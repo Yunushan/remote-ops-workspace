@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+.venv/
+venv/
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Remote Ops Workspace private data
+.row/
+remote-ops-data/
+profiles.json
+vault.json
+*.vault
+*.key
+*.pem
+*.p12
+*.pfx
+*.ppk
+*.rdp
+*.vnc
+*.kdbx
+*.log
+support-bundle-*.zip
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

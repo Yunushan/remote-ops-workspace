@@ -1,0 +1,480 @@
+{
+  "coverage_goal": "100% public feature-family coverage for requested products via built-in implementations, external-client adapters, or plugin seams.",
+  "features": [
+    {
+      "category": "protocol",
+      "extension_point": "launcher.build_launch_plan",
+      "id": "protocol.ssh",
+      "inspired_by": [
+        "MobaXterm",
+        "Remmina",
+        "mRemoteNG",
+        "Termius"
+      ],
+      "name": "SSH terminal sessions",
+      "status": "implemented-adapter"
+    },
+    {
+      "category": "protocol",
+      "extension_point": "launcher.build_launch_plan",
+      "id": "protocol.sftp",
+      "inspired_by": [
+        "MobaXterm",
+        "Termius"
+      ],
+      "name": "SFTP file transfer",
+      "status": "implemented-adapter"
+    },
+    {
+      "category": "protocol",
+      "extension_point": "launcher.build_launch_plan",
+      "id": "protocol.scp",
+      "inspired_by": [
+        "MobaXterm",
+        "Termius"
+      ],
+      "name": "SCP file transfer",
+      "status": "implemented-adapter"
+    },
+    {
+      "category": "protocol",
+      "extension_point": "launcher.build_launch_plan",
+      "id": "protocol.rdp",
+      "inspired_by": [
+        "MobaXterm",
+        "Remmina",
+        "mRemoteNG"
+      ],
+      "name": "RDP remote desktop",
+      "status": "implemented-adapter"
+    },
+    {
+      "category": "protocol",
+      "extension_point": "launcher.build_launch_plan",
+      "id": "protocol.vnc",
+      "inspired_by": [
+        "MobaXterm",
+        "Remmina",
+        "mRemoteNG"
+      ],
+      "name": "VNC remote desktop",
+      "status": "implemented-adapter"
+    },
+    {
+      "category": "protocol",
+      "extension_point": "launcher.build_launch_plan",
+      "id": "protocol.telnet",
+      "inspired_by": [
+        "MobaXterm",
+        "mRemoteNG",
+        "Termius"
+      ],
+      "name": "Telnet sessions",
+      "status": "implemented-adapter"
+    },
+    {
+      "category": "protocol",
+      "extension_point": "launcher.build_launch_plan",
+      "id": "protocol.rlogin",
+      "inspired_by": [
+        "MobaXterm",
+        "mRemoteNG"
+      ],
+      "name": "rlogin sessions",
+      "status": "implemented-adapter"
+    },
+    {
+      "category": "protocol",
+      "extension_point": "launcher.build_launch_plan",
+      "id": "protocol.rsh",
+      "inspired_by": [
+        "MobaXterm"
+      ],
+      "name": "rsh sessions",
+      "status": "implemented-adapter"
+    },
+    {
+      "category": "protocol",
+      "extension_point": "launcher.build_launch_plan",
+      "id": "protocol.ftp",
+      "inspired_by": [
+        "MobaXterm"
+      ],
+      "name": "FTP sessions",
+      "status": "implemented-adapter"
+    },
+    {
+      "category": "protocol",
+      "extension_point": "launcher.build_launch_plan",
+      "id": "protocol.mosh",
+      "inspired_by": [
+        "MobaXterm",
+        "Termius"
+      ],
+      "name": "Mosh sessions",
+      "status": "implemented-adapter"
+    },
+    {
+      "category": "protocol",
+      "extension_point": "launcher.build_launch_plan",
+      "id": "protocol.spice",
+      "inspired_by": [
+        "Remmina"
+      ],
+      "name": "SPICE remote desktop",
+      "status": "implemented-adapter"
+    },
+    {
+      "category": "protocol",
+      "extension_point": "launcher.build_launch_plan",
+      "id": "protocol.x2go",
+      "inspired_by": [
+        "Remmina"
+      ],
+      "name": "X2Go remote desktop",
+      "status": "implemented-adapter"
+    },
+    {
+      "category": "protocol",
+      "extension_point": "launcher.build_launch_plan",
+      "id": "protocol.xdmcp",
+      "inspired_by": [
+        "MobaXterm"
+      ],
+      "name": "XDMCP display sessions",
+      "status": "plugin-seam"
+    },
+    {
+      "category": "protocol",
+      "extension_point": "launcher.build_launch_plan",
+      "id": "protocol.ica",
+      "inspired_by": [
+        "mRemoteNG"
+      ],
+      "name": "Citrix ICA",
+      "status": "implemented-adapter"
+    },
+    {
+      "category": "protocol",
+      "extension_point": "launcher.build_launch_plan",
+      "id": "protocol.http",
+      "inspired_by": [
+        "mRemoteNG",
+        "Remmina"
+      ],
+      "name": "HTTP/HTTPS profile launch",
+      "status": "implemented-adapter"
+    },
+    {
+      "category": "protocol",
+      "extension_point": "launcher.build_launch_plan",
+      "id": "protocol.raw",
+      "inspired_by": [
+        "mRemoteNG"
+      ],
+      "name": "Raw socket profiles",
+      "status": "implemented-adapter"
+    },
+    {
+      "category": "protocol",
+      "extension_point": "launcher.build_launch_plan",
+      "id": "protocol.serial",
+      "inspired_by": [
+        "network-operator workflows"
+      ],
+      "name": "Serial console profiles",
+      "status": "implemented-adapter"
+    },
+    {
+      "category": "terminal",
+      "extension_point": "gui.MainWindow",
+      "id": "terminal.tabs",
+      "inspired_by": [
+        "MobaXterm",
+        "Remmina",
+        "mRemoteNG",
+        "Terminator",
+        "Termius"
+      ],
+      "name": "Tabbed sessions",
+      "status": "gui-shell"
+    },
+    {
+      "category": "terminal",
+      "extension_point": "gui.MainWindow.add_split",
+      "id": "terminal.splits",
+      "inspired_by": [
+        "Terminator"
+      ],
+      "name": "Horizontal/vertical split panes",
+      "status": "gui-shell"
+    },
+    {
+      "category": "terminal",
+      "extension_point": "layouts plugin",
+      "id": "terminal.layouts",
+      "inspired_by": [
+        "Terminator"
+      ],
+      "name": "Saved layouts and profiles",
+      "status": "manifest-seam"
+    },
+    {
+      "category": "terminal",
+      "extension_point": "broadcast plugin",
+      "id": "terminal.broadcast",
+      "inspired_by": [
+        "Terminator"
+      ],
+      "name": "Broadcast input to groups",
+      "status": "plugin-seam"
+    },
+    {
+      "category": "terminal",
+      "extension_point": "gui shortcuts",
+      "id": "terminal.shortcuts",
+      "inspired_by": [
+        "Terminator",
+        "MobaXterm"
+      ],
+      "name": "Keyboard shortcuts",
+      "status": "gui-shell"
+    },
+    {
+      "category": "terminal",
+      "extension_point": "terminal widget plugin",
+      "id": "terminal.search",
+      "inspired_by": [
+        "Terminator",
+        "Termius"
+      ],
+      "name": "Terminal search/scrollback",
+      "status": "plugin-seam"
+    },
+    {
+      "category": "automation",
+      "extension_point": "snippets plugin",
+      "id": "terminal.macros",
+      "inspired_by": [
+        "MobaXterm",
+        "Termius"
+      ],
+      "name": "Macros and snippets",
+      "status": "plugin-seam"
+    },
+    {
+      "category": "session",
+      "extension_point": "storage.ProfileStore",
+      "id": "session.profiles",
+      "inspired_by": [
+        "MobaXterm",
+        "Remmina",
+        "mRemoteNG",
+        "Termius"
+      ],
+      "name": "Profiles, groups and tags",
+      "status": "implemented"
+    },
+    {
+      "category": "session",
+      "extension_point": "profile policy plugin",
+      "id": "session.inheritance",
+      "inspired_by": [
+        "mRemoteNG"
+      ],
+      "name": "Group inheritance/defaults",
+      "status": "plugin-seam"
+    },
+    {
+      "category": "session",
+      "extension_point": "cli/gui",
+      "id": "session.quick-connect",
+      "inspired_by": [
+        "mRemoteNG",
+        "MobaXterm",
+        "Termius"
+      ],
+      "name": "Quick connect",
+      "status": "implemented-cli-gui"
+    },
+    {
+      "category": "session",
+      "extension_point": "sync.BackupService",
+      "id": "session.import-export",
+      "inspired_by": [
+        "mRemoteNG",
+        "Termius"
+      ],
+      "name": "Import/export profiles",
+      "status": "implemented"
+    },
+    {
+      "category": "security",
+      "extension_point": "vault.LocalVault",
+      "id": "security.vault",
+      "inspired_by": [
+        "Termius",
+        "MobaXterm",
+        "mRemoteNG"
+      ],
+      "name": "Encrypted local vault",
+      "status": "implemented-optional"
+    },
+    {
+      "category": "security",
+      "extension_point": "key management plugin",
+      "id": "security.keys",
+      "inspired_by": [
+        "Termius",
+        "MobaXterm",
+        "Remmina"
+      ],
+      "name": "SSH key management and keygen seam",
+      "status": "plugin-seam"
+    },
+    {
+      "category": "security",
+      "extension_point": "OpenSSH agent/FIDO",
+      "id": "security.fido",
+      "inspired_by": [
+        "Termius"
+      ],
+      "name": "FIDO/security-key authentication seam",
+      "status": "adapter-seam"
+    },
+    {
+      "category": "security",
+      "extension_point": "audit.append_event",
+      "id": "security.audit",
+      "inspired_by": [
+        "operator workflows"
+      ],
+      "name": "Redacted launch audit log",
+      "status": "implemented"
+    },
+    {
+      "category": "network",
+      "extension_point": "models.Tunnel",
+      "id": "network.tunnels",
+      "inspired_by": [
+        "MobaXterm",
+        "Remmina",
+        "Termius"
+      ],
+      "name": "Local/remote/dynamic SSH tunnels",
+      "status": "implemented-adapter"
+    },
+    {
+      "category": "network",
+      "extension_point": "ssh options plugin",
+      "id": "network.proxy",
+      "inspired_by": [
+        "Termius",
+        "MobaXterm"
+      ],
+      "name": "Proxy/jump host seam",
+      "status": "plugin-seam"
+    },
+    {
+      "category": "network",
+      "extension_point": "scripts/ and plugins",
+      "id": "network.tools",
+      "inspired_by": [
+        "MobaXterm"
+      ],
+      "name": "Network toolbox seam",
+      "status": "script-seam"
+    },
+    {
+      "category": "display",
+      "extension_point": "ssh options x11=true",
+      "id": "x11.forwarding",
+      "inspired_by": [
+        "MobaXterm",
+        "Termius/OpenSSH workflows"
+      ],
+      "name": "X11 forwarding workflow",
+      "status": "implemented-adapter"
+    },
+    {
+      "category": "display",
+      "extension_point": "VcXsrv/XQuartz/Xorg docs",
+      "id": "x11.server",
+      "inspired_by": [
+        "MobaXterm"
+      ],
+      "name": "External X server helper seam",
+      "status": "docs-adapter"
+    },
+    {
+      "category": "sync",
+      "extension_point": "sync.BackupService",
+      "id": "sync.local",
+      "inspired_by": [
+        "Termius",
+        "mRemoteNG"
+      ],
+      "name": "Local export/import sync",
+      "status": "implemented"
+    },
+    {
+      "category": "sync",
+      "extension_point": "sync provider plugin",
+      "id": "sync.cloud",
+      "inspired_by": [
+        "Termius"
+      ],
+      "name": "Cloud/team sync provider seam",
+      "status": "plugin-seam"
+    },
+    {
+      "category": "interface",
+      "extension_point": "apps/web",
+      "id": "web.pwa",
+      "inspired_by": [
+        "Termius cross-device workflows"
+      ],
+      "name": "Web/PWA shell",
+      "status": "implemented-shell"
+    },
+    {
+      "category": "platform",
+      "extension_point": "docs/ANDROID.md",
+      "id": "android.termux",
+      "inspired_by": [
+        "Termius mobile workflows"
+      ],
+      "name": "Android Termux CLI/PWA workflow",
+      "status": "docs-adapter"
+    },
+    {
+      "category": "platform",
+      "extension_point": "ROW_HOME",
+      "id": "portable.mode",
+      "inspired_by": [
+        "MobaXterm"
+      ],
+      "name": "Portable workspace mode",
+      "status": "implemented"
+    },
+    {
+      "category": "extensibility",
+      "extension_point": "remote_ops_workspace.plugins",
+      "id": "plugins.entrypoints",
+      "inspired_by": [
+        "Remmina",
+        "Terminator"
+      ],
+      "name": "Python entry-point plugins",
+      "status": "implemented"
+    }
+  ],
+  "products": [
+    "MobaXterm",
+    "Remmina",
+    "mRemoteNG",
+    "Terminator",
+    "Termius"
+  ],
+  "schema_version": 1
+}

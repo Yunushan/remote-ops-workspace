@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "theme": "system",
+  "portable_mode": false,
+  "default_terminal": "system",
+  "confirm_before_launch": false,
+  "redact_audit_log": true,
+  "external_clients": {
+    "rdp": ["mstsc", "xfreerdp", "wlfreerdp"],
+    "vnc": ["vncviewer"],
+    "spice": ["remote-viewer"],
+    "x2go": ["x2goclient"]
+  }
+}

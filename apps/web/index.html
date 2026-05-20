@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Remote Ops Workspace</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="hero">
+    <h1>Remote Ops Workspace</h1>
+    <p>Web/PWA shell for SSH, RDP, VNC, SFTP, Mosh, Telnet, X11, SPICE, X2Go, ICA, HTTP/HTTPS and operator workflows.</p>
+    <div class="badges">
+      <span>MIT</span><span>CLI</span><span>GUI</span><span>Web/PWA</span><span>Cross-platform</span>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="card">
+      <h2>Profiles</h2>
+      <form id="profile-form">
+        <input name="name" placeholder="name" required>
+        <select name="protocol">
+          <option>ssh</option><option>rdp</option><option>vnc</option><option>sftp</option><option>mosh</option><option>telnet</option><option>https</option><option>serial</option>
+        </select>
+        <input name="target" placeholder="host, URL or device path" required>
+        <button type="submit">Add demo profile</button>
+      </form>
+      <ul id="profiles"></ul>
+    </section>
+
+    <section class="card terminal-card">
+      <h2>Workspace</h2>
+      <div class="toolbar">
+        <button data-action="split-h">Split horizontal</button>
+        <button data-action="split-v">Split vertical</button>
+        <button data-action="clear">Clear</button>
+      </div>
+      <div id="terminal-grid" class="terminal-grid">
+        <div class="terminal-pane">PWA shell pane<br>Future API/terminal plugin seam.</div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Feature coverage</h2>
+      <p>CLI, GUI and Web/PWA share the same manifest-driven roadmap. Use <code>row features</code> for the complete local manifest.</p>
+      <div id="feature-tags"></div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

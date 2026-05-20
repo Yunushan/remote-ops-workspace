@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "profiles": [
+    {
+      "name": "lab-ssh",
+      "protocol": "ssh",
+      "host": "192.0.2.10",
+      "port": 22,
+      "username": "admin",
+      "group": "lab",
+      "tags": ["linux", "ssh"],
+      "description": "Example SSH profile",
+      "options": {"x11": "false"}
+    },
+    {
+      "name": "win-rdp",
+      "protocol": "rdp",
+      "host": "192.0.2.20",
+      "port": 3389,
+      "username": "administrator",
+      "group": "windows",
+      "tags": ["windows", "rdp"],
+      "description": "Example RDP profile"
+    },
+    {
+      "name": "router-serial",
+      "protocol": "serial",
+      "path": "/dev/ttyUSB0",
+      "group": "network",
+      "tags": ["serial", "router"],
+      "options": {"baud": "115200"}
+    },
+    {
+      "name": "admin-portal",
+      "protocol": "https",
+      "url": "https://example.com",
+      "group": "web",
+      "tags": ["web"]
+    }
+  ]
+}

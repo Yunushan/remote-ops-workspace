@@ -1,0 +1,3 @@
+# Runtime is intentionally stdlib-first.
+# Optional extras:
+#   pip install -e ".[desktop,security]"

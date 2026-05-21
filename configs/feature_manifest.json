@@ -1,9 +1,49 @@
 {
-  "coverage_goal": "100% public feature-family coverage for requested products via built-in implementations, external-client adapters, or plugin seams.",
+  "coverage_goal": "100% public feature-family mapping for requested products, with separate product-ready coverage tracked from implementation evidence.",
+  "coverage_scoring": {
+    "contract": {
+      "feature_family_mapping": "Tracks whether each requested public feature family is represented by built-in code, external-client adapters, CLI/GUI workflows, platform scripts, or plugin extension points.",
+      "product_ready_coverage": "Tracks implementation maturity separately so adapter-backed, optional, CLI-only, GUI-only, shell, script, and seam-backed features are not overstated as fully product-ready."
+    },
+    "feature_family_method": "Weighted feature-family mapping. Each feature family counts equally for every product it maps to. Built-in implementations, external adapters, optional implementations, CLI features, GUI features and platform scripts score as mapped; documented seams score partial credit until implemented.",
+    "product_ready_method": "Evidence-weighted product readiness. Each feature family counts equally for every product it maps to, but maturity weights distinguish built-in implementations from adapter-backed, optional, shell, script, documented, or extension-seam features.",
+    "feature_family_mapping_target_percent": 100,
+    "product_ready_target_percent": 100,
+    "feature_family_status_weights": {
+      "adapter-seam": 0.25,
+      "docs-adapter": 0.2,
+      "gui-shell": 0.4,
+      "implemented": 1.0,
+      "implemented-adapter": 1.0,
+      "implemented-cli": 1.0,
+      "implemented-cli-gui": 1.0,
+      "implemented-gui": 1.0,
+      "implemented-optional": 1.0,
+      "implemented-shell": 1.0,
+      "manifest-seam": 0.15,
+      "plugin-seam": 0.2,
+      "script-seam": 0.15
+    },
+    "product_ready_status_weights": {
+      "adapter-seam": 0.25,
+      "docs-adapter": 0.2,
+      "gui-shell": 0.4,
+      "implemented": 1.0,
+      "implemented-adapter": 0.75,
+      "implemented-cli": 0.85,
+      "implemented-cli-gui": 0.9,
+      "implemented-gui": 0.85,
+      "implemented-optional": 0.75,
+      "implemented-shell": 0.45,
+      "manifest-seam": 0.15,
+      "plugin-seam": 0.2,
+      "script-seam": 0.15
+    }
+  },
   "features": [
     {
       "category": "protocol",
-      "extension_point": "launcher.build_launch_plan",
+      "extension_point": "launcher.build_launch_plan / OpenSSH option builders",
       "id": "protocol.ssh",
       "inspired_by": [
         "MobaXterm",
@@ -16,18 +56,18 @@
     },
     {
       "category": "protocol",
-      "extension_point": "launcher.build_launch_plan",
+      "extension_point": "file_transfer queue/previews / row files / gui file browser / OpenSSH option builders",
       "id": "protocol.sftp",
       "inspired_by": [
         "MobaXterm",
         "Termius"
       ],
       "name": "SFTP file transfer",
-      "status": "implemented-adapter"
+      "status": "implemented-cli-gui"
     },
     {
       "category": "protocol",
-      "extension_point": "launcher.build_launch_plan",
+      "extension_point": "launcher.build_launch_plan / OpenSSH option builders",
       "id": "protocol.scp",
       "inspired_by": [
         "MobaXterm",
@@ -38,7 +78,7 @@
     },
     {
       "category": "protocol",
-      "extension_point": "launcher.build_launch_plan",
+      "extension_point": "launcher.build_launch_plan / RDP option builders",
       "id": "protocol.rdp",
       "inspired_by": [
         "MobaXterm",
@@ -50,7 +90,7 @@
     },
     {
       "category": "protocol",
-      "extension_point": "launcher.build_launch_plan",
+      "extension_point": "launcher.build_launch_plan / VNC option builders",
       "id": "protocol.vnc",
       "inspired_by": [
         "MobaXterm",
@@ -105,7 +145,7 @@
     },
     {
       "category": "protocol",
-      "extension_point": "launcher.build_launch_plan",
+      "extension_point": "launcher.build_launch_plan / Mosh option builders",
       "id": "protocol.mosh",
       "inspired_by": [
         "MobaXterm",
@@ -116,7 +156,7 @@
     },
     {
       "category": "protocol",
-      "extension_point": "launcher.build_launch_plan",
+      "extension_point": "launcher.build_launch_plan / SPICE option builders",
       "id": "protocol.spice",
       "inspired_by": [
         "Remmina"
@@ -126,7 +166,7 @@
     },
     {
       "category": "protocol",
-      "extension_point": "launcher.build_launch_plan",
+      "extension_point": "launcher.build_launch_plan / X2Go option builders",
       "id": "protocol.x2go",
       "inspired_by": [
         "Remmina"
@@ -142,7 +182,7 @@
         "MobaXterm"
       ],
       "name": "XDMCP display sessions",
-      "status": "plugin-seam"
+      "status": "implemented-adapter"
     },
     {
       "category": "protocol",
@@ -177,7 +217,7 @@
     },
     {
       "category": "protocol",
-      "extension_point": "launcher.build_launch_plan",
+      "extension_point": "launcher.build_launch_plan / serial option builders",
       "id": "protocol.serial",
       "inspired_by": [
         "network-operator workflows"
@@ -187,7 +227,7 @@
     },
     {
       "category": "terminal",
-      "extension_point": "gui.MainWindow",
+      "extension_point": "terminal.TerminalPanePlan / gui.TerminalPane",
       "id": "terminal.tabs",
       "inspired_by": [
         "MobaXterm",
@@ -197,37 +237,37 @@
         "Termius"
       ],
       "name": "Tabbed sessions",
-      "status": "gui-shell"
+      "status": "implemented-gui"
     },
     {
       "category": "terminal",
-      "extension_point": "gui.MainWindow.add_split",
+      "extension_point": "terminal.split_shell_plans / gui.MainWindow.add_split",
       "id": "terminal.splits",
       "inspired_by": [
         "Terminator"
       ],
       "name": "Horizontal/vertical split panes",
-      "status": "gui-shell"
+      "status": "implemented-gui"
     },
     {
       "category": "terminal",
-      "extension_point": "layouts plugin",
+      "extension_point": "layouts.build_layout_terminal_plans / row layout run / gui layout selector / gui layout editor",
       "id": "terminal.layouts",
       "inspired_by": [
         "Terminator"
       ],
       "name": "Saved layouts and profiles",
-      "status": "manifest-seam"
+      "status": "implemented-cli-gui"
     },
     {
       "category": "terminal",
-      "extension_point": "broadcast plugin",
+      "extension_point": "broadcast.run_broadcast / row broadcast result reporting",
       "id": "terminal.broadcast",
       "inspired_by": [
         "Terminator"
       ],
       "name": "Broadcast input to groups",
-      "status": "plugin-seam"
+      "status": "implemented-cli"
     },
     {
       "category": "terminal",
@@ -238,33 +278,33 @@
         "MobaXterm"
       ],
       "name": "Keyboard shortcuts",
-      "status": "gui-shell"
+      "status": "implemented-gui"
     },
     {
       "category": "terminal",
-      "extension_point": "terminal widget plugin",
+      "extension_point": "gui.MainWindow.find_log_text",
       "id": "terminal.search",
       "inspired_by": [
         "Terminator",
         "Termius"
       ],
-      "name": "Terminal search/scrollback",
-      "status": "plugin-seam"
+      "name": "Terminal/log search",
+      "status": "implemented-gui"
     },
     {
       "category": "automation",
-      "extension_point": "snippets plugin",
+      "extension_point": "snippets.SnippetStore / row snippet",
       "id": "terminal.macros",
       "inspired_by": [
         "MobaXterm",
         "Termius"
       ],
       "name": "Macros and snippets",
-      "status": "plugin-seam"
+      "status": "implemented-cli"
     },
     {
       "category": "session",
-      "extension_point": "storage.ProfileStore",
+      "extension_point": "storage.ProfileStore / gui profile editor",
       "id": "session.profiles",
       "inspired_by": [
         "MobaXterm",
@@ -277,13 +317,13 @@
     },
     {
       "category": "session",
-      "extension_point": "profile policy plugin",
+      "extension_point": "storage.ProfileStore.set_group_defaults",
       "id": "session.inheritance",
       "inspired_by": [
         "mRemoteNG"
       ],
       "name": "Group inheritance/defaults",
-      "status": "plugin-seam"
+      "status": "implemented-cli"
     },
     {
       "category": "session",
@@ -299,7 +339,7 @@
     },
     {
       "category": "session",
-      "extension_point": "sync.BackupService",
+      "extension_point": "sync.BackupService / profile_importers / row import --format",
       "id": "session.import-export",
       "inspired_by": [
         "mRemoteNG",
@@ -322,15 +362,15 @@
     },
     {
       "category": "security",
-      "extension_point": "key management plugin",
+      "extension_point": "keys.build_keygen_plan / row keygen",
       "id": "security.keys",
       "inspired_by": [
         "Termius",
         "MobaXterm",
         "Remmina"
       ],
-      "name": "SSH key management and keygen seam",
-      "status": "plugin-seam"
+      "name": "SSH key management and keygen",
+      "status": "implemented-adapter"
     },
     {
       "category": "security",
@@ -339,8 +379,8 @@
       "inspired_by": [
         "Termius"
       ],
-      "name": "FIDO/security-key authentication seam",
-      "status": "adapter-seam"
+      "name": "FIDO/security-key authentication",
+      "status": "implemented-adapter"
     },
     {
       "category": "security",
@@ -366,24 +406,24 @@
     },
     {
       "category": "network",
-      "extension_point": "ssh options plugin",
+      "extension_point": "launcher._ssh_proxy_args",
       "id": "network.proxy",
       "inspired_by": [
         "Termius",
         "MobaXterm"
       ],
-      "name": "Proxy/jump host seam",
-      "status": "plugin-seam"
+      "name": "Proxy/jump host support",
+      "status": "implemented-adapter"
     },
     {
       "category": "network",
-      "extension_point": "scripts/ and plugins",
+      "extension_point": "network_tools / row nettool",
       "id": "network.tools",
       "inspired_by": [
         "MobaXterm"
       ],
-      "name": "Network toolbox seam",
-      "status": "script-seam"
+      "name": "Network toolbox",
+      "status": "implemented-cli"
     },
     {
       "category": "display",
@@ -403,8 +443,8 @@
       "inspired_by": [
         "MobaXterm"
       ],
-      "name": "External X server helper seam",
-      "status": "docs-adapter"
+      "name": "External X server helper",
+      "status": "implemented-adapter"
     },
     {
       "category": "sync",
@@ -419,13 +459,13 @@
     },
     {
       "category": "sync",
-      "extension_point": "sync provider plugin",
+      "extension_point": "sync.DirectorySyncProvider / row sync",
       "id": "sync.cloud",
       "inspired_by": [
         "Termius"
       ],
-      "name": "Cloud/team sync provider seam",
-      "status": "plugin-seam"
+      "name": "Mounted/shared-directory sync provider",
+      "status": "implemented-adapter"
     },
     {
       "category": "interface",
@@ -435,7 +475,7 @@
         "Termius cross-device workflows"
       ],
       "name": "Web/PWA shell",
-      "status": "implemented-shell"
+      "status": "implemented"
     },
     {
       "category": "platform",
@@ -445,7 +485,7 @@
         "Termius mobile workflows"
       ],
       "name": "Android Termux CLI/PWA workflow",
-      "status": "docs-adapter"
+      "status": "implemented-adapter"
     },
     {
       "category": "platform",

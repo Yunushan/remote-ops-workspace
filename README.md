@@ -69,6 +69,8 @@ row serve-web --host 127.0.0.1 --port 8765
 row init
 row profile add --name core-rdp --protocol rdp --host 192.0.2.20 --username administrator
 row profile add --name switch-console --protocol serial --path /dev/ttyUSB0 --option baud=115200
+row profile add --name jump-ssh --protocol ssh --host 192.0.2.10 --username admin --option proxy_jump=bastion --option keepalive_interval=30
+row profile add --name lab-vnc --protocol vnc --host 192.0.2.30 --option fullscreen=true --option shared=true
 row profile list
 row profile show core-rdp
 row connect core-rdp --dry-run
@@ -77,11 +79,27 @@ row features
 row vault init
 row vault set prod/router-password
 row vault list
+row features --coverage
+row files ls lab-ssh /var/log --dry-run
+row files get lab-ssh /etc/hosts --local ./hosts.copy --dry-run
+row files queue lab-ssh --op "get /etc/hosts ./hosts.copy" --op "put ./build.tar.gz /tmp/build.tar.gz" --dry-run
+row files preview-local ./README.md --json
+row snippet add --name uptime --command "uptime" --tag ops
+row layout save triage --pane profile:lab-ssh --pane command:top --orientation horizontal
+row layout run triage --dry-run
+row broadcast --group prod --command "hostname" --timeout 10 --json
+row keygen --out ~/.ssh/id_ed25519_row --comment row
+row nettool ping example.com --dry-run
+row sync push --to ~/RemoteOpsSync
 row export --out backups/remote-ops-export.json
 row import --in backups/remote-ops-export.json
+row import --in confCons.xml --format mremoteng
+row import --in ~/.local/share/remmina --format remmina
 ```
 
-The launcher never concatenates shell strings. Protocol launches are built as safe argument arrays and can be inspected with `--dry-run` before execution.
+The launcher never concatenates shell strings. Protocol launches are built as safe argument arrays and can be inspected with `--dry-run` before execution. Per-protocol profile options cover OpenSSH keepalives/proxies/host-key policy, Mosh ports/prediction, RDP display/security/device flags, VNC/SPICE/X2Go viewer flags and serial line settings; see [`docs/PROTOCOLS.md`](docs/PROTOCOLS.md).
+
+Profile imports support the native ROW bundle plus Remmina `.remmina`, mRemoteNG `confCons.xml`, Termius-style JSON host lists and MobaXterm session bookmark exports. See [`docs/IMPORTERS.md`](docs/IMPORTERS.md). File transfer queues and previews are documented in [`docs/FILE_TRANSFER.md`](docs/FILE_TRANSFER.md).
 
 ---
 
@@ -90,11 +108,15 @@ The launcher never concatenates shell strings. Protocol launches are built as sa
 The PyQt6 desktop shell provides:
 
 - session tree and quick-connect panel;
+- profile create/edit/remove dialogs backed by the same profile store as the CLI;
 - external protocol launch buttons;
-- tabbed workspace placeholder;
-- split-pane layout controls inspired by tiling terminals;
+- interactive SFTP file browser panes and transfer queue preview dialog for SSH/SFTP profiles;
+- tabbed workspace for process-backed sessions;
+- process-backed terminal panes with stdout/stderr capture and stdin entry;
+- horizontal and vertical split-pane shells inspired by tiling terminals;
+- saved layout selector plus create/edit/remove dialogs that open layout panes directly in the workspace;
 - doctor/status panel;
-- plugin-ready terminal embedding seam for `qtermwidget`, PTY-backed terminals, web terminals, or native terminal widgets.
+- future plugin seam for deeper PTY/qtermwidget/web terminal emulation.
 
 Install optional GUI extras:
 
@@ -119,27 +141,45 @@ Then open the displayed URL from a browser or install it as a PWA.
 
 ## Feature Coverage
 
-Coverage target: **100% of the public feature families** represented by the requested tools, mapped to either built-in code, external-client adapters, or documented plugin seams.
+Coverage target: **100% public feature-family mapping** for the requested tools, tracked separately from product-ready implementation maturity.
+
+Coverage is generated from [`configs/feature_manifest.json`](configs/feature_manifest.json). Feature-family mapping answers whether each public feature family is represented by built-in code, external adapters, optional implementations, CLI/GUI workflows, platform scripts, or plugin extension points. Product-ready coverage applies stricter evidence weights so adapter-backed, optional, shell, script and partial workflows are not overstated.
+
+| Product target | Feature-family mapping | Product-ready coverage | Ready gap to 100% | Feature families tracked |
+|---|---:|---:|---:|---:|
+| MobaXterm | 100.0% | 80.0% | 20.0% | 24 |
+| Remmina | 100.0% | 80.5% | 19.5% | 11 |
+| mRemoteNG | 100.0% | 82.3% | 17.7% | 15 |
+| Terminator | 100.0% | 87.9% | 12.1% | 7 |
+| Termius | 100.0% | 82.6% | 17.4% | 21 |
+| **Overall** | **100.0%** | **82.0%** | **18.0%** | **43** |
+
+Run:
+
+```bash
+row features --coverage
+row features --coverage --json
+```
 
 | Feature family | MobaXterm | Remmina | mRemoteNG | Terminator | Termius | Project coverage |
 |---|---:|---:|---:|---:|---:|---|
 | SSH terminal sessions | ✅ | ✅ | ✅ | local shell | ✅ | Built-in OpenSSH adapter + profile store |
 | RDP | ✅ | ✅ | ✅ | — | — | MSTSC/FreeRDP adapter |
 | VNC | ✅ | ✅ | ✅ | — | — | TigerVNC/RealVNC adapter |
-| SFTP/SCP/FTP file transfer | ✅ | profile/file features | — | — | ✅ | OpenSSH SFTP/SCP adapter + file-transfer profile type |
+| SFTP/SCP/FTP file transfer | ✅ | profile/file features | — | — | ✅ | OpenSSH SFTP/SCP adapter + `row files` batch operations, transfer queues, previews, GUI SFTP pane |
 | Telnet/rlogin/rsh/raw sockets | ✅ | limited/plugins | ✅ | — | Telnet | External command adapters |
 | Mosh | ✅ | plugins | — | — | ✅ | Mosh adapter |
 | X11 forwarding / X server workflow | ✅ | X/SSH workflows | — | — | SSH forwarding | SSH `-X/-Y` + VcXsrv/XQuartz/Xorg helper notes |
-| SPICE/X2Go/XDMCP | XDMCP | ✅ | — | — | — | virt-viewer/x2goclient/XDMCP plugin seams |
-| ICA/Citrix | — | plugins | ✅ | — | — | `wfica` adapter seam |
-| Session manager / groups / tags | ✅ | ✅ | ✅ | profiles | ✅ | JSON profile store, groups, tags |
-| Tabs and split panes | ✅ | ✅ | ✅ | ✅ | multi-session | GUI shell + layout manifest |
-| Broadcast input / command fanout | macros/tools | — | — | ✅ | snippets | Command group and snippets seam |
+| SPICE/X2Go/XDMCP | XDMCP | ✅ | — | — | — | virt-viewer/x2goclient/XDMCP adapters |
+| ICA/Citrix | — | plugins | ✅ | — | — | `wfica` adapter |
+| Session manager / groups / tags | ✅ | ✅ | ✅ | profiles | ✅ | JSON profile store, groups, tags, GUI profile editor |
+| Tabs and split panes | ✅ | ✅ | ✅ | ✅ | multi-session | GUI shell + executable saved layouts and editor |
+| Broadcast input / command fanout | macros/tools | — | — | ✅ | snippets | Broadcast/fanout CLI with per-target result reporting |
 | Macros / snippets | ✅ | — | — | shortcuts | ✅ | Snippet model and manifest entries |
 | Encrypted vault | passwords | password store | credential store | — | ✅ | Optional cryptography-based local vault |
-| Cloud/team sync | shared sessions | — | shared config options | — | ✅ | Export/import now; sync provider seam |
-| Keygen / SSH keys / agent | SSH keys | SSH keys | PuTTY keys | — | ✅ | OpenSSH key helper seam |
-| Hardware/FIDO keys | SSH support | SSH support | depends | — | ✅ | OpenSSH/FIDO agent seam |
+| Cloud/team sync | shared sessions | — | shared config options | — | ✅ | Export/import + mounted/shared-directory provider |
+| Keygen / SSH keys / agent | SSH keys | SSH keys | PuTTY keys | — | ✅ | OpenSSH keygen CLI |
+| Hardware/FIDO keys | SSH support | SSH support | depends | — | ✅ | OpenSSH security-key keygen adapter |
 | Portable mode | ✅ | packages | config portability | — | mobile/desktop | `ROW_HOME` portable data directory |
 | Web/mobile access | — | Kasm/container options | — | — | ✅ | Static Web/PWA shell + Android/PWA docs |
 | Plugin architecture | plugins | plugins | extensions | plugins | integrations | Python entry-point plugin loader |
@@ -160,7 +200,7 @@ See [`docs/FULL_FEATURE_COVERAGE.md`](docs/FULL_FEATURE_COVERAGE.md) and [`confi
 | Solaris/illumos | CLI, Web/PWA, GUI if Python/Qt stack exists | Focus on OpenSSH, browser, serial/raw sockets |
 | macOS Intel/Apple Silicon | CLI, GUI, Web/PWA | OpenSSH, XQuartz, Microsoft Remote Desktop/FreeRDP, VNC viewers |
 | Android | Web/PWA, Termux CLI | Browser/PWA first; Termux can run the Python CLI and OpenSSH adapters |
-| Web | PWA shell | Static UI today; API/backend seam included |
+| Web | PWA shell | Static PWA shell; API/backend can be layered on |
 
 ---
 
@@ -195,6 +235,10 @@ Core design principles:
 - Store examples only under `configs/*.example.*`.
 - Use `row connect NAME --dry-run` before launching newly imported profiles.
 - Vault encryption requires the optional `security` extra: `pip install -e ".[security]"`.
+- `row vault get` requires explicit `--show` or `--out`; secrets are not printed by default.
+- `row keygen --passphrase-env` keeps software-key passphrases out of `ssh-keygen` argv by generating encrypted keys in-process.
+- Launchers validate hosts, ports, URLs, snippets, broadcast payloads and X11 display names before starting external tools.
+- Prefer SSH `proxy_jump`; `proxy_command` requires explicit `allow_unsafe_proxy_command=true`.
 - See [`SECURITY.md`](SECURITY.md) and [`docs/SECURITY_MODEL.md`](docs/SECURITY_MODEL.md).
 
 ---

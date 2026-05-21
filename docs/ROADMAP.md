@@ -5,14 +5,14 @@
 - Harden CLI profile workflows.
 - Add group inheritance defaults.
 - Add snippets command group.
-- Add profile importers for common formats where licensing allows.
-- Add richer GUI profile editor.
+- Add profile importers for Remmina, mRemoteNG, Termius-style JSON and MobaXterm session exports.
+- Continue enriching GUI profile and layout editors with protocol presets and import previews.
 
 ## v0.2.x
 
-- Terminal widget plugin using qtermwidget or PTY/web terminal.
-- Embedded file transfer panel.
-- Layout save/restore.
+- Deeper terminal widget plugin using qtermwidget or PTY/web terminal emulation.
+- Continue enriching embedded file transfer UI with live transfer progress after queue/preview support.
+- Richer layout save/restore with resize persistence.
 - SSH key helper and local key generation workflow.
 - Sync provider interface.
 

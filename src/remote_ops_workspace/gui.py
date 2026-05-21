@@ -3,20 +3,42 @@ from __future__ import annotations
 import sys
 
 from .doctor import run_doctor
-from .launcher import LauncherError, launch
+from .file_transfer import build_sftp_queue_plan, parse_transfer_item_spec, preview_local_path
+from .gui_editors import (
+    layout_from_editor_data,
+    layout_to_editor_data,
+    profile_from_editor_data,
+    profile_to_editor_data,
+)
+from .layouts import Layout, LayoutStore, build_layout_terminal_plans
+from .launcher import LauncherError, build_launch_plan
 from .storage import ProfileStore
+from .terminal import (
+    TerminalPanePlan,
+    split_shell_plans,
+    terminal_plan_for_profile,
+    terminal_plan_for_sftp_browser,
+)
 
 
 def main() -> int:
     try:
-        from PyQt6.QtCore import Qt
+        from PyQt6.QtCore import QProcess, Qt
+        from PyQt6.QtGui import QKeySequence, QShortcut, QTextCursor
         from PyQt6.QtWidgets import (
             QApplication,
+            QComboBox,
+            QDialog,
+            QDialogButtonBox,
+            QFormLayout,
             QHBoxLayout,
             QLabel,
+            QLineEdit,
             QListWidget,
+            QListWidgetItem,
             QMainWindow,
             QMessageBox,
+            QPlainTextEdit,
             QPushButton,
             QSplitter,
             QTabWidget,
@@ -30,6 +52,271 @@ def main() -> int:
         print(exc)
         return 2
 
+    class TerminalPane(QWidget):
+        def __init__(self, plan: TerminalPanePlan) -> None:
+            super().__init__()
+            self.plan = plan
+            self.process = QProcess(self)
+            self.process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
+
+            self.output = QTextEdit()
+            self.output.setReadOnly(True)
+            self.output.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
+            self.input = QLineEdit()
+            self.input.setPlaceholderText("stdin")
+            self.status = QLabel("ready")
+            self.start_button = QPushButton("Start")
+            self.stop_button = QPushButton("Stop")
+
+            controls = QHBoxLayout()
+            controls.addWidget(self.status, 1)
+            controls.addWidget(self.start_button)
+            controls.addWidget(self.stop_button)
+
+            layout = QVBoxLayout(self)
+            layout.setContentsMargins(4, 4, 4, 4)
+            layout.addLayout(controls)
+            layout.addWidget(self.output, 1)
+            layout.addWidget(self.input)
+
+            self.start_button.clicked.connect(self.start)
+            self.stop_button.clicked.connect(self.stop)
+            self.input.returnPressed.connect(self.send_input)
+            self.process.readyReadStandardOutput.connect(self.read_stdout)
+            self.process.readyReadStandardError.connect(self.read_stderr)
+            self.process.started.connect(lambda: self.status.setText("running"))
+            self.process.errorOccurred.connect(lambda error: self.append_text(f"\n[error] {error.name}\n"))
+            self.process.finished.connect(self.on_finished)
+            self.start()
+
+        def start(self) -> None:
+            if self.process.state() != QProcess.ProcessState.NotRunning:
+                return
+            if not self.plan.command:
+                self.append_text("[error] empty terminal command\n")
+                return
+            self.output.clear()
+            self.append_text(f"$ {self.plan.printable()}\n")
+            for note in self.plan.notes:
+                self.append_text(f"[note] {note}\n")
+            self.process.setProgram(self.plan.command[0])
+            self.process.setArguments(self.plan.command[1:])
+            self.process.start()
+
+        def stop(self) -> None:
+            if self.process.state() == QProcess.ProcessState.NotRunning:
+                return
+            self.process.terminate()
+            if not self.process.waitForFinished(1500):
+                self.process.kill()
+
+        def send_input(self) -> None:
+            line = self.input.text()
+            self.input.clear()
+            if self.process.state() == QProcess.ProcessState.NotRunning:
+                self.append_text("[stdin ignored: process is not running]\n")
+                return
+            self.process.write((line + "\n").encode("utf-8"))
+
+        def read_stdout(self) -> None:
+            self.append_text(bytes(self.process.readAllStandardOutput()).decode(errors="replace"))
+
+        def read_stderr(self) -> None:
+            self.append_text(bytes(self.process.readAllStandardError()).decode(errors="replace"))
+
+        def append_text(self, text: str) -> None:
+            if not text:
+                return
+            self.output.moveCursor(QTextCursor.MoveOperation.End)
+            self.output.insertPlainText(text)
+            self.output.moveCursor(QTextCursor.MoveOperation.End)
+
+        def on_finished(self, exit_code: int, exit_status: QProcess.ExitStatus) -> None:
+            self.status.setText(f"exited {exit_code}")
+            self.append_text(f"\n[process exited: {exit_code}, {exit_status.name}]\n")
+
+    class ProfileDialog(QDialog):
+        def __init__(self, profile=None, parent=None) -> None:
+            super().__init__(parent)
+            self.setWindowTitle("Profile")
+            self.resize(520, 660)
+            data = profile_to_editor_data(profile)
+            self.fields: dict[str, object] = {}
+            form = QFormLayout(self)
+
+            for key, label in [
+                ("name", "Name"),
+                ("protocol", "Protocol"),
+                ("host", "Host"),
+                ("port", "Port"),
+                ("username", "Username"),
+                ("group", "Group"),
+                ("tags", "Tags"),
+                ("path", "Path"),
+                ("url", "URL"),
+                ("command", "Command"),
+                ("identity_file", "Identity file"),
+                ("credential_ref", "Credential ref"),
+            ]:
+                widget = QLineEdit(data[key])
+                self.fields[key] = widget
+                form.addRow(label, widget)
+
+            description = QPlainTextEdit()
+            description.setPlainText(data["description"])
+            description.setMaximumBlockCount(200)
+            self.fields["description"] = description
+            form.addRow("Description", description)
+
+            options = QPlainTextEdit()
+            options.setPlainText(data["options"])
+            options.setPlaceholderText("key=value")
+            self.fields["options"] = options
+            form.addRow("Options", options)
+
+            tunnels = QPlainTextEdit()
+            tunnels.setPlainText(data["tunnels"])
+            tunnels.setPlaceholderText("dynamic:1080\nlocal:15432:127.0.0.1:5432")
+            self.fields["tunnels"] = tunnels
+            form.addRow("Tunnels", tunnels)
+
+            buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+            buttons.accepted.connect(self.accept)
+            buttons.rejected.connect(self.reject)
+            form.addRow(buttons)
+
+        def editor_data(self) -> dict[str, str]:
+            data: dict[str, str] = {}
+            for key, widget in self.fields.items():
+                if isinstance(widget, QPlainTextEdit):
+                    data[key] = widget.toPlainText()
+                else:
+                    data[key] = widget.text()
+            return data
+
+        def profile(self):
+            return profile_from_editor_data(self.editor_data())
+
+    class LayoutDialog(QDialog):
+        def __init__(self, layout=None, parent=None) -> None:
+            super().__init__(parent)
+            self.setWindowTitle("Layout")
+            self.resize(520, 520)
+            data = layout_to_editor_data(layout)
+            form = QFormLayout(self)
+            self.name = QLineEdit(data["name"])
+            self.orientation = QComboBox()
+            self.orientation.addItems(["grid", "horizontal", "vertical"])
+            self.orientation.setCurrentText(data["orientation"])
+            self.description = QPlainTextEdit()
+            self.description.setPlainText(data["description"])
+            self.panes = QPlainTextEdit()
+            self.panes.setPlainText(data["panes"])
+            self.panes.setPlaceholderText("profile:edge | Edge\ncommand:python -V | Version")
+            form.addRow("Name", self.name)
+            form.addRow("Orientation", self.orientation)
+            form.addRow("Description", self.description)
+            form.addRow("Panes", self.panes)
+            buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+            buttons.accepted.connect(self.accept)
+            buttons.rejected.connect(self.reject)
+            form.addRow(buttons)
+
+        def editor_data(self) -> dict[str, str]:
+            return {
+                "name": self.name.text(),
+                "orientation": self.orientation.currentText(),
+                "description": self.description.toPlainText(),
+                "panes": self.panes.toPlainText(),
+            }
+
+        def layout(self) -> Layout:
+            return layout_from_editor_data(self.editor_data())
+
+    class TransferQueueDialog(QDialog):
+        def __init__(self, profile, parent=None) -> None:
+            super().__init__(parent)
+            self.profile = profile
+            self.setWindowTitle(f"Transfer Queue: {profile.name}")
+            self.resize(640, 620)
+
+            root = QVBoxLayout(self)
+            form = QFormLayout()
+            self.operations = QPlainTextEdit()
+            self.operations.setPlaceholderText(
+                "get /etc/hosts ./hosts.copy\nput ./build.tar.gz /tmp/build.tar.gz\nmkdir /tmp/releases"
+            )
+            self.local_preview_path = QLineEdit()
+            self.local_preview_path.setPlaceholderText("Local file or directory")
+            form.addRow("Operations", self.operations)
+            form.addRow("Local preview", self.local_preview_path)
+            root.addLayout(form)
+
+            controls = QHBoxLayout()
+            self.preview_button = QPushButton("Preview Queue")
+            self.local_preview_button = QPushButton("Preview Local")
+            controls.addWidget(self.preview_button)
+            controls.addWidget(self.local_preview_button)
+            controls.addStretch(1)
+            root.addLayout(controls)
+
+            self.preview = QTextEdit()
+            self.preview.setReadOnly(True)
+            self.preview.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
+            root.addWidget(self.preview, 1)
+
+            buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+            buttons.accepted.connect(self.accept)
+            buttons.rejected.connect(self.reject)
+            root.addWidget(buttons)
+
+            self.preview_button.clicked.connect(self.refresh_queue_preview)
+            self.local_preview_button.clicked.connect(self.refresh_local_preview)
+
+        def queue_plan(self):
+            items = []
+            for line in self.operations.toPlainText().splitlines():
+                raw = line.strip()
+                if raw and not raw.startswith("#"):
+                    items.append(parse_transfer_item_spec(raw))
+            return build_sftp_queue_plan(self.profile, items)
+
+        def refresh_queue_preview(self) -> None:
+            try:
+                plan = self.queue_plan()
+            except ValueError as exc:
+                self.preview.setPlainText(f"error: {exc}")
+                return
+            lines = [plan.printable(), "", "queue:"]
+            for index, command in enumerate(plan.batch_commands, start=1):
+                lines.append(f"{index}. {command}")
+            for note in plan.notes:
+                lines.append(f"note: {note}")
+            self.preview.setPlainText("\n".join(lines))
+
+        def refresh_local_preview(self) -> None:
+            try:
+                preview = preview_local_path(self.local_preview_path.text())
+            except ValueError as exc:
+                self.preview.setPlainText(f"error: {exc}")
+                return
+            data = preview.to_dict()
+            lines = [f"{data['path']}: {data['kind']}"]
+            if data.get("size") is not None:
+                lines.append(f"size: {data['size']}")
+            for child in data.get("children", []):
+                lines.append(f"  {child}")
+            if data.get("binary"):
+                lines.append("binary: true")
+            if data.get("truncated"):
+                lines.append("truncated: true")
+            if data.get("text"):
+                lines.append("")
+                lines.append(str(data["text"]))
+            if data.get("error"):
+                lines.append(f"error: {data['error']}")
+            self.preview.setPlainText("\n".join(lines))
+
     class MainWindow(QMainWindow):
         def __init__(self) -> None:
             super().__init__()
@@ -37,17 +324,50 @@ def main() -> int:
             self.resize(1180, 720)
             self.store = ProfileStore()
             self.store.init(with_examples=True)
+            self.layout_store = LayoutStore()
 
             toolbar = QToolBar("Main")
             self.addToolBar(toolbar)
             self.refresh_button = QPushButton("Refresh")
+            self.new_profile_button = QPushButton("New Profile")
+            self.edit_profile_button = QPushButton("Edit Profile")
+            self.remove_profile_button = QPushButton("Remove Profile")
             self.connect_button = QPushButton("Connect")
+            self.files_button = QPushButton("Files")
+            self.queue_button = QPushButton("Queue")
             self.dry_run_button = QPushButton("Dry Run")
             self.doctor_button = QPushButton("Doctor")
             self.split_h_button = QPushButton("Split H")
             self.split_v_button = QPushButton("Split V")
-            for button in [self.refresh_button, self.connect_button, self.dry_run_button, self.doctor_button, self.split_h_button, self.split_v_button]:
+            self.layout_select = QComboBox()
+            self.layout_select.setMinimumWidth(180)
+            self.new_layout_button = QPushButton("New Layout")
+            self.edit_layout_button = QPushButton("Edit Layout")
+            self.remove_layout_button = QPushButton("Remove Layout")
+            self.open_layout_button = QPushButton("Open Layout")
+            self.search_input = QLineEdit()
+            self.search_input.setPlaceholderText("Search log")
+            self.find_button = QPushButton("Find")
+            for button in [
+                self.refresh_button,
+                self.new_profile_button,
+                self.edit_profile_button,
+                self.remove_profile_button,
+                self.connect_button,
+                self.files_button,
+                self.queue_button,
+                self.dry_run_button,
+                self.doctor_button,
+                self.split_h_button,
+                self.split_v_button,
+            ]:
                 toolbar.addWidget(button)
+            toolbar.addWidget(self.layout_select)
+            for button in [self.new_layout_button, self.edit_layout_button, self.remove_layout_button]:
+                toolbar.addWidget(button)
+            toolbar.addWidget(self.open_layout_button)
+            toolbar.addWidget(self.search_input)
+            toolbar.addWidget(self.find_button)
 
             self.profile_list = QListWidget()
             self.profile_list.setMinimumWidth(300)
@@ -69,26 +389,116 @@ def main() -> int:
             self.setCentralWidget(root)
 
             self.refresh_button.clicked.connect(self.refresh_profiles)
+            self.new_profile_button.clicked.connect(self.create_profile)
+            self.edit_profile_button.clicked.connect(self.edit_selected_profile)
+            self.remove_profile_button.clicked.connect(self.remove_selected_profile)
             self.connect_button.clicked.connect(lambda: self.connect_selected(False))
+            self.files_button.clicked.connect(self.open_files_selected)
+            self.queue_button.clicked.connect(self.open_transfer_queue_selected)
             self.dry_run_button.clicked.connect(lambda: self.connect_selected(True))
             self.doctor_button.clicked.connect(self.show_doctor)
             self.split_h_button.clicked.connect(lambda: self.add_split("horizontal"))
             self.split_v_button.clicked.connect(lambda: self.add_split("vertical"))
+            self.new_layout_button.clicked.connect(self.create_layout)
+            self.edit_layout_button.clicked.connect(self.edit_selected_layout)
+            self.remove_layout_button.clicked.connect(self.remove_selected_layout)
+            self.open_layout_button.clicked.connect(self.open_selected_layout)
+            self.find_button.clicked.connect(self.find_log_text)
+            QShortcut(QKeySequence("Ctrl+R"), self, activated=self.refresh_profiles)
+            QShortcut(QKeySequence("Ctrl+N"), self, activated=self.create_profile)
+            QShortcut(QKeySequence("Ctrl+E"), self, activated=self.edit_selected_profile)
+            QShortcut(QKeySequence("Ctrl+Return"), self, activated=lambda: self.connect_selected(False))
+            QShortcut(QKeySequence("Ctrl+Shift+H"), self, activated=lambda: self.add_split("horizontal"))
+            QShortcut(QKeySequence("Ctrl+Shift+V"), self, activated=lambda: self.add_split("vertical"))
+            QShortcut(QKeySequence("Ctrl+L"), self, activated=self.open_selected_layout)
+            QShortcut(QKeySequence("Ctrl+F"), self, activated=self.search_input.setFocus)
             self.refresh_profiles()
+            self.refresh_layouts()
             self.add_welcome_tab()
 
         def refresh_profiles(self) -> None:
             self.profile_list.clear()
             for profile in self.store.load():
-                self.profile_list.addItem(f"{profile.group}/{profile.name}  [{profile.protocol}]  {profile.display_target}")
+                item = QListWidgetItem(f"{profile.group}/{profile.name}  [{profile.protocol}]  {profile.display_target}")
+                item.setData(Qt.ItemDataRole.UserRole, profile.name)
+                self.profile_list.addItem(item)
+            self.refresh_layouts()
+
+        def refresh_layouts(self) -> None:
+            self.layout_select.clear()
+            for layout in self.layout_store.load():
+                self.layout_select.addItem(layout.name)
 
         def selected_profile_name(self) -> str | None:
             item = self.profile_list.currentItem()
             if not item:
                 return None
-            text = item.text()
-            group_name = text.split("  ", 1)[0]
-            return group_name.split("/", 1)[1]
+            return item.data(Qt.ItemDataRole.UserRole)
+
+        def create_profile(self) -> None:
+            dialog = ProfileDialog(parent=self)
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+            try:
+                profile = dialog.profile()
+                self.store.add(profile)
+                self.refresh_profiles()
+                self.select_profile(profile.name)
+                self.log.append(f"PROFILE SAVED: {profile.name}")
+            except ValueError as exc:
+                QMessageBox.warning(self, "Profile failed", str(exc))
+
+        def edit_selected_profile(self) -> None:
+            name = self.selected_profile_name()
+            if not name:
+                QMessageBox.information(self, "Remote Ops Workspace", "Select a profile first.")
+                return
+            try:
+                current = self.store.get(name)
+            except KeyError as exc:
+                QMessageBox.warning(self, "Profile failed", str(exc))
+                return
+            dialog = ProfileDialog(current, self)
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+            try:
+                profile = dialog.profile()
+                self.save_profile(profile, original_name=name)
+                self.refresh_profiles()
+                self.select_profile(profile.name)
+                self.log.append(f"PROFILE UPDATED: {profile.name}")
+            except (KeyError, ValueError) as exc:
+                QMessageBox.warning(self, "Profile failed", str(exc))
+
+        def remove_selected_profile(self) -> None:
+            name = self.selected_profile_name()
+            if not name:
+                QMessageBox.information(self, "Remote Ops Workspace", "Select a profile first.")
+                return
+            answer = QMessageBox.question(self, "Remove profile", f"Remove profile {name}?")
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+            try:
+                self.store.remove(name)
+                self.refresh_profiles()
+                self.log.append(f"PROFILE REMOVED: {name}")
+            except KeyError as exc:
+                QMessageBox.warning(self, "Profile failed", str(exc))
+
+        def save_profile(self, profile, original_name: str) -> None:
+            profiles = self.store.load(resolve=False)
+            if profile.name != original_name and any(item.name == profile.name for item in profiles):
+                raise ValueError(f"profile already exists: {profile.name}")
+            profiles = [item for item in profiles if item.name != original_name]
+            profiles.append(profile)
+            self.store.save(sorted(profiles, key=lambda item: (item.group, item.name)))
+
+        def select_profile(self, name: str) -> None:
+            for row in range(self.profile_list.count()):
+                item = self.profile_list.item(row)
+                if item.data(Qt.ItemDataRole.UserRole) == name:
+                    self.profile_list.setCurrentRow(row)
+                    return
 
         def connect_selected(self, dry_run: bool) -> None:
             name = self.selected_profile_name()
@@ -97,34 +507,178 @@ def main() -> int:
                 return
             try:
                 profile = self.store.get(name)
-                plan = launch(profile, dry_run=dry_run)
+                plan = build_launch_plan(profile)
                 prefix = "DRY RUN" if dry_run else "LAUNCHED"
-                self.log.append(f"{prefix}: {plan.printable()}")
+                if dry_run:
+                    self.log.append(f"{prefix}: {plan.printable()}")
+                    for note in plan.notes:
+                        self.log.append(f"  note: {note}")
+                else:
+                    pane_plan = terminal_plan_for_profile(profile)
+                    self.open_terminal_tab(pane_plan)
+                    self.log.append(f"{prefix}: {pane_plan.printable()}")
+            except (KeyError, LauncherError, ValueError) as exc:
+                QMessageBox.warning(self, "Launch failed", str(exc))
+
+        def open_files_selected(self) -> None:
+            name = self.selected_profile_name()
+            if not name:
+                QMessageBox.information(self, "Remote Ops Workspace", "Select a profile first.")
+                return
+            try:
+                profile = self.store.get(name)
+                pane_plan = terminal_plan_for_sftp_browser(profile)
+                self.open_terminal_tab(pane_plan)
+                self.log.append(f"FILES: {pane_plan.printable()}")
+            except (KeyError, LauncherError, ValueError) as exc:
+                QMessageBox.warning(self, "SFTP failed", str(exc))
+
+        def open_transfer_queue_selected(self) -> None:
+            name = self.selected_profile_name()
+            if not name:
+                QMessageBox.information(self, "Remote Ops Workspace", "Select a profile first.")
+                return
+            try:
+                profile = self.store.get(name)
+                dialog = TransferQueueDialog(profile, self)
+                if dialog.exec() != QDialog.DialogCode.Accepted:
+                    return
+                plan = dialog.queue_plan()
+                self.log.append(f"QUEUE: {plan.printable()}")
+                for command in plan.batch_commands:
+                    self.log.append(f"  {command}")
                 for note in plan.notes:
                     self.log.append(f"  note: {note}")
             except (KeyError, LauncherError, ValueError) as exc:
-                QMessageBox.warning(self, "Launch failed", str(exc))
+                QMessageBox.warning(self, "Transfer queue failed", str(exc))
 
         def show_doctor(self) -> None:
             self.log.append(run_doctor().to_json())
 
+        def find_log_text(self) -> None:
+            needle = self.search_input.text()
+            if not needle:
+                return
+            if not self.log.find(needle):
+                cursor = self.log.textCursor()
+                cursor.movePosition(QTextCursor.MoveOperation.Start)
+                self.log.setTextCursor(cursor)
+                self.log.find(needle)
+
         def add_welcome_tab(self) -> None:
             box = QWidget()
             layout = QVBoxLayout(box)
-            label = QLabel("Remote Ops Workspace\n\nUse the profile list and toolbar to launch sessions. Split buttons demonstrate the Terminator-style workspace layout seam.")
+            label = QLabel("Remote Ops Workspace\n\nUse the profile list and toolbar to launch process-backed session panes.")
             label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             layout.addWidget(label)
             self.tabs.addTab(box, "Welcome")
 
+        def open_terminal_tab(self, plan: TerminalPanePlan) -> None:
+            pane = TerminalPane(plan)
+            self.tabs.addTab(pane, plan.title)
+            self.tabs.setCurrentWidget(pane)
+
         def add_split(self, direction: str) -> None:
             orientation = Qt.Orientation.Horizontal if direction == "horizontal" else Qt.Orientation.Vertical
             splitter = QSplitter(orientation)
-            for idx in range(2):
-                pane = QTextEdit()
-                pane.setPlaceholderText(f"Terminal pane {idx + 1}\nFuture plugin seam: qtermwidget, PTY, web terminal or embedded protocol view.")
-                splitter.addWidget(pane)
+            for plan in split_shell_plans(2):
+                splitter.addWidget(TerminalPane(plan))
             self.tabs.addTab(splitter, f"Split {self.tabs.count()}")
             self.tabs.setCurrentWidget(splitter)
+
+        def create_layout(self) -> None:
+            dialog = LayoutDialog(parent=self)
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+            try:
+                layout = dialog.layout()
+                self.layout_store.add(layout)
+                self.refresh_layouts()
+                self.layout_select.setCurrentText(layout.name)
+                self.log.append(f"LAYOUT SAVED: {layout.name}")
+            except ValueError as exc:
+                QMessageBox.warning(self, "Layout failed", str(exc))
+
+        def edit_selected_layout(self) -> None:
+            name = self.layout_select.currentText()
+            if not name:
+                QMessageBox.information(self, "Remote Ops Workspace", "No saved layout selected.")
+                return
+            try:
+                current = self.layout_store.get(name)
+            except KeyError as exc:
+                QMessageBox.warning(self, "Layout failed", str(exc))
+                return
+            dialog = LayoutDialog(current, self)
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+            try:
+                layout = dialog.layout()
+                self.save_layout(layout, original_name=name)
+                self.refresh_layouts()
+                self.layout_select.setCurrentText(layout.name)
+                self.log.append(f"LAYOUT UPDATED: {layout.name}")
+            except (KeyError, ValueError) as exc:
+                QMessageBox.warning(self, "Layout failed", str(exc))
+
+        def remove_selected_layout(self) -> None:
+            name = self.layout_select.currentText()
+            if not name:
+                QMessageBox.information(self, "Remote Ops Workspace", "No saved layout selected.")
+                return
+            answer = QMessageBox.question(self, "Remove layout", f"Remove layout {name}?")
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+            try:
+                self.layout_store.remove(name)
+                self.refresh_layouts()
+                self.log.append(f"LAYOUT REMOVED: {name}")
+            except KeyError as exc:
+                QMessageBox.warning(self, "Layout failed", str(exc))
+
+        def save_layout(self, layout: Layout, original_name: str) -> None:
+            layouts = self.layout_store.load()
+            if layout.name != original_name and any(item.name == layout.name for item in layouts):
+                raise ValueError(f"layout already exists: {layout.name}")
+            layouts = [item for item in layouts if item.name != original_name]
+            layouts.append(layout)
+            self.layout_store.save(sorted(layouts, key=lambda item: item.name))
+
+        def open_selected_layout(self) -> None:
+            name = self.layout_select.currentText()
+            if not name:
+                QMessageBox.information(self, "Remote Ops Workspace", "No saved layout selected.")
+                return
+            try:
+                layout = self.layout_store.get(name)
+                plans = build_layout_terminal_plans(layout, self.store)
+                widget = self.layout_widget(layout, plans)
+                self.tabs.addTab(widget, layout.name)
+                self.tabs.setCurrentWidget(widget)
+                self.log.append(f"LAYOUT: {layout.name} ({len(plans)} panes)")
+            except (KeyError, LauncherError, ValueError) as exc:
+                QMessageBox.warning(self, "Layout failed", str(exc))
+
+        def layout_widget(self, layout: Layout, plans: list[TerminalPanePlan]) -> QWidget:
+            if len(plans) == 1:
+                return TerminalPane(plans[0])
+            if layout.orientation == "vertical":
+                splitter = QSplitter(Qt.Orientation.Vertical)
+                for plan in plans:
+                    splitter.addWidget(TerminalPane(plan))
+                return splitter
+            if layout.orientation == "horizontal":
+                splitter = QSplitter(Qt.Orientation.Horizontal)
+                for plan in plans:
+                    splitter.addWidget(TerminalPane(plan))
+                return splitter
+            root = QSplitter(Qt.Orientation.Vertical)
+            for offset in range(0, len(plans), 2):
+                row = QSplitter(Qt.Orientation.Horizontal)
+                for plan in plans[offset : offset + 2]:
+                    row.addWidget(TerminalPane(plan))
+                root.addWidget(row)
+            return root
 
     app = QApplication(sys.argv)
     window = MainWindow()

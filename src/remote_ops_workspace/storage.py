@@ -25,19 +25,25 @@ class ProfileStore:
         profiles = example_profiles() if with_examples else []
         self.save(profiles)
 
-    def load(self) -> list[Profile]:
-        if not self.path.exists():
-            return []
-        data = json.loads(self.path.read_text(encoding="utf-8"))
-        return [Profile.from_dict(item) for item in data.get("profiles", [])]
+    def load(self, resolve: bool = True) -> list[Profile]:
+        data = self._load_data()
+        if not resolve:
+            return [Profile.from_dict(item) for item in data.get("profiles", [])]
+        defaults = data.get("group_defaults", {})
+        return [
+            Profile.from_dict(_apply_group_defaults(item, defaults.get(item.get("group", "default"), {})))
+            for item in data.get("profiles", [])
+        ]
 
     def save(self, profiles: Iterable[Profile]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        data = {"version": 1, "profiles": [profile.to_dict() for profile in profiles]}
+        data = self._load_data()
+        data["version"] = 1
+        data["profiles"] = [profile.to_dict() for profile in profiles]
         self.path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
 
     def add(self, profile: Profile, replace: bool = False) -> None:
-        profiles = self.load()
+        profiles = self.load(resolve=False)
         names = {p.name for p in profiles}
         if profile.name in names and not replace:
             raise ValueError(f"profile already exists: {profile.name}")
@@ -46,7 +52,7 @@ class ProfileStore:
         self.save(sorted(profiles, key=lambda p: (p.group, p.name)))
 
     def remove(self, name: str) -> None:
-        profiles = self.load()
+        profiles = self.load(resolve=False)
         remaining = [p for p in profiles if p.name != name]
         if len(remaining) == len(profiles):
             raise KeyError(name)
@@ -60,15 +66,43 @@ class ProfileStore:
 
     def export_to(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps({"version": 1, "profiles": [p.to_dict() for p in self.load()]}, indent=2), encoding="utf-8")
+        data = self._load_data()
+        data["profiles"] = [p.to_dict() for p in self.load(resolve=False)]
+        path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
 
     def import_from(self, path: Path, replace: bool = False) -> int:
         data = json.loads(path.read_text(encoding="utf-8"))
+        if replace and "group_defaults" in data:
+            current = self._load_data()
+            current["group_defaults"] = data["group_defaults"]
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self.path.write_text(json.dumps(current, indent=2, sort_keys=True), encoding="utf-8")
         count = 0
         for item in data.get("profiles", []):
             self.add(Profile.from_dict(item), replace=replace)
             count += 1
         return count
+
+    def group_defaults(self) -> dict[str, dict[str, object]]:
+        return dict(self._load_data().get("group_defaults", {}))
+
+    def set_group_defaults(self, group: str, defaults: dict[str, object], replace: bool = False) -> None:
+        data = self._load_data()
+        group_defaults = data.setdefault("group_defaults", {})
+        existing = {} if replace else dict(group_defaults.get(group, {}))
+        existing.update({key: value for key, value in defaults.items() if value not in (None, "", [], {})})
+        group_defaults[group] = existing
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+
+    def _load_data(self) -> dict[str, object]:
+        if not self.path.exists():
+            return {"version": 1, "profiles": [], "group_defaults": {}}
+        data = json.loads(self.path.read_text(encoding="utf-8"))
+        data.setdefault("version", 1)
+        data.setdefault("profiles", [])
+        data.setdefault("group_defaults", {})
+        return data
 
 
 def example_profiles() -> list[Profile]:
@@ -102,3 +136,15 @@ def example_profiles() -> list[Profile]:
             description="Example web profile.",
         ),
     ]
+
+
+def _apply_group_defaults(item: dict[str, object], defaults: dict[str, object]) -> dict[str, object]:
+    if not defaults:
+        return item
+    merged = dict(defaults)
+    merged.update({key: value for key, value in item.items() if value not in (None, "", [], {})})
+    default_options = defaults.get("options", {})
+    item_options = item.get("options", {})
+    if isinstance(default_options, dict) and isinstance(item_options, dict):
+        merged["options"] = {**default_options, **item_options}
+    return merged

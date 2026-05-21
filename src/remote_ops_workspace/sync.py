@@ -29,3 +29,24 @@ class BackupService:
 
     def import_bundle(self, path: Path, replace: bool = False) -> int:
         return self.store.import_from(path, replace=replace)
+
+
+class DirectorySyncProvider:
+    """Sync profile bundles through a mounted/shared directory.
+
+    This covers local folders, removable media, SMB shares, WebDAV mounts, and
+    cloud-sync folders such as OneDrive, Dropbox, iCloud Drive or Nextcloud.
+    """
+
+    def __init__(self, service: BackupService | None = None, filename: str = "remote-ops-workspace-sync.json") -> None:
+        self.service = service or BackupService()
+        self.filename = filename
+
+    def push(self, directory: Path) -> Path:
+        target = directory / self.filename
+        self.service.export_bundle(target)
+        return target
+
+    def pull(self, source: Path, replace: bool = False) -> int:
+        bundle = source / self.filename if source.is_dir() else source
+        return self.service.import_bundle(bundle, replace=replace)

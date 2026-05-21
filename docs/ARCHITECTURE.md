@@ -29,6 +29,22 @@ Profiles are stored as JSON under the platform-specific config directory or unde
 }
 ```
 
+The import path keeps the native JSON bundle as the canonical format, then converts
+common external exports into the same `Profile` model. Current importers cover
+Remmina `.remmina` files, mRemoteNG `confCons.xml`, Termius-style JSON host lists
+and MobaXterm bookmark/session exports. Secret-like fields are skipped so imported
+credentials stay behind the local vault boundary.
+
+GUI profile and layout editors use a pure conversion layer before touching PyQt
+widgets. That keeps validation shared between tests and the desktop dialogs:
+profile edits become `Profile` objects, layout pane text becomes `LayoutPane`
+objects, and the same storage classes persist the results.
+
+File transfer operations are represented as SFTP batch plans. One-shot commands,
+queued transfers and preview commands all flow through `file_transfer.py`, which
+keeps remote paths, local paths and generated batch text validated before any
+external `sftp` process is launched.
+
 ## Plugin model
 
 Third-party packages can register entry points under:

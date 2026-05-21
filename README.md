@@ -7,7 +7,7 @@
 ![build](https://img.shields.io/badge/build-ready-brightgreen)
 ![release](https://img.shields.io/badge/release-v0.1.0-blue)
 ![license](https://img.shields.io/badge/license-MIT-blue)
-![runtime](https://img.shields.io/badge/runtime-Python%203.10--3.13-orange)
+![runtime](https://img.shields.io/badge/runtime-Python%203.10--3.14-orange)
 ![interfaces](https://img.shields.io/badge/interfaces-CLI%20%7C%20GUI%20%7C%20Web-purple)
 ![targets](https://img.shields.io/badge/targets-Windows%20%7C%20Linux%20%7C%20macOS%20%7C%20BSD%20%7C%20Solaris%20%7C%20Android%20%7C%20Web-green)
 ![protocols](https://img.shields.io/badge/protocols-SSH%20%7C%20RDP%20%7C%20VNC%20%7C%20SFTP%20%7C%20Mosh%20%7C%20Telnet%20%7C%20SPICE%20%7C%20X2Go-yellow)

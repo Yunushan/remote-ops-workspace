@@ -138,8 +138,9 @@ def test_sftp_list_plan_uses_batch_stdin() -> None:
 
 def test_sftp_put_plan_quotes_paths_with_spaces() -> None:
     profile = Profile(name="files", protocol="sftp", host="192.0.2.10")
-    plan = build_sftp_put_plan(profile, Path("local dir/report.txt"), remote_path="/tmp/report copy.txt")
-    assert plan.batch_commands == ["put 'local dir\\report.txt' '/tmp/report copy.txt'"]
+    local_path = Path("local dir/report.txt")
+    plan = build_sftp_put_plan(profile, local_path, remote_path="/tmp/report copy.txt")
+    assert plan.batch_commands == [f"put '{local_path}' '/tmp/report copy.txt'"]
 
 
 def test_sftp_get_plan_rejects_option_like_remote_path() -> None:

@@ -55,6 +55,46 @@ row serve-web --host 127.0.0.1 --port 8765
 
 Windows, Windows Server, Linux, Unix, BSD, Solaris/illumos, macOS, Android/Termux-PWA ve Web hedeflenmiştir. Ayrıntılar için `docs/PLATFORM_SUPPORT.md` dosyasına bakın.
 
+## Yayın paketleri
+
+`v0.1.0` gibi bir etiket yayınlandığında GitHub Actions şu paketleri üretir:
+
+| Hedef | Paket |
+|---|---|
+| Python wheel | `remote_ops_workspace-0.1.0-py3-none-any.whl` |
+| Python sdist | `remote_ops_workspace-0.1.0.tar.gz` |
+| Kaynak | `remote-ops-workspace-v0.1.0-source.zip` |
+| Windows | `remote-ops-workspace-v0.1.0-windows.zip` |
+| Linux | `remote-ops-workspace-v0.1.0-linux.tar.gz` |
+| macOS | `remote-ops-workspace-v0.1.0-macos.tar.gz` |
+| BSD | `remote-ops-workspace-v0.1.0-bsd.tar.gz` |
+| Solaris/illumos | `remote-ops-workspace-v0.1.0-solaris.tar.gz` |
+| Android/Termux | `remote-ops-workspace-v0.1.0-android-termux.tar.gz` |
+| Web/PWA | `remote-ops-workspace-v0.1.0-web-pwa.zip` |
+| Windows native | `remote-ops-workspace-v0.1.0-windows-x64-setup.exe` |
+| Windows native | `remote-ops-workspace-v0.1.0-windows-x64.msi` |
+| Windows native | `remote-ops-workspace-v0.1.0-windows-x64-native.zip` |
+| macOS native | `remote-ops-workspace-v0.1.0-macos-<arch>.dmg` |
+| macOS native | `remote-ops-workspace-v0.1.0-macos-<arch>.pkg` |
+| Linux native | `remote-ops-workspace-v0.1.0-linux-amd64.deb` |
+| Linux native | `remote-ops-workspace-v0.1.0-linux-x86_64.rpm` |
+| Linux native | `remote-ops-workspace-v0.1.0-linux-x86_64.AppImage` |
+| Linux native | `remote-ops-workspace-v0.1.0-linux-x86_64-native.tar.gz` |
+| Manifestler | `remote-ops-workspace-v0.1.0-*-manifest.json` |
+
+Yerel protokol çalıştırma, hedef sistemde kurulu harici istemcilere bağlıdır.
+
+Yerel kurulum paketleri fazlara ayrılmıştır:
+
+| Faz | Paketler | Durum |
+|---|---|---|
+| 1 | Python wheel/sdist ve zip/tar.gz hedef paketleri | Aktif |
+| 2 | Windows `.exe`, `.msi` ve taşınabilir `.zip` | Aktif |
+| 3 | macOS `.dmg` ve `.pkg` | Aktif |
+| 4 | Linux `.deb`, `.rpm`, AppImage ve native tarball | Aktif |
+
+Ayrıntılar için `docs/RELEASE_STRATEGY.md` dosyasına bakın.
+
 ## Lisans
 
 MIT. Ayrıntılar için `LICENSE` dosyasına bakın.

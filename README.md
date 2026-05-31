@@ -253,11 +253,49 @@ python -m compileall src
 pytest -q
 ```
 
-Create a local release bundle:
+Create local release bundles for the advertised targets:
 
 ```bash
 python scripts/make_release.py
 ```
+
+The GitHub release workflow runs on tags like `v0.1.0` and uploads these assets:
+
+| Target | Asset |
+|---|---|
+| Python wheel | `remote_ops_workspace-0.1.0-py3-none-any.whl` |
+| Python sdist | `remote_ops_workspace-0.1.0.tar.gz` |
+| Source | `remote-ops-workspace-v0.1.0-source.zip` |
+| Windows | `remote-ops-workspace-v0.1.0-windows.zip` |
+| Linux | `remote-ops-workspace-v0.1.0-linux.tar.gz` |
+| macOS | `remote-ops-workspace-v0.1.0-macos.tar.gz` |
+| BSD | `remote-ops-workspace-v0.1.0-bsd.tar.gz` |
+| Solaris/illumos | `remote-ops-workspace-v0.1.0-solaris.tar.gz` |
+| Android/Termux | `remote-ops-workspace-v0.1.0-android-termux.tar.gz` |
+| Web/PWA | `remote-ops-workspace-v0.1.0-web-pwa.zip` |
+| Windows native | `remote-ops-workspace-v0.1.0-windows-x64-setup.exe` |
+| Windows native | `remote-ops-workspace-v0.1.0-windows-x64.msi` |
+| Windows native | `remote-ops-workspace-v0.1.0-windows-x64-native.zip` |
+| macOS native | `remote-ops-workspace-v0.1.0-macos-<arch>.dmg` |
+| macOS native | `remote-ops-workspace-v0.1.0-macos-<arch>.pkg` |
+| Linux native | `remote-ops-workspace-v0.1.0-linux-amd64.deb` |
+| Linux native | `remote-ops-workspace-v0.1.0-linux-x86_64.rpm` |
+| Linux native | `remote-ops-workspace-v0.1.0-linux-x86_64.AppImage` |
+| Linux native | `remote-ops-workspace-v0.1.0-linux-x86_64-native.tar.gz` |
+| Manifests | `remote-ops-workspace-v0.1.0-*-manifest.json` |
+
+Native protocol rendering still depends on the external clients installed on the target system.
+
+Release phases:
+
+| Phase | Release assets | Status |
+|---|---|---|
+| 1 | Python wheel/sdist plus zip/tar.gz target bundles | Active |
+| 2 | Windows `.exe`, `.msi`, and portable `.zip` | Active |
+| 3 | macOS `.dmg` and `.pkg` | Active |
+| 4 | Linux `.deb`, `.rpm`, AppImage, and native tarball | Active |
+
+See [`docs/RELEASE_STRATEGY.md`](docs/RELEASE_STRATEGY.md).
 
 ---
 

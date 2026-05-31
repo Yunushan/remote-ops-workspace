@@ -9,16 +9,97 @@ permissions:
   contents: write
 
 jobs:
-  package:
+  source-and-python:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - name: Build source archive
+      - name: Install release build tools
+        run: python -m pip install --upgrade build setuptools wheel
+      - name: Build source and Python package assets
         run: python scripts/make_release.py
-      - name: Upload release asset
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-source-python
+          path: dist/*
+          if-no-files-found: error
+
+  windows-native:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install Python packaging dependencies
+        run: python -m pip install --upgrade pip setuptools wheel ".[security,package]"
+      - name: Install Windows installer toolchains
+        shell: powershell
+        run: |
+          choco install innosetup -y --no-progress
+          dotnet tool install --global wix
+      - name: Build Windows EXE and MSI installers
+        shell: powershell
+        run: .\scripts\make_windows_native.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-windows-native
+          path: native-dist/windows/*
+          if-no-files-found: error
+
+  macos-native:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install Python packaging dependencies
+        run: python -m pip install --upgrade pip setuptools wheel ".[desktop,security,package]"
+      - name: Build macOS DMG and PKG installers
+        run: bash scripts/make_macos_native.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-macos-native
+          path: native-dist/macos/*
+          if-no-files-found: error
+
+  linux-native:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install Linux packaging toolchains
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm
+      - name: Install Python packaging dependencies
+        run: python -m pip install --upgrade pip setuptools wheel ".[security,package]"
+      - name: Build Linux DEB, RPM and AppImage packages
+        run: bash scripts/make_linux_native.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-linux-native
+          path: native-dist/linux/*
+          if-no-files-found: error
+
+  publish:
+    runs-on: ubuntu-latest
+    needs:
+      - source-and-python
+      - windows-native
+      - macos-native
+      - linux-native
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+      - name: Upload release assets
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/remote-ops-workspace.zip
+          files: release-assets/*

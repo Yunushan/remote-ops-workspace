@@ -94,7 +94,8 @@ TARGETS = [
         archive_format="zip",
         install_command=r".\installers\install.ps1",
         notes=(
-            "Targets Windows 10/11 and Windows Server 2012-2025.",
+            "Targets Windows 10/11 and Windows Server 2012-2025 for modern local installs.",
+            "Windows 8.1/8/7/Vista/XP are documented as best-effort source or remote-target tiers.",
             "Includes PowerShell and batch installers.",
             "Protocol sessions use system tools such as OpenSSH, MSTSC, PuTTY, VcXsrv, and VNC clients.",
         ),
@@ -107,6 +108,7 @@ TARGETS = [
         install_command="./installers/install.sh",
         notes=(
             "Targets Linux CLI, GUI, and Web/PWA deployments.",
+            "Native package mappings cover i386/i686, x86_64/amd64, armv7l/armhf, and aarch64/arm64 builders.",
             "Protocol sessions use system tools such as OpenSSH, FreeRDP, TigerVNC, Remmina-compatible clients, and Xorg.",
         ),
     ),
@@ -150,7 +152,7 @@ TARGETS = [
         archive_format="tar.gz",
         install_command="./installers/install-termux.sh",
         notes=(
-            "Targets Android through Termux CLI and browser/PWA workflows.",
+            "Targets Android ARMv7 and ARM64 through Termux CLI and browser/PWA workflows.",
             "The Termux installer uses the security extra and OpenSSH-oriented tools.",
         ),
     ),

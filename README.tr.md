@@ -71,15 +71,15 @@ Windows, Windows Server, Linux, Unix, BSD, Solaris/illumos, macOS, Android/Termu
 | Solaris/illumos | `remote-ops-workspace-v0.1.0-solaris.tar.gz` |
 | Android/Termux | `remote-ops-workspace-v0.1.0-android-termux.tar.gz` |
 | Web/PWA | `remote-ops-workspace-v0.1.0-web-pwa.zip` |
-| Windows native | `remote-ops-workspace-v0.1.0-windows-x64-setup.exe` |
-| Windows native | `remote-ops-workspace-v0.1.0-windows-x64.msi` |
-| Windows native | `remote-ops-workspace-v0.1.0-windows-x64-native.zip` |
+| Windows native | `remote-ops-workspace-v0.1.0-windows-<x86\|x64\|arm64>-setup.exe` |
+| Windows native | `remote-ops-workspace-v0.1.0-windows-<x86\|x64\|arm64>.msi` |
+| Windows native | `remote-ops-workspace-v0.1.0-windows-<x86\|x64\|arm64>-native.zip` |
 | macOS native | `remote-ops-workspace-v0.1.0-macos-<arch>.dmg` |
 | macOS native | `remote-ops-workspace-v0.1.0-macos-<arch>.pkg` |
-| Linux native | `remote-ops-workspace-v0.1.0-linux-amd64.deb` |
-| Linux native | `remote-ops-workspace-v0.1.0-linux-x86_64.rpm` |
-| Linux native | `remote-ops-workspace-v0.1.0-linux-x86_64.AppImage` |
-| Linux native | `remote-ops-workspace-v0.1.0-linux-x86_64-native.tar.gz` |
+| Linux native | `remote-ops-workspace-v0.1.0-linux-<i386\|amd64\|armhf\|arm64>.deb` |
+| Linux native | `remote-ops-workspace-v0.1.0-linux-<i686\|x86_64\|armv7hl\|aarch64>.rpm` |
+| Linux native | `remote-ops-workspace-v0.1.0-linux-<i686\|x86_64\|armhf\|aarch64>.AppImage` |
+| Linux native | `remote-ops-workspace-v0.1.0-linux-<i686\|x86_64\|armhf\|aarch64>-native.tar.gz` |
 | Manifestler | `remote-ops-workspace-v0.1.0-*-manifest.json` |
 
 Yerel protokol çalıştırma, hedef sistemde kurulu harici istemcilere bağlıdır.

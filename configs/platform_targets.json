@@ -1,0 +1,245 @@
+{
+  "release_architectures": [
+    {
+      "id": "windows-x86",
+      "platform": "Windows",
+      "cpu_arch": "x86",
+      "bits": 32,
+      "release_tier": "native",
+      "host_support": "Windows 10/11 and supported Windows Server on 32-bit Python builds; older Windows versions are legacy remote targets.",
+      "assets": [
+        "remote-ops-workspace-v0.1.0-windows-x86-setup.exe",
+        "remote-ops-workspace-v0.1.0-windows-x86.msi",
+        "remote-ops-workspace-v0.1.0-windows-x86-native.zip",
+        "remote-ops-workspace-v0.1.0-windows-x86-native-manifest.json"
+      ],
+      "notes": [
+        "Built with a 32-bit Python/PyInstaller toolchain.",
+        "Useful for older x86 operator hosts where the modern Python dependency stack is still available."
+      ]
+    },
+    {
+      "id": "windows-x64",
+      "platform": "Windows",
+      "cpu_arch": "x64",
+      "bits": 64,
+      "release_tier": "native",
+      "host_support": "Windows 10/11 and supported Windows Server.",
+      "assets": [
+        "remote-ops-workspace-v0.1.0-windows-x64-setup.exe",
+        "remote-ops-workspace-v0.1.0-windows-x64.msi",
+        "remote-ops-workspace-v0.1.0-windows-x64-native.zip",
+        "remote-ops-workspace-v0.1.0-windows-x64-native-manifest.json"
+      ],
+      "notes": [
+        "Default Windows native release target.",
+        "Built with a 64-bit Python/PyInstaller toolchain."
+      ]
+    },
+    {
+      "id": "windows-arm64",
+      "platform": "Windows",
+      "cpu_arch": "arm64",
+      "bits": 64,
+      "release_tier": "native",
+      "host_support": "Windows 11 ARM64 and ARM64 Windows Server runners when available.",
+      "assets": [
+        "remote-ops-workspace-v0.1.0-windows-arm64-setup.exe",
+        "remote-ops-workspace-v0.1.0-windows-arm64.msi",
+        "remote-ops-workspace-v0.1.0-windows-arm64-native.zip",
+        "remote-ops-workspace-v0.1.0-windows-arm64-native-manifest.json"
+      ],
+      "notes": [
+        "Requires an ARM64 Windows Python/PyInstaller toolchain.",
+        "Can be produced by an ARM64 Windows CI runner or self-hosted ARM64 builder."
+      ]
+    },
+    {
+      "id": "linux-i386",
+      "platform": "Linux",
+      "cpu_arch": "i386",
+      "bits": 32,
+      "release_tier": "native",
+      "host_support": "32-bit x86 Linux distributions with Python 3.10+ and PyInstaller support.",
+      "assets": [
+        "remote-ops-workspace-v0.1.0-linux-i386.deb",
+        "remote-ops-workspace-v0.1.0-linux-i686.rpm",
+        "remote-ops-workspace-v0.1.0-linux-i686.AppImage",
+        "remote-ops-workspace-v0.1.0-linux-i686-native.tar.gz",
+        "remote-ops-workspace-v0.1.0-linux-i686-native-manifest.json"
+      ],
+      "notes": [
+        "Built on an i386/i686 Linux host or matching self-hosted runner.",
+        "External protocol clients must also be available for the 32-bit distribution."
+      ]
+    },
+    {
+      "id": "linux-x86_64",
+      "platform": "Linux",
+      "cpu_arch": "x86_64",
+      "bits": 64,
+      "release_tier": "native",
+      "host_support": "64-bit x86 Linux distributions.",
+      "assets": [
+        "remote-ops-workspace-v0.1.0-linux-amd64.deb",
+        "remote-ops-workspace-v0.1.0-linux-x86_64.rpm",
+        "remote-ops-workspace-v0.1.0-linux-x86_64.AppImage",
+        "remote-ops-workspace-v0.1.0-linux-x86_64-native.tar.gz",
+        "remote-ops-workspace-v0.1.0-linux-x86_64-native-manifest.json"
+      ],
+      "notes": [
+        "Default Linux native release target.",
+        "Built on the standard Linux release runner."
+      ]
+    },
+    {
+      "id": "linux-armhf",
+      "platform": "Linux",
+      "cpu_arch": "armhf",
+      "bits": 32,
+      "release_tier": "native",
+      "host_support": "32-bit ARM Linux distributions with Python 3.10+ and PyInstaller support.",
+      "assets": [
+        "remote-ops-workspace-v0.1.0-linux-armhf.deb",
+        "remote-ops-workspace-v0.1.0-linux-armv7hl.rpm",
+        "remote-ops-workspace-v0.1.0-linux-armhf.AppImage",
+        "remote-ops-workspace-v0.1.0-linux-armhf-native.tar.gz",
+        "remote-ops-workspace-v0.1.0-linux-armhf-native-manifest.json"
+      ],
+      "notes": [
+        "Built on an armv7l/armhf Linux host or matching self-hosted runner.",
+        "Best suited for lightweight CLI, Web/PWA, SSH, serial and raw-socket workflows."
+      ]
+    },
+    {
+      "id": "linux-arm64",
+      "platform": "Linux",
+      "cpu_arch": "arm64",
+      "bits": 64,
+      "release_tier": "native",
+      "host_support": "64-bit ARM Linux distributions.",
+      "assets": [
+        "remote-ops-workspace-v0.1.0-linux-arm64.deb",
+        "remote-ops-workspace-v0.1.0-linux-aarch64.rpm",
+        "remote-ops-workspace-v0.1.0-linux-aarch64.AppImage",
+        "remote-ops-workspace-v0.1.0-linux-aarch64-native.tar.gz",
+        "remote-ops-workspace-v0.1.0-linux-aarch64-native-manifest.json"
+      ],
+      "notes": [
+        "Built on aarch64/arm64 Linux runners.",
+        "Useful for ARM servers, Raspberry Pi 4/5 class systems, and ARM cloud hosts."
+      ]
+    },
+    {
+      "id": "macos-x64",
+      "platform": "macOS",
+      "cpu_arch": "x64",
+      "bits": 64,
+      "release_tier": "native",
+      "host_support": "macOS Intel.",
+      "assets": [
+        "remote-ops-workspace-v0.1.0-macos-x64.dmg",
+        "remote-ops-workspace-v0.1.0-macos-x64.pkg",
+        "remote-ops-workspace-v0.1.0-macos-x64-native-manifest.json"
+      ],
+      "notes": [
+        "Built from an Intel macOS Python/PyInstaller toolchain or compatible runner."
+      ]
+    },
+    {
+      "id": "macos-arm64",
+      "platform": "macOS",
+      "cpu_arch": "arm64",
+      "bits": 64,
+      "release_tier": "native",
+      "host_support": "macOS Apple Silicon.",
+      "assets": [
+        "remote-ops-workspace-v0.1.0-macos-arm64.dmg",
+        "remote-ops-workspace-v0.1.0-macos-arm64.pkg",
+        "remote-ops-workspace-v0.1.0-macos-arm64-native-manifest.json"
+      ],
+      "notes": [
+        "Built from an Apple Silicon Python/PyInstaller toolchain."
+      ]
+    },
+    {
+      "id": "android-armv7",
+      "platform": "Android/Termux",
+      "cpu_arch": "armv7",
+      "bits": 32,
+      "release_tier": "termux-web",
+      "host_support": "Termux CLI and browser/PWA on 32-bit ARM Android where Termux packages are available.",
+      "assets": [
+        "remote-ops-workspace-v0.1.0-android-termux.tar.gz",
+        "remote-ops-workspace-v0.1.0-web-pwa.zip"
+      ],
+      "notes": [
+        "No APK is published yet.",
+        "Use the Termux installer or Web/PWA bundle."
+      ]
+    },
+    {
+      "id": "android-arm64",
+      "platform": "Android/Termux",
+      "cpu_arch": "arm64",
+      "bits": 64,
+      "release_tier": "termux-web",
+      "host_support": "Termux CLI and browser/PWA on 64-bit ARM Android.",
+      "assets": [
+        "remote-ops-workspace-v0.1.0-android-termux.tar.gz",
+        "remote-ops-workspace-v0.1.0-web-pwa.zip"
+      ],
+      "notes": [
+        "No APK is published yet.",
+        "Use the Termux installer or Web/PWA bundle."
+      ]
+    }
+  ],
+  "windows_legacy_targets": [
+    {
+      "version": "Windows 8.1",
+      "host_tier": "best-effort-source",
+      "remote_target_tier": "supported",
+      "notes": [
+        "Can be managed as a remote target through RDP, VNC, SSH, Telnet, serial or raw sockets.",
+        "Native host installs depend on a compatible Python 3.10+ and external protocol clients."
+      ]
+    },
+    {
+      "version": "Windows 8",
+      "host_tier": "legacy-source-only",
+      "remote_target_tier": "supported",
+      "notes": [
+        "Can be managed as a remote target through RDP, VNC, SSH, Telnet, serial or raw sockets.",
+        "Modern native Python/PyQt release artifacts are not guaranteed on Windows 8.0."
+      ]
+    },
+    {
+      "version": "Windows 7",
+      "host_tier": "legacy-source-only",
+      "remote_target_tier": "supported",
+      "notes": [
+        "Can be managed as a remote target through RDP, VNC, SSH, Telnet, serial or raw sockets.",
+        "Running the current app locally requires a separately maintained legacy Python dependency stack."
+      ]
+    },
+    {
+      "version": "Windows Vista",
+      "host_tier": "remote-target-only",
+      "remote_target_tier": "supported",
+      "notes": [
+        "Can be managed as a remote target when an external client can still negotiate the protocol.",
+        "Modern native Python/PyQt release artifacts do not target Vista."
+      ]
+    },
+    {
+      "version": "Windows XP",
+      "host_tier": "remote-target-only",
+      "remote_target_tier": "supported",
+      "notes": [
+        "Can be managed as a remote target when an external client can still negotiate the protocol.",
+        "Modern native Python/PyQt release artifacts do not target XP."
+      ]
+    }
+  ]
+}

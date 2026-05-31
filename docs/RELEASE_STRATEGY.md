@@ -27,18 +27,20 @@ Status: active.
 
 Release assets:
 
-- `remote-ops-workspace-v0.1.0-windows-x64-setup.exe`
-- `remote-ops-workspace-v0.1.0-windows-x64.msi`
-- `remote-ops-workspace-v0.1.0-windows-x64-native.zip`
-- `remote-ops-workspace-v0.1.0-windows-native-manifest.json`
+- `remote-ops-workspace-v0.1.0-windows-<x86|x64|arm64>-setup.exe`
+- `remote-ops-workspace-v0.1.0-windows-<x86|x64|arm64>.msi`
+- `remote-ops-workspace-v0.1.0-windows-<x86|x64|arm64>-native.zip`
+- `remote-ops-workspace-v0.1.0-windows-<x86|x64|arm64>-native-manifest.json`
 
 Implementation:
 
-- Builds a standalone `row.exe` with PyInstaller.
+- Builds a standalone `row.exe` with PyInstaller for x86, x64 and ARM64 builders.
 - Builds an interactive installer with Inno Setup.
 - Builds an MSI installer with WiX.
 - Publishes unsigned CI artifacts. Authenticode signing can be layered in when
   release signing credentials are available.
+- Treats Windows XP, Vista, Windows 7 and Windows 8.0 as legacy remote targets,
+  not as first-class modern native runtime targets.
 
 ## Phase 3: macOS native distribution
 
@@ -64,11 +66,11 @@ Status: active.
 
 Release assets:
 
-- `remote-ops-workspace-v0.1.0-linux-amd64.deb`
-- `remote-ops-workspace-v0.1.0-linux-x86_64.rpm`
-- `remote-ops-workspace-v0.1.0-linux-x86_64.AppImage`
-- `remote-ops-workspace-v0.1.0-linux-x86_64-native.tar.gz`
-- `remote-ops-workspace-v0.1.0-linux-x86_64-native-manifest.json`
+- `remote-ops-workspace-v0.1.0-linux-<i386|amd64|armhf|arm64>.deb`
+- `remote-ops-workspace-v0.1.0-linux-<i686|x86_64|armv7hl|aarch64>.rpm`
+- `remote-ops-workspace-v0.1.0-linux-<i686|x86_64|armhf|aarch64>.AppImage`
+- `remote-ops-workspace-v0.1.0-linux-<i686|x86_64|armhf|aarch64>-native.tar.gz`
+- `remote-ops-workspace-v0.1.0-linux-<i686|x86_64|armhf|aarch64>-native-manifest.json`
 
 Implementation:
 
@@ -77,6 +79,8 @@ Implementation:
 - Builds an RPM with `rpmbuild`.
 - Builds an AppImage with `appimagetool`.
 - Keeps `.tar.gz` source/install bundles for non-deb/rpm systems.
+- Maps i386/i686, x86_64/amd64, armv7l/armhf and aarch64/arm64. PyInstaller is
+  not cross-compiled by this script; use a matching builder for each native CPU.
 
 ## Android and Web
 

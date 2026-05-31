@@ -22,12 +22,28 @@ if [[ -n "${GITHUB_REF_NAME:-}" && "${GITHUB_REF_NAME}" != "v${VERSION}" ]]; the
   exit 1
 fi
 
-UNAME_ARCH="$(uname -m)"
+HOST_ARCH="$(uname -m)"
+UNAME_ARCH="${TARGET_ARCH:-$HOST_ARCH}"
 case "$UNAME_ARCH" in
   x86_64)
     DEB_ARCH="amd64"
     RPM_ARCH="x86_64"
     APPIMAGE_ARCH="x86_64"
+    ;;
+  i386|i486|i586|i686|x86)
+    DEB_ARCH="i386"
+    RPM_ARCH="i686"
+    APPIMAGE_ARCH="i686"
+    ;;
+  armv6l)
+    DEB_ARCH="armhf"
+    RPM_ARCH="armv6hl"
+    APPIMAGE_ARCH="armhf"
+    ;;
+  armv7l|armv7hl|armhf)
+    DEB_ARCH="armhf"
+    RPM_ARCH="armv7hl"
+    APPIMAGE_ARCH="armhf"
     ;;
   aarch64|arm64)
     DEB_ARCH="arm64"
@@ -79,11 +95,16 @@ cat > "$PKGROOT/usr/share/doc/remote-ops-workspace/RELEASE_TARGET.md" <<EOF
 Package: remote-ops-workspace
 Version: v$VERSION
 Target: Linux $UNAME_ARCH
+Build host architecture: $HOST_ARCH
 
 This native package installs the standalone `row` command built with
 PyInstaller. Protocol sessions still depend on Linux system tools such as
 OpenSSH, FreeRDP, TigerVNC, virt-viewer, x2goclient, mosh, and Xorg/Wayland
 display tooling.
+
+TARGET_ARCH may be used to select the artifact naming/mapping for a matching
+builder, but this script does not cross-compile PyInstaller binaries. Run it on
+the requested architecture or in an equivalent container/runner.
 EOF
 
 DEB_ROOT="$BUILD_DIR/debroot"
@@ -192,7 +213,7 @@ fi
 TARBALL="$OUT_DIR/remote-ops-workspace-v${VERSION}-linux-${APPIMAGE_ARCH}-native.tar.gz"
 tar -C "$PKGROOT" -czf "$TARBALL" .
 
-"$PYTHON_BIN" - "$ROOT" "$VERSION" "$OUT_DIR" "$DEB" "$RPM" "$APPIMAGE" "$TARBALL" "$DEB_ARCH" "$RPM_ARCH" "$APPIMAGE_ARCH" <<'PY'
+"$PYTHON_BIN" - "$ROOT" "$VERSION" "$OUT_DIR" "$DEB" "$RPM" "$APPIMAGE" "$TARBALL" "$DEB_ARCH" "$RPM_ARCH" "$APPIMAGE_ARCH" "$UNAME_ARCH" "$HOST_ARCH" <<'PY'
 from __future__ import annotations
 
 import json
@@ -209,6 +230,8 @@ tarball = Path(sys.argv[7])
 deb_arch = sys.argv[8]
 rpm_arch = sys.argv[9]
 appimage_arch = sys.argv[10]
+requested_arch = sys.argv[11]
+host_arch = sys.argv[12]
 
 def repo_path(path: Path) -> str:
     return path.resolve().relative_to(root.resolve()).as_posix()
@@ -218,37 +241,53 @@ manifest = [
         "phase": "phase-4-linux-native",
         "target": f"linux-{deb_arch}-deb",
         "label": f"Linux {deb_arch} DEB",
+        "architecture": deb_arch,
         "file": repo_path(deb),
         "format": "deb",
         "install_command": f"sudo apt install ./{deb.name}",
-        "notes": ["Debian/Ubuntu package containing the standalone row CLI."],
+        "notes": [
+            "Debian/Ubuntu package containing the standalone row CLI.",
+            f"Requested architecture: {requested_arch}; build host architecture: {host_arch}.",
+        ],
     },
     {
         "phase": "phase-4-linux-native",
         "target": f"linux-{rpm_arch}-rpm",
         "label": f"Linux {rpm_arch} RPM",
+        "architecture": rpm_arch,
         "file": repo_path(rpm),
         "format": "rpm",
         "install_command": f"sudo rpm -Uvh {rpm.name}",
-        "notes": ["Fedora/RHEL/openSUSE-style package containing the standalone row CLI."],
+        "notes": [
+            "Fedora/RHEL/openSUSE-style package containing the standalone row CLI.",
+            f"Requested architecture: {requested_arch}; build host architecture: {host_arch}.",
+        ],
     },
     {
         "phase": "phase-4-linux-native",
         "target": f"linux-{appimage_arch}-appimage",
         "label": f"Linux {appimage_arch} AppImage",
+        "architecture": appimage_arch,
         "file": repo_path(appimage),
         "format": "AppImage",
         "install_command": f"chmod +x {appimage.name} && ./{appimage.name} --version",
-        "notes": ["Portable AppImage containing the standalone row CLI."],
+        "notes": [
+            "Portable AppImage containing the standalone row CLI.",
+            f"Requested architecture: {requested_arch}; build host architecture: {host_arch}.",
+        ],
     },
     {
         "phase": "phase-4-linux-native",
         "target": f"linux-{appimage_arch}-native-tarball",
         "label": f"Linux {appimage_arch} native tarball",
+        "architecture": appimage_arch,
         "file": repo_path(tarball),
         "format": "tar.gz",
         "install_command": "Extract into a staging root or copy usr/bin/row into PATH.",
-        "notes": ["Native Linux filesystem payload used by the package builders."],
+        "notes": [
+            "Native Linux filesystem payload used by the package builders.",
+            f"Requested architecture: {requested_arch}; build host architecture: {host_arch}.",
+        ],
     },
 ]
 

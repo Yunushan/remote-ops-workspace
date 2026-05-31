@@ -28,6 +28,10 @@ case "$ARCH" in
   arm64|aarch64) ARTIFACT_ARCH="arm64" ;;
   *) ARTIFACT_ARCH="$ARCH" ;;
 esac
+if [[ -n "${EXPECTED_ARTIFACT_ARCH:-}" && "$ARTIFACT_ARCH" != "$EXPECTED_ARTIFACT_ARCH" ]]; then
+  echo "EXPECTED_ARTIFACT_ARCH='${EXPECTED_ARTIFACT_ARCH}' does not match detected artifact architecture '${ARTIFACT_ARCH}'" >&2
+  exit 1
+fi
 
 OUT_DIR="$ROOT/$DIST"
 BUILD_DIR="$ROOT/build/native/macos"

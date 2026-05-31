@@ -17,15 +17,15 @@ each public target badge:
 | Solaris/illumos | `remote-ops-workspace-v0.1.0-solaris.tar.gz` |
 | Android/Termux | `remote-ops-workspace-v0.1.0-android-termux.tar.gz` |
 | Web/PWA | `remote-ops-workspace-v0.1.0-web-pwa.zip` |
-| Windows native | `remote-ops-workspace-v0.1.0-windows-x64-setup.exe` |
-| Windows native | `remote-ops-workspace-v0.1.0-windows-x64.msi` |
-| Windows native | `remote-ops-workspace-v0.1.0-windows-x64-native.zip` |
+| Windows native | `remote-ops-workspace-v0.1.0-windows-<x86\|x64\|arm64>-setup.exe` |
+| Windows native | `remote-ops-workspace-v0.1.0-windows-<x86\|x64\|arm64>.msi` |
+| Windows native | `remote-ops-workspace-v0.1.0-windows-<x86\|x64\|arm64>-native.zip` |
 | macOS native | `remote-ops-workspace-v0.1.0-macos-<arch>.dmg` |
 | macOS native | `remote-ops-workspace-v0.1.0-macos-<arch>.pkg` |
-| Linux native | `remote-ops-workspace-v0.1.0-linux-amd64.deb` |
-| Linux native | `remote-ops-workspace-v0.1.0-linux-x86_64.rpm` |
-| Linux native | `remote-ops-workspace-v0.1.0-linux-x86_64.AppImage` |
-| Linux native | `remote-ops-workspace-v0.1.0-linux-x86_64-native.tar.gz` |
+| Linux native | `remote-ops-workspace-v0.1.0-linux-<i386\|amd64\|armhf\|arm64>.deb` |
+| Linux native | `remote-ops-workspace-v0.1.0-linux-<i686\|x86_64\|armv7hl\|aarch64>.rpm` |
+| Linux native | `remote-ops-workspace-v0.1.0-linux-<i686\|x86_64\|armhf\|aarch64>.AppImage` |
+| Linux native | `remote-ops-workspace-v0.1.0-linux-<i686\|x86_64\|armhf\|aarch64>-native.tar.gz` |
 | Manifests | `remote-ops-workspace-v0.1.0-*-manifest.json` |
 
 The platform bundles include source, docs, examples, relevant installer entry
@@ -34,16 +34,40 @@ bundles; SSH/RDP/VNC/X11/SPICE/X2Go/ICA rendering still depends on the external
 clients available on the target system.
 
 Native `.exe`, `.msi`, `.dmg`, `.pkg`, `.deb`, `.rpm`, and AppImage artifacts
-are built by OS-specific release jobs. Windows and macOS artifacts are unsigned
-CI builds until release signing credentials are configured. APK-style artifacts
-remain out of scope until there is a real native Android wrapper.
+are built by OS-specific release jobs or matching self-hosted builders. Windows
+and macOS artifacts are unsigned CI builds until release signing credentials are
+configured. APK-style artifacts remain out of scope until there is a real native
+Android wrapper.
+
+Architecture support is declared in `configs/platform_targets.json` and exposed
+with:
+
+```bash
+row platforms
+row platforms --json
+```
 
 ## Windows and Windows Server
 
 Target support:
 
-- Windows 10/11.
+- Windows 10/11 on x86, x64 and ARM64 where a matching Python/PyInstaller build exists.
 - Windows Server 2012, 2012 R2, 2016, 2019, 2022 and 2025.
+- Windows 8.1 as a best-effort source install and remote target.
+- Windows 8 and Windows 7 as legacy source-only or remote-target systems.
+- Windows Vista and Windows XP as remote targets only.
+
+Legacy Windows support means this project can store profiles, generate adapter
+commands, and connect to those systems through RDP, VNC, SSH, Telnet, serial
+consoles or raw sockets when the chosen external client can still negotiate the
+old protocol. The modern Python 3.10+/PyQt6 native release stack does not make
+XP, Vista, Windows 7 or Windows 8.0 first-class local operator hosts.
+
+Architecture targets:
+
+- x86: 32-bit Windows native artifacts from a 32-bit Python/PyInstaller build.
+- x64: default 64-bit Windows native artifacts.
+- ARM64: native Windows ARM64 artifacts from an ARM64 Windows builder.
 
 Recommended external clients:
 
@@ -64,6 +88,17 @@ row doctor
 ## Linux
 
 Target distributions include Ubuntu, Debian, Linux Mint, Kali, Fedora, RHEL, Rocky Linux, AlmaLinux, Oracle Linux, CentOS Stream, openSUSE, Arch, Manjaro, Gentoo and Alpine.
+
+Native package architecture mappings:
+
+- i386/i686: 32-bit x86 Linux packages.
+- x86_64/amd64: default 64-bit x86 Linux packages.
+- armv7l/armhf: 32-bit ARM Linux packages.
+- aarch64/arm64: 64-bit ARM Linux packages.
+
+The Linux native script maps these architectures, but it does not cross-compile
+PyInstaller binaries. Run `scripts/make_linux_native.sh` on the requested
+architecture, in a matching container, or on a matching self-hosted runner.
 
 Recommended external clients:
 
@@ -104,7 +139,8 @@ Recommended external clients:
 Target workflows:
 
 - Web/PWA from a browser.
-- CLI through Termux with Python and OpenSSH.
+- CLI through Termux with Python and OpenSSH on ARMv7 and ARM64 devices where
+  Termux packages are available.
 
 Termux example:
 

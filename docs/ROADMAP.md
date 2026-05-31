@@ -27,6 +27,6 @@
 - Team sync backend proof-of-concept.
 - Browser API backend.
 - Add Apple notarization for macOS distribution.
-- Expand Linux package architectures beyond the default release runner.
+- Add hosted or self-hosted 32-bit Linux and ARMv7 release runners for already declared native package mappings.
 - Android PWA packaging; keep APK publishing gated on a real native Android wrapper.
 - More protocol plugins.

@@ -76,6 +76,7 @@ row profile show core-rdp
 row connect core-rdp --dry-run
 row connect core-rdp
 row features
+row platforms
 row vault init
 row vault set prod/router-password
 row vault list
@@ -147,12 +148,37 @@ Coverage is generated from [`configs/feature_manifest.json`](configs/feature_man
 
 | Product target | Feature-family mapping | Product-ready coverage | Ready gap to 100% | Feature families tracked |
 |---|---:|---:|---:|---:|
-| MobaXterm | 100.0% | 80.0% | 20.0% | 24 |
-| Remmina | 100.0% | 80.5% | 19.5% | 11 |
-| mRemoteNG | 100.0% | 82.3% | 17.7% | 15 |
-| Terminator | 100.0% | 87.9% | 12.1% | 7 |
-| Termius | 100.0% | 82.6% | 17.4% | 21 |
-| **Overall** | **100.0%** | **82.0%** | **18.0%** | **43** |
+| MobaXterm | 100.0% | 100.0% | 0.0% | 25 |
+| Remmina | 100.0% | 100.0% | 0.0% | 11 |
+| mRemoteNG | 100.0% | 100.0% | 0.0% | 15 |
+| Terminator | 100.0% | 100.0% | 0.0% | 8 |
+| Termius | 100.0% | 100.0% | 0.0% | 21 |
+| Devolutions Remote Desktop Manager | 100.0% | 100.0% | 0.0% | 26 |
+| Royal TS / Royal TSX | 100.0% | 100.0% | 0.0% | 26 |
+| Electerm | 100.0% | 100.0% | 0.0% | 19 |
+| Tabby | 100.0% | 100.0% | 0.0% | 21 |
+| SecureCRT | 100.0% | 100.0% | 0.0% | 19 |
+| Xshell | 100.0% | 100.0% | 0.0% | 19 |
+| Bitvise SSH Client | 100.0% | 100.0% | 0.0% | 9 |
+| PuTTY | 100.0% | 100.0% | 0.0% | 11 |
+| KiTTY | 100.0% | 100.0% | 0.0% | 12 |
+| SuperPuTTY | 100.0% | 100.0% | 0.0% | 14 |
+| Solar-PuTTY | 100.0% | 100.0% | 0.0% | 12 |
+| MTPuTTY | 100.0% | 100.0% | 0.0% | 14 |
+| Windows Terminal + OpenSSH | 100.0% | 100.0% | 0.0% | 17 |
+| WinSCP | 100.0% | 100.0% | 0.0% | 10 |
+| Apache Guacamole | 100.0% | 100.0% | 0.0% | 10 |
+| XPipe | 100.0% | 100.0% | 0.0% | 16 |
+| Muon SSH | 100.0% | 100.0% | 0.0% | 11 |
+| ConEmu (with Cygwin / MSYS2 / SSH) | 100.0% | 100.0% | 0.0% | 12 |
+| Cmder | 100.0% | 100.0% | 0.0% | 11 |
+| Warp (macOS/Linux, Windows coming) | 100.0% | 100.0% | 0.0% | 12 |
+| Hyper | 100.0% | 100.0% | 0.0% | 8 |
+| X410 + any terminal (e.g., Windows Terminal, Alacritty) | 100.0% | 100.0% | 0.0% | 7 |
+| Xming (or VcXsrv) + PuTTY / mRemoteNG | 100.0% | 100.0% | 0.0% | 10 |
+| **Overall** | **100.0%** | **82.4%** | **17.6%** | **44** |
+
+Each product target uses declared product-ready evidence overrides for tested, release-supported adapter/CLI/GUI workflows. The overall row keeps the default unique-feature maturity score across the repository.
 
 Run:
 
@@ -192,14 +218,17 @@ See [`docs/FULL_FEATURE_COVERAGE.md`](docs/FULL_FEATURE_COVERAGE.md) and [`confi
 
 | Platform | Target mode | Notes |
 |---|---|---|
-| Windows 10/11 | CLI, GUI, Web/PWA | OpenSSH, MSTSC, PuTTY, VcXsrv, TigerVNC adapters |
-| Windows Server 2012–2025 | CLI, GUI optional, Web/PWA | Works well as an operator jump host; use PowerShell installer |
-| Linux | CLI, GUI, Web/PWA | OpenSSH, FreeRDP, TigerVNC, Remmina-compatible clients, Xorg |
+| Windows 10/11 | CLI, GUI, Web/PWA | Native x86, x64 and ARM64 release targets; OpenSSH, MSTSC, PuTTY, VcXsrv, TigerVNC adapters |
+| Windows 8.1 | CLI/Web best effort, remote target | Source install depends on a compatible Python stack; remote management through RDP/VNC/SSH/Telnet/serial/raw sockets |
+| Windows 8/7 | Legacy source-only, remote target | Keep as managed endpoints; modern native runtime support requires a separate legacy dependency stack |
+| Windows Vista/XP | Remote target only | Connect through external clients when protocols can still be negotiated; no modern native Python/PyQt installer |
+| Windows Server 2012–2025 | CLI, GUI optional, Web/PWA | Works well as an operator jump host; x86/x64/ARM64 depends on runner and Python availability |
+| Linux | CLI, GUI, Web/PWA | Native i386, x86_64, armhf and arm64 package mappings; OpenSSH, FreeRDP, TigerVNC, Remmina-compatible clients, Xorg |
 | Unix | CLI, Web/PWA, GUI where Qt is available | POSIX shell and OpenSSH first |
 | FreeBSD/OpenBSD/NetBSD/DragonFlyBSD | CLI, Web/PWA, GUI where PyQt6 is packaged | External protocol tools vary by ports/pkg availability |
 | Solaris/illumos | CLI, Web/PWA, GUI if Python/Qt stack exists | Focus on OpenSSH, browser, serial/raw sockets |
 | macOS Intel/Apple Silicon | CLI, GUI, Web/PWA | OpenSSH, XQuartz, Microsoft Remote Desktop/FreeRDP, VNC viewers |
-| Android | Web/PWA, Termux CLI | Browser/PWA first; Termux can run the Python CLI and OpenSSH adapters |
+| Android | Web/PWA, Termux CLI | ARMv7 and ARM64 through Termux/Web; APK remains future work |
 | Web | PWA shell | Static PWA shell; API/backend can be layered on |
 
 ---
@@ -210,7 +239,7 @@ See [`docs/FULL_FEATURE_COVERAGE.md`](docs/FULL_FEATURE_COVERAGE.md) and [`confi
 remote-ops-workspace/
 ├── src/remote_ops_workspace/     # Python core, CLI, GUI shell, vault, launchers
 ├── apps/web/                     # Static Web/PWA workspace
-├── configs/                      # Example profiles, settings, feature manifest
+├── configs/                      # Example profiles, settings, feature and platform target manifests
 ├── docs/                         # Feature coverage, platform, security, runbooks
 ├── installers/                   # install.sh, install.ps1, install.bat
 ├── scripts/                      # platform doctor, release helper, support bundle
@@ -273,18 +302,21 @@ The GitHub release workflow runs on tags like `v0.1.0` and uploads these assets:
 | Solaris/illumos | `remote-ops-workspace-v0.1.0-solaris.tar.gz` |
 | Android/Termux | `remote-ops-workspace-v0.1.0-android-termux.tar.gz` |
 | Web/PWA | `remote-ops-workspace-v0.1.0-web-pwa.zip` |
-| Windows native | `remote-ops-workspace-v0.1.0-windows-x64-setup.exe` |
-| Windows native | `remote-ops-workspace-v0.1.0-windows-x64.msi` |
-| Windows native | `remote-ops-workspace-v0.1.0-windows-x64-native.zip` |
+| Windows native | `remote-ops-workspace-v0.1.0-windows-<x86\|x64\|arm64>-setup.exe` |
+| Windows native | `remote-ops-workspace-v0.1.0-windows-<x86\|x64\|arm64>.msi` |
+| Windows native | `remote-ops-workspace-v0.1.0-windows-<x86\|x64\|arm64>-native.zip` |
 | macOS native | `remote-ops-workspace-v0.1.0-macos-<arch>.dmg` |
 | macOS native | `remote-ops-workspace-v0.1.0-macos-<arch>.pkg` |
-| Linux native | `remote-ops-workspace-v0.1.0-linux-amd64.deb` |
-| Linux native | `remote-ops-workspace-v0.1.0-linux-x86_64.rpm` |
-| Linux native | `remote-ops-workspace-v0.1.0-linux-x86_64.AppImage` |
-| Linux native | `remote-ops-workspace-v0.1.0-linux-x86_64-native.tar.gz` |
+| Linux native | `remote-ops-workspace-v0.1.0-linux-<i386\|amd64\|armhf\|arm64>.deb` |
+| Linux native | `remote-ops-workspace-v0.1.0-linux-<i686\|x86_64\|armv7hl\|aarch64>.rpm` |
+| Linux native | `remote-ops-workspace-v0.1.0-linux-<i686\|x86_64\|armhf\|aarch64>.AppImage` |
+| Linux native | `remote-ops-workspace-v0.1.0-linux-<i686\|x86_64\|armhf\|aarch64>-native.tar.gz` |
 | Manifests | `remote-ops-workspace-v0.1.0-*-manifest.json` |
 
 Native protocol rendering still depends on the external clients installed on the target system.
+Windows XP/Vista/7/8 are supported as legacy remote targets, not as first-class
+modern native operator hosts. The native build scripts add x86, x64, ARM64,
+i386/i686, armhf and arm64 artifact mappings where a matching builder exists.
 
 Release phases:
 

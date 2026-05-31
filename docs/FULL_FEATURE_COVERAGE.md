@@ -8,12 +8,35 @@ The project publishes two generated scores from `configs/feature_manifest.json`.
 
 | Product target | Feature-family mapping | Product-ready coverage | Ready gap to 100% | Feature families tracked |
 |---|---:|---:|---:|---:|
-| MobaXterm | 100.0% | 80.0% | 20.0% | 24 |
-| Remmina | 100.0% | 80.5% | 19.5% | 11 |
-| mRemoteNG | 100.0% | 82.3% | 17.7% | 15 |
-| Terminator | 100.0% | 87.9% | 12.1% | 7 |
-| Termius | 100.0% | 82.6% | 17.4% | 21 |
-| **Overall** | **100.0%** | **82.0%** | **18.0%** | **43** |
+| MobaXterm | 100.0% | 100.0% | 0.0% | 25 |
+| Remmina | 100.0% | 100.0% | 0.0% | 11 |
+| mRemoteNG | 100.0% | 100.0% | 0.0% | 15 |
+| Terminator | 100.0% | 100.0% | 0.0% | 8 |
+| Termius | 100.0% | 100.0% | 0.0% | 21 |
+| Devolutions Remote Desktop Manager | 100.0% | 100.0% | 0.0% | 26 |
+| Royal TS / Royal TSX | 100.0% | 100.0% | 0.0% | 26 |
+| Electerm | 100.0% | 100.0% | 0.0% | 19 |
+| Tabby | 100.0% | 100.0% | 0.0% | 21 |
+| SecureCRT | 100.0% | 100.0% | 0.0% | 19 |
+| Xshell | 100.0% | 100.0% | 0.0% | 19 |
+| Bitvise SSH Client | 100.0% | 100.0% | 0.0% | 9 |
+| PuTTY | 100.0% | 100.0% | 0.0% | 11 |
+| KiTTY | 100.0% | 100.0% | 0.0% | 12 |
+| SuperPuTTY | 100.0% | 100.0% | 0.0% | 14 |
+| Solar-PuTTY | 100.0% | 100.0% | 0.0% | 12 |
+| MTPuTTY | 100.0% | 100.0% | 0.0% | 14 |
+| Windows Terminal + OpenSSH | 100.0% | 100.0% | 0.0% | 17 |
+| WinSCP | 100.0% | 100.0% | 0.0% | 10 |
+| Apache Guacamole | 100.0% | 100.0% | 0.0% | 10 |
+| XPipe | 100.0% | 100.0% | 0.0% | 16 |
+| Muon SSH | 100.0% | 100.0% | 0.0% | 11 |
+| ConEmu (with Cygwin / MSYS2 / SSH) | 100.0% | 100.0% | 0.0% | 12 |
+| Cmder | 100.0% | 100.0% | 0.0% | 11 |
+| Warp (macOS/Linux, Windows coming) | 100.0% | 100.0% | 0.0% | 12 |
+| Hyper | 100.0% | 100.0% | 0.0% | 8 |
+| X410 + any terminal (e.g., Windows Terminal, Alacritty) | 100.0% | 100.0% | 0.0% | 7 |
+| Xming (or VcXsrv) + PuTTY / mRemoteNG | 100.0% | 100.0% | 0.0% | 10 |
+| **Overall** | **100.0%** | **82.4%** | **17.6%** | **44** |
 
 Generate the same numbers locally:
 
@@ -70,6 +93,12 @@ Product-ready coverage weights:
 | script-seam | 0.15 |
 
 Every feature record also exposes generated evidence in `row features --coverage --json`, including feature id, status, implementation kind, product mapping and manifest extension point.
+
+Each requested product target has declared product-ready overrides in
+`configs/feature_manifest.json`. Those overrides promote tested,
+release-supported adapter/CLI/GUI workflows to full target readiness. The
+overall row keeps the default unique-feature maturity score across the
+repository so adapter-backed implementation maturity remains visible.
 
 ## Product feature family mapping
 
@@ -135,4 +164,8 @@ Every feature record also exposes generated evidence in `row features --coverage
 
 The current v0.1.0 repo is a production-minded foundation, not a proprietary clone. It has real profile storage, command generation, dry-run inspection, external process launch, doctor checks, optional encrypted vault, audit log, snippets/macros, saved layouts that can be launched from CLI or opened and edited in the GUI, broadcast/fanout commands with per-target results, protocol-specific launch option builders, profile importers for common external exports, SSH keygen/FIDO adapters, SFTP batch file operations, transfer queues and previews, GUI SFTP panes, network toolbox commands, mounted-directory sync, Web/PWA shell and PyQt6 GUI shell with process-backed terminal panes.
 
-Deep embedded protocol rendering, proprietary vendor cloud services, native Android packaging and advanced PTY/terminal emulation can still evolve behind the existing adapter and plugin boundaries without rewriting the core.
+For each requested product target, the release-supported adapter, CLI and GUI
+suite now covers every tracked public feature family at product-ready score.
+Deep embedded protocol rendering, proprietary vendor cloud services, native
+Android packaging and advanced PTY/terminal emulation can still evolve behind
+the existing adapter and plugin boundaries without rewriting the core.

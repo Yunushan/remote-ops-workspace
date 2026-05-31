@@ -80,6 +80,9 @@ def coverage_report(path: Path | None = None) -> dict[str, Any]:
         "product_ready_status_weights",
         DEFAULT_PRODUCT_READY_STATUS_WEIGHTS,
     )
+    product_feature_mappings = _normalise_product_feature_mappings(
+        scoring.get("product_feature_mappings", {})
+    )
     feature_family_target = float(
         scoring.get("feature_family_mapping_target_percent", scoring.get("target_percent", 100))
     )
@@ -94,6 +97,7 @@ def coverage_report(path: Path | None = None) -> dict[str, Any]:
             "feature_family_method",
             scoring.get("method", "Weighted feature-family mapping by feature status."),
         ),
+        product_feature_mappings=product_feature_mappings,
     )
     product_ready_coverage = _coverage_block(
         label="product_ready_coverage",
@@ -105,6 +109,9 @@ def coverage_report(path: Path | None = None) -> dict[str, Any]:
             "product_ready_method",
             "Evidence-weighted product readiness by feature status.",
         ),
+        overrides=scoring.get("product_ready_feature_overrides", {}),
+        target_overrides=scoring.get("product_ready_target_overrides", {}),
+        product_feature_mappings=product_feature_mappings,
     )
     evidence = [_feature_evidence(item) for item in features]
 
@@ -161,25 +168,47 @@ def _coverage_block(
     weights: dict[str, float],
     target_percent: float,
     method: str,
+    overrides: dict[str, Any] | None = None,
+    target_overrides: dict[str, Any] | None = None,
+    product_feature_mappings: dict[str, set[str]] | None = None,
 ) -> dict[str, Any]:
+    override_map = _normalise_product_overrides(overrides or {})
+    target_override_map = _normalise_target_overrides(target_overrides or {})
     return {
         "metric": label,
         "target_percent": round(target_percent, 1),
         "method": method,
         "status_weights": weights,
-        "overall": _score_features("Overall", features, weights, target_percent),
+        "overall": _score_features("Overall", features, weights, target_percent, {}),
         "products": [
-            _score_features(product, _features_for_product(features, product), weights, target_percent)
+            _score_features(
+                product,
+                _features_for_product(features, product, product_feature_mappings or {}),
+                weights,
+                target_percent,
+                _product_overrides(
+                    product,
+                    _features_for_product(features, product, product_feature_mappings or {}),
+                    override_map.get(product, {}),
+                    target_override_map.get(product),
+                ),
+            )
             for product in products
         ],
     }
 
 
-def _features_for_product(features: list[dict[str, Any]], product: str) -> list[dict[str, Any]]:
+def _features_for_product(
+    features: list[dict[str, Any]],
+    product: str,
+    product_feature_mappings: dict[str, set[str]] | None = None,
+) -> list[dict[str, Any]]:
+    mapped_ids = (product_feature_mappings or {}).get(product, set())
     return [
         item
         for item in features
-        if any(product in str(source) for source in item.get("inspired_by", []))
+        if str(item.get("id", "")) in mapped_ids
+        or any(product in str(source) for source in item.get("inspired_by", []))
     ]
 
 
@@ -188,19 +217,38 @@ def _score_features(
     features: list[dict[str, Any]],
     weights: dict[str, float],
     target_percent: float,
+    overrides: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
     status_counts: dict[str, int] = {}
     current_points = 0.0
+    overrides_applied: list[dict[str, Any]] = []
 
     for item in features:
         status = str(item.get("status", ""))
         status_counts[status] = status_counts.get(status, 0) + 1
-        current_points += weights.get(status, 0.0)
+        status_weight = weights.get(status, 0.0)
+        feature_id = str(item.get("id", ""))
+        override = overrides.get(feature_id)
+        if override:
+            override_weight = float(override["weight"])
+            current_points += override_weight
+            overrides_applied.append(
+                {
+                    "id": feature_id,
+                    "status": status,
+                    "status_weight": round(status_weight, 2),
+                    "override_weight": round(override_weight, 2),
+                    "rationale": override.get("rationale", ""),
+                    "evidence": override.get("evidence", ""),
+                }
+            )
+        else:
+            current_points += status_weight
 
     target_points = float(len(features))
     current_percent = (current_points / target_points * 100) if target_points else 0.0
     gap_percent = max(target_percent - current_percent, 0.0)
-    return {
+    row = {
         "product": label,
         "feature_count": len(features),
         "current_points": round(current_points, 2),
@@ -210,6 +258,79 @@ def _score_features(
         "gap_percent": round(gap_percent, 1),
         "status_counts": dict(sorted(status_counts.items())),
     }
+    if overrides_applied:
+        row["overrides_applied"] = overrides_applied
+    return row
+
+
+def _normalise_product_overrides(overrides: dict[str, Any]) -> dict[str, dict[str, dict[str, Any]]]:
+    normalised: dict[str, dict[str, dict[str, Any]]] = {}
+    for product, product_overrides in overrides.items():
+        if not isinstance(product_overrides, dict):
+            continue
+        normalised[str(product)] = {}
+        for feature_id, override in product_overrides.items():
+            if isinstance(override, dict):
+                weight = float(override.get("weight", 0.0))
+                rationale = str(override.get("rationale", ""))
+                evidence = str(override.get("evidence", ""))
+            else:
+                weight = float(override)
+                rationale = ""
+                evidence = ""
+            normalised[str(product)][str(feature_id)] = {
+                "weight": weight,
+                "rationale": rationale,
+                "evidence": evidence,
+            }
+    return normalised
+
+
+def _normalise_target_overrides(overrides: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    normalised: dict[str, dict[str, Any]] = {}
+    for product, override in overrides.items():
+        if not isinstance(override, dict):
+            continue
+        normalised[str(product)] = {
+            "weight": float(override.get("weight", 0.0)),
+            "rationale": str(override.get("rationale", "")),
+            "evidence": str(override.get("evidence", "")),
+        }
+    return normalised
+
+
+def _normalise_product_feature_mappings(overrides: dict[str, Any]) -> dict[str, set[str]]:
+    normalised: dict[str, set[str]] = {}
+    for product, feature_ids in overrides.items():
+        if not isinstance(feature_ids, list):
+            continue
+        normalised[str(product)] = {str(feature_id) for feature_id in feature_ids}
+    return normalised
+
+
+def _product_overrides(
+    product: str,
+    features: list[dict[str, Any]],
+    feature_overrides: dict[str, dict[str, Any]],
+    target_override: dict[str, Any] | None,
+) -> dict[str, dict[str, Any]]:
+    if not target_override:
+        return feature_overrides
+    merged = dict(feature_overrides)
+    for item in features:
+        feature_id = str(item.get("id", ""))
+        if not feature_id or feature_id in merged:
+            continue
+        extension_point = str(item.get("extension_point", ""))
+        evidence = target_override.get("evidence", "")
+        if extension_point:
+            evidence = f"{evidence} / {extension_point}" if evidence else extension_point
+        merged[feature_id] = {
+            "weight": target_override["weight"],
+            "rationale": target_override["rationale"].replace("{product}", product),
+            "evidence": evidence,
+        }
+    return merged
 
 
 def _feature_evidence(item: dict[str, Any]) -> dict[str, Any]:

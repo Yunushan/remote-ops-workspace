@@ -27,12 +27,26 @@ jobs:
           if-no-files-found: error
 
   windows-native:
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            python-architecture: x64
+            runner: windows-latest
+          - arch: x86
+            python-architecture: x86
+            runner: windows-latest
+          - arch: arm64
+            python-architecture: arm64
+            runner: windows-11-arm
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+          architecture: ${{ matrix.python-architecture }}
       - name: Install Python packaging dependencies
         run: python -m pip install --upgrade pip setuptools wheel ".[security,package]"
       - name: Install Windows installer toolchains
@@ -42,15 +56,23 @@ jobs:
           dotnet tool install --global wix
       - name: Build Windows EXE and MSI installers
         shell: powershell
-        run: .\scripts\make_windows_native.ps1
+        run: .\scripts\make_windows_native.ps1 -Arch "${{ matrix.arch }}"
       - uses: actions/upload-artifact@v4
         with:
-          name: release-windows-native
+          name: release-windows-native-${{ matrix.arch }}
           path: native-dist/windows/*
           if-no-files-found: error
 
   macos-native:
-    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: macos-13
+          - arch: arm64
+            runner: macos-latest
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -59,15 +81,23 @@ jobs:
       - name: Install Python packaging dependencies
         run: python -m pip install --upgrade pip setuptools wheel ".[desktop,security,package]"
       - name: Build macOS DMG and PKG installers
-        run: bash scripts/make_macos_native.sh
+        run: EXPECTED_ARTIFACT_ARCH="${{ matrix.arch }}" bash scripts/make_macos_native.sh
       - uses: actions/upload-artifact@v4
         with:
-          name: release-macos-native
+          name: release-macos-native-${{ matrix.arch }}
           path: native-dist/macos/*
           if-no-files-found: error
 
   linux-native:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-latest
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -80,10 +110,10 @@ jobs:
       - name: Install Python packaging dependencies
         run: python -m pip install --upgrade pip setuptools wheel ".[security,package]"
       - name: Build Linux DEB, RPM and AppImage packages
-        run: bash scripts/make_linux_native.sh
+        run: TARGET_ARCH="${{ matrix.arch }}" bash scripts/make_linux_native.sh
       - uses: actions/upload-artifact@v4
         with:
-          name: release-linux-native
+          name: release-linux-native-${{ matrix.arch }}
           path: native-dist/linux/*
           if-no-files-found: error
 

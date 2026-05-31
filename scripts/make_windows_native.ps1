@@ -1,6 +1,8 @@
 param(
   [string]$Python = "python",
-  [string]$Dist = "native-dist\windows"
+  [string]$Dist = "native-dist\windows",
+  [ValidateSet("x86", "x64", "arm64")]
+  [string]$Arch = "x64"
 )
 
 $ErrorActionPreference = "Stop"
@@ -34,10 +36,40 @@ function Find-InnoSetup {
   throw "Inno Setup compiler is required. Install it with: choco install innosetup -y"
 }
 
-function Build-InnoSetupInstaller([string]$Version, [string]$Stage, [string]$OutDir) {
+function Get-InnoArchitectureDirectives([string]$Arch) {
+  switch ($Arch) {
+    "x64" {
+      return @"
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
+"@
+    }
+    "arm64" {
+      return @"
+ArchitecturesAllowed=arm64
+ArchitecturesInstallIn64BitMode=arm64
+"@
+    }
+    default {
+      return ""
+    }
+  }
+}
+
+function Get-WixArchitecture([string]$Arch) {
+  switch ($Arch) {
+    "x86" { return "x86" }
+    "x64" { return "x64" }
+    "arm64" { return "arm64" }
+    default { throw "Unsupported Windows architecture: $Arch" }
+  }
+}
+
+function Build-InnoSetupInstaller([string]$Version, [string]$Stage, [string]$OutDir, [string]$Arch) {
   $Iscc = Find-InnoSetup
   $Iss = Join-Path $BuildDir "remote-ops-workspace.iss"
-  $OutputBase = "remote-ops-workspace-v$Version-windows-x64-setup"
+  $OutputBase = "remote-ops-workspace-v$Version-windows-$Arch-setup"
+  $ArchitectureDirectives = Get-InnoArchitectureDirectives $Arch
   $StageEscaped = $Stage.Replace("\", "\\")
   $OutEscaped = $OutDir.Replace("\", "\\")
 
@@ -54,8 +86,7 @@ OutputDir=$OutEscaped
 OutputBaseFilename=$OutputBase
 Compression=lzma2
 SolidCompression=yes
-ArchitecturesAllowed=x64compatible
-ArchitecturesInstallIn64BitMode=x64compatible
+$ArchitectureDirectives
 
 [Files]
 Source: "$StageEscaped\\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -79,7 +110,7 @@ Filename: "{app}\bin\row.exe"; Parameters: "--version"; Description: "Show insta
   return $Setup
 }
 
-function Build-WixMsi([string]$Version, [string]$Stage, [string]$OutDir) {
+function Build-WixMsi([string]$Version, [string]$Stage, [string]$OutDir, [string]$Arch) {
   $env:PATH = "$env:PATH;$env:USERPROFILE\.dotnet\tools"
   $Wix = Get-Command "wix.exe" -ErrorAction SilentlyContinue
   if (!$Wix) {
@@ -87,7 +118,8 @@ function Build-WixMsi([string]$Version, [string]$Stage, [string]$OutDir) {
   }
 
   $Wxs = Join-Path $BuildDir "remote-ops-workspace.wxs"
-  $Msi = Join-Path $OutDir "remote-ops-workspace-v$Version-windows-x64.msi"
+  $Msi = Join-Path $OutDir "remote-ops-workspace-v$Version-windows-$Arch.msi"
+  $WixArch = Get-WixArchitecture $Arch
   $RowSource = XmlEscape (Join-Path $Stage "bin\row.exe")
   $LicenseSource = XmlEscape (Join-Path $Stage "docs\LICENSE")
   $NoticeSource = XmlEscape (Join-Path $Stage "docs\NOTICE")
@@ -133,7 +165,7 @@ function Build-WixMsi([string]$Version, [string]$Stage, [string]$OutDir) {
 </Wix>
 "@ | Set-Content -Encoding UTF8 $Wxs
 
-  & $Wix.Source build $Wxs -o $Msi
+  & $Wix.Source build $Wxs -arch $WixArch -o $Msi
   if (!(Test-Path $Msi)) {
     throw "WiX did not create $Msi"
   }
@@ -144,11 +176,23 @@ function XmlEscape([string]$Value) {
   return [System.Security.SecurityElement]::Escape($Value)
 }
 
+function Get-PythonArchitecture([string]$Python) {
+  $Detected = & $Python -c "import platform,struct; m=platform.machine().lower(); bits=struct.calcsize('P')*8; print('arm64' if 'arm64' in m or 'aarch64' in m else ('x64' if bits == 64 else 'x86'))"
+  if ($LASTEXITCODE -ne 0) {
+    throw "Unable to detect Python architecture from $Python"
+  }
+  return $Detected.Trim()
+}
+
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $Version = Get-ProjectVersion
 $Tag = $env:GITHUB_REF_NAME
 if ($Tag -and $Tag -ne "v$Version") {
   throw "GITHUB_REF_NAME='$Tag' does not match project version v$Version"
+}
+$PythonArch = Get-PythonArchitecture $Python
+if ($PythonArch -ne $Arch) {
+  throw "Requested Windows architecture '$Arch' does not match Python architecture '$PythonArch'. Use a matching Python/PyInstaller toolchain."
 }
 
 $OutDir = Resolve-PathOrCreate (Join-Path $Root $Dist)
@@ -190,50 +234,53 @@ Copy-Item (Join-Path $Root "README.tr.md") (Join-Path $Stage "docs\README.tr.md"
 
 Package: remote-ops-workspace
 Version: v$Version
-Target: Windows x64
+Target: Windows $Arch
 
 This native package installs the standalone `row.exe` command built with
 PyInstaller. Protocol sessions still depend on Windows system tools such as
 OpenSSH, MSTSC, PuTTY, VcXsrv, and VNC clients.
 "@ | Set-Content -Encoding UTF8 (Join-Path $Stage "RELEASE_TARGET.md")
 
-$NativeZip = Join-Path $OutDir "remote-ops-workspace-v$Version-windows-x64-native.zip"
+$NativeZip = Join-Path $OutDir "remote-ops-workspace-v$Version-windows-$Arch-native.zip"
 Compress-Archive -Path (Join-Path $Stage "*") -DestinationPath $NativeZip -Force
 
-$SetupExe = Build-InnoSetupInstaller -Version $Version -Stage $Stage -OutDir $OutDir
-$Msi = Build-WixMsi -Version $Version -Stage $Stage -OutDir $OutDir
+$SetupExe = Build-InnoSetupInstaller -Version $Version -Stage $Stage -OutDir $OutDir -Arch $Arch
+$Msi = Build-WixMsi -Version $Version -Stage $Stage -OutDir $OutDir -Arch $Arch
 
 $Manifest = @(
   @{
     phase = "phase-2-windows-native"
-    target = "windows-native-zip"
-    label = "Windows native portable bundle"
+    target = "windows-$Arch-native-zip"
+    label = "Windows $Arch native portable bundle"
+    architecture = $Arch
     file = (To-RepoPath $NativeZip)
     format = "zip"
     install_command = "Extract and run bin\row.exe"
-    notes = @("Standalone PyInstaller CLI executable plus docs.")
+    notes = @("Standalone PyInstaller CLI executable plus docs.", "Built for Windows $Arch.")
   },
   @{
     phase = "phase-2-windows-native"
-    target = "windows-exe-installer"
-    label = "Windows EXE installer"
+    target = "windows-$Arch-exe-installer"
+    label = "Windows $Arch EXE installer"
+    architecture = $Arch
     file = (To-RepoPath $SetupExe)
     format = "exe"
     install_command = "Run the installer interactively or with Inno Setup silent flags."
-    notes = @("Unsigned Inno Setup installer for the standalone row.exe CLI.")
+    notes = @("Unsigned Inno Setup installer for the standalone row.exe CLI.", "Built for Windows $Arch.")
   },
   @{
     phase = "phase-2-windows-native"
-    target = "windows-msi-installer"
-    label = "Windows MSI installer"
+    target = "windows-$Arch-msi-installer"
+    label = "Windows $Arch MSI installer"
+    architecture = $Arch
     file = (To-RepoPath $Msi)
     format = "msi"
     install_command = "msiexec /i $(Split-Path -Leaf $Msi)"
-    notes = @("Unsigned WiX MSI installer for managed Windows deployments.")
+    notes = @("Unsigned WiX MSI installer for managed Windows deployments.", "Built for Windows $Arch.")
   }
 )
 
-$ManifestPath = Join-Path $OutDir "remote-ops-workspace-v$Version-windows-native-manifest.json"
+$ManifestPath = Join-Path $OutDir "remote-ops-workspace-v$Version-windows-$Arch-native-manifest.json"
 $Manifest | ConvertTo-Json -Depth 8 | Set-Content -Encoding UTF8 $ManifestPath
 
 Write-Host "created $(To-RepoPath $NativeZip)"

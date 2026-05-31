@@ -13,28 +13,29 @@ from . import __version__
 from .audit import append_event
 from .broadcast import BroadcastResult, build_broadcast_plans, run_broadcast
 from .doctor import run_doctor
+from .features import coverage_report, feature_summary, load_feature_manifest
 from .file_transfer import (
     SftpBatchPlan,
     SftpQueuePlan,
     SftpQueueResult,
-    build_sftp_queue_plan,
     build_sftp_get_plan,
     build_sftp_interactive_plan,
     build_sftp_list_plan,
     build_sftp_mkdir_plan,
     build_sftp_put_plan,
-    build_sftp_rename_plan,
+    build_sftp_queue_plan,
     build_sftp_remote_preview_plan,
+    build_sftp_rename_plan,
     build_sftp_rm_plan,
     build_sftp_rmdir_plan,
     parse_transfer_item_spec,
     preview_local_path,
-    run_sftp_interactive,
     run_sftp_batch,
+    run_sftp_interactive,
     run_sftp_queue,
 )
-from .features import coverage_report, feature_summary, load_feature_manifest
 from .keys import build_keygen_plan, run_keygen
+from .launcher import LauncherError, launch
 from .layouts import (
     Layout,
     LayoutRunResult,
@@ -43,10 +44,10 @@ from .layouts import (
     parse_layout_pane,
     run_layout_terminal_plans,
 )
-from .launcher import LauncherError, launch
 from .models import Profile, Tunnel
 from .network_tools import build_network_tool_plan, check_tcp_port, run_network_tool
 from .paths import ensure_data_dir
+from .platform_targets import load_platform_targets
 from .profile_importers import SUPPORTED_IMPORT_FORMATS, import_profiles_into_store
 from .snippets import Snippet, SnippetStore, run_snippet
 from .storage import ProfileStore
@@ -130,6 +131,10 @@ def build_parser() -> argparse.ArgumentParser:
     doctor = sub.add_parser("doctor", help="inspect platform and external client availability")
     doctor.add_argument("--json", action="store_true")
     doctor.set_defaults(func=cmd_doctor)
+
+    platforms = sub.add_parser("platforms", help="show release architecture and legacy OS targets")
+    platforms.add_argument("--json", action="store_true")
+    platforms.set_defaults(func=cmd_platforms)
 
     features = sub.add_parser("features", help="show feature coverage manifest")
     features.add_argument("--json", action="store_true")
@@ -462,6 +467,33 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_platforms(args: argparse.Namespace) -> int:
+    targets = load_platform_targets()
+    if args.json:
+        print(json.dumps(targets, indent=2, sort_keys=True))
+        return 0
+
+    architectures = targets.get("release_architectures", [])
+    legacy_targets = targets.get("windows_legacy_targets", [])
+    print("Release architecture targets:")
+    platform_width = max(len(item["platform"]) for item in architectures)
+    arch_width = max(len(item["cpu_arch"]) for item in architectures)
+    for item in architectures:
+        print(
+            f"  {item['platform']:<{platform_width}} {item['cpu_arch']:<{arch_width}} "
+            f"{item['bits']:>2}-bit {item['release_tier']}"
+        )
+
+    print("\nLegacy Windows targets:")
+    version_width = max(len(item["version"]) for item in legacy_targets)
+    for item in legacy_targets:
+        print(
+            f"  {item['version']:<{version_width}} host {item['host_tier']}, "
+            f"remote target {item['remote_target_tier']}"
+        )
+    return 0
+
+
 def cmd_features(args: argparse.Namespace) -> int:
     if args.json:
         payload = coverage_report() if args.coverage else load_feature_manifest()
@@ -487,10 +519,11 @@ def cmd_features(args: argparse.Namespace) -> int:
         )
         print("\nProduct coverage:")
         readiness_rows = {row["product"]: row for row in readiness["products"]}
+        product_width = max(len(row["product"]) for row in mapping["products"])
         for row in mapping["products"]:
             ready_row = readiness_rows[row["product"]]
             print(
-                f"  {row['product']:<10} mapping {row['current_percent']:>5.1f}%, "
+                f"  {row['product']:<{product_width}} mapping {row['current_percent']:>5.1f}%, "
                 f"ready {ready_row['current_percent']:>5.1f}% "
                 f"({row['feature_count']} families)"
             )

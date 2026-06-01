@@ -4,14 +4,15 @@ import sys
 
 from .doctor import run_doctor
 from .file_transfer import build_sftp_queue_plan, parse_transfer_item_spec, preview_local_path
+from .gui_designs import GUI_DESIGN_PRESETS, get_gui_design_preset
 from .gui_editors import (
     layout_from_editor_data,
     layout_to_editor_data,
     profile_from_editor_data,
     profile_to_editor_data,
 )
-from .layouts import Layout, LayoutStore, build_layout_terminal_plans
 from .launcher import LauncherError, build_launch_plan
+from .layouts import Layout, LayoutStore, build_layout_terminal_plans
 from .storage import ProfileStore
 from .terminal import (
     TerminalPanePlan,
@@ -320,6 +321,7 @@ def main() -> int:
     class MainWindow(QMainWindow):
         def __init__(self) -> None:
             super().__init__()
+            self.setObjectName("remoteOpsMain")
             self.setWindowTitle("Remote Ops Workspace")
             self.resize(1180, 720)
             self.store = ProfileStore()
@@ -327,6 +329,7 @@ def main() -> int:
             self.layout_store = LayoutStore()
 
             toolbar = QToolBar("Main")
+            toolbar.setObjectName("mainToolbar")
             self.addToolBar(toolbar)
             self.refresh_button = QPushButton("Refresh")
             self.new_profile_button = QPushButton("New Profile")
@@ -341,6 +344,10 @@ def main() -> int:
             self.split_v_button = QPushButton("Split V")
             self.layout_select = QComboBox()
             self.layout_select.setMinimumWidth(180)
+            self.design_select = QComboBox()
+            self.design_select.setMinimumWidth(170)
+            for preset in GUI_DESIGN_PRESETS:
+                self.design_select.addItem(preset.label, preset.id)
             self.new_layout_button = QPushButton("New Layout")
             self.edit_layout_button = QPushButton("Edit Layout")
             self.remove_layout_button = QPushButton("Remove Layout")
@@ -362,6 +369,8 @@ def main() -> int:
                 self.split_v_button,
             ]:
                 toolbar.addWidget(button)
+            toolbar.addWidget(QLabel("View"))
+            toolbar.addWidget(self.design_select)
             toolbar.addWidget(self.layout_select)
             for button in [self.new_layout_button, self.edit_layout_button, self.remove_layout_button]:
                 toolbar.addWidget(button)
@@ -370,23 +379,28 @@ def main() -> int:
             toolbar.addWidget(self.find_button)
 
             self.profile_list = QListWidget()
+            self.profile_list.setObjectName("profileTree")
             self.profile_list.setMinimumWidth(300)
             self.tabs = QTabWidget()
+            self.tabs.setObjectName("sessionTabs")
             self.log = QTextEdit()
+            self.log.setObjectName("activityLog")
             self.log.setReadOnly(True)
             self.log.setPlaceholderText("Launch output, dry-run commands and doctor reports appear here.")
 
             self.workspace = QSplitter(Qt.Orientation.Vertical)
+            self.workspace.setObjectName("workspace")
             self.workspace.addWidget(self.tabs)
             self.workspace.addWidget(self.log)
             self.workspace.setStretchFactor(0, 3)
             self.workspace.setStretchFactor(1, 1)
 
-            root = QSplitter(Qt.Orientation.Horizontal)
-            root.addWidget(self.profile_list)
-            root.addWidget(self.workspace)
-            root.setStretchFactor(1, 1)
-            self.setCentralWidget(root)
+            self.root_splitter = QSplitter(Qt.Orientation.Horizontal)
+            self.root_splitter.setObjectName("rootWorkspace")
+            self.root_splitter.addWidget(self.profile_list)
+            self.root_splitter.addWidget(self.workspace)
+            self.root_splitter.setStretchFactor(1, 1)
+            self.setCentralWidget(self.root_splitter)
 
             self.refresh_button.clicked.connect(self.refresh_profiles)
             self.new_profile_button.clicked.connect(self.create_profile)
@@ -403,6 +417,7 @@ def main() -> int:
             self.edit_layout_button.clicked.connect(self.edit_selected_layout)
             self.remove_layout_button.clicked.connect(self.remove_selected_layout)
             self.open_layout_button.clicked.connect(self.open_selected_layout)
+            self.design_select.currentIndexChanged.connect(self.apply_selected_design)
             self.find_button.clicked.connect(self.find_log_text)
             QShortcut(QKeySequence("Ctrl+R"), self, activated=self.refresh_profiles)
             QShortcut(QKeySequence("Ctrl+N"), self, activated=self.create_profile)
@@ -415,6 +430,7 @@ def main() -> int:
             self.refresh_profiles()
             self.refresh_layouts()
             self.add_welcome_tab()
+            self.apply_selected_design()
 
         def refresh_profiles(self) -> None:
             self.profile_list.clear()
@@ -428,6 +444,31 @@ def main() -> int:
             self.layout_select.clear()
             for layout in self.layout_store.load():
                 self.layout_select.addItem(layout.name)
+
+        def apply_selected_design(self, *_args) -> None:
+            preset_id = self.design_select.currentData() or "native"
+            try:
+                preset = get_gui_design_preset(str(preset_id))
+            except ValueError:
+                preset = get_gui_design_preset("native")
+            self.setStyleSheet(preset.stylesheet)
+            self.profile_list.setMinimumWidth(min(preset.profile_width, 360))
+            self.root_splitter.setSizes([preset.profile_width, max(620, self.width() - preset.profile_width)])
+            self.workspace.setSizes([max(420, self.height() - preset.log_height), preset.log_height])
+            self.tabs.setTabPosition(self.tab_position_for_design(preset.tab_position))
+            self.log.setPlaceholderText(
+                f"{preset.description}\n\nLaunch output, dry-run commands and doctor reports appear here."
+            )
+            self.statusBar().showMessage(f"View: {preset.label}")
+
+        def tab_position_for_design(self, value: str):
+            if value == "west":
+                return QTabWidget.TabPosition.West
+            if value == "south":
+                return QTabWidget.TabPosition.South
+            if value == "east":
+                return QTabWidget.TabPosition.East
+            return QTabWidget.TabPosition.North
 
         def selected_profile_name(self) -> str | None:
             item = self.profile_list.currentItem()

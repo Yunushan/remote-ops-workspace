@@ -115,6 +115,7 @@ The PyQt6 desktop shell provides:
 - tabbed workspace for process-backed sessions;
 - process-backed terminal panes with stdout/stderr capture and stdin entry;
 - horizontal and vertical split-pane shells inspired by tiling terminals;
+- selectable GUI view presets: Native, MobaXterm-style, SecureCRT-style, Termius-style, Remmina-style and mRemoteNG-style;
 - saved layout selector plus create/edit/remove dialogs that open layout panes directly in the workspace;
 - doctor/status panel;
 - future plugin seam for deeper PTY/qtermwidget/web terminal emulation.

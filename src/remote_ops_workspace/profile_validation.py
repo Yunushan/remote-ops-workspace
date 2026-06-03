@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import replace
-from typing import Any
+from typing import Any, Iterable
 
 from . import command_safety as safe
 from .models import Profile, Tunnel
@@ -66,14 +66,19 @@ class ProfileValidationError(ValueError):
     pass
 
 
-def prepare_profile(profile: Profile, *, require_target: bool = True) -> Profile:
-    normalized = normalize_profile(profile)
-    validate_profile(normalized, require_target=require_target)
+def prepare_profile(
+    profile: Profile,
+    *,
+    require_target: bool = True,
+    extra_protocols: Iterable[str] = (),
+) -> Profile:
+    normalized = normalize_profile(profile, extra_protocols=extra_protocols)
+    validate_profile(normalized, require_target=require_target, extra_protocols=extra_protocols)
     return normalized
 
 
-def normalize_profile(profile: Profile) -> Profile:
-    protocol = _profile_protocol(profile.protocol)
+def normalize_profile(profile: Profile, *, extra_protocols: Iterable[str] = ()) -> Profile:
+    protocol = _profile_protocol(profile.protocol, extra_protocols=extra_protocols)
     return replace(
         profile,
         name=safe.clean_text(str(profile.name).strip(), "profile name"),
@@ -94,13 +99,18 @@ def normalize_profile(profile: Profile) -> Profile:
     )
 
 
-def validate_profile(profile: Profile, *, require_target: bool = True) -> None:
-    protocol = _profile_protocol(profile.protocol)
+def validate_profile(
+    profile: Profile,
+    *,
+    require_target: bool = True,
+    extra_protocols: Iterable[str] = (),
+) -> None:
+    protocol = _profile_protocol(profile.protocol, extra_protocols=extra_protocols)
     if protocol != profile.protocol:
         raise ProfileValidationError("profile protocol must be normalized before validation")
-    if protocol not in SUPPORTED_PROFILE_PROTOCOLS:
+    if protocol not in _supported_protocols(extra_protocols):
         raise ProfileValidationError(f"unsupported profile protocol: {protocol}")
-    if require_target:
+    if require_target and protocol in SUPPORTED_PROFILE_PROTOCOLS:
         _require_target(profile)
 
 
@@ -167,15 +177,19 @@ def normalize_group_defaults_map(defaults: Any) -> dict[str, dict[str, object]]:
     }
 
 
-def _profile_protocol(value: str) -> str:
+def _profile_protocol(value: str, *, extra_protocols: Iterable[str] = ()) -> str:
     protocol = safe.clean_text(str(value).strip().lower(), "protocol")
     if any(char.isspace() for char in protocol):
         raise ProfileValidationError("protocol must not contain whitespace")
     if protocol.startswith("-"):
         raise ProfileValidationError("protocol must not start with '-'")
-    if protocol not in SUPPORTED_PROFILE_PROTOCOLS:
+    if protocol not in _supported_protocols(extra_protocols):
         raise ProfileValidationError(f"unsupported profile protocol: {protocol}")
     return protocol
+
+
+def _supported_protocols(extra_protocols: Iterable[str]) -> frozenset[str]:
+    return SUPPORTED_PROFILE_PROTOCOLS | frozenset(str(protocol).strip().lower() for protocol in extra_protocols)
 
 
 def _require_target(profile: Profile) -> None:

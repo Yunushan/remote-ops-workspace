@@ -603,7 +603,7 @@
     },
     {
       "category": "terminal",
-      "extension_point": "terminal.TerminalPanePlan / gui.TerminalPane",
+      "extension_point": "terminal.TerminalPanePlan / gui.TerminalPane / gui_lifecycle.stop_process",
       "id": "terminal.tabs",
       "inspired_by": [
         "MobaXterm",
@@ -636,7 +636,7 @@
     },
     {
       "category": "terminal",
-      "extension_point": "terminal.split_shell_plans / gui.MainWindow.add_split",
+      "extension_point": "terminal.split_shell_plans / gui.MainWindow.add_split / managed process cleanup",
       "id": "terminal.splits",
       "inspired_by": [
         "Terminator"
@@ -646,7 +646,7 @@
     },
     {
       "category": "terminal",
-      "extension_point": "layouts.build_layout_terminal_plans / row layout run / gui layout selector / gui layout editor",
+      "extension_point": "layouts.build_layout_terminal_plans / row layout run / gui layout selector / gui layout editor / managed process cleanup",
       "id": "terminal.layouts",
       "inspired_by": [
         "Terminator"
@@ -745,7 +745,7 @@
     },
     {
       "category": "security",
-      "extension_point": "vault.LocalVault",
+      "extension_point": "vault.LocalVault / row vault status / row vault set --secret-env|--stdin / row vault delete --force",
       "id": "security.vault",
       "inspired_by": [
         "Termius",
@@ -894,7 +894,7 @@
     },
     {
       "category": "extensibility",
-      "extension_point": "remote_ops_workspace.plugins",
+      "extension_point": "remote_ops_workspace.plugins / launcher plugin protocol dispatch / row plugins list / row doctor",
       "id": "plugins.entrypoints",
       "inspired_by": [
         "Remmina",

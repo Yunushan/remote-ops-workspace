@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import argparse
+import gzip
+import hashlib
 import json
 import os
 import re
@@ -12,11 +14,15 @@ import tarfile
 import zipfile
 from collections.abc import Iterable
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DIST = ROOT / "dist"
 NAME = "remote-ops-workspace"
+DEFAULT_SOURCE_DATE_EPOCH = 1_704_067_200  # 2024-01-01T00:00:00Z
+MIN_ZIP_EPOCH = 315_532_800  # 1980-01-01T00:00:00Z
+VERSION_RE = re.compile(r"^\d+\.\d+\.\d+(?:a\d+|b\d+|rc\d+|\.post\d+)?$")
 
 PROJECT_FILES = [
     ".github",
@@ -194,7 +200,7 @@ def main() -> int:
 
     version = read_project_version()
     validate_github_tag(version)
-    dist = args.dist.resolve()
+    dist = resolve_dist(args.dist)
     reset_dist(dist)
 
     selected = [target for target in TARGETS if not args.target or target.key in args.target]
@@ -203,10 +209,12 @@ def main() -> int:
         artifacts.extend(build_python_package(version, dist))
     artifacts.extend(build_target(target, version, dist) for target in selected)
     manifest = write_manifest(version, artifacts, dist)
+    checksums = write_checksums(version, artifacts, ROOT / manifest, dist)
 
     for artifact in artifacts:
         print(f"created {artifact['file']}")
     print(f"created {manifest}")
+    print(f"created {checksums}")
     return 0
 
 
@@ -216,13 +224,32 @@ def read_project_version() -> str:
     match = re.search(r'(?m)^version\s*=\s*"([^"]+)"', text)
     if not match:
         raise SystemExit("pyproject.toml does not define project.version")
-    return match.group(1)
+    version = match.group(1)
+    validate_version(version)
+    return version
+
+
+def validate_version(version: str) -> None:
+    if not VERSION_RE.fullmatch(version):
+        raise SystemExit(f"project version must be release-like semantic version, got: {version!r}")
 
 
 def validate_github_tag(version: str) -> None:
     tag = os.environ.get("GITHUB_REF_NAME")
     if tag and tag != f"v{version}":
         raise SystemExit(f"GITHUB_REF_NAME={tag!r} does not match project version v{version}")
+
+
+def resolve_dist(path: Path) -> Path:
+    dist = path.resolve()
+    root = ROOT.resolve()
+    if dist == root:
+        raise SystemExit("--dist must not be the repository root")
+    if dist == Path.home().resolve():
+        raise SystemExit("--dist must not be the current user's home directory")
+    if root not in dist.parents:
+        raise SystemExit("--dist must be inside the repository")
+    return dist
 
 
 def reset_dist(dist: Path) -> None:
@@ -262,30 +289,30 @@ def build_python_package(version: str, dist: Path) -> list[dict[str, object]]:
         raise SystemExit(f"python package build did not create expected artifacts: {', '.join(missing)}")
 
     return [
-        {
-            "phase": "phase-1-python-package",
-            "target": "python-wheel",
-            "label": "Python wheel",
-            "file": wheel.relative_to(ROOT).as_posix(),
-            "format": "whl",
-            "install_command": f"python -m pip install {wheel.name}",
-            "notes": [
+        artifact_record(
+            phase="phase-1-python-package",
+            target="python-wheel",
+            label="Python wheel",
+            path=wheel,
+            format="whl",
+            install_command=f"python -m pip install {wheel.name}",
+            notes=[
                 "Phase 1 package artifact for Python users and package indexes.",
                 "Installs the CLI package; optional GUI/security extras still depend on target platform dependencies.",
             ],
-        },
-        {
-            "phase": "phase-1-python-package",
-            "target": "python-sdist",
-            "label": "Python source distribution",
-            "file": sdist.relative_to(ROOT).as_posix(),
-            "format": "sdist",
-            "install_command": f"python -m pip install {sdist.name}",
-            "notes": [
+        ),
+        artifact_record(
+            phase="phase-1-python-package",
+            target="python-sdist",
+            label="Python source distribution",
+            path=sdist,
+            format="sdist",
+            install_command=f"python -m pip install {sdist.name}",
+            notes=[
                 "Phase 1 source distribution for Python build backends and package indexes.",
                 "Useful for reproducible package publication and downstream repackaging.",
             ],
-        },
+        ),
     ]
 
 
@@ -310,21 +337,23 @@ def build_target(target: ReleaseTarget, version: str, dist: Path) -> dict[str, o
             add_files_to_zip(archive, files, root_name, web_only=target.web_only)
             add_text_to_zip(archive, f"{root_name}/RELEASE_TARGET.md", release_note)
     elif target.archive_format == "tar.gz":
-        with tarfile.open(output, "w:gz") as archive:
-            add_files_to_tar(archive, files, root_name, web_only=target.web_only)
-            add_text_to_tar(archive, f"{root_name}/RELEASE_TARGET.md", release_note)
+        with output.open("wb") as raw:
+            with gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=source_date_epoch()) as gz:
+                with tarfile.open(fileobj=gz, mode="w", format=tarfile.PAX_FORMAT) as archive:
+                    add_files_to_tar(archive, files, root_name, web_only=target.web_only)
+                    add_text_to_tar(archive, f"{root_name}/RELEASE_TARGET.md", release_note)
     else:
         raise ValueError(f"unsupported archive format: {target.archive_format}")
 
-    return {
-        "phase": "target-source-install-bundle",
-        "target": target.key,
-        "label": target.label,
-        "file": output.relative_to(ROOT).as_posix(),
-        "format": target.archive_format,
-        "install_command": target.install_command,
-        "notes": list(target.notes),
-    }
+    return artifact_record(
+        phase="target-source-install-bundle",
+        target=target.key,
+        label=target.label,
+        path=output,
+        format=target.archive_format,
+        install_command=target.install_command,
+        notes=list(target.notes),
+    )
 
 
 def iter_project_paths(entries: Iterable[str], *, web_only: bool) -> Iterable[tuple[Path, str]]:
@@ -336,9 +365,13 @@ def iter_project_paths(entries: Iterable[str], *, web_only: bool) -> Iterable[tu
             for child in sorted(path.rglob("*")):
                 if should_skip(child):
                     continue
+                if child.is_symlink():
+                    raise SystemExit(f"release input must not be a symlink: {child.relative_to(ROOT)}")
                 if child.is_file():
                     yield child, archive_name(child, web_only=web_only)
         elif path.is_file() and not should_skip(path):
+            if path.is_symlink():
+                raise SystemExit(f"release input must not be a symlink: {entry}")
             yield path, archive_name(path, web_only=web_only)
 
 
@@ -362,9 +395,10 @@ def add_files_to_zip(
 ) -> None:
     for source, relative in iter_project_paths(entries, web_only=web_only):
         destination = f"{root_name}/{relative}"
-        info = zipfile.ZipInfo.from_file(source, arcname=destination)
-        if source.suffix == ".sh":
-            info.external_attr = 0o755 << 16
+        info = zipfile.ZipInfo(destination, date_time=zip_datetime())
+        info.create_system = 3
+        mode = 0o755 if source.suffix == ".sh" else 0o644
+        info.external_attr = mode << 16
         with source.open("rb") as handle:
             archive.writestr(info, handle.read(), compress_type=zipfile.ZIP_DEFLATED)
 
@@ -379,22 +413,74 @@ def add_files_to_tar(
     for source, relative in iter_project_paths(entries, web_only=web_only):
         destination = f"{root_name}/{relative}"
         info = archive.gettarinfo(str(source), arcname=destination)
-        if source.suffix == ".sh":
-            info.mode = 0o755
+        normalize_tar_info(info, executable=source.suffix == ".sh")
         with source.open("rb") as handle:
             archive.addfile(info, handle)
 
 
 def add_text_to_zip(archive: zipfile.ZipFile, arcname: str, text: str) -> None:
-    archive.writestr(arcname, text, compress_type=zipfile.ZIP_DEFLATED)
+    info = zipfile.ZipInfo(arcname, date_time=zip_datetime())
+    info.create_system = 3
+    info.external_attr = 0o644 << 16
+    archive.writestr(info, text, compress_type=zipfile.ZIP_DEFLATED)
 
 
 def add_text_to_tar(archive: tarfile.TarFile, arcname: str, text: str) -> None:
     encoded = text.encode("utf-8")
     info = tarfile.TarInfo(arcname)
     info.size = len(encoded)
-    info.mode = 0o644
+    normalize_tar_info(info)
     archive.addfile(info, fileobj=BytesReader(encoded))
+
+
+def normalize_tar_info(info: tarfile.TarInfo, *, executable: bool = False) -> None:
+    info.mtime = source_date_epoch()
+    info.uid = 0
+    info.gid = 0
+    info.uname = ""
+    info.gname = ""
+    info.mode = 0o755 if executable else 0o644
+
+
+def source_date_epoch() -> int:
+    raw = os.environ.get("SOURCE_DATE_EPOCH")
+    if raw is None:
+        return DEFAULT_SOURCE_DATE_EPOCH
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise SystemExit("SOURCE_DATE_EPOCH must be an integer Unix timestamp") from exc
+    if value < 0:
+        raise SystemExit("SOURCE_DATE_EPOCH must not be negative")
+    return value
+
+
+def zip_datetime() -> tuple[int, int, int, int, int, int]:
+    epoch = max(source_date_epoch(), MIN_ZIP_EPOCH)
+    return datetime.fromtimestamp(epoch, tz=timezone.utc).timetuple()[:6]
+
+
+def artifact_record(**values: object) -> dict[str, object]:
+    path = Path(values.pop("path"))
+    record = dict(values)
+    record["file"] = path.relative_to(ROOT).as_posix()
+    record.update(file_integrity(path))
+    return record
+
+
+def file_integrity(path: Path) -> dict[str, object]:
+    return {
+        "size_bytes": path.stat().st_size,
+        "sha256": sha256_file(path),
+    }
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 class BytesReader:
@@ -437,14 +523,34 @@ available on the target system.
 
 def write_manifest(version: str, artifacts: list[dict[str, object]], dist: Path) -> str:
     manifest = {
+        "schema_version": 1,
         "name": NAME,
         "version": version,
         "tag": f"v{version}",
+        "source_date_epoch": source_date_epoch(),
+        "build": release_build_metadata(),
         "artifacts": artifacts,
     }
     path = dist / f"{NAME}-v{version}-release-manifest.json"
     path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     return path.relative_to(ROOT).as_posix()
+
+
+def release_build_metadata() -> dict[str, str]:
+    keys = ("GITHUB_REPOSITORY", "GITHUB_REF_NAME", "GITHUB_SHA", "GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT")
+    return {key.lower(): value for key in keys if (value := os.environ.get(key))}
+
+
+def write_checksums(version: str, artifacts: list[dict[str, object]], manifest_path: Path, dist: Path) -> str:
+    checksum_path = dist / f"{NAME}-v{version}-SHA256SUMS.txt"
+    entries = [ROOT / str(artifact["file"]) for artifact in artifacts]
+    entries.append(manifest_path)
+    lines = []
+    for path in entries:
+        relname = path.relative_to(dist).as_posix() if dist in path.parents else path.relative_to(ROOT).as_posix()
+        lines.append(f"{sha256_file(path)}  {relname}")
+    checksum_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return checksum_path.relative_to(ROOT).as_posix()
 
 
 if __name__ == "__main__":

@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 
 from . import command_safety as safe
 from .models import Profile
+from .plugins import plugin_protocols
 from .profile_validation import prepare_profile
 from .storage import ProfileStore
 
@@ -49,7 +50,7 @@ def import_profiles(
         raise ValueError(f"unsupported import format: {resolved_format}")
     if not result.profiles:
         raise ValueError(f"no profiles found in {path}")
-    result.profiles = [prepare_profile(profile) for profile in result.profiles]
+    result.profiles = [prepare_profile(profile, extra_protocols=plugin_protocols()) for profile in result.profiles]
     _warn_legacy_sshv1(result)
     return result
 

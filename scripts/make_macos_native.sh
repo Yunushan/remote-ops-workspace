@@ -107,6 +107,7 @@ pkgbuild \
 "$PYTHON_BIN" - "$ROOT" "$VERSION" "$DMG" "$PKG" "$ARTIFACT_ARCH" "$OUT_DIR" <<'PY'
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -120,6 +121,19 @@ out_dir = Path(sys.argv[6])
 
 def repo_path(path: Path) -> str:
     return path.resolve().relative_to(root.resolve()).as_posix()
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+def add_integrity(item: dict[str, object]) -> dict[str, object]:
+    path = root / str(item["file"])
+    item["size_bytes"] = path.stat().st_size
+    item["sha256"] = sha256_file(path)
+    return item
 
 manifest = [
     {
@@ -147,6 +161,8 @@ manifest = [
         ],
     },
 ]
+
+manifest = [add_integrity(item) for item in manifest]
 
 manifest_path = out_dir / f"remote-ops-workspace-v{version}-macos-{arch}-native-manifest.json"
 manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")

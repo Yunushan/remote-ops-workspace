@@ -21,6 +21,6 @@ li { border-bottom: 1px solid #30363d; padding: .55rem 0; }
 .terminal-card { grid-column: span 2; }
 .toolbar { display: flex; gap: .5rem; flex-wrap: wrap; margin-bottom: .75rem; }
 .terminal-grid { display: grid; grid-template-columns: 1fr; gap: .75rem; min-height: 320px; }
-.terminal-pane { border: 1px solid #238636; border-radius: .5rem; padding: 1rem; background: #010409; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; color: #7ee787; min-height: 140px; }
+.terminal-pane { border: 1px solid #238636; border-radius: .5rem; padding: 1rem; background: #010409; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; color: #7ee787; min-height: 140px; white-space: pre-line; }
 #feature-tags { display: flex; flex-wrap: wrap; gap: .5rem; }
 @media (max-width: 800px) { .terminal-card { grid-column: span 1; } }

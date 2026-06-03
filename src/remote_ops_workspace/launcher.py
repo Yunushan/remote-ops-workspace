@@ -11,6 +11,7 @@ from typing import Iterable, Mapping
 
 from . import command_safety as safe
 from .models import Profile, Tunnel
+from .plugins import LoadedPlugin, load_plugin_registry
 from .profile_validation import prepare_profile
 
 
@@ -57,9 +58,14 @@ SSH_V1_OPT_IN_OPTIONS = ("allow_insecure_sshv1", "allow_unsafe_sshv1")
 
 
 def build_launch_plan(profile: Profile) -> LaunchPlan:
-    profile = prepare_profile(profile)
+    plugin_registry = load_plugin_registry()
+    profile = prepare_profile(profile, extra_protocols=plugin_registry.protocols)
     protocol = profile.protocol.lower().strip()
     notes: list[str] = []
+
+    plugin = plugin_registry.plugin_for_protocol(protocol)
+    if plugin is not None:
+        return _build_plugin_plan(plugin, profile)
 
     if protocol in {"ssh", *SSH_V1_PROTOCOLS, "sftp", "scp"}:
         return _build_ssh_family(profile, protocol)
@@ -112,7 +118,7 @@ def launch(profile: Profile, dry_run: bool = False) -> LaunchPlan:
 
 
 def protocol_clients() -> dict[str, list[str]]:
-    return {
+    clients = {
         "ssh": ["ssh"],
         "ssh1": ["ssh"],
         "sshv1": ["ssh"],
@@ -133,6 +139,19 @@ def protocol_clients() -> dict[str, list[str]]:
         "serial": ["picocom", "screen", "cu", "putty"],
         "keygen": ["ssh-keygen"],
     }
+    for protocol, executables in load_plugin_registry().protocol_clients().items():
+        clients[protocol] = executables
+    return clients
+
+
+def _build_plugin_plan(plugin: LoadedPlugin, profile: Profile) -> LaunchPlan:
+    plan = plugin.object.build(profile)
+    if not isinstance(plan, LaunchPlan):
+        raise LauncherError(f"plugin {plugin.name} returned invalid launch plan for protocol {profile.protocol}")
+    command = safe.argv_list(plan.command, f"plugin {plugin.name} launch command")
+    protocol = safe.clean_text(plan.protocol or profile.protocol, f"plugin {plugin.name} protocol").strip().lower()
+    notes = [f"Built by plugin: {plugin.name}", *plan.notes]
+    return LaunchPlan(protocol, command, notes)
 
 
 def _build_ssh_family(profile: Profile, protocol: str) -> LaunchPlan:

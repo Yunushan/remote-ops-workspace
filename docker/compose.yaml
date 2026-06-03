@@ -4,9 +4,16 @@ services:
       context: ..
       dockerfile: docker/Dockerfile.web
     ports:
-      - "8765:8765"
+      - "127.0.0.1:8765:8765"
     environment:
       ROW_HOME: /data
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
     volumes:
       - remote-ops-data:/data
 volumes:

@@ -47,6 +47,14 @@ widgets. That keeps validation shared between tests and the desktop dialogs:
 profile edits become `Profile` objects, layout pane text becomes `LayoutPane`
 objects, and the same storage classes persist the results.
 
+GUI terminal panes own a `QProcess` for each process-backed session, while the
+main window owns tab and shutdown lifecycle. `gui_lifecycle.py` centralizes the
+stop contract: idle processes are ignored, running processes receive a graceful
+terminate request first, and stubborn processes are killed after a bounded
+timeout. Closing a tab or quitting the app enumerates child terminal panes,
+confirms live sessions with the operator, and applies the same cleanup path to
+single tabs, split panes and saved-layout tabs.
+
 File transfer operations are represented as SFTP batch plans. One-shot commands,
 queued transfers and preview commands all flow through `file_transfer.py`, which
 keeps remote paths, local paths and generated batch text validated before any
@@ -63,4 +71,12 @@ Third-party packages can register entry points under:
 my_protocol = "my_package.plugin:Plugin"
 ```
 
-A plugin can provide a protocol engine, a sync backend, a terminal widget, a vault backend, or network tools.
+Today this entry point is wired for protocol launch plugins. A plugin declares
+`name`, `protocols` and optional `executables`, then implements
+`build(profile) -> LaunchPlan`. Installed plugin protocols are accepted by
+profile validation, can be listed with `row plugins list`, appear in `row doctor`,
+and are dispatched by `row connect`.
+
+Sync backends, terminal widgets, vault backends and network-tool plugins remain
+future extension points. They should not be represented as active integrations
+until they have a caller path equivalent to the protocol-launch path above.

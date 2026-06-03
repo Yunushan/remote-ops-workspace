@@ -78,8 +78,10 @@ row connect core-rdp
 row features
 row platforms
 row vault init
-row vault set prod/router-password
+row vault status
+row vault set prod/router-password --secret-env ROW_ROUTER_PASSWORD
 row vault list
+row vault delete old/router-password --force
 row features --coverage
 row files ls lab-ssh /var/log --dry-run
 row files get lab-ssh /etc/hosts --local ./hosts.copy --dry-run
@@ -112,13 +114,14 @@ The PyQt6 desktop shell provides:
 - profile create/edit/remove dialogs backed by the same profile store as the CLI;
 - external protocol launch buttons;
 - interactive SFTP file browser panes and transfer queue preview dialog for SSH/SFTP profiles;
-- tabbed workspace for process-backed sessions;
-- process-backed terminal panes with stdout/stderr capture and stdin entry;
+- tabbed workspace for process-backed sessions with close confirmation and cleanup;
+- process-backed terminal panes with stdout/stderr capture, stdin entry and managed start/stop state;
 - horizontal and vertical split-pane shells inspired by tiling terminals;
 - selectable GUI view presets: Native, MobaXterm-style, SecureCRT-style, Termius-style, Remmina-style and mRemoteNG-style;
 - saved layout selector plus create/edit/remove dialogs that open layout panes directly in the workspace;
 - doctor/status panel;
-- future plugin seam for deeper PTY/qtermwidget/web terminal emulation.
+- protocol launch plugin discovery through Python entry points plus `row plugins list`;
+- future extension seams for deeper PTY/qtermwidget/web terminal emulation.
 
 Install optional GUI extras:
 
@@ -134,10 +137,14 @@ row gui
 `apps/web` contains a static browser workspace that can run as a PWA. It is useful for Android/browser workflows, documentation demos and future API integration.
 
 ```bash
-row serve-web --host 0.0.0.0 --port 8765
+row serve-web --host 127.0.0.1 --port 8765
 ```
 
-Then open the displayed URL from a browser or install it as a PWA.
+Then open the displayed URL from a browser or install it as a PWA. Binding to
+`0.0.0.0`, `::` or another non-loopback interface requires
+`--allow-public-bind`; use it only on trusted networks or inside the hardened
+Docker entrypoint. The compose file publishes the container on
+`127.0.0.1:8765` by default.
 
 ---
 
@@ -209,7 +216,7 @@ row features --coverage --json
 | Hardware/FIDO keys | SSH support | SSH support | depends | — | ✅ | OpenSSH security-key keygen adapter |
 | Portable mode | ✅ | packages | config portability | — | mobile/desktop | `ROW_HOME` portable data directory |
 | Web/mobile access | — | Kasm/container options | — | — | ✅ | Static Web/PWA shell + Android/PWA docs |
-| Plugin architecture | plugins | plugins | extensions | plugins | integrations | Python entry-point plugin loader |
+| Plugin architecture | plugins | plugins | extensions | plugins | integrations | Python entry-point protocol launch plugins + `row plugins list` |
 
 See [`docs/FULL_FEATURE_COVERAGE.md`](docs/FULL_FEATURE_COVERAGE.md) and [`configs/feature_manifest.json`](configs/feature_manifest.json) for the full coverage manifest.
 
@@ -254,7 +261,7 @@ Core design principles:
 2. **Safe-by-default launching**: command arrays instead of shell strings.
 3. **Portable profiles**: JSON profile store, environment-driven data path, backup/export/import.
 4. **Security boundary clarity**: local encrypted vault support, no secrets committed, redaction utilities.
-5. **Plugin-ready parity**: every requested feature family has a registry entry and extension point.
+5. **Plugin honesty**: protocol launch plugins are wired through entry points; broader backend seams stay documented as future work until they have a caller path.
 
 ---
 
@@ -265,10 +272,12 @@ Core design principles:
 - Store examples only under `configs/*.example.*`.
 - Use `row connect NAME --dry-run` before launching newly imported profiles.
 - Vault encryption requires the optional `security` extra: `pip install -e ".[security]"`.
+- Use `row vault set NAME --secret-env ENV` or `row vault set NAME --stdin` for automation so secret values are not placed in argv or shell history.
 - `row vault get` requires explicit `--show` or `--out`; secrets are not printed by default.
 - `row keygen --passphrase-env` keeps software-key passphrases out of `ssh-keygen` argv by generating encrypted keys in-process.
 - Shared profile validation checks protocol names, required targets, hosts, ports and URLs; command builders also validate snippets, broadcast payloads and X11 display names before starting external tools.
 - Destructive SFTP actions, remote-overwrite-prone uploads and local-overwrite downloads are blocked before execution unless an operator passes `--force`; broad delete targets and remote globs are rejected for deletes/renames.
+- `row serve-web` binds to loopback by default, adds static-app security headers, disables directory listing and requires `--allow-public-bind` for non-loopback interfaces. The web Docker image runs as a non-root user and compose binds to localhost with dropped Linux capabilities.
 - Prefer SSH `proxy_jump`; `proxy_command` requires explicit `allow_unsafe_proxy_command=true`.
 - SSHv1 legacy profiles require both `--protocol ssh1`/`sshv1` and `--option allow_insecure_sshv1=true`; protocol v1 remains insecure and should only be used for isolated legacy systems.
 - See [`SECURITY.md`](SECURITY.md) and [`docs/SECURITY_MODEL.md`](docs/SECURITY_MODEL.md).
@@ -318,11 +327,14 @@ The GitHub release workflow runs on tags like `v0.1.0` and uploads these assets:
 | Linux native | `remote-ops-workspace-v0.1.0-linux-<i686\|x86_64\|armhf\|aarch64>.AppImage` |
 | Linux native | `remote-ops-workspace-v0.1.0-linux-<i686\|x86_64\|armhf\|aarch64>-native.tar.gz` |
 | Manifests | `remote-ops-workspace-v0.1.0-*-manifest.json` |
+| Checksums | `remote-ops-workspace-v0.1.0-SHA256SUMS.txt` |
 
 Native protocol rendering still depends on the external clients installed on the target system.
 Windows XP/Vista/7/8 are supported as legacy remote targets, not as first-class
 modern native operator hosts. The native build scripts add x86, x64, ARM64,
 i386/i686, armhf and arm64 artifact mappings where a matching builder exists.
+Release manifests include `size_bytes` and `sha256` for each artifact, and CI
+build jobs run with read-only checkout credentials until the final publish step.
 
 Release phases:
 

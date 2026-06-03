@@ -11,6 +11,7 @@ from .gui_editors import (
     profile_from_editor_data,
     profile_to_editor_data,
 )
+from .gui_lifecycle import ProcessStopPolicy, ProcessStopResult, stop_process
 from .launcher import LauncherError, build_launch_plan
 from .layouts import Layout, LayoutStore, build_layout_terminal_plans
 from .storage import ProfileStore
@@ -55,6 +56,8 @@ def main() -> int:
         return 2
 
     class TerminalPane(QWidget):
+        STOP_POLICY = ProcessStopPolicy()
+
         def __init__(self, plan: TerminalPanePlan) -> None:
             super().__init__()
             self.plan = plan
@@ -86,36 +89,62 @@ def main() -> int:
             self.input.returnPressed.connect(self.send_input)
             self.process.readyReadStandardOutput.connect(self.read_stdout)
             self.process.readyReadStandardError.connect(self.read_stderr)
-            self.process.started.connect(lambda: self.status.setText("running"))
+            self.process.started.connect(self.on_started)
             self.process.errorOccurred.connect(lambda error: self.append_text(f"\n[error] {error.name}\n"))
             self.process.finished.connect(self.on_finished)
+            self.update_process_actions()
             self.start()
 
+        def is_running(self) -> bool:
+            return self.process.state() != QProcess.ProcessState.NotRunning
+
         def start(self) -> None:
-            if self.process.state() != QProcess.ProcessState.NotRunning:
+            if self.is_running():
                 return
             if not self.plan.command:
                 self.append_text("[error] empty terminal command\n")
                 return
             self.output.clear()
+            self.status.setText("starting")
+            self.start_button.setEnabled(False)
+            self.stop_button.setEnabled(True)
+            self.input.setEnabled(False)
             self.append_text(f"$ {self.plan.printable()}\n")
             for note in self.plan.notes:
                 self.append_text(f"[note] {note}\n")
             self.process.setProgram(self.plan.command[0])
             self.process.setArguments(self.plan.command[1:])
             self.process.start()
+            self.update_process_actions()
 
-        def stop(self) -> None:
-            if self.process.state() == QProcess.ProcessState.NotRunning:
-                return
-            self.process.terminate()
-            if not self.process.waitForFinished(1500):
-                self.process.kill()
+        def stop(self, policy: ProcessStopPolicy | None = None) -> ProcessStopResult:
+            if not self.is_running():
+                self.update_process_actions()
+                return ProcessStopResult(
+                    was_running=False,
+                    terminate_requested=False,
+                    kill_requested=False,
+                    finished=True,
+                )
+            self.status.setText("stopping")
+            self.stop_button.setEnabled(False)
+            self.append_text("\n[process stopping]\n")
+            result = stop_process(
+                self.process,
+                not_running_state=QProcess.ProcessState.NotRunning,
+                policy=policy or self.STOP_POLICY,
+            )
+            if result.kill_requested:
+                self.append_text("[process killed after graceful stop timeout]\n")
+            if not result.finished:
+                self.append_text("[warning] process did not exit after kill request]\n")
+            self.update_process_actions()
+            return result
 
         def send_input(self) -> None:
             line = self.input.text()
             self.input.clear()
-            if self.process.state() == QProcess.ProcessState.NotRunning:
+            if not self.is_running():
                 self.append_text("[stdin ignored: process is not running]\n")
                 return
             self.process.write((line + "\n").encode("utf-8"))
@@ -133,9 +162,20 @@ def main() -> int:
             self.output.insertPlainText(text)
             self.output.moveCursor(QTextCursor.MoveOperation.End)
 
+        def on_started(self) -> None:
+            self.status.setText("running")
+            self.update_process_actions()
+
         def on_finished(self, exit_code: int, exit_status: QProcess.ExitStatus) -> None:
             self.status.setText(f"exited {exit_code}")
             self.append_text(f"\n[process exited: {exit_code}, {exit_status.name}]\n")
+            self.update_process_actions()
+
+        def update_process_actions(self) -> None:
+            running = self.is_running()
+            self.start_button.setEnabled(not running)
+            self.stop_button.setEnabled(running)
+            self.input.setEnabled(running)
 
     class ProfileDialog(QDialog):
         def __init__(self, profile=None, parent=None) -> None:
@@ -322,6 +362,8 @@ def main() -> int:
             self.preview.setPlainText("\n".join(lines))
 
     class MainWindow(QMainWindow):
+        CLOSE_STOP_POLICY = ProcessStopPolicy(terminate_timeout_ms=2000, kill_timeout_ms=500)
+
         def __init__(self) -> None:
             super().__init__()
             self.setObjectName("remoteOpsMain")
@@ -386,6 +428,7 @@ def main() -> int:
             self.profile_list.setMinimumWidth(300)
             self.tabs = QTabWidget()
             self.tabs.setObjectName("sessionTabs")
+            self.tabs.setTabsClosable(True)
             self.log = QTextEdit()
             self.log.setObjectName("activityLog")
             self.log.setReadOnly(True)
@@ -420,6 +463,7 @@ def main() -> int:
             self.edit_layout_button.clicked.connect(self.edit_selected_layout)
             self.remove_layout_button.clicked.connect(self.remove_selected_layout)
             self.open_layout_button.clicked.connect(self.open_selected_layout)
+            self.tabs.tabCloseRequested.connect(self.close_tab)
             self.design_select.currentIndexChanged.connect(self.apply_selected_design)
             self.find_button.clicked.connect(self.find_log_text)
             QShortcut(QKeySequence("Ctrl+R"), self, activated=self.refresh_profiles)
@@ -618,17 +662,19 @@ def main() -> int:
             self.tabs.addTab(box, "Welcome")
 
         def open_terminal_tab(self, plan: TerminalPanePlan) -> None:
-            pane = TerminalPane(plan)
+            pane = self.new_terminal_pane(plan)
             self.tabs.addTab(pane, plan.title)
             self.tabs.setCurrentWidget(pane)
+            self.update_session_status()
 
         def add_split(self, direction: str) -> None:
             orientation = Qt.Orientation.Horizontal if direction == "horizontal" else Qt.Orientation.Vertical
             splitter = QSplitter(orientation)
             for plan in split_shell_plans(2):
-                splitter.addWidget(TerminalPane(plan))
+                splitter.addWidget(self.new_terminal_pane(plan))
             self.tabs.addTab(splitter, f"Split {self.tabs.count()}")
             self.tabs.setCurrentWidget(splitter)
+            self.update_session_status()
 
         def create_layout(self) -> None:
             dialog = LayoutDialog(parent=self)
@@ -700,29 +746,120 @@ def main() -> int:
                 self.tabs.addTab(widget, layout.name)
                 self.tabs.setCurrentWidget(widget)
                 self.log.append(f"LAYOUT: {layout.name} ({len(plans)} panes)")
+                self.update_session_status()
             except (KeyError, LauncherError, ValueError) as exc:
                 QMessageBox.warning(self, "Layout failed", str(exc))
 
         def layout_widget(self, layout: Layout, plans: list[TerminalPanePlan]) -> QWidget:
             if len(plans) == 1:
-                return TerminalPane(plans[0])
+                return self.new_terminal_pane(plans[0])
             if layout.orientation == "vertical":
                 splitter = QSplitter(Qt.Orientation.Vertical)
                 for plan in plans:
-                    splitter.addWidget(TerminalPane(plan))
+                    splitter.addWidget(self.new_terminal_pane(plan))
                 return splitter
             if layout.orientation == "horizontal":
                 splitter = QSplitter(Qt.Orientation.Horizontal)
                 for plan in plans:
-                    splitter.addWidget(TerminalPane(plan))
+                    splitter.addWidget(self.new_terminal_pane(plan))
                 return splitter
             root = QSplitter(Qt.Orientation.Vertical)
             for offset in range(0, len(plans), 2):
                 row = QSplitter(Qt.Orientation.Horizontal)
                 for plan in plans[offset : offset + 2]:
-                    row.addWidget(TerminalPane(plan))
+                    row.addWidget(self.new_terminal_pane(plan))
                 root.addWidget(row)
             return root
+
+        def new_terminal_pane(self, plan: TerminalPanePlan) -> TerminalPane:
+            pane = TerminalPane(plan)
+            pane.process.started.connect(self.update_session_status)
+            pane.process.finished.connect(lambda *_args: self.update_session_status())
+            return pane
+
+        def close_tab(self, index: int) -> None:
+            widget = self.tabs.widget(index)
+            if widget is None:
+                return
+            running = [pane for pane in self.terminal_panes_in(widget) if pane.is_running()]
+            if running and not self.confirm_stop_processes("Close tab", len(running)):
+                return
+            self.stop_terminal_panes(running)
+            title = self.tabs.tabText(index)
+            self.tabs.removeTab(index)
+            widget.deleteLater()
+            self.log.append(f"TAB CLOSED: {title}")
+            self.update_session_status()
+
+        def terminal_panes_in(self, widget: QWidget) -> list[TerminalPane]:
+            panes: list[TerminalPane] = []
+            if isinstance(widget, TerminalPane):
+                panes.append(widget)
+            panes.extend(widget.findChildren(TerminalPane))
+            return panes
+
+        def all_terminal_panes(self) -> list[TerminalPane]:
+            panes: list[TerminalPane] = []
+            seen: set[int] = set()
+            for index in range(self.tabs.count()):
+                widget = self.tabs.widget(index)
+                if widget is None:
+                    continue
+                for pane in self.terminal_panes_in(widget):
+                    key = id(pane)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    panes.append(pane)
+            return panes
+
+        def running_terminal_panes(self) -> list[TerminalPane]:
+            return [pane for pane in self.all_terminal_panes() if pane.is_running()]
+
+        def stop_terminal_panes(self, panes: list[TerminalPane]) -> None:
+            stopped = 0
+            killed = 0
+            unfinished = 0
+            for pane in panes:
+                result = pane.stop(self.CLOSE_STOP_POLICY)
+                if result.was_running:
+                    stopped += 1
+                if result.kill_requested:
+                    killed += 1
+                if not result.finished:
+                    unfinished += 1
+            if stopped:
+                detail = f"STOPPED: {stopped} process pane(s)"
+                if killed:
+                    detail += f", {killed} killed after timeout"
+                if unfinished:
+                    detail += f", {unfinished} still exiting"
+                self.log.append(detail)
+
+        def confirm_stop_processes(self, title: str, count: int) -> bool:
+            answer = QMessageBox.question(
+                self,
+                title,
+                f"Stop {count} running process pane(s)?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            return answer == QMessageBox.StandardButton.Yes
+
+        def update_session_status(self) -> None:
+            running = len(self.running_terminal_panes())
+            if running:
+                self.statusBar().showMessage(f"Running process panes: {running}")
+            else:
+                self.statusBar().showMessage("No running process panes")
+
+        def closeEvent(self, event) -> None:
+            running = self.running_terminal_panes()
+            if running and not self.confirm_stop_processes("Quit Remote Ops Workspace", len(running)):
+                event.ignore()
+                return
+            self.stop_terminal_panes(running)
+            event.accept()
 
     app = QApplication(sys.argv)
     window = MainWindow()

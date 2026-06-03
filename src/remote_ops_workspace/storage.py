@@ -7,6 +7,7 @@ from typing import Iterable
 from .file_safety import write_json_atomic
 from .models import Profile
 from .paths import ensure_data_dir
+from .plugins import plugin_protocols
 from .profile_validation import (
     normalize_group_defaults,
     normalize_group_defaults_map,
@@ -34,23 +35,31 @@ class ProfileStore:
 
     def load(self, resolve: bool = True) -> list[Profile]:
         data = self._load_data()
+        extra_protocols = plugin_protocols()
         if not resolve:
-            return [prepare_profile(Profile.from_dict(item)) for item in data.get("profiles", [])]
+            return [
+                prepare_profile(Profile.from_dict(item), extra_protocols=extra_protocols)
+                for item in data.get("profiles", [])
+            ]
         defaults = data.get("group_defaults", {})
         return [
-            prepare_profile(Profile.from_dict(_apply_group_defaults(item, defaults.get(item.get("group", "default"), {}))))
+            prepare_profile(
+                Profile.from_dict(_apply_group_defaults(item, defaults.get(item.get("group", "default"), {}))),
+                extra_protocols=extra_protocols,
+            )
             for item in data.get("profiles", [])
         ]
 
     def save(self, profiles: Iterable[Profile]) -> None:
-        prepared = [prepare_profile(profile) for profile in profiles]
+        extra_protocols = plugin_protocols()
+        prepared = [prepare_profile(profile, extra_protocols=extra_protocols) for profile in profiles]
         data = self._load_data()
         data["version"] = 1
         data["profiles"] = [profile.to_dict() for profile in prepared]
         write_json_atomic(self.path, data, private=True)
 
     def add(self, profile: Profile, replace: bool = False) -> None:
-        profile = prepare_profile(profile)
+        profile = prepare_profile(profile, extra_protocols=plugin_protocols())
         profiles = self.load(resolve=False)
         names = {p.name for p in profiles}
         if profile.name in names and not replace:

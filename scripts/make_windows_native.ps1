@@ -24,6 +24,13 @@ function To-RepoPath([string]$Path) {
   return (Resolve-Path $Path).Path.Substring($Root.Length + 1).Replace("\", "/")
 }
 
+function Add-ArtifactIntegrity([hashtable]$Item) {
+  $ArtifactPath = Join-Path $Root $Item["file"]
+  $Item["size_bytes"] = (Get-Item $ArtifactPath).Length
+  $Item["sha256"] = (Get-FileHash -Algorithm SHA256 $ArtifactPath).Hash.ToLowerInvariant()
+  return $Item
+}
+
 function Find-InnoSetup {
   $Command = Get-Command "iscc.exe" -ErrorAction SilentlyContinue
   if ($Command) {
@@ -279,6 +286,8 @@ $Manifest = @(
     notes = @("Unsigned WiX MSI installer for managed Windows deployments.", "Built for Windows $Arch.")
   }
 )
+
+$Manifest = @($Manifest | ForEach-Object { Add-ArtifactIntegrity $_ })
 
 $ManifestPath = Join-Path $OutDir "remote-ops-workspace-v$Version-windows-$Arch-native-manifest.json"
 $Manifest | ConvertTo-Json -Depth 8 | Set-Content -Encoding UTF8 $ManifestPath

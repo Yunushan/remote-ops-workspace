@@ -36,6 +36,11 @@ def build_steps(
             "compile source, tests, and scripts",
             [python, "-m", "compileall", "src", "tests", "scripts"],
             env=_source_env(),
+        ),
+        VerifyStep(
+            "documentation consistency",
+            [python, "scripts/check_docs.py"],
+            env=_source_env(),
         )
     ]
     if lint:

@@ -30,7 +30,47 @@ Profile and command launch hardening:
 - SSH `proxy_jump` is the preferred jump-host path; `proxy_command` is rejected unless the profile explicitly sets `allow_unsafe_proxy_command=true`;
 - SSHv1 requires both an explicit `ssh1`/`sshv1` profile protocol and `allow_insecure_sshv1=true`; when enabled it adds `-1` to the generated SSH argv and remains insecure even when an external client supports it;
 - SFTP upload, delete, rename and local-overwrite download plans are marked destructive and are refused before execution unless the operator passes `--force`; broad delete/rename targets such as `/`, `.`, `~`, parent traversal and remote globs are rejected even with force;
+- GUI process-backed panes track their `QProcess` state, ask before closing tabs or quitting with live sessions, and apply terminate-then-kill cleanup with bounded waits;
+- `row serve-web` validates the bind host, refuses non-loopback interfaces unless `--allow-public-bind` is set, disables directory listing and adds static-app browser hardening headers;
 - snippets, custom profile commands, broadcast commands, network tools and X11 helpers are parsed as argv lists and rejected when empty or malformed.
+
+## Web/PWA and containers
+
+The bundled Web/PWA is a static demo workspace. It does not expose a live remote
+operation API. Demo profiles are kept in `sessionStorage`, not persistent
+`localStorage`, to reduce accidental retention of hostnames typed into the
+browser.
+
+The included Python static server sends Content Security Policy, frame denial,
+referrer, permissions and same-origin resource headers. The service worker caches
+only same-origin `GET` requests and deletes stale cache versions during
+activation.
+
+The web Docker image runs as UID/GID `10001`, uses `/data` for `ROW_HOME`, and
+the compose file binds the published port to `127.0.0.1` with read-only root
+filesystem, no-new-privileges, dropped Linux capabilities and a temporary `/tmp`.
+
+## Release supply chain
+
+Release scripts validate that GitHub tag names match `pyproject.toml`, keep
+release output inside the repository by default before deleting/recreating it,
+reject symlinked release inputs, and stamp source/install archives with
+deterministic metadata. Release manifests include `size_bytes` and `sha256` for
+each artifact, and the source/Python release job emits a SHA-256 checksum file
+for generated artifacts and the release manifest.
+
+GitHub release build jobs run with read-only contents permission and do not
+persist checkout credentials. Only the final publish job receives contents write
+permission.
+
+## Plugins
+
+Protocol launch plugins are Python packages loaded from the local environment
+through the `remote_ops_workspace.plugins` entry-point group. Treat installed
+plugins as trusted code: they can run Python during discovery and launch-plan
+generation. The core launcher validates the argv list returned by a plugin, but
+it cannot sandbox plugin package code. Install plugins only from trusted sources
+and inspect `row plugins list --json` before using plugin-backed profiles.
 
 ## Vault
 
@@ -41,7 +81,11 @@ Operational rules:
 - use a strong passphrase;
 - do not store vault passphrases in shell history;
 - prefer `ROW_VAULT_PASSWORD` only for short-lived automation contexts;
+- use `row vault set NAME --secret-env ENV` or `row vault set NAME --stdin` for automation so secret values are not placed in argv;
+- secret names are validated to reject empty, option-like, whitespace/control-character and parent-directory-style names;
 - `row vault get` refuses to print secrets unless `--show` is provided, or writes to an explicit `--out` file with best-effort owner-only permissions where supported;
+- `row vault status` reports path, initialization state and item counts without revealing secret names or values;
+- `row vault delete` requires `--force` to reduce accidental deletion;
 - do not commit `vault.json`.
 
 ## Local data writes

@@ -5,6 +5,7 @@ from typing import Mapping
 from . import command_safety as safe
 from .layouts import Layout, LayoutPane, parse_layout_pane, validate_layout
 from .models import Profile, Tunnel
+from .plugins import plugin_protocols
 from .profile_validation import prepare_profile
 
 
@@ -86,7 +87,8 @@ def profile_from_editor_data(data: Mapping[str, str]) -> Profile:
             credential_ref=_optional_clean(data.get("credential_ref"), "credential ref"),
             tunnels=parse_tunnels_text(data.get("tunnels", "")),
             options=parse_key_value_text(data.get("options", "")),
-        )
+        ),
+        extra_protocols=plugin_protocols(),
     )
 
 

@@ -48,6 +48,7 @@ from .models import Profile, Tunnel
 from .network_tools import build_network_tool_plan, check_tcp_port, run_network_tool
 from .paths import ensure_data_dir
 from .platform_targets import load_platform_targets
+from .plugins import load_plugin_registry
 from .profile_importers import SUPPORTED_IMPORT_FORMATS, import_profiles_into_store
 from .snippets import Snippet, SnippetStore, run_snippet
 from .storage import ProfileStore
@@ -140,6 +141,12 @@ def build_parser() -> argparse.ArgumentParser:
     features.add_argument("--json", action="store_true")
     features.add_argument("--coverage", action="store_true", help="show weighted product coverage percentages")
     features.set_defaults(func=cmd_features)
+
+    plugins = sub.add_parser("plugins", help="inspect installed protocol launch plugins")
+    plugins_sub = plugins.add_subparsers(required=True)
+    plugins_list = plugins_sub.add_parser("list", help="list installed plugin entry points")
+    plugins_list.add_argument("--json", action="store_true")
+    plugins_list.set_defaults(func=cmd_plugins_list)
 
     snippet = sub.add_parser("snippet", help="manage reusable snippets and macros")
     snip_sub = snippet.add_subparsers(required=True)
@@ -328,6 +335,17 @@ def build_parser() -> argparse.ArgumentParser:
     vinit.set_defaults(func=cmd_vault_init)
     vset = vsub.add_parser("set", help="set a secret")
     vset.add_argument("name")
+    vset_source = vset.add_mutually_exclusive_group()
+    vset_source.add_argument(
+        "--secret-env",
+        metavar="ENV",
+        help="read the secret value from an environment variable instead of prompting",
+    )
+    vset_source.add_argument(
+        "--stdin",
+        action="store_true",
+        help="read the secret value from stdin; one trailing newline is removed",
+    )
     vset.set_defaults(func=cmd_vault_set)
     vget = vsub.add_parser("get", help="retrieve a secret")
     vget.add_argument("name")
@@ -339,8 +357,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="write the secret to a file with best-effort owner-only permissions",
     )
     vget.set_defaults(func=cmd_vault_get)
+    vdelete = vsub.add_parser("delete", help="delete a secret")
+    vdelete.add_argument("name")
+    vdelete.add_argument("--force", action="store_true", help="confirm deletion without prompting")
+    vdelete.set_defaults(func=cmd_vault_delete)
     vlist = vsub.add_parser("list", help="list secret names")
     vlist.set_defaults(func=cmd_vault_list)
+    vstatus = vsub.add_parser("status", help="show vault status without revealing secrets")
+    vstatus.add_argument("--json", action="store_true")
+    vstatus.set_defaults(func=cmd_vault_status)
 
     export = sub.add_parser("export", help="export profiles bundle")
     export.add_argument("--out", required=True, type=Path)
@@ -373,6 +398,11 @@ def build_parser() -> argparse.ArgumentParser:
     web = sub.add_parser("serve-web", help="serve static Web/PWA app")
     web.add_argument("--host", default="127.0.0.1")
     web.add_argument("--port", default=8765, type=int)
+    web.add_argument(
+        "--allow-public-bind",
+        action="store_true",
+        help="allow binding Web/PWA to a non-loopback interface",
+    )
     web.set_defaults(func=cmd_serve_web)
 
     return parser
@@ -536,6 +566,23 @@ def cmd_features(args: argparse.Namespace) -> int:
         return 0
     for row in feature_summary():
         print(f"{row['id']:<32} {row['status']:<18} {row['coverage']}")
+    return 0
+
+
+def cmd_plugins_list(args: argparse.Namespace) -> int:
+    registry = load_plugin_registry()
+    if args.json:
+        print(json.dumps(registry.to_dict(), indent=2, sort_keys=True))
+        return 0
+    if not registry.loaded and not registry.failures:
+        print("no plugins installed")
+        return 0
+    for plugin in registry.loaded:
+        protocols = ", ".join(plugin.protocols) or "-"
+        executables = ", ".join(plugin.executables) or "-"
+        print(f"{plugin.name:<28} protocols {protocols:<24} executables {executables}")
+    for failure in registry.failures:
+        print(f"failed: {failure.name}: {failure.error}", file=sys.stderr)
     return 0
 
 
@@ -809,7 +856,7 @@ def cmd_vault_init(args: argparse.Namespace) -> int:
 
 def cmd_vault_set(args: argparse.Namespace) -> int:
     passphrase = _vault_passphrase(confirm=False)
-    secret = getpass("Secret value: ")
+    secret = _vault_secret_value(args)
     LocalVault().set(args.name, secret, passphrase)
     print(f"secret saved: {args.name}")
     return 0
@@ -831,6 +878,31 @@ def cmd_vault_get(args: argparse.Namespace) -> int:
 def cmd_vault_list(args: argparse.Namespace) -> int:
     for name in LocalVault().list():
         print(name)
+    return 0
+
+
+def cmd_vault_delete(args: argparse.Namespace) -> int:
+    if not args.force:
+        raise ValueError("refusing to delete secret without --force")
+    LocalVault().delete(args.name)
+    print(f"secret deleted: {args.name}")
+    return 0
+
+
+def cmd_vault_status(args: argparse.Namespace) -> int:
+    status = LocalVault().status()
+    if args.json:
+        print(json.dumps(status.to_dict(), indent=2, sort_keys=True))
+        return 0
+    print(f"path: {status.path}")
+    print(f"initialized: {'yes' if status.initialized else 'no'}")
+    print(f"backend: {'available' if status.backend_available else 'unavailable'}")
+    if status.item_count is not None:
+        print(f"secrets: {status.item_count}")
+    if status.version is not None:
+        print(f"version: {status.version}")
+    if status.kdf:
+        print(f"kdf: {status.kdf}")
     return 0
 
 
@@ -868,7 +940,7 @@ def cmd_gui(args: argparse.Namespace) -> int:
 
 
 def cmd_serve_web(args: argparse.Namespace) -> int:
-    serve_web(host=args.host, port=args.port)
+    serve_web(host=args.host, port=args.port, allow_public_bind=args.allow_public_bind)
     return 0
 
 
@@ -895,6 +967,23 @@ def _vault_passphrase(confirm: bool) -> str:
     if "ROW_VAULT_PASSWORD" in os.environ:
         return _secret_from_env("ROW_VAULT_PASSWORD", "vault passphrase")
     return prompt_passphrase(confirm=confirm)
+
+
+def _vault_secret_value(args: argparse.Namespace, input_stream=None) -> str:
+    if getattr(args, "secret_env", None):
+        return _secret_from_env(args.secret_env, "secret")
+    if getattr(args, "stdin", False):
+        stream = input_stream or sys.stdin
+        return _strip_one_trailing_newline(stream.read())
+    return getpass("Secret value: ")
+
+
+def _strip_one_trailing_newline(value: str) -> str:
+    if value.endswith("\r\n"):
+        return value[:-2]
+    if value.endswith("\n") or value.endswith("\r"):
+        return value[:-1]
+    return value
 
 
 def _write_secret_file(path: Path, secret: str) -> None:

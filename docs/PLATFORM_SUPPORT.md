@@ -156,4 +156,4 @@ row doctor
 
 ## Web
 
-`apps/web` is static and can be served by the included Python HTTP server, Nginx, Apache, Caddy, a static host, or an internal portal.
+`apps/web` is static and can be served by the included Python HTTP server, Nginx, Apache, Caddy, a static host, or an internal portal. The included server binds to loopback by default and requires `--allow-public-bind` for non-loopback interfaces. The web Docker compose file publishes `127.0.0.1:8765` by default.

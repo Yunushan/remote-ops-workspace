@@ -1,9 +1,12 @@
 {
   "name": "Remote Ops Workspace",
   "short_name": "RemoteOps",
+  "id": "./index.html",
   "start_url": "./index.html",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#0d1117",
   "theme_color": "#1f6feb",
+  "prefer_related_applications": false,
   "icons": []
 }

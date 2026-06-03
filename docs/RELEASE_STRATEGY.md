@@ -3,6 +3,19 @@
 Remote Ops Workspace publishes release assets in phases. Each phase should ship
 only when the artifact is real, reproducible, and documented.
 
+Release integrity rules:
+
+- Release tags must match `pyproject.toml` exactly, for example `v0.1.0`.
+- Source/install bundles are built with deterministic archive metadata using
+  `SOURCE_DATE_EPOCH` or a fixed default.
+- Every artifact entry in release manifests includes `size_bytes` and `sha256`.
+- The source/Python release job also emits
+  `remote-ops-workspace-v<version>-SHA256SUMS.txt` covering every generated
+  artifact plus the release manifest.
+- CI build jobs run with read-only repository contents permission and checkout
+  credentials are not persisted. Only the publish job receives release write
+  permission.
+
 ## Phase 1: Python package artifacts
 
 Status: active.
@@ -13,6 +26,8 @@ Release assets:
 - `remote_ops_workspace-0.1.0.tar.gz`
 - target source/install bundles for Windows, Linux, macOS, BSD, Solaris,
   Android/Termux, and Web/PWA
+- `remote-ops-workspace-v0.1.0-release-manifest.json`
+- `remote-ops-workspace-v0.1.0-SHA256SUMS.txt`
 
 Purpose:
 

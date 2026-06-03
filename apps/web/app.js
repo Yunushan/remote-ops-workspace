@@ -3,6 +3,8 @@ const form = document.querySelector('#profile-form');
 const grid = document.querySelector('#terminal-grid');
 const featureTags = document.querySelector('#feature-tags');
 const STORAGE_KEY = 'remote-ops-workspace-demo-profiles';
+const PROTOCOLS = new Set(['ssh', 'rdp', 'vnc', 'sftp', 'mosh', 'telnet', 'https', 'serial']);
+const storage = demoStorage();
 
 const features = ['SSH', 'RDP', 'VNC', 'SFTP', 'Mosh', 'Telnet', 'SPICE', 'X2Go', 'ICA', 'HTTP/HTTPS', 'Serial', 'Raw Socket', 'Vault', 'Snippets', 'Split Panes', 'PWA'];
 features.forEach(feature => {
@@ -12,11 +14,21 @@ features.forEach(feature => {
 });
 
 function loadProfiles() {
-  return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+  if (!storage) {
+    return [];
+  }
+  try {
+    const profiles = JSON.parse(storage.getItem(STORAGE_KEY) || '[]');
+    return Array.isArray(profiles) ? profiles.filter(isDemoProfile).slice(0, 50) : [];
+  } catch {
+    return [];
+  }
 }
 
 function saveProfiles(profiles) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(profiles));
+  if (storage) {
+    storage.setItem(STORAGE_KEY, JSON.stringify(profiles.slice(-50)));
+  }
 }
 
 function renderProfiles() {
@@ -31,8 +43,17 @@ function renderProfiles() {
 form.addEventListener('submit', event => {
   event.preventDefault();
   const data = Object.fromEntries(new FormData(form).entries());
+  const protocol = String(data.protocol || '').toLowerCase();
+  const profile = {
+    name: cleanDemoField(data.name, 80),
+    protocol: PROTOCOLS.has(protocol) ? protocol : 'ssh',
+    target: cleanDemoField(data.target, 160),
+  };
+  if (!profile.name || !profile.target) {
+    return;
+  }
   const profiles = loadProfiles();
-  profiles.push(data);
+  profiles.push(profile);
   saveProfiles(profiles);
   form.reset();
   renderProfiles();
@@ -42,20 +63,56 @@ document.querySelectorAll('[data-action]').forEach(button => {
   button.addEventListener('click', () => {
     const action = button.dataset.action;
     if (action === 'clear') {
-      grid.innerHTML = '<div class="terminal-pane">PWA shell pane<br>Future API/terminal plugin seam.</div>';
+      grid.replaceChildren(defaultPane());
       grid.style.gridTemplateColumns = '1fr';
       return;
     }
-    const pane = document.createElement('div');
-    pane.className = 'terminal-pane';
-    pane.textContent = `New ${action === 'split-h' ? 'horizontal' : 'vertical'} pane\nDemo split-pane workspace.`;
-    grid.appendChild(pane);
+    grid.appendChild(terminalPane(`New ${action === 'split-h' ? 'horizontal' : 'vertical'} pane\nDemo split-pane workspace.`));
     grid.style.gridTemplateColumns = action === 'split-h' ? 'repeat(2, 1fr)' : '1fr';
   });
 });
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+
+function demoStorage() {
+  try {
+    const testKey = `${STORAGE_KEY}-probe`;
+    sessionStorage.setItem(testKey, '1');
+    sessionStorage.removeItem(testKey);
+    return sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
+function isDemoProfile(profile) {
+  return Boolean(
+    profile
+      && typeof profile.name === 'string'
+      && typeof profile.protocol === 'string'
+      && typeof profile.target === 'string'
+      && PROTOCOLS.has(profile.protocol),
+  );
+}
+
+function cleanDemoField(value, maxLength) {
+  return String(value || '')
+    .replace(/[\u0000-\u001f\u007f]/g, '')
+    .trim()
+    .slice(0, maxLength);
+}
+
+function terminalPane(text) {
+  const pane = document.createElement('div');
+  pane.className = 'terminal-pane';
+  pane.textContent = text;
+  return pane;
+}
+
+function defaultPane() {
+  return terminalPane('PWA shell pane\nFuture API/terminal plugin seam.');
 }
 
 renderProfiles();

@@ -41,7 +41,42 @@ def build_steps(
             "documentation consistency",
             [python, "scripts/check_docs.py"],
             env=_source_env(),
-        )
+        ),
+        VerifyStep(
+            "release identity and artifact truth",
+            [python, "scripts/check_release_truth.py"],
+            env=_source_env(),
+        ),
+        VerifyStep(
+            "release toolchain reproducibility",
+            [python, "scripts/check_release_toolchain.py"],
+            env=_source_env(),
+        ),
+        VerifyStep(
+            "optional dependency smoke",
+            [python, "scripts/check_optional_dependencies.py"],
+            env=_source_env(),
+        ),
+        VerifyStep(
+            "native release hardening",
+            [python, "scripts/check_native_release_hardening.py"],
+            env=_source_env(),
+        ),
+        VerifyStep(
+            "GUI preview workflow",
+            [python, "scripts/check_gui_design_previews.py"],
+            env=_source_env(),
+        ),
+        VerifyStep(
+            "first-run UX",
+            [python, "scripts/check_first_run_ux.py"],
+            env=_source_env(),
+        ),
+        VerifyStep(
+            "feature reality alignment",
+            [python, "scripts/check_feature_reality.py"],
+            env=_source_env(),
+        ),
     ]
     if lint:
         steps.append(

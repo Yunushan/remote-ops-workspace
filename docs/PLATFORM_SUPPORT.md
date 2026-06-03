@@ -20,12 +20,14 @@ each public target badge:
 | Windows native | `remote-ops-workspace-v0.1.0-windows-<x86\|x64\|arm64>-setup.exe` |
 | Windows native | `remote-ops-workspace-v0.1.0-windows-<x86\|x64\|arm64>.msi` |
 | Windows native | `remote-ops-workspace-v0.1.0-windows-<x86\|x64\|arm64>-native.zip` |
-| macOS native | `remote-ops-workspace-v0.1.0-macos-<arch>.dmg` |
-| macOS native | `remote-ops-workspace-v0.1.0-macos-<arch>.pkg` |
-| Linux native | `remote-ops-workspace-v0.1.0-linux-<i386\|amd64\|armhf\|arm64>.deb` |
-| Linux native | `remote-ops-workspace-v0.1.0-linux-<i686\|x86_64\|armv7hl\|aarch64>.rpm` |
-| Linux native | `remote-ops-workspace-v0.1.0-linux-<i686\|x86_64\|armhf\|aarch64>.AppImage` |
-| Linux native | `remote-ops-workspace-v0.1.0-linux-<i686\|x86_64\|armhf\|aarch64>-native.tar.gz` |
+| macOS native | `remote-ops-workspace-v0.1.0-macos-<x64\|arm64>.dmg` |
+| macOS native | `remote-ops-workspace-v0.1.0-macos-<x64\|arm64>.pkg` |
+| macOS native | `remote-ops-workspace-v0.1.0-macos-<x64\|arm64>-native-manifest.json` |
+| Linux native | `remote-ops-workspace-v0.1.0-linux-<amd64\|arm64>.deb` |
+| Linux native | `remote-ops-workspace-v0.1.0-linux-<x86_64\|aarch64>.rpm` |
+| Linux native | `remote-ops-workspace-v0.1.0-linux-<x86_64\|aarch64>.AppImage` |
+| Linux native | `remote-ops-workspace-v0.1.0-linux-<x86_64\|aarch64>-native.tar.gz` |
+| Linux native | `remote-ops-workspace-v0.1.0-linux-<x86_64\|aarch64>-native-manifest.json` |
 | Manifests | `remote-ops-workspace-v0.1.0-*-manifest.json` |
 
 The platform bundles include source, docs, examples, relevant installer entry
@@ -34,10 +36,13 @@ bundles; SSH/RDP/VNC/X11/SPICE/X2Go/ICA rendering still depends on the external
 clients available on the target system.
 
 Native `.exe`, `.msi`, `.dmg`, `.pkg`, `.deb`, `.rpm`, and AppImage artifacts
-are built by OS-specific release jobs or matching self-hosted builders. Windows
-and macOS artifacts are unsigned CI builds until release signing credentials are
-configured. APK-style artifacts remain out of scope until there is a real native
-Android wrapper.
+are built by OS-specific release jobs or matching self-hosted builders. The
+default GitHub release workflow uploads Windows `x86`/`x64`/`arm64`, macOS
+`x64`/`arm64`, and Linux `x86_64`/`aarch64` native artifacts. Extra Linux
+`i386`/`i686` and `armhf` mappings are script-supported only when a matching
+builder runs `scripts/make_linux_native.sh`. Windows and macOS artifacts are
+unsigned CI builds until release signing credentials are configured. APK-style
+artifacts remain out of scope until there is a real native Android wrapper.
 
 Architecture support is declared in `configs/platform_targets.json` and exposed
 with:
@@ -151,6 +156,7 @@ python -m venv .venv
 . .venv/bin/activate
 pip install -e .
 row init
+row welcome
 row doctor
 ```
 

@@ -135,6 +135,10 @@ def add_integrity(item: dict[str, object]) -> dict[str, object]:
     item["sha256"] = sha256_file(path)
     return item
 
+def write_checksums(paths: list[Path], checksum_path: Path) -> None:
+    lines = [f"{sha256_file(path)}  {path.name}" for path in paths]
+    checksum_path.write_text("\n".join(lines) + "\n", encoding="ascii")
+
 manifest = [
     {
         "phase": "phase-3-macos-native",
@@ -166,7 +170,10 @@ manifest = [add_integrity(item) for item in manifest]
 
 manifest_path = out_dir / f"remote-ops-workspace-v{version}-macos-{arch}-native-manifest.json"
 manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+checksums = out_dir / f"remote-ops-workspace-v{version}-macos-{arch}-native-SHA256SUMS.txt"
+write_checksums([dmg, pkg, manifest_path], checksums)
 print(f"created {repo_path(dmg)}")
 print(f"created {repo_path(pkg)}")
 print(f"created {repo_path(manifest_path)}")
+print(f"created {repo_path(checksums)}")
 PY

@@ -49,14 +49,14 @@ intentionally not emitted on the command line.
 Examples:
 
 ```bash
-row profile add --name edge --protocol ssh --host 192.0.2.10 --username admin \
+row profile add --name edge --protocol ssh --host ssh.example.invalid --username admin \
   --option compression=true --option keepalive_interval=30 \
   --option strict_host_key_checking=accept-new --option proxy_jump=bastion
 
-row profile add --name legacy-router --protocol ssh1 --host 192.0.2.11 --username admin \
+row profile add --name legacy-router --protocol ssh1 --host legacy-router.example.invalid --username admin \
   --option allow_insecure_sshv1=true
 
-row profile add --name desktop --protocol rdp --host 192.0.2.20 \
+row profile add --name desktop --protocol rdp --host rdp.example.invalid \
   --option geometry=1600x900 --option cert_ignore=true --option clipboard=false
 
 row profile add --name console --protocol serial --path COM3 \

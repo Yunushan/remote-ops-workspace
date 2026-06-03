@@ -1,12 +1,12 @@
 # Quickstart: Linux
 
 ```bash
-git clone https://github.com/YOUR-ORG/remote-ops-workspace.git
+git clone https://github.com/Yunushan/remote-ops-workspace.git
 cd remote-ops-workspace
 ./installers/install.sh
-row init
+row welcome
 row doctor
-row profile add --name lab --protocol ssh --host 192.0.2.10 --username admin
+row profile add --name lab --protocol ssh --host ssh.example.invalid --username admin
 row connect lab --dry-run
 ```
 

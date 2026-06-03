@@ -199,8 +199,14 @@ cp "$APPDIR/remote-ops-workspace.svg" "$APPDIR/usr/share/icons/hicolor/scalable/
 
 APPIMAGE="$OUT_DIR/remote-ops-workspace-v${VERSION}-linux-${APPIMAGE_ARCH}.AppImage"
 APPIMAGETOOL="${APPIMAGETOOL:-$BUILD_DIR/appimagetool-${APPIMAGE_ARCH}.AppImage}"
+APPIMAGETOOL_URL="${APPIMAGETOOL_URL:-https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${APPIMAGE_ARCH}.AppImage}"
 if ! command -v appimagetool >/dev/null 2>&1 && [[ ! -x "$APPIMAGETOOL" ]]; then
-  curl -fsSL -o "$APPIMAGETOOL" "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-${APPIMAGE_ARCH}.AppImage"
+  curl -fsSL -o "$APPIMAGETOOL" "$APPIMAGETOOL_URL"
+  if [[ -n "${APPIMAGETOOL_SHA256:-}" ]]; then
+    echo "${APPIMAGETOOL_SHA256}  ${APPIMAGETOOL}" | sha256sum -c -
+  else
+    echo "warning: APPIMAGETOOL_SHA256 is not set; downloaded appimagetool was not checksum-verified" >&2
+  fi
   chmod +x "$APPIMAGETOOL"
 fi
 
@@ -249,6 +255,10 @@ def add_integrity(item: dict[str, object]) -> dict[str, object]:
     item["size_bytes"] = path.stat().st_size
     item["sha256"] = sha256_file(path)
     return item
+
+def write_checksums(paths: list[Path], checksum_path: Path) -> None:
+    lines = [f"{sha256_file(path)}  {path.name}" for path in paths]
+    checksum_path.write_text("\n".join(lines) + "\n", encoding="ascii")
 
 manifest = [
     {
@@ -309,6 +319,8 @@ manifest = [add_integrity(item) for item in manifest]
 
 manifest_path = out_dir / f"remote-ops-workspace-v{version}-linux-{appimage_arch}-native-manifest.json"
 manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-for path in (deb, rpm, appimage, tarball, manifest_path):
+checksums = out_dir / f"remote-ops-workspace-v{version}-linux-{appimage_arch}-native-SHA256SUMS.txt"
+write_checksums([deb, rpm, appimage, tarball, manifest_path], checksums)
+for path in (deb, rpm, appimage, tarball, manifest_path, checksums):
     print(f"created {repo_path(path)}")
 PY

@@ -13,6 +13,13 @@ def test_verify_steps_include_full_checks_and_cli_smoke(tmp_path: Path) -> None:
 
     assert "compile source, tests, and scripts" in names
     assert "documentation consistency" in names
+    assert "release identity and artifact truth" in names
+    assert "release toolchain reproducibility" in names
+    assert "optional dependency smoke" in names
+    assert "native release hardening" in names
+    assert "GUI preview workflow" in names
+    assert "first-run UX" in names
+    assert "feature reality alignment" in names
     assert "pytest" in names
     assert "CLI smoke: init temp workspace" in names
     assert "CLI smoke: feature coverage" in names
@@ -28,6 +35,13 @@ def test_verify_quick_mode_skips_pytest_but_keeps_cli_smoke(tmp_path: Path) -> N
 
     assert "compile source, tests, and scripts" in names
     assert "documentation consistency" in names
+    assert "release identity and artifact truth" in names
+    assert "release toolchain reproducibility" in names
+    assert "optional dependency smoke" in names
+    assert "native release hardening" in names
+    assert "GUI preview workflow" in names
+    assert "first-run UX" in names
+    assert "feature reality alignment" in names
     assert "pytest" not in names
     assert "CLI smoke: init temp workspace" in names
     assert "CLI smoke: feature coverage" in names

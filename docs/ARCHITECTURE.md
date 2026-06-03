@@ -20,7 +20,7 @@ Profiles are stored as JSON under the platform-specific config directory or unde
 {
   "name": "lab-ssh",
   "protocol": "ssh",
-  "host": "192.0.2.10",
+  "host": "ssh.example.invalid",
   "port": 22,
   "username": "admin",
   "group": "lab",
@@ -74,8 +74,11 @@ my_protocol = "my_package.plugin:Plugin"
 Today this entry point is wired for protocol launch plugins. A plugin declares
 `name`, `protocols` and optional `executables`, then implements
 `build(profile) -> LaunchPlan`. Installed plugin protocols are accepted by
-profile validation, can be listed with `row plugins list`, appear in `row doctor`,
-and are dispatched by `row connect`.
+profile validation, can be listed with `row plugins list`, validated with
+`row plugins validate`, appear in `row doctor`, and are dispatched by
+`row connect`. `row plugins scaffold` creates a minimal third-party package
+with the expected entry point, plugin class and launch-plan test. See
+[`PLUGIN_DEVELOPMENT.md`](PLUGIN_DEVELOPMENT.md) for the exact contract.
 
 Sync backends, terminal widgets, vault backends and network-tool plugins remain
 future extension points. They should not be represented as active integrations

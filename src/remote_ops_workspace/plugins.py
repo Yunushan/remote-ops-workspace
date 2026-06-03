@@ -98,6 +98,11 @@ def load_plugin_registry(*, entry_points_provider: EntryPointsProvider | None = 
             protocols = normalize_plugin_protocols(getattr(instance, "protocols", ()))
             if not protocols:
                 raise ValueError("plugin must declare at least one protocol")
+            plugin_name = str(getattr(instance, "name", ep.name)).strip()
+            if not plugin_name:
+                raise ValueError("plugin name must not be empty")
+            if not callable(getattr(instance, "build", None)):
+                raise ValueError("plugin must implement build(profile) -> LaunchPlan")
             collisions = sorted(set(protocols) & SUPPORTED_PROFILE_PROTOCOLS)
             if collisions:
                 raise ValueError(
@@ -105,7 +110,7 @@ def load_plugin_registry(*, entry_points_provider: EntryPointsProvider | None = 
                 )
             loaded.append(
                 LoadedPlugin(
-                    name=str(getattr(instance, "name", ep.name)),
+                    name=plugin_name,
                     protocols=protocols,
                     executables=normalize_plugin_executables(getattr(instance, "executables", ())),
                     object=instance,

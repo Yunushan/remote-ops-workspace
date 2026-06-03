@@ -8,6 +8,11 @@ on:
 permissions:
   contents: read
 
+env:
+  SOURCE_DATE_EPOCH: "1704067200"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PYTHONHASHSEED: "0"
+
 jobs:
   source-and-python:
     runs-on: ubuntu-latest
@@ -19,7 +24,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install release build tools
-        run: python -m pip install --upgrade build setuptools wheel
+        run: python -m pip install --constraint requirements-release.txt pip setuptools wheel build
       - name: Build source and Python package assets
         run: python scripts/make_release.py
       - uses: actions/upload-artifact@v4
@@ -52,12 +57,12 @@ jobs:
           python-version: "3.12"
           architecture: ${{ matrix.python-architecture }}
       - name: Install Python packaging dependencies
-        run: python -m pip install --upgrade pip setuptools wheel ".[security,package]"
+        run: python -m pip install --constraint requirements-release.txt pip setuptools wheel ".[security,package]"
       - name: Install Windows installer toolchains
         shell: powershell
         run: |
-          choco install innosetup -y --no-progress
-          dotnet tool install --global wix
+          choco install innosetup --version=6.3.3 -y --no-progress
+          dotnet tool install --global wix --version 5.0.2
       - name: Build Windows EXE and MSI installers
         shell: powershell
         run: .\scripts\make_windows_native.ps1 -Arch "${{ matrix.arch }}"
@@ -85,7 +90,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install Python packaging dependencies
-        run: python -m pip install --upgrade pip setuptools wheel ".[desktop,security,package]"
+        run: python -m pip install --constraint requirements-release.txt pip setuptools wheel ".[desktop,security,package]"
       - name: Build macOS DMG and PKG installers
         run: EXPECTED_ARTIFACT_ARCH="${{ matrix.arch }}" bash scripts/make_macos_native.sh
       - uses: actions/upload-artifact@v4
@@ -116,7 +121,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y rpm
       - name: Install Python packaging dependencies
-        run: python -m pip install --upgrade pip setuptools wheel ".[security,package]"
+        run: python -m pip install --constraint requirements-release.txt pip setuptools wheel ".[security,package]"
       - name: Build Linux DEB, RPM and AppImage packages
         run: TARGET_ARCH="${{ matrix.arch }}" bash scripts/make_linux_native.sh
       - uses: actions/upload-artifact@v4

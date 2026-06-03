@@ -14,7 +14,8 @@ python -m venv .venv
 . .venv/bin/activate
 pip install -e .
 row init
-row profile add --name phone-ssh --protocol ssh --host 192.0.2.10 --username admin
+row welcome
+row profile add --name phone-ssh --protocol ssh --host ssh.example.invalid --username admin
 row connect phone-ssh --dry-run
 ```
 

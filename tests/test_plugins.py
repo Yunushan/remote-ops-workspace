@@ -9,6 +9,7 @@ import remote_ops_workspace.plugins as plugins_module
 from remote_ops_workspace.cli import main
 from remote_ops_workspace.launcher import LaunchPlan, build_launch_plan
 from remote_ops_workspace.models import Profile
+from remote_ops_workspace.plugin_dev import scaffold_plugin, validate_installed_plugins
 from remote_ops_workspace.plugins import load_plugin_registry
 from remote_ops_workspace.profile_validation import prepare_profile
 from remote_ops_workspace.storage import ProfileStore
@@ -28,9 +29,26 @@ class BadPlugin:
     protocols = ()
 
 
+class NoBuildPlugin:
+    name = "no build plugin"
+    protocols = ("nobuild",)
+
+
 class ShadowPlugin:
     name = "shadow plugin"
     protocols = ("ssh",)
+
+    def build(self, profile: Profile) -> LaunchPlan:
+        return LaunchPlan(profile.protocol, ["ssh", profile.name], [])
+
+
+class InvalidPlanPlugin:
+    name = "invalid plan plugin"
+    protocols = ("invalid",)
+    executables = ("invalid-client",)
+
+    def build(self, profile: Profile) -> object:
+        return ["invalid-client", profile.name]
 
 
 class FakeEntryPoint:
@@ -82,14 +100,16 @@ def test_plugin_registry_loads_protocol_plugins_and_failures() -> None:
             FakeEntryPoint("DemoPlugin", DemoPlugin),
             FakeEntryPoint("BrokenPlugin", DemoPlugin, fail=True),
             FakeEntryPoint("BadPlugin", BadPlugin),
+            FakeEntryPoint("NoBuildPlugin", NoBuildPlugin),
         )
     )
 
     assert registry.protocols == {"demo", "demo-alt"}
     assert registry.protocol_clients() == {"demo": ["demo-client"], "demo-alt": ["demo-client"]}
     assert registry.plugin_for_protocol("demo").name == "demo plugin"
-    assert len(registry.failures) == 2
+    assert len(registry.failures) == 3
     assert registry.to_dict()["loaded"][0]["protocols"] == ["demo", "demo-alt"]
+    assert any("build(profile)" in failure.error for failure in registry.failures)
 
 
 def test_plugin_registry_rejects_builtin_protocol_collisions() -> None:
@@ -136,3 +156,65 @@ def test_cli_plugins_list_json_reports_loaded_plugins() -> None:
     assert rc == 0
     assert payload["loaded"][0]["name"] == "demo plugin"
     assert payload["loaded"][0]["protocols"] == ["demo", "demo-alt"]
+
+
+def test_plugin_validation_report_checks_launch_plan_shape() -> None:
+    report = validate_installed_plugins(entry_points_provider=fake_entry_points)
+
+    assert report.ok
+    assert [check.protocol for check in report.plan_checks] == ["demo", "demo-alt"]
+    assert report.plan_checks[0].command == ["demo-client", "plugin-check-demo"]
+
+
+def test_plugin_validation_report_rejects_invalid_plan_shape() -> None:
+    report = validate_installed_plugins(
+        entry_points_provider=lambda: FakeEntryPoints(FakeEntryPoint("InvalidPlanPlugin", InvalidPlanPlugin))
+    )
+
+    assert not report.ok
+    assert "LaunchPlan" in report.plan_checks[0].error
+
+
+def test_cli_plugins_validate_json_reports_plan_checks() -> None:
+    with with_fake_entry_points(fake_entry_points):
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            rc = main(["plugins", "validate", "--json"])
+
+    payload = json.loads(stdout.getvalue())
+    assert rc == 0
+    assert payload["ok"] is True
+    assert payload["plan_checks"][0]["command"] == ["demo-client", "plugin-check-demo"]
+
+
+def test_plugin_scaffold_writes_minimal_project(tmp_path: Path) -> None:
+    result = scaffold_plugin(
+        out_dir=tmp_path / "row-demo-plugin",
+        project_name="row-demo-plugin",
+        module_name="row_demo_plugin",
+        protocol="demo",
+        client="demo-client",
+    )
+
+    assert (result.root / "pyproject.toml").exists()
+    assert (result.root / "src" / "row_demo_plugin" / "plugin.py").exists()
+    pyproject = (result.root / "pyproject.toml").read_text(encoding="utf-8")
+    plugin = (result.root / "src" / "row_demo_plugin" / "plugin.py").read_text(encoding="utf-8")
+    assert '[project.entry-points."remote_ops_workspace.plugins"]' in pyproject
+    assert 'demo = "row_demo_plugin.plugin:Plugin"' in pyproject
+    assert 'protocols = ("demo",)' in plugin
+
+
+def test_plugin_scaffold_rejects_builtin_protocol(tmp_path: Path) -> None:
+    try:
+        scaffold_plugin(
+            out_dir=tmp_path / "bad-plugin",
+            project_name="bad-plugin",
+            module_name="bad_plugin",
+            protocol="ssh",
+            client="ssh",
+        )
+    except ValueError as exc:
+        assert "built-in protocol" in str(exc)
+    else:
+        raise AssertionError("plugin scaffold should reject built-in protocol collisions")

@@ -33,6 +33,7 @@ from .file_transfer import (
     run_sftp_interactive,
     run_sftp_queue,
 )
+from .first_run import first_run_json, first_run_payload, format_first_run
 from .file_safety import write_text_atomic
 from .keys import build_keygen_plan, run_keygen
 from .launcher import LauncherError, launch
@@ -47,6 +48,14 @@ from .layouts import (
 from .models import Profile, Tunnel
 from .network_tools import build_network_tool_plan, check_tcp_port, run_network_tool
 from .paths import ensure_data_dir
+from .plugin_dev import (
+    DEFAULT_PLUGIN_CHECK_HOST,
+    DEFAULT_PLUGIN_CHECK_USERNAME,
+    report_to_text,
+    result_to_json,
+    scaffold_plugin,
+    validate_installed_plugins,
+)
 from .platform_targets import load_platform_targets
 from .plugins import load_plugin_registry
 from .profile_importers import SUPPORTED_IMPORT_FORMATS, import_profiles_into_store
@@ -75,7 +84,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     init = sub.add_parser("init", help="initialize local workspace data")
     init.add_argument("--no-examples", action="store_true", help="do not create example profiles")
+    init.add_argument("--quiet", action="store_true", help="only print the initialized data directory")
+    init.add_argument("--json", action="store_true", help="print first-run guidance as JSON")
     init.set_defaults(func=cmd_init)
+
+    welcome = sub.add_parser("welcome", help="show first-run guidance and useful next commands")
+    welcome.add_argument("--json", action="store_true")
+    welcome.set_defaults(func=cmd_welcome)
 
     profile = sub.add_parser("profile", help="manage connection profiles")
     psub = profile.add_subparsers(required=True)
@@ -147,6 +162,22 @@ def build_parser() -> argparse.ArgumentParser:
     plugins_list = plugins_sub.add_parser("list", help="list installed plugin entry points")
     plugins_list.add_argument("--json", action="store_true")
     plugins_list.set_defaults(func=cmd_plugins_list)
+    plugins_validate = plugins_sub.add_parser("validate", help="validate installed plugin contracts")
+    plugins_validate.add_argument("--json", action="store_true")
+    plugins_validate.add_argument("--host", default=DEFAULT_PLUGIN_CHECK_HOST)
+    plugins_validate.add_argument("--username", default=DEFAULT_PLUGIN_CHECK_USERNAME)
+    plugins_validate.add_argument("--port", type=int)
+    plugins_validate.add_argument("--option", action="append", default=[], help="sample profile option as key=value")
+    plugins_validate.set_defaults(func=cmd_plugins_validate)
+    plugins_scaffold = plugins_sub.add_parser("scaffold", help="create a minimal protocol plugin project")
+    plugins_scaffold.add_argument("--out", required=True, type=Path)
+    plugins_scaffold.add_argument("--name", required=True, help="Python package project name, e.g. row-demo-plugin")
+    plugins_scaffold.add_argument("--module", help="Python module name, e.g. row_demo_plugin")
+    plugins_scaffold.add_argument("--protocol", required=True, help="new plugin protocol name")
+    plugins_scaffold.add_argument("--client", required=True, help="external executable used by the sample plugin")
+    plugins_scaffold.add_argument("--force", action="store_true", help="overwrite existing scaffold files")
+    plugins_scaffold.add_argument("--json", action="store_true")
+    plugins_scaffold.set_defaults(func=cmd_plugins_scaffold)
 
     snippet = sub.add_parser("snippet", help="manage reusable snippets and macros")
     snip_sub = snippet.add_subparsers(required=True)
@@ -412,7 +443,25 @@ def cmd_init(args: argparse.Namespace) -> int:
     path = ensure_data_dir()
     store = ProfileStore()
     store.init(with_examples=not args.no_examples)
+    payload = _first_run_payload(path, store)
+    if args.json:
+        print(first_run_json(payload))
+        return 0
     print(f"initialized: {path}")
+    if not args.quiet:
+        print()
+        print(format_first_run(payload))
+    return 0
+
+
+def cmd_welcome(args: argparse.Namespace) -> int:
+    path = ensure_data_dir()
+    store = ProfileStore()
+    payload = _first_run_payload(path, store)
+    if args.json:
+        print(first_run_json(payload))
+        return 0
+    print(format_first_run(payload))
     return 0
 
 
@@ -583,6 +632,39 @@ def cmd_plugins_list(args: argparse.Namespace) -> int:
         print(f"{plugin.name:<28} protocols {protocols:<24} executables {executables}")
     for failure in registry.failures:
         print(f"failed: {failure.name}: {failure.error}", file=sys.stderr)
+    return 0
+
+
+def cmd_plugins_validate(args: argparse.Namespace) -> int:
+    report = validate_installed_plugins(
+        host=args.host,
+        username=args.username,
+        port=args.port,
+        options=_parse_options(args.option),
+    )
+    if args.json:
+        print(result_to_json(report))
+    else:
+        print(report_to_text(report))
+    return 0 if report.ok else 1
+
+
+def cmd_plugins_scaffold(args: argparse.Namespace) -> int:
+    result = scaffold_plugin(
+        out_dir=args.out,
+        project_name=args.name,
+        module_name=args.module,
+        protocol=args.protocol,
+        client=args.client,
+        force=args.force,
+    )
+    if args.json:
+        print(result_to_json(result))
+        return 0
+    print(f"created plugin scaffold: {result.root}")
+    for path in result.files:
+        print(f"  {path}")
+    print("next: python -m pip install -e . && row plugins validate")
     return 0
 
 
@@ -942,6 +1024,15 @@ def cmd_gui(args: argparse.Namespace) -> int:
 def cmd_serve_web(args: argparse.Namespace) -> int:
     serve_web(host=args.host, port=args.port, allow_public_bind=args.allow_public_bind)
     return 0
+
+
+def _first_run_payload(path: Path, store: ProfileStore) -> dict[str, object]:
+    profiles = store.load(resolve=False)
+    return first_run_payload(
+        data_dir=path,
+        profiles_file=store.path,
+        profile_names=[profile.name for profile in profiles],
+    )
 
 
 def _parse_options(items: list[str]) -> dict[str, str]:

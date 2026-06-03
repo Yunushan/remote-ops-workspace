@@ -4,7 +4,7 @@
     {
       "name": "lab-ssh",
       "protocol": "ssh",
-      "host": "192.0.2.10",
+      "host": "ssh.example.invalid",
       "port": 22,
       "username": "admin",
       "group": "lab",
@@ -15,7 +15,7 @@
     {
       "name": "win-rdp",
       "protocol": "rdp",
-      "host": "192.0.2.20",
+      "host": "rdp.example.invalid",
       "port": 3389,
       "username": "administrator",
       "group": "windows",

@@ -33,7 +33,7 @@ It is intentionally built as an **adapter-first foundation**: the repo includes 
 ## Quick Start
 
 ```bash
-git clone https://github.com/YOUR-ORG/remote-ops-workspace.git
+git clone https://github.com/Yunushan/remote-ops-workspace.git
 cd remote-ops-workspace
 
 python -m venv .venv
@@ -44,7 +44,8 @@ python -m venv .venv
 
 pip install -e ".[desktop,security]"
 row init
-row profile add --name lab-ssh --protocol ssh --host 192.0.2.10 --username admin
+row welcome
+row profile add --name lab-ssh --protocol ssh --host ssh.example.invalid --username admin
 row connect lab-ssh --dry-run
 row doctor
 ```
@@ -67,10 +68,11 @@ row serve-web --host 127.0.0.1 --port 8765
 
 ```bash
 row init
-row profile add --name core-rdp --protocol rdp --host 192.0.2.20 --username administrator
+row welcome
+row profile add --name core-rdp --protocol rdp --host rdp.example.invalid --username administrator
 row profile add --name switch-console --protocol serial --path /dev/ttyUSB0 --option baud=115200
-row profile add --name jump-ssh --protocol ssh --host 192.0.2.10 --username admin --option proxy_jump=bastion --option keepalive_interval=30
-row profile add --name lab-vnc --protocol vnc --host 192.0.2.30 --option fullscreen=true --option shared=true
+row profile add --name jump-ssh --protocol ssh --host ssh.example.invalid --username admin --option proxy_jump=bastion --option keepalive_interval=30
+row profile add --name lab-vnc --protocol vnc --host vnc.example.invalid --option fullscreen=true --option shared=true
 row profile list
 row profile show core-rdp
 row connect core-rdp --dry-run
@@ -82,6 +84,9 @@ row vault status
 row vault set prod/router-password --secret-env ROW_ROUTER_PASSWORD
 row vault list
 row vault delete old/router-password --force
+row plugins list
+row plugins validate
+row plugins scaffold --out ./row-demo-plugin --name row-demo-plugin --module row_demo_plugin --protocol demo --client demo-client
 row features --coverage
 row files ls lab-ssh /var/log --dry-run
 row files get lab-ssh /etc/hosts --local ./hosts.copy --dry-run
@@ -102,7 +107,7 @@ row import --in ~/.local/share/remmina --format remmina
 
 Profiles are normalized and validated before storage, import results, GUI edits and launch planning. The launcher never concatenates shell strings. Protocol launches are built as safe argument arrays and can be inspected with `--dry-run` before execution. Per-protocol profile options cover OpenSSH keepalives/proxies/host-key policy, Mosh ports/prediction, RDP display/security/device flags, VNC/SPICE/X2Go viewer flags and serial line settings; see [`docs/PROTOCOLS.md`](docs/PROTOCOLS.md).
 
-Profile imports support the native ROW bundle plus Remmina `.remmina`, mRemoteNG `confCons.xml`, Termius-style JSON host lists and MobaXterm session bookmark exports. See [`docs/IMPORTERS.md`](docs/IMPORTERS.md). File transfer queues, previews and `--force` requirements for destructive SFTP actions are documented in [`docs/FILE_TRANSFER.md`](docs/FILE_TRANSFER.md).
+Profile imports support the native ROW bundle plus Remmina `.remmina`, mRemoteNG `confCons.xml`, Termius-style JSON host lists and MobaXterm session bookmark exports. See [`docs/IMPORTERS.md`](docs/IMPORTERS.md). File transfer queues, previews and `--force` requirements for destructive SFTP actions are documented in [`docs/FILE_TRANSFER.md`](docs/FILE_TRANSFER.md). Protocol plugin scaffolding and validation are documented in [`docs/PLUGIN_DEVELOPMENT.md`](docs/PLUGIN_DEVELOPMENT.md).
 
 ---
 
@@ -117,10 +122,10 @@ The PyQt6 desktop shell provides:
 - tabbed workspace for process-backed sessions with close confirmation and cleanup;
 - process-backed terminal panes with stdout/stderr capture, stdin entry and managed start/stop state;
 - horizontal and vertical split-pane shells inspired by tiling terminals;
-- selectable GUI view presets: Native, MobaXterm-style, SecureCRT-style, Termius-style, Remmina-style and mRemoteNG-style;
+- selectable GUI view presets: Native, MobaXterm-style, SecureCRT-style, Termius-style, Remmina-style and mRemoteNG-style, with reproducible static previews documented in [`docs/GUI_DESIGN.md`](docs/GUI_DESIGN.md);
 - saved layout selector plus create/edit/remove dialogs that open layout panes directly in the workspace;
 - doctor/status panel;
-- protocol launch plugin discovery through Python entry points plus `row plugins list`;
+- protocol launch plugin discovery through Python entry points plus `row plugins list` and `row plugins validate`;
 - future extension seams for deeper PTY/qtermwidget/web terminal emulation.
 
 Install optional GUI extras:
@@ -152,7 +157,7 @@ Docker entrypoint. The compose file publishes the container on
 
 Coverage target: **100% public feature-family mapping** for the requested tools, tracked separately from product-ready implementation maturity.
 
-Coverage is generated from [`configs/feature_manifest.json`](configs/feature_manifest.json). Feature-family mapping answers whether each public feature family is represented by built-in code, external adapters, optional implementations, CLI/GUI workflows, platform scripts, or plugin extension points. Product-ready coverage applies stricter evidence weights so adapter-backed, optional, shell, script and partial workflows are not overstated.
+Coverage is generated from [`configs/feature_manifest.json`](configs/feature_manifest.json). Feature-family mapping answers whether each public feature family is represented by built-in code, external adapters, optional implementations, CLI/GUI workflows, platform scripts, or plugin extension points. Product-ready coverage applies stricter evidence weights so adapter-backed, optional, shell, script and partial workflows are not overstated. The verifier also runs `scripts/check_feature_reality.py` so implemented feature claims stay tied to real CLI command paths, launch-plan builders, implementation symbols and shipped files.
 
 | Product target | Feature-family mapping | Product-ready coverage | Ready gap to 100% | Feature families tracked |
 |---|---:|---:|---:|---:|
@@ -216,7 +221,7 @@ row features --coverage --json
 | Hardware/FIDO keys | SSH support | SSH support | depends | — | ✅ | OpenSSH security-key keygen adapter |
 | Portable mode | ✅ | packages | config portability | — | mobile/desktop | `ROW_HOME` portable data directory |
 | Web/mobile access | — | Kasm/container options | — | — | ✅ | Static Web/PWA shell + Android/PWA docs |
-| Plugin architecture | plugins | plugins | extensions | plugins | integrations | Python entry-point protocol launch plugins + `row plugins list` |
+| Plugin architecture | plugins | plugins | extensions | plugins | integrations | Python entry-point protocol launch plugins + `row plugins list`, `row plugins validate` and `row plugins scaffold` |
 
 See [`docs/FULL_FEATURE_COVERAGE.md`](docs/FULL_FEATURE_COVERAGE.md) and [`configs/feature_manifest.json`](configs/feature_manifest.json) for the full coverage manifest.
 
@@ -231,7 +236,7 @@ See [`docs/FULL_FEATURE_COVERAGE.md`](docs/FULL_FEATURE_COVERAGE.md) and [`confi
 | Windows 8/7 | Legacy source-only, remote target | Keep as managed endpoints; modern native runtime support requires a separate legacy dependency stack |
 | Windows Vista/XP | Remote target only | Connect through external clients when protocols can still be negotiated; no modern native Python/PyQt installer |
 | Windows Server 2012–2025 | CLI, GUI optional, Web/PWA | Works well as an operator jump host; x86/x64/ARM64 depends on runner and Python availability |
-| Linux | CLI, GUI, Web/PWA | Native i386, x86_64, armhf and arm64 package mappings; OpenSSH, FreeRDP, TigerVNC, Remmina-compatible clients, Xorg |
+| Linux | CLI, GUI, Web/PWA | Default GitHub release builds x86_64/amd64 and aarch64/arm64 native packages; i386/i686 and armhf mappings are script-supported on matching builders |
 | Unix | CLI, Web/PWA, GUI where Qt is available | POSIX shell and OpenSSH first |
 | FreeBSD/OpenBSD/NetBSD/DragonFlyBSD | CLI, Web/PWA, GUI where PyQt6 is packaged | External protocol tools vary by ports/pkg availability |
 | Solaris/illumos | CLI, Web/PWA, GUI if Python/Qt stack exists | Focus on OpenSSH, browser, serial/raw sockets |
@@ -261,7 +266,7 @@ Core design principles:
 2. **Safe-by-default launching**: command arrays instead of shell strings.
 3. **Portable profiles**: JSON profile store, environment-driven data path, backup/export/import.
 4. **Security boundary clarity**: local encrypted vault support, no secrets committed, redaction utilities.
-5. **Plugin honesty**: protocol launch plugins are wired through entry points; broader backend seams stay documented as future work until they have a caller path.
+5. **Plugin honesty**: protocol launch plugins are wired through entry points and can be validated with `row plugins validate`; broader backend seams stay documented as future work until they have a caller path.
 
 ---
 
@@ -280,6 +285,7 @@ Core design principles:
 - `row serve-web` binds to loopback by default, adds static-app security headers, disables directory listing and requires `--allow-public-bind` for non-loopback interfaces. The web Docker image runs as a non-root user and compose binds to localhost with dropped Linux capabilities.
 - Prefer SSH `proxy_jump`; `proxy_command` requires explicit `allow_unsafe_proxy_command=true`.
 - SSHv1 legacy profiles require both `--protocol ssh1`/`sshv1` and `--option allow_insecure_sshv1=true`; protocol v1 remains insecure and should only be used for isolated legacy systems.
+- Treat protocol plugins as trusted local Python code; use `row plugins validate` to catch load failures and invalid sample launch plans before using plugin-backed profiles.
 - See [`SECURITY.md`](SECURITY.md) and [`docs/SECURITY_MODEL.md`](docs/SECURITY_MODEL.md).
 
 ---
@@ -320,21 +326,30 @@ The GitHub release workflow runs on tags like `v0.1.0` and uploads these assets:
 | Windows native | `remote-ops-workspace-v0.1.0-windows-<x86\|x64\|arm64>-setup.exe` |
 | Windows native | `remote-ops-workspace-v0.1.0-windows-<x86\|x64\|arm64>.msi` |
 | Windows native | `remote-ops-workspace-v0.1.0-windows-<x86\|x64\|arm64>-native.zip` |
-| macOS native | `remote-ops-workspace-v0.1.0-macos-<arch>.dmg` |
-| macOS native | `remote-ops-workspace-v0.1.0-macos-<arch>.pkg` |
-| Linux native | `remote-ops-workspace-v0.1.0-linux-<i386\|amd64\|armhf\|arm64>.deb` |
-| Linux native | `remote-ops-workspace-v0.1.0-linux-<i686\|x86_64\|armv7hl\|aarch64>.rpm` |
-| Linux native | `remote-ops-workspace-v0.1.0-linux-<i686\|x86_64\|armhf\|aarch64>.AppImage` |
-| Linux native | `remote-ops-workspace-v0.1.0-linux-<i686\|x86_64\|armhf\|aarch64>-native.tar.gz` |
+| macOS native | `remote-ops-workspace-v0.1.0-macos-<x64\|arm64>.dmg` |
+| macOS native | `remote-ops-workspace-v0.1.0-macos-<x64\|arm64>.pkg` |
+| macOS native | `remote-ops-workspace-v0.1.0-macos-<x64\|arm64>-native-manifest.json` |
+| Linux native | `remote-ops-workspace-v0.1.0-linux-<amd64\|arm64>.deb` |
+| Linux native | `remote-ops-workspace-v0.1.0-linux-<x86_64\|aarch64>.rpm` |
+| Linux native | `remote-ops-workspace-v0.1.0-linux-<x86_64\|aarch64>.AppImage` |
+| Linux native | `remote-ops-workspace-v0.1.0-linux-<x86_64\|aarch64>-native.tar.gz` |
+| Linux native | `remote-ops-workspace-v0.1.0-linux-<x86_64\|aarch64>-native-manifest.json` |
 | Manifests | `remote-ops-workspace-v0.1.0-*-manifest.json` |
 | Checksums | `remote-ops-workspace-v0.1.0-SHA256SUMS.txt` |
 
 Native protocol rendering still depends on the external clients installed on the target system.
 Windows XP/Vista/7/8 are supported as legacy remote targets, not as first-class
-modern native operator hosts. The native build scripts add x86, x64, ARM64,
-i386/i686, armhf and arm64 artifact mappings where a matching builder exists.
+modern native operator hosts. The default GitHub workflow builds Windows
+`x86`/`x64`/`arm64`, macOS `x64`/`arm64`, and Linux `x86_64`/`aarch64`
+native jobs. The native build scripts also map Linux `i386`/`i686` and
+`armhf` outputs for matching builders, but those are not uploaded by the
+default GitHub release workflow.
 Release manifests include `size_bytes` and `sha256` for each artifact, and CI
 build jobs run with read-only checkout credentials until the final publish step.
+Python release tooling is constrained by `requirements-release.txt` and recorded
+in each release manifest through `configs/release_toolchain.json`. Native
+Windows, macOS and Linux jobs also emit per-platform `native-SHA256SUMS.txt`
+sidecars for their native artifacts and manifests.
 
 Release phases:
 

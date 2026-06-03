@@ -31,6 +31,16 @@ function Add-ArtifactIntegrity([hashtable]$Item) {
   return $Item
 }
 
+function Write-NativeChecksums([string]$Version, [string]$OutDir, [string]$Arch, [string[]]$Paths) {
+  $ChecksumPath = Join-Path $OutDir "remote-ops-workspace-v$Version-windows-$Arch-native-SHA256SUMS.txt"
+  $Lines = foreach ($Path in $Paths) {
+    $Hash = (Get-FileHash -Algorithm SHA256 $Path).Hash.ToLowerInvariant()
+    "$Hash  $(Split-Path -Leaf $Path)"
+  }
+  $Lines | Set-Content -Encoding ASCII $ChecksumPath
+  return $ChecksumPath
+}
+
 function Find-InnoSetup {
   $Command = Get-Command "iscc.exe" -ErrorAction SilentlyContinue
   if ($Command) {
@@ -291,8 +301,10 @@ $Manifest = @($Manifest | ForEach-Object { Add-ArtifactIntegrity $_ })
 
 $ManifestPath = Join-Path $OutDir "remote-ops-workspace-v$Version-windows-$Arch-native-manifest.json"
 $Manifest | ConvertTo-Json -Depth 8 | Set-Content -Encoding UTF8 $ManifestPath
+$Checksums = Write-NativeChecksums -Version $Version -OutDir $OutDir -Arch $Arch -Paths @($NativeZip, $SetupExe, $Msi, $ManifestPath)
 
 Write-Host "created $(To-RepoPath $NativeZip)"
 Write-Host "created $(To-RepoPath $SetupExe)"
 Write-Host "created $(To-RepoPath $Msi)"
 Write-Host "created $(To-RepoPath $ManifestPath)"
+Write-Host "created $(To-RepoPath $Checksums)"

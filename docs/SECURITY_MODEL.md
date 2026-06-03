@@ -16,7 +16,7 @@ Remote Ops Workspace manages profiles and launches clients. It does not make uns
 Launchers build command arrays such as:
 
 ```python
-["ssh", "-p", "22", "admin@192.0.2.10"]
+["ssh", "-p", "22", "admin@ssh.example.invalid"]
 ```
 
 They do not use `shell=True` or shell string concatenation for normal protocol launches.
@@ -70,7 +70,9 @@ through the `remote_ops_workspace.plugins` entry-point group. Treat installed
 plugins as trusted code: they can run Python during discovery and launch-plan
 generation. The core launcher validates the argv list returned by a plugin, but
 it cannot sandbox plugin package code. Install plugins only from trusted sources
-and inspect `row plugins list --json` before using plugin-backed profiles.
+and inspect `row plugins list --json` before using plugin-backed profiles. Use
+`row plugins validate` to catch load failures and invalid sample launch-plan
+shape, but do not treat validation as a sandbox or provenance check.
 
 ## Vault
 

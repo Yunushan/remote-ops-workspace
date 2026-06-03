@@ -20,6 +20,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 DIST = ROOT / "dist"
 NAME = "remote-ops-workspace"
+RELEASE_TOOLCHAIN = ROOT / "configs" / "release_toolchain.json"
 DEFAULT_SOURCE_DATE_EPOCH = 1_704_067_200  # 2024-01-01T00:00:00Z
 MIN_ZIP_EPOCH = 315_532_800  # 1980-01-01T00:00:00Z
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+(?:a\d+|b\d+|rc\d+|\.post\d+)?$")
@@ -44,6 +45,7 @@ PROJECT_FILES = [
     "README.tr.md",
     "pyproject.toml",
     "requirements-dev.txt",
+    "requirements-release.txt",
     "requirements.txt",
     "SECURITY.md",
 ]
@@ -114,7 +116,7 @@ TARGETS = [
         install_command="./installers/install.sh",
         notes=(
             "Targets Linux CLI, GUI, and Web/PWA deployments.",
-            "Native package mappings cover i386/i686, x86_64/amd64, armv7l/armhf, and aarch64/arm64 builders.",
+            "Native package scripts map i386/i686, x86_64/amd64, armv7l/armhf, and aarch64/arm64 when run on matching builders.",
             "Protocol sessions use system tools such as OpenSSH, FreeRDP, TigerVNC, Remmina-compatible clients, and Xorg.",
         ),
     ),
@@ -529,6 +531,7 @@ def write_manifest(version: str, artifacts: list[dict[str, object]], dist: Path)
         "tag": f"v{version}",
         "source_date_epoch": source_date_epoch(),
         "build": release_build_metadata(),
+        "toolchain": release_toolchain_metadata(),
         "artifacts": artifacts,
     }
     path = dist / f"{NAME}-v{version}-release-manifest.json"
@@ -539,6 +542,15 @@ def write_manifest(version: str, artifacts: list[dict[str, object]], dist: Path)
 def release_build_metadata() -> dict[str, str]:
     keys = ("GITHUB_REPOSITORY", "GITHUB_REF_NAME", "GITHUB_SHA", "GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT")
     return {key.lower(): value for key in keys if (value := os.environ.get(key))}
+
+
+def release_toolchain_metadata() -> dict[str, object]:
+    try:
+        return json.loads(RELEASE_TOOLCHAIN.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise SystemExit(f"release toolchain manifest missing: {RELEASE_TOOLCHAIN.relative_to(ROOT)}") from exc
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"release toolchain manifest is not valid JSON: {exc}") from exc
 
 
 def write_checksums(version: str, artifacts: list[dict[str, object]], manifest_path: Path, dist: Path) -> str:

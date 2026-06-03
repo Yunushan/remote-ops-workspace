@@ -1,0 +1,9 @@
+# Exact direct Python packages used by the release workflow.
+# Keep this file in sync with configs/release_toolchain.json.
+pip==24.3.1
+setuptools==80.9.0
+wheel==0.45.1
+build==1.2.2.post1
+pyinstaller==6.11.1
+PyQt6==6.7.1
+cryptography==42.0.8

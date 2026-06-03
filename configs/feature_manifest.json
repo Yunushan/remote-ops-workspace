@@ -769,7 +769,7 @@
     },
     {
       "category": "security",
-      "extension_point": "OpenSSH agent/FIDO",
+      "extension_point": "keys.SECURITY_KEY_TYPES / keys.build_keygen_plan / row keygen --type ed25519-sk|ecdsa-sk",
       "id": "security.fido",
       "inspired_by": [
         "Termius"
@@ -833,7 +833,7 @@
     },
     {
       "category": "display",
-      "extension_point": "VcXsrv/XQuartz/Xorg docs",
+      "extension_point": "x11.build_x_server_plan / row x11 start / VcXsrv, XQuartz and Xorg adapters",
       "id": "x11.server",
       "inspired_by": [
         "MobaXterm"
@@ -864,7 +864,7 @@
     },
     {
       "category": "interface",
-      "extension_point": "apps/web",
+      "extension_point": "apps/web static PWA shell / web_server.serve_web / row serve-web",
       "id": "web.pwa",
       "inspired_by": [
         "Termius cross-device workflows"
@@ -874,7 +874,7 @@
     },
     {
       "category": "platform",
-      "extension_point": "docs/ANDROID.md",
+      "extension_point": "installers/install-termux.sh / docs/ANDROID.md",
       "id": "android.termux",
       "inspired_by": [
         "Termius mobile workflows"
@@ -884,7 +884,7 @@
     },
     {
       "category": "platform",
-      "extension_point": "ROW_HOME",
+      "extension_point": "paths.data_dir / ROW_HOME / row init|welcome",
       "id": "portable.mode",
       "inspired_by": [
         "MobaXterm"
@@ -894,7 +894,7 @@
     },
     {
       "category": "extensibility",
-      "extension_point": "remote_ops_workspace.plugins / launcher plugin protocol dispatch / row plugins list / row doctor",
+      "extension_point": "remote_ops_workspace.plugins / launcher plugin protocol dispatch / row plugins list|validate|scaffold / row doctor",
       "id": "plugins.entrypoints",
       "inspired_by": [
         "Remmina",

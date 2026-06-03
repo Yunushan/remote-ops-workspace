@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Remote Ops Workspace GUI Preview Gallery</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #172033;
+      --muted: #667085;
+      --line: #d8dee8;
+      --panel: #ffffff;
+      --page: #f4f6f9;
+      --accent: #206a8e;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--page);
+      color: var(--ink);
+      font: 14px/1.45 "Segoe UI", system-ui, -apple-system, sans-serif;
+    }
+    header {
+      padding: 22px 28px 14px;
+      border-bottom: 1px solid var(--line);
+      background: #fff;
+    }
+    h1 {
+      margin: 0;
+      font-size: 22px;
+      font-weight: 700;
+    }
+    header p {
+      margin: 6px 0 0;
+      color: var(--muted);
+      max-width: 900px;
+    }
+    main {
+      max-width: 1500px;
+      margin: 0 auto;
+      padding: 24px 28px 34px;
+    }
+    .contact {
+      display: block;
+      margin-bottom: 24px;
+      color: var(--accent);
+      font-weight: 600;
+      text-decoration: none;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+      gap: 18px;
+    }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    img {
+      display: block;
+      width: 100%;
+      height: auto;
+      border-bottom: 1px solid var(--line);
+    }
+    .meta {
+      padding: 14px 16px 16px;
+    }
+    h2 {
+      margin: 0 0 4px;
+      font-size: 16px;
+      font-weight: 700;
+    }
+    p {
+      margin: 0 0 12px;
+      color: var(--muted);
+    }
+    dl {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+      margin: 0;
+    }
+    dt {
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+    }
+    dd {
+      margin: 2px 0 0;
+      font-weight: 600;
+    }
+    @media (max-width: 640px) {
+      main { padding: 18px 14px 24px; }
+      header { padding: 18px 16px 12px; }
+      .grid { grid-template-columns: 1fr; }
+      dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Remote Ops Workspace GUI Preview Gallery</h1>
+    <p>Static Windows-friendly previews generated from the same GUI design preset metadata used by the PyQt6 desktop shell.</p>
+  </header>
+  <main>
+    <a class="contact" href="all-gui-designs-contact-sheet.png">Open contact sheet</a>
+    <section class="grid">
+
+      <article class="card">
+        <a href="native.png"><img src="native.png" alt="Native preview"></a>
+        <div class="meta">
+          <h2>Native</h2>
+          <p>System-friendly Windows layout with quiet chrome and readable terminal panes.</p>
+          <dl>
+            <div><dt>Density</dt><dd>comfortable</dd></div>
+            <div><dt>Profile Width</dt><dd>305 px</dd></div>
+            <div><dt>Log Height</dt><dd>165 px</dd></div>
+            <div><dt>Tabs</dt><dd>north</dd></div>
+          </dl>
+        </div>
+      </article>
+      <article class="card">
+        <a href="mobaxterm.png"><img src="mobaxterm.png" alt="MobaXterm-style preview"></a>
+        <div class="meta">
+          <h2>MobaXterm-style</h2>
+          <p>Dense operator console with a connection tree, action strip, tabs and split panes.</p>
+          <dl>
+            <div><dt>Density</dt><dd>dense</dd></div>
+            <div><dt>Profile Width</dt><dd>335 px</dd></div>
+            <div><dt>Log Height</dt><dd>148 px</dd></div>
+            <div><dt>Tabs</dt><dd>north</dd></div>
+          </dl>
+        </div>
+      </article>
+      <article class="card">
+        <a href="securecrt.png"><img src="securecrt.png" alt="SecureCRT-style preview"></a>
+        <div class="meta">
+          <h2>SecureCRT-style</h2>
+          <p>Terminal-first workspace with restrained dark chrome and wide session tabs.</p>
+          <dl>
+            <div><dt>Density</dt><dd>terminal</dd></div>
+            <div><dt>Profile Width</dt><dd>270 px</dd></div>
+            <div><dt>Log Height</dt><dd>118 px</dd></div>
+            <div><dt>Tabs</dt><dd>north</dd></div>
+          </dl>
+        </div>
+      </article>
+      <article class="card">
+        <a href="termius.png"><img src="termius.png" alt="Termius-style preview"></a>
+        <div class="meta">
+          <h2>Termius-style</h2>
+          <p>Dark SSH-focused workspace with compact hosts, vault cues and vertical session tabs.</p>
+          <dl>
+            <div><dt>Density</dt><dd>focused</dd></div>
+            <div><dt>Profile Width</dt><dd>292 px</dd></div>
+            <div><dt>Log Height</dt><dd>136 px</dd></div>
+            <div><dt>Tabs</dt><dd>west</dd></div>
+          </dl>
+        </div>
+      </article>
+      <article class="card">
+        <a href="remmina.png"><img src="remmina.png" alt="Remmina-style preview"></a>
+        <div class="meta">
+          <h2>Remmina-style</h2>
+          <p>Light remote-desktop workspace with clear protocol profiles and viewer tabs.</p>
+          <dl>
+            <div><dt>Density</dt><dd>comfortable</dd></div>
+            <div><dt>Profile Width</dt><dd>320 px</dd></div>
+            <div><dt>Log Height</dt><dd>158 px</dd></div>
+            <div><dt>Tabs</dt><dd>north</dd></div>
+          </dl>
+        </div>
+      </article>
+      <article class="card">
+        <a href="mremoteng.png"><img src="mremoteng.png" alt="mRemoteNG-style preview"></a>
+        <div class="meta">
+          <h2>mRemoteNG-style</h2>
+          <p>Classic connection-manager workspace with a persistent tree and document tabs.</p>
+          <dl>
+            <div><dt>Density</dt><dd>classic</dd></div>
+            <div><dt>Profile Width</dt><dd>355 px</dd></div>
+            <div><dt>Log Height</dt><dd>145 px</dd></div>
+            <div><dt>Tabs</dt><dd>north</dd></div>
+          </dl>
+        </div>
+      </article>
+    </section>
+  </main>
+</body>
+</html>

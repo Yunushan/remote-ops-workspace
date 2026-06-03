@@ -87,6 +87,7 @@ def test_manifest_and_checksum_file_include_artifact_integrity(tmp_path: Path) -
         make_release.ROOT = old_root
 
     assert manifest["schema_version"] == 1
+    assert manifest["toolchain"]["python"]["constraints_file"] == "requirements-release.txt"
     assert manifest["artifacts"][0]["size_bytes"] == 7
     assert len(manifest["artifacts"][0]["sha256"]) == 64
     assert "asset.txt" in checksums
@@ -122,6 +123,15 @@ def test_release_workflow_uses_minimal_permissions() -> None:
     assert "fail_on_unmatched_files: true" in workflow
 
 
+def test_release_workflow_uses_pinned_toolchain() -> None:
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    assert 'SOURCE_DATE_EPOCH: "1704067200"' in workflow
+    assert "--constraint requirements-release.txt" in workflow
+    assert "python -m pip install --upgrade" not in workflow
+    assert "choco install innosetup --version=6.3.3" in workflow
+    assert "dotnet tool install --global wix --version 5.0.2" in workflow
+
+
 def test_native_manifest_scripts_add_integrity_fields() -> None:
     linux = Path("scripts/make_linux_native.sh").read_text(encoding="utf-8")
     macos = Path("scripts/make_macos_native.sh").read_text(encoding="utf-8")
@@ -132,3 +142,22 @@ def test_native_manifest_scripts_add_integrity_fields() -> None:
     assert "size_bytes" in macos
     assert "Get-FileHash -Algorithm SHA256" in windows
     assert "size_bytes" in windows
+
+
+def test_native_release_scripts_emit_checksum_sidecars() -> None:
+    linux = Path("scripts/make_linux_native.sh").read_text(encoding="utf-8")
+    macos = Path("scripts/make_macos_native.sh").read_text(encoding="utf-8")
+    windows = Path("scripts/make_windows_native.ps1").read_text(encoding="utf-8")
+    assert "linux-{appimage_arch}-native-SHA256SUMS.txt" in linux
+    assert "macos-{arch}-native-SHA256SUMS.txt" in macos
+    assert "windows-$Arch-native-SHA256SUMS.txt" in windows
+    assert "write_checksums([deb, rpm, appimage, tarball, manifest_path], checksums)" in linux
+    assert "write_checksums([dmg, pkg, manifest_path], checksums)" in macos
+    assert "Write-NativeChecksums" in windows
+
+
+def test_linux_appimagetool_download_supports_sha256_verification() -> None:
+    linux = Path("scripts/make_linux_native.sh").read_text(encoding="utf-8")
+    assert "https://github.com/AppImage/appimagetool/releases/download/continuous" in linux
+    assert "APPIMAGETOOL_SHA256" in linux
+    assert "sha256sum -c -" in linux

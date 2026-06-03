@@ -39,9 +39,9 @@ package = ["build>=1.2", "pyinstaller>=6.0"]
 dev = ["build>=1.2", "pytest>=8", "ruff>=0.5", "mypy>=1.10"]
 
 [project.urls]
-Homepage = "https://github.com/YOUR-ORG/remote-ops-workspace"
-Documentation = "https://github.com/YOUR-ORG/remote-ops-workspace/tree/main/docs"
-Issues = "https://github.com/YOUR-ORG/remote-ops-workspace/issues"
+Homepage = "https://github.com/Yunushan/remote-ops-workspace"
+Documentation = "https://github.com/Yunushan/remote-ops-workspace/tree/main/docs"
+Issues = "https://github.com/Yunushan/remote-ops-workspace/issues"
 
 [project.scripts]
 row = "remote_ops_workspace.cli:main"

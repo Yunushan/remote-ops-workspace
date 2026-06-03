@@ -23,9 +23,13 @@ from .terminal import (
 )
 
 
-def main() -> int:
+class GuiDependencyError(RuntimeError):
+    pass
+
+
+def create_main_window(argv: list[str] | None = None, *, show: bool = False):
     try:
-        from PyQt6.QtCore import QProcess, Qt
+        from PyQt6.QtCore import QProcess, QSize, Qt
         from PyQt6.QtGui import QKeySequence, QShortcut, QTextCursor
         from PyQt6.QtWidgets import (
             QApplication,
@@ -44,6 +48,7 @@ def main() -> int:
             QPlainTextEdit,
             QPushButton,
             QSplitter,
+            QStyle,
             QTabWidget,
             QTextEdit,
             QToolBar,
@@ -51,25 +56,27 @@ def main() -> int:
             QWidget,
         )
     except Exception as exc:  # pragma: no cover - optional dependency
-        print("PyQt6 is not installed. Install with: pip install -e '.[desktop]'")
-        print(exc)
-        return 2
+        raise GuiDependencyError("PyQt6 is not installed. Install with: pip install -e '.[desktop]'") from exc
 
     class TerminalPane(QWidget):
         STOP_POLICY = ProcessStopPolicy()
 
         def __init__(self, plan: TerminalPanePlan) -> None:
             super().__init__()
+            self.setObjectName("terminalPane")
             self.plan = plan
             self.process = QProcess(self)
             self.process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
 
             self.output = QTextEdit()
+            self.output.setObjectName("terminalOutput")
             self.output.setReadOnly(True)
             self.output.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
             self.input = QLineEdit()
+            self.input.setObjectName("terminalInput")
             self.input.setPlaceholderText("stdin")
             self.status = QLabel("ready")
+            self.status.setObjectName("paneStatus")
             self.start_button = QPushButton("Start")
             self.stop_button = QPushButton("Stop")
 
@@ -373,33 +380,40 @@ def main() -> int:
             self.store.init(with_examples=True)
             self.layout_store = LayoutStore()
 
-            toolbar = QToolBar("Main")
-            toolbar.setObjectName("mainToolbar")
-            self.addToolBar(toolbar)
-            self.refresh_button = QPushButton("Refresh")
-            self.new_profile_button = QPushButton("New Profile")
-            self.edit_profile_button = QPushButton("Edit Profile")
-            self.remove_profile_button = QPushButton("Remove Profile")
-            self.connect_button = QPushButton("Connect")
-            self.files_button = QPushButton("Files")
-            self.queue_button = QPushButton("Queue")
-            self.dry_run_button = QPushButton("Dry Run")
-            self.doctor_button = QPushButton("Doctor")
-            self.split_h_button = QPushButton("Split H")
-            self.split_v_button = QPushButton("Split V")
+            self.main_toolbar = QToolBar("Main")
+            self.main_toolbar.setObjectName("mainToolbar")
+            self.main_toolbar.setMovable(False)
+            self.addToolBar(self.main_toolbar)
+            self.refresh_button = self.toolbar_button("Refresh", "SP_BrowserReload", "Reload profiles")
+            self.new_profile_button = self.toolbar_button("New", "SP_FileIcon", "Create profile")
+            self.edit_profile_button = self.toolbar_button("Edit", "SP_FileDialogDetailedView", "Edit selected profile")
+            self.remove_profile_button = self.toolbar_button("Remove", "SP_TrashIcon", "Remove selected profile")
+            self.remove_profile_button.setObjectName("dangerAction")
+            self.connect_button = self.toolbar_button("Connect", "SP_MediaPlay", "Open selected profile")
+            self.connect_button.setObjectName("primaryAction")
+            self.files_button = self.toolbar_button("Files", "SP_DirIcon", "Open SFTP browser")
+            self.queue_button = self.toolbar_button("Queue", "SP_FileDialogListView", "Preview transfer queue")
+            self.dry_run_button = self.toolbar_button("Dry Run", "SP_CommandLink", "Show launch command")
+            self.doctor_button = self.toolbar_button("Doctor", "SP_MessageBoxInformation", "Run doctor checks")
+            self.split_h_button = self.toolbar_button("Split H", "SP_TitleBarShadeButton", "Open horizontal split")
+            self.split_v_button = self.toolbar_button("Split V", "SP_TitleBarUnshadeButton", "Open vertical split")
             self.layout_select = QComboBox()
+            self.layout_select.setObjectName("layoutSelect")
             self.layout_select.setMinimumWidth(180)
             self.design_select = QComboBox()
+            self.design_select.setObjectName("designSelect")
             self.design_select.setMinimumWidth(170)
             for preset in GUI_DESIGN_PRESETS:
                 self.design_select.addItem(preset.label, preset.id)
-            self.new_layout_button = QPushButton("New Layout")
-            self.edit_layout_button = QPushButton("Edit Layout")
-            self.remove_layout_button = QPushButton("Remove Layout")
-            self.open_layout_button = QPushButton("Open Layout")
+            self.new_layout_button = self.toolbar_button("New Layout", "SP_FileIcon", "Create layout")
+            self.edit_layout_button = self.toolbar_button("Edit Layout", "SP_FileDialogDetailedView", "Edit selected layout")
+            self.remove_layout_button = self.toolbar_button("Remove Layout", "SP_TrashIcon", "Remove selected layout")
+            self.remove_layout_button.setObjectName("dangerAction")
+            self.open_layout_button = self.toolbar_button("Open Layout", "SP_DialogOpenButton", "Open selected layout")
             self.search_input = QLineEdit()
+            self.search_input.setObjectName("toolbarSearch")
             self.search_input.setPlaceholderText("Search log")
-            self.find_button = QPushButton("Find")
+            self.find_button = self.toolbar_button("Find", "SP_FileDialogContentsView", "Find in log")
             for button in [
                 self.refresh_button,
                 self.new_profile_button,
@@ -413,15 +427,19 @@ def main() -> int:
                 self.split_h_button,
                 self.split_v_button,
             ]:
-                toolbar.addWidget(button)
-            toolbar.addWidget(QLabel("View"))
-            toolbar.addWidget(self.design_select)
-            toolbar.addWidget(self.layout_select)
+                self.main_toolbar.addWidget(button)
+            self.main_toolbar.addSeparator()
+            view_label = QLabel("View")
+            view_label.setObjectName("toolbarLabel")
+            self.main_toolbar.addWidget(view_label)
+            self.main_toolbar.addWidget(self.design_select)
+            self.main_toolbar.addWidget(self.layout_select)
             for button in [self.new_layout_button, self.edit_layout_button, self.remove_layout_button]:
-                toolbar.addWidget(button)
-            toolbar.addWidget(self.open_layout_button)
-            toolbar.addWidget(self.search_input)
-            toolbar.addWidget(self.find_button)
+                self.main_toolbar.addWidget(button)
+            self.main_toolbar.addWidget(self.open_layout_button)
+            self.main_toolbar.addSeparator()
+            self.main_toolbar.addWidget(self.search_input)
+            self.main_toolbar.addWidget(self.find_button)
 
             self.profile_list = QListWidget()
             self.profile_list.setObjectName("profileTree")
@@ -429,6 +447,7 @@ def main() -> int:
             self.tabs = QTabWidget()
             self.tabs.setObjectName("sessionTabs")
             self.tabs.setTabsClosable(True)
+            self.tabs.setMovable(True)
             self.log = QTextEdit()
             self.log.setObjectName("activityLog")
             self.log.setReadOnly(True)
@@ -479,6 +498,15 @@ def main() -> int:
             self.add_welcome_tab()
             self.apply_selected_design()
 
+        def toolbar_button(self, label: str, icon_name: str, tooltip: str) -> QPushButton:
+            button = QPushButton(label)
+            button.setToolTip(tooltip)
+            button.setIcon(self.style().standardIcon(self.standard_icon(icon_name)))
+            return button
+
+        def standard_icon(self, icon_name: str):
+            return getattr(QStyle.StandardPixmap, icon_name, QStyle.StandardPixmap.SP_FileIcon)
+
         def refresh_profiles(self) -> None:
             self.profile_list.clear()
             for profile in self.store.load():
@@ -499,10 +527,13 @@ def main() -> int:
             except ValueError:
                 preset = get_gui_design_preset("native")
             self.setStyleSheet(preset.stylesheet)
-            self.profile_list.setMinimumWidth(min(preset.profile_width, 360))
+            self.main_toolbar.setIconSize(QSize(preset.toolbar_icon_size, preset.toolbar_icon_size))
+            self.profile_list.setMinimumWidth(min(preset.profile_width, 380))
+            self.profile_list.setSpacing(preset.list_spacing)
             self.root_splitter.setSizes([preset.profile_width, max(620, self.width() - preset.profile_width)])
             self.workspace.setSizes([max(420, self.height() - preset.log_height), preset.log_height])
             self.tabs.setTabPosition(self.tab_position_for_design(preset.tab_position))
+            self.tabs.setDocumentMode(preset.document_mode)
             self.log.setPlaceholderText(
                 f"{preset.description}\n\nLaunch output, dry-run commands and doctor reports appear here."
             )
@@ -861,9 +892,23 @@ def main() -> int:
             self.stop_terminal_panes(running)
             event.accept()
 
-    app = QApplication(sys.argv)
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication(argv or sys.argv)
     window = MainWindow()
-    window.show()
+    if show:
+        window.show()
+    return app, window
+
+
+def main() -> int:
+    try:
+        app, _window = create_main_window(sys.argv, show=True)
+    except GuiDependencyError as exc:
+        print(str(exc))
+        if exc.__cause__ is not None:
+            print(exc.__cause__)
+        return 2
     return app.exec()
 
 

@@ -33,7 +33,7 @@ Proje bilincli olarak **adapter-first** tasarlanmistir: CLI, profil deposu, guve
 ## Hizli Baslangic
 
 ```bash
-git clone https://github.com/YOUR-ORG/remote-ops-workspace.git
+git clone https://github.com/Yunushan/remote-ops-workspace.git
 cd remote-ops-workspace
 
 python -m venv .venv
@@ -44,7 +44,8 @@ python -m venv .venv
 
 pip install -e ".[desktop,security]"
 row init
-row profile add --name lab-ssh --protocol ssh --host 192.0.2.10 --username admin
+row welcome
+row profile add --name lab-ssh --protocol ssh --host ssh.example.invalid --username admin
 row connect lab-ssh --dry-run
 row doctor
 ```
@@ -67,10 +68,11 @@ row serve-web --host 127.0.0.1 --port 8765
 
 ```bash
 row init
-row profile add --name core-rdp --protocol rdp --host 192.0.2.20 --username administrator
+row welcome
+row profile add --name core-rdp --protocol rdp --host rdp.example.invalid --username administrator
 row profile add --name switch-console --protocol serial --path /dev/ttyUSB0 --option baud=115200
-row profile add --name jump-ssh --protocol ssh --host 192.0.2.10 --username admin --option proxy_jump=bastion --option keepalive_interval=30
-row profile add --name lab-vnc --protocol vnc --host 192.0.2.30 --option fullscreen=true --option shared=true
+row profile add --name jump-ssh --protocol ssh --host ssh.example.invalid --username admin --option proxy_jump=bastion --option keepalive_interval=30
+row profile add --name lab-vnc --protocol vnc --host vnc.example.invalid --option fullscreen=true --option shared=true
 row profile list
 row profile show core-rdp
 row connect core-rdp --dry-run
@@ -83,6 +85,8 @@ row vault set prod/router-password --secret-env ROW_ROUTER_PASSWORD
 row vault list
 row vault delete old/router-password --force
 row plugins list
+row plugins validate
+row plugins scaffold --out ./row-demo-plugin --name row-demo-plugin --module row_demo_plugin --protocol demo --client demo-client
 row features --coverage
 row files ls lab-ssh /var/log --dry-run
 row files get lab-ssh /etc/hosts --local ./hosts.copy --dry-run
@@ -101,7 +105,7 @@ row import --in confCons.xml --format mremoteng
 row import --in ~/.local/share/remmina --format remmina
 ```
 
-Profiller kayit, import, GUI duzenleme ve baslatma oncesinde ortak dogrulamadan gecer. Baslaticilar shell string birlestirme kullanmaz; komutlar argv listesi olarak uretilir ve `--dry-run` ile incelenebilir. Protokol secenekleri icin [`docs/PROTOCOLS.md`](docs/PROTOCOLS.md), import akislari icin [`docs/IMPORTERS.md`](docs/IMPORTERS.md), SFTP kuyruklari ve `--force` kurallari icin [`docs/FILE_TRANSFER.md`](docs/FILE_TRANSFER.md) dosyalarina bakin.
+Profiller kayit, import, GUI duzenleme ve baslatma oncesinde ortak dogrulamadan gecer. Baslaticilar shell string birlestirme kullanmaz; komutlar argv listesi olarak uretilir ve `--dry-run` ile incelenebilir. Protokol secenekleri icin [`docs/PROTOCOLS.md`](docs/PROTOCOLS.md), import akislari icin [`docs/IMPORTERS.md`](docs/IMPORTERS.md), SFTP kuyruklari ve `--force` kurallari icin [`docs/FILE_TRANSFER.md`](docs/FILE_TRANSFER.md), eklenti gelistirme icin [`docs/PLUGIN_DEVELOPMENT.md`](docs/PLUGIN_DEVELOPMENT.md) dosyalarina bakin.
 
 ---
 
@@ -115,9 +119,9 @@ PyQt6 masaustu kabugu su akislari saglar:
 - calisan surecler icin kapatma onayi ve temizleme yapan sekmeli calisma alani;
 - stdout/stderr yakalama, stdin gonderme ve yonetilen Start/Stop durumuna sahip surec destekli terminal panelleri;
 - yatay/dikey bolunmus panel kabuklari;
-- Native, MobaXterm-style, SecureCRT-style, Termius-style, Remmina-style ve mRemoteNG-style gorunum presetleri;
+- Native, MobaXterm-style, SecureCRT-style, Termius-style, Remmina-style ve mRemoteNG-style gorunum presetleri; statik preview uretimi [`docs/GUI_DESIGN.md`](docs/GUI_DESIGN.md) icinde belgelenir;
 - kayitli layout secici ve layout panellerini dogrudan acan olusturma/duzenleme/silme diyaloglari;
-- `row plugins list` ile de gorulebilen Python entry-point protokol baslatma eklentileri.
+- `row plugins list` ve `row plugins validate` ile de gorulebilen/dogrulanabilen Python entry-point protokol baslatma eklentileri.
 
 ```bash
 pip install -e ".[desktop,security]"
@@ -162,7 +166,7 @@ Tam manifest ve skor aciklamalari icin [`docs/FULL_FEATURE_COVERAGE.md`](docs/FU
 | Windows 8/7 | Legacy kaynak, uzak hedef | Modern native runtime icin ayri legacy bagimlilik stack gerekir |
 | Windows Vista/XP | Yalnizca uzak hedef | Harici istemcilerle baglanilir; modern Python/PyQt installer hedefi degildir |
 | Windows Server 2012-2025 | CLI, GUI optional, Web/PWA | Operator jump host olarak uygundur |
-| Linux | CLI, GUI, Web/PWA | i386, x86_64, armhf ve arm64 paket haritalari |
+| Linux | CLI, GUI, Web/PWA | Varsayilan GitHub release is akisi x86_64/amd64 ve aarch64/arm64 native paketleri uretir; i386/i686 ve armhf haritalari eslesen builder ile betik desteklidir |
 | Unix/BSD/Solaris | CLI, Web/PWA, Qt varsa GUI | POSIX shell ve OpenSSH onceliklidir |
 | macOS Intel/Apple Silicon | CLI, GUI, Web/PWA | OpenSSH, XQuartz, Microsoft Remote Desktop/FreeRDP, VNC viewer |
 | Android | Web/PWA, Termux CLI | ARMv7 ve ARM64 Termux/Web; APK gelecek isidir |
@@ -185,6 +189,7 @@ Ayrintilar icin [`docs/PLATFORM_SUPPORT.md`](docs/PLATFORM_SUPPORT.md) dosyasina
 - Yikici SFTP islemleri ve overwrite riski olan transferler `--force` olmadan calistirilmaz.
 - `row serve-web` varsayilan olarak loopback'e bind eder; loopback disi bind icin `--allow-public-bind` gerekir.
 - SSHv1 profilleri yalnizca `ssh1`/`sshv1` protokolu ve `allow_insecure_sshv1=true` secenegi birlikte verildiginde baslatilabilir; protokol v1 yine de guvensizdir.
+- Protokol eklentilerini guvenilir yerel Python kodu gibi ele alin; eklenti destekli profilleri kullanmadan once `row plugins validate` ile yukleme hatalarini ve gecersiz ornek launch planlarini yakalayin.
 - Ayrintilar icin [`SECURITY.md`](SECURITY.md) ve [`docs/SECURITY_MODEL.md`](docs/SECURITY_MODEL.md) dosyalarina bakin.
 
 ---
@@ -200,7 +205,7 @@ python scripts/verify.py
 
 Bagimlilik kisitli inceleme ortamlarinda `pytest` yoksa `python scripts/verify.py --quick` kullanilabilir. Ayrintilar icin [`docs/VERIFYING.md`](docs/VERIFYING.md) dosyasina bakin.
 
-Yayin akisi `v0.1.0` gibi tag'lerde wheel/sdist, kaynak zip, platform tar/zip paketleri, native Windows/macOS/Linux placeholder/manifest paketleri, release manifestleri ve `remote-ops-workspace-v0.1.0-SHA256SUMS.txt` uretir. CI checkout credential'lari final publish adimina kadar read-only kalir.
+Yayin akisi `v0.1.0` gibi tag'lerde wheel/sdist, kaynak zip, platform tar/zip paketleri, Windows `x86`/`x64`/`arm64`, macOS `x64`/`arm64` ve Linux `x86_64`/`aarch64` native paketleri, release manifestleri ve `remote-ops-workspace-v0.1.0-SHA256SUMS.txt` uretir. Linux `i386`/`i686` ve `armhf` ciktisi eslesen builder ile betik desteklidir, fakat varsayilan GitHub release is akisinda yuklenmez. Python yayin araclari `requirements-release.txt` ile sabitlenir ve release manifestine `configs/release_toolchain.json` uzerinden yazilir. Native Windows, macOS ve Linux isleri kendi `native-SHA256SUMS.txt` yan dosyalarini da uretir. CI checkout credential'lari final publish adimina kadar read-only kalir.
 
 | Faz | Paketler | Durum |
 |---|---|---|

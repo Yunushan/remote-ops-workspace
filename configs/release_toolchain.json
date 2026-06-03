@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "python": {
+    "version": "3.12",
+    "constraints_file": "requirements-release.txt",
+    "source_date_epoch": 1704067200
+  },
+  "python_packages": [
+    {
+      "name": "pip",
+      "version": "24.3.1",
+      "purpose": "Pinned installer front-end for release jobs."
+    },
+    {
+      "name": "setuptools",
+      "version": "80.9.0",
+      "purpose": "Pinned build backend dependency."
+    },
+    {
+      "name": "wheel",
+      "version": "0.45.1",
+      "purpose": "Pinned wheel builder dependency."
+    },
+    {
+      "name": "build",
+      "version": "1.2.2.post1",
+      "purpose": "Pinned PEP 517 source/wheel build front-end."
+    },
+    {
+      "name": "pyinstaller",
+      "version": "6.11.1",
+      "purpose": "Pinned native executable packager."
+    },
+    {
+      "name": "PyQt6",
+      "version": "6.7.1",
+      "purpose": "Pinned desktop GUI dependency for native GUI bundles."
+    },
+    {
+      "name": "cryptography",
+      "version": "42.0.8",
+      "purpose": "Pinned optional vault encryption dependency."
+    }
+  ],
+  "native_toolchains": {
+    "windows": [
+      {
+        "name": "innosetup",
+        "provider": "chocolatey",
+        "version": "6.3.3"
+      },
+      {
+        "name": "wix",
+        "provider": "dotnet-tool",
+        "version": "5.0.2"
+      }
+    ],
+    "linux": [
+      {
+        "name": "rpm",
+        "provider": "apt",
+        "version": "runner-package-index"
+      },
+      {
+        "name": "appimagetool",
+        "provider": "system-or-env",
+        "version": "continuous-upstream-with-optional-sha256",
+        "verification": "Set APPIMAGETOOL to a preinstalled binary or set APPIMAGETOOL_SHA256 when APPIMAGETOOL_URL is downloaded."
+      }
+    ],
+    "macos": [
+      {
+        "name": "hdiutil",
+        "provider": "macos-runner",
+        "version": "runner-image"
+      },
+      {
+        "name": "pkgbuild",
+        "provider": "macos-runner",
+        "version": "runner-image"
+      },
+      {
+        "name": "codesign",
+        "provider": "macos-runner",
+        "version": "runner-image"
+      }
+    ]
+  }
+}

@@ -1,0 +1,117 @@
+{
+  "contact_sheet": {
+    "height": 1392,
+    "path": "all-gui-designs-contact-sheet.png",
+    "sha256": "71f9d3a06bda8aa50983044a4add1bb0702056dd5b8c80b60f55ffe3bdd14355",
+    "size_bytes": 286607,
+    "width": 1272
+  },
+  "contact_thumb": {
+    "height": 356,
+    "width": 600
+  },
+  "presets": [
+    {
+      "density": "comfortable",
+      "description": "System-friendly Windows layout with quiet chrome and readable terminal panes.",
+      "id": "native",
+      "image": {
+        "height": 760,
+        "path": "native.png",
+        "sha256": "58cf88243c61edd646d6c9af4460d6d0f76c6ac18fb83490f2de8286648ecb51",
+        "size_bytes": 58608,
+        "width": 1280
+      },
+      "label": "Native",
+      "log_height": 165,
+      "profile_width": 305,
+      "tab_position": "north"
+    },
+    {
+      "density": "dense",
+      "description": "Dense operator console with a connection tree, action strip, tabs and split panes.",
+      "id": "mobaxterm",
+      "image": {
+        "height": 760,
+        "path": "mobaxterm.png",
+        "sha256": "d7644937f3dd241ef31c805b590ac4773db6c48f30ad9a98996de187fcfd83f5",
+        "size_bytes": 59983,
+        "width": 1280
+      },
+      "label": "MobaXterm-style",
+      "log_height": 148,
+      "profile_width": 335,
+      "tab_position": "north"
+    },
+    {
+      "density": "terminal",
+      "description": "Terminal-first workspace with restrained dark chrome and wide session tabs.",
+      "id": "securecrt",
+      "image": {
+        "height": 760,
+        "path": "securecrt.png",
+        "sha256": "ceeb43887281614a094dd3a15754d1fb23e02e003de2f754ae816d1d90d99dd7",
+        "size_bytes": 58203,
+        "width": 1280
+      },
+      "label": "SecureCRT-style",
+      "log_height": 118,
+      "profile_width": 270,
+      "tab_position": "north"
+    },
+    {
+      "density": "focused",
+      "description": "Dark SSH-focused workspace with compact hosts, vault cues and vertical session tabs.",
+      "id": "termius",
+      "image": {
+        "height": 760,
+        "path": "termius.png",
+        "sha256": "916601c115495a6322c7b45a6debe22dcc8cb6da67894fa98b6cf7a4a15b50ea",
+        "size_bytes": 59488,
+        "width": 1280
+      },
+      "label": "Termius-style",
+      "log_height": 136,
+      "profile_width": 292,
+      "tab_position": "west"
+    },
+    {
+      "density": "comfortable",
+      "description": "Light remote-desktop workspace with clear protocol profiles and viewer tabs.",
+      "id": "remmina",
+      "image": {
+        "height": 760,
+        "path": "remmina.png",
+        "sha256": "de91d337a4fdcfa929c55ac9113ae87b51eff7fda1dd98f1adda1db9675640c7",
+        "size_bytes": 59580,
+        "width": 1280
+      },
+      "label": "Remmina-style",
+      "log_height": 158,
+      "profile_width": 320,
+      "tab_position": "north"
+    },
+    {
+      "density": "classic",
+      "description": "Classic connection-manager workspace with a persistent tree and document tabs.",
+      "id": "mremoteng",
+      "image": {
+        "height": 760,
+        "path": "mremoteng.png",
+        "sha256": "284d47b501e9314d88932dd652d7d6a50951d2a614174ecef37d234bb9cde493",
+        "size_bytes": 59955,
+        "width": 1280
+      },
+      "label": "mRemoteNG-style",
+      "log_height": 145,
+      "profile_width": 355,
+      "tab_position": "north"
+    }
+  ],
+  "preview_size": {
+    "height": 760,
+    "width": 1280
+  },
+  "renderer": "scripts/render_gui_design_previews.py",
+  "schema_version": 1
+}

@@ -92,7 +92,7 @@ Product-ready coverage weights:
 | manifest-seam | 0.15 |
 | script-seam | 0.15 |
 
-Every feature record also exposes generated evidence in `row features --coverage --json`, including feature id, status, implementation kind, product mapping and manifest extension point.
+Every feature record also exposes generated evidence in `row features --coverage --json`, including feature id, status, implementation kind, product mapping and manifest extension point. `scripts/check_feature_reality.py` separately verifies implemented feature families against executable evidence such as CLI parser command paths, launch-plan builders, implementation symbols and shipped PWA/Termux files.
 
 Product-ready coverage uses the manifest status weights directly. No blanket
 per-product override promotes adapter-backed, optional, CLI-only or GUI-only

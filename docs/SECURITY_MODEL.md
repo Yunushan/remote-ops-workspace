@@ -21,12 +21,15 @@ Launchers build command arrays such as:
 
 They do not use `shell=True` or shell string concatenation for normal protocol launches.
 
-Command launch hardening:
+Profile and command launch hardening:
 
+- profile creation, import, GUI editor parsing, storage writes and launch planning share profile validation for supported protocol names, safe text fields, tunnel shape and minimum target requirements;
 - hosts and network targets must not start with `-`, contain whitespace, or contain control characters;
 - ports must be explicit valid TCP/UDP-style port numbers when a protocol has no safe default, such as raw sockets;
 - HTTP/HTTPS profiles only open `http://` or `https://` URLs, reject embedded URL passwords, and use direct browser-launch helpers instead of Windows `cmd /c start`;
 - SSH `proxy_jump` is the preferred jump-host path; `proxy_command` is rejected unless the profile explicitly sets `allow_unsafe_proxy_command=true`;
+- SSHv1 requires both an explicit `ssh1`/`sshv1` profile protocol and `allow_insecure_sshv1=true`; when enabled it adds `-1` to the generated SSH argv and remains insecure even when an external client supports it;
+- SFTP upload, delete, rename and local-overwrite download plans are marked destructive and are refused before execution unless the operator passes `--force`; broad delete/rename targets such as `/`, `.`, `~`, parent traversal and remote globs are rejected even with force;
 - snippets, custom profile commands, broadcast commands, network tools and X11 helpers are parsed as argv lists and rejected when empty or malformed.
 
 ## Vault
@@ -41,6 +44,22 @@ Operational rules:
 - `row vault get` refuses to print secrets unless `--show` is provided, or writes to an explicit `--out` file with best-effort owner-only permissions where supported;
 - do not commit `vault.json`.
 
+## Local data writes
+
+The default workspace data directory is created with best-effort owner-only permissions where the operating system supports them. Profile storage, vault storage, layouts, snippets, profile backups, native private-key output and explicit vault `--out` secret files use atomic replacement helpers so partially-written files are not left behind after normal write failures.
+
+Files that may contain operator-sensitive values are written with best-effort private file permissions:
+
+- `profiles.json`;
+- `vault.json`;
+- `layouts.json`;
+- `snippets.json`;
+- `audit.jsonl`;
+- profile backup/export bundles created by the local backup helper;
+- generated private keys and `row vault get --out` files.
+
+Permissions are best-effort on platforms that do not expose POSIX mode bits consistently, so operators should still keep `ROW_HOME` on a trusted local filesystem.
+
 ## SSH key generation
 
 `row keygen` avoids placing non-empty key passphrases on `ssh-keygen` command lines. When `--passphrase-env` is used with software keys (`ed25519`, `ecdsa`, `rsa`), Remote Ops Workspace generates the encrypted OpenSSH key pair in-process through the optional `cryptography` backend and redacts the dry-run display. Hardware/FIDO key types (`ed25519-sk`, `ecdsa-sk`) must prompt interactively through `ssh-keygen`; `--passphrase-env` is rejected for those types to avoid leaking passphrases through process arguments.
@@ -54,4 +73,6 @@ Operational rules:
 
 ## Audit
 
-Launch events are appended to `audit.jsonl` with redaction for secret-like keys and common secret-bearing command flags such as `-N`, `--password`, `--passphrase`, `--secret` and `--token`. Treat support bundles as sensitive.
+Launch events are appended to `audit.jsonl` with redaction for secret-like keys and common secret-bearing command flags such as `-N`, `--password`, `--passphrase`, `--secret` and `--token`.
+
+Support bundles include `doctor.json` and a sanitized `profiles.summary.json`; they do not include raw `profiles.json`, `vault.json` or private keys. The summary preserves counts, protocol names and structural flags, but omits profile names, hostnames, usernames, paths, command values, credential references, group names and URL contents. Treat support bundles as sensitive and review them before sharing.

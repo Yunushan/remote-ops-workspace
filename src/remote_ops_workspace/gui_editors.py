@@ -5,6 +5,7 @@ from typing import Mapping
 from . import command_safety as safe
 from .layouts import Layout, LayoutPane, parse_layout_pane, validate_layout
 from .models import Profile, Tunnel
+from .profile_validation import prepare_profile
 
 
 PROFILE_EDITOR_FIELDS = {
@@ -68,22 +69,24 @@ def profile_from_editor_data(data: Mapping[str, str]) -> Profile:
     name = _required(data.get("name"), "profile name")
     protocol = _required(data.get("protocol"), "protocol").lower()
     port = _optional_port(data.get("port"), protocol)
-    return Profile(
-        name=name,
-        protocol=protocol,
-        host=_optional_clean(data.get("host"), "host"),
-        port=port,
-        username=_optional_clean(data.get("username"), "username"),
-        group=_optional_clean(data.get("group"), "group") or "default",
-        tags=parse_tags(data.get("tags", "")),
-        description=safe.clean_text(data.get("description") or "", "description", allow_empty=True),
-        path=_optional_clean(data.get("path"), "path"),
-        url=_optional_clean(data.get("url"), "url"),
-        command=_optional_clean(data.get("command"), "command"),
-        identity_file=_optional_clean(data.get("identity_file"), "identity file"),
-        credential_ref=_optional_clean(data.get("credential_ref"), "credential ref"),
-        tunnels=parse_tunnels_text(data.get("tunnels", "")),
-        options=parse_key_value_text(data.get("options", "")),
+    return prepare_profile(
+        Profile(
+            name=name,
+            protocol=protocol,
+            host=_optional_clean(data.get("host"), "host"),
+            port=port,
+            username=_optional_clean(data.get("username"), "username"),
+            group=_optional_clean(data.get("group"), "group") or "default",
+            tags=parse_tags(data.get("tags", "")),
+            description=safe.clean_text(data.get("description") or "", "description", allow_empty=True),
+            path=_optional_clean(data.get("path"), "path"),
+            url=_optional_clean(data.get("url"), "url"),
+            command=_optional_clean(data.get("command"), "command"),
+            identity_file=_optional_clean(data.get("identity_file"), "identity file"),
+            credential_ref=_optional_clean(data.get("credential_ref"), "credential ref"),
+            tunnels=parse_tunnels_text(data.get("tunnels", "")),
+            options=parse_key_value_text(data.get("options", "")),
+        )
     )
 
 

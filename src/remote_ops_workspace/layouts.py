@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from . import command_safety as safe
+from .file_safety import write_json_atomic
 from .paths import ensure_data_dir
 from .storage import ProfileStore
 from .terminal import TerminalPanePlan, terminal_plan_for_command, terminal_plan_for_profile
@@ -68,9 +69,8 @@ class LayoutStore:
         return [Layout.from_dict(item) for item in data.get("layouts", [])]
 
     def save(self, layouts: Iterable[Layout]) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
         data = {"version": 1, "layouts": [layout.to_dict() for layout in layouts]}
-        self.path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+        write_json_atomic(self.path, data, private=True)
 
     def add(self, layout: Layout, replace: bool = False) -> None:
         validate_layout(layout)

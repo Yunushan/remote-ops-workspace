@@ -8,8 +8,12 @@ Thanks for helping improve Remote Ops Workspace.
 python -m venv .venv
 . .venv/bin/activate
 pip install -e ".[desktop,security,dev]"
-pytest -q
+python scripts/verify.py
 ```
+
+Use `python scripts/verify.py --quick` only when dev dependencies such as
+`pytest` are unavailable in a constrained review environment. The quick path is
+not a replacement for the full verifier before a pull request or release.
 
 ## Contribution rules
 
@@ -21,8 +25,7 @@ pytest -q
 
 ## Pull request checklist
 
-- [ ] Tests pass with `pytest -q`.
-- [ ] `python -m compileall src` succeeds.
+- [ ] `python scripts/verify.py` succeeds.
 - [ ] README/docs updated if behavior changed.
 - [ ] No real secrets or private endpoints included.
 - [ ] New feature is represented in `configs/feature_manifest.json` when applicable.

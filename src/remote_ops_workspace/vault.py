@@ -6,6 +6,7 @@ from getpass import getpass
 from pathlib import Path
 from typing import Any
 
+from .file_safety import write_json_atomic
 from .paths import ensure_data_dir
 
 
@@ -32,8 +33,7 @@ class LocalVault:
         if self.path.exists():
             raise VaultError(f"vault already exists: {self.path}")
         data = self._empty(passphrase)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        write_json_atomic(self.path, data, private=True, sort_keys=False)
 
     def set(self, name: str, secret: str, passphrase: str) -> None:
         data = self._load()
@@ -62,7 +62,7 @@ class LocalVault:
         return json.loads(self.path.read_text(encoding="utf-8"))
 
     def _save(self, data: dict[str, Any]) -> None:
-        self.path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+        write_json_atomic(self.path, data, private=True)
 
     def _empty(self, passphrase: str) -> dict[str, Any]:
         import os

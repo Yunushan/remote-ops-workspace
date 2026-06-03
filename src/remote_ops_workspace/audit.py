@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .file_safety import append_jsonl_private
 from .paths import ensure_data_dir
 
 SENSITIVE_KEY_TOKENS = ("pass", "secret", "token", "key")
@@ -26,8 +26,7 @@ def append_event(event_type: str, payload: dict[str, Any]) -> Path:
         "event_type": event_type,
         "payload": _redact(payload),
     }
-    with path.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(record, sort_keys=True) + "\n")
+    append_jsonl_private(path, record)
     return path
 
 

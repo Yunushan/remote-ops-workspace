@@ -2,7 +2,7 @@
 
 ## Layers
 
-1. **Core model**: `Profile`, `Tunnel`, feature manifest and storage primitives.
+1. **Core model**: `Profile`, `Tunnel`, shared profile validation, feature manifest and storage primitives.
 2. **Adapters**: protocol command builders in `launcher.py`.
 3. **Operator interfaces**: CLI, PyQt6 GUI shell and Web/PWA shell.
 4. **Security**: encrypted local vault, redacted audit log and safe command-array launching.
@@ -35,6 +35,13 @@ Remmina `.remmina` files, mRemoteNG `confCons.xml`, Termius-style JSON host list
 and MobaXterm bookmark/session exports. Secret-like fields are skipped so imported
 credentials stay behind the local vault boundary.
 
+`profile_validation.py` owns shared profile invariants: supported protocol names,
+clean profile/group/tag/option text, valid tunnel shape, safe host/port/url fields
+and minimum launch target requirements such as host-backed SSH/RDP/VNC profiles,
+explicit raw-socket ports, serial device paths and custom commands. Storage,
+importers, GUI editor parsing and launch planning all pass through this layer
+before protocol-specific command builders add adapter options.
+
 GUI profile and layout editors use a pure conversion layer before touching PyQt
 widgets. That keeps validation shared between tests and the desktop dialogs:
 profile edits become `Profile` objects, layout pane text becomes `LayoutPane`
@@ -43,7 +50,9 @@ objects, and the same storage classes persist the results.
 File transfer operations are represented as SFTP batch plans. One-shot commands,
 queued transfers and preview commands all flow through `file_transfer.py`, which
 keeps remote paths, local paths and generated batch text validated before any
-external `sftp` process is launched.
+external `sftp` process is launched. Plans carry destructive-action metadata so
+uploads, deletes, renames and known local-overwrite downloads can be previewed
+with `--dry-run` but cannot execute through the project runner without `--force`.
 
 ## Plugin model
 

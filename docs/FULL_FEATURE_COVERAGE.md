@@ -8,34 +8,34 @@ The project publishes two generated scores from `configs/feature_manifest.json`.
 
 | Product target | Feature-family mapping | Product-ready coverage | Ready gap to 100% | Feature families tracked |
 |---|---:|---:|---:|---:|
-| MobaXterm | 100.0% | 100.0% | 0.0% | 25 |
-| Remmina | 100.0% | 100.0% | 0.0% | 11 |
-| mRemoteNG | 100.0% | 100.0% | 0.0% | 15 |
-| Terminator | 100.0% | 100.0% | 0.0% | 8 |
-| Termius | 100.0% | 100.0% | 0.0% | 21 |
-| Devolutions Remote Desktop Manager | 100.0% | 100.0% | 0.0% | 26 |
-| Royal TS / Royal TSX | 100.0% | 100.0% | 0.0% | 26 |
-| Electerm | 100.0% | 100.0% | 0.0% | 19 |
-| Tabby | 100.0% | 100.0% | 0.0% | 21 |
-| SecureCRT | 100.0% | 100.0% | 0.0% | 19 |
-| Xshell | 100.0% | 100.0% | 0.0% | 19 |
-| Bitvise SSH Client | 100.0% | 100.0% | 0.0% | 9 |
-| PuTTY | 100.0% | 100.0% | 0.0% | 11 |
-| KiTTY | 100.0% | 100.0% | 0.0% | 12 |
-| SuperPuTTY | 100.0% | 100.0% | 0.0% | 14 |
-| Solar-PuTTY | 100.0% | 100.0% | 0.0% | 12 |
-| MTPuTTY | 100.0% | 100.0% | 0.0% | 14 |
-| Windows Terminal + OpenSSH | 100.0% | 100.0% | 0.0% | 17 |
-| WinSCP | 100.0% | 100.0% | 0.0% | 10 |
-| Apache Guacamole | 100.0% | 100.0% | 0.0% | 10 |
-| XPipe | 100.0% | 100.0% | 0.0% | 16 |
-| Muon SSH | 100.0% | 100.0% | 0.0% | 11 |
-| ConEmu (with Cygwin / MSYS2 / SSH) | 100.0% | 100.0% | 0.0% | 12 |
-| Cmder | 100.0% | 100.0% | 0.0% | 11 |
-| Warp (macOS/Linux, Windows coming) | 100.0% | 100.0% | 0.0% | 12 |
-| Hyper | 100.0% | 100.0% | 0.0% | 8 |
-| X410 + any terminal (e.g., Windows Terminal, Alacritty) | 100.0% | 100.0% | 0.0% | 7 |
-| Xming (or VcXsrv) + PuTTY / mRemoteNG | 100.0% | 100.0% | 0.0% | 10 |
+| MobaXterm | 100.0% | 80.8% | 19.2% | 25 |
+| Remmina | 100.0% | 80.5% | 19.5% | 11 |
+| mRemoteNG | 100.0% | 82.3% | 17.7% | 15 |
+| Terminator | 100.0% | 89.4% | 10.6% | 8 |
+| Termius | 100.0% | 82.6% | 17.4% | 21 |
+| Devolutions Remote Desktop Manager | 100.0% | 81.5% | 18.5% | 26 |
+| Royal TS / Royal TSX | 100.0% | 81.5% | 18.5% | 26 |
+| Electerm | 100.0% | 85.3% | 14.7% | 19 |
+| Tabby | 100.0% | 84.3% | 15.7% | 21 |
+| SecureCRT | 100.0% | 82.6% | 17.4% | 19 |
+| Xshell | 100.0% | 82.6% | 17.4% | 19 |
+| Bitvise SSH Client | 100.0% | 82.2% | 17.8% | 9 |
+| PuTTY | 100.0% | 79.5% | 20.5% | 11 |
+| KiTTY | 100.0% | 80.0% | 20.0% | 12 |
+| SuperPuTTY | 100.0% | 81.1% | 18.9% | 14 |
+| Solar-PuTTY | 100.0% | 82.5% | 17.5% | 12 |
+| MTPuTTY | 100.0% | 81.1% | 18.9% | 14 |
+| Windows Terminal + OpenSSH | 100.0% | 84.4% | 15.6% | 17 |
+| WinSCP | 100.0% | 86.5% | 13.5% | 10 |
+| Apache Guacamole | 100.0% | 82.5% | 17.5% | 10 |
+| XPipe | 100.0% | 83.8% | 16.2% | 16 |
+| Muon SSH | 100.0% | 81.8% | 18.2% | 11 |
+| ConEmu (with Cygwin / MSYS2 / SSH) | 100.0% | 90.0% | 10.0% | 12 |
+| Cmder | 100.0% | 89.1% | 10.9% | 11 |
+| Warp (macOS/Linux, Windows coming) | 100.0% | 85.8% | 14.2% | 12 |
+| Hyper | 100.0% | 89.4% | 10.6% | 8 |
+| X410 + any terminal (e.g., Windows Terminal, Alacritty) | 100.0% | 82.1% | 17.9% | 7 |
+| Xming (or VcXsrv) + PuTTY / mRemoteNG | 100.0% | 77.5% | 22.5% | 10 |
 | **Overall** | **100.0%** | **82.4%** | **17.6%** | **44** |
 
 Generate the same numbers locally:
@@ -94,11 +94,10 @@ Product-ready coverage weights:
 
 Every feature record also exposes generated evidence in `row features --coverage --json`, including feature id, status, implementation kind, product mapping and manifest extension point.
 
-Each requested product target has declared product-ready overrides in
-`configs/feature_manifest.json`. Those overrides promote tested,
-release-supported adapter/CLI/GUI workflows to full target readiness. The
-overall row keeps the default unique-feature maturity score across the
-repository so adapter-backed implementation maturity remains visible.
+Product-ready coverage uses the manifest status weights directly. No blanket
+per-product override promotes adapter-backed, optional, CLI-only or GUI-only
+feature families to 100% readiness, so product rows expose the same maturity
+gaps operators should expect from the current adapter-first implementation.
 
 ## Product feature family mapping
 
@@ -162,10 +161,12 @@ repository so adapter-backed implementation maturity remains visible.
 
 ## Current implementation status
 
-The current v0.1.0 repo is a production-minded foundation, not a proprietary clone. It has real profile storage, command generation, dry-run inspection, external process launch, doctor checks, optional encrypted vault, audit log, snippets/macros, saved layouts that can be launched from CLI or opened and edited in the GUI, broadcast/fanout commands with per-target results, protocol-specific launch option builders, profile importers for common external exports, SSH keygen/FIDO adapters, SFTP batch file operations, transfer queues and previews, GUI SFTP panes, network toolbox commands, mounted-directory sync, Web/PWA shell and PyQt6 GUI shell with process-backed terminal panes.
+The current v0.1.0 repo is an adapter-first foundation, not a proprietary clone. It has working profile storage, command generation, dry-run inspection, external process launch, doctor checks, optional encrypted vault, audit log, snippets/macros, saved layouts that can be launched from CLI or opened and edited in the GUI, broadcast/fanout commands with per-target results, protocol-specific launch option builders, profile importers for common external exports, SSH keygen/FIDO adapters, SFTP batch file operations, transfer queues and previews, GUI SFTP panes, network toolbox commands, mounted-directory sync, Web/PWA shell and PyQt6 GUI shell with process-backed terminal panes.
 
-For each requested product target, the release-supported adapter, CLI and GUI
-suite now covers every tracked public feature family at product-ready score.
-Deep embedded protocol rendering, proprietary vendor cloud services, native
-Android packaging and advanced PTY/terminal emulation can still evolve behind
-the existing adapter and plugin boundaries without rewriting the core.
+For each requested product target, the repository maps every tracked public
+feature family, but the product-ready score remains below 100% until
+adapter-backed, optional, shell-backed, CLI-only and GUI-only workflows gain
+stronger embedded implementation, packaging, runtime verification and support
+evidence. Deep embedded protocol rendering, proprietary vendor cloud services,
+native Android packaging and advanced PTY/terminal emulation can still evolve
+behind the existing adapter and plugin boundaries without rewriting the core.

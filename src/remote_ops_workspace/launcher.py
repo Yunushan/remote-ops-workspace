@@ -11,6 +11,7 @@ from typing import Iterable, Mapping
 
 from . import command_safety as safe
 from .models import Profile, Tunnel
+from .profile_validation import prepare_profile
 
 
 @dataclass(slots=True)
@@ -29,6 +30,8 @@ class LauncherError(RuntimeError):
 
 DEFAULT_PORTS: dict[str, int] = {
     "ssh": 22,
+    "ssh1": 22,
+    "sshv1": 22,
     "sftp": 22,
     "scp": 22,
     "mosh": 22,
@@ -49,12 +52,16 @@ DEFAULT_PORTS: dict[str, int] = {
     "local-shell": 0,
 }
 
+SSH_V1_PROTOCOLS = {"ssh1", "sshv1"}
+SSH_V1_OPT_IN_OPTIONS = ("allow_insecure_sshv1", "allow_unsafe_sshv1")
+
 
 def build_launch_plan(profile: Profile) -> LaunchPlan:
+    profile = prepare_profile(profile)
     protocol = profile.protocol.lower().strip()
     notes: list[str] = []
 
-    if protocol in {"ssh", "sftp", "scp"}:
+    if protocol in {"ssh", *SSH_V1_PROTOCOLS, "sftp", "scp"}:
         return _build_ssh_family(profile, protocol)
     if protocol == "mosh":
         return _build_mosh(profile)
@@ -107,6 +114,8 @@ def launch(profile: Profile, dry_run: bool = False) -> LaunchPlan:
 def protocol_clients() -> dict[str, list[str]]:
     return {
         "ssh": ["ssh"],
+        "ssh1": ["ssh"],
+        "sshv1": ["ssh"],
         "sftp": ["sftp"],
         "scp": ["scp"],
         "mosh": ["mosh"],
@@ -132,8 +141,15 @@ def _build_ssh_family(profile: Profile, protocol: str) -> LaunchPlan:
     target = _target(profile, host)
     notes: list[str] = []
 
-    if protocol == "ssh":
-        cmd = ["ssh", "-p", str(port)]
+    if protocol in {"ssh", *SSH_V1_PROTOCOLS}:
+        cmd = ["ssh"]
+        if protocol in SSH_V1_PROTOCOLS:
+            _require_sshv1_opt_in(profile)
+            cmd.append("-1")
+            notes.append("SSHv1 is insecure, obsolete, and disabled unless allow_insecure_sshv1=true is set.")
+            notes.append("Use only for isolated legacy systems; protocol v1 cannot provide modern SSH security.")
+            notes.append("Requires an SSH client build that still supports protocol version 1.")
+        cmd.extend(["-p", str(port)])
         cmd.extend(_ssh_identity_args(profile))
         cmd.extend(_ssh_connection_option_args(profile.options))
         cmd.extend(_ssh_proxy_args(profile, notes))
@@ -285,6 +301,14 @@ def _build_mosh(profile: Profile) -> LaunchPlan:
         notes.append("Mosh does not carry SSH tunnels; tunnel definitions are ignored for this launch.")
     cmd.append(target)
     return LaunchPlan("mosh", cmd, notes)
+
+
+def _require_sshv1_opt_in(profile: Profile) -> None:
+    if _option_bool(profile.options, *SSH_V1_OPT_IN_OPTIONS):
+        return
+    raise LauncherError(
+        "SSHv1 is disabled by default; set allow_insecure_sshv1=true only for isolated legacy systems"
+    )
 
 
 def _build_rdp(profile: Profile) -> LaunchPlan:

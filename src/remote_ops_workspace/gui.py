@@ -28,6 +28,7 @@ def main() -> int:
         from PyQt6.QtGui import QKeySequence, QShortcut, QTextCursor
         from PyQt6.QtWidgets import (
             QApplication,
+            QCheckBox,
             QComboBox,
             QDialog,
             QDialogButtonBox,
@@ -249,8 +250,10 @@ def main() -> int:
             )
             self.local_preview_path = QLineEdit()
             self.local_preview_path.setPlaceholderText("Local file or directory")
+            self.force_destructive = QCheckBox("Force destructive actions")
             form.addRow("Operations", self.operations)
             form.addRow("Local preview", self.local_preview_path)
+            form.addRow("", self.force_destructive)
             root.addLayout(form)
 
             controls = QHBoxLayout()
@@ -280,7 +283,7 @@ def main() -> int:
                 raw = line.strip()
                 if raw and not raw.startswith("#"):
                     items.append(parse_transfer_item_spec(raw))
-            return build_sftp_queue_plan(self.profile, items)
+            return build_sftp_queue_plan(self.profile, items, force=self.force_destructive.isChecked())
 
         def refresh_queue_preview(self) -> None:
             try:

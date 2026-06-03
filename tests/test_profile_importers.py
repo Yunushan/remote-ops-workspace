@@ -72,6 +72,24 @@ def test_mremoteng_importer_maps_nested_groups_and_skips_password(tmp_path: Path
     assert any("not imported" in warning for warning in result.warnings)
 
 
+def test_mremoteng_importer_preserves_ssh1_protocol(tmp_path: Path) -> None:
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    source = tmp_path / "confCons.xml"
+    source.write_text(
+        """<Connections>
+  <Node Name="Legacy" Type="Connection" Protocol="SSH1" Hostname="192.0.2.15" Port="22" Username="admin" />
+</Connections>""",
+        encoding="utf-8",
+    )
+
+    result = import_profiles(source, source_format="mremoteng")
+
+    profile = result.profiles[0]
+    assert profile.protocol == "ssh1"
+    assert profile.host == "192.0.2.15"
+    assert any("allow_insecure_sshv1=true" in warning for warning in result.warnings)
+
+
 def test_termius_importer_maps_host_json(tmp_path: Path) -> None:
     tmp_path.mkdir(parents=True, exist_ok=True)
     source = tmp_path / "termius.json"

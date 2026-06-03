@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .file_safety import write_json_atomic
 from .storage import ProfileStore
 
 
@@ -24,8 +24,7 @@ class BackupService:
             "exported_at": datetime.now(timezone.utc).isoformat(),
             "profiles": [profile.to_dict() for profile in self.store.load()],
         }
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+        write_json_atomic(path, data, private=True)
 
     def import_bundle(self, path: Path, replace: bool = False) -> int:
         return self.store.import_from(path, replace=replace)

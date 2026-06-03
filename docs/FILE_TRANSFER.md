@@ -15,6 +15,25 @@ row files mkdir lab-ssh /tmp/releases --dry-run
 row files rename lab-ssh /tmp/old /tmp/new --dry-run
 ```
 
+Execution safety:
+
+- `ls`, `open`, previews, `mkdir` and downloads to a new local target do not
+  require `--force`.
+- `put` always requires `--force` for real execution because OpenSSH `sftp`
+  does not provide a no-clobber upload mode.
+- `get` requires `--force` only when the local destination already exists or
+  when a remote glob makes the local overwrite target unpredictable.
+- `rm`, `rmdir`, `rename` and destructive queue batches require `--force` for
+  real execution. `--dry-run` can still show the generated batch first.
+- Destructive remote paths reject overly broad targets such as `/`, `.`, `~`,
+  parent-directory traversal and glob patterns even when `--force` is used.
+
+```bash
+row files rm lab-ssh /tmp/old.txt --dry-run
+row files rm lab-ssh /tmp/old.txt --force
+row files put lab-ssh ./build.tar.gz --remote /tmp/build.tar.gz --force
+```
+
 ## Transfer Queues
 
 Use `row files queue` when several actions should be reviewed or executed as one
@@ -26,6 +45,16 @@ row files queue lab-ssh \
   --op "put --recursive ./build /tmp/build" \
   --op "mkdir /tmp/releases" \
   --dry-run
+```
+
+Add `--force` only when executing a queue that contains uploads, deletes,
+renames, existing local download targets or remote globs:
+
+```bash
+row files queue lab-ssh \
+  --op "rm /tmp/old.txt" \
+  --op "put ./build.tar.gz /tmp/build.tar.gz" \
+  --force
 ```
 
 Supported queue operations:

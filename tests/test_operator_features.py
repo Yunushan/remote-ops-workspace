@@ -499,7 +499,7 @@ def test_raw_socket_requires_explicit_port() -> None:
     try:
         build_launch_plan(Profile(name="raw", protocol="raw", host="192.0.2.10"))
     except ValueError as exc:
-        assert "raw port is required" in str(exc)
+        assert "raw profile requires explicit port" in str(exc)
     else:
         raise AssertionError("raw socket profiles should require an explicit port")
 

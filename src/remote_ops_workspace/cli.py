@@ -4,7 +4,6 @@ import argparse
 import json
 import os
 import shlex
-import stat
 import sys
 from getpass import getpass
 from pathlib import Path
@@ -34,6 +33,7 @@ from .file_transfer import (
     run_sftp_interactive,
     run_sftp_queue,
 )
+from .file_safety import write_text_atomic
 from .keys import build_keygen_plan, run_keygen
 from .launcher import LauncherError, launch
 from .layouts import (
@@ -214,6 +214,7 @@ def build_parser() -> argparse.ArgumentParser:
     files_get.add_argument("remote")
     files_get.add_argument("--local", type=Path)
     files_get.add_argument("--recursive", action="store_true")
+    files_get.add_argument("--force", action="store_true", help="allow overwriting an existing local target")
     files_get.add_argument("--dry-run", action="store_true")
     files_get.set_defaults(func=cmd_files_get)
     files_put = files_sub.add_parser("put", help="upload a local file or directory")
@@ -221,6 +222,7 @@ def build_parser() -> argparse.ArgumentParser:
     files_put.add_argument("local", type=Path)
     files_put.add_argument("--remote")
     files_put.add_argument("--recursive", action="store_true")
+    files_put.add_argument("--force", action="store_true", help="acknowledge remote overwrite risk")
     files_put.add_argument("--dry-run", action="store_true")
     files_put.set_defaults(func=cmd_files_put)
     files_mkdir = files_sub.add_parser("mkdir", help="create a remote directory")
@@ -231,17 +233,20 @@ def build_parser() -> argparse.ArgumentParser:
     files_rm = files_sub.add_parser("rm", help="remove a remote file")
     files_rm.add_argument("profile")
     files_rm.add_argument("remote")
+    files_rm.add_argument("--force", action="store_true", help="confirm remote deletion")
     files_rm.add_argument("--dry-run", action="store_true")
     files_rm.set_defaults(func=cmd_files_rm)
     files_rmdir = files_sub.add_parser("rmdir", help="remove a remote directory")
     files_rmdir.add_argument("profile")
     files_rmdir.add_argument("remote")
+    files_rmdir.add_argument("--force", action="store_true", help="confirm remote directory deletion")
     files_rmdir.add_argument("--dry-run", action="store_true")
     files_rmdir.set_defaults(func=cmd_files_rmdir)
     files_rename = files_sub.add_parser("rename", help="rename a remote path")
     files_rename.add_argument("profile")
     files_rename.add_argument("old")
     files_rename.add_argument("new")
+    files_rename.add_argument("--force", action="store_true", help="confirm remote rename or replace risk")
     files_rename.add_argument("--dry-run", action="store_true")
     files_rename.set_defaults(func=cmd_files_rename)
     files_queue = files_sub.add_parser("queue", help="run or inspect a queued SFTP transfer batch")
@@ -252,6 +257,7 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
         help='queued operation such as "get /etc/hosts ./hosts", "put ./build.tar.gz /tmp/build.tar.gz", "mkdir /tmp/x", or "rename old new"',
     )
+    files_queue.add_argument("--force", action="store_true", help="allow destructive queue items during execution")
     files_queue.add_argument("--dry-run", action="store_true")
     files_queue.add_argument("--json", action="store_true")
     files_queue.set_defaults(func=cmd_files_queue)
@@ -659,6 +665,7 @@ def cmd_files_get(args: argparse.Namespace) -> int:
         args.remote,
         local_path=args.local,
         recursive=args.recursive,
+        allow_overwrite=args.force,
     )
     run_sftp_batch(plan, dry_run=args.dry_run)
     _print_sftp_plan(plan, show_batch=args.dry_run)
@@ -672,6 +679,7 @@ def cmd_files_put(args: argparse.Namespace) -> int:
         args.local,
         remote_path=args.remote,
         recursive=args.recursive,
+        allow_overwrite=args.force,
     )
     run_sftp_batch(plan, dry_run=args.dry_run)
     _print_sftp_plan(plan, show_batch=args.dry_run)
@@ -688,7 +696,7 @@ def cmd_files_mkdir(args: argparse.Namespace) -> int:
 
 def cmd_files_rm(args: argparse.Namespace) -> int:
     profile = ProfileStore().get(args.profile)
-    plan = build_sftp_rm_plan(profile, args.remote)
+    plan = build_sftp_rm_plan(profile, args.remote, allow_delete=args.force)
     run_sftp_batch(plan, dry_run=args.dry_run)
     _print_sftp_plan(plan, show_batch=args.dry_run)
     return 0
@@ -696,7 +704,7 @@ def cmd_files_rm(args: argparse.Namespace) -> int:
 
 def cmd_files_rmdir(args: argparse.Namespace) -> int:
     profile = ProfileStore().get(args.profile)
-    plan = build_sftp_rmdir_plan(profile, args.remote)
+    plan = build_sftp_rmdir_plan(profile, args.remote, allow_delete=args.force)
     run_sftp_batch(plan, dry_run=args.dry_run)
     _print_sftp_plan(plan, show_batch=args.dry_run)
     return 0
@@ -704,7 +712,7 @@ def cmd_files_rmdir(args: argparse.Namespace) -> int:
 
 def cmd_files_rename(args: argparse.Namespace) -> int:
     profile = ProfileStore().get(args.profile)
-    plan = build_sftp_rename_plan(profile, args.old, args.new)
+    plan = build_sftp_rename_plan(profile, args.old, args.new, allow_rename=args.force)
     run_sftp_batch(plan, dry_run=args.dry_run)
     _print_sftp_plan(plan, show_batch=args.dry_run)
     return 0
@@ -713,7 +721,7 @@ def cmd_files_rename(args: argparse.Namespace) -> int:
 def cmd_files_queue(args: argparse.Namespace) -> int:
     profile = ProfileStore().get(args.profile)
     items = [parse_transfer_item_spec(spec) for spec in args.op]
-    plan = build_sftp_queue_plan(profile, items)
+    plan = build_sftp_queue_plan(profile, items, force=args.force)
     result = run_sftp_queue(plan, dry_run=args.dry_run)
     if args.json:
         payload = result.to_dict()
@@ -890,12 +898,7 @@ def _vault_passphrase(confirm: bool) -> str:
 
 
 def _write_secret_file(path: Path, secret: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(secret, encoding="utf-8")
-    try:
-        path.chmod(stat.S_IRUSR | stat.S_IWUSR)
-    except OSError:
-        pass
+    write_text_atomic(path, secret, private=True)
 
 
 def _print_sftp_plan(plan: SftpBatchPlan, *, show_batch: bool) -> None:

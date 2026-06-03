@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 
 from . import command_safety as safe
 from .models import Profile
+from .profile_validation import prepare_profile
 from .storage import ProfileStore
 
 
@@ -48,6 +49,8 @@ def import_profiles(
         raise ValueError(f"unsupported import format: {resolved_format}")
     if not result.profiles:
         raise ValueError(f"no profiles found in {path}")
+    result.profiles = [prepare_profile(profile) for profile in result.profiles]
+    _warn_legacy_sshv1(result)
     return result
 
 
@@ -507,8 +510,10 @@ def _map_protocol(value: str | None, *, default: str) -> str:
         "sftp": "sftp",
         "spice": "spice",
         "ssh": "ssh",
-        "ssh1": "ssh",
+        "ssh1": "ssh1",
+        "sshv1": "ssh1",
         "ssh2": "ssh",
+        "sshv2": "ssh",
         "telnet": "telnet",
         "vnc": "vnc",
         "www": "https",
@@ -516,6 +521,15 @@ def _map_protocol(value: str | None, *, default: str) -> str:
         "x2go": "x2go",
     }
     return mapping.get(normalized, default)
+
+
+def _warn_legacy_sshv1(result: ProfileImportResult) -> None:
+    for profile in result.profiles:
+        opt_in = profile.options.get("allow_insecure_sshv1", "").lower()
+        if profile.protocol in {"ssh1", "sshv1"} and opt_in not in {"1", "true", "yes"}:
+            result.warnings.append(
+                f"{profile.name}: SSHv1 is disabled by default; set allow_insecure_sshv1=true only for isolated legacy systems"
+            )
 
 
 def _mobaxterm_protocol(name: str, marker: str) -> str:

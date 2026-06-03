@@ -4,7 +4,7 @@
 
 ### Operator-first remote terminal and connection workspace for SSH, RDP, VNC, SFTP, Mosh, Telnet, X11, SPICE, X2Go, ICA, HTTP/HTTPS, serial consoles, raw sockets, split panes, vaults, snippets, sync, CLI, GUI and Web/PWA.
 
-![build](https://img.shields.io/badge/build-ready-brightgreen)
+![build](https://img.shields.io/badge/build-source--available-brightgreen)
 ![release](https://img.shields.io/badge/release-v0.1.0-blue)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 ![runtime](https://img.shields.io/badge/runtime-Python%203.10--3.14-orange)
@@ -22,9 +22,9 @@ English • [Türkçe](README.tr.md)
 
 ## What this project is
 
-**Remote Ops Workspace** is a GitHub-ready, MIT-licensed, cross-platform remote access workspace designed as an open foundation for the feature families people expect from MobaXterm, Remmina, mRemoteNG, Terminator and Termius.
+**Remote Ops Workspace** is a MIT-licensed, cross-platform remote access workspace designed as an open foundation for the feature families people expect from MobaXterm, Remmina, mRemoteNG, Terminator and Termius.
 
-It is intentionally built as an **adapter-first product**: the repo includes a real CLI, profile store, launcher command builders, encrypted vault support, GUI shell, Web/PWA shell, feature coverage manifest, tests, installers, CI and release scaffolding. Deep protocol rendering can be provided by native system tools such as OpenSSH, FreeRDP, TigerVNC, x2goclient, virt-viewer, PuTTY, Windows MSTSC, XQuartz/VcXsrv/Xorg, or by future embedded protocol plugins.
+It is intentionally built as an **adapter-first foundation**: the repo includes a working CLI, profile store, launcher command builders, optional encrypted vault support, GUI shell, Web/PWA shell, feature coverage manifest, tests, installers, CI and release scaffolding. Deep protocol rendering is delegated to native system tools such as OpenSSH, FreeRDP, TigerVNC, x2goclient, virt-viewer, PuTTY, Windows MSTSC, XQuartz/VcXsrv/Xorg, or future embedded protocol plugins.
 
 > Not affiliated with Mobatek/MobaXterm, Remmina, mRemoteNG, GNOME Terminator, or Termius. Product names are used only to describe compatibility goals and feature coverage targets.
 
@@ -98,9 +98,9 @@ row import --in confCons.xml --format mremoteng
 row import --in ~/.local/share/remmina --format remmina
 ```
 
-The launcher never concatenates shell strings. Protocol launches are built as safe argument arrays and can be inspected with `--dry-run` before execution. Per-protocol profile options cover OpenSSH keepalives/proxies/host-key policy, Mosh ports/prediction, RDP display/security/device flags, VNC/SPICE/X2Go viewer flags and serial line settings; see [`docs/PROTOCOLS.md`](docs/PROTOCOLS.md).
+Profiles are normalized and validated before storage, import results, GUI edits and launch planning. The launcher never concatenates shell strings. Protocol launches are built as safe argument arrays and can be inspected with `--dry-run` before execution. Per-protocol profile options cover OpenSSH keepalives/proxies/host-key policy, Mosh ports/prediction, RDP display/security/device flags, VNC/SPICE/X2Go viewer flags and serial line settings; see [`docs/PROTOCOLS.md`](docs/PROTOCOLS.md).
 
-Profile imports support the native ROW bundle plus Remmina `.remmina`, mRemoteNG `confCons.xml`, Termius-style JSON host lists and MobaXterm session bookmark exports. See [`docs/IMPORTERS.md`](docs/IMPORTERS.md). File transfer queues and previews are documented in [`docs/FILE_TRANSFER.md`](docs/FILE_TRANSFER.md).
+Profile imports support the native ROW bundle plus Remmina `.remmina`, mRemoteNG `confCons.xml`, Termius-style JSON host lists and MobaXterm session bookmark exports. See [`docs/IMPORTERS.md`](docs/IMPORTERS.md). File transfer queues, previews and `--force` requirements for destructive SFTP actions are documented in [`docs/FILE_TRANSFER.md`](docs/FILE_TRANSFER.md).
 
 ---
 
@@ -149,37 +149,37 @@ Coverage is generated from [`configs/feature_manifest.json`](configs/feature_man
 
 | Product target | Feature-family mapping | Product-ready coverage | Ready gap to 100% | Feature families tracked |
 |---|---:|---:|---:|---:|
-| MobaXterm | 100.0% | 100.0% | 0.0% | 25 |
-| Remmina | 100.0% | 100.0% | 0.0% | 11 |
-| mRemoteNG | 100.0% | 100.0% | 0.0% | 15 |
-| Terminator | 100.0% | 100.0% | 0.0% | 8 |
-| Termius | 100.0% | 100.0% | 0.0% | 21 |
-| Devolutions Remote Desktop Manager | 100.0% | 100.0% | 0.0% | 26 |
-| Royal TS / Royal TSX | 100.0% | 100.0% | 0.0% | 26 |
-| Electerm | 100.0% | 100.0% | 0.0% | 19 |
-| Tabby | 100.0% | 100.0% | 0.0% | 21 |
-| SecureCRT | 100.0% | 100.0% | 0.0% | 19 |
-| Xshell | 100.0% | 100.0% | 0.0% | 19 |
-| Bitvise SSH Client | 100.0% | 100.0% | 0.0% | 9 |
-| PuTTY | 100.0% | 100.0% | 0.0% | 11 |
-| KiTTY | 100.0% | 100.0% | 0.0% | 12 |
-| SuperPuTTY | 100.0% | 100.0% | 0.0% | 14 |
-| Solar-PuTTY | 100.0% | 100.0% | 0.0% | 12 |
-| MTPuTTY | 100.0% | 100.0% | 0.0% | 14 |
-| Windows Terminal + OpenSSH | 100.0% | 100.0% | 0.0% | 17 |
-| WinSCP | 100.0% | 100.0% | 0.0% | 10 |
-| Apache Guacamole | 100.0% | 100.0% | 0.0% | 10 |
-| XPipe | 100.0% | 100.0% | 0.0% | 16 |
-| Muon SSH | 100.0% | 100.0% | 0.0% | 11 |
-| ConEmu (with Cygwin / MSYS2 / SSH) | 100.0% | 100.0% | 0.0% | 12 |
-| Cmder | 100.0% | 100.0% | 0.0% | 11 |
-| Warp (macOS/Linux, Windows coming) | 100.0% | 100.0% | 0.0% | 12 |
-| Hyper | 100.0% | 100.0% | 0.0% | 8 |
-| X410 + any terminal (e.g., Windows Terminal, Alacritty) | 100.0% | 100.0% | 0.0% | 7 |
-| Xming (or VcXsrv) + PuTTY / mRemoteNG | 100.0% | 100.0% | 0.0% | 10 |
+| MobaXterm | 100.0% | 80.8% | 19.2% | 25 |
+| Remmina | 100.0% | 80.5% | 19.5% | 11 |
+| mRemoteNG | 100.0% | 82.3% | 17.7% | 15 |
+| Terminator | 100.0% | 89.4% | 10.6% | 8 |
+| Termius | 100.0% | 82.6% | 17.4% | 21 |
+| Devolutions Remote Desktop Manager | 100.0% | 81.5% | 18.5% | 26 |
+| Royal TS / Royal TSX | 100.0% | 81.5% | 18.5% | 26 |
+| Electerm | 100.0% | 85.3% | 14.7% | 19 |
+| Tabby | 100.0% | 84.3% | 15.7% | 21 |
+| SecureCRT | 100.0% | 82.6% | 17.4% | 19 |
+| Xshell | 100.0% | 82.6% | 17.4% | 19 |
+| Bitvise SSH Client | 100.0% | 82.2% | 17.8% | 9 |
+| PuTTY | 100.0% | 79.5% | 20.5% | 11 |
+| KiTTY | 100.0% | 80.0% | 20.0% | 12 |
+| SuperPuTTY | 100.0% | 81.1% | 18.9% | 14 |
+| Solar-PuTTY | 100.0% | 82.5% | 17.5% | 12 |
+| MTPuTTY | 100.0% | 81.1% | 18.9% | 14 |
+| Windows Terminal + OpenSSH | 100.0% | 84.4% | 15.6% | 17 |
+| WinSCP | 100.0% | 86.5% | 13.5% | 10 |
+| Apache Guacamole | 100.0% | 82.5% | 17.5% | 10 |
+| XPipe | 100.0% | 83.8% | 16.2% | 16 |
+| Muon SSH | 100.0% | 81.8% | 18.2% | 11 |
+| ConEmu (with Cygwin / MSYS2 / SSH) | 100.0% | 90.0% | 10.0% | 12 |
+| Cmder | 100.0% | 89.1% | 10.9% | 11 |
+| Warp (macOS/Linux, Windows coming) | 100.0% | 85.8% | 14.2% | 12 |
+| Hyper | 100.0% | 89.4% | 10.6% | 8 |
+| X410 + any terminal (e.g., Windows Terminal, Alacritty) | 100.0% | 82.1% | 17.9% | 7 |
+| Xming (or VcXsrv) + PuTTY / mRemoteNG | 100.0% | 77.5% | 22.5% | 10 |
 | **Overall** | **100.0%** | **82.4%** | **17.6%** | **44** |
 
-Each product target uses declared product-ready evidence overrides for tested, release-supported adapter/CLI/GUI workflows. The overall row keeps the default unique-feature maturity score across the repository.
+Product-ready coverage uses the manifest status weights directly. No blanket per-product override promotes adapter-backed, optional, CLI-only or GUI-only feature families to 100% readiness.
 
 Run:
 
@@ -267,8 +267,10 @@ Core design principles:
 - Vault encryption requires the optional `security` extra: `pip install -e ".[security]"`.
 - `row vault get` requires explicit `--show` or `--out`; secrets are not printed by default.
 - `row keygen --passphrase-env` keeps software-key passphrases out of `ssh-keygen` argv by generating encrypted keys in-process.
-- Launchers validate hosts, ports, URLs, snippets, broadcast payloads and X11 display names before starting external tools.
+- Shared profile validation checks protocol names, required targets, hosts, ports and URLs; command builders also validate snippets, broadcast payloads and X11 display names before starting external tools.
+- Destructive SFTP actions, remote-overwrite-prone uploads and local-overwrite downloads are blocked before execution unless an operator passes `--force`; broad delete targets and remote globs are rejected for deletes/renames.
 - Prefer SSH `proxy_jump`; `proxy_command` requires explicit `allow_unsafe_proxy_command=true`.
+- SSHv1 legacy profiles require both `--protocol ssh1`/`sshv1` and `--option allow_insecure_sshv1=true`; protocol v1 remains insecure and should only be used for isolated legacy systems.
 - See [`SECURITY.md`](SECURITY.md) and [`docs/SECURITY_MODEL.md`](docs/SECURITY_MODEL.md).
 
 ---
@@ -279,9 +281,12 @@ Core design principles:
 python -m venv .venv
 . .venv/bin/activate
 pip install -e ".[desktop,security,dev]"
-python -m compileall src
-pytest -q
+python scripts/verify.py
 ```
+
+Use `python scripts/verify.py --quick` only for dependency-constrained review
+environments where `pytest` is unavailable. See
+[`docs/VERIFYING.md`](docs/VERIFYING.md).
 
 Create local release bundles for the advertised targets:
 

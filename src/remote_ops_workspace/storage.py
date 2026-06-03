@@ -4,8 +4,15 @@ import json
 from pathlib import Path
 from typing import Iterable
 
+from .file_safety import write_json_atomic
 from .models import Profile
 from .paths import ensure_data_dir
+from .profile_validation import (
+    normalize_group_defaults,
+    normalize_group_defaults_map,
+    normalize_group_name,
+    prepare_profile,
+)
 
 
 class ProfileStore:
@@ -28,21 +35,22 @@ class ProfileStore:
     def load(self, resolve: bool = True) -> list[Profile]:
         data = self._load_data()
         if not resolve:
-            return [Profile.from_dict(item) for item in data.get("profiles", [])]
+            return [prepare_profile(Profile.from_dict(item)) for item in data.get("profiles", [])]
         defaults = data.get("group_defaults", {})
         return [
-            Profile.from_dict(_apply_group_defaults(item, defaults.get(item.get("group", "default"), {})))
+            prepare_profile(Profile.from_dict(_apply_group_defaults(item, defaults.get(item.get("group", "default"), {}))))
             for item in data.get("profiles", [])
         ]
 
     def save(self, profiles: Iterable[Profile]) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        prepared = [prepare_profile(profile) for profile in profiles]
         data = self._load_data()
         data["version"] = 1
-        data["profiles"] = [profile.to_dict() for profile in profiles]
-        self.path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+        data["profiles"] = [profile.to_dict() for profile in prepared]
+        write_json_atomic(self.path, data, private=True)
 
     def add(self, profile: Profile, replace: bool = False) -> None:
+        profile = prepare_profile(profile)
         profiles = self.load(resolve=False)
         names = {p.name for p in profiles}
         if profile.name in names and not replace:
@@ -65,18 +73,16 @@ class ProfileStore:
         raise KeyError(name)
 
     def export_to(self, path: Path) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
         data = self._load_data()
         data["profiles"] = [p.to_dict() for p in self.load(resolve=False)]
-        path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+        write_json_atomic(path, data, private=True)
 
     def import_from(self, path: Path, replace: bool = False) -> int:
         data = json.loads(path.read_text(encoding="utf-8"))
         if replace and "group_defaults" in data:
             current = self._load_data()
-            current["group_defaults"] = data["group_defaults"]
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            self.path.write_text(json.dumps(current, indent=2, sort_keys=True), encoding="utf-8")
+            current["group_defaults"] = normalize_group_defaults_map(data["group_defaults"])
+            write_json_atomic(self.path, current, private=True)
         count = 0
         for item in data.get("profiles", []):
             self.add(Profile.from_dict(item), replace=replace)
@@ -84,16 +90,17 @@ class ProfileStore:
         return count
 
     def group_defaults(self) -> dict[str, dict[str, object]]:
-        return dict(self._load_data().get("group_defaults", {}))
+        return normalize_group_defaults_map(self._load_data().get("group_defaults", {}))
 
     def set_group_defaults(self, group: str, defaults: dict[str, object], replace: bool = False) -> None:
         data = self._load_data()
+        group = normalize_group_name(group)
+        defaults = normalize_group_defaults(defaults)
         group_defaults = data.setdefault("group_defaults", {})
         existing = {} if replace else dict(group_defaults.get(group, {}))
         existing.update({key: value for key, value in defaults.items() if value not in (None, "", [], {})})
         group_defaults[group] = existing
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+        write_json_atomic(self.path, data, private=True)
 
     def _load_data(self) -> dict[str, object]:
         if not self.path.exists():
@@ -101,7 +108,7 @@ class ProfileStore:
         data = json.loads(self.path.read_text(encoding="utf-8"))
         data.setdefault("version", 1)
         data.setdefault("profiles", [])
-        data.setdefault("group_defaults", {})
+        data["group_defaults"] = normalize_group_defaults_map(data.get("group_defaults", {}))
         return data
 
 

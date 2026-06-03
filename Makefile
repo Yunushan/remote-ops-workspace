@@ -1,16 +1,22 @@
-.PHONY: install test lint compile run-web
+.PHONY: install test verify verify-quick lint compile run-web
 
 install:
 	python -m pip install -e ".[desktop,security,dev]"
 
 test:
-	pytest -q
+	python scripts/verify.py
+
+verify:
+	python scripts/verify.py
+
+verify-quick:
+	python scripts/verify.py --quick
 
 compile:
-	python -m compileall src
+	python -m compileall src tests scripts
 
 lint:
-	ruff check src tests
+	python scripts/verify.py --quick --lint --no-cli-smoke
 
 run-web:
 	row serve-web --host 127.0.0.1 --port 8765

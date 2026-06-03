@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import shlex
-import stat
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from .file_safety import write_bytes_atomic
 
 SOFTWARE_KEY_TYPES = {"ed25519", "ecdsa", "rsa"}
 SECURITY_KEY_TYPES = {"ed25519-sk", "ecdsa-sk"}
@@ -114,10 +115,8 @@ def _write_native_key_pair(plan: KeygenPlan) -> None:
         public_bytes += f" {plan.comment}".encode("utf-8")
     public_bytes += b"\n"
 
-    private_path.parent.mkdir(parents=True, exist_ok=True)
-    private_path.write_bytes(private_bytes)
-    _chmod_owner_only(private_path)
-    public_path.write_bytes(public_bytes)
+    write_bytes_atomic(private_path, private_bytes, private=True)
+    write_bytes_atomic(public_path, public_bytes)
 
 
 def _ecdsa_curve(bits: int | None):  # type: ignore[no-untyped-def]
@@ -132,10 +131,3 @@ def _ecdsa_curve(bits: int | None):  # type: ignore[no-untyped-def]
     if curve is None:
         raise ValueError("ecdsa bits must be one of: 256, 384, 521")
     return curve()
-
-
-def _chmod_owner_only(path: Path) -> None:
-    try:
-        path.chmod(stat.S_IRUSR | stat.S_IWUSR)
-    except OSError:
-        pass

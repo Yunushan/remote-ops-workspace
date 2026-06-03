@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from . import command_safety as safe
+from .file_safety import write_json_atomic
 from .paths import ensure_data_dir
 
 
@@ -50,9 +51,8 @@ class SnippetStore:
         return [Snippet.from_dict(item) for item in data.get("snippets", [])]
 
     def save(self, snippets: Iterable[Snippet]) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
         data = {"version": 1, "snippets": [snippet.to_dict() for snippet in snippets]}
-        self.path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+        write_json_atomic(self.path, data, private=True)
 
     def add(self, snippet: Snippet, replace: bool = False) -> None:
         snippets = self.load()

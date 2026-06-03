@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import shlex
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from dataclasses import replace as replace_dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Iterable
 
 from . import command_safety as safe
@@ -18,6 +18,9 @@ class SftpBatchPlan:
     command: list[str]
     batch_commands: list[str]
     notes: list[str]
+    destructive: bool = False
+    force: bool = False
+    safety_warnings: list[str] = field(default_factory=list)
 
     def batch_input(self) -> str:
         return "\n".join(self.batch_commands) + "\n"
@@ -47,6 +50,15 @@ class SftpQueueItem:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class SftpSafetyReview:
+    warnings: tuple[str, ...] = ()
+
+    @property
+    def destructive(self) -> bool:
+        return bool(self.warnings)
+
+
 @dataclass(slots=True)
 class SftpQueuePlan:
     profile_name: str
@@ -54,6 +66,9 @@ class SftpQueuePlan:
     items: list[SftpQueueItem]
     batch_commands: list[str]
     notes: list[str]
+    destructive: bool = False
+    force: bool = False
+    safety_warnings: list[str] = field(default_factory=list)
 
     def batch_input(self) -> str:
         return "\n".join(self.batch_commands) + "\n"
@@ -71,6 +86,9 @@ class SftpQueuePlan:
             "items": [item.to_dict() for item in self.items],
             "batch_commands": self.batch_commands,
             "notes": self.notes,
+            "destructive": self.destructive,
+            "force": self.force,
+            "safety_warnings": self.safety_warnings,
         }
 
 
@@ -81,6 +99,9 @@ class SftpQueueResult:
     items: list[SftpQueueItem]
     dry_run: bool
     ok: bool
+    destructive: bool = False
+    force: bool = False
+    safety_warnings: list[str] = field(default_factory=list)
     returncode: int | None = None
     stdout: str = ""
     stderr: str = ""
@@ -92,6 +113,9 @@ class SftpQueueResult:
             "items": [item.to_dict() for item in self.items],
             "dry_run": self.dry_run,
             "ok": self.ok,
+            "destructive": self.destructive,
+            "force": self.force,
+            "safety_warnings": self.safety_warnings,
             "returncode": self.returncode,
             "stdout": self.stdout,
             "stderr": self.stderr,
@@ -150,14 +174,21 @@ def build_sftp_get_plan(
     local_path: Path | str | None = None,
     *,
     recursive: bool = False,
+    allow_overwrite: bool = False,
 ) -> SftpBatchPlan:
+    safety = _review_get_safety(remote_path, local_path)
     command = "get"
     if recursive:
         command += " -r"
     command += f" {_quote_remote(remote_path)}"
     if local_path is not None:
         command += f" {_quote_local(local_path)}"
-    return _build_batch_plan(profile, [command])
+    return _build_batch_plan(
+        profile,
+        [command],
+        safety=safety,
+        force=allow_overwrite,
+    )
 
 
 def build_sftp_put_plan(
@@ -166,33 +197,55 @@ def build_sftp_put_plan(
     remote_path: str | None = None,
     *,
     recursive: bool = False,
+    allow_overwrite: bool = False,
 ) -> SftpBatchPlan:
+    safety = _review_put_safety(local_path, remote_path)
     command = "put"
     if recursive:
         command += " -r"
     command += f" {_quote_local(local_path)}"
     if remote_path is not None:
         command += f" {_quote_remote(remote_path)}"
-    return _build_batch_plan(profile, [command])
+    return _build_batch_plan(
+        profile,
+        [command],
+        safety=safety,
+        force=allow_overwrite,
+    )
 
 
 def build_sftp_mkdir_plan(profile: Profile, remote_path: str) -> SftpBatchPlan:
     return _build_batch_plan(profile, [f"mkdir {_quote_remote(remote_path)}"])
 
 
-def build_sftp_rm_plan(profile: Profile, remote_path: str) -> SftpBatchPlan:
-    return _build_batch_plan(profile, [f"rm {_quote_remote(remote_path)}"])
+def build_sftp_rm_plan(profile: Profile, remote_path: str, *, allow_delete: bool = False) -> SftpBatchPlan:
+    safety = _review_delete_safety("rm", remote_path)
+    return _build_batch_plan(profile, [f"rm {_quote_remote(remote_path)}"], safety=safety, force=allow_delete)
 
 
-def build_sftp_rmdir_plan(profile: Profile, remote_path: str) -> SftpBatchPlan:
-    return _build_batch_plan(profile, [f"rmdir {_quote_remote(remote_path)}"])
+def build_sftp_rmdir_plan(profile: Profile, remote_path: str, *, allow_delete: bool = False) -> SftpBatchPlan:
+    safety = _review_delete_safety("rmdir", remote_path)
+    return _build_batch_plan(profile, [f"rmdir {_quote_remote(remote_path)}"], safety=safety, force=allow_delete)
 
 
-def build_sftp_rename_plan(profile: Profile, old_path: str, new_path: str) -> SftpBatchPlan:
-    return _build_batch_plan(profile, [f"rename {_quote_remote(old_path)} {_quote_remote(new_path)}"])
+def build_sftp_rename_plan(
+    profile: Profile,
+    old_path: str,
+    new_path: str,
+    *,
+    allow_rename: bool = False,
+) -> SftpBatchPlan:
+    safety = _review_rename_safety(old_path, new_path)
+    return _build_batch_plan(
+        profile,
+        [f"rename {_quote_remote(old_path)} {_quote_remote(new_path)}"],
+        safety=safety,
+        force=allow_rename,
+    )
 
 
 def run_sftp_batch(plan: SftpBatchPlan, dry_run: bool = False) -> SftpBatchPlan:
+    _require_force_for_execution(plan.destructive, plan.force, dry_run, plan.safety_warnings)
     if not dry_run:
         safe.argv_list(plan.command, "sftp command")
         subprocess.run(plan.command, input=plan.batch_input(), text=True, check=True)
@@ -231,28 +284,35 @@ def parse_transfer_item_spec(spec: str) -> SftpQueueItem:
     raise ValueError(f"invalid transfer queue item: {spec}")
 
 
-def build_sftp_queue_plan(profile: Profile, items: Iterable[SftpQueueItem]) -> SftpQueuePlan:
+def build_sftp_queue_plan(profile: Profile, items: Iterable[SftpQueueItem], *, force: bool = False) -> SftpQueuePlan:
     _require_sftp_capable(profile)
     queue_items = list(items)
     if not queue_items:
         raise ValueError("transfer queue requires at least one item")
     interactive = build_sftp_interactive_plan(profile)
     command = [interactive.command[0], "-b", "-", *interactive.command[1:]]
+    safety_warnings = _queue_safety_warnings(queue_items)
     batch_commands = [_queue_item_batch_command(item) for item in queue_items]
+    notes = [
+        "Transfer queue is sent to sftp over stdin; no shell command string is used.",
+        *interactive.notes,
+    ]
+    notes.extend(_safety_notes(safety_warnings, force))
     return SftpQueuePlan(
         profile_name=profile.name,
         command=command,
         items=queue_items,
         batch_commands=batch_commands,
-        notes=[
-            "Transfer queue is sent to sftp over stdin; no shell command string is used.",
-            *interactive.notes,
-        ],
+        notes=notes,
+        destructive=bool(safety_warnings),
+        force=force,
+        safety_warnings=safety_warnings,
     )
 
 
 def run_sftp_queue(plan: SftpQueuePlan, dry_run: bool = False) -> SftpQueueResult:
     safe.argv_list(plan.command, "sftp queue command")
+    _require_force_for_execution(plan.destructive, plan.force, dry_run, plan.safety_warnings)
     if dry_run:
         return SftpQueueResult(
             profile_name=plan.profile_name,
@@ -260,6 +320,9 @@ def run_sftp_queue(plan: SftpQueuePlan, dry_run: bool = False) -> SftpQueueResul
             items=plan.items,
             dry_run=True,
             ok=True,
+            destructive=plan.destructive,
+            force=plan.force,
+            safety_warnings=plan.safety_warnings,
         )
     process = subprocess.run(
         plan.command,
@@ -274,6 +337,9 @@ def run_sftp_queue(plan: SftpQueuePlan, dry_run: bool = False) -> SftpQueueResul
         items=plan.items,
         dry_run=False,
         ok=process.returncode == 0,
+        destructive=plan.destructive,
+        force=plan.force,
+        safety_warnings=plan.safety_warnings,
         returncode=process.returncode,
         stdout=process.stdout,
         stderr=process.stderr,
@@ -326,15 +392,27 @@ def preview_local_path(path: Path | str, *, max_bytes: int = 4096, max_entries: 
         return LocalFilePreview(path=str(target), exists=target.exists(), kind="error", error=str(exc))
 
 
-def _build_batch_plan(profile: Profile, batch_commands: list[str]) -> SftpBatchPlan:
+def _build_batch_plan(
+    profile: Profile,
+    batch_commands: list[str],
+    *,
+    safety: SftpSafetyReview | None = None,
+    force: bool = False,
+) -> SftpBatchPlan:
     _require_sftp_capable(profile)
     interactive = build_sftp_interactive_plan(profile)
     command = [interactive.command[0], "-b", "-", *interactive.command[1:]]
+    safety_warnings = list((safety or SftpSafetyReview()).warnings)
+    notes = ["Batch is sent to sftp over stdin; no shell command string is used.", *interactive.notes]
+    notes.extend(_safety_notes(safety_warnings, force))
     return SftpBatchPlan(
         profile_name=profile.name,
         command=command,
         batch_commands=batch_commands,
-        notes=["Batch is sent to sftp over stdin; no shell command string is used.", *interactive.notes],
+        notes=notes,
+        destructive=bool(safety_warnings),
+        force=force,
+        safety_warnings=safety_warnings,
     )
 
 
@@ -349,6 +427,99 @@ def _quote_remote(path: str) -> str:
 
 def _quote_local(path: Path | str) -> str:
     return shlex.quote(safe.option_value(str(path), "local path"))
+
+
+def _review_get_safety(remote_path: str, local_path: Path | str | None) -> SftpSafetyReview:
+    remote_text = safe.option_value(remote_path, "remote path")
+    warnings: list[str] = []
+    if _contains_remote_glob(remote_text):
+        warnings.append("get uses a remote glob; local overwrite targets cannot be predicted")
+    local_target = _local_download_target(remote_text, local_path)
+    if local_target is not None and local_target.exists():
+        warnings.append(f"get may overwrite existing local target: {local_target}")
+    return SftpSafetyReview(tuple(warnings))
+
+
+def _review_put_safety(local_path: Path | str, remote_path: str | None) -> SftpSafetyReview:
+    safe.option_value(str(local_path), "local path")
+    if remote_path is not None:
+        safe.option_value(remote_path, "remote path")
+    return SftpSafetyReview(("put can overwrite remote files because sftp has no no-clobber mode",))
+
+
+def _review_delete_safety(action: str, remote_path: str) -> SftpSafetyReview:
+    remote_text = _validate_destructive_remote_path(action, remote_path)
+    return SftpSafetyReview((f"{action} deletes remote path: {remote_text}",))
+
+
+def _review_rename_safety(old_path: str, new_path: str) -> SftpSafetyReview:
+    old_text = _validate_destructive_remote_path("rename source", old_path)
+    new_text = _validate_destructive_remote_path("rename destination", new_path)
+    return SftpSafetyReview((f"rename moves remote path {old_text} to {new_text}",))
+
+
+def _queue_safety_warnings(items: Iterable[SftpQueueItem]) -> list[str]:
+    warnings: list[str] = []
+    for item in items:
+        action = item.action.lower()
+        if action == "get" and item.remote_path:
+            warnings.extend(_review_get_safety(item.remote_path, item.local_path).warnings)
+        elif action == "put" and item.local_path:
+            warnings.extend(_review_put_safety(item.local_path, item.remote_path).warnings)
+        elif action in {"rm", "rmdir"} and item.remote_path:
+            warnings.extend(_review_delete_safety(action, item.remote_path).warnings)
+        elif action == "rename" and item.remote_path and item.new_remote_path:
+            warnings.extend(_review_rename_safety(item.remote_path, item.new_remote_path).warnings)
+    return warnings
+
+
+def _safety_notes(safety_warnings: list[str], force: bool) -> list[str]:
+    if not safety_warnings:
+        return []
+    notes = ["Destructive SFTP actions are blocked during execution unless --force is set."]
+    notes.extend(f"safety: {warning}" for warning in safety_warnings)
+    if force:
+        notes.append("Destructive SFTP safety override acknowledged.")
+    return notes
+
+
+def _require_force_for_execution(
+    destructive: bool,
+    force: bool,
+    dry_run: bool,
+    safety_warnings: Iterable[str],
+) -> None:
+    if not destructive or force or dry_run:
+        return
+    details = "; ".join(safety_warnings)
+    suffix = f": {details}" if details else ""
+    raise ValueError(f"destructive SFTP plan requires --force before execution{suffix}")
+
+
+def _local_download_target(remote_path: str, local_path: Path | str | None) -> Path | None:
+    if local_path is not None:
+        return Path(safe.option_value(str(local_path), "local path"))
+    basename = PurePosixPath(remote_path.rstrip("/")).name
+    if basename in {"", ".", ".."}:
+        return None
+    return Path(basename)
+
+
+def _validate_destructive_remote_path(action: str, remote_path: str) -> str:
+    text = safe.option_value(remote_path, f"{action} remote path")
+    stripped = text.strip()
+    normalized = stripped.rstrip("/")
+    if normalized in {"", ".", "/", "~"}:
+        raise ValueError(f"{action} remote path is too broad: {text}")
+    if ".." in PurePosixPath(stripped).parts:
+        raise ValueError(f"{action} remote path must not contain '..': {text}")
+    if _contains_remote_glob(text):
+        raise ValueError(f"{action} remote path must not contain glob characters: {text}")
+    return text
+
+
+def _contains_remote_glob(path: str) -> bool:
+    return any(char in path for char in "*?[]{}")
 
 
 def _queue_item_batch_command(item: SftpQueueItem) -> str:

@@ -4,6 +4,8 @@ import os
 import platform
 from pathlib import Path
 
+from .file_safety import ensure_private_dir
+
 APP_NAME = "remote-ops-workspace"
 APP_TITLE = "RemoteOpsWorkspace"
 
@@ -31,7 +33,7 @@ def data_dir() -> Path:
 
 def ensure_data_dir() -> Path:
     path = data_dir()
-    path.mkdir(parents=True, exist_ok=True)
+    ensure_private_dir(path)
     return path
 
 

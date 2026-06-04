@@ -69,6 +69,11 @@ def check_gui_render_job(workflow: str) -> list[str]:
     required_snippets = {
         'QT_QPA_PLATFORM: "offscreen"': "offscreen Qt platform",
         'python-version: "3.12"': "stable GUI smoke Python version",
+        "sudo apt-get update": "Linux package index update for Qt runtime libraries",
+        "libegl1": "Qt EGL runtime library for PyQt6",
+        "libgl1": "OpenGL runtime library for PyQt6",
+        "libxkbcommon-x11-0": "Qt xkbcommon X11 runtime library",
+        "libxcb-cursor0": "Qt xcb cursor runtime library",
         '".[desktop,security,dev]"': "desktop extra installation",
         "python scripts/check_real_gui_render.py --require-pyqt6": "required live GUI render smoke",
         "--out-dir artifacts/gui-real": "live GUI screenshot artifact output",

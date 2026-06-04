@@ -39,6 +39,29 @@ def test_release_truth_checker_requires_release_preflight_job() -> None:
     assert "release workflow missing release-preflight job" in errors
 
 
+def test_release_truth_checker_requires_node24_javascript_action_runtime() -> None:
+    checker = _load_release_truth_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        '  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"\n',
+        "",
+    )
+
+    errors = checker.check_release_preflight(workflow)
+
+    assert "release workflow must opt JavaScript actions into Node.js 24" in errors
+
+
+def test_release_truth_checker_rejects_insecure_node_runtime_opt_out() -> None:
+    checker = _load_release_truth_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8") + (
+        "\nenv:\n  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true\n"
+    )
+
+    errors = checker.check_release_preflight(workflow)
+
+    assert "release workflow must not opt JavaScript actions into an insecure Node.js runtime" in errors
+
+
 def test_release_truth_checker_requires_build_jobs_to_need_preflight() -> None:
     checker = _load_release_truth_checker()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(

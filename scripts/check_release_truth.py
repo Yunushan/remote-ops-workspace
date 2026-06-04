@@ -100,9 +100,13 @@ def check_workflow_matrix() -> list[str]:
 def check_release_preflight(workflow: str | None = None) -> list[str]:
     workflow_text = workflow if workflow is not None else read(".github/workflows/release.yml")
     errors: list[str] = []
+    if 'FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"' not in workflow_text:
+        errors.append("release workflow must opt JavaScript actions into Node.js 24")
+    if "ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION" in workflow_text:
+        errors.append("release workflow must not opt JavaScript actions into an insecure Node.js runtime")
     block = workflow_job_block(workflow_text, RELEASE_PREFLIGHT_JOB)
     if not block:
-        return ["release workflow missing release-preflight job"]
+        return [*errors, "release workflow missing release-preflight job"]
     required_snippets = {
         "persist-credentials: false": "checkout credential persistence disabled",
         'python-version: "3.12"': "stable preflight Python version",

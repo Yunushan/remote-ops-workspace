@@ -34,6 +34,10 @@ def check_top_level_policy(workflow: str) -> list[str]:
             errors.append(f"ci workflow must run on {trigger.rstrip(':')}")
     if "permissions:\n  contents: read" not in workflow:
         errors.append("ci workflow must default to read-only contents permission")
+    if 'FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"' not in workflow:
+        errors.append("ci workflow must opt JavaScript actions into Node.js 24")
+    if "ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION" in workflow:
+        errors.append("ci workflow must not opt JavaScript actions into an insecure Node.js runtime")
     if "python -m pip install --upgrade pip" in workflow:
         errors.append("ci workflow must not upgrade pip outside the project dependency contract")
     if "actions/checkout@v6" not in workflow:

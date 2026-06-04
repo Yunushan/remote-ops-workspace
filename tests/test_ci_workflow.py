@@ -23,6 +23,29 @@ def test_ci_workflow_requires_lint_enabled_verifier() -> None:
     assert "ci test job must run the lint-enabled verifier" in errors
 
 
+def test_ci_workflow_requires_node24_javascript_action_runtime() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
+        '  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"\n',
+        "",
+    )
+
+    errors = checker.check_ci_workflow(workflow)
+
+    assert "ci workflow must opt JavaScript actions into Node.js 24" in errors
+
+
+def test_ci_workflow_rejects_insecure_node_runtime_opt_out() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8") + (
+        "\nenv:\n  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true\n"
+    )
+
+    errors = checker.check_ci_workflow(workflow)
+
+    assert "ci workflow must not opt JavaScript actions into an insecure Node.js runtime" in errors
+
+
 def test_ci_workflow_requires_dedicated_gui_render_job() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(

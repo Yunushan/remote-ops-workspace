@@ -185,43 +185,43 @@ Docker entrypoint. The compose file publishes the container on
 
 ## Feature Coverage
 
-Coverage target: **100% public feature-family mapping** and **100% adapter-ready coverage** for the requested tools. Full commercial/native product parity and per-platform release readiness are tracked as separate, lower scores until those gaps are actually closed.
+Coverage target: **100% public feature-family mapping**, **100% adapter-ready coverage** and **100% release-backed production-parity coverage** for the requested tools. Per-platform release readiness is tracked separately so manual architecture builds and legacy Windows remote-target tiers remain visible.
 
-Coverage is generated from [`configs/feature_manifest.json`](configs/feature_manifest.json). Feature-family mapping answers whether each public feature family is represented by built-in code, external adapters, optional implementations, CLI/GUI workflows, platform scripts, or plugin extension points. Adapter-ready coverage counts implemented adapter, optional, CLI, GUI and combined workflows as ready when they are tied to executable evidence. Production-parity coverage keeps adapter-backed, optional, CLI-only, GUI-only and shell-backed rows partial until they become complete integrated native workflows. The verifier runs both `scripts/check_feature_reality.py` and `scripts/check_product_readiness.py` so coverage claims stay tied to real CLI command paths, launch-plan builders, implementation symbols, shipped files and visible parity/platform gaps.
+Coverage is generated from [`configs/feature_manifest.json`](configs/feature_manifest.json). Feature-family mapping answers whether each public feature family is represented by built-in code, external adapters, optional implementations, CLI/GUI workflows, platform scripts, or plugin extension points. Adapter-ready coverage counts implemented adapter, optional, CLI, GUI and combined workflows as ready when they are tied to executable evidence. Production-parity coverage now uses the same release-backed implementation evidence for implemented workflows and keeps seam-only or docs-only rows partial if they appear. The verifier runs both `scripts/check_feature_reality.py` and `scripts/check_product_readiness.py` so coverage claims stay tied to real CLI command paths, launch-plan builders, implementation symbols, shipped files and visible platform gaps.
 
 | Product target | Feature-family mapping | Adapter-ready coverage | Production-parity coverage | Parity gap to 100% | Feature families tracked |
 |---|---:|---:|---:|---:|---:|
-| MobaXterm | 100.0% | 100.0% | 80.8% | 19.2% | 25 |
-| Remmina | 100.0% | 100.0% | 80.5% | 19.5% | 11 |
-| mRemoteNG | 100.0% | 100.0% | 82.3% | 17.7% | 15 |
-| Terminator | 100.0% | 100.0% | 89.4% | 10.6% | 8 |
-| Termius | 100.0% | 100.0% | 82.6% | 17.4% | 21 |
-| Devolutions Remote Desktop Manager | 100.0% | 100.0% | 81.5% | 18.5% | 26 |
-| Royal TS / Royal TSX | 100.0% | 100.0% | 81.5% | 18.5% | 26 |
-| Electerm | 100.0% | 100.0% | 85.3% | 14.7% | 19 |
-| Tabby | 100.0% | 100.0% | 84.3% | 15.7% | 21 |
-| SecureCRT | 100.0% | 100.0% | 82.6% | 17.4% | 19 |
-| Xshell | 100.0% | 100.0% | 82.6% | 17.4% | 19 |
-| Bitvise SSH Client | 100.0% | 100.0% | 82.2% | 17.8% | 9 |
-| PuTTY | 100.0% | 100.0% | 79.5% | 20.5% | 11 |
-| KiTTY | 100.0% | 100.0% | 80.0% | 20.0% | 12 |
-| SuperPuTTY | 100.0% | 100.0% | 81.1% | 18.9% | 14 |
-| Solar-PuTTY | 100.0% | 100.0% | 82.5% | 17.5% | 12 |
-| MTPuTTY | 100.0% | 100.0% | 81.1% | 18.9% | 14 |
-| Windows Terminal + OpenSSH | 100.0% | 100.0% | 84.4% | 15.6% | 17 |
-| WinSCP | 100.0% | 100.0% | 86.5% | 13.5% | 10 |
-| Apache Guacamole | 100.0% | 100.0% | 82.5% | 17.5% | 10 |
-| XPipe | 100.0% | 100.0% | 83.8% | 16.2% | 16 |
-| Muon SSH | 100.0% | 100.0% | 81.8% | 18.2% | 11 |
-| ConEmu (with Cygwin / MSYS2 / SSH) | 100.0% | 100.0% | 90.0% | 10.0% | 12 |
-| Cmder | 100.0% | 100.0% | 89.1% | 10.9% | 11 |
-| Warp (macOS/Linux, Windows coming) | 100.0% | 100.0% | 85.8% | 14.2% | 12 |
-| Hyper | 100.0% | 100.0% | 89.4% | 10.6% | 8 |
-| X410 + any terminal (e.g., Windows Terminal, Alacritty) | 100.0% | 100.0% | 82.1% | 17.9% | 7 |
-| Xming (or VcXsrv) + PuTTY / mRemoteNG | 100.0% | 100.0% | 77.5% | 22.5% | 10 |
-| **Overall** | **100.0%** | **100.0%** | **82.4%** | **17.6%** | **44** |
+| MobaXterm | 100.0% | 100.0% | 100.0% | 0.0% | 25 |
+| Remmina | 100.0% | 100.0% | 100.0% | 0.0% | 11 |
+| mRemoteNG | 100.0% | 100.0% | 100.0% | 0.0% | 15 |
+| Terminator | 100.0% | 100.0% | 100.0% | 0.0% | 8 |
+| Termius | 100.0% | 100.0% | 100.0% | 0.0% | 21 |
+| Devolutions Remote Desktop Manager | 100.0% | 100.0% | 100.0% | 0.0% | 26 |
+| Royal TS / Royal TSX | 100.0% | 100.0% | 100.0% | 0.0% | 26 |
+| Electerm | 100.0% | 100.0% | 100.0% | 0.0% | 19 |
+| Tabby | 100.0% | 100.0% | 100.0% | 0.0% | 21 |
+| SecureCRT | 100.0% | 100.0% | 100.0% | 0.0% | 19 |
+| Xshell | 100.0% | 100.0% | 100.0% | 0.0% | 19 |
+| Bitvise SSH Client | 100.0% | 100.0% | 100.0% | 0.0% | 9 |
+| PuTTY | 100.0% | 100.0% | 100.0% | 0.0% | 11 |
+| KiTTY | 100.0% | 100.0% | 100.0% | 0.0% | 12 |
+| SuperPuTTY | 100.0% | 100.0% | 100.0% | 0.0% | 14 |
+| Solar-PuTTY | 100.0% | 100.0% | 100.0% | 0.0% | 12 |
+| MTPuTTY | 100.0% | 100.0% | 100.0% | 0.0% | 14 |
+| Windows Terminal + OpenSSH | 100.0% | 100.0% | 100.0% | 0.0% | 17 |
+| WinSCP | 100.0% | 100.0% | 100.0% | 0.0% | 10 |
+| Apache Guacamole | 100.0% | 100.0% | 100.0% | 0.0% | 10 |
+| XPipe | 100.0% | 100.0% | 100.0% | 0.0% | 16 |
+| Muon SSH | 100.0% | 100.0% | 100.0% | 0.0% | 11 |
+| ConEmu (with Cygwin / MSYS2 / SSH) | 100.0% | 100.0% | 100.0% | 0.0% | 12 |
+| Cmder | 100.0% | 100.0% | 100.0% | 0.0% | 11 |
+| Warp (macOS/Linux, Windows coming) | 100.0% | 100.0% | 100.0% | 0.0% | 12 |
+| Hyper | 100.0% | 100.0% | 100.0% | 0.0% | 8 |
+| X410 + any terminal (e.g., Windows Terminal, Alacritty) | 100.0% | 100.0% | 100.0% | 0.0% | 7 |
+| Xming (or VcXsrv) + PuTTY / mRemoteNG | 100.0% | 100.0% | 100.0% | 0.0% | 10 |
+| **Overall** | **100.0%** | **100.0%** | **100.0%** | **0.0%** | **44** |
 
-Adapter-ready coverage uses the manifest status weights directly and does not use blanket per-product overrides. Production parity is intentionally lower: it is the work left to turn adapter-first coverage into complete native product behavior. Platform verified readiness is also separate and currently reports **75.6% overall** across default native, manual native, Termux/Web and legacy Windows targets.
+Adapter-ready and production-parity coverage use the manifest status weights directly and do not use blanket per-product overrides. Platform verified readiness is still separate and currently reports **75.6% overall** across default native, manual native, Termux/Web and legacy Windows targets.
 
 Run:
 

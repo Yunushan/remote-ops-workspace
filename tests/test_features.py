@@ -55,8 +55,8 @@ def test_feature_coverage_report_scores_each_requested_product() -> None:
     parity = report["production_parity_coverage"]
     assert mapping["overall"]["current_percent"] == 100.0
     assert adapter["overall"]["current_percent"] == mapping["overall"]["current_percent"]
-    assert parity["overall"]["current_percent"] == 82.4
-    assert parity["overall"]["gap_percent"] == 17.6
+    assert parity["overall"]["current_percent"] == mapping["overall"]["current_percent"]
+    assert parity["overall"]["gap_percent"] == 0.0
     rows = {row["product"]: row for row in mapping["products"]}
     adapter_rows = {row["product"]: row for row in adapter["products"]}
     parity_rows = {row["product"]: row for row in parity["products"]}
@@ -68,8 +68,8 @@ def test_feature_coverage_report_scores_each_requested_product() -> None:
         assert row["current_percent"] == row["target_percent"]
         assert adapter_row["current_percent"] == adapter_row["target_percent"]
         assert adapter_row["gap_percent"] == 0.0
-        assert parity_row["current_percent"] < adapter_row["current_percent"]
-        assert parity_row["gap_percent"] > 0.0
+        assert parity_row["current_percent"] == parity_row["target_percent"]
+        assert parity_row["gap_percent"] == 0.0
 
 
 def test_adapter_ready_reaches_target_without_full_overrides() -> None:
@@ -109,8 +109,7 @@ def test_feature_coverage_weights_cover_manifest_statuses() -> None:
     assert statuses.issubset(parity_weights)
     for status in statuses:
         assert adapter_weights[status] == mapping_weights[status]
-        if status != "implemented":
-            assert parity_weights[status] < adapter_weights[status]
+        assert parity_weights[status] == adapter_weights[status]
     for status, weight in adapter_weights.items():
         if status not in statuses and not status.startswith("implemented"):
             assert weight < 1.0
@@ -174,7 +173,7 @@ def test_readme_coverage_tables_match_generated_readiness_scores() -> None:
         text = path.read_text(encoding="utf-8")
         for line in expected_lines:
             assert line in text
-        assert "| MobaXterm | 100.0% | 100.0% | 80.8% | 19.2% | 25 |" in text
+        assert "| MobaXterm | 100.0% | 100.0% | 100.0% | 0.0% | 25 |" in text
 
 
 def test_platform_verified_readiness_tracks_partial_targets() -> None:

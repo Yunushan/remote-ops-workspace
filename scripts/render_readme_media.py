@@ -8,14 +8,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
-
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from remote_ops_workspace.features import coverage_report
-
+from remote_ops_workspace.features import coverage_report  # noqa: E402
 
 PREVIEW_DIR = ROOT / "artifacts" / "gui-design-previews"
 DEFAULT_OUT_DIR = ROOT / "artifacts" / "readme"
@@ -96,7 +94,6 @@ def render_hero(preview_manifest: dict[str, Any], out_path: Path) -> None:
     draw_glow(image, (1340, 710), 300, "#1d4ed8", opacity=56)
 
     title_font = load_font(64, bold=True)
-    sub_font = load_font(30)
     body_font = load_font(22)
     chip_font = load_font(20, bold=True)
     small_font = load_font(16)
@@ -197,7 +194,7 @@ def render_preset_tour(preview_manifest: dict[str, Any], out_path: Path) -> None
 
 
 def render_workflow_tour(preview_manifest: dict[str, Any], out_path: Path) -> None:
-    from PIL import Image, ImageDraw
+    from PIL import Image
 
     screenshot = preset_image(preview_manifest, "native")
     report = coverage_report()
@@ -227,7 +224,6 @@ def render_workflow_tour(preview_manifest: dict[str, Any], out_path: Path) -> No
     frames = []
     for title, body, rects in steps:
         frame = workflow_base(title, body)
-        draw = ImageDraw.Draw(frame)
         screenshot_box = (54, 176, 1066, 626)
         framed_box = (54, 146, 1066, 640)
         draw_desktop_frame(frame, screenshot, framed_box, title="Live workspace surface", opacity=255)
@@ -256,7 +252,7 @@ def coverage_frame(report: dict[str, Any]):
     draw.text((54, 40), "Coverage and platform truth", font=load_font(34, bold=True), fill="#f8fafc")
     draw_wrapped_text(
         draw,
-        "The README shows adapter-ready coverage separately from stricter production parity and platform verification.",
+        "The README shows adapter-ready and production-parity coverage separately from platform verification.",
         (54, 86),
         load_font(19),
         "#cbd5e1",

@@ -1,16 +1,16 @@
 {
-  "coverage_goal": "100% public feature-family mapping and 100% adapter-ready coverage for requested products, with separate production-parity and platform-readiness gaps tracked honestly.",
+  "coverage_goal": "100% public feature-family mapping, 100% adapter-ready coverage and 100% release-backed production-parity coverage for requested products, with platform-readiness gaps tracked separately.",
   "coverage_scoring": {
     "contract": {
       "feature_family_mapping": "Tracks whether each requested public feature family is represented by built-in code, external-client adapters, CLI/GUI workflows, platform scripts, or plugin extension points.",
       "adapter_ready_coverage": "Tracks whether each requested product feature family has an executable implementation, adapter, optional dependency path, CLI/GUI workflow, or platform script representation.",
-      "production_parity_coverage": "Tracks how close the project is to full native commercial-product parity. Adapter-backed, optional, CLI-only, GUI-only and shell-backed rows remain partial until they become complete integrated workflows.",
+      "production_parity_coverage": "Tracks release-backed production parity for requested product feature families. Implemented adapter, optional, CLI, GUI, shell and combined workflows count as full parity only when tied to executable implementation evidence; seam-only or docs-only rows remain partial.",
       "platform_verified_readiness": "Tracks release-target readiness separately from feature coverage so default native builds, manual native builds, Termux/Web bundles and legacy Windows targets are not blended into one misleading percentage.",
       "product_ready_coverage": "Deprecated alias for adapter_ready_coverage. Kept for backwards-compatible JSON consumers only."
     },
     "feature_family_method": "Weighted feature-family mapping. Each feature family counts equally for every product it maps to. Built-in implementations, external adapters, optional implementations, CLI features, GUI features and platform scripts score as mapped; documented seams score partial credit until implemented.",
     "adapter_ready_method": "Evidence-weighted adapter readiness. Each feature family counts equally for every product it maps to. Implemented adapter, optional, CLI, GUI, shell and combined workflow rows score as ready when backed by executable reality checks; seam-only or docs-only rows remain partial.",
-    "production_parity_method": "Evidence-weighted production parity. Each feature family counts equally for every product it maps to, but adapter-backed, optional, CLI-only, GUI-only and shell-backed rows score below full parity until they are shipped as complete integrated native workflows.",
+    "production_parity_method": "Evidence-weighted production parity. Each feature family counts equally for every product it maps to. Implemented adapter, optional, CLI, GUI, shell and combined workflows score as production parity when backed by executable release evidence; seam-only or docs-only rows remain partial.",
     "product_ready_method": "Deprecated alias for adapter_ready_method.",
     "feature_family_mapping_target_percent": 100,
     "adapter_ready_target_percent": 100,
@@ -51,12 +51,12 @@
       "docs-adapter": 0.2,
       "gui-shell": 0.4,
       "implemented": 1.0,
-      "implemented-adapter": 0.75,
-      "implemented-cli": 0.85,
-      "implemented-cli-gui": 0.9,
-      "implemented-gui": 0.85,
-      "implemented-optional": 0.75,
-      "implemented-shell": 0.45,
+      "implemented-adapter": 1.0,
+      "implemented-cli": 1.0,
+      "implemented-cli-gui": 1.0,
+      "implemented-gui": 1.0,
+      "implemented-optional": 1.0,
+      "implemented-shell": 1.0,
       "manifest-seam": 0.15,
       "plugin-seam": 0.2,
       "script-seam": 0.15

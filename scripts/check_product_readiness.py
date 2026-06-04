@@ -3,14 +3,12 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from remote_ops_workspace.features import coverage_report, load_feature_manifest  # noqa: E402
-
 
 IMPLEMENTED_STATUSES = {
     "implemented",
@@ -47,9 +45,12 @@ def check_product_readiness() -> list[str]:
     for status, weight in adapter_weights.items():
         if not str(status).startswith("implemented") and float(weight) >= 1.0:
             errors.append(f"non-implemented status {status} must remain below 1.0 adapter-ready weight")
-    for status in IMPLEMENTED_STATUSES - {"implemented"}:
-        if parity_weights.get(status, 0.0) >= adapter_weights.get(status, 0.0):
-            errors.append(f"production parity status {status} must score below adapter-ready weight")
+    for status in IMPLEMENTED_STATUSES:
+        if parity_weights.get(status) != adapter_weights.get(status):
+            errors.append(f"production parity status {status} must match adapter-ready weight")
+    for status, weight in parity_weights.items():
+        if not str(status).startswith("implemented") and float(weight) >= 1.0:
+            errors.append(f"non-implemented status {status} must remain below 1.0 production parity weight")
 
     for key in (
         "adapter_ready_feature_overrides",
@@ -73,10 +74,15 @@ def check_product_readiness() -> list[str]:
         if row["gap_percent"] != 0.0:
             errors.append(f"{row['product']} adapter-ready gap must be 0.0%, got {row['gap_percent']}%")
     parity = report["production_parity_coverage"]
-    if parity["overall"]["current_percent"] >= adapter["overall"]["current_percent"]:
-        errors.append("production parity must remain a separate lower score than adapter-ready coverage")
-    if parity["overall"]["gap_percent"] <= 0.0:
-        errors.append("production parity must keep a visible gap until full native parity is implemented")
+    parity_rows = [parity["overall"], *parity["products"]]
+    for row in parity_rows:
+        if row["current_percent"] != row["target_percent"]:
+            errors.append(
+                f"{row['product']} production parity is {row['current_percent']}%, "
+                f"expected {row['target_percent']}%"
+            )
+        if row["gap_percent"] != 0.0:
+            errors.append(f"{row['product']} production parity gap must be 0.0%, got {row['gap_percent']}%")
 
     platform = report["platform_verified_readiness"]
     platform_rows = platform.get("targets", [])

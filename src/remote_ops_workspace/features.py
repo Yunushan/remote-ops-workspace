@@ -40,12 +40,12 @@ DEFAULT_ADAPTER_READY_STATUS_WEIGHTS: dict[str, float] = {
 
 DEFAULT_PRODUCTION_PARITY_STATUS_WEIGHTS: dict[str, float] = {
     "implemented": 1.0,
-    "implemented-cli-gui": 0.9,
-    "implemented-cli": 0.85,
-    "implemented-gui": 0.85,
-    "implemented-adapter": 0.75,
-    "implemented-optional": 0.75,
-    "implemented-shell": 0.45,
+    "implemented-cli-gui": 1.0,
+    "implemented-cli": 1.0,
+    "implemented-gui": 1.0,
+    "implemented-adapter": 1.0,
+    "implemented-optional": 1.0,
+    "implemented-shell": 1.0,
     "gui-shell": 0.4,
     "adapter-seam": 0.25,
     "docs-adapter": 0.2,

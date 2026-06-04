@@ -144,9 +144,9 @@ row serve-web --host 127.0.0.1 --port 8765
 
 ## Ozellik Kapsami
 
-Hedef, istenen araclar icin **%100 genel ozellik ailesi haritalamasi** saglamak ve bunu urun-hazirlik olgunlugundan ayri izlemektir.
+Hedef, istenen araclar icin **%100 genel ozellik ailesi haritalamasi** ve **%100 adapter-ready coverage** saglamaktir. Tam commercial/native product parity ve platform release hazirligi ayri, daha dusuk skorlar olarak izlenir.
 
-Kapsam [`configs/feature_manifest.json`](configs/feature_manifest.json) dosyasindan uretilir. Haritalama, bir ozellik ailesinin built-in kod, harici adapter, istege bagli bagimlilik, CLI/GUI akisi, platform betigi veya eklenti noktasi ile temsil edilip edilmedigini gosterir. Product-ready skor ise adapter, optional, shell, script ve kismi is akislarini %100 hazir gibi gostermemek icin ayri agirliklar kullanir.
+Kapsam [`configs/feature_manifest.json`](configs/feature_manifest.json) dosyasindan uretilir. Haritalama, bir ozellik ailesinin built-in kod, harici adapter, istege bagli bagimlilik, CLI/GUI akisi, platform betigi veya eklenti noktasi ile temsil edilip edilmedigini gosterir. Adapter-ready skor, executable evidence ile dogrulanan implemented adapter, optional, CLI, GUI ve combined workflow satirlarini hazir sayar. Production-parity skor ise adapter-backed, optional, CLI-only, GUI-only ve shell-backed satirlari tam native workflow olana kadar kismi tutar. Platform verified readiness da default native, manual native, Termux/Web ve legacy Windows hedeflerini ayri gosterir. `scripts/check_feature_reality.py` ve `scripts/check_product_readiness.py` bu iddialari dogrular.
 
 ```bash
 row features --coverage
@@ -205,7 +205,14 @@ python scripts/verify.py
 
 Bagimlilik kisitli inceleme ortamlarinda `pytest` yoksa `python scripts/verify.py --quick` kullanilabilir. Ayrintilar icin [`docs/VERIFYING.md`](docs/VERIFYING.md) dosyasina bakin.
 
-Yayin akisi `v0.1.0` gibi tag'lerde wheel/sdist, kaynak zip, platform tar/zip paketleri, Windows `x86`/`x64`/`arm64`, macOS `x64`/`arm64` ve Linux `x86_64`/`aarch64` native paketleri, release manifestleri ve `remote-ops-workspace-v0.1.0-SHA256SUMS.txt` uretir. Linux `i386`/`i686` ve `armhf` ciktisi eslesen builder ile betik desteklidir, fakat varsayilan GitHub release is akisinda yuklenmez. Python yayin araclari `requirements-release.txt` ile sabitlenir ve release manifestine `configs/release_toolchain.json` uzerinden yazilir. Native Windows, macOS ve Linux isleri kendi `native-SHA256SUMS.txt` yan dosyalarini da uretir. CI checkout credential'lari final publish adimina kadar read-only kalir.
+Repository cleanup before tagging:
+
+```bash
+python scripts/check_repository_cleanup.py
+python scripts/check_repository_cleanup.py --require-clean
+```
+
+Yayin akisi `v0.1.0` gibi tag'lerde wheel/sdist, kaynak zip, platform tar/zip paketleri, Windows `x86`/`x64`/`arm64`, macOS `x64`/`arm64` ve Linux `x86_64`/`aarch64` native paketleri, release manifestleri ve `remote-ops-workspace-v0.1.0-SHA256SUMS.txt` uretir. Linux `i386`/`i686` ve `armhf` ciktisi eslesen builder ile betik desteklidir, fakat varsayilan GitHub release is akisinda yuklenmez. Makine tarafindan okunabilen yayin karari `configs/release_matrix.json` icindedir; `configs/platform_targets.json` ise `row platforms --json` tarafindan gosterilen daha genis platform katalogudur. Python yayin araclari `requirements-release.txt` ile sabitlenir ve release manifestine `configs/release_toolchain.json` uzerinden yazilir. Native Windows, macOS ve Linux isleri kendi `native-SHA256SUMS.txt` yan dosyalarini da uretir. CI checkout credential'lari final publish adimina kadar read-only kalir.
 
 | Faz | Paketler | Durum |
 |---|---|---|

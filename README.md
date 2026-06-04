@@ -12,9 +12,13 @@
 ![targets](https://img.shields.io/badge/targets-Windows%20%7C%20Linux%20%7C%20macOS%20%7C%20BSD%20%7C%20Solaris%20%7C%20Android%20%7C%20Web-green)
 ![protocols](https://img.shields.io/badge/protocols-SSH%20%7C%20RDP%20%7C%20VNC%20%7C%20SFTP%20%7C%20Mosh%20%7C%20Telnet%20%7C%20SPICE%20%7C%20X2Go-yellow)
 
-[Quick Start](#quick-start) • [CLI](#cli) • [GUI](#gui) • [Web/PWA](#webpwa) • [Feature Coverage](#feature-coverage) • [Platforms](#platform-support) • [Architecture](#architecture) • [Security](#security) • [License](#license)
+[Visual Overview](#visual-overview) • [Quick Start](#quick-start) • [CLI](#cli) • [GUI](#gui) • [Web/PWA](#webpwa) • [Feature Coverage](#feature-coverage) • [Platforms](#platform-support) • [Architecture](#architecture) • [Security](#security) • [License](#license)
 
 English • [Türkçe](README.tr.md)
+
+<br>
+
+<img src="artifacts/readme/remote-ops-hero.png" alt="Remote Ops Workspace enterprise GUI overview showing protocol chips, feature counts and a dense operator console preview" width="100%">
 
 </div>
 
@@ -27,6 +31,32 @@ English • [Türkçe](README.tr.md)
 It is intentionally built as an **adapter-first foundation**: the repo includes a working CLI, profile store, launcher command builders, optional encrypted vault support, GUI shell, Web/PWA shell, feature coverage manifest, tests, installers, CI and release scaffolding. Deep protocol rendering is delegated to native system tools such as OpenSSH, FreeRDP, TigerVNC, x2goclient, virt-viewer, PuTTY, Windows MSTSC, XQuartz/VcXsrv/Xorg, or future embedded protocol plugins.
 
 > Not affiliated with Mobatek/MobaXterm, Remmina, mRemoteNG, GNOME Terminator, or Termius. Product names are used only to describe compatibility goals and feature coverage targets.
+
+---
+
+## Visual Overview
+
+Generated README media lives in [`artifacts/readme`](artifacts/readme) and is built from the same tracked GUI preview assets used by [`docs/GUI_DESIGN.md`](docs/GUI_DESIGN.md). These images are meant to show the actual app surfaces and feature flows, not stock mockups.
+
+<p align="center">
+  <img src="artifacts/readme/gui-preset-tour.gif" alt="Animated tour of Remote Ops Workspace GUI presets including Native, MobaXterm-style, SecureCRT-style, Termius-style, Remmina-style and mRemoteNG-style" width="100%">
+</p>
+
+<p align="center">
+  <img src="artifacts/readme/feature-workflow-tour.gif" alt="Animated feature workflow tour showing quick connect, split terminal panes, SFTP queue previews, vault audit safety and coverage metrics" width="100%">
+</p>
+
+<p align="center">
+  <img src="artifacts/gui-design-previews/all-gui-designs-contact-sheet.png" alt="All GUI design presets contact sheet" width="100%">
+</p>
+
+Regenerate the README media and GUI previews with:
+
+```bash
+python scripts/render_gui_design_previews.py
+python scripts/render_readme_media.py
+python scripts/check_readme_media.py
+```
 
 ---
 
@@ -155,43 +185,43 @@ Docker entrypoint. The compose file publishes the container on
 
 ## Feature Coverage
 
-Coverage target: **100% public feature-family mapping** for the requested tools, tracked separately from product-ready implementation maturity.
+Coverage target: **100% public feature-family mapping** and **100% adapter-ready coverage** for the requested tools. Full commercial/native product parity and per-platform release readiness are tracked as separate, lower scores until those gaps are actually closed.
 
-Coverage is generated from [`configs/feature_manifest.json`](configs/feature_manifest.json). Feature-family mapping answers whether each public feature family is represented by built-in code, external adapters, optional implementations, CLI/GUI workflows, platform scripts, or plugin extension points. Product-ready coverage applies stricter evidence weights so adapter-backed, optional, shell, script and partial workflows are not overstated. The verifier also runs `scripts/check_feature_reality.py` so implemented feature claims stay tied to real CLI command paths, launch-plan builders, implementation symbols and shipped files.
+Coverage is generated from [`configs/feature_manifest.json`](configs/feature_manifest.json). Feature-family mapping answers whether each public feature family is represented by built-in code, external adapters, optional implementations, CLI/GUI workflows, platform scripts, or plugin extension points. Adapter-ready coverage counts implemented adapter, optional, CLI, GUI and combined workflows as ready when they are tied to executable evidence. Production-parity coverage keeps adapter-backed, optional, CLI-only, GUI-only and shell-backed rows partial until they become complete integrated native workflows. The verifier runs both `scripts/check_feature_reality.py` and `scripts/check_product_readiness.py` so coverage claims stay tied to real CLI command paths, launch-plan builders, implementation symbols, shipped files and visible parity/platform gaps.
 
-| Product target | Feature-family mapping | Product-ready coverage | Ready gap to 100% | Feature families tracked |
-|---|---:|---:|---:|---:|
-| MobaXterm | 100.0% | 80.8% | 19.2% | 25 |
-| Remmina | 100.0% | 80.5% | 19.5% | 11 |
-| mRemoteNG | 100.0% | 82.3% | 17.7% | 15 |
-| Terminator | 100.0% | 89.4% | 10.6% | 8 |
-| Termius | 100.0% | 82.6% | 17.4% | 21 |
-| Devolutions Remote Desktop Manager | 100.0% | 81.5% | 18.5% | 26 |
-| Royal TS / Royal TSX | 100.0% | 81.5% | 18.5% | 26 |
-| Electerm | 100.0% | 85.3% | 14.7% | 19 |
-| Tabby | 100.0% | 84.3% | 15.7% | 21 |
-| SecureCRT | 100.0% | 82.6% | 17.4% | 19 |
-| Xshell | 100.0% | 82.6% | 17.4% | 19 |
-| Bitvise SSH Client | 100.0% | 82.2% | 17.8% | 9 |
-| PuTTY | 100.0% | 79.5% | 20.5% | 11 |
-| KiTTY | 100.0% | 80.0% | 20.0% | 12 |
-| SuperPuTTY | 100.0% | 81.1% | 18.9% | 14 |
-| Solar-PuTTY | 100.0% | 82.5% | 17.5% | 12 |
-| MTPuTTY | 100.0% | 81.1% | 18.9% | 14 |
-| Windows Terminal + OpenSSH | 100.0% | 84.4% | 15.6% | 17 |
-| WinSCP | 100.0% | 86.5% | 13.5% | 10 |
-| Apache Guacamole | 100.0% | 82.5% | 17.5% | 10 |
-| XPipe | 100.0% | 83.8% | 16.2% | 16 |
-| Muon SSH | 100.0% | 81.8% | 18.2% | 11 |
-| ConEmu (with Cygwin / MSYS2 / SSH) | 100.0% | 90.0% | 10.0% | 12 |
-| Cmder | 100.0% | 89.1% | 10.9% | 11 |
-| Warp (macOS/Linux, Windows coming) | 100.0% | 85.8% | 14.2% | 12 |
-| Hyper | 100.0% | 89.4% | 10.6% | 8 |
-| X410 + any terminal (e.g., Windows Terminal, Alacritty) | 100.0% | 82.1% | 17.9% | 7 |
-| Xming (or VcXsrv) + PuTTY / mRemoteNG | 100.0% | 77.5% | 22.5% | 10 |
-| **Overall** | **100.0%** | **82.4%** | **17.6%** | **44** |
+| Product target | Feature-family mapping | Adapter-ready coverage | Production-parity coverage | Parity gap to 100% | Feature families tracked |
+|---|---:|---:|---:|---:|---:|
+| MobaXterm | 100.0% | 100.0% | 80.8% | 19.2% | 25 |
+| Remmina | 100.0% | 100.0% | 80.5% | 19.5% | 11 |
+| mRemoteNG | 100.0% | 100.0% | 82.3% | 17.7% | 15 |
+| Terminator | 100.0% | 100.0% | 89.4% | 10.6% | 8 |
+| Termius | 100.0% | 100.0% | 82.6% | 17.4% | 21 |
+| Devolutions Remote Desktop Manager | 100.0% | 100.0% | 81.5% | 18.5% | 26 |
+| Royal TS / Royal TSX | 100.0% | 100.0% | 81.5% | 18.5% | 26 |
+| Electerm | 100.0% | 100.0% | 85.3% | 14.7% | 19 |
+| Tabby | 100.0% | 100.0% | 84.3% | 15.7% | 21 |
+| SecureCRT | 100.0% | 100.0% | 82.6% | 17.4% | 19 |
+| Xshell | 100.0% | 100.0% | 82.6% | 17.4% | 19 |
+| Bitvise SSH Client | 100.0% | 100.0% | 82.2% | 17.8% | 9 |
+| PuTTY | 100.0% | 100.0% | 79.5% | 20.5% | 11 |
+| KiTTY | 100.0% | 100.0% | 80.0% | 20.0% | 12 |
+| SuperPuTTY | 100.0% | 100.0% | 81.1% | 18.9% | 14 |
+| Solar-PuTTY | 100.0% | 100.0% | 82.5% | 17.5% | 12 |
+| MTPuTTY | 100.0% | 100.0% | 81.1% | 18.9% | 14 |
+| Windows Terminal + OpenSSH | 100.0% | 100.0% | 84.4% | 15.6% | 17 |
+| WinSCP | 100.0% | 100.0% | 86.5% | 13.5% | 10 |
+| Apache Guacamole | 100.0% | 100.0% | 82.5% | 17.5% | 10 |
+| XPipe | 100.0% | 100.0% | 83.8% | 16.2% | 16 |
+| Muon SSH | 100.0% | 100.0% | 81.8% | 18.2% | 11 |
+| ConEmu (with Cygwin / MSYS2 / SSH) | 100.0% | 100.0% | 90.0% | 10.0% | 12 |
+| Cmder | 100.0% | 100.0% | 89.1% | 10.9% | 11 |
+| Warp (macOS/Linux, Windows coming) | 100.0% | 100.0% | 85.8% | 14.2% | 12 |
+| Hyper | 100.0% | 100.0% | 89.4% | 10.6% | 8 |
+| X410 + any terminal (e.g., Windows Terminal, Alacritty) | 100.0% | 100.0% | 82.1% | 17.9% | 7 |
+| Xming (or VcXsrv) + PuTTY / mRemoteNG | 100.0% | 100.0% | 77.5% | 22.5% | 10 |
+| **Overall** | **100.0%** | **100.0%** | **82.4%** | **17.6%** | **44** |
 
-Product-ready coverage uses the manifest status weights directly. No blanket per-product override promotes adapter-backed, optional, CLI-only or GUI-only feature families to 100% readiness.
+Adapter-ready coverage uses the manifest status weights directly and does not use blanket per-product overrides. Production parity is intentionally lower: it is the work left to turn adapter-first coverage into complete native product behavior. Platform verified readiness is also separate and currently reports **75.6% overall** across default native, manual native, Termux/Web and legacy Windows targets.
 
 Run:
 
@@ -303,6 +333,13 @@ Use `python scripts/verify.py --quick` only for dependency-constrained review
 environments where `pytest` is unavailable. See
 [`docs/VERIFYING.md`](docs/VERIFYING.md).
 
+Repository cleanup before tagging:
+
+```bash
+python scripts/check_repository_cleanup.py
+python scripts/check_repository_cleanup.py --require-clean
+```
+
 Create local release bundles for the advertised targets:
 
 ```bash
@@ -344,6 +381,10 @@ modern native operator hosts. The default GitHub workflow builds Windows
 native jobs. The native build scripts also map Linux `i386`/`i686` and
 `armhf` outputs for matching builders, but those are not uploaded by the
 default GitHub release workflow.
+The machine-readable release decision lives in
+[`configs/release_matrix.json`](configs/release_matrix.json), while
+[`configs/platform_targets.json`](configs/platform_targets.json) remains the
+broader platform support catalog exposed by `row platforms --json`.
 Release manifests include `size_bytes` and `sha256` for each artifact, and CI
 build jobs run with read-only checkout credentials until the final publish step.
 Python release tooling is constrained by `requirements-release.txt` and recorded

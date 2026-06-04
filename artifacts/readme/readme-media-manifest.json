@@ -1,0 +1,37 @@
+{
+  "assets": [
+    {
+      "frame_count": 1,
+      "height": 900,
+      "id": "hero",
+      "kind": "png",
+      "path": "artifacts/readme/remote-ops-hero.png",
+      "sha256": "68b338469aad56ad4be6293c32c01fd2c95a3df0961485a7d4fee0ee7e1802ac",
+      "size_bytes": 205862,
+      "width": 1600
+    },
+    {
+      "frame_count": 6,
+      "height": 680,
+      "id": "gui-preset-tour",
+      "kind": "gif",
+      "path": "artifacts/readme/gui-preset-tour.gif",
+      "sha256": "28bca5b0f4b29b220a1ebd2cb748a6082ff122b52e6cdd955343aed903df18b2",
+      "size_bytes": 200932,
+      "width": 1120
+    },
+    {
+      "frame_count": 5,
+      "height": 680,
+      "id": "feature-workflow-tour",
+      "kind": "gif",
+      "path": "artifacts/readme/feature-workflow-tour.gif",
+      "sha256": "0c9853984e6c3baec41ed663093ad7427b0c68e6651589ddd32bee2bf9041bc1",
+      "size_bytes": 170950,
+      "width": 1120
+    }
+  ],
+  "renderer": "scripts/render_readme_media.py",
+  "schema_version": 1,
+  "source_previews": "artifacts/gui-design-previews/preview-manifest.json"
+}

@@ -119,6 +119,19 @@ Operational rules:
 
 ## Audit
 
-Launch events are appended to `audit.jsonl` with redaction for secret-like keys and common secret-bearing command flags such as `-N`, `--password`, `--passphrase`, `--secret` and `--token`.
+Launch events are appended to `audit.jsonl` with centralized redaction for
+secret-like keys and common secret-bearing command flags such as `-N`,
+`--password`, `--passphrase`, `--secret` and `--token`. Redaction also covers
+assignment-style secret arguments such as `--password=value`, URL-embedded
+passwords, bearer-token strings and common Windows-style password switches.
 
-Support bundles include `doctor.json` and a sanitized `profiles.summary.json`; they do not include raw `profiles.json`, `vault.json` or private keys. The summary preserves counts, protocol names and structural flags, but omits profile names, hostnames, usernames, paths, command values, credential references, group names and URL contents. Treat support bundles as sensitive and review them before sharing.
+Support bundles include `doctor.json` and a sanitized `profiles.summary.json`;
+they do not include raw `profiles.json`, `vault.json` or private keys. The
+summary preserves counts, protocol names and structural flags, but omits profile
+names, hostnames, usernames, paths, command values, credential references, group
+names, URL contents and sensitive option key names. Sensitive option keys are
+reported only as counts. Treat support bundles as sensitive and review them
+before sharing.
+
+Run `python scripts/check_security_polish.py` to verify these production
+security polish rules without requiring optional dependencies.

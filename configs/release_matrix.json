@@ -1,0 +1,152 @@
+{
+  "schema_version": 1,
+  "release_tag_pattern": "v<project.version>",
+  "workflow": ".github/workflows/release.yml",
+  "policy": {
+    "default_github_release": "Only assets under default_github_release are uploaded by the default tagged GitHub release workflow.",
+    "script_supported_native": "These targets have maintained build-script mappings, but require matching builders and are not uploaded by the default GitHub release workflow.",
+    "source_or_remote_only": "These targets receive source/install/Web/PWA assets or can be managed as remote endpoints; they are not native app artifacts in the default workflow."
+  },
+  "default_github_release": {
+    "source_and_python": {
+      "job": "source-and-python",
+      "artifacts": [
+        "remote_ops_workspace-0.1.0-py3-none-any.whl",
+        "remote_ops_workspace-0.1.0.tar.gz",
+        "remote-ops-workspace-v0.1.0-release-manifest.json",
+        "remote-ops-workspace-v0.1.0-SHA256SUMS.txt"
+      ],
+      "target_bundles": [
+        "remote-ops-workspace-v0.1.0-source.zip",
+        "remote-ops-workspace-v0.1.0-windows.zip",
+        "remote-ops-workspace-v0.1.0-linux.tar.gz",
+        "remote-ops-workspace-v0.1.0-macos.tar.gz",
+        "remote-ops-workspace-v0.1.0-bsd.tar.gz",
+        "remote-ops-workspace-v0.1.0-solaris.tar.gz",
+        "remote-ops-workspace-v0.1.0-android-termux.tar.gz",
+        "remote-ops-workspace-v0.1.0-web-pwa.zip"
+      ]
+    },
+    "native_jobs": [
+      {
+        "job": "windows-native",
+        "platform": "windows",
+        "platform_target_ids": [
+          "windows-x86",
+          "windows-x64",
+          "windows-arm64"
+        ],
+        "arches": [
+          "x86",
+          "x64",
+          "arm64"
+        ],
+        "upload_artifact_prefix": "release-windows-native-",
+        "asset_patterns": [
+          "remote-ops-workspace-v0.1.0-windows-<x86|x64|arm64>-setup.exe",
+          "remote-ops-workspace-v0.1.0-windows-<x86|x64|arm64>.msi",
+          "remote-ops-workspace-v0.1.0-windows-<x86|x64|arm64>-native.zip",
+          "remote-ops-workspace-v0.1.0-windows-<x86|x64|arm64>-native-manifest.json",
+          "remote-ops-workspace-v0.1.0-windows-<x86|x64|arm64>-native-SHA256SUMS.txt"
+        ]
+      },
+      {
+        "job": "macos-native",
+        "platform": "macos",
+        "platform_target_ids": [
+          "macos-x64",
+          "macos-arm64"
+        ],
+        "arches": [
+          "x64",
+          "arm64"
+        ],
+        "upload_artifact_prefix": "release-macos-native-",
+        "asset_patterns": [
+          "remote-ops-workspace-v0.1.0-macos-<x64|arm64>.dmg",
+          "remote-ops-workspace-v0.1.0-macos-<x64|arm64>.pkg",
+          "remote-ops-workspace-v0.1.0-macos-<x64|arm64>-native-manifest.json",
+          "remote-ops-workspace-v0.1.0-macos-<x64|arm64>-native-SHA256SUMS.txt"
+        ]
+      },
+      {
+        "job": "linux-native",
+        "platform": "linux",
+        "platform_target_ids": [
+          "linux-x86_64",
+          "linux-arm64"
+        ],
+        "arches": [
+          "x86_64",
+          "aarch64"
+        ],
+        "upload_artifact_prefix": "release-linux-native-",
+        "asset_patterns": [
+          "remote-ops-workspace-v0.1.0-linux-<amd64|arm64>.deb",
+          "remote-ops-workspace-v0.1.0-linux-<x86_64|aarch64>.rpm",
+          "remote-ops-workspace-v0.1.0-linux-<x86_64|aarch64>.AppImage",
+          "remote-ops-workspace-v0.1.0-linux-<x86_64|aarch64>-native.tar.gz",
+          "remote-ops-workspace-v0.1.0-linux-<x86_64|aarch64>-native-manifest.json",
+          "remote-ops-workspace-v0.1.0-linux-<x86_64|aarch64>-native-SHA256SUMS.txt"
+        ]
+      }
+    ]
+  },
+  "script_supported_native": [
+    {
+      "platform_target_id": "linux-i386",
+      "platform": "linux",
+      "cpu_arch": "i386/i686",
+      "script": "scripts/make_linux_native.sh",
+      "builder_requirement": "Run on an i386/i686 host, matching container, or self-hosted runner with Python, PyInstaller, dpkg-deb, rpmbuild and appimagetool support.",
+      "promotion_policy": "May be attached to a release only after a maintainer runs and verifies the matching builder output."
+    },
+    {
+      "platform_target_id": "linux-armhf",
+      "platform": "linux",
+      "cpu_arch": "armv7l/armhf",
+      "script": "scripts/make_linux_native.sh",
+      "builder_requirement": "Run on an armv7l/armhf host, matching container, or self-hosted runner with Python, PyInstaller, dpkg-deb, rpmbuild and appimagetool support.",
+      "promotion_policy": "May be attached to a release only after a maintainer runs and verifies the matching builder output."
+    }
+  ],
+  "source_or_remote_only": [
+    {
+      "id": "android-termux",
+      "platform_target_ids": [
+        "android-armv7",
+        "android-arm64"
+      ],
+      "default_assets": [
+        "remote-ops-workspace-v0.1.0-android-termux.tar.gz",
+        "remote-ops-workspace-v0.1.0-web-pwa.zip"
+      ],
+      "native_status": "No APK is published until a tested native Android wrapper exists."
+    },
+    {
+      "id": "bsd",
+      "default_assets": [
+        "remote-ops-workspace-v0.1.0-bsd.tar.gz"
+      ],
+      "native_status": "Source/install bundle plus CLI/Web/PWA workflows; no default native installer."
+    },
+    {
+      "id": "solaris-illumos",
+      "default_assets": [
+        "remote-ops-workspace-v0.1.0-solaris.tar.gz"
+      ],
+      "native_status": "Source/install bundle plus CLI/Web/PWA workflows; no default native installer."
+    },
+    {
+      "id": "windows-legacy-remote-targets",
+      "windows_legacy_target_versions": [
+        "Windows XP",
+        "Windows Vista",
+        "Windows 7",
+        "Windows 8",
+        "Windows 8.1"
+      ],
+      "native_status": "Legacy Windows versions can be managed as remote targets; modern native releases target Windows 10/11 and supported Server hosts."
+    }
+  ]
+}

@@ -15,6 +15,13 @@ Use `python scripts/verify.py --quick` only when dev dependencies such as
 `pytest` are unavailable in a constrained review environment. The quick path is
 not a replacement for the full verifier before a pull request or release.
 
+Repository cleanup before tagging:
+
+```bash
+python scripts/check_repository_cleanup.py
+python scripts/check_repository_cleanup.py --require-clean
+```
+
 ## Contribution rules
 
 - Do not commit real hostnames, credentials, vault files, private keys, customer data, or screenshots containing secrets.
@@ -26,6 +33,7 @@ not a replacement for the full verifier before a pull request or release.
 ## Pull request checklist
 
 - [ ] `python scripts/verify.py` succeeds.
+- [ ] `python scripts/check_repository_cleanup.py` succeeds.
 - [ ] README/docs updated if behavior changed.
 - [ ] No real secrets or private endpoints included.
 - [ ] New feature is represented in `configs/feature_manifest.json` when applicable.

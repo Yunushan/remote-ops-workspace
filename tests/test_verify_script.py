@@ -18,6 +18,7 @@ def test_verify_steps_include_full_checks_and_cli_smoke(tmp_path: Path) -> None:
     assert "optional dependency smoke" in names
     assert "native release hardening" in names
     assert "GUI preview workflow" in names
+    assert "README media workflow" in names
     assert "first-run UX" in names
     assert "feature reality alignment" in names
     assert "pytest" in names
@@ -40,6 +41,7 @@ def test_verify_quick_mode_skips_pytest_but_keeps_cli_smoke(tmp_path: Path) -> N
     assert "optional dependency smoke" in names
     assert "native release hardening" in names
     assert "GUI preview workflow" in names
+    assert "README media workflow" in names
     assert "first-run UX" in names
     assert "feature reality alignment" in names
     assert "pytest" not in names

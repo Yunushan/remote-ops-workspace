@@ -23,6 +23,49 @@ Release integrity rules:
   credentials are not persisted. Only the publish job receives release write
   permission.
 
+## Release matrix policy
+
+`configs/release_matrix.json` is the machine-readable answer to "what will a tag
+release publish by default?" It is checked by
+`python scripts/check_release_matrix.py` and must stay aligned with
+`.github/workflows/release.yml`, `configs/platform_targets.json`, this document
+and `docs/PLATFORM_SUPPORT.md`.
+
+The default GitHub release workflow publishes:
+
+- Python wheel, Python sdist, target source/install bundles, the release
+  manifest and `remote-ops-workspace-v0.1.0-SHA256SUMS.txt`;
+- Windows native `x86`, `x64` and `arm64` artifacts;
+- macOS native `x64` and `arm64` artifacts;
+- Linux native `x86_64`/`amd64` and `aarch64`/`arm64` artifacts.
+
+Linux `i386`/`i686` and `armv7l`/`armhf` native outputs are
+script-supported by `scripts/make_linux_native.sh`, but they are not uploaded by
+the default GitHub release workflow. A maintainer can promote them only after
+running and verifying a matching builder. BSD, Solaris/illumos, Android
+Termux/Web/PWA and legacy Windows endpoints remain source/Web/remote-target
+entries unless a real native packaging path is added.
+
+## Repository cleanup before tagging
+
+Run the normal verifier first, then run the cleanup preflight:
+
+```bash
+python scripts/check_repository_cleanup.py
+python scripts/check_repository_cleanup.py --require-clean
+```
+
+The default cleanup check verifies `.gitignore` coverage for Python caches,
+release outputs, native build outputs, workflow download folders, local
+`ROW_HOME` data, support bundles and private key/profile/vault file patterns. It
+also scans tracked and non-ignored untracked text files for merge-conflict
+markers and rejects private/support artifacts that would otherwise be committed.
+
+Use `--require-clean` only immediately before creating the tag. It adds a
+`git status --porcelain` requirement so the tag is cut from a fully committed
+tree. During ordinary development, the default cleanup check can run while local
+work is still in progress.
+
 ## Phase 1: Python package artifacts
 
 Status: active.

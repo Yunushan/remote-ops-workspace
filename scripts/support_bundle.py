@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 
 from remote_ops_workspace.doctor import run_doctor
 from remote_ops_workspace.paths import data_dir
+from remote_ops_workspace.redaction import is_sensitive_key
 
 SUPPORT_BUNDLE_NOTE = (
     "Review before sharing. This bundle excludes vault.json, private keys, and raw profile data."
@@ -69,6 +70,7 @@ def _summarize_profile(index: int, profile: Any) -> dict[str, Any]:
     options = profile.get("options", {})
     tunnels = profile.get("tunnels", [])
     tags = profile.get("tags", [])
+    option_keys, sensitive_option_key_count = _summarize_option_keys(options)
     return {
         "index": index,
         "protocol": str(profile.get("protocol") or ""),
@@ -82,7 +84,8 @@ def _summarize_profile(index: int, profile: Any) -> dict[str, Any]:
         "has_description": bool(profile.get("description")),
         "url_scheme": _url_scheme(profile.get("url")),
         "tag_count": len(tags) if isinstance(tags, list) else 0,
-        "option_keys": sorted(str(key) for key in options) if isinstance(options, dict) else [],
+        "option_keys": option_keys,
+        "sensitive_option_key_count": sensitive_option_key_count,
         "tunnel_modes": _tunnel_modes(tunnels),
     }
 
@@ -96,16 +99,32 @@ def _summarize_group_defaults(defaults: Any) -> dict[str, Any]:
             groups.append({"index": index, "invalid": True})
             continue
         options = value.get("options", {})
+        option_keys, sensitive_option_key_count = _summarize_option_keys(options)
         groups.append(
             {
                 "index": index,
                 "has_username": bool(value.get("username")),
                 "has_identity_file": bool(value.get("identity_file")),
                 "has_credential_ref": bool(value.get("credential_ref")),
-                "option_keys": sorted(str(key) for key in options) if isinstance(options, dict) else [],
+                "option_keys": option_keys,
+                "sensitive_option_key_count": sensitive_option_key_count,
             }
         )
     return {"group_count": len(defaults), "groups": groups}
+
+
+def _summarize_option_keys(options: Any) -> tuple[list[str], int]:
+    if not isinstance(options, dict):
+        return [], 0
+    public_keys = []
+    sensitive_count = 0
+    for key in options:
+        text = str(key)
+        if is_sensitive_key(text):
+            sensitive_count += 1
+        else:
+            public_keys.append(text)
+    return sorted(public_keys), sensitive_count
 
 
 def _tunnel_modes(tunnels: Any) -> list[str]:

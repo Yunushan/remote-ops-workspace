@@ -35,6 +35,13 @@ def test_platform_targets_cover_requested_architectures() -> None:
         assert row["bits"] == bits
         assert row["assets"]
         assert row["host_support"]
+        assert row["github_release_channel"]
+    assert rows["linux-i386"]["release_tier"] == "script-supported-native"
+    assert rows["linux-i386"]["github_release_channel"] == "manual-script-native"
+    assert rows["linux-armhf"]["release_tier"] == "script-supported-native"
+    assert rows["linux-armhf"]["github_release_channel"] == "manual-script-native"
+    for target_id in ("windows-x64", "linux-x86_64", "linux-arm64", "macos-arm64"):
+        assert rows[target_id]["github_release_channel"] == "default-native"
 
 
 def test_legacy_windows_targets_are_declared_as_remote_targets() -> None:

@@ -14,7 +14,7 @@ def test_profile_summary_excludes_raw_profile_identifiers(tmp_path) -> None:
                     "customer-prod": {
                         "username": "root",
                         "credential_ref": "prod/router-password",
-                        "options": {"proxy_jump": "bastion.customer.example"},
+                        "options": {"proxy_jump": "bastion.customer.example", "api_token": "secret-token"},
                     }
                 },
                 "profiles": [
@@ -29,7 +29,7 @@ def test_profile_summary_excludes_raw_profile_identifiers(tmp_path) -> None:
                         "description": "Production edge router",
                         "identity_file": "/home/admin/.ssh/id_customer",
                         "credential_ref": "prod/router-password",
-                        "options": {"proxy_jump": "bastion.customer.example"},
+                        "options": {"proxy_jump": "bastion.customer.example", "password": "secret"},
                         "tunnels": [{"mode": "dynamic", "local_port": 1080}],
                     }
                 ],
@@ -45,12 +45,18 @@ def test_profile_summary_excludes_raw_profile_identifiers(tmp_path) -> None:
     assert summary["profile_count"] == 1
     assert summary["protocol_counts"] == {"ssh": 1}
     assert summary["profiles"][0]["option_keys"] == ["proxy_jump"]
+    assert summary["profiles"][0]["sensitive_option_key_count"] == 1
+    assert summary["group_defaults"]["groups"][0]["option_keys"] == ["proxy_jump"]
+    assert summary["group_defaults"]["groups"][0]["sensitive_option_key_count"] == 1
     assert summary["profiles"][0]["tunnel_modes"] == ["dynamic"]
     assert "router.customer.example" not in serialized
     assert "customer-router" not in serialized
     assert "admin" not in serialized
     assert "bastion.customer.example" not in serialized
     assert "prod/router-password" not in serialized
+    assert "api_token" not in serialized
+    assert "secret-token" not in serialized
+    assert "password" not in serialized
 
 
 def test_support_bundle_writes_sanitized_profiles_summary(monkeypatch, tmp_path) -> None:

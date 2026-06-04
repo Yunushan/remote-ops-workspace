@@ -6,6 +6,7 @@
       "cpu_arch": "x86",
       "bits": 32,
       "release_tier": "native",
+      "github_release_channel": "default-native",
       "host_support": "Windows 10/11 and supported Windows Server on 32-bit Python builds; older Windows versions are legacy remote targets.",
       "assets": [
         "remote-ops-workspace-v0.1.0-windows-x86-setup.exe",
@@ -24,6 +25,7 @@
       "cpu_arch": "x64",
       "bits": 64,
       "release_tier": "native",
+      "github_release_channel": "default-native",
       "host_support": "Windows 10/11 and supported Windows Server.",
       "assets": [
         "remote-ops-workspace-v0.1.0-windows-x64-setup.exe",
@@ -42,6 +44,7 @@
       "cpu_arch": "arm64",
       "bits": 64,
       "release_tier": "native",
+      "github_release_channel": "default-native",
       "host_support": "Windows 11 ARM64 and ARM64 Windows Server runners when available.",
       "assets": [
         "remote-ops-workspace-v0.1.0-windows-arm64-setup.exe",
@@ -59,7 +62,8 @@
       "platform": "Linux",
       "cpu_arch": "i386",
       "bits": 32,
-      "release_tier": "native",
+      "release_tier": "script-supported-native",
+      "github_release_channel": "manual-script-native",
       "host_support": "32-bit x86 Linux distributions with Python 3.10+ and PyInstaller support.",
       "assets": [
         "remote-ops-workspace-v0.1.0-linux-i386.deb",
@@ -79,6 +83,7 @@
       "cpu_arch": "x86_64",
       "bits": 64,
       "release_tier": "native",
+      "github_release_channel": "default-native",
       "host_support": "64-bit x86 Linux distributions.",
       "assets": [
         "remote-ops-workspace-v0.1.0-linux-amd64.deb",
@@ -97,7 +102,8 @@
       "platform": "Linux",
       "cpu_arch": "armhf",
       "bits": 32,
-      "release_tier": "native",
+      "release_tier": "script-supported-native",
+      "github_release_channel": "manual-script-native",
       "host_support": "32-bit ARM Linux distributions with Python 3.10+ and PyInstaller support.",
       "assets": [
         "remote-ops-workspace-v0.1.0-linux-armhf.deb",
@@ -117,6 +123,7 @@
       "cpu_arch": "arm64",
       "bits": 64,
       "release_tier": "native",
+      "github_release_channel": "default-native",
       "host_support": "64-bit ARM Linux distributions.",
       "assets": [
         "remote-ops-workspace-v0.1.0-linux-arm64.deb",
@@ -136,6 +143,7 @@
       "cpu_arch": "x64",
       "bits": 64,
       "release_tier": "native",
+      "github_release_channel": "default-native",
       "host_support": "macOS Intel.",
       "assets": [
         "remote-ops-workspace-v0.1.0-macos-x64.dmg",
@@ -152,6 +160,7 @@
       "cpu_arch": "arm64",
       "bits": 64,
       "release_tier": "native",
+      "github_release_channel": "default-native",
       "host_support": "macOS Apple Silicon.",
       "assets": [
         "remote-ops-workspace-v0.1.0-macos-arm64.dmg",
@@ -168,6 +177,7 @@
       "cpu_arch": "armv7",
       "bits": 32,
       "release_tier": "termux-web",
+      "github_release_channel": "default-termux-web",
       "host_support": "Termux CLI and browser/PWA on 32-bit ARM Android where Termux packages are available.",
       "assets": [
         "remote-ops-workspace-v0.1.0-android-termux.tar.gz",
@@ -184,6 +194,7 @@
       "cpu_arch": "arm64",
       "bits": 64,
       "release_tier": "termux-web",
+      "github_release_channel": "default-termux-web",
       "host_support": "Termux CLI and browser/PWA on 64-bit ARM Android.",
       "assets": [
         "remote-ops-workspace-v0.1.0-android-termux.tar.gz",

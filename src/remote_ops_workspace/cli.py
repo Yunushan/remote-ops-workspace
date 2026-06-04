@@ -564,9 +564,11 @@ def cmd_platforms(args: argparse.Namespace) -> int:
     platform_width = max(len(item["platform"]) for item in architectures)
     arch_width = max(len(item["cpu_arch"]) for item in architectures)
     for item in architectures:
+        tier = str(item["release_tier"]).replace("-", " ")
+        channel = str(item.get("github_release_channel", "unspecified")).replace("-", " ")
         print(
             f"  {item['platform']:<{platform_width}} {item['cpu_arch']:<{arch_width}} "
-            f"{item['bits']:>2}-bit {item['release_tier']}"
+            f"{item['bits']:>2}-bit {tier} ({channel})"
         )
 
     print("\nLegacy Windows targets:")
@@ -587,15 +589,28 @@ def cmd_features(args: argparse.Namespace) -> int:
     if args.coverage:
         report = coverage_report()
         mapping = report["feature_family_mapping"]
-        readiness = report["product_ready_coverage"]
+        adapter = report["adapter_ready_coverage"]
+        parity = report["production_parity_coverage"]
+        platform = report["platform_verified_readiness"]
         mapping_overall = mapping["overall"]
-        readiness_overall = readiness["overall"]
+        adapter_overall = adapter["overall"]
+        parity_overall = parity["overall"]
+        platform_overall = platform["overall"]
         print(f"Feature-family mapping target : {mapping['target_percent']:.0f}%")
         print(f"Feature-family mapping current: {mapping_overall['current_percent']:.1f}% ({mapping_overall['feature_count']} families)")
-        print(f"Product-ready target          : {readiness['target_percent']:.0f}%")
+        print(f"Adapter-ready target          : {adapter['target_percent']:.0f}%")
         print(
-            f"Product-ready current         : {readiness_overall['current_percent']:.1f}% "
-            f"({readiness_overall['gap_percent']:.1f}% gap)"
+            f"Adapter-ready current         : {adapter_overall['current_percent']:.1f}% "
+            f"({adapter_overall['gap_percent']:.1f}% gap)"
+        )
+        print(f"Production-parity target      : {parity['target_percent']:.0f}%")
+        print(
+            f"Production-parity current     : {parity_overall['current_percent']:.1f}% "
+            f"({parity_overall['gap_percent']:.1f}% gap)"
+        )
+        print(
+            f"Platform verified readiness   : {platform_overall['current_percent']:.1f}% "
+            f"({platform_overall['gap_percent']:.1f}% gap across {platform_overall['target_count']} targets)"
         )
         evidence = report["evidence_summary"]
         print(
@@ -603,15 +618,26 @@ def cmd_features(args: argparse.Namespace) -> int:
             f"{evidence['total_features']} feature families"
         )
         print("\nProduct coverage:")
-        readiness_rows = {row["product"]: row for row in readiness["products"]}
+        adapter_rows = {row["product"]: row for row in adapter["products"]}
+        parity_rows = {row["product"]: row for row in parity["products"]}
         product_width = max(len(row["product"]) for row in mapping["products"])
         for row in mapping["products"]:
-            ready_row = readiness_rows[row["product"]]
+            adapter_row = adapter_rows[row["product"]]
+            parity_row = parity_rows[row["product"]]
             print(
                 f"  {row['product']:<{product_width}} mapping {row['current_percent']:>5.1f}%, "
-                f"ready {ready_row['current_percent']:>5.1f}% "
+                f"adapter {adapter_row['current_percent']:>5.1f}%, "
+                f"parity {parity_row['current_percent']:>5.1f}% "
                 f"({row['feature_count']} families)"
             )
+        if platform["targets"]:
+            print("\nPlatform readiness:")
+            target_width = max(len(row["target"]) for row in platform["targets"])
+            for row in platform["targets"]:
+                print(
+                    f"  {row['target']:<{target_width}} {row['current_percent']:>5.1f}% "
+                    f"{row['status']} ({row['channel']})"
+                )
         return 0
     for row in feature_summary():
         print(f"{row['id']:<32} {row['status']:<18} {row['coverage']}")

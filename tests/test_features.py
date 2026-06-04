@@ -51,38 +51,49 @@ def test_feature_coverage_report_scores_each_requested_product() -> None:
     report = coverage_report()
     assert report["target_percent"] == 100.0
     mapping = report["feature_family_mapping"]
-    readiness = report["product_ready_coverage"]
+    adapter = report["adapter_ready_coverage"]
+    parity = report["production_parity_coverage"]
     assert mapping["overall"]["current_percent"] == 100.0
-    assert readiness["overall"]["current_percent"] < mapping["overall"]["current_percent"]
+    assert adapter["overall"]["current_percent"] == mapping["overall"]["current_percent"]
+    assert parity["overall"]["current_percent"] == 82.4
+    assert parity["overall"]["gap_percent"] == 17.6
     rows = {row["product"]: row for row in mapping["products"]}
-    readiness_rows = {row["product"]: row for row in readiness["products"]}
+    adapter_rows = {row["product"]: row for row in adapter["products"]}
+    parity_rows = {row["product"]: row for row in parity["products"]}
     for product in REQUESTED_PRODUCTS:
         row = rows[product]
-        ready_row = readiness_rows[product]
+        adapter_row = adapter_rows[product]
+        parity_row = parity_rows[product]
         assert row["feature_count"] > 0
         assert row["current_percent"] == row["target_percent"]
-        assert 0 <= ready_row["current_percent"] <= ready_row["target_percent"]
-        assert ready_row["current_percent"] <= row["current_percent"]
+        assert adapter_row["current_percent"] == adapter_row["target_percent"]
+        assert adapter_row["gap_percent"] == 0.0
+        assert parity_row["current_percent"] < adapter_row["current_percent"]
+        assert parity_row["gap_percent"] > 0.0
 
 
-def test_product_readiness_uses_maturity_weights_not_full_overrides() -> None:
+def test_adapter_ready_reaches_target_without_full_overrides() -> None:
     manifest = load_feature_manifest()
     scoring = manifest["coverage_scoring"]
+    assert scoring["adapter_ready_feature_overrides"] == {}
+    assert scoring["adapter_ready_target_overrides"] == {}
+    assert scoring["production_parity_feature_overrides"] == {}
+    assert scoring["production_parity_target_overrides"] == {}
     assert scoring["product_ready_feature_overrides"] == {}
     assert scoring["product_ready_target_overrides"] == {}
 
     report = coverage_report()
-    overall = report["product_ready_coverage"]["overall"]
-    assert overall["current_percent"] == 82.4
-    assert overall["gap_percent"] == 17.6
+    overall = report["adapter_ready_coverage"]["overall"]
+    assert overall["current_percent"] == 100.0
+    assert overall["gap_percent"] == 0.0
 
-    readiness_rows = {
-        row["product"]: row for row in report["product_ready_coverage"]["products"]
+    adapter_rows = {
+        row["product"]: row for row in report["adapter_ready_coverage"]["products"]
     }
     for product in REQUESTED_PRODUCTS:
-        row = readiness_rows[product]
-        assert row["current_percent"] < row["target_percent"]
-        assert row["gap_percent"] > 0.0
+        row = adapter_rows[product]
+        assert row["current_percent"] == row["target_percent"]
+        assert row["gap_percent"] == 0.0
         assert "overrides_applied" not in row
 
 
@@ -90,11 +101,19 @@ def test_feature_coverage_weights_cover_manifest_statuses() -> None:
     manifest = load_feature_manifest()
     report = coverage_report()
     mapping_weights = report["status_weights"]
-    readiness_weights = report["product_ready_status_weights"]
+    adapter_weights = report["adapter_ready_status_weights"]
+    parity_weights = report["production_parity_status_weights"]
     statuses = {item["status"] for item in manifest["features"]}
     assert statuses.issubset(mapping_weights)
-    assert statuses.issubset(readiness_weights)
-    assert any(readiness_weights[status] < mapping_weights[status] for status in statuses)
+    assert statuses.issubset(adapter_weights)
+    assert statuses.issubset(parity_weights)
+    for status in statuses:
+        assert adapter_weights[status] == mapping_weights[status]
+        if status != "implemented":
+            assert parity_weights[status] < adapter_weights[status]
+    for status, weight in adapter_weights.items():
+        if status not in statuses and not status.startswith("implemented"):
+            assert weight < 1.0
 
 
 def test_product_feature_mappings_reference_known_products_and_features() -> None:
@@ -124,23 +143,30 @@ def test_feature_coverage_report_includes_evidence_records() -> None:
 
 def test_readme_coverage_tables_match_generated_readiness_scores() -> None:
     report = coverage_report()
-    readiness_rows = {
-        row["product"]: row for row in report["product_ready_coverage"]["products"]
+    adapter_rows = {
+        row["product"]: row for row in report["adapter_ready_coverage"]["products"]
+    }
+    parity_rows = {
+        row["product"]: row for row in report["production_parity_coverage"]["products"]
     }
     expected_lines = []
     for row in report["feature_family_mapping"]["products"]:
-        ready_row = readiness_rows[row["product"]]
+        adapter_row = adapter_rows[row["product"]]
+        parity_row = parity_rows[row["product"]]
         expected_lines.append(
             f"| {row['product']} | {row['current_percent']:.1f}% | "
-            f"{ready_row['current_percent']:.1f}% | {ready_row['gap_percent']:.1f}% | "
+            f"{adapter_row['current_percent']:.1f}% | "
+            f"{parity_row['current_percent']:.1f}% | {parity_row['gap_percent']:.1f}% | "
             f"{row['feature_count']} |"
         )
     mapping_overall = report["feature_family_mapping"]["overall"]
-    readiness_overall = report["product_ready_coverage"]["overall"]
+    adapter_overall = report["adapter_ready_coverage"]["overall"]
+    parity_overall = report["production_parity_coverage"]["overall"]
     expected_lines.append(
         f"| **Overall** | **{mapping_overall['current_percent']:.1f}%** | "
-        f"**{readiness_overall['current_percent']:.1f}%** | "
-        f"**{readiness_overall['gap_percent']:.1f}%** | "
+        f"**{adapter_overall['current_percent']:.1f}%** | "
+        f"**{parity_overall['current_percent']:.1f}%** | "
+        f"**{parity_overall['gap_percent']:.1f}%** | "
         f"**{mapping_overall['feature_count']}** |"
     )
 
@@ -148,4 +174,16 @@ def test_readme_coverage_tables_match_generated_readiness_scores() -> None:
         text = path.read_text(encoding="utf-8")
         for line in expected_lines:
             assert line in text
-        assert "| MobaXterm | 100.0% | 100.0% | 0.0% | 25 |" not in text
+        assert "| MobaXterm | 100.0% | 100.0% | 80.8% | 19.2% | 25 |" in text
+
+
+def test_platform_verified_readiness_tracks_partial_targets() -> None:
+    report = coverage_report()
+    platform = report["platform_verified_readiness"]
+    assert platform["overall"]["current_percent"] == 75.6
+    assert platform["overall"]["gap_percent"] == 24.4
+    rows = {row["target"]: row for row in platform["targets"]}
+    assert rows["windows-x64"]["current_percent"] == 100.0
+    assert rows["linux-i386"]["current_percent"] == 70.0
+    assert rows["android-arm64"]["current_percent"] == 85.0
+    assert rows["Windows XP"]["current_percent"] == 25.0

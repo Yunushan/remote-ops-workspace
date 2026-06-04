@@ -8,12 +8,15 @@ __pycache__/
 venv/
 build/
 dist/
+native-dist/
+release-assets/
 *.egg-info/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 .coverage
 htmlcov/
+.verify-row-home/
 
 # Remote Ops Workspace private data
 .row/

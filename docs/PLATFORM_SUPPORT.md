@@ -36,16 +36,31 @@ bundles; SSH/RDP/VNC/X11/SPICE/X2Go/ICA rendering still depends on the external
 clients available on the target system.
 
 Native `.exe`, `.msi`, `.dmg`, `.pkg`, `.deb`, `.rpm`, and AppImage artifacts
-are built by OS-specific release jobs or matching self-hosted builders. The
-default GitHub release workflow uploads Windows `x86`/`x64`/`arm64`, macOS
-`x64`/`arm64`, and Linux `x86_64`/`aarch64` native artifacts. Extra Linux
-`i386`/`i686` and `armhf` mappings are script-supported only when a matching
-builder runs `scripts/make_linux_native.sh`. Windows and macOS artifacts are
-unsigned CI builds until release signing credentials are configured. APK-style
-artifacts remain out of scope until there is a real native Android wrapper.
+are built by OS-specific release jobs or matching self-hosted builders. Windows
+and macOS artifacts are unsigned CI builds until release signing credentials are
+configured. APK-style artifacts remain out of scope until there is a real native
+Android wrapper.
 
-Architecture support is declared in `configs/platform_targets.json` and exposed
-with:
+## Release matrix decision
+
+The publishing contract is declared in `configs/release_matrix.json` and checked
+by `python scripts/check_release_matrix.py`. It separates the broad platform
+catalog from the smaller set of files uploaded by the default GitHub release:
+
+- Default GitHub release: Python wheel/sdist, source/install bundles, Windows
+  `x86`/`x64`/`arm64` native artifacts, macOS `x64`/`arm64` native artifacts and
+  Linux `x86_64`/`aarch64` native artifacts.
+- Script-supported native: Linux `i386`/`i686` and `armhf` outputs. The build
+  script maps those architectures, but they are not uploaded by the default
+  GitHub release workflow unless a maintainer runs and verifies a matching
+  builder.
+- Source, Web/PWA or remote-target only: BSD, Solaris/illumos, Android
+  Termux/Web/PWA, and legacy Windows endpoints do not receive default native app
+  installers.
+
+Architecture support is declared in `configs/platform_targets.json`, release
+publishing policy is declared in `configs/release_matrix.json`, and the broad
+support catalog is exposed with:
 
 ```bash
 row platforms
@@ -96,10 +111,10 @@ Target distributions include Ubuntu, Debian, Linux Mint, Kali, Fedora, RHEL, Roc
 
 Native package architecture mappings:
 
-- i386/i686: 32-bit x86 Linux packages.
+- i386/i686: 32-bit x86 Linux packages, script-supported only.
 - x86_64/amd64: default 64-bit x86 Linux packages.
-- armv7l/armhf: 32-bit ARM Linux packages.
-- aarch64/arm64: 64-bit ARM Linux packages.
+- armv7l/armhf: 32-bit ARM Linux packages, script-supported only.
+- aarch64/arm64: default 64-bit ARM Linux packages.
 
 The Linux native script maps these architectures, but it does not cross-compile
 PyInstaller binaries. Run `scripts/make_linux_native.sh` on the requested

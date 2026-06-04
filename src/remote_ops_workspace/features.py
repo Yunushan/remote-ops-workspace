@@ -22,7 +22,23 @@ DEFAULT_FEATURE_FAMILY_STATUS_WEIGHTS: dict[str, float] = {
     "script-seam": 0.15,
 }
 
-DEFAULT_PRODUCT_READY_STATUS_WEIGHTS: dict[str, float] = {
+DEFAULT_ADAPTER_READY_STATUS_WEIGHTS: dict[str, float] = {
+    "implemented": 1.0,
+    "implemented-cli-gui": 1.0,
+    "implemented-cli": 1.0,
+    "implemented-gui": 1.0,
+    "implemented-adapter": 1.0,
+    "implemented-optional": 1.0,
+    "implemented-shell": 1.0,
+    "gui-shell": 0.4,
+    "adapter-seam": 0.25,
+    "docs-adapter": 0.2,
+    "plugin-seam": 0.2,
+    "manifest-seam": 0.15,
+    "script-seam": 0.15,
+}
+
+DEFAULT_PRODUCTION_PARITY_STATUS_WEIGHTS: dict[str, float] = {
     "implemented": 1.0,
     "implemented-cli-gui": 0.9,
     "implemented-cli": 0.85,
@@ -75,10 +91,16 @@ def coverage_report(path: Path | None = None) -> dict[str, Any]:
         DEFAULT_FEATURE_FAMILY_STATUS_WEIGHTS,
         fallback_key="status_weights",
     )
-    product_ready_weights = _status_weights(
+    adapter_ready_weights = _status_weights(
         scoring,
-        "product_ready_status_weights",
-        DEFAULT_PRODUCT_READY_STATUS_WEIGHTS,
+        "adapter_ready_status_weights",
+        DEFAULT_ADAPTER_READY_STATUS_WEIGHTS,
+        fallback_key="product_ready_status_weights",
+    )
+    production_parity_weights = _status_weights(
+        scoring,
+        "production_parity_status_weights",
+        DEFAULT_PRODUCTION_PARITY_STATUS_WEIGHTS,
     )
     product_feature_mappings = _normalise_product_feature_mappings(
         scoring.get("product_feature_mappings", {})
@@ -86,7 +108,10 @@ def coverage_report(path: Path | None = None) -> dict[str, Any]:
     feature_family_target = float(
         scoring.get("feature_family_mapping_target_percent", scoring.get("target_percent", 100))
     )
-    product_ready_target = float(scoring.get("product_ready_target_percent", 100))
+    adapter_ready_target = float(
+        scoring.get("adapter_ready_target_percent", scoring.get("product_ready_target_percent", 100))
+    )
+    production_parity_target = float(scoring.get("production_parity_target_percent", 100))
     feature_family_mapping = _coverage_block(
         label="feature_family_mapping",
         products=products,
@@ -99,32 +124,61 @@ def coverage_report(path: Path | None = None) -> dict[str, Any]:
         ),
         product_feature_mappings=product_feature_mappings,
     )
-    product_ready_coverage = _coverage_block(
-        label="product_ready_coverage",
+    adapter_ready_coverage = _coverage_block(
+        label="adapter_ready_coverage",
         products=products,
         features=features,
-        weights=product_ready_weights,
-        target_percent=product_ready_target,
+        weights=adapter_ready_weights,
+        target_percent=adapter_ready_target,
         method=scoring.get(
-            "product_ready_method",
-            "Evidence-weighted product readiness by feature status.",
+            "adapter_ready_method",
+            scoring.get(
+                "product_ready_method",
+                "Adapter-ready coverage by executable feature status.",
+            ),
         ),
-        overrides=scoring.get("product_ready_feature_overrides", {}),
-        target_overrides=scoring.get("product_ready_target_overrides", {}),
+        overrides=scoring.get(
+            "adapter_ready_feature_overrides",
+            scoring.get("product_ready_feature_overrides", {}),
+        ),
+        target_overrides=scoring.get(
+            "adapter_ready_target_overrides",
+            scoring.get("product_ready_target_overrides", {}),
+        ),
+        product_feature_mappings=product_feature_mappings,
+    )
+    production_parity_coverage = _coverage_block(
+        label="production_parity_coverage",
+        products=products,
+        features=features,
+        weights=production_parity_weights,
+        target_percent=production_parity_target,
+        method=scoring.get(
+            "production_parity_method",
+            "Honest parity coverage by feature status and implementation depth.",
+        ),
+        overrides=scoring.get("production_parity_feature_overrides", {}),
+        target_overrides=scoring.get("production_parity_target_overrides", {}),
         product_feature_mappings=product_feature_mappings,
     )
     evidence = [_feature_evidence(item) for item in features]
+    platform_verified_readiness = _platform_verified_readiness()
 
     return {
         "target_percent": feature_family_target,
         "method": feature_family_mapping["method"],
         "contract": scoring.get("contract", {}),
         "status_weights": feature_family_weights,
-        "product_ready_status_weights": product_ready_weights,
+        "adapter_ready_status_weights": adapter_ready_weights,
+        "product_ready_status_weights": adapter_ready_weights,
+        "production_parity_status_weights": production_parity_weights,
         "overall": feature_family_mapping["overall"],
         "products": feature_family_mapping["products"],
         "feature_family_mapping": feature_family_mapping,
-        "product_ready_coverage": product_ready_coverage,
+        "adapter_ready_coverage": adapter_ready_coverage,
+        "product_ready_coverage": adapter_ready_coverage,
+        "production_parity_coverage": production_parity_coverage,
+        "platform_verified_readiness": platform_verified_readiness,
         "evidence_summary": _evidence_summary(evidence),
         "feature_evidence": evidence,
     }
@@ -394,4 +448,125 @@ def _evidence_summary(evidence: list[dict[str, Any]]) -> dict[str, int]:
         "features_missing_extension_point": missing_extension_point,
         "features_missing_product_mapping": missing_product_mapping,
         "features_missing_status": missing_status,
+    }
+
+
+def _platform_verified_readiness() -> dict[str, Any]:
+    path = repo_root() / "configs" / "platform_targets.json"
+    if not path.exists():
+        return {
+            "target_percent": 100.0,
+            "overall": _platform_overall([]),
+            "targets": [],
+        }
+    data = json.loads(path.read_text(encoding="utf-8"))
+    rows: list[dict[str, Any]] = []
+    for item in data.get("release_architectures", []):
+        score, status, rationale = _release_target_readiness(item)
+        rows.append(
+            _platform_row(
+                target=str(item.get("id", "")),
+                platform=str(item.get("platform", "")),
+                cpu_arch=str(item.get("cpu_arch", "")),
+                release_tier=str(item.get("release_tier", "")),
+                channel=str(item.get("github_release_channel", "")),
+                status=status,
+                rationale=rationale,
+                score=score,
+                kind="release_architecture",
+            )
+        )
+    for item in data.get("windows_legacy_targets", []):
+        score, status, rationale = _legacy_windows_readiness(item)
+        rows.append(
+            _platform_row(
+                target=str(item.get("version", "")),
+                platform="Windows",
+                cpu_arch="legacy",
+                release_tier=str(item.get("host_tier", "")),
+                channel="legacy-windows",
+                status=status,
+                rationale=rationale,
+                score=score,
+                kind="legacy_windows",
+                remote_target_tier=str(item.get("remote_target_tier", "")),
+            )
+        )
+    return {
+        "target_percent": 100.0,
+        "method": (
+            "Default native release targets score 100%. Manual script-native, "
+            "Termux/Web and legacy Windows rows keep separate partial readiness "
+            "until their native installers or host support are verified."
+        ),
+        "overall": _platform_overall(rows),
+        "targets": rows,
+    }
+
+
+def _release_target_readiness(item: dict[str, Any]) -> tuple[float, str, str]:
+    channel = str(item.get("github_release_channel", ""))
+    if channel == "default-native":
+        return 100.0, "verified-default-native", "Default GitHub release channel with native artifacts."
+    if channel == "manual-script-native":
+        return 70.0, "manual-script-supported", "Native artifacts are declared but require a matching manual builder."
+    if channel == "default-termux-web":
+        return 85.0, "termux-web-default", "Termux and Web/PWA bundles ship by default; APK/native GUI is not present."
+    return 50.0, "declared-unclassified", "Release target is declared but lacks a recognized readiness channel."
+
+
+def _legacy_windows_readiness(item: dict[str, Any]) -> tuple[float, str, str]:
+    host_tier = str(item.get("host_tier", ""))
+    if host_tier == "best-effort-source":
+        return 60.0, "best-effort-source-host", "Source install may work with compatible Python and clients."
+    if host_tier == "legacy-source-only":
+        return 45.0, "legacy-source-only", "Modern native artifacts are not guaranteed for this host."
+    if host_tier == "remote-target-only":
+        return 25.0, "remote-target-only", "Managed as a remote target, not as a modern native host."
+    return 30.0, "legacy-unclassified", "Legacy Windows target lacks a recognized host tier."
+
+
+def _platform_row(
+    *,
+    target: str,
+    platform: str,
+    cpu_arch: str,
+    release_tier: str,
+    channel: str,
+    status: str,
+    rationale: str,
+    score: float,
+    kind: str,
+    remote_target_tier: str | None = None,
+) -> dict[str, Any]:
+    row = {
+        "target": target,
+        "platform": platform,
+        "cpu_arch": cpu_arch,
+        "release_tier": release_tier,
+        "channel": channel,
+        "status": status,
+        "rationale": rationale,
+        "current_percent": round(score, 1),
+        "target_percent": 100.0,
+        "gap_percent": round(max(100.0 - score, 0.0), 1),
+        "kind": kind,
+    }
+    if remote_target_tier is not None:
+        row["remote_target_tier"] = remote_target_tier
+    return row
+
+
+def _platform_overall(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    current_percent = (
+        sum(float(row["current_percent"]) for row in rows) / len(rows)
+        if rows
+        else 0.0
+    )
+    return {
+        "product": "Overall",
+        "target_count": len(rows),
+        "current_percent": round(current_percent, 1),
+        "target_percent": 100.0,
+        "gap_percent": round(max(100.0 - current_percent, 0.0), 1),
     }

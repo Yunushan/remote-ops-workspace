@@ -53,6 +53,11 @@ def build_steps(
             env=_source_env(),
         ),
         VerifyStep(
+            "release matrix policy",
+            [python, "scripts/check_release_matrix.py"],
+            env=_source_env(),
+        ),
+        VerifyStep(
             "optional dependency smoke",
             [python, "scripts/check_optional_dependencies.py"],
             env=_source_env(),
@@ -63,8 +68,23 @@ def build_steps(
             env=_source_env(),
         ),
         VerifyStep(
+            "production security polish",
+            [python, "scripts/check_security_polish.py"],
+            env=_source_env(),
+        ),
+        VerifyStep(
+            "repository cleanup preflight",
+            [python, "scripts/check_repository_cleanup.py"],
+            env=_source_env(),
+        ),
+        VerifyStep(
             "GUI preview workflow",
             [python, "scripts/check_gui_design_previews.py"],
+            env=_source_env(),
+        ),
+        VerifyStep(
+            "README media workflow",
+            [python, "scripts/check_readme_media.py"],
             env=_source_env(),
         ),
         VerifyStep(
@@ -75,6 +95,11 @@ def build_steps(
         VerifyStep(
             "feature reality alignment",
             [python, "scripts/check_feature_reality.py"],
+            env=_source_env(),
+        ),
+        VerifyStep(
+            "coverage truth metrics",
+            [python, "scripts/check_product_readiness.py"],
             env=_source_env(),
         ),
     ]

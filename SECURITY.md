@@ -26,8 +26,10 @@ Please include:
 - Workspace data directories are created with best-effort owner-only permissions where the platform supports it.
 - Local profile, vault, layout, snippet, backup and secret-output files are written through atomic replacement helpers with best-effort private file permissions.
 - Support bundles include a sanitized profile summary instead of raw `profiles.json`, and intentionally exclude `vault.json` and private keys. Review every bundle before sharing.
+- Support bundle summaries omit sensitive option key names and report only a sensitive option key count for password/token/credential-like option names.
 - Vault encryption uses the optional `cryptography` package; without it, vault commands fail closed.
 - `row connect --dry-run` prints launch arguments so operators can validate commands before connecting.
+- Audit redaction covers secret-like payload keys, assignment-style secret arguments such as `--password=value`, split secret flags such as `--token VALUE`, URL-embedded passwords, bearer tokens and common Windows-style password switches.
 - SSHv1 profiles are disabled unless the profile protocol is `ssh1`/`sshv1` and `allow_insecure_sshv1=true` is set; protocol v1 remains unsafe even then.
 
 ## Boundaries

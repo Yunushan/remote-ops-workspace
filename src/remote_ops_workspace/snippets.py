@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import json
 import subprocess
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from . import command_safety as safe
 from .file_safety import write_json_atomic
@@ -19,7 +20,7 @@ class Snippet:
     tags: list[str] = field(default_factory=list)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "Snippet":
+    def from_dict(cls, data: dict[str, Any]) -> Snippet:
         return cls(
             name=str(data["name"]),
             command=str(data["command"]),

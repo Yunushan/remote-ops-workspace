@@ -47,10 +47,10 @@ def check_product_readiness() -> list[str]:
             errors.append(f"non-implemented status {status} must remain below 1.0 adapter-ready weight")
     for status in IMPLEMENTED_STATUSES:
         if parity_weights.get(status) != adapter_weights.get(status):
-            errors.append(f"production parity status {status} must match adapter-ready weight")
+            errors.append(f"workflow parity status {status} must match adapter-ready weight")
     for status, weight in parity_weights.items():
         if not str(status).startswith("implemented") and float(weight) >= 1.0:
-            errors.append(f"non-implemented status {status} must remain below 1.0 production parity weight")
+            errors.append(f"non-implemented status {status} must remain below 1.0 workflow parity weight")
 
     for key in (
         "adapter_ready_feature_overrides",
@@ -75,14 +75,38 @@ def check_product_readiness() -> list[str]:
             errors.append(f"{row['product']} adapter-ready gap must be 0.0%, got {row['gap_percent']}%")
     parity = report["production_parity_coverage"]
     parity_rows = [parity["overall"], *parity["products"]]
+    workflow_evidence = {
+        row["product"]: row for row in report.get("workflow_parity_evidence", [])
+    }
     for row in parity_rows:
         if row["current_percent"] != row["target_percent"]:
             errors.append(
-                f"{row['product']} production parity is {row['current_percent']}%, "
+                f"{row['product']} workflow parity is {row['current_percent']}%, "
                 f"expected {row['target_percent']}%"
             )
         if row["gap_percent"] != 0.0:
-            errors.append(f"{row['product']} production parity gap must be 0.0%, got {row['gap_percent']}%")
+            errors.append(f"{row['product']} workflow parity gap must be 0.0%, got {row['gap_percent']}%")
+        evidence = workflow_evidence.get(row["product"])
+        if evidence is None:
+            errors.append(f"{row['product']} workflow parity row must expose JSON evidence")
+            continue
+        if evidence.get("native_clone_claimed") is not False:
+            errors.append(f"{row['product']} workflow parity must not claim proprietary native clone parity")
+        if evidence.get("coverage_percent") != row["current_percent"]:
+            errors.append(f"{row['product']} workflow parity evidence percentage does not match coverage row")
+        if evidence.get("feature_count") != row["feature_count"]:
+            errors.append(f"{row['product']} workflow parity evidence feature count does not match coverage row")
+        if evidence.get("partial_feature_count") != 0:
+            errors.append(f"{row['product']} workflow parity has partial feature evidence")
+        if evidence.get("missing_release_evidence_count") != 0:
+            errors.append(f"{row['product']} workflow parity is missing release-backed evidence")
+        if evidence.get("full_parity_feature_count") != row["feature_count"]:
+            errors.append(f"{row['product']} workflow parity full evidence count does not cover every feature")
+        for item in evidence.get("feature_evidence", []):
+            if item.get("counts_as_full_parity") and not item.get("release_backed"):
+                errors.append(f"{row['product']} feature {item.get('id')} lacks release-backed parity evidence")
+            if item.get("counts_as_full_parity") and not item.get("evidence_refs"):
+                errors.append(f"{row['product']} feature {item.get('id')} lacks evidence refs")
 
     platform = report["platform_verified_readiness"]
     platform_rows = platform.get("targets", [])

@@ -41,6 +41,15 @@ and macOS artifacts are unsigned CI builds until release signing credentials are
 configured. APK-style artifacts remain out of scope until there is a real native
 Android wrapper.
 
+Native installer smoke coverage is declared in
+`configs/native_installer_smoke.json` and checked by
+`python scripts/check_native_installer_smoke.py`. The default release workflow
+runs `scripts/smoke_windows_native.ps1`, `scripts/smoke_macos_native.sh` and
+`scripts/smoke_linux_native.sh` after native builds and before upload. Those
+smokes cover install, verify, upgrade and uninstall paths for Windows `.exe`
+and `.msi`, macOS `.dmg` and `.pkg`, and Linux `.deb`, `.rpm` and AppImage
+artifacts.
+
 ## Release matrix decision
 
 The publishing contract is declared in `configs/release_matrix.json` and checked
@@ -59,8 +68,11 @@ catalog from the smaller set of files uploaded by the default GitHub release:
   installers.
 
 Architecture support is declared in `configs/platform_targets.json`, release
-publishing policy is declared in `configs/release_matrix.json`, and the broad
-support catalog is exposed with:
+publishing policy is declared in `configs/release_matrix.json`, and
+`python scripts/check_platform_support_truth.py` verifies that the catalog,
+release matrix, generated readiness scores and platform docs keep the same
+default-native, script-supported, Termux/Web and legacy remote-target meaning.
+The broad support catalog is exposed with:
 
 ```bash
 row platforms

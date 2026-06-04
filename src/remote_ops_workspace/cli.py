@@ -13,6 +13,7 @@ from .audit import append_event
 from .broadcast import BroadcastResult, build_broadcast_plans, run_broadcast
 from .doctor import run_doctor
 from .features import coverage_report, feature_summary, load_feature_manifest
+from .file_safety import write_text_atomic
 from .file_transfer import (
     SftpBatchPlan,
     SftpQueuePlan,
@@ -34,7 +35,6 @@ from .file_transfer import (
     run_sftp_queue,
 )
 from .first_run import first_run_json, first_run_payload, format_first_run
-from .file_safety import write_text_atomic
 from .keys import build_keygen_plan, run_keygen
 from .launcher import LauncherError, launch
 from .layouts import (
@@ -48,6 +48,7 @@ from .layouts import (
 from .models import Profile, Tunnel
 from .network_tools import build_network_tool_plan, check_tcp_port, run_network_tool
 from .paths import ensure_data_dir
+from .platform_targets import load_platform_targets
 from .plugin_dev import (
     DEFAULT_PLUGIN_CHECK_HOST,
     DEFAULT_PLUGIN_CHECK_USERNAME,
@@ -56,7 +57,6 @@ from .plugin_dev import (
     scaffold_plugin,
     validate_installed_plugins,
 )
-from .platform_targets import load_platform_targets
 from .plugins import load_plugin_registry
 from .profile_importers import SUPPORTED_IMPORT_FORMATS, import_profiles_into_store
 from .snippets import Snippet, SnippetStore, run_snippet
@@ -546,10 +546,15 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     print(f"Data dir : {result.data_dir}")
     print("\nExternal clients:")
     for protocol, candidates in result.executables.items():
-        available = [name for name, ok in candidates.items() if ok]
-        status = ", ".join(available) if available else "missing"
-        print(f"  {protocol:<8} {status}")
+        status = result.protocol_status.get(protocol, {})
+        summary = str(status.get("summary", _doctor_executable_summary(candidates)))
+        print(f"  {protocol:<8} {summary}")
     return 0
+
+
+def _doctor_executable_summary(candidates: dict[str, bool]) -> str:
+    available = [name for name, ok in candidates.items() if ok]
+    return ", ".join(available) if available else "missing"
 
 
 def cmd_platforms(args: argparse.Namespace) -> int:
@@ -603,9 +608,9 @@ def cmd_features(args: argparse.Namespace) -> int:
             f"Adapter-ready current         : {adapter_overall['current_percent']:.1f}% "
             f"({adapter_overall['gap_percent']:.1f}% gap)"
         )
-        print(f"Production-parity target      : {parity['target_percent']:.0f}%")
+        print(f"Workflow parity target        : {parity['target_percent']:.0f}%")
         print(
-            f"Production-parity current     : {parity_overall['current_percent']:.1f}% "
+            f"Workflow parity current       : {parity_overall['current_percent']:.1f}% "
             f"({parity_overall['gap_percent']:.1f}% gap)"
         )
         print(
@@ -617,6 +622,7 @@ def cmd_features(args: argparse.Namespace) -> int:
             f"Evidence records              : {evidence['features_with_evidence']}/"
             f"{evidence['total_features']} feature families"
         )
+        print(f"Parity contract               : {report['workflow_parity_contract']['label']}")
         print("\nProduct coverage:")
         adapter_rows = {row["product"]: row for row in adapter["products"]}
         parity_rows = {row["product"]: row for row in parity["products"]}
@@ -627,7 +633,7 @@ def cmd_features(args: argparse.Namespace) -> int:
             print(
                 f"  {row['product']:<{product_width}} mapping {row['current_percent']:>5.1f}%, "
                 f"adapter {adapter_row['current_percent']:>5.1f}%, "
-                f"parity {parity_row['current_percent']:>5.1f}% "
+                f"workflow parity {parity_row['current_percent']:>5.1f}% "
                 f"({row['feature_count']} families)"
             )
         if platform["targets"]:

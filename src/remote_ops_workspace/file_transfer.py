@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import shlex
 import subprocess
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from dataclasses import replace as replace_dataclass
 from pathlib import Path, PurePosixPath
-from typing import Iterable
 
 from . import command_safety as safe
 from .launcher import LaunchPlan, build_launch_plan

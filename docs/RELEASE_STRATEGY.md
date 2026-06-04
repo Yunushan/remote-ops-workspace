@@ -19,6 +19,21 @@ Release integrity rules:
 - Each native platform script emits a per-platform
   `remote-ops-workspace-v<version>-<platform>-<arch>-native-SHA256SUMS.txt`
   sidecar covering its native artifacts and native manifest.
+- Native installer smoke coverage is declared in
+  `configs/native_installer_smoke.json` and checked by
+  `python scripts/check_native_installer_smoke.py`. The release workflow runs
+  `scripts/smoke_windows_native.ps1`, `scripts/smoke_macos_native.sh` and
+  `scripts/smoke_linux_native.sh` after native builds and before artifact
+  upload.
+- The `release-preflight` workflow job runs
+  `python scripts/verify.py --quick --no-cli-smoke` and
+  `python scripts/check_repository_cleanup.py --require-clean` before any
+  source, Python or native artifact build job can start.
+- The publish job runs
+  `python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag>`
+  after downloading workflow artifacts and before uploading the GitHub release.
+  It verifies the expected asset set from `configs/release_matrix.json`,
+  checksum sidecars and source release-manifest records.
 - CI build jobs run with read-only repository contents permission and checkout
   credentials are not persisted. Only the publish job receives release write
   permission.
@@ -46,6 +61,25 @@ running and verifying a matching builder. BSD, Solaris/illumos, Android
 Termux/Web/PWA and legacy Windows endpoints remain source/Web/remote-target
 entries unless a real native packaging path is added.
 
+## Native installer smoke tests
+
+Every default native installer format has an install, verify, upgrade and
+uninstall smoke path before upload:
+
+- Windows `.exe`: silent Inno Setup install into a smoke directory, `row.exe
+  --version`, silent reinstall, generated uninstaller cleanup.
+- Windows `.msi`: quiet `msiexec` install, Program Files `row.exe --version`,
+  quiet reinstall, quiet uninstall.
+- macOS `.dmg`: read-only mount, app bundle copy, `codesign --verify`, bundle
+  replacement, bundle cleanup and detach.
+- macOS `.pkg`: `sudo installer`, `/Applications` app verification, reinstall,
+  app removal and receipt cleanup.
+- Linux `.deb`: `sudo dpkg -i`, `/usr/bin/row --version`, reinstall, `dpkg -r`.
+- Linux `.rpm`: `sudo rpm -Uvh --replacepkgs`, `/usr/bin/row --version`,
+  reinstall, `rpm -e`.
+- Linux AppImage: stage executable copy, `APPIMAGE_EXTRACT_AND_RUN=1
+  --version`, overwrite staged copy, remove staged copy.
+
 ## Repository cleanup before tagging
 
 Run the normal verifier first, then run the cleanup preflight:
@@ -65,6 +99,11 @@ Use `--require-clean` only immediately before creating the tag. It adds a
 `git status --porcelain` requirement so the tag is cut from a fully committed
 tree. During ordinary development, the default cleanup check can run while local
 work is still in progress.
+
+The tag workflow repeats this protection automatically. The `release-preflight`
+job is a dependency of `source-and-python`, `windows-native`, `macos-native`,
+`linux-native` and `publish`, so a stale manifest, broken verifier check or
+dirty checkout stops the release before artifacts are built or uploaded.
 
 ## Phase 1: Python package artifacts
 
@@ -103,6 +142,8 @@ Implementation:
 - Builds a standalone `row.exe` with PyInstaller for x86, x64 and ARM64 builders.
 - Builds an interactive installer with Inno Setup.
 - Builds an MSI installer with WiX.
+- Runs `scripts/smoke_windows_native.ps1` to smoke install, verify, upgrade and
+  uninstall the `.exe` and `.msi` artifacts before upload.
 - Pins the Windows installer toolchain in CI: Inno Setup `6.3.3` and WiX
   `5.0.2`.
 - Publishes unsigned CI artifacts. Authenticode signing can be layered in when
@@ -126,6 +167,8 @@ Implementation:
 - Builds a PyInstaller `.app` bundle for the PyQt6 GUI entry point.
 - Builds a DMG for drag-and-drop installs.
 - Builds a PKG for managed installs.
+- Runs `scripts/smoke_macos_native.sh` to smoke install, verify, upgrade and
+  uninstall the `.dmg` and `.pkg` artifacts before upload.
 - Uses ad-hoc signing in CI. Developer ID signing and Apple notarization should
   be added before broad public macOS distribution.
 
@@ -148,6 +191,8 @@ Implementation:
 - Builds a DEB with `dpkg-deb`.
 - Builds an RPM with `rpmbuild`.
 - Builds an AppImage with `appimagetool`.
+- Runs `scripts/smoke_linux_native.sh` to smoke install, verify, upgrade and
+  uninstall the `.deb`, `.rpm` and AppImage artifacts before upload.
 - Downloads appimagetool from the maintained `AppImage/appimagetool` upstream
   when a local `APPIMAGETOOL` is not supplied, and supports
   `APPIMAGETOOL_SHA256` verification for pinned binary inputs.

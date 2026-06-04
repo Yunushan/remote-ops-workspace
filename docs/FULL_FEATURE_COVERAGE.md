@@ -1,12 +1,12 @@
 # Full Feature Coverage Manifest
 
-Remote Ops Workspace targets **100% public feature-family mapping**, **100% adapter-ready coverage** and **100% release-backed production-parity coverage** for the requested product feature families.
+Remote Ops Workspace targets **100% public feature-family mapping**, **100% adapter-ready coverage** and **100% release-backed product workflow parity** for the requested product feature families.
 
-The project publishes separate generated scores from `configs/feature_manifest.json`. Feature-family mapping answers whether each public feature family is represented by built-in code, external-client adapters, optional implementations, CLI/GUI workflows, platform scripts, or plugin extension points. Adapter-ready coverage counts implemented adapter, optional, CLI, GUI and combined workflows as ready when they are tied to executable evidence. Production-parity coverage uses the same release-backed implementation evidence for implemented workflows and keeps seam-only or docs-only rows partial if they appear. Platform verified readiness is separate from feature coverage so native release targets, Termux/Web bundles and legacy Windows support do not get blended into one misleading product score.
+The project publishes separate generated scores from `configs/feature_manifest.json`. Feature-family mapping answers whether each public feature family is represented by built-in code, external-client adapters, optional implementations, CLI/GUI workflows, platform scripts, or plugin extension points. Adapter-ready coverage counts implemented adapter, optional, CLI, GUI and combined workflows as ready when they are tied to executable evidence. The `production_parity_coverage` JSON key remains for compatibility, but the public contract is release-backed product workflow parity: implemented workflows count only when tied to executable release evidence, and seam-only or docs-only rows remain partial if they appear. This is not a proprietary native clone claim. Platform verified readiness is separate from feature coverage so native release targets, Termux/Web bundles and legacy Windows support do not get blended into one misleading product score.
 
 ## Current coverage score
 
-| Product target | Feature-family mapping | Adapter-ready coverage | Production-parity coverage | Parity gap to 100% | Feature families tracked |
+| Product target | Feature-family mapping | Adapter-ready coverage | Release-backed workflow parity | Workflow gap to 100% | Feature families tracked |
 |---|---:|---:|---:|---:|---:|
 | MobaXterm | 100.0% | 100.0% | 100.0% | 0.0% | 25 |
 | Remmina | 100.0% | 100.0% | 100.0% | 0.0% | 11 |
@@ -114,7 +114,7 @@ Adapter-ready coverage weights:
 | manifest-seam | 0.15 |
 | script-seam | 0.15 |
 
-Production-parity coverage weights:
+Release-backed workflow parity weights:
 
 | Status | Weight |
 |---|---:|
@@ -134,11 +134,28 @@ Production-parity coverage weights:
 
 Every feature record also exposes generated evidence in `row features --coverage --json`, including feature id, status, implementation kind, product mapping and manifest extension point. `scripts/check_feature_reality.py` separately verifies implemented feature families against executable evidence such as CLI parser command paths, launch-plan builders, implementation symbols and shipped PWA/Termux files.
 
-Adapter-ready and production-parity coverage use the manifest status weights
-directly and do not use blanket per-product overrides. Seam-only and docs-only
-rows remain partial, while implemented adapter, optional, CLI, GUI, shell and
-combined workflows count as production parity when they are tied to executable
-release evidence.
+## Release-backed workflow evidence
+
+`row features --coverage --json` includes `workflow_parity_contract` and
+`workflow_parity_evidence`. The evidence ledger has one row for `Overall` and
+one row for each product target. Each row lists:
+
+- `product`, `coverage_percent`, `gap_percent` and `feature_count`;
+- `feature_ids`, the exact feature-family IDs used by that product score;
+- `feature_evidence`, with `id`, `status`, `implementation_kind`,
+  `extension_point`, `status_weight`, `release_backed` and `evidence_refs`;
+- `native_clone_claimed: false`, because the score is not a proprietary native
+  clone claim or embedded protocol-engine parity claim.
+
+`scripts/check_product_readiness.py` fails if a 100% workflow-parity row lacks
+that evidence, has partial mapped features, uses blanket overrides, or blends
+platform readiness into product feature coverage.
+
+Adapter-ready coverage and release-backed product workflow parity use the
+manifest status weights directly and do not use blanket per-product overrides.
+Seam-only and docs-only rows remain partial, while implemented adapter,
+optional, CLI, GUI, shell and combined workflows count as workflow parity when
+they are tied to executable release evidence.
 
 ## Product feature family mapping
 
@@ -206,9 +223,9 @@ The current v0.1.0 repo is an adapter-first foundation, not a proprietary clone.
 
 For each requested product target, the repository maps every tracked public
 feature family and the implemented rows now score as adapter-ready under the
-adapter-first readiness contract. Production-parity coverage is also 100% for
-the tracked release-backed workflows because every mapped row is tied to
-implemented code, tested launch-plan builders, shipped platform scripts, GUI/CLI
-workflows or explicit plugin boundaries. Platform verified readiness remains
-separate because manual native builders, Termux/Web channels and legacy Windows
+adapter-first readiness contract. Release-backed product workflow parity is also
+100% for the tracked workflows because every mapped row is tied to implemented
+code, tested launch-plan builders, shipped platform scripts, GUI/CLI workflows
+or explicit plugin boundaries. Platform verified readiness remains separate
+because manual native builders, Termux/Web channels and legacy Windows
 remote-target tiers are not the same as product feature parity.

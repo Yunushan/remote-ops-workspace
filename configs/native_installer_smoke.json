@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "contract": "Every default native installer artifact must have an install, verify, upgrade-or-reinstall, and uninstall smoke path before release upload.",
+  "required_formats": [
+    "exe",
+    "msi",
+    "dmg",
+    "pkg",
+    "deb",
+    "rpm",
+    "AppImage"
+  ],
+  "platforms": {
+    "windows": {
+      "workflow_job": "windows-native",
+      "script": "scripts/smoke_windows_native.ps1",
+      "dist": "native-dist/windows",
+      "formats": [
+        {
+          "format": "exe",
+          "artifact_glob": "remote-ops-workspace-v*-windows-*-setup.exe",
+          "lifecycle": {
+            "install": "Inno Setup silent install into build/native-smoke/windows-<arch>/exe-install",
+            "verify": "installed bin/row.exe --version",
+            "upgrade": "rerun the same setup.exe silently over the installed copy",
+            "uninstall": "run generated unins*.exe silently and verify row.exe is removed"
+          }
+        },
+        {
+          "format": "msi",
+          "artifact_glob": "remote-ops-workspace-v*-windows-*.msi",
+          "lifecycle": {
+            "install": "msiexec /i <artifact> /qn /norestart",
+            "verify": "installed Program Files row.exe --version",
+            "upgrade": "msiexec /i <artifact> /qn /norestart over the installed product",
+            "uninstall": "msiexec /x <artifact> /qn /norestart and verify row.exe is removed"
+          }
+        }
+      ]
+    },
+    "macos": {
+      "workflow_job": "macos-native",
+      "script": "scripts/smoke_macos_native.sh",
+      "dist": "native-dist/macos",
+      "formats": [
+        {
+          "format": "dmg",
+          "artifact_glob": "remote-ops-workspace-v*-macos-*.dmg",
+          "lifecycle": {
+            "install": "hdiutil attach read-only DMG and copy Remote Ops Workspace.app into a smoke Applications directory",
+            "verify": "codesign --verify --deep --strict on the copied app bundle",
+            "upgrade": "replace the copied app bundle from the mounted DMG",
+            "uninstall": "remove the copied app bundle and detach the DMG"
+          }
+        },
+        {
+          "format": "pkg",
+          "artifact_glob": "remote-ops-workspace-v*-macos-*.pkg",
+          "lifecycle": {
+            "install": "sudo installer -pkg <artifact> -target /",
+            "verify": "installed /Applications/Remote Ops Workspace.app exists and passes codesign verification",
+            "upgrade": "sudo installer -pkg <artifact> -target / over the installed package",
+            "uninstall": "remove /Applications/Remote Ops Workspace.app and forget the package receipt"
+          }
+        }
+      ]
+    },
+    "linux": {
+      "workflow_job": "linux-native",
+      "script": "scripts/smoke_linux_native.sh",
+      "dist": "native-dist/linux",
+      "formats": [
+        {
+          "format": "deb",
+          "artifact_glob": "remote-ops-workspace-v*-linux-*.deb",
+          "lifecycle": {
+            "install": "sudo dpkg -i <artifact>",
+            "verify": "/usr/bin/row --version",
+            "upgrade": "sudo dpkg -i <artifact> over the installed package",
+            "uninstall": "sudo dpkg -r remote-ops-workspace and verify /usr/bin/row is removed"
+          }
+        },
+        {
+          "format": "rpm",
+          "artifact_glob": "remote-ops-workspace-v*-linux-*.rpm",
+          "lifecycle": {
+            "install": "sudo rpm -Uvh --replacepkgs <artifact>",
+            "verify": "/usr/bin/row --version",
+            "upgrade": "sudo rpm -Uvh --replacepkgs <artifact> over the installed package",
+            "uninstall": "sudo rpm -e remote-ops-workspace and verify /usr/bin/row is removed"
+          }
+        },
+        {
+          "format": "AppImage",
+          "artifact_glob": "remote-ops-workspace-v*-linux-*.AppImage",
+          "lifecycle": {
+            "install": "install -m 755 <artifact> build/native-smoke/linux-<arch>/appimage/row.AppImage",
+            "verify": "APPIMAGE_EXTRACT_AND_RUN=1 row.AppImage --version",
+            "upgrade": "overwrite the staged AppImage with the same artifact and run --version again",
+            "uninstall": "remove the staged AppImage"
+          }
+        }
+      ]
+    }
+  }
+}

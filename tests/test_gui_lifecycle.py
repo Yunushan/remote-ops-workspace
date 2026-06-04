@@ -1,6 +1,5 @@
 from remote_ops_workspace.gui_lifecycle import ProcessStopPolicy, is_process_running, stop_process
 
-
 NOT_RUNNING = "not-running"
 RUNNING = "running"
 

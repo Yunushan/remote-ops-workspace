@@ -24,6 +24,9 @@ class ProcessStopResult:
     finished: bool
 
 
+DEFAULT_PROCESS_STOP_POLICY = ProcessStopPolicy()
+
+
 def is_process_running(process: Any, *, not_running_state: object) -> bool:
     return process.state() != not_running_state
 
@@ -32,7 +35,7 @@ def stop_process(
     process: Any,
     *,
     not_running_state: object,
-    policy: ProcessStopPolicy = ProcessStopPolicy(),
+    policy: ProcessStopPolicy = DEFAULT_PROCESS_STOP_POLICY,
 ) -> ProcessStopResult:
     if not is_process_running(process, not_running_state=not_running_state):
         return ProcessStopResult(

@@ -112,7 +112,7 @@ def _write_native_key_pair(plan: KeygenPlan) -> None:
         format=serialization.PublicFormat.OpenSSH,
     )
     if plan.comment:
-        public_bytes += f" {plan.comment}".encode("utf-8")
+        public_bytes += f" {plan.comment}".encode()
     public_bytes += b"\n"
 
     write_bytes_atomic(private_path, private_bytes, private=True)

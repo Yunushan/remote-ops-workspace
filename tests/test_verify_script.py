@@ -13,11 +13,17 @@ def test_verify_steps_include_full_checks_and_cli_smoke(tmp_path: Path) -> None:
 
     assert "compile source, tests, and scripts" in names
     assert "documentation consistency" in names
+    assert "roadmap truth" in names
+    assert "CI workflow policy" in names
     assert "release identity and artifact truth" in names
     assert "release toolchain reproducibility" in names
+    assert "platform support truth" in names
+    assert "release publish asset contract" in names
     assert "optional dependency smoke" in names
     assert "native release hardening" in names
+    assert "native installer smoke contract" in names
     assert "GUI preview workflow" in names
+    assert "real GUI render smoke" in names
     assert "README media workflow" in names
     assert "first-run UX" in names
     assert "feature reality alignment" in names
@@ -36,11 +42,17 @@ def test_verify_quick_mode_skips_pytest_but_keeps_cli_smoke(tmp_path: Path) -> N
 
     assert "compile source, tests, and scripts" in names
     assert "documentation consistency" in names
+    assert "roadmap truth" in names
+    assert "CI workflow policy" in names
     assert "release identity and artifact truth" in names
     assert "release toolchain reproducibility" in names
+    assert "platform support truth" in names
+    assert "release publish asset contract" in names
     assert "optional dependency smoke" in names
     assert "native release hardening" in names
+    assert "native installer smoke contract" in names
     assert "GUI preview workflow" in names
+    assert "real GUI render smoke" in names
     assert "README media workflow" in names
     assert "first-run UX" in names
     assert "feature reality alignment" in names

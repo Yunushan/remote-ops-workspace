@@ -1,16 +1,16 @@
 {
-  "coverage_goal": "100% public feature-family mapping, 100% adapter-ready coverage and 100% release-backed production-parity coverage for requested products, with platform-readiness gaps tracked separately.",
+  "coverage_goal": "100% public feature-family mapping, 100% adapter-ready coverage and 100% release-backed product workflow parity for requested products, with platform-readiness gaps tracked separately.",
   "coverage_scoring": {
     "contract": {
       "feature_family_mapping": "Tracks whether each requested public feature family is represented by built-in code, external-client adapters, CLI/GUI workflows, platform scripts, or plugin extension points.",
       "adapter_ready_coverage": "Tracks whether each requested product feature family has an executable implementation, adapter, optional dependency path, CLI/GUI workflow, or platform script representation.",
-      "production_parity_coverage": "Tracks release-backed production parity for requested product feature families. Implemented adapter, optional, CLI, GUI, shell and combined workflows count as full parity only when tied to executable implementation evidence; seam-only or docs-only rows remain partial.",
+      "production_parity_coverage": "Backward-compatible JSON key for release-backed product workflow parity. Implemented adapter, optional, CLI, GUI, shell and combined workflows count as full parity only when tied to executable implementation evidence; seam-only or docs-only rows remain partial. This is not a proprietary native clone parity claim.",
       "platform_verified_readiness": "Tracks release-target readiness separately from feature coverage so default native builds, manual native builds, Termux/Web bundles and legacy Windows targets are not blended into one misleading percentage.",
       "product_ready_coverage": "Deprecated alias for adapter_ready_coverage. Kept for backwards-compatible JSON consumers only."
     },
     "feature_family_method": "Weighted feature-family mapping. Each feature family counts equally for every product it maps to. Built-in implementations, external adapters, optional implementations, CLI features, GUI features and platform scripts score as mapped; documented seams score partial credit until implemented.",
     "adapter_ready_method": "Evidence-weighted adapter readiness. Each feature family counts equally for every product it maps to. Implemented adapter, optional, CLI, GUI, shell and combined workflow rows score as ready when backed by executable reality checks; seam-only or docs-only rows remain partial.",
-    "production_parity_method": "Evidence-weighted production parity. Each feature family counts equally for every product it maps to. Implemented adapter, optional, CLI, GUI, shell and combined workflows score as production parity when backed by executable release evidence; seam-only or docs-only rows remain partial.",
+    "production_parity_method": "Evidence-weighted release-backed product workflow parity. Each feature family counts equally for every product it maps to. Implemented adapter, optional, CLI, GUI, shell and combined workflows score as workflow parity when backed by executable release evidence; seam-only or docs-only rows remain partial. The metric does not claim proprietary native clone parity or embedded protocol-engine parity.",
     "product_ready_method": "Deprecated alias for adapter_ready_method.",
     "feature_family_mapping_target_percent": 100,
     "adapter_ready_target_percent": 100,

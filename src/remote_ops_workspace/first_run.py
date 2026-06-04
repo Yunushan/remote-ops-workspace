@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-
 DEFAULT_DOCS = (
     "docs/PROTOCOLS.md",
     "docs/FILE_TRANSFER.md",

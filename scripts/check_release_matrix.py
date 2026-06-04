@@ -8,7 +8,6 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any
 
-
 ROOT = Path(__file__).resolve().parents[1]
 MATRIX_PATH = ROOT / "configs" / "release_matrix.json"
 PLATFORM_TARGETS_PATH = ROOT / "configs" / "platform_targets.json"

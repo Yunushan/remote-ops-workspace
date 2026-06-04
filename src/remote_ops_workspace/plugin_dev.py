@@ -4,7 +4,6 @@ import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
 from . import command_safety as safe
 from .file_safety import write_text_atomic
@@ -17,7 +16,6 @@ from .plugins import (
     normalize_plugin_protocols,
 )
 from .profile_validation import SUPPORTED_PROFILE_PROTOCOLS
-
 
 PLUGIN_ENTRY_POINT_GROUP = "remote_ops_workspace.plugins"
 DEFAULT_PLUGIN_CHECK_HOST = "plugin-check.example"

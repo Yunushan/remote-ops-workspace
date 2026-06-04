@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from typing import Mapping
+from collections.abc import Mapping
 
 from . import command_safety as safe
 from .layouts import Layout, LayoutPane, parse_layout_pane, validate_layout
 from .models import Profile, Tunnel
 from .plugins import plugin_protocols
 from .profile_validation import prepare_profile
-
 
 PROFILE_EDITOR_FIELDS = {
     "command",

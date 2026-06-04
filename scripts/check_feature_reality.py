@@ -6,18 +6,16 @@ import sys
 from pathlib import Path
 from typing import Any
 
-
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from remote_ops_workspace.cli import build_parser
-from remote_ops_workspace.features import load_feature_manifest
-from remote_ops_workspace.keys import build_keygen_plan
-from remote_ops_workspace.launcher import build_launch_plan
-from remote_ops_workspace.models import Profile, Tunnel
-
+from remote_ops_workspace.cli import build_parser  # noqa: E402
+from remote_ops_workspace.features import load_feature_manifest  # noqa: E402
+from remote_ops_workspace.keys import build_keygen_plan  # noqa: E402
+from remote_ops_workspace.launcher import build_launch_plan  # noqa: E402
+from remote_ops_workspace.models import Profile, Tunnel  # noqa: E402
 
 SAMPLE_HOST = "row-feature-check.example"
 

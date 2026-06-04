@@ -70,6 +70,14 @@ STATUS_EVIDENCE_TYPES: dict[str, str] = {
     "script-seam": "platform-script",
 }
 
+WORKFLOW_PARITY_LABEL = "release-backed product workflow parity"
+WORKFLOW_PARITY_SCOPE = (
+    "Counts requested public product feature families when this release provides an "
+    "implemented adapter, optional dependency path, CLI workflow, GUI workflow, "
+    "platform shell, or combined workflow tied to manifest evidence. This is not a "
+    "claim of proprietary native clone parity or embedded protocol-engine parity."
+)
+
 
 def feature_manifest_path() -> Path:
     return repo_root() / "configs" / "feature_manifest.json"
@@ -162,12 +170,34 @@ def coverage_report(path: Path | None = None) -> dict[str, Any]:
         product_feature_mappings=product_feature_mappings,
     )
     evidence = [_feature_evidence(item) for item in features]
+    workflow_parity_evidence = _workflow_parity_evidence(
+        products=products,
+        features=features,
+        product_feature_mappings=product_feature_mappings,
+        weights=production_parity_weights,
+        coverage_rows=[
+            production_parity_coverage["overall"],
+            *production_parity_coverage["products"],
+        ],
+    )
     platform_verified_readiness = _platform_verified_readiness()
 
     return {
         "target_percent": feature_family_target,
         "method": feature_family_mapping["method"],
         "contract": scoring.get("contract", {}),
+        "coverage_labels": {
+            "feature_family_mapping": "public feature-family mapping",
+            "adapter_ready_coverage": "adapter-ready coverage",
+            "production_parity_coverage": WORKFLOW_PARITY_LABEL,
+            "platform_verified_readiness": "platform verified readiness",
+        },
+        "workflow_parity_contract": {
+            "metric": "production_parity_coverage",
+            "label": WORKFLOW_PARITY_LABEL,
+            "scope": WORKFLOW_PARITY_SCOPE,
+            "native_clone_claimed": False,
+        },
         "status_weights": feature_family_weights,
         "adapter_ready_status_weights": adapter_ready_weights,
         "product_ready_status_weights": adapter_ready_weights,
@@ -181,6 +211,7 @@ def coverage_report(path: Path | None = None) -> dict[str, Any]:
         "platform_verified_readiness": platform_verified_readiness,
         "evidence_summary": _evidence_summary(evidence),
         "feature_evidence": evidence,
+        "workflow_parity_evidence": workflow_parity_evidence,
     }
 
 
@@ -433,6 +464,132 @@ def _feature_evidence(item: dict[str, Any]) -> dict[str, Any]:
         "evidence_count": len(evidence),
         "missing_metadata": missing_metadata,
     }
+
+
+def _workflow_parity_evidence(
+    *,
+    products: list[str],
+    features: list[dict[str, Any]],
+    product_feature_mappings: dict[str, set[str]],
+    weights: dict[str, float],
+    coverage_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    coverage_by_product = {row["product"]: row for row in coverage_rows}
+    evidence_by_id = {
+        str(item["id"]): item
+        for item in (_feature_evidence(feature) for feature in features)
+    }
+    rows: list[dict[str, Any]] = []
+    feature_sets = [("Overall", features)]
+    feature_sets.extend(
+        (
+            product,
+            _features_for_product(features, product, product_feature_mappings),
+        )
+        for product in products
+    )
+
+    for product, product_features in feature_sets:
+        feature_evidence = [
+            _workflow_parity_feature(
+                product=product,
+                feature=item,
+                evidence=evidence_by_id.get(str(item.get("id", "")), {}),
+                product_feature_mappings=product_feature_mappings,
+                weights=weights,
+            )
+            for item in product_features
+        ]
+        row = coverage_by_product.get(product, {})
+        rows.append(
+            {
+                "product": product,
+                "metric": "production_parity_coverage",
+                "label": WORKFLOW_PARITY_LABEL,
+                "evidence_contract": WORKFLOW_PARITY_SCOPE,
+                "native_clone_claimed": False,
+                "coverage_percent": row.get("current_percent", 0.0),
+                "gap_percent": row.get("gap_percent", 0.0),
+                "feature_count": len(product_features),
+                "feature_ids": [str(item.get("id", "")) for item in product_features],
+                "full_parity_feature_count": sum(
+                    1
+                    for item in feature_evidence
+                    if item["counts_as_full_parity"] and item["release_backed"]
+                ),
+                "partial_feature_count": sum(
+                    1 for item in feature_evidence if not item["counts_as_full_parity"]
+                ),
+                "missing_release_evidence_count": sum(
+                    1
+                    for item in feature_evidence
+                    if item["counts_as_full_parity"] and not item["release_backed"]
+                ),
+                "feature_evidence": feature_evidence,
+            }
+        )
+    return rows
+
+
+def _workflow_parity_feature(
+    *,
+    product: str,
+    feature: dict[str, Any],
+    evidence: dict[str, Any],
+    product_feature_mappings: dict[str, set[str]],
+    weights: dict[str, float],
+) -> dict[str, Any]:
+    feature_id = str(feature.get("id", ""))
+    status = str(feature.get("status", ""))
+    extension_point = str(feature.get("extension_point", ""))
+    status_weight = float(weights.get(status, 0.0))
+    counts_as_full_parity = status_weight >= 1.0
+    evidence_count = int(evidence.get("evidence_count", 0))
+    release_backed = (
+        counts_as_full_parity
+        and status.startswith("implemented")
+        and bool(extension_point)
+        and evidence_count >= 3
+    )
+    return {
+        "id": feature_id,
+        "name": feature.get("name", ""),
+        "status": status,
+        "implementation_kind": evidence.get(
+            "implementation_kind",
+            STATUS_EVIDENCE_TYPES.get(status, "unknown"),
+        ),
+        "extension_point": extension_point,
+        "status_weight": round(status_weight, 2),
+        "counts_as_full_parity": counts_as_full_parity,
+        "release_backed": release_backed,
+        "product_mapping_source": _product_mapping_source(
+            product,
+            feature,
+            product_feature_mappings,
+        ),
+        "evidence_count": evidence_count,
+        "evidence_refs": [
+            f"{item.get('type', '')}:{item.get('ref', '')}"
+            for item in evidence.get("evidence", [])
+            if item.get("ref")
+        ],
+    }
+
+
+def _product_mapping_source(
+    product: str,
+    feature: dict[str, Any],
+    product_feature_mappings: dict[str, set[str]],
+) -> str:
+    if product == "Overall":
+        return "overall-manifest-feature"
+    feature_id = str(feature.get("id", ""))
+    if feature_id in product_feature_mappings.get(product, set()):
+        return "explicit-product-feature-mapping"
+    if any(product in str(source) for source in feature.get("inspired_by", [])):
+        return "feature-inspired-by"
+    return "implicit-product-match"
 
 
 def _evidence_summary(evidence: list[dict[str, Any]]) -> dict[str, int]:

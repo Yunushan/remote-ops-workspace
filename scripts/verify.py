@@ -43,6 +43,16 @@ def build_steps(
             env=_source_env(),
         ),
         VerifyStep(
+            "roadmap truth",
+            [python, "scripts/check_roadmap_truth.py"],
+            env=_source_env(),
+        ),
+        VerifyStep(
+            "CI workflow policy",
+            [python, "scripts/check_ci_workflow.py"],
+            env=_source_env(),
+        ),
+        VerifyStep(
             "release identity and artifact truth",
             [python, "scripts/check_release_truth.py"],
             env=_source_env(),
@@ -58,6 +68,16 @@ def build_steps(
             env=_source_env(),
         ),
         VerifyStep(
+            "platform support truth",
+            [python, "scripts/check_platform_support_truth.py"],
+            env=_source_env(),
+        ),
+        VerifyStep(
+            "release publish asset contract",
+            [python, "scripts/check_release_publish_assets.py"],
+            env=_source_env(),
+        ),
+        VerifyStep(
             "optional dependency smoke",
             [python, "scripts/check_optional_dependencies.py"],
             env=_source_env(),
@@ -65,6 +85,11 @@ def build_steps(
         VerifyStep(
             "native release hardening",
             [python, "scripts/check_native_release_hardening.py"],
+            env=_source_env(),
+        ),
+        VerifyStep(
+            "native installer smoke contract",
+            [python, "scripts/check_native_installer_smoke.py"],
             env=_source_env(),
         ),
         VerifyStep(
@@ -80,6 +105,11 @@ def build_steps(
         VerifyStep(
             "GUI preview workflow",
             [python, "scripts/check_gui_design_previews.py"],
+            env=_source_env(),
+        ),
+        VerifyStep(
+            "real GUI render smoke",
+            [python, "scripts/check_real_gui_render.py"],
             env=_source_env(),
         ),
         VerifyStep(

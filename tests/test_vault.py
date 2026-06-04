@@ -5,8 +5,12 @@ import json
 import os
 from pathlib import Path
 
-from remote_ops_workspace.cli import build_parser, cmd_vault_delete
-from remote_ops_workspace.cli import _strip_one_trailing_newline, _vault_secret_value
+from remote_ops_workspace.cli import (
+    _strip_one_trailing_newline,
+    _vault_secret_value,
+    build_parser,
+    cmd_vault_delete,
+)
 from remote_ops_workspace.vault import LocalVault, VaultError, validate_secret_name
 
 

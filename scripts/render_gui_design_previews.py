@@ -11,13 +11,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 sys.path.insert(0, str(SRC))
 
-from remote_ops_workspace.gui_designs import GUI_DESIGN_PRESETS, GuiDesignPreset, gui_design_preset_ids
-
+from remote_ops_workspace.gui_designs import (  # noqa: E402
+    GUI_DESIGN_PRESETS,
+    GuiDesignPreset,
+    gui_design_preset_ids,
+)
 
 PREVIEW_SIZE = (1280, 760)
 CONTACT_THUMB = (600, 356)

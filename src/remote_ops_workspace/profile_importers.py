@@ -4,9 +4,10 @@ import configparser
 import json
 import shlex
 import xml.etree.ElementTree as ET
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 from urllib.parse import urlparse
 
 from . import command_safety as safe
@@ -14,7 +15,6 @@ from .models import Profile
 from .plugins import plugin_protocols
 from .profile_validation import prepare_profile
 from .storage import ProfileStore
-
 
 SUPPORTED_IMPORT_FORMATS = {"auto", "row", "remmina", "mremoteng", "termius", "mobaxterm"}
 
@@ -547,12 +547,17 @@ def _mobaxterm_protocol(name: str, marker: str) -> str:
 
 
 def _first_host_index(fields: list[str]) -> int | None:
-    for index, field in enumerate(fields):
-        if not field or field.startswith("#") or field.startswith("-"):
+    for index, candidate in enumerate(fields):
+        if not candidate or candidate.startswith("#") or candidate.startswith("-"):
             continue
-        if _int_or_none(field) is not None:
+        if _int_or_none(candidate) is not None:
             continue
-        if "." in field or ":" in field or field.lower() == "localhost" or any(char.isalpha() for char in field):
+        if (
+            "." in candidate
+            or ":" in candidate
+            or candidate.lower() == "localhost"
+            or any(char.isalpha() for char in candidate)
+        ):
             return index
     return None
 

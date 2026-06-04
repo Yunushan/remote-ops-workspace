@@ -252,7 +252,7 @@ def coverage_frame(report: dict[str, Any]):
     draw.text((54, 40), "Coverage and platform truth", font=load_font(34, bold=True), fill="#f8fafc")
     draw_wrapped_text(
         draw,
-        "The README shows adapter-ready and production-parity coverage separately from platform verification.",
+        "The README shows adapter-ready and release-backed workflow parity separately from platform verification.",
         (54, 86),
         load_font(19),
         "#cbd5e1",
@@ -262,7 +262,7 @@ def coverage_frame(report: dict[str, Any]):
     metrics = [
         ("Feature mapping", report["feature_family_mapping"]["overall"]["current_percent"], "#22c55e"),
         ("Adapter-ready", report["adapter_ready_coverage"]["overall"]["current_percent"], "#38bdf8"),
-        ("Production parity", report["production_parity_coverage"]["overall"]["current_percent"], "#f59e0b"),
+        ("Workflow parity", report["production_parity_coverage"]["overall"]["current_percent"], "#f59e0b"),
         ("Platform readiness", report["platform_verified_readiness"]["overall"]["current_percent"], "#a78bfa"),
     ]
     for index, (label, value, color) in enumerate(metrics):

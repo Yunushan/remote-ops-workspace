@@ -29,6 +29,10 @@ row connect PROFILE --dry-run
 Imported SSHv1 profiles are preserved as `ssh1`, but they are not launchable
 until an operator edits the profile and adds `allow_insecure_sshv1=true`.
 
+`row doctor` reports `ssh1` and `sshv1` as `legacy-insecure-opt-in` rather
+than normally available. A present `ssh` executable only means the external
+client exists; it does not prove that protocol v1 negotiation still works.
+
 ## Protocol options
 
 Profiles accept repeatable `--option key=value` entries. The launcher maps supported

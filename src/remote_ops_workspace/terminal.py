@@ -3,8 +3,8 @@ from __future__ import annotations
 import os
 import platform
 import shlex
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Mapping
 
 from . import command_safety as safe
 from .file_transfer import build_sftp_interactive_plan

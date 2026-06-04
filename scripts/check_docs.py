@@ -5,7 +5,6 @@ import sys
 from pathlib import Path
 from urllib.parse import unquote
 
-
 ROOT = Path(__file__).resolve().parents[1]
 MARKDOWN_LINK_RE = re.compile(r"!?\[[^\]]*]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
 EXTERNAL_LINK_PREFIXES = (
@@ -22,6 +21,7 @@ REQUIRED_FILES = (
     "SECURITY.md",
     "LICENSE",
     "NOTICE",
+    "docs/ROADMAP.md",
     "docs/SECURITY_MODEL.md",
     "docs/VERIFYING.md",
 )

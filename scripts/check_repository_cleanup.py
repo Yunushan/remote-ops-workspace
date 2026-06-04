@@ -6,7 +6,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 REQUIRED_GITIGNORE_PATTERNS = (
@@ -225,8 +224,7 @@ def run_git(*args: str) -> subprocess.CompletedProcess[str] | None:
             cwd=ROOT,
             check=True,
             text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
         )
     except (OSError, subprocess.CalledProcessError):
         return None

@@ -9,7 +9,6 @@ from pathlib import Path
 from . import command_safety as safe
 from .paths import repo_root
 
-
 SECURITY_HEADERS = {
     "Content-Security-Policy": (
         "default-src 'self'; "

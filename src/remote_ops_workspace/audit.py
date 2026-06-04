@@ -6,7 +6,7 @@ from typing import Any
 
 from .file_safety import append_jsonl_private
 from .paths import ensure_data_dir
-from .redaction import REDACTED, redact_value
+from .redaction import redact_value
 
 
 def append_event(event_type: str, payload: dict[str, Any]) -> Path:

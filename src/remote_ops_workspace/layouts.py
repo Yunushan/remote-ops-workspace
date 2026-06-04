@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import json
 import subprocess
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from . import command_safety as safe
 from .file_safety import write_json_atomic
@@ -22,7 +23,7 @@ class LayoutPane:
     title: str = ""
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "LayoutPane":
+    def from_dict(cls, data: dict[str, Any]) -> LayoutPane:
         return cls(
             profile=_optional_str(data.get("profile")),
             command=_optional_str(data.get("command")),
@@ -41,7 +42,7 @@ class Layout:
     description: str = ""
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "Layout":
+    def from_dict(cls, data: dict[str, Any]) -> Layout:
         return cls(
             name=str(data["name"]),
             orientation=str(data.get("orientation", "grid")),

@@ -4,7 +4,6 @@ import re
 import sys
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY_URL = "https://github.com/Yunushan/remote-ops-workspace"
 REPOSITORY_CLONE_URL = f"{REPOSITORY_URL}.git"
@@ -14,6 +13,15 @@ WORKFLOW_ARCHES = {
     "macos-native": {"x64", "arm64"},
     "linux-native": {"x86_64", "aarch64"},
 }
+
+RELEASE_PREFLIGHT_JOB = "release-preflight"
+RELEASE_PREFLIGHT_DEPENDENTS = (
+    "source-and-python",
+    "windows-native",
+    "macos-native",
+    "linux-native",
+    "publish",
+)
 
 REQUIRED_DOC_SNIPPETS = (
     "remote-ops-workspace-v0.1.0-linux-<amd64|arm64>.deb",
@@ -39,6 +47,7 @@ def main() -> int:
     errors: list[str] = []
     errors.extend(check_repository_identity())
     errors.extend(check_workflow_matrix())
+    errors.extend(check_release_preflight())
     errors.extend(check_release_docs())
     if errors:
         for error in errors:
@@ -85,6 +94,31 @@ def check_workflow_matrix() -> list[str]:
         found = set(re.findall(r"(?m)^\s+- arch:\s*([A-Za-z0-9_]+)\s*$", block))
         if found != expected_arches:
             errors.append(f"{job} arch matrix {sorted(found)} must equal {sorted(expected_arches)}")
+    return errors
+
+
+def check_release_preflight(workflow: str | None = None) -> list[str]:
+    workflow_text = workflow if workflow is not None else read(".github/workflows/release.yml")
+    errors: list[str] = []
+    block = workflow_job_block(workflow_text, RELEASE_PREFLIGHT_JOB)
+    if not block:
+        return ["release workflow missing release-preflight job"]
+    required_snippets = {
+        "persist-credentials: false": "checkout credential persistence disabled",
+        'python-version: "3.12"': "stable preflight Python version",
+        "python scripts/verify.py --quick --no-cli-smoke": "quick verifier before release builds",
+        "python scripts/check_repository_cleanup.py --require-clean": "clean checkout requirement before tagging",
+    }
+    for snippet, label in required_snippets.items():
+        if snippet not in block:
+            errors.append(f"release-preflight missing {label}: {snippet}")
+    for job in RELEASE_PREFLIGHT_DEPENDENTS:
+        dependent_block = workflow_job_block(workflow_text, job)
+        if not dependent_block:
+            errors.append(f"release workflow missing preflight dependent job: {job}")
+            continue
+        if "needs: release-preflight" not in dependent_block and "- release-preflight" not in dependent_block:
+            errors.append(f"{job} must depend on release-preflight")
     return errors
 
 

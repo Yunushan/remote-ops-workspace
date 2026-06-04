@@ -11,6 +11,7 @@ from remote_ops_workspace.file_transfer import (
     build_sftp_put_plan,
 )
 from remote_ops_workspace.keys import build_keygen_plan
+from remote_ops_workspace.launcher import LauncherError, build_launch_plan
 from remote_ops_workspace.layouts import (
     Layout,
     LayoutPane,
@@ -19,7 +20,6 @@ from remote_ops_workspace.layouts import (
     run_layout_terminal_plans,
     validate_layout,
 )
-from remote_ops_workspace.launcher import LauncherError, build_launch_plan
 from remote_ops_workspace.models import Profile, Tunnel
 from remote_ops_workspace.network_tools import build_network_tool_plan
 from remote_ops_workspace.snippets import Snippet, SnippetStore
@@ -42,7 +42,7 @@ def test_snippet_store_roundtrip(tmp_path: Path) -> None:
 
 def test_snippet_rejects_empty_command() -> None:
     try:
-        Snippet(name="empty", command="").argv
+        _ = Snippet(name="empty", command="").argv
     except ValueError as exc:
         assert "must not be empty" in str(exc) or "is required" in str(exc)
     else:

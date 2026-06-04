@@ -140,6 +140,38 @@ def test_feature_coverage_report_includes_evidence_records() -> None:
         assert item["evidence_count"] >= 2
 
 
+def test_workflow_parity_report_explains_every_coverage_row() -> None:
+    report = coverage_report()
+    contract = report["workflow_parity_contract"]
+    assert contract["label"] == "release-backed product workflow parity"
+    assert contract["native_clone_claimed"] is False
+
+    evidence_rows = {
+        row["product"]: row for row in report["workflow_parity_evidence"]
+    }
+    parity_rows = [
+        report["production_parity_coverage"]["overall"],
+        *report["production_parity_coverage"]["products"],
+    ]
+    for row in parity_rows:
+        evidence = evidence_rows[row["product"]]
+        assert evidence["label"] == contract["label"]
+        assert evidence["native_clone_claimed"] is False
+        assert evidence["coverage_percent"] == row["current_percent"]
+        assert evidence["gap_percent"] == row["gap_percent"]
+        assert evidence["feature_count"] == row["feature_count"]
+        assert len(evidence["feature_ids"]) == row["feature_count"]
+        assert evidence["full_parity_feature_count"] == row["feature_count"]
+        assert evidence["partial_feature_count"] == 0
+        assert evidence["missing_release_evidence_count"] == 0
+        for item in evidence["feature_evidence"]:
+            assert item["id"]
+            assert item["extension_point"]
+            assert item["counts_as_full_parity"] is True
+            assert item["release_backed"] is True
+            assert item["evidence_refs"]
+
+
 def test_readme_coverage_tables_match_generated_readiness_scores() -> None:
     report = coverage_report()
     adapter_rows = {
@@ -174,6 +206,8 @@ def test_readme_coverage_tables_match_generated_readiness_scores() -> None:
         for line in expected_lines:
             assert line in text
         assert "| MobaXterm | 100.0% | 100.0% | 100.0% | 0.0% | 25 |" in text
+        assert "release-backed product workflow parity" in text
+        assert "not a proprietary native clone" in text
 
 
 def test_platform_verified_readiness_tracks_partial_targets() -> None:

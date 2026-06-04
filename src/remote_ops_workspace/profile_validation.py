@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import replace
-from typing import Any, Iterable
+from typing import Any
 
 from . import command_safety as safe
 from .models import Profile, Tunnel

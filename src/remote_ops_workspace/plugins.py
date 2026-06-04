@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from importlib.metadata import entry_points
-from typing import TYPE_CHECKING, Any, Callable, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from .models import Profile
 from .profile_validation import SUPPORTED_PROFILE_PROTOCOLS
@@ -16,7 +17,7 @@ class ProtocolPlugin(Protocol):
     protocols: tuple[str, ...]
     executables: tuple[str, ...]
 
-    def build(self, profile: Profile) -> "LaunchPlan":
+    def build(self, profile: Profile) -> LaunchPlan:
         ...
 
 

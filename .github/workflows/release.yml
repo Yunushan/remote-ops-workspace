@@ -14,7 +14,22 @@ env:
   PYTHONHASHSEED: "0"
 
 jobs:
+  release-preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Run release preflight verifier
+        run: python scripts/verify.py --quick --no-cli-smoke
+      - name: Require clean release checkout
+        run: python scripts/check_repository_cleanup.py --require-clean
+
   source-and-python:
+    needs: release-preflight
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -34,6 +49,7 @@ jobs:
           if-no-files-found: error
 
   windows-native:
+    needs: release-preflight
     strategy:
       fail-fast: false
       matrix:
@@ -66,6 +82,9 @@ jobs:
       - name: Build Windows EXE and MSI installers
         shell: powershell
         run: .\scripts\make_windows_native.ps1 -Arch "${{ matrix.arch }}"
+      - name: Run Windows native installer smoke tests
+        shell: powershell
+        run: .\scripts\smoke_windows_native.ps1 -Arch "${{ matrix.arch }}" -Dist "native-dist\windows"
       - uses: actions/upload-artifact@v4
         with:
           name: release-windows-native-${{ matrix.arch }}
@@ -73,6 +92,7 @@ jobs:
           if-no-files-found: error
 
   macos-native:
+    needs: release-preflight
     strategy:
       fail-fast: false
       matrix:
@@ -93,6 +113,8 @@ jobs:
         run: python -m pip install --constraint requirements-release.txt pip setuptools wheel ".[desktop,security,package]"
       - name: Build macOS DMG and PKG installers
         run: EXPECTED_ARTIFACT_ARCH="${{ matrix.arch }}" bash scripts/make_macos_native.sh
+      - name: Run macOS native installer smoke tests
+        run: bash scripts/smoke_macos_native.sh --arch "${{ matrix.arch }}" --dist native-dist/macos
       - uses: actions/upload-artifact@v4
         with:
           name: release-macos-native-${{ matrix.arch }}
@@ -100,6 +122,7 @@ jobs:
           if-no-files-found: error
 
   linux-native:
+    needs: release-preflight
     strategy:
       fail-fast: false
       matrix:
@@ -124,6 +147,8 @@ jobs:
         run: python -m pip install --constraint requirements-release.txt pip setuptools wheel ".[security,package]"
       - name: Build Linux DEB, RPM and AppImage packages
         run: TARGET_ARCH="${{ matrix.arch }}" bash scripts/make_linux_native.sh
+      - name: Run Linux native installer smoke tests
+        run: bash scripts/smoke_linux_native.sh --arch "${{ matrix.arch }}" --dist native-dist/linux
       - uses: actions/upload-artifact@v4
         with:
           name: release-linux-native-${{ matrix.arch }}
@@ -135,15 +160,24 @@ jobs:
     permissions:
       contents: write
     needs:
+      - release-preflight
       - source-and-python
       - windows-native
       - macos-native
       - linux-native
     steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
       - uses: actions/download-artifact@v4
         with:
           path: release-assets
           merge-multiple: true
+      - name: Validate release publish assets
+        run: python scripts/check_release_publish_assets.py --assets-dir release-assets --tag "${{ github.ref_name }}"
       - name: Upload release assets
         uses: softprops/action-gh-release@v2
         with:

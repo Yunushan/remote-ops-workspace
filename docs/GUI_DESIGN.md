@@ -36,6 +36,8 @@ python scripts/render_gui_design_previews.py --list
 python scripts/render_gui_design_previews.py --preset termius
 python scripts/render_gui_design_previews.py --check
 python scripts/check_gui_design_previews.py
+python scripts/check_real_gui_render.py
+python scripts/check_real_gui_render.py --out-dir artifacts/gui-real
 ```
 
 `--check` re-renders in memory and reports stale generated outputs. The
@@ -48,3 +50,20 @@ When PyQt6 is installed, `python scripts/check_optional_dependencies.py` creates
 the real main window offscreen and applies every preset through the live design
 selector. In dependency-light environments, the same check verifies that the GUI
 factory fails closed with a clear install hint.
+
+`python scripts/check_real_gui_render.py` is the live screenshot contract. With
+the desktop extra installed it opens the real PyQt6 main window offscreen,
+switches through the requested presets, checks the expected controls are visible
+and rejects blank or placeholder captures by sampling screenshot pixels. Passing
+`--out-dir artifacts/gui-real` writes per-preset live PNGs plus
+`real-gui-render-manifest.json`; these captures are diagnostic outputs and are
+not the same as the tracked static preview gallery. Without PyQt6, the checker
+does not fake screenshots: it verifies that the GUI factory raises the expected
+dependency error unless `--require-pyqt6` is used.
+
+CI enforces both paths. The normal matrix runs `python scripts/verify.py --lint`,
+which includes the fail-closed render smoke in dependency-light jobs. A
+dedicated `gui-render` job installs the desktop extra and runs
+`python scripts/check_real_gui_render.py --require-pyqt6 --preset native
+--out-dir artifacts/gui-real`, then uploads the captured PNG manifest as a
+workflow artifact.

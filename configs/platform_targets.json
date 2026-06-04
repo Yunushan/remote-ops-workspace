@@ -231,6 +231,7 @@
       "remote_target_tier": "supported",
       "notes": [
         "Can be managed as a remote target through RDP, VNC, SSH, Telnet, serial or raw sockets.",
+        "Modern native Python/PyQt release artifacts are not guaranteed on Windows 7.",
         "Running the current app locally requires a separately maintained legacy Python dependency stack."
       ]
     },

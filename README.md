@@ -36,7 +36,7 @@ It is intentionally built as an **adapter-first foundation**: the repo includes 
 
 ## Visual Overview
 
-Generated README media lives in [`artifacts/readme`](artifacts/readme) and is built from the same tracked GUI preview assets used by [`docs/GUI_DESIGN.md`](docs/GUI_DESIGN.md). These images are meant to show the actual app surfaces and feature flows, not stock mockups.
+Generated README media lives in [`artifacts/readme`](artifacts/readme) and is built from the same tracked static GUI preview assets used by [`docs/GUI_DESIGN.md`](docs/GUI_DESIGN.md). They show the shipped workspace surfaces and feature flows in a deterministic gallery, while `python scripts/check_real_gui_render.py --out-dir artifacts/gui-real` captures the real PyQt6 window when the desktop extra is installed.
 
 <p align="center">
   <img src="artifacts/readme/gui-preset-tour.gif" alt="Animated tour of Remote Ops Workspace GUI presets including Native, MobaXterm-style, SecureCRT-style, Termius-style, Remmina-style and mRemoteNG-style" width="100%">
@@ -56,6 +56,7 @@ Regenerate the README media and GUI previews with:
 python scripts/render_gui_design_previews.py
 python scripts/render_readme_media.py
 python scripts/check_readme_media.py
+python scripts/check_real_gui_render.py
 ```
 
 ---
@@ -152,7 +153,7 @@ The PyQt6 desktop shell provides:
 - tabbed workspace for process-backed sessions with close confirmation and cleanup;
 - process-backed terminal panes with stdout/stderr capture, stdin entry and managed start/stop state;
 - horizontal and vertical split-pane shells inspired by tiling terminals;
-- selectable GUI view presets: Native, MobaXterm-style, SecureCRT-style, Termius-style, Remmina-style and mRemoteNG-style, with reproducible static previews documented in [`docs/GUI_DESIGN.md`](docs/GUI_DESIGN.md);
+- selectable GUI view presets: Native, MobaXterm-style, SecureCRT-style, Termius-style, Remmina-style and mRemoteNG-style, with reproducible static previews and live PyQt6 render smoke checks documented in [`docs/GUI_DESIGN.md`](docs/GUI_DESIGN.md);
 - saved layout selector plus create/edit/remove dialogs that open layout panes directly in the workspace;
 - doctor/status panel;
 - protocol launch plugin discovery through Python entry points plus `row plugins list` and `row plugins validate`;
@@ -185,11 +186,11 @@ Docker entrypoint. The compose file publishes the container on
 
 ## Feature Coverage
 
-Coverage target: **100% public feature-family mapping**, **100% adapter-ready coverage** and **100% release-backed production-parity coverage** for the requested tools. Per-platform release readiness is tracked separately so manual architecture builds and legacy Windows remote-target tiers remain visible.
+Coverage target: **100% public feature-family mapping**, **100% adapter-ready coverage** and **100% release-backed product workflow parity** for the requested tools. Per-platform release readiness is tracked separately so manual architecture builds and legacy Windows remote-target tiers remain visible.
 
-Coverage is generated from [`configs/feature_manifest.json`](configs/feature_manifest.json). Feature-family mapping answers whether each public feature family is represented by built-in code, external adapters, optional implementations, CLI/GUI workflows, platform scripts, or plugin extension points. Adapter-ready coverage counts implemented adapter, optional, CLI, GUI and combined workflows as ready when they are tied to executable evidence. Production-parity coverage now uses the same release-backed implementation evidence for implemented workflows and keeps seam-only or docs-only rows partial if they appear. The verifier runs both `scripts/check_feature_reality.py` and `scripts/check_product_readiness.py` so coverage claims stay tied to real CLI command paths, launch-plan builders, implementation symbols, shipped files and visible platform gaps.
+Coverage is generated from [`configs/feature_manifest.json`](configs/feature_manifest.json). Feature-family mapping answers whether each public feature family is represented by built-in code, external adapters, optional implementations, CLI/GUI workflows, platform scripts, or plugin extension points. Adapter-ready coverage counts implemented adapter, optional, CLI, GUI and combined workflows as ready when they are tied to executable evidence. The `production_parity_coverage` JSON key is kept for compatibility, but the public contract is release-backed product workflow parity: implemented workflows count only when tied to executable release evidence, and seam-only or docs-only rows remain partial if they appear. This is not a proprietary native clone claim. The verifier runs both `scripts/check_feature_reality.py` and `scripts/check_product_readiness.py` so coverage claims stay tied to real CLI command paths, launch-plan builders, implementation symbols, shipped files and visible platform gaps.
 
-| Product target | Feature-family mapping | Adapter-ready coverage | Production-parity coverage | Parity gap to 100% | Feature families tracked |
+| Product target | Feature-family mapping | Adapter-ready coverage | Release-backed workflow parity | Workflow gap to 100% | Feature families tracked |
 |---|---:|---:|---:|---:|---:|
 | MobaXterm | 100.0% | 100.0% | 100.0% | 0.0% | 25 |
 | Remmina | 100.0% | 100.0% | 100.0% | 0.0% | 11 |
@@ -221,7 +222,7 @@ Coverage is generated from [`configs/feature_manifest.json`](configs/feature_man
 | Xming (or VcXsrv) + PuTTY / mRemoteNG | 100.0% | 100.0% | 100.0% | 0.0% | 10 |
 | **Overall** | **100.0%** | **100.0%** | **100.0%** | **0.0%** | **44** |
 
-Adapter-ready and production-parity coverage use the manifest status weights directly and do not use blanket per-product overrides. Platform verified readiness is still separate and currently reports **75.6% overall** across default native, manual native, Termux/Web and legacy Windows targets.
+Adapter-ready coverage and release-backed product workflow parity use the manifest status weights directly and do not use blanket per-product overrides. Platform verified readiness is still separate and currently reports **75.6% overall** across default native, manual native, Termux/Web and legacy Windows targets.
 
 Run:
 
@@ -229,6 +230,8 @@ Run:
 row features --coverage
 row features --coverage --json
 ```
+
+The JSON report includes `workflow_parity_contract` and `workflow_parity_evidence`. Each evidence row lists the product row, mapped feature IDs, implementation status, implementation kind, manifest extension point and evidence refs used to justify the percentage. That is the source of truth for every 100% workflow-parity row.
 
 | Feature family | MobaXterm | Remmina | mRemoteNG | Terminator | Termius | Project coverage |
 |---|---:|---:|---:|---:|---:|---|
@@ -329,6 +332,12 @@ pip install -e ".[desktop,security,dev]"
 python scripts/verify.py
 ```
 
+Pull-request and push CI runs `python scripts/verify.py --lint` across the
+Python/OS matrix, and a dedicated Linux job installs the desktop extra and runs
+`python scripts/check_real_gui_render.py --require-pyqt6` against a live
+offscreen PyQt6 window. `python scripts/check_ci_workflow.py` keeps those gates
+from drifting.
+
 Use `python scripts/verify.py --quick` only for dependency-constrained review
 environments where `pytest` is unavailable. See
 [`docs/VERIFYING.md`](docs/VERIFYING.md).
@@ -387,10 +396,25 @@ The machine-readable release decision lives in
 broader platform support catalog exposed by `row platforms --json`.
 Release manifests include `size_bytes` and `sha256` for each artifact, and CI
 build jobs run with read-only checkout credentials until the final publish step.
+The release workflow also starts with a `release-preflight` job that runs
+`python scripts/verify.py --quick --no-cli-smoke` and
+`python scripts/check_repository_cleanup.py --require-clean`; source, native and
+publish jobs all depend on that gate.
+Before upload, the publish job runs
+`python scripts/check_release_publish_assets.py --assets-dir release-assets --tag`
+to verify the downloaded asset set, checksum sidecars and release manifest
+against `configs/release_matrix.json`.
 Python release tooling is constrained by `requirements-release.txt` and recorded
 in each release manifest through `configs/release_toolchain.json`. Native
 Windows, macOS and Linux jobs also emit per-platform `native-SHA256SUMS.txt`
 sidecars for their native artifacts and manifests.
+Native installer smoke coverage is declared in
+[`configs/native_installer_smoke.json`](configs/native_installer_smoke.json)
+and checked by `python scripts/check_native_installer_smoke.py`. The release
+workflow runs `scripts/smoke_windows_native.ps1`,
+`scripts/smoke_macos_native.sh` and `scripts/smoke_linux_native.sh` after native
+builds and before upload, covering install, verify, upgrade and uninstall paths
+for `.exe`, `.msi`, `.dmg`, `.pkg`, `.deb`, `.rpm` and AppImage artifacts.
 
 Release phases:
 

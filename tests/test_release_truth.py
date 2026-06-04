@@ -27,6 +27,42 @@ def test_release_truth_checker_rejects_stale_default_linux_patterns() -> None:
     assert "remote-ops-workspace-v0.1.0-linux-<amd64|arm64>.deb" in checker.REQUIRED_DOC_SNIPPETS
 
 
+def test_release_truth_checker_requires_release_preflight_job() -> None:
+    checker = _load_release_truth_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        "  release-preflight:",
+        "  release_preflight_disabled:",
+    )
+
+    errors = checker.check_release_preflight(workflow)
+
+    assert "release workflow missing release-preflight job" in errors
+
+
+def test_release_truth_checker_requires_build_jobs_to_need_preflight() -> None:
+    checker = _load_release_truth_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        "  source-and-python:\n    needs: release-preflight\n",
+        "  source-and-python:\n",
+    )
+
+    errors = checker.check_release_preflight(workflow)
+
+    assert "source-and-python must depend on release-preflight" in errors
+
+
+def test_release_truth_checker_requires_preflight_cleanup_command() -> None:
+    checker = _load_release_truth_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        "python scripts/check_repository_cleanup.py --require-clean",
+        "python scripts/check_repository_cleanup.py",
+    )
+
+    errors = checker.check_release_preflight(workflow)
+
+    assert any("clean checkout requirement" in error for error in errors)
+
+
 def _load_release_truth_checker():
     path = Path("scripts/check_release_truth.py")
     spec = importlib.util.spec_from_file_location("check_release_truth_script", path)

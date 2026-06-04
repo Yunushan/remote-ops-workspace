@@ -4,7 +4,6 @@ import re
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
-
 REDACTED = "***REDACTED***"
 
 SENSITIVE_KEY_TOKENS = (

@@ -15,7 +15,7 @@ class Tunnel:
     remote_port: int | None = None
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "Tunnel":
+    def from_dict(cls, data: dict[str, Any]) -> Tunnel:
         return cls(
             mode=str(data.get("mode", "local")),
             local_host=str(data.get("local_host", "127.0.0.1")),
@@ -59,7 +59,7 @@ class Profile:
     options: dict[str, str] = field(default_factory=dict)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "Profile":
+    def from_dict(cls, data: dict[str, Any]) -> Profile:
         raw_options = data.get("options") or {}
         if not isinstance(raw_options, dict):
             raw_options = {}

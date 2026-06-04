@@ -1,9 +1,14 @@
-from functools import partial
 import socket
+from functools import partial
 from pathlib import Path
 from threading import Thread
 
-from remote_ops_workspace.web_server import QuietHandler, ReusableTCPServer, SECURITY_HEADERS, validate_web_bind
+from remote_ops_workspace.web_server import (
+    SECURITY_HEADERS,
+    QuietHandler,
+    ReusableTCPServer,
+    validate_web_bind,
+)
 
 
 def test_web_security_headers_include_browser_hardening() -> None:

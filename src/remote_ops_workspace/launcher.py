@@ -6,8 +6,8 @@ import shlex
 import shutil
 import subprocess
 import sys
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from typing import Iterable, Mapping
 
 from . import command_safety as safe
 from .models import Profile, Tunnel

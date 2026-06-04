@@ -10,6 +10,7 @@ build/
 dist/
 native-dist/
 release-assets/
+artifacts/gui-real/
 *.egg-info/
 .pytest_cache/
 .mypy_cache/

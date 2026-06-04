@@ -62,6 +62,7 @@ def test_real_gui_render_manifest_contract_names_required_widgets() -> None:
 
     assert checker.MANIFEST_NAME == "real-gui-render-manifest.json"
     assert checker.REQUIRED_WIDGETS["designSelect"] == "view preset selector"
+    assert checker.REQUIRED_WIDGETS["layoutToolbar"] == "layout toolbar"
     assert checker.REQUIRED_WIDGETS["activityLog"] == "activity log"
 
 

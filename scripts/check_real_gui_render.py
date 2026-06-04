@@ -26,6 +26,7 @@ REQUIRED_WIDGETS = {
     "profileTree": "profile tree",
     "sessionTabs": "session tabs",
     "mainToolbar": "main toolbar",
+    "layoutToolbar": "layout toolbar",
     "toolbarSearch": "toolbar search",
     "activityLog": "activity log",
 }

@@ -65,7 +65,7 @@ def _stylesheet(
 QMainWindow#remoteOpsMain {{
   background: {colors.window};
 }}
-QToolBar#mainToolbar {{
+QToolBar#mainToolbar, QToolBar#layoutToolbar {{
   background: {colors.toolbar};
   border-bottom: 1px solid {colors.toolbar_border};
   spacing: 5px;

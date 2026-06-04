@@ -35,6 +35,7 @@ def test_gui_design_presets_have_valid_layout_metadata() -> None:
         assert preset.colors.primary.startswith("#")
         assert "QMainWindow#remoteOpsMain" in preset.stylesheet
         assert "QToolBar#mainToolbar" in preset.stylesheet
+        assert "QToolBar#layoutToolbar" in preset.stylesheet
         assert "QTabWidget#sessionTabs" in preset.stylesheet
         assert "QListWidget#profileTree" in preset.stylesheet
         assert "QPushButton#primaryAction" in preset.stylesheet

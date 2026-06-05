@@ -24,8 +24,10 @@ function Invoke-SmokeCommand([string]$Label, [string]$FilePath, [string[]]$Argum
     & taskkill.exe /PID $Process.Id /T /F 2>$null | Out-Null
     throw "$Label timed out after $CommandTimeoutSeconds seconds"
   }
-  if ($Process.ExitCode -ne 0) {
-    throw "$Label failed with exit code $($Process.ExitCode)"
+  $Process.Refresh()
+  $ExitCode = $Process.ExitCode
+  if ($ExitCode -ne 0) {
+    throw "$Label failed with exit code $ExitCode"
   }
 }
 

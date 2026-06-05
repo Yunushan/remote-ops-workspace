@@ -140,7 +140,12 @@ def check_windows_gui_launcher() -> list[str]:
         errors.append("release workflow must install the desktop extra for Windows GUI-capable native builds")
     if "Test-RowGuiLauncher" not in smoke or "row-gui.exe" not in smoke:
         errors.append("scripts/smoke_windows_native.ps1 must verify the installed Windows GUI launcher")
-    if "CommandTimeoutSeconds" not in smoke or "WaitForExit" not in smoke or "timed out after" not in smoke:
+    if (
+        "CommandTimeoutSeconds" not in smoke
+        or "WaitForExit" not in smoke
+        or "$Process.Refresh()" not in smoke
+        or "timed out after" not in smoke
+    ):
         errors.append("scripts/smoke_windows_native.ps1 must bound installer smoke commands with a timeout")
     if "row-gui.exe exists on x64/ARM64" not in smoke_contract:
         errors.append("configs/native_installer_smoke.json must document Windows GUI launcher verification")

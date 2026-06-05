@@ -219,7 +219,7 @@ they are tied to executable release evidence.
 
 ## Current implementation status
 
-The current v0.1.0 repo is an adapter-first foundation, not a proprietary clone. It has working profile storage, command generation, dry-run inspection, external process launch, doctor checks, optional encrypted vault, audit log, snippets/macros, saved layouts that can be launched from CLI or opened and edited in the GUI, broadcast/fanout commands with per-target results, protocol-specific launch option builders, profile importers for common external exports, SSH keygen/FIDO adapters, SFTP batch file operations, transfer queues and previews, GUI SFTP panes, network toolbox commands, mounted-directory sync, Web/PWA shell and PyQt6 GUI shell with process-backed terminal panes.
+The current v1.0.0 repo is an adapter-first foundation, not a proprietary clone. It has working profile storage, command generation, dry-run inspection, external process launch, doctor checks, optional encrypted vault, audit log, snippets/macros, saved layouts that can be launched from CLI or opened and edited in the GUI, broadcast/fanout commands with per-target results, protocol-specific launch option builders, profile importers for common external exports, SSH keygen/FIDO adapters, SFTP batch file operations, transfer queues and previews, GUI SFTP panes, network toolbox commands, mounted-directory sync, Web/PWA shell and PyQt6 GUI shell with process-backed terminal panes.
 
 For each requested product target, the repository maps every tracked public
 feature family and the implemented rows now score as adapter-ready under the

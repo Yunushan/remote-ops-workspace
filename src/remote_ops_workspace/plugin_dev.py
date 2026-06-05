@@ -247,7 +247,7 @@ version = "0.1.0"
 description = "Remote Ops Workspace protocol plugin for {protocol}."
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = ["remote-ops-workspace>=0.1.0"]
+dependencies = ["remote-ops-workspace>=1.0.0"]
 
 [project.entry-points."{PLUGIN_ENTRY_POINT_GROUP}"]
 {protocol} = "{module_name}.plugin:Plugin"

@@ -21,10 +21,10 @@ def test_release_truth_checker_tracks_default_workflow_arches() -> None:
 def test_release_truth_checker_rejects_stale_default_linux_patterns() -> None:
     checker = _load_release_truth_checker()
 
-    assert "remote-ops-workspace-v0.1.0-linux-<i386|amd64|armhf|arm64>.deb" in (
+    assert "remote-ops-workspace-v1.0.0-linux-<i386|amd64|armhf|arm64>.deb" in (
         checker.STALE_DEFAULT_ARTIFACT_SNIPPETS
     )
-    assert "remote-ops-workspace-v0.1.0-linux-<amd64|arm64>.deb" in checker.REQUIRED_DOC_SNIPPETS
+    assert "remote-ops-workspace-v1.0.0-linux-<amd64|arm64>.deb" in checker.REQUIRED_DOC_SNIPPETS
 
 
 def test_release_truth_checker_requires_release_preflight_job() -> None:

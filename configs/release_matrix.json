@@ -11,20 +11,20 @@
     "source_and_python": {
       "job": "source-and-python",
       "artifacts": [
-        "remote_ops_workspace-0.1.0-py3-none-any.whl",
-        "remote_ops_workspace-0.1.0.tar.gz",
-        "remote-ops-workspace-v0.1.0-release-manifest.json",
-        "remote-ops-workspace-v0.1.0-SHA256SUMS.txt"
+        "remote_ops_workspace-1.0.0-py3-none-any.whl",
+        "remote_ops_workspace-1.0.0.tar.gz",
+        "remote-ops-workspace-v1.0.0-release-manifest.json",
+        "remote-ops-workspace-v1.0.0-SHA256SUMS.txt"
       ],
       "target_bundles": [
-        "remote-ops-workspace-v0.1.0-source.zip",
-        "remote-ops-workspace-v0.1.0-windows.zip",
-        "remote-ops-workspace-v0.1.0-linux.tar.gz",
-        "remote-ops-workspace-v0.1.0-macos.tar.gz",
-        "remote-ops-workspace-v0.1.0-bsd.tar.gz",
-        "remote-ops-workspace-v0.1.0-solaris.tar.gz",
-        "remote-ops-workspace-v0.1.0-android-termux.tar.gz",
-        "remote-ops-workspace-v0.1.0-web-pwa.zip"
+        "remote-ops-workspace-v1.0.0-source.zip",
+        "remote-ops-workspace-v1.0.0-windows.zip",
+        "remote-ops-workspace-v1.0.0-linux.tar.gz",
+        "remote-ops-workspace-v1.0.0-macos.tar.gz",
+        "remote-ops-workspace-v1.0.0-bsd.tar.gz",
+        "remote-ops-workspace-v1.0.0-solaris.tar.gz",
+        "remote-ops-workspace-v1.0.0-android-termux.tar.gz",
+        "remote-ops-workspace-v1.0.0-web-pwa.zip"
       ]
     },
     "native_jobs": [
@@ -43,11 +43,11 @@
         ],
         "upload_artifact_prefix": "release-windows-native-",
         "asset_patterns": [
-          "remote-ops-workspace-v0.1.0-windows-<x86|x64|arm64>-setup.exe",
-          "remote-ops-workspace-v0.1.0-windows-<x86|x64|arm64>.msi",
-          "remote-ops-workspace-v0.1.0-windows-<x86|x64|arm64>-native.zip",
-          "remote-ops-workspace-v0.1.0-windows-<x86|x64|arm64>-native-manifest.json",
-          "remote-ops-workspace-v0.1.0-windows-<x86|x64|arm64>-native-SHA256SUMS.txt"
+          "remote-ops-workspace-v1.0.0-windows-<x86|x64|arm64>-setup.exe",
+          "remote-ops-workspace-v1.0.0-windows-<x86|x64|arm64>.msi",
+          "remote-ops-workspace-v1.0.0-windows-<x86|x64|arm64>-native.zip",
+          "remote-ops-workspace-v1.0.0-windows-<x86|x64|arm64>-native-manifest.json",
+          "remote-ops-workspace-v1.0.0-windows-<x86|x64|arm64>-native-SHA256SUMS.txt"
         ]
       },
       {
@@ -63,10 +63,10 @@
         ],
         "upload_artifact_prefix": "release-macos-native-",
         "asset_patterns": [
-          "remote-ops-workspace-v0.1.0-macos-<x64|arm64>.dmg",
-          "remote-ops-workspace-v0.1.0-macos-<x64|arm64>.pkg",
-          "remote-ops-workspace-v0.1.0-macos-<x64|arm64>-native-manifest.json",
-          "remote-ops-workspace-v0.1.0-macos-<x64|arm64>-native-SHA256SUMS.txt"
+          "remote-ops-workspace-v1.0.0-macos-<x64|arm64>.dmg",
+          "remote-ops-workspace-v1.0.0-macos-<x64|arm64>.pkg",
+          "remote-ops-workspace-v1.0.0-macos-<x64|arm64>-native-manifest.json",
+          "remote-ops-workspace-v1.0.0-macos-<x64|arm64>-native-SHA256SUMS.txt"
         ]
       },
       {
@@ -82,12 +82,12 @@
         ],
         "upload_artifact_prefix": "release-linux-native-",
         "asset_patterns": [
-          "remote-ops-workspace-v0.1.0-linux-<amd64|arm64>.deb",
-          "remote-ops-workspace-v0.1.0-linux-<x86_64|aarch64>.rpm",
-          "remote-ops-workspace-v0.1.0-linux-<x86_64|aarch64>.AppImage",
-          "remote-ops-workspace-v0.1.0-linux-<x86_64|aarch64>-native.tar.gz",
-          "remote-ops-workspace-v0.1.0-linux-<x86_64|aarch64>-native-manifest.json",
-          "remote-ops-workspace-v0.1.0-linux-<x86_64|aarch64>-native-SHA256SUMS.txt"
+          "remote-ops-workspace-v1.0.0-linux-<amd64|arm64>.deb",
+          "remote-ops-workspace-v1.0.0-linux-<x86_64|aarch64>.rpm",
+          "remote-ops-workspace-v1.0.0-linux-<x86_64|aarch64>.AppImage",
+          "remote-ops-workspace-v1.0.0-linux-<x86_64|aarch64>-native.tar.gz",
+          "remote-ops-workspace-v1.0.0-linux-<x86_64|aarch64>-native-manifest.json",
+          "remote-ops-workspace-v1.0.0-linux-<x86_64|aarch64>-native-SHA256SUMS.txt"
         ]
       }
     ]
@@ -118,22 +118,22 @@
         "android-arm64"
       ],
       "default_assets": [
-        "remote-ops-workspace-v0.1.0-android-termux.tar.gz",
-        "remote-ops-workspace-v0.1.0-web-pwa.zip"
+        "remote-ops-workspace-v1.0.0-android-termux.tar.gz",
+        "remote-ops-workspace-v1.0.0-web-pwa.zip"
       ],
       "native_status": "No APK is published until a tested native Android wrapper exists."
     },
     {
       "id": "bsd",
       "default_assets": [
-        "remote-ops-workspace-v0.1.0-bsd.tar.gz"
+        "remote-ops-workspace-v1.0.0-bsd.tar.gz"
       ],
       "native_status": "Source/install bundle plus CLI/Web/PWA workflows; no default native installer."
     },
     {
       "id": "solaris-illumos",
       "default_assets": [
-        "remote-ops-workspace-v0.1.0-solaris.tar.gz"
+        "remote-ops-workspace-v1.0.0-solaris.tar.gz"
       ],
       "native_status": "Source/install bundle plus CLI/Web/PWA workflows; no default native installer."
     },

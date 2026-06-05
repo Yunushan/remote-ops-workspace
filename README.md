@@ -5,7 +5,7 @@
 ### Operator-first remote terminal and connection workspace for SSH, RDP, VNC, SFTP, Mosh, Telnet, X11, SPICE, X2Go, ICA, HTTP/HTTPS, serial consoles, raw sockets, split panes, vaults, snippets, sync, CLI, GUI and Web/PWA.
 
 ![build](https://img.shields.io/badge/build-source--available-brightgreen)
-![release](https://img.shields.io/badge/release-v0.1.0-blue)
+![release](https://img.shields.io/badge/release-v1.0.0-blue)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 ![runtime](https://img.shields.io/badge/runtime-Python%203.10--3.14-orange)
 ![interfaces](https://img.shields.io/badge/interfaces-CLI%20%7C%20GUI%20%7C%20Web-purple)
@@ -355,33 +355,33 @@ Create local release bundles for the advertised targets:
 python scripts/make_release.py
 ```
 
-The GitHub release workflow runs on tags like `v0.1.0` and uploads these assets:
+The GitHub release workflow runs on tags like `v1.0.0` and uploads these assets:
 
 | Target | Asset |
 |---|---|
-| Python wheel | `remote_ops_workspace-0.1.0-py3-none-any.whl` |
-| Python sdist | `remote_ops_workspace-0.1.0.tar.gz` |
-| Source | `remote-ops-workspace-v0.1.0-source.zip` |
-| Windows | `remote-ops-workspace-v0.1.0-windows.zip` |
-| Linux | `remote-ops-workspace-v0.1.0-linux.tar.gz` |
-| macOS | `remote-ops-workspace-v0.1.0-macos.tar.gz` |
-| BSD | `remote-ops-workspace-v0.1.0-bsd.tar.gz` |
-| Solaris/illumos | `remote-ops-workspace-v0.1.0-solaris.tar.gz` |
-| Android/Termux | `remote-ops-workspace-v0.1.0-android-termux.tar.gz` |
-| Web/PWA | `remote-ops-workspace-v0.1.0-web-pwa.zip` |
-| Windows native | `remote-ops-workspace-v0.1.0-windows-<x86\|x64\|arm64>-setup.exe` |
-| Windows native | `remote-ops-workspace-v0.1.0-windows-<x86\|x64\|arm64>.msi` |
-| Windows native | `remote-ops-workspace-v0.1.0-windows-<x86\|x64\|arm64>-native.zip` |
-| macOS native | `remote-ops-workspace-v0.1.0-macos-<x64\|arm64>.dmg` |
-| macOS native | `remote-ops-workspace-v0.1.0-macos-<x64\|arm64>.pkg` |
-| macOS native | `remote-ops-workspace-v0.1.0-macos-<x64\|arm64>-native-manifest.json` |
-| Linux native | `remote-ops-workspace-v0.1.0-linux-<amd64\|arm64>.deb` |
-| Linux native | `remote-ops-workspace-v0.1.0-linux-<x86_64\|aarch64>.rpm` |
-| Linux native | `remote-ops-workspace-v0.1.0-linux-<x86_64\|aarch64>.AppImage` |
-| Linux native | `remote-ops-workspace-v0.1.0-linux-<x86_64\|aarch64>-native.tar.gz` |
-| Linux native | `remote-ops-workspace-v0.1.0-linux-<x86_64\|aarch64>-native-manifest.json` |
-| Manifests | `remote-ops-workspace-v0.1.0-*-manifest.json` |
-| Checksums | `remote-ops-workspace-v0.1.0-SHA256SUMS.txt` |
+| Python wheel | `remote_ops_workspace-1.0.0-py3-none-any.whl` |
+| Python sdist | `remote_ops_workspace-1.0.0.tar.gz` |
+| Source | `remote-ops-workspace-v1.0.0-source.zip` |
+| Windows | `remote-ops-workspace-v1.0.0-windows.zip` |
+| Linux | `remote-ops-workspace-v1.0.0-linux.tar.gz` |
+| macOS | `remote-ops-workspace-v1.0.0-macos.tar.gz` |
+| BSD | `remote-ops-workspace-v1.0.0-bsd.tar.gz` |
+| Solaris/illumos | `remote-ops-workspace-v1.0.0-solaris.tar.gz` |
+| Android/Termux | `remote-ops-workspace-v1.0.0-android-termux.tar.gz` |
+| Web/PWA | `remote-ops-workspace-v1.0.0-web-pwa.zip` |
+| Windows native | `remote-ops-workspace-v1.0.0-windows-<x86\|x64\|arm64>-setup.exe` |
+| Windows native | `remote-ops-workspace-v1.0.0-windows-<x86\|x64\|arm64>.msi` |
+| Windows native | `remote-ops-workspace-v1.0.0-windows-<x86\|x64\|arm64>-native.zip` |
+| macOS native | `remote-ops-workspace-v1.0.0-macos-<x64\|arm64>.dmg` |
+| macOS native | `remote-ops-workspace-v1.0.0-macos-<x64\|arm64>.pkg` |
+| macOS native | `remote-ops-workspace-v1.0.0-macos-<x64\|arm64>-native-manifest.json` |
+| Linux native | `remote-ops-workspace-v1.0.0-linux-<amd64\|arm64>.deb` |
+| Linux native | `remote-ops-workspace-v1.0.0-linux-<x86_64\|aarch64>.rpm` |
+| Linux native | `remote-ops-workspace-v1.0.0-linux-<x86_64\|aarch64>.AppImage` |
+| Linux native | `remote-ops-workspace-v1.0.0-linux-<x86_64\|aarch64>-native.tar.gz` |
+| Linux native | `remote-ops-workspace-v1.0.0-linux-<x86_64\|aarch64>-native-manifest.json` |
+| Manifests | `remote-ops-workspace-v1.0.0-*-manifest.json` |
+| Checksums | `remote-ops-workspace-v1.0.0-SHA256SUMS.txt` |
 
 Native protocol rendering still depends on the external clients installed on the target system.
 Windows XP/Vista/7/8 are supported as legacy remote targets, not as first-class

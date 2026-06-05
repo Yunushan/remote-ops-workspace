@@ -116,14 +116,14 @@ if [[ -e /usr/bin/row ]]; then
 fi
 
 echo "native installer smoke: RPM install"
-sudo rpm -Uvh --replacepkgs "$RPM"
+sudo rpm -Uvh --nodeps --replacepkgs "$RPM"
 echo "native installer smoke: RPM verify"
 verify_row /usr/bin/row
 echo "native installer smoke: RPM upgrade"
-sudo rpm -Uvh --replacepkgs "$RPM"
+sudo rpm -Uvh --nodeps --replacepkgs "$RPM"
 verify_row /usr/bin/row
 echo "native installer smoke: RPM uninstall"
-sudo rpm -e remote-ops-workspace
+sudo rpm -e --nodeps remote-ops-workspace
 if [[ -e /usr/bin/row ]]; then
   echo "RPM uninstall left /usr/bin/row behind" >&2
   exit 1

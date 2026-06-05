@@ -84,10 +84,10 @@
           "format": "rpm",
           "artifact_glob": "remote-ops-workspace-v*-linux-*.rpm",
           "lifecycle": {
-            "install": "sudo rpm -Uvh --replacepkgs <artifact>",
+            "install": "sudo rpm -Uvh --nodeps --replacepkgs <artifact> on Ubuntu CI runners",
             "verify": "/usr/bin/row --version",
-            "upgrade": "sudo rpm -Uvh --replacepkgs <artifact> over the installed package",
-            "uninstall": "sudo rpm -e remote-ops-workspace and verify /usr/bin/row is removed"
+            "upgrade": "sudo rpm -Uvh --nodeps --replacepkgs <artifact> over the installed package on Ubuntu CI runners",
+            "uninstall": "sudo rpm -e --nodeps remote-ops-workspace and verify /usr/bin/row is removed"
           }
         },
         {

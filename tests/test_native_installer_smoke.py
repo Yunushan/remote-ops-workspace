@@ -23,6 +23,22 @@ def test_native_installer_smoke_contract_covers_required_formats() -> None:
     assert formats == {"exe", "msi", "dmg", "pkg", "deb", "rpm", "AppImage"}
 
 
+def test_linux_rpm_smoke_uses_nodeps_on_ubuntu_runner() -> None:
+    config = json.loads(Path("configs/native_installer_smoke.json").read_text(encoding="utf-8"))
+    script = Path("scripts/smoke_linux_native.sh").read_text(encoding="utf-8")
+    rpm_lifecycle = next(
+        item["lifecycle"]
+        for item in config["platforms"]["linux"]["formats"]
+        if item["format"] == "rpm"
+    )
+
+    assert "--nodeps" in rpm_lifecycle["install"]
+    assert "--nodeps" in rpm_lifecycle["upgrade"]
+    assert "--nodeps" in rpm_lifecycle["uninstall"]
+    assert "rpm -Uvh --nodeps --replacepkgs" in script
+    assert "rpm -e --nodeps remote-ops-workspace" in script
+
+
 def _load_checker():
     path = Path("scripts/check_native_installer_smoke.py")
     spec = importlib.util.spec_from_file_location("native_installer_smoke_checker", path)

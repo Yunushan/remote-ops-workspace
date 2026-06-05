@@ -97,9 +97,16 @@ XP, Vista, Windows 7 or Windows 8.0 first-class local operator hosts.
 
 Architecture targets:
 
-- x86: 32-bit Windows native artifacts from a 32-bit Python/PyInstaller build.
-- x64: default 64-bit Windows native artifacts.
-- ARM64: native Windows ARM64 artifacts from an ARM64 Windows builder.
+- x86: 32-bit Windows native artifacts from a 32-bit Python/PyInstaller build;
+  CLI-first because PyQt6 does not publish 32-bit Windows wheels.
+- x64: default 64-bit Windows native artifacts with `bin\row.exe` and
+  double-clickable `bin\row-gui.exe`.
+- ARM64: native Windows ARM64 artifacts from an ARM64 Windows builder with
+  `bin\row.exe` and double-clickable `bin\row-gui.exe`.
+
+For the Windows x64 or ARM64 portable zip, extract the archive and double-click
+`bin\row-gui.exe` to start the desktop UI. Use `bin\row.exe` for CLI commands
+and automation.
 
 Recommended external clients:
 

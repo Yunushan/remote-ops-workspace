@@ -27,6 +27,7 @@ def main() -> int:
     errors.extend(check_native_checksum_sidecars())
     errors.extend(check_native_manifest_integrity())
     errors.extend(check_pyinstaller_launchers())
+    errors.extend(check_windows_gui_launcher())
     errors.extend(check_windows_wix_debug_sidecars())
     errors.extend(check_linux_appimagetool_download())
     errors.extend(check_native_workflow_boundaries())
@@ -103,6 +104,32 @@ def check_windows_wix_debug_sidecars() -> list[str]:
     errors: list[str] = []
     if ".wixpdb" not in text or "Remove-Item -LiteralPath $WixPdb" not in text:
         errors.append("scripts/make_windows_native.ps1 must remove WiX .wixpdb sidecars from release output")
+    return errors
+
+
+def check_windows_gui_launcher() -> list[str]:
+    script = NATIVE_SCRIPTS["windows"].read_text(encoding="utf-8")
+    workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    smoke = (ROOT / "scripts" / "smoke_windows_native.ps1").read_text(encoding="utf-8")
+    smoke_contract = (ROOT / "configs" / "native_installer_smoke.json").read_text(encoding="utf-8")
+    errors: list[str] = []
+    required_script_snippets = {
+        "row_gui_launcher.py": "GUI PyInstaller launcher source",
+        "from remote_ops_workspace.gui import main": "GUI launcher entry point",
+        "--name row-gui": "row-gui executable name",
+        "--windowed": "no-console GUI executable mode",
+        "Copy-Item $RowGuiExe": "row-gui.exe copied into the native package stage",
+        "$BuildGuiLauncher = $Arch -ne \"x86\"": "x86 PyQt6 wheel guard",
+    }
+    for snippet, label in required_script_snippets.items():
+        if snippet not in script:
+            errors.append(f"scripts/make_windows_native.ps1 missing {label}: {snippet}")
+    if '".[desktop,security,package]"' not in workflow or "matrix.arch" not in workflow:
+        errors.append("release workflow must install the desktop extra for Windows GUI-capable native builds")
+    if "Test-RowGuiLauncher" not in smoke or "row-gui.exe" not in smoke:
+        errors.append("scripts/smoke_windows_native.ps1 must verify the installed Windows GUI launcher")
+    if "row-gui.exe exists on x64/ARM64" not in smoke_contract:
+        errors.append("configs/native_installer_smoke.json must document Windows GUI launcher verification")
     return errors
 
 

@@ -87,6 +87,14 @@ function Build-InnoSetupInstaller([string]$Version, [string]$Stage, [string]$Out
   $Iss = Join-Path $BuildDir "remote-ops-workspace.iss"
   $OutputBase = "remote-ops-workspace-v$Version-windows-$Arch-setup"
   $ArchitectureDirectives = Get-InnoArchitectureDirectives $Arch
+  $GuiExe = Join-Path $Stage "bin\row-gui.exe"
+  $GuiIconEntries = ""
+  if (Test-Path $GuiExe) {
+    $GuiIconEntries = @"
+Name: "{group}\Remote Ops Workspace GUI"; Filename: "{app}\bin\row-gui.exe"
+Name: "{autodesktop}\Remote Ops Workspace GUI"; Filename: "{app}\bin\row-gui.exe"; Tasks: desktopicon
+"@
+  }
   $StageEscaped = $Stage.Replace("\", "\\")
   $OutEscaped = $OutDir.Replace("\", "\\")
 
@@ -109,6 +117,7 @@ $ArchitectureDirectives
 Source: "$StageEscaped\\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
+$GuiIconEntries
 Name: "{group}\Remote Ops Workspace CLI"; Filename: "{app}\bin\row.exe"
 Name: "{autodesktop}\Remote Ops Workspace CLI"; Filename: "{app}\bin\row.exe"; Tasks: desktopicon
 
@@ -143,6 +152,12 @@ function Build-WixMsi([string]$Version, [string]$Stage, [string]$OutDir, [string
   $Msi = Join-Path $OutDir "remote-ops-workspace-v$Version-windows-$Arch.msi"
   $WixArch = Get-WixArchitecture $Arch
   $RowSource = XmlEscape (Join-Path $Stage "bin\row.exe")
+  $RowGuiFile = ""
+  $RowGuiPath = Join-Path $Stage "bin\row-gui.exe"
+  if (Test-Path $RowGuiPath) {
+    $RowGuiSource = XmlEscape $RowGuiPath
+    $RowGuiFile = "            <File Id=`"RowGuiExe`" Source=`"$RowGuiSource`" />"
+  }
   $LicenseSource = XmlEscape (Join-Path $Stage "docs\LICENSE")
   $NoticeSource = XmlEscape (Join-Path $Stage "docs\NOTICE")
   $ReadmeSource = XmlEscape (Join-Path $Stage "docs\README.md")
@@ -158,6 +173,7 @@ function Build-WixMsi([string]$Version, [string]$Stage, [string]$OutDir, [string
         <Directory Id="BINDIR" Name="bin">
           <Component Id="RowExeComponent" Guid="7689D62F-2557-4DD3-8C58-38C5E245E44C">
             <File Id="RowExe" Source="$RowSource" KeyPath="yes" />
+$RowGuiFile
           </Component>
         </Directory>
         <Directory Id="DOCDIR" Name="docs">
@@ -210,6 +226,11 @@ function Get-PythonArchitecture([string]$Python) {
   return $Detected.Trim()
 }
 
+function Test-PythonModule([string]$Python, [string]$Module) {
+  & $Python -c "import importlib.util, sys; sys.exit(0 if importlib.util.find_spec('$Module') else 1)"
+  return $LASTEXITCODE -eq 0
+}
+
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $Version = Get-ProjectVersion
 $Tag = $env:GITHUB_REF_NAME
@@ -220,6 +241,10 @@ $PythonArch = Get-PythonArchitecture $Python
 if ($PythonArch -ne $Arch) {
   throw "Requested Windows architecture '$Arch' does not match Python architecture '$PythonArch'. Use a matching Python/PyInstaller toolchain."
 }
+$BuildGuiLauncher = $Arch -ne "x86"
+if ($BuildGuiLauncher -and !(Test-PythonModule -Python $Python -Module "PyQt6")) {
+  throw "PyQt6 is required to build the Windows $Arch GUI launcher. Install the desktop extra before running this script."
+}
 
 $OutDir = Resolve-PathOrCreate (Join-Path $Root $Dist)
 $BuildDir = Join-Path $Root "build\native\windows"
@@ -227,6 +252,7 @@ $Stage = Join-Path $BuildDir "stage"
 $PyDist = Join-Path $BuildDir "pyinstaller-dist"
 $PyWork = Join-Path $BuildDir "pyinstaller-work"
 $Launcher = Join-Path $BuildDir "row_launcher.py"
+$GuiLauncher = Join-Path $BuildDir "row_gui_launcher.py"
 
 Remove-Item -Recurse -Force $BuildDir -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force $OutDir, $Stage, $PyDist, $PyWork | Out-Null
@@ -236,6 +262,14 @@ from remote_ops_workspace.cli import main
 
 raise SystemExit(main())
 "@ | Set-Content -Encoding UTF8 $Launcher
+
+if ($BuildGuiLauncher) {
+@"
+from remote_ops_workspace.gui import main
+
+raise SystemExit(main())
+"@ | Set-Content -Encoding UTF8 $GuiLauncher
+}
 
 & $Python -m PyInstaller `
   --clean `
@@ -250,17 +284,48 @@ raise SystemExit(main())
   --copy-metadata remote-ops-workspace `
   $Launcher
 
+if ($BuildGuiLauncher) {
+  & $Python -m PyInstaller `
+    --clean `
+    --noconfirm `
+    --onefile `
+    --name row-gui `
+    --windowed `
+    --distpath $PyDist `
+    --workpath $PyWork `
+    --specpath $BuildDir `
+    --collect-submodules remote_ops_workspace `
+    --copy-metadata remote-ops-workspace `
+    --hidden-import PyQt6.QtCore `
+    --hidden-import PyQt6.QtGui `
+    --hidden-import PyQt6.QtWidgets `
+    $GuiLauncher
+}
+
 $RowExe = Join-Path $PyDist "row.exe"
 if (!(Test-Path $RowExe)) {
   throw "PyInstaller did not create $RowExe"
 }
+$RowGuiExe = Join-Path $PyDist "row-gui.exe"
+if ($BuildGuiLauncher -and !(Test-Path $RowGuiExe)) {
+  throw "PyInstaller did not create $RowGuiExe"
+}
 
 New-Item -ItemType Directory -Force (Join-Path $Stage "bin"), (Join-Path $Stage "docs") | Out-Null
 Copy-Item $RowExe (Join-Path $Stage "bin\row.exe")
+if ($BuildGuiLauncher) {
+  Copy-Item $RowGuiExe (Join-Path $Stage "bin\row-gui.exe")
+}
 Copy-Item (Join-Path $Root "LICENSE") (Join-Path $Stage "docs\LICENSE")
 Copy-Item (Join-Path $Root "NOTICE") (Join-Path $Stage "docs\NOTICE")
 Copy-Item (Join-Path $Root "README.md") (Join-Path $Stage "docs\README.md")
 Copy-Item (Join-Path $Root "README.tr.md") (Join-Path $Stage "docs\README.tr.md")
+
+$GuiTargetNote = if ($BuildGuiLauncher) {
+  "It also includes the double-clickable bin\row-gui.exe launcher for the PyQt6 desktop UI."
+} else {
+  "This 32-bit Windows build is CLI-first because PyQt6 does not publish 32-bit Windows wheels."
+}
 
 @"
 # Windows native release
@@ -269,8 +334,8 @@ Package: remote-ops-workspace
 Version: v$Version
 Target: Windows $Arch
 
-This native package installs the standalone `row.exe` command built with
-PyInstaller. Protocol sessions still depend on Windows system tools such as
+This native package installs the standalone row.exe command built with
+PyInstaller. $GuiTargetNote Protocol sessions still depend on Windows system tools such as
 OpenSSH, MSTSC, PuTTY, VcXsrv, and VNC clients.
 "@ | Set-Content -Encoding UTF8 (Join-Path $Stage "RELEASE_TARGET.md")
 
@@ -280,6 +345,21 @@ Compress-Archive -Path (Join-Path $Stage "*") -DestinationPath $NativeZip -Force
 $SetupExe = Build-InnoSetupInstaller -Version $Version -Stage $Stage -OutDir $OutDir -Arch $Arch
 $Msi = Build-WixMsi -Version $Version -Stage $Stage -OutDir $OutDir -Arch $Arch
 
+$PortableInstallCommand = if ($BuildGuiLauncher) {
+  "Extract and double-click bin\row-gui.exe for the desktop UI, or run bin\row.exe for CLI workflows."
+} else {
+  "Extract and run bin\row.exe. The Windows x86 portable build is CLI-first."
+}
+$PortableNotes = @("Standalone PyInstaller CLI executable plus docs.", "Built for Windows $Arch.")
+$InstallerNotes = @("Unsigned native installer for the standalone row.exe CLI.", "Built for Windows $Arch.")
+if ($BuildGuiLauncher) {
+  $PortableNotes += "Includes no-console PyQt6 GUI launcher: bin\row-gui.exe."
+  $InstallerNotes += "Installs bin\row-gui.exe and GUI shortcuts where the installer format supports shortcuts."
+} else {
+  $PortableNotes += "PyQt6 does not publish 32-bit Windows wheels, so this x86 bundle does not include row-gui.exe."
+  $InstallerNotes += "PyQt6 does not publish 32-bit Windows wheels, so this x86 installer does not include row-gui.exe."
+}
+
 $Manifest = @(
   @{
     phase = "phase-2-windows-native"
@@ -288,8 +368,8 @@ $Manifest = @(
     architecture = $Arch
     file = (To-RepoPath $NativeZip)
     format = "zip"
-    install_command = "Extract and run bin\row.exe"
-    notes = @("Standalone PyInstaller CLI executable plus docs.", "Built for Windows $Arch.")
+    install_command = $PortableInstallCommand
+    notes = $PortableNotes
   },
   @{
     phase = "phase-2-windows-native"
@@ -299,7 +379,7 @@ $Manifest = @(
     file = (To-RepoPath $SetupExe)
     format = "exe"
     install_command = "Run the installer interactively or with Inno Setup silent flags."
-    notes = @("Unsigned Inno Setup installer for the standalone row.exe CLI.", "Built for Windows $Arch.")
+    notes = $InstallerNotes
   },
   @{
     phase = "phase-2-windows-native"
@@ -309,7 +389,7 @@ $Manifest = @(
     file = (To-RepoPath $Msi)
     format = "msi"
     install_command = "msiexec /i $(Split-Path -Leaf $Msi)"
-    notes = @("Unsigned WiX MSI installer for managed Windows deployments.", "Built for Windows $Arch.")
+    notes = $InstallerNotes
   }
 )
 

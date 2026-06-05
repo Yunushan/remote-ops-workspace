@@ -5,5 +5,7 @@ setuptools==80.9.0
 wheel==0.45.1
 build==1.2.2.post1
 pyinstaller==6.11.1
-PyQt6==6.7.1
+PyQt6==6.11.0
+PyQt6-Qt6==6.11.1
+PyQt6-sip==13.11.1
 cryptography==46.0.3

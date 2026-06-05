@@ -21,9 +21,9 @@
           "artifact_glob": "remote-ops-workspace-v*-windows-*-setup.exe",
           "lifecycle": {
             "install": "Inno Setup silent install into build/native-smoke/windows-<arch>/exe-install",
-            "verify": "installed bin/row.exe --version",
+            "verify": "installed bin/row.exe --version and bin/row-gui.exe exists on x64/ARM64",
             "upgrade": "rerun the same setup.exe silently over the installed copy",
-            "uninstall": "run generated unins*.exe silently and verify row.exe is removed"
+            "uninstall": "run generated unins*.exe silently and verify row.exe and row-gui.exe are removed"
           }
         },
         {
@@ -31,9 +31,9 @@
           "artifact_glob": "remote-ops-workspace-v*-windows-*.msi",
           "lifecycle": {
             "install": "msiexec /i <artifact> /qn /norestart",
-            "verify": "installed Program Files row.exe --version",
+            "verify": "installed Program Files row.exe --version and row-gui.exe exists on x64/ARM64",
             "upgrade": "msiexec /i <artifact> /qn /norestart over the installed product",
-            "uninstall": "msiexec /x <artifact> /qn /norestart and verify row.exe is removed"
+            "uninstall": "msiexec /x <artifact> /qn /norestart and verify row.exe and row-gui.exe are removed"
           }
         }
       ]

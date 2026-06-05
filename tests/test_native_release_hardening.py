@@ -65,6 +65,22 @@ def test_windows_wix_debug_sidecars_are_removed() -> None:
     assert "Remove-Item -LiteralPath $WixPdb" in script
 
 
+def test_windows_native_package_builds_double_click_gui_launcher() -> None:
+    script = Path("scripts/make_windows_native.ps1").read_text(encoding="utf-8")
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    smoke = Path("scripts/smoke_windows_native.ps1").read_text(encoding="utf-8")
+
+    assert "row_gui_launcher.py" in script
+    assert "from remote_ops_workspace.gui import main" in script
+    assert "--name row-gui" in script
+    assert "--windowed" in script
+    assert "Copy-Item $RowGuiExe" in script
+    assert '$BuildGuiLauncher = $Arch -ne "x86"' in script
+    assert '".[desktop,security,package]"' in workflow
+    assert "Test-RowGuiLauncher" in smoke
+    assert "row-gui.exe" in smoke
+
+
 def _load_checker():
     path = Path("scripts/check_native_release_hardening.py")
     spec = importlib.util.spec_from_file_location("check_native_release_hardening_script", path)

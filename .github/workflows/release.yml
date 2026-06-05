@@ -74,7 +74,13 @@ jobs:
           python-version: "3.12"
           architecture: ${{ matrix.python-architecture }}
       - name: Install Python packaging dependencies
-        run: python -m pip install --constraint requirements-release.txt pip setuptools wheel ".[security,package]"
+        shell: powershell
+        run: |
+          if ("${{ matrix.arch }}" -eq "x86") {
+            python -m pip install --constraint requirements-release.txt pip setuptools wheel ".[security,package]"
+          } else {
+            python -m pip install --constraint requirements-release.txt pip setuptools wheel ".[desktop,security,package]"
+          }
       - name: Install Windows installer toolchains
         shell: powershell
         run: |

@@ -67,9 +67,10 @@ Every default native installer format has an install, verify, upgrade and
 uninstall smoke path before upload:
 
 - Windows `.exe`: silent Inno Setup install into a smoke directory, `row.exe
-  --version`, silent reinstall, generated uninstaller cleanup.
+  --version`, `row-gui.exe` presence on x64/ARM64, silent reinstall, generated
+  uninstaller cleanup.
 - Windows `.msi`: quiet `msiexec` install, Program Files `row.exe --version`,
-  quiet reinstall, quiet uninstall.
+  `row-gui.exe` presence on x64/ARM64, quiet reinstall, quiet uninstall.
 - macOS `.dmg`: read-only mount, app bundle copy, `codesign --verify`, bundle
   replacement, bundle cleanup and detach.
 - macOS `.pkg`: `sudo installer`, `/Applications` app verification, reinstall,
@@ -140,10 +141,14 @@ Release assets:
 Implementation:
 
 - Builds a standalone `row.exe` with PyInstaller for x86, x64 and ARM64 builders.
+- Builds a no-console `row-gui.exe` PyInstaller launcher for Windows x64 and
+  ARM64 portable/installable GUI use. Windows x86 remains CLI-first because
+  PyQt6 does not publish 32-bit Windows wheels.
 - Builds an interactive installer with Inno Setup.
 - Builds an MSI installer with WiX.
 - Runs `scripts/smoke_windows_native.ps1` to smoke install, verify, upgrade and
-  uninstall the `.exe` and `.msi` artifacts before upload.
+  uninstall the `.exe` and `.msi` artifacts before upload, including
+  `row-gui.exe` presence on GUI-capable Windows architectures.
 - Pins the Windows installer toolchain in CI: Inno Setup `6.3.3` and WiX
   `5.0.2`.
 - Publishes unsigned CI artifacts. Authenticode signing can be layered in when

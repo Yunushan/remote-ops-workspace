@@ -33,8 +33,18 @@
     },
     {
       "name": "PyQt6",
-      "version": "6.7.1",
-      "purpose": "Pinned desktop GUI dependency for native GUI bundles."
+      "version": "6.11.0",
+      "purpose": "Pinned desktop GUI dependency for native GUI bundles, including Windows x64 and ARM64 wheels."
+    },
+    {
+      "name": "PyQt6-Qt6",
+      "version": "6.11.1",
+      "purpose": "Pinned Qt runtime wheel used by PyQt6 native GUI bundles."
+    },
+    {
+      "name": "PyQt6-sip",
+      "version": "13.11.1",
+      "purpose": "Pinned PyQt6 SIP runtime dependency."
     },
     {
       "name": "cryptography",

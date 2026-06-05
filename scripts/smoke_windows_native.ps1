@@ -37,6 +37,16 @@ function Test-RowVersion([string]$Path, [string]$ExpectedVersion) {
   }
 }
 
+function Test-RowGuiLauncher([string]$RowPath, [string]$Arch) {
+  if ($Arch -eq "x86") {
+    return
+  }
+  $GuiPath = Join-Path (Split-Path -Parent $RowPath) "row-gui.exe"
+  if (!(Test-Path $GuiPath)) {
+    throw "expected installed GUI launcher missing: $GuiPath"
+  }
+}
+
 function Find-MsiRowExe {
   $Candidates = @()
   if ($env:ProgramFiles) {
@@ -83,8 +93,10 @@ $ExeInstallArgs = @(
 Invoke-SmokeCommand "EXE install" $SetupExe $ExeInstallArgs
 $ExeRow = Join-Path $ExeInstallDir "bin\row.exe"
 Test-RowVersion $ExeRow $Version
+Test-RowGuiLauncher $ExeRow $Arch
 Invoke-SmokeCommand "EXE upgrade" $SetupExe $ExeInstallArgs
 Test-RowVersion $ExeRow $Version
+Test-RowGuiLauncher $ExeRow $Arch
 $Uninstaller = Get-ChildItem -Path $ExeInstallDir -Filter "unins*.exe" | Select-Object -First 1
 if (!$Uninstaller) {
   throw "EXE uninstall helper was not created"
@@ -93,18 +105,28 @@ Invoke-SmokeCommand "EXE uninstall" $Uninstaller.FullName @("/VERYSILENT", "/SUP
 if (Test-Path $ExeRow) {
   throw "EXE uninstall left row.exe behind"
 }
+$ExeGui = Join-Path $ExeInstallDir "bin\row-gui.exe"
+if (Test-Path $ExeGui) {
+  throw "EXE uninstall left row-gui.exe behind"
+}
 
 # install / verify / upgrade / uninstall smoke for the WiX .msi installer.
 $MsiLog = Join-Path $SmokeRoot "msi-smoke.log"
 Invoke-SmokeCommand "MSI install" "msiexec.exe" @("/i", $Msi, "/qn", "/norestart", "/l*v", $MsiLog)
 $MsiRow = Find-MsiRowExe
 Test-RowVersion $MsiRow $Version
+Test-RowGuiLauncher $MsiRow $Arch
 Invoke-SmokeCommand "MSI upgrade" "msiexec.exe" @("/i", $Msi, "/qn", "/norestart", "/l*v", $MsiLog)
 $MsiRow = Find-MsiRowExe
 Test-RowVersion $MsiRow $Version
+Test-RowGuiLauncher $MsiRow $Arch
 Invoke-SmokeCommand "MSI uninstall" "msiexec.exe" @("/x", $Msi, "/qn", "/norestart", "/l*v", $MsiLog)
 if (Test-Path $MsiRow) {
   throw "MSI uninstall left row.exe behind"
+}
+$MsiGui = Join-Path (Split-Path -Parent $MsiRow) "row-gui.exe"
+if (Test-Path $MsiGui) {
+  throw "MSI uninstall left row-gui.exe behind"
 }
 
 Write-Host "native installer smoke passed for Windows $Arch"

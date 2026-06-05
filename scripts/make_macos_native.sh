@@ -96,9 +96,13 @@ hdiutil create -volname "$APP_NAME" -srcfolder "$DMG_STAGE" -ov -format UDZO "$D
 PKG_ROOT="$BUILD_DIR/pkgroot"
 mkdir -p "$PKG_ROOT/Applications"
 cp -R "$APP_PATH" "$PKG_ROOT/Applications/"
+COMPONENT_PLIST="$BUILD_DIR/components.plist"
+pkgbuild --analyze --root "$PKG_ROOT" "$COMPONENT_PLIST"
+/usr/libexec/PlistBuddy -c "Set :0:BundleIsRelocatable false" "$COMPONENT_PLIST"
 PKG="$OUT_DIR/remote-ops-workspace-v${VERSION}-macos-${ARTIFACT_ARCH}.pkg"
 pkgbuild \
   --root "$PKG_ROOT" \
+  --component-plist "$COMPONENT_PLIST" \
   --identifier "io.github.remoteopsworkspace.app" \
   --version "$VERSION" \
   --install-location "/" \

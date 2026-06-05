@@ -92,6 +92,8 @@ def check_pyinstaller_launchers() -> list[str]:
     macos = NATIVE_SCRIPTS["macos"].read_text(encoding="utf-8")
     if "remote_ops_workspace_gui_launcher.py" not in macos or 'main(["gui"])' not in macos:
         errors.append("scripts/make_macos_native.sh must build PyInstaller from the GUI launcher")
+    if "BundleIsRelocatable false" not in macos:
+        errors.append("scripts/make_macos_native.sh must make the app bundle non-relocatable in PKG builds")
     return errors
 
 

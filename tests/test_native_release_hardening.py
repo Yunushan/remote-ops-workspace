@@ -50,6 +50,14 @@ def test_release_macos_x64_uses_current_intel_runner() -> None:
     assert "runner: macos-13" not in workflow
 
 
+def test_macos_pkg_install_path_is_not_relocatable() -> None:
+    script = Path("scripts/make_macos_native.sh").read_text(encoding="utf-8")
+
+    assert "pkgbuild --analyze" in script
+    assert "BundleIsRelocatable false" in script
+    assert "--component-plist" in script
+
+
 def _load_checker():
     path = Path("scripts/check_native_release_hardening.py")
     spec = importlib.util.spec_from_file_location("check_native_release_hardening_script", path)

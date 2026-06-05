@@ -71,7 +71,7 @@ jobs:
         run: python -m pip install -e ".[desktop,security,dev]"
       - name: Real GUI render smoke
         run: python scripts/check_real_gui_render.py --require-pyqt6 --preset native --out-dir artifacts/gui-real
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: gui-real-render
           path: artifacts/gui-real/*

@@ -55,10 +55,10 @@ def check_publish_contract(matrix: dict[str, Any], workflow: str) -> list[str]:
     if not publish_block:
         return [*errors, "release workflow missing publish job"]
     required_snippets = {
-        "actions/download-artifact@v4": "artifact download",
+        "actions/download-artifact@v8": "artifact download",
         "merge-multiple: true": "merged downloaded artifact directory",
         "python scripts/check_release_publish_assets.py --assets-dir release-assets --tag": "publish asset validation",
-        "softprops/action-gh-release@v2": "GitHub release upload",
+        "softprops/action-gh-release@v3": "GitHub release upload",
         "fail_on_unmatched_files: true": "strict GitHub release upload",
     }
     for snippet, label in required_snippets.items():

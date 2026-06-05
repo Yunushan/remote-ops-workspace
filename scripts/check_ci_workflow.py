@@ -81,7 +81,7 @@ def check_gui_render_job(workflow: str) -> list[str]:
         '".[desktop,security,dev]"': "desktop extra installation",
         "python scripts/check_real_gui_render.py --require-pyqt6": "required live GUI render smoke",
         "--out-dir artifacts/gui-real": "live GUI screenshot artifact output",
-        "actions/upload-artifact@v4": "live GUI screenshot artifact upload",
+        "actions/upload-artifact@v7": "live GUI screenshot artifact upload",
         "if-no-files-found: error": "artifact upload failure on missing live screenshots",
     }
     for snippet, label in required_snippets.items():

@@ -58,6 +58,13 @@ def test_macos_pkg_install_path_is_not_relocatable() -> None:
     assert "--component-plist" in script
 
 
+def test_windows_wix_debug_sidecars_are_removed() -> None:
+    script = Path("scripts/make_windows_native.ps1").read_text(encoding="utf-8")
+
+    assert ".wixpdb" in script
+    assert "Remove-Item -LiteralPath $WixPdb" in script
+
+
 def _load_checker():
     path = Path("scripts/check_native_release_hardening.py")
     spec = importlib.util.spec_from_file_location("check_native_release_hardening_script", path)

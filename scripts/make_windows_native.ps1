@@ -191,6 +191,10 @@ function Build-WixMsi([string]$Version, [string]$Stage, [string]$OutDir, [string
   if (!(Test-Path $Msi)) {
     throw "WiX did not create $Msi"
   }
+  $WixPdb = [System.IO.Path]::ChangeExtension($Msi, ".wixpdb")
+  if (Test-Path $WixPdb) {
+    Remove-Item -LiteralPath $WixPdb -Force
+  }
   return $Msi
 }
 

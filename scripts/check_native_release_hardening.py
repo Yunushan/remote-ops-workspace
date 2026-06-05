@@ -27,6 +27,7 @@ def main() -> int:
     errors.extend(check_native_checksum_sidecars())
     errors.extend(check_native_manifest_integrity())
     errors.extend(check_pyinstaller_launchers())
+    errors.extend(check_windows_wix_debug_sidecars())
     errors.extend(check_linux_appimagetool_download())
     errors.extend(check_native_workflow_boundaries())
     if errors:
@@ -94,6 +95,14 @@ def check_pyinstaller_launchers() -> list[str]:
         errors.append("scripts/make_macos_native.sh must build PyInstaller from the GUI launcher")
     if "BundleIsRelocatable false" not in macos:
         errors.append("scripts/make_macos_native.sh must make the app bundle non-relocatable in PKG builds")
+    return errors
+
+
+def check_windows_wix_debug_sidecars() -> list[str]:
+    text = NATIVE_SCRIPTS["windows"].read_text(encoding="utf-8")
+    errors: list[str] = []
+    if ".wixpdb" not in text or "Remove-Item -LiteralPath $WixPdb" not in text:
+        errors.append("scripts/make_windows_native.ps1 must remove WiX .wixpdb sidecars from release output")
     return errors
 
 

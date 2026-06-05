@@ -44,7 +44,7 @@ APP_PATH="$PY_DIST/$APP_NAME.app"
 create_macos_dmg() {
   local dmg_stage="$1"
   local dmg="$2"
-  local dmg_tmp="$BUILD_DIR/$(basename "$dmg").tmp"
+  local dmg_tmp="$BUILD_DIR/$(basename "${dmg%.dmg}").tmp.dmg"
   local attempt
   local status=1
 

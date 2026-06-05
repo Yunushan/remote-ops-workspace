@@ -141,7 +141,7 @@ def check_macos_dmg_creation_retry() -> list[str]:
         "create_macos_dmg()": "retryable DMG creation helper",
         "hdiutil detach \"/Volumes/$APP_NAME\" -force": "stale volume detach before retry",
         "for attempt in 1 2 3": "bounded hdiutil retry loop",
-        "$(basename \"$dmg\").tmp": "temporary DMG output path",
+        "$(basename \"${dmg%.dmg}\").tmp.dmg": "temporary DMG output path",
     }
     for snippet, label in required.items():
         if snippet not in text:

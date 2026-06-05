@@ -64,7 +64,7 @@ def test_macos_dmg_creation_retries_resource_busy_failures() -> None:
     assert "create_macos_dmg()" in script
     assert 'hdiutil detach "/Volumes/$APP_NAME" -force' in script
     assert "for attempt in 1 2 3" in script
-    assert '$(basename "$dmg").tmp' in script
+    assert '$(basename "${dmg%.dmg}").tmp.dmg' in script
 
 
 def test_windows_wix_debug_sidecars_are_removed() -> None:

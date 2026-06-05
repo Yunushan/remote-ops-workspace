@@ -43,6 +43,13 @@ def test_native_workflow_uploads_fail_if_assets_missing() -> None:
         assert "persist-credentials: false" in block
 
 
+def test_release_macos_x64_uses_current_intel_runner() -> None:
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+
+    assert "runner: macos-15-intel" in workflow
+    assert "runner: macos-13" not in workflow
+
+
 def _load_checker():
     path = Path("scripts/check_native_release_hardening.py")
     spec = importlib.util.spec_from_file_location("check_native_release_hardening_script", path)

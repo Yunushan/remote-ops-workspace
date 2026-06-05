@@ -121,6 +121,10 @@ def check_native_workflow_boundaries() -> list[str]:
             errors.append(f"{job} artifact upload must fail when native assets are missing")
     if "permissions:\n  contents: read" not in workflow:
         errors.append("release workflow native jobs must inherit read-only contents permission")
+    if "runner: macos-13" in workflow:
+        errors.append("macOS x64 release builds must not use the deprecated macos-13 runner label")
+    if "runner: macos-15-intel" not in workflow:
+        errors.append("macOS x64 release builds must use the Intel macos-15-intel runner")
     return errors
 
 

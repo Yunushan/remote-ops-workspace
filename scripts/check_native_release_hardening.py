@@ -112,6 +112,7 @@ def check_windows_gui_launcher() -> list[str]:
     script = NATIVE_SCRIPTS["windows"].read_text(encoding="utf-8")
     cli = (ROOT / "src" / "remote_ops_workspace" / "cli.py").read_text(encoding="utf-8")
     workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    windows_job = workflow_job_block(workflow, "windows-native")
     smoke = (ROOT / "scripts" / "smoke_windows_native.ps1").read_text(encoding="utf-8")
     smoke_contract = (ROOT / "configs" / "native_installer_smoke.json").read_text(encoding="utf-8")
     errors: list[str] = []
@@ -140,13 +141,8 @@ def check_windows_gui_launcher() -> list[str]:
         errors.append("release workflow must install the desktop extra for Windows GUI-capable native builds")
     if "Test-RowGuiLauncher" not in smoke or "row-gui.exe" not in smoke:
         errors.append("scripts/smoke_windows_native.ps1 must verify the installed Windows GUI launcher")
-    if (
-        "CommandTimeoutSeconds" not in smoke
-        or "WaitForExit" not in smoke
-        or "$Process.Refresh()" not in smoke
-        or "timed out after" not in smoke
-    ):
-        errors.append("scripts/smoke_windows_native.ps1 must bound installer smoke commands with a timeout")
+    if "Run Windows native installer smoke tests" not in windows_job or "timeout-minutes: 20" not in windows_job:
+        errors.append("release workflow must bound Windows native installer smoke with timeout-minutes")
     if "row-gui.exe exists on x64/ARM64" not in smoke_contract:
         errors.append("configs/native_installer_smoke.json must document Windows GUI launcher verification")
     return errors

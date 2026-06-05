@@ -95,6 +95,7 @@ jobs:
         run: .\scripts\make_windows_native.ps1 -Arch "${{ matrix.arch }}"
       - name: Run Windows native installer smoke tests
         shell: powershell
+        timeout-minutes: 20
         run: .\scripts\smoke_windows_native.ps1 -Arch "${{ matrix.arch }}" -Dist "native-dist\windows"
       - uses: actions/upload-artifact@v7
         with:

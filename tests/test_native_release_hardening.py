@@ -93,9 +93,8 @@ def test_windows_native_package_builds_double_click_gui_launcher() -> None:
     assert '".[desktop,security,package]"' in workflow
     assert "Test-RowGuiLauncher" in smoke
     assert "row-gui.exe" in smoke
-    assert "CommandTimeoutSeconds" in smoke
-    assert "WaitForExit" in smoke
-    assert "$Process.Refresh()" in smoke
+    assert "timeout-minutes: 20" in workflow
+    assert "Start-Process -FilePath $FilePath -ArgumentList $ArgumentList -NoNewWindow -Wait -PassThru" in smoke
 
 
 def _load_checker():

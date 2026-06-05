@@ -23,6 +23,16 @@ def test_native_checksum_patterns_are_documented_in_scripts() -> None:
         assert pattern in text
 
 
+def test_native_pyinstaller_entrypoints_use_launchers() -> None:
+    checker = _load_checker()
+
+    assert checker.check_pyinstaller_launchers() == []
+    for platform in ("windows", "linux"):
+        text = checker.NATIVE_SCRIPTS[platform].read_text(encoding="utf-8")
+        assert "row_launcher.py" in text
+        assert "__main__.py" not in text
+
+
 def test_native_workflow_uploads_fail_if_assets_missing() -> None:
     checker = _load_checker()
 

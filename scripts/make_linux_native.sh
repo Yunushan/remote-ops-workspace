@@ -61,9 +61,16 @@ OUT_DIR="$ROOT/$DIST"
 BUILD_DIR="$ROOT/build/native/linux"
 PY_DIST="$BUILD_DIR/pyinstaller-dist"
 PY_WORK="$BUILD_DIR/pyinstaller-work"
+LAUNCHER="$BUILD_DIR/row_launcher.py"
 
 rm -rf "$BUILD_DIR"
 mkdir -p "$OUT_DIR" "$PY_DIST" "$PY_WORK"
+
+cat > "$LAUNCHER" <<'PY'
+from remote_ops_workspace.cli import main
+
+raise SystemExit(main())
+PY
 
 "$PYTHON_BIN" -m PyInstaller \
   --clean \
@@ -76,7 +83,7 @@ mkdir -p "$OUT_DIR" "$PY_DIST" "$PY_WORK"
   --specpath "$BUILD_DIR" \
   --collect-submodules remote_ops_workspace \
   --copy-metadata remote-ops-workspace \
-  "$ROOT/src/remote_ops_workspace/__main__.py"
+  "$LAUNCHER"
 
 ROW_BIN="$PY_DIST/row"
 if [[ ! -x "$ROW_BIN" ]]; then

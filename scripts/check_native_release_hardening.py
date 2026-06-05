@@ -26,6 +26,7 @@ def main() -> int:
     errors.extend(check_line_endings())
     errors.extend(check_native_checksum_sidecars())
     errors.extend(check_native_manifest_integrity())
+    errors.extend(check_pyinstaller_launchers())
     errors.extend(check_linux_appimagetool_download())
     errors.extend(check_native_workflow_boundaries())
     if errors:
@@ -70,6 +71,27 @@ def check_native_manifest_integrity() -> list[str]:
             errors.append(f"{display(path)} native manifest must include sha256")
         if "GITHUB_REF_NAME" not in text:
             errors.append(f"{display(path)} must reject tag/version mismatches")
+    return errors
+
+
+def check_pyinstaller_launchers() -> list[str]:
+    errors: list[str] = []
+    cli_launcher_requirements = {
+        "linux": ("row_launcher.py", "from remote_ops_workspace.cli import main", "raise SystemExit(main())"),
+        "windows": ("row_launcher.py", "from remote_ops_workspace.cli import main", "raise SystemExit(main())"),
+    }
+    for platform, requirements in cli_launcher_requirements.items():
+        path = NATIVE_SCRIPTS[platform]
+        text = path.read_text(encoding="utf-8")
+        for requirement in requirements:
+            if requirement not in text:
+                errors.append(f"{display(path)} must build PyInstaller from a package-aware CLI launcher")
+        if "src/remote_ops_workspace/__main__.py" in text or "src\\remote_ops_workspace\\__main__.py" in text:
+            errors.append(f"{display(path)} must not pass package __main__.py directly to PyInstaller")
+
+    macos = NATIVE_SCRIPTS["macos"].read_text(encoding="utf-8")
+    if "remote_ops_workspace_gui_launcher.py" not in macos or 'main(["gui"])' not in macos:
+        errors.append("scripts/make_macos_native.sh must build PyInstaller from the GUI launcher")
     return errors
 
 

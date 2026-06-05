@@ -6,4 +6,4 @@ wheel==0.45.1
 build==1.2.2.post1
 pyinstaller==6.11.1
 PyQt6==6.7.1
-cryptography==42.0.8
+cryptography==46.0.3

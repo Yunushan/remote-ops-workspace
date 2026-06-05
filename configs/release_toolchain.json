@@ -38,8 +38,8 @@
     },
     {
       "name": "cryptography",
-      "version": "42.0.8",
-      "purpose": "Pinned optional vault encryption dependency."
+      "version": "46.0.3",
+      "purpose": "Pinned optional vault encryption dependency with CPython 3.12 Windows ARM64 wheels."
     }
   ],
   "native_toolchains": {

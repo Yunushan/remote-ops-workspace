@@ -78,7 +78,11 @@ jobs:
       - name: Install Windows installer toolchains
         shell: powershell
         run: |
-          choco install innosetup --version=6.3.3 -y --no-progress
+          if (-not (Get-Command "iscc.exe" -ErrorAction SilentlyContinue) -and -not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
+            choco install innosetup --version=6.3.3 -y --no-progress
+          } else {
+            Write-Host "Inno Setup compiler already available"
+          }
           dotnet tool install --global wix --version 5.0.2
       - name: Build Windows EXE and MSI installers
         shell: powershell

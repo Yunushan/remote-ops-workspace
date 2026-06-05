@@ -119,7 +119,12 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 Filename: "{app}\bin\row.exe"; Parameters: "--version"; Description: "Show installed version"; Flags: postinstall nowait skipifsilent
 "@ | Set-Content -Encoding UTF8 $Iss
 
-  & $Iscc $Iss
+  $InnoOutput = & $Iscc $Iss
+  $InnoExitCode = $LASTEXITCODE
+  $InnoOutput | ForEach-Object { Write-Host $_ }
+  if ($InnoExitCode -ne 0) {
+    throw "Inno Setup failed with exit code $InnoExitCode"
+  }
   $Setup = Join-Path $OutDir "$OutputBase.exe"
   if (!(Test-Path $Setup)) {
     throw "Inno Setup did not create $Setup"
@@ -217,9 +222,16 @@ $BuildDir = Join-Path $Root "build\native\windows"
 $Stage = Join-Path $BuildDir "stage"
 $PyDist = Join-Path $BuildDir "pyinstaller-dist"
 $PyWork = Join-Path $BuildDir "pyinstaller-work"
+$Launcher = Join-Path $BuildDir "row_launcher.py"
 
 Remove-Item -Recurse -Force $BuildDir -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force $OutDir, $Stage, $PyDist, $PyWork | Out-Null
+
+@"
+from remote_ops_workspace.cli import main
+
+raise SystemExit(main())
+"@ | Set-Content -Encoding UTF8 $Launcher
 
 & $Python -m PyInstaller `
   --clean `
@@ -232,7 +244,7 @@ New-Item -ItemType Directory -Force $OutDir, $Stage, $PyDist, $PyWork | Out-Null
   --specpath $BuildDir `
   --collect-submodules remote_ops_workspace `
   --copy-metadata remote-ops-workspace `
-  (Join-Path $Root "src\remote_ops_workspace\__main__.py")
+  $Launcher
 
 $RowExe = Join-Path $PyDist "row.exe"
 if (!(Test-Path $RowExe)) {

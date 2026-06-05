@@ -106,7 +106,8 @@ Architecture targets:
 
 For the Windows x64 or ARM64 portable zip, extract the archive and double-click
 `bin\row-gui.exe` to start the desktop UI. Use `bin\row.exe` for CLI commands
-and automation.
+and automation. In frozen Windows native packages, `row gui` delegates to the
+sibling `bin\row-gui.exe` launcher.
 
 Recommended external clients:
 

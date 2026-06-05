@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import shlex
+import subprocess
 import sys
 from getpass import getpass
 from pathlib import Path
@@ -1048,9 +1049,23 @@ def cmd_sync_pull(args: argparse.Namespace) -> int:
 
 
 def cmd_gui(args: argparse.Namespace) -> int:
+    frozen_gui_result = _run_frozen_windows_gui_launcher()
+    if frozen_gui_result is not None:
+        return frozen_gui_result
+
     from .gui import main as gui_main
 
     return int(gui_main())
+
+
+def _run_frozen_windows_gui_launcher() -> int | None:
+    if os.name != "nt" or not getattr(sys, "frozen", False):
+        return None
+    gui_launcher = Path(sys.executable).with_name("row-gui.exe")
+    if not gui_launcher.exists():
+        return None
+    completed = subprocess.run([str(gui_launcher)], check=False)
+    return int(completed.returncode)
 
 
 def cmd_serve_web(args: argparse.Namespace) -> int:

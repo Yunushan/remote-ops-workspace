@@ -2,7 +2,8 @@ param(
   [string]$Dist = "native-dist\windows",
   [ValidateSet("x86", "x64", "arm64")]
   [string]$Arch = "x64",
-  [string]$Version = ""
+  [string]$Version = "",
+  [int]$CommandTimeoutSeconds = 180
 )
 
 $ErrorActionPreference = "Stop"
@@ -18,7 +19,11 @@ function Get-ProjectVersion {
 
 function Invoke-SmokeCommand([string]$Label, [string]$FilePath, [string[]]$ArgumentList) {
   Write-Host "native installer smoke: $Label"
-  $Process = Start-Process -FilePath $FilePath -ArgumentList $ArgumentList -NoNewWindow -Wait -PassThru
+  $Process = Start-Process -FilePath $FilePath -ArgumentList $ArgumentList -NoNewWindow -PassThru
+  if (!$Process.WaitForExit($CommandTimeoutSeconds * 1000)) {
+    & taskkill.exe /PID $Process.Id /T /F 2>$null | Out-Null
+    throw "$Label timed out after $CommandTimeoutSeconds seconds"
+  }
   if ($Process.ExitCode -ne 0) {
     throw "$Label failed with exit code $($Process.ExitCode)"
   }

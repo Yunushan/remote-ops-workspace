@@ -110,6 +110,7 @@ def check_windows_wix_debug_sidecars() -> list[str]:
 
 def check_windows_gui_launcher() -> list[str]:
     script = NATIVE_SCRIPTS["windows"].read_text(encoding="utf-8")
+    cli = (ROOT / "src" / "remote_ops_workspace" / "cli.py").read_text(encoding="utf-8")
     workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
     smoke = (ROOT / "scripts" / "smoke_windows_native.ps1").read_text(encoding="utf-8")
     smoke_contract = (ROOT / "configs" / "native_installer_smoke.json").read_text(encoding="utf-8")
@@ -121,14 +122,26 @@ def check_windows_gui_launcher() -> list[str]:
         "--windowed": "no-console GUI executable mode",
         "Copy-Item $RowGuiExe": "row-gui.exe copied into the native package stage",
         "$BuildGuiLauncher = $Arch -ne \"x86\"": "x86 PyQt6 wheel guard",
+        "--exclude-module PyQt6": "PyQt6 exclusion from the CLI row.exe launcher",
+        "--exclude-module remote_ops_workspace.gui": "GUI module exclusion from the CLI row.exe launcher",
     }
     for snippet, label in required_script_snippets.items():
         if snippet not in script:
             errors.append(f"scripts/make_windows_native.ps1 missing {label}: {snippet}")
+    required_cli_snippets = {
+        "getattr(sys, \"frozen\", False)": "frozen executable detection",
+        "Path(sys.executable).with_name(\"row-gui.exe\")": "sibling GUI launcher delegation",
+        "subprocess.run([str(gui_launcher)]": "row-gui.exe subprocess launch",
+    }
+    for snippet, label in required_cli_snippets.items():
+        if snippet not in cli:
+            errors.append(f"src/remote_ops_workspace/cli.py missing Windows GUI delegation {label}: {snippet}")
     if '".[desktop,security,package]"' not in workflow or "matrix.arch" not in workflow:
         errors.append("release workflow must install the desktop extra for Windows GUI-capable native builds")
     if "Test-RowGuiLauncher" not in smoke or "row-gui.exe" not in smoke:
         errors.append("scripts/smoke_windows_native.ps1 must verify the installed Windows GUI launcher")
+    if "CommandTimeoutSeconds" not in smoke or "WaitForExit" not in smoke or "timed out after" not in smoke:
+        errors.append("scripts/smoke_windows_native.ps1 must bound installer smoke commands with a timeout")
     if "row-gui.exe exists on x64/ARM64" not in smoke_contract:
         errors.append("configs/native_installer_smoke.json must document Windows GUI launcher verification")
     return errors

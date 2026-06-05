@@ -76,6 +76,7 @@ def test_windows_wix_debug_sidecars_are_removed() -> None:
 
 def test_windows_native_package_builds_double_click_gui_launcher() -> None:
     script = Path("scripts/make_windows_native.ps1").read_text(encoding="utf-8")
+    cli = Path("src/remote_ops_workspace/cli.py").read_text(encoding="utf-8")
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
     smoke = Path("scripts/smoke_windows_native.ps1").read_text(encoding="utf-8")
 
@@ -85,9 +86,15 @@ def test_windows_native_package_builds_double_click_gui_launcher() -> None:
     assert "--windowed" in script
     assert "Copy-Item $RowGuiExe" in script
     assert '$BuildGuiLauncher = $Arch -ne "x86"' in script
+    assert "--exclude-module PyQt6" in script
+    assert "--exclude-module remote_ops_workspace.gui" in script
+    assert 'Path(sys.executable).with_name("row-gui.exe")' in cli
+    assert 'getattr(sys, "frozen", False)' in cli
     assert '".[desktop,security,package]"' in workflow
     assert "Test-RowGuiLauncher" in smoke
     assert "row-gui.exe" in smoke
+    assert "CommandTimeoutSeconds" in smoke
+    assert "WaitForExit" in smoke
 
 
 def _load_checker():

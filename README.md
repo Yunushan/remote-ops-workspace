@@ -397,6 +397,8 @@ The GitHub release workflow runs on tags like `v1.0.0` and uploads these assets:
 Native protocol rendering still depends on the external clients installed on the target system.
 Windows x64 and ARM64 native packages include `bin\row-gui.exe` as a
 double-click GUI launcher, while `bin\row.exe` remains the CLI entry point.
+In those frozen Windows packages, `row gui` delegates to the sibling
+`bin\row-gui.exe` launcher.
 Windows XP/Vista/7/8 are supported as legacy remote targets, not as first-class
 modern native operator hosts. The default GitHub workflow builds Windows
 `x86`/`x64`/`arm64`, macOS `x64`/`arm64`, and Linux `x86_64`/`aarch64`

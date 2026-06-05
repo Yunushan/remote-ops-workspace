@@ -282,6 +282,10 @@ raise SystemExit(main())
   --specpath $BuildDir `
   --collect-submodules remote_ops_workspace `
   --copy-metadata remote-ops-workspace `
+  --exclude-module PyQt6 `
+  --exclude-module remote_ops_workspace.gui `
+  --exclude-module remote_ops_workspace.gui_designs `
+  --exclude-module remote_ops_workspace.gui_editors `
   $Launcher
 
 if ($BuildGuiLauncher) {

@@ -41,6 +41,28 @@ LAUNCHER="$BUILD_DIR/remote_ops_workspace_gui_launcher.py"
 APP_NAME="Remote Ops Workspace"
 APP_PATH="$PY_DIST/$APP_NAME.app"
 
+create_macos_dmg() {
+  local dmg_stage="$1"
+  local dmg="$2"
+  local dmg_tmp="$BUILD_DIR/$(basename "$dmg").tmp"
+  local attempt
+  local status=1
+
+  rm -f "$dmg" "$dmg_tmp"
+  hdiutil detach "/Volumes/$APP_NAME" -force >/dev/null 2>&1 || true
+  for attempt in 1 2 3; do
+    if hdiutil create -volname "$APP_NAME" -srcfolder "$dmg_stage" -format UDZO "$dmg_tmp"; then
+      mv "$dmg_tmp" "$dmg"
+      return 0
+    fi
+    status=$?
+    rm -f "$dmg_tmp"
+    hdiutil detach "/Volumes/$APP_NAME" -force >/dev/null 2>&1 || true
+    sleep "$((attempt * 3))"
+  done
+  return "$status"
+}
+
 rm -rf "$BUILD_DIR"
 mkdir -p "$OUT_DIR" "$PY_DIST" "$PY_WORK"
 
@@ -91,7 +113,7 @@ Developer ID signing and Apple notarization.
 EOF
 
 DMG="$OUT_DIR/remote-ops-workspace-v${VERSION}-macos-${ARTIFACT_ARCH}.dmg"
-hdiutil create -volname "$APP_NAME" -srcfolder "$DMG_STAGE" -ov -format UDZO "$DMG"
+create_macos_dmg "$DMG_STAGE" "$DMG"
 
 PKG_ROOT="$BUILD_DIR/pkgroot"
 mkdir -p "$PKG_ROOT/Applications"

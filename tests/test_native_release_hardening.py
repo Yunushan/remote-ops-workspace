@@ -58,6 +58,15 @@ def test_macos_pkg_install_path_is_not_relocatable() -> None:
     assert "--component-plist" in script
 
 
+def test_macos_dmg_creation_retries_resource_busy_failures() -> None:
+    script = Path("scripts/make_macos_native.sh").read_text(encoding="utf-8")
+
+    assert "create_macos_dmg()" in script
+    assert 'hdiutil detach "/Volumes/$APP_NAME" -force' in script
+    assert "for attempt in 1 2 3" in script
+    assert '$(basename "$dmg").tmp' in script
+
+
 def test_windows_wix_debug_sidecars_are_removed() -> None:
     script = Path("scripts/make_windows_native.ps1").read_text(encoding="utf-8")
 

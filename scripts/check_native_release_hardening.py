@@ -29,6 +29,7 @@ def main() -> int:
     errors.extend(check_pyinstaller_launchers())
     errors.extend(check_windows_gui_launcher())
     errors.extend(check_windows_wix_debug_sidecars())
+    errors.extend(check_macos_dmg_creation_retry())
     errors.extend(check_linux_appimagetool_download())
     errors.extend(check_native_workflow_boundaries())
     if errors:
@@ -130,6 +131,21 @@ def check_windows_gui_launcher() -> list[str]:
         errors.append("scripts/smoke_windows_native.ps1 must verify the installed Windows GUI launcher")
     if "row-gui.exe exists on x64/ARM64" not in smoke_contract:
         errors.append("configs/native_installer_smoke.json must document Windows GUI launcher verification")
+    return errors
+
+
+def check_macos_dmg_creation_retry() -> list[str]:
+    text = NATIVE_SCRIPTS["macos"].read_text(encoding="utf-8")
+    errors: list[str] = []
+    required = {
+        "create_macos_dmg()": "retryable DMG creation helper",
+        "hdiutil detach \"/Volumes/$APP_NAME\" -force": "stale volume detach before retry",
+        "for attempt in 1 2 3": "bounded hdiutil retry loop",
+        "$(basename \"$dmg\").tmp": "temporary DMG output path",
+    }
+    for snippet, label in required.items():
+        if snippet not in text:
+            errors.append(f"scripts/make_macos_native.sh missing {label}: {snippet}")
     return errors
 
 

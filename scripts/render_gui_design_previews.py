@@ -493,25 +493,10 @@ def render_mobaxterm_preset(preset: GuiDesignPreset):
     draw_text(draw, "Exit", PREVIEW_SIZE[0] - 50, ribbon_y + 42, c.control_text, 10)
     draw.line((0, ribbon_y + ribbon_h - 1, PREVIEW_SIZE[0], ribbon_y + ribbon_h - 1), fill=c.toolbar_border)
 
-    suggestion_h = 72
     draw.rectangle((0, main_y, side_w, main_y + quick_h), fill=c.control, outline=c.toolbar_border)
-    draw_text(draw, "ssh", 8, main_y + 5, c.control_text, 12)
-    suggestion_y = main_y + quick_h
-    draw.rectangle((0, suggestion_y, side_w, suggestion_y + suggestion_h), fill=c.sidebar, outline=c.toolbar_border)
-    quick_rows = [
-        ("[ssh] example-ssh", "ssh.example.invalid:22", True),
-        ("DIRECT SSH example.com", "port 2222", False),
-        ("[sftp] sftp-ops", "files.example:22", False),
-    ]
-    qy = suggestion_y + 7
-    for label, detail, selected in quick_rows:
-        if selected:
-            draw.rectangle((8, qy - 2, side_w - 8, qy + 17), fill=c.sidebar_selected)
-        draw_text(draw, label, 12, qy, c.sidebar_selected_text if selected else c.control_text, 10, bold=selected)
-        draw_text(draw, detail, 154, qy, c.sidebar_muted, 9)
-        qy += 20
+    draw_text(draw, "Quick connect...", 8, main_y + 5, c.sidebar_muted, 12)
 
-    tree_y = main_y + quick_h + suggestion_h
+    tree_y = main_y + quick_h
     draw.rectangle((0, tree_y, rail_w, tree_y + main_h - quick_h), fill="#101010")
     rail_items = [("<<", c.primary), ("Sessions", c.control_text), ("*", c.status), ("Tools", c.control_text), ("Macros", c.control_text)]
     ry = tree_y + 8
@@ -528,15 +513,15 @@ def render_mobaxterm_preset(preset: GuiDesignPreset):
     draw.rectangle((rail_w, tree_y, side_w, tree_y + main_h - quick_h), fill=c.sidebar, outline=c.toolbar_border)
     rows = [
         ("v", "[dir]", "User sessions", 0, c.control_text, False),
-        (">", "[dir]", "Hostinger", 1, c.sidebar_text, False),
+        (">", "[dir]", "Remote labs", 1, c.sidebar_text, False),
         ("v", "[dir]", "Local", 1, c.sidebar_text, False),
-        ("", "[pc]", "lab-win-01 (desktop)", 2, c.control_text, False),
-        ("", "[pc]", "lab-win-02 (workspace)", 2, c.control_text, False),
-        ("", "[ssh]", "edge-linux-01 (operator)", 2, c.control_text, False),
-        ("", "[ssh]", "edge-linux-02 (ops)", 2, c.control_text, True),
+        ("", "[pc]", "lab-win-01", 2, c.control_text, False),
+        ("", "[pc]", "lab-win-02", 2, c.control_text, False),
+        ("", "[ssh]", "edge-linux-01", 2, c.control_text, False),
+        ("", "[ssh]", "edge-linux-02", 2, c.control_text, True),
         (">", "[dir]", "WSL", 1, c.sidebar_text, False),
-        ("", "[pc]", "wsl-ubuntu (local)", 1, c.control_text, False),
-        ("", "[ssh]", "lab-sftp-01 (files)", 1, c.control_text, False),
+        ("", "[pc]", "wsl-ubuntu", 1, c.control_text, False),
+        ("", "[ssh]", "lab-sftp-01", 1, c.control_text, False),
     ]
     sy = tree_y + 10
     for arrow, prefix, label, depth, color, selected in rows:
@@ -558,8 +543,7 @@ def render_mobaxterm_preset(preset: GuiDesignPreset):
     draw.rectangle((workspace_x, tab_y, PREVIEW_SIZE[0], tab_y + 28), fill=c.tab, outline=c.toolbar_border)
     tab_specs = [
         ("Home", 50, False),
-        ("edge-prod", 82, True),
-        ("Split H 3", 82, False),
+        ("7. example.internal (operator)", 200, True),
         ("+", 28, False),
     ]
     tx = workspace_x + 10
@@ -572,17 +556,96 @@ def render_mobaxterm_preset(preset: GuiDesignPreset):
 
     content_y = tab_y + 28
     draw.rectangle((workspace_x, content_y, PREVIEW_SIZE[0], PREVIEW_SIZE[1] - status_h), fill=c.pane)
-    draw_terminal(
-        draw,
-        preset,
-        workspace_x + 12,
-        content_y + 12,
-        PREVIEW_SIZE[0] - workspace_x - 24,
-        PREVIEW_SIZE[1] - content_y - status_h - 24,
-        "edge-prod",
-        main=True,
-    )
-    draw_workflow_dialog(draw, preset, workspace_x + 280, content_y + 108, 560, 330)
+    draw_text(draw, "clip", PREVIEW_SIZE[0] - 28, content_y + 10, c.control_hover, 12, bold=True)
+    draw_text(draw, "*", PREVIEW_SIZE[0] - 28, content_y + 40, "#38bdf8", 24, bold=True)
+
+    sftp_x = workspace_x
+    sftp_y = content_y
+    sftp_w = 286
+    content_bottom = PREVIEW_SIZE[1] - status_h - 24
+    draw.rectangle((sftp_x, sftp_y, sftp_x + sftp_w, content_bottom), fill=c.sidebar, outline=c.toolbar_border)
+    draw.rectangle((sftp_x + 5, sftp_y + 6, sftp_x + sftp_w - 5, sftp_y + 30), fill=c.control, outline=c.toolbar_border)
+    tools = [("^", "#f4c430"), ("v", "#5da7ff"), ("+", "#6ac76a"), ("x", "#bf3d36"), ("A", "#b580ff"), ("[]", "#7db4ff")]
+    tool_x = sftp_x + 12
+    for label, color in tools:
+        draw.rectangle((tool_x, sftp_y + 10, tool_x + 15, sftp_y + 25), fill=color, outline=c.pane_border)
+        draw_text(draw, label, tool_x + 3, sftp_y + 11, c.primary_text, 8, bold=True)
+        tool_x += 23
+    draw.rectangle((sftp_x + 6, sftp_y + 36, sftp_x + sftp_w - 6, sftp_y + 58), fill=c.control, outline=c.toolbar_border)
+    draw_text(draw, "/var/log", sftp_x + 12, sftp_y + 41, c.control_text, 11, mono=True)
+    draw.rectangle((sftp_x + 6, sftp_y + 64, sftp_x + sftp_w - 6, sftp_y + 86), fill="#2b2b2b", outline=c.toolbar_border)
+    draw_text(draw, "Name", sftp_x + 22, sftp_y + 69, c.control_text, 10, bold=True)
+    draw_text(draw, "Size (KB)", sftp_x + 154, sftp_y + 69, c.control_text, 10, bold=True)
+    draw_text(draw, "Last modified", sftp_x + 218, sftp_y + 69, c.control_text, 10, bold=True)
+    file_rows = [
+        ("[dir]", "..", "", ""),
+        ("[dir]", "nginx", "0", "2026-06-06"),
+        ("[dir]", "app", "0", "2026-06-06"),
+        ("[file]", "auth.log", "42", "2026-06-06"),
+        ("[file]", "deploy.log", "8", "2026-06-06"),
+        ("[file]", "health.json", "4", "2026-06-06"),
+    ]
+    row_y = sftp_y + 92
+    for marker, name, size, modified in file_rows:
+        draw_text(draw, marker, sftp_x + 12, row_y, c.status if marker == "[dir]" else c.sidebar_muted, 9, bold=True)
+        draw_text(draw, name, sftp_x + 52, row_y, c.control_text, 10)
+        draw_text(draw, size, sftp_x + 164, row_y, c.control_text, 10)
+        draw_text(draw, modified, sftp_x + 218, row_y, c.sidebar_muted, 9)
+        row_y += 21
+    monitor_y = content_bottom - 102
+    draw.line((sftp_x + 22, monitor_y - 14, sftp_x + sftp_w - 22, monitor_y - 14), fill=c.sidebar_muted)
+    draw_text(draw, "[mon]", sftp_x + 86, monitor_y, "#35d7c7", 12, bold=True)
+    draw_text(draw, "Remote monitoring", sftp_x + 122, monitor_y + 2, c.control_text, 12)
+    draw_text(draw, "CPU 7%   RAM 0.4 GB / 7.5 GB", sftp_x + 42, monitor_y + 25, c.sidebar_text, 10)
+    draw_text(draw, "Disk 2.8 GB / 48.0 GB", sftp_x + 42, monitor_y + 45, c.sidebar_text, 10)
+    draw_text(draw, "[x] Follow terminal folder", sftp_x + 42, monitor_y + 72, c.control_text, 11)
+
+    term_x = sftp_x + sftp_w
+    banner_x = term_x + 42
+    banner_y = content_y + 18
+    banner_w = 560
+    banner_h = 154
+    draw.rectangle((banner_x, banner_y, banner_x + banner_w, banner_y + banner_h), fill=c.terminal, outline=c.terminal_accent)
+    banner_lines = [
+        "  * Remote Ops Workspace MobaXterm-style *",
+        "    (SSH client, SFTP browser and monitoring tools)",
+        "",
+        "> SSH session to operator@example.internal",
+        "  * Direct SSH      : yes",
+        "  * SSH compression: yes",
+        "  * SSH-browser    : yes",
+        "  * X11-forwarding : disabled or not supported by server",
+    ]
+    by = banner_y + 12
+    for line in banner_lines:
+        color = c.status if "Remote Ops" in line else c.control_text
+        draw_text(draw, line, banner_x + 14, by, color, 12, mono=True, bold="Remote Ops" in line)
+        by += 16
+    term_y = banner_y + banner_h + 24
+    terminal_lines = [
+        "Web console: https://example.internal:9090/",
+        "",
+        "Last login: Sat Jun  6 05:27:50 2026",
+        "[operator@example ~]$ cd /var/log",
+        "[operator@example log]$ tail -f deploy.log",
+        "2026-06-06T05:28:01Z service healthy",
+    ]
+    ty = term_y
+    for line in terminal_lines:
+        color = "#7dd3fc" if line.startswith(("Web", "Last")) else c.terminal_text
+        draw_text(draw, line, term_x + 14, ty, color, 13, mono=True)
+        ty += 20
+    draw.rectangle((term_x, content_bottom, PREVIEW_SIZE[0], PREVIEW_SIZE[1] - status_h), fill=c.toolbar, outline=c.toolbar_border)
+    telemetry = [
+        (10, "example.internal"),
+        (120, "7% CPU"),
+        (190, "RAM 0.4 / 7.5 GB"),
+        (324, "Disk 2.8 / 48.0 GB"),
+        (470, "Net 0.01 up/down"),
+        (604, "Conn 1  Proc 158"),
+    ]
+    for offset, item in telemetry:
+        draw_text(draw, item, term_x + offset, content_bottom + 6, c.control_text, 9)
 
     draw_status_bar(draw, preset, 0, PREVIEW_SIZE[1] - status_h, PREVIEW_SIZE[0], status_h)
     return image

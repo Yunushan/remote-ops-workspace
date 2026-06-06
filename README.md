@@ -203,7 +203,7 @@ Coverage is generated from [`configs/feature_manifest.json`](configs/feature_man
 
 | Product target | Feature-family mapping | Adapter-ready coverage | Release-backed workflow parity | Workflow gap to 100% | Feature families tracked |
 |---|---:|---:|---:|---:|---:|
-| MobaXterm | 100.0% | 100.0% | 100.0% | 0.0% | 25 |
+| MobaXterm | 100.0% | 100.0% | 100.0% | 0.0% | 30 |
 | Remmina | 100.0% | 100.0% | 100.0% | 0.0% | 11 |
 | mRemoteNG | 100.0% | 100.0% | 100.0% | 0.0% | 15 |
 | Terminator | 100.0% | 100.0% | 100.0% | 0.0% | 8 |
@@ -231,7 +231,7 @@ Coverage is generated from [`configs/feature_manifest.json`](configs/feature_man
 | Hyper | 100.0% | 100.0% | 100.0% | 0.0% | 8 |
 | X410 + any terminal (e.g., Windows Terminal, Alacritty) | 100.0% | 100.0% | 100.0% | 0.0% | 7 |
 | Xming (or VcXsrv) + PuTTY / mRemoteNG | 100.0% | 100.0% | 100.0% | 0.0% | 10 |
-| **Overall** | **100.0%** | **100.0%** | **100.0%** | **0.0%** | **44** |
+| **Overall** | **100.0%** | **100.0%** | **100.0%** | **0.0%** | **49** |
 
 Adapter-ready coverage and release-backed product workflow parity use the manifest status weights directly and do not use blanket per-product overrides. Platform verified readiness is still separate and currently reports **75.6% overall** across default native, manual native, Termux/Web and legacy Windows targets.
 

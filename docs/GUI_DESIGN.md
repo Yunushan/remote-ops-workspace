@@ -13,6 +13,12 @@ window applies the selected preset to toolbar icon sizing, profile-list spacing,
 document tab behavior, split-pane sizing and the stylesheet hooks for primary
 actions, terminal panes, the profile tree and the activity log.
 
+The MobaXterm-style preset also has a connected-session tab for SSH/SFTP
+profiles. In that mode `gui.MobaConnectedSessionPanel` adds a docked SFTP file
+browser, remote path toolbar, follow-terminal-folder checkbox, SSH connection
+banner, remote monitoring panel and bottom telemetry strip. Its state and
+executable SSH/SFTP plans live in `src/remote_ops_workspace/moba_connected.py`.
+
 Static previews can be regenerated without launching PyQt6:
 
 ```bash

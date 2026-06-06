@@ -360,9 +360,18 @@ QFrame#welcomePanel {{
   background: {colors.pane};
   border: 0;
 }}
+QLabel#welcomeLogo {{
+  background: {colors.control};
+  color: {colors.terminal_accent};
+  border: 2px solid {colors.sidebar_muted};
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 21px;
+  font-weight: 700;
+  padding: 6px;
+}}
 QLabel#welcomeTitle {{
   color: {colors.control_text};
-  font-size: 26px;
+  font-size: 30px;
   font-weight: 600;
 }}
 QLabel#welcomeSubtitle, QLabel#recentSessionsLabel {{
@@ -371,6 +380,107 @@ QLabel#welcomeSubtitle, QLabel#recentSessionsLabel {{
 QLabel#recentSessionsTitle {{
   color: {colors.control_text};
   font-weight: 700;
+}}
+QLineEdit#homeSearch {{
+  background: {colors.control};
+  color: {colors.control_text};
+  border: 1px solid {colors.sidebar_muted};
+  border-radius: 0;
+  padding: 4px 7px;
+}}
+QPushButton#mobaHomePrimaryAction {{
+  background: {colors.control};
+  color: {colors.control_text};
+  border: 1px solid {colors.control_hover};
+  border-radius: 0;
+  padding: 7px 20px;
+}}
+QPushButton#mobaHomeAction {{
+  background: {colors.control};
+  color: {colors.control_text};
+  border: 1px solid {colors.control_border};
+  border-radius: 0;
+  padding: 7px 20px;
+}}
+QPushButton#mobaHomePrimaryAction:hover, QPushButton#mobaHomeAction:hover {{
+  border-color: {colors.terminal_accent};
+}}
+QLabel#homePromo {{
+  color: {colors.control_hover};
+}}
+QWidget#mobaConnectedSession, QWidget#mobaTerminalArea {{
+  background: {colors.pane};
+}}
+QFrame#mobaSftpBrowser {{
+  background: {colors.sidebar};
+  border-right: 1px solid {colors.pane_border};
+}}
+QFrame#mobaSftpToolbar {{
+  background: {colors.control};
+  border: 1px solid {colors.pane_border};
+}}
+QToolButton#mobaSftpAction {{
+  background: transparent;
+  color: {colors.control_text};
+  border: 1px solid transparent;
+  border-radius: 0;
+  padding: 2px;
+}}
+QToolButton#mobaSftpAction:hover {{
+  border-color: {colors.terminal_accent};
+  background: {colors.pane};
+}}
+QLineEdit#mobaSftpPath {{
+  background: {colors.control};
+  color: {colors.control_text};
+  border: 1px solid {colors.pane_border};
+  border-radius: 0;
+  padding: 3px 6px;
+  font-family: "Cascadia Mono", Consolas, monospace;
+}}
+QTreeWidget#mobaSftpFileTable {{
+  background: {colors.sidebar};
+  color: {colors.sidebar_text};
+  border: 1px solid {colors.pane_border};
+  outline: 0;
+  font-size: 11px;
+}}
+QTreeWidget#mobaSftpFileTable::item {{
+  padding: 2px 4px;
+}}
+QTreeWidget#mobaSftpFileTable::item:selected {{
+  background: {colors.sidebar_selected};
+  color: {colors.sidebar_selected_text};
+}}
+QFrame#mobaRemoteMonitoring {{
+  background: {colors.window};
+  border-top: 1px solid {colors.sidebar_muted};
+}}
+QLabel#mobaRemoteMonitoringTitle {{
+  color: {colors.control_text};
+  font-weight: 600;
+}}
+QLabel#mobaMonitoringMetric, QCheckBox#mobaFollowTerminalFolder {{
+  color: {colors.control_text};
+  font-size: 11px;
+}}
+QFrame#mobaSshBanner {{
+  background: {colors.terminal};
+  border: 1px solid {colors.terminal_accent};
+  margin: 12px 36px 8px 36px;
+}}
+QLabel#mobaSshBannerLine {{
+  color: {colors.terminal_text};
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 12px;
+}}
+QFrame#mobaTelemetryBar {{
+  background: {colors.toolbar};
+  border-top: 1px solid {colors.pane_border};
+}}
+QLabel#mobaTelemetryItem {{
+  color: {colors.control_text};
+  font-size: 11px;
 }}
 QLabel#paneStatus {{
   color: {colors.status};

@@ -31,6 +31,32 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
         "cli": ["files open", "files ls", "files get", "files put", "files queue"],
         "module_attrs": ["remote_ops_workspace.file_transfer:build_sftp_interactive_plan"],
     },
+    "moba.ssh-browser": {
+        "module_attrs": ["remote_ops_workspace.moba_connected:build_moba_connected_session_state"],
+        "source_tokens": {
+            "src/remote_ops_workspace/gui.py": ["MobaConnectedSessionPanel", "mobaSftpBrowser", "mobaSftpFileTable"]
+        },
+    },
+    "moba.follow-terminal-folder": {
+        "module_attrs": ["remote_ops_workspace.moba_connected:build_follow_terminal_folder_plan"],
+        "source_tokens": {
+            "src/remote_ops_workspace/gui.py": ["mobaFollowTerminalFolder", "follow_folder_plan"]
+        },
+    },
+    "moba.remote-monitoring": {
+        "module_attrs": ["remote_ops_workspace.moba_connected:build_remote_monitoring_plan"],
+        "source_tokens": {
+            "src/remote_ops_workspace/gui.py": ["mobaRemoteMonitoring", "mobaMonitoringMetric"]
+        },
+    },
+    "moba.telemetry-status-bar": {
+        "module_attrs": ["remote_ops_workspace.moba_connected:RemoteMonitoringSnapshot"],
+        "source_tokens": {"src/remote_ops_workspace/gui.py": ["mobaTelemetryBar", "mobaTelemetryItem"]},
+    },
+    "moba.ssh-connection-banner": {
+        "module_attrs": ["remote_ops_workspace.moba_connected:build_ssh_connection_banner"],
+        "source_tokens": {"src/remote_ops_workspace/gui.py": ["mobaSshBanner", "mobaSshBannerLine"]},
+    },
     "protocol.scp": {"protocols": ["scp"]},
     "protocol.rdp": {"protocols": ["rdp"]},
     "protocol.vnc": {"protocols": ["vnc"]},

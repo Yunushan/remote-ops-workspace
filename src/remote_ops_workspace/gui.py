@@ -17,6 +17,7 @@ from .gui_editors import (
 from .gui_lifecycle import ProcessStopPolicy, ProcessStopResult, stop_process
 from .launcher import LauncherError, build_launch_plan
 from .layouts import Layout, LayoutStore, build_layout_terminal_plans
+from .moba_connected import MobaConnectedSessionState, build_moba_connected_session_state
 from .models import Profile
 from .storage import ProfileStore
 from .terminal import (
@@ -480,6 +481,160 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.restart_button.setEnabled(bool(self.plan.command))
             self.stop_button.setEnabled(running)
             self.input.setEnabled(running)
+
+    class MobaConnectedSessionPanel(QWidget):
+        def __init__(self, state: MobaConnectedSessionState, terminal_pane: TerminalPane) -> None:
+            super().__init__()
+            self.setObjectName("mobaConnectedSession")
+            self.state = state
+            self.terminal_pane = terminal_pane
+
+            root = QVBoxLayout(self)
+            root.setContentsMargins(0, 0, 0, 0)
+            root.setSpacing(0)
+
+            body = QSplitter(Qt.Orientation.Horizontal)
+            body.setObjectName("mobaConnectedBody")
+            body.addWidget(self.build_sftp_browser())
+            body.addWidget(self.build_terminal_area())
+            body.setStretchFactor(1, 1)
+            body.setSizes([388, 792])
+            root.addWidget(body, 1)
+            root.addWidget(self.build_telemetry_bar())
+
+        def build_sftp_browser(self) -> QFrame:
+            panel = QFrame()
+            panel.setObjectName("mobaSftpBrowser")
+            layout = QVBoxLayout(panel)
+            layout.setContentsMargins(5, 5, 5, 5)
+            layout.setSpacing(4)
+
+            toolbar = QFrame()
+            toolbar.setObjectName("mobaSftpToolbar")
+            toolbar_layout = QHBoxLayout(toolbar)
+            toolbar_layout.setContentsMargins(0, 0, 0, 0)
+            toolbar_layout.setSpacing(4)
+            for label, icon_name, tooltip in [
+                ("Refresh", "SP_BrowserReload", "Refresh remote directory"),
+                ("Up", "SP_ArrowUp", "Go to parent directory"),
+                ("Download", "SP_ArrowDown", "Download selected remote item"),
+                ("Upload", "SP_ArrowUp", "Upload local item"),
+                ("New", "SP_DirIcon", "Create remote folder"),
+                ("Delete", "SP_TrashIcon", "Delete selected remote item"),
+            ]:
+                toolbar_layout.addWidget(self.tool_button(label, icon_name, tooltip))
+            toolbar_layout.addStretch(1)
+            layout.addWidget(toolbar)
+
+            path = QLineEdit()
+            path.setObjectName("mobaSftpPath")
+            path.setText(self.state.remote_path)
+            path.setToolTip(self.state.follow_folder_plan.printable_batch())
+            layout.addWidget(path)
+
+            self.file_table = QTreeWidget()
+            self.file_table.setObjectName("mobaSftpFileTable")
+            self.file_table.setColumnCount(3)
+            self.file_table.setHeaderLabels(["Name", "Size (KB)", "Last modified"])
+            self.file_table.setRootIsDecorated(False)
+            self.file_table.setUniformRowHeights(True)
+            self.file_table.setSortingEnabled(False)
+            for entry in self.state.file_entries:
+                item = QTreeWidgetItem([entry.name, str(entry.size_kb), entry.modified])
+                icon_name = "SP_DirIcon" if entry.kind == "dir" else "SP_FileIcon"
+                item.setIcon(0, self.style().standardIcon(self.standard_icon(icon_name)))
+                item.setToolTip(0, f"{entry.kind}: {entry.name}")
+                self.file_table.addTopLevelItem(item)
+            self.file_table.resizeColumnToContents(0)
+            layout.addWidget(self.file_table, 1)
+
+            layout.addWidget(self.build_remote_monitoring())
+            return panel
+
+        def build_terminal_area(self) -> QWidget:
+            area = QWidget()
+            area.setObjectName("mobaTerminalArea")
+            layout = QVBoxLayout(area)
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setSpacing(0)
+            layout.addWidget(self.build_ssh_banner())
+            layout.addWidget(self.terminal_pane, 1)
+            return area
+
+        def build_ssh_banner(self) -> QFrame:
+            banner = QFrame()
+            banner.setObjectName("mobaSshBanner")
+            layout = QVBoxLayout(banner)
+            layout.setContentsMargins(14, 10, 14, 10)
+            layout.setSpacing(2)
+            for line in self.state.banner.lines():
+                label = QLabel(line)
+                label.setObjectName("mobaSshBannerLine")
+                label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+                layout.addWidget(label)
+            return banner
+
+        def build_remote_monitoring(self) -> QFrame:
+            panel = QFrame()
+            panel.setObjectName("mobaRemoteMonitoring")
+            layout = QVBoxLayout(panel)
+            layout.setContentsMargins(8, 8, 8, 8)
+            layout.setSpacing(5)
+            title = QLabel("Remote monitoring")
+            title.setObjectName("mobaRemoteMonitoringTitle")
+            layout.addWidget(title)
+            metrics = [
+                f"CPU {self.state.monitoring.cpu_percent}%",
+                f"RAM {self.state.monitoring.memory_label}",
+                f"Disk {self.state.monitoring.disk_label}",
+                f"Load {self.state.monitoring.load_average}",
+                f"Processes {self.state.monitoring.process_count}",
+            ]
+            for metric in metrics:
+                label = QLabel(metric)
+                label.setObjectName("mobaMonitoringMetric")
+                layout.addWidget(label)
+            follow = QCheckBox("Follow terminal folder")
+            follow.setObjectName("mobaFollowTerminalFolder")
+            follow.setChecked(self.state.follow_terminal_folder)
+            follow.setToolTip(self.state.follow_folder_plan.printable_batch())
+            layout.addWidget(follow)
+            return panel
+
+        def build_telemetry_bar(self) -> QFrame:
+            bar = QFrame()
+            bar.setObjectName("mobaTelemetryBar")
+            layout = QHBoxLayout(bar)
+            layout.setContentsMargins(8, 3, 8, 3)
+            layout.setSpacing(16)
+            telemetry = [
+                self.state.target,
+                f"{self.state.monitoring.cpu_percent}% CPU",
+                f"RAM {self.state.monitoring.memory_label}",
+                f"Disk {self.state.monitoring.disk_label}",
+                f"Net {self.state.monitoring.network_label}",
+                f"Connections: {self.state.monitoring.connection_count}",
+                f"Processes: {self.state.monitoring.process_count}",
+            ]
+            for text in telemetry:
+                label = QLabel(text)
+                label.setObjectName("mobaTelemetryItem")
+                layout.addWidget(label)
+            layout.addStretch(1)
+            return bar
+
+        def tool_button(self, label: str, icon_name: str, tooltip: str) -> QToolButton:
+            button = QToolButton()
+            button.setObjectName("mobaSftpAction")
+            button.setText(label)
+            button.setToolTip(tooltip)
+            button.setIcon(self.style().standardIcon(self.standard_icon(icon_name)))
+            button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+            button.setFixedSize(QSize(24, 24))
+            return button
+
+        def standard_icon(self, icon_name: str):
+            return getattr(QStyle.StandardPixmap, icon_name, QStyle.StandardPixmap.SP_FileIcon)
 
     class ProfileDialog(QDialog):
         def __init__(self, profile=None, parent=None) -> None:
@@ -1057,6 +1212,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             return panel
 
         def refresh_profiles(self) -> None:
+            selected_name = self.selected_profile_name()
             self.profile_list.clear()
             profiles = sorted(self.store.load(), key=lambda item: (item.group, item.name))
             root = QTreeWidgetItem(["User sessions"])
@@ -1085,6 +1241,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 item.setToolTip(0, f"{profile.protocol.upper()}  {profile.display_target}\nProfile: {profile.name}")
                 parent.addChild(item)
             self.profile_list.expandAll()
+            if selected_name:
+                self.select_profile(selected_name)
             self.refresh_layouts()
 
         def profile_group_parts(self, group: str) -> list[str]:
@@ -1092,6 +1250,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             return parts or ["default"]
 
         def profile_tree_label(self, profile) -> str:
+            if self.current_design_is_moba():
+                return profile.name
             protocol = profile.protocol.upper()
             target = profile.display_target
             return f"[{protocol}] {profile.name}  {target}" if target else f"[{protocol}] {profile.name}"
@@ -1128,6 +1288,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.update_quick_connect_suggestions()
             self.layout_toolbar.setVisible(not is_moba)
             self.log.setVisible(not is_moba)
+            self.refresh_profiles()
             self.main_toolbar.setIconSize(QSize(preset.toolbar_icon_size, preset.toolbar_icon_size))
             self.layout_toolbar.setIconSize(QSize(preset.toolbar_icon_size, preset.toolbar_icon_size))
             self.configure_toolbar_for_design(is_moba, preset.toolbar_icon_size)
@@ -1692,7 +1853,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     self.log.append(f"  note: {note}")
                 return
             pane_plan = terminal_plan_for_profile(profile)
-            self.open_terminal_tab(pane_plan)
+            if self.moba_connected_profile_supported(profile):
+                self.open_moba_connected_session_tab(profile, pane_plan)
+            else:
+                self.open_terminal_tab(pane_plan)
             self.log.append(f"{prefix}: {pane_plan.printable()}")
 
         def open_files_selected(self) -> None:
@@ -1702,8 +1866,12 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 return
             try:
                 profile = self.store.get(name)
-                pane_plan = terminal_plan_for_sftp_browser(profile)
-                self.open_terminal_tab(pane_plan)
+                if self.moba_connected_profile_supported(profile):
+                    pane_plan = terminal_plan_for_profile(profile)
+                    self.open_moba_connected_session_tab(profile, pane_plan, remote_path=profile.path or "/")
+                else:
+                    pane_plan = terminal_plan_for_sftp_browser(profile)
+                    self.open_terminal_tab(pane_plan)
                 self.log.append(f"FILES: {pane_plan.printable()}")
             except (KeyError, LauncherError, ValueError) as exc:
                 QMessageBox.warning(self, "SFTP failed", str(exc))
@@ -1749,24 +1917,38 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
             panel = QFrame()
             panel.setObjectName("welcomePanel")
+            panel.setMinimumWidth(520)
+            panel.setMaximumWidth(610)
             panel_layout = QVBoxLayout(panel)
             panel_layout.setContentsMargins(0, 0, 0, 0)
-            panel_layout.setSpacing(14)
+            panel_layout.setSpacing(13)
 
+            title_row = QHBoxLayout()
+            title_row.setSpacing(18)
+            title_row.addStretch(1)
+            logo = QLabel(">_")
+            logo.setObjectName("welcomeLogo")
+            logo.setFixedSize(QSize(64, 48))
+            logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
             title = QLabel("Remote Ops Workspace")
             title.setObjectName("welcomeTitle")
-            title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            subtitle = QLabel("Connection workspace")
-            subtitle.setObjectName("welcomeSubtitle")
-            subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            panel_layout.addWidget(title)
-            panel_layout.addWidget(subtitle)
+            title.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+            title_row.addWidget(logo)
+            title_row.addWidget(title)
+            title_row.addStretch(1)
+            panel_layout.addLayout(title_row)
 
             action_row = QHBoxLayout()
+            action_row.setSpacing(96)
             action_row.addStretch(1)
             start_button = QPushButton("Start local terminal")
-            start_button.setObjectName("primaryAction")
+            start_button.setObjectName("mobaHomePrimaryAction")
+            start_button.setIcon(self.style().standardIcon(self.standard_icon("SP_DialogApplyButton")))
+            start_button.setMinimumWidth(200)
             recover_button = QPushButton("Recover previous sessions")
+            recover_button.setObjectName("mobaHomeAction")
+            recover_button.setIcon(self.style().standardIcon(self.standard_icon("SP_BrowserReload")))
+            recover_button.setMinimumWidth(218)
             start_button.clicked.connect(self.open_local_terminal_tab)
             recover_button.clicked.connect(self.recover_previous_sessions)
             action_row.addWidget(start_button)
@@ -1777,27 +1959,38 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             search = QLineEdit()
             search.setObjectName("homeSearch")
             search.setPlaceholderText("Find existing session or server name...")
+            search.setMinimumWidth(405)
+            search.setMaximumWidth(405)
             search.returnPressed.connect(lambda: self.run_home_search(search.text()))
-            panel_layout.addWidget(search)
+            panel_layout.addWidget(search, 0, Qt.AlignmentFlag.AlignCenter)
 
             recent_title = QLabel("Recent sessions")
             recent_title.setObjectName("recentSessionsTitle")
             recent_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            recent_title.setContentsMargins(0, 9, 0, 0)
             panel_layout.addWidget(recent_title)
 
             recent_grid = QHBoxLayout()
+            recent_grid.setSpacing(44)
             for column in [
-                ["[ssh] edge-prod", "[ssh] sftp-ops", "..."],
-                ["[rdp] win-admin", "[vnc] lab-view", "..."],
+                ["[ssh] edge-linux-02", "[ssh] lab-sftp-01", "..."],
+                ["[rdp] lab-admin", "[vnc] lab-view", "..."],
                 ["[ssh] example-ssh", "[https] example-web", "..."],
             ]:
                 column_layout = QVBoxLayout()
+                column_layout.setSpacing(5)
                 for item in column:
                     label = QLabel(item)
                     label.setObjectName("recentSessionsLabel")
                     column_layout.addWidget(label)
                 recent_grid.addLayout(column_layout)
             panel_layout.addLayout(recent_grid)
+
+            promo = QLabel("Use open protocols and local profiles with Remote Ops Workspace.")
+            promo.setObjectName("homePromo")
+            promo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            promo.setContentsMargins(0, 12, 0, 0)
+            panel_layout.addWidget(promo)
 
             layout.addWidget(panel, 0, Qt.AlignmentFlag.AlignCenter)
             layout.addStretch(2)
@@ -1823,6 +2016,22 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             pane = self.new_terminal_pane(plan)
             self.remember_terminal_plan(plan)
             self.add_workspace_tab(pane, plan.title, role="terminal")
+            self.update_session_status()
+
+        def moba_connected_profile_supported(self, profile: Profile) -> bool:
+            return self.current_design_is_moba() and profile.protocol.lower() in {"ssh", "sftp"}
+
+        def open_moba_connected_session_tab(
+            self,
+            profile: Profile,
+            plan: TerminalPanePlan,
+            *,
+            remote_path: str = "/",
+        ) -> None:
+            state = build_moba_connected_session_state(profile, remote_path=remote_path)
+            panel = MobaConnectedSessionPanel(state, self.new_terminal_pane(plan))
+            self.remember_terminal_plan(plan)
+            self.add_workspace_tab(panel, plan.title, role="terminal")
             self.update_session_status()
 
         def add_split(self, direction: str) -> None:

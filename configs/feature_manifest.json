@@ -483,6 +483,56 @@
       "status": "implemented-cli-gui"
     },
     {
+      "category": "interface",
+      "extension_point": "moba_connected.build_moba_connected_session_state / gui.MobaConnectedSessionPanel / file_transfer.build_sftp_list_plan",
+      "id": "moba.ssh-browser",
+      "inspired_by": [
+        "MobaXterm"
+      ],
+      "name": "Docked SSH/SFTP browser",
+      "status": "implemented-gui"
+    },
+    {
+      "category": "interface",
+      "extension_point": "moba_connected.build_follow_terminal_folder_plan / gui mobaFollowTerminalFolder",
+      "id": "moba.follow-terminal-folder",
+      "inspired_by": [
+        "MobaXterm"
+      ],
+      "name": "Follow terminal folder",
+      "status": "implemented-gui"
+    },
+    {
+      "category": "monitoring",
+      "extension_point": "moba_connected.build_remote_monitoring_plan / gui mobaRemoteMonitoring",
+      "id": "moba.remote-monitoring",
+      "inspired_by": [
+        "MobaXterm"
+      ],
+      "name": "Remote monitoring panel",
+      "status": "implemented-gui"
+    },
+    {
+      "category": "monitoring",
+      "extension_point": "moba_connected.RemoteMonitoringSnapshot / gui mobaTelemetryBar",
+      "id": "moba.telemetry-status-bar",
+      "inspired_by": [
+        "MobaXterm"
+      ],
+      "name": "Connected-session telemetry status bar",
+      "status": "implemented-gui"
+    },
+    {
+      "category": "interface",
+      "extension_point": "moba_connected.build_ssh_connection_banner / gui mobaSshBanner",
+      "id": "moba.ssh-connection-banner",
+      "inspired_by": [
+        "MobaXterm"
+      ],
+      "name": "SSH connection banner and status",
+      "status": "implemented-gui"
+    },
+    {
       "category": "protocol",
       "extension_point": "launcher.build_launch_plan / OpenSSH option builders",
       "id": "protocol.scp",

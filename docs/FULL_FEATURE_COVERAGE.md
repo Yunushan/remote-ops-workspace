@@ -8,7 +8,7 @@ The project publishes separate generated scores from `configs/feature_manifest.j
 
 | Product target | Feature-family mapping | Adapter-ready coverage | Release-backed workflow parity | Workflow gap to 100% | Feature families tracked |
 |---|---:|---:|---:|---:|---:|
-| MobaXterm | 100.0% | 100.0% | 100.0% | 0.0% | 25 |
+| MobaXterm | 100.0% | 100.0% | 100.0% | 0.0% | 30 |
 | Remmina | 100.0% | 100.0% | 100.0% | 0.0% | 11 |
 | mRemoteNG | 100.0% | 100.0% | 100.0% | 0.0% | 15 |
 | Terminator | 100.0% | 100.0% | 100.0% | 0.0% | 8 |
@@ -36,7 +36,7 @@ The project publishes separate generated scores from `configs/feature_manifest.j
 | Hyper | 100.0% | 100.0% | 100.0% | 0.0% | 8 |
 | X410 + any terminal (e.g., Windows Terminal, Alacritty) | 100.0% | 100.0% | 100.0% | 0.0% | 7 |
 | Xming (or VcXsrv) + PuTTY / mRemoteNG | 100.0% | 100.0% | 100.0% | 0.0% | 10 |
-| **Overall** | **100.0%** | **100.0%** | **100.0%** | **0.0%** | **44** |
+| **Overall** | **100.0%** | **100.0%** | **100.0%** | **0.0%** | **49** |
 
 ## Platform verified readiness
 
@@ -163,6 +163,11 @@ they are tied to executable release evidence.
 
 - Tabbed SSH terminal workflow.
 - SFTP/SCP/FTP file transfer profiles, `row files` SFTP browser actions, transfer queues and local/remote previews.
+- MobaXterm-style connected-session SSH/SFTP browser panel with remote path toolbar and file table.
+- Follow terminal folder workflow that rebuilds the SFTP list plan from the active terminal path.
+- Remote monitoring plan and panel backed by agentless SSH `/proc`, `df`, `who` and process-count telemetry.
+- Bottom connected-session telemetry strip for CPU, RAM, disk, network, connection and process status.
+- SSH connection banner/status block for direct SSH, compression, SSH-browser and X11 state.
 - RDP, VNC, Telnet, rlogin, rsh, Mosh, XDMCP and raw network tool launchers.
 - Per-protocol launch options for OpenSSH, Mosh, RDP, VNC and serial console adapters.
 - X11 forwarding workflow through OpenSSH `-X`/`-Y`.

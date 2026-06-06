@@ -14,10 +14,10 @@ PLATFORM_TARGETS_PATH = ROOT / "configs" / "platform_targets.json"
 WORKFLOW_PATH = ROOT / ".github" / "workflows" / "release.yml"
 
 STALE_DEFAULT_ARTIFACT_SNIPPETS = (
-    "remote-ops-workspace-v1.0.1-linux-<i386|amd64|armhf|arm64>.deb",
-    "remote-ops-workspace-v1.0.1-linux-<i686|x86_64|armv7hl|aarch64>.rpm",
-    "remote-ops-workspace-v1.0.1-linux-<i686|x86_64|armhf|aarch64>.AppImage",
-    "remote-ops-workspace-v1.0.1-linux-<i686|x86_64|armhf|aarch64>-native.tar.gz",
+    "remote-ops-workspace-v1.0.2-linux-<i386|amd64|armhf|arm64>.deb",
+    "remote-ops-workspace-v1.0.2-linux-<i686|x86_64|armv7hl|aarch64>.rpm",
+    "remote-ops-workspace-v1.0.2-linux-<i686|x86_64|armhf|aarch64>.AppImage",
+    "remote-ops-workspace-v1.0.2-linux-<i686|x86_64|armhf|aarch64>-native.tar.gz",
 )
 
 

@@ -19,11 +19,11 @@ def test_expected_release_assets_expand_default_matrix() -> None:
 
     assets = checker.expected_release_assets(matrix)
 
-    assert "remote_ops_workspace-1.0.1-py3-none-any.whl" in assets
-    assert "remote-ops-workspace-v1.0.1-windows-x86-setup.exe" in assets
-    assert "remote-ops-workspace-v1.0.1-macos-arm64.pkg" in assets
-    assert "remote-ops-workspace-v1.0.1-linux-amd64.deb" in assets
-    assert "remote-ops-workspace-v1.0.1-linux-aarch64-native-SHA256SUMS.txt" in assets
+    assert "remote_ops_workspace-1.0.2-py3-none-any.whl" in assets
+    assert "remote-ops-workspace-v1.0.2-windows-x86-setup.exe" in assets
+    assert "remote-ops-workspace-v1.0.2-macos-arm64.pkg" in assets
+    assert "remote-ops-workspace-v1.0.2-linux-amd64.deb" in assets
+    assert "remote-ops-workspace-v1.0.2-linux-aarch64-native-SHA256SUMS.txt" in assets
 
 
 def test_publish_contract_requires_validation_before_upload() -> None:
@@ -43,7 +43,7 @@ def test_release_assets_report_missing_expected_files(tmp_path: Path) -> None:
     checker = _load_checker()
     matrix = _load_matrix()
 
-    errors = checker.check_release_assets(tmp_path, matrix, tag="v1.0.1")
+    errors = checker.check_release_assets(tmp_path, matrix, tag="v1.0.2")
 
     assert any("missing expected files" in error for error in errors)
 
@@ -53,7 +53,7 @@ def test_release_assets_accept_complete_synthetic_directory(tmp_path: Path) -> N
     matrix = _load_matrix()
     _write_synthetic_release_assets(checker, matrix, tmp_path)
 
-    errors = checker.check_release_assets(tmp_path, matrix, tag="v1.0.1")
+    errors = checker.check_release_assets(tmp_path, matrix, tag="v1.0.2")
 
     assert errors == []
 
@@ -62,18 +62,18 @@ def test_release_assets_reject_checksum_mismatch(tmp_path: Path) -> None:
     checker = _load_checker()
     matrix = _load_matrix()
     _write_synthetic_release_assets(checker, matrix, tmp_path)
-    checksum = tmp_path / "remote-ops-workspace-v1.0.1-SHA256SUMS.txt"
-    checksum.write_text("0" * 64 + "  remote_ops_workspace-1.0.1-py3-none-any.whl\n", encoding="utf-8")
+    checksum = tmp_path / "remote-ops-workspace-v1.0.2-SHA256SUMS.txt"
+    checksum.write_text("0" * 64 + "  remote_ops_workspace-1.0.2-py3-none-any.whl\n", encoding="utf-8")
 
-    errors = checker.check_release_assets(tmp_path, matrix, tag="v1.0.1")
+    errors = checker.check_release_assets(tmp_path, matrix, tag="v1.0.2")
 
     assert any("checksum mismatch" in error for error in errors)
 
 
 def _write_synthetic_release_assets(checker, matrix: dict[str, object], root: Path) -> None:
-    expected = checker.expected_release_assets(matrix, tag="v1.0.1")
-    source_manifest_artifacts = checker.expected_source_manifest_artifacts(matrix, tag="v1.0.1")
-    release_manifest = "remote-ops-workspace-v1.0.1-release-manifest.json"
+    expected = checker.expected_release_assets(matrix, tag="v1.0.2")
+    source_manifest_artifacts = checker.expected_source_manifest_artifacts(matrix, tag="v1.0.2")
+    release_manifest = "remote-ops-workspace-v1.0.2-release-manifest.json"
     checksum_assets = {asset for asset in expected if asset.endswith("SHA256SUMS.txt")}
 
     for asset in sorted(expected - checksum_assets - {release_manifest}):

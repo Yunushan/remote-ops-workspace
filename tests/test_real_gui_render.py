@@ -70,12 +70,17 @@ def test_real_gui_render_uses_preset_specific_widget_contracts() -> None:
     checker = _load_checker()
 
     native_widgets = checker.required_widgets_for_preset("native")
+    native_present_widgets = checker.present_widgets_for_preset("native")
     moba_widgets = checker.required_widgets_for_preset("mobaxterm")
+    moba_present_widgets = checker.present_widgets_for_preset("mobaxterm")
 
-    assert native_widgets["designSelect"] == "view preset selector"
-    assert native_widgets["toolbarSearch"] == "toolbar search"
+    assert "designSelect" not in native_widgets
+    assert "toolbarSearch" not in native_widgets
+    assert native_present_widgets["designSelect"] == "view preset selector"
+    assert native_present_widgets["toolbarSearch"] == "toolbar search"
     assert "designSelect" not in moba_widgets
     assert "toolbarSearch" not in moba_widgets
+    assert moba_present_widgets == {}
     assert moba_widgets["quickConnect"] == "Moba quick connect field"
     assert moba_widgets["mobaRibbonButton"] == "Moba ribbon action"
 

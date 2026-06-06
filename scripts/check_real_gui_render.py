@@ -27,10 +27,12 @@ COMMON_REQUIRED_WIDGETS = {
     "mainToolbar": "main toolbar",
 }
 NON_MOBA_REQUIRED_WIDGETS = {
-    "designSelect": "view preset selector",
     "layoutToolbar": "layout toolbar",
-    "toolbarSearch": "toolbar search",
     "activityLog": "activity log",
+}
+NON_MOBA_PRESENT_WIDGETS = {
+    "designSelect": "view preset selector",
+    "toolbarSearch": "toolbar search",
 }
 MOBA_REQUIRED_WIDGETS = {
     "quickConnect": "Moba quick connect field",
@@ -41,6 +43,7 @@ MOBA_REQUIRED_WIDGETS = {
 REQUIRED_WIDGETS = {
     **COMMON_REQUIRED_WIDGETS,
     **NON_MOBA_REQUIRED_WIDGETS,
+    **NON_MOBA_PRESENT_WIDGETS,
 }
 MIN_DISTINCT_COLORS = 18
 MIN_LUMINANCE_RANGE = 40
@@ -231,6 +234,13 @@ def _capture_live_gui(
                 required_widgets_for_preset(preset.id),
                 context=f"{preset.id} live GUI",
             )
+            preset_widget_errors.extend(
+                check_present_widgets(
+                    window,
+                    present_widgets_for_preset(preset.id),
+                    context=f"{preset.id} live GUI",
+                )
+            )
             if preset_widget_errors:
                 errors.extend(preset_widget_errors)
                 continue
@@ -278,6 +288,12 @@ def required_widgets_for_preset(preset_id: str) -> dict[str, str]:
     }
 
 
+def present_widgets_for_preset(preset_id: str) -> dict[str, str]:
+    if preset_id == "mobaxterm":
+        return {}
+    return NON_MOBA_PRESENT_WIDGETS
+
+
 def check_required_widgets(
     window: Any,
     required_widgets: dict[str, str] | None = None,
@@ -298,6 +314,22 @@ def check_required_widgets(
             errors.append(f"{context} {label} has empty geometry: {object_name}")
         if hasattr(widget, "isVisible") and not widget.isVisible():
             errors.append(f"{context} {label} is not visible: {object_name}")
+    return errors
+
+
+def check_present_widgets(
+    window: Any,
+    present_widgets: dict[str, str] | None = None,
+    *,
+    context: str = "live GUI",
+) -> list[str]:
+    from PyQt6.QtWidgets import QWidget
+
+    errors: list[str] = []
+    for object_name, label in (present_widgets or {}).items():
+        widget = window.findChild(QWidget, object_name)
+        if widget is None:
+            errors.append(f"{context} missing {label}: {object_name}")
     return errors
 
 
@@ -391,6 +423,10 @@ def write_manifest(out_dir: Path, captures: list[CaptureResult]) -> None:
         "preset_required_widgets": {
             "default": NON_MOBA_REQUIRED_WIDGETS,
             "mobaxterm": MOBA_REQUIRED_WIDGETS,
+        },
+        "preset_present_widgets": {
+            "default": NON_MOBA_PRESENT_WIDGETS,
+            "mobaxterm": {},
         },
         "captures": [capture.to_dict() for capture in captures],
     }

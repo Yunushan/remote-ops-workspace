@@ -85,6 +85,10 @@ def test_windows_native_package_builds_double_click_gui_launcher() -> None:
     assert "--name row-gui" in script
     assert "--windowed" in script
     assert "Copy-Item $RowGuiExe" in script
+    assert "$PortableStage" in script
+    assert "Remote Ops Workspace GUI.exe" in script
+    assert "portable_entrypoints" in script
+    assert '$PortableEntrypoints["desktop_gui"]' in script
     assert '$BuildGuiLauncher = $Arch -ne "x86"' in script
     assert "--exclude-module PyQt6" in script
     assert "--exclude-module remote_ops_workspace.gui" in script
@@ -92,6 +96,9 @@ def test_windows_native_package_builds_double_click_gui_launcher() -> None:
     assert 'getattr(sys, "frozen", False)' in cli
     assert '".[desktop,security,package]"' in workflow
     assert "Test-RowGuiLauncher" in smoke
+    assert "Test-PortableGuiLauncher" in smoke
+    assert "Expand-Archive" in smoke
+    assert "Remote Ops Workspace GUI.exe" in smoke
     assert "row-gui.exe" in smoke
     assert "timeout-minutes: 20" in workflow
     assert "Start-Process -FilePath $FilePath -ArgumentList $ArgumentList -NoNewWindow -Wait -PassThru" in smoke

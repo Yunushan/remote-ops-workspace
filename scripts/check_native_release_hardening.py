@@ -122,6 +122,10 @@ def check_windows_gui_launcher() -> list[str]:
         "--name row-gui": "row-gui executable name",
         "--windowed": "no-console GUI executable mode",
         "Copy-Item $RowGuiExe": "row-gui.exe copied into the native package stage",
+        "$PortableStage": "separate portable zip staging directory",
+        "Remote Ops Workspace GUI.exe": "top-level portable GUI launcher alias",
+        "portable_entrypoints": "native manifest portable entrypoint map",
+        "$PortableEntrypoints[\"desktop_gui\"]": "manifest desktop GUI entrypoint",
         "$BuildGuiLauncher = $Arch -ne \"x86\"": "x86 PyQt6 wheel guard",
         "--exclude-module PyQt6": "PyQt6 exclusion from the CLI row.exe launcher",
         "--exclude-module remote_ops_workspace.gui": "GUI module exclusion from the CLI row.exe launcher",
@@ -141,6 +145,10 @@ def check_windows_gui_launcher() -> list[str]:
         errors.append("release workflow must install the desktop extra for Windows GUI-capable native builds")
     if "Test-RowGuiLauncher" not in smoke or "row-gui.exe" not in smoke:
         errors.append("scripts/smoke_windows_native.ps1 must verify the installed Windows GUI launcher")
+    if "Expand-Archive" not in smoke or "Test-PortableGuiLauncher" not in smoke:
+        errors.append("scripts/smoke_windows_native.ps1 must verify the Windows native portable zip")
+    if "Remote Ops Workspace GUI.exe" not in smoke:
+        errors.append("scripts/smoke_windows_native.ps1 must verify the top-level portable GUI alias")
     if "Run Windows native installer smoke tests" not in windows_job or "timeout-minutes: 20" not in windows_job:
         errors.append("release workflow must bound Windows native installer smoke with timeout-minutes")
     if "row-gui.exe exists on x64/ARM64" not in smoke_contract:

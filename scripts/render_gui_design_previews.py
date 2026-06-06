@@ -396,6 +396,9 @@ def check_outputs(
 def render_preset(preset: GuiDesignPreset):
     from PIL import Image, ImageDraw
 
+    if preset.id == "mobaxterm":
+        return render_mobaxterm_preset(preset)
+
     colors = preset.colors
     image = Image.new("RGB", PREVIEW_SIZE, colors.window)
     draw = ImageDraw.Draw(image)
@@ -423,6 +426,164 @@ def render_preset(preset: GuiDesignPreset):
         content_h - margin * 2,
         log_h,
     )
+    draw_status_bar(draw, preset, 0, PREVIEW_SIZE[1] - status_h, PREVIEW_SIZE[0], status_h)
+    return image
+
+
+def render_mobaxterm_preset(preset: GuiDesignPreset):
+    from PIL import Image, ImageDraw
+
+    c = preset.colors
+    image = Image.new("RGB", PREVIEW_SIZE, c.window)
+    draw = ImageDraw.Draw(image)
+
+    title_h = 22
+    menu_h = 22
+    ribbon_h = 64
+    quick_h = 24
+    status_h = 22
+    side_w = 280
+    rail_w = 28
+    top_h = title_h + menu_h + ribbon_h
+    main_y = top_h
+    main_h = PREVIEW_SIZE[1] - main_y - status_h
+
+    draw.rectangle((0, 0, PREVIEW_SIZE[0], title_h), fill="#1c1c1c")
+    draw_text(draw, "Remote Ops Workspace", 10, 5, c.control_text, 12, bold=True)
+    for index, token in enumerate(("-", "[]", "x")):
+        draw_text(draw, token, PREVIEW_SIZE[0] - 70 + index * 24, 4, c.sidebar_muted, 12)
+
+    draw.rectangle((0, title_h, PREVIEW_SIZE[0], title_h + menu_h), fill="#141414")
+    mx = 8
+    for label in ["Terminal", "Sessions", "View", "X server", "Tools", "Games", "Settings", "Macros", "Help"]:
+        draw_text(draw, label, mx, title_h + 5, c.control_text, 11)
+        mx += len(label) * 7 + 18
+
+    ribbon_y = title_h + menu_h
+    draw.rectangle((0, ribbon_y, PREVIEW_SIZE[0], ribbon_y + ribbon_h), fill=c.toolbar)
+    ribbon_items = [
+        ("S", "Session", "#44a6ff"),
+        ("V", "Servers", "#26c6c9"),
+        ("T", "Tools", "#e45d3f"),
+        ("G", "Games", "#f5c242"),
+        ("*", "Sessions", "#f5d000"),
+        ("W", "View", "#5da7ff"),
+        ("=", "Split", "#4db6e8"),
+        ("M", "MultiExec", "#446ee8"),
+        ("<>", "Tunneling", "#55cc7a"),
+        ("P", "Packages", "#7587e8"),
+        ("G", "Settings", "#4573c4"),
+        ("?", "Help", "#1c9ef1"),
+    ]
+    rx = 12
+    for index, (icon, label, color) in enumerate(ribbon_items):
+        item_w = max(58, len(label) * 7 + 12)
+        if index in {1, 4, 7, 10}:
+            draw.line((rx - 6, ribbon_y + 7, rx - 6, ribbon_y + ribbon_h - 8), fill=c.toolbar_border)
+        draw.rounded_rectangle((rx + 14, ribbon_y + 6, rx + 38, ribbon_y + 30), radius=3, fill=color)
+        draw_text(draw, icon, rx + 21, ribbon_y + 10, c.primary_text, 11, bold=True)
+        draw_text(draw, label, rx + max(0, (item_w - len(label) * 6) // 2), ribbon_y + 40, c.control_text, 10)
+        rx += item_w
+    right_x = PREVIEW_SIZE[0] - 128
+    draw.line((right_x - 12, ribbon_y + 7, right_x - 12, ribbon_y + ribbon_h - 8), fill=c.toolbar_border)
+    draw_text(draw, "X", right_x + 10, ribbon_y + 8, "#41d45a", 24, bold=True)
+    draw_text(draw, "X server", right_x, ribbon_y + 42, c.control_text, 10)
+    draw.ellipse((PREVIEW_SIZE[0] - 47, ribbon_y + 9, PREVIEW_SIZE[0] - 25, ribbon_y + 31), fill="#e2473f")
+    draw_text(draw, "I", PREVIEW_SIZE[0] - 39, ribbon_y + 11, c.primary_text, 13, bold=True)
+    draw_text(draw, "Exit", PREVIEW_SIZE[0] - 50, ribbon_y + 42, c.control_text, 10)
+    draw.line((0, ribbon_y + ribbon_h - 1, PREVIEW_SIZE[0], ribbon_y + ribbon_h - 1), fill=c.toolbar_border)
+
+    suggestion_h = 72
+    draw.rectangle((0, main_y, side_w, main_y + quick_h), fill=c.control, outline=c.toolbar_border)
+    draw_text(draw, "ssh", 8, main_y + 5, c.control_text, 12)
+    suggestion_y = main_y + quick_h
+    draw.rectangle((0, suggestion_y, side_w, suggestion_y + suggestion_h), fill=c.sidebar, outline=c.toolbar_border)
+    quick_rows = [
+        ("[ssh] example-ssh", "ssh.example.invalid:22", True),
+        ("DIRECT SSH example.com", "port 2222", False),
+        ("[sftp] sftp-ops", "files.example:22", False),
+    ]
+    qy = suggestion_y + 7
+    for label, detail, selected in quick_rows:
+        if selected:
+            draw.rectangle((8, qy - 2, side_w - 8, qy + 17), fill=c.sidebar_selected)
+        draw_text(draw, label, 12, qy, c.sidebar_selected_text if selected else c.control_text, 10, bold=selected)
+        draw_text(draw, detail, 154, qy, c.sidebar_muted, 9)
+        qy += 20
+
+    tree_y = main_y + quick_h + suggestion_h
+    draw.rectangle((0, tree_y, rail_w, tree_y + main_h - quick_h), fill="#101010")
+    rail_items = [("<<", c.primary), ("Sessions", c.control_text), ("*", c.status), ("Tools", c.control_text), ("Macros", c.control_text)]
+    ry = tree_y + 8
+    for label, color in rail_items:
+        if len(label) > 3:
+            cy = ry
+            for char in label:
+                draw_text(draw, char, 9, cy, color, 8, bold=True)
+                cy += 9
+        else:
+            draw_text(draw, label, 3, ry, color, 9, bold=True)
+        ry += 48 if len(label) > 3 else 34
+
+    draw.rectangle((rail_w, tree_y, side_w, tree_y + main_h - quick_h), fill=c.sidebar, outline=c.toolbar_border)
+    rows = [
+        ("v", "[dir]", "User sessions", 0, c.control_text, False),
+        (">", "[dir]", "Hostinger", 1, c.sidebar_text, False),
+        ("v", "[dir]", "Local", 1, c.sidebar_text, False),
+        ("", "[pc]", "lab-win-01 (desktop)", 2, c.control_text, False),
+        ("", "[pc]", "lab-win-02 (workspace)", 2, c.control_text, False),
+        ("", "[ssh]", "edge-linux-01 (operator)", 2, c.control_text, False),
+        ("", "[ssh]", "edge-linux-02 (ops)", 2, c.control_text, True),
+        (">", "[dir]", "WSL", 1, c.sidebar_text, False),
+        ("", "[pc]", "wsl-ubuntu (local)", 1, c.control_text, False),
+        ("", "[ssh]", "lab-sftp-01 (files)", 1, c.control_text, False),
+    ]
+    sy = tree_y + 10
+    for arrow, prefix, label, depth, color, selected in rows:
+        x0 = rail_w + 8 + depth * 15
+        if depth:
+            draw.line((rail_w + 14 + (depth - 1) * 15, sy - 7, rail_w + 14 + (depth - 1) * 15, sy + 10), fill="#303030")
+            draw.line((rail_w + 14 + (depth - 1) * 15, sy + 8, x0 - 2, sy + 8), fill="#303030")
+        if selected:
+            draw.rectangle((x0 + 24, sy - 2, min(side_w - 6, x0 + 182), sy + 17), fill=c.sidebar_selected)
+        if arrow:
+            draw_text(draw, arrow, x0, sy, c.sidebar_muted, 9, bold=True)
+        icon_color = c.status if prefix == "[ssh]" else c.primary
+        draw_text(draw, prefix, x0 + 14, sy, icon_color, 9, bold=True)
+        draw_text(draw, label, x0 + 44, sy, c.sidebar_selected_text if selected else color, 10)
+        sy += 20
+
+    tab_y = main_y
+    workspace_x = side_w
+    draw.rectangle((workspace_x, tab_y, PREVIEW_SIZE[0], tab_y + 28), fill=c.tab, outline=c.toolbar_border)
+    tab_specs = [
+        ("Home", 50, False),
+        ("edge-prod", 82, True),
+        ("Split H 3", 82, False),
+        ("+", 28, False),
+    ]
+    tx = workspace_x + 10
+    for label, width, active in tab_specs:
+        fill = c.tab_selected if active else c.tab
+        text = c.tab_selected_text if active else c.tab_text
+        rounded(draw, (tx, tab_y + 3, tx + width, tab_y + 25), fill, c.toolbar_border, 2)
+        draw_text(draw, label, tx + 8, tab_y + 8 if label != "+" else tab_y + 6, text, 9 if label != "+" else 13, bold=active or label == "+")
+        tx += width + 4
+
+    content_y = tab_y + 28
+    draw.rectangle((workspace_x, content_y, PREVIEW_SIZE[0], PREVIEW_SIZE[1] - status_h), fill=c.pane)
+    draw_terminal(
+        draw,
+        preset,
+        workspace_x + 12,
+        content_y + 12,
+        PREVIEW_SIZE[0] - workspace_x - 24,
+        PREVIEW_SIZE[1] - content_y - status_h - 24,
+        "edge-prod",
+        main=True,
+    )
+    draw_workflow_dialog(draw, preset, workspace_x + 280, content_y + 108, 560, 330)
+
     draw_status_bar(draw, preset, 0, PREVIEW_SIZE[1] - status_h, PREVIEW_SIZE[0], status_h)
     return image
 
@@ -565,9 +726,21 @@ def draw_terminal(
 ) -> None:
     c = preset.colors
     rounded(draw, (x, y, x + w, y + h), c.terminal, c.pane_border, 3)
-    draw_text(draw, title, x + 12, y + 10, c.terminal_text, 12, bold=True)
+    header_h = 34
+    command_h = 26
+    draw.rectangle((x + 1, y + 1, x + w - 1, y + header_h), fill=c.toolbar)
+    draw_text(draw, title, x + 12, y + 10, c.control_text, 12, bold=True)
+    draw_text(draw, "profile:ssh", x + 88, y + 11, c.sidebar_muted, 10)
+    rounded(draw, (x + 160, y + 7, x + 214, y + 27), c.primary if main else c.control, c.primary, 2)
+    draw_text(draw, "running" if main else "ready", x + 170, y + 12, c.primary_text if main else c.status, 9, bold=True)
+    action_x = x + w - 238
+    for label, bw in [("Start", 40), ("Restart", 54), ("Stop", 38), ("Copy", 40), ("Clear", 40)]:
+        rounded(draw, (action_x, y + 6, action_x + bw, y + 28), c.control, c.control_border, 2)
+        draw_text(draw, label, action_x + 5, y + 12, c.control_text, 9)
+        action_x += bw + 6
+    draw.rectangle((x + 1, y + header_h, x + w - 1, y + header_h + command_h), fill=c.control)
+    draw_text(draw, "$ ssh -p 22 operator@edge-prod.example", x + 12, y + header_h + 8, c.terminal_accent, 11, mono=True)
     lines = [
-        "$ ssh -p 22 operator@edge-prod.example",
         "[note] command built as argv list",
         "sftp -> queue preview ready",
         "[process running] stdout captured",
@@ -584,17 +757,89 @@ def draw_terminal(
         '  "rdp": true',
         "}",
     ]
-    ly = y + 35
+    ly = y + header_h + command_h + 14
     for line in lines:
         color = c.terminal_accent if line.startswith("$") or line.startswith("initialized") else c.terminal_text
         draw_text(draw, line, x + 12, ly, color, 12, mono=True)
         ly += 19
 
 
+def draw_workflow_dialog(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
+    c = preset.colors
+    draw.rectangle((x + 8, y + 8, x + w + 8, y + h + 8), fill="#101010")
+    rounded(draw, (x, y, x + w, y + h), c.pane, c.pane_border, 3)
+    draw.rectangle((x + 1, y + 1, x + w - 1, y + 38), fill=c.toolbar)
+    draw_text(draw, "Tools workflow", x + 14, y + 11, c.control_text, 14, bold=True)
+    draw_text(draw, "Profiles, transfers, diagnostics and saved layouts", x + 140, y + 12, c.sidebar_muted, 10)
+    draw_text(draw, "-", x + w - 58, y + 11, c.sidebar_muted, 13, bold=True)
+    draw_text(draw, "x", x + w - 30, y + 11, c.sidebar_muted, 13, bold=True)
+
+    table_x = x + 14
+    table_y = y + 55
+    table_w = w - 28
+    table_h = 138
+    rounded(draw, (table_x, table_y, table_x + table_w, table_y + table_h), c.sidebar, c.pane_border, 2)
+    draw.rectangle((table_x + 1, table_y + 1, table_x + table_w - 1, table_y + 25), fill=c.control)
+    draw_text(draw, "Workflow", table_x + 10, table_y + 8, c.control_text, 10, bold=True)
+    draw_text(draw, "State", table_x + 180, table_y + 8, c.control_text, 10, bold=True)
+    draw_text(draw, "Detail", table_x + 260, table_y + 8, c.control_text, 10, bold=True)
+    rows = [
+        ("Profile editor", "6 saved", "Create, edit or remove connection profiles"),
+        ("Transfer queue", "ready", "Preview SFTP get, put, mkdir and delete operations"),
+        ("Layouts", "3 saved", "Open grid, horizontal or vertical multi-pane layouts"),
+        ("Doctor", "ready", "Inspect local protocol clients and launch readiness"),
+    ]
+    row_y = table_y + 31
+    for index, (workflow, state, detail) in enumerate(rows):
+        if index == 1:
+            draw.rectangle((table_x + 4, row_y - 3, table_x + table_w - 4, row_y + 17), fill=c.sidebar_selected)
+            text_color = c.sidebar_selected_text
+        else:
+            text_color = c.sidebar_text
+        draw_text(draw, workflow, table_x + 10, row_y, text_color, 10)
+        draw_text(draw, state, table_x + 180, row_y, c.status if state == "ready" else text_color, 10, bold=state == "ready")
+        draw_text(draw, detail, table_x + 260, row_y, c.sidebar_muted if index != 1 else c.sidebar_selected_text, 9)
+        row_y += 26
+
+    preview_y = table_y + table_h + 12
+    preview_h = 74
+    rounded(draw, (table_x, preview_y, table_x + table_w, preview_y + preview_h), c.terminal, c.pane_border, 2)
+    detail_lines = [
+        "Tools workflow",
+        "Profiles: 6",
+        "Layouts: 3",
+        "Use action buttons below to open the most common tools.",
+    ]
+    line_y = preview_y + 11
+    for line in detail_lines:
+        draw_text(draw, line, table_x + 12, line_y, c.terminal_accent if ":" in line else c.terminal_text, 10, mono=True)
+        line_y += 15
+
+    button_y = y + h - 43
+    button_x = x + 14
+    for label, width, primary in [
+        ("New profile", 92, False),
+        ("New layout", 86, False),
+        ("Run doctor", 90, True),
+        ("Close", 58, False),
+    ]:
+        fill = c.primary if primary else c.control
+        outline = c.primary if primary else c.control_border
+        text = c.primary_text if primary else c.control_text
+        rounded(draw, (button_x, button_y, button_x + width, button_y + 26), fill, outline, 2)
+        draw_text(draw, label, button_x + 10, button_y + 8, text, 10, bold=True)
+        button_x += width + 8
+
+
 def draw_status_bar(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
     c = preset.colors
     draw.rectangle((x, y, x + w, y + h), fill=c.toolbar)
     draw.line((x, y, x + w, y), fill=c.toolbar_border)
+    if preset.id == "mobaxterm":
+        draw_text(draw, "REMOTE OPS WORKSPACE", x + 6, y + 6, c.control_text, 10, bold=True)
+        draw_text(draw, " - MobaXterm-style operator shell", x + 142, y + 6, c.sidebar_muted, 10)
+        draw.rectangle((x + w - 20, y + 6, x + w - 6, y + 16), outline=c.sidebar_muted)
+        return
     draw_text(draw, preset.description, x + 14, y + 6, c.sidebar_muted, 10)
     right = f"profile width {preset.profile_width}px | log {preset.log_height}px | tabs {preset.tab_position}"
     draw_text(draw, right, x + w - 300, y + 6, c.sidebar_muted, 10)

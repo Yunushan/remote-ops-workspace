@@ -2,8 +2,8 @@
   "contact_sheet": {
     "height": 1392,
     "path": "all-gui-designs-contact-sheet.png",
-    "sha256": "71f9d3a06bda8aa50983044a4add1bb0702056dd5b8c80b60f55ffe3bdd14355",
-    "size_bytes": 286607,
+    "sha256": "badb42e6f45fbdf519cf3fe49f92d81a5e9fc57dab232d7915166b7b2ab3a82f",
+    "size_bytes": 325122,
     "width": 1272
   },
   "contact_thumb": {
@@ -18,8 +18,8 @@
       "image": {
         "height": 760,
         "path": "native.png",
-        "sha256": "58cf88243c61edd646d6c9af4460d6d0f76c6ac18fb83490f2de8286648ecb51",
-        "size_bytes": 58608,
+        "sha256": "9e09b26cb08fb54a5b4b88160106b1579606fe3091ec9032607da1d845d11140",
+        "size_bytes": 65720,
         "width": 1280
       },
       "label": "Native",
@@ -28,19 +28,19 @@
       "tab_position": "north"
     },
     {
-      "density": "dense",
-      "description": "Dense operator console with a connection tree, action strip, tabs and split panes.",
+      "density": "moba-shell",
+      "description": "MobaXterm-like dark shell with quick connect, session tree, home tab and large ribbon actions.",
       "id": "mobaxterm",
       "image": {
         "height": 760,
         "path": "mobaxterm.png",
-        "sha256": "d7644937f3dd241ef31c805b590ac4773db6c48f30ad9a98996de187fcfd83f5",
-        "size_bytes": 59983,
+        "sha256": "1a11059c58e9a4e6b2da46e013fb6d683a300bfc317064df517bba0962dcd70a",
+        "size_bytes": 73556,
         "width": 1280
       },
       "label": "MobaXterm-style",
-      "log_height": 148,
-      "profile_width": 335,
+      "log_height": 120,
+      "profile_width": 395,
       "tab_position": "north"
     },
     {
@@ -50,8 +50,8 @@
       "image": {
         "height": 760,
         "path": "securecrt.png",
-        "sha256": "ceeb43887281614a094dd3a15754d1fb23e02e003de2f754ae816d1d90d99dd7",
-        "size_bytes": 58203,
+        "sha256": "cd1ea71781afd6a74de52824721b6ad7147c5d0aa6114913f615c8685870a8df",
+        "size_bytes": 65524,
         "width": 1280
       },
       "label": "SecureCRT-style",
@@ -66,8 +66,8 @@
       "image": {
         "height": 760,
         "path": "termius.png",
-        "sha256": "916601c115495a6322c7b45a6debe22dcc8cb6da67894fa98b6cf7a4a15b50ea",
-        "size_bytes": 59488,
+        "sha256": "36d268b7437366407530ca45608935226ec355a5362a44892dc9c48e53a67e6e",
+        "size_bytes": 67116,
         "width": 1280
       },
       "label": "Termius-style",
@@ -82,8 +82,8 @@
       "image": {
         "height": 760,
         "path": "remmina.png",
-        "sha256": "de91d337a4fdcfa929c55ac9113ae87b51eff7fda1dd98f1adda1db9675640c7",
-        "size_bytes": 59580,
+        "sha256": "d320d1f6108f26a994edf981639e510b77d1bc9ed4afec8df8915f38ca274164",
+        "size_bytes": 66986,
         "width": 1280
       },
       "label": "Remmina-style",
@@ -98,8 +98,8 @@
       "image": {
         "height": 760,
         "path": "mremoteng.png",
-        "sha256": "284d47b501e9314d88932dd652d7d6a50951d2a614174ecef37d234bb9cde493",
-        "size_bytes": 59955,
+        "sha256": "7b87a3ada4da839edc06b1d41bcb053ec7bbe7ea1d4a76149b22b7c70fa81c48",
+        "size_bytes": 67428,
         "width": 1280
       },
       "label": "mRemoteNG-style",

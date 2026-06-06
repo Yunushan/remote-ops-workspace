@@ -170,12 +170,12 @@ Windows native portable packages for x64 and ARM64 include a double-clickable
 GUI launcher:
 
 ```text
-bin\row-gui.exe
+Remote Ops Workspace GUI.exe
 ```
 
-The same packages keep `bin\row.exe` for CLI workflows. The 32-bit Windows x86
-native package is CLI-first because PyQt6 does not publish 32-bit Windows
-wheels.
+The same portable zips also keep `bin\row-gui.exe` and `bin\row.exe` for
+scripted workflows. The 32-bit Windows x86 native package is CLI-first because
+PyQt6 does not publish 32-bit Windows wheels.
 
 ---
 
@@ -395,8 +395,9 @@ The GitHub release workflow runs on tags like `v1.0.0` and uploads these assets:
 | Checksums | `remote-ops-workspace-v1.0.0-SHA256SUMS.txt` |
 
 Native protocol rendering still depends on the external clients installed on the target system.
-Windows x64 and ARM64 native packages include `bin\row-gui.exe` as a
-double-click GUI launcher, while `bin\row.exe` remains the CLI entry point.
+Windows x64 and ARM64 native portable zips include a top-level
+`Remote Ops Workspace GUI.exe` double-click launcher, plus `bin\row-gui.exe`;
+`bin\row.exe` remains the CLI entry point.
 In those frozen Windows packages, `row gui` delegates to the sibling
 `bin\row-gui.exe` launcher.
 Windows XP/Vista/7/8 are supported as legacy remote targets, not as first-class

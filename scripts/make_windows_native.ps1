@@ -249,6 +249,7 @@ if ($BuildGuiLauncher -and !(Test-PythonModule -Python $Python -Module "PyQt6"))
 $OutDir = Resolve-PathOrCreate (Join-Path $Root $Dist)
 $BuildDir = Join-Path $Root "build\native\windows"
 $Stage = Join-Path $BuildDir "stage"
+$PortableStage = Join-Path $BuildDir "portable-stage"
 $PyDist = Join-Path $BuildDir "pyinstaller-dist"
 $PyWork = Join-Path $BuildDir "pyinstaller-work"
 $Launcher = Join-Path $BuildDir "row_launcher.py"
@@ -343,21 +344,33 @@ PyInstaller. $GuiTargetNote Protocol sessions still depend on Windows system too
 OpenSSH, MSTSC, PuTTY, VcXsrv, and VNC clients.
 "@ | Set-Content -Encoding UTF8 (Join-Path $Stage "RELEASE_TARGET.md")
 
+New-Item -ItemType Directory -Force $PortableStage | Out-Null
+Copy-Item -Path (Join-Path $Stage "*") -Destination $PortableStage -Recurse -Force
+if ($BuildGuiLauncher) {
+  Copy-Item (Join-Path $PortableStage "bin\row-gui.exe") (Join-Path $PortableStage "Remote Ops Workspace GUI.exe")
+}
+
 $NativeZip = Join-Path $OutDir "remote-ops-workspace-v$Version-windows-$Arch-native.zip"
-Compress-Archive -Path (Join-Path $Stage "*") -DestinationPath $NativeZip -Force
+Compress-Archive -Path (Join-Path $PortableStage "*") -DestinationPath $NativeZip -Force
 
 $SetupExe = Build-InnoSetupInstaller -Version $Version -Stage $Stage -OutDir $OutDir -Arch $Arch
 $Msi = Build-WixMsi -Version $Version -Stage $Stage -OutDir $OutDir -Arch $Arch
 
 $PortableInstallCommand = if ($BuildGuiLauncher) {
-  "Extract and double-click bin\row-gui.exe for the desktop UI, or run bin\row.exe for CLI workflows."
+  "Extract and double-click Remote Ops Workspace GUI.exe for the desktop UI, or run bin\row.exe for CLI workflows."
 } else {
   "Extract and run bin\row.exe. The Windows x86 portable build is CLI-first."
 }
 $PortableNotes = @("Standalone PyInstaller CLI executable plus docs.", "Built for Windows $Arch.")
 $InstallerNotes = @("Unsigned native installer for the standalone row.exe CLI.", "Built for Windows $Arch.")
+$PortableEntrypoints = @{
+  cli = "bin\row.exe"
+}
 if ($BuildGuiLauncher) {
   $PortableNotes += "Includes no-console PyQt6 GUI launcher: bin\row-gui.exe."
+  $PortableNotes += "Includes top-level double-click GUI alias: Remote Ops Workspace GUI.exe."
+  $PortableEntrypoints["desktop_gui"] = "Remote Ops Workspace GUI.exe"
+  $PortableEntrypoints["desktop_gui_bin"] = "bin\row-gui.exe"
   $InstallerNotes += "Installs bin\row-gui.exe and GUI shortcuts where the installer format supports shortcuts."
 } else {
   $PortableNotes += "PyQt6 does not publish 32-bit Windows wheels, so this x86 bundle does not include row-gui.exe."
@@ -373,6 +386,7 @@ $Manifest = @(
     file = (To-RepoPath $NativeZip)
     format = "zip"
     install_command = $PortableInstallCommand
+    portable_entrypoints = $PortableEntrypoints
     notes = $PortableNotes
   },
   @{

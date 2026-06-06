@@ -65,5 +65,5 @@ CI enforces both paths. The normal matrix runs `python scripts/verify.py --lint`
 which includes the fail-closed render smoke in dependency-light jobs. A
 dedicated `gui-render` job installs the desktop extra and runs
 `python scripts/check_real_gui_render.py --require-pyqt6 --preset native
---out-dir artifacts/gui-real`, then uploads the captured PNG manifest as a
-workflow artifact.
+--preset mobaxterm --out-dir artifacts/gui-real`, then uploads the captured PNG
+manifest as a workflow artifact.

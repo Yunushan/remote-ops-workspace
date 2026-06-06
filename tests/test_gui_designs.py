@@ -37,10 +37,15 @@ def test_gui_design_presets_have_valid_layout_metadata() -> None:
         assert "QToolBar#mainToolbar" in preset.stylesheet
         assert "QToolBar#layoutToolbar" in preset.stylesheet
         assert "QTabWidget#sessionTabs" in preset.stylesheet
-        assert "QListWidget#profileTree" in preset.stylesheet
+        assert "QTreeWidget#profileTree" in preset.stylesheet
         assert "QPushButton#primaryAction" in preset.stylesheet
         assert "QTextEdit#activityLog" in preset.stylesheet
         assert "QWidget#terminalPane" in preset.stylesheet
+        assert "QFrame#terminalHeader" in preset.stylesheet
+        assert "QToolButton#terminalAction" in preset.stylesheet
+        assert "QDialog#workflowDialog" in preset.stylesheet
+        assert "QTreeWidget#workflowRows" in preset.stylesheet
+        assert "QToolButton#workflowAction" in preset.stylesheet
         assert "QSplitter::handle" in preset.stylesheet
 
 

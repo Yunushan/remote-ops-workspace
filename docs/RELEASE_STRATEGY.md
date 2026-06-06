@@ -144,10 +144,13 @@ Implementation:
 - Builds a no-console `row-gui.exe` PyInstaller launcher for Windows x64 and
   ARM64 portable/installable GUI use. Windows x86 remains CLI-first because
   PyQt6 does not publish 32-bit Windows wheels.
+- Adds `Remote Ops Workspace GUI.exe` at the root of GUI-capable native zips so
+  portable users can start the desktop UI without opening a terminal.
 - Builds an interactive installer with Inno Setup.
 - Builds an MSI installer with WiX.
 - Runs `scripts/smoke_windows_native.ps1` to smoke install, verify, upgrade and
-  uninstall the `.exe` and `.msi` artifacts before upload, including
+  uninstall the native portable `.zip`, `.exe` and `.msi` artifacts before
+  upload, including `Remote Ops Workspace GUI.exe` in portable zips and
   `row-gui.exe` presence on GUI-capable Windows architectures.
 - Pins the Windows installer toolchain in CI: Inno Setup `6.3.3` and WiX
   `5.0.2`.

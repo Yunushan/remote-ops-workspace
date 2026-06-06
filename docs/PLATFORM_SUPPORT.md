@@ -100,14 +100,15 @@ Architecture targets:
 - x86: 32-bit Windows native artifacts from a 32-bit Python/PyInstaller build;
   CLI-first because PyQt6 does not publish 32-bit Windows wheels.
 - x64: default 64-bit Windows native artifacts with `bin\row.exe` and
-  double-clickable `bin\row-gui.exe`.
+  double-clickable `Remote Ops Workspace GUI.exe` in portable zips.
 - ARM64: native Windows ARM64 artifacts from an ARM64 Windows builder with
-  `bin\row.exe` and double-clickable `bin\row-gui.exe`.
+  `bin\row.exe` and double-clickable `Remote Ops Workspace GUI.exe` in portable zips.
 
 For the Windows x64 or ARM64 portable zip, extract the archive and double-click
-`bin\row-gui.exe` to start the desktop UI. Use `bin\row.exe` for CLI commands
-and automation. In frozen Windows native packages, `row gui` delegates to the
-sibling `bin\row-gui.exe` launcher.
+`Remote Ops Workspace GUI.exe` to start the desktop UI. The same zip also keeps
+`bin\row-gui.exe` and `bin\row.exe` for scripted workflows and automation. In
+frozen Windows native packages, `row gui` delegates to the sibling
+`bin\row-gui.exe` launcher.
 
 Recommended external clients:
 

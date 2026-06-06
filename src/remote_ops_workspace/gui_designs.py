@@ -71,42 +71,152 @@ QToolBar#mainToolbar, QToolBar#layoutToolbar {{
   spacing: 5px;
   padding: 5px 7px;
 }}
+QMenuBar {{
+  background: {colors.toolbar};
+  color: {colors.control_text};
+  border-bottom: 1px solid {colors.toolbar_border};
+  padding: 2px 6px;
+}}
+QMenuBar::item {{
+  padding: 3px 8px;
+  background: transparent;
+}}
+QMenuBar::item:selected {{
+  background: {colors.control};
+}}
 QLabel#toolbarLabel {{
   color: {colors.sidebar_muted};
   padding-left: 8px;
   padding-right: 2px;
 }}
-QPushButton, QComboBox, QLineEdit {{
+QPushButton, QToolButton, QComboBox, QLineEdit {{
   background: {colors.control};
   color: {colors.control_text};
   border: 1px solid {colors.control_border};
   border-radius: {radius}px;
   padding: {control_padding};
 }}
-QPushButton:hover, QComboBox:hover, QLineEdit:hover {{
+QPushButton:hover, QToolButton:hover, QComboBox:hover, QLineEdit:hover {{
   border-color: {colors.control_hover};
 }}
-QPushButton:disabled {{
+QPushButton:disabled, QToolButton:disabled {{
   color: {colors.sidebar_muted};
   background: {colors.pane};
 }}
-QPushButton#primaryAction {{
+QPushButton#primaryAction, QToolButton#primaryAction {{
   background: {colors.primary};
   color: {colors.primary_text};
   border-color: {colors.primary};
   font-weight: 600;
 }}
-QPushButton#primaryAction:hover {{
+QPushButton#primaryAction:hover, QToolButton#primaryAction:hover {{
   border-color: {colors.control_hover};
 }}
-QPushButton#dangerAction {{
+QPushButton#dangerAction, QToolButton#dangerAction {{
   color: {colors.danger_text};
+  border-color: {colors.danger};
+}}
+QToolButton#mobaRibbonButton {{
+  background: transparent;
+  color: {colors.control_text};
+  border: 1px solid transparent;
+  border-radius: 0;
+  padding: 4px 5px;
+  font-size: 10px;
+  font-weight: 500;
+}}
+QToolButton#mobaRibbonButton:hover {{
+  background: {colors.control};
+  border-color: {colors.control_border};
+}}
+QToolButton#mobaXServerAction {{
+  background: transparent;
+  color: {colors.primary};
+  border: 1px solid transparent;
+  border-radius: 0;
+  padding: 4px 5px;
+  font-size: 10px;
+  font-weight: 600;
+}}
+QToolButton#mobaXServerAction:hover {{
+  background: {colors.control};
+  border-color: {colors.control_border};
+}}
+QToolButton#mobaExitAction {{
+  background: transparent;
+  color: {colors.danger_text};
+  border: 1px solid transparent;
+  border-radius: 0;
+  padding: 4px 5px;
+  font-size: 10px;
+  font-weight: 600;
+}}
+QToolButton#mobaExitAction:hover {{
+  background: {colors.control};
   border-color: {colors.danger};
 }}
 QLineEdit#toolbarSearch {{
   min-width: 150px;
 }}
-QListWidget#profileTree {{
+QLineEdit#quickConnect {{
+  background: {colors.control};
+  color: {colors.control_text};
+  border: 1px solid {colors.toolbar_border};
+  border-radius: 0;
+  padding: 4px 8px;
+}}
+QTreeWidget#quickConnectSuggestions {{
+  background: {colors.sidebar};
+  color: {colors.sidebar_text};
+  border: 1px solid {colors.toolbar_border};
+  border-top: 0;
+  padding: 3px;
+  outline: 0;
+  font-family: "Segoe UI", Arial, sans-serif;
+}}
+QTreeWidget#quickConnectSuggestions::item {{
+  padding: 3px 5px;
+  border-radius: {radius}px;
+}}
+QTreeWidget#quickConnectSuggestions::item:selected {{
+  background: {colors.sidebar_selected};
+  color: {colors.sidebar_selected_text};
+}}
+QWidget#mobaRail {{
+  background: {colors.window};
+  border-right: 1px solid {colors.toolbar_border};
+}}
+QLabel#mobaRailButton, QToolButton#mobaRailButton {{
+  color: {colors.sidebar_text};
+  padding: 7px 3px;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid {colors.toolbar_border};
+  font-weight: 600;
+}}
+QLabel#mobaRailButton:hover, QToolButton#mobaRailButton:hover {{
+  background: {colors.control};
+  border-color: {colors.toolbar_border};
+}}
+QLabel#mobaRailButton:checked, QToolButton#mobaRailButton:checked {{
+  color: {colors.primary};
+  background: {colors.sidebar};
+}}
+QLabel#mobaRailAccent, QToolButton#mobaRailAccent {{
+  color: {colors.status};
+  padding: 7px 3px;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid {colors.toolbar_border};
+  font-weight: 700;
+}}
+QLabel#mobaRailAccent:hover, QToolButton#mobaRailAccent:hover {{
+  background: {colors.control};
+}}
+QLabel#mobaRailAccent:checked, QToolButton#mobaRailAccent:checked {{
+  background: {colors.sidebar};
+}}
+QTreeWidget#profileTree {{
   background: {colors.sidebar};
   color: {colors.sidebar_text};
   border: 0;
@@ -115,13 +225,19 @@ QListWidget#profileTree {{
   outline: 0;
   font-family: "Segoe UI", Arial, sans-serif;
 }}
-QListWidget#profileTree::item {{
+QTreeWidget#profileTree::item {{
   padding: {tree_padding};
   border-radius: {radius}px;
 }}
-QListWidget#profileTree::item:selected {{
+QTreeWidget#profileTree::item:hover {{
+  background: {colors.control};
+}}
+QTreeWidget#profileTree::item:selected {{
   background: {colors.sidebar_selected};
   color: {colors.sidebar_selected_text};
+}}
+QTreeWidget#profileTree::branch {{
+  background: transparent;
 }}
 QTabWidget#sessionTabs::pane {{
   background: {colors.pane};
@@ -140,17 +256,147 @@ QTabBar::tab:selected {{
   border-bottom-color: {colors.tab_selected};
   font-weight: 600;
 }}
+QTabBar::tab:hover {{
+  background: {colors.control};
+  color: {colors.control_text};
+}}
 QWidget#terminalPane {{
   background: {colors.pane};
+}}
+QFrame#terminalHeader {{
+  background: {colors.toolbar};
+  border: 1px solid {colors.pane_border};
+  border-bottom: 0;
+}}
+QFrame#terminalCommandRow {{
+  background: {colors.control};
+  border-left: 1px solid {colors.pane_border};
+  border-right: 1px solid {colors.pane_border};
+  border-bottom: 1px solid {colors.pane_border};
+}}
+QLabel#terminalTitle {{
+  color: {colors.control_text};
+  font-weight: 700;
+}}
+QLabel#terminalSource {{
+  color: {colors.sidebar_muted};
+}}
+QLabel#terminalCommand {{
+  color: {colors.terminal_accent};
+  font-family: "Cascadia Mono", Consolas, monospace;
+}}
+QToolButton#terminalAction {{
+  background: {colors.control};
+  color: {colors.control_text};
+  border: 1px solid {colors.control_border};
+  border-radius: {radius}px;
+  padding: 3px 6px;
+}}
+QToolButton#terminalAction:hover {{
+  border-color: {colors.control_hover};
+}}
+QToolButton#terminalAction:disabled {{
+  color: {colors.sidebar_muted};
+  background: {colors.pane};
+}}
+QDialog#workflowDialog {{
+  background: {colors.pane};
+  color: {colors.control_text};
+}}
+QDialog#workflowDialog QLabel#workflowTitle {{
+  color: {colors.control_text};
+  font-size: 18px;
+  font-weight: 700;
+}}
+QDialog#workflowDialog QLabel#workflowSubtitle {{
+  color: {colors.sidebar_muted};
+}}
+QDialog#workflowDialog QLineEdit,
+QDialog#workflowDialog QComboBox,
+QDialog#workflowDialog QPlainTextEdit {{
+  background: {colors.control};
+  color: {colors.control_text};
+  border: 1px solid {colors.control_border};
+  border-radius: {radius}px;
+  padding: {control_padding};
+}}
+QDialog#workflowDialog QTreeWidget#workflowRows {{
+  background: {colors.sidebar};
+  color: {colors.sidebar_text};
+  border: 1px solid {colors.pane_border};
+  outline: 0;
+}}
+QDialog#workflowDialog QTreeWidget#workflowRows::item {{
+  padding: 5px;
+}}
+QDialog#workflowDialog QTreeWidget#workflowRows::item:selected {{
+  background: {colors.sidebar_selected};
+  color: {colors.sidebar_selected_text};
+}}
+QDialog#workflowDialog QTextEdit#workflowPreview {{
+  background: {colors.terminal};
+  color: {colors.terminal_text};
+  border: 1px solid {colors.pane_border};
+  font-family: "Cascadia Mono", Consolas, monospace;
+}}
+QDialog#workflowDialog QToolButton#workflowAction {{
+  background: {colors.control};
+  color: {colors.control_text};
+  border: 1px solid {colors.control_border};
+  border-radius: {radius}px;
+  padding: 4px 9px;
+  font-weight: 600;
+}}
+QDialog#workflowDialog QToolButton#workflowAction:hover {{
+  border-color: {colors.control_hover};
+}}
+QWidget#newSessionTab {{
+  background: {colors.pane};
+}}
+QWidget#welcomeHome {{
+  background: {colors.pane};
+}}
+QFrame#welcomePanel {{
+  background: {colors.pane};
+  border: 0;
+}}
+QLabel#welcomeTitle {{
+  color: {colors.control_text};
+  font-size: 26px;
+  font-weight: 600;
+}}
+QLabel#welcomeSubtitle, QLabel#recentSessionsLabel {{
+  color: {colors.sidebar_muted};
+}}
+QLabel#recentSessionsTitle {{
+  color: {colors.control_text};
+  font-weight: 700;
 }}
 QLabel#paneStatus {{
   color: {colors.status};
   font-weight: 600;
+  padding: 2px 7px;
+  border: 1px solid {colors.status};
+  border-radius: {radius}px;
+}}
+QLabel#paneStatus[state="running"] {{
+  color: {colors.primary_text};
+  background: {colors.primary};
+  border-color: {colors.primary};
+}}
+QLabel#paneStatus[state="starting"], QLabel#paneStatus[state="stopping"] {{
+  color: {colors.terminal_accent};
+  border-color: {colors.terminal_accent};
+}}
+QLabel#paneStatus[state="error"] {{
+  color: {colors.danger_text};
+  border-color: {colors.danger};
 }}
 QTextEdit#terminalOutput, QPlainTextEdit {{
   background: {colors.terminal};
   color: {colors.terminal_text};
   border: 1px solid {colors.pane_border};
+  border-top: 0;
   font-family: "Cascadia Mono", Consolas, monospace;
 }}
 QLineEdit#terminalInput {{
@@ -251,34 +497,34 @@ NATIVE_COLORS = GuiDesignColors(
 )
 
 MOBAXTERM_COLORS = GuiDesignColors(
-    window="#0e1518",
-    toolbar="#162327",
-    toolbar_border="#29454b",
-    control="#1d3036",
-    control_text="#eef7f4",
-    control_border="#35565d",
-    control_hover="#f59e0b",
-    primary="#13a68f",
-    primary_text="#06100f",
-    danger="#ef8354",
-    danger_text="#ffd5c5",
-    sidebar="#101b1f",
-    sidebar_text="#d9ece9",
-    sidebar_muted="#87aaa6",
-    sidebar_selected="#263f45",
+    window="#101010",
+    toolbar="#171717",
+    toolbar_border="#454545",
+    control="#222222",
+    control_text="#f0f0f0",
+    control_border="#5a5a5a",
+    control_hover="#2f84d8",
+    primary="#2d6ebd",
+    primary_text="#ffffff",
+    danger="#d73737",
+    danger_text="#ffd0d0",
+    sidebar="#151515",
+    sidebar_text="#e8e8e8",
+    sidebar_muted="#a6a6a6",
+    sidebar_selected="#2b2b2b",
     sidebar_selected_text="#ffffff",
-    pane="#111d21",
-    pane_border="#2b474f",
-    tab="#183037",
-    tab_selected="#0f7f74",
-    tab_text="#cce5e1",
+    pane="#202020",
+    pane_border="#545454",
+    tab="#1a1a1a",
+    tab_selected="#242424",
+    tab_text="#cfcfcf",
     tab_selected_text="#ffffff",
-    terminal="#071113",
-    terminal_text="#c9fff0",
-    terminal_accent="#5eead4",
-    log="#0c1619",
-    log_text="#c6dad8",
-    status="#f59e0b",
+    terminal="#1f1f1f",
+    terminal_text="#e9e9e9",
+    terminal_accent="#f2cc00",
+    log="#151515",
+    log_text="#d9d9d9",
+    status="#f2cc00",
 )
 
 SECURECRT_COLORS = GuiDesignColors(
@@ -427,19 +673,19 @@ GUI_DESIGN_PRESETS: tuple[GuiDesignPreset, ...] = (
     _preset(
         id="mobaxterm",
         label="MobaXterm-style",
-        description="Dense operator console with a connection tree, action strip, tabs and split panes.",
-        profile_width=335,
-        log_height=148,
+        description="MobaXterm-like dark shell with quick connect, session tree, home tab and large ribbon actions.",
+        profile_width=395,
+        log_height=120,
         tab_position="north",
-        density="dense",
-        toolbar_icon_size=15,
+        density="moba-shell",
+        toolbar_icon_size=24,
         list_spacing=1,
         document_mode=True,
         colors=MOBAXTERM_COLORS,
-        radius=3,
+        radius=2,
         control_padding="4px 8px",
-        tab_padding="6px 12px",
-        tree_padding="5px 6px",
+        tab_padding="4px 13px",
+        tree_padding="3px 5px",
     ),
     _preset(
         id="securecrt",

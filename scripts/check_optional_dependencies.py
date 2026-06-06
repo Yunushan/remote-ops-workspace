@@ -107,14 +107,14 @@ def check_desktop_gui(tmp_path: Path) -> tuple[list[str], list[str]]:
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     os.environ["ROW_HOME"] = str(tmp_path / "row-home")
     try:
-        from PyQt6.QtWidgets import QComboBox, QListWidget, QTabWidget, QToolBar
+        from PyQt6.QtWidgets import QComboBox, QTabWidget, QToolBar, QTreeWidget
 
         from remote_ops_workspace.gui_designs import GUI_DESIGN_PRESETS
 
         app, window = gui.create_main_window(["row-gui-optional-check"], show=False)
         try:
             design_select = window.findChild(QComboBox, "designSelect")
-            profile_tree = window.findChild(QListWidget, "profileTree")
+            profile_tree = window.findChild(QTreeWidget, "profileTree")
             session_tabs = window.findChild(QTabWidget, "sessionTabs")
             toolbar = window.findChild(QToolBar, "mainToolbar")
             if not all((design_select, profile_tree, session_tabs, toolbar)):
@@ -127,8 +127,10 @@ def check_desktop_gui(tmp_path: Path) -> tuple[list[str], list[str]]:
                     return [f"GUI design selector missing preset: {preset.id}"], []
                 design_select.setCurrentIndex(index)
                 app.processEvents()
-                if profile_tree.spacing() != preset.list_spacing:
-                    return [f"{preset.id} profile-tree spacing was not applied"], []
+                if profile_tree.property("listSpacing") != preset.list_spacing:
+                    return [f"{preset.id} profile-tree density marker was not applied"], []
+                if profile_tree.topLevelItemCount() == 0:
+                    return [f"{preset.id} profile tree was not populated"], []
                 if toolbar.iconSize().width() != preset.toolbar_icon_size:
                     return [f"{preset.id} toolbar icon size was not applied"], []
                 if session_tabs.documentMode() != preset.document_mode:

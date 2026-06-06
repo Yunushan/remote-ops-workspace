@@ -47,6 +47,20 @@ function Test-RowGuiLauncher([string]$RowPath, [string]$Arch) {
   }
 }
 
+function Test-PortableGuiLauncher([string]$InstallDir, [string]$Arch) {
+  if ($Arch -eq "x86") {
+    return
+  }
+  $RootGuiPath = Join-Path $InstallDir "Remote Ops Workspace GUI.exe"
+  if (!(Test-Path $RootGuiPath)) {
+    throw "expected portable GUI alias missing: $RootGuiPath"
+  }
+  $BinGuiPath = Join-Path $InstallDir "bin\row-gui.exe"
+  if (!(Test-Path $BinGuiPath)) {
+    throw "expected portable bin GUI launcher missing: $BinGuiPath"
+  }
+}
+
 function Find-MsiRowExe {
   $Candidates = @()
   if ($env:ProgramFiles) {
@@ -69,9 +83,10 @@ if (!$Version) {
 }
 
 $OutDir = Resolve-Path (Join-Path $Root $Dist)
+$NativeZip = Join-Path $OutDir "remote-ops-workspace-v$Version-windows-$Arch-native.zip"
 $SetupExe = Join-Path $OutDir "remote-ops-workspace-v$Version-windows-$Arch-setup.exe"
 $Msi = Join-Path $OutDir "remote-ops-workspace-v$Version-windows-$Arch.msi"
-foreach ($Artifact in @($SetupExe, $Msi)) {
+foreach ($Artifact in @($NativeZip, $SetupExe, $Msi)) {
   if (!(Test-Path $Artifact)) {
     throw "native installer smoke artifact missing: $Artifact"
   }
@@ -80,6 +95,17 @@ foreach ($Artifact in @($SetupExe, $Msi)) {
 $SmokeRoot = Join-Path $Root "build\native-smoke\windows-$Arch"
 Remove-Item -Recurse -Force $SmokeRoot -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force $SmokeRoot | Out-Null
+
+# extract / verify / remove smoke for the native portable zip.
+$PortableInstallDir = Join-Path $SmokeRoot "portable"
+Expand-Archive -Path $NativeZip -DestinationPath $PortableInstallDir -Force
+$PortableRow = Join-Path $PortableInstallDir "bin\row.exe"
+Test-RowVersion $PortableRow $Version
+Test-PortableGuiLauncher $PortableInstallDir $Arch
+Remove-Item -Recurse -Force $PortableInstallDir
+if (Test-Path $PortableInstallDir) {
+  throw "portable zip cleanup left extracted files behind"
+}
 
 # install / verify / upgrade / uninstall smoke for the Inno Setup .exe installer.
 $ExeInstallDir = Join-Path $SmokeRoot "exe-install"

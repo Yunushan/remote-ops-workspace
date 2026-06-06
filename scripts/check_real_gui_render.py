@@ -21,14 +21,26 @@ from remote_ops_workspace.gui_designs import GUI_DESIGN_PRESETS  # noqa: E402
 REQUESTED_SIZE = (1420, 820)
 MIN_CAPTURE_SIZE = (1100, 680)
 MANIFEST_NAME = "real-gui-render-manifest.json"
-REQUIRED_WIDGETS = {
-    "designSelect": "view preset selector",
+COMMON_REQUIRED_WIDGETS = {
     "profileTree": "profile tree",
     "sessionTabs": "session tabs",
     "mainToolbar": "main toolbar",
+}
+NON_MOBA_REQUIRED_WIDGETS = {
+    "designSelect": "view preset selector",
     "layoutToolbar": "layout toolbar",
     "toolbarSearch": "toolbar search",
     "activityLog": "activity log",
+}
+MOBA_REQUIRED_WIDGETS = {
+    "quickConnect": "Moba quick connect field",
+    "mobaRail": "Moba side rail",
+    "mobaRibbonButton": "Moba ribbon action",
+    "mobaXServerAction": "Moba X server action",
+}
+REQUIRED_WIDGETS = {
+    **COMMON_REQUIRED_WIDGETS,
+    **NON_MOBA_REQUIRED_WIDGETS,
 }
 MIN_DISTINCT_COLORS = 18
 MIN_LUMINANCE_RANGE = 40
@@ -193,7 +205,7 @@ def _capture_live_gui(
         window.show()
         process_events(app)
 
-        widget_errors = check_required_widgets(window)
+        widget_errors = check_required_widgets(window, COMMON_REQUIRED_WIDGETS)
         if widget_errors:
             return captures, widget_errors, messages
 
@@ -213,6 +225,15 @@ def _capture_live_gui(
             design_select.setCurrentIndex(index)
             window.resize(*REQUESTED_SIZE)
             process_events(app)
+
+            preset_widget_errors = check_required_widgets(
+                window,
+                required_widgets_for_preset(preset.id),
+                context=f"{preset.id} live GUI",
+            )
+            if preset_widget_errors:
+                errors.extend(preset_widget_errors)
+                continue
 
             pixmap = window.grab()
             metrics = metrics_from_qimage(pixmap.toImage())
@@ -245,20 +266,38 @@ def process_events(app: Any) -> None:
         app.processEvents()
 
 
-def check_required_widgets(window: Any) -> list[str]:
+def required_widgets_for_preset(preset_id: str) -> dict[str, str]:
+    if preset_id == "mobaxterm":
+        return {
+            **COMMON_REQUIRED_WIDGETS,
+            **MOBA_REQUIRED_WIDGETS,
+        }
+    return {
+        **COMMON_REQUIRED_WIDGETS,
+        **NON_MOBA_REQUIRED_WIDGETS,
+    }
+
+
+def check_required_widgets(
+    window: Any,
+    required_widgets: dict[str, str] | None = None,
+    *,
+    context: str = "live GUI",
+) -> list[str]:
     from PyQt6.QtWidgets import QWidget
 
     errors: list[str] = []
-    for object_name, label in REQUIRED_WIDGETS.items():
+    widgets = required_widgets or REQUIRED_WIDGETS
+    for object_name, label in widgets.items():
         widget = window.findChild(QWidget, object_name)
         if widget is None:
-            errors.append(f"live GUI missing {label}: {object_name}")
+            errors.append(f"{context} missing {label}: {object_name}")
             continue
         geometry = widget.geometry()
         if geometry.width() <= 0 or geometry.height() <= 0:
-            errors.append(f"live GUI {label} has empty geometry: {object_name}")
+            errors.append(f"{context} {label} has empty geometry: {object_name}")
         if hasattr(widget, "isVisible") and not widget.isVisible():
-            errors.append(f"live GUI {label} is not visible: {object_name}")
+            errors.append(f"{context} {label} is not visible: {object_name}")
     return errors
 
 
@@ -348,6 +387,11 @@ def write_manifest(out_dir: Path, captures: list[CaptureResult]) -> None:
         "requested_window_size": {"width": REQUESTED_SIZE[0], "height": REQUESTED_SIZE[1]},
         "minimum_capture_size": {"width": MIN_CAPTURE_SIZE[0], "height": MIN_CAPTURE_SIZE[1]},
         "required_widgets": REQUIRED_WIDGETS,
+        "common_required_widgets": COMMON_REQUIRED_WIDGETS,
+        "preset_required_widgets": {
+            "default": NON_MOBA_REQUIRED_WIDGETS,
+            "mobaxterm": MOBA_REQUIRED_WIDGETS,
+        },
         "captures": [capture.to_dict() for capture in captures],
     }
     (out_dir / MANIFEST_NAME).write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")

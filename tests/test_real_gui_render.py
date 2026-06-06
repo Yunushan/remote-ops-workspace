@@ -66,6 +66,20 @@ def test_real_gui_render_manifest_contract_names_required_widgets() -> None:
     assert checker.REQUIRED_WIDGETS["activityLog"] == "activity log"
 
 
+def test_real_gui_render_uses_preset_specific_widget_contracts() -> None:
+    checker = _load_checker()
+
+    native_widgets = checker.required_widgets_for_preset("native")
+    moba_widgets = checker.required_widgets_for_preset("mobaxterm")
+
+    assert native_widgets["designSelect"] == "view preset selector"
+    assert native_widgets["toolbarSearch"] == "toolbar search"
+    assert "designSelect" not in moba_widgets
+    assert "toolbarSearch" not in moba_widgets
+    assert moba_widgets["quickConnect"] == "Moba quick connect field"
+    assert moba_widgets["mobaRibbonButton"] == "Moba ribbon action"
+
+
 def _load_checker():
     path = Path("scripts/check_real_gui_render.py")
     spec = importlib.util.spec_from_file_location("check_real_gui_render_script", path)

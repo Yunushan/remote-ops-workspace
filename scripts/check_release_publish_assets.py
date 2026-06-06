@@ -38,7 +38,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--tag",
-        help="Expected release tag, for example v1.0.0. Defaults to the matrix release tag.",
+        help="Expected release tag, for example v1.0.1. Defaults to the matrix release tag.",
     )
     return parser.parse_args(argv)
 

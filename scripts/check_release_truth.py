@@ -24,22 +24,22 @@ RELEASE_PREFLIGHT_DEPENDENTS = (
 )
 
 REQUIRED_DOC_SNIPPETS = (
-    "remote-ops-workspace-v1.0.0-linux-<amd64|arm64>.deb",
-    "remote-ops-workspace-v1.0.0-linux-<x86_64|aarch64>.rpm",
-    "remote-ops-workspace-v1.0.0-linux-<x86_64|aarch64>.AppImage",
-    "remote-ops-workspace-v1.0.0-linux-<x86_64|aarch64>-native.tar.gz",
-    "remote-ops-workspace-v1.0.0-macos-<x64|arm64>.dmg",
-    "remote-ops-workspace-v1.0.0-macos-<x64|arm64>.pkg",
+    "remote-ops-workspace-v1.0.1-linux-<amd64|arm64>.deb",
+    "remote-ops-workspace-v1.0.1-linux-<x86_64|aarch64>.rpm",
+    "remote-ops-workspace-v1.0.1-linux-<x86_64|aarch64>.AppImage",
+    "remote-ops-workspace-v1.0.1-linux-<x86_64|aarch64>-native.tar.gz",
+    "remote-ops-workspace-v1.0.1-macos-<x64|arm64>.dmg",
+    "remote-ops-workspace-v1.0.1-macos-<x64|arm64>.pkg",
     "not uploaded by the default GitHub",
 )
 
 STALE_DEFAULT_ARTIFACT_SNIPPETS = (
-    "remote-ops-workspace-v1.0.0-linux-<i386|amd64|armhf|arm64>.deb",
-    "remote-ops-workspace-v1.0.0-linux-<i686|x86_64|armv7hl|aarch64>.rpm",
-    "remote-ops-workspace-v1.0.0-linux-<i686|x86_64|armhf|aarch64>.AppImage",
-    "remote-ops-workspace-v1.0.0-linux-<i686|x86_64|armhf|aarch64>-native.tar.gz",
-    "remote-ops-workspace-v1.0.0-macos-<arch>.dmg",
-    "remote-ops-workspace-v1.0.0-macos-<arch>.pkg",
+    "remote-ops-workspace-v1.0.1-linux-<i386|amd64|armhf|arm64>.deb",
+    "remote-ops-workspace-v1.0.1-linux-<i686|x86_64|armv7hl|aarch64>.rpm",
+    "remote-ops-workspace-v1.0.1-linux-<i686|x86_64|armhf|aarch64>.AppImage",
+    "remote-ops-workspace-v1.0.1-linux-<i686|x86_64|armhf|aarch64>-native.tar.gz",
+    "remote-ops-workspace-v1.0.1-macos-<arch>.dmg",
+    "remote-ops-workspace-v1.0.1-macos-<arch>.pkg",
 )
 
 

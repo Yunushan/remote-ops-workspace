@@ -43,6 +43,8 @@ def test_example_profiles_use_clearly_fake_hostnames() -> None:
 
     assert examples["example-ssh"].host == "ssh.example.invalid"
     assert examples["example-rdp"].host == "rdp.example.invalid"
+    for name in ["edge-prod", "files-prod", "win-admin", "linux-console", "sftp-ops", "jump-host", "prod-cluster"]:
+        assert str(examples[name].host).endswith(".example.invalid")
     assert not any(str(profile.host or "").startswith("192.0.2.") for profile in examples.values())
 
 

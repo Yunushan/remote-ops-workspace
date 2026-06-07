@@ -2,8 +2,8 @@
   "contact_sheet": {
     "height": 1392,
     "path": "all-gui-designs-contact-sheet.png",
-    "sha256": "d61b26f1a41ab336a8022be4cc0be89bef3b1d1ed25002c4924890b7fc5d953f",
-    "size_bytes": 332688,
+    "sha256": "56fbd0844cd9043a8bc517a2ad32f896e0781375fc7a3b0561d35bac935506bc",
+    "size_bytes": 395510,
     "width": 1272
   },
   "contact_thumb": {
@@ -18,8 +18,8 @@
       "image": {
         "height": 760,
         "path": "native.png",
-        "sha256": "9e09b26cb08fb54a5b4b88160106b1579606fe3091ec9032607da1d845d11140",
-        "size_bytes": 65720,
+        "sha256": "c9ee013c95767988d69e2f561eade99f575969b002daae74aaaf45d54c11dc6f",
+        "size_bytes": 68708,
         "width": 1280
       },
       "label": "Native",
@@ -34,8 +34,8 @@
       "image": {
         "height": 760,
         "path": "mobaxterm.png",
-        "sha256": "075994aa24e3e5fe676474a265c495d606080b0ea9899e77f232a691e5ff7521",
-        "size_bytes": 79891,
+        "sha256": "987aa44afeab0f662f3e206a64ddfd142eeccda4fb41f132f4161ca26ed3a04d",
+        "size_bytes": 77455,
         "width": 1280
       },
       "label": "MobaXterm-style",
@@ -50,8 +50,8 @@
       "image": {
         "height": 760,
         "path": "securecrt.png",
-        "sha256": "cd1ea71781afd6a74de52824721b6ad7147c5d0aa6114913f615c8685870a8df",
-        "size_bytes": 65524,
+        "sha256": "c0e1543c7dcc676b8e00dc0d768937eedfee4bbd410f74ac29018abe190fe493",
+        "size_bytes": 87250,
         "width": 1280
       },
       "label": "SecureCRT-style",
@@ -66,8 +66,8 @@
       "image": {
         "height": 760,
         "path": "termius.png",
-        "sha256": "36d268b7437366407530ca45608935226ec355a5362a44892dc9c48e53a67e6e",
-        "size_bytes": 67116,
+        "sha256": "0e0acf3fbbc6f40434f44bd8fd4ff43d02ce2eaee90df17538f8c349c2939671",
+        "size_bytes": 86507,
         "width": 1280
       },
       "label": "Termius-style",
@@ -82,8 +82,8 @@
       "image": {
         "height": 760,
         "path": "remmina.png",
-        "sha256": "d320d1f6108f26a994edf981639e510b77d1bc9ed4afec8df8915f38ca274164",
-        "size_bytes": 66986,
+        "sha256": "10ec3577c8e1d504bc269ec060b531f1fceb8f07c105ac5339777b3e3184a66a",
+        "size_bytes": 77072,
         "width": 1280
       },
       "label": "Remmina-style",
@@ -98,8 +98,8 @@
       "image": {
         "height": 760,
         "path": "mremoteng.png",
-        "sha256": "7b87a3ada4da839edc06b1d41bcb053ec7bbe7ea1d4a76149b22b7c70fa81c48",
-        "size_bytes": 67428,
+        "sha256": "9530d18e47f4738eba74a3a840e165b51f21473c3a4dc1737926a273c9444854",
+        "size_bytes": 86489,
         "width": 1280
       },
       "label": "mRemoteNG-style",

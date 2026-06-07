@@ -80,7 +80,6 @@ def check_gui_render_job(workflow: str) -> list[str]:
         "libxcb-cursor0": "Qt xcb cursor runtime library",
         '".[desktop,security,dev]"': "desktop extra installation",
         "python scripts/check_real_gui_render.py --require-pyqt6": "required live GUI render smoke",
-        "--preset native --preset mobaxterm": "native and MobaXterm live screenshot presets",
         "--out-dir artifacts/gui-real": "live GUI screenshot artifact output",
         "actions/upload-artifact@v7": "live GUI screenshot artifact upload",
         "if-no-files-found: error": "artifact upload failure on missing live screenshots",
@@ -88,6 +87,8 @@ def check_gui_render_job(workflow: str) -> list[str]:
     for snippet, label in required_snippets.items():
         if snippet not in block:
             errors.append(f"ci gui-render job missing {label}: {snippet}")
+    if "--preset " in block:
+        errors.append("ci gui-render job must use the default all-preset live screenshot set")
     return errors
 
 

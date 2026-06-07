@@ -125,9 +125,82 @@ class RemoteMonitoringSnapshot:
 
 
 @dataclass(frozen=True, slots=True)
+class MobaTelemetrySegment:
+    key: str
+    icon_key: str
+    label: str
+    value: str
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "key": self.key,
+            "icon_key": self.icon_key,
+            "label": self.label,
+            "value": self.value,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class MobaTelemetryCell:
+    key: str
+    icon_key: str
+    label: str
+    value: str
+    display_text: str
+    width: int
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "icon_key": self.icon_key,
+            "label": self.label,
+            "value": self.value,
+            "display_text": self.display_text,
+            "width": self.width,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class MobaConnectedTabChromeItem:
+    key: str
+    label: str
+    icon_key: str
+    active: bool
+    closeable: bool
+    width: int
+    tooltip: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "label": self.label,
+            "icon_key": self.icon_key,
+            "active": self.active,
+            "closeable": self.closeable,
+            "width": self.width,
+            "tooltip": self.tooltip,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class MobaTerminalTranscriptLine:
+    key: str
+    text: str
+    tone: str
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "key": self.key,
+            "text": self.text,
+            "tone": self.tone,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class MobaConnectedSessionState:
     profile_name: str
     target: str
+    connection_label: str
     remote_path: str
     follow_terminal_folder: bool
     file_entries: tuple[RemoteFileEntry, ...]
@@ -136,11 +209,13 @@ class MobaConnectedSessionState:
     monitoring_plan: RemoteMonitoringPlan
     monitoring: RemoteMonitoringSnapshot
     banner: SshConnectionBanner
+    terminal_transcript: tuple[MobaTerminalTranscriptLine, ...]
 
     def to_dict(self) -> dict[str, object]:
         return {
             "profile_name": self.profile_name,
             "target": self.target,
+            "connection_label": self.connection_label,
             "remote_path": self.remote_path,
             "follow_terminal_folder": self.follow_terminal_folder,
             "file_entries": [item.to_dict() for item in self.file_entries],
@@ -154,7 +229,9 @@ class MobaConnectedSessionState:
             },
             "monitoring_plan": self.monitoring_plan.to_dict(),
             "monitoring": self.monitoring.to_dict(),
+            "telemetry_cells": [cell.to_dict() for cell in moba_telemetry_cells(self)],
             "banner": self.banner.to_dict(),
+            "terminal_transcript": [line.to_dict() for line in self.terminal_transcript],
         }
 
 
@@ -173,6 +250,7 @@ def build_moba_connected_session_state(
     return MobaConnectedSessionState(
         profile_name=profile.name,
         target=profile.display_target,
+        connection_label=moba_connected_profile_label(profile),
         remote_path=selected_path,
         follow_terminal_folder=follow_terminal_folder,
         file_entries=entries,
@@ -181,7 +259,147 @@ def build_moba_connected_session_state(
         monitoring_plan=build_remote_monitoring_plan(profile),
         monitoring=parse_remote_monitoring_output(monitoring_output) or default_remote_monitoring_snapshot(profile),
         banner=build_ssh_connection_banner(profile),
+        terminal_transcript=build_moba_terminal_transcript(profile, selected_path),
     )
+
+
+def moba_connected_profile_label(profile: Profile) -> str:
+    target = moba_connected_profile_target(profile)
+    if profile.username:
+        return f"{target} ({profile.username})"
+    return target
+
+
+def moba_connected_profile_target(profile: Profile) -> str:
+    if profile.host:
+        if profile.port and profile.port not in {22}:
+            return f"{profile.host}:{profile.port}"
+        return profile.host
+    return profile.display_target
+
+
+def moba_connected_tab_label(state: MobaConnectedSessionState, *, ordinal: int | None = None) -> str:
+    if ordinal is None:
+        return state.connection_label
+    return f"{ordinal}. {state.connection_label}"
+
+
+def moba_connected_window_title(state: MobaConnectedSessionState) -> str:
+    return state.connection_label
+
+
+def build_moba_terminal_transcript(profile: Profile, remote_path: str) -> tuple[MobaTerminalTranscriptLine, ...]:
+    target = moba_connected_profile_target(profile)
+    username = profile.username or "operator"
+    host_alias = target.split(":", maxsplit=1)[0].split(".", maxsplit=1)[0] or "remote"
+    normalized_path = normalise_remote_path(remote_path)
+    prompt_folder = PurePosixPath(normalized_path).name or "~"
+    return (
+        MobaTerminalTranscriptLine("web-console", f"Web console: https://{target}:9090/", "info"),
+        MobaTerminalTranscriptLine("spacer", "", "spacer"),
+        MobaTerminalTranscriptLine("last-login", "Last login: Sat Jun  6 05:27:50 2026", "info"),
+        MobaTerminalTranscriptLine("change-directory", f"[{username}@{host_alias} ~]$ cd {normalized_path}", "command"),
+        MobaTerminalTranscriptLine("tail-log", f"[{username}@{host_alias} {prompt_folder}]$ tail -f deploy.log", "command"),
+        MobaTerminalTranscriptLine("healthy-output", "2026-06-06T05:28:01Z service healthy", "output"),
+    )
+
+
+def moba_connected_tab_chrome_items(state: MobaConnectedSessionState) -> tuple[MobaConnectedTabChromeItem, ...]:
+    return (
+        MobaConnectedTabChromeItem(
+            key="home",
+            label="",
+            icon_key="home",
+            active=False,
+            closeable=False,
+            width=42,
+            tooltip="Home",
+        ),
+        MobaConnectedTabChromeItem(
+            key="inactive-session",
+            label="6. jump.example.invalid (operator)",
+            icon_key="terminal-key",
+            active=False,
+            closeable=True,
+            width=226,
+            tooltip="Inactive connected SSH tab",
+        ),
+        MobaConnectedTabChromeItem(
+            key="active-session",
+            label=moba_connected_tab_label(state, ordinal=7),
+            icon_key="terminal-key",
+            active=True,
+            closeable=True,
+            width=258,
+            tooltip="Active connected SSH tab with SFTP browser",
+        ),
+        MobaConnectedTabChromeItem(
+            key="new-session",
+            label="+",
+            icon_key="plus",
+            active=False,
+            closeable=False,
+            width=32,
+            tooltip="Open a new local terminal",
+        ),
+    )
+
+
+def moba_telemetry_segments(state: MobaConnectedSessionState) -> tuple[MobaTelemetrySegment, ...]:
+    monitoring = state.monitoring
+    return (
+        MobaTelemetrySegment("target", "host", "Connected target", state.target),
+        MobaTelemetrySegment("cpu", "cpu", "CPU usage", f"{monitoring.cpu_percent}%"),
+        MobaTelemetrySegment("memory", "memory", "Memory usage", monitoring.memory_label),
+        MobaTelemetrySegment("disk", "disk", "Disk usage", monitoring.disk_label),
+        MobaTelemetrySegment("net-up", "upload", "Network upload", f"{monitoring.net_up_mbps:.2f} Mb/s"),
+        MobaTelemetrySegment("net-down", "download", "Network download", f"{monitoring.net_down_mbps:.2f} Mb/s"),
+        MobaTelemetrySegment("connections", "connection", "Open connections", str(monitoring.connection_count)),
+        MobaTelemetrySegment("processes", "process", "Remote processes", str(monitoring.process_count)),
+    )
+
+
+def moba_telemetry_cells(state: MobaConnectedSessionState) -> tuple[MobaTelemetryCell, ...]:
+    widths = {
+        "target": 165,
+        "cpu": 60,
+        "memory": 125,
+        "disk": 124,
+        "net-up": 88,
+        "net-down": 88,
+        "connections": 145,
+        "processes": 77,
+    }
+    display_by_key = {
+        "target": moba_telemetry_target_display(state),
+        "connections": f"Connections: {state.monitoring.connection_count} (port {moba_telemetry_port(state)})",
+        "processes": f"{max(1, state.monitoring.connection_count + 1)}/{state.monitoring.process_count}",
+    }
+    return tuple(
+        MobaTelemetryCell(
+            key=segment.key,
+            icon_key=segment.icon_key,
+            label=segment.label,
+            value=segment.value,
+            display_text=display_by_key.get(segment.key, segment.value),
+            width=widths[segment.key],
+        )
+        for segment in moba_telemetry_segments(state)
+    )
+
+
+def moba_telemetry_port(state: MobaConnectedSessionState) -> str:
+    _prefix, separator, suffix = state.target.rpartition(":")
+    if separator and suffix.isdigit():
+        return suffix
+    return "22"
+
+
+def moba_telemetry_target_display(state: MobaConnectedSessionState) -> str:
+    _prefix, separator, suffix = state.target.rpartition(":")
+    if separator and suffix.isdigit():
+        return state.target
+    return f"{state.target}:{moba_telemetry_port(state)}"
 
 
 def build_follow_terminal_folder_plan(profile: Profile, terminal_cwd: str) -> SftpBatchPlan:

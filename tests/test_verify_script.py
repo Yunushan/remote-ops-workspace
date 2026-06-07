@@ -23,6 +23,8 @@ def test_verify_steps_include_full_checks_and_cli_smoke(tmp_path: Path) -> None:
     assert "native release hardening" in names
     assert "native installer smoke contract" in names
     assert "GUI preview workflow" in names
+    assert "GUI visual metrics" in names
+    assert "GUI parity criteria" in names
     assert "real GUI render smoke" in names
     assert "README media workflow" in names
     assert "first-run UX" in names
@@ -52,6 +54,8 @@ def test_verify_quick_mode_skips_pytest_but_keeps_cli_smoke(tmp_path: Path) -> N
     assert "native release hardening" in names
     assert "native installer smoke contract" in names
     assert "GUI preview workflow" in names
+    assert "GUI visual metrics" in names
+    assert "GUI parity criteria" in names
     assert "real GUI render smoke" in names
     assert "README media workflow" in names
     assert "first-run UX" in names

@@ -58,16 +58,16 @@ def test_ci_workflow_requires_dedicated_gui_render_job() -> None:
     assert "ci workflow missing gui-render job for live PyQt6 screenshots" in errors
 
 
-def test_ci_workflow_requires_mobaxterm_live_render_capture() -> None:
+def test_ci_workflow_requires_all_preset_live_render_capture() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
-        " --preset mobaxterm",
-        "",
+        "--require-pyqt6 --out-dir",
+        "--require-pyqt6 --preset native --preset mobaxterm --out-dir",
     )
 
     errors = checker.check_ci_workflow(workflow)
 
-    assert "ci gui-render job missing native and MobaXterm live screenshot presets" in "\n".join(errors)
+    assert "ci gui-render job must use the default all-preset live screenshot set" in errors
 
 
 def test_ci_workflow_requires_linux_qt_runtime_libraries() -> None:

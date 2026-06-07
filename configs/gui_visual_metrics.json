@@ -1,0 +1,221 @@
+{
+  "schema_version": 1,
+  "target_percent": 100,
+  "preview_size": [1280, 760],
+  "scope": "Static GUI preview visual metrics. These measurements verify that generated PNGs contain the expected major layout regions, brightness bands and visual complexity for each selectable preset.",
+  "presets": {
+    "native": {
+      "regions": [
+        {"id": "toolbar", "box": [0, 34, 1280, 88], "mean_luminance": [225, 255], "min_unique_colors": 120},
+        {"id": "sidebar", "box": [18, 106, 305, 736], "mean_luminance": [235, 255], "min_unique_colors": 120},
+        {"id": "workspace", "box": [323, 106, 1262, 581], "mean_luminance": [60, 150], "min_unique_colors": 350},
+        {"id": "log", "box": [323, 581, 1262, 736], "mean_luminance": [240, 255], "min_unique_colors": 80}
+      ]
+    },
+    "mobaxterm": {
+      "regions": [
+        {"id": "titlebar-chrome", "box": [0, 0, 1280, 22], "mean_luminance": [20, 65], "min_unique_colors": 25},
+        {"id": "top-menu-strip", "box": [0, 22, 470, 44], "mean_luminance": [15, 55], "min_unique_colors": 35},
+        {"id": "ribbon", "box": [0, 44, 1280, 108], "mean_luminance": [20, 60], "min_unique_colors": 160},
+        {"id": "ribbon-pictograms", "box": [10, 48, 860, 82], "mean_luminance": [20, 95], "min_unique_colors": 50},
+        {"id": "moba-rail-labels", "box": [0, 132, 24, 520], "mean_luminance": [10, 60], "min_unique_colors": 45},
+        {"id": "connected-left-dock", "box": [24, 132, 390, 738], "mean_luminance": [15, 45], "min_unique_colors": 140},
+        {"id": "connected-tab-strip", "box": [390, 108, 966, 136], "mean_luminance": [20, 70], "min_unique_colors": 55},
+        {"id": "ssh-banner-panel", "box": [432, 148, 1002, 314], "mean_luminance": [15, 55], "min_unique_colors": 35},
+        {"id": "sftp-path-table-chrome", "box": [30, 170, 386, 228], "mean_luminance": [20, 65], "min_unique_colors": 35},
+        {"id": "sftp-density-stack", "box": [30, 138, 386, 356], "mean_luminance": [15, 65], "min_unique_colors": 95},
+        {"id": "sftp-glyphs", "box": [34, 142, 370, 405], "mean_luminance": [15, 60], "min_unique_colors": 70},
+        {"id": "sftp-monitoring-dock", "box": [42, 608, 372, 712], "mean_luminance": [10, 45], "min_unique_colors": 25},
+        {"id": "monitoring-controls", "box": [58, 622, 268, 716], "mean_luminance": [10, 50], "min_unique_colors": 28},
+        {"id": "connected-terminal", "box": [390, 136, 1270, 720], "mean_luminance": [20, 60], "min_unique_colors": 180},
+        {"id": "terminal-transcript", "box": [404, 328, 850, 452], "mean_luminance": [20, 85], "min_unique_colors": 25},
+        {"id": "right-utility-rail", "box": [1250, 136, 1280, 739], "mean_luminance": [20, 70], "min_unique_colors": 5},
+        {"id": "bottom-telemetry", "box": [390, 714, 1270, 738], "mean_luminance": [20, 50], "min_unique_colors": 70},
+        {"id": "telemetry-cell-strip", "box": [398, 715, 1272, 738], "mean_luminance": [20, 55], "min_unique_colors": 75},
+        {"id": "moba-status-notice", "box": [0, 740, 330, 760], "mean_luminance": [15, 65], "min_unique_colors": 25}
+      ],
+      "color_anchors": [
+        {"id": "titlebar-icon-accent", "point": [11, 11], "rgb_min": [220, 175, 20], "rgb_max": [255, 230, 95]},
+        {"id": "quick-connect-accent", "point": [10, 110], "rgb_min": [35, 110, 180], "rgb_max": [75, 155, 235]},
+        {"id": "session-ribbon-icon", "point": [38, 72], "rgb_min": [45, 130, 210], "rgb_max": [95, 190, 255]},
+        {"id": "sessions-star-accent", "point": [274, 62], "rgb_min": [220, 175, 20], "rgb_max": [255, 230, 95]},
+        {"id": "ssh-banner-border", "point": [432, 154], "rgb_min": [220, 180, 0], "rgb_max": [255, 230, 45]},
+        {"id": "right-utility-settings-gear", "point": [1266, 194], "rgb_min": [40, 170, 230], "rgb_max": [80, 210, 255]},
+        {"id": "remote-monitoring-accent", "point": [128, 623], "rgb_min": [35, 180, 170], "rgb_max": [75, 235, 220]},
+        {"id": "telemetry-text", "point": [424, 727], "rgb_min": [210, 210, 210], "rgb_max": [245, 245, 245]}
+      ],
+      "line_anchors": [
+        {"id": "titlebar-bottom-rule", "from": [0, 21], "to": [1279, 21], "rgb_min": [55, 55, 55], "rgb_max": [90, 90, 90], "min_match_ratio": 0.99},
+        {"id": "quick-connect-top-blue-border", "from": [4, 110], "to": [386, 110], "rgb_min": [35, 110, 180], "rgb_max": [75, 155, 235], "min_match_ratio": 0.95},
+        {"id": "quick-connect-bottom-blue-border", "from": [4, 130], "to": [386, 130], "rgb_min": [35, 110, 180], "rgb_max": [75, 155, 235], "min_match_ratio": 0.95},
+        {"id": "ribbon-bottom-rule", "from": [0, 107], "to": [1279, 107], "rgb_min": [60, 60, 60], "rgb_max": [80, 80, 80], "min_match_ratio": 0.99},
+        {"id": "connected-dock-main-divider", "from": [390, 108], "to": [390, 739], "rgb_min": [25, 25, 25], "rgb_max": [85, 85, 85], "min_match_ratio": 0.98},
+        {"id": "sftp-toolbar-bottom-rule", "from": [30, 164], "to": [384, 164], "rgb_min": [55, 55, 55], "rgb_max": [90, 90, 90], "min_match_ratio": 0.9},
+        {"id": "sftp-toolbar-group-separator-a", "from": [64, 143], "to": [64, 159], "rgb_min": [55, 55, 55], "rgb_max": [90, 90, 90], "min_match_ratio": 0.9},
+        {"id": "sftp-toolbar-group-separator-b", "from": [119, 143], "to": [119, 159], "rgb_min": [55, 55, 55], "rgb_max": [90, 90, 90], "min_match_ratio": 0.9},
+        {"id": "sftp-path-bottom-rule", "from": [30, 195], "to": [384, 195], "rgb_min": [55, 55, 55], "rgb_max": [90, 90, 90], "min_match_ratio": 0.9},
+        {"id": "sftp-header-bottom-rule", "from": [30, 227], "to": [384, 227], "rgb_min": [55, 55, 55], "rgb_max": [90, 90, 90], "min_match_ratio": 0.9},
+        {"id": "sftp-dock-bottom-rule", "from": [24, 738], "to": [389, 738], "rgb_min": [60, 60, 60], "rgb_max": [80, 80, 80], "min_match_ratio": 0.9},
+        {"id": "remote-monitoring-divider", "from": [42, 608], "to": [372, 608], "rgb_min": [145, 145, 145], "rgb_max": [180, 180, 180], "min_match_ratio": 0.9},
+        {"id": "tab-strip-baseline", "from": [390, 136], "to": [690, 136], "rgb_min": [25, 25, 25], "rgb_max": [85, 85, 85], "min_match_ratio": 0.98},
+        {"id": "telemetry-top-rule", "from": [390, 714], "to": [1279, 714], "rgb_min": [60, 60, 60], "rgb_max": [80, 80, 80], "min_match_ratio": 0.99},
+        {"id": "telemetry-cell-separator", "from": [565, 716], "to": [565, 737], "rgb_min": [60, 60, 60], "rgb_max": [80, 80, 80], "min_match_ratio": 0.9},
+        {"id": "status-bar-top-rule", "from": [0, 739], "to": [1279, 739], "rgb_min": [20, 20, 20], "rgb_max": [70, 70, 70], "min_match_ratio": 0.99}
+      ],
+      "topology": [
+        {"id": "ribbon-above-connected-dock", "from": "ribbon", "relation": "above", "to": "connected-left-dock", "min_gap": 16, "max_gap": 40},
+        {"id": "ribbon-above-connected-terminal", "from": "ribbon", "relation": "above", "to": "connected-terminal", "min_gap": 16, "max_gap": 40},
+        {"id": "dock-left-of-terminal", "from": "connected-left-dock", "relation": "left_of", "to": "connected-terminal", "max_gap": 0},
+        {"id": "sftp-glyphs-inside-connected-dock", "from": "sftp-glyphs", "relation": "inside", "to": "connected-left-dock"},
+        {"id": "bottom-telemetry-below-sftp-glyphs", "from": "bottom-telemetry", "relation": "below", "to": "sftp-glyphs", "min_gap": 260, "max_gap": 340}
+      ]
+    },
+    "securecrt": {
+      "regions": [
+        {"id": "toolbar", "box": [0, 34, 1280, 88], "mean_luminance": [35, 75], "min_unique_colors": 130},
+        {"id": "session-manager", "box": [18, 106, 270, 736], "mean_luminance": [20, 50], "min_unique_colors": 140},
+        {"id": "terminal-surface", "box": [288, 106, 1262, 618], "mean_luminance": [5, 35], "min_unique_colors": 180},
+        {"id": "session-status-strip", "box": [298, 214, 1252, 247], "mean_luminance": [15, 45], "min_unique_colors": 220},
+        {"id": "command-window", "box": [300, 528, 1250, 588], "mean_luminance": [5, 45], "min_unique_colors": 80},
+        {"id": "command-window-input", "box": [432, 558, 1174, 582], "mean_luminance": [5, 50], "min_unique_colors": 35},
+        {"id": "session-log", "box": [288, 618, 1262, 736], "mean_luminance": [10, 35], "min_unique_colors": 70}
+      ],
+      "color_anchors": [
+        {"id": "connect-toolbar-accent", "point": [424, 58], "rgb_min": [185, 140, 45], "rgb_max": [235, 190, 95]},
+        {"id": "active-tab-border", "point": [291, 109], "rgb_min": [185, 140, 45], "rgb_max": [235, 190, 95]},
+        {"id": "session-folder-accent", "point": [38, 177], "rgb_min": [185, 140, 45], "rgb_max": [235, 190, 95]},
+        {"id": "terminal-command-accent", "point": [313, 300], "rgb_min": [55, 85, 55], "rgb_max": [100, 145, 100]},
+        {"id": "session-status-state-accent", "point": [1160, 230], "rgb_min": [75, 55, 20], "rgb_max": [105, 85, 50]},
+        {"id": "command-window-send", "point": [1190, 571], "rgb_min": [185, 140, 45], "rgb_max": [235, 190, 95]},
+        {"id": "workspace-header-dark", "point": [312, 186], "rgb_min": [20, 20, 20], "rgb_max": [55, 55, 55]}
+      ],
+      "line_anchors": [
+        {"id": "toolbar-bottom-rule", "from": [0, 88], "to": [1279, 88], "rgb_min": [30, 30, 30], "rgb_max": [45, 45, 45], "min_match_ratio": 0.99},
+        {"id": "session-manager-workspace-divider", "from": [288, 106], "to": [288, 736], "rgb_min": [40, 40, 40], "rgb_max": [70, 70, 70], "min_match_ratio": 0.9},
+        {"id": "tab-strip-baseline", "from": [288, 132], "to": [1262, 132], "rgb_min": [5, 5, 5], "rgb_max": [70, 70, 70], "min_match_ratio": 0.92},
+        {"id": "session-status-bottom-rule", "from": [300, 245], "to": [1250, 245], "rgb_min": [55, 55, 55], "rgb_max": [95, 95, 95], "min_match_ratio": 0.99},
+        {"id": "command-window-top-rule", "from": [300, 528], "to": [1250, 528], "rgb_min": [5, 5, 5], "rgb_max": [20, 20, 20], "min_match_ratio": 0.99},
+        {"id": "session-log-top-rule", "from": [288, 618], "to": [1262, 618], "rgb_min": [5, 5, 5], "rgb_max": [70, 70, 70], "min_match_ratio": 0.92},
+        {"id": "status-bar-top-rule", "from": [0, 738], "to": [1279, 738], "rgb_min": [30, 30, 30], "rgb_max": [45, 45, 45], "min_match_ratio": 0.99}
+      ],
+      "topology": [
+        {"id": "toolbar-above-session-manager", "from": "toolbar", "relation": "above", "to": "session-manager", "min_gap": 12, "max_gap": 30},
+        {"id": "session-manager-left-of-terminal", "from": "session-manager", "relation": "left_of", "to": "terminal-surface", "min_gap": 12, "max_gap": 30},
+        {"id": "command-window-inside-terminal", "from": "command-window", "relation": "inside", "to": "terminal-surface"},
+        {"id": "session-log-below-terminal", "from": "session-log", "relation": "below", "to": "terminal-surface", "max_gap": 0},
+        {"id": "command-window-above-session-log", "from": "command-window", "relation": "above", "to": "session-log", "min_gap": 20, "max_gap": 40}
+      ]
+    },
+    "termius": {
+      "regions": [
+        {"id": "toolbar", "box": [0, 34, 1280, 88], "mean_luminance": [30, 65], "min_unique_colors": 140},
+        {"id": "hosts-sidebar", "box": [18, 106, 292, 736], "mean_luminance": [15, 45], "min_unique_colors": 140},
+        {"id": "west-tab-rail", "box": [310, 106, 396, 600], "mean_luminance": [20, 50], "min_unique_colors": 90},
+        {"id": "host-workspace", "box": [396, 106, 1262, 600], "mean_luminance": [10, 45], "min_unique_colors": 220},
+        {"id": "host-header-chips", "box": [900, 130, 1245, 160], "mean_luminance": [20, 75], "min_unique_colors": 35},
+        {"id": "host-identity-strip", "box": [408, 214, 1250, 247], "mean_luminance": [25, 55], "min_unique_colors": 170},
+        {"id": "workflow-cards", "box": [408, 494, 1250, 586], "mean_luminance": [10, 50], "min_unique_colors": 100},
+        {"id": "sync-activity", "box": [310, 600, 1262, 736], "mean_luminance": [10, 35], "min_unique_colors": 80}
+      ],
+      "color_anchors": [
+        {"id": "sync-toolbar-accent", "point": [31, 58], "rgb_min": [50, 115, 80], "rgb_max": [90, 165, 120]},
+        {"id": "active-west-tab-border", "point": [313, 109], "rgb_min": [80, 180, 120], "rgb_max": [120, 230, 170]},
+        {"id": "personal-folder-accent", "point": [39, 177], "rgb_min": [80, 180, 120], "rgb_max": [120, 230, 170]},
+        {"id": "vault-status-chip", "point": [916, 142], "rgb_min": [55, 120, 85], "rgb_max": [95, 170, 130]},
+        {"id": "host-identity-sync-cell", "point": [1200, 225], "rgb_min": [80, 180, 120], "rgb_max": [120, 230, 170]},
+        {"id": "port-forward-card-icon", "point": [710, 525], "rgb_min": [80, 180, 120], "rgb_max": [120, 230, 170]},
+        {"id": "snippet-card-icon", "point": [986, 525], "rgb_min": [80, 180, 120], "rgb_max": [120, 230, 170]}
+      ],
+      "line_anchors": [
+        {"id": "toolbar-bottom-rule", "from": [0, 88], "to": [1279, 88], "rgb_min": [20, 25, 28], "rgb_max": [30, 35, 38], "min_match_ratio": 0.99},
+        {"id": "hosts-sidebar-workspace-divider", "from": [310, 106], "to": [310, 736], "rgb_min": [15, 18, 20], "rgb_max": [55, 65, 70], "min_match_ratio": 0.98},
+        {"id": "west-tab-rail-divider", "from": [396, 106], "to": [396, 600], "rgb_min": [15, 18, 20], "rgb_max": [60, 70, 75], "min_match_ratio": 0.97},
+        {"id": "host-identity-bottom-rule", "from": [410, 245], "to": [1248, 245], "rgb_min": [15, 18, 20], "rgb_max": [70, 80, 85], "min_match_ratio": 0.99},
+        {"id": "workflow-card-top-rule", "from": [408, 494], "to": [1250, 494], "rgb_min": [15, 18, 20], "rgb_max": [70, 80, 85], "min_match_ratio": 0.9},
+        {"id": "sync-activity-top-rule", "from": [310, 600], "to": [1262, 600], "rgb_min": [15, 18, 20], "rgb_max": [70, 80, 85], "min_match_ratio": 0.9},
+        {"id": "status-bar-top-rule", "from": [0, 738], "to": [1279, 738], "rgb_min": [20, 25, 28], "rgb_max": [30, 35, 38], "min_match_ratio": 0.99}
+      ],
+      "topology": [
+        {"id": "toolbar-above-hosts-sidebar", "from": "toolbar", "relation": "above", "to": "hosts-sidebar", "min_gap": 12, "max_gap": 30},
+        {"id": "hosts-sidebar-left-of-west-tab-rail", "from": "hosts-sidebar", "relation": "left_of", "to": "west-tab-rail", "min_gap": 12, "max_gap": 30},
+        {"id": "west-tab-rail-left-of-host-workspace", "from": "west-tab-rail", "relation": "left_of", "to": "host-workspace", "max_gap": 0},
+        {"id": "workflow-cards-inside-host-workspace", "from": "workflow-cards", "relation": "inside", "to": "host-workspace"},
+        {"id": "sync-activity-below-host-workspace", "from": "sync-activity", "relation": "below", "to": "host-workspace", "max_gap": 0}
+      ]
+    },
+    "remmina": {
+      "regions": [
+        {"id": "toolbar", "box": [0, 34, 1280, 88], "mean_luminance": [225, 255], "min_unique_colors": 120},
+        {"id": "connection-profiles", "box": [18, 106, 320, 736], "mean_luminance": [235, 255], "min_unique_colors": 120},
+        {"id": "profile-list-chrome", "box": [28, 168, 312, 296], "mean_luminance": [225, 255], "min_unique_colors": 190},
+        {"id": "viewer-control-strip", "box": [846, 150, 1255, 186], "mean_luminance": [220, 255], "min_unique_colors": 45},
+        {"id": "viewer-control-glyphs", "box": [850, 154, 1245, 184], "mean_luminance": [220, 255], "min_unique_colors": 40},
+        {"id": "remote-viewer", "box": [356, 203, 1010, 600], "mean_luminance": [200, 245], "min_unique_colors": 160},
+        {"id": "profile-options", "box": [1018, 203, 1240, 600], "mean_luminance": [235, 255], "min_unique_colors": 100},
+        {"id": "connection-activity", "box": [338, 602, 1262, 736], "mean_luminance": [240, 255], "min_unique_colors": 70}
+      ],
+      "color_anchors": [
+        {"id": "connect-toolbar-accent", "point": [390, 58], "rgb_min": [25, 100, 205], "rgb_max": [70, 145, 245]},
+        {"id": "active-viewer-tab-border", "point": [341, 109], "rgb_min": [25, 100, 205], "rgb_max": [70, 145, 245]},
+        {"id": "rdp-folder-accent", "point": [38, 318], "rgb_min": [25, 100, 205], "rgb_max": [70, 145, 245]},
+        {"id": "profile-list-selected-row", "point": [40, 226], "rgb_min": [200, 225, 245], "rgb_max": [230, 245, 255]},
+        {"id": "viewer-titlebar-accent", "point": [368, 233], "rgb_min": [35, 90, 150], "rgb_max": [70, 135, 200]},
+        {"id": "viewer-control-accent", "point": [939, 170], "rgb_min": [25, 100, 205], "rgb_max": [70, 145, 245]},
+        {"id": "rdp-state-card-accent", "point": [926, 251], "rgb_min": [35, 90, 150], "rgb_max": [70, 135, 200]}
+      ],
+      "line_anchors": [
+        {"id": "toolbar-bottom-rule", "from": [0, 88], "to": [1279, 88], "rgb_min": [250, 250, 250], "rgb_max": [255, 255, 255], "min_match_ratio": 0.99},
+        {"id": "profiles-workspace-divider", "from": [338, 106], "to": [338, 736], "rgb_min": [190, 198, 205], "rgb_max": [255, 255, 255], "min_match_ratio": 0.98},
+        {"id": "profile-list-bottom-rule", "from": [30, 294], "to": [310, 294], "rgb_min": [190, 198, 205], "rgb_max": [220, 230, 240], "min_match_ratio": 0.9},
+        {"id": "viewer-tab-baseline", "from": [338, 132], "to": [1262, 132], "rgb_min": [195, 200, 205], "rgb_max": [255, 255, 255], "min_match_ratio": 0.94},
+        {"id": "remote-viewer-top-rule", "from": [356, 225], "to": [1010, 225], "rgb_min": [195, 205, 215], "rgb_max": [220, 235, 245], "min_match_ratio": 0.99},
+        {"id": "remote-viewer-right-rule", "from": [1010, 203], "to": [1010, 600], "rgb_min": [195, 205, 215], "rgb_max": [255, 255, 255], "min_match_ratio": 0.98},
+        {"id": "connection-activity-top-rule", "from": [338, 602], "to": [1262, 602], "rgb_min": [190, 195, 200], "rgb_max": [255, 255, 255], "min_match_ratio": 0.94}
+      ],
+      "topology": [
+        {"id": "toolbar-above-connection-profiles", "from": "toolbar", "relation": "above", "to": "connection-profiles", "min_gap": 12, "max_gap": 30},
+        {"id": "profiles-left-of-remote-viewer", "from": "connection-profiles", "relation": "left_of", "to": "remote-viewer", "min_gap": 24, "max_gap": 48},
+        {"id": "remote-viewer-left-of-profile-options", "from": "remote-viewer", "relation": "left_of", "to": "profile-options", "min_gap": 4, "max_gap": 16},
+        {"id": "viewer-controls-above-remote-viewer", "from": "viewer-control-glyphs", "relation": "above", "to": "remote-viewer", "min_gap": 12, "max_gap": 30},
+        {"id": "connection-activity-below-remote-viewer", "from": "connection-activity", "relation": "below", "to": "remote-viewer", "max_gap": 8}
+      ]
+    },
+    "mremoteng": {
+      "regions": [
+        {"id": "toolbar", "box": [0, 34, 1280, 88], "mean_luminance": [220, 250], "min_unique_colors": 120},
+        {"id": "connections-tree", "box": [18, 106, 355, 736], "mean_luminance": [225, 250], "min_unique_colors": 120},
+        {"id": "document-control-strip", "box": [383, 185, 1252, 213], "mean_luminance": [220, 255], "min_unique_colors": 60},
+        {"id": "document-control-buttons", "box": [510, 216, 880, 244], "mean_luminance": [220, 255], "min_unique_colors": 35},
+        {"id": "document-workspace", "box": [373, 106, 1262, 573], "mean_luminance": [230, 255], "min_unique_colors": 250},
+        {"id": "config-inheritance", "box": [385, 436, 1248, 568], "mean_luminance": [235, 255], "min_unique_colors": 90},
+        {"id": "property-grid-rows", "box": [396, 472, 1240, 568], "mean_luminance": [230, 255], "min_unique_colors": 75},
+        {"id": "connection-log", "box": [373, 573, 1262, 736], "mean_luminance": [240, 255], "min_unique_colors": 70}
+      ],
+      "color_anchors": [
+        {"id": "open-toolbar-accent", "point": [370, 45], "rgb_min": [40, 90, 145], "rgb_max": [80, 130, 190]},
+        {"id": "active-document-tab-border", "point": [376, 109], "rgb_min": [40, 90, 145], "rgb_max": [80, 130, 190]},
+        {"id": "connections-root-accent", "point": [38, 177], "rgb_min": [35, 75, 120], "rgb_max": [75, 120, 170]},
+        {"id": "document-toolbar-save", "point": [526, 223], "rgb_min": [40, 90, 145], "rgb_max": [80, 130, 190]},
+        {"id": "rdp-pane-accent", "point": [938, 390], "rgb_min": [40, 90, 145], "rgb_max": [80, 130, 190]},
+        {"id": "config-grid-divider", "point": [403, 472], "rgb_min": [145, 150, 155], "rgb_max": [185, 190, 200]},
+        {"id": "property-grid-inherited-row", "point": [560, 532], "rgb_min": [135, 160, 185], "rgb_max": [175, 195, 215]}
+      ],
+      "line_anchors": [
+        {"id": "toolbar-bottom-rule", "from": [0, 88], "to": [1279, 88], "rgb_min": [235, 240, 245], "rgb_max": [250, 252, 255], "min_match_ratio": 0.99},
+        {"id": "connections-workspace-divider", "from": [373, 106], "to": [373, 736], "rgb_min": [165, 175, 185], "rgb_max": [255, 255, 255], "min_match_ratio": 0.98},
+        {"id": "document-tab-baseline", "from": [373, 132], "to": [1262, 132], "rgb_min": [165, 175, 185], "rgb_max": [255, 255, 255], "min_match_ratio": 0.98},
+        {"id": "document-control-top-rule", "from": [383, 215], "to": [1252, 215], "rgb_min": [165, 175, 185], "rgb_max": [180, 190, 200], "min_match_ratio": 0.99},
+        {"id": "config-inheritance-top-rule", "from": [385, 436], "to": [1248, 436], "rgb_min": [165, 175, 185], "rgb_max": [255, 255, 255], "min_match_ratio": 0.98},
+        {"id": "property-grid-header-rule", "from": [396, 472], "to": [1240, 472], "rgb_min": [165, 175, 185], "rgb_max": [190, 200, 210], "min_match_ratio": 0.98},
+        {"id": "connection-log-top-rule", "from": [373, 573], "to": [1262, 573], "rgb_min": [165, 175, 185], "rgb_max": [255, 255, 255], "min_match_ratio": 0.94}
+      ],
+      "topology": [
+        {"id": "toolbar-above-connections-tree", "from": "toolbar", "relation": "above", "to": "connections-tree", "min_gap": 12, "max_gap": 30},
+        {"id": "connections-tree-left-of-document-workspace", "from": "connections-tree", "relation": "left_of", "to": "document-workspace", "min_gap": 12, "max_gap": 30},
+        {"id": "document-control-strip-inside-workspace", "from": "document-control-strip", "relation": "inside", "to": "document-workspace"},
+        {"id": "config-inheritance-below-document-controls", "from": "config-inheritance", "relation": "below", "to": "document-control-strip", "min_gap": 210, "max_gap": 235},
+        {"id": "connection-log-below-document-workspace", "from": "connection-log", "relation": "below", "to": "document-workspace", "max_gap": 0}
+      ]
+    }
+  }
+}

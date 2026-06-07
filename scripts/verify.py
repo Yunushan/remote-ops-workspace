@@ -108,6 +108,16 @@ def build_steps(
             env=_source_env(),
         ),
         VerifyStep(
+            "GUI visual metrics",
+            [python, "scripts/check_gui_visual_metrics.py"],
+            env=_source_env(),
+        ),
+        VerifyStep(
+            "GUI parity criteria",
+            [python, "scripts/check_gui_parity.py"],
+            env=_source_env(),
+        ),
+        VerifyStep(
             "real GUI render smoke",
             [python, "scripts/check_real_gui_render.py"],
             env=_source_env(),

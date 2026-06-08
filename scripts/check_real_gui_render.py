@@ -20,11 +20,17 @@ from remote_ops_workspace.gui_designs import (  # noqa: E402
     GUI_DESIGN_PRESETS,
     gui_design_home_tab_label,
     gui_design_interaction_state,
+    gui_design_moba_bottom_edge_controls,
+    gui_design_moba_home_welcome_chrome,
     gui_design_moba_monitoring_controls,
     gui_design_moba_monitoring_metrics,
+    gui_design_moba_quick_connect_chrome,
+    gui_design_moba_quick_connect_suggestion_chrome,
     gui_design_moba_rail_items,
+    gui_design_moba_remote_monitoring_dock_chrome,
     gui_design_moba_ribbon_actions,
     gui_design_moba_right_utility_actions,
+    gui_design_moba_session_edge_actions,
     gui_design_moba_sftp_browser_chrome,
     gui_design_moba_sftp_dock_actions,
     gui_design_moba_sftp_dock_layout,
@@ -36,15 +42,19 @@ from remote_ops_workspace.gui_designs import (  # noqa: E402
     gui_design_mremoteng_document_controls,
     gui_design_mremoteng_document_toolbar_chrome,
     gui_design_mremoteng_property_grid_chrome,
+    gui_design_mremoteng_top_chrome,
     gui_design_reference_state,
     gui_design_remmina_profile_list_chrome,
     gui_design_remmina_viewer_controls,
     gui_design_securecrt_command_window_chrome,
+    gui_design_securecrt_session_manager_chrome,
     gui_design_securecrt_session_status_strip,
+    gui_design_securecrt_top_chrome,
     gui_design_sidebar_copy,
     gui_design_status_segments,
     gui_design_termius_header_chips,
     gui_design_termius_host_identity_strip,
+    gui_design_termius_hosts_chrome,
     gui_design_toolbar_actions,
     gui_design_workflow_cards,
     gui_design_workspace_surface,
@@ -53,6 +63,7 @@ from remote_ops_workspace.launcher import LauncherError  # noqa: E402
 from remote_ops_workspace.moba_connected import (  # noqa: E402
     build_moba_connected_session_state,
     build_moba_terminal_transcript,
+    build_ssh_connection_banner,
     moba_telemetry_cells,
 )
 from remote_ops_workspace.models import Profile  # noqa: E402
@@ -95,6 +106,9 @@ EXPECTED_MOBA_TOP_MENU_ITEMS = tuple(gui_design_moba_top_menu_items())
 EXPECTED_MOBA_TOP_MENU_KEYS = [item.key for item in EXPECTED_MOBA_TOP_MENU_ITEMS]
 EXPECTED_MOBA_TOP_MENU_LABELS = [item.label for item in EXPECTED_MOBA_TOP_MENU_ITEMS]
 EXPECTED_MOBA_TITLEBAR_CHROME = gui_design_moba_titlebar_chrome()
+EXPECTED_MOBA_QUICK_CONNECT_CHROME = gui_design_moba_quick_connect_chrome()
+EXPECTED_MOBA_QUICK_CONNECT_SUGGESTION_CHROME = gui_design_moba_quick_connect_suggestion_chrome()
+EXPECTED_MOBA_HOME_WELCOME_CHROME = gui_design_moba_home_welcome_chrome()
 EXPECTED_MOBA_TERMINAL_TRANSCRIPT = build_moba_terminal_transcript(
     Profile(
         name="edge-prod",
@@ -130,7 +144,22 @@ EXPECTED_MOBA_TAB_CHROME_KEYS = {"home", "active-session", "new-session"}
 EXPECTED_MOBA_STATIC_TAB_CHROME_KEYS = {"home", "inactive-session", "active-session", "new-session"}
 EXPECTED_MOBA_RIGHT_UTILITY_KEYS = {action.key for action in gui_design_moba_right_utility_actions()}
 EXPECTED_MOBA_RIGHT_UTILITY_ICON_KEYS = {action.key: action.icon_key for action in gui_design_moba_right_utility_actions()}
+EXPECTED_MOBA_SESSION_EDGE_ACTIONS = tuple(gui_design_moba_session_edge_actions())
+EXPECTED_MOBA_SESSION_EDGE_KEYS = {action.key for action in EXPECTED_MOBA_SESSION_EDGE_ACTIONS}
+EXPECTED_MOBA_SESSION_EDGE_ICON_KEYS = {action.key: action.icon_key for action in EXPECTED_MOBA_SESSION_EDGE_ACTIONS}
 EXPECTED_MOBA_SSH_BANNER_CHROME = gui_design_moba_ssh_banner_chrome()
+EXPECTED_MOBA_SSH_BANNER = build_ssh_connection_banner(
+    Profile(
+        name="edge-prod",
+        protocol="ssh",
+        host="edge-prod.example.invalid",
+        port=22,
+        username="operator",
+    )
+)
+EXPECTED_MOBA_SSH_BANNER_CAPABILITIES = EXPECTED_MOBA_SSH_BANNER.capability_rows()
+EXPECTED_MOBA_SSH_BANNER_CAPABILITY_KEYS = [row.key for row in EXPECTED_MOBA_SSH_BANNER_CAPABILITIES]
+EXPECTED_MOBA_SSH_BANNER_FOOTER_LINKS = list(EXPECTED_MOBA_SSH_BANNER.footer_links())
 EXPECTED_MOBA_SFTP_BROWSER_CHROME = gui_design_moba_sftp_browser_chrome()
 EXPECTED_MOBA_SFTP_DOCK_LAYOUT = gui_design_moba_sftp_dock_layout()
 EXPECTED_MOBA_SFTP_COLUMN_KEYS = [column.key for column in EXPECTED_MOBA_SFTP_BROWSER_CHROME.columns]
@@ -141,18 +170,44 @@ EXPECTED_MOBA_SFTP_SEPARATOR_AFTER_KEYS = [action.key for action in EXPECTED_MOB
 EXPECTED_MOBA_MONITORING_METRIC_KEYS = {metric.key for metric in gui_design_moba_monitoring_metrics()}
 EXPECTED_MOBA_MONITORING_CONTROLS = tuple(gui_design_moba_monitoring_controls())
 EXPECTED_MOBA_MONITORING_CONTROL_KEYS = {control.key for control in EXPECTED_MOBA_MONITORING_CONTROLS}
+EXPECTED_MOBA_REMOTE_MONITORING_DOCK_CHROME = gui_design_moba_remote_monitoring_dock_chrome()
 EXPECTED_MOBA_STATUS_KEYS = {segment.key for segment in gui_design_moba_status_segments()}
 EXPECTED_MOBA_STATUS_CHROME = gui_design_moba_status_bar_chrome()
+EXPECTED_MOBA_BOTTOM_EDGE_CONTROLS = tuple(gui_design_moba_bottom_edge_controls())
+EXPECTED_MOBA_BOTTOM_EDGE_KEYS = {control.key for control in EXPECTED_MOBA_BOTTOM_EDGE_CONTROLS}
+EXPECTED_MOBA_BOTTOM_EDGE_ICON_KEYS = {control.key: control.icon_key for control in EXPECTED_MOBA_BOTTOM_EDGE_CONTROLS}
 EXPECTED_SECURECRT_COMMAND_WINDOW_CHROME = gui_design_securecrt_command_window_chrome()
 EXPECTED_SECURECRT_SESSION_STATUS_STRIP = gui_design_securecrt_session_status_strip()
 EXPECTED_SECURECRT_SESSION_STATUS_KEYS = [field.key for field in EXPECTED_SECURECRT_SESSION_STATUS_STRIP.fields]
+EXPECTED_SECURECRT_SESSION_MANAGER_CHROME = gui_design_securecrt_session_manager_chrome()
+EXPECTED_SECURECRT_SESSION_MANAGER_ACTION_KEYS = [action.key for action in EXPECTED_SECURECRT_SESSION_MANAGER_CHROME.actions]
+EXPECTED_SECURECRT_SESSION_MANAGER_ICON_KEYS = {
+    action.key: action.icon_key for action in EXPECTED_SECURECRT_SESSION_MANAGER_CHROME.actions
+}
+EXPECTED_SECURECRT_TOP_CHROME = gui_design_securecrt_top_chrome()
+EXPECTED_SECURECRT_TOP_MENU_KEYS = [item.key for item in EXPECTED_SECURECRT_TOP_CHROME.menu_items]
+EXPECTED_SECURECRT_TOP_MENU_LABELS = [item.label for item in EXPECTED_SECURECRT_TOP_CHROME.menu_items]
+EXPECTED_SECURECRT_TOP_TOOLBAR_KEYS = [action.key for action in EXPECTED_SECURECRT_TOP_CHROME.toolbar_actions]
+EXPECTED_SECURECRT_TOP_TOOLBAR_ICON_KEYS = {
+    action.key: action.icon_key for action in EXPECTED_SECURECRT_TOP_CHROME.toolbar_actions
+}
 EXPECTED_REMMINA_VIEWER_CONTROL_KEYS = [control.key for control in gui_design_remmina_viewer_controls()]
 EXPECTED_REMMINA_PROFILE_LIST_CHROME = gui_design_remmina_profile_list_chrome()
 EXPECTED_REMMINA_PROFILE_COLUMN_KEYS = [column.key for column in EXPECTED_REMMINA_PROFILE_LIST_CHROME.columns]
 EXPECTED_REMMINA_PROFILE_ROW_KEYS = [row.key for row in EXPECTED_REMMINA_PROFILE_LIST_CHROME.rows]
 EXPECTED_TERMIUS_HEADER_CHIP_KEYS = [chip.key for chip in gui_design_termius_header_chips()]
+EXPECTED_TERMIUS_HOSTS_CHROME = gui_design_termius_hosts_chrome()
+EXPECTED_TERMIUS_HOSTS_ACTION_KEYS = [action.key for action in EXPECTED_TERMIUS_HOSTS_CHROME.actions]
+EXPECTED_TERMIUS_HOSTS_ICON_KEYS = {action.key: action.icon_key for action in EXPECTED_TERMIUS_HOSTS_CHROME.actions}
 EXPECTED_TERMIUS_HOST_IDENTITY_STRIP = gui_design_termius_host_identity_strip()
 EXPECTED_TERMIUS_HOST_IDENTITY_KEYS = [field.key for field in EXPECTED_TERMIUS_HOST_IDENTITY_STRIP.fields]
+EXPECTED_MREMOTENG_TOP_CHROME = gui_design_mremoteng_top_chrome()
+EXPECTED_MREMOTENG_TOP_MENU_KEYS = [item.key for item in EXPECTED_MREMOTENG_TOP_CHROME.menu_items]
+EXPECTED_MREMOTENG_TOP_MENU_LABELS = [item.label for item in EXPECTED_MREMOTENG_TOP_CHROME.menu_items]
+EXPECTED_MREMOTENG_TOP_TOOLBAR_KEYS = [action.key for action in EXPECTED_MREMOTENG_TOP_CHROME.toolbar_actions]
+EXPECTED_MREMOTENG_TOP_TOOLBAR_ICON_KEYS = {
+    action.key: action.icon_key for action in EXPECTED_MREMOTENG_TOP_CHROME.toolbar_actions
+}
 EXPECTED_MREMOTENG_DOCUMENT_CONTROL_KEYS = [control.key for control in gui_design_mremoteng_document_controls()]
 EXPECTED_MREMOTENG_DOCUMENT_TOOLBAR_CHROME = gui_design_mremoteng_document_toolbar_chrome()
 EXPECTED_MREMOTENG_PROPERTY_GRID_CHROME = gui_design_mremoteng_property_grid_chrome()
@@ -172,6 +227,7 @@ MOBA_CONNECTED_REQUIRED_WIDGETS = {
     "mobaRemoteMonitoring": "Moba remote monitoring panel",
     "mobaFollowTerminalFolder": "Moba follow terminal folder control",
     "mobaSshBanner": "Moba SSH connection banner",
+    "mobaSessionEdgeControls": "Moba session edge shortcut controls",
     "mobaRightUtilityRail": "Moba right terminal utility rail",
     "mobaTelemetryBar": "Moba bottom telemetry bar",
 }
@@ -180,15 +236,19 @@ NON_MOBA_REQUIRED_WIDGETS = {
     "activityLog": "activity log",
 }
 SECURECRT_REQUIRED_WIDGETS = {
+    "secureCrtMenuBar": "SecureCRT top menu bar",
     "secureCrtSessionStatusStrip": "SecureCRT session status strip",
+    "secureCrtSessionManagerChrome": "SecureCRT Session Manager filter/action chrome",
 }
 TERMIUS_REQUIRED_WIDGETS = {
+    "termiusHostsChrome": "Termius Hosts search/action chrome",
     "termiusHostIdentityStrip": "Termius host identity strip",
 }
 REMMINA_REQUIRED_WIDGETS = {
     "remminaProfileListChrome": "Remmina profile list chrome",
 }
 MREMOTENG_REQUIRED_WIDGETS = {
+    "mRemoteNgMenuBar": "mRemoteNG top menu bar",
     "mRemoteNgPropertyGrid": "mRemoteNG property inheritance grid",
 }
 NON_MOBA_PRESENT_WIDGETS = {
@@ -199,10 +259,12 @@ PRODUCT_STYLE_PRESETS = {"mobaxterm", "securecrt", "termius", "remmina", "mremot
 EXPECTED_MOBA_RAIL_ROLES = {"collapse", "sessions", "favorites", "tools", "macros", "sftp"}
 EXPECTED_MOBA_RAIL_LABELS = {item.role: item.label for item in gui_design_moba_rail_items() if item.label}
 MOBA_REQUIRED_WIDGETS = {
+    "mobaQuickConnectChrome": "Moba quick connect chrome",
     "quickConnect": "Moba quick connect field",
     "mobaRail": "Moba side rail",
     "mobaRibbonButton": "Moba ribbon action",
     "mobaXServerAction": "Moba X server action",
+    "mobaBottomEdgeControls": "Moba bottom-edge navigation controls",
 }
 REQUIRED_WIDGETS = {
     **COMMON_REQUIRED_WIDGETS,
@@ -213,9 +275,10 @@ LIVE_LAYOUT_CONTRACTS: dict[str, list[dict[str, object]]] = {
     "mobaxterm": [
         {
             "id": "quick-connect-top-strip",
-            "object_name": "quickConnect",
+            "object_name": "mobaQuickConnectChrome",
             "label": "Moba quick connect top strip",
             "min_width": 240,
+            "min_height": 20,
             "max_y": 150,
             "max_x": 90,
         },
@@ -262,6 +325,15 @@ LIVE_LAYOUT_CONTRACTS: dict[str, list[dict[str, object]]] = {
             "min_x": 900,
         },
         {
+            "id": "session-edge-controls",
+            "object_name": "mobaSessionEdgeControls",
+            "label": "Moba session edge shortcut controls",
+            "min_width": 18,
+            "max_width": 60,
+            "min_height": 40,
+            "min_x": 900,
+        },
+        {
             "id": "bottom-telemetry",
             "object_name": "mobaTelemetryBar",
             "label": "Moba bottom telemetry strip",
@@ -269,9 +341,27 @@ LIVE_LAYOUT_CONTRACTS: dict[str, list[dict[str, object]]] = {
             "max_height": 90,
             "min_x": 300,
         },
+        {
+            "id": "bottom-edge-controls",
+            "object_name": "mobaBottomEdgeControls",
+            "label": "Moba bottom-edge navigation controls",
+            "min_width": 45,
+            "max_width": 100,
+            "max_height": 40,
+            "min_x": 900,
+        },
     ],
     "securecrt": [
         {"id": "session-manager-width", "object_name": "leftPanel", "label": "Session Manager sidebar", "min_width": 220, "max_width": 360, "max_x": 90},
+        {
+            "id": "session-manager-chrome",
+            "object_name": "secureCrtSessionManagerChrome",
+            "label": "SecureCRT Session Manager filter/action chrome",
+            "min_width": 180,
+            "min_height": 48,
+            "max_x": 120,
+            "max_y": 210,
+        },
         {"id": "terminal-tabs-workspace", "object_name": "sessionTabs", "label": "SecureCRT terminal tabs", "min_width": 620, "min_height": 360, "min_x": 220},
         {"id": "command-log-bottom", "object_name": "activityLog", "label": "SecureCRT session log", "min_width": 620, "min_height": 70},
         {"id": "workflow-evidence", "object_name": "productWorkflowEvidence", "label": "SecureCRT workflow evidence cards", "min_width": 400, "min_height": 35},
@@ -280,6 +370,7 @@ LIVE_LAYOUT_CONTRACTS: dict[str, list[dict[str, object]]] = {
     ],
     "termius": [
         {"id": "hosts-sidebar-width", "object_name": "leftPanel", "label": "Termius Hosts sidebar", "min_width": 230, "max_width": 380, "max_x": 90},
+        {"id": "hosts-sidebar-chrome", "object_name": "termiusHostsChrome", "label": "Termius Hosts search/action chrome", "min_width": 180, "min_height": 48, "max_x": 120, "max_y": 210},
         {"id": "west-tab-workspace", "object_name": "sessionTabs", "label": "Termius west-tab workspace", "min_width": 620, "min_height": 360, "min_x": 230},
         {"id": "sync-activity-bottom", "object_name": "activityLog", "label": "Termius sync activity log", "min_width": 620, "min_height": 70},
         {"id": "workflow-evidence", "object_name": "productWorkflowEvidence", "label": "Termius workflow evidence cards", "min_width": 400, "min_height": 35},
@@ -300,12 +391,19 @@ LIVE_LAYOUT_CONTRACTS: dict[str, list[dict[str, object]]] = {
         {"id": "connection-log-bottom", "object_name": "activityLog", "label": "mRemoteNG connection log", "min_width": 620, "min_height": 70},
         {"id": "workflow-evidence", "object_name": "productWorkflowEvidence", "label": "mRemoteNG workflow evidence cards", "min_width": 400, "min_height": 35},
         {"id": "property-grid", "object_name": "mRemoteNgPropertyGrid", "label": "mRemoteNG property inheritance grid", "min_width": 520, "min_height": 90, "min_x": 300},
-        {"id": "toolbar-search", "object_name": "toolbarSearch", "label": "mRemoteNG tree filter/search", "min_width": 100, "max_y": 130},
+        {
+            "id": "document-tree-filter",
+            "object_name": "mRemoteNgDocumentFilter",
+            "label": "mRemoteNG document tree filter",
+            "min_width": 150,
+            "min_x": 300,
+            "max_y": 360,
+        },
     ],
 }
 LIVE_TOPOLOGY_CONTRACTS: dict[str, list[dict[str, object]]] = {
     "mobaxterm": [
-        {"id": "quick-connect-above-dock", "from": "quickConnect", "relation": "above", "to": "mobaConnectedLeftDock", "max_gap": 90},
+        {"id": "quick-connect-above-dock", "from": "mobaQuickConnectChrome", "relation": "above", "to": "mobaConnectedLeftDock", "max_gap": 90},
         {"id": "rail-left-of-dock", "from": "mobaRail", "relation": "left_of", "to": "mobaConnectedLeftDock", "max_gap": 80},
         {"id": "dock-left-of-ssh-banner", "from": "mobaConnectedLeftDock", "relation": "left_of", "to": "mobaSshBanner", "max_gap": 120},
         {"id": "ssh-banner-left-of-right-utility", "from": "mobaSshBanner", "relation": "left_of", "to": "mobaRightUtilityRail", "min_gap": 20},
@@ -643,6 +741,7 @@ def prepare_product_reference_tab(window: Any, preset_id: str) -> list[str]:
 
 
 def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
+    from PyQt6.QtCore import Qt
     from PyQt6.QtWidgets import (
         QCheckBox,
         QFrame,
@@ -685,10 +784,11 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
             if label not in toolbar_labels:
                 errors.append(f"{preset_id} live GUI toolbar missing action label: {label}")
     else:
+        errors.extend(check_live_moba_quick_connect_chrome(window))
         quick_connect = window.findChild(QLineEdit, "quickConnect")
         if quick_connect is None or not quick_connect.isVisible():
             errors.append("mobaxterm live GUI quick connect field must be visible")
-        top_menu_actions = window.menuBar().actions()
+        top_menu_actions = [action for action in window.menuBar().actions() if action.isVisible()]
         top_menu_labels = [action.text() for action in top_menu_actions]
         top_menu_keys = [str(action.property("mobaTopMenuKey") or "") for action in top_menu_actions]
         if top_menu_labels != EXPECTED_MOBA_TOP_MENU_LABELS:
@@ -801,12 +901,37 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
             column_keys = list(sftp_table.property("mobaSftpColumnKeys") or [])
             if column_keys != EXPECTED_MOBA_SFTP_COLUMN_KEYS:
                 errors.append(f"mobaxterm live GUI SFTP file table column keys drifted: {column_keys}")
+            if str(sftp_table.property("mobaSftpParentRowLabel") or "") != (
+                EXPECTED_MOBA_SFTP_BROWSER_CHROME.parent_row_label
+            ):
+                errors.append("mobaxterm live GUI SFTP parent-row label metadata drifted")
+            if str(sftp_table.property("mobaSftpParentRowKind") or "") != (
+                EXPECTED_MOBA_SFTP_BROWSER_CHROME.parent_row_kind
+            ):
+                errors.append("mobaxterm live GUI SFTP parent-row kind metadata drifted")
+            if str(sftp_table.property("mobaSftpSelectedRowKind") or "") != (
+                EXPECTED_MOBA_SFTP_BROWSER_CHROME.selected_row_kind
+            ):
+                errors.append("mobaxterm live GUI SFTP selected-row kind metadata drifted")
             if int(sftp_table.property("mobaSftpHeaderHeight") or 0) != EXPECTED_MOBA_SFTP_DOCK_LAYOUT.table_header_height:
                 errors.append("mobaxterm live GUI SFTP file table header height metadata drifted")
             if int(sftp_table.property("mobaSftpRowHeight") or 0) != EXPECTED_MOBA_SFTP_DOCK_LAYOUT.file_row_height:
                 errors.append("mobaxterm live GUI SFTP file row height metadata drifted")
             if sftp_table.topLevelItemCount() < 4:
                 errors.append("mobaxterm live GUI SFTP file table must expose multiple reference rows")
+            elif (parent_item := sftp_table.topLevelItem(0)) is None:
+                errors.append("mobaxterm live GUI SFTP file table missing parent row")
+            else:
+                if parent_item.text(0) != EXPECTED_MOBA_SFTP_BROWSER_CHROME.parent_row_label:
+                    errors.append("mobaxterm live GUI SFTP first file row must be the parent-folder entry")
+                parent_kind = str(parent_item.data(0, Qt.ItemDataRole.UserRole) or "")
+                if parent_kind != EXPECTED_MOBA_SFTP_BROWSER_CHROME.parent_row_kind:
+                    errors.append("mobaxterm live GUI SFTP parent row kind metadata drifted")
+                current_parent_row = sftp_table.indexOfTopLevelItem(sftp_table.currentItem())
+                if not parent_item.isSelected() or current_parent_row != 0:
+                    errors.append("mobaxterm live GUI SFTP parent row must be selected by default")
+                if parent_item.icon(0).isNull():
+                    errors.append("mobaxterm live GUI SFTP parent row must use a generated or platform folder icon")
         sftp_dock = window.findChild(QFrame, "mobaSftpBrowser")
         if sftp_dock is None:
             errors.append("mobaxterm live GUI SFTP dock missing density container")
@@ -840,11 +965,48 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                 EXPECTED_MOBA_SFTP_DOCK_LAYOUT.monitoring_divider_offset
             ):
                 errors.append("mobaxterm live GUI monitoring divider offset metadata drifted")
+            if bool(monitoring_panel.property("mobaRemoteMonitoringCompact")) != (
+                EXPECTED_MOBA_REMOTE_MONITORING_DOCK_CHROME.compact
+            ):
+                errors.append("mobaxterm live GUI monitoring compact mode metadata drifted")
+            if str(monitoring_panel.property("mobaRemoteMonitoringTelemetrySurface") or "") != (
+                EXPECTED_MOBA_REMOTE_MONITORING_DOCK_CHROME.telemetry_surface
+            ):
+                errors.append("mobaxterm live GUI monitoring telemetry surface metadata drifted")
+            if sorted(monitoring_panel.property("mobaRemoteMonitoringMetricKeys") or []) != sorted(
+                EXPECTED_MOBA_MONITORING_METRIC_KEYS
+            ):
+                errors.append("mobaxterm live GUI monitoring metric-key metadata drifted")
+            if list(monitoring_panel.property("mobaRemoteMonitoringVisibleMetricKeys") or []) != list(
+                EXPECTED_MOBA_REMOTE_MONITORING_DOCK_CHROME.visible_metric_keys
+            ):
+                errors.append("mobaxterm live GUI monitoring visible metric policy drifted")
+            if int(monitoring_panel.property("mobaRemoteMonitoringRefreshSeconds") or 0) != (
+                EXPECTED_MOBA_REMOTE_MONITORING_DOCK_CHROME.refresh_seconds
+            ):
+                errors.append("mobaxterm live GUI monitoring refresh cadence metadata drifted")
+            command = str(monitoring_panel.property("mobaRemoteMonitoringCommand") or "")
+            if "sh -lc" not in command or "/proc" not in command:
+                errors.append("mobaxterm live GUI monitoring panel must expose SSH telemetry command evidence")
+            follow_plan = str(monitoring_panel.property("mobaRemoteMonitoringFollowPlan") or "")
+            if "ls -la /" not in follow_plan:
+                errors.append("mobaxterm live GUI monitoring panel must expose follow-folder SFTP plan evidence")
         monitoring_labels = window.findChildren(QLabel, "mobaMonitoringMetric")
         monitoring_keys = {str(label.property("mobaMonitoringMetricKey") or "") for label in monitoring_labels}
         missing_monitoring_keys = sorted(EXPECTED_MOBA_MONITORING_METRIC_KEYS - monitoring_keys)
         if missing_monitoring_keys:
             errors.append(f"mobaxterm live GUI monitoring dock missing metric keys: {missing_monitoring_keys}")
+        visible_metric_keys = sorted(
+            str(label.property("mobaMonitoringMetricKey") or "")
+            for label in monitoring_labels
+            if bool(label.property("mobaMonitoringMetricVisibleInDock"))
+        )
+        if visible_metric_keys != sorted(EXPECTED_MOBA_REMOTE_MONITORING_DOCK_CHROME.visible_metric_keys):
+            errors.append(f"mobaxterm live GUI monitoring visible metric keys drifted: {visible_metric_keys}")
+        for label in monitoring_labels:
+            telemetry_surface = str(label.property("mobaMonitoringMetricTelemetrySurface") or "")
+            if telemetry_surface != EXPECTED_MOBA_REMOTE_MONITORING_DOCK_CHROME.telemetry_surface:
+                errors.append("mobaxterm live GUI monitoring metric telemetry surface metadata drifted")
         monitoring_controls = [
             *window.findChildren(QToolButton, "mobaMonitoringControl"),
             *window.findChildren(QCheckBox, "mobaFollowTerminalFolder"),
@@ -885,6 +1047,24 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                 errors.append(f"mobaxterm live GUI monitoring control {control.key!r} checked state drifted")
             if widget.icon().isNull():
                 errors.append(f"mobaxterm live GUI monitoring control {control.key!r} must expose an icon")
+            if str(widget.property("mobaMonitoringTelemetrySurface") or "") != (
+                EXPECTED_MOBA_REMOTE_MONITORING_DOCK_CHROME.telemetry_surface
+            ):
+                errors.append(f"mobaxterm live GUI monitoring control {control.key!r} telemetry surface drifted")
+            if control.key == "remote-monitoring":
+                command = str(widget.property("mobaMonitoringCommand") or "")
+                if "sh -lc" not in command or "/proc" not in command:
+                    errors.append("mobaxterm live GUI remote-monitoring control missing command evidence")
+                if int(widget.property("mobaMonitoringRefreshSeconds") or 0) != (
+                    EXPECTED_MOBA_REMOTE_MONITORING_DOCK_CHROME.refresh_seconds
+                ):
+                    errors.append("mobaxterm live GUI remote-monitoring control refresh cadence drifted")
+            if control.key == "follow-terminal-folder":
+                follow_plan = str(widget.property("mobaMonitoringFollowPlan") or "")
+                if "ls -la /" not in follow_plan:
+                    errors.append("mobaxterm live GUI follow-terminal-folder control missing SFTP plan evidence")
+                if not str(widget.property("mobaMonitoringFollowPath") or "").startswith("/"):
+                    errors.append("mobaxterm live GUI follow-terminal-folder control missing remote path metadata")
         expected_title = EXPECTED_LIVE_REFERENCE_TAB_LABELS["mobaxterm"]
         if window.windowTitle() != expected_title:
             errors.append(f"mobaxterm live GUI window title must be connected target label: {expected_title}")
@@ -919,6 +1099,52 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                     errors.append("mobaxterm live GUI SSH banner width metadata drifted")
                 if height != EXPECTED_MOBA_SSH_BANNER_CHROME.static_height:
                     errors.append("mobaxterm live GUI SSH banner height metadata drifted")
+        banner_frame = window.findChild(QFrame, "mobaSshBanner")
+        if banner_frame is None:
+            errors.append("mobaxterm live GUI SSH banner card is missing")
+        else:
+            if str(banner_frame.property("mobaBannerTargetIntro") or "") != (
+                EXPECTED_MOBA_SSH_BANNER_CHROME.target_intro
+            ):
+                errors.append("mobaxterm live GUI SSH banner target intro metadata drifted")
+            if int(banner_frame.property("mobaBannerCapabilityLabelWidth") or 0) != (
+                EXPECTED_MOBA_SSH_BANNER_CHROME.capability_label_width
+            ):
+                errors.append("mobaxterm live GUI SSH banner capability label width drifted")
+            capability_keys = list(banner_frame.property("mobaBannerCapabilityKeys") or [])
+            if capability_keys != EXPECTED_MOBA_SSH_BANNER_CAPABILITY_KEYS:
+                errors.append(f"mobaxterm live GUI SSH banner capability key order drifted: {capability_keys}")
+            footer_links = list(banner_frame.property("mobaBannerFooterLinks") or [])
+            if footer_links != EXPECTED_MOBA_SSH_BANNER_FOOTER_LINKS:
+                errors.append(f"mobaxterm live GUI SSH banner footer links drifted: {footer_links}")
+        target_lines = window.findChildren(QLabel, "mobaSshBannerTargetLine")
+        if not target_lines:
+            errors.append("mobaxterm live GUI SSH banner target line is missing")
+        elif str(target_lines[0].property("mobaSshBannerTarget") or "") != EXPECTED_MOBA_SSH_BANNER.title:
+            errors.append("mobaxterm live GUI SSH banner target metadata drifted")
+        capability_labels = window.findChildren(QLabel, "mobaSshBannerCapability")
+        actual_capabilities = [
+            {
+                "key": str(label.property("mobaSshBannerCapabilityKey") or ""),
+                "label": str(label.property("mobaSshBannerCapabilityLabel") or ""),
+                "value": str(label.property("mobaSshBannerCapabilityValue") or ""),
+                "status": str(label.property("mobaSshBannerCapabilityStatus") or ""),
+            }
+            for label in capability_labels
+        ]
+        expected_capabilities = [
+            {"key": row.key, "label": row.label, "value": row.value, "status": row.status}
+            for row in EXPECTED_MOBA_SSH_BANNER_CAPABILITIES
+        ]
+        if actual_capabilities != expected_capabilities:
+            errors.append("mobaxterm live GUI SSH banner capability-card rows drifted")
+        footer_labels = window.findChildren(QLabel, "mobaSshBannerFooter")
+        if not footer_labels:
+            errors.append("mobaxterm live GUI SSH banner footer is missing")
+        elif list(footer_labels[0].property("mobaSshBannerFooterLinks") or []) != (
+            EXPECTED_MOBA_SSH_BANNER_FOOTER_LINKS
+        ):
+            errors.append("mobaxterm live GUI SSH banner footer metadata drifted")
         terminal_output = window.findChild(QTextEdit, "terminalOutput")
         if terminal_output is None:
             errors.append("mobaxterm live GUI terminal transcript output is missing")
@@ -1002,6 +1228,24 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                 )
             if button.icon().isNull():
                 errors.append(f"mobaxterm live GUI right utility action {key!r} must use a generated icon")
+        edge_buttons = window.findChildren(QToolButton, "mobaSessionEdgeAction")
+        edge_keys = {str(button.property("mobaSessionEdgeKey") or "") for button in edge_buttons}
+        missing_edge_keys = sorted(EXPECTED_MOBA_SESSION_EDGE_KEYS - edge_keys)
+        if missing_edge_keys:
+            errors.append(f"mobaxterm live GUI session edge shortcuts missing keys: {missing_edge_keys}")
+        for button in edge_buttons:
+            key = str(button.property("mobaSessionEdgeKey") or "")
+            icon_key = str(button.property("mobaSessionEdgeIconKey") or "")
+            if key in EXPECTED_MOBA_SESSION_EDGE_KEYS and not icon_key:
+                errors.append(f"mobaxterm live GUI session edge shortcut {key!r} missing icon key")
+            expected_icon_key = EXPECTED_MOBA_SESSION_EDGE_ICON_KEYS.get(key)
+            if expected_icon_key is not None and icon_key != expected_icon_key:
+                errors.append(
+                    f"mobaxterm live GUI session edge shortcut {key!r} icon key {icon_key!r} "
+                    f"must equal {expected_icon_key!r}"
+                )
+            if button.icon().isNull():
+                errors.append(f"mobaxterm live GUI session edge shortcut {key!r} must use a generated icon")
         status_notice = window.findChild(QLabel, "productStatusNotice")
         if status_notice is None:
             errors.append("mobaxterm live GUI missing bottom status notice")
@@ -1012,6 +1256,24 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
             errors.append("mobaxterm live GUI missing bottom status right marker")
         elif status_marker.text() != EXPECTED_MOBA_STATUS_CHROME.right_marker:
             errors.append("mobaxterm live GUI bottom status marker drifted")
+        bottom_buttons = window.findChildren(QToolButton, "mobaBottomEdgeControl")
+        bottom_keys = {str(button.property("mobaBottomEdgeKey") or "") for button in bottom_buttons}
+        missing_bottom_keys = sorted(EXPECTED_MOBA_BOTTOM_EDGE_KEYS - bottom_keys)
+        if missing_bottom_keys:
+            errors.append(f"mobaxterm live GUI bottom-edge controls missing keys: {missing_bottom_keys}")
+        for button in bottom_buttons:
+            key = str(button.property("mobaBottomEdgeKey") or "")
+            icon_key = str(button.property("mobaBottomEdgeIconKey") or "")
+            if key in EXPECTED_MOBA_BOTTOM_EDGE_KEYS and not icon_key:
+                errors.append(f"mobaxterm live GUI bottom-edge control {key!r} missing icon key")
+            expected_icon_key = EXPECTED_MOBA_BOTTOM_EDGE_ICON_KEYS.get(key)
+            if expected_icon_key is not None and icon_key != expected_icon_key:
+                errors.append(
+                    f"mobaxterm live GUI bottom-edge control {key!r} icon key {icon_key!r} "
+                    f"must equal {expected_icon_key!r}"
+                )
+            if button.icon().isNull():
+                errors.append(f"mobaxterm live GUI bottom-edge control {key!r} must use a generated icon")
         status_keys = {
             str(label.property("productStatusKey") or "")
             for label in window.findChildren(QLabel, "productStatusSegment")
@@ -1026,20 +1288,26 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
         if text not in status_texts:
             errors.append(f"{preset_id} live GUI status segment missing text: {text}")
 
-    errors.extend(check_live_workflow_cards(window, preset_id))
-    if preset_id != "mobaxterm":
+    if preset_id == "mobaxterm":
+        errors.extend(check_live_moba_home_welcome(window))
+    else:
+        errors.extend(check_live_workflow_cards(window, preset_id))
         errors.extend(check_live_workspace_surface(window, preset_id))
         errors.extend(check_live_reference_state(window, preset_id))
         if preset_id == "securecrt":
+            errors.extend(check_live_securecrt_top_chrome(window))
+            errors.extend(check_live_securecrt_session_manager_chrome(window))
             errors.extend(check_live_securecrt_session_status_strip(window))
             errors.extend(check_live_securecrt_command_window(window))
         if preset_id == "remmina":
             errors.extend(check_live_remmina_profile_list_chrome(window))
             errors.extend(check_live_remmina_viewer_controls(window))
         if preset_id == "termius":
+            errors.extend(check_live_termius_hosts_chrome(window))
             errors.extend(check_live_termius_header_chips(window))
             errors.extend(check_live_termius_host_identity_strip(window))
         if preset_id == "mremoteng":
+            errors.extend(check_live_mremoteng_top_chrome(window))
             errors.extend(check_live_mremoteng_document_controls(window))
             errors.extend(check_live_mremoteng_property_grid(window))
     errors.extend(check_live_interaction_state(window, preset_id))
@@ -1393,6 +1661,93 @@ def check_live_workflow_cards(window: Any, preset_id: str) -> list[str]:
     return errors
 
 
+def check_live_moba_home_welcome(window: Any) -> list[str]:
+    from PyQt6.QtWidgets import QFrame, QLabel, QLineEdit, QPushButton
+
+    chrome = EXPECTED_MOBA_HOME_WELCOME_CHROME
+    surface = gui_design_workspace_surface("mobaxterm")
+    panel = window.findChild(QFrame, "mobaHomeWelcomeSurface")
+    if panel is None:
+        return ["mobaxterm live GUI missing Moba home welcome surface"]
+
+    errors: list[str] = []
+    if str(panel.property("designPreset") or "") != "mobaxterm":
+        errors.append("mobaxterm home welcome designPreset metadata drifted")
+    expected_panel_properties = {
+        "mobaHomeTitle": chrome.title,
+        "mobaHomeSubtitle": chrome.subtitle,
+        "mobaHomeRecentTitle": chrome.recent_title,
+    }
+    for property_name, expected_value in expected_panel_properties.items():
+        if str(panel.property(property_name) or "") != expected_value:
+            errors.append(f"mobaxterm home welcome {property_name} metadata drifted")
+    if int(panel.property("mobaHomeSearchWidth") or 0) != chrome.search_width:
+        errors.append("mobaxterm home welcome search width metadata drifted")
+    if int(panel.property("mobaHomeActionSpacing") or 0) != chrome.action_spacing:
+        errors.append("mobaxterm home welcome action spacing metadata drifted")
+
+    title = panel.findChild(QLabel, "mobaHomeTitle")
+    subtitle = panel.findChild(QLabel, "mobaHomeSubtitle")
+    logo = panel.findChild(QLabel, "mobaHomeLogo")
+    if title is None or title.text() != chrome.title:
+        errors.append("mobaxterm home welcome title text drifted")
+    if subtitle is None or subtitle.text() != chrome.subtitle:
+        errors.append("mobaxterm home welcome subtitle text drifted")
+    if logo is None:
+        errors.append("mobaxterm home welcome missing generated logo")
+    elif str(logo.property("mobaHomeIconKey") or "") != chrome.icon_key:
+        errors.append("mobaxterm home welcome logo icon key drifted")
+
+    action_buttons = panel.findChildren(QPushButton)
+    action_by_key = {str(button.property("mobaHomeActionKey") or ""): button for button in action_buttons}
+    expected_actions = {
+        "primary": (surface.home_actions[0], chrome.primary_action_icon_key),
+        "secondary": (surface.home_actions[1], chrome.secondary_action_icon_key),
+    }
+    for key, (expected_text, expected_icon_key) in expected_actions.items():
+        button = action_by_key.get(key)
+        if button is None:
+            errors.append(f"mobaxterm home welcome missing {key} action")
+            continue
+        if button.text() != expected_text:
+            errors.append(f"mobaxterm home welcome {key} action text drifted")
+        if str(button.property("mobaHomeActionIconKey") or "") != expected_icon_key:
+            errors.append(f"mobaxterm home welcome {key} action icon key drifted")
+        if button.icon().isNull():
+            errors.append(f"mobaxterm home welcome {key} action must use a generated icon")
+
+    search = panel.findChild(QLineEdit, "homeSearch")
+    if search is None:
+        errors.append("mobaxterm home welcome missing search field")
+    else:
+        if search.placeholderText() != surface.home_search_placeholder:
+            errors.append("mobaxterm home welcome search placeholder drifted")
+        if str(search.property("mobaHomeSearchPlaceholder") or "") != surface.home_search_placeholder:
+            errors.append("mobaxterm home welcome search placeholder metadata drifted")
+        if int(search.property("mobaHomeSearchWidth") or 0) != chrome.search_width:
+            errors.append("mobaxterm home welcome search field width metadata drifted")
+
+    recent_title = panel.findChild(QLabel, "recentSessionsTitle")
+    if recent_title is None or recent_title.text() != chrome.recent_title:
+        errors.append("mobaxterm home welcome recent title drifted")
+    recent_labels = panel.findChildren(QLabel, "mobaRecentSession")
+    expected_recent = [item for column in surface.recent_columns for item in column]
+    actual_recent = [label.text() for label in recent_labels]
+    if actual_recent != expected_recent:
+        errors.append("mobaxterm home welcome recent session labels drifted")
+    for label in recent_labels:
+        if label.property("mobaHomeRecentColumn") is None or label.property("mobaHomeRecentRow") is None:
+            errors.append("mobaxterm home welcome recent label missing grid metadata")
+            break
+
+    footer = panel.findChild(QLabel, "mobaHomeFooter")
+    if footer is None or footer.text() != surface.footer:
+        errors.append("mobaxterm home welcome footer drifted")
+    elif str(footer.property("mobaHomeFooter") or "") != surface.footer:
+        errors.append("mobaxterm home welcome footer metadata drifted")
+    return errors
+
+
 def check_live_workspace_surface(window: Any, preset_id: str) -> list[str]:
     from PyQt6.QtWidgets import QLabel, QWidget
 
@@ -1467,9 +1822,342 @@ def required_securecrt_session_status_texts() -> set[str]:
     return {chrome.title, *{f"{field.label}: {field.value}" for field in chrome.fields}}
 
 
+def required_securecrt_session_manager_texts() -> set[str]:
+    chrome = gui_design_securecrt_session_manager_chrome()
+    return {chrome.title}
+
+
+def required_securecrt_top_chrome_texts() -> set[str]:
+    chrome = gui_design_securecrt_top_chrome()
+    return {
+        chrome.window_title,
+        *{item.label for item in chrome.menu_items},
+        *{action.label for action in chrome.toolbar_actions},
+    }
+
+
+def required_mremoteng_top_chrome_texts() -> set[str]:
+    chrome = gui_design_mremoteng_top_chrome()
+    return {
+        chrome.window_title,
+        *{item.label for item in chrome.menu_items},
+        *{action.label for action in chrome.toolbar_actions},
+    }
+
+
+def check_live_securecrt_top_chrome(window: Any) -> list[str]:
+    from PyQt6.QtWidgets import QToolButton
+
+    errors: list[str] = []
+    chrome = gui_design_securecrt_top_chrome()
+    menu_bar = window.menuBar()
+    if menu_bar is None:
+        return ["securecrt live GUI missing top menu bar"]
+    if menu_bar.objectName() != "secureCrtMenuBar":
+        errors.append(f"securecrt live GUI top menu bar objectName {menu_bar.objectName()!r} must equal 'secureCrtMenuBar'")
+    if str(menu_bar.property("designPreset") or "") != "securecrt":
+        errors.append("securecrt live GUI top menu bar designPreset metadata drifted")
+    if str(menu_bar.property("secureCrtWindowTitle") or "") != chrome.window_title:
+        errors.append("securecrt live GUI top menu window title metadata drifted")
+    if list(menu_bar.property("secureCrtTopMenuKeys") or []) != EXPECTED_SECURECRT_TOP_MENU_KEYS:
+        errors.append("securecrt live GUI top menu key metadata drifted")
+    if list(menu_bar.property("secureCrtTopMenuLabels") or []) != EXPECTED_SECURECRT_TOP_MENU_LABELS:
+        errors.append("securecrt live GUI top menu label metadata drifted")
+
+    visible_actions = [action for action in menu_bar.actions() if action.isVisible()]
+    actual_menu_keys = [str(action.property("secureCrtTopMenuKey") or "") for action in visible_actions]
+    actual_menu_labels = [str(action.property("secureCrtTopMenuLabel") or action.text()) for action in visible_actions]
+    if actual_menu_keys != EXPECTED_SECURECRT_TOP_MENU_KEYS:
+        errors.append(
+            f"securecrt live GUI top menu keys {actual_menu_keys!r} must equal {EXPECTED_SECURECRT_TOP_MENU_KEYS!r}"
+        )
+    if actual_menu_labels != EXPECTED_SECURECRT_TOP_MENU_LABELS:
+        errors.append(
+            f"securecrt live GUI top menu labels {actual_menu_labels!r} must equal {EXPECTED_SECURECRT_TOP_MENU_LABELS!r}"
+        )
+
+    toolbar_buttons = [
+        button
+        for button in window.findChildren(QToolButton)
+        if str(button.property("secureCrtTopToolbarKey") or "")
+    ]
+    actual_toolbar_keys = [str(button.property("secureCrtTopToolbarKey") or "") for button in toolbar_buttons]
+    if actual_toolbar_keys != EXPECTED_SECURECRT_TOP_TOOLBAR_KEYS:
+        errors.append(
+            f"securecrt live GUI top toolbar keys {actual_toolbar_keys!r} "
+            f"must equal {EXPECTED_SECURECRT_TOP_TOOLBAR_KEYS!r}"
+        )
+
+    expected_by_key = {action.key: action for action in chrome.toolbar_actions}
+    for button in toolbar_buttons:
+        key = str(button.property("secureCrtTopToolbarKey") or "")
+        expected = expected_by_key.get(key)
+        if expected is None:
+            errors.append(f"securecrt live GUI unexpected top toolbar key: {key!r}")
+            continue
+        if button.text() != expected.label:
+            errors.append(f"securecrt live GUI top toolbar {key!r} label drifted")
+        if str(button.property("secureCrtTopToolbarIconKey") or "") != expected.icon_key:
+            errors.append(f"securecrt live GUI top toolbar {key!r} icon key drifted")
+        if int(button.property("secureCrtTopToolbarStaticX") or 0) != expected.static_x:
+            errors.append(f"securecrt live GUI top toolbar {key!r} static x drifted")
+        if int(button.property("secureCrtTopToolbarStaticWidth") or 0) != expected.static_width:
+            errors.append(f"securecrt live GUI top toolbar {key!r} static width drifted")
+    return errors
+
+
+def check_live_mremoteng_top_chrome(window: Any) -> list[str]:
+    from PyQt6.QtWidgets import QToolButton
+
+    errors: list[str] = []
+    chrome = gui_design_mremoteng_top_chrome()
+    menu_bar = window.menuBar()
+    if menu_bar is None:
+        return ["mremoteng live GUI missing top menu bar"]
+    if menu_bar.objectName() != "mRemoteNgMenuBar":
+        errors.append(
+            f"mremoteng live GUI top menu bar objectName {menu_bar.objectName()!r} "
+            "must equal 'mRemoteNgMenuBar'"
+        )
+    if str(menu_bar.property("designPreset") or "") != "mremoteng":
+        errors.append("mremoteng live GUI top menu bar designPreset metadata drifted")
+    if str(menu_bar.property("mRemoteNgWindowTitle") or "") != chrome.window_title:
+        errors.append("mremoteng live GUI top menu window title metadata drifted")
+    if list(menu_bar.property("mRemoteNgTopMenuKeys") or []) != EXPECTED_MREMOTENG_TOP_MENU_KEYS:
+        errors.append("mremoteng live GUI top menu key metadata drifted")
+    if list(menu_bar.property("mRemoteNgTopMenuLabels") or []) != EXPECTED_MREMOTENG_TOP_MENU_LABELS:
+        errors.append("mremoteng live GUI top menu label metadata drifted")
+
+    visible_actions = [action for action in menu_bar.actions() if action.isVisible()]
+    actual_menu_keys = [str(action.property("mRemoteNgTopMenuKey") or "") for action in visible_actions]
+    actual_menu_labels = [str(action.property("mRemoteNgTopMenuLabel") or action.text()) for action in visible_actions]
+    if actual_menu_keys != EXPECTED_MREMOTENG_TOP_MENU_KEYS:
+        errors.append(
+            f"mremoteng live GUI top menu keys {actual_menu_keys!r} "
+            f"must equal {EXPECTED_MREMOTENG_TOP_MENU_KEYS!r}"
+        )
+    if actual_menu_labels != EXPECTED_MREMOTENG_TOP_MENU_LABELS:
+        errors.append(
+            f"mremoteng live GUI top menu labels {actual_menu_labels!r} "
+            f"must equal {EXPECTED_MREMOTENG_TOP_MENU_LABELS!r}"
+        )
+
+    toolbar_buttons = [
+        button
+        for button in window.findChildren(QToolButton)
+        if str(button.property("mRemoteNgTopToolbarKey") or "")
+    ]
+    actual_toolbar_keys = [str(button.property("mRemoteNgTopToolbarKey") or "") for button in toolbar_buttons]
+    if actual_toolbar_keys != EXPECTED_MREMOTENG_TOP_TOOLBAR_KEYS:
+        errors.append(
+            f"mremoteng live GUI top toolbar keys {actual_toolbar_keys!r} "
+            f"must equal {EXPECTED_MREMOTENG_TOP_TOOLBAR_KEYS!r}"
+        )
+
+    expected_by_key = {action.key: action for action in chrome.toolbar_actions}
+    for button in toolbar_buttons:
+        key = str(button.property("mRemoteNgTopToolbarKey") or "")
+        expected = expected_by_key.get(key)
+        if expected is None:
+            errors.append(f"mremoteng live GUI unexpected top toolbar key: {key!r}")
+            continue
+        if button.text() != expected.label:
+            errors.append(f"mremoteng live GUI top toolbar {key!r} label drifted")
+        if str(button.property("mRemoteNgTopToolbarIconKey") or "") != expected.icon_key:
+            errors.append(f"mremoteng live GUI top toolbar {key!r} icon key drifted")
+        if int(button.property("mRemoteNgTopToolbarStaticX") or 0) != expected.static_x:
+            errors.append(f"mremoteng live GUI top toolbar {key!r} static x drifted")
+        if int(button.property("mRemoteNgTopToolbarStaticWidth") or 0) != expected.static_width:
+            errors.append(f"mremoteng live GUI top toolbar {key!r} static width drifted")
+    return errors
+
+
+def check_live_securecrt_session_manager_chrome(window: Any) -> list[str]:
+    from PyQt6.QtWidgets import QLabel, QLineEdit, QToolButton, QWidget
+
+    chrome = gui_design_securecrt_session_manager_chrome()
+    panel = window.findChild(QWidget, "secureCrtSessionManagerChrome")
+    if panel is None:
+        return ["securecrt live GUI missing Session Manager filter/action chrome"]
+    actual_preset = str(panel.property("designPreset") or "")
+    if actual_preset != "securecrt":
+        return [f"securecrt live GUI Session Manager chrome designPreset {actual_preset!r} must equal 'securecrt'"]
+
+    actual_panel_keys = list(panel.property("secureCrtSessionManagerActionKeys") or [])
+    if actual_panel_keys != EXPECTED_SECURECRT_SESSION_MANAGER_ACTION_KEYS:
+        return [
+            f"securecrt live GUI Session Manager action keys {actual_panel_keys!r} "
+            f"must equal {EXPECTED_SECURECRT_SESSION_MANAGER_ACTION_KEYS!r}"
+        ]
+
+    labels = {label.text() for label in panel.findChildren(QLabel)}
+    missing = sorted(required_securecrt_session_manager_texts() - labels)
+    if missing:
+        return [f"securecrt live GUI Session Manager chrome missing text: {missing}"]
+
+    filter_input = panel.findChild(QLineEdit, "secureCrtSessionFilter")
+    if filter_input is None:
+        return ["securecrt live GUI missing Session Manager filter field"]
+    if filter_input.placeholderText() != chrome.filter_placeholder:
+        return ["securecrt live GUI Session Manager filter placeholder drifted"]
+    if str(filter_input.property("interactionState") or "") != "focused":
+        return ["securecrt live GUI Session Manager filter must expose focused interactionState"]
+
+    buttons = panel.findChildren(QToolButton, "secureCrtSessionManagerAction")
+    actual_button_keys = [str(button.property("secureCrtSessionManagerActionKey") or "") for button in buttons]
+    if actual_button_keys != EXPECTED_SECURECRT_SESSION_MANAGER_ACTION_KEYS:
+        return [
+            f"securecrt live GUI Session Manager button keys {actual_button_keys!r} "
+            f"must equal {EXPECTED_SECURECRT_SESSION_MANAGER_ACTION_KEYS!r}"
+        ]
+    expected_labels = {action.key: action.label for action in chrome.actions}
+    expected_static_x = {action.key: action.static_x for action in chrome.actions}
+    for button in buttons:
+        key = str(button.property("secureCrtSessionManagerActionKey") or "")
+        label = str(button.property("secureCrtSessionManagerActionLabel") or "")
+        icon_key = str(button.property("secureCrtSessionManagerIconKey") or "")
+        static_x = int(button.property("secureCrtSessionManagerStaticX") or 0)
+        if label != expected_labels.get(key):
+            return [f"securecrt live GUI Session Manager action {key!r} label drifted"]
+        if icon_key != EXPECTED_SECURECRT_SESSION_MANAGER_ICON_KEYS.get(key):
+            return [f"securecrt live GUI Session Manager action {key!r} icon key drifted"]
+        if static_x != expected_static_x.get(key):
+            return [f"securecrt live GUI Session Manager action {key!r} static position drifted"]
+        if button.icon().isNull():
+            return [f"securecrt live GUI Session Manager action {key!r} must use an icon"]
+    return []
+
+
 def required_termius_host_identity_texts() -> set[str]:
     strip = gui_design_termius_host_identity_strip()
     return {strip.title, *{f"{field.label}: {field.value}" for field in strip.fields}}
+
+
+def required_termius_hosts_chrome_texts() -> set[str]:
+    chrome = gui_design_termius_hosts_chrome()
+    return {chrome.title}
+
+
+def check_live_moba_quick_connect_chrome(window: Any) -> list[str]:
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtWidgets import QFrame, QLabel, QLineEdit, QTreeWidget
+
+    chrome = gui_design_moba_quick_connect_chrome()
+    suggestions = EXPECTED_MOBA_QUICK_CONNECT_SUGGESTION_CHROME
+    panel = window.findChild(QFrame, "mobaQuickConnectChrome")
+    if panel is None:
+        return ["mobaxterm live GUI missing quick-connect chrome"]
+    actual_preset = str(panel.property("designPreset") or "")
+    if actual_preset != "mobaxterm":
+        return [f"mobaxterm live GUI quick-connect chrome designPreset {actual_preset!r} must equal 'mobaxterm'"]
+    if int(panel.property("mobaQuickConnectHeight") or 0) != chrome.static_height:
+        return ["mobaxterm live GUI quick-connect chrome height metadata drifted"]
+    if int(panel.property("mobaQuickConnectMarkerWidth") or 0) != chrome.marker_width:
+        return ["mobaxterm live GUI quick-connect marker width metadata drifted"]
+    if str(panel.property("interactionState") or "") != "focused":
+        return ["mobaxterm live GUI quick-connect chrome must carry focused interaction state"]
+
+    field = panel.findChild(QLineEdit, "quickConnect")
+    if field is None:
+        return ["mobaxterm live GUI quick-connect chrome missing input field"]
+    if field.placeholderText() != chrome.placeholder:
+        return [
+            f"mobaxterm live GUI quick-connect placeholder {field.placeholderText()!r} "
+            f"must equal {chrome.placeholder!r}"
+        ]
+    if str(field.property("mobaQuickConnectPlaceholder") or "") != chrome.placeholder:
+        return ["mobaxterm live GUI quick-connect field placeholder metadata drifted"]
+    if int(field.property("mobaQuickConnectInputLeft") or 0) != chrome.input_left:
+        return ["mobaxterm live GUI quick-connect input-left metadata drifted"]
+
+    dropdown = panel.findChild(QLabel, "mobaQuickConnectDropdown")
+    if dropdown is None:
+        return ["mobaxterm live GUI quick-connect chrome missing dropdown marker"]
+    if dropdown.text() != chrome.dropdown_marker:
+        return ["mobaxterm live GUI quick-connect dropdown text drifted"]
+    if str(dropdown.property("mobaQuickConnectDropdownMarker") or "") != chrome.dropdown_marker:
+        return ["mobaxterm live GUI quick-connect dropdown metadata drifted"]
+
+    errors: list[str] = []
+    tree = window.findChild(QTreeWidget, "quickConnectSuggestions")
+    if tree is None:
+        return ["mobaxterm live GUI missing quick-connect suggestion dropdown"]
+    if field.text() != chrome.connected_idle_query:
+        errors.append("mobaxterm live GUI connected quick-connect field must start in idle placeholder state")
+    if str(panel.property("mobaQuickConnectConnectedMode") or "") != "idle":
+        errors.append("mobaxterm live GUI quick-connect chrome must expose connected idle mode")
+    if str(field.property("mobaQuickConnectConnectedMode") or "") != "idle":
+        errors.append("mobaxterm live GUI quick-connect field must expose connected idle mode")
+    if str(tree.property("mobaQuickConnectConnectedMode") or "") != "idle":
+        errors.append("mobaxterm live GUI quick-connect suggestions must expose connected idle mode")
+    if bool(panel.property("mobaQuickConnectConnectedSuggestionVisible")) != chrome.connected_suggestions_visible:
+        errors.append("mobaxterm live GUI quick-connect chrome connected suggestion visibility drifted")
+    if bool(tree.property("mobaQuickConnectConnectedSuggestionVisible")) != chrome.connected_suggestions_visible:
+        errors.append("mobaxterm live GUI quick-connect connected idle suggestion visibility metadata drifted")
+    if tree.isVisible() != chrome.connected_suggestions_visible:
+        errors.append("mobaxterm live GUI connected quick-connect suggestions must stay hidden until typed")
+    if list(tree.property("mobaQuickConnectSuggestionKinds") or []):
+        errors.append("mobaxterm live GUI connected quick-connect idle state must not carry suggestion rows")
+
+    previous_text = field.text()
+    try:
+        field.setText(suggestions.preview_query)
+        update_suggestions = getattr(window, "update_quick_connect_suggestions", None)
+        if callable(update_suggestions):
+            update_suggestions()
+
+        if not tree.isVisible():
+            errors.append("mobaxterm live GUI quick-connect suggestion dropdown must become visible for a match")
+        if str(tree.property("mobaQuickConnectSuggestionQuery") or "") != suggestions.preview_query:
+            errors.append("mobaxterm live GUI quick-connect suggestion query metadata drifted")
+        if list(tree.property("mobaQuickConnectSuggestionExpectedKinds") or []) != list(suggestions.expected_kinds):
+            errors.append("mobaxterm live GUI quick-connect suggestion expected-kind metadata drifted")
+        if int(tree.property("mobaQuickConnectSuggestionMaxRows") or 0) != suggestions.max_visible_rows:
+            errors.append("mobaxterm live GUI quick-connect suggestion max-row metadata drifted")
+        if int(tree.property("mobaQuickConnectSuggestionRowHeight") or 0) != suggestions.row_height:
+            errors.append("mobaxterm live GUI quick-connect suggestion row-height metadata drifted")
+        if int(tree.property("mobaQuickConnectSuggestionStaticWidth") or 0) != suggestions.static_width:
+            errors.append("mobaxterm live GUI quick-connect suggestion static-width metadata drifted")
+
+        actual_kinds = list(tree.property("mobaQuickConnectSuggestionKinds") or [])
+        actual_labels = list(tree.property("mobaQuickConnectSuggestionLabels") or [])
+        actual_details = list(tree.property("mobaQuickConnectSuggestionDetails") or [])
+        for expected_kind in suggestions.expected_kinds:
+            if expected_kind not in actual_kinds:
+                errors.append(f"mobaxterm live GUI quick-connect suggestions missing {expected_kind!r} candidate")
+        if not any("edge-prod" in label for label in actual_labels):
+            errors.append("mobaxterm live GUI quick-connect suggestions must include saved edge-prod profile")
+        if suggestions.preview_query not in " ".join(actual_details + actual_labels):
+            errors.append("mobaxterm live GUI quick-connect suggestions must include the typed target")
+        if not any(label.startswith("DIRECT SSH") for label in actual_labels):
+            errors.append("mobaxterm live GUI quick-connect suggestions must include a direct SSH fallback")
+        if tree.topLevelItemCount() < len(suggestions.expected_kinds):
+            errors.append("mobaxterm live GUI quick-connect suggestions must expose multiple candidate rows")
+
+        user_role = int(Qt.ItemDataRole.UserRole)
+        for row_index in range(tree.topLevelItemCount()):
+            item = tree.topLevelItem(row_index)
+            row_kind = str(item.data(0, user_role + 1) or "")
+            row_label = str(item.data(0, user_role + 2) or "")
+            row_detail = str(item.data(0, user_role + 3) or "")
+            if row_kind and row_kind not in actual_kinds:
+                errors.append(f"mobaxterm live GUI quick-connect row {row_index} kind metadata is detached")
+            if row_label and row_label not in actual_labels:
+                errors.append(f"mobaxterm live GUI quick-connect row {row_index} label metadata is detached")
+            if row_detail and row_detail not in actual_details:
+                errors.append(f"mobaxterm live GUI quick-connect row {row_index} detail metadata is detached")
+            if suggestions.detail_separator not in item.text(0):
+                errors.append(f"mobaxterm live GUI quick-connect row {row_index} missing detail separator")
+    finally:
+        field.setText(previous_text)
+        update_suggestions = getattr(window, "update_quick_connect_suggestions", None)
+        if callable(update_suggestions):
+            update_suggestions()
+
+    if previous_text == chrome.connected_idle_query and tree.isVisible() != chrome.connected_suggestions_visible:
+        errors.append("mobaxterm live GUI quick-connect suggestions must return to connected idle visibility")
+
+    return errors
 
 
 def check_live_securecrt_session_status_strip(window: Any) -> list[str]:
@@ -1570,6 +2258,8 @@ def check_live_remmina_profile_list_chrome(window: Any) -> list[str]:
             f"remmina live GUI profile filter placeholder {actual_placeholder!r} "
             f"must equal {chrome.filter_placeholder!r}"
         ]
+    if str(filter_input.property("interactionState") or "") != "focused":
+        return ["remmina live GUI profile filter must expose focused interactionState"]
     actual_column_keys = list(panel.property("remminaProfileColumnKeys") or [])
     expected_column_keys = [column.key for column in chrome.columns]
     if actual_column_keys != expected_column_keys:
@@ -1638,6 +2328,65 @@ def check_live_termius_header_chips(window: Any) -> list[str]:
     return []
 
 
+def check_live_termius_hosts_chrome(window: Any) -> list[str]:
+    from PyQt6.QtWidgets import QLabel, QLineEdit, QToolButton, QWidget
+
+    chrome = gui_design_termius_hosts_chrome()
+    panel = window.findChild(QWidget, "termiusHostsChrome")
+    if panel is None:
+        return ["termius live GUI missing Hosts search/action chrome"]
+    actual_preset = str(panel.property("designPreset") or "")
+    if actual_preset != "termius":
+        return [f"termius live GUI Hosts chrome designPreset {actual_preset!r} must equal 'termius'"]
+
+    actual_panel_keys = list(panel.property("termiusHostsActionKeys") or [])
+    if actual_panel_keys != EXPECTED_TERMIUS_HOSTS_ACTION_KEYS:
+        return [
+            f"termius live GUI Hosts action keys {actual_panel_keys!r} "
+            f"must equal {EXPECTED_TERMIUS_HOSTS_ACTION_KEYS!r}"
+        ]
+
+    labels = {label.text() for label in panel.findChildren(QLabel)}
+    missing = sorted(required_termius_hosts_chrome_texts() - labels)
+    if missing:
+        return [f"termius live GUI Hosts chrome missing text: {missing}"]
+
+    search = panel.findChild(QLineEdit, "termiusHostSearch")
+    if search is None:
+        return ["termius live GUI missing Hosts search field"]
+    if search.placeholderText() != chrome.filter_placeholder:
+        return [
+            f"termius live GUI Hosts search placeholder {search.placeholderText()!r} "
+            f"must equal {chrome.filter_placeholder!r}"
+        ]
+    if str(search.property("interactionState") or "") != "focused":
+        return ["termius live GUI Hosts search must carry focused interaction state"]
+
+    buttons = panel.findChildren(QToolButton, "termiusHostsAction")
+    actual_button_keys = [str(button.property("termiusHostsActionKey") or "") for button in buttons]
+    if actual_button_keys != EXPECTED_TERMIUS_HOSTS_ACTION_KEYS:
+        return [
+            f"termius live GUI Hosts button keys {actual_button_keys!r} "
+            f"must equal {EXPECTED_TERMIUS_HOSTS_ACTION_KEYS!r}"
+        ]
+    expected_labels = {action.key: action.label for action in chrome.actions}
+    expected_static_x = {action.key: action.static_x for action in chrome.actions}
+    for button in buttons:
+        key = str(button.property("termiusHostsActionKey") or "")
+        label = str(button.property("termiusHostsActionLabel") or "")
+        icon_key = str(button.property("termiusHostsIconKey") or "")
+        static_x = int(button.property("termiusHostsStaticX") or 0)
+        if label != expected_labels.get(key):
+            return [f"termius live GUI Hosts action {key!r} label drifted"]
+        if icon_key != EXPECTED_TERMIUS_HOSTS_ICON_KEYS.get(key):
+            return [f"termius live GUI Hosts action {key!r} icon key drifted"]
+        if static_x != expected_static_x.get(key):
+            return [f"termius live GUI Hosts action {key!r} static position drifted"]
+        if button.icon().isNull():
+            return [f"termius live GUI Hosts action {key!r} must use an icon"]
+    return []
+
+
 def check_live_termius_host_identity_strip(window: Any) -> list[str]:
     from PyQt6.QtWidgets import QLabel, QWidget
 
@@ -1689,6 +2438,9 @@ def check_live_mremoteng_document_controls(window: Any) -> list[str]:
             f"must equal {chrome.filter_placeholder!r}"
         ]
 
+    if str(filter_input.property("interactionState") or "") != "focused":
+        return ["mremoteng live GUI document filter must expose focused interactionState"]
+
     buttons = panel.findChildren(QToolButton, "mRemoteNgDocumentControl")
     expected = list(gui_design_mremoteng_document_controls())
     actual_keys = [str(button.property("mRemoteNgDocumentControlKey") or "") for button in buttons]
@@ -1703,6 +2455,13 @@ def check_live_mremoteng_document_controls(window: Any) -> list[str]:
         icon_key = str(button.property("mRemoteNgDocumentIconKey") or "")
         if icon_key != control.icon_key:
             return [f"mremoteng live GUI document-control icon key {icon_key!r} must equal {control.icon_key!r}"]
+        expected_state = "checked" if control.key == "external-tool" else "normal"
+        actual_state = str(button.property("interactionState") or "")
+        if actual_state != expected_state:
+            return [
+                f"mremoteng live GUI document-control {control.key!r} interactionState "
+                f"{actual_state!r} must equal {expected_state!r}"
+            ]
         if button.icon().isNull():
             return [f"mremoteng live GUI document-control {control.key!r} must use an icon"]
     return []
@@ -1785,9 +2544,9 @@ def live_contract_checks_for_preset(preset_id: str) -> list[str]:
         "home-tab-label",
         "profile-tree-content",
         "status-segments",
-        "workflow-cards",
         "interaction-state",
     ]
+    checks.append("moba-home-welcome" if preset_id == "mobaxterm" else "workflow-cards")
     if live_layout_contracts_for_preset(preset_id):
         checks.append("layout-geometry")
     if live_topology_contracts_for_preset(preset_id):
@@ -1796,6 +2555,9 @@ def live_contract_checks_for_preset(preset_id: str) -> list[str]:
         checks.extend(
             [
                 "quick-connect-strip",
+                "quick-connect-chrome",
+                "quick-connect-suggestions",
+                "connected-quick-connect-idle",
                 "titlebar-chrome",
                 "top-menu-chrome",
                 "ribbon-actions",
@@ -1803,6 +2565,7 @@ def live_contract_checks_for_preset(preset_id: str) -> list[str]:
                 "moba-rail-roles",
                 "moba-rail-labels",
                 "connected-tab-chrome",
+                "session-edge-controls",
                 "right-utility-rail",
                 "connected-sftp-dock",
                 "sftp-toolbar-groups",
@@ -1813,9 +2576,11 @@ def live_contract_checks_for_preset(preset_id: str) -> list[str]:
                 "moba-monitoring-controls",
                 "ssh-banner",
                 "ssh-banner-chrome",
+                "ssh-banner-capability-card",
                 "terminal-transcript",
                 "bottom-telemetry",
                 "bottom-status-chrome",
+                "bottom-edge-controls",
             ]
         )
     else:
@@ -1830,15 +2595,19 @@ def live_contract_checks_for_preset(preset_id: str) -> list[str]:
             ]
         )
         if preset_id == "securecrt":
+            checks.append("securecrt-top-chrome")
+            checks.append("securecrt-session-manager-chrome")
             checks.append("securecrt-session-status-strip")
             checks.append("securecrt-command-window")
         if preset_id == "remmina":
             checks.append("remmina-profile-list-chrome")
             checks.append("remmina-viewer-controls")
         if preset_id == "termius":
+            checks.append("termius-hosts-chrome")
             checks.append("termius-header-chips")
             checks.append("termius-host-identity-strip")
         if preset_id == "mremoteng":
+            checks.append("mremoteng-top-chrome")
             checks.append("mremoteng-document-controls")
             checks.append("mremoteng-property-grid")
     return checks
@@ -1881,6 +2650,54 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
             if preset_id == "mobaxterm"
             else {}
         ),
+        "expected_moba_quick_connect_chrome": (
+            {
+                "placeholder": EXPECTED_MOBA_QUICK_CONNECT_CHROME.placeholder,
+                "dropdown_marker": EXPECTED_MOBA_QUICK_CONNECT_CHROME.dropdown_marker,
+                "static_height": EXPECTED_MOBA_QUICK_CONNECT_CHROME.static_height,
+                "marker_width": EXPECTED_MOBA_QUICK_CONNECT_CHROME.marker_width,
+                "input_left": EXPECTED_MOBA_QUICK_CONNECT_CHROME.input_left,
+                "connected_idle_query": EXPECTED_MOBA_QUICK_CONNECT_CHROME.connected_idle_query,
+                "connected_suggestions_visible": EXPECTED_MOBA_QUICK_CONNECT_CHROME.connected_suggestions_visible,
+            }
+            if preset_id == "mobaxterm"
+            else {}
+        ),
+        "expected_moba_connected_quick_connect_idle": (
+            {
+                "query": EXPECTED_MOBA_QUICK_CONNECT_CHROME.connected_idle_query,
+                "suggestions_visible": EXPECTED_MOBA_QUICK_CONNECT_CHROME.connected_suggestions_visible,
+            }
+            if preset_id == "mobaxterm"
+            else {}
+        ),
+        "expected_moba_quick_connect_suggestion_chrome": (
+            {
+                "preview_query": EXPECTED_MOBA_QUICK_CONNECT_SUGGESTION_CHROME.preview_query,
+                "expected_kinds": list(EXPECTED_MOBA_QUICK_CONNECT_SUGGESTION_CHROME.expected_kinds),
+                "max_visible_rows": EXPECTED_MOBA_QUICK_CONNECT_SUGGESTION_CHROME.max_visible_rows,
+                "row_height": EXPECTED_MOBA_QUICK_CONNECT_SUGGESTION_CHROME.row_height,
+                "static_width": EXPECTED_MOBA_QUICK_CONNECT_SUGGESTION_CHROME.static_width,
+                "detail_separator": EXPECTED_MOBA_QUICK_CONNECT_SUGGESTION_CHROME.detail_separator,
+            }
+            if preset_id == "mobaxterm"
+            else {}
+        ),
+        "expected_moba_home_welcome_chrome": (
+            {
+                "title": EXPECTED_MOBA_HOME_WELCOME_CHROME.title,
+                "subtitle": EXPECTED_MOBA_HOME_WELCOME_CHROME.subtitle,
+                "icon_key": EXPECTED_MOBA_HOME_WELCOME_CHROME.icon_key,
+                "primary_action_icon_key": EXPECTED_MOBA_HOME_WELCOME_CHROME.primary_action_icon_key,
+                "secondary_action_icon_key": EXPECTED_MOBA_HOME_WELCOME_CHROME.secondary_action_icon_key,
+                "search_width": EXPECTED_MOBA_HOME_WELCOME_CHROME.search_width,
+                "action_spacing": EXPECTED_MOBA_HOME_WELCOME_CHROME.action_spacing,
+                "recent_title": EXPECTED_MOBA_HOME_WELCOME_CHROME.recent_title,
+                "surface_width": EXPECTED_MOBA_HOME_WELCOME_CHROME.surface_width,
+            }
+            if preset_id == "mobaxterm"
+            else {}
+        ),
         "expected_moba_tab_chrome_keys": sorted(EXPECTED_MOBA_TAB_CHROME_KEYS) if preset_id == "mobaxterm" else [],
         "expected_moba_static_tab_chrome_keys": (
             sorted(EXPECTED_MOBA_STATIC_TAB_CHROME_KEYS) if preset_id == "mobaxterm" else []
@@ -1896,6 +2713,19 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
                     "label": action.label,
                 }
                 for action in gui_design_moba_right_utility_actions()
+            ]
+            if preset_id == "mobaxterm"
+            else []
+        ),
+        "expected_moba_session_edge_actions": (
+            [
+                {
+                    "key": action.key,
+                    "icon_key": action.icon_key,
+                    "label": action.label,
+                    "static_y": action.static_y,
+                }
+                for action in EXPECTED_MOBA_SESSION_EDGE_ACTIONS
             ]
             if preset_id == "mobaxterm"
             else []
@@ -1922,6 +2752,9 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
             {
                 "path_placeholder": EXPECTED_MOBA_SFTP_BROWSER_CHROME.path_placeholder,
                 "dropdown_marker": EXPECTED_MOBA_SFTP_BROWSER_CHROME.dropdown_marker,
+                "parent_row_label": EXPECTED_MOBA_SFTP_BROWSER_CHROME.parent_row_label,
+                "parent_row_kind": EXPECTED_MOBA_SFTP_BROWSER_CHROME.parent_row_kind,
+                "selected_row_kind": EXPECTED_MOBA_SFTP_BROWSER_CHROME.selected_row_kind,
                 "columns": [
                     {"key": column.key, "label": column.label, "static_x": column.static_x}
                     for column in EXPECTED_MOBA_SFTP_BROWSER_CHROME.columns
@@ -1960,6 +2793,18 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
         "expected_moba_monitoring_metric_keys": sorted(EXPECTED_MOBA_MONITORING_METRIC_KEYS)
         if preset_id == "mobaxterm"
         else [],
+        "expected_moba_remote_monitoring_dock_chrome": (
+            {
+                "title_control_key": EXPECTED_MOBA_REMOTE_MONITORING_DOCK_CHROME.title_control_key,
+                "follow_control_key": EXPECTED_MOBA_REMOTE_MONITORING_DOCK_CHROME.follow_control_key,
+                "telemetry_surface": EXPECTED_MOBA_REMOTE_MONITORING_DOCK_CHROME.telemetry_surface,
+                "visible_metric_keys": list(EXPECTED_MOBA_REMOTE_MONITORING_DOCK_CHROME.visible_metric_keys),
+                "refresh_seconds": EXPECTED_MOBA_REMOTE_MONITORING_DOCK_CHROME.refresh_seconds,
+                "compact": EXPECTED_MOBA_REMOTE_MONITORING_DOCK_CHROME.compact,
+            }
+            if preset_id == "mobaxterm"
+            else {}
+        ),
         "expected_moba_monitoring_controls": (
             [
                 {
@@ -1984,20 +2829,89 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
             if preset_id == "mobaxterm"
             else {}
         ),
+        "expected_moba_bottom_edge_controls": (
+            [
+                {
+                    "key": control.key,
+                    "icon_key": control.icon_key,
+                    "label": control.label,
+                    "static_x": control.static_x,
+                }
+                for control in EXPECTED_MOBA_BOTTOM_EDGE_CONTROLS
+            ]
+            if preset_id == "mobaxterm"
+            else []
+        ),
         "expected_moba_ssh_banner_chrome": (
             {
                 "title": EXPECTED_MOBA_SSH_BANNER_CHROME.title,
                 "subtitle": EXPECTED_MOBA_SSH_BANNER_CHROME.subtitle,
+                "heading_prefix": EXPECTED_MOBA_SSH_BANNER_CHROME.heading_prefix,
+                "heading_suffix": EXPECTED_MOBA_SSH_BANNER_CHROME.heading_suffix,
+                "target_intro": EXPECTED_MOBA_SSH_BANNER_CHROME.target_intro,
+                "capability_label_width": EXPECTED_MOBA_SSH_BANNER_CHROME.capability_label_width,
+                "footer_prefix": EXPECTED_MOBA_SSH_BANNER_CHROME.footer_prefix,
                 "static_width": EXPECTED_MOBA_SSH_BANNER_CHROME.static_width,
                 "static_height": EXPECTED_MOBA_SSH_BANNER_CHROME.static_height,
             }
             if preset_id == "mobaxterm"
             else {}
         ),
-        "expected_workflow_card_titles": [card.title for card in gui_design_workflow_cards(preset_id)],
+        "expected_moba_ssh_banner_capability_card": (
+            {
+                "target": EXPECTED_MOBA_SSH_BANNER.title,
+                "capabilities": [row.to_dict() for row in EXPECTED_MOBA_SSH_BANNER_CAPABILITIES],
+                "footer_links": EXPECTED_MOBA_SSH_BANNER_FOOTER_LINKS,
+            }
+            if preset_id == "mobaxterm"
+            else {}
+        ),
+        "expected_workflow_card_titles": []
+        if preset_id == "mobaxterm"
+        else [card.title for card in gui_design_workflow_cards(preset_id)],
         "expected_workspace_surface_texts": workspace_texts,
         "expected_reference_state_texts": reference_texts,
         "expected_reference_status_segments": list(gui_design_reference_state(preset_id).status_segments),
+        "expected_securecrt_top_chrome": (
+            {
+                "window_title": EXPECTED_SECURECRT_TOP_CHROME.window_title,
+                "menu_height": EXPECTED_SECURECRT_TOP_CHROME.menu_height,
+                "toolbar_height": EXPECTED_SECURECRT_TOP_CHROME.toolbar_height,
+                "menu_items": [
+                    {"key": item.key, "label": item.label, "primary_action": item.primary_action}
+                    for item in EXPECTED_SECURECRT_TOP_CHROME.menu_items
+                ],
+                "toolbar_actions": [
+                    {
+                        "key": action.key,
+                        "icon_key": action.icon_key,
+                        "label": action.label,
+                        "static_x": action.static_x,
+                        "static_width": action.static_width,
+                    }
+                    for action in EXPECTED_SECURECRT_TOP_CHROME.toolbar_actions
+                ],
+            }
+            if preset_id == "securecrt"
+            else {}
+        ),
+        "expected_securecrt_session_manager_chrome": (
+            {
+                "title": EXPECTED_SECURECRT_SESSION_MANAGER_CHROME.title,
+                "filter_placeholder": EXPECTED_SECURECRT_SESSION_MANAGER_CHROME.filter_placeholder,
+                "actions": [
+                    {
+                        "key": action.key,
+                        "icon_key": action.icon_key,
+                        "label": action.label,
+                        "static_x": action.static_x,
+                    }
+                    for action in EXPECTED_SECURECRT_SESSION_MANAGER_CHROME.actions
+                ],
+            }
+            if preset_id == "securecrt"
+            else {}
+        ),
         "expected_securecrt_command_window": (
             {
                 "key": EXPECTED_SECURECRT_COMMAND_WINDOW_CHROME.key,
@@ -2076,6 +2990,23 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
             if preset_id == "termius"
             else []
         ),
+        "expected_termius_hosts_chrome": (
+            {
+                "title": EXPECTED_TERMIUS_HOSTS_CHROME.title,
+                "filter_placeholder": EXPECTED_TERMIUS_HOSTS_CHROME.filter_placeholder,
+                "actions": [
+                    {
+                        "key": action.key,
+                        "icon_key": action.icon_key,
+                        "label": action.label,
+                        "static_x": action.static_x,
+                    }
+                    for action in EXPECTED_TERMIUS_HOSTS_CHROME.actions
+                ],
+            }
+            if preset_id == "termius"
+            else {}
+        ),
         "expected_termius_host_identity_strip": (
             {
                 "title": EXPECTED_TERMIUS_HOST_IDENTITY_STRIP.title,
@@ -2090,6 +3021,29 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
                 ],
             }
             if preset_id == "termius"
+            else {}
+        ),
+        "expected_mremoteng_top_chrome": (
+            {
+                "window_title": EXPECTED_MREMOTENG_TOP_CHROME.window_title,
+                "menu_height": EXPECTED_MREMOTENG_TOP_CHROME.menu_height,
+                "toolbar_height": EXPECTED_MREMOTENG_TOP_CHROME.toolbar_height,
+                "menu_items": [
+                    {"key": item.key, "label": item.label, "primary_action": item.primary_action}
+                    for item in EXPECTED_MREMOTENG_TOP_CHROME.menu_items
+                ],
+                "toolbar_actions": [
+                    {
+                        "key": action.key,
+                        "icon_key": action.icon_key,
+                        "label": action.label,
+                        "static_x": action.static_x,
+                        "static_width": action.static_width,
+                    }
+                    for action in EXPECTED_MREMOTENG_TOP_CHROME.toolbar_actions
+                ],
+            }
+            if preset_id == "mremoteng"
             else {}
         ),
         "expected_mremoteng_document_controls": (
@@ -2187,10 +3141,10 @@ def check_live_interaction_state(window: Any, preset_id: str) -> list[str]:
     focus_widgets = {
         "quick-connect": "quickConnect",
         "search-log": "toolbarSearch",
-        "session-filter": "toolbarSearch",
-        "host-search": "toolbarSearch",
-        "profile-filter": "toolbarSearch",
-        "tree-filter": "toolbarSearch",
+        "session-filter": "secureCrtSessionFilter",
+        "host-search": "termiusHostSearch",
+        "profile-filter": "remminaProfileFilter",
+        "tree-filter": "mRemoteNgDocumentFilter",
     }
     focus_object = focus_widgets.get(state.focused_control)
     if focus_object is not None:

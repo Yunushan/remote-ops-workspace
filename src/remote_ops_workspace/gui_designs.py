@@ -33,6 +33,41 @@ class GuiMobaTitlebarChrome:
 
 
 @dataclass(frozen=True)
+class GuiMobaQuickConnectChrome:
+    placeholder: str
+    dropdown_marker: str
+    static_height: int
+    marker_width: int
+    input_left: int
+    input_padding: str
+    connected_idle_query: str
+    connected_suggestions_visible: bool
+
+
+@dataclass(frozen=True)
+class GuiMobaQuickConnectSuggestionChrome:
+    preview_query: str
+    expected_kinds: tuple[str, ...]
+    max_visible_rows: int
+    row_height: int
+    static_width: int
+    detail_separator: str
+
+
+@dataclass(frozen=True)
+class GuiMobaHomeWelcomeChrome:
+    title: str
+    subtitle: str
+    icon_key: str
+    primary_action_icon_key: str
+    secondary_action_icon_key: str
+    search_width: int
+    action_spacing: int
+    recent_title: str
+    surface_width: int
+
+
+@dataclass(frozen=True)
 class GuiMobaRailItem:
     role: str
     label: str
@@ -49,6 +84,16 @@ class GuiMobaRightUtilityAction:
     label: str
     color: str
     tooltip: str
+
+
+@dataclass(frozen=True)
+class GuiMobaSessionEdgeAction:
+    key: str
+    icon_key: str
+    label: str
+    color: str
+    tooltip: str
+    static_y: int
 
 
 @dataclass(frozen=True)
@@ -73,6 +118,9 @@ class GuiMobaSftpTableColumn:
 class GuiMobaSftpBrowserChrome:
     path_placeholder: str
     dropdown_marker: str
+    parent_row_label: str
+    parent_row_kind: str
+    selected_row_kind: str
     columns: tuple[GuiMobaSftpTableColumn, ...]
 
 
@@ -117,6 +165,16 @@ class GuiMobaMonitoringControl:
 
 
 @dataclass(frozen=True)
+class GuiMobaRemoteMonitoringDockChrome:
+    title_control_key: str
+    follow_control_key: str
+    telemetry_surface: str
+    visible_metric_keys: tuple[str, ...]
+    refresh_seconds: int
+    compact: bool
+
+
+@dataclass(frozen=True)
 class GuiMobaStatusSegment:
     key: str
     text: str
@@ -132,9 +190,26 @@ class GuiMobaStatusBarChrome:
 
 
 @dataclass(frozen=True)
+class GuiMobaBottomEdgeControl:
+    key: str
+    icon_key: str
+    label: str
+    color: str
+    tooltip: str
+    static_x: int
+
+
+@dataclass(frozen=True)
 class GuiMobaSshBannerChrome:
     title: str
     subtitle: str
+    heading_prefix: str
+    heading_suffix: str
+    target_intro: str
+    capability_label_width: int
+    footer_prefix: str
+    help_link_label: str
+    website_link_label: str
     static_left_offset: int
     static_top_offset: int
     static_width: int
@@ -167,6 +242,76 @@ class GuiSecureCrtSessionStatusField:
 class GuiSecureCrtSessionStatusStrip:
     title: str
     fields: tuple[GuiSecureCrtSessionStatusField, ...]
+
+
+@dataclass(frozen=True)
+class GuiSecureCrtSessionManagerAction:
+    key: str
+    icon_key: str
+    label: str
+    tooltip: str
+    static_x: int
+
+
+@dataclass(frozen=True)
+class GuiSecureCrtSessionManagerChrome:
+    title: str
+    filter_placeholder: str
+    actions: tuple[GuiSecureCrtSessionManagerAction, ...]
+
+
+@dataclass(frozen=True)
+class GuiSecureCrtTopMenuItem:
+    key: str
+    label: str
+    primary_action: str
+    tooltip: str
+
+
+@dataclass(frozen=True)
+class GuiSecureCrtTopToolbarAction:
+    key: str
+    icon_key: str
+    label: str
+    tooltip: str
+    static_x: int
+    static_width: int
+
+
+@dataclass(frozen=True)
+class GuiSecureCrtTopChrome:
+    window_title: str
+    menu_height: int
+    toolbar_height: int
+    menu_items: tuple[GuiSecureCrtTopMenuItem, ...]
+    toolbar_actions: tuple[GuiSecureCrtTopToolbarAction, ...]
+
+
+@dataclass(frozen=True)
+class GuiMRemoteNgTopMenuItem:
+    key: str
+    label: str
+    primary_action: str
+    tooltip: str
+
+
+@dataclass(frozen=True)
+class GuiMRemoteNgTopToolbarAction:
+    key: str
+    icon_key: str
+    label: str
+    tooltip: str
+    static_x: int
+    static_width: int
+
+
+@dataclass(frozen=True)
+class GuiMRemoteNgTopChrome:
+    window_title: str
+    menu_height: int
+    toolbar_height: int
+    menu_items: tuple[GuiMRemoteNgTopMenuItem, ...]
+    toolbar_actions: tuple[GuiMRemoteNgTopToolbarAction, ...]
 
 
 @dataclass(frozen=True)
@@ -208,6 +353,22 @@ class GuiTermiusHeaderChip:
     key: str
     label: str
     tooltip: str
+
+
+@dataclass(frozen=True)
+class GuiTermiusHostsAction:
+    key: str
+    icon_key: str
+    label: str
+    tooltip: str
+    static_x: int
+
+
+@dataclass(frozen=True)
+class GuiTermiusHostsChrome:
+    title: str
+    filter_placeholder: str
+    actions: tuple[GuiTermiusHostsAction, ...]
 
 
 @dataclass(frozen=True)
@@ -347,8 +508,15 @@ GUI_DESIGN_MOBA_RAIL_ITEMS: tuple[GuiMobaRailItem, ...] = (
 
 
 GUI_DESIGN_MOBA_SSH_BANNER_CHROME = GuiMobaSshBannerChrome(
-    title="Remote Ops Workspace Moba-style",
-    subtitle="(SSH client, SFTP browser and monitoring tools)",
+    title="Remote Ops Workspace Personal Edition v1.0",
+    subtitle="(SSH client, SFTP browser and remote tools)",
+    heading_prefix="* ",
+    heading_suffix=" *",
+    target_intro="SSH session to",
+    capability_label_width=15,
+    footer_prefix="For more info, ctrl+click on",
+    help_link_label="help",
+    website_link_label="website",
     static_left_offset=42,
     static_top_offset=12,
     static_width=570,
@@ -383,6 +551,26 @@ GUI_DESIGN_MOBA_RIGHT_UTILITY_ACTIONS: tuple[GuiMobaRightUtilityAction, ...] = (
 )
 
 
+GUI_DESIGN_MOBA_SESSION_EDGE_ACTIONS: tuple[GuiMobaSessionEdgeAction, ...] = (
+    GuiMobaSessionEdgeAction(
+        key="attachment",
+        icon_key="clip",
+        label="Session attachment",
+        color="#2f8cff",
+        tooltip="Show attached session tools",
+        static_y=112,
+    ),
+    GuiMobaSessionEdgeAction(
+        key="settings",
+        icon_key="gear",
+        label="Session settings",
+        color="#38bdf8",
+        tooltip="Show session settings",
+        static_y=130,
+    ),
+)
+
+
 GUI_DESIGN_MOBA_TITLEBAR_CHROME = GuiMobaTitlebarChrome(
     icon_key="moba-window",
     static_height=22,
@@ -392,6 +580,37 @@ GUI_DESIGN_MOBA_TITLEBAR_CHROME = GuiMobaTitlebarChrome(
     control_keys=("minimize", "maximize", "close"),
     control_width=24,
     control_right_inset=8,
+)
+
+
+GUI_DESIGN_MOBA_QUICK_CONNECT_CHROME = GuiMobaQuickConnectChrome(
+    placeholder="Quick connect...",
+    dropdown_marker="v",
+    static_height=24,
+    marker_width=24,
+    input_left=0,
+    input_padding="4px 8px",
+    connected_idle_query="",
+    connected_suggestions_visible=False,
+)
+GUI_DESIGN_MOBA_QUICK_CONNECT_SUGGESTION_CHROME = GuiMobaQuickConnectSuggestionChrome(
+    preview_query="edge-prod.example.invalid",
+    expected_kinds=("profile", "direct"),
+    max_visible_rows=4,
+    row_height=22,
+    static_width=390,
+    detail_separator="    ",
+)
+GUI_DESIGN_MOBA_HOME_WELCOME_CHROME = GuiMobaHomeWelcomeChrome(
+    title="Remote Ops Workspace",
+    subtitle="Moba-style SSH client, SFTP browser and monitoring tools",
+    icon_key="session",
+    primary_action_icon_key="session",
+    secondary_action_icon_key="tunneling",
+    search_width=405,
+    action_spacing=96,
+    recent_title="Recent sessions",
+    surface_width=640,
 )
 
 
@@ -420,6 +639,9 @@ GUI_DESIGN_MOBA_SFTP_DOCK_ACTIONS: tuple[GuiMobaSftpDockAction, ...] = (
 GUI_DESIGN_MOBA_SFTP_BROWSER_CHROME = GuiMobaSftpBrowserChrome(
     path_placeholder="/",
     dropdown_marker="v",
+    parent_row_label="..",
+    parent_row_kind="parent-dir",
+    selected_row_kind="parent-dir",
     columns=(
         GuiMobaSftpTableColumn("name", "Name", 38),
         GuiMobaSftpTableColumn("size", "Size (KB)", 188),
@@ -478,6 +700,15 @@ GUI_DESIGN_MOBA_MONITORING_CONTROLS: tuple[GuiMobaMonitoringControl, ...] = (
     ),
 )
 
+GUI_DESIGN_MOBA_REMOTE_MONITORING_DOCK_CHROME = GuiMobaRemoteMonitoringDockChrome(
+    title_control_key="remote-monitoring",
+    follow_control_key="follow-terminal-folder",
+    telemetry_surface="bottom-telemetry-bar",
+    visible_metric_keys=(),
+    refresh_seconds=5,
+    compact=True,
+)
+
 
 GUI_DESIGN_MOBA_STATUS_SEGMENTS: tuple[GuiMobaStatusSegment, ...] = (
     GuiMobaStatusSegment("sftp-ready", "SFTP ready", "Connected SSH browser is ready"),
@@ -491,6 +722,35 @@ GUI_DESIGN_MOBA_STATUS_BAR_CHROME = GuiMobaStatusBarChrome(
     right_marker="[]",
     right_marker_tooltip="Compact status marker",
 )
+
+
+GUI_DESIGN_MOBA_BOTTOM_EDGE_CONTROLS: tuple[GuiMobaBottomEdgeControl, ...] = (
+    GuiMobaBottomEdgeControl(
+        key="tab-left",
+        icon_key="arrow-left",
+        label="Previous tab",
+        color="#4da3ff",
+        tooltip="Select previous session tab",
+        static_x=1204,
+    ),
+    GuiMobaBottomEdgeControl(
+        key="tab-right",
+        icon_key="arrow-right",
+        label="Next tab",
+        color="#4da3ff",
+        tooltip="Select next session tab",
+        static_x=1224,
+    ),
+    GuiMobaBottomEdgeControl(
+        key="close-active",
+        icon_key="close",
+        label="Close active tab",
+        color="#ff4d4d",
+        tooltip="Close active session tab",
+        static_x=1244,
+    ),
+)
+
 
 GUI_DESIGN_SECURECRT_COMMAND_WINDOW_CHROME = GuiSecureCrtCommandWindowChrome(
     key="send-to-all-sessions",
@@ -557,6 +817,91 @@ GUI_DESIGN_SECURECRT_SESSION_STATUS_STRIP = GuiSecureCrtSessionStatusStrip(
     ),
 )
 
+GUI_DESIGN_SECURECRT_SESSION_MANAGER_CHROME = GuiSecureCrtSessionManagerChrome(
+    title="Session Manager",
+    filter_placeholder="Filter sessions",
+    actions=(
+        GuiSecureCrtSessionManagerAction(
+            "connect",
+            "connect",
+            "Connect",
+            "Open selected Session Manager entry",
+            34,
+        ),
+        GuiSecureCrtSessionManagerAction(
+            "new-folder",
+            "folder",
+            "New Folder",
+            "Create a new Session Manager folder",
+            60,
+        ),
+        GuiSecureCrtSessionManagerAction(
+            "properties",
+            "properties",
+            "Properties",
+            "Edit selected Session Manager entry",
+            86,
+        ),
+    ),
+)
+
+GUI_DESIGN_SECURECRT_TOP_CHROME = GuiSecureCrtTopChrome(
+    window_title="edge-prod (SSH2) - Remote Ops Workspace",
+    menu_height=22,
+    toolbar_height=54,
+    menu_items=(
+        GuiSecureCrtTopMenuItem("file", "File", "Connect...", "Open, clone or save a session"),
+        GuiSecureCrtTopMenuItem("edit", "Edit", "Find...", "Find text and edit terminal selection"),
+        GuiSecureCrtTopMenuItem("view", "View", "Session Manager", "Show Session Manager and toolbar panes"),
+        GuiSecureCrtTopMenuItem("options", "Options", "Session Options", "Edit terminal and session options"),
+        GuiSecureCrtTopMenuItem("transfer", "Transfer", "Open SFTP", "Open file-transfer tools for the active session"),
+        GuiSecureCrtTopMenuItem("script", "Script", "Run Script", "Run a script against active sessions"),
+        GuiSecureCrtTopMenuItem("tools", "Tools", "Key Manager", "Open terminal and key-management tools"),
+        GuiSecureCrtTopMenuItem("window", "Window", "Tile Sessions", "Arrange session tabs and split panes"),
+        GuiSecureCrtTopMenuItem("help", "Help", "Help Topics", "Open diagnostics and product help"),
+    ),
+    toolbar_actions=(
+        GuiSecureCrtTopToolbarAction("refresh", "session-manager", "Refresh", "Refresh Session Manager", 14, 58),
+        GuiSecureCrtTopToolbarAction("new", "new-session", "New Session", "Create a terminal session", 82, 88),
+        GuiSecureCrtTopToolbarAction("edit", "properties", "Properties", "Edit session properties", 180, 82),
+        GuiSecureCrtTopToolbarAction("remove", "delete", "Delete", "Delete selected session", 272, 62),
+        GuiSecureCrtTopToolbarAction("connect", "connect", "Connect", "Open selected terminal session", 344, 70),
+        GuiSecureCrtTopToolbarAction("files", "sftp", "SFTP", "Open SFTP tab", 424, 54),
+        GuiSecureCrtTopToolbarAction("queue", "transfer", "Transfer", "Preview transfer queue", 488, 70),
+        GuiSecureCrtTopToolbarAction("dry-run", "command", "Command", "Show launch command", 568, 74),
+        GuiSecureCrtTopToolbarAction("doctor", "tools", "Tools", "Run tool diagnostics", 652, 54),
+        GuiSecureCrtTopToolbarAction("split-h", "tile-h", "Tile H", "Tile terminal panes horizontally", 716, 58),
+        GuiSecureCrtTopToolbarAction("split-v", "tile-v", "Tile V", "Tile terminal panes vertically", 784, 58),
+    ),
+)
+
+GUI_DESIGN_MREMOTENG_TOP_CHROME = GuiMRemoteNgTopChrome(
+    window_title="Connections.xml - Remote Ops Workspace",
+    menu_height=22,
+    toolbar_height=50,
+    menu_items=(
+        GuiMRemoteNgTopMenuItem("file", "File", "New Connection", "Create, save or import connection files"),
+        GuiMRemoteNgTopMenuItem("view", "View", "Connections", "Show connection tree, panels and toolbars"),
+        GuiMRemoteNgTopMenuItem("connections", "Connections", "Connect", "Connect, reconnect or organize entries"),
+        GuiMRemoteNgTopMenuItem("tools", "Tools", "External Tools", "Open external tools and diagnostics"),
+        GuiMRemoteNgTopMenuItem("window", "Window", "Tile", "Arrange open connection documents"),
+        GuiMRemoteNgTopMenuItem("help", "Help", "Help", "Open help and diagnostics"),
+    ),
+    toolbar_actions=(
+        GuiMRemoteNgTopToolbarAction("refresh", "refresh-tree", "Refresh", "Refresh connection tree", 14, 58),
+        GuiMRemoteNgTopToolbarAction("new", "new-connection", "New Conn", "Create connection", 80, 74),
+        GuiMRemoteNgTopToolbarAction("edit", "config", "Config", "Edit connection configuration", 164, 62),
+        GuiMRemoteNgTopToolbarAction("remove", "delete", "Delete", "Delete connection", 236, 58),
+        GuiMRemoteNgTopToolbarAction("connect", "open-connection", "Open", "Open selected connection", 304, 54),
+        GuiMRemoteNgTopToolbarAction("files", "external-tool", "External", "Open external file workflow", 368, 74),
+        GuiMRemoteNgTopToolbarAction("queue", "transfer", "Transfer", "Preview transfer workflow", 452, 70),
+        GuiMRemoteNgTopToolbarAction("dry-run", "script", "Script", "Show launch script", 532, 58),
+        GuiMRemoteNgTopToolbarAction("doctor", "tools", "Tools", "Run client tools check", 600, 54),
+        GuiMRemoteNgTopToolbarAction("split-h", "tile-h", "Tile H", "Tile connection panes horizontally", 664, 58),
+        GuiMRemoteNgTopToolbarAction("split-v", "tile-v", "Tile V", "Tile connection panes vertically", 732, 58),
+    ),
+)
+
 GUI_DESIGN_REMMINA_VIEWER_CONTROLS: tuple[GuiRemminaViewerControl, ...] = (
     GuiRemminaViewerControl("fit", "fit", "SP_TitleBarMaxButton", "Fit", "Fit remote desktop to the viewer"),
     GuiRemminaViewerControl("scale-100", "scale", "SP_ComputerIcon", "Scale 100%", "Use exact 100% viewer scale"),
@@ -605,6 +950,16 @@ GUI_DESIGN_TERMIUS_HEADER_CHIPS: tuple[GuiTermiusHeaderChip, ...] = (
     GuiTermiusHeaderChip("vault-unlocked", "Vault unlocked", "Vault identity is available for this host"),
     GuiTermiusHeaderChip("sync-current", "Sync current", "Host inventory and settings are current"),
     GuiTermiusHeaderChip("port-forward-ready", "Port fwd ready", "Port forwarding workflow is ready"),
+)
+
+GUI_DESIGN_TERMIUS_HOSTS_CHROME = GuiTermiusHostsChrome(
+    title="Hosts",
+    filter_placeholder="Search hosts",
+    actions=(
+        GuiTermiusHostsAction("new-host", "plus", "Add Host", "Create a vault host entry", 34),
+        GuiTermiusHostsAction("keychain", "key", "Keychain", "Open vault keychain", 60),
+        GuiTermiusHostsAction("sync-hosts", "sync", "Sync", "Sync host inventory", 86),
+    ),
 )
 
 GUI_DESIGN_TERMIUS_HOST_IDENTITY_STRIP = GuiTermiusHostIdentityStrip(
@@ -896,12 +1251,12 @@ GUI_DESIGN_INTERACTION_STATES: dict[str, GuiInteractionState] = {
     ),
     "mobaxterm": GuiInteractionState(
         active_toolbar_key="sessions",
-        checked_toolbar_key="tools",
+        checked_toolbar_key="sftp",
         disabled_toolbar_key="games",
         focused_control="quick-connect",
         active_tab_status="SSH direct",
         selected_tree_label="sftp-ops",
-        status_note="quick connect focus, tools rail checked, games disabled",
+        status_note="quick connect focus, SFTP rail checked, games disabled",
     ),
     "securecrt": GuiInteractionState(
         active_toolbar_key="connect",
@@ -1333,6 +1688,16 @@ QMenuBar {{
 QMenuBar#mobaTopMenuBar {{
   background: {colors.window};
 }}
+QMenuBar#secureCrtMenuBar {{
+  background: {colors.window};
+  border-bottom: 1px solid {colors.toolbar_border};
+  padding: 2px 7px;
+}}
+QMenuBar#mRemoteNgMenuBar {{
+  background: {colors.toolbar};
+  border-bottom: 1px solid {colors.toolbar_border};
+  padding: 2px 7px;
+}}
 QMenuBar::item {{
   padding: 3px 8px;
   background: transparent;
@@ -1451,9 +1816,23 @@ QLineEdit#toolbarSearch {{
 QLineEdit#quickConnect {{
   background: {colors.control};
   color: {colors.control_text};
+  border: 0;
+  border-radius: 0;
+  padding: {GUI_DESIGN_MOBA_QUICK_CONNECT_CHROME.input_padding};
+}}
+QFrame#mobaQuickConnectChrome {{
+  background: {colors.control};
   border: 1px solid {colors.toolbar_border};
   border-radius: 0;
-  padding: 4px 8px;
+}}
+QFrame#mobaQuickConnectChrome[interactionState="focused"] {{
+  border: 2px solid {colors.control_hover};
+}}
+QLabel#mobaQuickConnectDropdown {{
+  background: {colors.control};
+  color: {colors.sidebar_muted};
+  border-left: 1px solid {colors.toolbar_border};
+  font-weight: 700;
 }}
 QTreeWidget#quickConnectSuggestions {{
   background: {colors.sidebar};
@@ -1467,6 +1846,7 @@ QTreeWidget#quickConnectSuggestions {{
 QTreeWidget#quickConnectSuggestions::item {{
   padding: 3px 5px;
   border-radius: {radius}px;
+  min-height: {GUI_DESIGN_MOBA_QUICK_CONNECT_SUGGESTION_CHROME.row_height}px;
 }}
 QTreeWidget#quickConnectSuggestions::item:selected {{
   background: {colors.sidebar_selected};
@@ -1686,6 +2066,21 @@ QLineEdit#homeSearch {{
   border-radius: 0;
   padding: 4px 7px;
 }}
+QFrame#mobaHomeWelcomeSurface {{
+  background: transparent;
+  border: 0;
+}}
+QLabel#mobaHomeTitle {{
+  color: {colors.control_text};
+  font-size: 30px;
+  font-weight: 600;
+}}
+QLabel#mobaHomeSubtitle, QLabel#mobaRecentSession {{
+  color: {colors.control_text};
+}}
+QLabel#mobaHomeFooter {{
+  color: {colors.control_hover};
+}}
 QPushButton#mobaHomePrimaryAction {{
   background: {colors.control};
   color: {colors.control_text};
@@ -1764,6 +2159,31 @@ QFrame#secureCrtSessionStatusStrip {{
   border-radius: {radius}px;
   padding: 5px;
 }}
+QFrame#secureCrtSessionManagerChrome {{
+  background: {colors.pane};
+  border: 1px solid {colors.control_border};
+  border-radius: {radius}px;
+  padding: 5px;
+}}
+QLabel#secureCrtSessionManagerTitle {{
+  color: {colors.control_text};
+  font-weight: 700;
+}}
+QLineEdit#secureCrtSessionFilter {{
+  background: {colors.terminal};
+  border: 1px solid {colors.primary};
+  color: {colors.control_text};
+  padding: 3px 5px;
+}}
+QToolButton#secureCrtSessionManagerAction {{
+  background: {colors.control};
+  border: 1px solid {colors.control_border};
+  color: {colors.control_text};
+  padding: 3px 6px;
+}}
+QToolButton#secureCrtSessionManagerAction:hover {{
+  border-color: {colors.primary};
+}}
 QLabel#secureCrtSessionStatusTitle {{
   color: {colors.sidebar_muted};
   font-weight: 700;
@@ -1829,6 +2249,33 @@ QFrame#termiusHeaderChips {{
   border: 1px solid {colors.control_border};
   border-radius: {radius}px;
   padding: 5px;
+}}
+QFrame#termiusHostsChrome {{
+  background: {colors.pane};
+  border: 1px solid {colors.control_border};
+  border-radius: {radius}px;
+  padding: 5px;
+}}
+QLabel#termiusHostsTitle {{
+  color: {colors.control_text};
+  font-weight: 700;
+}}
+QLineEdit#termiusHostSearch {{
+  background: {colors.terminal};
+  border: 1px solid {colors.primary};
+  border-radius: {radius}px;
+  color: {colors.control_text};
+  padding: 3px 5px;
+}}
+QToolButton#termiusHostsAction {{
+  background: {colors.control};
+  border: 1px solid {colors.control_border};
+  border-radius: {radius}px;
+  color: {colors.control_text};
+  padding: 3px;
+}}
+QToolButton#termiusHostsAction:hover {{
+  border-color: {colors.control_hover};
 }}
 QFrame#termiusHostIdentityStrip {{
   background: {colors.pane};
@@ -2023,8 +2470,19 @@ QFrame#mobaSshBanner {{
   border: 1px solid {colors.terminal_accent};
   margin: 12px 36px 8px 36px;
 }}
-QLabel#mobaSshBannerLine {{
+QLabel#mobaSshBannerLine, QLabel#mobaSshBannerTargetLine, QLabel#mobaSshBannerCapability {{
   color: {colors.terminal_text};
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 12px;
+}}
+QLabel#mobaSshBannerCapability[capabilityStatus="ok"] {{
+  color: {colors.control_text};
+}}
+QLabel#mobaSshBannerCapability[capabilityStatus="disabled"] {{
+  color: {colors.status};
+}}
+QLabel#mobaSshBannerFooter {{
+  color: {colors.control_text};
   font-family: "Cascadia Mono", Consolas, monospace;
   font-size: 12px;
 }}
@@ -2051,6 +2509,21 @@ QToolButton#mobaRightUtilityAction {{
   padding: 3px;
 }}
 QToolButton#mobaRightUtilityAction:hover {{
+  background: {colors.control};
+  border-color: {colors.control_hover};
+}}
+QFrame#mobaSessionEdgeControls {{
+  background: transparent;
+  border: 0;
+}}
+QToolButton#mobaSessionEdgeAction {{
+  background: transparent;
+  color: {colors.control_hover};
+  border: 1px solid transparent;
+  border-radius: 0;
+  padding: 2px;
+}}
+QToolButton#mobaSessionEdgeAction:hover {{
   background: {colors.control};
   border-color: {colors.control_hover};
 }}
@@ -2124,6 +2597,20 @@ QStatusBar QLabel#productStatusMarker {{
   color: {colors.sidebar_muted};
   border: 1px solid {colors.toolbar_border};
   padding: 0 4px;
+}}
+QFrame#mobaBottomEdgeControls {{
+  background: transparent;
+  border: 0;
+}}
+QToolButton#mobaBottomEdgeControl {{
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 0;
+  padding: 1px;
+}}
+QToolButton#mobaBottomEdgeControl:hover {{
+  background: {colors.control};
+  border-color: {colors.control_hover};
 }}
 QStatusBar QLabel#productStatusSegment {{
   color: {colors.sidebar_muted};
@@ -2489,12 +2976,28 @@ def gui_design_moba_titlebar_chrome() -> GuiMobaTitlebarChrome:
     return GUI_DESIGN_MOBA_TITLEBAR_CHROME
 
 
+def gui_design_moba_quick_connect_chrome() -> GuiMobaQuickConnectChrome:
+    return GUI_DESIGN_MOBA_QUICK_CONNECT_CHROME
+
+
+def gui_design_moba_quick_connect_suggestion_chrome() -> GuiMobaQuickConnectSuggestionChrome:
+    return GUI_DESIGN_MOBA_QUICK_CONNECT_SUGGESTION_CHROME
+
+
+def gui_design_moba_home_welcome_chrome() -> GuiMobaHomeWelcomeChrome:
+    return GUI_DESIGN_MOBA_HOME_WELCOME_CHROME
+
+
 def gui_design_moba_rail_items() -> tuple[GuiMobaRailItem, ...]:
     return GUI_DESIGN_MOBA_RAIL_ITEMS
 
 
 def gui_design_moba_right_utility_actions() -> tuple[GuiMobaRightUtilityAction, ...]:
     return GUI_DESIGN_MOBA_RIGHT_UTILITY_ACTIONS
+
+
+def gui_design_moba_session_edge_actions() -> tuple[GuiMobaSessionEdgeAction, ...]:
+    return GUI_DESIGN_MOBA_SESSION_EDGE_ACTIONS
 
 
 def gui_design_moba_sftp_dock_actions() -> tuple[GuiMobaSftpDockAction, ...]:
@@ -2517,12 +3020,20 @@ def gui_design_moba_monitoring_controls() -> tuple[GuiMobaMonitoringControl, ...
     return GUI_DESIGN_MOBA_MONITORING_CONTROLS
 
 
+def gui_design_moba_remote_monitoring_dock_chrome() -> GuiMobaRemoteMonitoringDockChrome:
+    return GUI_DESIGN_MOBA_REMOTE_MONITORING_DOCK_CHROME
+
+
 def gui_design_moba_status_segments() -> tuple[GuiMobaStatusSegment, ...]:
     return GUI_DESIGN_MOBA_STATUS_SEGMENTS
 
 
 def gui_design_moba_status_bar_chrome() -> GuiMobaStatusBarChrome:
     return GUI_DESIGN_MOBA_STATUS_BAR_CHROME
+
+
+def gui_design_moba_bottom_edge_controls() -> tuple[GuiMobaBottomEdgeControl, ...]:
+    return GUI_DESIGN_MOBA_BOTTOM_EDGE_CONTROLS
 
 
 def gui_design_moba_ssh_banner_chrome() -> GuiMobaSshBannerChrome:
@@ -2537,6 +3048,18 @@ def gui_design_securecrt_session_status_strip() -> GuiSecureCrtSessionStatusStri
     return GUI_DESIGN_SECURECRT_SESSION_STATUS_STRIP
 
 
+def gui_design_securecrt_session_manager_chrome() -> GuiSecureCrtSessionManagerChrome:
+    return GUI_DESIGN_SECURECRT_SESSION_MANAGER_CHROME
+
+
+def gui_design_securecrt_top_chrome() -> GuiSecureCrtTopChrome:
+    return GUI_DESIGN_SECURECRT_TOP_CHROME
+
+
+def gui_design_mremoteng_top_chrome() -> GuiMRemoteNgTopChrome:
+    return GUI_DESIGN_MREMOTENG_TOP_CHROME
+
+
 def gui_design_remmina_viewer_controls() -> tuple[GuiRemminaViewerControl, ...]:
     return GUI_DESIGN_REMMINA_VIEWER_CONTROLS
 
@@ -2547,6 +3070,10 @@ def gui_design_remmina_profile_list_chrome() -> GuiRemminaProfileListChrome:
 
 def gui_design_termius_header_chips() -> tuple[GuiTermiusHeaderChip, ...]:
     return GUI_DESIGN_TERMIUS_HEADER_CHIPS
+
+
+def gui_design_termius_hosts_chrome() -> GuiTermiusHostsChrome:
+    return GUI_DESIGN_TERMIUS_HOSTS_CHROME
 
 
 def gui_design_termius_host_identity_strip() -> GuiTermiusHostIdentityStrip:

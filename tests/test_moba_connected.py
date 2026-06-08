@@ -59,13 +59,12 @@ def test_connected_session_state_tracks_browser_follow_monitoring_and_banner() -
         "web-console",
         "spacer",
         "last-login",
-        "change-directory",
-        "tail-log",
-        "healthy-output",
+        "prompt-ready",
     ]
-    assert state.terminal_transcript[0].text == "Web console: https://example.internal:9090/"
-    assert state.terminal_transcript[3].text == "[operator@example ~]$ cd /var/log"
-    assert state.terminal_transcript[4].text == "[operator@example log]$ tail -f deploy.log"
+    assert state.terminal_transcript[0].text == (
+        "Web console: https://example.internal:9090/ or https://192.0.2.10:9090/"
+    )
+    assert state.terminal_transcript[3].text == "[operator@example ~]$ "
     assert state.to_dict()["telemetry_cells"][0]["display_text"] == "example.internal:22"
 
 
@@ -153,11 +152,9 @@ def test_connected_tab_chrome_tracks_reference_tab_sequence_without_user_samples
 def test_terminal_transcript_uses_generic_connected_state_without_user_samples() -> None:
     lines = build_moba_terminal_transcript(ssh_profile(host="edge-prod.example.invalid"), "/var/log")
 
-    assert [line.tone for line in lines] == ["info", "spacer", "info", "command", "command", "output"]
-    assert lines[0].text == "Web console: https://edge-prod.example.invalid:9090/"
-    assert lines[3].text == "[operator@edge-prod ~]$ cd /var/log"
-    assert lines[4].text == "[operator@edge-prod log]$ tail -f deploy.log"
-    assert lines[5].text == "2026-06-06T05:28:01Z service healthy"
+    assert [line.tone for line in lines] == ["info", "spacer", "info", "command"]
+    assert lines[0].text == "Web console: https://edge-prod.example.invalid:9090/ or https://192.0.2.10:9090/"
+    assert lines[3].text == "[operator@edge-prod ~]$ "
     assert "yunus" not in "\n".join(line.text.lower() for line in lines)
 
 
@@ -211,11 +208,18 @@ def test_ssh_connection_banner_reports_disabled_options() -> None:
     banner = build_ssh_connection_banner(
         ssh_profile(options={"compression": "false", "ssh_browser": "false", "x11": "true"})
     )
+    rows = banner.capability_rows()
 
     assert banner.direct_ssh is True
     assert banner.ssh_compression is False
     assert banner.ssh_browser is False
     assert banner.x11_forwarding == "enabled"
+    assert [row.key for row in rows] == ["direct-ssh", "ssh-compression", "ssh-browser", "x11-forwarding"]
+    assert [row.label for row in rows] == ["Direct SSH", "SSH compression", "SSH-browser", "X11-forwarding"]
+    assert [row.value for row in rows] == ["yes", "no", "no", "enabled"]
+    assert [row.status for row in rows] == ["ok", "disabled", "disabled", "ok"]
+    assert banner.footer_links() == ("help", "website")
+    assert banner.to_dict()["capabilities"][0]["key"] == "direct-ssh"
 
 
 def test_connected_session_rejects_non_ssh_profiles() -> None:

@@ -57,6 +57,19 @@ sidebar identity, workspace state and status segments together. The static
 preview draws those values as compact reference-state chips, while the live PyQt
 home surface exposes matching `productReferenceStateItem` labels with stable
 `referenceKey` properties for the live render checker.
+The MobaXterm-style home welcome surface intentionally follows a separate,
+leaner contract: `gui_design_moba_home_welcome_chrome()` defines the centered
+title/subtitle, generated logo key, Start/Recover action icon keys, fixed
+search width and recent-session title, while the live PyQt Home tab exposes
+`mobaHomeWelcomeSurface`, `mobaHomeTitle`, `homeSearch` and
+`mobaRecentSession` widgets with stable metadata. The static gallery also
+tracks `mobaxterm-home.png` as a dedicated `state_previews` entry, keeping the
+Home/welcome reference state visible without replacing the connected
+SFTP/monitoring `mobaxterm.png` evidence. Static visual metrics measure this
+home-state preview separately, including the Quick Connect strip, session tree,
+centered action/search/recent-session surface and bottom status edge. Moba keeps
+the workflow evidence in the connected SFTP/monitoring tab instead of showing
+generic product cards on the reference Home screen.
 SecureCRT-style Command Window chrome is tracked the same way: title, helper
 copy, target scope, command input, send action and status live in shared
 metadata, the static preview draws them, the PyQt home surface exposes stable
@@ -67,6 +80,24 @@ target, protocol, cipher, attached SFTP tab, log file and connected state are
 defined once, drawn above the terminal panes in the static preview, exposed as
 live `secureCrtSessionStatusStrip`/`secureCrtSessionStatusKey` evidence and
 checked in the render manifest without using user-specific endpoints.
+SecureCRT-style Session Manager filter/action chrome is also shared metadata.
+The filter placeholder and Connect, New Folder and Properties actions are drawn
+in the static sidebar, exposed as live `secureCrtSessionManagerChrome` actions
+plus the focused `secureCrtSessionFilter`, and checked in CI as required
+Session Manager navigation evidence.
+The static SecureCRT Session Manager tree now has a dedicated renderer for the
+Session Database root, foldered Sessions/Local Shells/Pinned groups, selected
+SSH2 row and connector lines. Visual metrics pin those regions and color
+anchors so the left pane cannot drift back to a generic flat profile list.
+SecureCRT interaction-state visual metrics now pin those same controls in the
+generated PNG: the focused Session Manager filter outline, active SSH2 tab
+outline, command-window input focus outline and Send control fill are sampled as
+regions, color anchors, line anchors and topology relationships.
+SecureCRT-style top menu and toolbar chrome is shared metadata as well. File,
+Edit, View, Options, Transfer, Script, Tools, Window and Help menus are exposed
+through live `secureCrtTopMenuKey` actions, while icon-keyed session toolbar
+actions expose `secureCrtTopToolbarIconKey` and static sizing metadata so the
+static preview and real PyQt window no longer reuse the generic top bar.
 Remmina-style viewer control chrome now has shared metadata too. Fit,
 Scale 100%, Clipboard, Fullscreen and Screenshot are drawn in the static
 viewer toolbar and exposed as live `remminaViewerControl` buttons with stable
@@ -76,6 +107,16 @@ list title, filter placeholder, Name/Protocol/Server columns and generic
 RDP/VNC/SFTP rows are drawn in the static sidebar, exposed as live
 `remminaProfileListChrome`/`remminaProfileRowKey` evidence and checked in the
 render manifest.
+Remmina interaction-state visual metrics now pin the focused profile filter,
+selected connection-list row, selected protocol-tree row, active RDP viewer tab,
+checked Transfer toolbar action and viewer-control glyph cluster. The live
+interaction checker also expects the focused state on `remminaProfileFilter`
+rather than the generic toolbar search.
+Termius-style Hosts sidebar chrome is shared metadata: the Hosts title, Search
+hosts field, Add Host, Keychain and Sync actions are drawn in the static
+sidebar, exposed as live `termiusHostsChrome`/`termiusHostSearch` widgets with
+stable action and icon keys, and checked so host-search focus belongs to the
+sidebar rather than the generic toolbar.
 Termius-style host header chips are also shared metadata: Vault unlocked,
 Sync current and Port fwd ready are rendered in the static host header,
 exposed as live `termiusHeaderChip` labels with stable chip keys and pinned by
@@ -85,11 +126,25 @@ identity, jump chain, SFTP file state, port-forward, snippet and sync status
 are drawn above the terminal/detail panes, exposed as live
 `termiusHostIdentityStrip`/`termiusHostIdentityKey` evidence and checked in the
 render manifest with generic host and key labels.
+Termius interaction-state visual metrics also pin the focused Hosts search
+outline, selected vault host row, active west host tab, checked Vault toolbar
+button, identity-strip Sync control and workflow-card action row as measured
+regions, color anchors, line anchors and topology contracts.
 mRemoteNG-style document controls now use shared metadata for the
 Connections.xml title, Save, Reconnect, External tool and Dock view actions,
 plus the connection-tree filter placeholder. The static document toolbar and
 live PyQt `mRemoteNgDocumentControl` buttons expose the same keys, and visual
-metrics pin the document-control button strip.
+metrics pin the document-control button strip. mRemoteNG interaction-state
+metrics now pin the focused `mRemoteNgDocumentFilter`, selected connection-tree
+row, active document tab, checked External tool actions, guarded Delete toolbar
+button, embedded RDP control glyphs and inherited property-grid rows.
+mRemoteNG-style top menu and toolbar chrome is shared metadata too. File,
+View, Connections, Tools, Window and Help menus expose stable
+`mRemoteNgTopMenuKey` values, while top toolbar buttons expose
+`mRemoteNgTopToolbarIconKey`, static position and static width metadata for
+Refresh, New Conn, Config, Delete, Open, External, Transfer, Script, Tools and
+Tile controls. The static preview and live PyQt menu bar are checked from the
+same source.
 mRemoteNG-style property grid chrome is also shared metadata. The Config /
 Inheritance title, active document scope, Property/Inherited/Effective value/
 Source columns, inherited row state and generic effective values are drawn in
@@ -123,6 +178,15 @@ rotated in the narrow rail, while the live PyQt rail exposes matching
 The connected SFTP preview also uses drawn toolbar, file, folder and monitoring
 glyphs rather than bracketed text placeholders, while the live SFTP dock keeps
 icon-bearing action buttons and file rows.
+MobaXterm-style connected visual metrics now pin the smaller reference details
+that make the screen feel native to the target workflow: titlebar window
+controls, right-side X server/Exit ribbon actions, the session-edge shortcut
+cluster, SFTP toolbar action strip, dense file row, compact monitoring and
+follow-folder rows, right utility stack, CPU telemetry cell and bottom-edge
+navigation controls.
+Connected MobaXterm-style mode now checks the SFTP rail item when the left dock
+is the active SFTP browser, and the static preview uses a generic home-directory
+listing with selected/striped rows instead of an application log demo table.
 The SFTP dock chrome is also shared metadata now: the static preview and live
 PyQt dock use the same parent/download/upload/reconnect/new-folder/new-file/
 delete/ASCII/split/tools/terminal action order, generated icon keys, remote
@@ -144,15 +208,25 @@ dock exposes matching `mobaSftpDockInnerMargin`, `mobaSftpToolbarHeight`,
 metrics pin the SFTP toolbar/path/header rules.
 The SFTP browser path and table header chrome are tracked as their own shared
 metadata too. `GuiMobaSftpBrowserChrome` defines the path placeholder, dropdown
-marker and keyed Name/Size/Last modified columns; the static preview uses the
-same column offsets as the live PyQt file table exposes through
-`mobaSftpColumnKeys`, and the visual metrics pin that path/header strip.
+marker, selected `..` parent-folder row and keyed Name/Size/Last modified
+columns; the static preview uses the same column offsets and selected parent row
+as the live PyQt file table exposes through `mobaSftpColumnKeys`,
+`mobaSftpParentRowKind` and `mobaSftpSelectedRowKind`. The visual metrics pin
+the path/header strip plus the selected parent-row fill and outline so the dock
+cannot drift back to an unselected generic file list.
 The remote-monitoring controls are tracked separately as shared metadata too:
 Remote monitoring and Follow terminal folder now expose stable keys, icon keys,
 control types, checked state and tooltips in both the static PNG renderer and
 the live PyQt dock. The live checker validates `mobaMonitoringControlKey` and
 `mobaMonitoringControlIconKey`, and the visual metrics pin the bottom-left
 monitoring-controls region.
+The connected left dock also has a compact MobaXterm-style remote-monitoring dock
+contract. `GuiMobaRemoteMonitoringDockChrome` keeps the visible dock to the
+reference-like Remote monitoring control plus Follow terminal folder checkbox,
+while telemetry metric keys, refresh cadence, SSH monitoring command evidence
+and follow-folder SFTP plan evidence are exposed as `mobaRemoteMonitoring*`
+properties and rendered in the bottom telemetry/status surface instead of as
+extra visible dock rows.
 Connected MobaXterm-style chrome now uses a shared SSH/SFTP state model for the
 window title, active tab label and bottom telemetry segments, so the static
 preview and live PyQt window show the same target-centric example identity and
@@ -162,17 +236,20 @@ labels: `moba_telemetry_cells()` defines the ordered cell keys, icon keys,
 display text and widths; the static preview draws separator lines and
 reference-like cells; and the live PyQt bar exposes `mobaTelemetryCell`,
 `mobaTelemetryCellWidth` and `mobaTelemetryDisplayText` for the render checker.
-The SSH banner chrome has its own shared title, subtitle and geometry metadata;
-the static renderer uses it for the centered banner header and terminal spacing,
-while the live PyQt banner exposes `mobaSshBannerTitle`,
-`mobaSshBannerSubtitle` and `mobaBannerWidth` properties for the render
-contract.
+The SSH banner chrome has its own shared title, subtitle, target-line,
+capability-row, footer-link and geometry metadata; the static renderer uses it
+for the centered banner header and terminal spacing, while the live PyQt banner
+exposes `mobaSshBannerTitle`, `mobaSshBannerSubtitle`, `mobaBannerWidth`,
+`mobaSshBannerTargetLine`, `mobaSshBannerCapabilityKey` and
+`mobaSshBannerFooter` properties for the render contract. The MobaXterm-style SSH banner capability card is now checked as keyed rows for Direct SSH, SSH
+compression, SSH-browser and X11-forwarding status, plus the help/website footer
+links, so static and live evidence cannot drift independently.
 The connected terminal transcript is shared state too. `moba_connected.py`
-builds keyed transcript lines for the web-console URL, last-login notice,
-prompt commands and health output from the generic reference profile; the
-static preview renders `state.terminal_transcript`, while the live terminal
-output exposes `mobaTerminalTranscriptKeys` and `mobaTerminalTranscriptTones`
-for the render checker.
+builds keyed transcript lines for the web-console URL, last-login notice and
+ready shell prompt from the generic reference profile; the static preview
+renders `state.terminal_transcript`, while the live terminal output exposes
+`mobaTerminalTranscriptKeys` and `mobaTerminalTranscriptTones` for the render
+checker.
 The connected tab strip is also state-driven: the static preview renders home,
 inactive SSH, active SSH and plus tabs with generated icons and close markers,
 while the live PyQt tabs expose matching `mobaTabChromeKey` and
@@ -182,12 +259,45 @@ shared action metadata; the static preview draws clip/settings/tool icons
 instead of text placeholders, and the live PyQt panel exposes
 `mobaRightUtilityAction` widgets with stable `mobaRightUtilityKey` and
 `mobaRightUtilityIconKey` properties.
+The small session edge shortcut cluster beside the connected tab/terminal edge
+is tracked separately with `gui_design_moba_session_edge_actions()`: static
+previews draw the paperclip/settings icons from shared `static_y` coordinates,
+and the live rail exposes `mobaSessionEdgeControls` plus
+`mobaSessionEdgeAction` buttons with `mobaSessionEdgeKey` and
+`mobaSessionEdgeIconKey` properties.
 The bottom status bar has shared Moba-style chrome metadata too. Static and live
 evidence use project-owned notice text, a compact product note, keyed SFTP/CPU/
 SSH-browser workflow segments and a right-side marker instead of copying
 proprietary status wording. The live PyQt status labels expose
 `productStatusNotice`, `productStatusMarker` and `productStatusKey` properties,
 and static visual metrics measure the status-notice region.
+The MobaXterm-style bottom-edge navigation controls are shared metadata as well:
+`gui_design_moba_bottom_edge_controls()` defines previous-tab, next-tab and
+close-active actions with generated arrow/close glyphs. Static previews draw the
+same controls at the bottom-right status edge, while the live PyQt status bar
+exposes `mobaBottomEdgeControls` and `mobaBottomEdgeControl` buttons with stable
+`mobaBottomEdgeKey` and `mobaBottomEdgeIconKey` properties.
+The MobaXterm-style Quick Connect top strip is also shared metadata:
+`gui_design_moba_quick_connect_chrome()` defines the placeholder, dropdown
+marker, fixed strip height and input padding. Static previews draw the same
+focused strip above the left dock, while the live PyQt UI exposes
+`mobaQuickConnectChrome`, `quickConnect` and `mobaQuickConnectDropdown` with
+stable metadata properties.
+The MobaXterm-style Quick Connect suggestion dropdown is tracked separately:
+`gui_design_moba_quick_connect_suggestion_chrome()` defines the preview query,
+expected saved-profile/direct-target candidate kinds, row height, visible-row
+limit and detail separator. Static previews draw the opened dropdown with
+generic `edge-prod.example.invalid` evidence, while the live PyQt UI exposes
+`quickConnectSuggestions`, `mobaQuickConnectSuggestionKinds`,
+`mobaQuickConnectSuggestionLabels` and `mobaQuickConnectSuggestionDetails` for
+the render checker.
+The connected Quick Connect idle state is now tracked independently from the
+typed dropdown. The connected MobaXterm-style reference starts with the
+placeholder-only `Quick connect...` strip and hidden suggestions so the SFTP
+toolbar, path row, file browser and compact monitoring controls are visible
+immediately, matching the connected reference view. Typing the generic preview
+query still opens the saved-profile/direct-target suggestion evidence and is
+checked as a separate interaction state.
 The Termius-style renderer follows its west-tab preset metadata with vertical
 session tabs in the generated preview.
 
@@ -205,7 +315,8 @@ and a local HTML gallery to `artifacts/gui-design-previews/`:
 - `artifacts/gui-design-previews/all-gui-designs-contact-sheet.png` is the
   single-image overview.
 - `artifacts/gui-design-previews/preview-manifest.json` records the expected
-  preset order, image dimensions, file sizes and SHA-256 hashes.
+  preset order, additional `state_previews` such as `mobaxterm-home.png`, image
+  dimensions, file sizes and SHA-256 hashes.
 
 Product-style parity is tracked separately from image freshness in
 `configs/gui_parity_criteria.json`. Run `python scripts/check_gui_parity.py` to
@@ -231,17 +342,20 @@ for prohibited user-specific sample tokens.
 Static visual metrics live in `configs/gui_visual_metrics.json`. Run
 `python scripts/check_gui_visual_metrics.py` to sample the generated preview PNGs
 with the standard library and verify that each major region has the expected
-brightness band and nonblank visual complexity. Product-style previews also
-define color anchors for reference landmarks such as accent toolbar actions,
-active tabs, tree identity glyphs, workflow cards, monitoring accents and viewer
-panes. Product-style previews also define line anchors for structural boundaries
-such as toolbar baselines, sidebar/workspace dividers, tab edges, viewer frames,
-workflow surfaces, activity/log separators, telemetry and status-bar rules. This
-catches geometry drift that would still pass broad region sampling. Product-style
-previews also define topology contracts between named regions, such as left-dock
-before terminal, tab rail before workspace, viewer controls above viewer and log
-panes below document surfaces. These relationships catch stale, collapsed or
-structurally reordered layouts that still have correct source tokens.
+brightness band and nonblank visual complexity. The checker covers both primary
+preset screenshots and manifest `state_previews`, so `mobaxterm-home.png` is
+measured separately from the connected MobaXterm-style state. Product-style
+previews also define color anchors for reference landmarks such as accent
+toolbar actions, active tabs, tree identity glyphs, workflow cards, monitoring
+accents and viewer panes. Product-style previews also define line anchors for
+structural boundaries such as toolbar baselines, sidebar/workspace dividers, tab
+edges, viewer frames, workflow surfaces, activity/log separators, telemetry and
+status-bar rules. This catches geometry drift that would still pass broad region
+sampling. Product-style previews also define topology contracts between named
+regions, such as left-dock before terminal, tab rail before workspace, viewer
+controls above viewer and log panes below document surfaces. These relationships
+catch stale, collapsed or structurally reordered layouts that still have correct
+source tokens.
 
 Useful renderer commands:
 

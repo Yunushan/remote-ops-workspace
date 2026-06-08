@@ -55,7 +55,7 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
     },
     "moba.ssh-connection-banner": {
         "module_attrs": ["remote_ops_workspace.moba_connected:build_ssh_connection_banner"],
-        "source_tokens": {"src/remote_ops_workspace/gui.py": ["mobaSshBanner", "mobaSshBannerLine"]},
+        "source_tokens": {"src/remote_ops_workspace/gui.py": ["mobaSshBanner", "mobaSshBannerCapability"]},
     },
     "protocol.scp": {"protocols": ["scp"]},
     "protocol.rdp": {"protocols": ["rdp"]},

@@ -15,15 +15,22 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 sys.path.insert(0, str(SRC))
 
+from remote_ops_workspace.gui import quick_connect_candidates  # noqa: E402
 from remote_ops_workspace.gui_designs import (  # noqa: E402
     GUI_DESIGN_PRESETS,
     GuiDesignPreset,
     gui_design_interaction_state,
+    gui_design_moba_bottom_edge_controls,
+    gui_design_moba_home_welcome_chrome,
     gui_design_moba_monitoring_controls,
     gui_design_moba_monitoring_metrics,
+    gui_design_moba_quick_connect_chrome,
+    gui_design_moba_quick_connect_suggestion_chrome,
     gui_design_moba_rail_items,
+    gui_design_moba_remote_monitoring_dock_chrome,
     gui_design_moba_ribbon_actions,
     gui_design_moba_right_utility_actions,
+    gui_design_moba_session_edge_actions,
     gui_design_moba_sftp_browser_chrome,
     gui_design_moba_sftp_dock_actions,
     gui_design_moba_sftp_dock_layout,
@@ -35,18 +42,23 @@ from remote_ops_workspace.gui_designs import (  # noqa: E402
     gui_design_mremoteng_document_controls,
     gui_design_mremoteng_document_toolbar_chrome,
     gui_design_mremoteng_property_grid_chrome,
+    gui_design_mremoteng_top_chrome,
     gui_design_preset_ids,
     gui_design_reference_state,
     gui_design_remmina_profile_list_chrome,
     gui_design_remmina_viewer_controls,
     gui_design_securecrt_command_window_chrome,
+    gui_design_securecrt_session_manager_chrome,
     gui_design_securecrt_session_status_strip,
+    gui_design_securecrt_top_chrome,
     gui_design_sidebar_copy,
     gui_design_status_segments,
     gui_design_tab_items,
     gui_design_termius_header_chips,
     gui_design_termius_host_identity_strip,
+    gui_design_termius_hosts_chrome,
     gui_design_toolbar_actions,
+    gui_design_tree_root_copy,
     gui_design_tree_rows,
     gui_design_workspace_surface,
 )
@@ -73,6 +85,9 @@ class PreviewArtifact:
     width: int
     height: int
     preset: GuiDesignPreset | None = None
+    variant_id: str = "primary"
+    variant_label: str = ""
+    variant_description: str = ""
 
     @property
     def size_bytes(self) -> int:
@@ -191,6 +206,23 @@ def render_artifacts(
                 preset=preset,
             )
         )
+        if preset.id == "mobaxterm":
+            home_image = render_mobaxterm_home_preset(preset)
+            artifacts.append(
+                PreviewArtifact(
+                    path=out_dir / "mobaxterm-home.png",
+                    png_bytes=image_to_png_bytes(home_image),
+                    width=PREVIEW_SIZE[0],
+                    height=PREVIEW_SIZE[1],
+                    preset=preset,
+                    variant_id="home",
+                    variant_label="MobaXterm-style Home",
+                    variant_description=(
+                        "Home/welcome state with Quick Connect, session tree, centered actions, "
+                        "session search and recent sessions."
+                    ),
+                )
+            )
     if include_contact:
         contact = render_contact_sheet(rendered)
         artifacts.append(
@@ -212,7 +244,12 @@ def image_to_png_bytes(image: Any) -> bytes:
 
 
 def build_manifest(artifacts: list[PreviewArtifact]) -> dict[str, Any]:
-    preview_artifacts = [artifact for artifact in artifacts if artifact.preset is not None]
+    preview_artifacts = [
+        artifact for artifact in artifacts if artifact.preset is not None and artifact.variant_id == "primary"
+    ]
+    state_artifacts = [
+        artifact for artifact in artifacts if artifact.preset is not None and artifact.variant_id != "primary"
+    ]
     contact_artifact = next((artifact for artifact in artifacts if artifact.preset is None), None)
     manifest: dict[str, Any] = {
         "schema_version": 1,
@@ -220,6 +257,7 @@ def build_manifest(artifacts: list[PreviewArtifact]) -> dict[str, Any]:
         "preview_size": {"width": PREVIEW_SIZE[0], "height": PREVIEW_SIZE[1]},
         "contact_thumb": {"width": CONTACT_THUMB[0], "height": CONTACT_THUMB[1]},
         "presets": [preset_manifest(artifact) for artifact in preview_artifacts],
+        "state_previews": [state_preview_manifest(artifact) for artifact in state_artifacts],
     }
     if contact_artifact is not None:
         manifest["contact_sheet"] = image_manifest(contact_artifact)
@@ -238,6 +276,19 @@ def preset_manifest(artifact: PreviewArtifact) -> dict[str, Any]:
         "profile_width": preset.profile_width,
         "log_height": preset.log_height,
         "tab_position": preset.tab_position,
+        "image": image_manifest(artifact),
+    }
+
+
+def state_preview_manifest(artifact: PreviewArtifact) -> dict[str, Any]:
+    if artifact.preset is None:
+        raise ValueError("state preview preset artifact required")
+    return {
+        "id": f"{artifact.preset.id}-{artifact.variant_id}",
+        "preset_id": artifact.preset.id,
+        "variant": artifact.variant_id,
+        "label": artifact.variant_label,
+        "description": artifact.variant_description,
         "image": image_manifest(artifact),
     }
 
@@ -272,6 +323,24 @@ def build_gallery_html(manifest: dict[str, Any]) -> str:
             <div><dt>Profile Width</dt><dd>{preset['profile_width']} px</dd></div>
             <div><dt>Log Height</dt><dd>{preset['log_height']} px</dd></div>
             <div><dt>Tabs</dt><dd>{html.escape(preset['tab_position'])}</dd></div>
+          </dl>
+        </div>
+      </article>"""
+        )
+    for state_preview in manifest.get("state_previews", []):
+        image = state_preview["image"]
+        cards.append(
+            f"""
+      <article class="card state-card">
+        <a href="{html.escape(image['path'])}"><img src="{html.escape(image['path'])}" alt="{html.escape(state_preview['label'])} preview"></a>
+        <div class="meta">
+          <h2>{html.escape(state_preview['label'])}</h2>
+          <p>{html.escape(state_preview['description'])}</p>
+          <dl>
+            <div><dt>Preset</dt><dd>{html.escape(state_preview['preset_id'])}</dd></div>
+            <div><dt>Variant</dt><dd>{html.escape(state_preview['variant'])}</dd></div>
+            <div><dt>Width</dt><dd>{image['width']} px</dd></div>
+            <div><dt>Height</dt><dd>{image['height']} px</dd></div>
           </dl>
         </div>
       </article>"""
@@ -481,17 +550,19 @@ def moba_preview_reference_state() -> MobaConnectedSessionState:
     )
     listing = "\n".join(
         [
-            "drwxr-xr-x 2 operator operator 4096 Jun 06 12:01 current",
-            "drwxr-xr-x 2 operator operator 4096 Jun 06 12:02 archive",
-            "-rw-r--r-- 1 operator operator 65536 Jun 06 12:03 app.log",
-            "-rw-r--r-- 1 operator operator 4096 Jun 06 12:04 health.json",
-            "-rw-r--r-- 1 operator operator 8192 Jun 06 12:05 deploy.log",
+            "drwx------ 4 operator operator 4096 Jun 06 12:01 .cache",
+            "drwx------ 2 operator operator 4096 Jun 06 12:02 .ssh",
+            "drwxr-xr-x 3 operator operator 4096 Jun 06 12:03 workspace",
+            "-rw------- 1 operator operator 2048 Feb 12 09:13 .bash_history",
+            "-rw-r--r-- 1 operator operator 1024 Feb 12 09:13 .bashrc",
+            "-rw-r--r-- 1 operator operator 1024 Jun 06 12:04 .profile",
+            "-rw------- 1 operator operator 1024 Jun 06 12:05 .viminfo",
         ]
     )
     return build_moba_connected_session_state(
         profile,
-        remote_path="/var/log",
-        terminal_cwd="/var/log",
+        remote_path="/home/operator",
+        terminal_cwd="/home/operator",
         follow_terminal_folder=True,
         sftp_listing=listing,
         monitoring_output="cpu=7 mem_mb=410/7680 disk_mb=2867/49152 load=0.07 users=1 "
@@ -511,7 +582,8 @@ def render_mobaxterm_preset(preset: GuiDesignPreset):
     title_h = 22
     menu_h = 22
     ribbon_h = 64
-    quick_h = 24
+    quick_connect_chrome = gui_design_moba_quick_connect_chrome()
+    quick_h = quick_connect_chrome.static_height
     status_h = 22
     side_w = 390
     rail_w = 24
@@ -569,10 +641,15 @@ def render_mobaxterm_preset(preset: GuiDesignPreset):
     draw_text(draw, "Exit", PREVIEW_SIZE[0] - 50, ribbon_y + 42, c.control_text, 10)
     draw.line((0, ribbon_y + ribbon_h - 1, PREVIEW_SIZE[0], ribbon_y + ribbon_h - 1), fill=c.toolbar_border)
 
-    draw.rectangle((0, main_y, side_w, main_y + quick_h), fill=c.control, outline=c.toolbar_border)
-    if interaction.focused_control == "quick-connect":
-        draw.rectangle((2, main_y + 2, side_w - 2, main_y + quick_h - 2), outline=c.control_hover, width=2)
-    draw_text(draw, "Quick connect...", 8, main_y + 5, c.sidebar_muted, 12)
+    draw_moba_quick_connect_chrome(
+        draw,
+        quick_connect_chrome,
+        c,
+        0,
+        main_y,
+        side_w,
+        query=quick_connect_chrome.connected_idle_query,
+    )
 
     tree_y = main_y + quick_h
     draw.rectangle((0, tree_y, rail_w, tree_y + main_h - quick_h), fill="#101010")
@@ -598,6 +675,9 @@ def render_mobaxterm_preset(preset: GuiDesignPreset):
             ry += 8
 
     draw_moba_connected_sftp_dock(draw, preset, state, rail_w, tree_y, side_w - rail_w, main_h - quick_h)
+    if quick_connect_chrome.connected_suggestions_visible:
+        draw_moba_quick_connect_suggestions(draw, preset, 0, main_y + quick_h, side_w, state)
+    redraw_moba_sftp_toolbar_metric_edges(draw, preset, rail_w, tree_y, side_w - rail_w)
 
     tab_y = main_y
     workspace_x = side_w
@@ -610,24 +690,15 @@ def render_mobaxterm_preset(preset: GuiDesignPreset):
     content_y = tab_y + 28
     draw.rectangle((workspace_x, content_y, PREVIEW_SIZE[0], PREVIEW_SIZE[1] - status_h), fill=c.pane)
     draw_moba_right_utility_rail(draw, PREVIEW_SIZE[0] - 30, content_y, 30, PREVIEW_SIZE[1] - status_h - content_y, c)
+    draw_moba_session_edge_controls(draw, PREVIEW_SIZE[0] - 21, c)
 
     content_bottom = PREVIEW_SIZE[1] - status_h - 24
     term_x = workspace_x
     banner_chrome = gui_design_moba_ssh_banner_chrome()
     banner_x = term_x + banner_chrome.static_left_offset
     banner_y = content_y + banner_chrome.static_top_offset
-    banner_w = banner_chrome.static_width
-    banner_h = banner_chrome.static_height
-    draw.rectangle((banner_x, banner_y, banner_x + banner_w, banner_y + banner_h), fill=c.terminal, outline=c.terminal_accent)
-    draw_centered_text(draw, f"* {banner_chrome.title} *", banner_x, banner_y + 10, banner_w, c.status, 12, mono=True, bold=True)
-    draw_centered_text(draw, banner_chrome.subtitle, banner_x, banner_y + 27, banner_w, c.status, 12, mono=True)
-    banner_lines = [f"> {line}" if index == 0 else f"  * {line}" for index, line in enumerate(state.banner.lines())]
-    by = banner_y + banner_chrome.body_top_offset
-    for line in banner_lines:
-        color = c.control_text
-        draw_text(draw, line, banner_x + 14, by, color, 12, mono=True)
-        by += 16
-    term_y = banner_y + banner_h + banner_chrome.terminal_gap
+    draw_moba_ssh_banner_card(draw, preset, state, banner_x, banner_y)
+    term_y = banner_y + banner_chrome.static_height + banner_chrome.terminal_gap
     ty = term_y
     for line in state.terminal_transcript:
         color = "#7dd3fc" if line.tone == "info" else c.terminal_text
@@ -646,6 +717,382 @@ def render_mobaxterm_preset(preset: GuiDesignPreset):
 
     draw_status_bar(draw, preset, 0, PREVIEW_SIZE[1] - status_h, PREVIEW_SIZE[0], status_h)
     return image
+
+
+def render_mobaxterm_home_preset(preset: GuiDesignPreset):
+    from PIL import Image, ImageDraw
+
+    c = preset.colors
+    interaction = gui_design_interaction_state(preset.id)
+    image = Image.new("RGB", PREVIEW_SIZE, c.window)
+    draw = ImageDraw.Draw(image)
+
+    title_h = 22
+    menu_h = 22
+    ribbon_h = 64
+    quick_connect_chrome = gui_design_moba_quick_connect_chrome()
+    quick_h = quick_connect_chrome.static_height
+    status_h = 22
+    side_w = 390
+    rail_w = 24
+    top_h = title_h + menu_h + ribbon_h
+    main_y = top_h
+    main_h = PREVIEW_SIZE[1] - main_y - status_h
+
+    titlebar_chrome = gui_design_moba_titlebar_chrome()
+    draw.rectangle((0, 0, PREVIEW_SIZE[0], title_h), fill="#1c1c1c")
+    draw_moba_titlebar_icon(
+        draw,
+        titlebar_chrome.icon_left,
+        (title_h - titlebar_chrome.icon_size) // 2,
+        titlebar_chrome.icon_size,
+        c,
+    )
+    draw_text(draw, "Remote Ops Workspace - MobaXterm-style Home", titlebar_chrome.title_left, 5, c.control_text, 12, bold=True)
+    control_x = PREVIEW_SIZE[0] - titlebar_chrome.control_right_inset - (
+        titlebar_chrome.control_width * len(titlebar_chrome.control_keys)
+    )
+    for key in titlebar_chrome.control_keys:
+        draw_moba_titlebar_control(draw, key, control_x, 0, titlebar_chrome.control_width, title_h, c)
+        control_x += titlebar_chrome.control_width
+    draw.line((0, title_h - 1, PREVIEW_SIZE[0], title_h - 1), fill=c.toolbar_border)
+
+    draw.rectangle((0, title_h, PREVIEW_SIZE[0], title_h + menu_h), fill="#141414")
+    mx = 8
+    for item in gui_design_moba_top_menu_items():
+        draw_text(draw, item.label, mx, title_h + 5, c.control_text, 11)
+        mx += len(item.label) * 7 + 18
+
+    ribbon_y = title_h + menu_h
+    draw.rectangle((0, ribbon_y, PREVIEW_SIZE[0], ribbon_y + ribbon_h), fill=c.toolbar)
+    rx = 12
+    for index, action in enumerate(gui_design_moba_ribbon_actions()):
+        item_w = max(58, len(action.label) * 7 + 12)
+        if index in {1, 4, 7, 10}:
+            draw.line((rx - 6, ribbon_y + 7, rx - 6, ribbon_y + ribbon_h - 8), fill=c.toolbar_border)
+        action_state = toolbar_interaction_state(action.label.lower().replace(" ", "-"), interaction)
+        icon_fill, icon_outline, text_color = interaction_button_colors(action_state, c)
+        icon_fill = action.color if action_state == "normal" else icon_fill
+        if action_state in {"active", "checked"}:
+            draw.rectangle((rx + 10, ribbon_y + 3, rx + 42, ribbon_y + 34), outline=c.control_hover)
+        draw_moba_ribbon_icon(draw, action.icon_key, rx + 14, ribbon_y + 6, 24, icon_fill, icon_outline, c)
+        draw_text(draw, action.label, rx + max(0, (item_w - len(action.label) * 6) // 2), ribbon_y + 40, text_color, 10)
+        rx += item_w
+    right_x = PREVIEW_SIZE[0] - 128
+    draw.line((right_x - 12, ribbon_y + 7, right_x - 12, ribbon_y + ribbon_h - 8), fill=c.toolbar_border)
+    draw_moba_ribbon_icon(draw, "xserver", right_x + 6, ribbon_y + 6, 28, "#1a1a1a", "#1a1a1a", c)
+    draw_text(draw, "X server", right_x, ribbon_y + 42, c.control_text, 10)
+    draw_moba_ribbon_icon(draw, "exit", PREVIEW_SIZE[0] - 48, ribbon_y + 7, 25, "#e2473f", "#e2473f", c)
+    draw_text(draw, "Exit", PREVIEW_SIZE[0] - 50, ribbon_y + 42, c.control_text, 10)
+    draw.line((0, ribbon_y + ribbon_h - 1, PREVIEW_SIZE[0], ribbon_y + ribbon_h - 1), fill=c.toolbar_border)
+
+    draw_moba_quick_connect_chrome(draw, quick_connect_chrome, c, 0, main_y, side_w, query="")
+    tree_y = main_y + quick_h
+    draw_moba_home_rail(draw, image, preset, 0, tree_y, rail_w, main_h - quick_h)
+    draw_moba_home_session_tree(draw, preset, rail_w, tree_y, side_w - rail_w, main_h - quick_h)
+
+    workspace_x = side_w
+    tab_y = main_y
+    draw_moba_home_tab_bar(draw, preset, workspace_x, tab_y, PREVIEW_SIZE[0] - workspace_x, 28)
+    content_y = tab_y + 28
+    draw.rectangle((workspace_x, content_y, PREVIEW_SIZE[0], PREVIEW_SIZE[1] - status_h), fill=c.pane)
+    draw_moba_right_utility_rail(draw, PREVIEW_SIZE[0] - 30, content_y, 30, PREVIEW_SIZE[1] - status_h - content_y, c)
+    draw_moba_session_edge_controls(draw, PREVIEW_SIZE[0] - 21, c)
+    draw_moba_home_welcome_surface(draw, preset, workspace_x, content_y, PREVIEW_SIZE[0] - workspace_x - 30, PREVIEW_SIZE[1] - status_h - content_y)
+
+    draw_status_bar(draw, preset, 0, PREVIEW_SIZE[1] - status_h, PREVIEW_SIZE[0], status_h)
+    return image
+
+
+def draw_moba_home_rail(draw: Any, image: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
+    c = preset.colors
+    interaction = gui_design_interaction_state(preset.id)
+    draw.rectangle((x, y, x + w, y + h), fill="#101010")
+    rail_icon_keys = {
+        "collapse": "collapse",
+        "sessions": "session",
+        "favorites": "star",
+        "tools": "tools",
+        "macros": "macros",
+        "sftp": "sftp",
+    }
+    ry = y + 8
+    for item in gui_design_moba_rail_items():
+        rail_state = toolbar_interaction_state(item.role, interaction)
+        if rail_state == "checked":
+            draw.rectangle((x + 2, ry - 3, x + w - 2, ry + 27), fill=c.sidebar_selected, outline=c.control_hover)
+        draw_moba_rail_icon(draw, rail_icon_keys[item.role], x + 5, ry, 16, item.color, c)
+        ry += 26
+        if item.label:
+            draw_moba_rail_label(image, item.label, x, ry, w, 54, c)
+            ry += 58
+        else:
+            ry += 8
+
+
+def draw_moba_home_session_tree(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
+    c = preset.colors
+    interaction = gui_design_interaction_state(preset.id)
+    draw.rectangle((x, y, x + w, y + h), fill=c.sidebar)
+    draw.line((x + w, y, x + w, y + h), fill=c.toolbar_border)
+    draw.rectangle((x, y, x + w, y + 28), fill="#151515")
+    draw_sidebar_row_icon(draw, preset, "ssh", x + 9, y + 7, 14, selected=False, group=False)
+    draw_text(draw, "User sessions", x + 31, y + 8, c.control_text, 10, bold=True)
+    row_y = y + 38
+    for name, target, group in gui_design_tree_rows("mobaxterm"):
+        label = name.strip()
+        selected = bool(label and label == interaction.selected_tree_label)
+        if group:
+            draw_text(draw, "v", x + 13, row_y + 2, c.control_text, 9, bold=True)
+            draw_sidebar_row_icon(draw, preset, "folder", x + 29, row_y + 1, 15, selected=False, group=True)
+            draw_text(draw, label, x + 51, row_y + 1, c.status, 10, bold=True)
+            row_y += 24
+            continue
+        if selected:
+            draw.rectangle((x + 28, row_y - 3, x + w - 8, row_y + 31), fill=c.sidebar_selected)
+        icon_key = sidebar_row_icon_key("mobaxterm", name, target, group)
+        draw_sidebar_row_icon(draw, preset, icon_key, x + 39, row_y + 1, 14, selected=selected, group=False)
+        text = c.sidebar_selected_text if selected else c.sidebar_text
+        muted = c.sidebar_selected_text if selected else c.sidebar_muted
+        draw_text(draw, label, x + 61, row_y, text, 10)
+        draw_text(draw, target, x + 61, row_y + 14, muted, 8)
+        row_y += 34
+
+
+def draw_moba_home_tab_bar(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
+    c = preset.colors
+    draw.rectangle((x, y, x + w, y + h), fill=c.tab, outline=c.toolbar_border)
+    rounded(draw, (x + 10, y + 3, x + 48, y + 25), c.tab_selected, c.toolbar_border, 2)
+    draw_moba_tab_icon(draw, "home", x + 22, y + 8, 12, c)
+    rounded(draw, (x + 54, y + 3, x + 92, y + 25), c.tab, c.toolbar_border, 2)
+    draw_text(draw, "+", x + 67, y + 6, c.tab_text, 12, bold=True)
+
+
+def draw_moba_home_welcome_surface(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
+    c = preset.colors
+    chrome = gui_design_moba_home_welcome_chrome()
+    surface = gui_design_workspace_surface("mobaxterm")
+    center_w = min(chrome.surface_width, w - 80)
+    center_x = x + max(0, (w - center_w) // 2)
+    hero_y = y + max(115, (h - 330) // 2)
+
+    logo_size = 46
+    logo_x = center_x + max(0, (center_w - 360) // 2)
+    draw.rectangle((logo_x, hero_y, logo_x + logo_size, hero_y + logo_size), fill=c.terminal, outline=c.control_text, width=2)
+    draw_moba_ribbon_icon(draw, chrome.icon_key, logo_x + 7, hero_y + 7, 32, c.primary, c.control_border, c)
+    draw_text(draw, chrome.title, logo_x + logo_size + 28, hero_y + 9, c.control_text, 28)
+    draw_centered_text(draw, chrome.subtitle, center_x, hero_y + 57, center_w, c.sidebar_muted, 12)
+
+    primary_w = 206
+    secondary_w = 220
+    button_y = hero_y + 94
+    button_gap = 62
+    button_x = center_x + max(0, (center_w - primary_w - secondary_w - button_gap) // 2)
+    draw_moba_home_action_button(
+        draw,
+        chrome.primary_action_icon_key,
+        surface.home_actions[0],
+        button_x,
+        button_y,
+        primary_w,
+        c,
+        primary=True,
+    )
+    draw_moba_home_action_button(
+        draw,
+        chrome.secondary_action_icon_key,
+        surface.home_actions[1],
+        button_x + primary_w + button_gap,
+        button_y,
+        secondary_w,
+        c,
+        primary=False,
+    )
+
+    search_x = center_x + max(0, (center_w - chrome.search_width) // 2)
+    search_y = button_y + 45
+    draw.rectangle((search_x, search_y, search_x + chrome.search_width, search_y + 25), fill=c.control, outline=c.control_border)
+    draw_text(draw, surface.home_search_placeholder, search_x + 10, search_y + 6, c.sidebar_muted, 12)
+
+    recent_y = search_y + 52
+    draw_centered_text(draw, chrome.recent_title, center_x, recent_y, center_w, c.control_text, 12, bold=True)
+    col_w = center_w // len(surface.recent_columns)
+    for col_index, column in enumerate(surface.recent_columns):
+        col_x = center_x + col_index * col_w + 12
+        item_y = recent_y + 28
+        for item in column:
+            draw_moba_home_recent_item(draw, preset, item, col_x, item_y)
+            item_y += 22
+
+    draw_centered_text(draw, surface.footer, center_x, recent_y + 120, center_w, c.control_text, 10)
+
+
+def draw_moba_home_action_button(
+    draw: Any,
+    icon_key: str,
+    label: str,
+    x: int,
+    y: int,
+    w: int,
+    c: Any,
+    *,
+    primary: bool,
+) -> None:
+    fill = c.primary if primary else c.control
+    outline = c.control_hover if primary else c.control_border
+    text = c.primary_text if primary else c.control_text
+    draw.rectangle((x, y, x + w, y + 28), fill=fill, outline=outline)
+    draw_moba_ribbon_icon(draw, icon_key, x + 13, y + 6, 16, "#55cc7a" if primary else "#202020", outline, c)
+    draw_text(draw, label, x + 40, y + 8, text, 11)
+
+
+def draw_moba_home_recent_item(draw: Any, preset: GuiDesignPreset, label: str, x: int, y: int) -> None:
+    c = preset.colors
+    if label == "...":
+        draw.rectangle((x, y + 4, x + 12, y + 16), outline=c.toolbar_border)
+        draw_text(draw, label, x + 20, y + 3, c.control_text, 10, bold=True)
+        return
+    icon_key = sidebar_row_icon_key("mobaxterm", label, label, False)
+    draw_sidebar_row_icon(draw, preset, icon_key, x, y + 2, 13, selected=False, group=False)
+    draw_text(draw, label, x + 20, y + 3, c.control_text, 10)
+
+
+def draw_moba_ssh_banner_card(
+    draw: Any,
+    preset: Any,
+    state: MobaConnectedSessionState,
+    x: int,
+    y: int,
+) -> None:
+    c = preset.colors
+    chrome = gui_design_moba_ssh_banner_chrome()
+    draw.rectangle(
+        (x, y, x + chrome.static_width, y + chrome.static_height),
+        fill=c.terminal,
+        outline=c.terminal_accent,
+    )
+    draw_centered_text(
+        draw,
+        f"{chrome.heading_prefix}{chrome.title}{chrome.heading_suffix}",
+        x,
+        y + 10,
+        chrome.static_width,
+        c.status,
+        12,
+        mono=True,
+        bold=True,
+    )
+    draw_centered_text(draw, chrome.subtitle, x, y + 27, chrome.static_width, c.status, 12, mono=True)
+    row_y = y + chrome.body_top_offset
+    draw_text(draw, f"> {chrome.target_intro} {state.banner.title}", x + 14, row_y, c.control_text, 12, mono=True)
+    row_y += 16
+    for row in state.banner.capability_rows():
+        value_color = c.control_text if row.status == "ok" else c.status
+        draw_text(
+            draw,
+            f"  * {row.line(label_width=chrome.capability_label_width)}",
+            x + 14,
+            row_y,
+            value_color,
+            12,
+            mono=True,
+        )
+        row_y += 16
+    help_link, website_link = state.banner.footer_links()
+    footer = f"> {chrome.footer_prefix} {help_link} or visit our {website_link}."
+    draw_text(draw, footer, x + 14, row_y + 4, c.control_text, 12, mono=True)
+
+
+def draw_moba_quick_connect_chrome(draw: Any, chrome: Any, c: Any, x: int, y: int, w: int, *, query: str = "") -> None:
+    interaction = gui_design_interaction_state("mobaxterm")
+    h = chrome.static_height
+    draw.rectangle((x, y, x + w, y + h), fill=c.control, outline=c.toolbar_border)
+    if interaction.focused_control == "quick-connect":
+        draw.rectangle((x + 2, y + 2, x + w - 2, y + h - 2), outline=c.control_hover, width=2)
+    input_right = x + w - chrome.marker_width
+    draw_text(
+        draw,
+        query or chrome.placeholder,
+        x + chrome.input_left + 8,
+        y + 5,
+        c.control_text if query else c.sidebar_muted,
+        12,
+    )
+    draw.line((input_right, y + 3, input_right, y + h - 3), fill=c.toolbar_border)
+    draw_text(draw, chrome.dropdown_marker, input_right + 8, y + 6, c.sidebar_muted, 10, bold=True)
+
+
+def draw_moba_quick_connect_suggestions(
+    draw: Any,
+    preset: GuiDesignPreset,
+    x: int,
+    y: int,
+    w: int,
+    state: MobaConnectedSessionState,
+) -> None:
+    c = preset.colors
+    chrome = gui_design_moba_quick_connect_suggestion_chrome()
+    profiles = [
+        Profile(
+            name="edge-prod",
+            protocol="ssh",
+            host=state.target.split(":", maxsplit=1)[0],
+            port=22,
+            username="operator",
+            group="prod",
+            tags=["ssh", "demo"],
+        ),
+        Profile(
+            name="files-prod",
+            protocol="sftp",
+            host="files.example.invalid",
+            port=22,
+            username="operator",
+            group="files",
+            tags=["sftp"],
+        ),
+    ]
+    candidates = quick_connect_candidates(chrome.preview_query, profiles, limit=chrome.max_visible_rows)
+    if not candidates:
+        return
+    height = min(chrome.max_visible_rows, len(candidates)) * chrome.row_height + 8
+    draw.rectangle((x, y, x + w, y + height), fill=c.sidebar, outline=c.toolbar_border)
+    for index, candidate in enumerate(candidates[: chrome.max_visible_rows]):
+        row_y = y + 4 + index * chrome.row_height
+        if index == 0:
+            draw.rectangle((x + 4, row_y, x + w - 4, row_y + chrome.row_height - 2), fill=c.sidebar_selected)
+            text_color = c.sidebar_selected_text
+            detail_color = c.sidebar_selected_text
+        else:
+            text_color = c.sidebar_text
+            detail_color = c.sidebar_muted
+        icon_key = "session" if candidate.kind == "profile" else "terminal-key"
+        draw_moba_tab_icon(draw, icon_key, x + 8, row_y + 4, 12, c)
+        draw_text(draw, candidate.label, x + 26, row_y + 5, text_color, 9, bold=index == 0)
+        draw_text(draw, candidate.detail, x + 196, row_y + 5, detail_color, 9)
+
+
+def redraw_moba_sftp_toolbar_metric_edges(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int) -> None:
+    c = preset.colors
+    density = gui_design_moba_sftp_dock_layout()
+    toolbar_y = y + density.inner_margin
+    dock_left = x + density.inner_margin
+    dock_right = x + w - density.inner_margin
+    draw.line(
+        (dock_left, toolbar_y + density.toolbar_height, dock_right, toolbar_y + density.toolbar_height),
+        fill=c.toolbar_border,
+    )
+    tool_x = dock_left + density.toolbar_icon_left_inset
+    for action in gui_design_moba_sftp_dock_actions():
+        tool_x += density.toolbar_icon_step
+        if not action.separator_after:
+            continue
+        separator_x = tool_x + density.toolbar_separator_width // 2
+        draw.line(
+            (separator_x, toolbar_y + 5, separator_x, toolbar_y + density.toolbar_height - 5),
+            fill=c.toolbar_border,
+        )
+        tool_x += density.toolbar_separator_width
 
 
 def draw_moba_telemetry_icon(draw: Any, icon_key: str, x: int, y: int, size: int, c: Any) -> None:
@@ -711,6 +1158,11 @@ def draw_moba_right_utility_rail(draw: Any, x: int, y: int, w: int, h: int, c: A
     for action in gui_design_moba_right_utility_actions():
         draw_moba_right_utility_icon(draw, action.icon_key, x + 7, icon_y, 16, action.color, c)
         icon_y += 36
+
+
+def draw_moba_session_edge_controls(draw: Any, x: int, c: Any) -> None:
+    for action in gui_design_moba_session_edge_actions():
+        draw_moba_right_utility_icon(draw, action.icon_key, x, action.static_y, 16, action.color, c)
 
 
 def draw_moba_right_utility_icon(draw: Any, icon_key: str, x: int, y: int, size: int, color: str, c: Any) -> None:
@@ -902,9 +1354,24 @@ def draw_moba_connected_sftp_dock(
     )
     for column in chrome.columns:
         draw_text(draw, column.label, x + column.static_x, header_y + 7, c.control_text, 10, bold=True)
-    file_rows = [("parent-dir", "..", "", ""), *[(entry.kind, entry.name, str(entry.size_kb), entry.modified) for entry in state.file_entries]]
+    file_rows = [
+        (chrome.parent_row_kind, chrome.parent_row_label, "", ""),
+        *[(entry.kind, entry.name, str(entry.size_kb), entry.modified) for entry in state.file_entries],
+    ]
     row_y = header_y + density.table_header_height + density.file_row_gap
-    for kind, name, size, modified in file_rows[: density.static_max_rows]:
+    column_separator_x = (x + 188, x + 266)
+    for row_index, (kind, name, size, modified) in enumerate(file_rows[: density.static_max_rows]):
+        row_top = row_y - 4
+        row_bottom = row_top + density.file_row_height
+        selected = kind == chrome.selected_row_kind
+        row_fill = "#1f2f3f" if selected else "#171717" if row_index % 2 else c.sidebar
+        draw.rectangle((dock_left + 1, row_top, dock_right - 1, row_bottom), fill=row_fill)
+        if selected:
+            draw.rectangle((dock_left + 1, row_top, dock_right - 1, row_bottom), outline="#477ab0")
+        else:
+            draw.line((dock_left + 1, row_bottom, dock_right - 1, row_bottom), fill="#252525")
+        for separator_x in column_separator_x:
+            draw.line((separator_x, row_top, separator_x, row_bottom), fill="#262626")
         draw_moba_sftp_file_icon(draw, kind, x + 14, row_y - 1, 14, c)
         draw_text(draw, name, x + 38, row_y, c.control_text, 10)
         draw_text(draw, size, x + 202, row_y, c.control_text, 10)
@@ -922,6 +1389,8 @@ def draw_moba_connected_sftp_dock(
         fill=c.sidebar_muted,
     )
     controls = list(gui_design_moba_monitoring_controls())
+    chrome = gui_design_moba_remote_monitoring_dock_chrome()
+    visible_metric_keys = chrome.visible_metric_keys if chrome.telemetry_surface == "left-dock" else ()
     remote_control = controls[0]
     follow_control = controls[1]
     draw_moba_monitoring_control(
@@ -934,15 +1403,21 @@ def draw_moba_connected_sftp_dock(
         centered_icon=True,
     )
     metrics = [moba_monitoring_metric_text(state, metric) for metric in gui_design_moba_monitoring_metrics()]
-    draw_text(draw, "   ".join(metrics[:2]), x + density.monitoring_content_left, monitor_y + 28, c.sidebar_text, 10)
-    draw_text(
-        draw,
-        "   ".join(metrics[2:4]),
-        x + density.monitoring_content_left,
-        monitor_y + 28 + density.monitoring_metric_row_gap,
-        c.sidebar_text,
-        10,
-    )
+    visible_metrics = [
+        text
+        for text, metric in zip(metrics, gui_design_moba_monitoring_metrics(), strict=True)
+        if metric.key in visible_metric_keys
+    ]
+    if visible_metrics:
+        draw_text(draw, "   ".join(visible_metrics[:2]), x + density.monitoring_content_left, monitor_y + 28, c.sidebar_text, 10)
+        draw_text(
+            draw,
+            "   ".join(visible_metrics[2:4]),
+            x + density.monitoring_content_left,
+            monitor_y + 28 + density.monitoring_metric_row_gap,
+            c.sidebar_text,
+            10,
+        )
     draw_moba_monitoring_control(
         draw,
         follow_control,
@@ -1087,6 +1562,12 @@ def draw_moba_monitor_icon(draw: Any, x: int, y: int, size: int, c: Any) -> None
 
 
 def draw_title_bar(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
+    if preset.id == "securecrt":
+        draw_securecrt_title_bar(draw, preset, x, y, w, h)
+        return
+    if preset.id == "mremoteng":
+        draw_mremoteng_title_bar(draw, preset, x, y, w, h)
+        return
     c = preset.colors
     draw.rectangle((x, y, x + w, y + h), fill=c.toolbar)
     draw.line((x, y + h - 1, x + w, y + h - 1), fill=c.toolbar_border)
@@ -1097,7 +1578,45 @@ def draw_title_bar(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h
         draw_text(draw, token, bx, y + 8, c.sidebar_muted, 14, bold=True)
 
 
+def draw_securecrt_title_bar(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
+    c = preset.colors
+    chrome = gui_design_securecrt_top_chrome()
+    draw.rectangle((x, y, x + w, y + h), fill=c.window)
+    draw_text(draw, chrome.window_title, x + 8, y + 3, c.control_text, 10, bold=True)
+    for index, token in enumerate(("-", "[]", "x")):
+        bx = x + w - 82 + index * 27
+        draw_text(draw, token, bx, y + 2, c.sidebar_muted, 10, bold=True)
+    menu_x = x + 7
+    menu_y = y + max(18, h - 14)
+    for item in chrome.menu_items:
+        draw_text(draw, item.label, menu_x, menu_y, c.control_text, 10)
+        menu_x += max(36, len(item.label) * 7 + 13)
+    draw.line((x, y + h - 1, x + w, y + h - 1), fill=c.toolbar_border)
+
+
+def draw_mremoteng_title_bar(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
+    c = preset.colors
+    chrome = gui_design_mremoteng_top_chrome()
+    draw.rectangle((x, y, x + w, y + h), fill=c.window)
+    draw_text(draw, chrome.window_title, x + 8, y + 3, c.control_text, 10, bold=True)
+    for index, token in enumerate(("-", "[]", "x")):
+        bx = x + w - 82 + index * 27
+        draw_text(draw, token, bx, y + 2, c.sidebar_muted, 10, bold=True)
+    menu_x = x + 7
+    menu_y = y + max(18, h - 14)
+    for item in chrome.menu_items:
+        draw_text(draw, item.label, menu_x, menu_y, c.control_text, 10)
+        menu_x += max(42, len(item.label) * 7 + 15)
+    draw.line((x, y + h - 1, x + w, y + h - 1), fill=c.toolbar_border)
+
+
 def draw_toolbar(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
+    if preset.id == "securecrt":
+        draw_securecrt_toolbar(draw, preset, x, y, w, h)
+        return
+    if preset.id == "mremoteng":
+        draw_mremoteng_toolbar(draw, preset, x, y, w, h)
+        return
     c = preset.colors
     interaction = gui_design_interaction_state(preset.id)
     draw.rectangle((x, y, x + w, y + h), fill=c.toolbar)
@@ -1136,6 +1655,177 @@ def draw_toolbar(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: 
     if interaction.focused_control in {"search-log", "session-filter", "host-search", "profile-filter", "tree-filter"}:
         draw.rectangle((sx - 2, y + 9, sx + search_w + 2, y + 41), outline=c.control_hover, width=2)
     draw_text(draw, "Search log", sx + 10, y + 18, c.sidebar_muted, 11)
+
+
+def draw_securecrt_toolbar(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
+    c = preset.colors
+    chrome = gui_design_securecrt_top_chrome()
+    interaction = gui_design_interaction_state(preset.id)
+    draw.rectangle((x, y, x + w, y + h), fill=c.toolbar)
+    draw.line((x, y + h - 1, x + w, y + h - 1), fill=c.toolbar_border)
+    for action in chrome.toolbar_actions:
+        bx = x + action.static_x
+        bw = action.static_width
+        state = toolbar_interaction_state(action.key, interaction)
+        fill, outline, text = interaction_button_colors(state, c)
+        if state in {"active", "checked"}:
+            draw.rectangle((bx - 2, y + 5, bx + bw + 2, y + h - 5), outline=c.primary, width=1)
+        elif state == "disabled":
+            draw.rectangle((bx - 1, y + 6, bx + bw + 1, y + h - 6), outline=c.toolbar_border, width=1)
+        icon_x = bx + max(3, (bw - 18) // 2)
+        draw_securecrt_toolbar_icon(draw, action.icon_key, icon_x, y + 7, 18, c, disabled=state == "disabled")
+        label_x = bx + 4 if len(action.label) * 6 + 8 < bw else bx + 1
+        draw_text(draw, action.label, label_x, y + 32, text, 8, bold=state in {"active", "checked"})
+        if action.key in {"edit", "queue", "doctor"}:
+            sep_x = bx + bw + 8
+            draw.line((sep_x, y + 8, sep_x, y + h - 8), fill=c.toolbar_border)
+
+    selector_x = x + w - 346
+    draw_text(draw, "View", selector_x, y + 17, c.sidebar_muted, 10)
+    rounded(draw, (selector_x + 38, y + 10, selector_x + 170, y + 38), c.control, c.control_border, 3)
+    draw_text(draw, "SecureCRT-style", selector_x + 47, y + 18, c.control_text, 9)
+    search_x = x + w - 164
+    rounded(draw, (search_x, y + 10, x + w - 12, y + 38), c.control, c.control_border, 3)
+    draw_text(draw, "Search log", search_x + 9, y + 18, c.sidebar_muted, 9)
+
+
+def draw_mremoteng_toolbar(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
+    c = preset.colors
+    chrome = gui_design_mremoteng_top_chrome()
+    interaction = gui_design_interaction_state(preset.id)
+    draw.rectangle((x, y, x + w, y + h), fill=c.toolbar)
+    draw.line((x, y + h - 1, x + w, y + h - 1), fill=c.toolbar_border)
+    for action in chrome.toolbar_actions:
+        bx = x + action.static_x
+        bw = action.static_width
+        state = toolbar_interaction_state(action.key, interaction)
+        _fill, outline, text = interaction_button_colors(state, c)
+        if state in {"active", "checked"}:
+            draw.rectangle((bx - 2, y + 5, bx + bw + 2, y + h - 5), outline=c.primary, width=1)
+        elif state == "disabled":
+            draw.rectangle((bx - 1, y + 6, bx + bw + 1, y + h - 6), outline=c.toolbar_border, width=1)
+        icon_x = bx + max(4, (bw - 17) // 2)
+        draw_mremoteng_toolbar_icon(draw, action.icon_key, icon_x, y + 6, 17, c, disabled=state == "disabled")
+        label_x = bx + 3 if len(action.label) * 6 + 6 < bw else bx + 1
+        draw_text(draw, action.label, label_x, y + 30, text, 8, bold=state in {"active", "checked"})
+        if action.key in {"edit", "queue", "doctor"}:
+            sep_x = bx + bw + 7
+            draw.line((sep_x, y + 7, sep_x, y + h - 8), fill=c.toolbar_border)
+
+    selector_x = x + w - 356
+    draw_text(draw, "View", selector_x, y + 16, c.sidebar_muted, 10)
+    rounded(draw, (selector_x + 38, y + 9, selector_x + 174, y + 37), c.control, c.control_border, 2)
+    draw_text(draw, "mRemoteNG-style", selector_x + 47, y + 17, c.control_text, 9)
+    search_x = x + w - 174
+    rounded(draw, (search_x, y + 9, x + w - 12, y + 37), c.control, c.control_border, 2)
+    draw_text(draw, "Search log", search_x + 9, y + 17, c.sidebar_muted, 9)
+
+
+def draw_securecrt_toolbar_icon(
+    draw: Any,
+    icon_key: str,
+    x: int,
+    y: int,
+    size: int,
+    c: Any,
+    *,
+    disabled: bool,
+) -> None:
+    color = c.sidebar_muted if disabled else c.primary
+    dark = c.window
+    white = c.control_text if not disabled else c.sidebar_muted
+    mid = size // 2
+    if icon_key == "session-manager":
+        draw.rectangle((x + 2, y + 6, x + size - 2, y + size - 2), fill=color, outline=white)
+        draw.rectangle((x + 4, y + 4, x + 11, y + 7), fill=color, outline=white)
+        return
+    if icon_key == "new-session":
+        draw.rectangle((x + 2, y + 2, x + size - 2, y + size - 4), fill=dark, outline=color)
+        draw.line((x + mid, y + 5, x + mid, y + size - 8), fill=color, width=2)
+        draw.line((x + 5, y + mid - 1, x + size - 5, y + mid - 1), fill=color, width=2)
+        return
+    if icon_key == "properties":
+        draw.rectangle((x + 4, y + 3, x + size - 4, y + size - 3), outline=color, width=2)
+        draw_text(draw, "P", x + 7, y + 5, color, 9, bold=True)
+        return
+    if icon_key == "delete":
+        draw.line((x + 4, y + 4, x + size - 4, y + size - 4), fill=color, width=2)
+        draw.line((x + size - 4, y + 4, x + 4, y + size - 4), fill=color, width=2)
+        return
+    if icon_key == "connect":
+        draw.polygon([(x + 4, y + 3), (x + size - 3, y + mid), (x + 4, y + size - 3)], fill=color)
+        return
+    if icon_key == "sftp":
+        draw.rectangle((x + 2, y + 6, x + size - 2, y + size - 2), fill=color, outline=white)
+        draw.line((x + 5, y + 11, x + size - 5, y + 11), fill=dark, width=1)
+        return
+    if icon_key == "transfer":
+        draw.line((x + 3, y + 6, x + size - 4, y + 6), fill=color, width=2)
+        draw.polygon([(x + size - 4, y + 3), (x + size - 1, y + 6), (x + size - 4, y + 9)], fill=color)
+        draw.line((x + size - 3, y + 12, x + 4, y + 12), fill=color, width=2)
+        draw.polygon([(x + 4, y + 9), (x + 1, y + 12), (x + 4, y + 15)], fill=color)
+        return
+    if icon_key == "command":
+        draw.rectangle((x + 2, y + 3, x + size - 2, y + size - 3), fill=dark, outline=color)
+        draw.line((x + 5, y + 7, x + 9, y + 10), fill=color, width=2)
+        draw.line((x + 9, y + 10, x + 5, y + 13), fill=color, width=2)
+        return
+    if icon_key == "tools":
+        draw.line((x + 4, y + 4, x + size - 5, y + size - 5), fill=color, width=2)
+        draw.line((x + size - 5, y + 4, x + 5, y + size - 4), fill=color, width=2)
+        return
+    if icon_key in {"tile-h", "tile-v"}:
+        draw.rectangle((x + 2, y + 3, x + size - 2, y + size - 3), outline=color, width=2)
+        if icon_key == "tile-h":
+            draw.line((x + 2, y + mid, x + size - 2, y + mid), fill=color, width=2)
+        else:
+            draw.line((x + mid, y + 3, x + mid, y + size - 3), fill=color, width=2)
+        return
+    draw.rectangle((x + 3, y + 3, x + size - 3, y + size - 3), outline=color)
+
+
+def draw_mremoteng_toolbar_icon(
+    draw: Any,
+    icon_key: str,
+    x: int,
+    y: int,
+    size: int,
+    c: Any,
+    *,
+    disabled: bool,
+) -> None:
+    color = c.sidebar_muted if disabled else c.primary
+    dark = c.window
+    mid = size // 2
+    if icon_key == "refresh-tree":
+        draw.arc((x + 3, y + 3, x + size - 3, y + size - 3), 35, 320, fill=color, width=2)
+        draw.polygon([(x + size - 4, y + 5), (x + size - 1, y + 8), (x + size - 6, y + 10)], fill=color)
+        return
+    if icon_key == "new-connection":
+        draw.rectangle((x + 2, y + 3, x + size - 3, y + size - 3), fill=dark, outline=color)
+        draw.line((x + mid, y + 5, x + mid, y + size - 6), fill=color, width=2)
+        draw.line((x + 5, y + mid, x + size - 6, y + mid), fill=color, width=2)
+        return
+    if icon_key == "config":
+        draw.rectangle((x + 3, y + 3, x + size - 4, y + size - 4), outline=color, width=2)
+        draw_text(draw, "C", x + 6, y + 5, color, 8, bold=True)
+        return
+    if icon_key == "open-connection":
+        draw.polygon([(x + 4, y + 3), (x + size - 3, y + mid), (x + 4, y + size - 3)], fill=color)
+        draw.rectangle((x + 1, y + 5, x + 5, y + size - 5), fill=dark, outline=color)
+        return
+    if icon_key == "external-tool":
+        draw.rectangle((x + 2, y + 4, x + size - 5, y + size - 3), fill=dark, outline=color)
+        draw.line((x + 7, y + size - 7, x + size - 2, y + 3), fill=color, width=2)
+        draw.polygon([(x + size - 2, y + 3), (x + size - 3, y + 8), (x + size - 7, y + 4)], fill=color)
+        return
+    if icon_key == "script":
+        draw.rectangle((x + 2, y + 3, x + size - 2, y + size - 3), fill=dark, outline=color)
+        draw.line((x + 5, y + 7, x + 8, y + mid), fill=color, width=2)
+        draw.line((x + 8, y + mid, x + 5, y + size - 7), fill=color, width=2)
+        draw.line((x + 10, y + size - 6, x + size - 4, y + size - 6), fill=color, width=1)
+        return
+    draw_securecrt_toolbar_icon(draw, icon_key, x, y, size, c, disabled=disabled)
 
 
 def toolbar_interaction_state(key: str, interaction: Any) -> str:
@@ -1298,7 +1988,14 @@ def draw_sidebar(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: 
     draw_text(draw, preset.density, x + w - 86, y + 15, c.sidebar_muted, 11)
     rows = gui_design_tree_rows(preset.id)
     row_y = y + 66
-    if preset.id == "remmina":
+    if preset.id == "securecrt":
+        draw_securecrt_session_manager_chrome(draw, preset, x + 10, y + 58, w - 20, 72)
+        draw_securecrt_session_tree(draw, preset, x + 14, y + 150, w - 28, h - 158)
+        return
+    elif preset.id == "termius":
+        draw_termius_hosts_chrome(draw, preset, x + 10, y + 58, w - 20, 72)
+        row_y = y + 150
+    elif preset.id == "remmina":
         draw_remmina_profile_list_chrome(draw, preset, x + 10, y + 62, w - 20, 126)
         row_y = y + 204
     for name, target, group in rows:
@@ -1322,10 +2019,13 @@ def draw_sidebar(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: 
 def draw_remmina_profile_list_chrome(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
     c = preset.colors
     chrome = gui_design_remmina_profile_list_chrome()
+    interaction = gui_design_interaction_state(preset.id)
     rounded(draw, (x, y, x + w, y + h), c.pane, c.pane_border, 4)
     draw_text(draw, chrome.title, x + 8, y + 8, c.control_text, 10, bold=True)
     filter_x = x + 110
     rounded(draw, (filter_x, y + 5, x + w - 7, y + 25), c.control, c.control_border, 3)
+    if interaction.focused_control == "profile-filter":
+        draw.rectangle((filter_x - 2, y + 3, x + w - 5, y + 27), outline=c.primary, width=1)
     draw_text(draw, chrome.filter_placeholder, filter_x + 7, y + 10, c.sidebar_muted, 8)
     header_y = y + 33
     col_x = x + 8
@@ -1347,6 +2047,100 @@ def draw_remmina_profile_list_chrome(draw: Any, preset: GuiDesignPreset, x: int,
             col_x += column.static_width
         draw_text(draw, row.status, x + 12, row_y + 16, c.sidebar_muted, 7)
         row_y += 24
+
+
+def draw_securecrt_session_manager_chrome(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
+    c = preset.colors
+    chrome = gui_design_securecrt_session_manager_chrome()
+    interaction = gui_design_interaction_state(preset.id)
+    rounded(draw, (x, y, x + w, y + h), c.pane, c.control_border, 3)
+    draw_text(draw, chrome.title, x + 8, y + 8, c.control_text, 10, bold=True)
+    for action in chrome.actions:
+        bx = x + action.static_x
+        by = y + 5
+        rounded(draw, (bx, by, bx + 20, by + 20), c.control, c.control_border, 2)
+        if action.icon_key == "folder":
+            draw_sidebar_row_icon(draw, preset, "folder", bx + 5, by + 5, 10, selected=False, group=True)
+        elif action.icon_key == "properties":
+            draw_text(draw, "P", bx + 6, by + 4, c.primary, 9, bold=True)
+        else:
+            draw_text(draw, ">", bx + 7, by + 3, c.primary, 10, bold=True)
+    filter_y = y + 35
+    rounded(draw, (x + 8, filter_y, x + w - 8, filter_y + 24), c.terminal, c.primary, 2)
+    if interaction.focused_control == "session-filter":
+        draw.rectangle((x + 6, filter_y - 2, x + w - 6, filter_y + 26), outline=c.control_hover, width=1)
+    draw_text(draw, chrome.filter_placeholder, x + 17, filter_y + 7, c.sidebar_muted, 9)
+
+
+def draw_securecrt_session_tree(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
+    c = preset.colors
+    interaction = gui_design_interaction_state(preset.id)
+    root_title, root_subtitle = gui_design_tree_root_copy(preset.id)
+    draw.rectangle((x, y, x + w, y + h), fill=c.sidebar)
+    draw_sidebar_row_icon(draw, preset, "folder", x + 3, y + 4, 14, selected=False, group=True)
+    draw_text(draw, root_title, x + 26, y + 3, c.status, 11, bold=True)
+    draw_text(draw, root_subtitle, x + 26, y + 18, c.sidebar_muted, 8)
+
+    row_y = y + 44
+    branch_x = x + 18
+    for name, target, group in gui_design_tree_rows(preset.id):
+        label = name.strip()
+        selected = label == interaction.selected_tree_label
+        if group:
+            draw.line((branch_x, row_y + 14, branch_x + 12, row_y + 14), fill=c.toolbar_border)
+            draw_sidebar_row_icon(draw, preset, "folder", x + 4, row_y + 2, 14, selected=False, group=True)
+            draw_text(draw, label, x + 26, row_y + 1, c.status, 11, bold=True)
+            draw.line((branch_x, row_y + 21, branch_x, row_y + 52), fill=c.toolbar_border)
+            row_y += 28
+            continue
+        row_top = row_y - 3
+        row_bottom = row_top + 33
+        if selected:
+            rounded(draw, (x + 18, row_top, x + w - 2, row_bottom), c.sidebar_selected, c.sidebar_selected, 4)
+            draw.rectangle((x + 18, row_top, x + 22, row_bottom), fill=c.primary)
+        draw.line((branch_x, row_y + 11, branch_x + 20, row_y + 11), fill=c.toolbar_border)
+        draw_sidebar_row_icon(draw, preset, sidebar_row_icon_key(preset.id, name, target, group), x + 28, row_y, 13, selected=selected, group=False)
+        text = c.sidebar_selected_text if selected else c.sidebar_text
+        muted = c.sidebar_selected_text if selected else c.sidebar_muted
+        draw_text(draw, label, x + 49, row_y - 1, text, 11)
+        draw_text(draw, target, x + 49, row_y + 13, muted, 8)
+        row_y += 34
+
+
+def draw_termius_hosts_chrome(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
+    c = preset.colors
+    chrome = gui_design_termius_hosts_chrome()
+    interaction = gui_design_interaction_state(preset.id)
+    rounded(draw, (x, y, x + w, y + h), c.pane, c.control_border, 3)
+    draw_text(draw, chrome.title, x + 8, y + 8, c.control_text, 10, bold=True)
+    for action in chrome.actions:
+        bx = x + action.static_x
+        by = y + 5
+        rounded(draw, (bx, by, bx + 20, by + 20), c.control, c.control_border, 2)
+        draw_termius_hosts_action_icon(draw, action.icon_key, bx + 5, by + 5, 10, c.primary)
+    filter_y = y + 35
+    rounded(draw, (x + 8, filter_y, x + w - 8, filter_y + 24), c.terminal, c.primary, 2)
+    if interaction.focused_control == "host-search":
+        draw.rectangle((x + 6, filter_y - 2, x + w - 6, filter_y + 26), outline=c.control_hover, width=1)
+    draw_text(draw, chrome.filter_placeholder, x + 17, filter_y + 7, c.sidebar_muted, 9)
+
+
+def draw_termius_hosts_action_icon(draw: Any, icon_key: str, x: int, y: int, size: int, color: str) -> None:
+    if icon_key == "plus":
+        mid = x + size // 2
+        draw.line((mid, y + 2, mid, y + size - 2), fill=color, width=2)
+        draw.line((x + 2, y + size // 2, x + size - 2, y + size // 2), fill=color, width=2)
+        return
+    if icon_key == "key":
+        draw.ellipse((x, y + 2, x + 5, y + 7), outline=color, width=2)
+        draw.line((x + 5, y + 5, x + size, y + 5), fill=color, width=2)
+        draw.line((x + size - 3, y + 5, x + size - 3, y + 8), fill=color, width=2)
+        return
+    if icon_key == "sync":
+        draw.arc((x + 1, y + 1, x + size - 1, y + size - 1), 35, 270, fill=color, width=2)
+        draw.polygon([(x + 2, y + 3), (x + 5, y + 1), (x + 5, y + 5)], fill=color)
+        return
+    draw.rectangle((x + 2, y + 2, x + size - 2, y + size - 2), outline=color)
 
 
 def sidebar_row_icon_key(preset_id: str, name: str, target: str, group: bool) -> str:
@@ -1891,15 +2685,24 @@ def draw_remote_viewer(draw: Any, preset: GuiDesignPreset, surface: Any, x: int,
 def draw_mremoteng_document_toolbar(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
     c = preset.colors
     chrome = gui_design_mremoteng_document_toolbar_chrome()
+    interaction = gui_design_interaction_state(preset.id)
     draw.rectangle((x, y, x + w, y + h), fill=c.control, outline=c.pane_border)
     draw_text(draw, chrome.title, x + 10, y + 8, c.control_text, 10, bold=True)
     button_x = x + 128
     for control in gui_design_mremoteng_document_controls():
+        state = "checked" if control.key == "external-tool" and interaction.checked_toolbar_key == "files" else "normal"
+        _fill, outline, text = interaction_button_colors(state, c)
         rounded(draw, (button_x, y + 4, button_x + control.static_width, y + h - 4), c.toolbar, c.control_border, 2)
+        if state == "checked":
+            draw.rectangle((button_x - 2, y + 2, button_x + control.static_width + 2, y + h - 2), outline=outline, width=1)
         draw_sidebar_row_icon(draw, preset, control.icon_key, button_x + 8, y + 7, 13, selected=False, group=False)
-        draw_text(draw, control.label, button_x + 27, y + 8, c.control_text, 9)
+        draw_text(draw, control.label, button_x + 27, y + 8, text, 9, bold=state == "checked")
         button_x += control.static_width + 8
-    draw.rectangle((x + w - 188, y + 5, x + w - 10, y + h - 5), fill=c.window, outline=c.control_border)
+    filter_box = (x + w - 188, y + 5, x + w - 10, y + h - 5)
+    draw.rectangle(filter_box, fill=c.window, outline=c.control_border)
+    if interaction.focused_control == "tree-filter":
+        fx1, fy1, fx2, fy2 = filter_box
+        draw.rectangle((fx1 - 2, fy1 - 2, fx2 + 2, fy2 + 2), outline=c.primary, width=1)
     draw_text(draw, chrome.filter_placeholder, x + w - 178, y + 9, c.sidebar_muted, 9)
 
 
@@ -2153,8 +2956,9 @@ def draw_status_bar(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, 
         chrome = gui_design_moba_status_bar_chrome()
         draw_text(draw, chrome.notice, x + 6, y + 6, c.control_text, 10, bold=True)
         draw_text(draw, f" - {chrome.product_note}", x + 142, y + 6, c.sidebar_muted, 10)
-        draw.rectangle((x + w - 20, y + 6, x + w - 6, y + 16), outline=c.sidebar_muted)
-        draw_status_segments(draw, tuple(segment.text for segment in gui_design_moba_status_segments()), x + w - 360, y, c)
+        draw_status_segments(draw, tuple(segment.text for segment in gui_design_moba_status_segments()), x + w - 480, y, c)
+        draw_moba_bottom_edge_controls(draw, y + 3, c)
+        draw.rectangle((x + w - 13, y + 6, x + w - 4, y + 16), outline=c.sidebar_muted)
         return
     draw_text(draw, preset.description, x + 14, y + 6, c.sidebar_muted, 10)
     draw_status_segments(draw, segments, x + w - 430, y, c)
@@ -2166,6 +2970,31 @@ def draw_status_segments(draw: Any, segments: tuple[str, ...], x: int, y: int, c
         draw.line((segment_x - 8, y + 4, segment_x - 8, y + 20), fill=c.toolbar_border)
         draw_text(draw, text, segment_x, y + 6, c.sidebar_muted, 10)
         segment_x += max(116, len(text) * 7 + 20)
+
+
+def draw_moba_bottom_edge_controls(draw: Any, y: int, c: Any) -> None:
+    for action in gui_design_moba_bottom_edge_controls():
+        draw_moba_bottom_edge_icon(draw, action.icon_key, action.static_x, y, 14, action.color, c)
+
+
+def draw_moba_bottom_edge_icon(draw: Any, icon_key: str, x: int, y: int, size: int, color: str, c: Any) -> None:
+    draw.rectangle((x - 2, y, x + size + 2, y + size + 2), outline=c.toolbar_border)
+    mid_y = y + size // 2 + 1
+    if icon_key == "arrow-left":
+        draw.line((x + size - 2, y + 4, x + 5, mid_y), fill=color, width=2)
+        draw.line((x + 5, mid_y, x + size - 2, y + size - 2), fill=color, width=2)
+        draw.line((x + 5, mid_y, x + size, mid_y), fill=color, width=2)
+        return
+    if icon_key == "arrow-right":
+        draw.line((x + 2, y + 4, x + size - 5, mid_y), fill=color, width=2)
+        draw.line((x + size - 5, mid_y, x + 2, y + size - 2), fill=color, width=2)
+        draw.line((x, mid_y, x + size - 5, mid_y), fill=color, width=2)
+        return
+    if icon_key == "close":
+        draw.line((x + 4, y + 4, x + size - 4, y + size - 4), fill=color, width=2)
+        draw.line((x + size - 4, y + 4, x + 4, y + size - 4), fill=color, width=2)
+        return
+    draw.rectangle((x + 3, y + 3, x + size - 3, y + size - 3), outline=c.control_hover)
 
 
 def render_contact_sheet(rendered: list[tuple[GuiDesignPreset, Any]]):

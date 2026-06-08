@@ -2,11 +2,18 @@ from remote_ops_workspace.gui_designs import (
     DEFAULT_GUI_DESIGN_ID,
     GUI_DESIGN_PRESETS,
     get_gui_design_preset,
+    gui_design_interaction_state,
+    gui_design_moba_bottom_edge_controls,
+    gui_design_moba_home_welcome_chrome,
     gui_design_moba_monitoring_controls,
     gui_design_moba_monitoring_metrics,
+    gui_design_moba_quick_connect_chrome,
+    gui_design_moba_quick_connect_suggestion_chrome,
     gui_design_moba_rail_items,
+    gui_design_moba_remote_monitoring_dock_chrome,
     gui_design_moba_ribbon_actions,
     gui_design_moba_right_utility_actions,
+    gui_design_moba_session_edge_actions,
     gui_design_moba_sftp_browser_chrome,
     gui_design_moba_sftp_dock_actions,
     gui_design_moba_sftp_dock_layout,
@@ -18,15 +25,19 @@ from remote_ops_workspace.gui_designs import (
     gui_design_mremoteng_document_controls,
     gui_design_mremoteng_document_toolbar_chrome,
     gui_design_mremoteng_property_grid_chrome,
+    gui_design_mremoteng_top_chrome,
     gui_design_preset_ids,
     gui_design_preset_labels,
     gui_design_reference_state,
     gui_design_remmina_profile_list_chrome,
     gui_design_remmina_viewer_controls,
     gui_design_securecrt_command_window_chrome,
+    gui_design_securecrt_session_manager_chrome,
     gui_design_securecrt_session_status_strip,
+    gui_design_securecrt_top_chrome,
     gui_design_termius_header_chips,
     gui_design_termius_host_identity_strip,
+    gui_design_termius_hosts_chrome,
     gui_design_workflow_cards,
 )
 
@@ -59,6 +70,8 @@ def test_gui_design_presets_have_valid_layout_metadata() -> None:
         assert preset.colors.primary.startswith("#")
         assert "QMainWindow#remoteOpsMain" in preset.stylesheet
         assert "QMenuBar#mobaTopMenuBar" in preset.stylesheet
+        assert "QMenuBar#secureCrtMenuBar" in preset.stylesheet
+        assert "QMenuBar#mRemoteNgMenuBar" in preset.stylesheet
         assert "QToolBar#mainToolbar" in preset.stylesheet
         assert "QToolBar#layoutToolbar" in preset.stylesheet
         assert "QTabWidget#sessionTabs" in preset.stylesheet
@@ -77,6 +90,9 @@ def test_gui_design_presets_have_valid_layout_metadata() -> None:
         assert "QFrame#productReferenceState" in preset.stylesheet
         assert "QLabel#productReferenceStateItem" in preset.stylesheet
         assert "QFrame#secureCrtCommandWindow" in preset.stylesheet
+        assert "QFrame#secureCrtSessionManagerChrome" in preset.stylesheet
+        assert "QLineEdit#secureCrtSessionFilter" in preset.stylesheet
+        assert "QToolButton#secureCrtSessionManagerAction" in preset.stylesheet
         assert "QFrame#secureCrtSessionStatusStrip" in preset.stylesheet
         assert "QLabel#secureCrtSessionStatusCell" in preset.stylesheet
         assert "QLabel#secureCrtCommandInput" in preset.stylesheet
@@ -86,6 +102,9 @@ def test_gui_design_presets_have_valid_layout_metadata() -> None:
         assert "QLabel#remminaProfileListCell" in preset.stylesheet
         assert "QFrame#termiusHeaderChips" in preset.stylesheet
         assert "QLabel#termiusHeaderChip" in preset.stylesheet
+        assert "QFrame#termiusHostsChrome" in preset.stylesheet
+        assert "QLineEdit#termiusHostSearch" in preset.stylesheet
+        assert "QToolButton#termiusHostsAction" in preset.stylesheet
         assert "QFrame#termiusHostIdentityStrip" in preset.stylesheet
         assert "QLabel#termiusHostIdentityCell" in preset.stylesheet
         assert "QFrame#mRemoteNgDocumentControls" in preset.stylesheet
@@ -96,12 +115,21 @@ def test_gui_design_presets_have_valid_layout_metadata() -> None:
         assert "QToolButton#mobaMonitoringControl" in preset.stylesheet
         assert "QCheckBox#mobaFollowTerminalFolder" in preset.stylesheet
         assert "QLabel#mobaRailLabel" in preset.stylesheet
+        assert "QFrame#mobaQuickConnectChrome" in preset.stylesheet
+        assert "QLabel#mobaQuickConnectDropdown" in preset.stylesheet
         assert "QFrame#mobaRightUtilityRail" in preset.stylesheet
         assert "QToolButton#mobaRightUtilityAction" in preset.stylesheet
+        assert "QFrame#mobaSessionEdgeControls" in preset.stylesheet
+        assert "QToolButton#mobaSessionEdgeAction" in preset.stylesheet
         assert "QLabel#mobaSshBannerTitle" in preset.stylesheet
         assert "QLabel#mobaSshBannerSubtitle" in preset.stylesheet
+        assert "QLabel#mobaSshBannerTargetLine" in preset.stylesheet
+        assert "QLabel#mobaSshBannerCapability" in preset.stylesheet
+        assert "QLabel#mobaSshBannerFooter" in preset.stylesheet
         assert "QStatusBar QLabel#productStatusNotice" in preset.stylesheet
         assert "QStatusBar QLabel#productStatusMarker" in preset.stylesheet
+        assert "QFrame#mobaBottomEdgeControls" in preset.stylesheet
+        assert "QToolButton#mobaBottomEdgeControl" in preset.stylesheet
         assert "QFrame#productWorkspacePrimaryPane" in preset.stylesheet
         assert "QLabel#productWorkspaceTitle" in preset.stylesheet
         assert "QSplitter::handle" in preset.stylesheet
@@ -187,6 +215,44 @@ def test_mobaxterm_titlebar_chrome_is_shared_metadata() -> None:
     assert chrome.control_width == 24
 
 
+def test_mobaxterm_quick_connect_chrome_is_shared_metadata() -> None:
+    chrome = gui_design_moba_quick_connect_chrome()
+
+    assert chrome.placeholder == "Quick connect..."
+    assert chrome.dropdown_marker == "v"
+    assert chrome.static_height == 24
+    assert chrome.marker_width == 24
+    assert chrome.input_left == 0
+    assert chrome.input_padding == "4px 8px"
+    assert chrome.connected_idle_query == ""
+    assert chrome.connected_suggestions_visible is False
+
+
+def test_mobaxterm_quick_connect_suggestion_chrome_is_shared_metadata() -> None:
+    chrome = gui_design_moba_quick_connect_suggestion_chrome()
+
+    assert chrome.preview_query == "edge-prod.example.invalid"
+    assert chrome.expected_kinds == ("profile", "direct")
+    assert chrome.max_visible_rows == 4
+    assert chrome.row_height == 22
+    assert chrome.static_width == 390
+    assert chrome.detail_separator == "    "
+
+
+def test_mobaxterm_home_welcome_chrome_is_shared_metadata() -> None:
+    chrome = gui_design_moba_home_welcome_chrome()
+
+    assert chrome.title == "Remote Ops Workspace"
+    assert chrome.subtitle == "Moba-style SSH client, SFTP browser and monitoring tools"
+    assert chrome.icon_key == "session"
+    assert chrome.primary_action_icon_key == "session"
+    assert chrome.secondary_action_icon_key == "tunneling"
+    assert chrome.search_width == 405
+    assert chrome.action_spacing == 96
+    assert chrome.recent_title == "Recent sessions"
+    assert chrome.surface_width == 640
+
+
 def test_mobaxterm_rail_items_include_vertical_reference_labels() -> None:
     items = gui_design_moba_rail_items()
 
@@ -201,6 +267,14 @@ def test_mobaxterm_rail_items_include_vertical_reference_labels() -> None:
     assert all(item.color.startswith("#") for item in items)
 
 
+def test_mobaxterm_connected_interaction_state_checks_sftp_rail() -> None:
+    state = gui_design_interaction_state("mobaxterm")
+
+    assert state.focused_control == "quick-connect"
+    assert state.checked_toolbar_key == "sftp"
+    assert "SFTP rail checked" in state.status_note
+
+
 def test_mobaxterm_right_utility_actions_are_shared_metadata() -> None:
     actions = gui_design_moba_right_utility_actions()
 
@@ -211,6 +285,17 @@ def test_mobaxterm_right_utility_actions_are_shared_metadata() -> None:
         "Terminal settings",
         "Terminal tools",
     ]
+    assert all(action.tooltip for action in actions)
+    assert all(action.color.startswith("#") for action in actions)
+
+
+def test_mobaxterm_session_edge_actions_are_shared_metadata() -> None:
+    actions = gui_design_moba_session_edge_actions()
+
+    assert [action.key for action in actions] == ["attachment", "settings"]
+    assert [action.icon_key for action in actions] == ["clip", "gear"]
+    assert [action.label for action in actions] == ["Session attachment", "Session settings"]
+    assert [action.static_y for action in actions] == [112, 130]
     assert all(action.tooltip for action in actions)
     assert all(action.color.startswith("#") for action in actions)
 
@@ -260,6 +345,9 @@ def test_mobaxterm_sftp_browser_chrome_is_shared_metadata() -> None:
 
     assert chrome.path_placeholder == "/"
     assert chrome.dropdown_marker == "v"
+    assert chrome.parent_row_label == ".."
+    assert chrome.parent_row_kind == "parent-dir"
+    assert chrome.selected_row_kind == "parent-dir"
     assert [column.key for column in chrome.columns] == ["name", "size", "modified"]
     assert [column.label for column in chrome.columns] == ["Name", "Size (KB)", "Last modified"]
     assert [column.static_x for column in chrome.columns] == [38, 188, 266]
@@ -300,6 +388,17 @@ def test_mobaxterm_monitoring_controls_are_shared_metadata() -> None:
     assert all(control.tooltip for control in controls)
 
 
+def test_mobaxterm_remote_monitoring_dock_chrome_is_compact_shared_metadata() -> None:
+    chrome = gui_design_moba_remote_monitoring_dock_chrome()
+
+    assert chrome.title_control_key == "remote-monitoring"
+    assert chrome.follow_control_key == "follow-terminal-folder"
+    assert chrome.telemetry_surface == "bottom-telemetry-bar"
+    assert chrome.visible_metric_keys == ()
+    assert chrome.refresh_seconds == 5
+    assert chrome.compact is True
+
+
 def test_mobaxterm_status_bar_chrome_is_shared_metadata() -> None:
     chrome = gui_design_moba_status_bar_chrome()
     segments = gui_design_moba_status_segments()
@@ -312,11 +411,29 @@ def test_mobaxterm_status_bar_chrome_is_shared_metadata() -> None:
     assert all(segment.tooltip for segment in segments)
 
 
+def test_mobaxterm_bottom_edge_controls_are_shared_metadata() -> None:
+    controls = gui_design_moba_bottom_edge_controls()
+
+    assert [control.key for control in controls] == ["tab-left", "tab-right", "close-active"]
+    assert [control.icon_key for control in controls] == ["arrow-left", "arrow-right", "close"]
+    assert [control.label for control in controls] == ["Previous tab", "Next tab", "Close active tab"]
+    assert [control.static_x for control in controls] == [1204, 1224, 1244]
+    assert all(control.tooltip for control in controls)
+    assert all(control.color.startswith("#") for control in controls)
+
+
 def test_mobaxterm_ssh_banner_chrome_is_shared_metadata() -> None:
     chrome = gui_design_moba_ssh_banner_chrome()
 
-    assert chrome.title == "Remote Ops Workspace Moba-style"
-    assert chrome.subtitle == "(SSH client, SFTP browser and monitoring tools)"
+    assert chrome.title == "Remote Ops Workspace Personal Edition v1.0"
+    assert chrome.subtitle == "(SSH client, SFTP browser and remote tools)"
+    assert chrome.heading_prefix == "* "
+    assert chrome.heading_suffix == " *"
+    assert chrome.target_intro == "SSH session to"
+    assert chrome.capability_label_width == 15
+    assert chrome.footer_prefix == "For more info, ctrl+click on"
+    assert chrome.help_link_label == "help"
+    assert chrome.website_link_label == "website"
     assert chrome.static_left_offset == 42
     assert chrome.static_top_offset == 12
     assert chrome.static_width == 570
@@ -364,6 +481,72 @@ def test_securecrt_session_status_strip_is_shared_metadata() -> None:
     assert strip.fields[-1].value == "connected"
     assert [field.static_width for field in strip.fields] == [132, 174, 102, 122, 102, 90, 82]
     assert all(field.tooltip for field in strip.fields)
+
+
+def test_securecrt_session_manager_chrome_is_shared_metadata() -> None:
+    chrome = gui_design_securecrt_session_manager_chrome()
+
+    assert chrome.title == "Session Manager"
+    assert chrome.filter_placeholder == "Filter sessions"
+    assert [action.key for action in chrome.actions] == ["connect", "new-folder", "properties"]
+    assert [action.icon_key for action in chrome.actions] == ["connect", "folder", "properties"]
+    assert [action.label for action in chrome.actions] == ["Connect", "New Folder", "Properties"]
+    assert [action.static_x for action in chrome.actions] == [34, 60, 86]
+    assert all(action.tooltip for action in chrome.actions)
+
+
+def test_securecrt_top_chrome_is_shared_metadata() -> None:
+    chrome = gui_design_securecrt_top_chrome()
+
+    assert chrome.window_title == "edge-prod (SSH2) - Remote Ops Workspace"
+    assert chrome.menu_height == 22
+    assert chrome.toolbar_height == 54
+    assert [item.key for item in chrome.menu_items] == [
+        "file",
+        "edit",
+        "view",
+        "options",
+        "transfer",
+        "script",
+        "tools",
+        "window",
+        "help",
+    ]
+    assert [item.label for item in chrome.menu_items] == [
+        "File",
+        "Edit",
+        "View",
+        "Options",
+        "Transfer",
+        "Script",
+        "Tools",
+        "Window",
+        "Help",
+    ]
+    assert [action.key for action in chrome.toolbar_actions] == [
+        "refresh",
+        "new",
+        "edit",
+        "remove",
+        "connect",
+        "files",
+        "queue",
+        "dry-run",
+        "doctor",
+        "split-h",
+        "split-v",
+    ]
+    assert [action.icon_key for action in chrome.toolbar_actions[:5]] == [
+        "session-manager",
+        "new-session",
+        "properties",
+        "delete",
+        "connect",
+    ]
+    assert [action.static_x for action in chrome.toolbar_actions[:4]] == [14, 82, 180, 272]
+    assert all(action.static_width >= 54 for action in chrome.toolbar_actions)
+    assert all(item.primary_action for item in chrome.menu_items)
+    assert all(action.tooltip for action in chrome.toolbar_actions)
 
 
 def test_remmina_viewer_controls_are_shared_metadata() -> None:
@@ -417,6 +600,18 @@ def test_termius_header_chips_are_shared_metadata() -> None:
     assert all(chip.tooltip for chip in chips)
 
 
+def test_termius_hosts_chrome_is_shared_metadata() -> None:
+    chrome = gui_design_termius_hosts_chrome()
+
+    assert chrome.title == "Hosts"
+    assert chrome.filter_placeholder == "Search hosts"
+    assert [action.key for action in chrome.actions] == ["new-host", "keychain", "sync-hosts"]
+    assert [action.icon_key for action in chrome.actions] == ["plus", "key", "sync"]
+    assert [action.label for action in chrome.actions] == ["Add Host", "Keychain", "Sync"]
+    assert [action.static_x for action in chrome.actions] == [34, 60, 86]
+    assert all(action.tooltip for action in chrome.actions)
+
+
 def test_termius_host_identity_strip_is_shared_metadata() -> None:
     strip = gui_design_termius_host_identity_strip()
 
@@ -455,6 +650,62 @@ def test_mremoteng_document_controls_are_shared_metadata() -> None:
     assert all(control.standard_icon.startswith("SP_") for control in controls)
     assert all(control.tooltip for control in controls)
     assert [control.static_width for control in controls] == [56, 88, 104, 84]
+
+
+def test_mremoteng_top_chrome_is_shared_metadata() -> None:
+    chrome = gui_design_mremoteng_top_chrome()
+
+    assert chrome.window_title == "Connections.xml - Remote Ops Workspace"
+    assert chrome.menu_height == 22
+    assert chrome.toolbar_height == 50
+    assert [item.key for item in chrome.menu_items] == [
+        "file",
+        "view",
+        "connections",
+        "tools",
+        "window",
+        "help",
+    ]
+    assert [item.label for item in chrome.menu_items] == [
+        "File",
+        "View",
+        "Connections",
+        "Tools",
+        "Window",
+        "Help",
+    ]
+    assert [action.key for action in chrome.toolbar_actions] == [
+        "refresh",
+        "new",
+        "edit",
+        "remove",
+        "connect",
+        "files",
+        "queue",
+        "dry-run",
+        "doctor",
+        "split-h",
+        "split-v",
+    ]
+    assert [action.icon_key for action in chrome.toolbar_actions[:6]] == [
+        "refresh-tree",
+        "new-connection",
+        "config",
+        "delete",
+        "open-connection",
+        "external-tool",
+    ]
+    assert [action.label for action in chrome.toolbar_actions[:6]] == [
+        "Refresh",
+        "New Conn",
+        "Config",
+        "Delete",
+        "Open",
+        "External",
+    ]
+    assert [action.static_width for action in chrome.toolbar_actions] == [58, 74, 62, 58, 54, 74, 70, 58, 54, 58, 58]
+    assert all(item.tooltip for item in chrome.menu_items)
+    assert all(action.tooltip for action in chrome.toolbar_actions)
 
 
 def test_mremoteng_property_grid_is_shared_metadata() -> None:

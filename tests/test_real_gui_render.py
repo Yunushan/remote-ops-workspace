@@ -91,21 +91,57 @@ def test_real_gui_render_manifest_contract_names_required_widgets() -> None:
         "Macros",
         "Help",
     ]
+    assert checker.EXPECTED_SECURECRT_TOP_MENU_KEYS == [
+        "file",
+        "edit",
+        "view",
+        "options",
+        "transfer",
+        "script",
+        "tools",
+        "window",
+        "help",
+    ]
+    assert checker.EXPECTED_SECURECRT_TOP_MENU_LABELS == [
+        "File",
+        "Edit",
+        "View",
+        "Options",
+        "Transfer",
+        "Script",
+        "Tools",
+        "Window",
+        "Help",
+    ]
+    assert checker.EXPECTED_SECURECRT_TOP_TOOLBAR_KEYS[:5] == [
+        "refresh",
+        "new",
+        "edit",
+        "remove",
+        "connect",
+    ]
+    assert checker.EXPECTED_SECURECRT_TOP_TOOLBAR_ICON_KEYS["files"] == "sftp"
+    assert checker.EXPECTED_MOBA_QUICK_CONNECT_CHROME.placeholder == "Quick connect..."
+    assert checker.EXPECTED_MOBA_QUICK_CONNECT_CHROME.dropdown_marker == "v"
+    assert checker.EXPECTED_MOBA_QUICK_CONNECT_CHROME.static_height == 24
+    assert checker.EXPECTED_MOBA_QUICK_CONNECT_SUGGESTION_CHROME.preview_query == "edge-prod.example.invalid"
+    assert checker.EXPECTED_MOBA_QUICK_CONNECT_SUGGESTION_CHROME.expected_kinds == ("profile", "direct")
+    assert checker.EXPECTED_MOBA_QUICK_CONNECT_SUGGESTION_CHROME.max_visible_rows == 4
+    assert checker.EXPECTED_MOBA_QUICK_CONNECT_SUGGESTION_CHROME.row_height == 22
+    assert checker.EXPECTED_MOBA_HOME_WELCOME_CHROME.title == "Remote Ops Workspace"
+    assert checker.EXPECTED_MOBA_HOME_WELCOME_CHROME.search_width == 405
+    assert checker.EXPECTED_MOBA_HOME_WELCOME_CHROME.recent_title == "Recent sessions"
     assert checker.EXPECTED_MOBA_TERMINAL_TRANSCRIPT_KEYS == [
         "web-console",
         "spacer",
         "last-login",
-        "change-directory",
-        "tail-log",
-        "healthy-output",
+        "prompt-ready",
     ]
     assert checker.EXPECTED_MOBA_TERMINAL_TRANSCRIPT_TONES == [
         "info",
         "spacer",
         "info",
         "command",
-        "command",
-        "output",
     ]
     assert "terminal" in checker.EXPECTED_MOBA_SFTP_ACTION_KEYS
     assert checker.EXPECTED_MOBA_SFTP_BROWSER_CHROME.dropdown_marker == "v"
@@ -123,12 +159,17 @@ def test_real_gui_render_manifest_contract_names_required_widgets() -> None:
         "remote-monitoring",
         "follow-terminal-folder",
     }
+    assert checker.EXPECTED_MOBA_REMOTE_MONITORING_DOCK_CHROME.compact is True
+    assert checker.EXPECTED_MOBA_REMOTE_MONITORING_DOCK_CHROME.visible_metric_keys == ()
+    assert checker.EXPECTED_MOBA_REMOTE_MONITORING_DOCK_CHROME.telemetry_surface == "bottom-telemetry-bar"
     assert [control.icon_key for control in checker.EXPECTED_MOBA_MONITORING_CONTROLS] == [
         "monitor",
         "follow-folder",
     ]
     assert checker.EXPECTED_MOBA_STATUS_KEYS == {"sftp-ready", "cpu-monitor", "ssh-browser"}
     assert checker.EXPECTED_MOBA_STATUS_CHROME.notice == "REMOTE OPS WORKSPACE"
+    assert checker.EXPECTED_MOBA_BOTTOM_EDGE_KEYS == {"tab-left", "tab-right", "close-active"}
+    assert checker.EXPECTED_MOBA_BOTTOM_EDGE_ICON_KEYS["close-active"] == "close"
     assert checker.EXPECTED_SECURECRT_COMMAND_WINDOW_CHROME.key == "send-to-all-sessions"
     assert checker.EXPECTED_SECURECRT_COMMAND_WINDOW_CHROME.command == "$ row doctor --json"
     assert checker.EXPECTED_SECURECRT_SESSION_STATUS_KEYS == [
@@ -156,6 +197,13 @@ def test_real_gui_render_manifest_contract_names_required_widgets() -> None:
         "sync-current",
         "port-forward-ready",
     ]
+    assert checker.EXPECTED_TERMIUS_HOSTS_ACTION_KEYS == ["new-host", "keychain", "sync-hosts"]
+    assert checker.EXPECTED_TERMIUS_HOSTS_ICON_KEYS == {
+        "new-host": "plus",
+        "keychain": "key",
+        "sync-hosts": "sync",
+    }
+    assert checker.EXPECTED_TERMIUS_HOSTS_CHROME.filter_placeholder == "Search hosts"
     assert checker.EXPECTED_TERMIUS_HOST_IDENTITY_KEYS == [
         "host",
         "identity",
@@ -166,6 +214,23 @@ def test_real_gui_render_manifest_contract_names_required_widgets() -> None:
         "sync",
     ]
     assert checker.EXPECTED_TERMIUS_HOST_IDENTITY_STRIP.fields[1].value == "prod-ed25519"
+    assert checker.EXPECTED_MREMOTENG_TOP_MENU_KEYS == [
+        "file",
+        "view",
+        "connections",
+        "tools",
+        "window",
+        "help",
+    ]
+    assert checker.EXPECTED_MREMOTENG_TOP_TOOLBAR_KEYS[:6] == [
+        "refresh",
+        "new",
+        "edit",
+        "remove",
+        "connect",
+        "files",
+    ]
+    assert checker.EXPECTED_MREMOTENG_TOP_TOOLBAR_ICON_KEYS["files"] == "external-tool"
     assert checker.EXPECTED_MREMOTENG_DOCUMENT_CONTROL_KEYS == [
         "save",
         "reconnect",
@@ -209,13 +274,19 @@ def test_real_gui_render_uses_preset_specific_widget_contracts() -> None:
     assert checker.required_widgets_for_preset("termius")["termiusHostIdentityStrip"] == (
         "Termius host identity strip"
     )
+    assert checker.required_widgets_for_preset("termius")["termiusHostsChrome"] == (
+        "Termius Hosts search/action chrome"
+    )
+    assert checker.required_widgets_for_preset("securecrt")["secureCrtMenuBar"] == "SecureCRT top menu bar"
     assert checker.required_widgets_for_preset("remmina")["remminaProfileListChrome"] == (
         "Remmina profile list chrome"
     )
+    assert checker.required_widgets_for_preset("mremoteng")["mRemoteNgMenuBar"] == "mRemoteNG top menu bar"
     assert checker.required_widgets_for_preset("mremoteng")["mRemoteNgPropertyGrid"] == (
         "mRemoteNG property inheritance grid"
     )
     assert moba_present_widgets == {}
+    assert moba_widgets["mobaQuickConnectChrome"] == "Moba quick connect chrome"
     assert moba_widgets["quickConnect"] == "Moba quick connect field"
     assert moba_widgets["mobaRibbonButton"] == "Moba ribbon action"
     assert moba_widgets["mobaConnectedLeftDock"] == "Moba connected SFTP/monitoring dock"
@@ -224,6 +295,7 @@ def test_real_gui_render_uses_preset_specific_widget_contracts() -> None:
 
 def test_real_gui_render_contract_helper_maps_product_labels() -> None:
     checker = _load_checker()
+    source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
 
     assert checker.interaction_label_for_key("mobaxterm", "tools") == "Tools"
     assert checker.interaction_label_for_key("securecrt", "files") == "SFTP"
@@ -231,6 +303,10 @@ def test_real_gui_render_contract_helper_maps_product_labels() -> None:
     assert checker.interaction_label_for_key("remmina", "queue") == "Transfer"
     assert checker.interaction_label_for_key("mremoteng", "files") == "External"
     assert checker.tab_position_name("west") == "west"
+    assert '"profile-filter": "remminaProfileFilter"' in source
+    assert "profile filter must expose focused interactionState" in source
+    assert '"tree-filter": "mRemoteNgDocumentFilter"' in source
+    assert "document filter must expose focused interactionState" in source
 
 
 def test_real_gui_render_tracks_live_content_contract_labels() -> None:
@@ -311,12 +387,18 @@ def test_real_gui_render_contract_checks_live_workspace_surface_text() -> None:
     }
     assert "Target: edge-prod.example.invalid:22" in checker.required_securecrt_session_status_texts()
     assert "Cipher: chacha20-poly1305" in checker.required_securecrt_session_status_texts()
+    assert "Options" in checker.required_securecrt_top_chrome_texts()
+    assert "New Session" in checker.required_securecrt_top_chrome_texts()
+    assert "Connections" in checker.required_mremoteng_top_chrome_texts()
+    assert "New Conn" in checker.required_mremoteng_top_chrome_texts()
     assert "Forward: 8080 -> localhost:80" in checker.required_termius_host_identity_texts()
     assert "Identity: prod-ed25519" in checker.required_termius_host_identity_texts()
     assert "check_live_reference_state" in source
     assert "check_live_securecrt_session_status_strip" in source
     assert "check_live_termius_host_identity_strip" in source
     assert "check_live_securecrt_command_window" in source
+    assert "check_live_securecrt_top_chrome" in source
+    assert "check_live_mremoteng_top_chrome" in source
     assert "gui_design_reference_state" in source
 
 
@@ -567,19 +649,33 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
     assert set(summaries) == {"native", "mobaxterm", "securecrt", "remmina", "termius", "mremoteng"}
 
     moba = summaries["mobaxterm"]
+    assert "mobaQuickConnectChrome" in moba["required_widgets"]
     assert "mobaConnectedLeftDock" in moba["required_widgets"]
     assert "mobaSftpFileTable" in moba["required_widgets"]
+    assert "mobaSessionEdgeControls" in moba["required_widgets"]
     assert "mobaRightUtilityRail" in moba["required_widgets"]
+    assert "mobaBottomEdgeControls" in moba["required_widgets"]
     assert moba["present_widgets"] == {}
     assert moba["reference_profile"] == "edge-prod"
     assert moba["expected_reference_tab_label"] == "edge-prod.example.invalid (operator)"
-    assert {"connected-left-dock", "sftp-file-table", "ssh-banner-workspace"} <= set(moba["layout_contract_ids"])
+    assert {
+        "connected-left-dock",
+        "sftp-file-table",
+        "ssh-banner-workspace",
+        "session-edge-controls",
+        "bottom-edge-controls",
+    } <= set(moba["layout_contract_ids"])
     assert {"dock-left-of-ssh-banner", "sftp-table-inside-dock"} <= set(moba["topology_contract_ids"])
     assert "moba-rail-roles" in moba["contract_checks"]
     assert "moba-rail-labels" in moba["contract_checks"]
+    assert "moba-home-welcome" in moba["contract_checks"]
     assert "titlebar-chrome" in moba["contract_checks"]
     assert "top-menu-chrome" in moba["contract_checks"]
+    assert "quick-connect-chrome" in moba["contract_checks"]
+    assert "quick-connect-suggestions" in moba["contract_checks"]
+    assert "connected-quick-connect-idle" in moba["contract_checks"]
     assert "connected-tab-chrome" in moba["contract_checks"]
+    assert "session-edge-controls" in moba["contract_checks"]
     assert "right-utility-rail" in moba["contract_checks"]
     assert "ssh-banner-chrome" in moba["contract_checks"]
     assert "terminal-transcript" in moba["contract_checks"]
@@ -588,6 +684,7 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
     assert "sftp-dock-density" in moba["contract_checks"]
     assert "sftp-browser-chrome" in moba["contract_checks"]
     assert "bottom-status-chrome" in moba["contract_checks"]
+    assert "bottom-edge-controls" in moba["contract_checks"]
     assert "live-topology" in moba["contract_checks"]
     assert "remote-monitoring-dock" in moba["contract_checks"]
     assert "moba-monitoring-controls" in moba["contract_checks"]
@@ -612,6 +709,14 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "tools",
     ]
     assert "network" in moba["expected_moba_monitoring_metric_keys"]
+    assert moba["expected_moba_remote_monitoring_dock_chrome"] == {
+        "title_control_key": "remote-monitoring",
+        "follow_control_key": "follow-terminal-folder",
+        "telemetry_surface": "bottom-telemetry-bar",
+        "visible_metric_keys": [],
+        "refresh_seconds": 5,
+        "compact": True,
+    }
     assert moba["expected_moba_monitoring_controls"] == [
         {
             "key": "remote-monitoring",
@@ -630,6 +735,11 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
     ]
     assert "sftp-ready" in moba["expected_moba_status_keys"]
     assert moba["expected_moba_status_chrome"]["notice"] == "REMOTE OPS WORKSPACE"
+    assert moba["expected_moba_bottom_edge_controls"] == [
+        {"key": "tab-left", "icon_key": "arrow-left", "label": "Previous tab", "static_x": 1204},
+        {"key": "tab-right", "icon_key": "arrow-right", "label": "Next tab", "static_x": 1224},
+        {"key": "close-active", "icon_key": "close", "label": "Close active tab", "static_x": 1244},
+    ]
     assert moba["expected_moba_rail_labels"] == {
         "sessions": "Sessions",
         "tools": "Tools",
@@ -647,9 +757,45 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "control_keys": ["minimize", "maximize", "close"],
         "control_width": 24,
     }
+    assert moba["expected_moba_quick_connect_chrome"] == {
+        "placeholder": "Quick connect...",
+        "dropdown_marker": "v",
+        "static_height": 24,
+        "marker_width": 24,
+        "input_left": 0,
+        "connected_idle_query": "",
+        "connected_suggestions_visible": False,
+    }
+    assert moba["expected_moba_connected_quick_connect_idle"] == {
+        "query": "",
+        "suggestions_visible": False,
+    }
+    assert moba["expected_moba_quick_connect_suggestion_chrome"] == {
+        "preview_query": "edge-prod.example.invalid",
+        "expected_kinds": ["profile", "direct"],
+        "max_visible_rows": 4,
+        "row_height": 22,
+        "static_width": 390,
+        "detail_separator": "    ",
+    }
+    assert moba["expected_moba_home_welcome_chrome"] == {
+        "title": "Remote Ops Workspace",
+        "subtitle": "Moba-style SSH client, SFTP browser and monitoring tools",
+        "icon_key": "session",
+        "primary_action_icon_key": "session",
+        "secondary_action_icon_key": "tunneling",
+        "search_width": 405,
+        "action_spacing": 96,
+        "recent_title": "Recent sessions",
+        "surface_width": 640,
+    }
+    assert moba["expected_workflow_card_titles"] == []
     assert moba["expected_moba_sftp_browser_chrome"] == {
         "path_placeholder": "/",
         "dropdown_marker": "v",
+        "parent_row_label": "..",
+        "parent_row_kind": "parent-dir",
+        "selected_row_kind": "parent-dir",
         "columns": [
             {"key": "name", "label": "Name", "static_x": 38},
             {"key": "size", "label": "Size (KB)", "static_x": 188},
@@ -673,8 +819,9 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         checker.EXPECTED_MOBA_TERMINAL_TRANSCRIPT_KEYS
     )
     assert moba["expected_moba_terminal_transcript"][0]["text"] == (
-        "Web console: https://edge-prod.example.invalid:9090/"
+        "Web console: https://edge-prod.example.invalid:9090/ or https://192.0.2.10:9090/"
     )
+    assert moba["expected_moba_terminal_transcript"][3]["text"] == "[operator@edge-prod ~]$ "
     assert [cell["key"] for cell in moba["expected_moba_telemetry_cells"]] == (
         checker.EXPECTED_MOBA_TELEMETRY_CELL_KEYS
     )
@@ -695,28 +842,71 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         {"key": "settings", "icon_key": "gear", "label": "Terminal settings"},
         {"key": "tools", "icon_key": "spark", "label": "Terminal tools"},
     ]
+    assert moba["expected_moba_session_edge_actions"] == [
+        {"key": "attachment", "icon_key": "clip", "label": "Session attachment", "static_y": 112},
+        {"key": "settings", "icon_key": "gear", "label": "Session settings", "static_y": 130},
+    ]
     assert moba["expected_moba_ssh_banner_chrome"] == {
-        "title": "Remote Ops Workspace Moba-style",
-        "subtitle": "(SSH client, SFTP browser and monitoring tools)",
+        "title": "Remote Ops Workspace Personal Edition v1.0",
+        "subtitle": "(SSH client, SFTP browser and remote tools)",
+        "heading_prefix": "* ",
+        "heading_suffix": " *",
+        "target_intro": "SSH session to",
+        "capability_label_width": 15,
+        "footer_prefix": "For more info, ctrl+click on",
         "static_width": 570,
         "static_height": 166,
     }
+    assert moba["expected_moba_ssh_banner_capability_card"]["target"] == "edge-prod.example.invalid"
+    assert [row["key"] for row in moba["expected_moba_ssh_banner_capability_card"]["capabilities"]] == [
+        "direct-ssh",
+        "ssh-compression",
+        "ssh-browser",
+        "x11-forwarding",
+    ]
+    assert moba["expected_moba_ssh_banner_capability_card"]["footer_links"] == ["help", "website"]
+    assert "ssh-banner-capability-card" in moba["contract_checks"]
     assert "workspace-surface" not in moba["contract_checks"]
 
     securecrt = summaries["securecrt"]
     assert "productWorkspaceSurface" in securecrt["required_widgets"]
     assert securecrt["required_widgets"]["secureCrtSessionStatusStrip"] == "SecureCRT session status strip"
+    assert (
+        securecrt["required_widgets"]["secureCrtSessionManagerChrome"]
+        == "SecureCRT Session Manager filter/action chrome"
+    )
     assert "designSelect" in securecrt["present_widgets"]
     assert securecrt["reference_profile"] == "edge-prod"
     assert securecrt["expected_reference_tab_label"] == "edge-prod (SSH2)"
     assert "edge-prod (SSH2)" in securecrt["expected_tree_labels"]
     assert "workspace-surface" in securecrt["contract_checks"]
     assert "reference-state" in securecrt["contract_checks"]
+    assert "securecrt-top-chrome" in securecrt["contract_checks"]
+    assert "securecrt-session-manager-chrome" in securecrt["contract_checks"]
     assert "securecrt-session-status-strip" in securecrt["contract_checks"]
     assert "securecrt-command-window" in securecrt["contract_checks"]
     assert "live-topology" in securecrt["contract_checks"]
     assert "active-tab: edge-prod (SSH2)" in securecrt["expected_reference_state_texts"]
     assert securecrt["expected_reference_status_segments"] == ["SSH2", "Session Manager", "2 active tabs"]
+    assert [item["label"] for item in securecrt["expected_securecrt_top_chrome"]["menu_items"]] == [
+        "File",
+        "Edit",
+        "View",
+        "Options",
+        "Transfer",
+        "Script",
+        "Tools",
+        "Window",
+        "Help",
+    ]
+    assert securecrt["expected_securecrt_top_chrome"]["toolbar_height"] == 54
+    assert securecrt["expected_securecrt_top_chrome"]["toolbar_actions"][5] == {
+        "key": "files",
+        "icon_key": "sftp",
+        "label": "SFTP",
+        "static_x": 424,
+        "static_width": 54,
+    }
     assert securecrt["expected_securecrt_command_window"] == {
         "key": "send-to-all-sessions",
         "title": "Command Window",
@@ -724,6 +914,15 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "command": "$ row doctor --json",
         "send_label": "Send",
         "status": "ready",
+    }
+    assert securecrt["expected_securecrt_session_manager_chrome"] == {
+        "title": "Session Manager",
+        "filter_placeholder": "Filter sessions",
+        "actions": [
+            {"key": "connect", "icon_key": "connect", "label": "Connect", "static_x": 34},
+            {"key": "new-folder", "icon_key": "folder", "label": "New Folder", "static_x": 60},
+            {"key": "properties", "icon_key": "properties", "label": "Properties", "static_x": 86},
+        ],
     }
     assert [field["key"] for field in securecrt["expected_securecrt_session_status_strip"]["fields"]] == [
         "session",
@@ -740,6 +939,7 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "value": "edge-prod.example.invalid:22",
         "static_width": 174,
     }
+    assert "session-manager-chrome" in securecrt["layout_contract_ids"]
     assert "session-status-strip" in securecrt["layout_contract_ids"]
     assert securecrt["layout_contract_count"] == len(checker.live_layout_contracts_for_preset("securecrt"))
     assert securecrt["topology_contract_count"] == len(checker.live_topology_contracts_for_preset("securecrt"))
@@ -774,9 +974,12 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
     ]
 
     termius = summaries["termius"]
+    assert "termius-hosts-chrome" in termius["contract_checks"]
     assert "termius-header-chips" in termius["contract_checks"]
     assert "termius-host-identity-strip" in termius["contract_checks"]
+    assert termius["required_widgets"]["termiusHostsChrome"] == "Termius Hosts search/action chrome"
     assert termius["required_widgets"]["termiusHostIdentityStrip"] == "Termius host identity strip"
+    assert "hosts-sidebar-chrome" in termius["layout_contract_ids"]
     assert "host-identity-strip" in termius["layout_contract_ids"]
     assert termius["expected_reference_tab_label"] == "edge-prod"
     assert termius["expected_termius_header_chips"] == [
@@ -784,6 +987,15 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         {"key": "sync-current", "label": "Sync current"},
         {"key": "port-forward-ready", "label": "Port fwd ready"},
     ]
+    assert termius["expected_termius_hosts_chrome"] == {
+        "title": "Hosts",
+        "filter_placeholder": "Search hosts",
+        "actions": [
+            {"key": "new-host", "icon_key": "plus", "label": "Add Host", "static_x": 34},
+            {"key": "keychain", "icon_key": "key", "label": "Keychain", "static_x": 60},
+            {"key": "sync-hosts", "icon_key": "sync", "label": "Sync", "static_x": 86},
+        ],
+    }
     assert termius["expected_termius_host_identity_strip"]["title"] == "Host identity"
     assert termius["expected_termius_host_identity_strip"]["fields"][1] == {
         "key": "identity",
@@ -799,11 +1011,30 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
     }
 
     mremoteng = summaries["mremoteng"]
+    assert "mremoteng-top-chrome" in mremoteng["contract_checks"]
     assert "mremoteng-document-controls" in mremoteng["contract_checks"]
     assert "mremoteng-property-grid" in mremoteng["contract_checks"]
+    assert mremoteng["required_widgets"]["mRemoteNgMenuBar"] == "mRemoteNG top menu bar"
     assert mremoteng["required_widgets"]["mRemoteNgPropertyGrid"] == "mRemoteNG property inheritance grid"
     assert "property-grid" in mremoteng["layout_contract_ids"]
+    assert "document-tree-filter" in mremoteng["layout_contract_ids"]
     assert mremoteng["expected_reference_tab_label"] == "edge-prod [SSH]"
+    assert [item["label"] for item in mremoteng["expected_mremoteng_top_chrome"]["menu_items"]] == [
+        "File",
+        "View",
+        "Connections",
+        "Tools",
+        "Window",
+        "Help",
+    ]
+    assert mremoteng["expected_mremoteng_top_chrome"]["toolbar_height"] == 50
+    assert mremoteng["expected_mremoteng_top_chrome"]["toolbar_actions"][5] == {
+        "key": "files",
+        "icon_key": "external-tool",
+        "label": "External",
+        "static_x": 368,
+        "static_width": 74,
+    }
     assert mremoteng["expected_mremoteng_document_controls"] == {
         "title": "Connections.xml",
         "filter_placeholder": "Filter connection tree",
@@ -846,7 +1077,10 @@ def test_real_gui_render_tracks_live_layout_contracts_for_product_presets() -> N
         assert all("object_name" in contract for contract in contracts)
     moba_objects = {str(contract["object_name"]) for contract in checker.live_layout_contracts_for_preset("mobaxterm")}
     assert {
+        "mobaQuickConnectChrome",
         "mobaConnectedLeftDock",
+        "mobaSessionEdgeControls",
+        "mobaBottomEdgeControls",
         "mobaRightUtilityRail",
         "mobaSftpFileTable",
         "mobaSshBanner",
@@ -854,6 +1088,7 @@ def test_real_gui_render_tracks_live_layout_contracts_for_product_presets() -> N
     } <= moba_objects
     mremoteng_objects = {str(contract["object_name"]) for contract in checker.live_layout_contracts_for_preset("mremoteng")}
     assert "mRemoteNgPropertyGrid" in mremoteng_objects
+    assert "mRemoteNgDocumentFilter" in mremoteng_objects
 
 
 def test_real_gui_render_tracks_live_topology_contracts_for_product_presets() -> None:
@@ -1034,7 +1269,13 @@ def test_gui_profile_tab_label_helper_is_product_specific() -> None:
     assert "moba_connected_tab_chrome_items" in source
     assert "mobaTabChromeKey" in source
     assert "mobaRightUtilityKey" in source
+    assert "mobaSessionEdgeKey" in source
+    assert "mobaBottomEdgeKey" in source
+    assert "activate_adjacent_tab" in source
     assert "mobaSshBannerTitle" in source
+    assert "mobaSshBannerTargetLine" in source
+    assert "mobaSshBannerCapabilityKey" in source
+    assert "mobaSshBannerFooter" in source
     assert "mobaBannerWidth" in source
     assert "def profile_tab_status" in source
     assert "build_product_workspace_surface_evidence" in source

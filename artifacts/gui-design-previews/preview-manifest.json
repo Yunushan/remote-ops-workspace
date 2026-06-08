@@ -2,8 +2,8 @@
   "contact_sheet": {
     "height": 1392,
     "path": "all-gui-designs-contact-sheet.png",
-    "sha256": "56fbd0844cd9043a8bc517a2ad32f896e0781375fc7a3b0561d35bac935506bc",
-    "size_bytes": 395510,
+    "sha256": "b7a39716bdf33170d15295983786b3b4d72cd0ac820ea992a488973eedc6ac04",
+    "size_bytes": 398526,
     "width": 1272
   },
   "contact_thumb": {
@@ -34,8 +34,8 @@
       "image": {
         "height": 760,
         "path": "mobaxterm.png",
-        "sha256": "987aa44afeab0f662f3e206a64ddfd142eeccda4fb41f132f4161ca26ed3a04d",
-        "size_bytes": 77455,
+        "sha256": "29e3affe65a1b86e806d1f1524e034ad5b8dfa0ded832134102330fe7b58f499",
+        "size_bytes": 75044,
         "width": 1280
       },
       "label": "MobaXterm-style",
@@ -50,8 +50,8 @@
       "image": {
         "height": 760,
         "path": "securecrt.png",
-        "sha256": "c0e1543c7dcc676b8e00dc0d768937eedfee4bbd410f74ac29018abe190fe493",
-        "size_bytes": 87250,
+        "sha256": "838800f7293bf3f6e406f2b355d5e5555e457e1d056fbc2871a786401e9c2f5a",
+        "size_bytes": 89659,
         "width": 1280
       },
       "label": "SecureCRT-style",
@@ -66,8 +66,8 @@
       "image": {
         "height": 760,
         "path": "termius.png",
-        "sha256": "0e0acf3fbbc6f40434f44bd8fd4ff43d02ce2eaee90df17538f8c349c2939671",
-        "size_bytes": 86507,
+        "sha256": "ca7fa054df6adbe7cd822e82ded3318ed1310bb4944413a6ca7a828b0098143a",
+        "size_bytes": 88355,
         "width": 1280
       },
       "label": "Termius-style",
@@ -82,8 +82,8 @@
       "image": {
         "height": 760,
         "path": "remmina.png",
-        "sha256": "10ec3577c8e1d504bc269ec060b531f1fceb8f07c105ac5339777b3e3184a66a",
-        "size_bytes": 77072,
+        "sha256": "8d684d067fa8b1f142ec587ca93978cd2f62e151a0b4a5f482ebd31ba52c0705",
+        "size_bytes": 77152,
         "width": 1280
       },
       "label": "Remmina-style",
@@ -98,8 +98,8 @@
       "image": {
         "height": 760,
         "path": "mremoteng.png",
-        "sha256": "9530d18e47f4738eba74a3a840e165b51f21473c3a4dc1737926a273c9444854",
-        "size_bytes": 86489,
+        "sha256": "e211debb8ce79a3da4439eae96e2e100e6738d3cdd875c335da6e9d45c571d8a",
+        "size_bytes": 83979,
         "width": 1280
       },
       "label": "mRemoteNG-style",
@@ -113,5 +113,21 @@
     "width": 1280
   },
   "renderer": "scripts/render_gui_design_previews.py",
-  "schema_version": 1
+  "schema_version": 1,
+  "state_previews": [
+    {
+      "description": "Home/welcome state with Quick Connect, session tree, centered actions, session search and recent sessions.",
+      "id": "mobaxterm-home",
+      "image": {
+        "height": 760,
+        "path": "mobaxterm-home.png",
+        "sha256": "30baf108980ed89d48caf6ca9329a7b326d193ca8306d6a091377701fe885563",
+        "size_bytes": 56089,
+        "width": 1280
+      },
+      "label": "MobaXterm-style Home",
+      "preset_id": "mobaxterm",
+      "variant": "home"
+    }
+  ]
 }

@@ -49,6 +49,7 @@ def check_gui_design_previews() -> list[str]:
 
     errors.extend(check_manifest_shape(manifest, renderer))
     errors.extend(check_preset_images(manifest, renderer))
+    errors.extend(check_state_preview_images(manifest, renderer))
     errors.extend(check_contact_sheet(manifest, contact_path))
     if gallery_path.is_file():
         errors.extend(check_gallery_links(manifest, gallery_path))
@@ -71,6 +72,13 @@ def check_manifest_shape(manifest: dict[str, object], renderer) -> list[str]:  #
     found_ids = [str(item.get("id", "")) for item in manifest_presets if isinstance(item, dict)]
     if found_ids != expected_ids:
         errors.append(f"preview manifest preset ids {found_ids} must equal {expected_ids}")
+    state_previews = manifest.get("state_previews")
+    if not isinstance(state_previews, list):
+        errors.append("preview manifest state_previews must be a list")
+    else:
+        state_ids = [str(item.get("id", "")) for item in state_previews if isinstance(item, dict)]
+        if "mobaxterm-home" not in state_ids:
+            errors.append("preview manifest must include mobaxterm-home state preview")
     return errors
 
 
@@ -91,6 +99,31 @@ def check_preset_images(manifest: dict[str, object], renderer) -> list[str]:  # 
         errors.extend(
             check_image_manifest(
                 f"preset {item.get('id', '<unknown>')}",
+                path,
+                image,
+                expected_size=renderer.PREVIEW_SIZE,
+            )
+        )
+    return errors
+
+
+def check_state_preview_images(manifest: dict[str, object], renderer) -> list[str]:  # type: ignore[no-untyped-def]
+    errors: list[str] = []
+    state_previews = manifest.get("state_previews", [])
+    if not isinstance(state_previews, list):
+        return ["preview manifest state_previews must be a list"]
+    for item in state_previews:
+        if not isinstance(item, dict):
+            errors.append("preview manifest state preview entry must be an object")
+            continue
+        image = item.get("image")
+        if not isinstance(image, dict):
+            errors.append(f"{item.get('id', '<unknown>')} missing image manifest")
+            continue
+        path = PREVIEW_DIR / str(image.get("path", ""))
+        errors.extend(
+            check_image_manifest(
+                f"state preview {item.get('id', '<unknown>')}",
                 path,
                 image,
                 expected_size=renderer.PREVIEW_SIZE,
@@ -137,19 +170,21 @@ def check_gallery_links(manifest: dict[str, object], gallery_path: Path) -> list
     if isinstance(contact, dict) and str(contact.get("path", "")) not in text:
         errors.append("preview gallery must link the contact sheet")
     presets = manifest.get("presets", [])
-    if isinstance(presets, list):
-        for item in presets:
-            if not isinstance(item, dict):
-                continue
-            image = item.get("image")
-            if not isinstance(image, dict):
-                continue
-            image_path = str(image.get("path", ""))
-            label = str(item.get("label", ""))
-            if image_path not in text:
-                errors.append(f"preview gallery must reference {image_path}")
-            if label not in text:
-                errors.append(f"preview gallery must include preset label {label}")
+    state_previews = manifest.get("state_previews", [])
+    for collection, label_key in ((presets, "preset label"), (state_previews, "state preview label")):
+        if isinstance(collection, list):
+            for item in collection:
+                if not isinstance(item, dict):
+                    continue
+                image = item.get("image")
+                if not isinstance(image, dict):
+                    continue
+                image_path = str(image.get("path", ""))
+                label = str(item.get("label", ""))
+                if image_path not in text:
+                    errors.append(f"preview gallery must reference {image_path}")
+                if label not in text:
+                    errors.append(f"preview gallery must include {label_key} {label}")
     return errors
 
 

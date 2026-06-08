@@ -13,11 +13,17 @@ from .gui_designs import (
     get_gui_design_preset,
     gui_design_home_tab_label,
     gui_design_interaction_state,
+    gui_design_moba_bottom_edge_controls,
+    gui_design_moba_home_welcome_chrome,
     gui_design_moba_monitoring_controls,
     gui_design_moba_monitoring_metrics,
+    gui_design_moba_quick_connect_chrome,
+    gui_design_moba_quick_connect_suggestion_chrome,
     gui_design_moba_rail_items,
+    gui_design_moba_remote_monitoring_dock_chrome,
     gui_design_moba_ribbon_actions,
     gui_design_moba_right_utility_actions,
+    gui_design_moba_session_edge_actions,
     gui_design_moba_sftp_browser_chrome,
     gui_design_moba_sftp_dock_actions,
     gui_design_moba_sftp_dock_layout,
@@ -29,15 +35,19 @@ from .gui_designs import (
     gui_design_mremoteng_document_controls,
     gui_design_mremoteng_document_toolbar_chrome,
     gui_design_mremoteng_property_grid_chrome,
+    gui_design_mremoteng_top_chrome,
     gui_design_reference_state,
     gui_design_remmina_profile_list_chrome,
     gui_design_remmina_viewer_controls,
     gui_design_securecrt_command_window_chrome,
+    gui_design_securecrt_session_manager_chrome,
     gui_design_securecrt_session_status_strip,
+    gui_design_securecrt_top_chrome,
     gui_design_sidebar_copy,
     gui_design_status_segments,
     gui_design_termius_header_chips,
     gui_design_termius_host_identity_strip,
+    gui_design_termius_hosts_chrome,
     gui_design_toolbar_actions,
     gui_design_tree_root_copy,
     gui_design_workflow_cards,
@@ -605,6 +615,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.file_table.setHeaderLabels([column.label for column in chrome.columns])
             self.file_table.setProperty("mobaSftpColumnKeys", [column.key for column in chrome.columns])
             self.file_table.setProperty("mobaSftpColumnLabels", [column.label for column in chrome.columns])
+            self.file_table.setProperty("mobaSftpParentRowLabel", chrome.parent_row_label)
+            self.file_table.setProperty("mobaSftpParentRowKind", chrome.parent_row_kind)
+            self.file_table.setProperty("mobaSftpSelectedRowKind", chrome.selected_row_kind)
             self.file_table.setProperty("mobaSftpHeaderHeight", density.table_header_height)
             self.file_table.setProperty("mobaSftpRowHeight", density.file_row_height)
             self.file_table.setIconSize(QSize(density.toolbar_icon_size, density.toolbar_icon_size))
@@ -612,13 +625,22 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.file_table.setUniformRowHeights(True)
             self.file_table.setSortingEnabled(False)
             self.file_table.header().setFixedHeight(density.table_header_height)
+            parent_item = QTreeWidgetItem([chrome.parent_row_label, "", ""])
+            parent_item.setData(0, Qt.ItemDataRole.UserRole, chrome.parent_row_kind)
+            parent_item.setIcon(0, self.style().standardIcon(self.standard_icon("SP_DirIcon")))
+            parent_item.setSizeHint(0, QSize(0, density.file_row_height))
+            parent_item.setToolTip(0, "parent directory")
+            self.file_table.addTopLevelItem(parent_item)
             for entry in self.state.file_entries:
                 item = QTreeWidgetItem([entry.name, str(entry.size_kb), entry.modified])
+                item.setData(0, Qt.ItemDataRole.UserRole, entry.kind)
                 icon_name = "SP_DirIcon" if entry.kind == "dir" else "SP_FileIcon"
                 item.setIcon(0, self.style().standardIcon(self.standard_icon(icon_name)))
                 item.setSizeHint(0, QSize(0, density.file_row_height))
                 item.setToolTip(0, f"{entry.kind}: {entry.name}")
                 self.file_table.addTopLevelItem(item)
+            parent_item.setSelected(True)
+            self.file_table.setCurrentItem(parent_item)
             self.file_table.resizeColumnToContents(0)
             layout.addSpacing(density.table_header_gap)
             layout.addWidget(self.file_table, 1)
@@ -626,28 +648,39 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             layout.addWidget(self.build_remote_monitoring(density))
 
         def build_remote_monitoring(self, density) -> QFrame:
+            chrome = gui_design_moba_remote_monitoring_dock_chrome()
+            metric_keys = [metric.key for metric in gui_design_moba_monitoring_metrics()]
             panel = QFrame()
             panel.setObjectName("mobaRemoteMonitoring")
             panel.setProperty("mobaSftpMonitoringHeight", density.monitoring_height)
             panel.setProperty("mobaSftpMonitoringDividerOffset", density.monitoring_divider_offset)
             panel.setProperty("mobaSftpMonitoringMetricRowGap", density.monitoring_metric_row_gap)
+            panel.setProperty("mobaRemoteMonitoringCompact", chrome.compact)
+            panel.setProperty("mobaRemoteMonitoringTelemetrySurface", chrome.telemetry_surface)
+            panel.setProperty("mobaRemoteMonitoringMetricKeys", metric_keys)
+            panel.setProperty("mobaRemoteMonitoringVisibleMetricKeys", list(chrome.visible_metric_keys))
+            panel.setProperty("mobaRemoteMonitoringRefreshSeconds", chrome.refresh_seconds)
+            panel.setProperty("mobaRemoteMonitoringCommand", self.state.monitoring_plan.printable())
+            panel.setProperty("mobaRemoteMonitoringFollowPlan", self.state.follow_folder_plan.printable_batch())
             panel.setFixedHeight(density.monitoring_height)
             layout = QVBoxLayout(panel)
             layout.setContentsMargins(8, 8, 8, 8)
-            layout.setSpacing(5)
+            layout.setSpacing(9)
             controls = QFrame()
             controls.setObjectName("mobaMonitoringControls")
             controls_layout = QVBoxLayout(controls)
             controls_layout.setContentsMargins(0, 0, 0, 0)
-            controls_layout.setSpacing(4)
+            controls_layout.setSpacing(18)
             for control in gui_design_moba_monitoring_controls():
                 controls_layout.addWidget(self.monitoring_control_widget(control))
             layout.addWidget(controls)
             for metric in gui_design_moba_monitoring_metrics():
-                label = QLabel(self.monitoring_metric_text(metric))
+                label = QLabel(self.monitoring_metric_text(metric), panel)
                 label.setObjectName("mobaMonitoringMetric")
                 label.setProperty("mobaMonitoringMetricKey", metric.key)
-                layout.addWidget(label)
+                label.setProperty("mobaMonitoringMetricVisibleInDock", metric.key in chrome.visible_metric_keys)
+                label.setProperty("mobaMonitoringMetricTelemetrySurface", chrome.telemetry_surface)
+                label.setVisible(False)
             return panel
 
         def monitoring_control_widget(self, control):
@@ -664,11 +697,21 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             widget.setProperty("mobaMonitoringControlIconKey", control.icon_key)
             widget.setProperty("mobaMonitoringControlType", control.control_type)
             widget.setProperty("mobaMonitoringControlDefaultChecked", control.checked)
+            widget.setProperty("mobaMonitoringTelemetrySurface", gui_design_moba_remote_monitoring_dock_chrome().telemetry_surface)
             widget.setCheckable(True)
             widget.setChecked(self.monitoring_control_checked(control))
             widget.setToolTip(self.monitoring_control_tooltip(control))
             widget.setIcon(self.monitoring_control_icon(control.icon_key))
             widget.setIconSize(QSize(18, 18))
+            if control.key == "remote-monitoring":
+                widget.setProperty("mobaMonitoringCommand", self.state.monitoring_plan.printable())
+                widget.setProperty(
+                    "mobaMonitoringRefreshSeconds",
+                    gui_design_moba_remote_monitoring_dock_chrome().refresh_seconds,
+                )
+            if control.key == "follow-terminal-folder":
+                widget.setProperty("mobaMonitoringFollowPlan", self.state.follow_folder_plan.printable_batch())
+                widget.setProperty("mobaMonitoringFollowPath", self.state.remote_path)
             return widget
 
         def monitoring_control_checked(self, control) -> bool:
@@ -899,8 +942,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             rail.setObjectName("mobaRightUtilityRail")
             rail.setFixedWidth(28)
             layout = QVBoxLayout(rail)
-            layout.setContentsMargins(2, 12, 2, 2)
+            layout.setContentsMargins(2, 2, 2, 2)
             layout.setSpacing(8)
+            layout.addWidget(self.build_session_edge_controls())
             for action in gui_design_moba_right_utility_actions():
                 button = QToolButton()
                 button.setObjectName("mobaRightUtilityAction")
@@ -914,6 +958,30 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 layout.addWidget(button)
             layout.addStretch(1)
             return rail
+
+        def build_session_edge_controls(self) -> QFrame:
+            controls = QFrame()
+            controls.setObjectName("mobaSessionEdgeControls")
+            actions = gui_design_moba_session_edge_actions()
+            controls.setProperty("mobaSessionEdgeActionKeys", [action.key for action in actions])
+            controls.setFixedHeight(50)
+            layout = QVBoxLayout(controls)
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setSpacing(0)
+            for action in actions:
+                button = QToolButton()
+                button.setObjectName("mobaSessionEdgeAction")
+                button.setProperty("mobaSessionEdgeKey", action.key)
+                button.setProperty("mobaSessionEdgeIconKey", action.icon_key)
+                button.setProperty("mobaSessionEdgeStaticY", action.static_y)
+                button.setToolTip(action.tooltip)
+                button.setIcon(self.moba_utility_icon(action.icon_key, action.color))
+                button.setIconSize(QSize(17, 17))
+                button.setFixedSize(QSize(22, 22))
+                button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+                layout.addWidget(button)
+            layout.addStretch(1)
+            return controls
 
         def moba_utility_icon(self, icon_key: str, fill: str) -> QIcon:
             pixmap = QPixmap(20, 20)
@@ -947,6 +1015,17 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                         ((16, 16), (13, 13)),
                     ):
                         painter.drawLine(*start, *end)
+                elif icon_key == "arrow-left":
+                    painter.drawLine(14, 5, 7, 10)
+                    painter.drawLine(7, 10, 14, 15)
+                    painter.drawLine(7, 10, 17, 10)
+                elif icon_key == "arrow-right":
+                    painter.drawLine(6, 5, 13, 10)
+                    painter.drawLine(13, 10, 6, 15)
+                    painter.drawLine(3, 10, 13, 10)
+                elif icon_key == "close":
+                    painter.drawLine(6, 6, 14, 14)
+                    painter.drawLine(14, 6, 6, 14)
                 else:
                     painter.drawRect(4, 4, 12, 12)
             finally:
@@ -959,6 +1038,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             banner.setObjectName("mobaSshBanner")
             banner.setProperty("mobaBannerTitle", chrome.title)
             banner.setProperty("mobaBannerSubtitle", chrome.subtitle)
+            banner.setProperty("mobaBannerTargetIntro", chrome.target_intro)
+            banner.setProperty("mobaBannerCapabilityLabelWidth", chrome.capability_label_width)
+            banner.setProperty("mobaBannerFooterPrefix", chrome.footer_prefix)
+            banner.setProperty("mobaBannerCapabilityKeys", [row.key for row in self.state.banner.capability_rows()])
+            banner.setProperty("mobaBannerFooterLinks", list(self.state.banner.footer_links()))
             banner.setProperty("mobaBannerWidth", chrome.static_width)
             banner.setProperty("mobaBannerHeight", chrome.static_height)
             banner.setMinimumWidth(chrome.static_width)
@@ -967,7 +1051,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             layout = QVBoxLayout(banner)
             layout.setContentsMargins(14, 9, 14, 9)
             layout.setSpacing(2)
-            title = QLabel(f"* {chrome.title} *")
+            title = QLabel(f"{chrome.heading_prefix}{chrome.title}{chrome.heading_suffix}")
             title.setObjectName("mobaSshBannerTitle")
             title.setAlignment(Qt.AlignmentFlag.AlignCenter)
             layout.addWidget(title)
@@ -976,11 +1060,28 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
             layout.addWidget(subtitle)
             layout.addSpacing(8)
-            for line in self.state.banner.lines():
-                label = QLabel(line)
-                label.setObjectName("mobaSshBannerLine")
+            target = QLabel(f"> {chrome.target_intro} {self.state.banner.title}")
+            target.setObjectName("mobaSshBannerTargetLine")
+            target.setProperty("mobaSshBannerTarget", self.state.banner.title)
+            target.setProperty("mobaSshBannerTargetIntro", chrome.target_intro)
+            target.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            layout.addWidget(target)
+            for row in self.state.banner.capability_rows():
+                label = QLabel(f"  * {row.line(label_width=chrome.capability_label_width)}")
+                label.setObjectName("mobaSshBannerCapability")
+                label.setProperty("mobaSshBannerCapabilityKey", row.key)
+                label.setProperty("mobaSshBannerCapabilityLabel", row.label)
+                label.setProperty("mobaSshBannerCapabilityValue", row.value)
+                label.setProperty("mobaSshBannerCapabilityStatus", row.status)
+                label.setProperty("capabilityStatus", row.status)
                 label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
                 layout.addWidget(label)
+            help_link, website_link = self.state.banner.footer_links()
+            footer = QLabel(f"> {chrome.footer_prefix} {help_link} or visit our {website_link}.")
+            footer.setObjectName("mobaSshBannerFooter")
+            footer.setProperty("mobaSshBannerFooterLinks", [help_link, website_link])
+            footer.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            layout.addWidget(footer)
             return banner
 
         def build_telemetry_bar(self) -> QFrame:
@@ -1444,16 +1545,42 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.left_panel_subtitle.setWordWrap(True)
             left_panel_header_layout.addWidget(self.left_panel_title)
             left_panel_header_layout.addWidget(self.left_panel_subtitle)
+            self.securecrt_session_manager_chrome = self.build_securecrt_session_manager_chrome()
+            left_panel_header_layout.addWidget(self.securecrt_session_manager_chrome)
+            self.termius_hosts_chrome = self.build_termius_hosts_chrome()
+            left_panel_header_layout.addWidget(self.termius_hosts_chrome)
             self.quick_connect = QLineEdit()
             self.quick_connect.setObjectName("quickConnect")
-            self.quick_connect.setPlaceholderText("Quick connect...")
+            quick_connect_chrome = gui_design_moba_quick_connect_chrome()
+            self.quick_connect.setPlaceholderText(quick_connect_chrome.placeholder)
+            self.quick_connect.setProperty("mobaQuickConnectConnectedIdleQuery", quick_connect_chrome.connected_idle_query)
+            self.quick_connect.setProperty(
+                "mobaQuickConnectConnectedSuggestionVisible",
+                quick_connect_chrome.connected_suggestions_visible,
+            )
+            self.moba_quick_connect_chrome = self.build_moba_quick_connect_chrome()
             self.quick_connect_suggestions = QTreeWidget()
             self.quick_connect_suggestions.setObjectName("quickConnectSuggestions")
             self.quick_connect_suggestions.setHeaderHidden(True)
             self.quick_connect_suggestions.setColumnCount(1)
             self.quick_connect_suggestions.setRootIsDecorated(False)
             self.quick_connect_suggestions.setUniformRowHeights(True)
-            self.quick_connect_suggestions.setMaximumHeight(126)
+            suggestion_chrome = gui_design_moba_quick_connect_suggestion_chrome()
+            self.quick_connect_suggestions.setProperty("mobaQuickConnectSuggestionMaxRows", suggestion_chrome.max_visible_rows)
+            self.quick_connect_suggestions.setProperty("mobaQuickConnectSuggestionRowHeight", suggestion_chrome.row_height)
+            self.quick_connect_suggestions.setProperty("mobaQuickConnectSuggestionStaticWidth", suggestion_chrome.static_width)
+            self.quick_connect_suggestions.setProperty(
+                "mobaQuickConnectSuggestionExpectedKinds",
+                list(suggestion_chrome.expected_kinds),
+            )
+            self.quick_connect_suggestions.setProperty("mobaQuickConnectConnectedMode", "")
+            self.quick_connect_suggestions.setProperty(
+                "mobaQuickConnectConnectedSuggestionVisible",
+                quick_connect_chrome.connected_suggestions_visible,
+            )
+            self.quick_connect_suggestions.setMaximumHeight(
+                suggestion_chrome.max_visible_rows * suggestion_chrome.row_height + 10
+            )
             self.quick_connect_suggestions.setVisible(False)
             self.remmina_profile_list_chrome = self.build_remmina_profile_list_chrome()
             self.moba_rail = self.create_moba_rail()
@@ -1533,6 +1660,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
         def build_menu_bar(self) -> None:
             self.menuBar().setObjectName("mobaTopMenuBar")
             self.moba_top_menus: list[QMenu] = []
+            self.moba_top_menu_actions = []
             for item in gui_design_moba_top_menu_items():
                 menu = self.menuBar().addMenu(item.label)
                 menu.setObjectName("mobaTopMenu")
@@ -1543,6 +1671,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 menu.menuAction().setProperty("mobaTopMenuLabel", item.label)
                 menu.menuAction().setToolTip(item.tooltip)
                 self.moba_top_menus.append(menu)
+                self.moba_top_menu_actions.append(menu.menuAction())
                 if item.key == "terminal":
                     menu.addAction(item.primary_action, lambda _checked=False: self.add_split("horizontal"))
                 elif item.key == "sessions":
@@ -1551,6 +1680,68 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 elif item.key == "view":
                     self.view_menu = menu
                     menu.addAction(item.primary_action, self.refresh_profiles)
+                elif item.key == "help":
+                    menu.addAction(item.primary_action, self.show_doctor)
+                else:
+                    menu.addAction(item.primary_action)
+
+            securecrt_chrome = gui_design_securecrt_top_chrome()
+            self.securecrt_top_menus: list[QMenu] = []
+            self.securecrt_top_menu_actions = []
+            for item in securecrt_chrome.menu_items:
+                menu = self.menuBar().addMenu(item.label)
+                menu.setObjectName("secureCrtTopMenu")
+                menu.setProperty("secureCrtTopMenuKey", item.key)
+                menu.setProperty("secureCrtTopMenuLabel", item.label)
+                menu.setProperty("secureCrtTopMenuPrimaryAction", item.primary_action)
+                menu.setToolTip(item.tooltip)
+                menu.menuAction().setProperty("secureCrtTopMenuKey", item.key)
+                menu.menuAction().setProperty("secureCrtTopMenuLabel", item.label)
+                menu.menuAction().setProperty("secureCrtTopMenuPrimaryAction", item.primary_action)
+                menu.menuAction().setToolTip(item.tooltip)
+                self.securecrt_top_menus.append(menu)
+                self.securecrt_top_menu_actions.append(menu.menuAction())
+                if item.key == "file":
+                    menu.addAction(item.primary_action, lambda _checked=False: self.connect_selected(False))
+                elif item.key == "edit":
+                    menu.addAction(item.primary_action, self.find_log_text)
+                elif item.key == "view":
+                    menu.addAction(item.primary_action, self.refresh_profiles)
+                elif item.key == "transfer":
+                    menu.addAction(item.primary_action, self.open_files_selected)
+                elif item.key == "tools":
+                    menu.addAction(item.primary_action, self.show_doctor)
+                elif item.key == "window":
+                    menu.addAction(item.primary_action, lambda _checked=False: self.add_split("horizontal"))
+                elif item.key == "help":
+                    menu.addAction(item.primary_action, self.show_doctor)
+                else:
+                    menu.addAction(item.primary_action)
+
+            mremoteng_chrome = gui_design_mremoteng_top_chrome()
+            self.mremoteng_top_menus: list[QMenu] = []
+            self.mremoteng_top_menu_actions = []
+            for item in mremoteng_chrome.menu_items:
+                menu = self.menuBar().addMenu(item.label)
+                menu.setObjectName("mRemoteNgTopMenu")
+                menu.setProperty("mRemoteNgTopMenuKey", item.key)
+                menu.setProperty("mRemoteNgTopMenuLabel", item.label)
+                menu.setProperty("mRemoteNgTopMenuPrimaryAction", item.primary_action)
+                menu.setToolTip(item.tooltip)
+                menu.menuAction().setProperty("mRemoteNgTopMenuKey", item.key)
+                menu.menuAction().setProperty("mRemoteNgTopMenuLabel", item.label)
+                menu.menuAction().setProperty("mRemoteNgTopMenuPrimaryAction", item.primary_action)
+                menu.menuAction().setToolTip(item.tooltip)
+                self.mremoteng_top_menus.append(menu)
+                self.mremoteng_top_menu_actions.append(menu.menuAction())
+                if item.key in {"file", "connections"}:
+                    menu.addAction(item.primary_action, lambda _checked=False: self.connect_selected(False))
+                elif item.key == "view":
+                    menu.addAction(item.primary_action, self.refresh_profiles)
+                elif item.key == "tools":
+                    menu.addAction(item.primary_action, self.show_doctor)
+                elif item.key == "window":
+                    menu.addAction(item.primary_action, lambda _checked=False: self.add_split("horizontal"))
                 elif item.key == "help":
                     menu.addAction(item.primary_action, self.show_doctor)
                 else:
@@ -1755,11 +1946,42 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 label.setMinimumWidth(92)
                 self.statusBar().addPermanentWidget(label)
                 labels.append(label)
+            self.moba_bottom_edge_controls = self.create_moba_bottom_edge_controls()
+            self.statusBar().addPermanentWidget(self.moba_bottom_edge_controls)
             self.status_marker_label = QLabel()
             self.status_marker_label.setObjectName("productStatusMarker")
             self.status_marker_label.setMinimumWidth(18)
             self.statusBar().addPermanentWidget(self.status_marker_label)
             return labels
+
+        def create_moba_bottom_edge_controls(self) -> QFrame:
+            controls = QFrame()
+            controls.setObjectName("mobaBottomEdgeControls")
+            actions = gui_design_moba_bottom_edge_controls()
+            controls.setProperty("mobaBottomEdgeControlKeys", [action.key for action in actions])
+            layout = QHBoxLayout(controls)
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setSpacing(1)
+            slots = {
+                "tab-left": self.activate_previous_tab,
+                "tab-right": self.activate_next_tab,
+                "close-active": self.close_current_tab,
+            }
+            for action in actions:
+                button = QToolButton()
+                button.setObjectName("mobaBottomEdgeControl")
+                button.setProperty("mobaBottomEdgeKey", action.key)
+                button.setProperty("mobaBottomEdgeIconKey", action.icon_key)
+                button.setProperty("mobaBottomEdgeStaticX", action.static_x)
+                button.setToolTip(action.tooltip)
+                button.setIcon(self.moba_utility_icon(action.icon_key, action.color))
+                button.setIconSize(QSize(14, 14))
+                button.setFixedSize(QSize(18, 18))
+                button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+                button.clicked.connect(slots[action.key])
+                layout.addWidget(button)
+            controls.setVisible(False)
+            return controls
 
         def build_moba_ribbon_buttons(self) -> list[QToolButton]:
             slots = {
@@ -1844,7 +2066,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             layout = QVBoxLayout(panel)
             layout.setContentsMargins(0, 0, 0, 0)
             layout.setSpacing(0)
-            layout.addWidget(self.quick_connect)
+            layout.addWidget(self.moba_quick_connect_chrome)
             layout.addWidget(self.quick_connect_suggestions)
             layout.addWidget(self.left_panel_header)
             layout.addWidget(self.remmina_profile_list_chrome)
@@ -1864,6 +2086,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             if not hasattr(self, "moba_left_stack"):
                 return
             self.moba_left_stack.setCurrentWidget(self.profile_list)
+            self.clear_moba_quick_connect_connected_idle()
             self.set_moba_rail_active("sessions")
             self.setWindowTitle("Remote Ops Workspace")
             self.apply_moba_titlebar_chrome("Remote Ops Workspace")
@@ -1873,12 +2096,92 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.left_panel_title.setText(title)
             self.left_panel_subtitle.setText(subtitle)
             self.left_panel_header.setVisible(not is_moba)
+            self.securecrt_session_manager_chrome.setVisible(preset.id == "securecrt")
+            self.termius_hosts_chrome.setVisible(preset.id == "termius")
 
         def configure_toolbar_copy_for_design(self, preset: GuiDesignPreset) -> None:
             actions = gui_design_toolbar_actions(preset.id)
-            for button, (_key, label, tooltip) in zip(self.product_toolbar_buttons, actions, strict=False):
+            securecrt_toolbar_actions = {
+                action.key: action for action in gui_design_securecrt_top_chrome().toolbar_actions
+            }
+            mremoteng_toolbar_actions = {
+                action.key: action for action in gui_design_mremoteng_top_chrome().toolbar_actions
+            }
+            for button, (key, label, tooltip) in zip(self.product_toolbar_buttons, actions, strict=False):
                 button.setText(label)
                 button.setToolTip(tooltip)
+                button.setProperty("productToolbarKey", key)
+                securecrt_action = securecrt_toolbar_actions.get(key) if preset.id == "securecrt" else None
+                mremoteng_action = mremoteng_toolbar_actions.get(key) if preset.id == "mremoteng" else None
+                button.setProperty("secureCrtTopToolbarKey", securecrt_action.key if securecrt_action else "")
+                button.setProperty("secureCrtTopToolbarLabel", securecrt_action.label if securecrt_action else "")
+                button.setProperty("secureCrtTopToolbarIconKey", securecrt_action.icon_key if securecrt_action else "")
+                button.setProperty("secureCrtTopToolbarStaticX", securecrt_action.static_x if securecrt_action else 0)
+                button.setProperty("secureCrtTopToolbarStaticWidth", securecrt_action.static_width if securecrt_action else 0)
+                button.setProperty("mRemoteNgTopToolbarKey", mremoteng_action.key if mremoteng_action else "")
+                button.setProperty("mRemoteNgTopToolbarLabel", mremoteng_action.label if mremoteng_action else "")
+                button.setProperty("mRemoteNgTopToolbarIconKey", mremoteng_action.icon_key if mremoteng_action else "")
+                button.setProperty("mRemoteNgTopToolbarStaticX", mremoteng_action.static_x if mremoteng_action else 0)
+                button.setProperty("mRemoteNgTopToolbarStaticWidth", mremoteng_action.static_width if mremoteng_action else 0)
+                button.setMinimumWidth(
+                    securecrt_action.static_width
+                    if securecrt_action
+                    else mremoteng_action.static_width
+                    if mremoteng_action
+                    else 0
+                )
+                button.setEnabled(True)
+
+        def configure_menu_bar_for_design(self, preset: GuiDesignPreset) -> None:
+            is_moba = preset.id == "mobaxterm"
+            is_securecrt = preset.id == "securecrt"
+            is_mremoteng = preset.id == "mremoteng"
+            securecrt_chrome = gui_design_securecrt_top_chrome()
+            mremoteng_chrome = gui_design_mremoteng_top_chrome()
+            menu_bar = self.menuBar()
+            menu_bar.setVisible(is_moba or is_securecrt or is_mremoteng)
+            menu_bar.setObjectName(
+                "mobaTopMenuBar"
+                if is_moba
+                else "secureCrtMenuBar"
+                if is_securecrt
+                else "mRemoteNgMenuBar"
+                if is_mremoteng
+                else "productMenuBar"
+            )
+            menu_bar.setProperty("designPreset", preset.id)
+            menu_bar.setProperty(
+                "secureCrtTopMenuKeys",
+                [item.key for item in securecrt_chrome.menu_items] if is_securecrt else [],
+            )
+            menu_bar.setProperty(
+                "secureCrtTopMenuLabels",
+                [item.label for item in securecrt_chrome.menu_items] if is_securecrt else [],
+            )
+            menu_bar.setProperty(
+                "secureCrtTopToolbarKeys",
+                [action.key for action in securecrt_chrome.toolbar_actions] if is_securecrt else [],
+            )
+            menu_bar.setProperty("secureCrtWindowTitle", securecrt_chrome.window_title if is_securecrt else "")
+            menu_bar.setProperty(
+                "mRemoteNgTopMenuKeys",
+                [item.key for item in mremoteng_chrome.menu_items] if is_mremoteng else [],
+            )
+            menu_bar.setProperty(
+                "mRemoteNgTopMenuLabels",
+                [item.label for item in mremoteng_chrome.menu_items] if is_mremoteng else [],
+            )
+            menu_bar.setProperty(
+                "mRemoteNgTopToolbarKeys",
+                [action.key for action in mremoteng_chrome.toolbar_actions] if is_mremoteng else [],
+            )
+            menu_bar.setProperty("mRemoteNgWindowTitle", mremoteng_chrome.window_title if is_mremoteng else "")
+            for action in self.moba_top_menu_actions:
+                action.setVisible(is_moba)
+            for action in self.securecrt_top_menu_actions:
+                action.setVisible(is_securecrt)
+            for action in self.mremoteng_top_menu_actions:
+                action.setVisible(is_mremoteng)
 
         def configure_interaction_states_for_design(self, preset: GuiDesignPreset) -> None:
             state = gui_design_interaction_state(preset.id)
@@ -1895,15 +2198,19 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             focus_widgets = {
                 "quick-connect": self.quick_connect,
                 "search-log": self.search_input,
-                "session-filter": self.search_input,
-                "host-search": self.search_input,
-                "profile-filter": self.search_input,
-                "tree-filter": self.search_input,
+                "session-filter": self.securecrt_session_filter,
+                "host-search": self.termius_host_search,
+                "profile-filter": self.remmina_profile_filter,
+                "tree-filter": getattr(self, "mremoteng_document_filter", self.search_input),
             }
             for key, widget in focus_widgets.items():
                 self.set_interaction_state(widget, "focused" if key == state.focused_control else "normal")
                 if key == state.focused_control:
                     widget.setToolTip(f"{preset.label}: {state.status_note}")
+            self.set_interaction_state(
+                self.moba_quick_connect_chrome,
+                "focused" if preset.id == "mobaxterm" and state.focused_control == "quick-connect" else "normal",
+            )
             self.select_profile_tree_label(state.selected_tree_label)
             self.statusBar().showMessage(f"{preset.label}: {state.status_note}")
 
@@ -1931,6 +2238,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 self.status_marker_label.setText(chrome.right_marker)
                 self.status_marker_label.setToolTip(chrome.right_marker_tooltip)
                 self.status_marker_label.setProperty("productStatusKey", "right-marker")
+                self.moba_bottom_edge_controls.setVisible(True)
                 for label, segment in zip(self.status_segment_labels, gui_design_moba_status_segments(), strict=False):
                     label.setText(segment.text)
                     label.setToolTip(segment.tooltip)
@@ -1942,6 +2250,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.status_marker_label.setText("")
             self.status_marker_label.setToolTip("")
             self.status_marker_label.setProperty("productStatusKey", "right-marker")
+            self.moba_bottom_edge_controls.setVisible(False)
             for label, text in zip(self.status_segment_labels, gui_design_status_segments(preset.id), strict=False):
                 label.setText(text)
                 label.setToolTip(f"{preset.label}: {text}")
@@ -1957,10 +2266,55 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.moba_connected_dock.setObjectName("mobaConnectedLeftDock")
             self.moba_left_stack.addWidget(self.moba_connected_dock)
             self.moba_left_stack.setCurrentWidget(self.moba_connected_dock)
-            self.set_moba_rail_active("tools")
+            self.set_moba_quick_connect_connected_idle()
+            self.set_moba_rail_active("sftp")
             title = moba_connected_window_title(state)
             self.setWindowTitle(title)
             self.apply_moba_titlebar_chrome(title)
+
+        def current_moba_connected_dock_is_active(self) -> bool:
+            return (
+                hasattr(self, "moba_left_stack")
+                and self.moba_connected_dock is not None
+                and self.moba_left_stack.currentWidget() is self.moba_connected_dock
+            )
+
+        def set_moba_quick_connect_connected_idle(self) -> None:
+            chrome = gui_design_moba_quick_connect_chrome()
+            previous_blocked = self.quick_connect.blockSignals(True)
+            try:
+                self.quick_connect.setText(chrome.connected_idle_query)
+            finally:
+                self.quick_connect.blockSignals(previous_blocked)
+            self.moba_quick_connect_chrome.setProperty("mobaQuickConnectConnectedMode", "idle")
+            self.moba_quick_connect_chrome.setProperty(
+                "mobaQuickConnectConnectedSuggestionVisible",
+                chrome.connected_suggestions_visible,
+            )
+            self.quick_connect.setProperty("mobaQuickConnectConnectedMode", "idle")
+            self.quick_connect.setProperty("mobaQuickConnectConnectedIdleQuery", chrome.connected_idle_query)
+            self.quick_connect.setProperty(
+                "mobaQuickConnectConnectedSuggestionVisible",
+                chrome.connected_suggestions_visible,
+            )
+            self.quick_connect_suggestions.clear()
+            self.quick_connect_suggestions.setProperty("mobaQuickConnectConnectedMode", "idle")
+            self.quick_connect_suggestions.setProperty(
+                "mobaQuickConnectConnectedSuggestionVisible",
+                chrome.connected_suggestions_visible,
+            )
+            self.quick_connect_suggestions.setProperty("mobaQuickConnectSuggestionQuery", chrome.connected_idle_query)
+            self.quick_connect_suggestions.setProperty("mobaQuickConnectSuggestionKinds", [])
+            self.quick_connect_suggestions.setProperty("mobaQuickConnectSuggestionLabels", [])
+            self.quick_connect_suggestions.setProperty("mobaQuickConnectSuggestionDetails", [])
+            self.quick_connect_suggestions.setVisible(chrome.connected_suggestions_visible)
+
+        def clear_moba_quick_connect_connected_idle(self) -> None:
+            if not hasattr(self, "quick_connect_suggestions"):
+                return
+            for widget in (self.moba_quick_connect_chrome, self.quick_connect, self.quick_connect_suggestions):
+                widget.setProperty("mobaQuickConnectConnectedMode", "")
+                widget.setProperty("mobaQuickConnectConnectedSuggestionVisible", False)
 
         def apply_moba_titlebar_chrome(self, title: str) -> None:
             chrome = gui_design_moba_titlebar_chrome()
@@ -2015,6 +2369,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 item.setToolTip(0, self.profile_tree_tooltip(profile))
                 parent.addChild(item)
             self.profile_list.expandAll()
+            if hasattr(self, "securecrt_session_filter"):
+                self.filter_profile_tree(self.securecrt_session_filter.text())
             if selected_name:
                 self.select_profile(selected_name)
             self.refresh_layouts()
@@ -2143,7 +2499,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 preset = get_gui_design_preset("native")
             is_moba = preset.id == "mobaxterm"
             self.setStyleSheet(preset.stylesheet)
-            self.menuBar().setVisible(is_moba)
+            self.configure_menu_bar_for_design(preset)
+            self.moba_quick_connect_chrome.setVisible(is_moba)
             self.quick_connect.setVisible(is_moba)
             self.configure_left_panel_header_for_design(preset, is_moba)
             self.remmina_profile_list_chrome.setVisible(preset.id == "remmina")
@@ -2156,7 +2513,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.layout_toolbar.setIconSize(QSize(preset.toolbar_icon_size, preset.toolbar_icon_size))
             self.configure_toolbar_copy_for_design(preset)
             self.configure_status_bar_for_design(preset)
-            self.configure_toolbar_for_design(is_moba, preset.toolbar_icon_size)
+            self.configure_toolbar_for_design(preset, is_moba, preset.toolbar_icon_size)
             self.configure_interaction_states_for_design(preset)
             self.left_panel.setMinimumWidth(min(preset.profile_width, 430))
             self.configure_profile_tree_for_design(is_moba, preset.list_spacing)
@@ -2174,16 +2531,22 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             )
             self.statusBar().showMessage(f"View: {preset.label}")
 
-        def configure_toolbar_for_design(self, is_moba: bool, icon_size: int) -> None:
+        def configure_toolbar_for_design(self, preset: GuiDesignPreset, is_moba: bool, icon_size: int) -> None:
             icon = QSize(icon_size, icon_size)
+            is_securecrt = preset.id == "securecrt"
+            is_mremoteng = preset.id == "mremoteng"
             self.main_toolbar.setToolButtonStyle(
                 Qt.ToolButtonStyle.ToolButtonTextUnderIcon
-                if is_moba
+                if is_moba or is_securecrt or is_mremoteng
                 else Qt.ToolButtonStyle.ToolButtonTextBesideIcon
             )
             for button in self.main_toolbar_buttons + self.layout_toolbar_buttons:
                 button.setIconSize(icon)
-                button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+                button.setToolButtonStyle(
+                    Qt.ToolButtonStyle.ToolButtonTextUnderIcon
+                    if button in self.main_toolbar_buttons and (is_securecrt or is_mremoteng)
+                    else Qt.ToolButtonStyle.ToolButtonTextBesideIcon
+                )
                 button.setMinimumSize(QSize(0, 0))
                 button.setMaximumSize(QSize(16777215, 16777215))
                 button.setVisible(not is_moba or button in self.layout_toolbar_buttons)
@@ -2206,6 +2569,20 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
                     button.setMinimumSize(QSize(70, 56))
                     button.setMaximumSize(QSize(78, 56))
+            elif is_securecrt:
+                self.main_toolbar.setMinimumHeight(gui_design_securecrt_top_chrome().toolbar_height)
+                self.main_toolbar.setMaximumHeight(gui_design_securecrt_top_chrome().toolbar_height)
+                for button in self.main_toolbar_buttons:
+                    width = int(button.property("secureCrtTopToolbarStaticWidth") or 58)
+                    button.setMinimumSize(QSize(width, 44))
+                    button.setMaximumSize(QSize(max(width + 12, 70), 48))
+            elif is_mremoteng:
+                self.main_toolbar.setMinimumHeight(gui_design_mremoteng_top_chrome().toolbar_height)
+                self.main_toolbar.setMaximumHeight(gui_design_mremoteng_top_chrome().toolbar_height)
+                for button in self.main_toolbar_buttons:
+                    width = int(button.property("mRemoteNgTopToolbarStaticWidth") or 56)
+                    button.setMinimumSize(QSize(width, 40))
+                    button.setMaximumSize(QSize(max(width + 12, 70), 44))
             else:
                 self.main_toolbar.setMinimumHeight(0)
                 self.main_toolbar.setMaximumHeight(16777215)
@@ -2221,13 +2598,47 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
         def update_quick_connect_suggestions(self) -> None:
             self.quick_connect_suggestions.clear()
+            chrome = gui_design_moba_quick_connect_suggestion_chrome()
+            quick_connect_chrome = gui_design_moba_quick_connect_chrome()
+            self.quick_connect_suggestions.setProperty("mobaQuickConnectSuggestionQuery", self.quick_connect.text().strip())
             if not self.current_design_is_moba():
+                self.quick_connect_suggestions.setProperty("mobaQuickConnectSuggestionKinds", [])
+                self.quick_connect_suggestions.setProperty("mobaQuickConnectSuggestionLabels", [])
+                self.quick_connect_suggestions.setProperty("mobaQuickConnectSuggestionDetails", [])
+                self.quick_connect_suggestions.setProperty("mobaQuickConnectConnectedMode", "")
+                self.quick_connect_suggestions.setProperty("mobaQuickConnectConnectedSuggestionVisible", False)
                 self.quick_connect_suggestions.setVisible(False)
                 return
+            if (
+                self.current_moba_connected_dock_is_active()
+                and self.quick_connect.text().strip() == quick_connect_chrome.connected_idle_query
+            ):
+                self.set_moba_quick_connect_connected_idle()
+                return
+            connected_mode = "typed" if self.current_moba_connected_dock_is_active() else ""
+            self.moba_quick_connect_chrome.setProperty("mobaQuickConnectConnectedMode", connected_mode)
+            self.quick_connect.setProperty("mobaQuickConnectConnectedMode", connected_mode)
+            self.quick_connect_suggestions.setProperty("mobaQuickConnectConnectedMode", connected_mode)
             candidates = quick_connect_candidates(self.quick_connect.text(), self.store.load(), limit=6)
+            self.quick_connect_suggestions.setProperty(
+                "mobaQuickConnectSuggestionKinds",
+                [candidate.kind for candidate in candidates],
+            )
+            self.quick_connect_suggestions.setProperty(
+                "mobaQuickConnectSuggestionLabels",
+                [candidate.label for candidate in candidates],
+            )
+            self.quick_connect_suggestions.setProperty(
+                "mobaQuickConnectSuggestionDetails",
+                [candidate.detail for candidate in candidates],
+            )
             for candidate in candidates:
-                item = QTreeWidgetItem([f"{candidate.label}    {candidate.detail}"])
+                item = QTreeWidgetItem([f"{candidate.label}{chrome.detail_separator}{candidate.detail}"])
                 item.setData(0, Qt.ItemDataRole.UserRole, candidate)
+                item.setData(0, int(Qt.ItemDataRole.UserRole) + 1, candidate.kind)
+                item.setData(0, int(Qt.ItemDataRole.UserRole) + 2, candidate.label)
+                item.setData(0, int(Qt.ItemDataRole.UserRole) + 3, candidate.detail)
+                item.setSizeHint(0, QSize(0, chrome.row_height))
                 item.setToolTip(0, candidate.detail)
                 if candidate.kind == "direct":
                     item.setIcon(0, self.profile_icon_for_protocol(candidate.profile.protocol if candidate.profile else "ssh"))
@@ -2238,7 +2649,17 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 self.quick_connect_suggestions.addTopLevelItem(item)
             if self.quick_connect_suggestions.topLevelItemCount() > 0:
                 self.quick_connect_suggestions.setCurrentItem(self.quick_connect_suggestions.topLevelItem(0))
-            self.quick_connect_suggestions.setVisible(self.quick_connect_suggestions.topLevelItemCount() > 0)
+            suggestions_visible = self.quick_connect_suggestions.topLevelItemCount() > 0
+            self.quick_connect_suggestions.setProperty(
+                "mobaQuickConnectConnectedSuggestionVisible",
+                suggestions_visible,
+            )
+            self.moba_quick_connect_chrome.setProperty(
+                "mobaQuickConnectConnectedSuggestionVisible",
+                suggestions_visible,
+            )
+            self.quick_connect.setProperty("mobaQuickConnectConnectedSuggestionVisible", suggestions_visible)
+            self.quick_connect_suggestions.setVisible(suggestions_visible)
 
         def run_quick_connect(self) -> None:
             text = self.quick_connect.text().strip()
@@ -2270,6 +2691,42 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 self.launch_profile(candidate.profile, dry_run=False, prefix="QUICK CONNECT")
             self.quick_connect_suggestions.setVisible(False)
             self.statusBar().showMessage(f"Quick connect: {candidate.label}")
+
+        def build_moba_quick_connect_chrome(self) -> QFrame:
+            chrome = gui_design_moba_quick_connect_chrome()
+            suggestions = gui_design_moba_quick_connect_suggestion_chrome()
+            panel = QFrame()
+            panel.setObjectName("mobaQuickConnectChrome")
+            panel.setProperty("designPreset", "mobaxterm")
+            panel.setProperty("mobaQuickConnectPlaceholder", chrome.placeholder)
+            panel.setProperty("mobaQuickConnectDropdownMarker", chrome.dropdown_marker)
+            panel.setProperty("mobaQuickConnectHeight", chrome.static_height)
+            panel.setProperty("mobaQuickConnectMarkerWidth", chrome.marker_width)
+            panel.setProperty("mobaQuickConnectInputLeft", chrome.input_left)
+            panel.setProperty("mobaQuickConnectConnectedIdleQuery", chrome.connected_idle_query)
+            panel.setProperty("mobaQuickConnectConnectedSuggestionVisible", chrome.connected_suggestions_visible)
+            panel.setProperty("mobaQuickConnectConnectedMode", "")
+            panel.setProperty("mobaQuickConnectSuggestionQuery", suggestions.preview_query)
+            panel.setProperty("mobaQuickConnectSuggestionExpectedKinds", list(suggestions.expected_kinds))
+            panel.setProperty("mobaQuickConnectSuggestionMaxRows", suggestions.max_visible_rows)
+            panel.setFixedHeight(chrome.static_height)
+            panel.setFocusProxy(self.quick_connect)
+            layout = QHBoxLayout(panel)
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setSpacing(0)
+            self.quick_connect.setProperty("mobaQuickConnectPlaceholder", chrome.placeholder)
+            self.quick_connect.setProperty("mobaQuickConnectInputLeft", chrome.input_left)
+            self.quick_connect.setProperty("mobaQuickConnectConnectedIdleQuery", chrome.connected_idle_query)
+            self.quick_connect.setProperty("mobaQuickConnectConnectedMode", "")
+            layout.addWidget(self.quick_connect, 1)
+            dropdown = QLabel(chrome.dropdown_marker)
+            dropdown.setObjectName("mobaQuickConnectDropdown")
+            dropdown.setProperty("mobaQuickConnectDropdownMarker", chrome.dropdown_marker)
+            dropdown.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            dropdown.setFixedWidth(chrome.marker_width)
+            layout.addWidget(dropdown)
+            panel.setVisible(False)
+            return panel
 
         def profile_by_name(self, name: str | None) -> Profile | None:
             if not name:
@@ -2776,6 +3233,24 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             for index in range(self.profile_list.topLevelItemCount()):
                 yield from walk(self.profile_list.topLevelItem(index))
 
+        def filter_profile_tree(self, text: str) -> None:
+            needle = text.strip().lower()
+
+            def apply_filter(item) -> bool:
+                own_text = item.text(0).lower()
+                own_tooltip = item.toolTip(0).lower()
+                child_match = False
+                for child_index in range(item.childCount()):
+                    child_match = apply_filter(item.child(child_index)) or child_match
+                item_match = not needle or needle in own_text or needle in own_tooltip or child_match
+                item.setHidden(not item_match)
+                if item_match and child_match:
+                    item.setExpanded(True)
+                return item_match
+
+            for index in range(self.profile_list.topLevelItemCount()):
+                apply_filter(self.profile_list.topLevelItem(index))
+
         def connect_selected(self, dry_run: bool) -> None:
             name = self.selected_profile_name()
             if not name:
@@ -2865,6 +3340,25 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             layout = QVBoxLayout(box)
             layout.setContentsMargins(48, 48, 48, 48)
             layout.addStretch(1)
+
+            if self.current_design_is_moba():
+                panel = self.build_moba_home_welcome(surface)
+                layout.addWidget(panel, 0, Qt.AlignmentFlag.AlignCenter)
+                layout.addStretch(2)
+                index = self.add_workspace_tab(
+                    box,
+                    gui_design_home_tab_label(self.current_design_id()),
+                    select=self.tabs.count() == 0 if select is None else select,
+                    role="home",
+                )
+                self.apply_moba_tab_chrome(
+                    index,
+                    key="home",
+                    icon_key="home",
+                    tooltip="Home",
+                    closeable=False,
+                )
+                return
 
             panel = QFrame()
             panel.setObjectName("welcomePanel")
@@ -2970,6 +3464,109 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     closeable=False,
                 )
 
+        def build_moba_home_welcome(self, surface) -> QFrame:
+            chrome = gui_design_moba_home_welcome_chrome()
+            panel = QFrame()
+            panel.setObjectName("mobaHomeWelcomeSurface")
+            panel.setProperty("designPreset", "mobaxterm")
+            panel.setProperty("mobaHomeTitle", chrome.title)
+            panel.setProperty("mobaHomeSubtitle", chrome.subtitle)
+            panel.setProperty("mobaHomeSearchWidth", chrome.search_width)
+            panel.setProperty("mobaHomeRecentTitle", chrome.recent_title)
+            panel.setProperty("mobaHomeActionSpacing", chrome.action_spacing)
+            panel.setMinimumWidth(chrome.surface_width)
+            panel.setMaximumWidth(chrome.surface_width + 120)
+
+            panel_layout = QVBoxLayout(panel)
+            panel_layout.setContentsMargins(0, 0, 0, 0)
+            panel_layout.setSpacing(13)
+
+            title_row = QHBoxLayout()
+            title_row.setSpacing(18)
+            title_row.addStretch(1)
+            logo = QLabel()
+            logo.setObjectName("mobaHomeLogo")
+            logo.setProperty("mobaHomeIconKey", chrome.icon_key)
+            logo.setFixedSize(QSize(64, 56))
+            logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            logo.setPixmap(self.moba_ribbon_icon(chrome.icon_key, "#1a1a1a", size=56).pixmap(QSize(56, 56)))
+            title_column = QVBoxLayout()
+            title_column.setSpacing(3)
+            title = QLabel(chrome.title)
+            title.setObjectName("mobaHomeTitle")
+            title.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+            subtitle = QLabel(chrome.subtitle)
+            subtitle.setObjectName("mobaHomeSubtitle")
+            subtitle.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+            title_column.addWidget(title)
+            title_column.addWidget(subtitle)
+            title_row.addWidget(logo)
+            title_row.addLayout(title_column)
+            title_row.addStretch(1)
+            panel_layout.addLayout(title_row)
+
+            action_row = QHBoxLayout()
+            action_row.setSpacing(chrome.action_spacing)
+            action_row.addStretch(1)
+            primary_action, secondary_action = surface.home_actions[:2]
+            start_button = QPushButton(primary_action)
+            start_button.setObjectName("mobaHomePrimaryAction")
+            start_button.setProperty("mobaHomeActionKey", "primary")
+            start_button.setProperty("mobaHomeActionIconKey", chrome.primary_action_icon_key)
+            start_button.setIcon(self.moba_ribbon_icon(chrome.primary_action_icon_key, "#4db7ff", size=18))
+            start_button.setMinimumWidth(200)
+            recover_button = QPushButton(secondary_action)
+            recover_button.setObjectName("mobaHomeAction")
+            recover_button.setProperty("mobaHomeActionKey", "secondary")
+            recover_button.setProperty("mobaHomeActionIconKey", chrome.secondary_action_icon_key)
+            recover_button.setIcon(self.moba_ribbon_icon(chrome.secondary_action_icon_key, "#35d7c7", size=18))
+            recover_button.setMinimumWidth(218)
+            start_button.clicked.connect(self.open_local_terminal_tab)
+            recover_button.clicked.connect(self.recover_previous_sessions)
+            action_row.addWidget(start_button)
+            action_row.addWidget(recover_button)
+            action_row.addStretch(1)
+            panel_layout.addLayout(action_row)
+
+            search = QLineEdit()
+            search.setObjectName("homeSearch")
+            search.setProperty("mobaHomeSearchPlaceholder", surface.home_search_placeholder)
+            search.setProperty("mobaHomeSearchWidth", chrome.search_width)
+            search.setPlaceholderText(surface.home_search_placeholder)
+            search.setMinimumWidth(chrome.search_width)
+            search.setMaximumWidth(chrome.search_width)
+            search.returnPressed.connect(lambda: self.run_home_search(search.text()))
+            panel_layout.addWidget(search, 0, Qt.AlignmentFlag.AlignCenter)
+
+            recent_title = QLabel(chrome.recent_title)
+            recent_title.setObjectName("recentSessionsTitle")
+            recent_title.setProperty("mobaHomeRecentTitle", chrome.recent_title)
+            recent_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            recent_title.setContentsMargins(0, 9, 0, 0)
+            panel_layout.addWidget(recent_title)
+
+            recent_grid = QHBoxLayout()
+            recent_grid.setSpacing(44)
+            for column_index, column in enumerate(surface.recent_columns):
+                column_layout = QVBoxLayout()
+                column_layout.setSpacing(5)
+                for row_index, item in enumerate(column):
+                    label = QLabel(item)
+                    label.setObjectName("mobaRecentSession")
+                    label.setProperty("mobaHomeRecentColumn", column_index)
+                    label.setProperty("mobaHomeRecentRow", row_index)
+                    column_layout.addWidget(label)
+                recent_grid.addLayout(column_layout)
+            panel_layout.addLayout(recent_grid)
+
+            footer = QLabel(surface.footer)
+            footer.setObjectName("mobaHomeFooter")
+            footer.setProperty("mobaHomeFooter", surface.footer)
+            footer.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            footer.setContentsMargins(0, 12, 0, 0)
+            panel_layout.addWidget(footer)
+            return panel
+
         def build_product_workflow_evidence(self) -> QFrame:
             cards = gui_design_workflow_cards(self.current_design_id())
             panel = QFrame()
@@ -3053,6 +3650,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
         def build_mremoteng_document_controls_evidence(self) -> QFrame:
             chrome = gui_design_mremoteng_document_toolbar_chrome()
+            state = gui_design_interaction_state("mremoteng")
             panel = QFrame()
             panel.setObjectName("mRemoteNgDocumentControls")
             panel.setProperty("designPreset", "mremoteng")
@@ -3070,6 +3668,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 button.setProperty("mRemoteNgDocumentIconKey", control.icon_key)
                 button.setText(control.label)
                 button.setToolTip(control.tooltip)
+                control_state = "checked" if control.key == "external-tool" and state.checked_toolbar_key == "files" else "normal"
+                button.setCheckable(control_state == "checked")
+                button.setChecked(control_state == "checked")
+                self.set_interaction_state(button, control_state)
                 button.setIcon(self.style().standardIcon(self.standard_icon(control.standard_icon)))
                 button.setIconSize(QSize(14, 14))
                 button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
@@ -3086,6 +3688,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             filter_input.setPlaceholderText(chrome.filter_placeholder)
             filter_input.setMinimumWidth(170)
             filter_input.setMaximumWidth(220)
+            self.mremoteng_document_filter = filter_input
+            self.set_interaction_state(
+                filter_input,
+                "focused" if state.focused_control == "tree-filter" else "normal",
+            )
             layout.addWidget(filter_input)
             return panel
 
@@ -3227,6 +3834,132 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 layout.addWidget(button)
             return panel
 
+        def build_securecrt_session_manager_chrome(self) -> QFrame:
+            chrome = gui_design_securecrt_session_manager_chrome()
+            panel = QFrame()
+            panel.setObjectName("secureCrtSessionManagerChrome")
+            panel.setProperty("designPreset", "securecrt")
+            panel.setProperty("secureCrtSessionManagerActionKeys", [action.key for action in chrome.actions])
+            panel.setProperty("secureCrtSessionFilterPlaceholder", chrome.filter_placeholder)
+            panel.setMaximumHeight(94)
+            layout = QVBoxLayout(panel)
+            layout.setContentsMargins(7, 6, 7, 6)
+            layout.setSpacing(5)
+
+            title_row = QHBoxLayout()
+            title_row.setSpacing(5)
+            title = QLabel(chrome.title)
+            title.setObjectName("secureCrtSessionManagerTitle")
+            title_row.addWidget(title, 1)
+            for action in chrome.actions:
+                button = QToolButton()
+                button.setObjectName("secureCrtSessionManagerAction")
+                button.setProperty("secureCrtSessionManagerActionKey", action.key)
+                button.setProperty("secureCrtSessionManagerIconKey", action.icon_key)
+                button.setProperty("secureCrtSessionManagerActionLabel", action.label)
+                button.setProperty("secureCrtSessionManagerStaticX", action.static_x)
+                button.setToolTip(action.tooltip)
+                button.setIcon(self.style().standardIcon(self.standard_icon(self.securecrt_session_manager_icon_name(action.icon_key))))
+                button.setIconSize(QSize(14, 14))
+                button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+                button.setFixedSize(QSize(24, 24))
+                button.clicked.connect(
+                    lambda _checked=False, key=action.key: self.run_securecrt_session_manager_action(key)
+                )
+                title_row.addWidget(button)
+            layout.addLayout(title_row)
+
+            self.securecrt_session_filter = QLineEdit()
+            self.securecrt_session_filter.setObjectName("secureCrtSessionFilter")
+            self.securecrt_session_filter.setPlaceholderText(chrome.filter_placeholder)
+            self.securecrt_session_filter.setMinimumHeight(24)
+            self.securecrt_session_filter.textChanged.connect(self.filter_profile_tree)
+            layout.addWidget(self.securecrt_session_filter)
+            panel.setVisible(False)
+            return panel
+
+        def securecrt_session_manager_icon_name(self, icon_key: str) -> str:
+            icon_map = {
+                "connect": "SP_MediaPlay",
+                "folder": "SP_DirIcon",
+                "properties": "SP_FileDialogDetailedView",
+            }
+            return icon_map.get(icon_key, "SP_FileIcon")
+
+        def run_securecrt_session_manager_action(self, key: str) -> None:
+            actions = {
+                "connect": lambda: self.connect_selected(False),
+                "new-folder": self.create_profile,
+                "properties": self.edit_selected_profile,
+            }
+            action = actions.get(key)
+            if action is None:
+                self.statusBar().showMessage(f"Session Manager action: {key}")
+                return
+            action()
+
+        def build_termius_hosts_chrome(self) -> QFrame:
+            chrome = gui_design_termius_hosts_chrome()
+            panel = QFrame()
+            panel.setObjectName("termiusHostsChrome")
+            panel.setProperty("designPreset", "termius")
+            panel.setProperty("termiusHostsActionKeys", [action.key for action in chrome.actions])
+            panel.setProperty("termiusHostSearchPlaceholder", chrome.filter_placeholder)
+            panel.setMaximumHeight(94)
+            layout = QVBoxLayout(panel)
+            layout.setContentsMargins(7, 6, 7, 6)
+            layout.setSpacing(5)
+
+            title_row = QHBoxLayout()
+            title_row.setSpacing(5)
+            title = QLabel(chrome.title)
+            title.setObjectName("termiusHostsTitle")
+            title_row.addWidget(title, 1)
+            for action in chrome.actions:
+                button = QToolButton()
+                button.setObjectName("termiusHostsAction")
+                button.setProperty("termiusHostsActionKey", action.key)
+                button.setProperty("termiusHostsIconKey", action.icon_key)
+                button.setProperty("termiusHostsActionLabel", action.label)
+                button.setProperty("termiusHostsStaticX", action.static_x)
+                button.setToolTip(action.tooltip)
+                button.setIcon(self.style().standardIcon(self.standard_icon(self.termius_hosts_icon_name(action.icon_key))))
+                button.setIconSize(QSize(14, 14))
+                button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+                button.setFixedSize(QSize(24, 24))
+                button.clicked.connect(lambda _checked=False, key=action.key: self.run_termius_hosts_action(key))
+                title_row.addWidget(button)
+            layout.addLayout(title_row)
+
+            self.termius_host_search = QLineEdit()
+            self.termius_host_search.setObjectName("termiusHostSearch")
+            self.termius_host_search.setPlaceholderText(chrome.filter_placeholder)
+            self.termius_host_search.setMinimumHeight(24)
+            self.termius_host_search.textChanged.connect(self.filter_profile_tree)
+            layout.addWidget(self.termius_host_search)
+            panel.setVisible(False)
+            return panel
+
+        def termius_hosts_icon_name(self, icon_key: str) -> str:
+            icon_map = {
+                "plus": "SP_FileDialogNewFolder",
+                "key": "SP_FileDialogDetailedView",
+                "sync": "SP_BrowserReload",
+            }
+            return icon_map.get(icon_key, "SP_FileIcon")
+
+        def run_termius_hosts_action(self, key: str) -> None:
+            actions = {
+                "new-host": self.create_profile,
+                "keychain": lambda: self.statusBar().showMessage("Termius-style keychain: vault identity list"),
+                "sync-hosts": self.refresh_profiles,
+            }
+            action = actions.get(key)
+            if action is None:
+                self.statusBar().showMessage(f"Termius Hosts action: {key}")
+                return
+            action()
+
         def build_remmina_profile_list_chrome(self) -> QFrame:
             chrome = gui_design_remmina_profile_list_chrome()
             panel = QFrame()
@@ -3249,6 +3982,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             filter_input.setPlaceholderText(chrome.filter_placeholder)
             filter_input.setReadOnly(True)
             filter_input.setMinimumWidth(142)
+            self.remmina_profile_filter = filter_input
             title_row.addWidget(filter_input, 1)
             layout.addLayout(title_row)
 
@@ -3512,6 +4246,23 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             index = self.tabs.currentIndex()
             if index >= 0:
                 self.close_tab(index)
+
+        def activate_previous_tab(self) -> None:
+            self.activate_adjacent_tab(-1)
+
+        def activate_next_tab(self) -> None:
+            self.activate_adjacent_tab(1)
+
+        def activate_adjacent_tab(self, step: int) -> None:
+            count = self.tabs.count()
+            if count <= 1:
+                return
+            current = self.tabs.currentIndex()
+            for offset in range(1, count + 1):
+                index = (current + step * offset) % count
+                if self.tab_role(index) != "new-session":
+                    self.tabs.setCurrentIndex(index)
+                    return
 
         def close_other_tabs(self, keep_index: int) -> None:
             for index in range(self.tabs.count() - 1, -1, -1):

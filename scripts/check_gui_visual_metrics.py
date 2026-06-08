@@ -50,15 +50,39 @@ def check_gui_visual_metrics() -> list[str]:
     if errors:
         return errors
     manifest_images = preview_images_by_preset(manifest)
+    state_preview_images = preview_images_by_state_preview(manifest)
     expected_size = tuple(metrics["preview_size"])
-    for preset_id, preset_metrics in metrics["presets"].items():
+    if set(metrics["presets"]) != set(manifest_images):
+        errors.append(
+            f"preset visual metric ids {sorted(metrics['presets'])} must equal preview manifest ids {sorted(manifest_images)}"
+        )
+    errors.extend(check_metric_images("preset", metrics["presets"], manifest_images, expected_size))
+    state_metrics = metrics.get("state_previews", {})
+    if isinstance(state_metrics, dict):
+        if set(state_metrics) != set(state_preview_images):
+            errors.append(
+                "state preview visual metric ids "
+                f"{sorted(state_metrics)} must equal preview manifest state ids {sorted(state_preview_images)}"
+            )
+        errors.extend(check_metric_images("state preview", state_metrics, state_preview_images, expected_size))
+    return errors
+
+
+def check_metric_images(
+    collection_label: str,
+    metric_items: dict[str, Any],
+    manifest_images: dict[str, str],
+    expected_size: tuple[int, int],
+) -> list[str]:
+    errors: list[str] = []
+    for preset_id, preset_metrics in metric_items.items():
         image_name = manifest_images.get(preset_id)
         if image_name is None:
-            errors.append(f"{preset_id} missing from preview manifest")
+            errors.append(f"{collection_label} {preset_id} missing from preview manifest")
             continue
         path = PREVIEW_DIR / image_name
         if not path.is_file():
-            errors.append(f"{preset_id} image missing: {display(path)}")
+            errors.append(f"{collection_label} {preset_id} image missing: {display(path)}")
             continue
         try:
             image = read_png_rgb(path)
@@ -90,13 +114,24 @@ def check_metrics_shape(metrics: dict[str, Any]) -> list[str]:
     presets = metrics.get("presets")
     if not isinstance(presets, dict) or not presets:
         return [*errors, "GUI visual metrics presets must be a non-empty object"]
-    for preset_id, preset_metrics in presets.items():
+    errors.extend(check_metrics_collection_shape("preset", presets))
+    state_previews = metrics.get("state_previews", {})
+    if not isinstance(state_previews, dict):
+        errors.append("GUI visual metrics state_previews must be an object when present")
+    else:
+        errors.extend(check_metrics_collection_shape("state preview", state_previews))
+    return errors
+
+
+def check_metrics_collection_shape(collection_label: str, collection: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    for preset_id, preset_metrics in collection.items():
         if not isinstance(preset_metrics, dict):
-            errors.append(f"{preset_id} metrics must be an object")
+            errors.append(f"{collection_label} {preset_id} metrics must be an object")
             continue
         regions = preset_metrics.get("regions")
         if not isinstance(regions, list) or not regions:
-            errors.append(f"{preset_id} metrics must include non-empty regions")
+            errors.append(f"{collection_label} {preset_id} metrics must include non-empty regions")
             continue
         seen: set[str] = set()
         for region in regions:
@@ -233,6 +268,21 @@ def preview_images_by_preset(manifest: dict[str, Any]) -> dict[str, str]:
     if not isinstance(presets, list):
         return result
     for item in presets:
+        if not isinstance(item, dict):
+            continue
+        image = item.get("image")
+        if not isinstance(image, dict):
+            continue
+        result[str(item.get("id", ""))] = str(image.get("path", ""))
+    return result
+
+
+def preview_images_by_state_preview(manifest: dict[str, Any]) -> dict[str, str]:
+    result: dict[str, str] = {}
+    state_previews = manifest.get("state_previews", [])
+    if not isinstance(state_previews, list):
+        return result
+    for item in state_previews:
         if not isinstance(item, dict):
             continue
         image = item.get("image")
@@ -488,31 +538,29 @@ def luminance(pixel: tuple[int, int, int]) -> float:
 
 
 def count_regions(metrics: dict[str, Any]) -> int:
-    presets = metrics.get("presets", {})
-    if not isinstance(presets, dict):
-        return 0
-    return sum(len(preset.get("regions", [])) for preset in presets.values() if isinstance(preset, dict))
+    return count_metric_items(metrics, "regions")
 
 
 def count_color_anchors(metrics: dict[str, Any]) -> int:
-    presets = metrics.get("presets", {})
-    if not isinstance(presets, dict):
-        return 0
-    return sum(len(preset.get("color_anchors", [])) for preset in presets.values() if isinstance(preset, dict))
+    return count_metric_items(metrics, "color_anchors")
 
 
 def count_line_anchors(metrics: dict[str, Any]) -> int:
-    presets = metrics.get("presets", {})
-    if not isinstance(presets, dict):
-        return 0
-    return sum(len(preset.get("line_anchors", [])) for preset in presets.values() if isinstance(preset, dict))
+    return count_metric_items(metrics, "line_anchors")
 
 
 def count_topology_contracts(metrics: dict[str, Any]) -> int:
-    presets = metrics.get("presets", {})
-    if not isinstance(presets, dict):
-        return 0
-    return sum(len(preset.get("topology", [])) for preset in presets.values() if isinstance(preset, dict))
+    return count_metric_items(metrics, "topology")
+
+
+def count_metric_items(metrics: dict[str, Any], metric_key: str) -> int:
+    total = 0
+    for collection_key in ("presets", "state_previews"):
+        collection = metrics.get(collection_key, {})
+        if not isinstance(collection, dict):
+            continue
+        total += sum(len(item.get(metric_key, [])) for item in collection.values() if isinstance(item, dict))
+    return total
 
 
 def load_json(path: Path) -> dict[str, Any]:

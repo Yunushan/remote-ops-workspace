@@ -40,6 +40,28 @@ class RemoteFileEntry:
 
 
 @dataclass(frozen=True, slots=True)
+class SshConnectionCapability:
+    key: str
+    label: str
+    value: str
+    status: str
+    note: str = ""
+
+    def line(self, *, label_width: int = 15) -> str:
+        return f"{self.label:<{label_width}}: {self.value}"
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "key": self.key,
+            "label": self.label,
+            "value": self.value,
+            "status": self.status,
+            "note": self.note,
+            "line": self.line(),
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class SshConnectionBanner:
     title: str
     direct_ssh: bool
@@ -47,13 +69,41 @@ class SshConnectionBanner:
     ssh_browser: bool
     x11_forwarding: str
 
+    def target_line(self) -> str:
+        return f"SSH session to {self.title}"
+
+    def capability_rows(self) -> tuple[SshConnectionCapability, ...]:
+        x11_disabled = self.x11_forwarding.startswith("disabled")
+        return (
+            SshConnectionCapability("direct-ssh", "Direct SSH", checkmark(self.direct_ssh), bool_status(self.direct_ssh)),
+            SshConnectionCapability(
+                "ssh-compression",
+                "SSH compression",
+                checkmark(self.ssh_compression),
+                bool_status(self.ssh_compression),
+            ),
+            SshConnectionCapability(
+                "ssh-browser",
+                "SSH-browser",
+                checkmark(self.ssh_browser),
+                bool_status(self.ssh_browser),
+            ),
+            SshConnectionCapability(
+                "x11-forwarding",
+                "X11-forwarding",
+                self.x11_forwarding,
+                "disabled" if x11_disabled else "ok",
+                "server-disabled" if x11_disabled else "",
+            ),
+        )
+
+    def footer_links(self) -> tuple[str, str]:
+        return ("help", "website")
+
     def lines(self) -> list[str]:
         return [
-            f"SSH session to {self.title}",
-            f"Direct SSH      : {checkmark(self.direct_ssh)}",
-            f"SSH compression: {checkmark(self.ssh_compression)}",
-            f"SSH-browser    : {checkmark(self.ssh_browser)}",
-            f"X11-forwarding : {self.x11_forwarding}",
+            self.target_line(),
+            *(row.line() for row in self.capability_rows()),
         ]
 
     def to_dict(self) -> dict[str, object]:
@@ -64,6 +114,8 @@ class SshConnectionBanner:
             "ssh_browser": self.ssh_browser,
             "x11_forwarding": self.x11_forwarding,
             "lines": self.lines(),
+            "capabilities": [row.to_dict() for row in self.capability_rows()],
+            "footer_links": list(self.footer_links()),
         }
 
 
@@ -292,15 +344,12 @@ def build_moba_terminal_transcript(profile: Profile, remote_path: str) -> tuple[
     target = moba_connected_profile_target(profile)
     username = profile.username or "operator"
     host_alias = target.split(":", maxsplit=1)[0].split(".", maxsplit=1)[0] or "remote"
-    normalized_path = normalise_remote_path(remote_path)
-    prompt_folder = PurePosixPath(normalized_path).name or "~"
+    _normalized_path = normalise_remote_path(remote_path)
     return (
-        MobaTerminalTranscriptLine("web-console", f"Web console: https://{target}:9090/", "info"),
+        MobaTerminalTranscriptLine("web-console", f"Web console: https://{target}:9090/ or https://192.0.2.10:9090/", "info"),
         MobaTerminalTranscriptLine("spacer", "", "spacer"),
         MobaTerminalTranscriptLine("last-login", "Last login: Sat Jun  6 05:27:50 2026", "info"),
-        MobaTerminalTranscriptLine("change-directory", f"[{username}@{host_alias} ~]$ cd {normalized_path}", "command"),
-        MobaTerminalTranscriptLine("tail-log", f"[{username}@{host_alias} {prompt_folder}]$ tail -f deploy.log", "command"),
-        MobaTerminalTranscriptLine("healthy-output", "2026-06-06T05:28:01Z service healthy", "output"),
+        MobaTerminalTranscriptLine("prompt-ready", f"[{username}@{host_alias} ~]$ ", "command"),
     )
 
 
@@ -436,7 +485,7 @@ def build_ssh_connection_banner(profile: Profile) -> SshConnectionBanner:
     else:
         x11 = "disabled or not supported by server"
     return SshConnectionBanner(
-        title=profile.display_target,
+        title=moba_connected_profile_target(profile),
         direct_ssh=direct_ssh,
         ssh_compression=compression,
         ssh_browser=browser,
@@ -558,6 +607,10 @@ def clamp_int(value: str | None, lower: int, upper: int) -> int:
 
 def checkmark(enabled: bool) -> str:
     return "yes" if enabled else "no"
+
+
+def bool_status(enabled: bool) -> str:
+    return "ok" if enabled else "disabled"
 
 
 def _require_ssh_browser_profile(profile: Profile) -> None:

@@ -972,9 +972,12 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
     assert "reference-state" in securecrt["contract_checks"]
     assert "securecrt-top-chrome" in securecrt["contract_checks"]
     assert "securecrt-session-manager-chrome" in securecrt["contract_checks"]
+    assert "securecrt-session-manager-geometry" in securecrt["contract_checks"]
     assert "securecrt-tree-icons" in securecrt["contract_checks"]
     assert "securecrt-session-status-strip" in securecrt["contract_checks"]
+    assert "securecrt-session-status-geometry" in securecrt["contract_checks"]
     assert "securecrt-command-window" in securecrt["contract_checks"]
+    assert "securecrt-command-window-geometry" in securecrt["contract_checks"]
     assert "live-topology" in securecrt["contract_checks"]
     assert "active-tab: edge-prod (SSH2)" in securecrt["expected_reference_state_texts"]
     assert securecrt["expected_reference_status_segments"] == ["SSH2", "Session Manager", "2 active tabs"]
@@ -1004,14 +1007,74 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "command": "$ row doctor --json",
         "send_label": "Send",
         "status": "ready",
+        "static_header_height": 25,
+        "static_control_y": 31,
+        "static_target_width": 112,
+        "static_input_x": 132,
+        "static_input_text_x": 10,
+        "static_input_text_y": 7,
+        "static_send_width": 58,
+        "static_send_right_margin": 10,
+        "live_target_min_width": 112,
+        "live_send_min_width": 48,
     }
     assert securecrt["expected_securecrt_session_manager_chrome"] == {
         "title": "Session Manager",
         "filter_placeholder": "Filter sessions",
+        "static_title_x": 8,
+        "static_title_y": 8,
+        "static_filter_y": 35,
+        "static_filter_x_margin": 8,
+        "static_filter_height": 24,
+        "static_filter_placeholder_x": 17,
+        "static_filter_placeholder_y": 7,
+        "live_max_height": 94,
+        "live_spacing": 5,
+        "live_title_spacing": 5,
+        "live_filter_height": 24,
         "actions": [
-            {"key": "connect", "icon_key": "connect", "label": "Connect", "static_x": 34},
-            {"key": "new-folder", "icon_key": "folder", "label": "New Folder", "static_x": 60},
-            {"key": "properties", "icon_key": "properties", "label": "Properties", "static_x": 86},
+            {
+                "key": "connect",
+                "icon_key": "connect",
+                "label": "Connect",
+                "static_x": 34,
+                "static_y": 5,
+                "static_button_size": 20,
+                "static_icon_x": 7,
+                "static_icon_y": 3,
+                "static_icon_size": 10,
+                "live_icon_size": 14,
+                "live_button_size": 24,
+                "render_source": "generated-pixmap",
+            },
+            {
+                "key": "new-folder",
+                "icon_key": "folder",
+                "label": "New Folder",
+                "static_x": 60,
+                "static_y": 5,
+                "static_button_size": 20,
+                "static_icon_x": 5,
+                "static_icon_y": 5,
+                "static_icon_size": 10,
+                "live_icon_size": 14,
+                "live_button_size": 24,
+                "render_source": "generated-pixmap",
+            },
+            {
+                "key": "properties",
+                "icon_key": "properties",
+                "label": "Properties",
+                "static_x": 86,
+                "static_y": 5,
+                "static_button_size": 20,
+                "static_icon_x": 6,
+                "static_icon_y": 4,
+                "static_icon_size": 9,
+                "live_icon_size": 14,
+                "live_button_size": 24,
+                "render_source": "generated-pixmap",
+            },
         ],
     }
     assert securecrt["expected_securecrt_tree_icons"][:3] == [
@@ -1028,11 +1091,23 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "log",
         "state",
     ]
+    assert securecrt["expected_securecrt_session_status_strip"]["title_width"] == 86
+    assert securecrt["expected_securecrt_session_status_strip"]["static_cell_start_x"] == 96
+    assert securecrt["expected_securecrt_session_status_strip"]["static_cell_gap"] == 6
     assert securecrt["expected_securecrt_session_status_strip"]["fields"][1] == {
         "key": "target",
         "label": "Target",
         "value": "edge-prod.example.invalid:22",
         "static_width": 174,
+        "role": "normal",
+        "static_y": 5,
+        "static_height": 20,
+        "static_label_x": 6,
+        "static_label_y": 9,
+        "static_value_x": 48,
+        "static_value_y": 9,
+        "live_min_width": 170,
+        "live_cell_height": 22,
     }
     assert "session-manager-chrome" in securecrt["layout_contract_ids"]
     assert "session-status-strip" in securecrt["layout_contract_ids"]
@@ -1053,10 +1128,15 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
     assert "profile-list-chrome" in remmina["layout_contract_ids"]
     assert remmina["expected_reference_tab_label"] == "RDP - win-admin"
     assert remmina["expected_remmina_profile_list_chrome"]["title"] == "Connection list"
+    assert remmina["expected_remmina_profile_list_chrome"]["static_filter_x"] == 110
+    assert remmina["expected_remmina_profile_list_chrome"]["static_row_height"] == 22
+    assert remmina["expected_remmina_profile_list_chrome"]["static_row_step"] == 24
+    assert remmina["expected_remmina_profile_list_chrome"]["live_filter_width"] == 142
+    assert remmina["expected_remmina_profile_list_chrome"]["live_row_min_height"] == 24
     assert remmina["expected_remmina_profile_list_chrome"]["columns"] == [
-        {"key": "name", "label": "Name", "static_width": 98},
-        {"key": "protocol", "label": "Protocol", "static_width": 58},
-        {"key": "server", "label": "Server", "static_width": 104},
+        {"key": "name", "label": "Name", "static_width": 98, "live_min_width": 98},
+        {"key": "protocol", "label": "Protocol", "static_width": 58, "live_min_width": 58},
+        {"key": "server", "label": "Server", "static_width": 104, "live_min_width": 104},
     ]
     assert remmina["expected_remmina_profile_list_chrome"]["rows"][0] == {
         "key": "win-admin",
@@ -1067,6 +1147,7 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "selected": True,
     }
     assert "remmina-viewer-control-geometry" in remmina["contract_checks"]
+    assert "remmina-profile-list-geometry" in remmina["contract_checks"]
     assert remmina["expected_remmina_viewer_controls"] == [
         {
             "key": "fit",
@@ -1155,6 +1236,7 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
     assert "termius-hosts-chrome" in termius["contract_checks"]
     assert "termius-header-chips" in termius["contract_checks"]
     assert "termius-host-identity-strip" in termius["contract_checks"]
+    assert "termius-host-identity-geometry" in termius["contract_checks"]
     assert termius["expected_product_tree_icons"][:3] == [
         {"label": "Personal Vault", "icon_key": "database", "row_kind": "root", "static_size": 16},
         {"label": "Vault / Personal", "icon_key": "folder", "row_kind": "group", "static_size": 14},
@@ -1180,17 +1262,38 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         ],
     }
     assert termius["expected_termius_host_identity_strip"]["title"] == "Host identity"
+    assert termius["expected_termius_host_identity_strip"]["title_width"] == 88
+    assert termius["expected_termius_host_identity_strip"]["static_cell_start_x"] == 80
+    assert termius["expected_termius_host_identity_strip"]["static_cell_gap"] == 6
     assert termius["expected_termius_host_identity_strip"]["fields"][1] == {
         "key": "identity",
         "label": "Identity",
         "value": "prod-ed25519",
         "static_width": 112,
+        "role": "normal",
+        "static_y": 5,
+        "static_height": 20,
+        "static_label_x": 6,
+        "static_label_y": 9,
+        "static_value_x": 42,
+        "static_value_y": 9,
+        "live_min_width": 112,
+        "live_cell_height": 22,
     }
     assert termius["expected_termius_host_identity_strip"]["fields"][4] == {
         "key": "forward",
         "label": "Forward",
         "value": "8080 -> localhost:80",
         "static_width": 132,
+        "role": "normal",
+        "static_y": 5,
+        "static_height": 20,
+        "static_label_x": 6,
+        "static_label_y": 9,
+        "static_value_x": 42,
+        "static_value_y": 9,
+        "live_min_width": 132,
+        "live_cell_height": 22,
     }
 
     mremoteng = summaries["mremoteng"]

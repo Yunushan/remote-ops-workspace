@@ -255,6 +255,37 @@ class GuiSecureCrtCommandWindowChrome:
     command: str
     send_label: str
     status: str
+    static_header_height: int
+    static_title_x: int
+    static_title_y: int
+    static_helper_x: int
+    static_helper_y: int
+    static_control_y: int
+    static_control_bottom_margin: int
+    static_target_x: int
+    static_target_width: int
+    static_target_icon_x: int
+    static_target_icon_y: int
+    static_target_icon_size: int
+    static_target_label_x: int
+    static_target_label_y: int
+    static_input_x: int
+    static_input_text_x: int
+    static_input_text_y: int
+    static_send_width: int
+    static_send_right_margin: int
+    static_send_input_gap: int
+    static_send_label_x: int
+    static_send_label_y: int
+    live_margin_left: int
+    live_margin_top: int
+    live_margin_right: int
+    live_margin_bottom: int
+    live_spacing: int
+    live_header_spacing: int
+    live_row_spacing: int
+    live_target_min_width: int
+    live_send_min_width: int
 
 
 @dataclass(frozen=True)
@@ -264,12 +295,31 @@ class GuiSecureCrtSessionStatusField:
     value: str
     tooltip: str
     static_width: int
+    role: str
+    static_y: int
+    static_height: int
+    static_label_x: int
+    static_label_y: int
+    static_value_x: int
+    static_value_y: int
+    live_min_width: int
+    live_cell_height: int
 
 
 @dataclass(frozen=True)
 class GuiSecureCrtSessionStatusStrip:
     title: str
     fields: tuple[GuiSecureCrtSessionStatusField, ...]
+    title_width: int
+    static_title_x: int
+    static_title_y: int
+    static_cell_start_x: int
+    static_cell_gap: int
+    live_margin_left: int
+    live_margin_top: int
+    live_margin_right: int
+    live_margin_bottom: int
+    live_spacing: int
 
 
 @dataclass(frozen=True)
@@ -279,6 +329,14 @@ class GuiSecureCrtSessionManagerAction:
     label: str
     tooltip: str
     static_x: int
+    static_y: int
+    static_button_size: int
+    static_icon_x: int
+    static_icon_y: int
+    static_icon_size: int
+    live_icon_size: int
+    live_button_size: int
+    render_source: str
 
 
 @dataclass(frozen=True)
@@ -286,6 +344,21 @@ class GuiSecureCrtSessionManagerChrome:
     title: str
     filter_placeholder: str
     actions: tuple[GuiSecureCrtSessionManagerAction, ...]
+    static_title_x: int
+    static_title_y: int
+    static_filter_y: int
+    static_filter_x_margin: int
+    static_filter_height: int
+    static_filter_placeholder_x: int
+    static_filter_placeholder_y: int
+    live_max_height: int
+    live_margin_left: int
+    live_margin_top: int
+    live_margin_right: int
+    live_margin_bottom: int
+    live_spacing: int
+    live_title_spacing: int
+    live_filter_height: int
 
 
 @dataclass(frozen=True)
@@ -367,6 +440,7 @@ class GuiRemminaProfileColumn:
     key: str
     label: str
     static_width: int
+    live_min_width: int
 
 
 @dataclass(frozen=True)
@@ -385,6 +459,38 @@ class GuiRemminaProfileListChrome:
     filter_placeholder: str
     columns: tuple[GuiRemminaProfileColumn, ...]
     rows: tuple[GuiRemminaProfileRow, ...]
+    static_title_x: int
+    static_title_y: int
+    static_filter_x: int
+    static_filter_y: int
+    static_filter_height: int
+    static_filter_right_margin: int
+    static_filter_placeholder_x: int
+    static_filter_placeholder_y: int
+    static_header_y: int
+    static_column_start_x: int
+    static_row_start_y: int
+    static_row_x_margin: int
+    static_row_height: int
+    static_row_step: int
+    static_cell_start_x: int
+    static_cell_y: int
+    static_status_y: int
+    live_max_height: int
+    live_margin_left: int
+    live_margin_top: int
+    live_margin_right: int
+    live_margin_bottom: int
+    live_spacing: int
+    live_title_spacing: int
+    live_filter_width: int
+    live_header_spacing: int
+    live_row_margin_left: int
+    live_row_margin_top: int
+    live_row_margin_right: int
+    live_row_margin_bottom: int
+    live_row_spacing: int
+    live_row_min_height: int
 
 
 @dataclass(frozen=True)
@@ -417,12 +523,31 @@ class GuiTermiusHostIdentityField:
     value: str
     tooltip: str
     static_width: int
+    role: str
+    static_y: int
+    static_height: int
+    static_label_x: int
+    static_label_y: int
+    static_value_x: int
+    static_value_y: int
+    live_min_width: int
+    live_cell_height: int
 
 
 @dataclass(frozen=True)
 class GuiTermiusHostIdentityStrip:
     title: str
     fields: tuple[GuiTermiusHostIdentityField, ...]
+    title_width: int
+    static_title_x: int
+    static_title_y: int
+    static_cell_start_x: int
+    static_cell_gap: int
+    live_margin_left: int
+    live_margin_top: int
+    live_margin_right: int
+    live_margin_bottom: int
+    live_spacing: int
 
 
 @dataclass(frozen=True)
@@ -871,6 +996,37 @@ GUI_DESIGN_SECURECRT_COMMAND_WINDOW_CHROME = GuiSecureCrtCommandWindowChrome(
     command="$ row doctor --json",
     send_label="Send",
     status="ready",
+    static_header_height=25,
+    static_title_x=10,
+    static_title_y=8,
+    static_helper_x=138,
+    static_helper_y=8,
+    static_control_y=31,
+    static_control_bottom_margin=8,
+    static_target_x=10,
+    static_target_width=112,
+    static_target_icon_x=18,
+    static_target_icon_y=6,
+    static_target_icon_size=13,
+    static_target_label_x=38,
+    static_target_label_y=7,
+    static_input_x=132,
+    static_input_text_x=10,
+    static_input_text_y=7,
+    static_send_width=58,
+    static_send_right_margin=10,
+    static_send_input_gap=18,
+    static_send_label_x=15,
+    static_send_label_y=7,
+    live_margin_left=8,
+    live_margin_top=7,
+    live_margin_right=8,
+    live_margin_bottom=7,
+    live_spacing=5,
+    live_header_spacing=8,
+    live_row_spacing=8,
+    live_target_min_width=112,
+    live_send_min_width=48,
 )
 
 GUI_DESIGN_SECURECRT_SESSION_STATUS_STRIP = GuiSecureCrtSessionStatusStrip(
@@ -882,6 +1038,15 @@ GUI_DESIGN_SECURECRT_SESSION_STATUS_STRIP = GuiSecureCrtSessionStatusStrip(
             "edge-prod (SSH2)",
             "Active SecureCRT-style terminal session tab",
             132,
+            "normal",
+            5,
+            20,
+            6,
+            9,
+            48,
+            9,
+            132,
+            22,
         ),
         GuiSecureCrtSessionStatusField(
             "target",
@@ -889,6 +1054,15 @@ GUI_DESIGN_SECURECRT_SESSION_STATUS_STRIP = GuiSecureCrtSessionStatusStrip(
             "edge-prod.example.invalid:22",
             "Generic example target endpoint",
             174,
+            "normal",
+            5,
+            20,
+            6,
+            9,
+            48,
+            9,
+            170,
+            22,
         ),
         GuiSecureCrtSessionStatusField(
             "protocol",
@@ -896,6 +1070,15 @@ GUI_DESIGN_SECURECRT_SESSION_STATUS_STRIP = GuiSecureCrtSessionStatusStrip(
             "SSH2 + SFTP",
             "Terminal protocol and attached file-transfer tab",
             102,
+            "normal",
+            5,
+            20,
+            6,
+            9,
+            48,
+            9,
+            102,
+            22,
         ),
         GuiSecureCrtSessionStatusField(
             "cipher",
@@ -903,6 +1086,15 @@ GUI_DESIGN_SECURECRT_SESSION_STATUS_STRIP = GuiSecureCrtSessionStatusStrip(
             "chacha20-poly1305",
             "Reference SSH cipher label",
             122,
+            "normal",
+            5,
+            20,
+            6,
+            9,
+            48,
+            9,
+            122,
+            22,
         ),
         GuiSecureCrtSessionStatusField(
             "sftp",
@@ -910,6 +1102,15 @@ GUI_DESIGN_SECURECRT_SESSION_STATUS_STRIP = GuiSecureCrtSessionStatusStrip(
             "files-prod tab",
             "Attached SFTP tab state",
             102,
+            "normal",
+            5,
+            20,
+            6,
+            9,
+            48,
+            9,
+            102,
+            22,
         ),
         GuiSecureCrtSessionStatusField(
             "log",
@@ -917,6 +1118,15 @@ GUI_DESIGN_SECURECRT_SESSION_STATUS_STRIP = GuiSecureCrtSessionStatusStrip(
             "session.log",
             "Session logging state",
             90,
+            "normal",
+            5,
+            20,
+            6,
+            9,
+            48,
+            9,
+            90,
+            22,
         ),
         GuiSecureCrtSessionStatusField(
             "state",
@@ -924,8 +1134,27 @@ GUI_DESIGN_SECURECRT_SESSION_STATUS_STRIP = GuiSecureCrtSessionStatusStrip(
             "connected",
             "Active connected-session state",
             82,
+            "status",
+            5,
+            20,
+            6,
+            9,
+            48,
+            9,
+            84,
+            22,
         ),
     ),
+    title_width=86,
+    static_title_x=9,
+    static_title_y=10,
+    static_cell_start_x=96,
+    static_cell_gap=6,
+    live_margin_left=7,
+    live_margin_top=5,
+    live_margin_right=7,
+    live_margin_bottom=5,
+    live_spacing=6,
 )
 
 GUI_DESIGN_SECURECRT_SESSION_MANAGER_CHROME = GuiSecureCrtSessionManagerChrome(
@@ -938,6 +1167,14 @@ GUI_DESIGN_SECURECRT_SESSION_MANAGER_CHROME = GuiSecureCrtSessionManagerChrome(
             "Connect",
             "Open selected Session Manager entry",
             34,
+            5,
+            20,
+            7,
+            3,
+            10,
+            14,
+            24,
+            "generated-pixmap",
         ),
         GuiSecureCrtSessionManagerAction(
             "new-folder",
@@ -945,6 +1182,14 @@ GUI_DESIGN_SECURECRT_SESSION_MANAGER_CHROME = GuiSecureCrtSessionManagerChrome(
             "New Folder",
             "Create a new Session Manager folder",
             60,
+            5,
+            20,
+            5,
+            5,
+            10,
+            14,
+            24,
+            "generated-pixmap",
         ),
         GuiSecureCrtSessionManagerAction(
             "properties",
@@ -952,8 +1197,31 @@ GUI_DESIGN_SECURECRT_SESSION_MANAGER_CHROME = GuiSecureCrtSessionManagerChrome(
             "Properties",
             "Edit selected Session Manager entry",
             86,
+            5,
+            20,
+            6,
+            4,
+            9,
+            14,
+            24,
+            "generated-pixmap",
         ),
     ),
+    static_title_x=8,
+    static_title_y=8,
+    static_filter_y=35,
+    static_filter_x_margin=8,
+    static_filter_height=24,
+    static_filter_placeholder_x=17,
+    static_filter_placeholder_y=7,
+    live_max_height=94,
+    live_margin_left=7,
+    live_margin_top=6,
+    live_margin_right=7,
+    live_margin_bottom=6,
+    live_spacing=5,
+    live_title_spacing=5,
+    live_filter_height=24,
 )
 
 GUI_DESIGN_SECURECRT_TOP_CHROME = GuiSecureCrtTopChrome(
@@ -1110,9 +1378,9 @@ GUI_DESIGN_REMMINA_PROFILE_LIST_CHROME = GuiRemminaProfileListChrome(
     title="Connection list",
     filter_placeholder="Filter by name or protocol",
     columns=(
-        GuiRemminaProfileColumn("name", "Name", 98),
-        GuiRemminaProfileColumn("protocol", "Protocol", 58),
-        GuiRemminaProfileColumn("server", "Server", 104),
+        GuiRemminaProfileColumn("name", "Name", 98, 98),
+        GuiRemminaProfileColumn("protocol", "Protocol", 58, 58),
+        GuiRemminaProfileColumn("server", "Server", 104, 104),
     ),
     rows=(
         GuiRemminaProfileRow(
@@ -1140,6 +1408,38 @@ GUI_DESIGN_REMMINA_PROFILE_LIST_CHROME = GuiRemminaProfileListChrome(
             False,
         ),
     ),
+    static_title_x=8,
+    static_title_y=8,
+    static_filter_x=110,
+    static_filter_y=5,
+    static_filter_height=20,
+    static_filter_right_margin=7,
+    static_filter_placeholder_x=7,
+    static_filter_placeholder_y=10,
+    static_header_y=33,
+    static_column_start_x=8,
+    static_row_start_y=48,
+    static_row_x_margin=6,
+    static_row_height=22,
+    static_row_step=24,
+    static_cell_start_x=12,
+    static_cell_y=6,
+    static_status_y=16,
+    live_max_height=166,
+    live_margin_left=7,
+    live_margin_top=6,
+    live_margin_right=7,
+    live_margin_bottom=6,
+    live_spacing=5,
+    live_title_spacing=6,
+    live_filter_width=142,
+    live_header_spacing=4,
+    live_row_margin_left=5,
+    live_row_margin_top=3,
+    live_row_margin_right=5,
+    live_row_margin_bottom=3,
+    live_row_spacing=4,
+    live_row_min_height=24,
 )
 
 GUI_DESIGN_TERMIUS_HEADER_CHIPS: tuple[GuiTermiusHeaderChip, ...] = (
@@ -1161,26 +1461,129 @@ GUI_DESIGN_TERMIUS_HOSTS_CHROME = GuiTermiusHostsChrome(
 GUI_DESIGN_TERMIUS_HOST_IDENTITY_STRIP = GuiTermiusHostIdentityStrip(
     title="Host identity",
     fields=(
-        GuiTermiusHostIdentityField("host", "Host", "edge-prod", "Active SSH host profile", 92),
+        GuiTermiusHostIdentityField(
+            "host",
+            "Host",
+            "edge-prod",
+            "Active SSH host profile",
+            92,
+            "normal",
+            5,
+            20,
+            6,
+            9,
+            42,
+            9,
+            92,
+            22,
+        ),
         GuiTermiusHostIdentityField(
             "identity",
             "Identity",
             "prod-ed25519",
             "Vault identity assigned to this host",
             112,
+            "normal",
+            5,
+            20,
+            6,
+            9,
+            42,
+            9,
+            112,
+            22,
         ),
-        GuiTermiusHostIdentityField("chain", "Chain", "direct", "Host chain or jump state", 82),
-        GuiTermiusHostIdentityField("files", "Files", "SFTP ready", "Attached file workflow state", 92),
+        GuiTermiusHostIdentityField(
+            "chain",
+            "Chain",
+            "direct",
+            "Host chain or jump state",
+            82,
+            "normal",
+            5,
+            20,
+            6,
+            9,
+            42,
+            9,
+            82,
+            22,
+        ),
+        GuiTermiusHostIdentityField(
+            "files",
+            "Files",
+            "SFTP ready",
+            "Attached file workflow state",
+            92,
+            "normal",
+            5,
+            20,
+            6,
+            9,
+            42,
+            9,
+            92,
+            22,
+        ),
         GuiTermiusHostIdentityField(
             "forward",
             "Forward",
             "8080 -> localhost:80",
             "Port forwarding state",
             132,
+            "normal",
+            5,
+            20,
+            6,
+            9,
+            42,
+            9,
+            132,
+            22,
         ),
-        GuiTermiusHostIdentityField("snippet", "Snippet", "row vault status", "Pinned command snippet", 122),
-        GuiTermiusHostIdentityField("sync", "Sync", "current", "Host inventory sync state", 82),
+        GuiTermiusHostIdentityField(
+            "snippet",
+            "Snippet",
+            "row vault status",
+            "Pinned command snippet",
+            122,
+            "normal",
+            5,
+            20,
+            6,
+            9,
+            42,
+            9,
+            122,
+            22,
+        ),
+        GuiTermiusHostIdentityField(
+            "sync",
+            "Sync",
+            "current",
+            "Host inventory sync state",
+            82,
+            "status",
+            5,
+            20,
+            6,
+            9,
+            42,
+            9,
+            82,
+            22,
+        ),
     ),
+    title_width=88,
+    static_title_x=9,
+    static_title_y=10,
+    static_cell_start_x=80,
+    static_cell_gap=6,
+    live_margin_left=7,
+    live_margin_top=5,
+    live_margin_right=7,
+    live_margin_bottom=5,
+    live_spacing=6,
 )
 
 GUI_DESIGN_MREMOTENG_DOCUMENT_TOOLBAR_CHROME = GuiMRemoteNgDocumentToolbarChrome(

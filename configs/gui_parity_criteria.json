@@ -450,19 +450,19 @@
         "SecureCRT-style terminal-first operator surface with restrained dark chrome, wide tabs and session tree."
       ],
       "dimension_coverage": {
-        "layout": ["securecrt.terminal-density", "securecrt.top-chrome", "securecrt.workspace-surface", "securecrt.session-status-strip", "securecrt.session-manager-chrome", "securecrt.reference-line-anchors", "securecrt.reference-topology"],
-        "navigation": ["securecrt.top-chrome", "securecrt.session-manager-sidebar", "securecrt.session-manager-chrome", "securecrt.reference-line-anchors"],
-        "panes": ["securecrt.workspace-surface", "securecrt.session-status-strip", "securecrt.command-window", "securecrt.command-window-chrome", "securecrt.reference-line-anchors"],
-        "tabs": ["securecrt.session-tabs", "securecrt.tab-model", "securecrt.reference-state", "securecrt.session-status-strip", "securecrt.reference-line-anchors"],
-        "sidebars": ["securecrt.session-manager-sidebar", "securecrt.session-manager-chrome", "securecrt.reference-line-anchors"],
-        "toolbars": ["securecrt.top-chrome", "securecrt.session-toolbar", "securecrt.session-manager-chrome", "securecrt.reference-line-anchors"],
-        "session_trees": ["securecrt.session-tree", "securecrt.session-glyphs", "securecrt.session-manager-chrome"],
-        "connected_session_behavior": ["securecrt.workspace-surface", "securecrt.session-status-strip", "securecrt.command-window", "securecrt.command-window-chrome", "securecrt.reference-state"],
+        "layout": ["securecrt.terminal-density", "securecrt.top-chrome", "securecrt.workspace-surface", "securecrt.session-status-strip", "securecrt.session-status-geometry", "securecrt.command-window-geometry", "securecrt.session-manager-chrome", "securecrt.session-manager-geometry", "securecrt.reference-line-anchors", "securecrt.reference-topology"],
+        "navigation": ["securecrt.top-chrome", "securecrt.session-manager-sidebar", "securecrt.session-manager-chrome", "securecrt.session-manager-geometry", "securecrt.reference-line-anchors"],
+        "panes": ["securecrt.workspace-surface", "securecrt.session-status-strip", "securecrt.session-status-geometry", "securecrt.command-window", "securecrt.command-window-chrome", "securecrt.command-window-geometry", "securecrt.reference-line-anchors"],
+        "tabs": ["securecrt.session-tabs", "securecrt.tab-model", "securecrt.reference-state", "securecrt.session-status-strip", "securecrt.session-status-geometry", "securecrt.reference-line-anchors"],
+        "sidebars": ["securecrt.session-manager-sidebar", "securecrt.session-manager-chrome", "securecrt.session-manager-geometry", "securecrt.reference-line-anchors"],
+        "toolbars": ["securecrt.top-chrome", "securecrt.session-toolbar", "securecrt.session-manager-chrome", "securecrt.session-manager-geometry", "securecrt.reference-line-anchors"],
+        "session_trees": ["securecrt.session-tree", "securecrt.session-glyphs", "securecrt.session-manager-chrome", "securecrt.session-manager-geometry"],
+        "connected_session_behavior": ["securecrt.workspace-surface", "securecrt.session-status-strip", "securecrt.session-status-geometry", "securecrt.command-window", "securecrt.command-window-chrome", "securecrt.command-window-geometry", "securecrt.reference-state"],
         "file_monitoring_panels": ["securecrt.workspace-surface"],
-        "status_bars": ["securecrt.status-bar", "securecrt.reference-state", "securecrt.session-status-strip", "securecrt.reference-line-anchors"],
-        "density": ["securecrt.terminal-density", "securecrt.top-chrome", "securecrt.session-status-strip", "securecrt.session-manager-chrome", "securecrt.reference-line-anchors"],
-        "spacing": ["securecrt.top-chrome", "securecrt.session-tabs", "securecrt.session-status-strip", "securecrt.session-manager-chrome", "securecrt.reference-line-anchors"],
-        "interaction_states": ["securecrt.interaction-states", "securecrt.top-chrome", "securecrt.reference-state", "securecrt.session-status-strip", "securecrt.session-manager-chrome"]
+        "status_bars": ["securecrt.status-bar", "securecrt.reference-state", "securecrt.session-status-strip", "securecrt.session-status-geometry", "securecrt.reference-line-anchors"],
+        "density": ["securecrt.terminal-density", "securecrt.top-chrome", "securecrt.session-status-strip", "securecrt.session-status-geometry", "securecrt.session-manager-chrome", "securecrt.session-manager-geometry", "securecrt.reference-line-anchors"],
+        "spacing": ["securecrt.top-chrome", "securecrt.session-tabs", "securecrt.session-status-strip", "securecrt.session-status-geometry", "securecrt.command-window-geometry", "securecrt.session-manager-chrome", "securecrt.session-manager-geometry", "securecrt.reference-line-anchors"],
+        "interaction_states": ["securecrt.interaction-states", "securecrt.top-chrome", "securecrt.reference-state", "securecrt.session-status-strip", "securecrt.session-manager-chrome", "securecrt.session-manager-geometry"]
       },
       "requirements": [
         {
@@ -536,6 +536,17 @@
           }
         },
         {
+          "id": "securecrt.session-manager-geometry",
+          "description": "SecureCRT-style Session Manager geometry pins measured filter, title, action-button and generated-icon dimensions across static preview, live Qt metadata and CI render checks.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["static_button_size", "live_button_size", "render_source"],
+            "src/remote_ops_workspace/gui.py": ["secureCrtSessionManagerLiveButtonSize", "secureCrtSessionManagerRenderSource", "securecrt_session_manager_action_icon"],
+            "scripts/render_gui_design_previews.py": ["draw_securecrt_session_manager_action_icon", "action.static_button_size", "chrome.static_filter_y"],
+            "scripts/check_real_gui_render.py": ["securecrt-session-manager-geometry", "secureCrtSessionManagerRenderSource", "expected_securecrt_session_manager_chrome"],
+            "docs/GUI_DESIGN.md": ["SecureCRT-style Session Manager geometry"]
+          }
+        },
+        {
           "id": "securecrt.session-tree",
           "description": "SecureCRT-style tree uses a Session Database root, foldered sessions and SSH2/SFTP terminal entries.",
           "source_tokens": {
@@ -606,6 +617,17 @@
           }
         },
         {
+          "id": "securecrt.command-window-geometry",
+          "description": "SecureCRT-style Command Window uses shared static/live geometry for header height, target selector width, command input origin, send button width and live target/send minimum widths.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["static_control_y", "static_target_width", "static_input_x", "live_send_min_width"],
+            "src/remote_ops_workspace/gui.py": ["secureCrtCommandStaticControlY", "secureCrtCommandStaticInputX", "secureCrtCommandLiveSendMinWidth"],
+            "scripts/render_gui_design_previews.py": ["draw_securecrt_command_window", "chrome.static_send_width", "chrome.static_target_width"],
+            "scripts/check_real_gui_render.py": ["securecrt-command-window-geometry", "secureCrtCommandLiveSendMinWidth", "expected_securecrt_command_window"],
+            "docs/GUI_DESIGN.md": ["SecureCRT-style Command Window geometry"]
+          }
+        },
+        {
           "id": "securecrt.session-status-strip",
           "description": "SecureCRT-style session status strip uses shared static/live metadata for session, target, protocol, cipher, SFTP tab, log file and connected state so the terminal workspace carries reference-like connected-session context.",
           "source_tokens": {
@@ -615,6 +637,17 @@
             "scripts/check_real_gui_render.py": ["EXPECTED_SECURECRT_SESSION_STATUS_KEYS", "securecrt-session-status-strip", "expected_securecrt_session_status_strip"],
             "configs/gui_visual_metrics.json": ["securecrt", "session-status-strip", "session-status-bottom-rule"],
             "docs/GUI_DESIGN.md": ["SecureCRT-style session status strip"]
+          }
+        },
+        {
+          "id": "securecrt.session-status-geometry",
+          "description": "SecureCRT-style session status strip uses shared static/live geometry for title width, cell start, cell gap, label/value offsets, connected-state role and live cell dimensions.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["static_cell_start_x", "static_cell_gap", "static_value_x", "live_cell_height"],
+            "src/remote_ops_workspace/gui.py": ["secureCrtSessionStatusStaticCellStartX", "secureCrtSessionStatusStaticValueX", "secureCrtSessionStatusLiveCellHeight"],
+            "scripts/render_gui_design_previews.py": ["draw_securecrt_session_status_strip", "chrome.static_cell_gap", "field.static_value_x", "field.role"],
+            "scripts/check_real_gui_render.py": ["securecrt-session-status-geometry", "secureCrtSessionStatusLiveCellHeight", "expected_securecrt_session_status_strip"],
+            "docs/GUI_DESIGN.md": ["SecureCRT-style session status geometry"]
           }
         },
         {
@@ -663,18 +696,18 @@
         "Termius-style SSH-focused dark workspace with compact hosts, vault cues and vertical session tabs."
       ],
       "dimension_coverage": {
-        "layout": ["termius.vertical-tabs", "termius.workspace-surface", "termius.hosts-sidebar-chrome", "termius.header-chip-chrome", "termius.host-identity-strip", "termius.reference-line-anchors", "termius.reference-topology"],
+        "layout": ["termius.vertical-tabs", "termius.workspace-surface", "termius.hosts-sidebar-chrome", "termius.header-chip-chrome", "termius.host-identity-strip", "termius.host-identity-geometry", "termius.reference-line-anchors", "termius.reference-topology"],
         "navigation": ["termius.hosts-sidebar", "termius.hosts-sidebar-chrome", "termius.vertical-tabs", "termius.reference-line-anchors"],
-        "panes": ["termius.workspace-surface", "termius.host-identity-strip", "termius.workflow-cards", "termius.reference-line-anchors"],
+        "panes": ["termius.workspace-surface", "termius.host-identity-strip", "termius.host-identity-geometry", "termius.workflow-cards", "termius.reference-line-anchors"],
         "tabs": ["termius.vertical-tabs", "termius.tab-model", "termius.reference-state", "termius.host-identity-strip", "termius.reference-line-anchors"],
         "sidebars": ["termius.hosts-sidebar", "termius.hosts-sidebar-chrome", "termius.reference-line-anchors"],
-        "toolbars": ["termius.host-toolbar", "termius.hosts-sidebar-chrome", "termius.header-chip-chrome", "termius.host-identity-strip", "termius.reference-line-anchors"],
+        "toolbars": ["termius.host-toolbar", "termius.hosts-sidebar-chrome", "termius.header-chip-chrome", "termius.host-identity-strip", "termius.host-identity-geometry", "termius.reference-line-anchors"],
         "session_trees": ["termius.host-tree", "termius.host-glyphs", "termius.hosts-sidebar-chrome"],
-        "connected_session_behavior": ["termius.workspace-surface", "termius.host-identity-strip", "termius.workflow-cards", "termius.header-chip-chrome", "termius.reference-state"],
+        "connected_session_behavior": ["termius.workspace-surface", "termius.host-identity-strip", "termius.host-identity-geometry", "termius.workflow-cards", "termius.header-chip-chrome", "termius.reference-state"],
         "file_monitoring_panels": ["termius.workspace-surface", "termius.host-identity-strip", "termius.workflow-cards"],
-        "status_bars": ["termius.status-bar", "termius.header-chip-chrome", "termius.host-identity-strip", "termius.reference-state", "termius.reference-line-anchors"],
-        "density": ["termius.dark-hosts", "termius.hosts-sidebar-chrome", "termius.host-identity-strip", "termius.reference-line-anchors"],
-        "spacing": ["termius.vertical-tabs", "termius.hosts-sidebar-chrome", "termius.host-identity-strip", "termius.reference-line-anchors"],
+        "status_bars": ["termius.status-bar", "termius.header-chip-chrome", "termius.host-identity-strip", "termius.host-identity-geometry", "termius.reference-state", "termius.reference-line-anchors"],
+        "density": ["termius.dark-hosts", "termius.hosts-sidebar-chrome", "termius.host-identity-strip", "termius.host-identity-geometry", "termius.reference-line-anchors"],
+        "spacing": ["termius.vertical-tabs", "termius.hosts-sidebar-chrome", "termius.host-identity-strip", "termius.host-identity-geometry", "termius.reference-line-anchors"],
         "interaction_states": ["termius.interaction-states", "termius.reference-state", "termius.hosts-sidebar-chrome", "termius.host-identity-strip"]
       },
       "requirements": [
@@ -817,6 +850,17 @@
           }
         },
         {
+          "id": "termius.host-identity-geometry",
+          "description": "Termius-style host identity strip uses shared static/live geometry for title width, cell start, cell gap, label/value offsets, status role and live cell dimensions.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["static_cell_start_x", "static_cell_gap", "static_value_x", "live_cell_height"],
+            "src/remote_ops_workspace/gui.py": ["termiusHostIdentityStaticCellStartX", "termiusHostIdentityStaticValueX", "termiusHostIdentityLiveCellHeight"],
+            "scripts/render_gui_design_previews.py": ["draw_termius_host_identity_strip", "strip.static_cell_gap", "field.static_value_x", "field.role"],
+            "scripts/check_real_gui_render.py": ["termius-host-identity-geometry", "termiusHostIdentityLiveCellHeight", "expected_termius_host_identity_strip"],
+            "docs/GUI_DESIGN.md": ["Termius-style host identity geometry"]
+          }
+        },
+        {
           "id": "termius.live-workflow-cards",
           "description": "Live Termius-style home tab exposes workflow evidence cards for vault identity, port forwarding and snippets.",
           "source_tokens": {
@@ -862,19 +906,19 @@
         "Remmina-style light remote-desktop workspace with protocol profiles and viewer tabs."
       ],
       "dimension_coverage": {
-        "layout": ["remmina.light-desktop", "remmina.viewer-surface", "remmina.profile-list-chrome", "remmina.reference-line-anchors", "remmina.reference-topology"],
-        "navigation": ["remmina.connection-profile-sidebar", "remmina.profile-list-chrome", "remmina.reference-line-anchors"],
+        "layout": ["remmina.light-desktop", "remmina.viewer-surface", "remmina.profile-list-chrome", "remmina.profile-list-geometry", "remmina.reference-line-anchors", "remmina.reference-topology"],
+        "navigation": ["remmina.connection-profile-sidebar", "remmina.profile-list-chrome", "remmina.profile-list-geometry", "remmina.reference-line-anchors"],
         "panes": ["remmina.viewer-surface", "remmina.viewer-controls", "remmina.viewer-control-chrome", "remmina.reference-line-anchors"],
         "tabs": ["remmina.viewer-tabs", "remmina.reference-state", "remmina.reference-line-anchors"],
-        "sidebars": ["remmina.connection-profile-sidebar", "remmina.profile-list-chrome", "remmina.reference-line-anchors"],
-        "toolbars": ["remmina.viewer-toolbar", "remmina.viewer-control-chrome", "remmina.profile-list-chrome", "remmina.reference-line-anchors"],
-        "session_trees": ["remmina.protocol-tree", "remmina.profile-list-chrome", "remmina.protocol-glyphs"],
-        "connected_session_behavior": ["remmina.viewer-surface", "remmina.profile-list-chrome", "remmina.viewer-controls", "remmina.viewer-control-chrome", "remmina.reference-state"],
+        "sidebars": ["remmina.connection-profile-sidebar", "remmina.profile-list-chrome", "remmina.profile-list-geometry", "remmina.reference-line-anchors"],
+        "toolbars": ["remmina.viewer-toolbar", "remmina.viewer-control-chrome", "remmina.profile-list-chrome", "remmina.profile-list-geometry", "remmina.reference-line-anchors"],
+        "session_trees": ["remmina.protocol-tree", "remmina.profile-list-chrome", "remmina.profile-list-geometry", "remmina.protocol-glyphs"],
+        "connected_session_behavior": ["remmina.viewer-surface", "remmina.profile-list-chrome", "remmina.profile-list-geometry", "remmina.viewer-controls", "remmina.viewer-control-chrome", "remmina.reference-state"],
         "file_monitoring_panels": ["remmina.viewer-surface", "remmina.import-workflow"],
         "status_bars": ["remmina.status-bar", "remmina.reference-state", "remmina.reference-line-anchors"],
-        "density": ["remmina.light-desktop", "remmina.profile-list-chrome", "remmina.reference-line-anchors"],
-        "spacing": ["remmina.viewer-tabs", "remmina.profile-list-chrome", "remmina.reference-line-anchors"],
-        "interaction_states": ["remmina.interaction-states", "remmina.profile-list-chrome", "remmina.reference-state"]
+        "density": ["remmina.light-desktop", "remmina.profile-list-chrome", "remmina.profile-list-geometry", "remmina.reference-line-anchors"],
+        "spacing": ["remmina.viewer-tabs", "remmina.profile-list-chrome", "remmina.profile-list-geometry", "remmina.reference-line-anchors"],
+        "interaction_states": ["remmina.interaction-states", "remmina.profile-list-chrome", "remmina.profile-list-geometry", "remmina.reference-state"]
       },
       "requirements": [
         {
@@ -1002,6 +1046,17 @@
             "scripts/check_real_gui_render.py": ["EXPECTED_REMMINA_PROFILE_ROW_KEYS", "remmina-profile-list-chrome", "expected_remmina_profile_list_chrome"],
             "configs/gui_visual_metrics.json": ["remmina", "profile-list-chrome", "profile-filter-focus", "connection-list-selected-row"],
             "docs/GUI_DESIGN.md": ["Remmina-style profile-list chrome"]
+          }
+        },
+        {
+          "id": "remmina.profile-list-geometry",
+          "description": "Remmina-style profile list uses shared static/live geometry for filter position, header offset, row start, row height, row step, cell offsets, live filter width and live row height.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["static_row_start_y", "static_row_step", "live_filter_width", "live_row_min_height"],
+            "src/remote_ops_workspace/gui.py": ["remminaProfileStaticRowStartY", "remminaProfileStaticRowStep", "remminaProfileLiveRowMinHeight"],
+            "scripts/render_gui_design_previews.py": ["draw_remmina_profile_list_chrome", "chrome.static_row_step", "chrome.static_filter_x"],
+            "scripts/check_real_gui_render.py": ["remmina-profile-list-geometry", "remminaProfileLiveRowMinHeight", "expected_remmina_profile_list_chrome"],
+            "docs/GUI_DESIGN.md": ["Remmina-style profile-list geometry"]
           }
         },
         {

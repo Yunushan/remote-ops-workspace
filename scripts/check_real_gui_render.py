@@ -2223,6 +2223,24 @@ def check_live_securecrt_session_manager_chrome(window: Any) -> list[str]:
     actual_preset = str(panel.property("designPreset") or "")
     if actual_preset != "securecrt":
         return [f"securecrt live GUI Session Manager chrome designPreset {actual_preset!r} must equal 'securecrt'"]
+    expected_panel_geometry = {
+        "secureCrtSessionManagerStaticTitleX": chrome.static_title_x,
+        "secureCrtSessionManagerStaticTitleY": chrome.static_title_y,
+        "secureCrtSessionManagerStaticFilterY": chrome.static_filter_y,
+        "secureCrtSessionManagerStaticFilterXMargin": chrome.static_filter_x_margin,
+        "secureCrtSessionManagerStaticFilterHeight": chrome.static_filter_height,
+        "secureCrtSessionManagerStaticFilterPlaceholderX": chrome.static_filter_placeholder_x,
+        "secureCrtSessionManagerStaticFilterPlaceholderY": chrome.static_filter_placeholder_y,
+        "secureCrtSessionManagerLiveMaxHeight": chrome.live_max_height,
+        "secureCrtSessionManagerLiveSpacing": chrome.live_spacing,
+        "secureCrtSessionManagerLiveTitleSpacing": chrome.live_title_spacing,
+        "secureCrtSessionManagerLiveFilterHeight": chrome.live_filter_height,
+    }
+    for property_name, expected_value in expected_panel_geometry.items():
+        if int(panel.property(property_name) or 0) != expected_value:
+            return [f"securecrt live GUI Session Manager chrome {property_name} metadata drifted"]
+    if panel.maximumHeight() != chrome.live_max_height:
+        return ["securecrt live GUI Session Manager chrome maximum height drifted"]
 
     actual_panel_keys = list(panel.property("secureCrtSessionManagerActionKeys") or [])
     if actual_panel_keys != EXPECTED_SECURECRT_SESSION_MANAGER_ACTION_KEYS:
@@ -2243,6 +2261,10 @@ def check_live_securecrt_session_manager_chrome(window: Any) -> list[str]:
         return ["securecrt live GUI Session Manager filter placeholder drifted"]
     if str(filter_input.property("interactionState") or "") != "focused":
         return ["securecrt live GUI Session Manager filter must expose focused interactionState"]
+    if int(filter_input.property("secureCrtSessionManagerLiveFilterHeight") or 0) != chrome.live_filter_height:
+        return ["securecrt live GUI Session Manager filter live height metadata drifted"]
+    if filter_input.minimumHeight() != chrome.live_filter_height:
+        return ["securecrt live GUI Session Manager filter minimum height drifted"]
 
     buttons = panel.findChildren(QToolButton, "secureCrtSessionManagerAction")
     actual_button_keys = [str(button.property("secureCrtSessionManagerActionKey") or "") for button in buttons]
@@ -2253,17 +2275,46 @@ def check_live_securecrt_session_manager_chrome(window: Any) -> list[str]:
         ]
     expected_labels = {action.key: action.label for action in chrome.actions}
     expected_static_x = {action.key: action.static_x for action in chrome.actions}
+    expected_actions = {action.key: action for action in chrome.actions}
     for button in buttons:
         key = str(button.property("secureCrtSessionManagerActionKey") or "")
         label = str(button.property("secureCrtSessionManagerActionLabel") or "")
         icon_key = str(button.property("secureCrtSessionManagerIconKey") or "")
         static_x = int(button.property("secureCrtSessionManagerStaticX") or 0)
+        expected_action = expected_actions.get(key)
+        if expected_action is None:
+            return [f"securecrt live GUI Session Manager action {key!r} is not expected"]
         if label != expected_labels.get(key):
             return [f"securecrt live GUI Session Manager action {key!r} label drifted"]
         if icon_key != EXPECTED_SECURECRT_SESSION_MANAGER_ICON_KEYS.get(key):
             return [f"securecrt live GUI Session Manager action {key!r} icon key drifted"]
         if static_x != expected_static_x.get(key):
             return [f"securecrt live GUI Session Manager action {key!r} static position drifted"]
+        expected_button_geometry = {
+            "secureCrtSessionManagerStaticY": expected_action.static_y,
+            "secureCrtSessionManagerStaticButtonSize": expected_action.static_button_size,
+            "secureCrtSessionManagerStaticIconX": expected_action.static_icon_x,
+            "secureCrtSessionManagerStaticIconY": expected_action.static_icon_y,
+            "secureCrtSessionManagerStaticIconSize": expected_action.static_icon_size,
+            "secureCrtSessionManagerLiveIconSize": expected_action.live_icon_size,
+            "secureCrtSessionManagerLiveButtonSize": expected_action.live_button_size,
+        }
+        for property_name, expected_value in expected_button_geometry.items():
+            if int(button.property(property_name) or 0) != expected_value:
+                return [f"securecrt live GUI Session Manager action {key!r} {property_name} metadata drifted"]
+        render_source = str(button.property("secureCrtSessionManagerRenderSource") or "")
+        if render_source != expected_action.render_source:
+            return [f"securecrt live GUI Session Manager action {key!r} render source drifted"]
+        icon_size = button.iconSize()
+        if icon_size.width() != expected_action.live_icon_size or icon_size.height() != expected_action.live_icon_size:
+            return [f"securecrt live GUI Session Manager action {key!r} live icon size drifted"]
+        if (
+            button.minimumWidth() != expected_action.live_button_size
+            or button.maximumWidth() != expected_action.live_button_size
+            or button.minimumHeight() != expected_action.live_button_size
+            or button.maximumHeight() != expected_action.live_button_size
+        ):
+            return [f"securecrt live GUI Session Manager action {key!r} live button size drifted"]
         if button.icon().isNull():
             return [f"securecrt live GUI Session Manager action {key!r} must use an icon"]
     return []
@@ -2411,10 +2462,30 @@ def check_live_securecrt_session_status_strip(window: Any) -> list[str]:
     actual_preset = str(panel.property("designPreset") or "")
     if actual_preset != "securecrt":
         return [f"securecrt live GUI session-status designPreset {actual_preset!r} must equal 'securecrt'"]
+    expected_panel_props = {
+        "secureCrtSessionStatusTitleWidth": chrome.title_width,
+        "secureCrtSessionStatusStaticTitleX": chrome.static_title_x,
+        "secureCrtSessionStatusStaticTitleY": chrome.static_title_y,
+        "secureCrtSessionStatusStaticCellStartX": chrome.static_cell_start_x,
+        "secureCrtSessionStatusStaticCellGap": chrome.static_cell_gap,
+        "secureCrtSessionStatusLiveSpacing": chrome.live_spacing,
+    }
+    for prop_name, expected_value in expected_panel_props.items():
+        actual_value = int(panel.property(prop_name) or 0)
+        if actual_value != expected_value:
+            return [
+                f"securecrt live GUI session-status {prop_name} "
+                f"{actual_value!r} must equal {expected_value!r}"
+            ]
     actual_panel_keys = list(panel.property("secureCrtSessionStatusFieldKeys") or [])
     expected_keys = [field.key for field in chrome.fields]
     if actual_panel_keys != expected_keys:
         return [f"securecrt live GUI session-status field keys {actual_panel_keys!r} must equal {expected_keys!r}"]
+    title = panel.findChild(QLabel, "secureCrtSessionStatusTitle")
+    if title is None:
+        return ["securecrt live GUI session-status missing title label"]
+    if title.minimumWidth() != chrome.title_width or title.maximumWidth() != chrome.title_width:
+        return ["securecrt live GUI session-status title width drifted"]
     labels = {label.text() for label in panel.findChildren(QLabel)}
     missing = sorted(required_securecrt_session_status_texts() - labels)
     if missing:
@@ -2427,6 +2498,34 @@ def check_live_securecrt_session_status_strip(window: Any) -> list[str]:
     expected_widths = [field.static_width for field in chrome.fields]
     if actual_widths != expected_widths:
         return [f"securecrt live GUI session-status widths {actual_widths!r} must equal {expected_widths!r}"]
+    for cell, field in zip(status_cells, chrome.fields, strict=False):
+        expected_props = {
+            "secureCrtSessionStatusStaticY": field.static_y,
+            "secureCrtSessionStatusStaticHeight": field.static_height,
+            "secureCrtSessionStatusStaticLabelX": field.static_label_x,
+            "secureCrtSessionStatusStaticLabelY": field.static_label_y,
+            "secureCrtSessionStatusStaticValueX": field.static_value_x,
+            "secureCrtSessionStatusStaticValueY": field.static_value_y,
+            "secureCrtSessionStatusLiveMinWidth": field.live_min_width,
+            "secureCrtSessionStatusLiveCellHeight": field.live_cell_height,
+        }
+        actual_role = str(cell.property("secureCrtSessionStatusRole") or "")
+        if actual_role != field.role:
+            return [
+                f"securecrt live GUI session-status field {field.key!r} role "
+                f"{actual_role!r} must equal {field.role!r}"
+            ]
+        for prop_name, expected_value in expected_props.items():
+            actual_value = int(cell.property(prop_name) or 0)
+            if actual_value != expected_value:
+                return [
+                    f"securecrt live GUI session-status field {field.key!r} {prop_name} "
+                    f"{actual_value!r} must equal {expected_value!r}"
+                ]
+        if cell.minimumWidth() != field.live_min_width:
+            return [f"securecrt live GUI session-status field {field.key!r} minimum width drifted"]
+        if cell.minimumHeight() != field.live_cell_height:
+            return [f"securecrt live GUI session-status field {field.key!r} height drifted"]
     return []
 
 
@@ -2440,6 +2539,26 @@ def check_live_securecrt_command_window(window: Any) -> list[str]:
     actual_key = str(panel.property("secureCrtCommandWindowKey") or "")
     if actual_key != chrome.key:
         return [f"securecrt live GUI command-window key {actual_key!r} must equal {chrome.key!r}"]
+    expected_panel_props = {
+        "secureCrtCommandStaticHeaderHeight": chrome.static_header_height,
+        "secureCrtCommandStaticTitleX": chrome.static_title_x,
+        "secureCrtCommandStaticTitleY": chrome.static_title_y,
+        "secureCrtCommandStaticHelperX": chrome.static_helper_x,
+        "secureCrtCommandStaticHelperY": chrome.static_helper_y,
+        "secureCrtCommandStaticControlY": chrome.static_control_y,
+        "secureCrtCommandStaticTargetWidth": chrome.static_target_width,
+        "secureCrtCommandStaticInputX": chrome.static_input_x,
+        "secureCrtCommandStaticSendWidth": chrome.static_send_width,
+        "secureCrtCommandLiveTargetMinWidth": chrome.live_target_min_width,
+        "secureCrtCommandLiveSendMinWidth": chrome.live_send_min_width,
+    }
+    for prop_name, expected_value in expected_panel_props.items():
+        actual_value = int(panel.property(prop_name) or 0)
+        if actual_value != expected_value:
+            return [
+                f"securecrt live GUI command-window {prop_name} "
+                f"{actual_value!r} must equal {expected_value!r}"
+            ]
     labels = {label.text() for label in panel.findChildren(QLabel)}
     missing = sorted(required_securecrt_command_window_texts() - labels)
     if missing:
@@ -2451,6 +2570,39 @@ def check_live_securecrt_command_window(window: Any) -> list[str]:
         label_key = str(label.property("secureCrtCommandWindowKey") or "")
         if label_key != chrome.key:
             return [f"securecrt live GUI command-window label key {label_key!r} must equal {chrome.key!r}"]
+    target = panel.findChild(QLabel, "secureCrtCommandTarget")
+    if target is None:
+        return ["securecrt live GUI command-window missing target label"]
+    target_static_width = int(target.property("secureCrtCommandStaticTargetWidth") or 0)
+    target_live_width = int(target.property("secureCrtCommandLiveTargetMinWidth") or 0)
+    if target_static_width != chrome.static_target_width:
+        return ["securecrt live GUI command-window target static width drifted"]
+    if target_live_width != chrome.live_target_min_width or target.minimumWidth() != chrome.live_target_min_width:
+        return ["securecrt live GUI command-window target live width drifted"]
+    command_input = panel.findChild(QLabel, "secureCrtCommandInput")
+    if command_input is None:
+        return ["securecrt live GUI command-window missing command input"]
+    expected_input_props = {
+        "secureCrtCommandStaticInputX": chrome.static_input_x,
+        "secureCrtCommandStaticInputTextX": chrome.static_input_text_x,
+        "secureCrtCommandStaticInputTextY": chrome.static_input_text_y,
+    }
+    for prop_name, expected_value in expected_input_props.items():
+        actual_value = int(command_input.property(prop_name) or 0)
+        if actual_value != expected_value:
+            return [
+                f"securecrt live GUI command-window input {prop_name} "
+                f"{actual_value!r} must equal {expected_value!r}"
+            ]
+    send = panel.findChild(QLabel, "secureCrtCommandSend")
+    if send is None:
+        return ["securecrt live GUI command-window missing send label"]
+    send_static_width = int(send.property("secureCrtCommandStaticSendWidth") or 0)
+    send_live_width = int(send.property("secureCrtCommandLiveSendMinWidth") or 0)
+    if send_static_width != chrome.static_send_width:
+        return ["securecrt live GUI command-window send static width drifted"]
+    if send_live_width != chrome.live_send_min_width or send.minimumWidth() != chrome.live_send_min_width:
+        return ["securecrt live GUI command-window send live width drifted"]
     return []
 
 
@@ -2517,6 +2669,30 @@ def check_live_remmina_profile_list_chrome(window: Any) -> list[str]:
     actual_preset = str(panel.property("designPreset") or "")
     if actual_preset != "remmina":
         return [f"remmina live GUI profile-list designPreset {actual_preset!r} must equal 'remmina'"]
+    expected_panel_props = {
+        "remminaProfileStaticFilterX": chrome.static_filter_x,
+        "remminaProfileStaticFilterY": chrome.static_filter_y,
+        "remminaProfileStaticFilterHeight": chrome.static_filter_height,
+        "remminaProfileStaticHeaderY": chrome.static_header_y,
+        "remminaProfileStaticRowStartY": chrome.static_row_start_y,
+        "remminaProfileStaticRowHeight": chrome.static_row_height,
+        "remminaProfileStaticRowStep": chrome.static_row_step,
+        "remminaProfileStaticCellStartX": chrome.static_cell_start_x,
+        "remminaProfileStaticCellY": chrome.static_cell_y,
+        "remminaProfileStaticStatusY": chrome.static_status_y,
+        "remminaProfileLiveMaxHeight": chrome.live_max_height,
+        "remminaProfileLiveSpacing": chrome.live_spacing,
+        "remminaProfileLiveRowMinHeight": chrome.live_row_min_height,
+    }
+    for prop_name, expected_value in expected_panel_props.items():
+        actual_value = int(panel.property(prop_name) or 0)
+        if actual_value != expected_value:
+            return [
+                f"remmina live GUI profile-list {prop_name} "
+                f"{actual_value!r} must equal {expected_value!r}"
+            ]
+    if panel.maximumHeight() != chrome.live_max_height:
+        return ["remmina live GUI profile-list maximum height drifted"]
     filter_input = panel.findChild(QLineEdit, "remminaProfileFilter")
     if filter_input is None or filter_input.placeholderText() != chrome.filter_placeholder:
         actual_placeholder = None if filter_input is None else filter_input.placeholderText()
@@ -2524,6 +2700,11 @@ def check_live_remmina_profile_list_chrome(window: Any) -> list[str]:
             f"remmina live GUI profile filter placeholder {actual_placeholder!r} "
             f"must equal {chrome.filter_placeholder!r}"
         ]
+    filter_width = int(filter_input.property("remminaProfileFilterWidth") or 0)
+    if filter_width != chrome.live_filter_width or filter_input.minimumWidth() != chrome.live_filter_width:
+        return ["remmina live GUI profile filter width drifted"]
+    if not filter_input.isReadOnly():
+        return ["remmina live GUI profile filter must remain read-only evidence"]
     if str(filter_input.property("interactionState") or "") != "focused":
         return ["remmina live GUI profile filter must expose focused interactionState"]
     actual_column_keys = list(panel.property("remminaProfileColumnKeys") or [])
@@ -2542,6 +2723,23 @@ def check_live_remmina_profile_list_chrome(window: Any) -> list[str]:
     actual_header_keys = [str(label.property("remminaProfileColumnKey") or "") for label in columns]
     if actual_header_keys != expected_column_keys:
         return [f"remmina live GUI profile header keys {actual_header_keys!r} must equal {expected_column_keys!r}"]
+    expected_column_widths = [column.static_width for column in chrome.columns]
+    actual_column_widths = [int(label.property("remminaProfileColumnWidth") or 0) for label in columns]
+    if actual_column_widths != expected_column_widths:
+        return [
+            f"remmina live GUI profile header widths {actual_column_widths!r} "
+            f"must equal {expected_column_widths!r}"
+        ]
+    expected_live_widths = [column.live_min_width for column in chrome.columns]
+    actual_live_widths = [int(label.property("remminaProfileColumnLiveMinWidth") or 0) for label in columns]
+    if actual_live_widths != expected_live_widths:
+        return [
+            f"remmina live GUI profile header live widths {actual_live_widths!r} "
+            f"must equal {expected_live_widths!r}"
+        ]
+    actual_header_min_widths = [label.minimumWidth() for label in columns]
+    if actual_header_min_widths != expected_live_widths:
+        return ["remmina live GUI profile header minimum widths drifted"]
     rows = panel.findChildren(QFrame, "remminaProfileListRow")
     live_rows = {str(row.property("remminaProfileRowKey") or ""): row for row in rows}
     missing_rows = sorted(set(expected_row_keys) - set(live_rows))
@@ -2553,6 +2751,20 @@ def check_live_remmina_profile_list_chrome(window: Any) -> list[str]:
         expected_selected = "true" if row.selected else "false"
         if selected != expected_selected:
             return [f"remmina live GUI profile row {row.key!r} selected state drifted"]
+        expected_row_props = {
+            "remminaProfileStaticRowHeight": chrome.static_row_height,
+            "remminaProfileStaticRowStep": chrome.static_row_step,
+            "remminaProfileLiveRowMinHeight": chrome.live_row_min_height,
+        }
+        for prop_name, expected_value in expected_row_props.items():
+            actual_value = int(live_row.property(prop_name) or 0)
+            if actual_value != expected_value:
+                return [
+                    f"remmina live GUI profile row {row.key!r} {prop_name} "
+                    f"{actual_value!r} must equal {expected_value!r}"
+                ]
+        if live_row.minimumHeight() != chrome.live_row_min_height:
+            return [f"remmina live GUI profile row {row.key!r} minimum height drifted"]
         cell_values = {
             str(cell.property("remminaProfileColumnKey") or ""): str(cell.property("remminaProfileCellValue") or "")
             for cell in live_row.findChildren(QLabel, "remminaProfileListCell")
@@ -2569,6 +2781,28 @@ def check_live_remmina_profile_list_chrome(window: Any) -> list[str]:
                     f"remmina live GUI profile row {row.key!r} {key} "
                     f"{cell_values.get(key)!r} must equal {expected_value!r}"
                 ]
+        cells = live_row.findChildren(QLabel, "remminaProfileListCell")
+        for column in chrome.columns:
+            matching = [
+                cell for cell in cells if str(cell.property("remminaProfileColumnKey") or "") == column.key
+            ]
+            if not matching:
+                return [f"remmina live GUI profile row {row.key!r} missing {column.key!r} cell"]
+            cell = matching[0]
+            column_width = int(cell.property("remminaProfileColumnWidth") or 0)
+            live_width = int(cell.property("remminaProfileColumnLiveMinWidth") or 0)
+            if column_width != column.static_width:
+                return [f"remmina live GUI profile row {row.key!r} {column.key!r} static width drifted"]
+            if live_width != column.live_min_width or cell.minimumWidth() != column.live_min_width:
+                return [f"remmina live GUI profile row {row.key!r} {column.key!r} live width drifted"]
+        status_cells = [
+            cell for cell in cells if str(cell.property("remminaProfileColumnKey") or "") == "status"
+        ]
+        if not status_cells:
+            return [f"remmina live GUI profile row {row.key!r} missing status cell"]
+        status_y = int(status_cells[0].property("remminaProfileStaticStatusY") or 0)
+        if status_y != chrome.static_status_y:
+            return [f"remmina live GUI profile row {row.key!r} status y drifted"]
     return []
 
 
@@ -2663,10 +2897,30 @@ def check_live_termius_host_identity_strip(window: Any) -> list[str]:
     actual_preset = str(panel.property("designPreset") or "")
     if actual_preset != "termius":
         return [f"termius live GUI host-identity designPreset {actual_preset!r} must equal 'termius'"]
+    expected_panel_props = {
+        "termiusHostIdentityTitleWidth": strip.title_width,
+        "termiusHostIdentityStaticTitleX": strip.static_title_x,
+        "termiusHostIdentityStaticTitleY": strip.static_title_y,
+        "termiusHostIdentityStaticCellStartX": strip.static_cell_start_x,
+        "termiusHostIdentityStaticCellGap": strip.static_cell_gap,
+        "termiusHostIdentityLiveSpacing": strip.live_spacing,
+    }
+    for prop_name, expected_value in expected_panel_props.items():
+        actual_value = int(panel.property(prop_name) or 0)
+        if actual_value != expected_value:
+            return [
+                f"termius live GUI host-identity {prop_name} "
+                f"{actual_value!r} must equal {expected_value!r}"
+            ]
     actual_panel_keys = list(panel.property("termiusHostIdentityFieldKeys") or [])
     expected_keys = [field.key for field in strip.fields]
     if actual_panel_keys != expected_keys:
         return [f"termius live GUI host-identity field keys {actual_panel_keys!r} must equal {expected_keys!r}"]
+    title = panel.findChild(QLabel, "termiusHostIdentityTitle")
+    if title is None:
+        return ["termius live GUI host-identity missing title label"]
+    if title.minimumWidth() != strip.title_width or title.maximumWidth() != strip.title_width:
+        return ["termius live GUI host-identity title width drifted"]
     labels = {label.text() for label in panel.findChildren(QLabel)}
     missing = sorted(required_termius_host_identity_texts() - labels)
     if missing:
@@ -2679,6 +2933,34 @@ def check_live_termius_host_identity_strip(window: Any) -> list[str]:
     expected_widths = [field.static_width for field in strip.fields]
     if actual_widths != expected_widths:
         return [f"termius live GUI host-identity widths {actual_widths!r} must equal {expected_widths!r}"]
+    for cell, field in zip(cells, strip.fields, strict=False):
+        expected_props = {
+            "termiusHostIdentityStaticY": field.static_y,
+            "termiusHostIdentityStaticHeight": field.static_height,
+            "termiusHostIdentityStaticLabelX": field.static_label_x,
+            "termiusHostIdentityStaticLabelY": field.static_label_y,
+            "termiusHostIdentityStaticValueX": field.static_value_x,
+            "termiusHostIdentityStaticValueY": field.static_value_y,
+            "termiusHostIdentityLiveMinWidth": field.live_min_width,
+            "termiusHostIdentityLiveCellHeight": field.live_cell_height,
+        }
+        actual_role = str(cell.property("termiusHostIdentityRole") or "")
+        if actual_role != field.role:
+            return [
+                f"termius live GUI host-identity field {field.key!r} role "
+                f"{actual_role!r} must equal {field.role!r}"
+            ]
+        for prop_name, expected_value in expected_props.items():
+            actual_value = int(cell.property(prop_name) or 0)
+            if actual_value != expected_value:
+                return [
+                    f"termius live GUI host-identity field {field.key!r} {prop_name} "
+                    f"{actual_value!r} must equal {expected_value!r}"
+                ]
+        if cell.minimumWidth() != field.live_min_width:
+            return [f"termius live GUI host-identity field {field.key!r} minimum width drifted"]
+        if cell.minimumHeight() != field.live_cell_height:
+            return [f"termius live GUI host-identity field {field.key!r} height drifted"]
     return []
 
 
@@ -2925,12 +3207,16 @@ def live_contract_checks_for_preset(preset_id: str) -> list[str]:
         if preset_id == "securecrt":
             checks.append("securecrt-top-chrome")
             checks.append("securecrt-session-manager-chrome")
+            checks.append("securecrt-session-manager-geometry")
             checks.append("securecrt-tree-icons")
             checks.append("securecrt-session-status-strip")
+            checks.append("securecrt-session-status-geometry")
             checks.append("securecrt-command-window")
+            checks.append("securecrt-command-window-geometry")
         if preset_id == "remmina":
             checks.append("remmina-tree-icons")
             checks.append("remmina-profile-list-chrome")
+            checks.append("remmina-profile-list-geometry")
             checks.append("remmina-viewer-controls")
             checks.append("remmina-viewer-control-geometry")
         if preset_id == "termius":
@@ -2938,6 +3224,7 @@ def live_contract_checks_for_preset(preset_id: str) -> list[str]:
             checks.append("termius-hosts-chrome")
             checks.append("termius-header-chips")
             checks.append("termius-host-identity-strip")
+            checks.append("termius-host-identity-geometry")
         if preset_id == "mremoteng":
             checks.append("mremoteng-tree-icons")
             checks.append("mremoteng-top-chrome")
@@ -3288,12 +3575,35 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
             {
                 "title": EXPECTED_SECURECRT_SESSION_MANAGER_CHROME.title,
                 "filter_placeholder": EXPECTED_SECURECRT_SESSION_MANAGER_CHROME.filter_placeholder,
+                "static_title_x": EXPECTED_SECURECRT_SESSION_MANAGER_CHROME.static_title_x,
+                "static_title_y": EXPECTED_SECURECRT_SESSION_MANAGER_CHROME.static_title_y,
+                "static_filter_y": EXPECTED_SECURECRT_SESSION_MANAGER_CHROME.static_filter_y,
+                "static_filter_x_margin": EXPECTED_SECURECRT_SESSION_MANAGER_CHROME.static_filter_x_margin,
+                "static_filter_height": EXPECTED_SECURECRT_SESSION_MANAGER_CHROME.static_filter_height,
+                "static_filter_placeholder_x": (
+                    EXPECTED_SECURECRT_SESSION_MANAGER_CHROME.static_filter_placeholder_x
+                ),
+                "static_filter_placeholder_y": (
+                    EXPECTED_SECURECRT_SESSION_MANAGER_CHROME.static_filter_placeholder_y
+                ),
+                "live_max_height": EXPECTED_SECURECRT_SESSION_MANAGER_CHROME.live_max_height,
+                "live_spacing": EXPECTED_SECURECRT_SESSION_MANAGER_CHROME.live_spacing,
+                "live_title_spacing": EXPECTED_SECURECRT_SESSION_MANAGER_CHROME.live_title_spacing,
+                "live_filter_height": EXPECTED_SECURECRT_SESSION_MANAGER_CHROME.live_filter_height,
                 "actions": [
                     {
                         "key": action.key,
                         "icon_key": action.icon_key,
                         "label": action.label,
                         "static_x": action.static_x,
+                        "static_y": action.static_y,
+                        "static_button_size": action.static_button_size,
+                        "static_icon_x": action.static_icon_x,
+                        "static_icon_y": action.static_icon_y,
+                        "static_icon_size": action.static_icon_size,
+                        "live_icon_size": action.live_icon_size,
+                        "live_button_size": action.live_button_size,
+                        "render_source": action.render_source,
                     }
                     for action in EXPECTED_SECURECRT_SESSION_MANAGER_CHROME.actions
                 ],
@@ -3314,6 +3624,16 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
                 "command": EXPECTED_SECURECRT_COMMAND_WINDOW_CHROME.command,
                 "send_label": EXPECTED_SECURECRT_COMMAND_WINDOW_CHROME.send_label,
                 "status": EXPECTED_SECURECRT_COMMAND_WINDOW_CHROME.status,
+                "static_header_height": EXPECTED_SECURECRT_COMMAND_WINDOW_CHROME.static_header_height,
+                "static_control_y": EXPECTED_SECURECRT_COMMAND_WINDOW_CHROME.static_control_y,
+                "static_target_width": EXPECTED_SECURECRT_COMMAND_WINDOW_CHROME.static_target_width,
+                "static_input_x": EXPECTED_SECURECRT_COMMAND_WINDOW_CHROME.static_input_x,
+                "static_input_text_x": EXPECTED_SECURECRT_COMMAND_WINDOW_CHROME.static_input_text_x,
+                "static_input_text_y": EXPECTED_SECURECRT_COMMAND_WINDOW_CHROME.static_input_text_y,
+                "static_send_width": EXPECTED_SECURECRT_COMMAND_WINDOW_CHROME.static_send_width,
+                "static_send_right_margin": EXPECTED_SECURECRT_COMMAND_WINDOW_CHROME.static_send_right_margin,
+                "live_target_min_width": EXPECTED_SECURECRT_COMMAND_WINDOW_CHROME.live_target_min_width,
+                "live_send_min_width": EXPECTED_SECURECRT_COMMAND_WINDOW_CHROME.live_send_min_width,
             }
             if preset_id == "securecrt"
             else {}
@@ -3321,12 +3641,27 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
         "expected_securecrt_session_status_strip": (
             {
                 "title": EXPECTED_SECURECRT_SESSION_STATUS_STRIP.title,
+                "title_width": EXPECTED_SECURECRT_SESSION_STATUS_STRIP.title_width,
+                "static_title_x": EXPECTED_SECURECRT_SESSION_STATUS_STRIP.static_title_x,
+                "static_title_y": EXPECTED_SECURECRT_SESSION_STATUS_STRIP.static_title_y,
+                "static_cell_start_x": EXPECTED_SECURECRT_SESSION_STATUS_STRIP.static_cell_start_x,
+                "static_cell_gap": EXPECTED_SECURECRT_SESSION_STATUS_STRIP.static_cell_gap,
+                "live_spacing": EXPECTED_SECURECRT_SESSION_STATUS_STRIP.live_spacing,
                 "fields": [
                     {
                         "key": field.key,
                         "label": field.label,
                         "value": field.value,
                         "static_width": field.static_width,
+                        "role": field.role,
+                        "static_y": field.static_y,
+                        "static_height": field.static_height,
+                        "static_label_x": field.static_label_x,
+                        "static_label_y": field.static_label_y,
+                        "static_value_x": field.static_value_x,
+                        "static_value_y": field.static_value_y,
+                        "live_min_width": field.live_min_width,
+                        "live_cell_height": field.live_cell_height,
                     }
                     for field in EXPECTED_SECURECRT_SESSION_STATUS_STRIP.fields
                 ],
@@ -3361,11 +3696,25 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
             {
                 "title": EXPECTED_REMMINA_PROFILE_LIST_CHROME.title,
                 "filter_placeholder": EXPECTED_REMMINA_PROFILE_LIST_CHROME.filter_placeholder,
+                "static_filter_x": EXPECTED_REMMINA_PROFILE_LIST_CHROME.static_filter_x,
+                "static_filter_y": EXPECTED_REMMINA_PROFILE_LIST_CHROME.static_filter_y,
+                "static_filter_height": EXPECTED_REMMINA_PROFILE_LIST_CHROME.static_filter_height,
+                "static_header_y": EXPECTED_REMMINA_PROFILE_LIST_CHROME.static_header_y,
+                "static_row_start_y": EXPECTED_REMMINA_PROFILE_LIST_CHROME.static_row_start_y,
+                "static_row_height": EXPECTED_REMMINA_PROFILE_LIST_CHROME.static_row_height,
+                "static_row_step": EXPECTED_REMMINA_PROFILE_LIST_CHROME.static_row_step,
+                "static_cell_start_x": EXPECTED_REMMINA_PROFILE_LIST_CHROME.static_cell_start_x,
+                "static_cell_y": EXPECTED_REMMINA_PROFILE_LIST_CHROME.static_cell_y,
+                "static_status_y": EXPECTED_REMMINA_PROFILE_LIST_CHROME.static_status_y,
+                "live_max_height": EXPECTED_REMMINA_PROFILE_LIST_CHROME.live_max_height,
+                "live_filter_width": EXPECTED_REMMINA_PROFILE_LIST_CHROME.live_filter_width,
+                "live_row_min_height": EXPECTED_REMMINA_PROFILE_LIST_CHROME.live_row_min_height,
                 "columns": [
                     {
                         "key": column.key,
                         "label": column.label,
                         "static_width": column.static_width,
+                        "live_min_width": column.live_min_width,
                     }
                     for column in EXPECTED_REMMINA_PROFILE_LIST_CHROME.columns
                 ],
@@ -3415,12 +3764,27 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
         "expected_termius_host_identity_strip": (
             {
                 "title": EXPECTED_TERMIUS_HOST_IDENTITY_STRIP.title,
+                "title_width": EXPECTED_TERMIUS_HOST_IDENTITY_STRIP.title_width,
+                "static_title_x": EXPECTED_TERMIUS_HOST_IDENTITY_STRIP.static_title_x,
+                "static_title_y": EXPECTED_TERMIUS_HOST_IDENTITY_STRIP.static_title_y,
+                "static_cell_start_x": EXPECTED_TERMIUS_HOST_IDENTITY_STRIP.static_cell_start_x,
+                "static_cell_gap": EXPECTED_TERMIUS_HOST_IDENTITY_STRIP.static_cell_gap,
+                "live_spacing": EXPECTED_TERMIUS_HOST_IDENTITY_STRIP.live_spacing,
                 "fields": [
                     {
                         "key": field.key,
                         "label": field.label,
                         "value": field.value,
                         "static_width": field.static_width,
+                        "role": field.role,
+                        "static_y": field.static_y,
+                        "static_height": field.static_height,
+                        "static_label_x": field.static_label_x,
+                        "static_label_y": field.static_label_y,
+                        "static_value_x": field.static_value_x,
+                        "static_value_y": field.static_value_y,
+                        "live_min_width": field.live_min_width,
+                        "live_cell_height": field.live_cell_height,
                     }
                     for field in EXPECTED_TERMIUS_HOST_IDENTITY_STRIP.fields
                 ],

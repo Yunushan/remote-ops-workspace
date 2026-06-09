@@ -4125,13 +4125,25 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             panel.setObjectName("termiusHostIdentityStrip")
             panel.setProperty("designPreset", "termius")
             panel.setProperty("termiusHostIdentityFieldKeys", [field.key for field in strip.fields])
+            panel.setProperty("termiusHostIdentityTitleWidth", strip.title_width)
+            panel.setProperty("termiusHostIdentityStaticTitleX", strip.static_title_x)
+            panel.setProperty("termiusHostIdentityStaticTitleY", strip.static_title_y)
+            panel.setProperty("termiusHostIdentityStaticCellStartX", strip.static_cell_start_x)
+            panel.setProperty("termiusHostIdentityStaticCellGap", strip.static_cell_gap)
+            panel.setProperty("termiusHostIdentityLiveSpacing", strip.live_spacing)
             layout = QHBoxLayout(panel)
-            layout.setContentsMargins(7, 5, 7, 5)
-            layout.setSpacing(6)
+            layout.setContentsMargins(
+                strip.live_margin_left,
+                strip.live_margin_top,
+                strip.live_margin_right,
+                strip.live_margin_bottom,
+            )
+            layout.setSpacing(strip.live_spacing)
 
             title = QLabel(strip.title)
             title.setObjectName("termiusHostIdentityTitle")
-            title.setMinimumWidth(88)
+            title.setMinimumWidth(strip.title_width)
+            title.setMaximumWidth(strip.title_width)
             layout.addWidget(title)
             for field in strip.fields:
                 cell = QLabel(f"{field.label}: {field.value}")
@@ -4140,8 +4152,18 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 cell.setProperty("termiusHostIdentityLabel", field.label)
                 cell.setProperty("termiusHostIdentityValue", field.value)
                 cell.setProperty("termiusHostIdentityWidth", field.static_width)
+                cell.setProperty("termiusHostIdentityRole", field.role)
+                cell.setProperty("termiusHostIdentityStaticY", field.static_y)
+                cell.setProperty("termiusHostIdentityStaticHeight", field.static_height)
+                cell.setProperty("termiusHostIdentityStaticLabelX", field.static_label_x)
+                cell.setProperty("termiusHostIdentityStaticLabelY", field.static_label_y)
+                cell.setProperty("termiusHostIdentityStaticValueX", field.static_value_x)
+                cell.setProperty("termiusHostIdentityStaticValueY", field.static_value_y)
+                cell.setProperty("termiusHostIdentityLiveMinWidth", field.live_min_width)
+                cell.setProperty("termiusHostIdentityLiveCellHeight", field.live_cell_height)
                 cell.setToolTip(field.tooltip)
-                cell.setMinimumWidth(max(78, min(field.static_width, 150)))
+                cell.setMinimumWidth(field.live_min_width)
+                cell.setMinimumHeight(field.live_cell_height)
                 cell.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
                 layout.addWidget(cell)
             layout.addStretch(1)
@@ -4245,13 +4267,29 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             panel.setProperty("designPreset", "securecrt")
             panel.setProperty("secureCrtSessionManagerActionKeys", [action.key for action in chrome.actions])
             panel.setProperty("secureCrtSessionFilterPlaceholder", chrome.filter_placeholder)
-            panel.setMaximumHeight(94)
+            panel.setProperty("secureCrtSessionManagerStaticTitleX", chrome.static_title_x)
+            panel.setProperty("secureCrtSessionManagerStaticTitleY", chrome.static_title_y)
+            panel.setProperty("secureCrtSessionManagerStaticFilterY", chrome.static_filter_y)
+            panel.setProperty("secureCrtSessionManagerStaticFilterXMargin", chrome.static_filter_x_margin)
+            panel.setProperty("secureCrtSessionManagerStaticFilterHeight", chrome.static_filter_height)
+            panel.setProperty("secureCrtSessionManagerStaticFilterPlaceholderX", chrome.static_filter_placeholder_x)
+            panel.setProperty("secureCrtSessionManagerStaticFilterPlaceholderY", chrome.static_filter_placeholder_y)
+            panel.setProperty("secureCrtSessionManagerLiveMaxHeight", chrome.live_max_height)
+            panel.setProperty("secureCrtSessionManagerLiveSpacing", chrome.live_spacing)
+            panel.setProperty("secureCrtSessionManagerLiveTitleSpacing", chrome.live_title_spacing)
+            panel.setProperty("secureCrtSessionManagerLiveFilterHeight", chrome.live_filter_height)
+            panel.setMaximumHeight(chrome.live_max_height)
             layout = QVBoxLayout(panel)
-            layout.setContentsMargins(7, 6, 7, 6)
-            layout.setSpacing(5)
+            layout.setContentsMargins(
+                chrome.live_margin_left,
+                chrome.live_margin_top,
+                chrome.live_margin_right,
+                chrome.live_margin_bottom,
+            )
+            layout.setSpacing(chrome.live_spacing)
 
             title_row = QHBoxLayout()
-            title_row.setSpacing(5)
+            title_row.setSpacing(chrome.live_title_spacing)
             title = QLabel(chrome.title)
             title.setObjectName("secureCrtSessionManagerTitle")
             title_row.addWidget(title, 1)
@@ -4262,11 +4300,19 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 button.setProperty("secureCrtSessionManagerIconKey", action.icon_key)
                 button.setProperty("secureCrtSessionManagerActionLabel", action.label)
                 button.setProperty("secureCrtSessionManagerStaticX", action.static_x)
+                button.setProperty("secureCrtSessionManagerStaticY", action.static_y)
+                button.setProperty("secureCrtSessionManagerStaticButtonSize", action.static_button_size)
+                button.setProperty("secureCrtSessionManagerStaticIconX", action.static_icon_x)
+                button.setProperty("secureCrtSessionManagerStaticIconY", action.static_icon_y)
+                button.setProperty("secureCrtSessionManagerStaticIconSize", action.static_icon_size)
+                button.setProperty("secureCrtSessionManagerLiveIconSize", action.live_icon_size)
+                button.setProperty("secureCrtSessionManagerLiveButtonSize", action.live_button_size)
+                button.setProperty("secureCrtSessionManagerRenderSource", action.render_source)
                 button.setToolTip(action.tooltip)
-                button.setIcon(self.style().standardIcon(self.standard_icon(self.securecrt_session_manager_icon_name(action.icon_key))))
-                button.setIconSize(QSize(14, 14))
+                button.setIcon(self.securecrt_session_manager_action_icon(action.icon_key, size=action.live_icon_size))
+                button.setIconSize(QSize(action.live_icon_size, action.live_icon_size))
                 button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
-                button.setFixedSize(QSize(24, 24))
+                button.setFixedSize(QSize(action.live_button_size, action.live_button_size))
                 button.clicked.connect(
                     lambda _checked=False, key=action.key: self.run_securecrt_session_manager_action(key)
                 )
@@ -4276,19 +4322,42 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.securecrt_session_filter = QLineEdit()
             self.securecrt_session_filter.setObjectName("secureCrtSessionFilter")
             self.securecrt_session_filter.setPlaceholderText(chrome.filter_placeholder)
-            self.securecrt_session_filter.setMinimumHeight(24)
+            self.securecrt_session_filter.setProperty("secureCrtSessionManagerLiveFilterHeight", chrome.live_filter_height)
+            self.securecrt_session_filter.setMinimumHeight(chrome.live_filter_height)
             self.securecrt_session_filter.textChanged.connect(self.filter_profile_tree)
             layout.addWidget(self.securecrt_session_filter)
             panel.setVisible(False)
             return panel
 
-        def securecrt_session_manager_icon_name(self, icon_key: str) -> str:
-            icon_map = {
-                "connect": "SP_MediaPlay",
-                "folder": "SP_DirIcon",
-                "properties": "SP_FileDialogDetailedView",
-            }
-            return icon_map.get(icon_key, "SP_FileIcon")
+        def securecrt_session_manager_action_icon(self, icon_key: str, *, size: int) -> QIcon:
+            pixmap = QPixmap(size, size)
+            pixmap.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(pixmap)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            try:
+                self.draw_securecrt_session_manager_action_icon(painter, icon_key, size)
+            finally:
+                painter.end()
+            return QIcon(pixmap)
+
+        def draw_securecrt_session_manager_action_icon(self, painter: QPainter, icon_key: str, size: int) -> None:
+            primary = QColor("#d7a84a")
+            dark = QColor("#201a0e")
+            painter.setPen(QPen(primary, 1))
+            painter.setBrush(QBrush(primary))
+            if icon_key == "folder":
+                painter.drawRect(1, 4, size - 2, size - 5)
+                painter.drawRect(2, 2, max(4, size // 2), 3)
+                return
+            if icon_key == "properties":
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.drawRect(2, 2, size - 4, size - 4)
+                painter.setPen(QPen(dark, 1))
+                painter.drawLine(4, 5, size - 4, 5)
+                painter.drawLine(4, 8, size - 5, 8)
+                painter.drawLine(4, 11, size - 6, 11)
+                return
+            painter.drawPolygon(QPoint(3, 2), QPoint(size - 3, size // 2), QPoint(3, size - 2))
 
         def run_securecrt_session_manager_action(self, key: str) -> None:
             actions = {
@@ -4371,13 +4440,31 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             panel.setProperty("designPreset", "remmina")
             panel.setProperty("remminaProfileColumnKeys", [column.key for column in chrome.columns])
             panel.setProperty("remminaProfileRowKeys", [row.key for row in chrome.rows])
-            panel.setMaximumHeight(166)
+            panel.setProperty("remminaProfileStaticFilterX", chrome.static_filter_x)
+            panel.setProperty("remminaProfileStaticFilterY", chrome.static_filter_y)
+            panel.setProperty("remminaProfileStaticFilterHeight", chrome.static_filter_height)
+            panel.setProperty("remminaProfileStaticHeaderY", chrome.static_header_y)
+            panel.setProperty("remminaProfileStaticRowStartY", chrome.static_row_start_y)
+            panel.setProperty("remminaProfileStaticRowHeight", chrome.static_row_height)
+            panel.setProperty("remminaProfileStaticRowStep", chrome.static_row_step)
+            panel.setProperty("remminaProfileStaticCellStartX", chrome.static_cell_start_x)
+            panel.setProperty("remminaProfileStaticCellY", chrome.static_cell_y)
+            panel.setProperty("remminaProfileStaticStatusY", chrome.static_status_y)
+            panel.setProperty("remminaProfileLiveMaxHeight", chrome.live_max_height)
+            panel.setProperty("remminaProfileLiveSpacing", chrome.live_spacing)
+            panel.setProperty("remminaProfileLiveRowMinHeight", chrome.live_row_min_height)
+            panel.setMaximumHeight(chrome.live_max_height)
             layout = QVBoxLayout(panel)
-            layout.setContentsMargins(7, 6, 7, 6)
-            layout.setSpacing(5)
+            layout.setContentsMargins(
+                chrome.live_margin_left,
+                chrome.live_margin_top,
+                chrome.live_margin_right,
+                chrome.live_margin_bottom,
+            )
+            layout.setSpacing(chrome.live_spacing)
 
             title_row = QHBoxLayout()
-            title_row.setSpacing(6)
+            title_row.setSpacing(chrome.live_title_spacing)
             title = QLabel(chrome.title)
             title.setObjectName("remminaProfileListTitle")
             title_row.addWidget(title)
@@ -4385,19 +4472,21 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             filter_input.setObjectName("remminaProfileFilter")
             filter_input.setPlaceholderText(chrome.filter_placeholder)
             filter_input.setReadOnly(True)
-            filter_input.setMinimumWidth(142)
+            filter_input.setProperty("remminaProfileFilterWidth", chrome.live_filter_width)
+            filter_input.setMinimumWidth(chrome.live_filter_width)
             self.remmina_profile_filter = filter_input
             title_row.addWidget(filter_input, 1)
             layout.addLayout(title_row)
 
             header = QHBoxLayout()
-            header.setSpacing(4)
+            header.setSpacing(chrome.live_header_spacing)
             for column in chrome.columns:
                 label = QLabel(column.label)
                 label.setObjectName("remminaProfileListColumn")
                 label.setProperty("remminaProfileColumnKey", column.key)
                 label.setProperty("remminaProfileColumnWidth", column.static_width)
-                label.setMinimumWidth(max(48, min(column.static_width, 112)))
+                label.setProperty("remminaProfileColumnLiveMinWidth", column.live_min_width)
+                label.setMinimumWidth(column.live_min_width)
                 header.addWidget(label)
             layout.addLayout(header)
 
@@ -4407,9 +4496,18 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 row_frame.setProperty("remminaProfileRowKey", row.key)
                 row_frame.setProperty("remminaProfileProtocol", row.protocol)
                 row_frame.setProperty("selectedRow", "true" if row.selected else "false")
+                row_frame.setProperty("remminaProfileStaticRowHeight", chrome.static_row_height)
+                row_frame.setProperty("remminaProfileStaticRowStep", chrome.static_row_step)
+                row_frame.setProperty("remminaProfileLiveRowMinHeight", chrome.live_row_min_height)
+                row_frame.setMinimumHeight(chrome.live_row_min_height)
                 row_layout = QHBoxLayout(row_frame)
-                row_layout.setContentsMargins(5, 3, 5, 3)
-                row_layout.setSpacing(4)
+                row_layout.setContentsMargins(
+                    chrome.live_row_margin_left,
+                    chrome.live_row_margin_top,
+                    chrome.live_row_margin_right,
+                    chrome.live_row_margin_bottom,
+                )
+                row_layout.setSpacing(chrome.live_row_spacing)
                 values = {
                     "name": row.name,
                     "protocol": row.protocol,
@@ -4422,7 +4520,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     cell.setProperty("remminaProfileRowKey", row.key)
                     cell.setProperty("remminaProfileColumnKey", column.key)
                     cell.setProperty("remminaProfileCellValue", values[column.key])
-                    cell.setMinimumWidth(max(48, min(column.static_width, 112)))
+                    cell.setProperty("remminaProfileColumnWidth", column.static_width)
+                    cell.setProperty("remminaProfileColumnLiveMinWidth", column.live_min_width)
+                    cell.setMinimumWidth(column.live_min_width)
                     cell.setToolTip(f"{row.name}: {row.status}")
                     row_layout.addWidget(cell)
                 status = QLabel(row.status)
@@ -4430,6 +4530,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 status.setProperty("remminaProfileRowKey", row.key)
                 status.setProperty("remminaProfileColumnKey", "status")
                 status.setProperty("remminaProfileCellValue", row.status)
+                status.setProperty("remminaProfileStaticStatusY", chrome.static_status_y)
                 status.setToolTip(f"{row.name}: {row.status}")
                 row_layout.addWidget(status, 1)
                 layout.addWidget(row_frame)
@@ -4441,13 +4542,25 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             panel.setObjectName("secureCrtSessionStatusStrip")
             panel.setProperty("designPreset", "securecrt")
             panel.setProperty("secureCrtSessionStatusFieldKeys", [field.key for field in chrome.fields])
+            panel.setProperty("secureCrtSessionStatusTitleWidth", chrome.title_width)
+            panel.setProperty("secureCrtSessionStatusStaticTitleX", chrome.static_title_x)
+            panel.setProperty("secureCrtSessionStatusStaticTitleY", chrome.static_title_y)
+            panel.setProperty("secureCrtSessionStatusStaticCellStartX", chrome.static_cell_start_x)
+            panel.setProperty("secureCrtSessionStatusStaticCellGap", chrome.static_cell_gap)
+            panel.setProperty("secureCrtSessionStatusLiveSpacing", chrome.live_spacing)
             layout = QHBoxLayout(panel)
-            layout.setContentsMargins(7, 5, 7, 5)
-            layout.setSpacing(6)
+            layout.setContentsMargins(
+                chrome.live_margin_left,
+                chrome.live_margin_top,
+                chrome.live_margin_right,
+                chrome.live_margin_bottom,
+            )
+            layout.setSpacing(chrome.live_spacing)
 
             title = QLabel(chrome.title)
             title.setObjectName("secureCrtSessionStatusTitle")
-            title.setMinimumWidth(86)
+            title.setMinimumWidth(chrome.title_width)
+            title.setMaximumWidth(chrome.title_width)
             layout.addWidget(title)
             for field in chrome.fields:
                 cell = QLabel(f"{field.label}: {field.value}")
@@ -4456,8 +4569,18 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 cell.setProperty("secureCrtSessionStatusLabel", field.label)
                 cell.setProperty("secureCrtSessionStatusValue", field.value)
                 cell.setProperty("secureCrtSessionStatusWidth", field.static_width)
+                cell.setProperty("secureCrtSessionStatusRole", field.role)
+                cell.setProperty("secureCrtSessionStatusStaticY", field.static_y)
+                cell.setProperty("secureCrtSessionStatusStaticHeight", field.static_height)
+                cell.setProperty("secureCrtSessionStatusStaticLabelX", field.static_label_x)
+                cell.setProperty("secureCrtSessionStatusStaticLabelY", field.static_label_y)
+                cell.setProperty("secureCrtSessionStatusStaticValueX", field.static_value_x)
+                cell.setProperty("secureCrtSessionStatusStaticValueY", field.static_value_y)
+                cell.setProperty("secureCrtSessionStatusLiveMinWidth", field.live_min_width)
+                cell.setProperty("secureCrtSessionStatusLiveCellHeight", field.live_cell_height)
                 cell.setToolTip(field.tooltip)
-                cell.setMinimumWidth(max(84, min(field.static_width, 170)))
+                cell.setMinimumWidth(field.live_min_width)
+                cell.setMinimumHeight(field.live_cell_height)
                 cell.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
                 layout.addWidget(cell)
             layout.addStretch(1)
@@ -4468,12 +4591,28 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             panel = QFrame()
             panel.setObjectName("secureCrtCommandWindow")
             panel.setProperty("secureCrtCommandWindowKey", chrome.key)
+            panel.setProperty("secureCrtCommandStaticHeaderHeight", chrome.static_header_height)
+            panel.setProperty("secureCrtCommandStaticTitleX", chrome.static_title_x)
+            panel.setProperty("secureCrtCommandStaticTitleY", chrome.static_title_y)
+            panel.setProperty("secureCrtCommandStaticHelperX", chrome.static_helper_x)
+            panel.setProperty("secureCrtCommandStaticHelperY", chrome.static_helper_y)
+            panel.setProperty("secureCrtCommandStaticControlY", chrome.static_control_y)
+            panel.setProperty("secureCrtCommandStaticTargetWidth", chrome.static_target_width)
+            panel.setProperty("secureCrtCommandStaticInputX", chrome.static_input_x)
+            panel.setProperty("secureCrtCommandStaticSendWidth", chrome.static_send_width)
+            panel.setProperty("secureCrtCommandLiveTargetMinWidth", chrome.live_target_min_width)
+            panel.setProperty("secureCrtCommandLiveSendMinWidth", chrome.live_send_min_width)
             layout = QVBoxLayout(panel)
-            layout.setContentsMargins(8, 7, 8, 7)
-            layout.setSpacing(5)
+            layout.setContentsMargins(
+                chrome.live_margin_left,
+                chrome.live_margin_top,
+                chrome.live_margin_right,
+                chrome.live_margin_bottom,
+            )
+            layout.setSpacing(chrome.live_spacing)
 
             header = QHBoxLayout()
-            header.setSpacing(8)
+            header.setSpacing(chrome.live_header_spacing)
             title = QLabel(chrome.title)
             title.setObjectName("secureCrtCommandTitle")
             helper = QLabel(chrome.helper)
@@ -4484,18 +4623,25 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             layout.addLayout(header)
 
             command_row = QHBoxLayout()
-            command_row.setSpacing(8)
+            command_row.setSpacing(chrome.live_row_spacing)
             target = QLabel(chrome.target_scope)
             target.setObjectName("secureCrtCommandTarget")
             target.setProperty("secureCrtCommandWindowKey", chrome.key)
-            target.setMinimumWidth(112)
+            target.setProperty("secureCrtCommandStaticTargetWidth", chrome.static_target_width)
+            target.setProperty("secureCrtCommandLiveTargetMinWidth", chrome.live_target_min_width)
+            target.setMinimumWidth(chrome.live_target_min_width)
             command_input = QLabel(chrome.command)
             command_input.setObjectName("secureCrtCommandInput")
+            command_input.setProperty("secureCrtCommandStaticInputX", chrome.static_input_x)
+            command_input.setProperty("secureCrtCommandStaticInputTextX", chrome.static_input_text_x)
+            command_input.setProperty("secureCrtCommandStaticInputTextY", chrome.static_input_text_y)
             command_input.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
             send = QLabel(chrome.send_label)
             send.setObjectName("secureCrtCommandSend")
             send.setProperty("secureCrtCommandWindowKey", chrome.key)
-            send.setMinimumWidth(48)
+            send.setProperty("secureCrtCommandStaticSendWidth", chrome.static_send_width)
+            send.setProperty("secureCrtCommandLiveSendMinWidth", chrome.live_send_min_width)
+            send.setMinimumWidth(chrome.live_send_min_width)
             status = QLabel(chrome.status)
             status.setObjectName("secureCrtCommandStatus")
             status.setProperty("secureCrtCommandWindowKey", chrome.key)

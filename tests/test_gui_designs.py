@@ -491,6 +491,17 @@ def test_securecrt_command_window_chrome_is_shared_metadata() -> None:
     assert chrome.command == "$ row doctor --json"
     assert chrome.send_label == "Send"
     assert chrome.status == "ready"
+    assert chrome.static_header_height == 25
+    assert chrome.static_control_y == 31
+    assert chrome.static_target_width == 112
+    assert chrome.static_target_icon_size == 13
+    assert chrome.static_input_x == 132
+    assert chrome.static_input_text_x == 10
+    assert chrome.static_input_text_y == 7
+    assert chrome.static_send_width == 58
+    assert chrome.static_send_right_margin == 10
+    assert chrome.live_target_min_width == 112
+    assert chrome.live_send_min_width == 48
 
 
 def test_securecrt_session_status_strip_is_shared_metadata() -> None:
@@ -519,6 +530,21 @@ def test_securecrt_session_status_strip_is_shared_metadata() -> None:
     assert strip.fields[3].value == "chacha20-poly1305"
     assert strip.fields[-1].value == "connected"
     assert [field.static_width for field in strip.fields] == [132, 174, 102, 122, 102, 90, 82]
+    assert [field.role for field in strip.fields] == ["normal", "normal", "normal", "normal", "normal", "normal", "status"]
+    assert {field.static_y for field in strip.fields} == {5}
+    assert {field.static_height for field in strip.fields} == {20}
+    assert {field.static_label_x for field in strip.fields} == {6}
+    assert {field.static_label_y for field in strip.fields} == {9}
+    assert {field.static_value_x for field in strip.fields} == {48}
+    assert {field.static_value_y for field in strip.fields} == {9}
+    assert [field.live_min_width for field in strip.fields] == [132, 170, 102, 122, 102, 90, 84]
+    assert {field.live_cell_height for field in strip.fields} == {22}
+    assert strip.title_width == 86
+    assert strip.static_title_x == 9
+    assert strip.static_title_y == 10
+    assert strip.static_cell_start_x == 96
+    assert strip.static_cell_gap == 6
+    assert strip.live_spacing == 6
     assert all(field.tooltip for field in strip.fields)
 
 
@@ -531,6 +557,23 @@ def test_securecrt_session_manager_chrome_is_shared_metadata() -> None:
     assert [action.icon_key for action in chrome.actions] == ["connect", "folder", "properties"]
     assert [action.label for action in chrome.actions] == ["Connect", "New Folder", "Properties"]
     assert [action.static_x for action in chrome.actions] == [34, 60, 86]
+    assert [action.static_y for action in chrome.actions] == [5, 5, 5]
+    assert [action.static_button_size for action in chrome.actions] == [20, 20, 20]
+    assert [action.static_icon_size for action in chrome.actions] == [10, 10, 9]
+    assert [action.live_icon_size for action in chrome.actions] == [14, 14, 14]
+    assert [action.live_button_size for action in chrome.actions] == [24, 24, 24]
+    assert {action.render_source for action in chrome.actions} == {"generated-pixmap"}
+    assert chrome.static_title_x == 8
+    assert chrome.static_title_y == 8
+    assert chrome.static_filter_y == 35
+    assert chrome.static_filter_x_margin == 8
+    assert chrome.static_filter_height == 24
+    assert chrome.static_filter_placeholder_x == 17
+    assert chrome.static_filter_placeholder_y == 7
+    assert chrome.live_max_height == 94
+    assert chrome.live_spacing == 5
+    assert chrome.live_title_spacing == 5
+    assert chrome.live_filter_height == 24
     assert all(action.tooltip for action in chrome.actions)
 
 
@@ -692,11 +735,25 @@ def test_remmina_profile_list_chrome_is_shared_metadata() -> None:
     assert [column.key for column in chrome.columns] == ["name", "protocol", "server"]
     assert [column.label for column in chrome.columns] == ["Name", "Protocol", "Server"]
     assert [column.static_width for column in chrome.columns] == [98, 58, 104]
+    assert [column.live_min_width for column in chrome.columns] == [98, 58, 104]
     assert [row.key for row in chrome.rows] == ["win-admin", "linux-console", "sftp-ops"]
     assert [row.protocol for row in chrome.rows] == ["RDP", "VNC", "SFTP"]
     assert chrome.rows[0].selected is True
     assert chrome.rows[0].server == "admin-win.example.invalid"
     assert chrome.rows[-1].status == "file sharing"
+    assert chrome.static_filter_x == 110
+    assert chrome.static_filter_y == 5
+    assert chrome.static_filter_height == 20
+    assert chrome.static_header_y == 33
+    assert chrome.static_row_start_y == 48
+    assert chrome.static_row_height == 22
+    assert chrome.static_row_step == 24
+    assert chrome.static_cell_start_x == 12
+    assert chrome.static_cell_y == 6
+    assert chrome.static_status_y == 16
+    assert chrome.live_max_height == 166
+    assert chrome.live_filter_width == 142
+    assert chrome.live_row_min_height == 24
 
 
 def test_termius_header_chips_are_shared_metadata() -> None:
@@ -742,6 +799,21 @@ def test_termius_host_identity_strip_is_shared_metadata() -> None:
         "current",
     ]
     assert [field.static_width for field in strip.fields] == [92, 112, 82, 92, 132, 122, 82]
+    assert [field.role for field in strip.fields] == ["normal", "normal", "normal", "normal", "normal", "normal", "status"]
+    assert {field.static_y for field in strip.fields} == {5}
+    assert {field.static_height for field in strip.fields} == {20}
+    assert {field.static_label_x for field in strip.fields} == {6}
+    assert {field.static_label_y for field in strip.fields} == {9}
+    assert {field.static_value_x for field in strip.fields} == {42}
+    assert {field.static_value_y for field in strip.fields} == {9}
+    assert [field.live_min_width for field in strip.fields] == [92, 112, 82, 92, 132, 122, 82]
+    assert {field.live_cell_height for field in strip.fields} == {22}
+    assert strip.title_width == 88
+    assert strip.static_title_x == 9
+    assert strip.static_title_y == 10
+    assert strip.static_cell_start_x == 80
+    assert strip.static_cell_gap == 6
+    assert strip.live_spacing == 6
     assert all(field.tooltip for field in strip.fields)
 
 

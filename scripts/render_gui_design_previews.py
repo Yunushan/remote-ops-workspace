@@ -2066,32 +2066,65 @@ def draw_remmina_profile_list_chrome(draw: Any, preset: GuiDesignPreset, x: int,
     chrome = gui_design_remmina_profile_list_chrome()
     interaction = gui_design_interaction_state(preset.id)
     rounded(draw, (x, y, x + w, y + h), c.pane, c.pane_border, 4)
-    draw_text(draw, chrome.title, x + 8, y + 8, c.control_text, 10, bold=True)
-    filter_x = x + 110
-    rounded(draw, (filter_x, y + 5, x + w - 7, y + 25), c.control, c.control_border, 3)
+    draw_text(draw, chrome.title, x + chrome.static_title_x, y + chrome.static_title_y, c.control_text, 10, bold=True)
+    filter_x = x + chrome.static_filter_x
+    filter_box = (
+        filter_x,
+        y + chrome.static_filter_y,
+        x + w - chrome.static_filter_right_margin,
+        y + chrome.static_filter_y + chrome.static_filter_height,
+    )
+    rounded(draw, filter_box, c.control, c.control_border, 3)
     if interaction.focused_control == "profile-filter":
-        draw.rectangle((filter_x - 2, y + 3, x + w - 5, y + 27), outline=c.primary, width=1)
-    draw_text(draw, chrome.filter_placeholder, filter_x + 7, y + 10, c.sidebar_muted, 8)
-    header_y = y + 33
-    col_x = x + 8
+        fx1, fy1, fx2, fy2 = filter_box
+        draw.rectangle((fx1 - 2, fy1 - 2, fx2 + 2, fy2 + 2), outline=c.primary, width=1)
+    draw_text(
+        draw,
+        chrome.filter_placeholder,
+        filter_x + chrome.static_filter_placeholder_x,
+        y + chrome.static_filter_placeholder_y,
+        c.sidebar_muted,
+        8,
+    )
+    header_y = y + chrome.static_header_y
+    col_x = x + chrome.static_column_start_x
     for column in chrome.columns:
         draw_text(draw, column.label, col_x, header_y, c.sidebar_muted, 8, bold=True)
         col_x += column.static_width
-    row_y = y + 48
+    row_y = y + chrome.static_row_start_y
     for row in chrome.rows:
         fill = c.sidebar_selected if row.selected else c.control
         outline = c.primary if row.selected else c.control_border
-        rounded(draw, (x + 6, row_y, x + w - 6, row_y + 22), fill, outline, 3)
+        rounded(
+            draw,
+            (
+                x + chrome.static_row_x_margin,
+                row_y,
+                x + w - chrome.static_row_x_margin,
+                row_y + chrome.static_row_height,
+            ),
+            fill,
+            outline,
+            3,
+        )
         values = {"name": row.name, "protocol": row.protocol, "server": row.server}
-        col_x = x + 12
+        col_x = x + chrome.static_cell_start_x
         for column in chrome.columns:
             text_color = c.sidebar_selected_text if row.selected else c.control_text
             if column.key == "protocol":
                 text_color = c.primary
-            draw_text(draw, values[column.key], col_x, row_y + 6, text_color, 8, bold=column.key == "name")
+            draw_text(
+                draw,
+                values[column.key],
+                col_x,
+                row_y + chrome.static_cell_y,
+                text_color,
+                8,
+                bold=column.key == "name",
+            )
             col_x += column.static_width
-        draw_text(draw, row.status, x + 12, row_y + 16, c.sidebar_muted, 7)
-        row_y += 24
+        draw_text(draw, row.status, x + chrome.static_cell_start_x, row_y + chrome.static_status_y, c.sidebar_muted, 7)
+        row_y += chrome.static_row_step
 
 
 def draw_securecrt_session_manager_chrome(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
@@ -2099,22 +2132,56 @@ def draw_securecrt_session_manager_chrome(draw: Any, preset: GuiDesignPreset, x:
     chrome = gui_design_securecrt_session_manager_chrome()
     interaction = gui_design_interaction_state(preset.id)
     rounded(draw, (x, y, x + w, y + h), c.pane, c.control_border, 3)
-    draw_text(draw, chrome.title, x + 8, y + 8, c.control_text, 10, bold=True)
+    draw_text(draw, chrome.title, x + chrome.static_title_x, y + chrome.static_title_y, c.control_text, 10, bold=True)
     for action in chrome.actions:
         bx = x + action.static_x
-        by = y + 5
-        rounded(draw, (bx, by, bx + 20, by + 20), c.control, c.control_border, 2)
-        if action.icon_key == "folder":
-            draw_sidebar_row_icon(draw, preset, "folder", bx + 5, by + 5, 10, selected=False, group=True)
-        elif action.icon_key == "properties":
-            draw_text(draw, "P", bx + 6, by + 4, c.primary, 9, bold=True)
-        else:
-            draw_text(draw, ">", bx + 7, by + 3, c.primary, 10, bold=True)
-    filter_y = y + 35
-    rounded(draw, (x + 8, filter_y, x + w - 8, filter_y + 24), c.terminal, c.primary, 2)
+        by = y + action.static_y
+        rounded(draw, (bx, by, bx + action.static_button_size, by + action.static_button_size), c.control, c.control_border, 2)
+        draw_securecrt_session_manager_action_icon(
+            draw,
+            preset,
+            action.icon_key,
+            bx + action.static_icon_x,
+            by + action.static_icon_y,
+            action.static_icon_size,
+        )
+    filter_y = y + chrome.static_filter_y
+    filter_box = (
+        x + chrome.static_filter_x_margin,
+        filter_y,
+        x + w - chrome.static_filter_x_margin,
+        filter_y + chrome.static_filter_height,
+    )
+    rounded(draw, filter_box, c.terminal, c.primary, 2)
     if interaction.focused_control == "session-filter":
-        draw.rectangle((x + 6, filter_y - 2, x + w - 6, filter_y + 26), outline=c.control_hover, width=1)
-    draw_text(draw, chrome.filter_placeholder, x + 17, filter_y + 7, c.sidebar_muted, 9)
+        fx1, fy1, fx2, fy2 = filter_box
+        draw.rectangle((fx1 - 2, fy1 - 2, fx2 + 2, fy2 + 2), outline=c.control_hover, width=1)
+    draw_text(
+        draw,
+        chrome.filter_placeholder,
+        x + chrome.static_filter_placeholder_x,
+        filter_y + chrome.static_filter_placeholder_y,
+        c.sidebar_muted,
+        9,
+    )
+
+
+def draw_securecrt_session_manager_action_icon(
+    draw: Any,
+    preset: GuiDesignPreset,
+    icon_key: str,
+    x: int,
+    y: int,
+    size: int,
+) -> None:
+    c = preset.colors
+    if icon_key == "folder":
+        draw_sidebar_row_icon(draw, preset, "folder", x, y, size, selected=False, group=True)
+        return
+    if icon_key == "properties":
+        draw_text(draw, "P", x, y, c.primary, size, bold=True)
+        return
+    draw_text(draw, ">", x, y, c.primary, size, bold=True)
 
 
 def draw_securecrt_session_tree(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
@@ -2575,38 +2642,98 @@ def draw_securecrt_command_window(draw: Any, preset: GuiDesignPreset, x: int, y:
     c = preset.colors
     chrome = gui_design_securecrt_command_window_chrome()
     rounded(draw, (x, y, x + w, y + h), c.log, c.pane_border, 2)
-    draw.rectangle((x + 1, y + 1, x + w - 1, y + 25), fill=c.toolbar)
-    draw_text(draw, chrome.title, x + 10, y + 8, c.control_text, 10, bold=True)
-    draw_text(draw, chrome.helper, x + 138, y + 8, c.sidebar_muted, 9)
-    control_y = y + 31
-    target_w = 112
-    rounded(draw, (x + 10, control_y, x + 10 + target_w, y + h - 8), c.control, c.control_border, 2)
-    draw_sidebar_row_icon(draw, preset, "database", x + 18, control_y + 6, 13, selected=False, group=False)
-    draw_text(draw, chrome.target_scope, x + 38, control_y + 7, c.control_text, 9)
-    input_x = x + 132
-    send_w = 58
-    draw.rectangle((input_x, control_y, x + w - send_w - 18, y + h - 8), fill=c.terminal, outline=c.primary)
-    draw_text(draw, chrome.command, input_x + 10, control_y + 7, c.terminal_accent, 10, mono=True)
-    rounded(draw, (x + w - send_w - 10, control_y, x + w - 10, y + h - 8), c.primary, c.primary, 2)
-    draw_text(draw, chrome.send_label, x + w - send_w + 5, control_y + 7, c.primary_text, 9, bold=True)
+    draw.rectangle((x + 1, y + 1, x + w - 1, y + chrome.static_header_height), fill=c.toolbar)
+    draw_text(draw, chrome.title, x + chrome.static_title_x, y + chrome.static_title_y, c.control_text, 10, bold=True)
+    draw_text(draw, chrome.helper, x + chrome.static_helper_x, y + chrome.static_helper_y, c.sidebar_muted, 9)
+    control_y = y + chrome.static_control_y
+    control_bottom = y + h - chrome.static_control_bottom_margin
+    target_x = x + chrome.static_target_x
+    rounded(
+        draw,
+        (target_x, control_y, target_x + chrome.static_target_width, control_bottom),
+        c.control,
+        c.control_border,
+        2,
+    )
+    draw_sidebar_row_icon(
+        draw,
+        preset,
+        "database",
+        x + chrome.static_target_icon_x,
+        control_y + chrome.static_target_icon_y,
+        chrome.static_target_icon_size,
+        selected=False,
+        group=False,
+    )
+    draw_text(
+        draw,
+        chrome.target_scope,
+        x + chrome.static_target_label_x,
+        control_y + chrome.static_target_label_y,
+        c.control_text,
+        9,
+    )
+    input_x = x + chrome.static_input_x
+    send_x = x + w - chrome.static_send_width - chrome.static_send_right_margin
+    draw.rectangle(
+        (input_x, control_y, x + w - chrome.static_send_width - chrome.static_send_input_gap, control_bottom),
+        fill=c.terminal,
+        outline=c.primary,
+    )
+    draw_text(
+        draw,
+        chrome.command,
+        input_x + chrome.static_input_text_x,
+        control_y + chrome.static_input_text_y,
+        c.terminal_accent,
+        10,
+        mono=True,
+    )
+    rounded(draw, (send_x, control_y, x + w - chrome.static_send_right_margin, control_bottom), c.primary, c.primary, 2)
+    draw_text(
+        draw,
+        chrome.send_label,
+        send_x + chrome.static_send_label_x,
+        control_y + chrome.static_send_label_y,
+        c.primary_text,
+        9,
+        bold=True,
+    )
 
 
 def draw_securecrt_session_status_strip(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
     c = preset.colors
     chrome = gui_design_securecrt_session_status_strip()
     rounded(draw, (x, y, x + w, y + h), c.pane, c.control_border, 2)
-    draw_text(draw, chrome.title, x + 9, y + 10, c.sidebar_muted, 9, bold=True)
-    cell_x = x + 96
+    draw_text(draw, chrome.title, x + chrome.static_title_x, y + chrome.static_title_y, c.sidebar_muted, 9, bold=True)
+    cell_x = x + chrome.static_cell_start_x
     for field in chrome.fields:
         cell_w = field.static_width
         if cell_x + cell_w > x + w - 6:
             break
-        cell_fill = c.primary if field.key == "state" else c.terminal
-        cell_text = c.primary_text if field.key == "state" else c.control_text
-        rounded(draw, (cell_x, y + 5, cell_x + cell_w, y + h - 5), cell_fill, c.control_border, 2)
-        draw_text(draw, field.label, cell_x + 6, y + 9, c.sidebar_muted if field.key != "state" else c.primary_text, 8)
-        draw_text(draw, field.value, cell_x + 48, y + 9, cell_text, 8, mono=True, bold=field.key == "state")
-        cell_x += cell_w + 6
+        is_status = field.role == "status"
+        cell_fill = c.primary if is_status else c.terminal
+        cell_text = c.primary_text if is_status else c.control_text
+        rounded(
+            draw,
+            (cell_x, y + field.static_y, cell_x + cell_w, y + field.static_y + field.static_height),
+            cell_fill,
+            c.control_border,
+            2,
+        )
+        label_color = c.primary_text if is_status else c.sidebar_muted
+        draw_text(draw, field.label, cell_x + field.static_label_x, y + field.static_label_y, label_color, 8)
+        draw_text(
+            draw,
+            field.value,
+            cell_x + field.static_value_x,
+            y + field.static_value_y,
+            cell_text,
+            8,
+            mono=True,
+            bold=is_status,
+        )
+        cell_x += cell_w + chrome.static_cell_gap
 
 
 def draw_termius_session_workflow(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
@@ -2635,19 +2762,35 @@ def draw_termius_host_identity_strip(draw: Any, preset: GuiDesignPreset, x: int,
     c = preset.colors
     strip = gui_design_termius_host_identity_strip()
     rounded(draw, (x, y, x + w, y + h), c.pane, c.control_border, 2)
-    draw_text(draw, strip.title, x + 9, y + 10, c.sidebar_muted, 9, bold=True)
-    cell_x = x + 80
+    draw_text(draw, strip.title, x + strip.static_title_x, y + strip.static_title_y, c.sidebar_muted, 9, bold=True)
+    cell_x = x + strip.static_cell_start_x
     for field in strip.fields:
         cell_w = field.static_width
         if cell_x + cell_w > x + w - 6:
             break
-        cell_fill = c.primary if field.key == "sync" else c.terminal
-        cell_text = c.primary_text if field.key == "sync" else c.control_text
-        rounded(draw, (cell_x, y + 5, cell_x + cell_w, y + h - 5), cell_fill, c.control_border, 2)
-        label_color = c.primary_text if field.key == "sync" else c.sidebar_muted
-        draw_text(draw, field.label, cell_x + 6, y + 9, label_color, 8)
-        draw_text(draw, field.value, cell_x + 42, y + 9, cell_text, 8, mono=True, bold=field.key == "sync")
-        cell_x += cell_w + 6
+        is_status = field.role == "status"
+        cell_fill = c.primary if is_status else c.terminal
+        cell_text = c.primary_text if is_status else c.control_text
+        rounded(
+            draw,
+            (cell_x, y + field.static_y, cell_x + cell_w, y + field.static_y + field.static_height),
+            cell_fill,
+            c.control_border,
+            2,
+        )
+        label_color = c.primary_text if is_status else c.sidebar_muted
+        draw_text(draw, field.label, cell_x + field.static_label_x, y + field.static_label_y, label_color, 8)
+        draw_text(
+            draw,
+            field.value,
+            cell_x + field.static_value_x,
+            y + field.static_value_y,
+            cell_text,
+            8,
+            mono=True,
+            bold=is_status,
+        )
+        cell_x += cell_w + strip.static_cell_gap
 
 
 def draw_remmina_viewer_control_icon(

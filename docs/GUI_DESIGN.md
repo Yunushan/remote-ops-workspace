@@ -74,17 +74,24 @@ SecureCRT-style Command Window chrome is tracked the same way: title, helper
 copy, target scope, command input, send action and status live in shared
 metadata, the static preview draws them, the PyQt home surface exposes stable
 `secureCrtCommandWindow`/`secureCrtCommandWindowKey` evidence, and CI verifies
-that the PNG still contains a measured command-input strip.
+that the PNG still contains a measured command-input strip. SecureCRT-style Command Window geometry
+also pins the header height, target selector width, command input origin, send
+button width and live target/send minimum widths.
 The SecureCRT-style session status strip is shared metadata too. Session,
 target, protocol, cipher, attached SFTP tab, log file and connected state are
 defined once, drawn above the terminal panes in the static preview, exposed as
 live `secureCrtSessionStatusStrip`/`secureCrtSessionStatusKey` evidence and
-checked in the render manifest without using user-specific endpoints.
+checked in the render manifest without using user-specific endpoints. The
+SecureCRT-style session status geometry contract pins title width, cell start,
+cell gap, label/value offsets, connected-state role and live cell dimensions.
 SecureCRT-style Session Manager filter/action chrome is also shared metadata.
 The filter placeholder and Connect, New Folder and Properties actions are drawn
 in the static sidebar, exposed as live `secureCrtSessionManagerChrome` actions
 plus the focused `secureCrtSessionFilter`, and checked in CI as required
 Session Manager navigation evidence.
+SecureCRT-style Session Manager geometry now pins the title offsets, focused
+filter rectangle, action-button positions, generated icon source and live Qt
+button/filter sizes so the static preview and real GUI cannot diverge silently.
 The static SecureCRT Session Manager tree now has a dedicated renderer for the
 Session Database root, foldered Sessions/Local Shells/Pinned groups, selected
 SSH2 row and connector lines. Visual metrics pin those regions and color
@@ -119,7 +126,9 @@ Remmina-style profile-list chrome is shared metadata as well. The connection
 list title, filter placeholder, Name/Protocol/Server columns and generic
 RDP/VNC/SFTP rows are drawn in the static sidebar, exposed as live
 `remminaProfileListChrome`/`remminaProfileRowKey` evidence and checked in the
-render manifest.
+render manifest. Remmina-style profile-list geometry pins the filter position,
+header offset, row start, row height, row step, cell offsets, live filter width
+and live row height across static and real-GUI evidence.
 Remmina interaction-state visual metrics now pin the focused profile filter,
 selected connection-list row, selected protocol-tree row, active RDP viewer tab,
 checked Transfer toolbar action and viewer-control glyph cluster. The live
@@ -138,7 +147,9 @@ Termius-style host identity strip is shared metadata too. Host, vault
 identity, jump chain, SFTP file state, port-forward, snippet and sync status
 are drawn above the terminal/detail panes, exposed as live
 `termiusHostIdentityStrip`/`termiusHostIdentityKey` evidence and checked in the
-render manifest with generic host and key labels.
+render manifest with generic host and key labels. Termius-style host identity geometry
+pins the title width, cell start, cell gap, label/value offsets, status role
+and live cell dimensions across static and real-GUI evidence.
 Termius interaction-state visual metrics also pin the focused Hosts search
 outline, selected vault host row, active west host tab, checked Vault toolbar
 button, identity-strip Sync control and workflow-card action row as measured

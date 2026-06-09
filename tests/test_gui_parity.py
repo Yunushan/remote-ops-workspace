@@ -967,6 +967,7 @@ def test_static_renderer_tracks_remmina_and_mremoteng_control_surfaces() -> None
     remmina_requirements = {item["id"] for item in criteria["presets"]["remmina"]["requirements"]}
     assert "remmina.viewer-controls" in remmina_requirements
     assert "remmina.viewer-control-chrome" in remmina_requirements
+    assert "remmina.profile-list-geometry" in remmina_requirements
     mremoteng_requirements = {item["id"] for item in criteria["presets"]["mremoteng"]["requirements"]}
     assert "mremoteng.top-chrome" in mremoteng_requirements
     assert "mremoteng.document-controls" in mremoteng_requirements
@@ -987,25 +988,32 @@ def test_static_renderer_tracks_remmina_and_mremoteng_control_surfaces() -> None
     assert "build_mremoteng_property_grid_evidence" in gui_source
     assert "mRemoteNgPropertyRowKey" in gui_source
     assert "GuiRemminaViewerControl" in design_source
+    assert "GuiRemminaProfileListChrome" in design_source
     assert "static_width" in design_source
     assert "live_button_height" in design_source
+    assert "static_row_start_y" in design_source
     assert "gui_design_remmina_viewer_controls" in design_source
     assert "build_remmina_viewer_controls_evidence" in gui_source
     assert "remmina_profile_filter" in gui_source
     assert "remminaViewerControlKey" in gui_source
     assert "remminaViewerControlStaticWidth" in gui_source
     assert "remminaViewerControlRenderSource" in gui_source
+    assert "remminaProfileStaticRowStartY" in gui_source
+    assert "remminaProfileLiveRowMinHeight" in gui_source
     assert "remminaProfileFilter" in live_checker_source
     assert "draw_remmina_viewer_control_icon" in renderer_source
     assert "gui_design_remmina_viewer_controls" in renderer_source
     assert "control.static_width" in renderer_source
     assert "control.static_icon_size" in renderer_source
+    assert "chrome.static_row_step" in renderer_source
     assert "profile-filter-focus" in visual_metrics_source
     assert "active-viewer-tab" in visual_metrics_source
     assert "transfer-toolbar-checked" in visual_metrics_source
     assert "viewer-control-glyph-cluster" in visual_metrics_source
     assert "check_live_remmina_viewer_controls" in live_checker_source
     assert "remmina-viewer-control-geometry" in live_checker_source
+    assert "remmina-profile-list-geometry" in live_checker_source
+    assert "remminaProfileLiveRowMinHeight" in live_checker_source
     assert "draw_mremoteng_title_bar" in renderer_source
     assert "draw_mremoteng_toolbar" in renderer_source
     assert "gui_design_mremoteng_top_chrome" in renderer_source
@@ -1043,34 +1051,60 @@ def test_static_renderer_tracks_securecrt_and_termius_workflow_surfaces() -> Non
     assert "securecrt.command-window-chrome" in securecrt_requirements
     assert "securecrt.session-manager-chrome" in securecrt_requirements
     assert "securecrt.top-chrome" in securecrt_requirements
+    assert "securecrt.session-status-geometry" in securecrt_requirements
+    assert "securecrt.command-window-geometry" in securecrt_requirements
+    assert "securecrt.session-manager-geometry" in securecrt_requirements
     assert "securecrt.top-chrome" in criteria["presets"]["securecrt"]["dimension_coverage"]["toolbars"]
     termius_requirements = {item["id"] for item in criteria["presets"]["termius"]["requirements"]}
     assert "termius.workflow-cards" in termius_requirements
     assert "termius.hosts-sidebar-chrome" in termius_requirements
     assert "termius.header-chip-chrome" in termius_requirements
+    assert "termius.host-identity-geometry" in termius_requirements
     assert "GuiSecureCrtCommandWindowChrome" in design_source
+    assert "static_control_y" in design_source
     assert "gui_design_securecrt_command_window_chrome" in design_source
     assert "GuiSecureCrtSessionManagerChrome" in design_source
+    assert "static_button_size" in design_source
+    assert "live_button_size" in design_source
+    assert "render_source" in design_source
+    assert "GuiSecureCrtSessionStatusStrip" in design_source
+    assert "static_cell_start_x" in design_source
     assert "gui_design_securecrt_session_manager_chrome" in design_source
     assert "GuiSecureCrtTopChrome" in design_source
     assert "gui_design_securecrt_top_chrome" in design_source
     assert "GuiTermiusHeaderChip" in design_source
     assert "GuiTermiusHostsChrome" in design_source
+    assert "GuiTermiusHostIdentityStrip" in design_source
+    assert "static_cell_start_x" in design_source
     assert "gui_design_termius_hosts_chrome" in design_source
     assert "gui_design_termius_header_chips" in design_source
     assert "build_securecrt_command_window_evidence" in gui_source
+    assert "secureCrtCommandStaticControlY" in gui_source
+    assert "secureCrtCommandLiveSendMinWidth" in gui_source
     assert "build_securecrt_session_manager_chrome" in gui_source
+    assert "secureCrtSessionManagerLiveButtonSize" in gui_source
+    assert "secureCrtSessionManagerRenderSource" in gui_source
+    assert "securecrt_session_manager_action_icon" in gui_source
+    assert "secureCrtSessionStatusStaticCellStartX" in gui_source
+    assert "secureCrtSessionStatusLiveCellHeight" in gui_source
     assert "configure_menu_bar_for_design" in gui_source
     assert "secureCrtTopToolbarIconKey" in gui_source
     assert "build_termius_hosts_chrome" in gui_source
     assert "termiusHostSearch" in gui_source
     assert "build_termius_header_chips_evidence" in gui_source
     assert "termiusHeaderChipKey" in gui_source
+    assert "termiusHostIdentityStaticCellStartX" in gui_source
+    assert "termiusHostIdentityLiveCellHeight" in gui_source
     assert "secureCrtCommandWindowKey" in gui_source
     assert "secureCrtSessionManagerActionKey" in gui_source
     assert "draw_securecrt_command_window" in renderer_source
+    assert "chrome.static_send_width" in renderer_source
     assert "draw_securecrt_session_manager_chrome" in renderer_source
+    assert "draw_securecrt_session_manager_action_icon" in renderer_source
+    assert "action.static_button_size" in renderer_source
     assert "draw_securecrt_session_tree" in renderer_source
+    assert "draw_securecrt_session_status_strip" in renderer_source
+    assert "chrome.static_cell_gap" in renderer_source
     assert "gui_design_tree_root_copy" in renderer_source
     assert "gui_design_securecrt_command_window_chrome" in renderer_source
     assert "gui_design_securecrt_session_manager_chrome" in renderer_source
@@ -1089,6 +1123,8 @@ def test_static_renderer_tracks_securecrt_and_termius_workflow_surfaces() -> Non
     assert "draw_securecrt_toolbar" in renderer_source
     assert "gui_design_securecrt_top_chrome" in renderer_source
     assert "draw_termius_hosts_chrome" in renderer_source
+    assert "draw_termius_host_identity_strip" in renderer_source
+    assert "strip.static_cell_gap" in renderer_source
     assert "gui_design_termius_hosts_chrome" in renderer_source
     assert "gui_design_termius_header_chips" in renderer_source
     assert "check_live_securecrt_command_window" in live_checker_source
@@ -1098,9 +1134,17 @@ def test_static_renderer_tracks_securecrt_and_termius_workflow_surfaces() -> Non
     assert "EXPECTED_SECURECRT_TREE_ICON_KEYS" in live_checker_source
     assert "securecrt-top-chrome" in live_checker_source
     assert "securecrt-tree-icons" in live_checker_source
+    assert "securecrt-session-status-geometry" in live_checker_source
+    assert "securecrt-session-manager-geometry" in live_checker_source
+    assert "secureCrtSessionManagerRenderSource" in live_checker_source
+    assert "secureCrtSessionStatusLiveCellHeight" in live_checker_source
+    assert "securecrt-command-window-geometry" in live_checker_source
+    assert "secureCrtCommandLiveSendMinWidth" in live_checker_source
     assert "check_live_termius_hosts_chrome" in live_checker_source
     assert "termius-hosts-chrome" in live_checker_source
     assert "check_live_termius_header_chips" in live_checker_source
+    assert "termius-host-identity-geometry" in live_checker_source
+    assert "termiusHostIdentityLiveCellHeight" in live_checker_source
     assert "draw_termius_session_workflow" in renderer_source
 
 

@@ -15,6 +15,8 @@ from .gui_designs import (
     gui_design_interaction_state,
     gui_design_moba_bottom_edge_controls,
     gui_design_moba_home_welcome_chrome,
+    gui_design_moba_monitoring_control_geometry,
+    gui_design_moba_monitoring_control_geometry_for,
     gui_design_moba_monitoring_controls,
     gui_design_moba_monitoring_metrics,
     gui_design_moba_quick_connect_chrome,
@@ -27,6 +29,8 @@ from .gui_designs import (
     gui_design_moba_sftp_browser_chrome,
     gui_design_moba_sftp_dock_actions,
     gui_design_moba_sftp_dock_layout,
+    gui_design_moba_sftp_file_row_icon,
+    gui_design_moba_sftp_file_row_icons,
     gui_design_moba_ssh_banner_chrome,
     gui_design_moba_status_bar_chrome,
     gui_design_moba_status_segments,
@@ -50,6 +54,8 @@ from .gui_designs import (
     gui_design_termius_hosts_chrome,
     gui_design_toolbar_actions,
     gui_design_tree_root_copy,
+    gui_design_tree_root_icon,
+    gui_design_tree_row_icon,
     gui_design_workflow_cards,
     gui_design_workspace_surface,
 )
@@ -112,19 +118,6 @@ QUICK_CONNECT_DEFAULT_PORTS = {
     "mosh": 22,
     "raw": None,
 }
-
-
-def telemetry_segment_icon(icon_key: str) -> str:
-    return {
-        "host": "H",
-        "cpu": "%",
-        "memory": "M",
-        "disk": "D",
-        "upload": "^",
-        "download": "v",
-        "connection": "C",
-        "process": "P",
-    }.get(icon_key, "*")
 
 
 @dataclass(frozen=True)
@@ -336,6 +329,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             QFormLayout,
             QFrame,
             QHBoxLayout,
+            QHeaderView,
             QLabel,
             QLineEdit,
             QMainWindow,
@@ -359,6 +353,16 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
         )
     except Exception as exc:  # pragma: no cover - optional dependency
         raise GuiDependencyError("PyQt6 is not installed. Install with: pip install -e '.[desktop]'") from exc
+
+    TREE_ICON_KEY_ROLE = int(Qt.ItemDataRole.UserRole) + 31
+    TREE_ROW_KIND_ROLE = int(Qt.ItemDataRole.UserRole) + 32
+    TREE_ICON_SIZE_ROLE = int(Qt.ItemDataRole.UserRole) + 33
+    TREE_ICON_RENDER_ROLE = int(Qt.ItemDataRole.UserRole) + 34
+    SFTP_ROW_ICON_KEY_ROLE = int(Qt.ItemDataRole.UserRole) + 41
+    SFTP_ROW_KIND_ROLE = int(Qt.ItemDataRole.UserRole) + 42
+    SFTP_ROW_ICON_SIZE_ROLE = int(Qt.ItemDataRole.UserRole) + 43
+    SFTP_ROW_ICON_RENDER_ROLE = int(Qt.ItemDataRole.UserRole) + 44
+    GENERATED_PROFILE_TREE_ICON_PRESETS = {"securecrt", "termius", "remmina", "mremoteng"}
 
     class TerminalPane(QWidget):
         STOP_POLICY = ProcessStopPolicy()
@@ -615,37 +619,94 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.file_table.setHeaderLabels([column.label for column in chrome.columns])
             self.file_table.setProperty("mobaSftpColumnKeys", [column.key for column in chrome.columns])
             self.file_table.setProperty("mobaSftpColumnLabels", [column.label for column in chrome.columns])
+            self.file_table.setProperty("mobaSftpColumnWidths", [column.static_width for column in chrome.columns])
             self.file_table.setProperty("mobaSftpParentRowLabel", chrome.parent_row_label)
             self.file_table.setProperty("mobaSftpParentRowKind", chrome.parent_row_kind)
             self.file_table.setProperty("mobaSftpSelectedRowKind", chrome.selected_row_kind)
             self.file_table.setProperty("mobaSftpHeaderHeight", density.table_header_height)
             self.file_table.setProperty("mobaSftpRowHeight", density.file_row_height)
+            self.file_table.setProperty(
+                "mobaSftpFileRowIconKinds",
+                [row_icon.kind for row_icon in gui_design_moba_sftp_file_row_icons()],
+            )
+            self.file_table.setProperty(
+                "mobaSftpFileRowIconKeys",
+                [row_icon.icon_key for row_icon in gui_design_moba_sftp_file_row_icons()],
+            )
             self.file_table.setIconSize(QSize(density.toolbar_icon_size, density.toolbar_icon_size))
             self.file_table.setRootIsDecorated(False)
             self.file_table.setUniformRowHeights(True)
             self.file_table.setSortingEnabled(False)
             self.file_table.header().setFixedHeight(density.table_header_height)
+            self.file_table.header().setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
+            self.file_table.header().setStretchLastSection(False)
+            for column_index, column in enumerate(chrome.columns):
+                self.file_table.setColumnWidth(column_index, column.static_width)
             parent_item = QTreeWidgetItem([chrome.parent_row_label, "", ""])
-            parent_item.setData(0, Qt.ItemDataRole.UserRole, chrome.parent_row_kind)
-            parent_item.setIcon(0, self.style().standardIcon(self.standard_icon("SP_DirIcon")))
+            self.apply_sftp_file_row_icon(parent_item, chrome.parent_row_kind)
             parent_item.setSizeHint(0, QSize(0, density.file_row_height))
             parent_item.setToolTip(0, "parent directory")
             self.file_table.addTopLevelItem(parent_item)
             for entry in self.state.file_entries:
                 item = QTreeWidgetItem([entry.name, str(entry.size_kb), entry.modified])
-                item.setData(0, Qt.ItemDataRole.UserRole, entry.kind)
-                icon_name = "SP_DirIcon" if entry.kind == "dir" else "SP_FileIcon"
-                item.setIcon(0, self.style().standardIcon(self.standard_icon(icon_name)))
+                self.apply_sftp_file_row_icon(item, entry.kind)
                 item.setSizeHint(0, QSize(0, density.file_row_height))
                 item.setToolTip(0, f"{entry.kind}: {entry.name}")
                 self.file_table.addTopLevelItem(item)
             parent_item.setSelected(True)
             self.file_table.setCurrentItem(parent_item)
-            self.file_table.resizeColumnToContents(0)
             layout.addSpacing(density.table_header_gap)
             layout.addWidget(self.file_table, 1)
 
             layout.addWidget(self.build_remote_monitoring(density))
+
+        def apply_sftp_file_row_icon(self, item: QTreeWidgetItem, kind: str) -> None:
+            row_icon = gui_design_moba_sftp_file_row_icon(kind)
+            item.setData(0, Qt.ItemDataRole.UserRole, row_icon.row_kind)
+            item.setData(0, SFTP_ROW_ICON_KEY_ROLE, row_icon.icon_key)
+            item.setData(0, SFTP_ROW_KIND_ROLE, row_icon.row_kind)
+            item.setData(0, SFTP_ROW_ICON_SIZE_ROLE, row_icon.static_size)
+            item.setData(0, SFTP_ROW_ICON_RENDER_ROLE, row_icon.render_source)
+            item.setIcon(0, self.sftp_file_row_icon(row_icon.icon_key, size=row_icon.static_size))
+
+        def sftp_file_row_icon(self, icon_key: str, *, size: int) -> QIcon:
+            pixmap = QPixmap(size, size)
+            pixmap.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(pixmap)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            try:
+                self.draw_sftp_file_row_icon(painter, icon_key, size)
+            finally:
+                painter.end()
+            return QIcon(pixmap)
+
+        def draw_sftp_file_row_icon(self, painter: QPainter, icon_key: str, size: int) -> None:
+            outline = QColor("#343a40")
+            folder = QColor("#f2c744")
+            parent_folder = QColor("#f5d96a")
+            file_fill = QColor("#d7dde5")
+            folded = QColor("#eef2f7")
+            muted = QColor("#6b7280")
+            if icon_key in {"folder", "folder-up"}:
+                painter.setPen(QPen(outline, 1))
+                painter.setBrush(QBrush(parent_folder if icon_key == "folder-up" else folder))
+                painter.drawRect(0, 4, size - 1, size - 5)
+                painter.setBrush(QBrush(QColor("#ffe58a")))
+                painter.drawRect(2, 2, max(6, size // 2), 3)
+                if icon_key == "folder-up":
+                    painter.setPen(Qt.PenStyle.NoPen)
+                    painter.setBrush(QBrush(QColor("#2f6fb1")))
+                    mid = size // 2
+                    painter.drawPolygon(QPoint(mid, 4), QPoint(mid - 3, 8), QPoint(mid + 3, 8))
+                return
+            painter.setPen(QPen(outline, 1))
+            painter.setBrush(QBrush(file_fill))
+            painter.drawRect(2, 1, size - 3, size - 2)
+            painter.setBrush(QBrush(folded))
+            painter.drawPolygon(QPoint(size - 5, 1), QPoint(size - 1, 5), QPoint(size - 5, 5))
+            painter.setPen(QPen(muted, 1))
+            painter.drawLine(4, 7, size - 4, 7)
+            painter.drawLine(4, 10, size - 5, 10)
 
         def build_remote_monitoring(self, density) -> QFrame:
             chrome = gui_design_moba_remote_monitoring_dock_chrome()
@@ -662,18 +723,28 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             panel.setProperty("mobaRemoteMonitoringRefreshSeconds", chrome.refresh_seconds)
             panel.setProperty("mobaRemoteMonitoringCommand", self.state.monitoring_plan.printable())
             panel.setProperty("mobaRemoteMonitoringFollowPlan", self.state.follow_folder_plan.printable_batch())
+            panel.setProperty(
+                "mobaMonitoringControlGeometryKeys",
+                [geometry.key for geometry in gui_design_moba_monitoring_control_geometry()],
+            )
             panel.setFixedHeight(density.monitoring_height)
-            layout = QVBoxLayout(panel)
-            layout.setContentsMargins(8, 8, 8, 8)
-            layout.setSpacing(9)
-            controls = QFrame()
+            controls = QFrame(panel)
             controls.setObjectName("mobaMonitoringControls")
-            controls_layout = QVBoxLayout(controls)
-            controls_layout.setContentsMargins(0, 0, 0, 0)
-            controls_layout.setSpacing(18)
+            controls.setGeometry(0, 0, 260, density.monitoring_height)
+            controls.setProperty(
+                "mobaMonitoringControlGeometryKeys",
+                [geometry.key for geometry in gui_design_moba_monitoring_control_geometry()],
+            )
             for control in gui_design_moba_monitoring_controls():
-                controls_layout.addWidget(self.monitoring_control_widget(control))
-            layout.addWidget(controls)
+                widget = self.monitoring_control_widget(control)
+                geometry = gui_design_moba_monitoring_control_geometry_for(control.key)
+                widget.setParent(controls)
+                widget.setGeometry(
+                    geometry.anchor_x,
+                    geometry.static_y,
+                    250 - geometry.anchor_x,
+                    max(geometry.row_height + 4, geometry.icon_size + 4),
+                )
             for metric in gui_design_moba_monitoring_metrics():
                 label = QLabel(self.monitoring_metric_text(metric), panel)
                 label.setObjectName("mobaMonitoringMetric")
@@ -698,11 +769,20 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             widget.setProperty("mobaMonitoringControlType", control.control_type)
             widget.setProperty("mobaMonitoringControlDefaultChecked", control.checked)
             widget.setProperty("mobaMonitoringTelemetrySurface", gui_design_moba_remote_monitoring_dock_chrome().telemetry_surface)
+            geometry = gui_design_moba_monitoring_control_geometry_for(control.key)
+            widget.setProperty("mobaMonitoringControlStaticX", geometry.anchor_x)
+            widget.setProperty("mobaMonitoringControlStaticY", geometry.static_y)
+            widget.setProperty("mobaMonitoringControlIconX", geometry.icon_x)
+            widget.setProperty("mobaMonitoringControlIconSize", geometry.icon_size)
+            widget.setProperty("mobaMonitoringControlLabelX", geometry.label_x)
+            widget.setProperty("mobaMonitoringControlCheckSize", geometry.check_size)
+            widget.setProperty("mobaMonitoringControlRowHeight", geometry.row_height)
             widget.setCheckable(True)
             widget.setChecked(self.monitoring_control_checked(control))
             widget.setToolTip(self.monitoring_control_tooltip(control))
             widget.setIcon(self.monitoring_control_icon(control.icon_key))
-            widget.setIconSize(QSize(18, 18))
+            widget.setIconSize(QSize(geometry.icon_size, geometry.icon_size))
+            widget.setMinimumHeight(geometry.row_height)
             if control.key == "remote-monitoring":
                 widget.setProperty("mobaMonitoringCommand", self.state.monitoring_plan.printable())
                 widget.setProperty(
@@ -950,10 +1030,16 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 button.setObjectName("mobaRightUtilityAction")
                 button.setProperty("mobaRightUtilityKey", action.key)
                 button.setProperty("mobaRightUtilityIconKey", action.icon_key)
+                button.setProperty("mobaRightUtilityStaticX", action.static_x)
+                button.setProperty("mobaRightUtilityStaticY", action.static_y)
+                button.setProperty("mobaRightUtilityStaticSize", action.static_size)
+                button.setProperty("mobaRightUtilityLiveIconSize", action.live_icon_size)
+                button.setProperty("mobaRightUtilityButtonSize", action.button_size)
+                button.setProperty("mobaRightUtilityRenderSource", action.render_source)
                 button.setToolTip(action.tooltip)
                 button.setIcon(self.moba_utility_icon(action.icon_key, action.color))
-                button.setIconSize(QSize(18, 18))
-                button.setFixedSize(QSize(22, 22))
+                button.setIconSize(QSize(action.live_icon_size, action.live_icon_size))
+                button.setFixedSize(QSize(action.button_size, action.button_size))
                 button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
                 layout.addWidget(button)
             layout.addStretch(1)
@@ -1095,6 +1181,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 cell_frame.setObjectName("mobaTelemetryCell")
                 cell_frame.setProperty("mobaTelemetryKey", cell.key)
                 cell_frame.setProperty("mobaTelemetryIconKey", cell.icon_key)
+                cell_frame.setProperty("mobaTelemetryIconAccent", cell.icon_accent)
+                cell_frame.setProperty("mobaTelemetryIconSize", cell.icon_size)
                 cell_frame.setProperty("mobaTelemetryDisplayText", cell.display_text)
                 cell_frame.setProperty("mobaTelemetryCellWidth", cell.width)
                 cell_frame.setToolTip(cell.label)
@@ -1102,10 +1190,15 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 cell_layout = QHBoxLayout(cell_frame)
                 cell_layout.setContentsMargins(4, 1, 5, 1)
                 cell_layout.setSpacing(4)
-                icon = QLabel(telemetry_segment_icon(cell.icon_key))
+                icon = QLabel()
                 icon.setObjectName("mobaTelemetryIcon")
                 icon.setProperty("mobaTelemetryKey", cell.key)
                 icon.setProperty("mobaTelemetryIconKey", cell.icon_key)
+                icon.setProperty("mobaTelemetryIconAccent", cell.icon_accent)
+                icon.setProperty("mobaTelemetryIconSize", cell.icon_size)
+                icon.setProperty("mobaTelemetryIconRender", "generated-pixmap")
+                icon.setPixmap(self.telemetry_icon_pixmap(cell))
+                icon.setFixedSize(QSize(cell.icon_size, cell.icon_size))
                 icon.setToolTip(cell.label)
                 cell_layout.addWidget(icon)
                 label = QLabel(cell.display_text)
@@ -1118,6 +1211,60 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 layout.addWidget(cell_frame)
             layout.addStretch(1)
             return bar
+
+        def telemetry_icon_pixmap(self, cell) -> QPixmap:
+            size = cell.icon_size
+            pixmap = QPixmap(size, size)
+            pixmap.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(pixmap)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+            try:
+                accent = QColor(cell.icon_accent)
+                dark = QColor("#101010")
+
+                def pen(color: QColor, width: int = 1) -> None:
+                    painter.setPen(QPen(color, width))
+
+                def brush(color: QColor) -> None:
+                    painter.setBrush(QBrush(color))
+
+                pen(accent)
+                brush(dark)
+                painter.drawRect(0, 0, size - 1, size - 1)
+                mid = size // 2
+                icon_key = cell.icon_key
+                if icon_key == "host":
+                    painter.drawRect(3, 3, size - 6, size - 8)
+                    painter.drawLine(4, size - 3, size - 4, size - 3)
+                elif icon_key == "cpu":
+                    painter.drawRect(3, 3, size - 6, size - 6)
+                    painter.drawPoint(mid, 4)
+                    painter.drawPoint(mid, size - 4)
+                    painter.drawPoint(4, mid)
+                    painter.drawPoint(size - 4, mid)
+                elif icon_key in {"memory", "disk"}:
+                    painter.drawRect(3, 4, size - 6, size - 8)
+                    painter.drawLine(4, size - 5, size - 4, size - 5)
+                elif icon_key == "upload":
+                    pen(accent, 2)
+                    painter.drawLine(mid, size - 3, mid, 3)
+                    painter.drawLine(mid, 3, mid - 3, 6)
+                    painter.drawLine(mid, 3, mid + 3, 6)
+                elif icon_key == "download":
+                    pen(accent, 2)
+                    painter.drawLine(mid, 3, mid, size - 3)
+                    painter.drawLine(mid, size - 3, mid - 3, size - 6)
+                    painter.drawLine(mid, size - 3, mid + 3, size - 6)
+                elif icon_key == "connection":
+                    pen(accent, 2)
+                    painter.drawArc(2, 3, size - 4, size, 200 * 16, 140 * 16)
+                elif icon_key == "process":
+                    painter.drawLine(3, 4, size - 3, 4)
+                    painter.drawLine(3, 7, size - 5, 7)
+                    painter.drawLine(3, 10, size - 6, 10)
+            finally:
+                painter.end()
+            return pixmap
 
     class ProfileDialog(QDialog):
         def __init__(self, profile=None, parent=None) -> None:
@@ -2345,7 +2492,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             root_label, root_tooltip = gui_design_tree_root_copy(self.current_design_id())
             root = QTreeWidgetItem([root_label])
             root.setData(0, Qt.ItemDataRole.UserRole, None)
-            root.setIcon(0, self.style().standardIcon(self.standard_icon("SP_DirHomeIcon")))
+            self.apply_profile_tree_icon(root, gui_design_tree_root_icon(self.current_design_id()))
             root.setToolTip(0, root_tooltip)
             self.profile_list.addTopLevelItem(root)
             group_nodes: dict[tuple[str, ...], QTreeWidgetItem] = {}
@@ -2358,14 +2505,21 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     if key not in group_nodes:
                         group_item = QTreeWidgetItem([self.profile_group_label(part)])
                         group_item.setData(0, Qt.ItemDataRole.UserRole, None)
-                        group_item.setIcon(0, self.style().standardIcon(self.standard_icon("SP_DirIcon")))
+                        group_icon = gui_design_tree_row_icon(self.current_design_id(), part, "", True)
+                        self.apply_profile_tree_icon(group_item, group_icon)
                         group_item.setToolTip(0, self.profile_group_tooltip(path))
                         parent.addChild(group_item)
                         group_nodes[key] = group_item
                     parent = group_nodes[key]
                 item = QTreeWidgetItem([self.profile_tree_label(profile)])
                 item.setData(0, Qt.ItemDataRole.UserRole, profile.name)
-                item.setIcon(0, self.profile_icon_for_protocol(profile.protocol))
+                profile_icon = gui_design_tree_row_icon(
+                    self.current_design_id(),
+                    self.profile_tree_label(profile),
+                    self.profile_tree_tooltip(profile),
+                    False,
+                )
+                self.apply_profile_tree_icon(item, profile_icon, protocol=profile.protocol)
                 item.setToolTip(0, self.profile_tree_tooltip(profile))
                 parent.addChild(item)
             self.profile_list.expandAll()
@@ -2472,6 +2626,113 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             if design_id == "mremoteng":
                 return f"Connection tree node\nProtocol: {protocol}\nTarget: {target}"
             return f"{protocol}  {target}\nProfile: {profile.name}"
+
+        def apply_profile_tree_icon(self, item: QTreeWidgetItem, row_icon, *, protocol: str = "") -> None:
+            item.setData(0, TREE_ICON_KEY_ROLE, row_icon.icon_key)
+            item.setData(0, TREE_ROW_KIND_ROLE, row_icon.row_kind)
+            item.setData(0, TREE_ICON_SIZE_ROLE, row_icon.static_size)
+            if self.current_design_id() in GENERATED_PROFILE_TREE_ICON_PRESETS:
+                item.setData(0, TREE_ICON_RENDER_ROLE, "generated-pixmap")
+                item.setIcon(
+                    0,
+                    self.profile_tree_generated_icon(
+                        row_icon.icon_key,
+                        group=row_icon.row_kind in {"root", "group"},
+                        size=row_icon.static_size,
+                    ),
+                )
+                return
+            item.setData(0, TREE_ICON_RENDER_ROLE, "platform")
+            if row_icon.row_kind in {"root", "group"}:
+                icon_name = "SP_DirHomeIcon" if row_icon.row_kind == "root" else "SP_DirIcon"
+                item.setIcon(0, self.style().standardIcon(self.standard_icon(icon_name)))
+                return
+            item.setIcon(0, self.profile_icon_for_protocol(protocol))
+
+        def profile_tree_generated_icon(self, icon_key: str, *, group: bool, size: int = 16) -> QIcon:
+            pixmap = QPixmap(size, size)
+            pixmap.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(pixmap)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            try:
+                self.draw_profile_tree_generated_icon(painter, icon_key, group=group, size=size)
+            finally:
+                painter.end()
+            return QIcon(pixmap)
+
+        def draw_profile_tree_generated_icon(self, painter: QPainter, icon_key: str, *, group: bool, size: int) -> None:
+            fill = QColor("#f4c430" if group else "#35d7c7")
+            outline = QColor("#d7dde5")
+            dark = QColor("#151515")
+            muted = QColor("#7d8792")
+            painter.setPen(QPen(outline, 1))
+            painter.setBrush(QBrush(fill if group else Qt.BrushStyle.NoBrush))
+            if icon_key == "folder":
+                painter.drawRect(1, 5, size - 2, size - 6)
+                painter.drawRect(3, 3, max(5, size // 2), 4)
+                return
+            if icon_key == "database":
+                painter.setBrush(QBrush(fill))
+                painter.drawEllipse(1, 1, size - 2, max(5, size // 3))
+                painter.drawRect(1, size // 4, size - 2, max(5, size - 7))
+                painter.drawEllipse(1, size - 7, size - 2, 5)
+                return
+            if icon_key == "sftp":
+                painter.setBrush(QBrush(fill))
+                painter.drawRect(2, 5, size - 4, size - 6)
+                painter.drawRect(3, 3, max(5, size // 2), 4)
+                painter.setPen(QPen(dark, 1))
+                painter.drawLine(4, size - 5, size - 4, size - 5)
+                painter.drawLine(size - 6, size - 7, size - 3, size - 5)
+                painter.drawLine(size - 6, size - 3, size - 3, size - 5)
+                return
+            if icon_key == "pin":
+                painter.setPen(QPen(fill, 1))
+                painter.setBrush(QBrush(fill))
+                painter.drawPolygon(
+                    [
+                        QPoint(size // 2, 1),
+                        QPoint(size - 2, size // 2),
+                        QPoint(size // 2 + 2, size // 2 + 2),
+                        QPoint(size // 2, size - 1),
+                        QPoint(size // 2 - 2, size // 2 + 2),
+                        QPoint(2, size // 2),
+                    ]
+                )
+                return
+            if icon_key in {"shell", "command", "ssh", "ssh2", "host"}:
+                painter.setPen(QPen(fill, 1))
+                painter.setBrush(QBrush(dark))
+                painter.drawRect(1, 2, size - 2, size - 3)
+                painter.drawLine(4, 6, 7, size // 2)
+                painter.drawLine(7, size // 2, 4, size - 5)
+                painter.drawLine(9, size - 5, size - 3, size - 5)
+                if icon_key == "ssh2":
+                    painter.setPen(QPen(outline, 1))
+                    painter.drawText(size - 6, 8, "2")
+                elif icon_key == "command":
+                    painter.setPen(QPen(muted, 1))
+                    painter.drawRect(size - 6, 4, 3, 3)
+                return
+            if icon_key in {"rdp", "vnc"}:
+                painter.setPen(QPen(fill, 1))
+                painter.setBrush(QBrush(dark if icon_key == "vnc" else QColor("#d8e6f3")))
+                painter.drawRect(1, 2, size - 2, size - 5)
+                painter.drawRect(4, size - 3, size - 8, 2)
+                if icon_key == "vnc":
+                    painter.drawLine(4, 5, size - 4, size - 5)
+                    painter.drawLine(size - 4, 5, 4, size - 5)
+                return
+            if icon_key == "snippet":
+                painter.setPen(QPen(fill, 1))
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.drawRect(3, 1, size - 6, size - 2)
+                painter.drawLine(5, 5, size - 5, 5)
+                painter.drawLine(5, 8, size - 5, 8)
+                painter.drawLine(5, 11, size - 7, 11)
+                return
+            painter.setPen(QPen(fill, 1))
+            painter.drawRect(2, 2, size - 4, size - 4)
 
         def profile_icon_for_protocol(self, protocol: str):
             normalized = protocol.lower()
@@ -3654,26 +3915,55 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             panel = QFrame()
             panel.setObjectName("mRemoteNgDocumentControls")
             panel.setProperty("designPreset", "mremoteng")
+            panel.setProperty("mRemoteNgDocumentTitleWidth", chrome.title_width)
+            panel.setProperty("mRemoteNgDocumentStaticHeight", chrome.static_height)
+            panel.setProperty("mRemoteNgDocumentStaticButtonStartX", chrome.static_button_start_x)
+            panel.setProperty("mRemoteNgDocumentStaticButtonGap", chrome.static_button_gap)
+            panel.setProperty("mRemoteNgDocumentStaticFilterWidth", chrome.static_filter_width)
+            panel.setProperty("mRemoteNgDocumentStaticFilterY", chrome.static_filter_y)
+            panel.setProperty("mRemoteNgDocumentStaticFilterHeight", chrome.static_filter_height)
+            panel.setProperty("mRemoteNgDocumentLiveSpacing", chrome.live_spacing)
             layout = QHBoxLayout(panel)
-            layout.setContentsMargins(7, 5, 7, 5)
-            layout.setSpacing(7)
+            layout.setContentsMargins(
+                chrome.live_margin_left,
+                chrome.live_margin_top,
+                chrome.live_margin_right,
+                chrome.live_margin_bottom,
+            )
+            layout.setSpacing(chrome.live_spacing)
 
             title = QLabel(chrome.title)
             title.setObjectName("mRemoteNgDocumentTitle")
+            title.setMinimumWidth(chrome.title_width)
+            title.setMaximumWidth(chrome.title_width)
             layout.addWidget(title)
             for control in gui_design_mremoteng_document_controls():
                 button = QToolButton()
                 button.setObjectName("mRemoteNgDocumentControl")
                 button.setProperty("mRemoteNgDocumentControlKey", control.key)
                 button.setProperty("mRemoteNgDocumentIconKey", control.icon_key)
+                button.setProperty("mRemoteNgDocumentStaticWidth", control.static_width)
+                button.setProperty("mRemoteNgDocumentStaticY", control.static_y)
+                button.setProperty("mRemoteNgDocumentStaticHeight", control.static_height)
+                button.setProperty("mRemoteNgDocumentStaticIconX", control.static_icon_x)
+                button.setProperty("mRemoteNgDocumentStaticIconY", control.static_icon_y)
+                button.setProperty("mRemoteNgDocumentStaticIconSize", control.static_icon_size)
+                button.setProperty("mRemoteNgDocumentStaticLabelX", control.static_label_x)
+                button.setProperty("mRemoteNgDocumentStaticLabelY", control.static_label_y)
+                button.setProperty("mRemoteNgDocumentLiveIconSize", control.live_icon_size)
+                button.setProperty("mRemoteNgDocumentLiveMinWidth", control.live_min_width)
+                button.setProperty("mRemoteNgDocumentLiveButtonHeight", control.live_button_height)
+                button.setProperty("mRemoteNgDocumentRenderSource", control.render_source)
                 button.setText(control.label)
                 button.setToolTip(control.tooltip)
                 control_state = "checked" if control.key == "external-tool" and state.checked_toolbar_key == "files" else "normal"
                 button.setCheckable(control_state == "checked")
                 button.setChecked(control_state == "checked")
                 self.set_interaction_state(button, control_state)
-                button.setIcon(self.style().standardIcon(self.standard_icon(control.standard_icon)))
-                button.setIconSize(QSize(14, 14))
+                button.setIcon(self.mremoteng_document_control_icon(control.icon_key, size=control.live_icon_size))
+                button.setIconSize(QSize(control.live_icon_size, control.live_icon_size))
+                button.setMinimumWidth(control.live_min_width)
+                button.setMinimumHeight(control.live_button_height)
                 button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
                 button.clicked.connect(
                     lambda _checked=False, label=control.label: self.statusBar().showMessage(
@@ -3686,8 +3976,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             filter_input = QLineEdit()
             filter_input.setObjectName("mRemoteNgDocumentFilter")
             filter_input.setPlaceholderText(chrome.filter_placeholder)
-            filter_input.setMinimumWidth(170)
-            filter_input.setMaximumWidth(220)
+            filter_input.setProperty("mRemoteNgDocumentFilterWidth", chrome.live_filter_width)
+            filter_input.setProperty("mRemoteNgDocumentFilterHeight", chrome.live_filter_height)
+            filter_input.setMinimumWidth(chrome.live_filter_width)
+            filter_input.setMaximumWidth(chrome.live_filter_width)
+            filter_input.setMinimumHeight(chrome.live_filter_height)
             self.mremoteng_document_filter = filter_input
             self.set_interaction_state(
                 filter_input,
@@ -3695,6 +3988,53 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             )
             layout.addWidget(filter_input)
             return panel
+
+        def mremoteng_document_control_icon(self, icon_key: str, *, size: int) -> QIcon:
+            pixmap = QPixmap(size, size)
+            pixmap.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(pixmap)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            try:
+                self.draw_mremoteng_document_control_icon(painter, icon_key, size)
+            finally:
+                painter.end()
+            return QIcon(pixmap)
+
+        def draw_mremoteng_document_control_icon(self, painter: QPainter, icon_key: str, size: int) -> None:
+            primary = QColor("#2f6fb1")
+            dark = QColor("#35516a")
+            fill = QColor("#e8edf3")
+            painter.setPen(QPen(primary, 1))
+            painter.setBrush(QBrush(fill))
+            if icon_key == "database":
+                painter.drawEllipse(2, 2, size - 4, 4)
+                painter.drawRect(2, 4, size - 4, size - 7)
+                painter.drawArc(2, size - 6, size - 4, 4, 0, -180 * 16)
+                painter.drawLine(2, 7, size - 2, 7)
+                return
+            if icon_key == "ssh":
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.drawEllipse(1, 4, 5, 5)
+                painter.drawLine(6, 6, size - 2, 6)
+                painter.drawLine(size - 5, 6, size - 5, 10)
+                painter.drawLine(size - 2, 6, size - 2, 9)
+                return
+            if icon_key == "external":
+                painter.drawRect(1, 4, size - 6, size - 6)
+                painter.setPen(QPen(dark, 1))
+                painter.drawLine(size - 7, 2, size - 2, 2)
+                painter.drawLine(size - 2, 2, size - 2, 7)
+                painter.drawLine(size - 8, 8, size - 2, 2)
+                return
+            if icon_key == "rdp":
+                painter.drawRect(1, 3, size - 2, size - 6)
+                painter.drawLine(size // 2, size - 3, size // 2, size - 1)
+                painter.drawLine(4, size - 1, size - 4, size - 1)
+                painter.setPen(QPen(dark, 1))
+                painter.drawLine(3, 6, size - 4, 6)
+                return
+            painter.setPen(QPen(dark, 1))
+            painter.drawText(2, size - 3, icon_key[:1].upper())
 
         def build_mremoteng_property_grid_evidence(self) -> QFrame:
             chrome = gui_design_mremoteng_property_grid_chrome()
@@ -3820,12 +4160,24 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 button.setObjectName("remminaViewerControl")
                 button.setProperty("remminaViewerControlKey", control.key)
                 button.setProperty("remminaViewerIconKey", control.icon_key)
+                button.setProperty("remminaViewerControlStaticWidth", control.static_width)
+                button.setProperty("remminaViewerControlStaticStep", control.static_step)
+                button.setProperty("remminaViewerControlStaticY", control.static_y)
+                button.setProperty("remminaViewerControlStaticHeight", control.static_height)
+                button.setProperty("remminaViewerControlStaticIconX", control.static_icon_x)
+                button.setProperty("remminaViewerControlStaticIconSize", control.static_icon_size)
+                button.setProperty("remminaViewerControlStaticLabelX", control.static_label_x)
+                button.setProperty("remminaViewerControlLiveIconSize", control.live_icon_size)
+                button.setProperty("remminaViewerControlLiveMinWidth", control.live_min_width)
+                button.setProperty("remminaViewerControlLiveButtonHeight", control.live_button_height)
+                button.setProperty("remminaViewerControlRenderSource", control.render_source)
                 button.setText(control.label)
                 button.setToolTip(control.tooltip)
-                button.setIcon(self.style().standardIcon(self.standard_icon(control.standard_icon)))
-                button.setIconSize(QSize(14, 14))
+                button.setIcon(self.remmina_viewer_control_icon(control.icon_key, size=control.live_icon_size))
+                button.setIconSize(QSize(control.live_icon_size, control.live_icon_size))
                 button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-                button.setMinimumHeight(26)
+                button.setMinimumWidth(control.live_min_width)
+                button.setMinimumHeight(control.live_button_height)
                 button.clicked.connect(
                     lambda _checked=False, label=control.label: self.statusBar().showMessage(
                         f"Remmina viewer control: {label}"
@@ -3833,6 +4185,58 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 )
                 layout.addWidget(button)
             return panel
+
+        def remmina_viewer_control_icon(self, icon_key: str, *, size: int) -> QIcon:
+            pixmap = QPixmap(size, size)
+            pixmap.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(pixmap)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            try:
+                self.draw_remmina_viewer_control_icon(painter, icon_key, size)
+            finally:
+                painter.end()
+            return QIcon(pixmap)
+
+        def draw_remmina_viewer_control_icon(self, painter: QPainter, icon_key: str, size: int) -> None:
+            primary = QColor("#2f6fb1")
+            dark = QColor("#35516a")
+            fill = QColor("#e8edf3")
+            painter.setPen(QPen(primary, 1))
+            painter.setBrush(QBrush(fill))
+            if icon_key == "fit":
+                painter.drawRect(2, 2, size - 4, size - 4)
+                painter.drawLine(4, 4, 7, 4)
+                painter.drawLine(4, 4, 4, 7)
+                painter.drawLine(size - 5, size - 5, size - 8, size - 5)
+                painter.drawLine(size - 5, size - 5, size - 5, size - 8)
+                return
+            if icon_key == "scale":
+                painter.drawRect(2, 4, size - 4, size - 6)
+                painter.setPen(QPen(dark, 1))
+                painter.drawText(4, size - 3, "1")
+                return
+            if icon_key == "clipboard":
+                painter.drawRect(4, 3, size - 7, size - 5)
+                painter.drawRect(6, 1, size - 11, 4)
+                painter.setPen(QPen(dark, 1))
+                painter.drawLine(6, 7, size - 5, 7)
+                painter.drawLine(6, 10, size - 6, 10)
+                return
+            if icon_key == "fullscreen":
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.drawRect(2, 2, size - 4, size - 4)
+                painter.drawLine(4, 6, 4, 4)
+                painter.drawLine(4, 4, 6, 4)
+                painter.drawLine(size - 5, size - 7, size - 5, size - 5)
+                painter.drawLine(size - 7, size - 5, size - 5, size - 5)
+                return
+            if icon_key == "screenshot":
+                painter.drawRect(2, 5, size - 4, size - 7)
+                painter.drawRect(5, 3, 5, 3)
+                painter.setBrush(QBrush(primary))
+                painter.drawEllipse(size // 2 - 2, size // 2 - 1, 4, 4)
+                return
+            painter.drawEllipse(3, 3, size - 6, size - 6)
 
         def build_securecrt_session_manager_chrome(self) -> QFrame:
             chrome = gui_design_securecrt_session_manager_chrome()

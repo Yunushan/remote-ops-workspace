@@ -320,7 +320,7 @@
         {"id": "active-document-tab-focus-outline", "point": [376, 109], "rgb_min": [40, 90, 145], "rgb_max": [80, 130, 190]},
         {"id": "connections-root-accent", "point": [38, 177], "rgb_min": [35, 75, 120], "rgb_max": [75, 120, 170]},
         {"id": "selected-tree-row-fill", "point": [40, 228], "rgb_min": [190, 210, 225], "rgb_max": [215, 230, 245]},
-        {"id": "document-toolbar-save", "point": [526, 223], "rgb_min": [40, 90, 145], "rgb_max": [80, 130, 190]},
+        {"id": "document-toolbar-save", "point": [526, 222], "rgb_min": [40, 90, 145], "rgb_max": [80, 130, 190]},
         {"id": "document-external-tool-checked-outline", "point": [669, 217], "rgb_min": [40, 90, 145], "rgb_max": [80, 130, 190]},
         {"id": "document-filter-focus-outline", "point": [1062, 218], "rgb_min": [40, 90, 145], "rgb_max": [80, 130, 190]},
         {"id": "document-filter-fill", "point": [1074, 229], "rgb_min": [195, 205, 215], "rgb_max": [215, 225, 235]},

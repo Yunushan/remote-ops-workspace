@@ -172,6 +172,16 @@ def test_real_gui_render_manifest_contract_names_required_widgets() -> None:
     assert checker.EXPECTED_MOBA_BOTTOM_EDGE_ICON_KEYS["close-active"] == "close"
     assert checker.EXPECTED_SECURECRT_COMMAND_WINDOW_CHROME.key == "send-to-all-sessions"
     assert checker.EXPECTED_SECURECRT_COMMAND_WINDOW_CHROME.command == "$ row doctor --json"
+    assert checker.EXPECTED_SECURECRT_TREE_ICON_KEYS["Session Database"] == "database"
+    assert checker.EXPECTED_SECURECRT_TREE_ICON_KEYS["edge-prod (SSH2)"] == "ssh2"
+    assert checker.EXPECTED_SECURECRT_TREE_ICON_KEYS["files-prod (SFTP)"] == "sftp"
+    assert checker.EXPECTED_SECURECRT_TREE_ICON_KEYS["jump-host (SSH2)"] == "pin"
+    assert checker.EXPECTED_SECURECRT_TREE_ROW_KINDS["Folder: Sessions"] == "group"
+    assert checker.EXPECTED_SECURECRT_TREE_ICON_SIZES["Session Database"] == 16
+    assert checker.EXPECTED_PRODUCT_TREE_ICON_KEYS["termius"]["prod-cluster  ssh host"] == "host"
+    assert checker.EXPECTED_PRODUCT_TREE_ICON_KEYS["termius"]["jump-host  ssh host"] == "pin"
+    assert checker.EXPECTED_PRODUCT_TREE_ICON_KEYS["remmina"]["VNC - linux-console"] == "vnc"
+    assert checker.EXPECTED_PRODUCT_TREE_ICON_KEYS["mremoteng"]["win-admin [RDP]"] == "rdp"
     assert checker.EXPECTED_SECURECRT_SESSION_STATUS_KEYS == [
         "session",
         "target",
@@ -708,6 +718,30 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "delete",
         "tools",
     ]
+    assert "sftp-file-row-icons" in moba["contract_checks"]
+    assert moba["expected_moba_sftp_file_row_icons"] == [
+        {
+            "kind": "parent-dir",
+            "icon_key": "folder-up",
+            "row_kind": "parent-dir",
+            "static_size": 14,
+            "render_source": "generated-pixmap",
+        },
+        {
+            "kind": "dir",
+            "icon_key": "folder",
+            "row_kind": "dir",
+            "static_size": 14,
+            "render_source": "generated-pixmap",
+        },
+        {
+            "kind": "file",
+            "icon_key": "file",
+            "row_kind": "file",
+            "static_size": 14,
+            "render_source": "generated-pixmap",
+        },
+    ]
     assert "network" in moba["expected_moba_monitoring_metric_keys"]
     assert moba["expected_moba_remote_monitoring_dock_chrome"] == {
         "title_control_key": "remote-monitoring",
@@ -731,6 +765,28 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
             "label": "Follow terminal folder",
             "control_type": "checkbox",
             "checked": True,
+        },
+    ]
+    assert moba["expected_moba_monitoring_control_geometry"] == [
+        {
+            "key": "remote-monitoring",
+            "anchor_x": 104,
+            "static_y": 1,
+            "icon_x": 104,
+            "icon_size": 20,
+            "label_x": 132,
+            "check_size": 0,
+            "row_height": 22,
+        },
+        {
+            "key": "follow-terminal-folder",
+            "anchor_x": 42,
+            "static_y": 76,
+            "icon_x": 60,
+            "icon_size": 16,
+            "label_x": 80,
+            "check_size": 10,
+            "row_height": 19,
         },
     ]
     assert "sftp-ready" in moba["expected_moba_status_keys"]
@@ -797,9 +853,9 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "parent_row_kind": "parent-dir",
         "selected_row_kind": "parent-dir",
         "columns": [
-            {"key": "name", "label": "Name", "static_x": 38},
-            {"key": "size", "label": "Size (KB)", "static_x": 188},
-            {"key": "modified", "label": "Last modified", "static_x": 266},
+            {"key": "name", "label": "Name", "static_x": 38, "static_width": 182},
+            {"key": "size", "label": "Size (KB)", "static_x": 188, "static_width": 78},
+            {"key": "modified", "label": "Last modified", "static_x": 266, "static_width": 94},
         ],
     }
     assert moba["expected_moba_sftp_dock_layout"] == {
@@ -828,6 +884,8 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
     assert [cell["width"] for cell in moba["expected_moba_telemetry_cells"]] == (
         checker.EXPECTED_MOBA_TELEMETRY_CELL_WIDTHS
     )
+    assert [cell["icon_size"] for cell in moba["expected_moba_telemetry_cells"]] == [12] * 8
+    assert moba["expected_moba_telemetry_cells"][1]["icon_accent"] == "#f4c430"
     assert moba["expected_moba_telemetry_cells"][6]["display_text"] == "Connections: 1 (port 22)"
     assert moba["expected_moba_tab_chrome_keys"] == ["active-session", "home", "new-session"]
     assert moba["expected_moba_static_tab_chrome_keys"] == [
@@ -837,10 +895,41 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "new-session",
     ]
     assert moba["expected_moba_right_utility_keys"] == ["clip", "settings", "tools"]
+    assert "right-utility-rail-geometry" in moba["contract_checks"]
     assert moba["expected_moba_right_utility_actions"] == [
-        {"key": "clip", "icon_key": "clip", "label": "Clipboard and transfer hints"},
-        {"key": "settings", "icon_key": "gear", "label": "Terminal settings"},
-        {"key": "tools", "icon_key": "spark", "label": "Terminal tools"},
+        {
+            "key": "clip",
+            "icon_key": "clip",
+            "label": "Clipboard and transfer hints",
+            "static_x": 7,
+            "static_y": 13,
+            "static_size": 16,
+            "live_icon_size": 18,
+            "button_size": 22,
+            "render_source": "generated-pixmap",
+        },
+        {
+            "key": "settings",
+            "icon_key": "gear",
+            "label": "Terminal settings",
+            "static_x": 7,
+            "static_y": 49,
+            "static_size": 16,
+            "live_icon_size": 18,
+            "button_size": 22,
+            "render_source": "generated-pixmap",
+        },
+        {
+            "key": "tools",
+            "icon_key": "spark",
+            "label": "Terminal tools",
+            "static_x": 7,
+            "static_y": 85,
+            "static_size": 16,
+            "live_icon_size": 18,
+            "button_size": 22,
+            "render_source": "generated-pixmap",
+        },
     ]
     assert moba["expected_moba_session_edge_actions"] == [
         {"key": "attachment", "icon_key": "clip", "label": "Session attachment", "static_y": 112},
@@ -883,6 +972,7 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
     assert "reference-state" in securecrt["contract_checks"]
     assert "securecrt-top-chrome" in securecrt["contract_checks"]
     assert "securecrt-session-manager-chrome" in securecrt["contract_checks"]
+    assert "securecrt-tree-icons" in securecrt["contract_checks"]
     assert "securecrt-session-status-strip" in securecrt["contract_checks"]
     assert "securecrt-command-window" in securecrt["contract_checks"]
     assert "live-topology" in securecrt["contract_checks"]
@@ -924,6 +1014,11 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
             {"key": "properties", "icon_key": "properties", "label": "Properties", "static_x": 86},
         ],
     }
+    assert securecrt["expected_securecrt_tree_icons"][:3] == [
+        {"label": "Session Database", "icon_key": "database", "row_kind": "root", "static_size": 16},
+        {"label": "Folder: Sessions", "icon_key": "folder", "row_kind": "group", "static_size": 14},
+        {"label": "edge-prod (SSH2)", "icon_key": "ssh2", "row_kind": "profile", "static_size": 14},
+    ]
     assert [field["key"] for field in securecrt["expected_securecrt_session_status_strip"]["fields"]] == [
         "session",
         "target",
@@ -946,8 +1041,14 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
     assert ["leftPanel", "sessionTabs"] in securecrt["topology_contract_widgets"]
 
     remmina = summaries["remmina"]
+    assert "remmina-tree-icons" in remmina["contract_checks"]
     assert "remmina-profile-list-chrome" in remmina["contract_checks"]
     assert "remmina-viewer-controls" in remmina["contract_checks"]
+    assert remmina["expected_product_tree_icons"][:3] == [
+        {"label": "Profile Groups", "icon_key": "folder", "row_kind": "root", "static_size": 16},
+        {"label": "Group: RDP", "icon_key": "folder", "row_kind": "group", "static_size": 14},
+        {"label": "RDP - win-admin", "icon_key": "rdp", "row_kind": "profile", "static_size": 14},
+    ]
     assert remmina["required_widgets"]["remminaProfileListChrome"] == "Remmina profile list chrome"
     assert "profile-list-chrome" in remmina["layout_contract_ids"]
     assert remmina["expected_reference_tab_label"] == "RDP - win-admin"
@@ -965,18 +1066,100 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "status": "scale 100%",
         "selected": True,
     }
+    assert "remmina-viewer-control-geometry" in remmina["contract_checks"]
     assert remmina["expected_remmina_viewer_controls"] == [
-        {"key": "fit", "icon_key": "fit", "label": "Fit"},
-        {"key": "scale-100", "icon_key": "scale", "label": "Scale 100%"},
-        {"key": "clipboard", "icon_key": "clipboard", "label": "Clipboard"},
-        {"key": "fullscreen", "icon_key": "fullscreen", "label": "Fullscreen"},
-        {"key": "screenshot", "icon_key": "screenshot", "label": "Screenshot"},
+        {
+            "key": "fit",
+            "icon_key": "fit",
+            "label": "Fit",
+            "static_width": 74,
+            "static_step": 78,
+            "static_y": 7,
+            "static_height": 20,
+            "static_icon_x": 6,
+            "static_icon_size": 12,
+            "static_label_x": 22,
+            "live_icon_size": 14,
+            "live_min_width": 74,
+            "live_button_height": 26,
+            "render_source": "generated-pixmap",
+        },
+        {
+            "key": "scale-100",
+            "icon_key": "scale",
+            "label": "Scale 100%",
+            "static_width": 74,
+            "static_step": 78,
+            "static_y": 7,
+            "static_height": 20,
+            "static_icon_x": 6,
+            "static_icon_size": 12,
+            "static_label_x": 22,
+            "live_icon_size": 14,
+            "live_min_width": 74,
+            "live_button_height": 26,
+            "render_source": "generated-pixmap",
+        },
+        {
+            "key": "clipboard",
+            "icon_key": "clipboard",
+            "label": "Clipboard",
+            "static_width": 74,
+            "static_step": 78,
+            "static_y": 7,
+            "static_height": 20,
+            "static_icon_x": 6,
+            "static_icon_size": 12,
+            "static_label_x": 22,
+            "live_icon_size": 14,
+            "live_min_width": 74,
+            "live_button_height": 26,
+            "render_source": "generated-pixmap",
+        },
+        {
+            "key": "fullscreen",
+            "icon_key": "fullscreen",
+            "label": "Fullscreen",
+            "static_width": 74,
+            "static_step": 78,
+            "static_y": 7,
+            "static_height": 20,
+            "static_icon_x": 6,
+            "static_icon_size": 12,
+            "static_label_x": 22,
+            "live_icon_size": 14,
+            "live_min_width": 74,
+            "live_button_height": 26,
+            "render_source": "generated-pixmap",
+        },
+        {
+            "key": "screenshot",
+            "icon_key": "screenshot",
+            "label": "Screenshot",
+            "static_width": 74,
+            "static_step": 78,
+            "static_y": 7,
+            "static_height": 20,
+            "static_icon_x": 6,
+            "static_icon_size": 12,
+            "static_label_x": 22,
+            "live_icon_size": 14,
+            "live_min_width": 74,
+            "live_button_height": 26,
+            "render_source": "generated-pixmap",
+        },
     ]
 
     termius = summaries["termius"]
+    assert "termius-tree-icons" in termius["contract_checks"]
     assert "termius-hosts-chrome" in termius["contract_checks"]
     assert "termius-header-chips" in termius["contract_checks"]
     assert "termius-host-identity-strip" in termius["contract_checks"]
+    assert termius["expected_product_tree_icons"][:3] == [
+        {"label": "Personal Vault", "icon_key": "database", "row_kind": "root", "static_size": 16},
+        {"label": "Vault / Personal", "icon_key": "folder", "row_kind": "group", "static_size": 14},
+        {"label": "edge-prod  ssh host", "icon_key": "host", "row_kind": "profile", "static_size": 14},
+    ]
     assert termius["required_widgets"]["termiusHostsChrome"] == "Termius Hosts search/action chrome"
     assert termius["required_widgets"]["termiusHostIdentityStrip"] == "Termius host identity strip"
     assert "hosts-sidebar-chrome" in termius["layout_contract_ids"]
@@ -1011,9 +1194,16 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
     }
 
     mremoteng = summaries["mremoteng"]
+    assert "mremoteng-tree-icons" in mremoteng["contract_checks"]
     assert "mremoteng-top-chrome" in mremoteng["contract_checks"]
     assert "mremoteng-document-controls" in mremoteng["contract_checks"]
+    assert "mremoteng-document-control-geometry" in mremoteng["contract_checks"]
     assert "mremoteng-property-grid" in mremoteng["contract_checks"]
+    assert mremoteng["expected_product_tree_icons"][:3] == [
+        {"label": "Connections", "icon_key": "database", "row_kind": "root", "static_size": 16},
+        {"label": "Container: prod", "icon_key": "folder", "row_kind": "group", "static_size": 14},
+        {"label": "edge-prod [SSH]", "icon_key": "ssh", "row_kind": "profile", "static_size": 14},
+    ]
     assert mremoteng["required_widgets"]["mRemoteNgMenuBar"] == "mRemoteNG top menu bar"
     assert mremoteng["required_widgets"]["mRemoteNgPropertyGrid"] == "mRemoteNG property inheritance grid"
     assert "property-grid" in mremoteng["layout_contract_ids"]
@@ -1038,11 +1228,84 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
     assert mremoteng["expected_mremoteng_document_controls"] == {
         "title": "Connections.xml",
         "filter_placeholder": "Filter connection tree",
+        "title_width": 112,
+        "static_height": 28,
+        "static_button_start_x": 128,
+        "static_button_gap": 8,
+        "static_filter_width": 178,
+        "static_filter_y": 5,
+        "static_filter_height": 18,
+        "live_filter_width": 178,
+        "live_filter_height": 24,
         "controls": [
-            {"key": "save", "icon_key": "database", "label": "Save"},
-            {"key": "reconnect", "icon_key": "ssh", "label": "Reconnect"},
-            {"key": "external-tool", "icon_key": "external", "label": "External tool"},
-            {"key": "dock-view", "icon_key": "rdp", "label": "Dock view"},
+            {
+                "key": "save",
+                "icon_key": "database",
+                "label": "Save",
+                "static_width": 56,
+                "static_y": 4,
+                "static_height": 20,
+                "static_icon_x": 8,
+                "static_icon_y": 7,
+                "static_icon_size": 13,
+                "static_label_x": 27,
+                "static_label_y": 8,
+                "live_icon_size": 14,
+                "live_min_width": 56,
+                "live_button_height": 26,
+                "render_source": "generated-pixmap",
+            },
+            {
+                "key": "reconnect",
+                "icon_key": "ssh",
+                "label": "Reconnect",
+                "static_width": 88,
+                "static_y": 4,
+                "static_height": 20,
+                "static_icon_x": 8,
+                "static_icon_y": 7,
+                "static_icon_size": 13,
+                "static_label_x": 27,
+                "static_label_y": 8,
+                "live_icon_size": 14,
+                "live_min_width": 88,
+                "live_button_height": 26,
+                "render_source": "generated-pixmap",
+            },
+            {
+                "key": "external-tool",
+                "icon_key": "external",
+                "label": "External tool",
+                "static_width": 104,
+                "static_y": 4,
+                "static_height": 20,
+                "static_icon_x": 8,
+                "static_icon_y": 7,
+                "static_icon_size": 13,
+                "static_label_x": 27,
+                "static_label_y": 8,
+                "live_icon_size": 14,
+                "live_min_width": 104,
+                "live_button_height": 26,
+                "render_source": "generated-pixmap",
+            },
+            {
+                "key": "dock-view",
+                "icon_key": "rdp",
+                "label": "Dock view",
+                "static_width": 84,
+                "static_y": 4,
+                "static_height": 20,
+                "static_icon_x": 8,
+                "static_icon_y": 7,
+                "static_icon_size": 13,
+                "static_label_x": 27,
+                "static_label_y": 8,
+                "live_icon_size": 14,
+                "live_min_width": 84,
+                "live_button_height": 26,
+                "render_source": "generated-pixmap",
+            },
         ],
     }
     assert mremoteng["expected_mremoteng_property_grid"]["columns"] == [

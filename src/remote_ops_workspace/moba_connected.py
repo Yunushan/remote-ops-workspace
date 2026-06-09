@@ -22,6 +22,28 @@ REMOTE_MONITORING_SCRIPT = (
     "\"$cpu\" \"$mem\" \"$disk\" \"$load\" \"$users\" \"$processes\""
 )
 
+MOBA_TELEMETRY_ICON_SIZE = 12
+MOBA_TELEMETRY_ICON_ACCENTS = {
+    "host": "#35d7c7",
+    "cpu": "#f4c430",
+    "memory": "#6ac76a",
+    "disk": "#6ac76a",
+    "upload": "#4da3ff",
+    "download": "#4da3ff",
+    "connection": "#35d7c7",
+    "process": "#f4c430",
+}
+MOBA_TELEMETRY_CELL_WIDTHS = {
+    "target": 165,
+    "cpu": 60,
+    "memory": 125,
+    "disk": 124,
+    "net-up": 88,
+    "net-down": 88,
+    "connections": 145,
+    "processes": 77,
+}
+
 
 @dataclass(frozen=True, slots=True)
 class RemoteFileEntry:
@@ -196,6 +218,8 @@ class MobaTelemetrySegment:
 class MobaTelemetryCell:
     key: str
     icon_key: str
+    icon_accent: str
+    icon_size: int
     label: str
     value: str
     display_text: str
@@ -205,6 +229,8 @@ class MobaTelemetryCell:
         return {
             "key": self.key,
             "icon_key": self.icon_key,
+            "icon_accent": self.icon_accent,
+            "icon_size": self.icon_size,
             "label": self.label,
             "value": self.value,
             "display_text": self.display_text,
@@ -409,16 +435,6 @@ def moba_telemetry_segments(state: MobaConnectedSessionState) -> tuple[MobaTelem
 
 
 def moba_telemetry_cells(state: MobaConnectedSessionState) -> tuple[MobaTelemetryCell, ...]:
-    widths = {
-        "target": 165,
-        "cpu": 60,
-        "memory": 125,
-        "disk": 124,
-        "net-up": 88,
-        "net-down": 88,
-        "connections": 145,
-        "processes": 77,
-    }
     display_by_key = {
         "target": moba_telemetry_target_display(state),
         "connections": f"Connections: {state.monitoring.connection_count} (port {moba_telemetry_port(state)})",
@@ -428,10 +444,12 @@ def moba_telemetry_cells(state: MobaConnectedSessionState) -> tuple[MobaTelemetr
         MobaTelemetryCell(
             key=segment.key,
             icon_key=segment.icon_key,
+            icon_accent=MOBA_TELEMETRY_ICON_ACCENTS[segment.icon_key],
+            icon_size=MOBA_TELEMETRY_ICON_SIZE,
             label=segment.label,
             value=segment.value,
             display_text=display_by_key.get(segment.key, segment.value),
-            width=widths[segment.key],
+            width=MOBA_TELEMETRY_CELL_WIDTHS[segment.key],
         )
         for segment in moba_telemetry_segments(state)
     )

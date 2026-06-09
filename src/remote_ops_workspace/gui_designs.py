@@ -84,6 +84,12 @@ class GuiMobaRightUtilityAction:
     label: str
     color: str
     tooltip: str
+    static_x: int
+    static_y: int
+    static_size: int
+    live_icon_size: int
+    button_size: int
+    render_source: str
 
 
 @dataclass(frozen=True)
@@ -112,6 +118,7 @@ class GuiMobaSftpTableColumn:
     key: str
     label: str
     static_x: int
+    static_width: int
 
 
 @dataclass(frozen=True)
@@ -122,6 +129,15 @@ class GuiMobaSftpBrowserChrome:
     parent_row_kind: str
     selected_row_kind: str
     columns: tuple[GuiMobaSftpTableColumn, ...]
+
+
+@dataclass(frozen=True)
+class GuiMobaSftpFileRowIcon:
+    kind: str
+    icon_key: str
+    row_kind: str
+    static_size: int
+    render_source: str
 
 
 @dataclass(frozen=True)
@@ -162,6 +178,18 @@ class GuiMobaMonitoringControl:
     control_type: str
     checked: bool
     tooltip: str
+
+
+@dataclass(frozen=True)
+class GuiMobaMonitoringControlGeometry:
+    key: str
+    anchor_x: int
+    static_y: int
+    icon_x: int
+    icon_size: int
+    label_x: int
+    check_size: int
+    row_height: int
 
 
 @dataclass(frozen=True)
@@ -321,6 +349,17 @@ class GuiRemminaViewerControl:
     standard_icon: str
     label: str
     tooltip: str
+    static_width: int
+    static_step: int
+    static_y: int
+    static_height: int
+    static_icon_x: int
+    static_icon_size: int
+    static_label_x: int
+    live_icon_size: int
+    live_min_width: int
+    live_button_height: int
+    render_source: str
 
 
 @dataclass(frozen=True)
@@ -390,16 +429,41 @@ class GuiTermiusHostIdentityStrip:
 class GuiMRemoteNgDocumentControl:
     key: str
     icon_key: str
-    standard_icon: str
     label: str
     tooltip: str
     static_width: int
+    static_y: int
+    static_height: int
+    static_icon_x: int
+    static_icon_y: int
+    static_icon_size: int
+    static_label_x: int
+    static_label_y: int
+    live_icon_size: int
+    live_min_width: int
+    live_button_height: int
+    render_source: str
 
 
 @dataclass(frozen=True)
 class GuiMRemoteNgDocumentToolbarChrome:
     title: str
     filter_placeholder: str
+    title_width: int
+    static_height: int
+    static_margin_x: int
+    static_button_start_x: int
+    static_button_gap: int
+    static_filter_width: int
+    static_filter_y: int
+    static_filter_height: int
+    live_margin_left: int
+    live_margin_top: int
+    live_margin_right: int
+    live_margin_bottom: int
+    live_spacing: int
+    live_filter_width: int
+    live_filter_height: int
 
 
 @dataclass(frozen=True)
@@ -533,6 +597,12 @@ GUI_DESIGN_MOBA_RIGHT_UTILITY_ACTIONS: tuple[GuiMobaRightUtilityAction, ...] = (
         label="Clipboard and transfer hints",
         color="#2f8cff",
         tooltip="Show clipboard and transfer hints",
+        static_x=7,
+        static_y=13,
+        static_size=16,
+        live_icon_size=18,
+        button_size=22,
+        render_source="generated-pixmap",
     ),
     GuiMobaRightUtilityAction(
         key="settings",
@@ -540,6 +610,12 @@ GUI_DESIGN_MOBA_RIGHT_UTILITY_ACTIONS: tuple[GuiMobaRightUtilityAction, ...] = (
         label="Terminal settings",
         color="#38bdf8",
         tooltip="Show terminal settings",
+        static_x=7,
+        static_y=49,
+        static_size=16,
+        live_icon_size=18,
+        button_size=22,
+        render_source="generated-pixmap",
     ),
     GuiMobaRightUtilityAction(
         key="tools",
@@ -547,6 +623,12 @@ GUI_DESIGN_MOBA_RIGHT_UTILITY_ACTIONS: tuple[GuiMobaRightUtilityAction, ...] = (
         label="Terminal tools",
         color="#38bdf8",
         tooltip="Show terminal tools",
+        static_x=7,
+        static_y=85,
+        static_size=16,
+        live_icon_size=18,
+        button_size=22,
+        render_source="generated-pixmap",
     ),
 )
 
@@ -643,10 +725,16 @@ GUI_DESIGN_MOBA_SFTP_BROWSER_CHROME = GuiMobaSftpBrowserChrome(
     parent_row_kind="parent-dir",
     selected_row_kind="parent-dir",
     columns=(
-        GuiMobaSftpTableColumn("name", "Name", 38),
-        GuiMobaSftpTableColumn("size", "Size (KB)", 188),
-        GuiMobaSftpTableColumn("modified", "Last modified", 266),
+        GuiMobaSftpTableColumn("name", "Name", 38, 182),
+        GuiMobaSftpTableColumn("size", "Size (KB)", 188, 78),
+        GuiMobaSftpTableColumn("modified", "Last modified", 266, 94),
     ),
+)
+
+GUI_DESIGN_MOBA_SFTP_FILE_ROW_ICONS: tuple[GuiMobaSftpFileRowIcon, ...] = (
+    GuiMobaSftpFileRowIcon("parent-dir", "folder-up", "parent-dir", 14, "generated-pixmap"),
+    GuiMobaSftpFileRowIcon("dir", "folder", "dir", 14, "generated-pixmap"),
+    GuiMobaSftpFileRowIcon("file", "file", "file", 14, "generated-pixmap"),
 )
 
 GUI_DESIGN_MOBA_SFTP_DOCK_LAYOUT = GuiMobaSftpDockLayout(
@@ -697,6 +785,29 @@ GUI_DESIGN_MOBA_MONITORING_CONTROLS: tuple[GuiMobaMonitoringControl, ...] = (
         control_type="checkbox",
         checked=True,
         tooltip="Keep the SFTP browser path synced to the terminal working directory",
+    ),
+)
+
+GUI_DESIGN_MOBA_MONITORING_CONTROL_GEOMETRY: tuple[GuiMobaMonitoringControlGeometry, ...] = (
+    GuiMobaMonitoringControlGeometry(
+        key="remote-monitoring",
+        anchor_x=104,
+        static_y=1,
+        icon_x=104,
+        icon_size=20,
+        label_x=132,
+        check_size=0,
+        row_height=22,
+    ),
+    GuiMobaMonitoringControlGeometry(
+        key="follow-terminal-folder",
+        anchor_x=42,
+        static_y=76,
+        icon_x=60,
+        icon_size=16,
+        label_x=80,
+        check_size=10,
+        row_height=19,
     ),
 )
 
@@ -903,11 +1014,96 @@ GUI_DESIGN_MREMOTENG_TOP_CHROME = GuiMRemoteNgTopChrome(
 )
 
 GUI_DESIGN_REMMINA_VIEWER_CONTROLS: tuple[GuiRemminaViewerControl, ...] = (
-    GuiRemminaViewerControl("fit", "fit", "SP_TitleBarMaxButton", "Fit", "Fit remote desktop to the viewer"),
-    GuiRemminaViewerControl("scale-100", "scale", "SP_ComputerIcon", "Scale 100%", "Use exact 100% viewer scale"),
-    GuiRemminaViewerControl("clipboard", "clipboard", "SP_FileDialogDetailedView", "Clipboard", "Toggle clipboard sync"),
-    GuiRemminaViewerControl("fullscreen", "fullscreen", "SP_TitleBarShadeButton", "Fullscreen", "Enter fullscreen viewer mode"),
-    GuiRemminaViewerControl("screenshot", "screenshot", "SP_FileDialogContentsView", "Screenshot", "Capture the remote viewer"),
+    GuiRemminaViewerControl(
+        "fit",
+        "fit",
+        "SP_TitleBarMaxButton",
+        "Fit",
+        "Fit remote desktop to the viewer",
+        74,
+        78,
+        7,
+        20,
+        6,
+        12,
+        22,
+        14,
+        74,
+        26,
+        "generated-pixmap",
+    ),
+    GuiRemminaViewerControl(
+        "scale-100",
+        "scale",
+        "SP_ComputerIcon",
+        "Scale 100%",
+        "Use exact 100% viewer scale",
+        74,
+        78,
+        7,
+        20,
+        6,
+        12,
+        22,
+        14,
+        74,
+        26,
+        "generated-pixmap",
+    ),
+    GuiRemminaViewerControl(
+        "clipboard",
+        "clipboard",
+        "SP_FileDialogDetailedView",
+        "Clipboard",
+        "Toggle clipboard sync",
+        74,
+        78,
+        7,
+        20,
+        6,
+        12,
+        22,
+        14,
+        74,
+        26,
+        "generated-pixmap",
+    ),
+    GuiRemminaViewerControl(
+        "fullscreen",
+        "fullscreen",
+        "SP_TitleBarShadeButton",
+        "Fullscreen",
+        "Enter fullscreen viewer mode",
+        74,
+        78,
+        7,
+        20,
+        6,
+        12,
+        22,
+        14,
+        74,
+        26,
+        "generated-pixmap",
+    ),
+    GuiRemminaViewerControl(
+        "screenshot",
+        "screenshot",
+        "SP_FileDialogContentsView",
+        "Screenshot",
+        "Capture the remote viewer",
+        74,
+        78,
+        7,
+        20,
+        6,
+        12,
+        22,
+        14,
+        74,
+        26,
+        "generated-pixmap",
+    ),
 )
 
 GUI_DESIGN_REMMINA_PROFILE_LIST_CHROME = GuiRemminaProfileListChrome(
@@ -990,20 +1186,96 @@ GUI_DESIGN_TERMIUS_HOST_IDENTITY_STRIP = GuiTermiusHostIdentityStrip(
 GUI_DESIGN_MREMOTENG_DOCUMENT_TOOLBAR_CHROME = GuiMRemoteNgDocumentToolbarChrome(
     title="Connections.xml",
     filter_placeholder="Filter connection tree",
+    title_width=112,
+    static_height=28,
+    static_margin_x=10,
+    static_button_start_x=128,
+    static_button_gap=8,
+    static_filter_width=178,
+    static_filter_y=5,
+    static_filter_height=18,
+    live_margin_left=7,
+    live_margin_top=5,
+    live_margin_right=7,
+    live_margin_bottom=5,
+    live_spacing=7,
+    live_filter_width=178,
+    live_filter_height=24,
 )
 
 GUI_DESIGN_MREMOTENG_DOCUMENT_CONTROLS: tuple[GuiMRemoteNgDocumentControl, ...] = (
-    GuiMRemoteNgDocumentControl("save", "database", "SP_DialogSaveButton", "Save", "Save the connection document", 56),
-    GuiMRemoteNgDocumentControl("reconnect", "ssh", "SP_BrowserReload", "Reconnect", "Reconnect active document", 88),
+    GuiMRemoteNgDocumentControl(
+        "save",
+        "database",
+        "Save",
+        "Save the connection document",
+        56,
+        4,
+        20,
+        8,
+        7,
+        13,
+        27,
+        8,
+        14,
+        56,
+        26,
+        "generated-pixmap",
+    ),
+    GuiMRemoteNgDocumentControl(
+        "reconnect",
+        "ssh",
+        "Reconnect",
+        "Reconnect active document",
+        88,
+        4,
+        20,
+        8,
+        7,
+        13,
+        27,
+        8,
+        14,
+        88,
+        26,
+        "generated-pixmap",
+    ),
     GuiMRemoteNgDocumentControl(
         "external-tool",
         "external",
-        "SP_FileDialogDetailedView",
         "External tool",
         "Open the external tool for this connection",
         104,
+        4,
+        20,
+        8,
+        7,
+        13,
+        27,
+        8,
+        14,
+        104,
+        26,
+        "generated-pixmap",
     ),
-    GuiMRemoteNgDocumentControl("dock-view", "rdp", "SP_ComputerIcon", "Dock view", "Toggle the docked viewer", 84),
+    GuiMRemoteNgDocumentControl(
+        "dock-view",
+        "rdp",
+        "Dock view",
+        "Toggle the docked viewer",
+        84,
+        4,
+        20,
+        8,
+        7,
+        13,
+        27,
+        8,
+        14,
+        84,
+        26,
+        "generated-pixmap",
+    ),
 )
 
 GUI_DESIGN_MREMOTENG_PROPERTY_GRID_CHROME = GuiMRemoteNgPropertyGridChrome(
@@ -1123,6 +1395,66 @@ GUI_DESIGN_TREE_ROOT_COPY: dict[str, tuple[str, str]] = {
     "termius": ("Personal Vault", "Termius-style encrypted host inventory"),
     "remmina": ("Profile Groups", "Remmina-style protocol connection profiles"),
     "mremoteng": ("Connections", "mRemoteNG-style nested connection tree"),
+}
+
+
+@dataclass(frozen=True)
+class GuiDesignTreeRowIcon:
+    label: str
+    icon_key: str
+    row_kind: str
+    static_size: int
+
+
+GUI_DESIGN_TREE_ROOT_ICONS: dict[str, GuiDesignTreeRowIcon] = {
+    DEFAULT_GUI_DESIGN_ID: GuiDesignTreeRowIcon("Profiles", "folder", "root", 16),
+    "mobaxterm": GuiDesignTreeRowIcon("User sessions", "folder", "root", 16),
+    "securecrt": GuiDesignTreeRowIcon("Session Database", "database", "root", 16),
+    "termius": GuiDesignTreeRowIcon("Personal Vault", "database", "root", 16),
+    "remmina": GuiDesignTreeRowIcon("Profile Groups", "folder", "root", 16),
+    "mremoteng": GuiDesignTreeRowIcon("Connections", "database", "root", 16),
+}
+
+
+GUI_DESIGN_TREE_ROW_ICONS: dict[str, tuple[GuiDesignTreeRowIcon, ...]] = {
+    "securecrt": (
+        GuiDesignTreeRowIcon("Sessions", "folder", "group", 14),
+        GuiDesignTreeRowIcon("edge-prod (SSH2)", "ssh2", "profile", 14),
+        GuiDesignTreeRowIcon("files-prod (SFTP)", "sftp", "profile", 14),
+        GuiDesignTreeRowIcon("Local Shells", "folder", "group", 14),
+        GuiDesignTreeRowIcon("PowerShell", "shell", "profile", 14),
+        GuiDesignTreeRowIcon("Net tools", "command", "profile", 14),
+        GuiDesignTreeRowIcon("Pinned", "folder", "group", 14),
+        GuiDesignTreeRowIcon("jump-host (SSH2)", "pin", "profile", 14),
+    ),
+    "termius": (
+        GuiDesignTreeRowIcon("Personal", "folder", "group", 14),
+        GuiDesignTreeRowIcon("edge-prod", "host", "profile", 14),
+        GuiDesignTreeRowIcon("jump-host", "pin", "profile", 14),
+        GuiDesignTreeRowIcon("Teams", "folder", "group", 14),
+        GuiDesignTreeRowIcon("prod-cluster", "host", "profile", 14),
+        GuiDesignTreeRowIcon("Snippets", "folder", "group", 14),
+        GuiDesignTreeRowIcon("deploy-check", "snippet", "profile", 14),
+    ),
+    "remmina": (
+        GuiDesignTreeRowIcon("RDP", "folder", "group", 14),
+        GuiDesignTreeRowIcon("win-admin", "rdp", "profile", 14),
+        GuiDesignTreeRowIcon("lab-desktop", "rdp", "profile", 14),
+        GuiDesignTreeRowIcon("VNC", "folder", "group", 14),
+        GuiDesignTreeRowIcon("linux-console", "vnc", "profile", 14),
+        GuiDesignTreeRowIcon("SSH/SFTP", "folder", "group", 14),
+        GuiDesignTreeRowIcon("sftp-ops", "sftp", "profile", 14),
+    ),
+    "mremoteng": (
+        GuiDesignTreeRowIcon("Connections.xml", "database", "group", 14),
+        GuiDesignTreeRowIcon("prod", "folder", "group", 14),
+        GuiDesignTreeRowIcon("edge-prod [SSH]", "ssh", "profile", 14),
+        GuiDesignTreeRowIcon("win-admin [RDP]", "rdp", "profile", 14),
+        GuiDesignTreeRowIcon("files", "folder", "group", 14),
+        GuiDesignTreeRowIcon("sftp-ops [SFTP]", "sftp", "profile", 14),
+        GuiDesignTreeRowIcon("tools", "folder", "group", 14),
+        GuiDesignTreeRowIcon("net-tools [SSH]", "ssh", "profile", 14),
+    ),
 }
 GUI_DESIGN_TREE_ROWS: dict[str, tuple[tuple[str, str, bool], ...]] = {
     DEFAULT_GUI_DESIGN_ID: (
@@ -3008,6 +3340,17 @@ def gui_design_moba_sftp_browser_chrome() -> GuiMobaSftpBrowserChrome:
     return GUI_DESIGN_MOBA_SFTP_BROWSER_CHROME
 
 
+def gui_design_moba_sftp_file_row_icons() -> tuple[GuiMobaSftpFileRowIcon, ...]:
+    return GUI_DESIGN_MOBA_SFTP_FILE_ROW_ICONS
+
+
+def gui_design_moba_sftp_file_row_icon(kind: str) -> GuiMobaSftpFileRowIcon:
+    for row_icon in GUI_DESIGN_MOBA_SFTP_FILE_ROW_ICONS:
+        if row_icon.kind == kind:
+            return row_icon
+    return GUI_DESIGN_MOBA_SFTP_FILE_ROW_ICONS[-1]
+
+
 def gui_design_moba_sftp_dock_layout() -> GuiMobaSftpDockLayout:
     return GUI_DESIGN_MOBA_SFTP_DOCK_LAYOUT
 
@@ -3018,6 +3361,17 @@ def gui_design_moba_monitoring_metrics() -> tuple[GuiMobaMonitoringMetric, ...]:
 
 def gui_design_moba_monitoring_controls() -> tuple[GuiMobaMonitoringControl, ...]:
     return GUI_DESIGN_MOBA_MONITORING_CONTROLS
+
+
+def gui_design_moba_monitoring_control_geometry() -> tuple[GuiMobaMonitoringControlGeometry, ...]:
+    return GUI_DESIGN_MOBA_MONITORING_CONTROL_GEOMETRY
+
+
+def gui_design_moba_monitoring_control_geometry_for(key: str) -> GuiMobaMonitoringControlGeometry:
+    for item in GUI_DESIGN_MOBA_MONITORING_CONTROL_GEOMETRY:
+        if item.key == key:
+            return item
+    raise KeyError(key)
 
 
 def gui_design_moba_remote_monitoring_dock_chrome() -> GuiMobaRemoteMonitoringDockChrome:
@@ -3108,8 +3462,58 @@ def gui_design_tree_root_copy(preset_id: str) -> tuple[str, str]:
     return GUI_DESIGN_TREE_ROOT_COPY.get(preset_id, GUI_DESIGN_TREE_ROOT_COPY[DEFAULT_GUI_DESIGN_ID])
 
 
+def gui_design_tree_root_icon(preset_id: str) -> GuiDesignTreeRowIcon:
+    return GUI_DESIGN_TREE_ROOT_ICONS.get(preset_id, GUI_DESIGN_TREE_ROOT_ICONS[DEFAULT_GUI_DESIGN_ID])
+
+
 def gui_design_tree_rows(preset_id: str) -> tuple[tuple[str, str, bool], ...]:
     return GUI_DESIGN_TREE_ROWS.get(preset_id, GUI_DESIGN_TREE_ROWS[DEFAULT_GUI_DESIGN_ID])
+
+
+def gui_design_tree_row_icons(preset_id: str) -> tuple[GuiDesignTreeRowIcon, ...]:
+    explicit = GUI_DESIGN_TREE_ROW_ICONS.get(preset_id)
+    if explicit is not None:
+        return explicit
+    return tuple(_tree_row_icon_from_values(preset_id, name, target, group) for name, target, group in gui_design_tree_rows(preset_id))
+
+
+def gui_design_tree_row_icon(preset_id: str, name: str, target: str, group: bool) -> GuiDesignTreeRowIcon:
+    label = name.strip()
+    for row_icon in gui_design_tree_row_icons(preset_id):
+        if row_icon.label == label:
+            return row_icon
+    return _tree_row_icon_from_values(preset_id, name, target, group)
+
+
+def gui_design_tree_row_icon_key(preset_id: str, name: str, target: str, group: bool) -> str:
+    return gui_design_tree_row_icon(preset_id, name, target, group).icon_key
+
+
+def _tree_row_icon_from_values(preset_id: str, name: str, target: str, group: bool) -> GuiDesignTreeRowIcon:
+    label = name.strip()
+    value = f"{name} {target}".lower()
+    if group:
+        icon_key = "database" if any(token in value for token in ("xml", "database", "vault")) else "folder"
+        return GuiDesignTreeRowIcon(label, icon_key, "group", 14)
+    if "rdp" in value:
+        icon_key = "rdp"
+    elif "vnc" in value:
+        icon_key = "vnc"
+    elif "sftp" in value or "file" in value:
+        icon_key = "sftp"
+    elif "local" in value or "powershell" in value:
+        icon_key = "shell"
+    elif "snippet" in value or "deploy" in value:
+        icon_key = "snippet"
+    elif "jump" in value or "pinned" in value:
+        icon_key = "pin"
+    elif preset_id == "termius":
+        icon_key = "host"
+    elif "ssh2" in value:
+        icon_key = "ssh2"
+    else:
+        icon_key = "ssh"
+    return GuiDesignTreeRowIcon(label, icon_key, "profile", 14)
 
 
 def gui_design_home_tab_label(preset_id: str) -> str:

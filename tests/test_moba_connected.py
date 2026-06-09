@@ -132,6 +132,17 @@ def test_bottom_telemetry_cells_match_reference_like_status_strip() -> None:
         "2/158",
     ]
     assert [cell.width for cell in cells] == [165, 60, 125, 124, 88, 88, 145, 77]
+    assert [cell.icon_size for cell in cells] == [12] * 8
+    assert [cell.icon_accent for cell in cells] == [
+        "#35d7c7",
+        "#f4c430",
+        "#6ac76a",
+        "#6ac76a",
+        "#4da3ff",
+        "#4da3ff",
+        "#35d7c7",
+        "#f4c430",
+    ]
 
 
 def test_connected_tab_chrome_tracks_reference_tab_sequence_without_user_samples() -> None:

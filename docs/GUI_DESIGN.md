@@ -89,6 +89,15 @@ The static SecureCRT Session Manager tree now has a dedicated renderer for the
 Session Database root, foldered Sessions/Local Shells/Pinned groups, selected
 SSH2 row and connector lines. Visual metrics pin those regions and color
 anchors so the left pane cannot drift back to a generic flat profile list.
+The same tree now carries shared row-icon metadata for the database root, folder
+groups, SSH2 sessions, SFTP sessions, shell/command rows and pinned sessions.
+The live `profileTree` stores each row's icon key, row kind, static icon size and
+`generated-pixmap` render source, and CI rejects SecureCRT rows that fall back to
+text-only or platform-default glyph evidence.
+The same generated-tree-glyph contract now covers Termius, Remmina and
+mRemoteNG: Termius host/vault/snippet rows, Remmina RDP/VNC/SFTP protocol rows
+and mRemoteNG Connections.xml/container/protocol nodes all use shared icon
+metadata in the static renderer and live `profileTree` evidence.
 SecureCRT interaction-state visual metrics now pin those same controls in the
 generated PNG: the focused Session Manager filter outline, active SSH2 tab
 outline, command-window input focus outline and Send control fill are sampled as
@@ -101,7 +110,11 @@ static preview and real PyQt window no longer reuse the generic top bar.
 Remmina-style viewer control chrome now has shared metadata too. Fit,
 Scale 100%, Clipboard, Fullscreen and Screenshot are drawn in the static
 viewer toolbar and exposed as live `remminaViewerControl` buttons with stable
-control and icon keys, while the visual metrics pin the control-strip region.
+control keys, generated icon keys, static strip widths/offsets and live button
+sizing. The live checker validates `remminaViewerControlStaticWidth`,
+`remminaViewerControlLiveButtonHeight` and
+`remminaViewerControlRenderSource`, while the visual metrics pin the
+control-strip region.
 Remmina-style profile-list chrome is shared metadata as well. The connection
 list title, filter placeholder, Name/Protocol/Server columns and generic
 RDP/VNC/SFTP rows are drawn in the static sidebar, exposed as live
@@ -134,7 +147,10 @@ mRemoteNG-style document controls now use shared metadata for the
 Connections.xml title, Save, Reconnect, External tool and Dock view actions,
 plus the connection-tree filter placeholder. The static document toolbar and
 live PyQt `mRemoteNgDocumentControl` buttons expose the same keys, and visual
-metrics pin the document-control button strip. mRemoteNG interaction-state
+metrics pin the document-control button strip. The mRemoteNG-style document-control geometry
+contract also pins generated icon rendering, button widths, icon offsets, label
+offsets, filter width and live button dimensions through the shared metadata
+and real-GUI checker. mRemoteNG interaction-state
 metrics now pin the focused `mRemoteNgDocumentFilter`, selected connection-tree
 row, active document tab, checked External tool actions, guarded Delete toolbar
 button, embedded RDP control glyphs and inherited property-grid rows.
@@ -209,33 +225,47 @@ metrics pin the SFTP toolbar/path/header rules.
 The SFTP browser path and table header chrome are tracked as their own shared
 metadata too. `GuiMobaSftpBrowserChrome` defines the path placeholder, dropdown
 marker, selected `..` parent-folder row and keyed Name/Size/Last modified
-columns; the static preview uses the same column offsets and selected parent row
-as the live PyQt file table exposes through `mobaSftpColumnKeys`,
-`mobaSftpParentRowKind` and `mobaSftpSelectedRowKind`. The visual metrics pin
-the path/header strip plus the selected parent-row fill and outline so the dock
-cannot drift back to an unselected generic file list.
+columns with fixed reference widths; the static preview uses the same column
+offsets and selected parent row as the live PyQt file table exposes through
+`mobaSftpColumnKeys`, `mobaSftpColumnWidths`, `mobaSftpParentRowKind` and
+`mobaSftpSelectedRowKind`. The live checker rejects auto-sized column drift, and
+the visual metrics pin the path/header strip plus the selected parent-row fill
+and outline so the dock cannot drift back to an unselected generic file list.
+SFTP file-row glyphs now use shared generated metadata too:
+`GuiMobaSftpFileRowIcon` defines parent-folder, folder and file icons with
+stable icon keys, row kinds, sizes and `generated-pixmap` render evidence. The
+static preview draws those icons through `draw_moba_sftp_file_icon`, while the
+live PyQt `mobaSftpFileTable` stores matching row roles and rejects fallback to
+platform-default folder/file icons in the real GUI checker.
 The remote-monitoring controls are tracked separately as shared metadata too:
 Remote monitoring and Follow terminal folder now expose stable keys, icon keys,
-control types, checked state and tooltips in both the static PNG renderer and
-the live PyQt dock. The live checker validates `mobaMonitoringControlKey` and
-`mobaMonitoringControlIconKey`, and the visual metrics pin the bottom-left
+control types, checked state, tooltips and compact dock geometry in both the
+static PNG renderer and the live PyQt dock. `GuiMobaMonitoringControlGeometry`
+defines each control's reference anchor, y offset, icon size, label offset,
+checkbox size and row height; the live checker validates
+`mobaMonitoringControlStaticX`, `mobaMonitoringControlIconSize` and the related
+geometry properties, and the visual metrics pin the bottom-left
 monitoring-controls region.
 The connected left dock also has a compact MobaXterm-style remote-monitoring dock
 contract. `GuiMobaRemoteMonitoringDockChrome` keeps the visible dock to the
 reference-like Remote monitoring control plus Follow terminal folder checkbox,
 while telemetry metric keys, refresh cadence, SSH monitoring command evidence
 and follow-folder SFTP plan evidence are exposed as `mobaRemoteMonitoring*`
-properties and rendered in the bottom telemetry/status surface instead of as
-extra visible dock rows.
+properties. The compact dock additionally exposes
+`mobaMonitoringControlGeometryKeys` so static previews, live PyQt controls and
+the render manifest report the same Moba-style monitoring row geometry instead
+of drifting independently.
 Connected MobaXterm-style chrome now uses a shared SSH/SFTP state model for the
 window title, active tab label and bottom telemetry segments, so the static
 preview and live PyQt window show the same target-centric example identity and
 icon-backed CPU, memory, disk, network, connection and process indicators.
 Those indicators now use a shared bottom telemetry cell model instead of loose
 labels: `moba_telemetry_cells()` defines the ordered cell keys, icon keys,
-display text and widths; the static preview draws separator lines and
-reference-like cells; and the live PyQt bar exposes `mobaTelemetryCell`,
-`mobaTelemetryCellWidth` and `mobaTelemetryDisplayText` for the render checker.
+project-owned icon accents, icon size, display text and widths; the static
+preview draws separator lines and reference-like cells; and the live PyQt bar
+uses generated pixmap glyphs exposed through `mobaTelemetryIconRender`,
+`mobaTelemetryCellWidth` and `mobaTelemetryDisplayText` for the render checker,
+which rejects text-placeholder telemetry icons.
 The SSH banner chrome has its own shared title, subtitle, target-line,
 capability-row, footer-link and geometry metadata; the static renderer uses it
 for the centered banner header and terminal spacing, while the live PyQt banner
@@ -255,10 +285,12 @@ inactive SSH, active SSH and plus tabs with generated icons and close markers,
 while the live PyQt tabs expose matching `mobaTabChromeKey` and
 `mobaTabIconKey` properties for the render checker.
 The connected terminal workspace also includes a right utility rail backed by
-shared action metadata; the static preview draws clip/settings/tool icons
-instead of text placeholders, and the live PyQt panel exposes
-`mobaRightUtilityAction` widgets with stable `mobaRightUtilityKey` and
-`mobaRightUtilityIconKey` properties.
+shared action metadata; the static preview draws clip/settings/tool icons from
+shared right-edge stack coordinates instead of text placeholders, and the live
+PyQt panel exposes `mobaRightUtilityAction` widgets with stable
+`mobaRightUtilityKey`, `mobaRightUtilityIconKey`,
+`mobaRightUtilityStaticY`, `mobaRightUtilityButtonSize` and
+`mobaRightUtilityRenderSource` properties.
 The small session edge shortcut cluster beside the connected tab/terminal edge
 is tracked separately with `gui_design_moba_session_edge_actions()`: static
 previews draw the paperclip/settings icons from shared `static_y` coordinates,

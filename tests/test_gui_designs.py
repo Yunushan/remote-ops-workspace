@@ -5,6 +5,7 @@ from remote_ops_workspace.gui_designs import (
     gui_design_interaction_state,
     gui_design_moba_bottom_edge_controls,
     gui_design_moba_home_welcome_chrome,
+    gui_design_moba_monitoring_control_geometry,
     gui_design_moba_monitoring_controls,
     gui_design_moba_monitoring_metrics,
     gui_design_moba_quick_connect_chrome,
@@ -17,6 +18,8 @@ from remote_ops_workspace.gui_designs import (
     gui_design_moba_sftp_browser_chrome,
     gui_design_moba_sftp_dock_actions,
     gui_design_moba_sftp_dock_layout,
+    gui_design_moba_sftp_file_row_icon,
+    gui_design_moba_sftp_file_row_icons,
     gui_design_moba_ssh_banner_chrome,
     gui_design_moba_status_bar_chrome,
     gui_design_moba_status_segments,
@@ -38,6 +41,9 @@ from remote_ops_workspace.gui_designs import (
     gui_design_termius_header_chips,
     gui_design_termius_host_identity_strip,
     gui_design_termius_hosts_chrome,
+    gui_design_tree_root_icon,
+    gui_design_tree_row_icon,
+    gui_design_tree_row_icons,
     gui_design_workflow_cards,
 )
 
@@ -285,6 +291,12 @@ def test_mobaxterm_right_utility_actions_are_shared_metadata() -> None:
         "Terminal settings",
         "Terminal tools",
     ]
+    assert [action.static_x for action in actions] == [7, 7, 7]
+    assert [action.static_y for action in actions] == [13, 49, 85]
+    assert [action.static_size for action in actions] == [16, 16, 16]
+    assert [action.live_icon_size for action in actions] == [18, 18, 18]
+    assert [action.button_size for action in actions] == [22, 22, 22]
+    assert [action.render_source for action in actions] == ["generated-pixmap"] * 3
     assert all(action.tooltip for action in actions)
     assert all(action.color.startswith("#") for action in actions)
 
@@ -351,6 +363,21 @@ def test_mobaxterm_sftp_browser_chrome_is_shared_metadata() -> None:
     assert [column.key for column in chrome.columns] == ["name", "size", "modified"]
     assert [column.label for column in chrome.columns] == ["Name", "Size (KB)", "Last modified"]
     assert [column.static_x for column in chrome.columns] == [38, 188, 266]
+    assert [column.static_width for column in chrome.columns] == [182, 78, 94]
+
+
+def test_mobaxterm_sftp_file_row_icons_are_shared_metadata() -> None:
+    row_icons = gui_design_moba_sftp_file_row_icons()
+
+    assert [(item.kind, item.icon_key, item.row_kind) for item in row_icons] == [
+        ("parent-dir", "folder-up", "parent-dir"),
+        ("dir", "folder", "dir"),
+        ("file", "file", "file"),
+    ]
+    assert [item.static_size for item in row_icons] == [14, 14, 14]
+    assert [item.render_source for item in row_icons] == ["generated-pixmap"] * 3
+    assert gui_design_moba_sftp_file_row_icon("parent-dir").icon_key == "folder-up"
+    assert gui_design_moba_sftp_file_row_icon("unknown").icon_key == "file"
 
 
 def test_mobaxterm_sftp_dock_layout_is_shared_density_metadata() -> None:
@@ -386,6 +413,18 @@ def test_mobaxterm_monitoring_controls_are_shared_metadata() -> None:
     assert [control.control_type for control in controls] == ["toggle", "checkbox"]
     assert [control.checked for control in controls] == [True, True]
     assert all(control.tooltip for control in controls)
+
+
+def test_mobaxterm_monitoring_control_geometry_is_shared_metadata() -> None:
+    geometry = gui_design_moba_monitoring_control_geometry()
+
+    assert [item.key for item in geometry] == ["remote-monitoring", "follow-terminal-folder"]
+    assert [(item.anchor_x, item.static_y) for item in geometry] == [(104, 1), (42, 76)]
+    assert [item.icon_x for item in geometry] == [104, 60]
+    assert [item.icon_size for item in geometry] == [20, 16]
+    assert [item.label_x for item in geometry] == [132, 80]
+    assert [item.check_size for item in geometry] == [0, 10]
+    assert [item.row_height for item in geometry] == [22, 19]
 
 
 def test_mobaxterm_remote_monitoring_dock_chrome_is_compact_shared_metadata() -> None:
@@ -495,6 +534,63 @@ def test_securecrt_session_manager_chrome_is_shared_metadata() -> None:
     assert all(action.tooltip for action in chrome.actions)
 
 
+def test_securecrt_session_tree_icons_are_shared_metadata() -> None:
+    root = gui_design_tree_root_icon("securecrt")
+    rows = gui_design_tree_row_icons("securecrt")
+
+    assert root.label == "Session Database"
+    assert root.icon_key == "database"
+    assert root.row_kind == "root"
+    assert root.static_size == 16
+    assert [(row.label, row.icon_key, row.row_kind) for row in rows] == [
+        ("Sessions", "folder", "group"),
+        ("edge-prod (SSH2)", "ssh2", "profile"),
+        ("files-prod (SFTP)", "sftp", "profile"),
+        ("Local Shells", "folder", "group"),
+        ("PowerShell", "shell", "profile"),
+        ("Net tools", "command", "profile"),
+        ("Pinned", "folder", "group"),
+        ("jump-host (SSH2)", "pin", "profile"),
+    ]
+    assert gui_design_tree_row_icon("securecrt", "edge-prod (SSH2)", "", False).icon_key == "ssh2"
+    assert gui_design_tree_row_icon("securecrt", "files-prod (SFTP)", "", False).icon_key == "sftp"
+    assert gui_design_tree_row_icon("securecrt", "jump-host (SSH2)", "", False).icon_key == "pin"
+
+
+def test_product_session_tree_icons_are_shared_metadata() -> None:
+    assert [(row.label, row.icon_key, row.row_kind) for row in gui_design_tree_row_icons("termius")] == [
+        ("Personal", "folder", "group"),
+        ("edge-prod", "host", "profile"),
+        ("jump-host", "pin", "profile"),
+        ("Teams", "folder", "group"),
+        ("prod-cluster", "host", "profile"),
+        ("Snippets", "folder", "group"),
+        ("deploy-check", "snippet", "profile"),
+    ]
+    assert [(row.label, row.icon_key, row.row_kind) for row in gui_design_tree_row_icons("remmina")] == [
+        ("RDP", "folder", "group"),
+        ("win-admin", "rdp", "profile"),
+        ("lab-desktop", "rdp", "profile"),
+        ("VNC", "folder", "group"),
+        ("linux-console", "vnc", "profile"),
+        ("SSH/SFTP", "folder", "group"),
+        ("sftp-ops", "sftp", "profile"),
+    ]
+    assert [(row.label, row.icon_key, row.row_kind) for row in gui_design_tree_row_icons("mremoteng")] == [
+        ("Connections.xml", "database", "group"),
+        ("prod", "folder", "group"),
+        ("edge-prod [SSH]", "ssh", "profile"),
+        ("win-admin [RDP]", "rdp", "profile"),
+        ("files", "folder", "group"),
+        ("sftp-ops [SFTP]", "sftp", "profile"),
+        ("tools", "folder", "group"),
+        ("net-tools [SSH]", "ssh", "profile"),
+    ]
+    assert gui_design_tree_root_icon("termius").icon_key == "database"
+    assert gui_design_tree_row_icon("remmina", "linux-console", "", False).icon_key == "vnc"
+    assert gui_design_tree_row_icon("mremoteng", "win-admin [RDP]", "", False).icon_key == "rdp"
+
+
 def test_securecrt_top_chrome_is_shared_metadata() -> None:
     chrome = gui_design_securecrt_top_chrome()
 
@@ -574,6 +670,17 @@ def test_remmina_viewer_controls_are_shared_metadata() -> None:
         "Screenshot",
     ]
     assert all(control.standard_icon.startswith("SP_") for control in controls)
+    assert [control.static_width for control in controls] == [74] * 5
+    assert [control.static_step for control in controls] == [78] * 5
+    assert [control.static_y for control in controls] == [7] * 5
+    assert [control.static_height for control in controls] == [20] * 5
+    assert [control.static_icon_x for control in controls] == [6] * 5
+    assert [control.static_icon_size for control in controls] == [12] * 5
+    assert [control.static_label_x for control in controls] == [22] * 5
+    assert [control.live_icon_size for control in controls] == [14] * 5
+    assert [control.live_min_width for control in controls] == [74] * 5
+    assert [control.live_button_height for control in controls] == [26] * 5
+    assert [control.render_source for control in controls] == ["generated-pixmap"] * 5
     assert all(control.tooltip for control in controls)
 
 
@@ -647,9 +754,25 @@ def test_mremoteng_document_controls_are_shared_metadata() -> None:
     assert [control.key for control in controls] == ["save", "reconnect", "external-tool", "dock-view"]
     assert [control.icon_key for control in controls] == ["database", "ssh", "external", "rdp"]
     assert [control.label for control in controls] == ["Save", "Reconnect", "External tool", "Dock view"]
-    assert all(control.standard_icon.startswith("SP_") for control in controls)
     assert all(control.tooltip for control in controls)
     assert [control.static_width for control in controls] == [56, 88, 104, 84]
+    assert {control.static_y for control in controls} == {4}
+    assert {control.static_height for control in controls} == {20}
+    assert {control.static_icon_x for control in controls} == {8}
+    assert {control.static_icon_y for control in controls} == {7}
+    assert {control.static_icon_size for control in controls} == {13}
+    assert {control.static_label_x for control in controls} == {27}
+    assert {control.static_label_y for control in controls} == {8}
+    assert [control.live_min_width for control in controls] == [56, 88, 104, 84]
+    assert {control.live_icon_size for control in controls} == {14}
+    assert {control.live_button_height for control in controls} == {26}
+    assert {control.render_source for control in controls} == {"generated-pixmap"}
+    assert chrome.title_width == 112
+    assert chrome.static_height == 28
+    assert chrome.static_button_start_x == 128
+    assert chrome.static_button_gap == 8
+    assert chrome.static_filter_width == 178
+    assert chrome.live_filter_width == 178
 
 
 def test_mremoteng_top_chrome_is_shared_metadata() -> None:

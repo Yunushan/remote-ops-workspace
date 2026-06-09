@@ -2,8 +2,8 @@
   "contact_sheet": {
     "height": 1392,
     "path": "all-gui-designs-contact-sheet.png",
-    "sha256": "b7a39716bdf33170d15295983786b3b4d72cd0ac820ea992a488973eedc6ac04",
-    "size_bytes": 398526,
+    "sha256": "ee6448fe687c13550f66cb7b2e4377ffb9c18ed5ac9cf0f71354405661e892c9",
+    "size_bytes": 398774,
     "width": 1272
   },
   "contact_thumb": {
@@ -50,8 +50,8 @@
       "image": {
         "height": 760,
         "path": "securecrt.png",
-        "sha256": "838800f7293bf3f6e406f2b355d5e5555e457e1d056fbc2871a786401e9c2f5a",
-        "size_bytes": 89659,
+        "sha256": "d8ec5f08f478f1d36b767f45352c276e59aba5298d0a4da796c8042e5d7d3dc1",
+        "size_bytes": 89806,
         "width": 1280
       },
       "label": "SecureCRT-style",
@@ -98,8 +98,8 @@
       "image": {
         "height": 760,
         "path": "mremoteng.png",
-        "sha256": "e211debb8ce79a3da4439eae96e2e100e6738d3cdd875c335da6e9d45c571d8a",
-        "size_bytes": 83979,
+        "sha256": "15fea49cd2209ee32baf650070d3d3e38d25956a01234c812e171254a7c7cbed",
+        "size_bytes": 84239,
         "width": 1280
       },
       "label": "mRemoteNG-style",

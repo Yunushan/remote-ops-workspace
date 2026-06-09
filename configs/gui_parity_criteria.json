@@ -211,12 +211,12 @@
         },
         {
           "id": "moba.right-utility-rail",
-          "description": "Connected MobaXterm-style terminal workspace has a narrow right utility rail with generated clip, settings and tool icons instead of text placeholders, with live widget properties and static visual metrics.",
+          "description": "Connected MobaXterm-style terminal workspace has a narrow right utility rail with generated clip, settings and tool icons plus shared static/live stack geometry instead of text placeholders.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": ["GUI_DESIGN_MOBA_RIGHT_UTILITY_ACTIONS", "GuiMobaRightUtilityAction", "gui_design_moba_right_utility_actions", "Terminal settings"],
-            "scripts/render_gui_design_previews.py": ["draw_moba_right_utility_rail", "draw_moba_right_utility_icon", "gui_design_moba_right_utility_actions", "\"gear\""],
-            "src/remote_ops_workspace/gui.py": ["mobaRightUtilityRail", "mobaRightUtilityAction", "mobaRightUtilityKey", "mobaRightUtilityIconKey"],
-            "scripts/check_real_gui_render.py": ["EXPECTED_MOBA_RIGHT_UTILITY_KEYS", "EXPECTED_MOBA_RIGHT_UTILITY_ICON_KEYS", "right-utility-rail", "mobaRightUtilityIconKey"],
+            "src/remote_ops_workspace/gui_designs.py": ["GUI_DESIGN_MOBA_RIGHT_UTILITY_ACTIONS", "GuiMobaRightUtilityAction", "gui_design_moba_right_utility_actions", "Terminal settings", "static_y", "button_size"],
+            "scripts/render_gui_design_previews.py": ["draw_moba_right_utility_rail", "draw_moba_right_utility_icon", "gui_design_moba_right_utility_actions", "action.static_y", "\"gear\""],
+            "src/remote_ops_workspace/gui.py": ["mobaRightUtilityRail", "mobaRightUtilityAction", "mobaRightUtilityKey", "mobaRightUtilityIconKey", "mobaRightUtilityStaticY", "mobaRightUtilityButtonSize"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_MOBA_RIGHT_UTILITY_KEYS", "EXPECTED_MOBA_RIGHT_UTILITY_ICON_KEYS", "EXPECTED_MOBA_RIGHT_UTILITY_BY_KEY", "right-utility-rail-geometry", "mobaRightUtilityIconKey"],
             "configs/gui_visual_metrics.json": ["right-utility-rail", "right-utility-action-stack", "right-utility-settings-gear", "right-utility-stack-inside-right-utility-rail"]
           }
         },
@@ -234,19 +234,21 @@
           "id": "moba.sftp-browser-chrome",
           "description": "MobaXterm-style SFTP browser path strip and file-table headers use shared static/live metadata for the remote path placeholder, dropdown marker, selected parent-folder row and keyed Name, Size and Last modified columns.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": ["GuiMobaSftpBrowserChrome", "parent_row_label", "selected_row_kind", "GuiMobaSftpTableColumn", "GUI_DESIGN_MOBA_SFTP_BROWSER_CHROME"],
-            "scripts/render_gui_design_previews.py": ["gui_design_moba_sftp_browser_chrome", "column.static_x", "chrome.dropdown_marker", "chrome.selected_row_kind"],
-            "src/remote_ops_workspace/gui.py": ["mobaSftpPathDropdownMarker", "mobaSftpColumnKeys", "mobaSftpParentRowLabel", "mobaSftpSelectedRowKind", "gui_design_moba_sftp_browser_chrome"],
-            "scripts/check_real_gui_render.py": ["EXPECTED_MOBA_SFTP_BROWSER_CHROME", "parent_row_kind", "sftp-browser-chrome", "expected_moba_sftp_browser_chrome"],
+            "src/remote_ops_workspace/gui_designs.py": ["GuiMobaSftpBrowserChrome", "parent_row_label", "selected_row_kind", "static_width", "GuiMobaSftpTableColumn", "GUI_DESIGN_MOBA_SFTP_BROWSER_CHROME"],
+            "scripts/render_gui_design_previews.py": ["gui_design_moba_sftp_browser_chrome", "column.static_x", "column.static_width", "chrome.dropdown_marker", "chrome.selected_row_kind"],
+            "src/remote_ops_workspace/gui.py": ["mobaSftpPathDropdownMarker", "mobaSftpColumnKeys", "mobaSftpColumnWidths", "mobaSftpParentRowLabel", "mobaSftpSelectedRowKind", "gui_design_moba_sftp_browser_chrome"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_MOBA_SFTP_BROWSER_CHROME", "EXPECTED_MOBA_SFTP_COLUMN_WIDTHS", "column widths drifted", "parent_row_kind", "sftp-browser-chrome", "expected_moba_sftp_browser_chrome"],
             "configs/gui_visual_metrics.json": ["sftp-path-table-chrome", "sftp-file-row-density", "sftp-selected-parent-row", "sftp-parent-row-icon", "sftp-parent-row-fill", "sftp-parent-row-outline"]
           }
         },
         {
           "id": "moba.sftp-glyphs",
-          "description": "MobaXterm-style connected SFTP dock uses independent drawn toolbar, file, folder and monitoring glyphs instead of bracketed text placeholders in the static preview, while the live dock uses icon-bearing file rows and action buttons.",
+          "description": "MobaXterm-style connected SFTP dock uses independent drawn toolbar, generated file/folder/parent-row and monitoring glyphs instead of bracketed text placeholders in static and live evidence.",
           "source_tokens": {
-            "scripts/render_gui_design_previews.py": ["draw_moba_sftp_toolbar_icon", "draw_moba_sftp_file_icon", "draw_moba_monitor_icon"],
-            "src/remote_ops_workspace/gui.py": ["mobaSftpAction", "item.setIcon", "mobaMonitoringMetric"]
+            "src/remote_ops_workspace/gui_designs.py": ["GuiMobaSftpFileRowIcon", "GUI_DESIGN_MOBA_SFTP_FILE_ROW_ICONS", "gui_design_moba_sftp_file_row_icon"],
+            "scripts/render_gui_design_previews.py": ["draw_moba_sftp_toolbar_icon", "draw_moba_sftp_file_icon", "gui_design_moba_sftp_file_row_icon", "draw_moba_monitor_icon"],
+            "src/remote_ops_workspace/gui.py": ["mobaSftpAction", "apply_sftp_file_row_icon", "SFTP_ROW_ICON_RENDER_ROLE", "generated-pixmap", "mobaMonitoringMetric"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_MOBA_SFTP_FILE_ROW_ICONS", "sftp-file-row-icons", "expected_moba_sftp_file_row_icons"]
           }
         },
         {
@@ -293,12 +295,12 @@
         },
         {
           "id": "moba.remote-monitoring-compact-dock",
-          "description": "MobaXterm-style connected left dock keeps the visible remote-monitoring area compact like the reference while retaining telemetry metric keys, refresh cadence, SSH command evidence and follow-folder SFTP plan metadata for the bottom telemetry/status surface.",
+          "description": "MobaXterm-style connected left dock keeps the visible remote-monitoring area compact like the reference while retaining telemetry metric keys, refresh cadence, SSH command evidence, follow-folder SFTP plan metadata and shared control geometry for the bottom telemetry/status surface.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": ["GuiMobaRemoteMonitoringDockChrome", "GUI_DESIGN_MOBA_REMOTE_MONITORING_DOCK_CHROME", "gui_design_moba_remote_monitoring_dock_chrome"],
-            "scripts/render_gui_design_previews.py": ["gui_design_moba_remote_monitoring_dock_chrome", "visible_metric_keys", "telemetry_surface"],
-            "src/remote_ops_workspace/gui.py": ["mobaRemoteMonitoringCompact", "mobaRemoteMonitoringTelemetrySurface", "mobaRemoteMonitoringCommand", "mobaRemoteMonitoringFollowPlan"],
-            "scripts/check_real_gui_render.py": ["EXPECTED_MOBA_REMOTE_MONITORING_DOCK_CHROME", "expected_moba_remote_monitoring_dock_chrome", "mobaRemoteMonitoringVisibleMetricKeys"],
+            "src/remote_ops_workspace/gui_designs.py": ["GuiMobaRemoteMonitoringDockChrome", "GUI_DESIGN_MOBA_REMOTE_MONITORING_DOCK_CHROME", "GuiMobaMonitoringControlGeometry", "GUI_DESIGN_MOBA_MONITORING_CONTROL_GEOMETRY", "gui_design_moba_remote_monitoring_dock_chrome"],
+            "scripts/render_gui_design_previews.py": ["gui_design_moba_remote_monitoring_dock_chrome", "gui_design_moba_monitoring_control_geometry_for", "visible_metric_keys", "telemetry_surface"],
+            "src/remote_ops_workspace/gui.py": ["mobaRemoteMonitoringCompact", "mobaRemoteMonitoringTelemetrySurface", "mobaRemoteMonitoringCommand", "mobaRemoteMonitoringFollowPlan", "mobaMonitoringControlGeometryKeys", "mobaMonitoringControlStaticX"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_MOBA_REMOTE_MONITORING_DOCK_CHROME", "EXPECTED_MOBA_MONITORING_CONTROL_GEOMETRY", "expected_moba_remote_monitoring_dock_chrome", "expected_moba_monitoring_control_geometry", "mobaRemoteMonitoringVisibleMetricKeys"],
             "docs/GUI_DESIGN.md": ["compact MobaXterm-style remote-monitoring dock"]
           }
         },
@@ -369,10 +371,10 @@
           "id": "moba.bottom-telemetry",
           "description": "Bottom connected-session status strip tracks target, CPU, RAM, disk, network, connection and process state as ordered reference-like cells with stable display text, icon keys, widths and separators across static and live evidence.",
           "source_tokens": {
-            "src/remote_ops_workspace/moba_connected.py": ["MobaTelemetryCell", "moba_telemetry_cells", "display_text", "width"],
-            "scripts/render_gui_design_previews.py": ["moba_telemetry_cells", "cell.width", "draw_moba_telemetry_icon"],
-            "src/remote_ops_workspace/gui.py": ["mobaTelemetryCell", "mobaTelemetryCellWidth", "mobaTelemetryDisplayText"],
-            "scripts/check_real_gui_render.py": ["EXPECTED_MOBA_TELEMETRY_CELL_KEYS", "expected_moba_telemetry_cells"],
+            "src/remote_ops_workspace/moba_connected.py": ["MobaTelemetryCell", "moba_telemetry_cells", "display_text", "width", "icon_accent", "icon_size"],
+            "scripts/render_gui_design_previews.py": ["moba_telemetry_cells", "cell.width", "cell.icon_accent", "draw_moba_telemetry_icon"],
+            "src/remote_ops_workspace/gui.py": ["mobaTelemetryCell", "mobaTelemetryCellWidth", "mobaTelemetryDisplayText", "telemetry_icon_pixmap", "mobaTelemetryIconRender"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_MOBA_TELEMETRY_CELL_KEYS", "expected_moba_telemetry_cells", "must not be a text placeholder"],
             "configs/gui_visual_metrics.json": ["bottom-telemetry", "telemetry-cell-strip", "telemetry-cpu-cell", "telemetry-cpu-icon"]
           }
         },
@@ -545,10 +547,12 @@
         },
         {
           "id": "securecrt.session-glyphs",
-          "description": "SecureCRT-style static sidebar uses independent folder, terminal, SFTP and pinned-session glyphs for Session Manager entries instead of text-only rows.",
+          "description": "SecureCRT-style Session Manager rows use shared database, folder, SSH2, SFTP, shell, command and pinned-session icon metadata in static previews and live Qt evidence instead of text-only rows.",
           "source_tokens": {
-            "scripts/render_gui_design_previews.py": ["sidebar_row_icon_key", "draw_sidebar_row_icon", "\"securecrt\""],
-            "src/remote_ops_workspace/gui_designs.py": ["edge-prod (SSH2)", "files-prod (SFTP)"],
+            "scripts/render_gui_design_previews.py": ["gui_design_tree_row_icon_key", "draw_sidebar_row_icon", "\"ssh2\"", "\"command\""],
+            "src/remote_ops_workspace/gui_designs.py": ["GUI_DESIGN_TREE_ROOT_ICONS", "GUI_DESIGN_TREE_ROW_ICONS", "GuiDesignTreeRowIcon"],
+            "src/remote_ops_workspace/gui.py": ["apply_profile_tree_icon", "profile_tree_generated_icon", "TREE_ICON_RENDER_ROLE"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_SECURECRT_TREE_ICON_KEYS", "check_securecrt_tree_icon_metadata", "securecrt-tree-icons"],
             "configs/gui_visual_metrics.json": ["session-manager-tree-connectors", "session-tree-connector", "session-tree-selected-fill"]
           }
         },
@@ -743,10 +747,12 @@
         },
         {
           "id": "termius.host-glyphs",
-          "description": "Termius-style static sidebar uses independent vault, host and snippet glyphs for Personal and Teams inventory rows.",
+          "description": "Termius-style Hosts tree uses shared vault/folder, host, pinned-forward and snippet glyph metadata in static previews and live Qt evidence.",
           "source_tokens": {
-            "scripts/render_gui_design_previews.py": ["sidebar_row_icon_key", "draw_sidebar_row_icon", "\"termius\""],
-            "src/remote_ops_workspace/gui_designs.py": ["Personal Vault", "prod-cluster", "deploy-check"]
+            "src/remote_ops_workspace/gui_designs.py": ["GUI_DESIGN_TREE_ROW_ICONS", "Personal Vault", "prod-cluster", "deploy-check"],
+            "src/remote_ops_workspace/gui.py": ["GENERATED_PROFILE_TREE_ICON_PRESETS", "profile_tree_generated_icon", "generated-pixmap"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRODUCT_TREE_ICON_ROWS", "termius-tree-icons", "expected_product_tree_icons"],
+            "scripts/render_gui_design_previews.py": ["gui_design_tree_row_icon_key", "draw_sidebar_row_icon", "\"termius\""]
           }
         },
         {
@@ -923,10 +929,12 @@
         },
         {
           "id": "remmina.protocol-glyphs",
-          "description": "Remmina-style static sidebar uses independent protocol glyphs for RDP, VNC and SSH/SFTP profile rows.",
+          "description": "Remmina-style profile rows use shared protocol glyph metadata for RDP, VNC and SSH/SFTP profiles in static previews and live Qt evidence.",
           "source_tokens": {
-            "scripts/render_gui_design_previews.py": ["sidebar_row_icon_key", "draw_sidebar_row_icon", "\"rdp\"", "\"vnc\"", "\"sftp\""],
-            "src/remote_ops_workspace/gui_designs.py": ["Profile Groups", "lab-desktop", "linux-console"]
+            "src/remote_ops_workspace/gui_designs.py": ["GUI_DESIGN_TREE_ROW_ICONS", "Profile Groups", "lab-desktop", "linux-console"],
+            "src/remote_ops_workspace/gui.py": ["GENERATED_PROFILE_TREE_ICON_PRESETS", "profile_tree_generated_icon", "generated-pixmap"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRODUCT_TREE_ICON_ROWS", "remmina-tree-icons", "expected_product_tree_icons"],
+            "scripts/render_gui_design_previews.py": ["gui_design_tree_row_icon_key", "draw_sidebar_row_icon", "\"rdp\"", "\"vnc\"", "\"sftp\""]
           }
         },
         {
@@ -975,12 +983,12 @@
         },
         {
           "id": "remmina.viewer-control-chrome",
-          "description": "Remmina-style viewer controls are shared static/live metadata with stable keys and icon keys for Fit, Scale 100%, Clipboard, Fullscreen and Screenshot actions.",
+          "description": "Remmina-style viewer controls are shared static/live metadata with stable keys, generated icon keys, strip geometry and button sizing for Fit, Scale 100%, Clipboard, Fullscreen and Screenshot actions.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": ["GuiRemminaViewerControl", "GUI_DESIGN_REMMINA_VIEWER_CONTROLS", "gui_design_remmina_viewer_controls"],
-            "src/remote_ops_workspace/gui.py": ["build_remmina_viewer_controls_evidence", "remminaViewerControl", "remminaViewerControlKey"],
-            "scripts/render_gui_design_previews.py": ["gui_design_remmina_viewer_controls", "draw_remmina_workspace", "control.icon_key"],
-            "scripts/check_real_gui_render.py": ["check_live_remmina_viewer_controls", "expected_remmina_viewer_controls", "remmina-viewer-controls"],
+            "src/remote_ops_workspace/gui_designs.py": ["GuiRemminaViewerControl", "GUI_DESIGN_REMMINA_VIEWER_CONTROLS", "gui_design_remmina_viewer_controls", "static_width", "live_button_height"],
+            "src/remote_ops_workspace/gui.py": ["build_remmina_viewer_controls_evidence", "remminaViewerControl", "remminaViewerControlKey", "remminaViewerControlStaticWidth", "remminaViewerControlRenderSource"],
+            "scripts/render_gui_design_previews.py": ["gui_design_remmina_viewer_controls", "draw_remmina_workspace", "control.static_width", "control.static_icon_size"],
+            "scripts/check_real_gui_render.py": ["check_live_remmina_viewer_controls", "expected_remmina_viewer_controls", "remmina-viewer-control-geometry"],
             "configs/gui_visual_metrics.json": ["remmina", "viewer-control-strip", "viewer-fullscreen-control-glyph"]
           }
         },
@@ -1043,16 +1051,16 @@
       "dimension_coverage": {
         "layout": ["mremoteng.classic-tree", "mremoteng.top-chrome", "mremoteng.workspace-surface", "mremoteng.property-grid-chrome", "mremoteng.reference-line-anchors", "mremoteng.reference-topology"],
         "navigation": ["mremoteng.top-chrome", "mremoteng.connections-sidebar", "mremoteng.nested-connection-tree", "mremoteng.reference-line-anchors"],
-        "panes": ["mremoteng.workspace-surface", "mremoteng.document-controls", "mremoteng.document-control-chrome", "mremoteng.property-grid-chrome", "mremoteng.reference-line-anchors"],
+        "panes": ["mremoteng.workspace-surface", "mremoteng.document-controls", "mremoteng.document-control-chrome", "mremoteng.document-control-geometry", "mremoteng.property-grid-chrome", "mremoteng.reference-line-anchors"],
         "tabs": ["mremoteng.document-tabs", "mremoteng.tab-model", "mremoteng.reference-state", "mremoteng.reference-line-anchors"],
         "sidebars": ["mremoteng.connections-sidebar", "mremoteng.reference-line-anchors"],
-        "toolbars": ["mremoteng.top-chrome", "mremoteng.connection-toolbar", "mremoteng.document-controls", "mremoteng.document-control-chrome", "mremoteng.reference-line-anchors"],
+        "toolbars": ["mremoteng.top-chrome", "mremoteng.connection-toolbar", "mremoteng.document-controls", "mremoteng.document-control-chrome", "mremoteng.document-control-geometry", "mremoteng.reference-line-anchors"],
         "session_trees": ["mremoteng.nested-connection-tree", "mremoteng.connection-glyphs"],
-        "connected_session_behavior": ["mremoteng.workspace-surface", "mremoteng.document-controls", "mremoteng.document-control-chrome", "mremoteng.property-grid-chrome", "mremoteng.reference-state"],
+        "connected_session_behavior": ["mremoteng.workspace-surface", "mremoteng.document-controls", "mremoteng.document-control-chrome", "mremoteng.document-control-geometry", "mremoteng.property-grid-chrome", "mremoteng.reference-state"],
         "file_monitoring_panels": ["mremoteng.workspace-surface", "mremoteng.import-groups"],
         "status_bars": ["mremoteng.status-bar", "mremoteng.reference-state", "mremoteng.reference-line-anchors"],
         "density": ["mremoteng.classic-tree", "mremoteng.top-chrome", "mremoteng.reference-line-anchors"],
-        "spacing": ["mremoteng.top-chrome", "mremoteng.document-tabs", "mremoteng.property-grid-chrome", "mremoteng.reference-line-anchors"],
+        "spacing": ["mremoteng.top-chrome", "mremoteng.document-tabs", "mremoteng.document-control-geometry", "mremoteng.property-grid-chrome", "mremoteng.reference-line-anchors"],
         "interaction_states": ["mremoteng.top-chrome", "mremoteng.interaction-states", "mremoteng.property-grid-chrome", "mremoteng.reference-state"]
       },
       "requirements": [
@@ -1091,10 +1099,12 @@
         },
         {
           "id": "mremoteng.connection-glyphs",
-          "description": "mRemoteNG-style static sidebar uses independent database, folder, SSH, RDP and SFTP glyphs for the nested connection tree.",
+          "description": "mRemoteNG-style tree distinguishes Connections.xml, containers and protocol nodes with shared static/live glyph metadata.",
           "source_tokens": {
-            "scripts/render_gui_design_previews.py": ["sidebar_row_icon_key", "draw_sidebar_row_icon", "\"mremoteng\"", "\"database\""],
-            "src/remote_ops_workspace/gui_designs.py": ["Connections.xml", "edge-prod [SSH]"]
+            "src/remote_ops_workspace/gui_designs.py": ["GUI_DESIGN_TREE_ROW_ICONS", "Connections.xml", "edge-prod [SSH]"],
+            "src/remote_ops_workspace/gui.py": ["GENERATED_PROFILE_TREE_ICON_PRESETS", "profile_tree_generated_icon", "generated-pixmap"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRODUCT_TREE_ICON_ROWS", "mremoteng-tree-icons", "expected_product_tree_icons"],
+            "scripts/render_gui_design_previews.py": ["gui_design_tree_row_icon_key", "draw_sidebar_row_icon", "\"mremoteng\"", "\"database\""]
           }
         },
         {
@@ -1179,6 +1189,17 @@
             "scripts/render_gui_design_previews.py": ["gui_design_mremoteng_document_controls", "draw_mremoteng_document_toolbar", "control.static_width", "filter_box"],
             "scripts/check_real_gui_render.py": ["check_live_mremoteng_document_controls", "expected_mremoteng_document_controls", "mremoteng-document-controls", "mRemoteNgDocumentFilter"],
             "configs/gui_visual_metrics.json": ["mremoteng", "document-control-buttons", "document-external-tool-checked", "document-filter-focus"]
+          }
+        },
+        {
+          "id": "mremoteng.document-control-geometry",
+          "description": "mRemoteNG-style document controls use project-owned generated icons and shared static/live geometry for button width, icon offsets, filter width and toolbar spacing.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["static_icon_x", "static_icon_y", "live_icon_size", "render_source"],
+            "src/remote_ops_workspace/gui.py": ["mremoteng_document_control_icon", "mRemoteNgDocumentRenderSource", "mRemoteNgDocumentStaticFilterWidth", "mRemoteNgDocumentFilterWidth"],
+            "scripts/render_gui_design_previews.py": ["draw_mremoteng_document_control_icon", "control.static_icon_size", "chrome.static_button_gap", "chrome.static_filter_width"],
+            "scripts/check_real_gui_render.py": ["mremoteng-document-control-geometry", "mRemoteNgDocumentRenderSource", "live_filter_width", "expected_mremoteng_document_controls"],
+            "docs/GUI_DESIGN.md": ["mRemoteNG-style document-control geometry"]
           }
         },
         {

@@ -491,10 +491,22 @@ def test_mobaxterm_rail_uses_role_based_generated_icons() -> None:
 
 def test_mobaxterm_static_sftp_dock_uses_drawn_glyphs() -> None:
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
+    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
+    live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
 
+    assert "GuiMobaSftpFileRowIcon" in design_source
+    assert "GUI_DESIGN_MOBA_SFTP_FILE_ROW_ICONS" in design_source
     assert "draw_moba_sftp_toolbar_icon" in renderer_source
     assert "draw_moba_sftp_file_icon" in renderer_source
+    assert "gui_design_moba_sftp_file_row_icon" in renderer_source
     assert "draw_moba_monitor_icon" in renderer_source
+    assert "apply_sftp_file_row_icon" in gui_source
+    assert "SFTP_ROW_ICON_RENDER_ROLE" in gui_source
+    assert "generated-pixmap" in gui_source
+    assert "EXPECTED_MOBA_SFTP_FILE_ROW_ICONS" in live_checker_source
+    assert "expected_moba_sftp_file_row_icons" in live_checker_source
+    assert "sftp-file-row-icons" in live_checker_source
     assert "moba_preview_reference_state" in renderer_source
     assert "moba_connected_tab_chrome_items" in renderer_source
     assert "draw_moba_telemetry_icon" in renderer_source
@@ -512,6 +524,7 @@ def test_mobaxterm_sftp_dock_uses_shared_chrome_metadata() -> None:
     assert "GUI_DESIGN_MOBA_SFTP_DOCK_ACTIONS" in design_source
     assert "GuiMobaSftpBrowserChrome" in design_source
     assert "GUI_DESIGN_MOBA_SFTP_BROWSER_CHROME" in design_source
+    assert "GuiMobaSftpFileRowIcon" in design_source
     assert "GuiMobaSftpDockLayout" in design_source
     assert "GUI_DESIGN_MOBA_SFTP_DOCK_LAYOUT" in design_source
     assert "group_key" in design_source
@@ -538,6 +551,8 @@ def test_mobaxterm_sftp_dock_uses_shared_chrome_metadata() -> None:
     assert "mobaMonitoringMetricKey" in gui_source
     assert "mobaMonitoringControlKey" in gui_source
     assert "mobaMonitoringControlIconKey" in gui_source
+    assert "mobaMonitoringControlStaticX" in gui_source
+    assert "mobaMonitoringControlIconSize" in gui_source
     assert "mobaRemoteMonitoringCompact" in gui_source
     assert "EXPECTED_MOBA_SFTP_ACTION_KEYS" in checker_source
     assert "EXPECTED_MOBA_SFTP_BROWSER_CHROME" in checker_source
@@ -547,6 +562,7 @@ def test_mobaxterm_sftp_dock_uses_shared_chrome_metadata() -> None:
     assert "expected_moba_sftp_dock_layout" in checker_source
     assert "EXPECTED_MOBA_MONITORING_METRIC_KEYS" in checker_source
     assert "EXPECTED_MOBA_MONITORING_CONTROL_KEYS" in checker_source
+    assert "EXPECTED_MOBA_MONITORING_CONTROL_GEOMETRY" in checker_source
 
 
 def test_mobaxterm_compact_monitoring_dock_uses_shared_metadata() -> None:
@@ -564,14 +580,20 @@ def test_mobaxterm_compact_monitoring_dock_uses_shared_metadata() -> None:
     assert "compact" in requirement["description"]
     assert "GuiMobaRemoteMonitoringDockChrome" in design_source
     assert "GUI_DESIGN_MOBA_REMOTE_MONITORING_DOCK_CHROME" in design_source
+    assert "GuiMobaMonitoringControlGeometry" in design_source
+    assert "GUI_DESIGN_MOBA_MONITORING_CONTROL_GEOMETRY" in design_source
     assert "gui_design_moba_remote_monitoring_dock_chrome" in renderer_source
+    assert "gui_design_moba_monitoring_control_geometry_for" in renderer_source
     assert "visible_metric_keys" in renderer_source
     assert "mobaRemoteMonitoringTelemetrySurface" in gui_source
     assert "mobaRemoteMonitoringCommand" in gui_source
     assert "mobaRemoteMonitoringFollowPlan" in gui_source
+    assert "mobaMonitoringControlGeometryKeys" in gui_source
     assert "EXPECTED_MOBA_REMOTE_MONITORING_DOCK_CHROME" in checker_source
     assert "expected_moba_remote_monitoring_dock_chrome" in checker_source
+    assert "expected_moba_monitoring_control_geometry" in checker_source
     assert "mobaRemoteMonitoringCompact" in requirement["source_tokens"]["src/remote_ops_workspace/gui.py"]
+    assert "mobaMonitoringControlStaticX" in requirement["source_tokens"]["src/remote_ops_workspace/gui.py"]
 
 
 def test_mobaxterm_static_renderer_uses_connected_tab_chrome_metadata() -> None:
@@ -594,13 +616,19 @@ def test_mobaxterm_static_renderer_uses_right_utility_icons_not_text_placeholder
     assert "draw_moba_right_utility_rail" in renderer_source
     assert "draw_moba_right_utility_icon" in renderer_source
     assert "gui_design_moba_right_utility_actions" in renderer_source
+    assert "action.static_y" in renderer_source
     assert '"gear"' in renderer_source
     assert 'draw_text(draw, "clip"' not in renderer_source
     assert "mobaRightUtilityRail" in gui_source
     assert "mobaRightUtilityKey" in gui_source
     assert "mobaRightUtilityIconKey" in gui_source
+    assert "mobaRightUtilityStaticY" in gui_source
+    assert "mobaRightUtilityButtonSize" in gui_source
+    assert "mobaRightUtilityRenderSource" in gui_source
     assert "EXPECTED_MOBA_RIGHT_UTILITY_KEYS" in checker_source
     assert "EXPECTED_MOBA_RIGHT_UTILITY_ICON_KEYS" in checker_source
+    assert "EXPECTED_MOBA_RIGHT_UTILITY_BY_KEY" in checker_source
+    assert "right-utility-rail-geometry" in checker_source
 
 
 def test_mobaxterm_static_renderer_uses_session_edge_shortcut_metadata() -> None:
@@ -729,10 +757,13 @@ def test_mobaxterm_connected_chrome_uses_shared_target_and_telemetry_state() -> 
     assert "moba_connected_window_title" in gui_source
     assert "moba_connected_tab_label" in gui_source
     assert "moba_telemetry_cells" in gui_source
+    assert "telemetry_icon_pixmap" in gui_source
+    assert "mobaTelemetryIconRender" in gui_source
     assert "mobaTelemetryCellWidth" in gui_source
     assert "mobaTelemetryKey" in gui_source
     assert "EXPECTED_MOBA_TELEMETRY_CELL_KEYS" in live_checker_source
     assert "expected_moba_telemetry_cells" in live_checker_source
+    assert "must not be a text placeholder" in live_checker_source
     assert "window title must be connected target label" in live_checker_source
 
 
@@ -829,15 +860,21 @@ def test_live_and_static_renderers_share_session_tree_copy() -> None:
 
     assert "GUI_DESIGN_TREE_ROOT_COPY" in design_source
     assert "GUI_DESIGN_TREE_ROWS" in design_source
+    assert "GUI_DESIGN_TREE_ROOT_ICONS" in design_source
+    assert "GUI_DESIGN_TREE_ROW_ICONS" in design_source
     assert "profile_group_label" in gui_source
     assert "profile_tree_tooltip" in gui_source
+    assert "apply_profile_tree_icon" in gui_source
     assert "gui_design_tree_rows" in renderer_source
+    assert "gui_design_tree_row_icon_key" in renderer_source
 
 
 def test_static_renderer_tracks_product_specific_sidebar_glyphs() -> None:
     checker = _load_checker()
     criteria = checker.load_json(checker.CRITERIA_PATH)
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
+    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
 
     expected = {
         "securecrt": "securecrt.session-glyphs",
@@ -850,6 +887,16 @@ def test_static_renderer_tracks_product_specific_sidebar_glyphs() -> None:
         assert requirement_id in requirement_ids
     assert "sidebar_row_icon_key" in renderer_source
     assert "draw_sidebar_row_icon" in renderer_source
+    assert "gui_design_tree_row_icon_key" in renderer_source
+    assert "ssh2" in renderer_source
+    assert "command" in renderer_source
+    assert "GENERATED_PROFILE_TREE_ICON_PRESETS" in gui_source
+    assert "profile_tree_generated_icon" in gui_source
+    assert "EXPECTED_PRODUCT_TREE_ICON_ROWS" in live_checker_source
+    assert "check_product_tree_icon_metadata" in live_checker_source
+    assert "termius-tree-icons" in live_checker_source
+    assert "remmina-tree-icons" in live_checker_source
+    assert "mremoteng-tree-icons" in live_checker_source
 
 
 def test_gui_parity_tracks_product_specific_tab_models() -> None:
@@ -935,31 +982,43 @@ def test_static_renderer_tracks_remmina_and_mremoteng_control_surfaces() -> None
     assert "mRemoteNgTopToolbarIconKey" in gui_source
     assert "build_mremoteng_document_controls_evidence" in gui_source
     assert "mRemoteNgDocumentControlKey" in gui_source
+    assert "mRemoteNgDocumentRenderSource" in gui_source
+    assert "mremoteng_document_control_icon" in gui_source
     assert "build_mremoteng_property_grid_evidence" in gui_source
     assert "mRemoteNgPropertyRowKey" in gui_source
     assert "GuiRemminaViewerControl" in design_source
+    assert "static_width" in design_source
+    assert "live_button_height" in design_source
     assert "gui_design_remmina_viewer_controls" in design_source
     assert "build_remmina_viewer_controls_evidence" in gui_source
     assert "remmina_profile_filter" in gui_source
     assert "remminaViewerControlKey" in gui_source
+    assert "remminaViewerControlStaticWidth" in gui_source
+    assert "remminaViewerControlRenderSource" in gui_source
     assert "remminaProfileFilter" in live_checker_source
     assert "draw_remmina_viewer_control_icon" in renderer_source
     assert "gui_design_remmina_viewer_controls" in renderer_source
+    assert "control.static_width" in renderer_source
+    assert "control.static_icon_size" in renderer_source
     assert "profile-filter-focus" in visual_metrics_source
     assert "active-viewer-tab" in visual_metrics_source
     assert "transfer-toolbar-checked" in visual_metrics_source
     assert "viewer-control-glyph-cluster" in visual_metrics_source
     assert "check_live_remmina_viewer_controls" in live_checker_source
+    assert "remmina-viewer-control-geometry" in live_checker_source
     assert "draw_mremoteng_title_bar" in renderer_source
     assert "draw_mremoteng_toolbar" in renderer_source
     assert "gui_design_mremoteng_top_chrome" in renderer_source
     assert "draw_mremoteng_document_toolbar" in renderer_source
     assert "gui_design_mremoteng_document_controls" in renderer_source
+    assert "draw_mremoteng_document_control_icon" in renderer_source
     assert "draw_mremoteng_property_grid" in renderer_source
     assert "gui_design_mremoteng_property_grid_chrome" in renderer_source
     assert "check_live_mremoteng_top_chrome" in live_checker_source
     assert "mremoteng-top-chrome" in live_checker_source
     assert "check_live_mremoteng_document_controls" in live_checker_source
+    assert "mremoteng-document-control-geometry" in live_checker_source
+    assert "mRemoteNgDocumentRenderSource" in live_checker_source
     assert "check_live_mremoteng_property_grid" in live_checker_source
     assert "draw_mremoteng_config_grid" in renderer_source
     assert "mRemoteNgDocumentFilter" in gui_source
@@ -1035,7 +1094,10 @@ def test_static_renderer_tracks_securecrt_and_termius_workflow_surfaces() -> Non
     assert "check_live_securecrt_command_window" in live_checker_source
     assert "check_live_securecrt_session_manager_chrome" in live_checker_source
     assert "check_live_securecrt_top_chrome" in live_checker_source
+    assert "check_securecrt_tree_icon_metadata" in live_checker_source
+    assert "EXPECTED_SECURECRT_TREE_ICON_KEYS" in live_checker_source
     assert "securecrt-top-chrome" in live_checker_source
+    assert "securecrt-tree-icons" in live_checker_source
     assert "check_live_termius_hosts_chrome" in live_checker_source
     assert "termius-hosts-chrome" in live_checker_source
     assert "check_live_termius_header_chips" in live_checker_source

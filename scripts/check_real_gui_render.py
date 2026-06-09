@@ -22,6 +22,7 @@ from remote_ops_workspace.gui_designs import (  # noqa: E402
     gui_design_interaction_state,
     gui_design_moba_bottom_edge_controls,
     gui_design_moba_home_welcome_chrome,
+    gui_design_moba_monitoring_control_geometry,
     gui_design_moba_monitoring_controls,
     gui_design_moba_monitoring_metrics,
     gui_design_moba_quick_connect_chrome,
@@ -34,6 +35,7 @@ from remote_ops_workspace.gui_designs import (  # noqa: E402
     gui_design_moba_sftp_browser_chrome,
     gui_design_moba_sftp_dock_actions,
     gui_design_moba_sftp_dock_layout,
+    gui_design_moba_sftp_file_row_icons,
     gui_design_moba_ssh_banner_chrome,
     gui_design_moba_status_bar_chrome,
     gui_design_moba_status_segments,
@@ -56,6 +58,8 @@ from remote_ops_workspace.gui_designs import (  # noqa: E402
     gui_design_termius_host_identity_strip,
     gui_design_termius_hosts_chrome,
     gui_design_toolbar_actions,
+    gui_design_tree_root_icon,
+    gui_design_tree_row_icon,
     gui_design_workflow_cards,
     gui_design_workspace_surface,
 )
@@ -144,6 +148,8 @@ EXPECTED_MOBA_TAB_CHROME_KEYS = {"home", "active-session", "new-session"}
 EXPECTED_MOBA_STATIC_TAB_CHROME_KEYS = {"home", "inactive-session", "active-session", "new-session"}
 EXPECTED_MOBA_RIGHT_UTILITY_KEYS = {action.key for action in gui_design_moba_right_utility_actions()}
 EXPECTED_MOBA_RIGHT_UTILITY_ICON_KEYS = {action.key: action.icon_key for action in gui_design_moba_right_utility_actions()}
+EXPECTED_MOBA_RIGHT_UTILITY_ACTIONS = tuple(gui_design_moba_right_utility_actions())
+EXPECTED_MOBA_RIGHT_UTILITY_BY_KEY = {action.key: action for action in EXPECTED_MOBA_RIGHT_UTILITY_ACTIONS}
 EXPECTED_MOBA_SESSION_EDGE_ACTIONS = tuple(gui_design_moba_session_edge_actions())
 EXPECTED_MOBA_SESSION_EDGE_KEYS = {action.key for action in EXPECTED_MOBA_SESSION_EDGE_ACTIONS}
 EXPECTED_MOBA_SESSION_EDGE_ICON_KEYS = {action.key: action.icon_key for action in EXPECTED_MOBA_SESSION_EDGE_ACTIONS}
@@ -164,12 +170,25 @@ EXPECTED_MOBA_SFTP_BROWSER_CHROME = gui_design_moba_sftp_browser_chrome()
 EXPECTED_MOBA_SFTP_DOCK_LAYOUT = gui_design_moba_sftp_dock_layout()
 EXPECTED_MOBA_SFTP_COLUMN_KEYS = [column.key for column in EXPECTED_MOBA_SFTP_BROWSER_CHROME.columns]
 EXPECTED_MOBA_SFTP_COLUMN_LABELS = [column.label for column in EXPECTED_MOBA_SFTP_BROWSER_CHROME.columns]
+EXPECTED_MOBA_SFTP_COLUMN_WIDTHS = [column.static_width for column in EXPECTED_MOBA_SFTP_BROWSER_CHROME.columns]
 EXPECTED_MOBA_SFTP_ACTIONS = tuple(gui_design_moba_sftp_dock_actions())
 EXPECTED_MOBA_SFTP_ACTION_KEYS = {action.key for action in EXPECTED_MOBA_SFTP_ACTIONS}
 EXPECTED_MOBA_SFTP_SEPARATOR_AFTER_KEYS = [action.key for action in EXPECTED_MOBA_SFTP_ACTIONS if action.separator_after]
+EXPECTED_MOBA_SFTP_FILE_ROW_ICONS = tuple(gui_design_moba_sftp_file_row_icons())
+EXPECTED_MOBA_SFTP_FILE_ROW_ICON_KEYS = {row_icon.kind: row_icon.icon_key for row_icon in EXPECTED_MOBA_SFTP_FILE_ROW_ICONS}
+EXPECTED_MOBA_SFTP_FILE_ROW_RENDER_SOURCES = {
+    row_icon.kind: row_icon.render_source for row_icon in EXPECTED_MOBA_SFTP_FILE_ROW_ICONS
+}
+EXPECTED_MOBA_SFTP_FILE_ROW_ICON_SIZES = {
+    row_icon.kind: row_icon.static_size for row_icon in EXPECTED_MOBA_SFTP_FILE_ROW_ICONS
+}
 EXPECTED_MOBA_MONITORING_METRIC_KEYS = {metric.key for metric in gui_design_moba_monitoring_metrics()}
 EXPECTED_MOBA_MONITORING_CONTROLS = tuple(gui_design_moba_monitoring_controls())
 EXPECTED_MOBA_MONITORING_CONTROL_KEYS = {control.key for control in EXPECTED_MOBA_MONITORING_CONTROLS}
+EXPECTED_MOBA_MONITORING_CONTROL_GEOMETRY = tuple(gui_design_moba_monitoring_control_geometry())
+EXPECTED_MOBA_MONITORING_CONTROL_GEOMETRY_BY_KEY = {
+    geometry.key: geometry for geometry in EXPECTED_MOBA_MONITORING_CONTROL_GEOMETRY
+}
 EXPECTED_MOBA_REMOTE_MONITORING_DOCK_CHROME = gui_design_moba_remote_monitoring_dock_chrome()
 EXPECTED_MOBA_STATUS_KEYS = {segment.key for segment in gui_design_moba_status_segments()}
 EXPECTED_MOBA_STATUS_CHROME = gui_design_moba_status_bar_chrome()
@@ -184,6 +203,57 @@ EXPECTED_SECURECRT_SESSION_MANAGER_ACTION_KEYS = [action.key for action in EXPEC
 EXPECTED_SECURECRT_SESSION_MANAGER_ICON_KEYS = {
     action.key: action.icon_key for action in EXPECTED_SECURECRT_SESSION_MANAGER_CHROME.actions
 }
+EXPECTED_SECURECRT_TREE_ICON_ROWS = (
+    ("Session Database", gui_design_tree_root_icon("securecrt")),
+    ("Folder: Sessions", gui_design_tree_row_icon("securecrt", "Sessions", "", True)),
+    ("edge-prod (SSH2)", gui_design_tree_row_icon("securecrt", "edge-prod (SSH2)", "", False)),
+    ("files-prod (SFTP)", gui_design_tree_row_icon("securecrt", "files-prod (SFTP)", "", False)),
+    ("Folder: Pinned", gui_design_tree_row_icon("securecrt", "Pinned", "", True)),
+    ("jump-host (SSH2)", gui_design_tree_row_icon("securecrt", "jump-host (SSH2)", "", False)),
+)
+EXPECTED_PRODUCT_TREE_ICON_ROWS = {
+    "securecrt": EXPECTED_SECURECRT_TREE_ICON_ROWS,
+    "termius": (
+        ("Personal Vault", gui_design_tree_root_icon("termius")),
+        ("Vault / Personal", gui_design_tree_row_icon("termius", "Personal", "", True)),
+        ("edge-prod  ssh host", gui_design_tree_row_icon("termius", "edge-prod", "", False)),
+        ("jump-host  ssh host", gui_design_tree_row_icon("termius", "jump-host", "", False)),
+        ("Vault / Teams", gui_design_tree_row_icon("termius", "Teams", "", True)),
+        ("prod-cluster  ssh host", gui_design_tree_row_icon("termius", "prod-cluster", "", False)),
+    ),
+    "remmina": (
+        ("Profile Groups", gui_design_tree_root_icon("remmina")),
+        ("Group: RDP", gui_design_tree_row_icon("remmina", "RDP", "", True)),
+        ("RDP - win-admin", gui_design_tree_row_icon("remmina", "win-admin", "", False)),
+        ("Group: VNC", gui_design_tree_row_icon("remmina", "VNC", "", True)),
+        ("VNC - linux-console", gui_design_tree_row_icon("remmina", "linux-console", "", False)),
+        ("Group: SSH/SFTP", gui_design_tree_row_icon("remmina", "SSH/SFTP", "", True)),
+        ("SFTP - sftp-ops", gui_design_tree_row_icon("remmina", "sftp-ops", "", False)),
+    ),
+    "mremoteng": (
+        ("Connections", gui_design_tree_root_icon("mremoteng")),
+        ("Container: prod", gui_design_tree_row_icon("mremoteng", "prod", "", True)),
+        ("edge-prod [SSH]", gui_design_tree_row_icon("mremoteng", "edge-prod [SSH]", "", False)),
+        ("win-admin [RDP]", gui_design_tree_row_icon("mremoteng", "win-admin [RDP]", "", False)),
+        ("Container: files", gui_design_tree_row_icon("mremoteng", "files", "", True)),
+        ("sftp-ops [SFTP]", gui_design_tree_row_icon("mremoteng", "sftp-ops [SFTP]", "", False)),
+    ),
+}
+EXPECTED_PRODUCT_TREE_ICON_KEYS = {
+    preset_id: {label: row.icon_key for label, row in rows}
+    for preset_id, rows in EXPECTED_PRODUCT_TREE_ICON_ROWS.items()
+}
+EXPECTED_PRODUCT_TREE_ROW_KINDS = {
+    preset_id: {label: row.row_kind for label, row in rows}
+    for preset_id, rows in EXPECTED_PRODUCT_TREE_ICON_ROWS.items()
+}
+EXPECTED_PRODUCT_TREE_ICON_SIZES = {
+    preset_id: {label: row.static_size for label, row in rows}
+    for preset_id, rows in EXPECTED_PRODUCT_TREE_ICON_ROWS.items()
+}
+EXPECTED_SECURECRT_TREE_ICON_KEYS = EXPECTED_PRODUCT_TREE_ICON_KEYS["securecrt"]
+EXPECTED_SECURECRT_TREE_ROW_KINDS = EXPECTED_PRODUCT_TREE_ROW_KINDS["securecrt"]
+EXPECTED_SECURECRT_TREE_ICON_SIZES = EXPECTED_PRODUCT_TREE_ICON_SIZES["securecrt"]
 EXPECTED_SECURECRT_TOP_CHROME = gui_design_securecrt_top_chrome()
 EXPECTED_SECURECRT_TOP_MENU_KEYS = [item.key for item in EXPECTED_SECURECRT_TOP_CHROME.menu_items]
 EXPECTED_SECURECRT_TOP_MENU_LABELS = [item.label for item in EXPECTED_SECURECRT_TOP_CHROME.menu_items]
@@ -901,6 +971,12 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
             column_keys = list(sftp_table.property("mobaSftpColumnKeys") or [])
             if column_keys != EXPECTED_MOBA_SFTP_COLUMN_KEYS:
                 errors.append(f"mobaxterm live GUI SFTP file table column keys drifted: {column_keys}")
+            column_widths = list(sftp_table.property("mobaSftpColumnWidths") or [])
+            if column_widths != EXPECTED_MOBA_SFTP_COLUMN_WIDTHS:
+                errors.append(f"mobaxterm live GUI SFTP file table column width metadata drifted: {column_widths}")
+            actual_column_widths = [sftp_table.columnWidth(index) for index in range(sftp_table.columnCount())]
+            if actual_column_widths[: len(EXPECTED_MOBA_SFTP_COLUMN_WIDTHS)] != EXPECTED_MOBA_SFTP_COLUMN_WIDTHS:
+                errors.append(f"mobaxterm live GUI SFTP file table column widths drifted: {actual_column_widths}")
             if str(sftp_table.property("mobaSftpParentRowLabel") or "") != (
                 EXPECTED_MOBA_SFTP_BROWSER_CHROME.parent_row_label
             ):
@@ -917,6 +993,14 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                 errors.append("mobaxterm live GUI SFTP file table header height metadata drifted")
             if int(sftp_table.property("mobaSftpRowHeight") or 0) != EXPECTED_MOBA_SFTP_DOCK_LAYOUT.file_row_height:
                 errors.append("mobaxterm live GUI SFTP file row height metadata drifted")
+            if list(sftp_table.property("mobaSftpFileRowIconKinds") or []) != [
+                row_icon.kind for row_icon in EXPECTED_MOBA_SFTP_FILE_ROW_ICONS
+            ]:
+                errors.append("mobaxterm live GUI SFTP file row icon-kind metadata drifted")
+            if list(sftp_table.property("mobaSftpFileRowIconKeys") or []) != [
+                row_icon.icon_key for row_icon in EXPECTED_MOBA_SFTP_FILE_ROW_ICONS
+            ]:
+                errors.append("mobaxterm live GUI SFTP file row icon-key metadata drifted")
             if sftp_table.topLevelItemCount() < 4:
                 errors.append("mobaxterm live GUI SFTP file table must expose multiple reference rows")
             elif (parent_item := sftp_table.topLevelItem(0)) is None:
@@ -931,7 +1015,35 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                 if not parent_item.isSelected() or current_parent_row != 0:
                     errors.append("mobaxterm live GUI SFTP parent row must be selected by default")
                 if parent_item.icon(0).isNull():
-                    errors.append("mobaxterm live GUI SFTP parent row must use a generated or platform folder icon")
+                    errors.append("mobaxterm live GUI SFTP parent row must use a generated folder-up icon")
+            user_role = int(Qt.ItemDataRole.UserRole)
+            icon_key_role = user_role + 41
+            row_kind_role = user_role + 42
+            icon_size_role = user_role + 43
+            icon_render_role = user_role + 44
+            for row_index in range(sftp_table.topLevelItemCount()):
+                item = sftp_table.topLevelItem(row_index)
+                if item is None:
+                    continue
+                row_kind = str(item.data(0, row_kind_role) or item.data(0, Qt.ItemDataRole.UserRole) or "")
+                expected_icon_key = EXPECTED_MOBA_SFTP_FILE_ROW_ICON_KEYS.get(row_kind)
+                if expected_icon_key is None:
+                    errors.append(f"mobaxterm live GUI SFTP row {item.text(0)!r} has unknown row kind {row_kind!r}")
+                    continue
+                icon_key = str(item.data(0, icon_key_role) or "")
+                icon_render = str(item.data(0, icon_render_role) or "")
+                icon_size = int(item.data(0, icon_size_role) or 0)
+                if icon_key != expected_icon_key:
+                    errors.append(
+                        f"mobaxterm live GUI SFTP row {item.text(0)!r} icon key "
+                        f"{icon_key!r} must equal {expected_icon_key!r}"
+                    )
+                if icon_render != EXPECTED_MOBA_SFTP_FILE_ROW_RENDER_SOURCES[row_kind]:
+                    errors.append(f"mobaxterm live GUI SFTP row {item.text(0)!r} must use generated-pixmap icon")
+                if icon_size != EXPECTED_MOBA_SFTP_FILE_ROW_ICON_SIZES[row_kind]:
+                    errors.append(f"mobaxterm live GUI SFTP row {item.text(0)!r} icon size drifted")
+                if item.icon(0).isNull():
+                    errors.append(f"mobaxterm live GUI SFTP row {item.text(0)!r} must expose a generated icon")
         sftp_dock = window.findChild(QFrame, "mobaSftpBrowser")
         if sftp_dock is None:
             errors.append("mobaxterm live GUI SFTP dock missing density container")
@@ -985,6 +1097,10 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                 EXPECTED_MOBA_REMOTE_MONITORING_DOCK_CHROME.refresh_seconds
             ):
                 errors.append("mobaxterm live GUI monitoring refresh cadence metadata drifted")
+            if list(monitoring_panel.property("mobaMonitoringControlGeometryKeys") or []) != [
+                geometry.key for geometry in EXPECTED_MOBA_MONITORING_CONTROL_GEOMETRY
+            ]:
+                errors.append("mobaxterm live GUI monitoring control geometry sequence drifted")
             command = str(monitoring_panel.property("mobaRemoteMonitoringCommand") or "")
             if "sh -lc" not in command or "/proc" not in command:
                 errors.append("mobaxterm live GUI monitoring panel must expose SSH telemetry command evidence")
@@ -1047,6 +1163,27 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                 errors.append(f"mobaxterm live GUI monitoring control {control.key!r} checked state drifted")
             if widget.icon().isNull():
                 errors.append(f"mobaxterm live GUI monitoring control {control.key!r} must expose an icon")
+            geometry = EXPECTED_MOBA_MONITORING_CONTROL_GEOMETRY_BY_KEY.get(control.key)
+            if geometry is None:
+                errors.append(f"mobaxterm live GUI monitoring control {control.key!r} missing geometry reference")
+            else:
+                geometry_properties = {
+                    "mobaMonitoringControlStaticX": geometry.anchor_x,
+                    "mobaMonitoringControlStaticY": geometry.static_y,
+                    "mobaMonitoringControlIconX": geometry.icon_x,
+                    "mobaMonitoringControlIconSize": geometry.icon_size,
+                    "mobaMonitoringControlLabelX": geometry.label_x,
+                    "mobaMonitoringControlCheckSize": geometry.check_size,
+                    "mobaMonitoringControlRowHeight": geometry.row_height,
+                }
+                for property_name, expected_value in geometry_properties.items():
+                    if int(widget.property(property_name) or -1) != expected_value:
+                        errors.append(
+                            f"mobaxterm live GUI monitoring control {control.key!r} "
+                            f"{property_name} drifted"
+                        )
+                if widget.iconSize().width() != geometry.icon_size or widget.iconSize().height() != geometry.icon_size:
+                    errors.append(f"mobaxterm live GUI monitoring control {control.key!r} icon size drifted")
             if str(widget.property("mobaMonitoringTelemetrySurface") or "") != (
                 EXPECTED_MOBA_REMOTE_MONITORING_DOCK_CHROME.telemetry_surface
             ):
@@ -1176,16 +1313,35 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
         if cell_widths != EXPECTED_MOBA_TELEMETRY_CELL_WIDTHS:
             errors.append(f"mobaxterm live GUI telemetry cell widths drifted: {cell_widths}")
         cell_by_key = {str(cell.property("mobaTelemetryKey") or ""): cell for cell in telemetry_cells}
+        icons_by_key = {str(icon.property("mobaTelemetryKey") or ""): icon for icon in telemetry_icons}
         labels_by_key = {str(label.property("mobaTelemetryKey") or ""): label for label in telemetry_labels}
         for expected_cell in EXPECTED_MOBA_TELEMETRY_CELLS:
             live_cell = cell_by_key.get(expected_cell.key)
+            live_icon = icons_by_key.get(expected_cell.key)
             live_label = labels_by_key.get(expected_cell.key)
-            if live_cell is None or live_label is None:
+            if live_cell is None or live_icon is None or live_label is None:
                 continue
             if str(live_cell.property("mobaTelemetryIconKey") or "") != expected_cell.icon_key:
                 errors.append(f"mobaxterm live GUI telemetry cell {expected_cell.key!r} icon key drifted")
+            if str(live_cell.property("mobaTelemetryIconAccent") or "") != expected_cell.icon_accent:
+                errors.append(f"mobaxterm live GUI telemetry cell {expected_cell.key!r} icon accent drifted")
+            if int(live_cell.property("mobaTelemetryIconSize") or 0) != expected_cell.icon_size:
+                errors.append(f"mobaxterm live GUI telemetry cell {expected_cell.key!r} icon size drifted")
             if str(live_cell.property("mobaTelemetryDisplayText") or "") != expected_cell.display_text:
                 errors.append(f"mobaxterm live GUI telemetry cell {expected_cell.key!r} display text drifted")
+            if str(live_icon.property("mobaTelemetryIconKey") or "") != expected_cell.icon_key:
+                errors.append(f"mobaxterm live GUI telemetry icon {expected_cell.key!r} icon key drifted")
+            if str(live_icon.property("mobaTelemetryIconAccent") or "") != expected_cell.icon_accent:
+                errors.append(f"mobaxterm live GUI telemetry icon {expected_cell.key!r} accent drifted")
+            if int(live_icon.property("mobaTelemetryIconSize") or 0) != expected_cell.icon_size:
+                errors.append(f"mobaxterm live GUI telemetry icon {expected_cell.key!r} size drifted")
+            if str(live_icon.property("mobaTelemetryIconRender") or "") != "generated-pixmap":
+                errors.append(f"mobaxterm live GUI telemetry icon {expected_cell.key!r} must use generated pixmap")
+            if live_icon.text().strip():
+                errors.append(f"mobaxterm live GUI telemetry icon {expected_cell.key!r} must not be a text placeholder")
+            pixmap = live_icon.pixmap()
+            if pixmap is None or pixmap.isNull():
+                errors.append(f"mobaxterm live GUI telemetry icon {expected_cell.key!r} pixmap is missing")
             if live_label.text() != expected_cell.display_text:
                 errors.append(f"mobaxterm live GUI telemetry label {expected_cell.key!r} text drifted")
         tab_chrome: dict[str, tuple[str, bool]] = {}
@@ -1226,6 +1382,27 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                     f"mobaxterm live GUI right utility action {key!r} icon key {icon_key!r} "
                     f"must equal {expected_icon_key!r}"
                 )
+            expected_action = EXPECTED_MOBA_RIGHT_UTILITY_BY_KEY.get(key)
+            if expected_action is not None:
+                geometry_properties = {
+                    "mobaRightUtilityStaticX": expected_action.static_x,
+                    "mobaRightUtilityStaticY": expected_action.static_y,
+                    "mobaRightUtilityStaticSize": expected_action.static_size,
+                    "mobaRightUtilityLiveIconSize": expected_action.live_icon_size,
+                    "mobaRightUtilityButtonSize": expected_action.button_size,
+                }
+                for property_name, expected_value in geometry_properties.items():
+                    if int(button.property(property_name) or -1) != expected_value:
+                        errors.append(
+                            f"mobaxterm live GUI right utility action {key!r} "
+                            f"{property_name} drifted"
+                        )
+                if str(button.property("mobaRightUtilityRenderSource") or "") != expected_action.render_source:
+                    errors.append(f"mobaxterm live GUI right utility action {key!r} render source drifted")
+                if button.iconSize().width() != expected_action.live_icon_size:
+                    errors.append(f"mobaxterm live GUI right utility action {key!r} icon size drifted")
+                if button.width() != expected_action.button_size or button.height() != expected_action.button_size:
+                    errors.append(f"mobaxterm live GUI right utility action {key!r} button size drifted")
             if button.icon().isNull():
                 errors.append(f"mobaxterm live GUI right utility action {key!r} must use a generated icon")
         edge_buttons = window.findChildren(QToolButton, "mobaSessionEdgeAction")
@@ -1319,17 +1496,22 @@ def live_tab_labels(tabs: Any) -> set[str]:
 
 
 def check_live_tree_content(window: Any, preset_id: str) -> list[str]:
+    from PyQt6.QtCore import Qt
     from PyQt6.QtWidgets import QTreeWidget
 
     tree = window.findChild(QTreeWidget, "profileTree")
     if tree is None:
         return [f"{preset_id} live GUI missing profile tree for content contract"]
+    errors: list[str] = []
     labels = collect_tree_labels(tree)
     expected = EXPECTED_LIVE_TREE_LABELS.get(preset_id, set())
     missing = sorted(expected - labels)
     if missing:
-        return [f"{preset_id} live GUI profile tree missing expected labels: {missing}"]
-    return []
+        errors.append(f"{preset_id} live GUI profile tree missing expected labels: {missing}")
+    if preset_id in EXPECTED_PRODUCT_TREE_ICON_ROWS:
+        user_role = int(Qt.ItemDataRole.UserRole)
+        errors.extend(check_product_tree_icon_metadata(tree, preset_id, user_role))
+    return errors
 
 
 def collect_tree_labels(tree: Any) -> set[str]:
@@ -1343,6 +1525,65 @@ def collect_tree_labels(tree: Any) -> set[str]:
     for index in range(tree.topLevelItemCount()):
         walk(tree.topLevelItem(index))
     return labels
+
+
+def check_product_tree_icon_metadata(tree: Any, preset_id: str, user_role: int) -> list[str]:
+    errors: list[str] = []
+    rows = collect_tree_icon_metadata(tree, user_role)
+    expected_icon_keys = EXPECTED_PRODUCT_TREE_ICON_KEYS[preset_id]
+    expected_row_kinds = EXPECTED_PRODUCT_TREE_ROW_KINDS[preset_id]
+    expected_icon_sizes = EXPECTED_PRODUCT_TREE_ICON_SIZES[preset_id]
+    for label, expected_icon_key in expected_icon_keys.items():
+        metadata = rows.get(label)
+        if metadata is None:
+            errors.append(f"{preset_id} live GUI profile tree missing icon metadata row: {label}")
+            continue
+        if metadata["icon_key"] != expected_icon_key:
+            errors.append(
+                f"{preset_id} live GUI profile tree row {label!r} icon key {metadata['icon_key']!r} "
+                f"must equal {expected_icon_key!r}"
+            )
+        expected_kind = expected_row_kinds[label]
+        if metadata["row_kind"] != expected_kind:
+            errors.append(
+                f"{preset_id} live GUI profile tree row {label!r} kind {metadata['row_kind']!r} "
+                f"must equal {expected_kind!r}"
+            )
+        expected_size = expected_icon_sizes[label]
+        if metadata["icon_size"] != expected_size:
+            errors.append(
+                f"{preset_id} live GUI profile tree row {label!r} icon size {metadata['icon_size']!r} "
+                f"must equal {expected_size!r}"
+            )
+        if metadata["icon_render"] != "generated-pixmap":
+            errors.append(f"{preset_id} live GUI profile tree row {label!r} must use generated-pixmap icon render")
+        if not metadata["has_icon"]:
+            errors.append(f"{preset_id} live GUI profile tree row {label!r} must expose a non-null icon")
+    return errors
+
+
+def check_securecrt_tree_icon_metadata(tree: Any, user_role: int) -> list[str]:
+    return check_product_tree_icon_metadata(tree, "securecrt", user_role)
+
+
+def collect_tree_icon_metadata(tree: Any, user_role: int) -> dict[str, dict[str, object]]:
+    rows: dict[str, dict[str, object]] = {}
+
+    def walk(item: Any) -> None:
+        label = item.text(0)
+        rows[label] = {
+            "icon_key": str(item.data(0, user_role + 31) or ""),
+            "row_kind": str(item.data(0, user_role + 32) or ""),
+            "icon_size": int(item.data(0, user_role + 33) or 0),
+            "icon_render": str(item.data(0, user_role + 34) or ""),
+            "has_icon": not item.icon(0).isNull(),
+        }
+        for child_index in range(item.childCount()):
+            walk(item.child(child_index))
+
+    for index in range(tree.topLevelItemCount()):
+        walk(tree.topLevelItem(index))
+    return rows
 
 
 def check_live_layout_contracts(window: Any, preset_id: str) -> list[str]:
@@ -2236,6 +2477,31 @@ def check_live_remmina_viewer_controls(window: Any) -> list[str]:
         icon_key = str(button.property("remminaViewerIconKey") or "")
         if icon_key != control.icon_key:
             return [f"remmina live GUI viewer-control icon key {icon_key!r} must equal {control.icon_key!r}"]
+        expected_properties = {
+            "remminaViewerControlStaticWidth": control.static_width,
+            "remminaViewerControlStaticStep": control.static_step,
+            "remminaViewerControlStaticY": control.static_y,
+            "remminaViewerControlStaticHeight": control.static_height,
+            "remminaViewerControlStaticIconX": control.static_icon_x,
+            "remminaViewerControlStaticIconSize": control.static_icon_size,
+            "remminaViewerControlStaticLabelX": control.static_label_x,
+            "remminaViewerControlLiveIconSize": control.live_icon_size,
+            "remminaViewerControlLiveMinWidth": control.live_min_width,
+            "remminaViewerControlLiveButtonHeight": control.live_button_height,
+        }
+        for property_name, expected_value in expected_properties.items():
+            if int(button.property(property_name) or -1) != expected_value:
+                return [f"remmina live GUI viewer-control {control.key!r} {property_name} drifted"]
+        render_source = str(button.property("remminaViewerControlRenderSource") or "")
+        if render_source != control.render_source:
+            return [
+                f"remmina live GUI viewer-control {control.key!r} render source "
+                f"{render_source!r} must equal {control.render_source!r}"
+            ]
+        if button.iconSize().width() != control.live_icon_size or button.iconSize().height() != control.live_icon_size:
+            return [f"remmina live GUI viewer-control {control.key!r} icon size drifted"]
+        if button.minimumWidth() != control.live_min_width or button.minimumHeight() != control.live_button_height:
+            return [f"remmina live GUI viewer-control {control.key!r} live geometry drifted"]
         if button.icon().isNull():
             return [f"remmina live GUI viewer-control {control.key!r} must use an icon"]
     return []
@@ -2426,10 +2692,29 @@ def check_live_mremoteng_document_controls(window: Any) -> list[str]:
     actual_preset = str(panel.property("designPreset") or "")
     if actual_preset != "mremoteng":
         return [f"mremoteng live GUI document-control designPreset {actual_preset!r} must equal 'mremoteng'"]
+    expected_panel_props = {
+        "mRemoteNgDocumentTitleWidth": chrome.title_width,
+        "mRemoteNgDocumentStaticHeight": chrome.static_height,
+        "mRemoteNgDocumentStaticButtonStartX": chrome.static_button_start_x,
+        "mRemoteNgDocumentStaticButtonGap": chrome.static_button_gap,
+        "mRemoteNgDocumentStaticFilterWidth": chrome.static_filter_width,
+        "mRemoteNgDocumentStaticFilterY": chrome.static_filter_y,
+        "mRemoteNgDocumentStaticFilterHeight": chrome.static_filter_height,
+        "mRemoteNgDocumentLiveSpacing": chrome.live_spacing,
+    }
+    for prop_name, expected_value in expected_panel_props.items():
+        actual_value = int(panel.property(prop_name) or 0)
+        if actual_value != expected_value:
+            return [
+                f"mremoteng live GUI document-control {prop_name} "
+                f"{actual_value!r} must equal {expected_value!r}"
+            ]
     title = panel.findChild(QLabel, "mRemoteNgDocumentTitle")
     if title is None or title.text() != chrome.title:
         actual_title = None if title is None else title.text()
         return [f"mremoteng live GUI document toolbar title {actual_title!r} must equal {chrome.title!r}"]
+    if title.minimumWidth() != chrome.title_width or title.maximumWidth() != chrome.title_width:
+        return ["mremoteng live GUI document toolbar title width drifted"]
     filter_input = panel.findChild(QLineEdit, "mRemoteNgDocumentFilter")
     if filter_input is None or filter_input.placeholderText() != chrome.filter_placeholder:
         actual_placeholder = None if filter_input is None else filter_input.placeholderText()
@@ -2437,6 +2722,14 @@ def check_live_mremoteng_document_controls(window: Any) -> list[str]:
             f"mremoteng live GUI document filter placeholder {actual_placeholder!r} "
             f"must equal {chrome.filter_placeholder!r}"
         ]
+    filter_width = int(filter_input.property("mRemoteNgDocumentFilterWidth") or 0)
+    filter_height = int(filter_input.property("mRemoteNgDocumentFilterHeight") or 0)
+    if filter_width != chrome.live_filter_width or filter_input.minimumWidth() != chrome.live_filter_width:
+        return ["mremoteng live GUI document filter width drifted"]
+    if filter_input.maximumWidth() != chrome.live_filter_width:
+        return ["mremoteng live GUI document filter maximum width drifted"]
+    if filter_height != chrome.live_filter_height or filter_input.minimumHeight() != chrome.live_filter_height:
+        return ["mremoteng live GUI document filter height drifted"]
 
     if str(filter_input.property("interactionState") or "") != "focused":
         return ["mremoteng live GUI document filter must expose focused interactionState"]
@@ -2455,6 +2748,32 @@ def check_live_mremoteng_document_controls(window: Any) -> list[str]:
         icon_key = str(button.property("mRemoteNgDocumentIconKey") or "")
         if icon_key != control.icon_key:
             return [f"mremoteng live GUI document-control icon key {icon_key!r} must equal {control.icon_key!r}"]
+        expected_props = {
+            "mRemoteNgDocumentStaticWidth": control.static_width,
+            "mRemoteNgDocumentStaticY": control.static_y,
+            "mRemoteNgDocumentStaticHeight": control.static_height,
+            "mRemoteNgDocumentStaticIconX": control.static_icon_x,
+            "mRemoteNgDocumentStaticIconY": control.static_icon_y,
+            "mRemoteNgDocumentStaticIconSize": control.static_icon_size,
+            "mRemoteNgDocumentStaticLabelX": control.static_label_x,
+            "mRemoteNgDocumentStaticLabelY": control.static_label_y,
+            "mRemoteNgDocumentLiveIconSize": control.live_icon_size,
+            "mRemoteNgDocumentLiveMinWidth": control.live_min_width,
+            "mRemoteNgDocumentLiveButtonHeight": control.live_button_height,
+        }
+        for prop_name, expected_value in expected_props.items():
+            actual_value = int(button.property(prop_name) or 0)
+            if actual_value != expected_value:
+                return [
+                    f"mremoteng live GUI document-control {control.key!r} {prop_name} "
+                    f"{actual_value!r} must equal {expected_value!r}"
+                ]
+        render_source = str(button.property("mRemoteNgDocumentRenderSource") or "")
+        if render_source != control.render_source:
+            return [
+                f"mremoteng live GUI document-control {control.key!r} render source "
+                f"{render_source!r} must equal {control.render_source!r}"
+            ]
         expected_state = "checked" if control.key == "external-tool" else "normal"
         actual_state = str(button.property("interactionState") or "")
         if actual_state != expected_state:
@@ -2464,6 +2783,12 @@ def check_live_mremoteng_document_controls(window: Any) -> list[str]:
             ]
         if button.icon().isNull():
             return [f"mremoteng live GUI document-control {control.key!r} must use an icon"]
+        if button.iconSize().width() != control.live_icon_size or button.iconSize().height() != control.live_icon_size:
+            return [f"mremoteng live GUI document-control {control.key!r} icon size drifted"]
+        if button.minimumWidth() != control.live_min_width:
+            return [f"mremoteng live GUI document-control {control.key!r} minimum width drifted"]
+        if button.minimumHeight() != control.live_button_height:
+            return [f"mremoteng live GUI document-control {control.key!r} height drifted"]
     return []
 
 
@@ -2567,13 +2892,16 @@ def live_contract_checks_for_preset(preset_id: str) -> list[str]:
                 "connected-tab-chrome",
                 "session-edge-controls",
                 "right-utility-rail",
+                "right-utility-rail-geometry",
                 "connected-sftp-dock",
                 "sftp-toolbar-groups",
+                "sftp-file-row-icons",
                 "sftp-dock-density",
                 "sftp-browser-chrome",
                 "sftp-dock-chrome",
                 "remote-monitoring-dock",
                 "moba-monitoring-controls",
+                "moba-monitoring-control-geometry",
                 "ssh-banner",
                 "ssh-banner-chrome",
                 "ssh-banner-capability-card",
@@ -2597,20 +2925,38 @@ def live_contract_checks_for_preset(preset_id: str) -> list[str]:
         if preset_id == "securecrt":
             checks.append("securecrt-top-chrome")
             checks.append("securecrt-session-manager-chrome")
+            checks.append("securecrt-tree-icons")
             checks.append("securecrt-session-status-strip")
             checks.append("securecrt-command-window")
         if preset_id == "remmina":
+            checks.append("remmina-tree-icons")
             checks.append("remmina-profile-list-chrome")
             checks.append("remmina-viewer-controls")
+            checks.append("remmina-viewer-control-geometry")
         if preset_id == "termius":
+            checks.append("termius-tree-icons")
             checks.append("termius-hosts-chrome")
             checks.append("termius-header-chips")
             checks.append("termius-host-identity-strip")
         if preset_id == "mremoteng":
+            checks.append("mremoteng-tree-icons")
             checks.append("mremoteng-top-chrome")
             checks.append("mremoteng-document-controls")
+            checks.append("mremoteng-document-control-geometry")
             checks.append("mremoteng-property-grid")
     return checks
+
+
+def product_tree_icon_summary(preset_id: str) -> list[dict[str, object]]:
+    return [
+        {
+            "label": label,
+            "icon_key": row.icon_key,
+            "row_kind": row.row_kind,
+            "static_size": row.static_size,
+        }
+        for label, row in EXPECTED_PRODUCT_TREE_ICON_ROWS.get(preset_id, ())
+    ]
 
 
 def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
@@ -2630,6 +2976,7 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
         "reference_profile": PRESET_REFERENCE_PROFILES.get(preset_id),
         "expected_reference_tab_label": EXPECTED_LIVE_REFERENCE_TAB_LABELS.get(preset_id),
         "expected_tree_labels": sorted(EXPECTED_LIVE_TREE_LABELS.get(preset_id, set())),
+        "expected_product_tree_icons": product_tree_icon_summary(preset_id),
         "expected_status_segments": list(gui_design_status_segments(preset_id)),
         "expected_moba_rail_labels": EXPECTED_MOBA_RAIL_LABELS if preset_id == "mobaxterm" else {},
         "expected_moba_top_menu": (
@@ -2711,8 +3058,14 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
                     "key": action.key,
                     "icon_key": action.icon_key,
                     "label": action.label,
+                    "static_x": action.static_x,
+                    "static_y": action.static_y,
+                    "static_size": action.static_size,
+                    "live_icon_size": action.live_icon_size,
+                    "button_size": action.button_size,
+                    "render_source": action.render_source,
                 }
-                for action in gui_design_moba_right_utility_actions()
+                for action in EXPECTED_MOBA_RIGHT_UTILITY_ACTIONS
             ]
             if preset_id == "mobaxterm"
             else []
@@ -2748,6 +3101,20 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
         "expected_moba_sftp_separator_after_keys": (
             EXPECTED_MOBA_SFTP_SEPARATOR_AFTER_KEYS if preset_id == "mobaxterm" else []
         ),
+        "expected_moba_sftp_file_row_icons": (
+            [
+                {
+                    "kind": row_icon.kind,
+                    "icon_key": row_icon.icon_key,
+                    "row_kind": row_icon.row_kind,
+                    "static_size": row_icon.static_size,
+                    "render_source": row_icon.render_source,
+                }
+                for row_icon in EXPECTED_MOBA_SFTP_FILE_ROW_ICONS
+            ]
+            if preset_id == "mobaxterm"
+            else []
+        ),
         "expected_moba_sftp_browser_chrome": (
             {
                 "path_placeholder": EXPECTED_MOBA_SFTP_BROWSER_CHROME.path_placeholder,
@@ -2756,7 +3123,12 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
                 "parent_row_kind": EXPECTED_MOBA_SFTP_BROWSER_CHROME.parent_row_kind,
                 "selected_row_kind": EXPECTED_MOBA_SFTP_BROWSER_CHROME.selected_row_kind,
                 "columns": [
-                    {"key": column.key, "label": column.label, "static_x": column.static_x}
+                    {
+                        "key": column.key,
+                        "label": column.label,
+                        "static_x": column.static_x,
+                        "static_width": column.static_width,
+                    }
                     for column in EXPECTED_MOBA_SFTP_BROWSER_CHROME.columns
                 ],
             }
@@ -2815,6 +3187,23 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
                     "checked": control.checked,
                 }
                 for control in EXPECTED_MOBA_MONITORING_CONTROLS
+            ]
+            if preset_id == "mobaxterm"
+            else []
+        ),
+        "expected_moba_monitoring_control_geometry": (
+            [
+                {
+                    "key": geometry.key,
+                    "anchor_x": geometry.anchor_x,
+                    "static_y": geometry.static_y,
+                    "icon_x": geometry.icon_x,
+                    "icon_size": geometry.icon_size,
+                    "label_x": geometry.label_x,
+                    "check_size": geometry.check_size,
+                    "row_height": geometry.row_height,
+                }
+                for geometry in EXPECTED_MOBA_MONITORING_CONTROL_GEOMETRY
             ]
             if preset_id == "mobaxterm"
             else []
@@ -2912,6 +3301,11 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
             if preset_id == "securecrt"
             else {}
         ),
+        "expected_securecrt_tree_icons": (
+            product_tree_icon_summary("securecrt")
+            if preset_id == "securecrt"
+            else []
+        ),
         "expected_securecrt_command_window": (
             {
                 "key": EXPECTED_SECURECRT_COMMAND_WINDOW_CHROME.key,
@@ -2946,6 +3340,17 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
                     "key": control.key,
                     "icon_key": control.icon_key,
                     "label": control.label,
+                    "static_width": control.static_width,
+                    "static_step": control.static_step,
+                    "static_y": control.static_y,
+                    "static_height": control.static_height,
+                    "static_icon_x": control.static_icon_x,
+                    "static_icon_size": control.static_icon_size,
+                    "static_label_x": control.static_label_x,
+                    "live_icon_size": control.live_icon_size,
+                    "live_min_width": control.live_min_width,
+                    "live_button_height": control.live_button_height,
+                    "render_source": control.render_source,
                 }
                 for control in gui_design_remmina_viewer_controls()
             ]
@@ -3050,11 +3455,32 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
             {
                 "title": EXPECTED_MREMOTENG_DOCUMENT_TOOLBAR_CHROME.title,
                 "filter_placeholder": EXPECTED_MREMOTENG_DOCUMENT_TOOLBAR_CHROME.filter_placeholder,
+                "title_width": EXPECTED_MREMOTENG_DOCUMENT_TOOLBAR_CHROME.title_width,
+                "static_height": EXPECTED_MREMOTENG_DOCUMENT_TOOLBAR_CHROME.static_height,
+                "static_button_start_x": EXPECTED_MREMOTENG_DOCUMENT_TOOLBAR_CHROME.static_button_start_x,
+                "static_button_gap": EXPECTED_MREMOTENG_DOCUMENT_TOOLBAR_CHROME.static_button_gap,
+                "static_filter_width": EXPECTED_MREMOTENG_DOCUMENT_TOOLBAR_CHROME.static_filter_width,
+                "static_filter_y": EXPECTED_MREMOTENG_DOCUMENT_TOOLBAR_CHROME.static_filter_y,
+                "static_filter_height": EXPECTED_MREMOTENG_DOCUMENT_TOOLBAR_CHROME.static_filter_height,
+                "live_filter_width": EXPECTED_MREMOTENG_DOCUMENT_TOOLBAR_CHROME.live_filter_width,
+                "live_filter_height": EXPECTED_MREMOTENG_DOCUMENT_TOOLBAR_CHROME.live_filter_height,
                 "controls": [
                     {
                         "key": control.key,
                         "icon_key": control.icon_key,
                         "label": control.label,
+                        "static_width": control.static_width,
+                        "static_y": control.static_y,
+                        "static_height": control.static_height,
+                        "static_icon_x": control.static_icon_x,
+                        "static_icon_y": control.static_icon_y,
+                        "static_icon_size": control.static_icon_size,
+                        "static_label_x": control.static_label_x,
+                        "static_label_y": control.static_label_y,
+                        "live_icon_size": control.live_icon_size,
+                        "live_min_width": control.live_min_width,
+                        "live_button_height": control.live_button_height,
+                        "render_source": control.render_source,
                     }
                     for control in gui_design_mremoteng_document_controls()
                 ],

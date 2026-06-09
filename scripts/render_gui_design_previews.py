@@ -22,6 +22,7 @@ from remote_ops_workspace.gui_designs import (  # noqa: E402
     gui_design_interaction_state,
     gui_design_moba_bottom_edge_controls,
     gui_design_moba_home_welcome_chrome,
+    gui_design_moba_monitoring_control_geometry_for,
     gui_design_moba_monitoring_controls,
     gui_design_moba_monitoring_metrics,
     gui_design_moba_quick_connect_chrome,
@@ -34,6 +35,7 @@ from remote_ops_workspace.gui_designs import (  # noqa: E402
     gui_design_moba_sftp_browser_chrome,
     gui_design_moba_sftp_dock_actions,
     gui_design_moba_sftp_dock_layout,
+    gui_design_moba_sftp_file_row_icon,
     gui_design_moba_ssh_banner_chrome,
     gui_design_moba_status_bar_chrome,
     gui_design_moba_status_segments,
@@ -59,6 +61,8 @@ from remote_ops_workspace.gui_designs import (  # noqa: E402
     gui_design_termius_hosts_chrome,
     gui_design_toolbar_actions,
     gui_design_tree_root_copy,
+    gui_design_tree_root_icon,
+    gui_design_tree_row_icon_key,
     gui_design_tree_rows,
     gui_design_workspace_surface,
 )
@@ -710,8 +714,16 @@ def render_mobaxterm_preset(preset: GuiDesignPreset):
         cell_right = telemetry_x + cell.width
         draw.rectangle((telemetry_x, content_bottom + 1, cell_right, PREVIEW_SIZE[1] - status_h - 1), fill=c.toolbar)
         draw.line((telemetry_x, content_bottom + 2, telemetry_x, PREVIEW_SIZE[1] - status_h - 2), fill=c.toolbar_border)
-        draw_moba_telemetry_icon(draw, cell.icon_key, telemetry_x + 5, content_bottom + 5, 12, c)
-        draw_text(draw, cell.display_text, telemetry_x + 22, content_bottom + 6, c.control_text, 9)
+        draw_moba_telemetry_icon(
+            draw,
+            cell.icon_key,
+            telemetry_x + 5,
+            content_bottom + 5,
+            cell.icon_size,
+            c,
+            accent=cell.icon_accent,
+        )
+        draw_text(draw, cell.display_text, telemetry_x + cell.icon_size + 10, content_bottom + 6, c.control_text, 9)
         telemetry_x = cell_right
     draw.line((telemetry_x, content_bottom + 2, telemetry_x, PREVIEW_SIZE[1] - status_h - 2), fill=c.toolbar_border)
 
@@ -1095,14 +1107,16 @@ def redraw_moba_sftp_toolbar_metric_edges(draw: Any, preset: GuiDesignPreset, x:
         tool_x += density.toolbar_separator_width
 
 
-def draw_moba_telemetry_icon(draw: Any, icon_key: str, x: int, y: int, size: int, c: Any) -> None:
-    accent = "#35d7c7"
-    if icon_key in {"upload", "download"}:
-        accent = "#4da3ff"
-    elif icon_key in {"cpu", "process"}:
-        accent = "#f4c430"
-    elif icon_key in {"memory", "disk"}:
-        accent = "#6ac76a"
+def draw_moba_telemetry_icon(
+    draw: Any,
+    icon_key: str,
+    x: int,
+    y: int,
+    size: int,
+    c: Any,
+    *,
+    accent: str,
+) -> None:
     draw.rectangle((x, y, x + size, y + size), fill="#101010", outline=accent)
     mid = x + size // 2
     if icon_key == "host":
@@ -1154,10 +1168,16 @@ def draw_moba_titlebar_control(draw: Any, key: str, x: int, y: int, w: int, h: i
 def draw_moba_right_utility_rail(draw: Any, x: int, y: int, w: int, h: int, c: Any) -> None:
     draw.rectangle((x, y, x + w, y + h), fill=c.pane)
     draw.line((x, y, x, y + h), fill=c.toolbar_border)
-    icon_y = y + 13
     for action in gui_design_moba_right_utility_actions():
-        draw_moba_right_utility_icon(draw, action.icon_key, x + 7, icon_y, 16, action.color, c)
-        icon_y += 36
+        draw_moba_right_utility_icon(
+            draw,
+            action.icon_key,
+            x + action.static_x,
+            y + action.static_y,
+            action.static_size,
+            action.color,
+            c,
+        )
 
 
 def draw_moba_session_edge_controls(draw: Any, x: int, c: Any) -> None:
@@ -1359,7 +1379,11 @@ def draw_moba_connected_sftp_dock(
         *[(entry.kind, entry.name, str(entry.size_kb), entry.modified) for entry in state.file_entries],
     ]
     row_y = header_y + density.table_header_height + density.file_row_gap
-    column_separator_x = (x + 188, x + 266)
+    column_separator_x: list[int] = []
+    separator_x = dock_left
+    for column in chrome.columns[:-1]:
+        separator_x += column.static_width
+        column_separator_x.append(separator_x)
     for row_index, (kind, name, size, modified) in enumerate(file_rows[: density.static_max_rows]):
         row_top = row_y - 4
         row_bottom = row_top + density.file_row_height
@@ -1372,7 +1396,8 @@ def draw_moba_connected_sftp_dock(
             draw.line((dock_left + 1, row_bottom, dock_right - 1, row_bottom), fill="#252525")
         for separator_x in column_separator_x:
             draw.line((separator_x, row_top, separator_x, row_bottom), fill="#262626")
-        draw_moba_sftp_file_icon(draw, kind, x + 14, row_y - 1, 14, c)
+        row_icon = gui_design_moba_sftp_file_row_icon(kind)
+        draw_moba_sftp_file_icon(draw, row_icon.icon_key, x + 14, row_y - 1, row_icon.static_size, c)
         draw_text(draw, name, x + 38, row_y, c.control_text, 10)
         draw_text(draw, size, x + 202, row_y, c.control_text, 10)
         draw_text(draw, modified, x + 278, row_y, c.sidebar_muted, 9)
@@ -1396,11 +1421,11 @@ def draw_moba_connected_sftp_dock(
     draw_moba_monitoring_control(
         draw,
         remote_control,
-        x + density.monitoring_icon_center_x,
-        monitor_y + 1,
+        x,
+        monitor_y,
         c,
         checked=remote_control.checked,
-        centered_icon=True,
+        geometry=gui_design_moba_monitoring_control_geometry_for(remote_control.key),
     )
     metrics = [moba_monitoring_metric_text(state, metric) for metric in gui_design_moba_monitoring_metrics()]
     visible_metrics = [
@@ -1421,10 +1446,11 @@ def draw_moba_connected_sftp_dock(
     draw_moba_monitoring_control(
         draw,
         follow_control,
-        x + density.monitoring_content_left,
-        monitor_y + 76,
+        x,
+        monitor_y,
         c,
         checked=state.follow_terminal_folder,
+        geometry=gui_design_moba_monitoring_control_geometry_for(follow_control.key),
     )
 
 
@@ -1436,19 +1462,38 @@ def draw_moba_monitoring_control(
     c: Any,
     *,
     checked: bool,
-    centered_icon: bool = False,
+    geometry: Any,
 ) -> None:
     if control.control_type == "checkbox":
-        draw.rectangle((x, y + 3, x + 10, y + 13), outline=c.control_text, fill=c.window)
+        check_x = x + geometry.anchor_x
+        check_y = y + geometry.static_y + 3
+        draw.rectangle(
+            (check_x, check_y, check_x + geometry.check_size, check_y + geometry.check_size),
+            outline=c.control_text,
+            fill=c.window,
+        )
         if checked:
-            draw.line((x + 2, y + 8, x + 5, y + 12), fill=c.control_text, width=1)
-            draw.line((x + 5, y + 12, x + 10, y + 4), fill=c.control_text, width=1)
-        draw_moba_monitoring_control_icon(draw, control.icon_key, x + 18, y, 16, c)
-        draw_text(draw, control.label, x + 38, y + 3, c.control_text, 11)
+            draw.line((check_x + 2, check_y + 5, check_x + 5, check_y + 9), fill=c.control_text, width=1)
+            draw.line((check_x + 5, check_y + 9, check_x + 10, check_y + 1), fill=c.control_text, width=1)
+        draw_moba_monitoring_control_icon(
+            draw,
+            control.icon_key,
+            x + geometry.icon_x,
+            y + geometry.static_y,
+            geometry.icon_size,
+            c,
+        )
+        draw_text(draw, control.label, x + geometry.label_x, y + geometry.static_y + 3, c.control_text, 11)
         return
-    icon_x = x if centered_icon else x + 18
-    draw_moba_monitoring_control_icon(draw, control.icon_key, icon_x, y, 20, c)
-    draw_text(draw, control.label, icon_x + 28, y + 2, c.control_text, 12, bold=True)
+    draw_moba_monitoring_control_icon(
+        draw,
+        control.icon_key,
+        x + geometry.icon_x,
+        y + geometry.static_y,
+        geometry.icon_size,
+        c,
+    )
+    draw_text(draw, control.label, x + geometry.label_x, y + geometry.static_y + 2, c.control_text, 12, bold=True)
 
 
 def draw_moba_monitoring_control_icon(draw: Any, icon_key: str, x: int, y: int, size: int, c: Any) -> None:
@@ -1538,12 +1583,12 @@ def draw_moba_sftp_toolbar_icon(draw: Any, icon_key: str, x: int, y: int, size: 
         draw.line((x + 10, y + 10, x + 6, y + 13), fill="#35d7c7", width=2)
 
 
-def draw_moba_sftp_file_icon(draw: Any, kind: str, x: int, y: int, size: int, c: Any) -> None:
-    if kind in {"dir", "parent-dir"}:
-        fill = "#f2c744" if kind == "dir" else "#f5d96a"
+def draw_moba_sftp_file_icon(draw: Any, icon_key: str, x: int, y: int, size: int, c: Any) -> None:
+    if icon_key in {"folder", "folder-up"}:
+        fill = "#f2c744" if icon_key == "folder" else "#f5d96a"
         draw.rectangle((x, y + 4, x + size, y + size - 1), fill=fill, outline=c.pane_border)
         draw.rectangle((x + 2, y + 2, x + 8, y + 5), fill="#ffe58a", outline=c.pane_border)
-        if kind == "parent-dir":
+        if icon_key == "folder-up":
             mid = x + size // 2
             draw.polygon([(mid, y + 4), (mid - 3, y + 8), (mid + 3, y + 8)], fill="#2f6fb1")
         return
@@ -2076,8 +2121,9 @@ def draw_securecrt_session_tree(draw: Any, preset: GuiDesignPreset, x: int, y: i
     c = preset.colors
     interaction = gui_design_interaction_state(preset.id)
     root_title, root_subtitle = gui_design_tree_root_copy(preset.id)
+    root_icon = gui_design_tree_root_icon(preset.id)
     draw.rectangle((x, y, x + w, y + h), fill=c.sidebar)
-    draw_sidebar_row_icon(draw, preset, "folder", x + 3, y + 4, 14, selected=False, group=True)
+    draw_sidebar_row_icon(draw, preset, root_icon.icon_key, x + 3, y + 3, root_icon.static_size, selected=False, group=True)
     draw_text(draw, root_title, x + 26, y + 3, c.status, 11, bold=True)
     draw_text(draw, root_subtitle, x + 26, y + 18, c.sidebar_muted, 8)
 
@@ -2087,8 +2133,9 @@ def draw_securecrt_session_tree(draw: Any, preset: GuiDesignPreset, x: int, y: i
         label = name.strip()
         selected = label == interaction.selected_tree_label
         if group:
+            icon_key = sidebar_row_icon_key(preset.id, name, target, group)
             draw.line((branch_x, row_y + 14, branch_x + 12, row_y + 14), fill=c.toolbar_border)
-            draw_sidebar_row_icon(draw, preset, "folder", x + 4, row_y + 2, 14, selected=False, group=True)
+            draw_sidebar_row_icon(draw, preset, icon_key, x + 4, row_y + 2, 14, selected=False, group=True)
             draw_text(draw, label, x + 26, row_y + 1, c.status, 11, bold=True)
             draw.line((branch_x, row_y + 21, branch_x, row_y + 52), fill=c.toolbar_border)
             row_y += 28
@@ -2144,26 +2191,7 @@ def draw_termius_hosts_action_icon(draw: Any, icon_key: str, x: int, y: int, siz
 
 
 def sidebar_row_icon_key(preset_id: str, name: str, target: str, group: bool) -> str:
-    value = f"{name} {target}".lower()
-    if group:
-        if "xml" in value or "database" in value or "vault" in value:
-            return "database"
-        return "folder"
-    if "rdp" in value:
-        return "rdp"
-    if "vnc" in value:
-        return "vnc"
-    if "sftp" in value or "file" in value:
-        return "sftp"
-    if "local" in value or "powershell" in value:
-        return "shell"
-    if "snippet" in value or "deploy" in value:
-        return "snippet"
-    if "jump" in value or "pinned" in value:
-        return "pin"
-    if preset_id == "termius":
-        return "host"
-    return "ssh"
+    return gui_design_tree_row_icon_key(preset_id, name, target, group)
 
 
 def draw_sidebar_row_icon(
@@ -2213,6 +2241,19 @@ def draw_sidebar_row_icon(
         draw.line((x + 3, y + 5, x + 6, y + 8), fill=fill)
         draw.line((x + 6, y + 8, x + 3, y + 11), fill=fill)
         draw.line((x + 8, y + 11, x + size - 3, y + 11), fill=fill)
+        return
+    if icon_key == "ssh2":
+        draw.rectangle((x, y + 2, x + size, y + size - 1), fill="#101820", outline=fill)
+        draw.line((x + 3, y + 5, x + 6, y + 8), fill=fill, width=1)
+        draw.line((x + 6, y + 8, x + 3, y + 11), fill=fill, width=1)
+        draw.line((x + 8, y + 11, x + size - 3, y + 11), fill=fill, width=1)
+        draw_text(draw, "2", x + size - 5, y + 2, fill, 6, bold=True)
+        return
+    if icon_key == "command":
+        draw.rectangle((x, y + 2, x + size, y + size - 1), fill="#101820", outline=fill)
+        draw.line((x + 3, y + 5, x + 7, y + 8), fill=fill, width=1)
+        draw.line((x + 7, y + 8, x + 3, y + 11), fill=fill, width=1)
+        draw.rectangle((x + size - 5, y + 4, x + size - 2, y + 7), outline=fill)
         return
     if icon_key == "snippet":
         draw.rectangle((x + 2, y + 1, x + size - 2, y + size - 1), fill=None, outline=fill)
@@ -2399,19 +2440,29 @@ def draw_remmina_workspace(
     controls = gui_design_remmina_viewer_controls()
     control_x = x + w - 410
     for control in controls:
-        width = 74
-        rounded(draw, (control_x, toolbar_y + 7, control_x + width, toolbar_y + 27), c.control, c.control_border, 2)
+        rounded(
+            draw,
+            (
+                control_x,
+                toolbar_y + control.static_y,
+                control_x + control.static_width,
+                toolbar_y + control.static_y + control.static_height,
+            ),
+            c.control,
+            c.control_border,
+            2,
+        )
         draw_remmina_viewer_control_icon(
             draw,
             control.icon_key,
-            control_x + 6,
-            toolbar_y + 10,
-            12,
+            control_x + control.static_icon_x,
+            toolbar_y + control.static_y + 3,
+            control.static_icon_size,
             c.primary,
             c.control_text,
         )
-        draw_text(draw, control.label, control_x + 22, toolbar_y + 12, c.control_text, 8)
-        control_x += 78
+        draw_text(draw, control.label, control_x + control.static_label_x, toolbar_y + control.static_y + 5, c.control_text, 8)
+        control_x += control.static_step
     draw_product_reference_state(draw, preset, x + 10, toolbar_y + 40, w - 20, 24)
 
     viewer_x = x + 18
@@ -2686,24 +2737,97 @@ def draw_mremoteng_document_toolbar(draw: Any, preset: GuiDesignPreset, x: int, 
     c = preset.colors
     chrome = gui_design_mremoteng_document_toolbar_chrome()
     interaction = gui_design_interaction_state(preset.id)
-    draw.rectangle((x, y, x + w, y + h), fill=c.control, outline=c.pane_border)
-    draw_text(draw, chrome.title, x + 10, y + 8, c.control_text, 10, bold=True)
-    button_x = x + 128
+    toolbar_h = min(h, chrome.static_height)
+    draw.rectangle((x, y, x + w, y + toolbar_h), fill=c.control, outline=c.pane_border)
+    draw_text(draw, chrome.title, x + chrome.static_margin_x, y + 8, c.control_text, 10, bold=True)
+    button_x = x + chrome.static_button_start_x
     for control in gui_design_mremoteng_document_controls():
         state = "checked" if control.key == "external-tool" and interaction.checked_toolbar_key == "files" else "normal"
         _fill, outline, text = interaction_button_colors(state, c)
-        rounded(draw, (button_x, y + 4, button_x + control.static_width, y + h - 4), c.toolbar, c.control_border, 2)
+        button_box = (
+            button_x,
+            y + control.static_y,
+            button_x + control.static_width,
+            y + control.static_y + control.static_height,
+        )
+        rounded(draw, button_box, c.toolbar, c.control_border, 2)
         if state == "checked":
-            draw.rectangle((button_x - 2, y + 2, button_x + control.static_width + 2, y + h - 2), outline=outline, width=1)
-        draw_sidebar_row_icon(draw, preset, control.icon_key, button_x + 8, y + 7, 13, selected=False, group=False)
-        draw_text(draw, control.label, button_x + 27, y + 8, text, 9, bold=state == "checked")
-        button_x += control.static_width + 8
-    filter_box = (x + w - 188, y + 5, x + w - 10, y + h - 5)
+            draw.rectangle(
+                (
+                    button_x - 2,
+                    y + control.static_y - 2,
+                    button_x + control.static_width + 2,
+                    y + control.static_y + control.static_height + 2,
+                ),
+                outline=outline,
+                width=1,
+            )
+        draw_mremoteng_document_control_icon(
+            draw,
+            control.icon_key,
+            button_x + control.static_icon_x,
+            y + control.static_icon_y,
+            control.static_icon_size,
+            c.primary,
+            c.control_text,
+        )
+        draw_text(
+            draw,
+            control.label,
+            button_x + control.static_label_x,
+            y + control.static_label_y,
+            text,
+            9,
+            bold=state == "checked",
+        )
+        button_x += control.static_width + chrome.static_button_gap
+    filter_box = (
+        x + w - chrome.static_filter_width - chrome.static_margin_x,
+        y + chrome.static_filter_y,
+        x + w - chrome.static_margin_x,
+        y + chrome.static_filter_y + chrome.static_filter_height,
+    )
     draw.rectangle(filter_box, fill=c.window, outline=c.control_border)
     if interaction.focused_control == "tree-filter":
         fx1, fy1, fx2, fy2 = filter_box
         draw.rectangle((fx1 - 2, fy1 - 2, fx2 + 2, fy2 + 2), outline=c.primary, width=1)
-    draw_text(draw, chrome.filter_placeholder, x + w - 178, y + 9, c.sidebar_muted, 9)
+    draw_text(draw, chrome.filter_placeholder, filter_box[0] + 10, y + 9, c.sidebar_muted, 9)
+
+
+def draw_mremoteng_document_control_icon(
+    draw: Any,
+    icon_key: str,
+    x: int,
+    y: int,
+    size: int,
+    color: str,
+    text_color: str,
+) -> None:
+    if icon_key == "database":
+        draw.ellipse((x + 1, y, x + size - 1, y + 5), outline=color)
+        draw.rectangle((x + 1, y + 3, x + size - 1, y + size - 3), fill=None, outline=color)
+        draw.arc((x + 1, y + size - 6, x + size - 1, y + size - 1), 0, 180, fill=color)
+        draw.line((x + 2, y + 7, x + size - 2, y + 7), fill=color)
+        return
+    if icon_key == "ssh":
+        draw.ellipse((x, y + 3, x + 5, y + 8), fill=None, outline=color)
+        draw.line((x + 5, y + 6, x + size, y + 6), fill=color, width=2)
+        draw.line((x + size - 4, y + 6, x + size - 4, y + 10), fill=color)
+        draw.line((x + size - 1, y + 6, x + size - 1, y + 9), fill=color)
+        return
+    if icon_key == "external":
+        draw.rectangle((x, y + 4, x + size - 6, y + size), fill=None, outline=color)
+        draw.line((x + size - 7, y + 2, x + size, y + 2), fill=text_color)
+        draw.line((x + size, y + 2, x + size, y + 8), fill=text_color)
+        draw.line((x + size - 8, y + 9, x + size, y + 2), fill=text_color, width=2)
+        return
+    if icon_key == "rdp":
+        draw.rectangle((x, y + 2, x + size, y + size - 4), fill=None, outline=color)
+        draw.line((x + 3, y + 6, x + size - 3, y + 6), fill=text_color)
+        draw.line((x + size // 2, y + size - 4, x + size // 2, y + size), fill=color)
+        draw.line((x + 3, y + size, x + size - 3, y + size), fill=color)
+        return
+    draw_text(draw, icon_key[:1].upper(), x, y - 2, text_color, 9, bold=True)
 
 
 def draw_mremoteng_config_grid(draw: Any, preset: GuiDesignPreset, surface: Any, x: int, y: int, w: int, h: int) -> None:

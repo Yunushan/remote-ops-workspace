@@ -2,8 +2,8 @@
   "contact_sheet": {
     "height": 1392,
     "path": "all-gui-designs-contact-sheet.png",
-    "sha256": "ee6448fe687c13550f66cb7b2e4377ffb9c18ed5ac9cf0f71354405661e892c9",
-    "size_bytes": 398774,
+    "sha256": "3a0ece04e6ea98b387c515669ef5f354f2b5f984d6079bbd613d557360216e87",
+    "size_bytes": 398750,
     "width": 1272
   },
   "contact_thumb": {
@@ -34,8 +34,8 @@
       "image": {
         "height": 760,
         "path": "mobaxterm.png",
-        "sha256": "29e3affe65a1b86e806d1f1524e034ad5b8dfa0ded832134102330fe7b58f499",
-        "size_bytes": 75044,
+        "sha256": "3152c97278740633ed61d21708cdd88b879ed0359296334dbeaad061ae79d9ec",
+        "size_bytes": 75043,
         "width": 1280
       },
       "label": "MobaXterm-style",

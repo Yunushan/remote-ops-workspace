@@ -14,6 +14,7 @@ from .gui_designs import (
     gui_design_home_tab_label,
     gui_design_interaction_state,
     gui_design_moba_bottom_edge_controls,
+    gui_design_moba_connected_dock_frame,
     gui_design_moba_home_welcome_chrome,
     gui_design_moba_monitoring_control_geometry,
     gui_design_moba_monitoring_control_geometry_for,
@@ -23,7 +24,10 @@ from .gui_designs import (
     gui_design_moba_quick_connect_suggestion_chrome,
     gui_design_moba_rail_items,
     gui_design_moba_remote_monitoring_dock_chrome,
+    gui_design_moba_ribbon_action_geometry,
+    gui_design_moba_ribbon_action_geometry_for,
     gui_design_moba_ribbon_actions,
+    gui_design_moba_ribbon_edge_actions,
     gui_design_moba_right_utility_actions,
     gui_design_moba_session_edge_actions,
     gui_design_moba_sftp_browser_chrome,
@@ -31,11 +35,19 @@ from .gui_designs import (
     gui_design_moba_sftp_dock_layout,
     gui_design_moba_sftp_file_row_icon,
     gui_design_moba_sftp_file_row_icons,
+    gui_design_moba_sftp_toolbar_action_geometry,
+    gui_design_moba_sftp_toolbar_action_geometry_for,
     gui_design_moba_ssh_banner_chrome,
+    gui_design_moba_ssh_banner_row_geometry,
+    gui_design_moba_ssh_banner_row_geometry_for,
     gui_design_moba_status_bar_chrome,
     gui_design_moba_status_segments,
+    gui_design_moba_terminal_transcript_row_geometry,
     gui_design_moba_titlebar_chrome,
+    gui_design_moba_top_menu_geometry,
+    gui_design_moba_top_menu_geometry_for,
     gui_design_moba_top_menu_items,
+    gui_design_moba_top_stack_geometry,
     gui_design_mremoteng_document_controls,
     gui_design_mremoteng_document_toolbar_chrome,
     gui_design_mremoteng_property_grid_chrome,
@@ -72,9 +84,13 @@ from .moba_connected import (
     MobaConnectedSessionState,
     build_moba_connected_session_state,
     moba_connected_profile_label,
+    moba_connected_tab_chrome_geometry_for,
+    moba_connected_tab_chrome_geometry_items,
     moba_connected_tab_chrome_items,
     moba_connected_tab_label,
     moba_connected_window_title,
+    moba_telemetry_cell_geometry,
+    moba_telemetry_cell_geometry_for,
     moba_telemetry_cells,
 )
 from .models import Profile
@@ -397,9 +413,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.copy_button = self.terminal_button("Copy", "SP_DialogSaveButton", "Copy launch command")
             self.clear_button = self.terminal_button("Clear", "SP_DialogResetButton", "Clear terminal output")
 
-            header = QFrame()
-            header.setObjectName("terminalHeader")
-            header_layout = QHBoxLayout(header)
+            self.header = QFrame()
+            self.header.setObjectName("terminalHeader")
+            header_layout = QHBoxLayout(self.header)
             header_layout.setContentsMargins(8, 6, 8, 6)
             header_layout.setSpacing(8)
             header_layout.addWidget(self.title)
@@ -415,17 +431,17 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             ]:
                 header_layout.addWidget(button)
 
-            command_row = QFrame()
-            command_row.setObjectName("terminalCommandRow")
-            command_layout = QHBoxLayout(command_row)
+            self.command_row = QFrame()
+            self.command_row.setObjectName("terminalCommandRow")
+            command_layout = QHBoxLayout(self.command_row)
             command_layout.setContentsMargins(8, 3, 8, 5)
             command_layout.addWidget(self.command_preview, 1)
 
             layout = QVBoxLayout(self)
             layout.setContentsMargins(0, 0, 0, 0)
             layout.setSpacing(0)
-            layout.addWidget(header)
-            layout.addWidget(command_row)
+            layout.addWidget(self.header)
+            layout.addWidget(self.command_row)
             layout.addWidget(self.output, 1)
             layout.addWidget(self.input)
 
@@ -564,21 +580,58 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.input.setEnabled(running)
 
     class MobaSftpDock(QFrame):
+        @staticmethod
+        def apply_connected_dock_frame_properties(widget) -> None:
+            frame = gui_design_moba_connected_dock_frame()
+            properties = {
+                "mobaConnectedDockSideWidth": frame.side_width,
+                "mobaConnectedDockRailWidth": frame.rail_width,
+                "mobaConnectedDockX": frame.dock_x,
+                "mobaConnectedDockY": frame.dock_y,
+                "mobaConnectedDockWidth": frame.dock_width,
+                "mobaConnectedDockHeight": frame.dock_height,
+                "mobaConnectedDockWorkspaceX": frame.workspace_x,
+                "mobaConnectedDockQuickConnectY": frame.quick_connect_y,
+                "mobaConnectedDockQuickConnectHeight": frame.quick_connect_height,
+                "mobaConnectedDockStatusY": frame.status_y,
+            }
+            for key, value in properties.items():
+                widget.setProperty(key, value)
+
+        @staticmethod
+        def apply_sftp_dock_density_properties(widget, density) -> None:
+            widget.setProperty("mobaSftpDockInnerMargin", density.inner_margin)
+            widget.setProperty("mobaSftpToolbarHeight", density.toolbar_height)
+            widget.setProperty("mobaSftpPathHeight", density.path_height)
+            widget.setProperty("mobaSftpHeaderHeight", density.table_header_height)
+            widget.setProperty("mobaSftpRowHeight", density.file_row_height)
+            widget.setProperty("mobaSftpMonitoringHeight", density.monitoring_height)
+            widget.setProperty("mobaSftpStaticMaxRows", density.static_max_rows)
+            widget.setProperty("mobaSftpToolbarSeparatorWidth", density.toolbar_separator_width)
+
         def __init__(self, state: MobaConnectedSessionState) -> None:
             super().__init__()
-            self.setObjectName("mobaSftpBrowser")
+            self.setObjectName("mobaConnectedLeftDock")
             self.state = state
+            frame = gui_design_moba_connected_dock_frame()
             density = gui_design_moba_sftp_dock_layout()
-            self.setProperty("mobaSftpDockInnerMargin", density.inner_margin)
-            self.setProperty("mobaSftpToolbarHeight", density.toolbar_height)
-            self.setProperty("mobaSftpPathHeight", density.path_height)
-            self.setProperty("mobaSftpHeaderHeight", density.table_header_height)
-            self.setProperty("mobaSftpRowHeight", density.file_row_height)
-            self.setProperty("mobaSftpMonitoringHeight", density.monitoring_height)
-            self.setProperty("mobaSftpStaticMaxRows", density.static_max_rows)
-            self.setProperty("mobaSftpToolbarSeparatorWidth", density.toolbar_separator_width)
+            self.apply_connected_dock_frame_properties(self)
+            self.setMinimumWidth(frame.dock_width)
+            self.setMinimumHeight(frame.dock_height)
 
-            layout = QVBoxLayout(self)
+            outer_layout = QVBoxLayout(self)
+            outer_layout.setContentsMargins(0, 0, 0, 0)
+            outer_layout.setSpacing(0)
+            browser = QFrame()
+            browser.setObjectName("mobaSftpBrowser")
+            browser.setMinimumWidth(frame.dock_width)
+            browser.setMinimumHeight(frame.dock_height)
+            self.browser = browser
+            self.apply_connected_dock_frame_properties(browser)
+            self.apply_sftp_dock_density_properties(browser, density)
+            outer_layout.addWidget(browser)
+
+            layout = QVBoxLayout(browser)
             layout.setContentsMargins(
                 density.inner_margin,
                 density.inner_margin,
@@ -591,8 +644,14 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             toolbar.setObjectName("mobaSftpToolbar")
             toolbar.setProperty("mobaSftpToolbarHeight", density.toolbar_height)
             toolbar.setFixedHeight(density.toolbar_height)
+            toolbar_geometry = gui_design_moba_sftp_toolbar_action_geometry()
             toolbar_layout = QHBoxLayout(toolbar)
-            toolbar_layout.setContentsMargins(0, 0, 0, 0)
+            toolbar_layout.setContentsMargins(
+                toolbar_geometry[0].button_x,
+                toolbar_geometry[0].button_y,
+                0,
+                toolbar_geometry[0].button_y,
+            )
             toolbar_layout.setSpacing(0)
             for action in gui_design_moba_sftp_dock_actions():
                 toolbar_layout.addWidget(self.tool_button(action, density))
@@ -608,6 +667,12 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             path.setPlaceholderText(chrome.path_placeholder)
             path.setProperty("mobaSftpPathDropdownMarker", chrome.dropdown_marker)
             path.setProperty("mobaSftpPathHeight", density.path_height)
+            path.setProperty("mobaSftpPathTextX", chrome.path_text_x)
+            path.setProperty("mobaSftpPathTextY", chrome.path_text_y)
+            path.setProperty("mobaSftpPathFontSize", chrome.path_font_size)
+            path.setProperty("mobaSftpDropdownRightOffset", chrome.dropdown_right_offset)
+            path.setProperty("mobaSftpDropdownY", chrome.dropdown_y)
+            path.setProperty("mobaSftpDropdownFontSize", chrome.dropdown_font_size)
             path.setFixedHeight(density.path_height)
             path.setToolTip(self.state.follow_folder_plan.printable_batch())
             layout.addSpacing(density.path_gap)
@@ -624,7 +689,18 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.file_table.setProperty("mobaSftpParentRowKind", chrome.parent_row_kind)
             self.file_table.setProperty("mobaSftpSelectedRowKind", chrome.selected_row_kind)
             self.file_table.setProperty("mobaSftpHeaderHeight", density.table_header_height)
+            self.file_table.setProperty("mobaSftpHeaderLabelY", chrome.header_label_y)
+            self.file_table.setProperty("mobaSftpHeaderFontSize", chrome.header_font_size)
             self.file_table.setProperty("mobaSftpRowHeight", density.file_row_height)
+            self.file_table.setProperty("mobaSftpRowTopOffset", chrome.row_top_offset)
+            self.file_table.setProperty("mobaSftpRowIconX", chrome.row_icon_x)
+            self.file_table.setProperty("mobaSftpRowIconYOffset", chrome.row_icon_y_offset)
+            self.file_table.setProperty("mobaSftpRowNameX", chrome.row_name_x)
+            self.file_table.setProperty("mobaSftpRowSizeX", chrome.row_size_x)
+            self.file_table.setProperty("mobaSftpRowModifiedX", chrome.row_modified_x)
+            self.file_table.setProperty("mobaSftpRowTextYOffset", chrome.row_text_y_offset)
+            self.file_table.setProperty("mobaSftpRowTextFontSize", chrome.row_text_font_size)
+            self.file_table.setProperty("mobaSftpRowModifiedFontSize", chrome.row_modified_font_size)
             self.file_table.setProperty(
                 "mobaSftpFileRowIconKinds",
                 [row_icon.kind for row_icon in gui_design_moba_sftp_file_row_icons()],
@@ -721,16 +797,26 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             panel.setProperty("mobaRemoteMonitoringMetricKeys", metric_keys)
             panel.setProperty("mobaRemoteMonitoringVisibleMetricKeys", list(chrome.visible_metric_keys))
             panel.setProperty("mobaRemoteMonitoringRefreshSeconds", chrome.refresh_seconds)
+            panel.setProperty("mobaRemoteMonitoringStaticHeight", chrome.static_height)
+            panel.setProperty("mobaRemoteMonitoringDividerOffset", chrome.divider_offset)
+            panel.setProperty("mobaRemoteMonitoringDividerLeftInset", chrome.divider_left_inset)
+            panel.setProperty("mobaRemoteMonitoringDividerRightInset", chrome.divider_right_inset)
+            panel.setProperty("mobaRemoteMonitoringContentLeft", chrome.content_left)
+            panel.setProperty("mobaRemoteMonitoringIconCenterX", chrome.icon_center_x)
+            panel.setProperty("mobaRemoteMonitoringMetricRowGap", chrome.metric_row_gap)
+            panel.setProperty("mobaRemoteMonitoringLiveControlsWidth", chrome.live_controls_width)
             panel.setProperty("mobaRemoteMonitoringCommand", self.state.monitoring_plan.printable())
             panel.setProperty("mobaRemoteMonitoringFollowPlan", self.state.follow_folder_plan.printable_batch())
             panel.setProperty(
                 "mobaMonitoringControlGeometryKeys",
                 [geometry.key for geometry in gui_design_moba_monitoring_control_geometry()],
             )
-            panel.setFixedHeight(density.monitoring_height)
+            panel.setFixedHeight(chrome.static_height)
             controls = QFrame(panel)
             controls.setObjectName("mobaMonitoringControls")
-            controls.setGeometry(0, 0, 260, density.monitoring_height)
+            controls.setGeometry(0, 0, chrome.live_controls_width, chrome.static_height)
+            controls.setProperty("mobaRemoteMonitoringLiveControlsWidth", chrome.live_controls_width)
+            controls.setProperty("mobaRemoteMonitoringStaticHeight", chrome.static_height)
             controls.setProperty(
                 "mobaMonitoringControlGeometryKeys",
                 [geometry.key for geometry in gui_design_moba_monitoring_control_geometry()],
@@ -825,20 +911,26 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             return f"{metric.label} {value}".strip()
 
         def tool_button(self, action, density) -> QToolButton:
+            geometry = gui_design_moba_sftp_toolbar_action_geometry_for(action.key)
             button = QToolButton()
             button.setObjectName("mobaSftpAction")
             button.setProperty("mobaSftpActionKey", action.key)
             button.setProperty("mobaSftpIconKey", action.icon_key)
             button.setProperty("mobaSftpActionGroupKey", action.group_key)
             button.setProperty("mobaSftpActionSeparatorAfter", action.separator_after)
-            button.setProperty("mobaSftpActionButtonSize", density.toolbar_icon_step)
-            button.setProperty("mobaSftpActionIconSize", density.toolbar_icon_size)
+            button.setProperty("mobaSftpActionStaticX", geometry.button_x)
+            button.setProperty("mobaSftpActionStaticY", geometry.button_y)
+            button.setProperty("mobaSftpActionButtonSize", geometry.button_size)
+            button.setProperty("mobaSftpActionIconX", geometry.icon_x)
+            button.setProperty("mobaSftpActionIconY", geometry.icon_y)
+            button.setProperty("mobaSftpActionIconSize", geometry.icon_size)
+            button.setProperty("mobaSftpActionSeparatorX", geometry.separator_x)
             button.setText(action.label)
             button.setToolTip(action.tooltip)
-            button.setIcon(self.sftp_action_icon(action.icon_key, action.color))
-            button.setIconSize(QSize(density.toolbar_icon_size, density.toolbar_icon_size))
+            button.setIcon(self.sftp_action_icon(action.icon_key, action.color, size=geometry.icon_size))
+            button.setIconSize(QSize(geometry.icon_size, geometry.icon_size))
             button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
-            button.setFixedSize(QSize(density.toolbar_icon_step, density.toolbar_icon_step))
+            button.setFixedSize(QSize(geometry.button_size, geometry.button_size))
             return button
 
         def toolbar_separator(self, action, density) -> QFrame:
@@ -1003,8 +1095,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             stack_layout = QVBoxLayout(terminal_stack)
             stack_layout.setContentsMargins(0, 0, 0, 0)
             stack_layout.setSpacing(0)
-            stack_layout.addWidget(self.build_ssh_banner())
+            stack_layout.addWidget(self.build_ssh_banner_slot())
             self.apply_terminal_transcript_evidence()
+            self.apply_moba_plain_terminal_mode()
             stack_layout.addWidget(self.terminal_pane, 1)
             layout.addWidget(terminal_stack, 1)
             layout.addWidget(self.build_right_utility_rail())
@@ -1016,6 +1109,22 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.terminal_pane.output.setProperty("mobaTerminalTranscriptTones", [line.tone for line in lines])
             self.terminal_pane.output.setPlainText("\n".join(line.text for line in lines))
             self.terminal_pane.output.moveCursor(QTextCursor.MoveOperation.End)
+
+        def apply_moba_plain_terminal_mode(self) -> None:
+            geometry = gui_design_moba_terminal_transcript_row_geometry()
+            self.terminal_pane.setProperty("mobaPlainTerminalMode", True)
+            self.terminal_pane.setProperty("mobaTerminalHeaderVisible", False)
+            self.terminal_pane.setProperty("mobaTerminalCommandRowVisible", False)
+            self.terminal_pane.setProperty("mobaTerminalInputVisible", False)
+            self.terminal_pane.header.setVisible(False)
+            self.terminal_pane.command_row.setVisible(False)
+            self.terminal_pane.input.setVisible(False)
+            self.terminal_pane.output.setProperty("mobaPlainTerminalMode", True)
+            self.terminal_pane.output.setProperty("mobaTerminalTranscriptGeometryKeys", [row.key for row in geometry])
+            self.terminal_pane.output.setProperty("mobaTerminalTranscriptX", [row.static_x for row in geometry])
+            self.terminal_pane.output.setProperty("mobaTerminalTranscriptY", [row.static_y for row in geometry])
+            self.terminal_pane.output.setProperty("mobaTerminalTranscriptRowHeight", [row.row_height for row in geometry])
+            self.terminal_pane.output.setProperty("mobaTerminalTranscriptFontSize", [row.font_size for row in geometry])
 
         def build_right_utility_rail(self) -> QFrame:
             rail = QFrame()
@@ -1118,6 +1227,43 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 painter.end()
             return QIcon(pixmap)
 
+        def build_ssh_banner_slot(self) -> QFrame:
+            chrome = gui_design_moba_ssh_banner_chrome()
+            slot = QFrame()
+            slot.setObjectName("mobaSshBannerSlot")
+            slot.setProperty("mobaBannerLeftOffset", chrome.static_left_offset)
+            slot.setProperty("mobaBannerTopOffset", chrome.static_top_offset)
+            slot.setProperty("mobaBannerTerminalGap", chrome.terminal_gap)
+            slot.setFixedHeight(chrome.static_top_offset + chrome.static_height + chrome.terminal_gap)
+            banner = self.build_ssh_banner()
+            banner.setParent(slot)
+            banner.setGeometry(
+                chrome.static_left_offset,
+                chrome.static_top_offset,
+                chrome.static_width,
+                chrome.static_height,
+            )
+            return slot
+
+        def apply_ssh_banner_row_geometry(self, label: QLabel, key: str) -> None:
+            geometry = gui_design_moba_ssh_banner_row_geometry_for(key)
+            label.setProperty("mobaSshBannerRowKey", geometry.key)
+            label.setProperty("mobaSshBannerRowX", geometry.static_x)
+            label.setProperty("mobaSshBannerRowY", geometry.static_y)
+            label.setProperty("mobaSshBannerRowWidth", geometry.static_width)
+            label.setProperty("mobaSshBannerRowHeight", geometry.static_height)
+            label.setProperty("mobaSshBannerRowCentered", geometry.centered)
+            label.setGeometry(
+                geometry.static_x,
+                geometry.static_y,
+                geometry.static_width,
+                geometry.static_height,
+            )
+            if geometry.centered:
+                label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            else:
+                label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+
         def build_ssh_banner(self) -> QFrame:
             chrome = gui_design_moba_ssh_banner_chrome()
             banner = QFrame()
@@ -1131,52 +1277,62 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             banner.setProperty("mobaBannerFooterLinks", list(self.state.banner.footer_links()))
             banner.setProperty("mobaBannerWidth", chrome.static_width)
             banner.setProperty("mobaBannerHeight", chrome.static_height)
-            banner.setMinimumWidth(chrome.static_width)
-            banner.setMaximumWidth(chrome.static_width + 120)
-            banner.setFixedHeight(chrome.static_height)
-            layout = QVBoxLayout(banner)
-            layout.setContentsMargins(14, 9, 14, 9)
-            layout.setSpacing(2)
+            banner.setProperty("mobaBannerLeftOffset", chrome.static_left_offset)
+            banner.setProperty("mobaBannerTopOffset", chrome.static_top_offset)
+            banner.setProperty("mobaBannerTerminalGap", chrome.terminal_gap)
+            banner.setProperty(
+                "mobaSshBannerRowGeometryKeys",
+                [geometry.key for geometry in gui_design_moba_ssh_banner_row_geometry()],
+            )
+            banner.setFixedSize(QSize(chrome.static_width, chrome.static_height))
             title = QLabel(f"{chrome.heading_prefix}{chrome.title}{chrome.heading_suffix}")
+            title.setParent(banner)
             title.setObjectName("mobaSshBannerTitle")
-            title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            layout.addWidget(title)
+            self.apply_ssh_banner_row_geometry(title, "title")
             subtitle = QLabel(chrome.subtitle)
+            subtitle.setParent(banner)
             subtitle.setObjectName("mobaSshBannerSubtitle")
-            subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            layout.addWidget(subtitle)
-            layout.addSpacing(8)
+            self.apply_ssh_banner_row_geometry(subtitle, "subtitle")
             target = QLabel(f"> {chrome.target_intro} {self.state.banner.title}")
+            target.setParent(banner)
             target.setObjectName("mobaSshBannerTargetLine")
             target.setProperty("mobaSshBannerTarget", self.state.banner.title)
             target.setProperty("mobaSshBannerTargetIntro", chrome.target_intro)
+            self.apply_ssh_banner_row_geometry(target, "target")
             target.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-            layout.addWidget(target)
             for row in self.state.banner.capability_rows():
                 label = QLabel(f"  * {row.line(label_width=chrome.capability_label_width)}")
+                label.setParent(banner)
                 label.setObjectName("mobaSshBannerCapability")
                 label.setProperty("mobaSshBannerCapabilityKey", row.key)
                 label.setProperty("mobaSshBannerCapabilityLabel", row.label)
                 label.setProperty("mobaSshBannerCapabilityValue", row.value)
                 label.setProperty("mobaSshBannerCapabilityStatus", row.status)
                 label.setProperty("capabilityStatus", row.status)
+                self.apply_ssh_banner_row_geometry(label, row.key)
                 label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-                layout.addWidget(label)
             help_link, website_link = self.state.banner.footer_links()
             footer = QLabel(f"> {chrome.footer_prefix} {help_link} or visit our {website_link}.")
+            footer.setParent(banner)
             footer.setObjectName("mobaSshBannerFooter")
             footer.setProperty("mobaSshBannerFooterLinks", [help_link, website_link])
+            self.apply_ssh_banner_row_geometry(footer, "footer")
             footer.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-            layout.addWidget(footer)
             return banner
 
         def build_telemetry_bar(self) -> QFrame:
             bar = QFrame()
             bar.setObjectName("mobaTelemetryBar")
+            geometry_items = moba_telemetry_cell_geometry()
+            bar.setProperty("mobaTelemetryGeometryKeys", [geometry.key for geometry in geometry_items])
+            bar.setProperty("mobaTelemetryStartX", geometry_items[0].static_x)
+            bar.setProperty("mobaTelemetryBarHeight", 24)
+            bar.setFixedHeight(24)
             layout = QHBoxLayout(bar)
-            layout.setContentsMargins(7, 2, 7, 2)
+            layout.setContentsMargins(geometry_items[0].static_x, 0, 7, 0)
             layout.setSpacing(0)
             for cell in moba_telemetry_cells(self.state):
+                geometry = moba_telemetry_cell_geometry_for(cell.key)
                 cell_frame = QFrame()
                 cell_frame.setObjectName("mobaTelemetryCell")
                 cell_frame.setProperty("mobaTelemetryKey", cell.key)
@@ -1184,27 +1340,38 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 cell_frame.setProperty("mobaTelemetryIconAccent", cell.icon_accent)
                 cell_frame.setProperty("mobaTelemetryIconSize", cell.icon_size)
                 cell_frame.setProperty("mobaTelemetryDisplayText", cell.display_text)
-                cell_frame.setProperty("mobaTelemetryCellWidth", cell.width)
+                cell_frame.setProperty("mobaTelemetryCellStaticX", geometry.static_x)
+                cell_frame.setProperty("mobaTelemetryCellStaticY", geometry.static_y)
+                cell_frame.setProperty("mobaTelemetryCellWidth", geometry.width)
+                cell_frame.setProperty("mobaTelemetryCellHeight", geometry.height)
+                cell_frame.setProperty("mobaTelemetrySeparatorTop", geometry.separator_top)
+                cell_frame.setProperty("mobaTelemetrySeparatorBottom", geometry.separator_bottom)
                 cell_frame.setToolTip(cell.label)
-                cell_frame.setFixedWidth(cell.width)
+                cell_frame.setFixedWidth(geometry.width)
+                cell_frame.setFixedHeight(geometry.height)
                 cell_layout = QHBoxLayout(cell_frame)
-                cell_layout.setContentsMargins(4, 1, 5, 1)
-                cell_layout.setSpacing(4)
+                cell_layout.setContentsMargins(geometry.icon_x, 0, 5, 0)
+                cell_layout.setSpacing(geometry.label_x - geometry.icon_x - geometry.icon_size)
                 icon = QLabel()
                 icon.setObjectName("mobaTelemetryIcon")
                 icon.setProperty("mobaTelemetryKey", cell.key)
                 icon.setProperty("mobaTelemetryIconKey", cell.icon_key)
                 icon.setProperty("mobaTelemetryIconAccent", cell.icon_accent)
-                icon.setProperty("mobaTelemetryIconSize", cell.icon_size)
+                icon.setProperty("mobaTelemetryIconX", geometry.icon_x)
+                icon.setProperty("mobaTelemetryIconY", geometry.icon_y)
+                icon.setProperty("mobaTelemetryIconSize", geometry.icon_size)
                 icon.setProperty("mobaTelemetryIconRender", "generated-pixmap")
                 icon.setPixmap(self.telemetry_icon_pixmap(cell))
-                icon.setFixedSize(QSize(cell.icon_size, cell.icon_size))
+                icon.setFixedSize(QSize(geometry.icon_size, geometry.icon_size))
                 icon.setToolTip(cell.label)
                 cell_layout.addWidget(icon)
                 label = QLabel(cell.display_text)
                 label.setObjectName("mobaTelemetryItem")
                 label.setProperty("mobaTelemetryKey", cell.key)
                 label.setProperty("mobaTelemetryDisplayText", cell.display_text)
+                label.setProperty("mobaTelemetryLabelX", geometry.label_x)
+                label.setProperty("mobaTelemetryLabelY", geometry.label_y)
+                label.setProperty("mobaTelemetryLabelFontSize", geometry.label_font_size)
                 label.setToolTip(cell.label)
                 label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
                 cell_layout.addWidget(label, 1)
@@ -1624,18 +1791,23 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.moba_toolbar_spacer.setObjectName("mobaToolbarSpacer")
             self.moba_toolbar_spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
             self.main_toolbar.addWidget(self.moba_toolbar_spacer)
+            moba_edge_actions = {action.key: action for action in gui_design_moba_ribbon_edge_actions()}
+            x_server_action = moba_edge_actions["xserver"]
             self.moba_x_server_button = self.toolbar_button(
-                "X server",
+                x_server_action.label,
                 "SP_ComputerIcon",
-                "Show X server workflow status",
+                x_server_action.tooltip,
             )
             self.moba_x_server_button.setObjectName("mobaXServerAction")
-            self.moba_x_server_button.setProperty("mobaIconKey", "xserver")
-            self.moba_x_server_button.setIcon(self.moba_ribbon_icon("xserver", "#1a1a1a"))
-            self.moba_exit_button = self.toolbar_button("Exit", "SP_DialogCloseButton", "Close Remote Ops Workspace")
+            self.moba_x_server_button.setProperty("mobaIconKey", x_server_action.icon_key)
+            self.moba_x_server_button.setIcon(self.moba_ribbon_icon(x_server_action.icon_key, x_server_action.color))
+            self.apply_moba_ribbon_action_geometry(self.moba_x_server_button, x_server_action.key)
+            exit_action = moba_edge_actions["exit"]
+            self.moba_exit_button = self.toolbar_button(exit_action.label, "SP_DialogCloseButton", exit_action.tooltip)
             self.moba_exit_button.setObjectName("mobaExitAction")
-            self.moba_exit_button.setProperty("mobaIconKey", "exit")
-            self.moba_exit_button.setIcon(self.moba_ribbon_icon("exit", "#e2473f"))
+            self.moba_exit_button.setProperty("mobaIconKey", exit_action.icon_key)
+            self.moba_exit_button.setIcon(self.moba_ribbon_icon(exit_action.icon_key, exit_action.color))
+            self.apply_moba_ribbon_action_geometry(self.moba_exit_button, exit_action.key)
             self.main_toolbar.addWidget(self.moba_x_server_button)
             self.main_toolbar.addWidget(self.moba_exit_button)
             self.main_toolbar_buttons = [
@@ -1809,13 +1981,29 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.moba_top_menus: list[QMenu] = []
             self.moba_top_menu_actions = []
             for item in gui_design_moba_top_menu_items():
+                geometry = gui_design_moba_top_menu_geometry_for(item.key)
                 menu = self.menuBar().addMenu(item.label)
                 menu.setObjectName("mobaTopMenu")
                 menu.setProperty("mobaTopMenuKey", item.key)
                 menu.setProperty("mobaTopMenuLabel", item.label)
+                menu.setProperty("mobaTopMenuGeometryKeys", [item.key for item in gui_design_moba_top_menu_geometry()])
+                menu.setProperty("mobaTopMenuStaticX", geometry.static_x)
+                menu.setProperty("mobaTopMenuWidth", geometry.width)
+                menu.setProperty("mobaTopMenuLabelY", geometry.label_y)
+                menu.setProperty("mobaTopMenuLabelFontSize", geometry.label_font_size)
+                menu.setProperty("mobaTopMenuGapAfter", geometry.gap_after)
                 menu.setToolTip(item.tooltip)
                 menu.menuAction().setProperty("mobaTopMenuKey", item.key)
                 menu.menuAction().setProperty("mobaTopMenuLabel", item.label)
+                menu.menuAction().setProperty(
+                    "mobaTopMenuGeometryKeys",
+                    [item.key for item in gui_design_moba_top_menu_geometry()],
+                )
+                menu.menuAction().setProperty("mobaTopMenuStaticX", geometry.static_x)
+                menu.menuAction().setProperty("mobaTopMenuWidth", geometry.width)
+                menu.menuAction().setProperty("mobaTopMenuLabelY", geometry.label_y)
+                menu.menuAction().setProperty("mobaTopMenuLabelFontSize", geometry.label_font_size)
+                menu.menuAction().setProperty("mobaTopMenuGapAfter", geometry.gap_after)
                 menu.menuAction().setToolTip(item.tooltip)
                 self.moba_top_menus.append(menu)
                 self.moba_top_menu_actions.append(menu.menuAction())
@@ -2130,6 +2318,31 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             controls.setVisible(False)
             return controls
 
+        def apply_moba_ribbon_action_geometry(self, button: QToolButton, key: str) -> None:
+            geometry = gui_design_moba_ribbon_action_geometry_for(key)
+            button.setProperty(
+                "mobaRibbonActionGeometryKeys",
+                [item.key for item in gui_design_moba_ribbon_action_geometry()],
+            )
+            button.setProperty("mobaRibbonStaticX", geometry.static_x)
+            button.setProperty("mobaRibbonStaticWidth", geometry.width)
+            button.setProperty("mobaRibbonIconX", geometry.icon_x)
+            button.setProperty("mobaRibbonIconY", geometry.icon_y)
+            button.setProperty("mobaRibbonIconSize", geometry.icon_size)
+            button.setProperty("mobaRibbonLabelX", geometry.label_x)
+            button.setProperty("mobaRibbonLabelY", geometry.label_y)
+            button.setProperty("mobaRibbonLabelFontSize", geometry.label_font_size)
+            button.setProperty("mobaRibbonSeparatorBefore", geometry.separator_before)
+            button.setProperty("mobaRibbonSeparatorX", geometry.separator_x)
+            button.setProperty("mobaRibbonSeparatorTop", geometry.separator_top)
+            button.setProperty("mobaRibbonSeparatorBottom", geometry.separator_bottom)
+            button.setProperty("mobaRibbonActiveOutlineX", geometry.active_outline_x)
+            button.setProperty("mobaRibbonActiveOutlineY", geometry.active_outline_y)
+            button.setProperty("mobaRibbonActiveOutlineWidth", geometry.active_outline_width)
+            button.setProperty("mobaRibbonActiveOutlineHeight", geometry.active_outline_height)
+            button.setMinimumWidth(geometry.width)
+            button.setIconSize(QSize(geometry.icon_size, geometry.icon_size))
+
         def build_moba_ribbon_buttons(self) -> list[QToolButton]:
             slots = {
                 "session": self.create_profile,
@@ -2165,6 +2378,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 button.setObjectName("mobaRibbonButton")
                 button.setProperty("mobaIconKey", action.icon_key)
                 button.setIcon(self.moba_ribbon_icon(action.icon_key, action.color))
+                self.apply_moba_ribbon_action_geometry(button, action.icon_key)
                 button.clicked.connect(slots[action.icon_key])
                 buttons.append(button)
             return buttons
@@ -2173,9 +2387,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             return getattr(QStyle.StandardPixmap, icon_name, QStyle.StandardPixmap.SP_FileIcon)
 
         def create_moba_rail(self) -> QWidget:
+            frame = gui_design_moba_connected_dock_frame()
             rail = QWidget()
             rail.setObjectName("mobaRail")
-            rail.setFixedWidth(28)
+            rail.setProperty("mobaConnectedDockRailWidth", frame.rail_width)
+            rail.setFixedWidth(frame.rail_width)
             layout = QVBoxLayout(rail)
             layout.setContentsMargins(0, 0, 0, 0)
             layout.setSpacing(0)
@@ -2208,8 +2424,13 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             return rail
 
         def create_left_panel(self) -> QWidget:
+            frame = gui_design_moba_connected_dock_frame()
             panel = QWidget()
             panel.setObjectName("leftPanel")
+            panel.setProperty("mobaConnectedDockSideWidth", frame.side_width)
+            panel.setProperty("mobaConnectedDockRailWidth", frame.rail_width)
+            panel.setProperty("mobaConnectedDockWidth", frame.dock_width)
+            panel.setMinimumWidth(frame.side_width)
             layout = QVBoxLayout(panel)
             layout.setContentsMargins(0, 0, 0, 0)
             layout.setSpacing(0)
@@ -2224,6 +2445,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             body_layout.addWidget(self.moba_rail)
             self.moba_left_stack = QStackedWidget()
             self.moba_left_stack.setObjectName("mobaLeftStack")
+            self.moba_left_stack.setProperty("mobaConnectedDockX", frame.dock_x)
+            self.moba_left_stack.setProperty("mobaConnectedDockWidth", frame.dock_width)
             self.moba_left_stack.addWidget(self.profile_list)
             body_layout.addWidget(self.moba_left_stack, 1)
             layout.addWidget(body, 1)
@@ -2379,18 +2602,32 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
         def configure_status_bar_for_design(self, preset: GuiDesignPreset) -> None:
             if preset.id == "mobaxterm":
                 chrome = gui_design_moba_status_bar_chrome()
+                status_bar = self.statusBar()
+                status_bar.setFixedHeight(chrome.static_height)
+                status_bar.setProperty("mobaStatusStaticHeight", chrome.static_height)
+                status_bar.setProperty("mobaStatusSegmentStartRightOffset", chrome.segment_start_right_offset)
                 self.status_notice_label.setText(f"{chrome.notice} - {chrome.product_note}")
                 self.status_notice_label.setToolTip(f"{preset.label}: {chrome.product_note}")
                 self.status_notice_label.setProperty("productStatusKey", "notice")
+                self.status_notice_label.setProperty("mobaStatusNoticeX", chrome.notice_x)
+                self.status_notice_label.setProperty("mobaStatusNoticeY", chrome.notice_y)
+                self.status_notice_label.setProperty("mobaStatusProductNoteX", chrome.product_note_x)
+                self.status_notice_label.setProperty("mobaStatusProductNoteY", chrome.product_note_y)
+                self.status_notice_label.setProperty("mobaStatusTextFontSize", chrome.text_font_size)
                 self.status_marker_label.setText(chrome.right_marker)
                 self.status_marker_label.setToolTip(chrome.right_marker_tooltip)
                 self.status_marker_label.setProperty("productStatusKey", "right-marker")
+                self.status_marker_label.setProperty("mobaStatusMarkerRightInset", chrome.marker_right_inset)
+                self.status_marker_label.setProperty("mobaStatusMarkerY", chrome.marker_y)
+                self.status_marker_label.setProperty("mobaStatusMarkerWidth", chrome.marker_width)
+                self.status_marker_label.setProperty("mobaStatusMarkerHeight", chrome.marker_height)
                 self.moba_bottom_edge_controls.setVisible(True)
                 for label, segment in zip(self.status_segment_labels, gui_design_moba_status_segments(), strict=False):
                     label.setText(segment.text)
                     label.setToolTip(segment.tooltip)
                     label.setProperty("productStatusKey", segment.key)
                 return
+            self.statusBar().setFixedHeight(22)
             self.status_notice_label.setText("Remote Ops Workspace")
             self.status_notice_label.setToolTip(preset.description)
             self.status_notice_label.setProperty("productStatusKey", "notice")
@@ -2410,7 +2647,6 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 self.moba_left_stack.removeWidget(self.moba_connected_dock)
                 self.moba_connected_dock.deleteLater()
             self.moba_connected_dock = MobaSftpDock(state)
-            self.moba_connected_dock.setObjectName("mobaConnectedLeftDock")
             self.moba_left_stack.addWidget(self.moba_connected_dock)
             self.moba_left_stack.setCurrentWidget(self.moba_connected_dock)
             self.set_moba_quick_connect_connected_idle()
@@ -2462,6 +2698,35 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             for widget in (self.moba_quick_connect_chrome, self.quick_connect, self.quick_connect_suggestions):
                 widget.setProperty("mobaQuickConnectConnectedMode", "")
                 widget.setProperty("mobaQuickConnectConnectedSuggestionVisible", False)
+
+        def apply_moba_top_stack_geometry(self) -> None:
+            stack = gui_design_moba_top_stack_geometry()
+            properties = {
+                "mobaTopStackTitlebarHeight": stack.titlebar_height,
+                "mobaTopStackMenuY": stack.menu_y,
+                "mobaTopStackMenuHeight": stack.menu_height,
+                "mobaTopStackRibbonY": stack.ribbon_y,
+                "mobaTopStackRibbonHeight": stack.ribbon_height,
+                "mobaTopStackQuickConnectY": stack.quick_connect_y,
+                "mobaTopStackQuickConnectHeight": stack.quick_connect_height,
+                "mobaTopStackLeftDockY": stack.left_dock_y,
+                "mobaTopStackTabY": stack.tab_y,
+                "mobaTopStackTabHeight": stack.tab_height,
+                "mobaTopStackTerminalContentY": stack.terminal_content_y,
+                "mobaTopStackStatusHeight": stack.status_height,
+                "mobaTopStackSideWidth": stack.side_width,
+                "mobaTopStackRailWidth": stack.rail_width,
+            }
+            for key, value in properties.items():
+                self.setProperty(key, value)
+            self.menuBar().setProperty("mobaTopStackMenuY", stack.menu_y)
+            self.menuBar().setProperty("mobaTopStackMenuHeight", stack.menu_height)
+            self.main_toolbar.setProperty("mobaTopStackRibbonY", stack.ribbon_y)
+            self.main_toolbar.setProperty("mobaTopStackRibbonHeight", stack.ribbon_height)
+            self.moba_quick_connect_chrome.setProperty("mobaTopStackQuickConnectY", stack.quick_connect_y)
+            self.moba_quick_connect_chrome.setProperty("mobaTopStackQuickConnectHeight", stack.quick_connect_height)
+            self.tabs.setProperty("mobaTopStackTabY", stack.tab_y)
+            self.tabs.setProperty("mobaTopStackTabHeight", stack.tab_height)
 
         def apply_moba_titlebar_chrome(self, title: str) -> None:
             chrome = gui_design_moba_titlebar_chrome()
@@ -2775,10 +3040,14 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.configure_toolbar_copy_for_design(preset)
             self.configure_status_bar_for_design(preset)
             self.configure_toolbar_for_design(preset, is_moba, preset.toolbar_icon_size)
+            if is_moba:
+                self.apply_moba_top_stack_geometry()
             self.configure_interaction_states_for_design(preset)
-            self.left_panel.setMinimumWidth(min(preset.profile_width, 430))
+            moba_frame = gui_design_moba_connected_dock_frame()
+            profile_width = moba_frame.side_width if is_moba else preset.profile_width
+            self.left_panel.setMinimumWidth(min(profile_width, 430))
             self.configure_profile_tree_for_design(is_moba, preset.list_spacing)
-            self.root_splitter.setSizes([preset.profile_width, max(620, self.width() - preset.profile_width)])
+            self.root_splitter.setSizes([profile_width, max(620, self.width() - profile_width)])
             if is_moba:
                 self.workspace.setSizes([max(620, self.height()), 0])
             else:
@@ -2818,8 +3087,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             for widget in moba_widgets:
                 widget.setVisible(is_moba)
             if is_moba:
-                self.main_toolbar.setMinimumHeight(64)
-                self.main_toolbar.setMaximumHeight(64)
+                top_stack = gui_design_moba_top_stack_geometry()
+                self.main_toolbar.setMinimumHeight(top_stack.ribbon_height)
+                self.main_toolbar.setMaximumHeight(top_stack.ribbon_height)
+                self.main_toolbar.setProperty("mobaTopStackRibbonY", top_stack.ribbon_y)
+                self.main_toolbar.setProperty("mobaTopStackRibbonHeight", top_stack.ribbon_height)
                 for button in self.moba_ribbon_buttons:
                     button.setIconSize(icon)
                     button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
@@ -2970,6 +3242,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             panel.setProperty("mobaQuickConnectSuggestionQuery", suggestions.preview_query)
             panel.setProperty("mobaQuickConnectSuggestionExpectedKinds", list(suggestions.expected_kinds))
             panel.setProperty("mobaQuickConnectSuggestionMaxRows", suggestions.max_visible_rows)
+            stack = gui_design_moba_top_stack_geometry()
+            panel.setProperty("mobaTopStackQuickConnectY", stack.quick_connect_y)
+            panel.setProperty("mobaTopStackQuickConnectHeight", stack.quick_connect_height)
             panel.setFixedHeight(chrome.static_height)
             panel.setFocusProxy(self.quick_connect)
             layout = QHBoxLayout(panel)
@@ -3343,10 +3618,28 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             if index < 0:
                 return
             widget = self.tabs.widget(index)
+            geometry = moba_connected_tab_chrome_geometry_for(key)
+            self.tabs.setProperty(
+                "mobaTabChromeGeometryKeys",
+                [item.key for item in moba_connected_tab_chrome_geometry_items()],
+            )
             if widget is not None:
                 widget.setProperty("mobaTabChromeKey", key)
                 widget.setProperty("mobaTabIconKey", icon_key)
                 widget.setProperty("mobaTabCloseable", closeable)
+                widget.setProperty("mobaTabStaticWidth", geometry.width)
+                widget.setProperty("mobaTabStaticHeight", geometry.height)
+                widget.setProperty("mobaTabCornerRadius", geometry.corner_radius)
+                widget.setProperty("mobaTabIconX", geometry.icon_x)
+                widget.setProperty("mobaTabIconY", geometry.icon_y)
+                widget.setProperty("mobaTabIconSize", geometry.icon_size)
+                widget.setProperty("mobaTabLabelX", geometry.label_x)
+                widget.setProperty("mobaTabLabelY", geometry.label_y)
+                widget.setProperty("mobaTabCloseRightOffset", geometry.close_right_offset)
+                widget.setProperty("mobaTabCloseY", geometry.close_y)
+                widget.setProperty("mobaTabPlusX", geometry.plus_x)
+                widget.setProperty("mobaTabPlusY", geometry.plus_y)
+                widget.setProperty("mobaTabGapAfter", geometry.gap_after)
             self.tabs.setIconSize(QSize(16, 16))
             self.tabs.setTabIcon(index, self.moba_ribbon_icon(icon_key, "#d6a72d", size=18))
             self.tabs.setTabToolTip(index, tooltip)

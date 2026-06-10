@@ -67,8 +67,10 @@ def test_real_gui_render_manifest_contract_names_required_widgets() -> None:
     assert checker.COMMON_REQUIRED_WIDGETS["productWorkflowEvidence"] == "product workflow evidence strip"
     assert checker.COMMON_REQUIRED_WIDGETS["productWorkspaceSurface"] == "product workspace evidence surface"
     assert checker.MOBA_CONNECTED_REQUIRED_WIDGETS["mobaConnectedLeftDock"] == "Moba connected SFTP/monitoring dock"
+    assert checker.MOBA_CONNECTED_REQUIRED_WIDGETS["mobaSftpBrowser"] == "Moba SFTP browser"
     assert checker.PRODUCT_STYLE_PRESETS == {"mobaxterm", "securecrt", "termius", "remmina", "mremoteng"}
     assert checker.EXPECTED_MOBA_RAIL_ROLES == {"collapse", "sessions", "favorites", "tools", "macros", "sftp"}
+    assert checker.EXPECTED_MOBA_CONNECTED_DOCK_FRAME.rail_width == 24
     assert checker.EXPECTED_MOBA_TOP_MENU_KEYS == [
         "terminal",
         "sessions",
@@ -144,6 +146,7 @@ def test_real_gui_render_manifest_contract_names_required_widgets() -> None:
         "command",
     ]
     assert "terminal" in checker.EXPECTED_MOBA_SFTP_ACTION_KEYS
+    assert checker.EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_GEOMETRY_BY_KEY["ascii-mode"].icon_x == 196
     assert checker.EXPECTED_MOBA_SFTP_BROWSER_CHROME.dropdown_marker == "v"
     assert checker.EXPECTED_MOBA_SFTP_COLUMN_KEYS == ["name", "size", "modified"]
     assert checker.EXPECTED_MOBA_SFTP_COLUMN_LABELS == ["Name", "Size (KB)", "Last modified"]
@@ -661,6 +664,7 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
     moba = summaries["mobaxterm"]
     assert "mobaQuickConnectChrome" in moba["required_widgets"]
     assert "mobaConnectedLeftDock" in moba["required_widgets"]
+    assert "mobaSftpBrowser" in moba["required_widgets"]
     assert "mobaSftpFileTable" in moba["required_widgets"]
     assert "mobaSessionEdgeControls" in moba["required_widgets"]
     assert "mobaRightUtilityRail" in moba["required_widgets"]
@@ -680,23 +684,34 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
     assert "moba-rail-labels" in moba["contract_checks"]
     assert "moba-home-welcome" in moba["contract_checks"]
     assert "titlebar-chrome" in moba["contract_checks"]
+    assert "top-stack-geometry" in moba["contract_checks"]
     assert "top-menu-chrome" in moba["contract_checks"]
+    assert "top-menu-geometry" in moba["contract_checks"]
+    assert "ribbon-geometry" in moba["contract_checks"]
     assert "quick-connect-chrome" in moba["contract_checks"]
     assert "quick-connect-suggestions" in moba["contract_checks"]
     assert "connected-quick-connect-idle" in moba["contract_checks"]
     assert "connected-tab-chrome" in moba["contract_checks"]
+    assert "connected-tab-geometry" in moba["contract_checks"]
+    assert "connected-dock-frame" in moba["contract_checks"]
     assert "session-edge-controls" in moba["contract_checks"]
     assert "right-utility-rail" in moba["contract_checks"]
     assert "ssh-banner-chrome" in moba["contract_checks"]
     assert "terminal-transcript" in moba["contract_checks"]
+    assert "terminal-transcript-geometry" in moba["contract_checks"]
     assert "sftp-toolbar-groups" in moba["contract_checks"]
+    assert "sftp-toolbar-geometry" in moba["contract_checks"]
     assert "sftp-dock-chrome" in moba["contract_checks"]
     assert "sftp-dock-density" in moba["contract_checks"]
     assert "sftp-browser-chrome" in moba["contract_checks"]
+    assert "sftp-browser-geometry" in moba["contract_checks"]
     assert "bottom-status-chrome" in moba["contract_checks"]
+    assert "bottom-status-geometry" in moba["contract_checks"]
+    assert "bottom-telemetry-geometry" in moba["contract_checks"]
     assert "bottom-edge-controls" in moba["contract_checks"]
     assert "live-topology" in moba["contract_checks"]
     assert "remote-monitoring-dock" in moba["contract_checks"]
+    assert "remote-monitoring-footer-geometry" in moba["contract_checks"]
     assert "moba-monitoring-controls" in moba["contract_checks"]
     assert "terminal" in moba["expected_moba_sftp_action_keys"]
     assert [item["key"] for item in moba["expected_moba_sftp_toolbar_groups"]] == [
@@ -717,6 +732,129 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "upload",
         "delete",
         "tools",
+    ]
+    assert moba["expected_moba_sftp_toolbar_action_geometry"] == [
+        {
+            "key": "parent-folder",
+            "button_x": 3,
+            "button_y": 1,
+            "button_size": 24,
+            "icon_x": 7,
+            "icon_y": 5,
+            "icon_size": 16,
+            "separator_after": True,
+            "separator_x": 34,
+        },
+        {
+            "key": "download",
+            "button_x": 34,
+            "button_y": 1,
+            "button_size": 24,
+            "icon_x": 38,
+            "icon_y": 5,
+            "icon_size": 16,
+            "separator_after": False,
+            "separator_x": 0,
+        },
+        {
+            "key": "upload",
+            "button_x": 58,
+            "button_y": 1,
+            "button_size": 24,
+            "icon_x": 62,
+            "icon_y": 5,
+            "icon_size": 16,
+            "separator_after": True,
+            "separator_x": 89,
+        },
+        {
+            "key": "connect",
+            "button_x": 89,
+            "button_y": 1,
+            "button_size": 24,
+            "icon_x": 93,
+            "icon_y": 5,
+            "icon_size": 16,
+            "separator_after": False,
+            "separator_x": 0,
+        },
+        {
+            "key": "new-folder",
+            "button_x": 113,
+            "button_y": 1,
+            "button_size": 24,
+            "icon_x": 117,
+            "icon_y": 5,
+            "icon_size": 16,
+            "separator_after": False,
+            "separator_x": 0,
+        },
+        {
+            "key": "new-file",
+            "button_x": 137,
+            "button_y": 1,
+            "button_size": 24,
+            "icon_x": 141,
+            "icon_y": 5,
+            "icon_size": 16,
+            "separator_after": False,
+            "separator_x": 0,
+        },
+        {
+            "key": "delete",
+            "button_x": 161,
+            "button_y": 1,
+            "button_size": 24,
+            "icon_x": 165,
+            "icon_y": 5,
+            "icon_size": 16,
+            "separator_after": True,
+            "separator_x": 192,
+        },
+        {
+            "key": "ascii-mode",
+            "button_x": 192,
+            "button_y": 1,
+            "button_size": 24,
+            "icon_x": 196,
+            "icon_y": 5,
+            "icon_size": 16,
+            "separator_after": False,
+            "separator_x": 0,
+        },
+        {
+            "key": "split-view",
+            "button_x": 216,
+            "button_y": 1,
+            "button_size": 24,
+            "icon_x": 220,
+            "icon_y": 5,
+            "icon_size": 16,
+            "separator_after": False,
+            "separator_x": 0,
+        },
+        {
+            "key": "tools",
+            "button_x": 240,
+            "button_y": 1,
+            "button_size": 24,
+            "icon_x": 244,
+            "icon_y": 5,
+            "icon_size": 16,
+            "separator_after": True,
+            "separator_x": 271,
+        },
+        {
+            "key": "terminal",
+            "button_x": 271,
+            "button_y": 1,
+            "button_size": 24,
+            "icon_x": 275,
+            "icon_y": 5,
+            "icon_size": 16,
+            "separator_after": False,
+            "separator_x": 0,
+        },
     ]
     assert "sftp-file-row-icons" in moba["contract_checks"]
     assert moba["expected_moba_sftp_file_row_icons"] == [
@@ -750,6 +888,14 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "visible_metric_keys": [],
         "refresh_seconds": 5,
         "compact": True,
+        "static_height": 116,
+        "divider_offset": 14,
+        "divider_left_inset": 18,
+        "divider_right_inset": 194,
+        "content_left": 42,
+        "icon_center_x": 104,
+        "metric_row_gap": 21,
+        "live_controls_width": 260,
     }
     assert moba["expected_moba_monitoring_controls"] == [
         {
@@ -790,7 +936,22 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         },
     ]
     assert "sftp-ready" in moba["expected_moba_status_keys"]
-    assert moba["expected_moba_status_chrome"]["notice"] == "REMOTE OPS WORKSPACE"
+    assert moba["expected_moba_status_chrome"] == {
+        "notice": "REMOTE OPS WORKSPACE",
+        "product_note": "open-protocol operator shell",
+        "right_marker": "[]",
+        "static_height": 22,
+        "notice_x": 6,
+        "notice_y": 6,
+        "product_note_x": 142,
+        "product_note_y": 6,
+        "text_font_size": 10,
+        "segment_start_right_offset": 480,
+        "marker_right_inset": 4,
+        "marker_y": 6,
+        "marker_width": 9,
+        "marker_height": 10,
+    }
     assert moba["expected_moba_bottom_edge_controls"] == [
         {"key": "tab-left", "icon_key": "arrow-left", "label": "Previous tab", "static_x": 1204},
         {"key": "tab-right", "icon_key": "arrow-right", "label": "Next tab", "static_x": 1224},
@@ -804,6 +965,12 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
     }
     assert [item["key"] for item in moba["expected_moba_top_menu"]] == checker.EXPECTED_MOBA_TOP_MENU_KEYS
     assert [item["label"] for item in moba["expected_moba_top_menu"]] == checker.EXPECTED_MOBA_TOP_MENU_LABELS
+    assert moba["expected_moba_top_menu_geometry"] == [
+        geometry.to_dict() for geometry in checker.EXPECTED_MOBA_TOP_MENU_GEOMETRY
+    ]
+    assert moba["expected_moba_ribbon_action_geometry"] == [
+        geometry.to_dict() for geometry in checker.EXPECTED_MOBA_RIBBON_ACTION_GEOMETRY
+    ]
     assert moba["expected_moba_titlebar_chrome"] == {
         "icon_key": "moba-window",
         "static_height": 22,
@@ -812,6 +979,34 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "title_left": 24,
         "control_keys": ["minimize", "maximize", "close"],
         "control_width": 24,
+    }
+    assert moba["expected_moba_top_stack_geometry"] == {
+        "titlebar_height": 22,
+        "menu_y": 22,
+        "menu_height": 22,
+        "ribbon_y": 44,
+        "ribbon_height": 64,
+        "quick_connect_y": 108,
+        "quick_connect_height": 24,
+        "left_dock_y": 132,
+        "tab_y": 108,
+        "tab_height": 28,
+        "terminal_content_y": 136,
+        "status_height": 22,
+        "side_width": 390,
+        "rail_width": 24,
+    }
+    assert moba["expected_moba_connected_dock_frame"] == {
+        "side_width": 390,
+        "rail_width": 24,
+        "dock_x": 24,
+        "dock_y": 132,
+        "dock_width": 366,
+        "dock_height": 606,
+        "workspace_x": 390,
+        "quick_connect_y": 108,
+        "quick_connect_height": 24,
+        "status_y": 738,
     }
     assert moba["expected_moba_quick_connect_chrome"] == {
         "placeholder": "Quick connect...",
@@ -858,6 +1053,25 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
             {"key": "modified", "label": "Last modified", "static_x": 266, "static_width": 94},
         ],
     }
+    assert moba["expected_moba_sftp_browser_geometry"] == {
+        "path_text_x": 14,
+        "path_text_y": 6,
+        "path_font_size": 11,
+        "dropdown_right_offset": 18,
+        "dropdown_y": 6,
+        "dropdown_font_size": 10,
+        "header_label_y": 7,
+        "header_font_size": 10,
+        "row_top_offset": -4,
+        "row_icon_x": 14,
+        "row_icon_y_offset": -1,
+        "row_name_x": 38,
+        "row_size_x": 202,
+        "row_modified_x": 278,
+        "row_text_y_offset": 0,
+        "row_text_font_size": 10,
+        "row_modified_font_size": 9,
+    }
     assert moba["expected_moba_sftp_dock_layout"] == {
         "inner_margin": 6,
         "toolbar_height": 26,
@@ -878,6 +1092,12 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "Web console: https://edge-prod.example.invalid:9090/ or https://192.0.2.10:9090/"
     )
     assert moba["expected_moba_terminal_transcript"][3]["text"] == "[operator@edge-prod ~]$ "
+    assert moba["expected_moba_terminal_transcript_row_geometry"] == [
+        {"key": "web-console", "static_x": 14, "static_y": 0, "row_height": 20, "font_size": 13},
+        {"key": "spacer", "static_x": 14, "static_y": 20, "row_height": 20, "font_size": 13},
+        {"key": "last-login", "static_x": 14, "static_y": 40, "row_height": 20, "font_size": 13},
+        {"key": "prompt-ready", "static_x": 14, "static_y": 60, "row_height": 20, "font_size": 13},
+    ]
     assert [cell["key"] for cell in moba["expected_moba_telemetry_cells"]] == (
         checker.EXPECTED_MOBA_TELEMETRY_CELL_KEYS
     )
@@ -887,12 +1107,200 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
     assert [cell["icon_size"] for cell in moba["expected_moba_telemetry_cells"]] == [12] * 8
     assert moba["expected_moba_telemetry_cells"][1]["icon_accent"] == "#f4c430"
     assert moba["expected_moba_telemetry_cells"][6]["display_text"] == "Connections: 1 (port 22)"
+    assert moba["expected_moba_telemetry_cell_geometry"] == [
+        {
+            "key": "target",
+            "static_x": 10,
+            "static_y": 1,
+            "width": 165,
+            "height": 22,
+            "icon_x": 5,
+            "icon_y": 5,
+            "icon_size": 12,
+            "label_x": 22,
+            "label_y": 6,
+            "label_font_size": 9,
+            "separator_top": 2,
+            "separator_bottom": 22,
+        },
+        {
+            "key": "cpu",
+            "static_x": 175,
+            "static_y": 1,
+            "width": 60,
+            "height": 22,
+            "icon_x": 5,
+            "icon_y": 5,
+            "icon_size": 12,
+            "label_x": 22,
+            "label_y": 6,
+            "label_font_size": 9,
+            "separator_top": 2,
+            "separator_bottom": 22,
+        },
+        {
+            "key": "memory",
+            "static_x": 235,
+            "static_y": 1,
+            "width": 125,
+            "height": 22,
+            "icon_x": 5,
+            "icon_y": 5,
+            "icon_size": 12,
+            "label_x": 22,
+            "label_y": 6,
+            "label_font_size": 9,
+            "separator_top": 2,
+            "separator_bottom": 22,
+        },
+        {
+            "key": "disk",
+            "static_x": 360,
+            "static_y": 1,
+            "width": 124,
+            "height": 22,
+            "icon_x": 5,
+            "icon_y": 5,
+            "icon_size": 12,
+            "label_x": 22,
+            "label_y": 6,
+            "label_font_size": 9,
+            "separator_top": 2,
+            "separator_bottom": 22,
+        },
+        {
+            "key": "net-up",
+            "static_x": 484,
+            "static_y": 1,
+            "width": 88,
+            "height": 22,
+            "icon_x": 5,
+            "icon_y": 5,
+            "icon_size": 12,
+            "label_x": 22,
+            "label_y": 6,
+            "label_font_size": 9,
+            "separator_top": 2,
+            "separator_bottom": 22,
+        },
+        {
+            "key": "net-down",
+            "static_x": 572,
+            "static_y": 1,
+            "width": 88,
+            "height": 22,
+            "icon_x": 5,
+            "icon_y": 5,
+            "icon_size": 12,
+            "label_x": 22,
+            "label_y": 6,
+            "label_font_size": 9,
+            "separator_top": 2,
+            "separator_bottom": 22,
+        },
+        {
+            "key": "connections",
+            "static_x": 660,
+            "static_y": 1,
+            "width": 145,
+            "height": 22,
+            "icon_x": 5,
+            "icon_y": 5,
+            "icon_size": 12,
+            "label_x": 22,
+            "label_y": 6,
+            "label_font_size": 9,
+            "separator_top": 2,
+            "separator_bottom": 22,
+        },
+        {
+            "key": "processes",
+            "static_x": 805,
+            "static_y": 1,
+            "width": 77,
+            "height": 22,
+            "icon_x": 5,
+            "icon_y": 5,
+            "icon_size": 12,
+            "label_x": 22,
+            "label_y": 6,
+            "label_font_size": 9,
+            "separator_top": 2,
+            "separator_bottom": 22,
+        },
+    ]
     assert moba["expected_moba_tab_chrome_keys"] == ["active-session", "home", "new-session"]
     assert moba["expected_moba_static_tab_chrome_keys"] == [
         "active-session",
         "home",
         "inactive-session",
         "new-session",
+    ]
+    assert moba["expected_moba_tab_chrome_geometry"] == [
+        {
+            "key": "home",
+            "width": 42,
+            "height": 22,
+            "corner_radius": 2,
+            "icon_x": 8,
+            "icon_y": 5,
+            "icon_size": 12,
+            "label_x": 26,
+            "label_y": 7,
+            "close_right_offset": 16,
+            "close_y": 6,
+            "plus_x": 11,
+            "plus_y": 3,
+            "gap_after": 4,
+        },
+        {
+            "key": "inactive-session",
+            "width": 226,
+            "height": 22,
+            "corner_radius": 2,
+            "icon_x": 8,
+            "icon_y": 5,
+            "icon_size": 12,
+            "label_x": 26,
+            "label_y": 7,
+            "close_right_offset": 16,
+            "close_y": 6,
+            "plus_x": 11,
+            "plus_y": 3,
+            "gap_after": 4,
+        },
+        {
+            "key": "active-session",
+            "width": 258,
+            "height": 22,
+            "corner_radius": 2,
+            "icon_x": 8,
+            "icon_y": 5,
+            "icon_size": 12,
+            "label_x": 26,
+            "label_y": 7,
+            "close_right_offset": 16,
+            "close_y": 6,
+            "plus_x": 11,
+            "plus_y": 3,
+            "gap_after": 4,
+        },
+        {
+            "key": "new-session",
+            "width": 32,
+            "height": 22,
+            "corner_radius": 2,
+            "icon_x": 8,
+            "icon_y": 5,
+            "icon_size": 12,
+            "label_x": 26,
+            "label_y": 7,
+            "close_right_offset": 16,
+            "close_y": 6,
+            "plus_x": 11,
+            "plus_y": 3,
+            "gap_after": 4,
+        },
     ]
     assert moba["expected_moba_right_utility_keys"] == ["clip", "settings", "tools"]
     assert "right-utility-rail-geometry" in moba["contract_checks"]
@@ -943,9 +1351,87 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "target_intro": "SSH session to",
         "capability_label_width": 15,
         "footer_prefix": "For more info, ctrl+click on",
+        "static_left_offset": 42,
+        "static_top_offset": 12,
         "static_width": 570,
         "static_height": 166,
+        "body_top_offset": 54,
+        "terminal_gap": 18,
     }
+    assert moba["expected_moba_ssh_banner_row_geometry"] == [
+        {
+            "key": "title",
+            "object_name": "mobaSshBannerTitle",
+            "static_x": 0,
+            "static_y": 10,
+            "static_width": 570,
+            "static_height": 16,
+            "centered": True,
+        },
+        {
+            "key": "subtitle",
+            "object_name": "mobaSshBannerSubtitle",
+            "static_x": 0,
+            "static_y": 27,
+            "static_width": 570,
+            "static_height": 16,
+            "centered": True,
+        },
+        {
+            "key": "target",
+            "object_name": "mobaSshBannerTargetLine",
+            "static_x": 14,
+            "static_y": 54,
+            "static_width": 542,
+            "static_height": 16,
+            "centered": False,
+        },
+        {
+            "key": "direct-ssh",
+            "object_name": "mobaSshBannerCapability",
+            "static_x": 14,
+            "static_y": 70,
+            "static_width": 542,
+            "static_height": 16,
+            "centered": False,
+        },
+        {
+            "key": "ssh-compression",
+            "object_name": "mobaSshBannerCapability",
+            "static_x": 14,
+            "static_y": 86,
+            "static_width": 542,
+            "static_height": 16,
+            "centered": False,
+        },
+        {
+            "key": "ssh-browser",
+            "object_name": "mobaSshBannerCapability",
+            "static_x": 14,
+            "static_y": 102,
+            "static_width": 542,
+            "static_height": 16,
+            "centered": False,
+        },
+        {
+            "key": "x11-forwarding",
+            "object_name": "mobaSshBannerCapability",
+            "static_x": 14,
+            "static_y": 118,
+            "static_width": 542,
+            "static_height": 16,
+            "centered": False,
+        },
+        {
+            "key": "footer",
+            "object_name": "mobaSshBannerFooter",
+            "static_x": 14,
+            "static_y": 138,
+            "static_width": 542,
+            "static_height": 16,
+            "centered": False,
+        },
+    ]
     assert moba["expected_moba_ssh_banner_capability_card"]["target"] == "edge-prod.example.invalid"
     assert [row["key"] for row in moba["expected_moba_ssh_banner_capability_card"]["capabilities"]] == [
         "direct-ssh",
@@ -955,6 +1441,7 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
     ]
     assert moba["expected_moba_ssh_banner_capability_card"]["footer_links"] == ["help", "website"]
     assert "ssh-banner-capability-card" in moba["contract_checks"]
+    assert "ssh-banner-row-geometry" in moba["contract_checks"]
     assert "workspace-surface" not in moba["contract_checks"]
 
     securecrt = summaries["securecrt"]

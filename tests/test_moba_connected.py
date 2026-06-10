@@ -8,9 +8,13 @@ from remote_ops_workspace.moba_connected import (
     build_remote_monitoring_plan,
     build_ssh_connection_banner,
     moba_connected_profile_label,
+    moba_connected_tab_chrome_geometry_for,
+    moba_connected_tab_chrome_geometry_items,
     moba_connected_tab_chrome_items,
     moba_connected_tab_label,
     moba_connected_window_title,
+    moba_telemetry_cell_geometry,
+    moba_telemetry_cell_geometry_for,
     moba_telemetry_cells,
     moba_telemetry_segments,
     normalise_remote_path,
@@ -145,6 +149,34 @@ def test_bottom_telemetry_cells_match_reference_like_status_strip() -> None:
     ]
 
 
+def test_bottom_telemetry_cell_geometry_tracks_reference_offsets() -> None:
+    geometry = moba_telemetry_cell_geometry()
+
+    assert [item.key for item in geometry] == [
+        "target",
+        "cpu",
+        "memory",
+        "disk",
+        "net-up",
+        "net-down",
+        "connections",
+        "processes",
+    ]
+    assert [item.static_x for item in geometry] == [10, 175, 235, 360, 484, 572, 660, 805]
+    assert [item.width for item in geometry] == [165, 60, 125, 124, 88, 88, 145, 77]
+    assert {item.static_y for item in geometry} == {1}
+    assert {item.height for item in geometry} == {22}
+    assert {item.icon_x for item in geometry} == {5}
+    assert {item.icon_y for item in geometry} == {5}
+    assert {item.icon_size for item in geometry} == {12}
+    assert {item.label_x for item in geometry} == {22}
+    assert {item.label_y for item in geometry} == {6}
+    assert {item.label_font_size for item in geometry} == {9}
+    assert {item.separator_top for item in geometry} == {2}
+    assert {item.separator_bottom for item in geometry} == {22}
+    assert moba_telemetry_cell_geometry_for("connections").static_x == 660
+
+
 def test_connected_tab_chrome_tracks_reference_tab_sequence_without_user_samples() -> None:
     state = build_moba_connected_session_state(ssh_profile())
     items = moba_connected_tab_chrome_items(state)
@@ -156,8 +188,29 @@ def test_connected_tab_chrome_tracks_reference_tab_sequence_without_user_samples
     assert items[2].label == "7. example.internal (operator)"
     assert items[2].active is True
     assert items[2].closeable is True
+    assert [item.width for item in items] == [42, 226, 258, 32]
     assert items[3].label == "+"
     assert "yunus" not in " ".join(item.label.lower() for item in items)
+
+
+def test_connected_tab_chrome_geometry_tracks_reference_offsets() -> None:
+    geometry = moba_connected_tab_chrome_geometry_items()
+
+    assert [item.key for item in geometry] == ["home", "inactive-session", "active-session", "new-session"]
+    assert [item.width for item in geometry] == [42, 226, 258, 32]
+    assert {item.height for item in geometry} == {22}
+    assert {item.corner_radius for item in geometry} == {2}
+    assert {item.icon_x for item in geometry} == {8}
+    assert {item.icon_y for item in geometry} == {5}
+    assert {item.icon_size for item in geometry} == {12}
+    assert {item.label_x for item in geometry} == {26}
+    assert {item.label_y for item in geometry} == {7}
+    assert {item.close_right_offset for item in geometry} == {16}
+    assert {item.close_y for item in geometry} == {6}
+    assert {item.plus_x for item in geometry} == {11}
+    assert {item.plus_y for item in geometry} == {3}
+    assert {item.gap_after for item in geometry} == {4}
+    assert moba_connected_tab_chrome_geometry_for("active-session").width == 258
 
 
 def test_terminal_transcript_uses_generic_connected_state_without_user_samples() -> None:

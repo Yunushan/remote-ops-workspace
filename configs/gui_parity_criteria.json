@@ -24,19 +24,19 @@
         "User-approved MobaXterm-style home reference screenshot with centered welcome title, primary/recover actions, session search, recent sessions and footer notice."
       ],
       "dimension_coverage": {
-        "layout": ["moba.titlebar-chrome", "moba.quick-connect-chrome", "moba.quick-connect-suggestions", "moba.connected-quick-connect-idle", "moba.home-welcome-surface", "moba.connected-left-dock", "moba.remote-monitoring-compact-dock", "moba.session-edge-controls", "moba.right-utility-rail", "moba.bottom-telemetry", "moba.reference-line-anchors", "moba.reference-topology"],
-        "navigation": ["moba.titlebar-chrome", "moba.top-menu-chrome", "moba.quick-connect-rail", "moba.quick-connect-chrome", "moba.quick-connect-suggestions", "moba.connected-quick-connect-idle", "moba.home-welcome-surface", "moba.rail-section-labels", "moba.session-edge-controls", "moba.bottom-edge-controls", "moba.reference-line-anchors"],
-        "panes": ["moba.connected-left-dock", "moba.sftp-dock-chrome", "moba.sftp-dock-density", "moba.sftp-browser-chrome", "moba.ssh-banner", "moba.ssh-banner-chrome", "moba.ssh-banner-capability-card", "moba.terminal-transcript"],
-        "tabs": ["moba.titlebar-chrome", "moba.home-welcome-surface", "moba.live-dock-switch", "moba.connected-tab-chrome", "moba.session-edge-controls", "moba.bottom-edge-controls", "moba.connected-session-chrome", "moba.reference-line-anchors"],
-        "sidebars": ["moba.quick-connect-rail", "moba.quick-connect-chrome", "moba.quick-connect-suggestions", "moba.connected-quick-connect-idle", "moba.rail-section-labels", "moba.connected-left-dock", "moba.reference-line-anchors"],
-        "toolbars": ["moba.top-menu-chrome", "moba.menu-ribbon", "moba.ribbon-pictograms", "moba.sftp-dock-chrome", "moba.sftp-toolbar-groups", "moba.sftp-dock-density"],
+        "layout": ["moba.titlebar-chrome", "moba.top-stack-geometry", "moba.top-menu-geometry", "moba.ribbon-geometry", "moba.quick-connect-chrome", "moba.quick-connect-suggestions", "moba.connected-quick-connect-idle", "moba.home-welcome-surface", "moba.connected-left-dock", "moba.connected-dock-frame", "moba.remote-monitoring-compact-dock", "moba.remote-monitoring-footer-geometry", "moba.session-edge-controls", "moba.right-utility-rail", "moba.ssh-banner-row-geometry", "moba.terminal-transcript-geometry", "moba.bottom-telemetry", "moba.bottom-telemetry-geometry", "moba.bottom-status-geometry", "moba.reference-line-anchors", "moba.reference-topology"],
+        "navigation": ["moba.titlebar-chrome", "moba.top-stack-geometry", "moba.top-menu-chrome", "moba.top-menu-geometry", "moba.quick-connect-rail", "moba.quick-connect-chrome", "moba.quick-connect-suggestions", "moba.connected-quick-connect-idle", "moba.home-welcome-surface", "moba.rail-section-labels", "moba.session-edge-controls", "moba.bottom-edge-controls", "moba.reference-line-anchors"],
+        "panes": ["moba.connected-left-dock", "moba.connected-dock-frame", "moba.sftp-dock-chrome", "moba.sftp-dock-density", "moba.sftp-browser-chrome", "moba.sftp-browser-geometry", "moba.ssh-banner", "moba.ssh-banner-chrome", "moba.ssh-banner-capability-card", "moba.ssh-banner-row-geometry", "moba.terminal-transcript", "moba.terminal-transcript-geometry"],
+        "tabs": ["moba.titlebar-chrome", "moba.top-stack-geometry", "moba.home-welcome-surface", "moba.live-dock-switch", "moba.connected-tab-chrome", "moba.connected-tab-geometry", "moba.session-edge-controls", "moba.bottom-edge-controls", "moba.connected-session-chrome", "moba.reference-line-anchors"],
+        "sidebars": ["moba.top-stack-geometry", "moba.quick-connect-rail", "moba.quick-connect-chrome", "moba.quick-connect-suggestions", "moba.connected-quick-connect-idle", "moba.rail-section-labels", "moba.connected-left-dock", "moba.connected-dock-frame", "moba.remote-monitoring-footer-geometry", "moba.reference-line-anchors"],
+        "toolbars": ["moba.top-stack-geometry", "moba.top-menu-chrome", "moba.top-menu-geometry", "moba.menu-ribbon", "moba.ribbon-pictograms", "moba.ribbon-geometry", "moba.sftp-dock-chrome", "moba.sftp-toolbar-groups", "moba.sftp-toolbar-geometry", "moba.sftp-dock-density"],
         "session_trees": ["moba.session-tree"],
-        "connected_session_behavior": ["moba.titlebar-chrome", "moba.live-dock-switch", "moba.ssh-banner", "moba.ssh-banner-chrome", "moba.ssh-banner-capability-card", "moba.terminal-transcript", "moba.quick-connect-suggestions", "moba.connected-quick-connect-idle", "moba.session-edge-controls", "moba.right-utility-rail", "moba.connected-tab-chrome", "moba.bottom-edge-controls", "moba.connected-session-chrome", "moba.monitoring-controls", "moba.remote-monitoring-compact-dock"],
-        "file_monitoring_panels": ["moba.sftp-table", "moba.sftp-dock-chrome", "moba.sftp-toolbar-groups", "moba.sftp-dock-density", "moba.sftp-browser-chrome", "moba.connected-quick-connect-idle", "moba.remote-monitoring", "moba.monitoring-controls", "moba.remote-monitoring-compact-dock"],
-        "status_bars": ["moba.status-segments", "moba.bottom-status-chrome", "moba.bottom-edge-controls", "moba.bottom-telemetry", "moba.connected-session-chrome", "moba.remote-monitoring-compact-dock", "moba.reference-line-anchors"],
-        "density": ["moba.density-spacing", "moba.titlebar-chrome", "moba.top-menu-chrome", "moba.quick-connect-chrome", "moba.quick-connect-suggestions", "moba.connected-quick-connect-idle", "moba.home-welcome-surface", "moba.rail-section-labels", "moba.sftp-dock-chrome", "moba.sftp-toolbar-groups", "moba.sftp-dock-density", "moba.sftp-browser-chrome", "moba.remote-monitoring-compact-dock", "moba.ssh-banner-chrome", "moba.ssh-banner-capability-card", "moba.terminal-transcript", "moba.bottom-status-chrome", "moba.bottom-edge-controls", "moba.session-edge-controls", "moba.right-utility-rail", "moba.connected-tab-chrome", "moba.reference-line-anchors"],
-        "spacing": ["moba.density-spacing", "moba.titlebar-chrome", "moba.top-menu-chrome", "moba.quick-connect-chrome", "moba.quick-connect-suggestions", "moba.connected-quick-connect-idle", "moba.home-welcome-surface", "moba.rail-section-labels", "moba.sftp-dock-chrome", "moba.sftp-toolbar-groups", "moba.sftp-dock-density", "moba.sftp-browser-chrome", "moba.remote-monitoring-compact-dock", "moba.ssh-banner-chrome", "moba.ssh-banner-capability-card", "moba.terminal-transcript", "moba.bottom-status-chrome", "moba.bottom-edge-controls", "moba.session-edge-controls", "moba.right-utility-rail", "moba.connected-tab-chrome", "moba.reference-line-anchors"],
-        "interaction_states": ["moba.interaction-states", "moba.titlebar-chrome", "moba.top-menu-chrome", "moba.quick-connect-chrome", "moba.quick-connect-suggestions", "moba.connected-quick-connect-idle", "moba.home-welcome-surface", "moba.rail-section-labels", "moba.sftp-dock-chrome", "moba.sftp-toolbar-groups", "moba.session-edge-controls", "moba.bottom-edge-controls", "moba.right-utility-rail", "moba.connected-tab-chrome", "moba.connected-session-chrome", "moba.monitoring-controls", "moba.remote-monitoring-compact-dock", "moba.ssh-banner-capability-card"]
+        "connected_session_behavior": ["moba.titlebar-chrome", "moba.live-dock-switch", "moba.ssh-banner", "moba.ssh-banner-chrome", "moba.ssh-banner-capability-card", "moba.ssh-banner-row-geometry", "moba.terminal-transcript", "moba.terminal-transcript-geometry", "moba.quick-connect-suggestions", "moba.connected-quick-connect-idle", "moba.session-edge-controls", "moba.right-utility-rail", "moba.connected-tab-chrome", "moba.connected-tab-geometry", "moba.connected-dock-frame", "moba.sftp-toolbar-geometry", "moba.bottom-edge-controls", "moba.bottom-telemetry-geometry", "moba.connected-session-chrome", "moba.monitoring-controls", "moba.remote-monitoring-compact-dock", "moba.remote-monitoring-footer-geometry"],
+        "file_monitoring_panels": ["moba.sftp-table", "moba.sftp-dock-chrome", "moba.sftp-toolbar-groups", "moba.sftp-toolbar-geometry", "moba.sftp-dock-density", "moba.sftp-browser-chrome", "moba.sftp-browser-geometry", "moba.connected-dock-frame", "moba.connected-quick-connect-idle", "moba.remote-monitoring", "moba.monitoring-controls", "moba.remote-monitoring-compact-dock", "moba.remote-monitoring-footer-geometry"],
+        "status_bars": ["moba.status-segments", "moba.bottom-status-chrome", "moba.bottom-status-geometry", "moba.bottom-edge-controls", "moba.bottom-telemetry", "moba.bottom-telemetry-geometry", "moba.connected-session-chrome", "moba.remote-monitoring-compact-dock", "moba.remote-monitoring-footer-geometry", "moba.reference-line-anchors"],
+        "density": ["moba.density-spacing", "moba.titlebar-chrome", "moba.top-stack-geometry", "moba.top-menu-chrome", "moba.top-menu-geometry", "moba.ribbon-geometry", "moba.quick-connect-chrome", "moba.quick-connect-suggestions", "moba.connected-quick-connect-idle", "moba.home-welcome-surface", "moba.rail-section-labels", "moba.sftp-dock-chrome", "moba.sftp-toolbar-groups", "moba.sftp-toolbar-geometry", "moba.sftp-dock-density", "moba.sftp-browser-chrome", "moba.sftp-browser-geometry", "moba.connected-dock-frame", "moba.remote-monitoring-compact-dock", "moba.remote-monitoring-footer-geometry", "moba.ssh-banner-chrome", "moba.ssh-banner-capability-card", "moba.ssh-banner-row-geometry", "moba.terminal-transcript", "moba.terminal-transcript-geometry", "moba.bottom-telemetry-geometry", "moba.bottom-status-chrome", "moba.bottom-status-geometry", "moba.bottom-edge-controls", "moba.session-edge-controls", "moba.right-utility-rail", "moba.connected-tab-chrome", "moba.connected-tab-geometry", "moba.reference-line-anchors"],
+        "spacing": ["moba.density-spacing", "moba.titlebar-chrome", "moba.top-stack-geometry", "moba.top-menu-chrome", "moba.top-menu-geometry", "moba.ribbon-geometry", "moba.quick-connect-chrome", "moba.quick-connect-suggestions", "moba.connected-quick-connect-idle", "moba.home-welcome-surface", "moba.rail-section-labels", "moba.sftp-dock-chrome", "moba.sftp-toolbar-groups", "moba.sftp-toolbar-geometry", "moba.sftp-dock-density", "moba.sftp-browser-chrome", "moba.sftp-browser-geometry", "moba.connected-dock-frame", "moba.remote-monitoring-compact-dock", "moba.remote-monitoring-footer-geometry", "moba.ssh-banner-chrome", "moba.ssh-banner-capability-card", "moba.ssh-banner-row-geometry", "moba.terminal-transcript", "moba.terminal-transcript-geometry", "moba.bottom-telemetry-geometry", "moba.bottom-status-chrome", "moba.bottom-status-geometry", "moba.bottom-edge-controls", "moba.session-edge-controls", "moba.right-utility-rail", "moba.connected-tab-chrome", "moba.connected-tab-geometry", "moba.reference-line-anchors"],
+        "interaction_states": ["moba.interaction-states", "moba.titlebar-chrome", "moba.top-stack-geometry", "moba.top-menu-chrome", "moba.top-menu-geometry", "moba.ribbon-geometry", "moba.quick-connect-chrome", "moba.quick-connect-suggestions", "moba.connected-quick-connect-idle", "moba.home-welcome-surface", "moba.rail-section-labels", "moba.sftp-dock-chrome", "moba.sftp-toolbar-groups", "moba.sftp-toolbar-geometry", "moba.session-edge-controls", "moba.bottom-edge-controls", "moba.right-utility-rail", "moba.connected-tab-chrome", "moba.connected-tab-geometry", "moba.connected-session-chrome", "moba.monitoring-controls", "moba.remote-monitoring-compact-dock", "moba.remote-monitoring-footer-geometry", "moba.ssh-banner-capability-card", "moba.ssh-banner-row-geometry", "moba.terminal-transcript-geometry"]
       },
       "requirements": [
         {
@@ -51,6 +51,18 @@
           }
         },
         {
+          "id": "moba.top-stack-geometry",
+          "description": "MobaXterm-style top chrome stack pins the titlebar, menu row, ribbon, Quick Connect strip, connected tab strip, terminal content start and left-dock offsets to one shared static/live geometry contract.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiMobaTopStackGeometry", "GUI_DESIGN_MOBA_TOP_STACK_GEOMETRY", "gui_design_moba_top_stack_geometry"],
+            "scripts/render_gui_design_previews.py": ["gui_design_moba_top_stack_geometry", "top_stack.ribbon_y", "top_stack.left_dock_y"],
+            "src/remote_ops_workspace/gui.py": ["apply_moba_top_stack_geometry", "mobaTopStackRibbonHeight", "mobaTopStackQuickConnectY"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_MOBA_TOP_STACK_GEOMETRY", "top-stack-geometry", "expected_moba_top_stack_geometry"],
+            "configs/gui_visual_metrics.json": ["titlebar-bottom-rule", "ribbon-bottom-rule", "quick-connect-top-blue-border", "tab-strip-baseline"],
+            "docs/GUI_DESIGN.md": ["MobaXterm-style top chrome stack geometry"]
+          }
+        },
+        {
           "id": "moba.top-menu-chrome",
           "description": "MobaXterm-style top menu row uses shared static/live metadata for Terminal, Sessions, View, X server, Tools, Games, Settings, Macros and Help, with stable keys and primary actions.",
           "source_tokens": {
@@ -62,11 +74,23 @@
           }
         },
         {
+          "id": "moba.top-menu-geometry",
+          "description": "MobaXterm-style top menu row pins each menu label x offset, width, y offset, font size and gap through shared static/live geometry metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiMobaTopMenuGeometry", "GUI_DESIGN_MOBA_TOP_MENU_GEOMETRY", "gui_design_moba_top_menu_geometry_for"],
+            "scripts/render_gui_design_previews.py": ["gui_design_moba_top_menu_geometry_for", "geometry.static_x", "geometry.label_font_size"],
+            "src/remote_ops_workspace/gui.py": ["mobaTopMenuStaticX", "mobaTopMenuWidth", "mobaTopMenuLabelFontSize"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_MOBA_TOP_MENU_GEOMETRY", "top-menu-geometry", "expected_moba_top_menu_geometry"],
+            "configs/gui_visual_metrics.json": ["top-menu-strip"],
+            "docs/GUI_DESIGN.md": ["MobaXterm-style top menu geometry"]
+          }
+        },
+        {
           "id": "moba.menu-ribbon",
           "description": "Top menu and large ribbon actions cover session, server, tools, games, split, multiexec, tunneling, packages, settings, help, X server and exit affordances.",
           "source_tokens": {
-            "scripts/render_gui_design_previews.py": ["gui_design_moba_ribbon_actions", "X server", "Exit"],
-            "src/remote_ops_workspace/gui.py": ["build_moba_ribbon_buttons", "mobaXServerAction", "mobaExitAction"],
+            "scripts/render_gui_design_previews.py": ["gui_design_moba_ribbon_actions", "gui_design_moba_ribbon_edge_actions"],
+            "src/remote_ops_workspace/gui.py": ["build_moba_ribbon_buttons", "gui_design_moba_ribbon_edge_actions", "mobaXServerAction", "mobaExitAction"],
             "configs/gui_visual_metrics.json": ["ribbon-right-actions", "ribbon-xserver-action", "ribbon-exit-action"]
           }
         },
@@ -79,6 +103,18 @@
             "src/remote_ops_workspace/gui.py": ["moba_ribbon_icon", "draw_moba_ribbon_icon", "mobaIconKey", "gui_design_moba_ribbon_actions"],
             "scripts/check_real_gui_render.py": ["mobaIconKey", "gui_design_moba_ribbon_actions", "must use a generated ribbon icon"],
             "configs/gui_visual_metrics.json": ["ribbon-right-actions-inside-ribbon"]
+          }
+        },
+        {
+          "id": "moba.ribbon-geometry",
+          "description": "MobaXterm-style top ribbon pins each main and right-edge action width, icon offset, label offset, separator span and active-outline bounds through shared static/live geometry metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiMobaRibbonActionGeometry", "GUI_DESIGN_MOBA_RIBBON_ACTION_GEOMETRY", "gui_design_moba_ribbon_action_geometry_for"],
+            "scripts/render_gui_design_previews.py": ["gui_design_moba_ribbon_action_geometry_for", "geometry.separator_x", "geometry.active_outline_x"],
+            "src/remote_ops_workspace/gui.py": ["mobaRibbonStaticX", "mobaRibbonIconX", "mobaRibbonActiveOutlineWidth"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_MOBA_RIBBON_ACTION_GEOMETRY", "ribbon-geometry", "expected_moba_ribbon_action_geometry"],
+            "configs/gui_visual_metrics.json": ["ribbon-pictograms", "ribbon-right-actions", "session-ribbon-icon"],
+            "docs/GUI_DESIGN.md": ["MobaXterm-style ribbon geometry"]
           }
         },
         {
@@ -174,8 +210,19 @@
           "id": "moba.connected-left-dock",
           "description": "Connected-session reference uses a wide left SFTP/monitoring dock instead of a profile-tree plus duplicate in-workspace file pane.",
           "source_tokens": {
-            "scripts/render_gui_design_previews.py": ["side_w = 390", "draw_moba_connected_sftp_dock"],
+            "scripts/render_gui_design_previews.py": ["gui_design_moba_connected_dock_frame", "draw_moba_connected_sftp_dock"],
             "src/remote_ops_workspace/gui.py": ["MobaSftpDock", "mobaConnectedLeftDock", "MobaConnectedSessionPanel"]
+          }
+        },
+        {
+          "id": "moba.connected-dock-frame",
+          "description": "Connected MobaXterm-style left dock frame uses shared side width, rail width, dock origin, dock size, workspace boundary, Quick Connect y/height and status y metadata across static preview, live PyQt widgets and real-render checks.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiMobaConnectedDockFrame", "GUI_DESIGN_MOBA_CONNECTED_DOCK_FRAME", "gui_design_moba_connected_dock_frame"],
+            "scripts/render_gui_design_previews.py": ["gui_design_moba_connected_dock_frame", "frame.dock_x", "frame.dock_width"],
+            "src/remote_ops_workspace/gui.py": ["mobaConnectedDockSideWidth", "mobaConnectedDockRailWidth", "mobaConnectedDockWidth"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_MOBA_CONNECTED_DOCK_FRAME", "connected-dock-frame", "expected_moba_connected_dock_frame"],
+            "docs/GUI_DESIGN.md": ["MobaXterm-style connected dock frame"]
           }
         },
         {
@@ -195,6 +242,17 @@
             "src/remote_ops_workspace/gui.py": ["moba_connected_tab_chrome_items", "mobaTabChromeKey", "mobaTabIconKey", "apply_moba_tab_chrome"],
             "scripts/check_real_gui_render.py": ["EXPECTED_MOBA_TAB_CHROME_KEYS", "connected-tab-chrome", "mobaTabIconKey"],
             "configs/gui_visual_metrics.json": ["connected-tab-strip"]
+          }
+        },
+        {
+          "id": "moba.connected-tab-geometry",
+          "description": "Connected MobaXterm-style tab strip pins home, inactive SSH, active SSH and plus-tab widths plus icon, label, close and gap offsets through shared static/live geometry metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/moba_connected.py": ["MobaConnectedTabChromeGeometry", "moba_connected_tab_chrome_geometry_items", "moba_connected_tab_chrome_geometry_for"],
+            "scripts/render_gui_design_previews.py": ["moba_connected_tab_chrome_geometry_for", "geometry.close_right_offset", "geometry.gap_after"],
+            "src/remote_ops_workspace/gui.py": ["mobaTabStaticWidth", "mobaTabCloseRightOffset", "mobaTabChromeGeometryKeys"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_MOBA_TAB_CHROME_GEOMETRY", "connected-tab-geometry", "expected_moba_tab_chrome_geometry"],
+            "docs/GUI_DESIGN.md": ["MobaXterm-style connected tab geometry"]
           }
         },
         {
@@ -242,6 +300,18 @@
           }
         },
         {
+          "id": "moba.sftp-browser-geometry",
+          "description": "MobaXterm-style SFTP path strip, dropdown marker, table header labels and file-row text/icon offsets are pinned through shared static/live geometry metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["path_text_x", "dropdown_right_offset", "row_modified_x", "geometry_dict"],
+            "scripts/render_gui_design_previews.py": ["chrome.path_text_x", "chrome.dropdown_right_offset", "chrome.row_icon_x", "chrome.row_modified_font_size"],
+            "src/remote_ops_workspace/gui.py": ["mobaSftpPathTextX", "mobaSftpDropdownRightOffset", "mobaSftpRowModifiedX", "mobaSftpRowModifiedFontSize"],
+            "scripts/check_real_gui_render.py": ["sftp-browser-geometry", "expected_moba_sftp_browser_geometry", "mobaSftpRowIconYOffset"],
+            "configs/gui_visual_metrics.json": ["sftp-path-table-chrome", "sftp-file-row-density", "sftp-selected-parent-row", "sftp-parent-row-icon"],
+            "docs/GUI_DESIGN.md": ["MobaXterm-style SFTP browser geometry"]
+          }
+        },
+        {
           "id": "moba.sftp-glyphs",
           "description": "MobaXterm-style connected SFTP dock uses independent drawn toolbar, generated file/folder/parent-row and monitoring glyphs instead of bracketed text placeholders in static and live evidence.",
           "source_tokens": {
@@ -267,7 +337,7 @@
           "description": "MobaXterm-style connected SFTP dock uses shared density metadata for the toolbar, path row, table header, file rows, monitoring panel and divider so static and live evidence keep the reference-like compact left-dock spacing.",
           "source_tokens": {
             "src/remote_ops_workspace/gui_designs.py": ["GuiMobaSftpDockLayout", "GUI_DESIGN_MOBA_SFTP_DOCK_LAYOUT", "gui_design_moba_sftp_dock_layout"],
-            "scripts/render_gui_design_previews.py": ["gui_design_moba_sftp_dock_layout", "density.file_row_height", "density.monitoring_height"],
+            "scripts/render_gui_design_previews.py": ["gui_design_moba_sftp_dock_layout", "density.file_row_height", "chrome.static_height"],
             "src/remote_ops_workspace/gui.py": ["mobaSftpDockInnerMargin", "mobaSftpToolbarHeight", "mobaSftpRowHeight", "mobaSftpMonitoringHeight"],
             "scripts/check_real_gui_render.py": ["EXPECTED_MOBA_SFTP_DOCK_LAYOUT", "sftp-dock-density", "expected_moba_sftp_dock_layout"],
             "configs/gui_visual_metrics.json": ["sftp-density-stack", "sftp-file-row-density", "sftp-toolbar-bottom-rule", "sftp-path-bottom-rule", "sftp-header-bottom-rule"]
@@ -278,10 +348,22 @@
           "description": "MobaXterm-style SFTP toolbar actions are grouped into navigation, transfer, manage, mode and terminal clusters with reference-like separator boundaries across static and live evidence.",
           "source_tokens": {
             "src/remote_ops_workspace/gui_designs.py": ["group_key", "separator_after", "navigation", "transfer", "manage", "mode", "terminal"],
-            "scripts/render_gui_design_previews.py": ["action.separator_after", "toolbar_separator_width"],
+            "scripts/render_gui_design_previews.py": ["geometry.separator_after", "geometry.separator_x"],
             "src/remote_ops_workspace/gui.py": ["mobaSftpActionGroupKey", "mobaSftpToolbarSeparator", "mobaSftpSeparatorAfterActionKey"],
             "scripts/check_real_gui_render.py": ["EXPECTED_MOBA_SFTP_SEPARATOR_AFTER_KEYS", "sftp-toolbar-groups", "expected_moba_sftp_toolbar_groups"],
             "configs/gui_visual_metrics.json": ["sftp-toolbar-action-strip", "sftp-toolbar-ascii-action", "sftp-toolbar-group-separator-a", "sftp-toolbar-group-separator-b"]
+          }
+        },
+        {
+          "id": "moba.sftp-toolbar-geometry",
+          "description": "MobaXterm-style SFTP toolbar pins each connected-dock action button, icon and separator offset through shared static/live geometry metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiMobaSftpToolbarActionGeometry", "GUI_DESIGN_MOBA_SFTP_TOOLBAR_ACTION_GEOMETRY", "gui_design_moba_sftp_toolbar_action_geometry"],
+            "scripts/render_gui_design_previews.py": ["gui_design_moba_sftp_toolbar_action_geometry", "gui_design_moba_sftp_toolbar_action_geometry_for", "geometry.icon_x", "geometry.separator_x"],
+            "src/remote_ops_workspace/gui.py": ["mobaSftpActionStaticX", "mobaSftpActionIconX", "mobaSftpActionSeparatorX"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_GEOMETRY", "sftp-toolbar-geometry", "expected_moba_sftp_toolbar_action_geometry"],
+            "configs/gui_visual_metrics.json": ["sftp-toolbar-action-strip", "sftp-toolbar-ascii-action", "sftp-toolbar-group-separator-a", "sftp-toolbar-group-separator-b"],
+            "docs/GUI_DESIGN.md": ["MobaXterm-style SFTP toolbar geometry"]
           }
         },
         {
@@ -302,6 +384,17 @@
             "src/remote_ops_workspace/gui.py": ["mobaRemoteMonitoringCompact", "mobaRemoteMonitoringTelemetrySurface", "mobaRemoteMonitoringCommand", "mobaRemoteMonitoringFollowPlan", "mobaMonitoringControlGeometryKeys", "mobaMonitoringControlStaticX"],
             "scripts/check_real_gui_render.py": ["EXPECTED_MOBA_REMOTE_MONITORING_DOCK_CHROME", "EXPECTED_MOBA_MONITORING_CONTROL_GEOMETRY", "expected_moba_remote_monitoring_dock_chrome", "expected_moba_monitoring_control_geometry", "mobaRemoteMonitoringVisibleMetricKeys"],
             "docs/GUI_DESIGN.md": ["compact MobaXterm-style remote-monitoring dock"]
+          }
+        },
+        {
+          "id": "moba.remote-monitoring-footer-geometry",
+          "description": "MobaXterm-style remote-monitoring footer pins the divider span, footer height, content-left offset, metric gap and live controls frame width so the lower-left monitoring/follow-folder band stays reference-like in static and live evidence.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["static_height", "divider_left_inset", "live_controls_width"],
+            "scripts/render_gui_design_previews.py": ["chrome.static_height", "chrome.divider_left_inset", "chrome.metric_row_gap"],
+            "src/remote_ops_workspace/gui.py": ["mobaRemoteMonitoringStaticHeight", "mobaRemoteMonitoringDividerLeftInset", "mobaRemoteMonitoringLiveControlsWidth"],
+            "scripts/check_real_gui_render.py": ["remote-monitoring-footer-geometry", "mobaRemoteMonitoringStaticHeight", "mobaRemoteMonitoringLiveControlsWidth", "expected_moba_remote_monitoring_dock_chrome"],
+            "docs/GUI_DESIGN.md": ["MobaXterm-style remote-monitoring footer geometry"]
           }
         },
         {
@@ -338,7 +431,7 @@
           "description": "MobaXterm-style SSH banner chrome uses shared centered title/subtitle and static/live geometry metadata so the generated preview and live PyQt banner keep the same compact terminal placement.",
           "source_tokens": {
             "src/remote_ops_workspace/gui_designs.py": ["GuiMobaSshBannerChrome", "GUI_DESIGN_MOBA_SSH_BANNER_CHROME", "gui_design_moba_ssh_banner_chrome"],
-            "scripts/render_gui_design_previews.py": ["gui_design_moba_ssh_banner_chrome", "draw_centered_text", "body_top_offset"],
+            "scripts/render_gui_design_previews.py": ["gui_design_moba_ssh_banner_chrome", "draw_centered_text", "chrome.static_width"],
             "src/remote_ops_workspace/gui.py": ["mobaSshBannerTitle", "mobaSshBannerSubtitle", "mobaBannerWidth"],
             "scripts/check_real_gui_render.py": ["EXPECTED_MOBA_SSH_BANNER_CHROME", "ssh-banner-chrome", "mobaBannerHeight"],
             "configs/gui_visual_metrics.json": ["ssh-banner-panel"]
@@ -357,6 +450,18 @@
           }
         },
         {
+          "id": "moba.ssh-banner-row-geometry",
+          "description": "MobaXterm-style SSH banner pins title, subtitle, target, capability and footer row positions plus the live banner slot top/left/gap through shared static/live row geometry metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiMobaSshBannerRowGeometry", "GUI_DESIGN_MOBA_SSH_BANNER_ROW_GEOMETRY", "gui_design_moba_ssh_banner_row_geometry"],
+            "scripts/render_gui_design_previews.py": ["gui_design_moba_ssh_banner_row_geometry_for", "title_geometry.static_y", "footer_geometry.static_y"],
+            "src/remote_ops_workspace/gui.py": ["mobaSshBannerSlot", "mobaSshBannerRowY", "mobaSshBannerRowGeometryKeys"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_MOBA_SSH_BANNER_ROW_GEOMETRY", "ssh-banner-row-geometry", "expected_moba_ssh_banner_row_geometry"],
+            "configs/gui_visual_metrics.json": ["ssh-banner-panel", "ssh-banner-border"],
+            "docs/GUI_DESIGN.md": ["MobaXterm-style SSH banner row geometry"]
+          }
+        },
+        {
           "id": "moba.terminal-transcript",
           "description": "MobaXterm-style connected terminal transcript uses shared SSH/SFTP state for the web-console line, last-login line, prompt commands and health output across static preview and live PyQt terminal evidence.",
           "source_tokens": {
@@ -368,14 +473,38 @@
           }
         },
         {
+          "id": "moba.terminal-transcript-geometry",
+          "description": "MobaXterm-style connected terminal hides generic terminal controls and pins transcript row x/y, cadence and font-size metadata across static preview and live PyQt evidence.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiMobaTerminalTranscriptRowGeometry", "GUI_DESIGN_MOBA_TERMINAL_TRANSCRIPT_ROW_GEOMETRY", "gui_design_moba_terminal_transcript_row_geometry"],
+            "scripts/render_gui_design_previews.py": ["gui_design_moba_terminal_transcript_row_geometry_for", "geometry.static_x", "geometry.font_size"],
+            "src/remote_ops_workspace/gui.py": ["mobaPlainTerminalMode", "mobaTerminalTranscriptGeometryKeys", "mobaTerminalHeaderVisible"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_MOBA_TERMINAL_TRANSCRIPT_ROW_GEOMETRY", "terminal-transcript-geometry", "expected_moba_terminal_transcript_row_geometry"],
+            "configs/gui_visual_metrics.json": ["terminal-transcript"],
+            "docs/GUI_DESIGN.md": ["MobaXterm-style terminal transcript geometry"]
+          }
+        },
+        {
           "id": "moba.bottom-telemetry",
           "description": "Bottom connected-session status strip tracks target, CPU, RAM, disk, network, connection and process state as ordered reference-like cells with stable display text, icon keys, widths and separators across static and live evidence.",
           "source_tokens": {
             "src/remote_ops_workspace/moba_connected.py": ["MobaTelemetryCell", "moba_telemetry_cells", "display_text", "width", "icon_accent", "icon_size"],
-            "scripts/render_gui_design_previews.py": ["moba_telemetry_cells", "cell.width", "cell.icon_accent", "draw_moba_telemetry_icon"],
+            "scripts/render_gui_design_previews.py": ["moba_telemetry_cells", "geometry.width", "cell.icon_accent", "draw_moba_telemetry_icon"],
             "src/remote_ops_workspace/gui.py": ["mobaTelemetryCell", "mobaTelemetryCellWidth", "mobaTelemetryDisplayText", "telemetry_icon_pixmap", "mobaTelemetryIconRender"],
             "scripts/check_real_gui_render.py": ["EXPECTED_MOBA_TELEMETRY_CELL_KEYS", "expected_moba_telemetry_cells", "must not be a text placeholder"],
             "configs/gui_visual_metrics.json": ["bottom-telemetry", "telemetry-cell-strip", "telemetry-cpu-cell", "telemetry-cpu-icon"]
+          }
+        },
+        {
+          "id": "moba.bottom-telemetry-geometry",
+          "description": "MobaXterm-style bottom telemetry strip pins each cell start, height, icon offset, label offset, font size and separator span through shared static/live geometry metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/moba_connected.py": ["MobaTelemetryCellGeometry", "moba_telemetry_cell_geometry", "MOBA_TELEMETRY_START_X"],
+            "scripts/render_gui_design_previews.py": ["moba_telemetry_cell_geometry_for", "geometry.icon_x", "geometry.label_x"],
+            "src/remote_ops_workspace/gui.py": ["mobaTelemetryGeometryKeys", "mobaTelemetryCellStaticX", "mobaTelemetryLabelX"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_MOBA_TELEMETRY_CELL_GEOMETRY", "bottom-telemetry-geometry", "expected_moba_telemetry_cell_geometry"],
+            "configs/gui_visual_metrics.json": ["bottom-telemetry", "telemetry-cell-strip", "telemetry-cell-separator"],
+            "docs/GUI_DESIGN.md": ["MobaXterm-style bottom telemetry geometry"]
           }
         },
         {
@@ -406,6 +535,18 @@
             "src/remote_ops_workspace/gui.py": ["productStatusNotice", "productStatusMarker", "productStatusKey"],
             "scripts/check_real_gui_render.py": ["EXPECTED_MOBA_STATUS_KEYS", "bottom-status-chrome", "EXPECTED_MOBA_STATUS_CHROME"],
             "configs/gui_visual_metrics.json": ["moba-status-notice"]
+          }
+        },
+        {
+          "id": "moba.bottom-status-geometry",
+          "description": "MobaXterm-style bottom edition/status footer pins notice, product-note, segment-start and right-marker coordinates through shared static/live geometry metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["static_height", "notice_x", "segment_start_right_offset", "marker_right_inset"],
+            "scripts/render_gui_design_previews.py": ["chrome.notice_x", "chrome.segment_start_right_offset", "chrome.marker_right_inset"],
+            "src/remote_ops_workspace/gui.py": ["mobaStatusStaticHeight", "mobaStatusNoticeX", "mobaStatusMarkerRightInset"],
+            "scripts/check_real_gui_render.py": ["mobaStatusSegmentStartRightOffset", "marker_width", "expected_moba_status_chrome"],
+            "configs/gui_visual_metrics.json": ["moba-status-notice"],
+            "docs/GUI_DESIGN.md": ["MobaXterm-style bottom status geometry"]
           }
         },
         {

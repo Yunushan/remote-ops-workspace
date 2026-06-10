@@ -184,26 +184,35 @@ def test_gui_parity_mobaxterm_connected_reference_is_explicit() -> None:
     assert "moba.connected-quick-connect-idle" in requirement_ids
     assert "moba.home-welcome-surface" in requirement_ids
     assert "moba.connected-left-dock" in requirement_ids
+    assert "moba.connected-dock-frame" in requirement_ids
     assert "moba.live-dock-switch" in requirement_ids
     assert "moba.top-menu-chrome" in requirement_ids
+    assert "moba.top-menu-geometry" in requirement_ids
     assert "moba.ribbon-pictograms" in requirement_ids
+    assert "moba.ribbon-geometry" in requirement_ids
     assert "moba.sftp-glyphs" in requirement_ids
     assert "moba.sftp-dock-chrome" in requirement_ids
     assert "moba.sftp-toolbar-groups" in requirement_ids
+    assert "moba.sftp-toolbar-geometry" in requirement_ids
     assert "moba.sftp-dock-density" in requirement_ids
     assert "moba.sftp-browser-chrome" in requirement_ids
+    assert "moba.sftp-browser-geometry" in requirement_ids
     assert "moba.remote-monitoring" in requirement_ids
     assert "moba.remote-monitoring-compact-dock" in requirement_ids
     assert "moba.monitoring-controls" in requirement_ids
     assert "moba.bottom-telemetry" in requirement_ids
+    assert "moba.bottom-telemetry-geometry" in requirement_ids
     assert "moba.bottom-status-chrome" in requirement_ids
+    assert "moba.bottom-status-geometry" in requirement_ids
     assert "moba.bottom-edge-controls" in requirement_ids
     assert "moba.connected-session-chrome" in requirement_ids
     assert "moba.connected-tab-chrome" in requirement_ids
     assert "moba.session-edge-controls" in requirement_ids
     assert "moba.right-utility-rail" in requirement_ids
     assert "moba.ssh-banner-chrome" in requirement_ids
+    assert "moba.ssh-banner-row-geometry" in requirement_ids
     assert "moba.terminal-transcript" in requirement_ids
+    assert "moba.terminal-transcript-geometry" in requirement_ids
     assert "moba.rail-section-labels" in requirement_ids
     assert "moba.reference-line-anchors" in requirement_ids
     assert "moba.reference-topology" in requirement_ids
@@ -240,6 +249,17 @@ def test_gui_parity_mobaxterm_connected_reference_is_explicit() -> None:
     assert "moba.home-welcome-surface" in moba["dimension_coverage"]["interaction_states"]
     assert "moba.top-menu-chrome" in moba["dimension_coverage"]["toolbars"]
     assert "moba.top-menu-chrome" in moba["dimension_coverage"]["navigation"]
+    assert "moba.top-menu-geometry" in moba["dimension_coverage"]["layout"]
+    assert "moba.top-menu-geometry" in moba["dimension_coverage"]["navigation"]
+    assert "moba.top-menu-geometry" in moba["dimension_coverage"]["toolbars"]
+    assert "moba.top-menu-geometry" in moba["dimension_coverage"]["density"]
+    assert "moba.top-menu-geometry" in moba["dimension_coverage"]["spacing"]
+    assert "moba.top-menu-geometry" in moba["dimension_coverage"]["interaction_states"]
+    assert "moba.ribbon-geometry" in moba["dimension_coverage"]["layout"]
+    assert "moba.ribbon-geometry" in moba["dimension_coverage"]["toolbars"]
+    assert "moba.ribbon-geometry" in moba["dimension_coverage"]["density"]
+    assert "moba.ribbon-geometry" in moba["dimension_coverage"]["spacing"]
+    assert "moba.ribbon-geometry" in moba["dimension_coverage"]["interaction_states"]
     assert "moba.right-utility-rail" in moba["dimension_coverage"]["layout"]
     assert "moba.session-edge-controls" in moba["dimension_coverage"]["layout"]
     assert "moba.session-edge-controls" in moba["dimension_coverage"]["navigation"]
@@ -260,17 +280,44 @@ def test_gui_parity_mobaxterm_connected_reference_is_explicit() -> None:
     assert "moba.ssh-banner-capability-card" in moba["dimension_coverage"]["density"]
     assert "moba.ssh-banner-capability-card" in moba["dimension_coverage"]["spacing"]
     assert "moba.ssh-banner-capability-card" in moba["dimension_coverage"]["interaction_states"]
+    assert "moba.ssh-banner-row-geometry" in moba["dimension_coverage"]["layout"]
+    assert "moba.ssh-banner-row-geometry" in moba["dimension_coverage"]["panes"]
+    assert "moba.ssh-banner-row-geometry" in moba["dimension_coverage"]["connected_session_behavior"]
+    assert "moba.ssh-banner-row-geometry" in moba["dimension_coverage"]["density"]
+    assert "moba.ssh-banner-row-geometry" in moba["dimension_coverage"]["spacing"]
+    assert "moba.ssh-banner-row-geometry" in moba["dimension_coverage"]["interaction_states"]
     assert "moba.terminal-transcript" in moba["dimension_coverage"]["panes"]
     assert "moba.terminal-transcript" in moba["dimension_coverage"]["connected_session_behavior"]
+    assert "moba.terminal-transcript-geometry" in moba["dimension_coverage"]["layout"]
+    assert "moba.terminal-transcript-geometry" in moba["dimension_coverage"]["panes"]
+    assert "moba.terminal-transcript-geometry" in moba["dimension_coverage"]["connected_session_behavior"]
+    assert "moba.terminal-transcript-geometry" in moba["dimension_coverage"]["density"]
+    assert "moba.terminal-transcript-geometry" in moba["dimension_coverage"]["spacing"]
+    assert "moba.terminal-transcript-geometry" in moba["dimension_coverage"]["interaction_states"]
     assert "moba.sftp-dock-chrome" in moba["dimension_coverage"]["file_monitoring_panels"]
     assert "moba.sftp-toolbar-groups" in moba["dimension_coverage"]["toolbars"]
     assert "moba.sftp-toolbar-groups" in moba["dimension_coverage"]["file_monitoring_panels"]
     assert "moba.sftp-toolbar-groups" in moba["dimension_coverage"]["interaction_states"]
+    assert "moba.sftp-toolbar-geometry" in moba["dimension_coverage"]["toolbars"]
+    assert "moba.sftp-toolbar-geometry" in moba["dimension_coverage"]["connected_session_behavior"]
+    assert "moba.sftp-toolbar-geometry" in moba["dimension_coverage"]["file_monitoring_panels"]
+    assert "moba.sftp-toolbar-geometry" in moba["dimension_coverage"]["density"]
+    assert "moba.sftp-toolbar-geometry" in moba["dimension_coverage"]["spacing"]
+    assert "moba.sftp-toolbar-geometry" in moba["dimension_coverage"]["interaction_states"]
     assert "moba.sftp-dock-density" in moba["dimension_coverage"]["file_monitoring_panels"]
     assert "moba.sftp-dock-density" in moba["dimension_coverage"]["density"]
     assert "moba.sftp-dock-density" in moba["dimension_coverage"]["spacing"]
+    assert "moba.connected-dock-frame" in moba["dimension_coverage"]["layout"]
+    assert "moba.connected-dock-frame" in moba["dimension_coverage"]["panes"]
+    assert "moba.connected-dock-frame" in moba["dimension_coverage"]["file_monitoring_panels"]
+    assert "moba.connected-dock-frame" in moba["dimension_coverage"]["density"]
+    assert "moba.connected-dock-frame" in moba["dimension_coverage"]["spacing"]
     assert "moba.sftp-browser-chrome" in moba["dimension_coverage"]["file_monitoring_panels"]
     assert "moba.sftp-browser-chrome" in moba["dimension_coverage"]["panes"]
+    assert "moba.sftp-browser-geometry" in moba["dimension_coverage"]["file_monitoring_panels"]
+    assert "moba.sftp-browser-geometry" in moba["dimension_coverage"]["panes"]
+    assert "moba.sftp-browser-geometry" in moba["dimension_coverage"]["density"]
+    assert "moba.sftp-browser-geometry" in moba["dimension_coverage"]["spacing"]
     assert "moba.monitoring-controls" in moba["dimension_coverage"]["file_monitoring_panels"]
     assert "moba.monitoring-controls" in moba["dimension_coverage"]["connected_session_behavior"]
     assert "moba.monitoring-controls" in moba["dimension_coverage"]["interaction_states"]
@@ -280,7 +327,16 @@ def test_gui_parity_mobaxterm_connected_reference_is_explicit() -> None:
     assert "moba.remote-monitoring-compact-dock" in moba["dimension_coverage"]["density"]
     assert "moba.remote-monitoring-compact-dock" in moba["dimension_coverage"]["spacing"]
     assert "moba.remote-monitoring-compact-dock" in moba["dimension_coverage"]["interaction_states"]
+    assert "moba.bottom-telemetry-geometry" in moba["dimension_coverage"]["layout"]
+    assert "moba.bottom-telemetry-geometry" in moba["dimension_coverage"]["connected_session_behavior"]
+    assert "moba.bottom-telemetry-geometry" in moba["dimension_coverage"]["status_bars"]
+    assert "moba.bottom-telemetry-geometry" in moba["dimension_coverage"]["density"]
+    assert "moba.bottom-telemetry-geometry" in moba["dimension_coverage"]["spacing"]
     assert "moba.bottom-status-chrome" in moba["dimension_coverage"]["status_bars"]
+    assert "moba.bottom-status-geometry" in moba["dimension_coverage"]["layout"]
+    assert "moba.bottom-status-geometry" in moba["dimension_coverage"]["status_bars"]
+    assert "moba.bottom-status-geometry" in moba["dimension_coverage"]["density"]
+    assert "moba.bottom-status-geometry" in moba["dimension_coverage"]["spacing"]
     assert "moba.bottom-edge-controls" in moba["dimension_coverage"]["status_bars"]
     assert "moba.rail-section-labels" in moba["dimension_coverage"]["sidebars"]
 
@@ -321,9 +377,21 @@ def test_gui_parity_tracks_reference_topology_for_product_presets() -> None:
 def test_mobaxterm_static_renderer_uses_drawn_ribbon_pictograms() -> None:
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
+    checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
+    docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
 
     assert "def draw_moba_ribbon_icon" in renderer_source
     assert "gui_design_moba_ribbon_actions" in renderer_source
+    assert "gui_design_moba_ribbon_edge_actions" in renderer_source
+    assert "gui_design_moba_ribbon_action_geometry_for" in renderer_source
+    assert "geometry.separator_x" in renderer_source
+    assert "geometry.active_outline_x" in renderer_source
+    assert "GuiMobaRibbonActionGeometry" in design_source
+    assert "GUI_DESIGN_MOBA_RIBBON_ACTION_GEOMETRY" in design_source
+    assert "EXPECTED_MOBA_RIBBON_ACTION_GEOMETRY" in checker_source
+    assert "ribbon-geometry" in checker_source
+    assert "expected_moba_ribbon_action_geometry" in checker_source
+    assert "MobaXterm-style ribbon geometry" in docs_source
     assert "GuiMobaTopMenuItem" in design_source
     assert "GUI_DESIGN_MOBA_TOP_MENU_ITEMS" in design_source
     assert "gui_design_moba_top_menu_items" in renderer_source
@@ -332,21 +400,46 @@ def test_mobaxterm_static_renderer_uses_drawn_ribbon_pictograms() -> None:
 
 
 def test_mobaxterm_titlebar_chrome_uses_shared_metadata() -> None:
+    criteria = _load_checker().load_json(_load_checker().CRITERIA_PATH)
+    requirement_ids = {item["id"] for item in criteria["presets"]["mobaxterm"]["requirements"]}
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
     checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
 
+    assert "moba.top-stack-geometry" in requirement_ids
+    assert "moba.top-menu-geometry" in requirement_ids
     assert "GuiMobaTitlebarChrome" in design_source
+    assert "GuiMobaTopStackGeometry" in design_source
+    assert "GuiMobaTopMenuGeometry" in design_source
     assert "GUI_DESIGN_MOBA_TITLEBAR_CHROME" in design_source
+    assert "GUI_DESIGN_MOBA_TOP_STACK_GEOMETRY" in design_source
+    assert "GUI_DESIGN_MOBA_TOP_MENU_GEOMETRY" in design_source
     assert "gui_design_moba_titlebar_chrome" in renderer_source
+    assert "gui_design_moba_top_stack_geometry" in renderer_source
+    assert "gui_design_moba_top_menu_geometry_for" in renderer_source
+    assert "geometry.static_x" in renderer_source
+    assert "geometry.label_font_size" in renderer_source
+    assert "top_stack.ribbon_y" in renderer_source
+    assert "top_stack.left_dock_y" in renderer_source
     assert "draw_moba_titlebar_icon" in renderer_source
     assert "draw_moba_titlebar_control" in renderer_source
     assert "apply_moba_titlebar_chrome" in gui_source
+    assert "apply_moba_top_stack_geometry" in gui_source
     assert "mobaTitlebarTitle" in gui_source
     assert "mobaTitlebarControlKeys" in gui_source
+    assert "mobaTopStackRibbonHeight" in gui_source
+    assert "mobaTopStackQuickConnectY" in gui_source
+    assert "mobaTopMenuStaticX" in gui_source
+    assert "mobaTopMenuLabelFontSize" in gui_source
     assert "EXPECTED_MOBA_TITLEBAR_CHROME" in checker_source
+    assert "EXPECTED_MOBA_TOP_STACK_GEOMETRY" in checker_source
+    assert "EXPECTED_MOBA_TOP_MENU_GEOMETRY" in checker_source
     assert "expected_moba_titlebar_chrome" in checker_source
+    assert "expected_moba_top_stack_geometry" in checker_source
+    assert "expected_moba_top_menu_geometry" in checker_source
+    assert "top-stack-geometry" in checker_source
+    assert "top-menu-geometry" in checker_source
 
 
 def test_mobaxterm_quick_connect_chrome_uses_shared_metadata() -> None:
@@ -473,6 +566,10 @@ def test_mobaxterm_live_gui_uses_generated_ribbon_icons() -> None:
     assert "mobaTopMenuKey" in gui_source
     assert "EXPECTED_MOBA_TOP_MENU_KEYS" in live_checker_source
     assert "mobaIconKey" in gui_source
+    assert "mobaRibbonStaticX" in gui_source
+    assert "mobaRibbonIconX" in gui_source
+    assert "mobaRibbonActiveOutlineWidth" in gui_source
+    assert "mobaRibbonSeparatorBottom" in live_checker_source
     assert "must use a generated ribbon icon" in live_checker_source
 
 
@@ -519,11 +616,31 @@ def test_mobaxterm_sftp_dock_uses_shared_chrome_metadata() -> None:
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
     checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
+    docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
+    criteria = _load_checker().load_json(_load_checker().CRITERIA_PATH)
+    moba = criteria["presets"]["mobaxterm"]
+    connected_frame_requirement = next(
+        item for item in moba["requirements"] if item["id"] == "moba.connected-dock-frame"
+    )
+    toolbar_geometry_requirement = next(
+        item for item in moba["requirements"] if item["id"] == "moba.sftp-toolbar-geometry"
+    )
+    browser_geometry_requirement = next(
+        item for item in moba["requirements"] if item["id"] == "moba.sftp-browser-geometry"
+    )
 
     assert "GuiMobaSftpDockAction" in design_source
+    assert "GuiMobaSftpToolbarActionGeometry" in design_source
+    assert "GuiMobaConnectedDockFrame" in design_source
+    assert "GUI_DESIGN_MOBA_CONNECTED_DOCK_FRAME" in design_source
     assert "GUI_DESIGN_MOBA_SFTP_DOCK_ACTIONS" in design_source
+    assert "GUI_DESIGN_MOBA_SFTP_TOOLBAR_ACTION_GEOMETRY" in design_source
     assert "GuiMobaSftpBrowserChrome" in design_source
     assert "GUI_DESIGN_MOBA_SFTP_BROWSER_CHROME" in design_source
+    assert "path_text_x" in design_source
+    assert "dropdown_right_offset" in design_source
+    assert "row_modified_x" in design_source
+    assert "geometry_dict" in design_source
     assert "GuiMobaSftpFileRowIcon" in design_source
     assert "GuiMobaSftpDockLayout" in design_source
     assert "GUI_DESIGN_MOBA_SFTP_DOCK_LAYOUT" in design_source
@@ -532,21 +649,40 @@ def test_mobaxterm_sftp_dock_uses_shared_chrome_metadata() -> None:
     assert "GuiMobaMonitoringControl" in design_source
     assert "GUI_DESIGN_MOBA_MONITORING_CONTROLS" in design_source
     assert "gui_design_moba_sftp_dock_actions" in renderer_source
+    assert "gui_design_moba_connected_dock_frame" in renderer_source
+    assert "frame.dock_x" in renderer_source
+    assert "frame.dock_width" in renderer_source
     assert "gui_design_moba_sftp_browser_chrome" in renderer_source
     assert "gui_design_moba_sftp_dock_layout" in renderer_source
     assert "density.file_row_height" in renderer_source
-    assert "action.separator_after" in renderer_source
+    assert "gui_design_moba_sftp_toolbar_action_geometry" in renderer_source
+    assert "geometry.icon_x" in renderer_source
+    assert "geometry.separator_x" in renderer_source
     assert "column.static_x" in renderer_source
+    assert "chrome.path_text_x" in renderer_source
+    assert "chrome.dropdown_right_offset" in renderer_source
+    assert "chrome.row_icon_x" in renderer_source
+    assert "chrome.row_modified_font_size" in renderer_source
     assert "gui_design_moba_monitoring_controls" in renderer_source
     assert "draw_moba_monitoring_control" in renderer_source
     assert "moba_monitoring_metric_text" in renderer_source
     assert "mobaSftpActionKey" in gui_source
     assert "mobaSftpIconKey" in gui_source
+    assert "mobaConnectedDockSideWidth" in gui_source
+    assert "mobaConnectedDockRailWidth" in gui_source
+    assert "mobaConnectedDockWidth" in gui_source
     assert "mobaSftpActionGroupKey" in gui_source
+    assert "mobaSftpActionStaticX" in gui_source
+    assert "mobaSftpActionIconX" in gui_source
+    assert "mobaSftpActionSeparatorX" in gui_source
     assert "mobaSftpToolbarSeparator" in gui_source
     assert "mobaSftpPathDropdownMarker" in gui_source
+    assert "mobaSftpPathTextX" in gui_source
+    assert "mobaSftpDropdownRightOffset" in gui_source
     assert "mobaSftpColumnKeys" in gui_source
     assert "mobaSftpRowHeight" in gui_source
+    assert "mobaSftpRowModifiedX" in gui_source
+    assert "mobaSftpRowModifiedFontSize" in gui_source
     assert "mobaSftpMonitoringHeight" in gui_source
     assert "mobaMonitoringMetricKey" in gui_source
     assert "mobaMonitoringControlKey" in gui_source
@@ -555,14 +691,37 @@ def test_mobaxterm_sftp_dock_uses_shared_chrome_metadata() -> None:
     assert "mobaMonitoringControlIconSize" in gui_source
     assert "mobaRemoteMonitoringCompact" in gui_source
     assert "EXPECTED_MOBA_SFTP_ACTION_KEYS" in checker_source
+    assert "EXPECTED_MOBA_CONNECTED_DOCK_FRAME" in checker_source
+    assert "connected-dock-frame" in checker_source
+    assert "expected_moba_connected_dock_frame" in checker_source
     assert "EXPECTED_MOBA_SFTP_BROWSER_CHROME" in checker_source
+    assert "sftp-browser-geometry" in checker_source
+    assert "expected_moba_sftp_browser_geometry" in checker_source
+    assert "mobaSftpRowIconYOffset" in checker_source
     assert "EXPECTED_MOBA_SFTP_DOCK_LAYOUT" in checker_source
     assert "EXPECTED_MOBA_SFTP_SEPARATOR_AFTER_KEYS" in checker_source
+    assert "EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_GEOMETRY" in checker_source
     assert "expected_moba_sftp_toolbar_groups" in checker_source
+    assert "expected_moba_sftp_toolbar_action_geometry" in checker_source
     assert "expected_moba_sftp_dock_layout" in checker_source
     assert "EXPECTED_MOBA_MONITORING_METRIC_KEYS" in checker_source
     assert "EXPECTED_MOBA_MONITORING_CONTROL_KEYS" in checker_source
     assert "EXPECTED_MOBA_MONITORING_CONTROL_GEOMETRY" in checker_source
+    assert "MobaXterm-style connected dock frame" in docs_source
+    assert "MobaXterm-style SFTP toolbar geometry" in docs_source
+    assert "MobaXterm-style SFTP browser geometry" in docs_source
+    assert (
+        "mobaConnectedDockSideWidth"
+        in connected_frame_requirement["source_tokens"]["src/remote_ops_workspace/gui.py"]
+    )
+    assert (
+        "mobaSftpActionStaticX"
+        in toolbar_geometry_requirement["source_tokens"]["src/remote_ops_workspace/gui.py"]
+    )
+    assert (
+        "mobaSftpPathTextX"
+        in browser_geometry_requirement["source_tokens"]["src/remote_ops_workspace/gui.py"]
+    )
 
 
 def test_mobaxterm_compact_monitoring_dock_uses_shared_metadata() -> None:
@@ -571,6 +730,11 @@ def test_mobaxterm_compact_monitoring_dock_uses_shared_metadata() -> None:
         item
         for item in criteria["presets"]["mobaxterm"]["requirements"]
         if item["id"] == "moba.remote-monitoring-compact-dock"
+    )
+    geometry_requirement = next(
+        item
+        for item in criteria["presets"]["mobaxterm"]["requirements"]
+        if item["id"] == "moba.remote-monitoring-footer-geometry"
     )
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
@@ -582,23 +746,42 @@ def test_mobaxterm_compact_monitoring_dock_uses_shared_metadata() -> None:
     assert "GUI_DESIGN_MOBA_REMOTE_MONITORING_DOCK_CHROME" in design_source
     assert "GuiMobaMonitoringControlGeometry" in design_source
     assert "GUI_DESIGN_MOBA_MONITORING_CONTROL_GEOMETRY" in design_source
+    assert "divider_left_inset" in design_source
+    assert "live_controls_width" in design_source
     assert "gui_design_moba_remote_monitoring_dock_chrome" in renderer_source
     assert "gui_design_moba_monitoring_control_geometry_for" in renderer_source
     assert "visible_metric_keys" in renderer_source
+    assert "chrome.static_height" in renderer_source
+    assert "chrome.divider_left_inset" in renderer_source
     assert "mobaRemoteMonitoringTelemetrySurface" in gui_source
     assert "mobaRemoteMonitoringCommand" in gui_source
     assert "mobaRemoteMonitoringFollowPlan" in gui_source
     assert "mobaMonitoringControlGeometryKeys" in gui_source
+    assert "mobaRemoteMonitoringStaticHeight" in gui_source
+    assert "mobaRemoteMonitoringLiveControlsWidth" in gui_source
     assert "EXPECTED_MOBA_REMOTE_MONITORING_DOCK_CHROME" in checker_source
     assert "expected_moba_remote_monitoring_dock_chrome" in checker_source
     assert "expected_moba_monitoring_control_geometry" in checker_source
+    assert "remote-monitoring-footer-geometry" in checker_source
+    assert "mobaRemoteMonitoringStaticHeight" in checker_source
     assert "mobaRemoteMonitoringCompact" in requirement["source_tokens"]["src/remote_ops_workspace/gui.py"]
     assert "mobaMonitoringControlStaticX" in requirement["source_tokens"]["src/remote_ops_workspace/gui.py"]
+    assert "mobaRemoteMonitoringStaticHeight" in geometry_requirement["source_tokens"]["src/remote_ops_workspace/gui.py"]
+    assert "chrome.divider_left_inset" in geometry_requirement["source_tokens"]["scripts/render_gui_design_previews.py"]
 
 
 def test_mobaxterm_static_renderer_uses_connected_tab_chrome_metadata() -> None:
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     state_source = Path("src/remote_ops_workspace/moba_connected.py").read_text(encoding="utf-8")
+    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
+    docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
+    criteria = _load_checker().load_json(_load_checker().CRITERIA_PATH)
+    moba = criteria["presets"]["mobaxterm"]
+    requirement_ids = {item["id"] for item in moba["requirements"]}
+    geometry_requirement = next(
+        item for item in moba["requirements"] if item["id"] == "moba.connected-tab-geometry"
+    )
 
     assert "moba_connected_tab_chrome_items" in renderer_source
     assert "draw_moba_connected_tab" in renderer_source
@@ -606,6 +789,22 @@ def test_mobaxterm_static_renderer_uses_connected_tab_chrome_metadata() -> None:
     assert "MobaConnectedTabChromeItem" in state_source
     assert "inactive-session" in state_source
     assert "terminal-key" in state_source
+    assert "moba.connected-tab-geometry" in requirement_ids
+    assert "moba.connected-tab-geometry" in moba["dimension_coverage"]["tabs"]
+    assert "MobaConnectedTabChromeGeometry" in state_source
+    assert "moba_connected_tab_chrome_geometry_for" in renderer_source
+    assert "geometry.close_right_offset" in renderer_source
+    assert "geometry.gap_after" in renderer_source
+    assert "mobaTabStaticWidth" in gui_source
+    assert "mobaTabCloseRightOffset" in gui_source
+    assert "mobaTabChromeGeometryKeys" in gui_source
+    assert "EXPECTED_MOBA_TAB_CHROME_GEOMETRY" in checker_source
+    assert "expected_moba_tab_chrome_geometry" in checker_source
+    assert "MobaXterm-style connected tab geometry" in docs_source
+    assert (
+        "mobaTabStaticWidth"
+        in geometry_requirement["source_tokens"]["src/remote_ops_workspace/gui.py"]
+    )
 
 
 def test_mobaxterm_static_renderer_uses_right_utility_icons_not_text_placeholders() -> None:
@@ -658,11 +857,17 @@ def test_mobaxterm_ssh_banner_uses_shared_chrome_metadata() -> None:
     checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
 
     assert "GuiMobaSshBannerChrome" in design_source
+    assert "GuiMobaSshBannerRowGeometry" in design_source
     assert "gui_design_moba_ssh_banner_chrome" in renderer_source
+    assert "gui_design_moba_ssh_banner_row_geometry_for" in renderer_source
     assert "draw_centered_text" in renderer_source
     assert "mobaSshBannerTitle" in gui_source
     assert "mobaSshBannerSubtitle" in gui_source
+    assert "mobaSshBannerSlot" in gui_source
+    assert "mobaSshBannerRowY" in gui_source
     assert "EXPECTED_MOBA_SSH_BANNER_CHROME" in checker_source
+    assert "EXPECTED_MOBA_SSH_BANNER_ROW_GEOMETRY" in checker_source
+    assert "expected_moba_ssh_banner_row_geometry" in checker_source
 
 
 def test_mobaxterm_ssh_banner_capability_card_is_tracked() -> None:
@@ -676,6 +881,7 @@ def test_mobaxterm_ssh_banner_capability_card_is_tracked() -> None:
     requirement_ids = {item["id"] for item in criteria["presets"]["mobaxterm"]["requirements"]}
 
     assert "moba.ssh-banner-capability-card" in requirement_ids
+    assert "moba.ssh-banner-row-geometry" in requirement_ids
     assert "SshConnectionCapability" in state_source
     assert "capability_rows" in state_source
     assert "footer_links" in state_source
@@ -690,24 +896,36 @@ def test_mobaxterm_ssh_banner_capability_card_is_tracked() -> None:
     assert "EXPECTED_MOBA_SSH_BANNER_CAPABILITY_KEYS" in checker_source
     assert "expected_moba_ssh_banner_capability_card" in checker_source
     assert "MobaXterm-style SSH banner capability card" in docs_source
+    assert "MobaXterm-style SSH banner row geometry" in docs_source
 
 
 def test_mobaxterm_terminal_transcript_uses_shared_connected_state() -> None:
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
     state_source = Path("src/remote_ops_workspace/moba_connected.py").read_text(encoding="utf-8")
     checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
+    docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
 
     assert "MobaTerminalTranscriptLine" in state_source
     assert "build_moba_terminal_transcript" in state_source
     assert "terminal_transcript" in state_source
+    assert "GuiMobaTerminalTranscriptRowGeometry" in design_source
     assert "state.terminal_transcript" in renderer_source
     assert "line.tone" in renderer_source
+    assert "gui_design_moba_terminal_transcript_row_geometry_for" in renderer_source
+    assert "geometry.font_size" in renderer_source
     assert "apply_terminal_transcript_evidence" in gui_source
     assert "mobaTerminalTranscriptKeys" in gui_source
     assert "mobaTerminalTranscriptTones" in gui_source
+    assert "mobaPlainTerminalMode" in gui_source
+    assert "mobaTerminalTranscriptGeometryKeys" in gui_source
     assert "EXPECTED_MOBA_TERMINAL_TRANSCRIPT_KEYS" in checker_source
     assert "expected_moba_terminal_transcript" in checker_source
+    assert "EXPECTED_MOBA_TERMINAL_TRANSCRIPT_ROW_GEOMETRY" in checker_source
+    assert "expected_moba_terminal_transcript_row_geometry" in checker_source
+    assert "terminal-transcript-geometry" in checker_source
+    assert "MobaXterm-style terminal transcript geometry" in docs_source
 
 
 def test_mobaxterm_bottom_status_uses_shared_chrome_metadata() -> None:
@@ -715,16 +933,26 @@ def test_mobaxterm_bottom_status_uses_shared_chrome_metadata() -> None:
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
     checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
+    docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
 
     assert "GuiMobaStatusBarChrome" in design_source
     assert "GUI_DESIGN_MOBA_STATUS_SEGMENTS" in design_source
+    assert "segment_start_right_offset" in design_source
+    assert "marker_right_inset" in design_source
     assert "gui_design_moba_status_bar_chrome" in renderer_source
     assert "gui_design_moba_status_segments" in renderer_source
+    assert "chrome.notice_x" in renderer_source
+    assert "chrome.segment_start_right_offset" in renderer_source
     assert "productStatusNotice" in gui_source
     assert "productStatusMarker" in gui_source
     assert "productStatusKey" in gui_source
+    assert "mobaStatusNoticeX" in gui_source
+    assert "mobaStatusMarkerRightInset" in gui_source
     assert "EXPECTED_MOBA_STATUS_KEYS" in checker_source
     assert "EXPECTED_MOBA_STATUS_CHROME" in checker_source
+    assert "mobaStatusSegmentStartRightOffset" in checker_source
+    assert "expected_moba_status_chrome" in checker_source
+    assert "MobaXterm-style bottom status geometry" in docs_source
 
 
 def test_mobaxterm_bottom_edge_controls_use_shared_metadata() -> None:
@@ -748,23 +976,36 @@ def test_mobaxterm_bottom_edge_controls_use_shared_metadata() -> None:
 
 
 def test_mobaxterm_connected_chrome_uses_shared_target_and_telemetry_state() -> None:
+    renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
     state_source = Path("src/remote_ops_workspace/moba_connected.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
+    docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
 
     assert "MobaTelemetrySegment" in state_source
+    assert "MobaTelemetryCellGeometry" in state_source
     assert "moba_connected_profile_label" in state_source
+    assert "moba_telemetry_cell_geometry" in state_source
+    assert "moba_telemetry_cell_geometry_for" in renderer_source
+    assert "geometry.label_x" in renderer_source
     assert "moba_connected_window_title" in gui_source
     assert "moba_connected_tab_label" in gui_source
     assert "moba_telemetry_cells" in gui_source
+    assert "mobaTelemetryGeometryKeys" in gui_source
+    assert "mobaTelemetryCellStaticX" in gui_source
+    assert "mobaTelemetryLabelX" in gui_source
     assert "telemetry_icon_pixmap" in gui_source
     assert "mobaTelemetryIconRender" in gui_source
     assert "mobaTelemetryCellWidth" in gui_source
     assert "mobaTelemetryKey" in gui_source
     assert "EXPECTED_MOBA_TELEMETRY_CELL_KEYS" in live_checker_source
+    assert "EXPECTED_MOBA_TELEMETRY_CELL_GEOMETRY" in live_checker_source
     assert "expected_moba_telemetry_cells" in live_checker_source
+    assert "expected_moba_telemetry_cell_geometry" in live_checker_source
+    assert "bottom-telemetry-geometry" in live_checker_source
     assert "must not be a text placeholder" in live_checker_source
     assert "window title must be connected target label" in live_checker_source
+    assert "MobaXterm-style bottom telemetry geometry" in docs_source
 
 
 def test_mobaxterm_live_connected_session_uses_left_dock_switch() -> None:

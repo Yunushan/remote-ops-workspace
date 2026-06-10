@@ -188,6 +188,19 @@ The static and live MobaXterm-style ribbons share action metadata and use drawn
 pictograms for the main actions instead of placeholder letters or copied product
 artwork. The live render checker verifies the `mobaIconKey` widget properties
 and non-null generated icons in the dedicated PyQt6 CI job.
+MobaXterm-style ribbon geometry is tracked separately too:
+`GuiMobaRibbonActionGeometry` pins each main and right-edge action width, icon
+offset, label offset, separator span and active-outline bounds. Static previews
+consume those offsets directly, and live PyQt ribbon buttons expose matching
+`mobaRibbon*` properties so geometry drift is caught independently from label or
+icon coverage.
+MobaXterm-style connected dock frame geometry is shared metadata now:
+`GuiMobaConnectedDockFrame` pins the 390px side width, 24px rail, connected SFTP
+dock origin/size, workspace boundary, Quick Connect strip position and bottom
+status boundary across the static preview, live PyQt widgets and render
+manifest. The live dock keeps `mobaConnectedLeftDock` as the outer measured
+frame while preserving `mobaSftpBrowser` as the inner browser frame, so the
+topology and SFTP density checks can both inspect the real widgets.
 The top titlebar is shared Moba-style chrome too. `GuiMobaTitlebarChrome`
 defines the generated app mark, compact control order and title offsets; the
 static preview draws those pieces, while the live PyQt window exposes
@@ -198,6 +211,14 @@ Tools, Games, Settings, Macros and Help are generated from
 `GuiMobaTopMenuItem` records in both the static preview and live PyQt menu bar.
 The live checker validates `mobaTopMenuKey` and `mobaTopMenuLabel` order, while
 the static visual metrics pin the top-menu strip.
+MobaXterm-style top menu geometry is tracked separately: `GuiMobaTopMenuGeometry`
+pins each menu label x offset, width, y offset, font size and post-label gap,
+and the same values are consumed by static previews and exposed as live
+`mobaTopMenu*` properties.
+MobaXterm-style top chrome stack geometry is now shared through
+`GuiMobaTopStackGeometry`, which pins the titlebar, menu row, ribbon, Quick
+Connect strip, connected tab strip, terminal content start and left-dock offsets
+across the static preview, live PyQt metadata and render manifest.
 The connected left rail also shares section metadata for the Sessions, Tools,
 Macros and SFTP vertical labels; the static preview renders those labels
 rotated in the narrow rail, while the live PyQt rail exposes matching
@@ -226,6 +247,12 @@ navigation, transfer, manage, mode and terminal groups. The static preview draws
 the separator marks, while the live PyQt toolbar exposes
 `mobaSftpActionGroupKey`, `mobaSftpToolbarSeparator` and
 `mobaSftpSeparatorAfterActionKey` for the render checker.
+MobaXterm-style SFTP toolbar geometry is shared as a separate contract:
+`GuiMobaSftpToolbarActionGeometry` pins each connected-dock action's button
+start, icon offset, icon size and separator boundary. The static preview uses
+those offsets through `gui_design_moba_sftp_toolbar_action_geometry`, and the
+live PyQt buttons expose `mobaSftpActionStaticX`, `mobaSftpActionIconX` and
+`mobaSftpActionSeparatorX` so the render checker can reject per-button drift.
 The dock density is shared metadata too. `GuiMobaSftpDockLayout` defines the
 compact inner margin, toolbar height, path row height, table-header height, file
 row height, maximum static rows, monitoring panel height and divider offset.
@@ -242,6 +269,10 @@ offsets and selected parent row as the live PyQt file table exposes through
 `mobaSftpSelectedRowKind`. The live checker rejects auto-sized column drift, and
 the visual metrics pin the path/header strip plus the selected parent-row fill
 and outline so the dock cannot drift back to an unselected generic file list.
+MobaXterm-style SFTP browser geometry is tracked separately: the same
+`GuiMobaSftpBrowserChrome` record pins path text, dropdown marker, header-label
+and file-row icon/text offsets, and the live PyQt path and table widgets expose
+matching `mobaSftp*` geometry properties for the render checker.
 SFTP file-row glyphs now use shared generated metadata too:
 `GuiMobaSftpFileRowIcon` defines parent-folder, folder and file icons with
 stable icon keys, row kinds, sizes and `generated-pixmap` render evidence. The
@@ -266,6 +297,10 @@ properties. The compact dock additionally exposes
 `mobaMonitoringControlGeometryKeys` so static previews, live PyQt controls and
 the render manifest report the same Moba-style monitoring row geometry instead
 of drifting independently.
+MobaXterm-style remote-monitoring footer geometry now pins the footer height,
+short divider span, content-left offset, metric-row gap and live controls-frame
+width so the lower-left monitoring band cannot drift away from the connected
+reference while telemetry detail stays in the bottom status surface.
 Connected MobaXterm-style chrome now uses a shared SSH/SFTP state model for the
 window title, active tab label and bottom telemetry segments, so the static
 preview and live PyQt window show the same target-centric example identity and
@@ -277,6 +312,13 @@ preview draws separator lines and reference-like cells; and the live PyQt bar
 uses generated pixmap glyphs exposed through `mobaTelemetryIconRender`,
 `mobaTelemetryCellWidth` and `mobaTelemetryDisplayText` for the render checker,
 which rejects text-placeholder telemetry icons.
+MobaXterm-style bottom telemetry geometry is tracked separately too:
+`MobaTelemetryCellGeometry` fixes each cell's strip x position, cell height,
+icon offset, label offset, label font size and separator span. Static previews
+use `moba_telemetry_cell_geometry_for`, while the live PyQt telemetry widgets
+expose `mobaTelemetryGeometryKeys`, `mobaTelemetryCellStaticX`,
+`mobaTelemetryIconX` and `mobaTelemetryLabelX` so the render checker can catch
+spacing drift inside the bottom status strip.
 The SSH banner chrome has its own shared title, subtitle, target-line,
 capability-row, footer-link and geometry metadata; the static renderer uses it
 for the centered banner header and terminal spacing, while the live PyQt banner
@@ -285,16 +327,34 @@ exposes `mobaSshBannerTitle`, `mobaSshBannerSubtitle`, `mobaBannerWidth`,
 `mobaSshBannerFooter` properties for the render contract. The MobaXterm-style SSH banner capability card is now checked as keyed rows for Direct SSH, SSH
 compression, SSH-browser and X11-forwarding status, plus the help/website footer
 links, so static and live evidence cannot drift independently.
+MobaXterm-style SSH banner row geometry is tracked separately through
+`GuiMobaSshBannerRowGeometry`: title, subtitle, target, each capability row and
+the footer all have fixed x/y/width/height metadata. The static renderer reads
+those rows through `gui_design_moba_ssh_banner_row_geometry_for`, while the live
+PyQt card uses a `mobaSshBannerSlot` and exposes `mobaSshBannerRowY` plus
+`mobaSshBannerRowGeometryKeys` so the render checker can reject row-spacing,
+left-offset or terminal-gap drift.
 The connected terminal transcript is shared state too. `moba_connected.py`
 builds keyed transcript lines for the web-console URL, last-login notice and
 ready shell prompt from the generic reference profile; the static preview
 renders `state.terminal_transcript`, while the live terminal output exposes
 `mobaTerminalTranscriptKeys` and `mobaTerminalTranscriptTones` for the render
 checker.
+MobaXterm-style terminal transcript geometry is also explicit:
+`GuiMobaTerminalTranscriptRowGeometry` fixes the transcript left offset,
+per-line y positions, row cadence and mono font size. The static preview reads
+that geometry for every transcript line, and the live PyQt connected terminal
+marks `mobaPlainTerminalMode`, hides the generic terminal header/command/input
+surfaces, and exposes `mobaTerminalTranscriptGeometryKeys` plus row x/y/height
+metadata for the render checker.
 The connected tab strip is also state-driven: the static preview renders home,
 inactive SSH, active SSH and plus tabs with generated icons and close markers,
 while the live PyQt tabs expose matching `mobaTabChromeKey` and
 `mobaTabIconKey` properties for the render checker.
+MobaXterm-style connected tab geometry is now shared too: home, inactive SSH,
+active SSH and plus-tab widths plus icon, label, close-button and gap offsets
+are defined in `MobaConnectedTabChromeGeometry`, used by the static renderer and
+exposed as live `mobaTab*` properties.
 The connected terminal workspace also includes a right utility rail backed by
 shared action metadata; the static preview draws clip/settings/tool icons from
 shared right-edge stack coordinates instead of text placeholders, and the live
@@ -314,6 +374,10 @@ SSH-browser workflow segments and a right-side marker instead of copying
 proprietary status wording. The live PyQt status labels expose
 `productStatusNotice`, `productStatusMarker` and `productStatusKey` properties,
 and static visual metrics measure the status-notice region.
+MobaXterm-style bottom status geometry is tracked separately: the shared chrome
+metadata pins the 22px footer height, notice/product-note offsets, status-segment
+start offset and right-marker box, with the same values consumed by the static
+renderer and exposed through live `mobaStatus*` properties.
 The MobaXterm-style bottom-edge navigation controls are shared metadata as well:
 `gui_design_moba_bottom_edge_controls()` defines previous-tab, next-tab and
 close-active actions with generated arrow/close glyphs. Static previews draw the

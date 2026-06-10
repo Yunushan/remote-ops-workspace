@@ -21,6 +21,7 @@ from remote_ops_workspace.gui_designs import (  # noqa: E402
     GuiDesignPreset,
     gui_design_interaction_state,
     gui_design_moba_bottom_edge_controls,
+    gui_design_moba_connected_dock_frame,
     gui_design_moba_home_welcome_chrome,
     gui_design_moba_monitoring_control_geometry_for,
     gui_design_moba_monitoring_controls,
@@ -29,18 +30,26 @@ from remote_ops_workspace.gui_designs import (  # noqa: E402
     gui_design_moba_quick_connect_suggestion_chrome,
     gui_design_moba_rail_items,
     gui_design_moba_remote_monitoring_dock_chrome,
+    gui_design_moba_ribbon_action_geometry_for,
     gui_design_moba_ribbon_actions,
+    gui_design_moba_ribbon_edge_actions,
     gui_design_moba_right_utility_actions,
     gui_design_moba_session_edge_actions,
     gui_design_moba_sftp_browser_chrome,
     gui_design_moba_sftp_dock_actions,
     gui_design_moba_sftp_dock_layout,
     gui_design_moba_sftp_file_row_icon,
+    gui_design_moba_sftp_toolbar_action_geometry,
+    gui_design_moba_sftp_toolbar_action_geometry_for,
     gui_design_moba_ssh_banner_chrome,
+    gui_design_moba_ssh_banner_row_geometry_for,
     gui_design_moba_status_bar_chrome,
     gui_design_moba_status_segments,
+    gui_design_moba_terminal_transcript_row_geometry_for,
     gui_design_moba_titlebar_chrome,
+    gui_design_moba_top_menu_geometry_for,
     gui_design_moba_top_menu_items,
+    gui_design_moba_top_stack_geometry,
     gui_design_mremoteng_document_controls,
     gui_design_mremoteng_document_toolbar_chrome,
     gui_design_mremoteng_property_grid_chrome,
@@ -69,8 +78,11 @@ from remote_ops_workspace.gui_designs import (  # noqa: E402
 from remote_ops_workspace.moba_connected import (  # noqa: E402
     MobaConnectedSessionState,
     build_moba_connected_session_state,
+    moba_connected_tab_chrome_geometry_for,
     moba_connected_tab_chrome_items,
     moba_connected_window_title,
+    moba_telemetry_cell_geometry,
+    moba_telemetry_cell_geometry_for,
     moba_telemetry_cells,
 )
 from remote_ops_workspace.models import Profile  # noqa: E402
@@ -583,17 +595,17 @@ def render_mobaxterm_preset(preset: GuiDesignPreset):
     image = Image.new("RGB", PREVIEW_SIZE, c.window)
     draw = ImageDraw.Draw(image)
 
-    title_h = 22
-    menu_h = 22
-    ribbon_h = 64
     quick_connect_chrome = gui_design_moba_quick_connect_chrome()
-    quick_h = quick_connect_chrome.static_height
-    status_h = 22
-    side_w = 390
-    rail_w = 24
-    top_h = title_h + menu_h + ribbon_h
-    main_y = top_h
-    main_h = PREVIEW_SIZE[1] - main_y - status_h
+    top_stack = gui_design_moba_top_stack_geometry()
+    frame = gui_design_moba_connected_dock_frame()
+    title_h = top_stack.titlebar_height
+    menu_h = top_stack.menu_height
+    ribbon_h = top_stack.ribbon_height
+    quick_h = frame.quick_connect_height
+    status_h = top_stack.status_height
+    side_w = frame.side_width
+    rail_w = frame.rail_width
+    main_y = frame.quick_connect_y
 
     titlebar_chrome = gui_design_moba_titlebar_chrome()
     draw.rectangle((0, 0, PREVIEW_SIZE[0], title_h), fill="#1c1c1c")
@@ -614,35 +626,74 @@ def render_mobaxterm_preset(preset: GuiDesignPreset):
     draw.line((0, title_h - 1, PREVIEW_SIZE[0], title_h - 1), fill=c.toolbar_border)
 
     draw.rectangle((0, title_h, PREVIEW_SIZE[0], title_h + menu_h), fill="#141414")
-    mx = 8
     for item in gui_design_moba_top_menu_items():
-        draw_text(draw, item.label, mx, title_h + 5, c.control_text, 11)
-        mx += len(item.label) * 7 + 18
+        geometry = gui_design_moba_top_menu_geometry_for(item.key)
+        draw_text(draw, item.label, geometry.static_x, title_h + geometry.label_y, c.control_text, geometry.label_font_size)
 
-    ribbon_y = title_h + menu_h
+    ribbon_y = top_stack.ribbon_y
     draw.rectangle((0, ribbon_y, PREVIEW_SIZE[0], ribbon_y + ribbon_h), fill=c.toolbar)
-    rx = 12
-    for index, action in enumerate(gui_design_moba_ribbon_actions()):
+    for action in gui_design_moba_ribbon_actions():
         icon_key = action.icon_key
         label = action.label
         color = action.color
-        item_w = max(58, len(label) * 7 + 12)
-        if index in {1, 4, 7, 10}:
-            draw.line((rx - 6, ribbon_y + 7, rx - 6, ribbon_y + ribbon_h - 8), fill=c.toolbar_border)
-        action_state = toolbar_interaction_state(label.lower().replace(" ", "-"), interaction)
+        geometry = gui_design_moba_ribbon_action_geometry_for(icon_key)
+        if geometry.separator_before:
+            draw.line(
+                (
+                    geometry.separator_x,
+                    ribbon_y + geometry.separator_top,
+                    geometry.separator_x,
+                    ribbon_y + geometry.separator_bottom,
+                ),
+                fill=c.toolbar_border,
+            )
+        action_state = toolbar_interaction_state(icon_key, interaction)
         icon_fill, icon_outline, text_color = interaction_button_colors(action_state, c)
         icon_fill = color if action_state == "normal" else icon_fill
         if action_state in {"active", "checked"}:
-            draw.rectangle((rx + 10, ribbon_y + 3, rx + 42, ribbon_y + 34), outline=c.control_hover)
-        draw_moba_ribbon_icon(draw, icon_key, rx + 14, ribbon_y + 6, 24, icon_fill, icon_outline, c)
-        draw_text(draw, label, rx + max(0, (item_w - len(label) * 6) // 2), ribbon_y + 40, text_color, 10)
-        rx += item_w
-    right_x = PREVIEW_SIZE[0] - 128
-    draw.line((right_x - 12, ribbon_y + 7, right_x - 12, ribbon_y + ribbon_h - 8), fill=c.toolbar_border)
-    draw_moba_ribbon_icon(draw, "xserver", right_x + 6, ribbon_y + 6, 28, "#1a1a1a", "#1a1a1a", c)
-    draw_text(draw, "X server", right_x, ribbon_y + 42, c.control_text, 10)
-    draw_moba_ribbon_icon(draw, "exit", PREVIEW_SIZE[0] - 48, ribbon_y + 7, 25, "#e2473f", "#e2473f", c)
-    draw_text(draw, "Exit", PREVIEW_SIZE[0] - 50, ribbon_y + 42, c.control_text, 10)
+            draw.rectangle(
+                (
+                    geometry.active_outline_x,
+                    ribbon_y + geometry.active_outline_y,
+                    geometry.active_outline_x + geometry.active_outline_width,
+                    ribbon_y + geometry.active_outline_y + geometry.active_outline_height,
+                ),
+                outline=c.control_hover,
+            )
+        draw_moba_ribbon_icon(
+            draw,
+            icon_key,
+            geometry.icon_x,
+            ribbon_y + geometry.icon_y,
+            geometry.icon_size,
+            icon_fill,
+            icon_outline,
+            c,
+        )
+        draw_text(draw, label, geometry.label_x, ribbon_y + geometry.label_y, text_color, geometry.label_font_size)
+    for action in gui_design_moba_ribbon_edge_actions():
+        geometry = gui_design_moba_ribbon_action_geometry_for(action.key)
+        if geometry.separator_before:
+            draw.line(
+                (
+                    geometry.separator_x,
+                    ribbon_y + geometry.separator_top,
+                    geometry.separator_x,
+                    ribbon_y + geometry.separator_bottom,
+                ),
+                fill=c.toolbar_border,
+            )
+        draw_moba_ribbon_icon(
+            draw,
+            action.icon_key,
+            geometry.icon_x,
+            ribbon_y + geometry.icon_y,
+            geometry.icon_size,
+            action.color,
+            action.color,
+            c,
+        )
+        draw_text(draw, action.label, geometry.label_x, ribbon_y + geometry.label_y, c.control_text, geometry.label_font_size)
     draw.line((0, ribbon_y + ribbon_h - 1, PREVIEW_SIZE[0], ribbon_y + ribbon_h - 1), fill=c.toolbar_border)
 
     draw_moba_quick_connect_chrome(
@@ -655,8 +706,10 @@ def render_mobaxterm_preset(preset: GuiDesignPreset):
         query=quick_connect_chrome.connected_idle_query,
     )
 
-    tree_y = main_y + quick_h
-    draw.rectangle((0, tree_y, rail_w, tree_y + main_h - quick_h), fill="#101010")
+    if frame.dock_y != top_stack.left_dock_y:
+        raise ValueError("Moba connected dock frame y must match the top stack left-dock y")
+    tree_y = frame.dock_y
+    draw.rectangle((0, tree_y, rail_w, tree_y + frame.dock_height), fill="#101010")
     rail_icon_keys = {
         "collapse": "collapse",
         "sessions": "session",
@@ -678,20 +731,21 @@ def render_mobaxterm_preset(preset: GuiDesignPreset):
         else:
             ry += 8
 
-    draw_moba_connected_sftp_dock(draw, preset, state, rail_w, tree_y, side_w - rail_w, main_h - quick_h)
+    draw_moba_connected_sftp_dock(draw, preset, state, frame.dock_x, frame.dock_y, frame.dock_width, frame.dock_height)
     if quick_connect_chrome.connected_suggestions_visible:
         draw_moba_quick_connect_suggestions(draw, preset, 0, main_y + quick_h, side_w, state)
-    redraw_moba_sftp_toolbar_metric_edges(draw, preset, rail_w, tree_y, side_w - rail_w)
+    redraw_moba_sftp_toolbar_metric_edges(draw, preset, frame.dock_x, frame.dock_y, frame.dock_width)
 
-    tab_y = main_y
-    workspace_x = side_w
-    draw.rectangle((workspace_x, tab_y, PREVIEW_SIZE[0], tab_y + 28), fill=c.tab, outline=c.toolbar_border)
+    tab_y = top_stack.tab_y
+    workspace_x = frame.workspace_x
+    draw.rectangle((workspace_x, tab_y, PREVIEW_SIZE[0], tab_y + top_stack.tab_height), fill=c.tab, outline=c.toolbar_border)
     tx = workspace_x + 10
     for item in moba_connected_tab_chrome_items(state):
         draw_moba_connected_tab(draw, item, tx, tab_y + 3, c)
-        tx += item.width + 4
+        geometry = moba_connected_tab_chrome_geometry_for(item.key)
+        tx += geometry.width + geometry.gap_after
 
-    content_y = tab_y + 28
+    content_y = top_stack.terminal_content_y
     draw.rectangle((workspace_x, content_y, PREVIEW_SIZE[0], PREVIEW_SIZE[1] - status_h), fill=c.pane)
     draw_moba_right_utility_rail(draw, PREVIEW_SIZE[0] - 30, content_y, 30, PREVIEW_SIZE[1] - status_h - content_y, c)
     draw_moba_session_edge_controls(draw, PREVIEW_SIZE[0] - 21, c)
@@ -703,29 +757,63 @@ def render_mobaxterm_preset(preset: GuiDesignPreset):
     banner_y = content_y + banner_chrome.static_top_offset
     draw_moba_ssh_banner_card(draw, preset, state, banner_x, banner_y)
     term_y = banner_y + banner_chrome.static_height + banner_chrome.terminal_gap
-    ty = term_y
     for line in state.terminal_transcript:
+        geometry = gui_design_moba_terminal_transcript_row_geometry_for(line.key)
         color = "#7dd3fc" if line.tone == "info" else c.terminal_text
-        draw_text(draw, line.text, term_x + 14, ty, color, 13, mono=True)
-        ty += 20
+        draw_text(
+            draw,
+            line.text,
+            term_x + geometry.static_x,
+            term_y + geometry.static_y,
+            color,
+            geometry.font_size,
+            mono=True,
+        )
     draw.rectangle((term_x, content_bottom, PREVIEW_SIZE[0], PREVIEW_SIZE[1] - status_h), fill=c.toolbar, outline=c.toolbar_border)
-    telemetry_x = term_x + 10
+    telemetry_geometry = moba_telemetry_cell_geometry()
     for cell in moba_telemetry_cells(state):
-        cell_right = telemetry_x + cell.width
-        draw.rectangle((telemetry_x, content_bottom + 1, cell_right, PREVIEW_SIZE[1] - status_h - 1), fill=c.toolbar)
-        draw.line((telemetry_x, content_bottom + 2, telemetry_x, PREVIEW_SIZE[1] - status_h - 2), fill=c.toolbar_border)
+        geometry = moba_telemetry_cell_geometry_for(cell.key)
+        cell_x = term_x + geometry.static_x
+        cell_y = content_bottom + geometry.static_y
+        cell_right = cell_x + geometry.width
+        draw.rectangle((cell_x, cell_y, cell_right, cell_y + geometry.height), fill=c.toolbar)
+        draw.line(
+            (
+                cell_x,
+                content_bottom + geometry.separator_top,
+                cell_x,
+                content_bottom + geometry.separator_bottom,
+            ),
+            fill=c.toolbar_border,
+        )
         draw_moba_telemetry_icon(
             draw,
             cell.icon_key,
-            telemetry_x + 5,
-            content_bottom + 5,
-            cell.icon_size,
+            cell_x + geometry.icon_x,
+            content_bottom + geometry.icon_y,
+            geometry.icon_size,
             c,
             accent=cell.icon_accent,
         )
-        draw_text(draw, cell.display_text, telemetry_x + cell.icon_size + 10, content_bottom + 6, c.control_text, 9)
-        telemetry_x = cell_right
-    draw.line((telemetry_x, content_bottom + 2, telemetry_x, PREVIEW_SIZE[1] - status_h - 2), fill=c.toolbar_border)
+        draw_text(
+            draw,
+            cell.display_text,
+            cell_x + geometry.label_x,
+            content_bottom + geometry.label_y,
+            c.control_text,
+            geometry.label_font_size,
+        )
+    last_geometry = telemetry_geometry[-1]
+    telemetry_right = term_x + last_geometry.static_x + last_geometry.width
+    draw.line(
+        (
+            telemetry_right,
+            content_bottom + last_geometry.separator_top,
+            telemetry_right,
+            content_bottom + last_geometry.separator_bottom,
+        ),
+        fill=c.toolbar_border,
+    )
 
     draw_status_bar(draw, preset, 0, PREVIEW_SIZE[1] - status_h, PREVIEW_SIZE[0], status_h)
     return image
@@ -770,32 +858,71 @@ def render_mobaxterm_home_preset(preset: GuiDesignPreset):
     draw.line((0, title_h - 1, PREVIEW_SIZE[0], title_h - 1), fill=c.toolbar_border)
 
     draw.rectangle((0, title_h, PREVIEW_SIZE[0], title_h + menu_h), fill="#141414")
-    mx = 8
     for item in gui_design_moba_top_menu_items():
-        draw_text(draw, item.label, mx, title_h + 5, c.control_text, 11)
-        mx += len(item.label) * 7 + 18
+        geometry = gui_design_moba_top_menu_geometry_for(item.key)
+        draw_text(draw, item.label, geometry.static_x, title_h + geometry.label_y, c.control_text, geometry.label_font_size)
 
     ribbon_y = title_h + menu_h
     draw.rectangle((0, ribbon_y, PREVIEW_SIZE[0], ribbon_y + ribbon_h), fill=c.toolbar)
-    rx = 12
-    for index, action in enumerate(gui_design_moba_ribbon_actions()):
-        item_w = max(58, len(action.label) * 7 + 12)
-        if index in {1, 4, 7, 10}:
-            draw.line((rx - 6, ribbon_y + 7, rx - 6, ribbon_y + ribbon_h - 8), fill=c.toolbar_border)
-        action_state = toolbar_interaction_state(action.label.lower().replace(" ", "-"), interaction)
+    for action in gui_design_moba_ribbon_actions():
+        geometry = gui_design_moba_ribbon_action_geometry_for(action.icon_key)
+        if geometry.separator_before:
+            draw.line(
+                (
+                    geometry.separator_x,
+                    ribbon_y + geometry.separator_top,
+                    geometry.separator_x,
+                    ribbon_y + geometry.separator_bottom,
+                ),
+                fill=c.toolbar_border,
+            )
+        action_state = toolbar_interaction_state(action.icon_key, interaction)
         icon_fill, icon_outline, text_color = interaction_button_colors(action_state, c)
         icon_fill = action.color if action_state == "normal" else icon_fill
         if action_state in {"active", "checked"}:
-            draw.rectangle((rx + 10, ribbon_y + 3, rx + 42, ribbon_y + 34), outline=c.control_hover)
-        draw_moba_ribbon_icon(draw, action.icon_key, rx + 14, ribbon_y + 6, 24, icon_fill, icon_outline, c)
-        draw_text(draw, action.label, rx + max(0, (item_w - len(action.label) * 6) // 2), ribbon_y + 40, text_color, 10)
-        rx += item_w
-    right_x = PREVIEW_SIZE[0] - 128
-    draw.line((right_x - 12, ribbon_y + 7, right_x - 12, ribbon_y + ribbon_h - 8), fill=c.toolbar_border)
-    draw_moba_ribbon_icon(draw, "xserver", right_x + 6, ribbon_y + 6, 28, "#1a1a1a", "#1a1a1a", c)
-    draw_text(draw, "X server", right_x, ribbon_y + 42, c.control_text, 10)
-    draw_moba_ribbon_icon(draw, "exit", PREVIEW_SIZE[0] - 48, ribbon_y + 7, 25, "#e2473f", "#e2473f", c)
-    draw_text(draw, "Exit", PREVIEW_SIZE[0] - 50, ribbon_y + 42, c.control_text, 10)
+            draw.rectangle(
+                (
+                    geometry.active_outline_x,
+                    ribbon_y + geometry.active_outline_y,
+                    geometry.active_outline_x + geometry.active_outline_width,
+                    ribbon_y + geometry.active_outline_y + geometry.active_outline_height,
+                ),
+                outline=c.control_hover,
+            )
+        draw_moba_ribbon_icon(
+            draw,
+            action.icon_key,
+            geometry.icon_x,
+            ribbon_y + geometry.icon_y,
+            geometry.icon_size,
+            icon_fill,
+            icon_outline,
+            c,
+        )
+        draw_text(draw, action.label, geometry.label_x, ribbon_y + geometry.label_y, text_color, geometry.label_font_size)
+    for action in gui_design_moba_ribbon_edge_actions():
+        geometry = gui_design_moba_ribbon_action_geometry_for(action.key)
+        if geometry.separator_before:
+            draw.line(
+                (
+                    geometry.separator_x,
+                    ribbon_y + geometry.separator_top,
+                    geometry.separator_x,
+                    ribbon_y + geometry.separator_bottom,
+                ),
+                fill=c.toolbar_border,
+            )
+        draw_moba_ribbon_icon(
+            draw,
+            action.icon_key,
+            geometry.icon_x,
+            ribbon_y + geometry.icon_y,
+            geometry.icon_size,
+            action.color,
+            action.color,
+            c,
+        )
+        draw_text(draw, action.label, geometry.label_x, ribbon_y + geometry.label_y, c.control_text, geometry.label_font_size)
     draw.line((0, ribbon_y + ribbon_h - 1, PREVIEW_SIZE[0], ribbon_y + ribbon_h - 1), fill=c.toolbar_border)
 
     draw_moba_quick_connect_chrome(draw, quick_connect_chrome, c, 0, main_y, side_w, query="")
@@ -983,36 +1110,63 @@ def draw_moba_ssh_banner_card(
         fill=c.terminal,
         outline=c.terminal_accent,
     )
+    title_geometry = gui_design_moba_ssh_banner_row_geometry_for("title")
     draw_centered_text(
         draw,
         f"{chrome.heading_prefix}{chrome.title}{chrome.heading_suffix}",
-        x,
-        y + 10,
-        chrome.static_width,
+        x + title_geometry.static_x,
+        y + title_geometry.static_y,
+        title_geometry.static_width,
         c.status,
         12,
         mono=True,
         bold=True,
     )
-    draw_centered_text(draw, chrome.subtitle, x, y + 27, chrome.static_width, c.status, 12, mono=True)
-    row_y = y + chrome.body_top_offset
-    draw_text(draw, f"> {chrome.target_intro} {state.banner.title}", x + 14, row_y, c.control_text, 12, mono=True)
-    row_y += 16
+    subtitle_geometry = gui_design_moba_ssh_banner_row_geometry_for("subtitle")
+    draw_centered_text(
+        draw,
+        chrome.subtitle,
+        x + subtitle_geometry.static_x,
+        y + subtitle_geometry.static_y,
+        subtitle_geometry.static_width,
+        c.status,
+        12,
+        mono=True,
+    )
+    target_geometry = gui_design_moba_ssh_banner_row_geometry_for("target")
+    draw_text(
+        draw,
+        f"> {chrome.target_intro} {state.banner.title}",
+        x + target_geometry.static_x,
+        y + target_geometry.static_y,
+        c.control_text,
+        12,
+        mono=True,
+    )
     for row in state.banner.capability_rows():
+        row_geometry = gui_design_moba_ssh_banner_row_geometry_for(row.key)
         value_color = c.control_text if row.status == "ok" else c.status
         draw_text(
             draw,
             f"  * {row.line(label_width=chrome.capability_label_width)}",
-            x + 14,
-            row_y,
+            x + row_geometry.static_x,
+            y + row_geometry.static_y,
             value_color,
             12,
             mono=True,
         )
-        row_y += 16
     help_link, website_link = state.banner.footer_links()
+    footer_geometry = gui_design_moba_ssh_banner_row_geometry_for("footer")
     footer = f"> {chrome.footer_prefix} {help_link} or visit our {website_link}."
-    draw_text(draw, footer, x + 14, row_y + 4, c.control_text, 12, mono=True)
+    draw_text(
+        draw,
+        footer,
+        x + footer_geometry.static_x,
+        y + footer_geometry.static_y,
+        c.control_text,
+        12,
+        mono=True,
+    )
 
 
 def draw_moba_quick_connect_chrome(draw: Any, chrome: Any, c: Any, x: int, y: int, w: int, *, query: str = "") -> None:
@@ -1094,17 +1248,14 @@ def redraw_moba_sftp_toolbar_metric_edges(draw: Any, preset: GuiDesignPreset, x:
         (dock_left, toolbar_y + density.toolbar_height, dock_right, toolbar_y + density.toolbar_height),
         fill=c.toolbar_border,
     )
-    tool_x = dock_left + density.toolbar_icon_left_inset
-    for action in gui_design_moba_sftp_dock_actions():
-        tool_x += density.toolbar_icon_step
-        if not action.separator_after:
+    for geometry in gui_design_moba_sftp_toolbar_action_geometry():
+        if not geometry.separator_after:
             continue
-        separator_x = tool_x + density.toolbar_separator_width // 2
+        separator_x = dock_left + geometry.separator_x
         draw.line(
             (separator_x, toolbar_y + 5, separator_x, toolbar_y + density.toolbar_height - 5),
             fill=c.toolbar_border,
         )
-        tool_x += density.toolbar_separator_width
 
 
 def draw_moba_telemetry_icon(
@@ -1217,18 +1368,19 @@ def draw_moba_right_utility_icon(draw: Any, icon_key: str, x: int, y: int, size:
 
 
 def draw_moba_connected_tab(draw: Any, item: Any, x: int, y: int, c: Any) -> None:
+    geometry = moba_connected_tab_chrome_geometry_for(item.key)
     fill = c.tab_selected if item.active else c.tab
     text = c.tab_selected_text if item.active else c.tab_text
-    rounded(draw, (x, y, x + item.width, y + 22), fill, c.toolbar_border, 2)
-    icon_x = x + 8
+    rounded(draw, (x, y, x + geometry.width, y + geometry.height), fill, c.toolbar_border, geometry.corner_radius)
+    icon_x = x + geometry.icon_x
     if item.key == "new-session":
-        draw_text(draw, "+", x + 11, y + 3, text, 13, bold=True)
+        draw_text(draw, "+", x + geometry.plus_x, y + geometry.plus_y, text, 13, bold=True)
         return
-    draw_moba_tab_icon(draw, item.icon_key, icon_x, y + 5, 12, c)
+    draw_moba_tab_icon(draw, item.icon_key, icon_x, y + geometry.icon_y, geometry.icon_size, c)
     if item.label:
-        draw_text(draw, item.label, icon_x + 18, y + 7, text, 8, bold=item.active)
+        draw_text(draw, item.label, x + geometry.label_x, y + geometry.label_y, text, 8, bold=item.active)
     if item.closeable:
-        draw_text(draw, "x", x + item.width - 16, y + 6, c.sidebar_muted, 9, bold=True)
+        draw_text(draw, "x", x + geometry.width - geometry.close_right_offset, y + geometry.close_y, c.sidebar_muted, 9, bold=True)
 
 
 def draw_moba_tab_icon(draw: Any, icon_key: str, x: int, y: int, size: int, c: Any) -> None:
@@ -1340,31 +1492,45 @@ def draw_moba_connected_sftp_dock(
         fill=c.control,
         outline=c.toolbar_border,
     )
-    tool_x = dock_left + density.toolbar_icon_left_inset
     for action in gui_design_moba_sftp_dock_actions():
+        geometry = gui_design_moba_sftp_toolbar_action_geometry_for(action.key)
         draw_moba_sftp_toolbar_icon(
             draw,
             action.icon_key,
-            tool_x,
-            toolbar_y + (density.toolbar_height - density.toolbar_icon_size) // 2,
-            density.toolbar_icon_size,
+            dock_left + geometry.icon_x,
+            toolbar_y + geometry.icon_y,
+            geometry.icon_size,
             action.color,
             c,
         )
-        tool_x += density.toolbar_icon_step
-        if action.separator_after:
-            separator_x = tool_x + density.toolbar_separator_width // 2
+        if geometry.separator_after:
+            separator_x = dock_left + geometry.separator_x
             draw.line(
                 (separator_x, toolbar_y + 5, separator_x, toolbar_y + density.toolbar_height - 5),
                 fill=c.toolbar_border,
             )
-            tool_x += density.toolbar_separator_width
 
     chrome = gui_design_moba_sftp_browser_chrome()
     path_y = toolbar_y + density.toolbar_height + density.path_gap
     draw.rectangle((dock_left, path_y, dock_right, path_y + density.path_height), fill=c.control, outline=c.toolbar_border)
-    draw_text(draw, state.remote_path or chrome.path_placeholder, x + 14, path_y + 6, c.control_text, 11, mono=True)
-    draw_text(draw, chrome.dropdown_marker, x + w - 18, path_y + 6, c.sidebar_muted, 10, bold=True)
+    draw_text(
+        draw,
+        state.remote_path or chrome.path_placeholder,
+        x + chrome.path_text_x,
+        path_y + chrome.path_text_y,
+        c.control_text,
+        chrome.path_font_size,
+        mono=True,
+    )
+    draw_text(
+        draw,
+        chrome.dropdown_marker,
+        x + w - chrome.dropdown_right_offset,
+        path_y + chrome.dropdown_y,
+        c.sidebar_muted,
+        chrome.dropdown_font_size,
+        bold=True,
+    )
 
     header_y = path_y + density.path_height + density.table_header_gap
     draw.rectangle(
@@ -1373,7 +1539,15 @@ def draw_moba_connected_sftp_dock(
         outline=c.toolbar_border,
     )
     for column in chrome.columns:
-        draw_text(draw, column.label, x + column.static_x, header_y + 7, c.control_text, 10, bold=True)
+        draw_text(
+            draw,
+            column.label,
+            x + column.static_x,
+            header_y + chrome.header_label_y,
+            c.control_text,
+            chrome.header_font_size,
+            bold=True,
+        )
     file_rows = [
         (chrome.parent_row_kind, chrome.parent_row_label, "", ""),
         *[(entry.kind, entry.name, str(entry.size_kb), entry.modified) for entry in state.file_entries],
@@ -1385,7 +1559,7 @@ def draw_moba_connected_sftp_dock(
         separator_x += column.static_width
         column_separator_x.append(separator_x)
     for row_index, (kind, name, size, modified) in enumerate(file_rows[: density.static_max_rows]):
-        row_top = row_y - 4
+        row_top = row_y + chrome.row_top_offset
         row_bottom = row_top + density.file_row_height
         selected = kind == chrome.selected_row_kind
         row_fill = "#1f2f3f" if selected else "#171717" if row_index % 2 else c.sidebar
@@ -1397,24 +1571,32 @@ def draw_moba_connected_sftp_dock(
         for separator_x in column_separator_x:
             draw.line((separator_x, row_top, separator_x, row_bottom), fill="#262626")
         row_icon = gui_design_moba_sftp_file_row_icon(kind)
-        draw_moba_sftp_file_icon(draw, row_icon.icon_key, x + 14, row_y - 1, row_icon.static_size, c)
-        draw_text(draw, name, x + 38, row_y, c.control_text, 10)
-        draw_text(draw, size, x + 202, row_y, c.control_text, 10)
-        draw_text(draw, modified, x + 278, row_y, c.sidebar_muted, 9)
+        draw_moba_sftp_file_icon(
+            draw,
+            row_icon.icon_key,
+            x + chrome.row_icon_x,
+            row_y + chrome.row_icon_y_offset,
+            row_icon.static_size,
+            c,
+        )
+        row_text_y = row_y + chrome.row_text_y_offset
+        draw_text(draw, name, x + chrome.row_name_x, row_text_y, c.control_text, chrome.row_text_font_size)
+        draw_text(draw, size, x + chrome.row_size_x, row_text_y, c.control_text, chrome.row_text_font_size)
+        draw_text(draw, modified, x + chrome.row_modified_x, row_text_y, c.sidebar_muted, chrome.row_modified_font_size)
         row_y += density.file_row_height
 
-    monitor_y = y + h - density.monitoring_height
+    chrome = gui_design_moba_remote_monitoring_dock_chrome()
+    monitor_y = y + h - chrome.static_height
+    controls = list(gui_design_moba_monitoring_controls())
     draw.line(
         (
-            x + density.monitoring_left_inset,
-            monitor_y - density.monitoring_divider_offset,
-            x + w - density.monitoring_left_inset,
-            monitor_y - density.monitoring_divider_offset,
+            x + chrome.divider_left_inset,
+            monitor_y - chrome.divider_offset,
+            x + w - chrome.divider_right_inset,
+            monitor_y - chrome.divider_offset,
         ),
         fill=c.sidebar_muted,
     )
-    controls = list(gui_design_moba_monitoring_controls())
-    chrome = gui_design_moba_remote_monitoring_dock_chrome()
     visible_metric_keys = chrome.visible_metric_keys if chrome.telemetry_surface == "left-dock" else ()
     remote_control = controls[0]
     follow_control = controls[1]
@@ -1434,12 +1616,12 @@ def draw_moba_connected_sftp_dock(
         if metric.key in visible_metric_keys
     ]
     if visible_metrics:
-        draw_text(draw, "   ".join(visible_metrics[:2]), x + density.monitoring_content_left, monitor_y + 28, c.sidebar_text, 10)
+        draw_text(draw, "   ".join(visible_metrics[:2]), x + chrome.content_left, monitor_y + 28, c.sidebar_text, 10)
         draw_text(
             draw,
             "   ".join(visible_metrics[2:4]),
-            x + density.monitoring_content_left,
-            monitor_y + 28 + density.monitoring_metric_row_gap,
+            x + chrome.content_left,
+            monitor_y + 28 + chrome.metric_row_gap,
             c.sidebar_text,
             10,
         )
@@ -3221,11 +3403,30 @@ def draw_status_bar(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, 
     segments = gui_design_status_segments(preset.id)
     if preset.id == "mobaxterm":
         chrome = gui_design_moba_status_bar_chrome()
-        draw_text(draw, chrome.notice, x + 6, y + 6, c.control_text, 10, bold=True)
-        draw_text(draw, f" - {chrome.product_note}", x + 142, y + 6, c.sidebar_muted, 10)
-        draw_status_segments(draw, tuple(segment.text for segment in gui_design_moba_status_segments()), x + w - 480, y, c)
+        draw_text(draw, chrome.notice, x + chrome.notice_x, y + chrome.notice_y, c.control_text, chrome.text_font_size, bold=True)
+        draw_text(
+            draw,
+            f" - {chrome.product_note}",
+            x + chrome.product_note_x,
+            y + chrome.product_note_y,
+            c.sidebar_muted,
+            chrome.text_font_size,
+        )
+        draw_status_segments(
+            draw,
+            tuple(segment.text for segment in gui_design_moba_status_segments()),
+            x + w - chrome.segment_start_right_offset,
+            y,
+            c,
+        )
         draw_moba_bottom_edge_controls(draw, y + 3, c)
-        draw.rectangle((x + w - 13, y + 6, x + w - 4, y + 16), outline=c.sidebar_muted)
+        marker_right = x + w - chrome.marker_right_inset
+        marker_left = marker_right - chrome.marker_width
+        marker_top = y + chrome.marker_y
+        draw.rectangle(
+            (marker_left, marker_top, marker_right, marker_top + chrome.marker_height),
+            outline=c.sidebar_muted,
+        )
         return
     draw_text(draw, preset.description, x + 14, y + 6, c.sidebar_muted, 10)
     draw_status_segments(draw, segments, x + w - 430, y, c)

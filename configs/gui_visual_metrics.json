@@ -82,7 +82,7 @@
         {"id": "sftp-path-bottom-rule", "from": [30, 195], "to": [384, 195], "rgb_min": [55, 55, 55], "rgb_max": [90, 90, 90], "min_match_ratio": 0.9},
         {"id": "sftp-header-bottom-rule", "from": [30, 227], "to": [384, 227], "rgb_min": [55, 55, 55], "rgb_max": [90, 90, 90], "min_match_ratio": 0.9},
         {"id": "sftp-dock-bottom-rule", "from": [24, 738], "to": [389, 738], "rgb_min": [60, 60, 60], "rgb_max": [80, 80, 80], "min_match_ratio": 0.9},
-        {"id": "remote-monitoring-divider", "from": [42, 608], "to": [372, 608], "rgb_min": [145, 145, 145], "rgb_max": [180, 180, 180], "min_match_ratio": 0.9},
+        {"id": "remote-monitoring-divider", "from": [42, 608], "to": [196, 608], "rgb_min": [145, 145, 145], "rgb_max": [180, 180, 180], "min_match_ratio": 0.9},
         {"id": "tab-strip-baseline", "from": [390, 136], "to": [690, 136], "rgb_min": [25, 25, 25], "rgb_max": [85, 85, 85], "min_match_ratio": 0.98},
         {"id": "telemetry-top-rule", "from": [390, 714], "to": [1279, 714], "rgb_min": [60, 60, 60], "rgb_max": [80, 80, 80], "min_match_ratio": 0.99},
         {"id": "telemetry-cell-separator", "from": [565, 716], "to": [565, 737], "rgb_min": [60, 60, 60], "rgb_max": [80, 80, 80], "min_match_ratio": 0.9},

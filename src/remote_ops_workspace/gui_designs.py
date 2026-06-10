@@ -13,11 +13,82 @@ class GuiMobaRibbonAction:
 
 
 @dataclass(frozen=True)
+class GuiMobaRibbonEdgeAction:
+    key: str
+    label: str
+    icon_key: str
+    color: str
+    tooltip: str
+
+
+@dataclass(frozen=True)
+class GuiMobaRibbonActionGeometry:
+    key: str
+    static_x: int
+    width: int
+    icon_x: int
+    icon_y: int
+    icon_size: int
+    label_x: int
+    label_y: int
+    label_font_size: int
+    separator_before: bool
+    separator_x: int
+    separator_top: int
+    separator_bottom: int
+    active_outline_x: int
+    active_outline_y: int
+    active_outline_width: int
+    active_outline_height: int
+
+    def to_dict(self) -> dict[str, int | str | bool]:
+        return {
+            "key": self.key,
+            "static_x": self.static_x,
+            "width": self.width,
+            "icon_x": self.icon_x,
+            "icon_y": self.icon_y,
+            "icon_size": self.icon_size,
+            "label_x": self.label_x,
+            "label_y": self.label_y,
+            "label_font_size": self.label_font_size,
+            "separator_before": self.separator_before,
+            "separator_x": self.separator_x,
+            "separator_top": self.separator_top,
+            "separator_bottom": self.separator_bottom,
+            "active_outline_x": self.active_outline_x,
+            "active_outline_y": self.active_outline_y,
+            "active_outline_width": self.active_outline_width,
+            "active_outline_height": self.active_outline_height,
+        }
+
+
+@dataclass(frozen=True)
 class GuiMobaTopMenuItem:
     key: str
     label: str
     primary_action: str
     tooltip: str
+
+
+@dataclass(frozen=True)
+class GuiMobaTopMenuGeometry:
+    key: str
+    static_x: int
+    width: int
+    label_y: int
+    label_font_size: int
+    gap_after: int
+
+    def to_dict(self) -> dict[str, int | str]:
+        return {
+            "key": self.key,
+            "static_x": self.static_x,
+            "width": self.width,
+            "label_y": self.label_y,
+            "label_font_size": self.label_font_size,
+            "gap_after": self.gap_after,
+        }
 
 
 @dataclass(frozen=True)
@@ -42,6 +113,24 @@ class GuiMobaQuickConnectChrome:
     input_padding: str
     connected_idle_query: str
     connected_suggestions_visible: bool
+
+
+@dataclass(frozen=True)
+class GuiMobaTopStackGeometry:
+    titlebar_height: int
+    menu_y: int
+    menu_height: int
+    ribbon_y: int
+    ribbon_height: int
+    quick_connect_y: int
+    quick_connect_height: int
+    left_dock_y: int
+    tab_y: int
+    tab_height: int
+    terminal_content_y: int
+    status_height: int
+    side_width: int
+    rail_width: int
 
 
 @dataclass(frozen=True)
@@ -114,6 +203,19 @@ class GuiMobaSftpDockAction:
 
 
 @dataclass(frozen=True)
+class GuiMobaSftpToolbarActionGeometry:
+    key: str
+    button_x: int
+    button_y: int
+    button_size: int
+    icon_x: int
+    icon_y: int
+    icon_size: int
+    separator_after: bool
+    separator_x: int
+
+
+@dataclass(frozen=True)
 class GuiMobaSftpTableColumn:
     key: str
     label: str
@@ -129,6 +231,44 @@ class GuiMobaSftpBrowserChrome:
     parent_row_kind: str
     selected_row_kind: str
     columns: tuple[GuiMobaSftpTableColumn, ...]
+    path_text_x: int
+    path_text_y: int
+    path_font_size: int
+    dropdown_right_offset: int
+    dropdown_y: int
+    dropdown_font_size: int
+    header_label_y: int
+    header_font_size: int
+    row_top_offset: int
+    row_icon_x: int
+    row_icon_y_offset: int
+    row_name_x: int
+    row_size_x: int
+    row_modified_x: int
+    row_text_y_offset: int
+    row_text_font_size: int
+    row_modified_font_size: int
+
+    def geometry_dict(self) -> dict[str, int]:
+        return {
+            "path_text_x": self.path_text_x,
+            "path_text_y": self.path_text_y,
+            "path_font_size": self.path_font_size,
+            "dropdown_right_offset": self.dropdown_right_offset,
+            "dropdown_y": self.dropdown_y,
+            "dropdown_font_size": self.dropdown_font_size,
+            "header_label_y": self.header_label_y,
+            "header_font_size": self.header_font_size,
+            "row_top_offset": self.row_top_offset,
+            "row_icon_x": self.row_icon_x,
+            "row_icon_y_offset": self.row_icon_y_offset,
+            "row_name_x": self.row_name_x,
+            "row_size_x": self.row_size_x,
+            "row_modified_x": self.row_modified_x,
+            "row_text_y_offset": self.row_text_y_offset,
+            "row_text_font_size": self.row_text_font_size,
+            "row_modified_font_size": self.row_modified_font_size,
+        }
 
 
 @dataclass(frozen=True)
@@ -161,6 +301,20 @@ class GuiMobaSftpDockLayout:
     monitoring_content_left: int
     monitoring_icon_center_x: int
     monitoring_metric_row_gap: int
+
+
+@dataclass(frozen=True)
+class GuiMobaConnectedDockFrame:
+    side_width: int
+    rail_width: int
+    dock_x: int
+    dock_y: int
+    dock_width: int
+    dock_height: int
+    workspace_x: int
+    quick_connect_y: int
+    quick_connect_height: int
+    status_y: int
 
 
 @dataclass(frozen=True)
@@ -200,6 +354,14 @@ class GuiMobaRemoteMonitoringDockChrome:
     visible_metric_keys: tuple[str, ...]
     refresh_seconds: int
     compact: bool
+    static_height: int
+    divider_offset: int
+    divider_left_inset: int
+    divider_right_inset: int
+    content_left: int
+    icon_center_x: int
+    metric_row_gap: int
+    live_controls_width: int
 
 
 @dataclass(frozen=True)
@@ -215,6 +377,17 @@ class GuiMobaStatusBarChrome:
     product_note: str
     right_marker: str
     right_marker_tooltip: str
+    static_height: int
+    notice_x: int
+    notice_y: int
+    product_note_x: int
+    product_note_y: int
+    text_font_size: int
+    segment_start_right_offset: int
+    marker_right_inset: int
+    marker_y: int
+    marker_width: int
+    marker_height: int
 
 
 @dataclass(frozen=True)
@@ -244,6 +417,26 @@ class GuiMobaSshBannerChrome:
     static_height: int
     body_top_offset: int
     terminal_gap: int
+
+
+@dataclass(frozen=True)
+class GuiMobaSshBannerRowGeometry:
+    key: str
+    object_name: str
+    static_x: int
+    static_y: int
+    static_width: int
+    static_height: int
+    centered: bool = False
+
+
+@dataclass(frozen=True)
+class GuiMobaTerminalTranscriptRowGeometry:
+    key: str
+    static_x: int
+    static_y: int
+    row_height: int
+    font_size: int
 
 
 @dataclass(frozen=True)
@@ -632,6 +825,28 @@ GUI_DESIGN_MOBA_RIBBON_ACTIONS: tuple[GuiMobaRibbonAction, ...] = (
     GuiMobaRibbonAction("help", "Help", "#1c9ef1"),
 )
 
+GUI_DESIGN_MOBA_RIBBON_EDGE_ACTIONS: tuple[GuiMobaRibbonEdgeAction, ...] = (
+    GuiMobaRibbonEdgeAction("xserver", "X server", "xserver", "#1a1a1a", "Show X server workflow status"),
+    GuiMobaRibbonEdgeAction("exit", "Exit", "exit", "#e2473f", "Close Remote Ops Workspace"),
+)
+
+GUI_DESIGN_MOBA_RIBBON_ACTION_GEOMETRY: tuple[GuiMobaRibbonActionGeometry, ...] = (
+    GuiMobaRibbonActionGeometry("session", 12, 61, 26, 6, 24, 21, 40, 10, False, 0, 7, 56, 22, 3, 32, 31),
+    GuiMobaRibbonActionGeometry("servers", 73, 61, 87, 6, 24, 82, 40, 10, True, 67, 7, 56, 83, 3, 32, 31),
+    GuiMobaRibbonActionGeometry("tools", 134, 58, 148, 6, 24, 148, 40, 10, False, 0, 7, 56, 144, 3, 32, 31),
+    GuiMobaRibbonActionGeometry("games", 192, 58, 206, 6, 24, 206, 40, 10, False, 0, 7, 56, 202, 3, 32, 31),
+    GuiMobaRibbonActionGeometry("sessions", 250, 68, 264, 6, 24, 260, 40, 10, True, 244, 7, 56, 260, 3, 32, 31),
+    GuiMobaRibbonActionGeometry("view", 318, 58, 332, 6, 24, 335, 40, 10, False, 0, 7, 56, 328, 3, 32, 31),
+    GuiMobaRibbonActionGeometry("split", 376, 58, 390, 6, 24, 390, 40, 10, False, 0, 7, 56, 386, 3, 32, 31),
+    GuiMobaRibbonActionGeometry("multiexec", 434, 75, 448, 6, 24, 444, 40, 10, True, 428, 7, 56, 444, 3, 32, 31),
+    GuiMobaRibbonActionGeometry("tunneling", 509, 75, 523, 6, 24, 519, 40, 10, False, 0, 7, 56, 519, 3, 32, 31),
+    GuiMobaRibbonActionGeometry("packages", 584, 68, 598, 6, 24, 594, 40, 10, False, 0, 7, 56, 594, 3, 32, 31),
+    GuiMobaRibbonActionGeometry("settings", 652, 68, 666, 6, 24, 662, 40, 10, True, 646, 7, 56, 662, 3, 32, 31),
+    GuiMobaRibbonActionGeometry("help", 720, 58, 734, 6, 24, 737, 40, 10, False, 0, 7, 56, 730, 3, 32, 31),
+    GuiMobaRibbonActionGeometry("xserver", 1152, 70, 1158, 6, 28, 1152, 42, 10, True, 1140, 7, 56, 1158, 3, 32, 31),
+    GuiMobaRibbonActionGeometry("exit", 1230, 42, 1232, 7, 25, 1230, 42, 10, False, 0, 7, 56, 1232, 3, 32, 31),
+)
+
 GUI_DESIGN_MOBA_TOP_MENU_ITEMS: tuple[GuiMobaTopMenuItem, ...] = (
     GuiMobaTopMenuItem("terminal", "Terminal", "Start local terminal", "Local terminal and split-pane commands"),
     GuiMobaTopMenuItem("sessions", "Sessions", "Connect selected", "Saved session and connection commands"),
@@ -642,6 +857,18 @@ GUI_DESIGN_MOBA_TOP_MENU_ITEMS: tuple[GuiMobaTopMenuItem, ...] = (
     GuiMobaTopMenuItem("settings", "Settings", "Settings status", "Workspace settings commands"),
     GuiMobaTopMenuItem("macros", "Macros", "Macros status", "Macro and multiexec workflow status"),
     GuiMobaTopMenuItem("help", "Help", "Run doctor", "Help and doctor commands"),
+)
+
+GUI_DESIGN_MOBA_TOP_MENU_GEOMETRY: tuple[GuiMobaTopMenuGeometry, ...] = (
+    GuiMobaTopMenuGeometry("terminal", 8, 74, 5, 11, 18),
+    GuiMobaTopMenuGeometry("sessions", 82, 74, 5, 11, 18),
+    GuiMobaTopMenuGeometry("view", 156, 46, 5, 11, 18),
+    GuiMobaTopMenuGeometry("x-server", 202, 74, 5, 11, 18),
+    GuiMobaTopMenuGeometry("tools", 276, 53, 5, 11, 18),
+    GuiMobaTopMenuGeometry("games", 329, 53, 5, 11, 18),
+    GuiMobaTopMenuGeometry("settings", 382, 74, 5, 11, 18),
+    GuiMobaTopMenuGeometry("macros", 456, 60, 5, 11, 18),
+    GuiMobaTopMenuGeometry("help", 516, 46, 5, 11, 18),
 )
 
 GUI_DESIGN_MOBA_RAIL_ITEMS: tuple[GuiMobaRailItem, ...] = (
@@ -712,6 +939,74 @@ GUI_DESIGN_MOBA_SSH_BANNER_CHROME = GuiMobaSshBannerChrome(
     static_height=166,
     body_top_offset=54,
     terminal_gap=18,
+)
+
+GUI_DESIGN_MOBA_SSH_BANNER_CAPABILITY_KEYS = (
+    "direct-ssh",
+    "ssh-compression",
+    "ssh-browser",
+    "x11-forwarding",
+)
+
+
+def _build_moba_ssh_banner_row_geometry() -> tuple[GuiMobaSshBannerRowGeometry, ...]:
+    chrome = GUI_DESIGN_MOBA_SSH_BANNER_CHROME
+    body_x = 14
+    body_width = chrome.static_width - body_x * 2
+    line_height = 16
+    rows: list[GuiMobaSshBannerRowGeometry] = [
+        GuiMobaSshBannerRowGeometry("title", "mobaSshBannerTitle", 0, 10, chrome.static_width, line_height, True),
+        GuiMobaSshBannerRowGeometry(
+            "subtitle",
+            "mobaSshBannerSubtitle",
+            0,
+            27,
+            chrome.static_width,
+            line_height,
+            True,
+        ),
+        GuiMobaSshBannerRowGeometry(
+            "target",
+            "mobaSshBannerTargetLine",
+            body_x,
+            chrome.body_top_offset,
+            body_width,
+            line_height,
+        ),
+    ]
+    capability_y = chrome.body_top_offset + line_height
+    for index, key in enumerate(GUI_DESIGN_MOBA_SSH_BANNER_CAPABILITY_KEYS):
+        rows.append(
+            GuiMobaSshBannerRowGeometry(
+                key,
+                "mobaSshBannerCapability",
+                body_x,
+                capability_y + index * line_height,
+                body_width,
+                line_height,
+            )
+        )
+    rows.append(
+        GuiMobaSshBannerRowGeometry(
+            "footer",
+            "mobaSshBannerFooter",
+            body_x,
+            capability_y + len(GUI_DESIGN_MOBA_SSH_BANNER_CAPABILITY_KEYS) * line_height + 4,
+            body_width,
+            line_height,
+        )
+    )
+    return tuple(rows)
+
+
+GUI_DESIGN_MOBA_SSH_BANNER_ROW_GEOMETRY = _build_moba_ssh_banner_row_geometry()
+
+
+GUI_DESIGN_MOBA_TERMINAL_TRANSCRIPT_ROW_GEOMETRY: tuple[GuiMobaTerminalTranscriptRowGeometry, ...] = (
+    GuiMobaTerminalTranscriptRowGeometry("web-console", 14, 0, 20, 13),
+    GuiMobaTerminalTranscriptRowGeometry("spacer", 14, 20, 20, 13),
+    GuiMobaTerminalTranscriptRowGeometry("last-login", 14, 40, 20, 13),
+    GuiMobaTerminalTranscriptRowGeometry("prompt-ready", 14, 60, 20, 13),
 )
 
 
@@ -800,6 +1095,22 @@ GUI_DESIGN_MOBA_QUICK_CONNECT_CHROME = GuiMobaQuickConnectChrome(
     connected_idle_query="",
     connected_suggestions_visible=False,
 )
+GUI_DESIGN_MOBA_TOP_STACK_GEOMETRY = GuiMobaTopStackGeometry(
+    titlebar_height=GUI_DESIGN_MOBA_TITLEBAR_CHROME.static_height,
+    menu_y=GUI_DESIGN_MOBA_TITLEBAR_CHROME.static_height,
+    menu_height=22,
+    ribbon_y=44,
+    ribbon_height=64,
+    quick_connect_y=108,
+    quick_connect_height=GUI_DESIGN_MOBA_QUICK_CONNECT_CHROME.static_height,
+    left_dock_y=132,
+    tab_y=108,
+    tab_height=28,
+    terminal_content_y=136,
+    status_height=22,
+    side_width=390,
+    rail_width=24,
+)
 GUI_DESIGN_MOBA_QUICK_CONNECT_SUGGESTION_CHROME = GuiMobaQuickConnectSuggestionChrome(
     preview_query="edge-prod.example.invalid",
     expected_kinds=("profile", "direct"),
@@ -854,6 +1165,23 @@ GUI_DESIGN_MOBA_SFTP_BROWSER_CHROME = GuiMobaSftpBrowserChrome(
         GuiMobaSftpTableColumn("size", "Size (KB)", 188, 78),
         GuiMobaSftpTableColumn("modified", "Last modified", 266, 94),
     ),
+    path_text_x=14,
+    path_text_y=6,
+    path_font_size=11,
+    dropdown_right_offset=18,
+    dropdown_y=6,
+    dropdown_font_size=10,
+    header_label_y=7,
+    header_font_size=10,
+    row_top_offset=-4,
+    row_icon_x=14,
+    row_icon_y_offset=-1,
+    row_name_x=38,
+    row_size_x=202,
+    row_modified_x=278,
+    row_text_y_offset=0,
+    row_text_font_size=10,
+    row_modified_font_size=9,
 )
 
 GUI_DESIGN_MOBA_SFTP_FILE_ROW_ICONS: tuple[GuiMobaSftpFileRowIcon, ...] = (
@@ -882,6 +1210,54 @@ GUI_DESIGN_MOBA_SFTP_DOCK_LAYOUT = GuiMobaSftpDockLayout(
     monitoring_content_left=42,
     monitoring_icon_center_x=104,
     monitoring_metric_row_gap=21,
+)
+
+
+def _build_moba_sftp_toolbar_action_geometry() -> tuple[GuiMobaSftpToolbarActionGeometry, ...]:
+    layout = GUI_DESIGN_MOBA_SFTP_DOCK_LAYOUT
+    icon_x = layout.toolbar_icon_left_inset
+    icon_y = (layout.toolbar_height - layout.toolbar_icon_size) // 2
+    button_icon_inset = (layout.toolbar_icon_step - layout.toolbar_icon_size) // 2
+    button_y = (layout.toolbar_height - layout.toolbar_icon_step) // 2
+    geometry: list[GuiMobaSftpToolbarActionGeometry] = []
+    for action in GUI_DESIGN_MOBA_SFTP_DOCK_ACTIONS:
+        separator_x = (
+            icon_x + layout.toolbar_icon_step + layout.toolbar_separator_width // 2
+            if action.separator_after
+            else 0
+        )
+        geometry.append(
+            GuiMobaSftpToolbarActionGeometry(
+                key=action.key,
+                button_x=icon_x - button_icon_inset,
+                button_y=button_y,
+                button_size=layout.toolbar_icon_step,
+                icon_x=icon_x,
+                icon_y=icon_y,
+                icon_size=layout.toolbar_icon_size,
+                separator_after=action.separator_after,
+                separator_x=separator_x,
+            )
+        )
+        icon_x += layout.toolbar_icon_step
+        if action.separator_after:
+            icon_x += layout.toolbar_separator_width
+    return tuple(geometry)
+
+
+GUI_DESIGN_MOBA_SFTP_TOOLBAR_ACTION_GEOMETRY = _build_moba_sftp_toolbar_action_geometry()
+
+GUI_DESIGN_MOBA_CONNECTED_DOCK_FRAME = GuiMobaConnectedDockFrame(
+    side_width=390,
+    rail_width=24,
+    dock_x=24,
+    dock_y=132,
+    dock_width=366,
+    dock_height=606,
+    workspace_x=390,
+    quick_connect_y=108,
+    quick_connect_height=24,
+    status_y=738,
 )
 
 GUI_DESIGN_MOBA_MONITORING_METRICS: tuple[GuiMobaMonitoringMetric, ...] = (
@@ -943,6 +1319,14 @@ GUI_DESIGN_MOBA_REMOTE_MONITORING_DOCK_CHROME = GuiMobaRemoteMonitoringDockChrom
     visible_metric_keys=(),
     refresh_seconds=5,
     compact=True,
+    static_height=116,
+    divider_offset=14,
+    divider_left_inset=18,
+    divider_right_inset=194,
+    content_left=42,
+    icon_center_x=104,
+    metric_row_gap=21,
+    live_controls_width=260,
 )
 
 
@@ -957,6 +1341,17 @@ GUI_DESIGN_MOBA_STATUS_BAR_CHROME = GuiMobaStatusBarChrome(
     product_note="open-protocol operator shell",
     right_marker="[]",
     right_marker_tooltip="Compact status marker",
+    static_height=22,
+    notice_x=6,
+    notice_y=6,
+    product_note_x=142,
+    product_note_y=6,
+    text_font_size=10,
+    segment_start_right_offset=480,
+    marker_right_inset=4,
+    marker_y=6,
+    marker_width=9,
+    marker_height=10,
 )
 
 
@@ -3703,8 +4098,34 @@ def gui_design_moba_ribbon_actions() -> tuple[GuiMobaRibbonAction, ...]:
     return GUI_DESIGN_MOBA_RIBBON_ACTIONS
 
 
+def gui_design_moba_ribbon_edge_actions() -> tuple[GuiMobaRibbonEdgeAction, ...]:
+    return GUI_DESIGN_MOBA_RIBBON_EDGE_ACTIONS
+
+
+def gui_design_moba_ribbon_action_geometry() -> tuple[GuiMobaRibbonActionGeometry, ...]:
+    return GUI_DESIGN_MOBA_RIBBON_ACTION_GEOMETRY
+
+
+def gui_design_moba_ribbon_action_geometry_for(key: str) -> GuiMobaRibbonActionGeometry:
+    for geometry in GUI_DESIGN_MOBA_RIBBON_ACTION_GEOMETRY:
+        if geometry.key == key:
+            return geometry
+    raise KeyError(key)
+
+
 def gui_design_moba_top_menu_items() -> tuple[GuiMobaTopMenuItem, ...]:
     return GUI_DESIGN_MOBA_TOP_MENU_ITEMS
+
+
+def gui_design_moba_top_menu_geometry() -> tuple[GuiMobaTopMenuGeometry, ...]:
+    return GUI_DESIGN_MOBA_TOP_MENU_GEOMETRY
+
+
+def gui_design_moba_top_menu_geometry_for(key: str) -> GuiMobaTopMenuGeometry:
+    for geometry in GUI_DESIGN_MOBA_TOP_MENU_GEOMETRY:
+        if geometry.key == key:
+            return geometry
+    raise KeyError(key)
 
 
 def gui_design_moba_titlebar_chrome() -> GuiMobaTitlebarChrome:
@@ -3713,6 +4134,10 @@ def gui_design_moba_titlebar_chrome() -> GuiMobaTitlebarChrome:
 
 def gui_design_moba_quick_connect_chrome() -> GuiMobaQuickConnectChrome:
     return GUI_DESIGN_MOBA_QUICK_CONNECT_CHROME
+
+
+def gui_design_moba_top_stack_geometry() -> GuiMobaTopStackGeometry:
+    return GUI_DESIGN_MOBA_TOP_STACK_GEOMETRY
 
 
 def gui_design_moba_quick_connect_suggestion_chrome() -> GuiMobaQuickConnectSuggestionChrome:
@@ -3739,6 +4164,17 @@ def gui_design_moba_sftp_dock_actions() -> tuple[GuiMobaSftpDockAction, ...]:
     return GUI_DESIGN_MOBA_SFTP_DOCK_ACTIONS
 
 
+def gui_design_moba_sftp_toolbar_action_geometry() -> tuple[GuiMobaSftpToolbarActionGeometry, ...]:
+    return GUI_DESIGN_MOBA_SFTP_TOOLBAR_ACTION_GEOMETRY
+
+
+def gui_design_moba_sftp_toolbar_action_geometry_for(key: str) -> GuiMobaSftpToolbarActionGeometry:
+    for geometry in GUI_DESIGN_MOBA_SFTP_TOOLBAR_ACTION_GEOMETRY:
+        if geometry.key == key:
+            return geometry
+    raise KeyError(key)
+
+
 def gui_design_moba_sftp_browser_chrome() -> GuiMobaSftpBrowserChrome:
     return GUI_DESIGN_MOBA_SFTP_BROWSER_CHROME
 
@@ -3756,6 +4192,10 @@ def gui_design_moba_sftp_file_row_icon(kind: str) -> GuiMobaSftpFileRowIcon:
 
 def gui_design_moba_sftp_dock_layout() -> GuiMobaSftpDockLayout:
     return GUI_DESIGN_MOBA_SFTP_DOCK_LAYOUT
+
+
+def gui_design_moba_connected_dock_frame() -> GuiMobaConnectedDockFrame:
+    return GUI_DESIGN_MOBA_CONNECTED_DOCK_FRAME
 
 
 def gui_design_moba_monitoring_metrics() -> tuple[GuiMobaMonitoringMetric, ...]:
@@ -3795,6 +4235,28 @@ def gui_design_moba_bottom_edge_controls() -> tuple[GuiMobaBottomEdgeControl, ..
 
 def gui_design_moba_ssh_banner_chrome() -> GuiMobaSshBannerChrome:
     return GUI_DESIGN_MOBA_SSH_BANNER_CHROME
+
+
+def gui_design_moba_ssh_banner_row_geometry() -> tuple[GuiMobaSshBannerRowGeometry, ...]:
+    return GUI_DESIGN_MOBA_SSH_BANNER_ROW_GEOMETRY
+
+
+def gui_design_moba_ssh_banner_row_geometry_for(key: str) -> GuiMobaSshBannerRowGeometry:
+    for geometry in GUI_DESIGN_MOBA_SSH_BANNER_ROW_GEOMETRY:
+        if geometry.key == key:
+            return geometry
+    raise KeyError(key)
+
+
+def gui_design_moba_terminal_transcript_row_geometry() -> tuple[GuiMobaTerminalTranscriptRowGeometry, ...]:
+    return GUI_DESIGN_MOBA_TERMINAL_TRANSCRIPT_ROW_GEOMETRY
+
+
+def gui_design_moba_terminal_transcript_row_geometry_for(key: str) -> GuiMobaTerminalTranscriptRowGeometry:
+    for geometry in GUI_DESIGN_MOBA_TERMINAL_TRANSCRIPT_ROW_GEOMETRY:
+        if geometry.key == key:
+            return geometry
+    raise KeyError(key)
 
 
 def gui_design_securecrt_command_window_chrome() -> GuiSecureCrtCommandWindowChrome:

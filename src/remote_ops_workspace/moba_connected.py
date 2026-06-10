@@ -43,6 +43,17 @@ MOBA_TELEMETRY_CELL_WIDTHS = {
     "connections": 145,
     "processes": 77,
 }
+MOBA_TELEMETRY_BAR_HEIGHT = 24
+MOBA_TELEMETRY_START_X = 10
+MOBA_TELEMETRY_CELL_Y = 1
+MOBA_TELEMETRY_CELL_HEIGHT = 22
+MOBA_TELEMETRY_SEPARATOR_TOP = 2
+MOBA_TELEMETRY_SEPARATOR_BOTTOM = 22
+MOBA_TELEMETRY_ICON_X = 5
+MOBA_TELEMETRY_ICON_Y = 5
+MOBA_TELEMETRY_LABEL_X = 22
+MOBA_TELEMETRY_LABEL_Y = 6
+MOBA_TELEMETRY_LABEL_FONT_SIZE = 9
 
 
 @dataclass(frozen=True, slots=True)
@@ -239,6 +250,40 @@ class MobaTelemetryCell:
 
 
 @dataclass(frozen=True, slots=True)
+class MobaTelemetryCellGeometry:
+    key: str
+    static_x: int
+    static_y: int
+    width: int
+    height: int
+    icon_x: int
+    icon_y: int
+    icon_size: int
+    label_x: int
+    label_y: int
+    label_font_size: int
+    separator_top: int
+    separator_bottom: int
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "static_x": self.static_x,
+            "static_y": self.static_y,
+            "width": self.width,
+            "height": self.height,
+            "icon_x": self.icon_x,
+            "icon_y": self.icon_y,
+            "icon_size": self.icon_size,
+            "label_x": self.label_x,
+            "label_y": self.label_y,
+            "label_font_size": self.label_font_size,
+            "separator_top": self.separator_top,
+            "separator_bottom": self.separator_bottom,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class MobaConnectedTabChromeItem:
     key: str
     label: str
@@ -257,6 +302,42 @@ class MobaConnectedTabChromeItem:
             "closeable": self.closeable,
             "width": self.width,
             "tooltip": self.tooltip,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class MobaConnectedTabChromeGeometry:
+    key: str
+    width: int
+    height: int
+    corner_radius: int
+    icon_x: int
+    icon_y: int
+    icon_size: int
+    label_x: int
+    label_y: int
+    close_right_offset: int
+    close_y: int
+    plus_x: int
+    plus_y: int
+    gap_after: int
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "width": self.width,
+            "height": self.height,
+            "corner_radius": self.corner_radius,
+            "icon_x": self.icon_x,
+            "icon_y": self.icon_y,
+            "icon_size": self.icon_size,
+            "label_x": self.label_x,
+            "label_y": self.label_y,
+            "close_right_offset": self.close_right_offset,
+            "close_y": self.close_y,
+            "plus_x": self.plus_x,
+            "plus_y": self.plus_y,
+            "gap_after": self.gap_after,
         }
 
 
@@ -376,10 +457,93 @@ def build_moba_terminal_transcript(profile: Profile, remote_path: str) -> tuple[
         MobaTerminalTranscriptLine("spacer", "", "spacer"),
         MobaTerminalTranscriptLine("last-login", "Last login: Sat Jun  6 05:27:50 2026", "info"),
         MobaTerminalTranscriptLine("prompt-ready", f"[{username}@{host_alias} ~]$ ", "command"),
-    )
+        )
+
+
+MOBA_CONNECTED_TAB_CHROME_GEOMETRY: tuple[MobaConnectedTabChromeGeometry, ...] = (
+    MobaConnectedTabChromeGeometry(
+        key="home",
+        width=42,
+        height=22,
+        corner_radius=2,
+        icon_x=8,
+        icon_y=5,
+        icon_size=12,
+        label_x=26,
+        label_y=7,
+        close_right_offset=16,
+        close_y=6,
+        plus_x=11,
+        plus_y=3,
+        gap_after=4,
+    ),
+    MobaConnectedTabChromeGeometry(
+        key="inactive-session",
+        width=226,
+        height=22,
+        corner_radius=2,
+        icon_x=8,
+        icon_y=5,
+        icon_size=12,
+        label_x=26,
+        label_y=7,
+        close_right_offset=16,
+        close_y=6,
+        plus_x=11,
+        plus_y=3,
+        gap_after=4,
+    ),
+    MobaConnectedTabChromeGeometry(
+        key="active-session",
+        width=258,
+        height=22,
+        corner_radius=2,
+        icon_x=8,
+        icon_y=5,
+        icon_size=12,
+        label_x=26,
+        label_y=7,
+        close_right_offset=16,
+        close_y=6,
+        plus_x=11,
+        plus_y=3,
+        gap_after=4,
+    ),
+    MobaConnectedTabChromeGeometry(
+        key="new-session",
+        width=32,
+        height=22,
+        corner_radius=2,
+        icon_x=8,
+        icon_y=5,
+        icon_size=12,
+        label_x=26,
+        label_y=7,
+        close_right_offset=16,
+        close_y=6,
+        plus_x=11,
+        plus_y=3,
+        gap_after=4,
+    ),
+)
+
+
+def moba_connected_tab_chrome_geometry_items() -> tuple[MobaConnectedTabChromeGeometry, ...]:
+    return MOBA_CONNECTED_TAB_CHROME_GEOMETRY
+
+
+def moba_connected_tab_chrome_geometry_for(key: str) -> MobaConnectedTabChromeGeometry:
+    for geometry in MOBA_CONNECTED_TAB_CHROME_GEOMETRY:
+        if geometry.key == key:
+            return geometry
+    raise KeyError(key)
 
 
 def moba_connected_tab_chrome_items(state: MobaConnectedSessionState) -> tuple[MobaConnectedTabChromeItem, ...]:
+    home = moba_connected_tab_chrome_geometry_for("home")
+    inactive = moba_connected_tab_chrome_geometry_for("inactive-session")
+    active = moba_connected_tab_chrome_geometry_for("active-session")
+    new_session = moba_connected_tab_chrome_geometry_for("new-session")
     return (
         MobaConnectedTabChromeItem(
             key="home",
@@ -387,7 +551,7 @@ def moba_connected_tab_chrome_items(state: MobaConnectedSessionState) -> tuple[M
             icon_key="home",
             active=False,
             closeable=False,
-            width=42,
+            width=home.width,
             tooltip="Home",
         ),
         MobaConnectedTabChromeItem(
@@ -396,7 +560,7 @@ def moba_connected_tab_chrome_items(state: MobaConnectedSessionState) -> tuple[M
             icon_key="terminal-key",
             active=False,
             closeable=True,
-            width=226,
+            width=inactive.width,
             tooltip="Inactive connected SSH tab",
         ),
         MobaConnectedTabChromeItem(
@@ -405,7 +569,7 @@ def moba_connected_tab_chrome_items(state: MobaConnectedSessionState) -> tuple[M
             icon_key="terminal-key",
             active=True,
             closeable=True,
-            width=258,
+            width=active.width,
             tooltip="Active connected SSH tab with SFTP browser",
         ),
         MobaConnectedTabChromeItem(
@@ -414,7 +578,7 @@ def moba_connected_tab_chrome_items(state: MobaConnectedSessionState) -> tuple[M
             icon_key="plus",
             active=False,
             closeable=False,
-            width=32,
+            width=new_session.width,
             tooltip="Open a new local terminal",
         ),
     )
@@ -453,6 +617,38 @@ def moba_telemetry_cells(state: MobaConnectedSessionState) -> tuple[MobaTelemetr
         )
         for segment in moba_telemetry_segments(state)
     )
+
+
+def moba_telemetry_cell_geometry() -> tuple[MobaTelemetryCellGeometry, ...]:
+    x = MOBA_TELEMETRY_START_X
+    geometry: list[MobaTelemetryCellGeometry] = []
+    for key, width in MOBA_TELEMETRY_CELL_WIDTHS.items():
+        geometry.append(
+            MobaTelemetryCellGeometry(
+                key=key,
+                static_x=x,
+                static_y=MOBA_TELEMETRY_CELL_Y,
+                width=width,
+                height=MOBA_TELEMETRY_CELL_HEIGHT,
+                icon_x=MOBA_TELEMETRY_ICON_X,
+                icon_y=MOBA_TELEMETRY_ICON_Y,
+                icon_size=MOBA_TELEMETRY_ICON_SIZE,
+                label_x=MOBA_TELEMETRY_LABEL_X,
+                label_y=MOBA_TELEMETRY_LABEL_Y,
+                label_font_size=MOBA_TELEMETRY_LABEL_FONT_SIZE,
+                separator_top=MOBA_TELEMETRY_SEPARATOR_TOP,
+                separator_bottom=MOBA_TELEMETRY_SEPARATOR_BOTTOM,
+            )
+        )
+        x += width
+    return tuple(geometry)
+
+
+def moba_telemetry_cell_geometry_for(key: str) -> MobaTelemetryCellGeometry:
+    for geometry in moba_telemetry_cell_geometry():
+        if geometry.key == key:
+            return geometry
+    raise KeyError(key)
 
 
 def moba_telemetry_port(state: MobaConnectedSessionState) -> str:

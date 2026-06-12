@@ -23,22 +23,30 @@ from remote_ops_workspace.gui_designs import (  # noqa: E402
     gui_design_moba_bottom_edge_controls,
     gui_design_moba_connected_dock_frame,
     gui_design_moba_home_welcome_chrome,
+    gui_design_moba_home_welcome_geometry,
     gui_design_moba_monitoring_control_geometry_for,
     gui_design_moba_monitoring_controls,
     gui_design_moba_monitoring_metrics,
+    gui_design_moba_monitoring_telemetry_route,
     gui_design_moba_quick_connect_chrome,
     gui_design_moba_quick_connect_suggestion_chrome,
+    gui_design_moba_rail_chrome,
+    gui_design_moba_rail_item_geometry_for,
     gui_design_moba_rail_items,
     gui_design_moba_remote_monitoring_dock_chrome,
     gui_design_moba_ribbon_action_geometry_for,
     gui_design_moba_ribbon_actions,
     gui_design_moba_ribbon_edge_actions,
     gui_design_moba_right_utility_actions,
+    gui_design_moba_right_utility_rail_chrome,
     gui_design_moba_session_edge_actions,
+    gui_design_moba_session_tree_chrome,
     gui_design_moba_sftp_browser_chrome,
     gui_design_moba_sftp_dock_actions,
     gui_design_moba_sftp_dock_layout,
     gui_design_moba_sftp_file_row_icon,
+    gui_design_moba_sftp_follow_folder_route,
+    gui_design_moba_sftp_routed_file_rows,
     gui_design_moba_sftp_toolbar_action_geometry,
     gui_design_moba_sftp_toolbar_action_geometry_for,
     gui_design_moba_ssh_banner_chrome,
@@ -50,16 +58,21 @@ from remote_ops_workspace.gui_designs import (  # noqa: E402
     gui_design_moba_top_menu_geometry_for,
     gui_design_moba_top_menu_items,
     gui_design_moba_top_stack_geometry,
+    gui_design_mremoteng_connection_document_route,
     gui_design_mremoteng_document_controls,
     gui_design_mremoteng_document_toolbar_chrome,
     gui_design_mremoteng_property_grid_chrome,
     gui_design_mremoteng_top_chrome,
     gui_design_preset_ids,
     gui_design_reference_state,
+    gui_design_remmina_clipboard_route,
     gui_design_remmina_profile_list_chrome,
+    gui_design_remmina_profile_viewer_route,
     gui_design_remmina_viewer_controls,
     gui_design_securecrt_command_window_chrome,
+    gui_design_securecrt_command_window_send_route,
     gui_design_securecrt_session_manager_chrome,
+    gui_design_securecrt_session_manager_route,
     gui_design_securecrt_session_status_strip,
     gui_design_securecrt_top_chrome,
     gui_design_sidebar_copy,
@@ -67,7 +80,9 @@ from remote_ops_workspace.gui_designs import (  # noqa: E402
     gui_design_tab_items,
     gui_design_termius_header_chips,
     gui_design_termius_host_identity_strip,
+    gui_design_termius_host_selection_route,
     gui_design_termius_hosts_chrome,
+    gui_design_termius_sync_route,
     gui_design_toolbar_actions,
     gui_design_tree_root_copy,
     gui_design_tree_root_icon,
@@ -78,6 +93,8 @@ from remote_ops_workspace.gui_designs import (  # noqa: E402
 from remote_ops_workspace.moba_connected import (  # noqa: E402
     MobaConnectedSessionState,
     build_moba_connected_session_state,
+    moba_connected_session_identity_route,
+    moba_connected_session_route,
     moba_connected_tab_chrome_geometry_for,
     moba_connected_tab_chrome_items,
     moba_connected_window_title,
@@ -592,6 +609,27 @@ def render_mobaxterm_preset(preset: GuiDesignPreset):
     c = preset.colors
     interaction = gui_design_interaction_state(preset.id)
     state = moba_preview_reference_state()
+    connected_route = moba_connected_session_route(state)
+    identity_route = moba_connected_session_identity_route(state)
+    tab_items = moba_connected_tab_chrome_items(state)
+    if connected_route.active_tab_key not in {item.key for item in tab_items if item.active}:
+        raise RuntimeError("Moba connected-session route active tab key drifted")
+    if connected_route.reference_tab_label not in {item.label for item in tab_items}:
+        raise RuntimeError("Moba connected-session route reference tab label drifted")
+    if connected_route.target != state.target or connected_route.remote_path != state.remote_path:
+        raise RuntimeError("Moba connected-session route state metadata drifted")
+    if connected_route.telemetry_identity_cell_key != moba_telemetry_cells(state)[0].key:
+        raise RuntimeError("Moba connected-session route telemetry identity metadata drifted")
+    if identity_route.reference_tab_label not in {item.label for item in tab_items}:
+        raise RuntimeError("Moba connected-session identity route reference tab label drifted")
+    if identity_route.banner_target != state.banner.title:
+        raise RuntimeError("Moba connected-session identity route banner target drifted")
+    if identity_route.web_console_line != state.terminal_transcript[0].text:
+        raise RuntimeError("Moba connected-session identity route web console line drifted")
+    if identity_route.terminal_prompt != state.terminal_transcript[-1].text:
+        raise RuntimeError("Moba connected-session identity route terminal prompt drifted")
+    if identity_route.telemetry_target != moba_telemetry_cells(state)[0].display_text:
+        raise RuntimeError("Moba connected-session identity route telemetry target drifted")
     image = Image.new("RGB", PREVIEW_SIZE, c.window)
     draw = ImageDraw.Draw(image)
 
@@ -710,26 +748,42 @@ def render_mobaxterm_preset(preset: GuiDesignPreset):
         raise ValueError("Moba connected dock frame y must match the top stack left-dock y")
     tree_y = frame.dock_y
     draw.rectangle((0, tree_y, rail_w, tree_y + frame.dock_height), fill="#101010")
-    rail_icon_keys = {
-        "collapse": "collapse",
-        "sessions": "session",
-        "favorites": "star",
-        "tools": "tools",
-        "macros": "macros",
-        "sftp": "sftp",
-    }
-    ry = tree_y + 8
+    rail_chrome = gui_design_moba_rail_chrome()
     for item in gui_design_moba_rail_items():
+        geometry = gui_design_moba_rail_item_geometry_for(item.role)
+        icon_y = tree_y + geometry.static_icon_y
         rail_state = toolbar_interaction_state(item.role, interaction)
         if rail_state == "checked":
-            draw.rectangle((2, ry - 3, rail_w - 2, ry + 27), fill=c.sidebar_selected, outline=c.control_hover)
-        draw_moba_rail_icon(draw, rail_icon_keys[item.role], 5, ry, 16, item.color, c)
-        ry += 26
+            draw.rectangle(
+                (
+                    rail_chrome.active_x,
+                    icon_y + rail_chrome.active_y_offset,
+                    rail_chrome.active_x + rail_chrome.active_width,
+                    icon_y + rail_chrome.active_y_offset + rail_chrome.active_height,
+                ),
+                fill=c.sidebar_selected,
+                outline=c.control_hover,
+            )
+        draw_moba_rail_icon(
+            draw,
+            item.rail_icon_key,
+            rail_chrome.icon_x,
+            icon_y,
+            rail_chrome.static_icon_size,
+            item.color,
+            c,
+        )
         if item.label:
-            draw_moba_rail_label(image, item.label, 0, ry, rail_w, 54, c)
-            ry += 58
-        else:
-            ry += 8
+            draw_moba_rail_label(
+                image,
+                item.label,
+                0,
+                tree_y + geometry.static_label_y,
+                rail_chrome.label_width,
+                rail_chrome.label_height,
+                c,
+                rail_chrome.label_font_size,
+            )
 
     draw_moba_connected_sftp_dock(draw, preset, state, frame.dock_x, frame.dock_y, frame.dock_width, frame.dock_height)
     if quick_connect_chrome.connected_suggestions_visible:
@@ -747,8 +801,16 @@ def render_mobaxterm_preset(preset: GuiDesignPreset):
 
     content_y = top_stack.terminal_content_y
     draw.rectangle((workspace_x, content_y, PREVIEW_SIZE[0], PREVIEW_SIZE[1] - status_h), fill=c.pane)
-    draw_moba_right_utility_rail(draw, PREVIEW_SIZE[0] - 30, content_y, 30, PREVIEW_SIZE[1] - status_h - content_y, c)
-    draw_moba_session_edge_controls(draw, PREVIEW_SIZE[0] - 21, c)
+    right_rail = gui_design_moba_right_utility_rail_chrome()
+    draw_moba_right_utility_rail(
+        draw,
+        PREVIEW_SIZE[0] - right_rail.static_width,
+        content_y,
+        right_rail.static_width,
+        PREVIEW_SIZE[1] - status_h - content_y,
+        c,
+    )
+    draw_moba_session_edge_controls(draw, PREVIEW_SIZE[0] - right_rail.static_width, c)
 
     content_bottom = PREVIEW_SIZE[1] - status_h - 24
     term_x = workspace_x
@@ -935,8 +997,16 @@ def render_mobaxterm_home_preset(preset: GuiDesignPreset):
     draw_moba_home_tab_bar(draw, preset, workspace_x, tab_y, PREVIEW_SIZE[0] - workspace_x, 28)
     content_y = tab_y + 28
     draw.rectangle((workspace_x, content_y, PREVIEW_SIZE[0], PREVIEW_SIZE[1] - status_h), fill=c.pane)
-    draw_moba_right_utility_rail(draw, PREVIEW_SIZE[0] - 30, content_y, 30, PREVIEW_SIZE[1] - status_h - content_y, c)
-    draw_moba_session_edge_controls(draw, PREVIEW_SIZE[0] - 21, c)
+    right_rail = gui_design_moba_right_utility_rail_chrome()
+    draw_moba_right_utility_rail(
+        draw,
+        PREVIEW_SIZE[0] - right_rail.static_width,
+        content_y,
+        right_rail.static_width,
+        PREVIEW_SIZE[1] - status_h - content_y,
+        c,
+    )
+    draw_moba_session_edge_controls(draw, PREVIEW_SIZE[0] - right_rail.static_width, c)
     draw_moba_home_welcome_surface(draw, preset, workspace_x, content_y, PREVIEW_SIZE[0] - workspace_x - 30, PREVIEW_SIZE[1] - status_h - content_y)
 
     draw_status_bar(draw, preset, 0, PREVIEW_SIZE[1] - status_h, PREVIEW_SIZE[0], status_h)
@@ -947,55 +1017,123 @@ def draw_moba_home_rail(draw: Any, image: Any, preset: GuiDesignPreset, x: int, 
     c = preset.colors
     interaction = gui_design_interaction_state(preset.id)
     draw.rectangle((x, y, x + w, y + h), fill="#101010")
-    rail_icon_keys = {
-        "collapse": "collapse",
-        "sessions": "session",
-        "favorites": "star",
-        "tools": "tools",
-        "macros": "macros",
-        "sftp": "sftp",
-    }
-    ry = y + 8
+    rail_chrome = gui_design_moba_rail_chrome()
     for item in gui_design_moba_rail_items():
+        geometry = gui_design_moba_rail_item_geometry_for(item.role)
+        icon_y = y + geometry.static_icon_y
         rail_state = toolbar_interaction_state(item.role, interaction)
         if rail_state == "checked":
-            draw.rectangle((x + 2, ry - 3, x + w - 2, ry + 27), fill=c.sidebar_selected, outline=c.control_hover)
-        draw_moba_rail_icon(draw, rail_icon_keys[item.role], x + 5, ry, 16, item.color, c)
-        ry += 26
+            draw.rectangle(
+                (
+                    x + rail_chrome.active_x,
+                    icon_y + rail_chrome.active_y_offset,
+                    x + rail_chrome.active_x + rail_chrome.active_width,
+                    icon_y + rail_chrome.active_y_offset + rail_chrome.active_height,
+                ),
+                fill=c.sidebar_selected,
+                outline=c.control_hover,
+            )
+        draw_moba_rail_icon(
+            draw,
+            item.rail_icon_key,
+            x + rail_chrome.icon_x,
+            icon_y,
+            rail_chrome.static_icon_size,
+            item.color,
+            c,
+        )
         if item.label:
-            draw_moba_rail_label(image, item.label, x, ry, w, 54, c)
-            ry += 58
-        else:
-            ry += 8
+            draw_moba_rail_label(
+                image,
+                item.label,
+                x,
+                y + geometry.static_label_y,
+                rail_chrome.label_width,
+                rail_chrome.label_height,
+                c,
+                rail_chrome.label_font_size,
+            )
 
 
 def draw_moba_home_session_tree(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
     c = preset.colors
     interaction = gui_design_interaction_state(preset.id)
+    chrome = gui_design_moba_session_tree_chrome()
     draw.rectangle((x, y, x + w, y + h), fill=c.sidebar)
     draw.line((x + w, y, x + w, y + h), fill=c.toolbar_border)
-    draw.rectangle((x, y, x + w, y + 28), fill="#151515")
-    draw_sidebar_row_icon(draw, preset, "ssh", x + 9, y + 7, 14, selected=False, group=False)
-    draw_text(draw, "User sessions", x + 31, y + 8, c.control_text, 10, bold=True)
-    row_y = y + 38
+    draw.rectangle((x, y, x + w, y + chrome.header_height), fill="#151515")
+    draw_sidebar_row_icon(
+        draw,
+        preset,
+        "folder",
+        x + chrome.header_icon_x,
+        y + chrome.header_icon_y,
+        chrome.header_icon_size,
+        selected=False,
+        group=True,
+    )
+    draw_text(
+        draw,
+        "User sessions",
+        x + chrome.header_text_x,
+        y + chrome.header_text_y,
+        c.control_text,
+        chrome.header_font_size,
+        bold=True,
+    )
+    row_y = y + chrome.row_start_y
     for name, target, group in gui_design_tree_rows("mobaxterm"):
         label = name.strip()
         selected = bool(label and label == interaction.selected_tree_label)
         if group:
-            draw_text(draw, "v", x + 13, row_y + 2, c.control_text, 9, bold=True)
-            draw_sidebar_row_icon(draw, preset, "folder", x + 29, row_y + 1, 15, selected=False, group=True)
-            draw_text(draw, label, x + 51, row_y + 1, c.status, 10, bold=True)
-            row_y += 24
+            draw_text(draw, "v", x + chrome.group_arrow_x, row_y + chrome.group_arrow_y_offset, c.control_text, 9, bold=True)
+            draw_sidebar_row_icon(
+                draw,
+                preset,
+                "folder",
+                x + chrome.group_icon_x,
+                row_y + chrome.group_icon_y_offset,
+                15,
+                selected=False,
+                group=True,
+            )
+            draw_text(
+                draw,
+                label,
+                x + chrome.group_label_x,
+                row_y + chrome.group_label_y_offset,
+                c.status,
+                chrome.group_font_size,
+                bold=True,
+            )
+            row_y += chrome.group_row_height
             continue
         if selected:
-            draw.rectangle((x + 28, row_y - 3, x + w - 8, row_y + 31), fill=c.sidebar_selected)
+            draw.rectangle(
+                (
+                    x + chrome.selected_left,
+                    row_y + chrome.selected_top_offset,
+                    x + w - chrome.selected_right_inset,
+                    row_y + chrome.selected_top_offset + chrome.selected_height,
+                ),
+                fill=c.sidebar_selected,
+            )
         icon_key = sidebar_row_icon_key("mobaxterm", name, target, group)
-        draw_sidebar_row_icon(draw, preset, icon_key, x + 39, row_y + 1, 14, selected=selected, group=False)
+        draw_sidebar_row_icon(
+            draw,
+            preset,
+            icon_key,
+            x + chrome.profile_icon_x,
+            row_y + chrome.profile_icon_y_offset,
+            14,
+            selected=selected,
+            group=False,
+        )
         text = c.sidebar_selected_text if selected else c.sidebar_text
         muted = c.sidebar_selected_text if selected else c.sidebar_muted
-        draw_text(draw, label, x + 61, row_y, text, 10)
-        draw_text(draw, target, x + 61, row_y + 14, muted, 8)
-        row_y += 34
+        draw_text(draw, label, x + chrome.profile_label_x, row_y + chrome.profile_label_y_offset, text, chrome.profile_label_font_size)
+        draw_text(draw, target, x + chrome.profile_target_x, row_y + chrome.profile_target_y_offset, muted, chrome.profile_target_font_size)
+        row_y += chrome.profile_row_height
 
 
 def draw_moba_home_tab_bar(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
@@ -1010,60 +1148,119 @@ def draw_moba_home_tab_bar(draw: Any, preset: GuiDesignPreset, x: int, y: int, w
 def draw_moba_home_welcome_surface(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
     c = preset.colors
     chrome = gui_design_moba_home_welcome_chrome()
+    geometry = gui_design_moba_home_welcome_geometry()
     surface = gui_design_workspace_surface("mobaxterm")
-    center_w = min(chrome.surface_width, w - 80)
+    center_w = min(chrome.surface_width, w - geometry.center_side_margin)
     center_x = x + max(0, (w - center_w) // 2)
-    hero_y = y + max(115, (h - 330) // 2)
+    hero_y = y + max(geometry.hero_min_y, (h - geometry.hero_height) // 2)
 
-    logo_size = 46
-    logo_x = center_x + max(0, (center_w - 360) // 2)
-    draw.rectangle((logo_x, hero_y, logo_x + logo_size, hero_y + logo_size), fill=c.terminal, outline=c.control_text, width=2)
-    draw_moba_ribbon_icon(draw, chrome.icon_key, logo_x + 7, hero_y + 7, 32, c.primary, c.control_border, c)
-    draw_text(draw, chrome.title, logo_x + logo_size + 28, hero_y + 9, c.control_text, 28)
-    draw_centered_text(draw, chrome.subtitle, center_x, hero_y + 57, center_w, c.sidebar_muted, 12)
+    logo_x = center_x + max(0, (center_w - geometry.logo_cluster_width) // 2)
+    draw.rectangle(
+        (logo_x, hero_y, logo_x + geometry.logo_size, hero_y + geometry.logo_size),
+        fill=c.terminal,
+        outline=c.control_text,
+        width=2,
+    )
+    draw_moba_ribbon_icon(
+        draw,
+        chrome.icon_key,
+        logo_x + geometry.logo_inner_padding,
+        hero_y + geometry.logo_inner_padding,
+        geometry.logo_icon_size,
+        c.primary,
+        c.control_border,
+        c,
+    )
+    draw_text(
+        draw,
+        chrome.title,
+        logo_x + geometry.logo_size + geometry.title_gap,
+        hero_y + geometry.title_y_offset,
+        c.control_text,
+        geometry.title_font_size,
+    )
+    draw_centered_text(
+        draw,
+        chrome.subtitle,
+        center_x,
+        hero_y + geometry.subtitle_y_offset,
+        center_w,
+        c.sidebar_muted,
+        geometry.subtitle_font_size,
+    )
 
-    primary_w = 206
-    secondary_w = 220
-    button_y = hero_y + 94
-    button_gap = 62
-    button_x = center_x + max(0, (center_w - primary_w - secondary_w - button_gap) // 2)
+    button_y = hero_y + geometry.button_y_offset
+    button_x = center_x + max(
+        0,
+        (center_w - geometry.primary_width - geometry.secondary_width - geometry.action_gap) // 2,
+    )
     draw_moba_home_action_button(
         draw,
         chrome.primary_action_icon_key,
         surface.home_actions[0],
         button_x,
         button_y,
-        primary_w,
+        geometry.primary_width,
         c,
+        geometry,
         primary=True,
     )
     draw_moba_home_action_button(
         draw,
         chrome.secondary_action_icon_key,
         surface.home_actions[1],
-        button_x + primary_w + button_gap,
+        button_x + geometry.primary_width + geometry.action_gap,
         button_y,
-        secondary_w,
+        geometry.secondary_width,
         c,
+        geometry,
         primary=False,
     )
 
     search_x = center_x + max(0, (center_w - chrome.search_width) // 2)
-    search_y = button_y + 45
-    draw.rectangle((search_x, search_y, search_x + chrome.search_width, search_y + 25), fill=c.control, outline=c.control_border)
-    draw_text(draw, surface.home_search_placeholder, search_x + 10, search_y + 6, c.sidebar_muted, 12)
+    search_y = button_y + geometry.search_y_gap
+    draw.rectangle(
+        (search_x, search_y, search_x + chrome.search_width, search_y + geometry.search_height),
+        fill=c.control,
+        outline=c.control_border,
+    )
+    draw_text(
+        draw,
+        surface.home_search_placeholder,
+        search_x + geometry.search_text_x,
+        search_y + geometry.search_text_y,
+        c.sidebar_muted,
+        geometry.search_font_size,
+    )
 
-    recent_y = search_y + 52
-    draw_centered_text(draw, chrome.recent_title, center_x, recent_y, center_w, c.control_text, 12, bold=True)
+    recent_y = search_y + geometry.recent_y_gap
+    draw_centered_text(
+        draw,
+        chrome.recent_title,
+        center_x,
+        recent_y,
+        center_w,
+        c.control_text,
+        geometry.recent_title_font_size,
+        bold=True,
+    )
     col_w = center_w // len(surface.recent_columns)
     for col_index, column in enumerate(surface.recent_columns):
-        col_x = center_x + col_index * col_w + 12
-        item_y = recent_y + 28
+        col_x = center_x + col_index * col_w + geometry.recent_column_padding
+        item_y = recent_y + geometry.recent_item_y_offset
         for item in column:
             draw_moba_home_recent_item(draw, preset, item, col_x, item_y)
-            item_y += 22
+            item_y += geometry.recent_item_step
 
-    draw_centered_text(draw, surface.footer, center_x, recent_y + 120, center_w, c.control_text, 10)
+    draw_centered_text(
+        draw,
+        surface.footer,
+        center_x,
+        recent_y + geometry.footer_y_offset,
+        center_w,
+        c.control_text,
+        geometry.footer_font_size,
+    )
 
 
 def draw_moba_home_action_button(
@@ -1074,15 +1271,25 @@ def draw_moba_home_action_button(
     y: int,
     w: int,
     c: Any,
+    geometry: Any,
     *,
     primary: bool,
 ) -> None:
     fill = c.primary if primary else c.control
     outline = c.control_hover if primary else c.control_border
     text = c.primary_text if primary else c.control_text
-    draw.rectangle((x, y, x + w, y + 28), fill=fill, outline=outline)
-    draw_moba_ribbon_icon(draw, icon_key, x + 13, y + 6, 16, "#55cc7a" if primary else "#202020", outline, c)
-    draw_text(draw, label, x + 40, y + 8, text, 11)
+    draw.rectangle((x, y, x + w, y + geometry.button_height), fill=fill, outline=outline)
+    draw_moba_ribbon_icon(
+        draw,
+        icon_key,
+        x + geometry.button_icon_x,
+        y + geometry.button_icon_y,
+        geometry.button_icon_size,
+        "#55cc7a" if primary else "#202020",
+        outline,
+        c,
+    )
+    draw_text(draw, label, x + geometry.button_label_x, y + geometry.button_label_y, text, geometry.button_font_size)
 
 
 def draw_moba_home_recent_item(draw: Any, preset: GuiDesignPreset, label: str, x: int, y: int) -> None:
@@ -1332,8 +1539,18 @@ def draw_moba_right_utility_rail(draw: Any, x: int, y: int, w: int, h: int, c: A
 
 
 def draw_moba_session_edge_controls(draw: Any, x: int, c: Any) -> None:
+    rail = gui_design_moba_right_utility_rail_chrome()
     for action in gui_design_moba_session_edge_actions():
-        draw_moba_right_utility_icon(draw, action.icon_key, x, action.static_y, 16, action.color, c)
+        control_y = rail.session_edge_top_y + action.relative_y(rail.session_edge_top_y)
+        draw_moba_right_utility_icon(
+            draw,
+            action.icon_key,
+            x + rail.session_edge_icon_x,
+            control_y,
+            action.static_size,
+            action.color,
+            c,
+        )
 
 
 def draw_moba_right_utility_icon(draw: Any, icon_key: str, x: int, y: int, size: int, color: str, c: Any) -> None:
@@ -1451,12 +1668,12 @@ def draw_moba_rail_icon(draw: Any, icon_key: str, x: int, y: int, size: int, col
         draw.line((x + 5, y + 13, x + size - 5, y + 13), fill="#2f6fb1", width=2)
 
 
-def draw_moba_rail_label(image: Any, text: str, x: int, y: int, w: int, h: int, c: Any) -> None:
+def draw_moba_rail_label(image: Any, text: str, x: int, y: int, w: int, h: int, c: Any, font_size: int) -> None:
     from PIL import Image, ImageDraw
 
     label = Image.new("RGBA", (h, w), (0, 0, 0, 0))
     label_draw = ImageDraw.Draw(label)
-    label_font = font(10, bold=True)
+    label_font = font(font_size, bold=True)
     bbox = label_draw.textbbox((0, 0), text, font=label_font)
     text_w = bbox[2] - bbox[0]
     text_h = bbox[3] - bbox[1]
@@ -1511,11 +1728,26 @@ def draw_moba_connected_sftp_dock(
             )
 
     chrome = gui_design_moba_sftp_browser_chrome()
+    follow_route = gui_design_moba_sftp_follow_folder_route()
+    routed_rows = gui_design_moba_sftp_routed_file_rows()
+    if routed_rows.follow_route_key != follow_route.key:
+        raise ValueError("MobaXterm routed SFTP rows must target the follow-folder route")
+    if routed_rows.target_table_object != follow_route.target_table_object:
+        raise ValueError("MobaXterm routed SFTP rows must target the follow-folder file table")
+    if routed_rows.parent_row_name != chrome.parent_row_label:
+        raise ValueError("MobaXterm routed SFTP rows must share the parent-row label")
+    if routed_rows.selected_row_kind != chrome.selected_row_kind:
+        raise ValueError("MobaXterm routed SFTP rows must share selected parent-row metadata")
+    if state.follow_terminal_folder and not state.remote_path.startswith("/"):
+        raise ValueError("MobaXterm follow-folder SFTP rows require an absolute remote path")
+    path_source_key = follow_route.source_control_key if state.follow_terminal_folder else "profile-path"
+    path_outline = c.toolbar_border if follow_route.target_path_object == "mobaSftpPath" else c.danger
+    path_text = state.remote_path if path_source_key == follow_route.source_control_key else state.remote_path
     path_y = toolbar_y + density.toolbar_height + density.path_gap
-    draw.rectangle((dock_left, path_y, dock_right, path_y + density.path_height), fill=c.control, outline=c.toolbar_border)
+    draw.rectangle((dock_left, path_y, dock_right, path_y + density.path_height), fill=c.control, outline=path_outline)
     draw_text(
         draw,
-        state.remote_path or chrome.path_placeholder,
+        path_text or chrome.path_placeholder,
         x + chrome.path_text_x,
         path_y + chrome.path_text_y,
         c.control_text,
@@ -1586,6 +1818,7 @@ def draw_moba_connected_sftp_dock(
         row_y += density.file_row_height
 
     chrome = gui_design_moba_remote_monitoring_dock_chrome()
+    telemetry_route = gui_design_moba_monitoring_telemetry_route()
     monitor_y = y + h - chrome.static_height
     controls = list(gui_design_moba_monitoring_controls())
     draw.line(
@@ -1597,7 +1830,9 @@ def draw_moba_connected_sftp_dock(
         ),
         fill=c.sidebar_muted,
     )
-    visible_metric_keys = chrome.visible_metric_keys if chrome.telemetry_surface == "left-dock" else ()
+    visible_metric_keys = (
+        telemetry_route.visible_dock_metric_keys if telemetry_route.telemetry_surface == "left-dock" else ()
+    )
     remote_control = controls[0]
     follow_control = controls[1]
     draw_moba_monitoring_control(
@@ -1648,15 +1883,24 @@ def draw_moba_monitoring_control(
 ) -> None:
     if control.control_type == "checkbox":
         check_x = x + geometry.anchor_x
-        check_y = y + geometry.static_y + 3
+        check_y = y + geometry.static_y + geometry.check_y_offset
         draw.rectangle(
             (check_x, check_y, check_x + geometry.check_size, check_y + geometry.check_size),
             outline=c.control_text,
             fill=c.window,
         )
-        if checked:
-            draw.line((check_x + 2, check_y + 5, check_x + 5, check_y + 9), fill=c.control_text, width=1)
-            draw.line((check_x + 5, check_y + 9, check_x + 10, check_y + 1), fill=c.control_text, width=1)
+        if checked and len(geometry.checkmark_points) >= 3:
+            start, middle, end = geometry.checkmark_points[:3]
+            draw.line(
+                (check_x + start[0], check_y + start[1], check_x + middle[0], check_y + middle[1]),
+                fill=c.control_text,
+                width=1,
+            )
+            draw.line(
+                (check_x + middle[0], check_y + middle[1], check_x + end[0], check_y + end[1]),
+                fill=c.control_text,
+                width=1,
+            )
         draw_moba_monitoring_control_icon(
             draw,
             control.icon_key,
@@ -1665,7 +1909,15 @@ def draw_moba_monitoring_control(
             geometry.icon_size,
             c,
         )
-        draw_text(draw, control.label, x + geometry.label_x, y + geometry.static_y + 3, c.control_text, 11)
+        draw_text(
+            draw,
+            control.label,
+            x + geometry.label_x,
+            y + geometry.static_y + geometry.label_y_offset,
+            c.control_text,
+            geometry.label_font_size,
+            bold=geometry.label_bold,
+        )
         return
     draw_moba_monitoring_control_icon(
         draw,
@@ -1675,7 +1927,15 @@ def draw_moba_monitoring_control(
         geometry.icon_size,
         c,
     )
-    draw_text(draw, control.label, x + geometry.label_x, y + geometry.static_y + 2, c.control_text, 12, bold=True)
+    draw_text(
+        draw,
+        control.label,
+        x + geometry.label_x,
+        y + geometry.static_y + geometry.label_y_offset,
+        c.control_text,
+        geometry.label_font_size,
+        bold=geometry.label_bold,
+    )
 
 
 def draw_moba_monitoring_control_icon(draw: Any, icon_key: str, x: int, y: int, size: int, c: Any) -> None:
@@ -2246,6 +2506,12 @@ def draw_sidebar(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: 
 def draw_remmina_profile_list_chrome(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
     c = preset.colors
     chrome = gui_design_remmina_profile_list_chrome()
+    route = gui_design_remmina_profile_viewer_route()
+    selected_rows = [row for row in chrome.rows if row.selected]
+    if len(selected_rows) != 1 or selected_rows[0].key != route.selected_profile_key:
+        raise RuntimeError("Remmina profile-viewer route selected profile metadata drifted")
+    if selected_rows[0].protocol != route.protocol or selected_rows[0].status != route.profile_status:
+        raise RuntimeError("Remmina profile-viewer route protocol/status metadata drifted")
     interaction = gui_design_interaction_state(preset.id)
     rounded(draw, (x, y, x + w, y + h), c.pane, c.pane_border, 4)
     draw_text(draw, chrome.title, x + chrome.static_title_x, y + chrome.static_title_y, c.control_text, 10, bold=True)
@@ -2276,7 +2542,7 @@ def draw_remmina_profile_list_chrome(draw: Any, preset: GuiDesignPreset, x: int,
     row_y = y + chrome.static_row_start_y
     for row in chrome.rows:
         fill = c.sidebar_selected if row.selected else c.control
-        outline = c.primary if row.selected else c.control_border
+        outline = c.primary if row.selected or row.key == route.selected_profile_key else c.control_border
         rounded(
             draw,
             (
@@ -2312,13 +2578,18 @@ def draw_remmina_profile_list_chrome(draw: Any, preset: GuiDesignPreset, x: int,
 def draw_securecrt_session_manager_chrome(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
     c = preset.colors
     chrome = gui_design_securecrt_session_manager_chrome()
+    route = gui_design_securecrt_session_manager_route()
     interaction = gui_design_interaction_state(preset.id)
+    if route.session_manager_object != "secureCrtSessionManagerChrome":
+        raise RuntimeError("SecureCRT session-manager route object drifted")
     rounded(draw, (x, y, x + w, y + h), c.pane, c.control_border, 3)
     draw_text(draw, chrome.title, x + chrome.static_title_x, y + chrome.static_title_y, c.control_text, 10, bold=True)
     for action in chrome.actions:
+        routed = action.key == route.session_manager_action_key
         bx = x + action.static_x
         by = y + action.static_y
-        rounded(draw, (bx, by, bx + action.static_button_size, by + action.static_button_size), c.control, c.control_border, 2)
+        border = c.primary if routed else c.control_border
+        rounded(draw, (bx, by, bx + action.static_button_size, by + action.static_button_size), c.control, border, 2)
         draw_securecrt_session_manager_action_icon(
             draw,
             preset,
@@ -2406,6 +2677,9 @@ def draw_securecrt_session_tree(draw: Any, preset: GuiDesignPreset, x: int, y: i
 def draw_termius_hosts_chrome(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
     c = preset.colors
     chrome = gui_design_termius_hosts_chrome()
+    sync_route = gui_design_termius_sync_route()
+    if not any(action.key == sync_route.hosts_action_key for action in chrome.actions):
+        raise RuntimeError("Termius sync route Hosts action metadata drifted")
     interaction = gui_design_interaction_state(preset.id)
     rounded(draw, (x, y, x + w, y + h), c.pane, c.control_border, 3)
     draw_text(draw, chrome.title, x + 8, y + 8, c.control_text, 10, bold=True)
@@ -2590,6 +2864,14 @@ def draw_securecrt_workspace(
     log_h: int,
 ) -> None:
     c = preset.colors
+    route = gui_design_securecrt_session_manager_route()
+    reference = gui_design_reference_state(preset.id)
+    if route.active_tab_label != reference.active_tab_label:
+        raise RuntimeError("SecureCRT session-manager route active tab metadata drifted")
+    if route.target_value != reference.target_label:
+        raise RuntimeError("SecureCRT session-manager route target metadata drifted")
+    if route.protocol_value not in reference.protocol_label:
+        raise RuntimeError("SecureCRT session-manager route protocol metadata drifted")
     tabs_h = 35
     log_y = y + h - log_h
     draw_tabs(draw, preset, x, y, w, tabs_h)
@@ -2627,6 +2909,17 @@ def draw_termius_workspace(
     log_h: int,
 ) -> None:
     c = preset.colors
+    sync_route = gui_design_termius_sync_route()
+    host_route = gui_design_termius_host_selection_route()
+    reference = gui_design_reference_state(preset.id)
+    if host_route.active_tab_label != reference.active_tab_label:
+        raise RuntimeError("Termius host-selection route active tab metadata drifted")
+    if host_route.selected_profile_name != reference.profile_name:
+        raise RuntimeError("Termius host-selection route profile metadata drifted")
+    if host_route.target_value != reference.target_label:
+        raise RuntimeError("Termius host-selection route target metadata drifted")
+    if host_route.protocol_value != reference.protocol_label:
+        raise RuntimeError("Termius host-selection route protocol metadata drifted")
     tabs_w = 86
     log_y = y + h - log_h
     draw_vertical_tabs(draw, preset, x, y, tabs_w, log_y - y - 8)
@@ -2638,6 +2931,8 @@ def draw_termius_workspace(
     draw_text(draw, surface.title, pane_x + 26, y + 24, c.control_text, 15, bold=True)
     draw_text(draw, surface.subtitle, pane_x + 26, y + 47, c.sidebar_muted, 10)
     for index, chip in enumerate(gui_design_termius_header_chips()):
+        if chip.key == sync_route.header_chip_key and sync_route.sync_state not in chip.label.lower():
+            raise RuntimeError("Termius sync route header chip metadata drifted")
         chip_x = pane_x + pane_w - 360 + index * 116
         rounded(draw, (chip_x, y + 25, chip_x + 104, y + 51), c.control, c.control_border, 12)
         draw_text(draw, chip.label, chip_x + 10, y + 33, c.terminal_accent, 8, bold=True)
@@ -2686,9 +2981,31 @@ def draw_remmina_workspace(
     toolbar_y = pane_y + 10
     draw.rectangle((x + 10, toolbar_y, x + w - 10, toolbar_y + 34), fill=c.toolbar, outline=c.pane_border)
     draw_text(draw, surface.title, x + 22, toolbar_y + 10, c.control_text, 13, bold=True)
+    route = gui_design_remmina_profile_viewer_route()
+    clipboard_route = gui_design_remmina_clipboard_route()
+    reference = gui_design_reference_state("remmina")
+    if route.active_tab_label != reference.active_tab_label:
+        raise RuntimeError("Remmina profile-viewer route active tab metadata drifted")
+    if route.profile_status != surface.primary_state or route.profile_status != reference.workspace_state:
+        raise RuntimeError("Remmina profile-viewer route scale state metadata drifted")
+    if clipboard_route.active_tab_label != reference.active_tab_label:
+        raise RuntimeError("Remmina clipboard route active tab metadata drifted")
+    if clipboard_route.status_segment not in reference.status_segments:
+        raise RuntimeError("Remmina clipboard route status segment metadata drifted")
+    if clipboard_route.clipboard_state != surface.secondary_state:
+        raise RuntimeError("Remmina clipboard route workspace state metadata drifted")
+    if clipboard_route.detail_line not in surface.detail_lines:
+        raise RuntimeError("Remmina clipboard route detail-line metadata drifted")
+    if clipboard_route.activity_line not in surface.activity_lines:
+        raise RuntimeError("Remmina clipboard route activity-line metadata drifted")
     controls = gui_design_remmina_viewer_controls()
+    if route.viewer_control_key not in {control.key for control in controls}:
+        raise RuntimeError("Remmina profile-viewer route target control is missing")
+    if clipboard_route.viewer_control_key not in {control.key for control in controls}:
+        raise RuntimeError("Remmina clipboard route target control is missing")
     control_x = x + w - 410
     for control in controls:
+        routed_control = control.key in {route.viewer_control_key, clipboard_route.viewer_control_key}
         rounded(
             draw,
             (
@@ -2697,8 +3014,8 @@ def draw_remmina_workspace(
                 control_x + control.static_width,
                 toolbar_y + control.static_y + control.static_height,
             ),
-            c.control,
-            c.control_border,
+            c.toolbar if routed_control else c.control,
+            c.primary if routed_control else c.control_border,
             2,
         )
         draw_remmina_viewer_control_icon(
@@ -2743,6 +3060,13 @@ def draw_mremoteng_workspace(
     log_h: int,
 ) -> None:
     c = preset.colors
+    route = gui_design_mremoteng_connection_document_route()
+    reference = gui_design_reference_state("mremoteng")
+    surface_tabs = {tab_label for tab_label, _status, _active in gui_design_tab_items("mremoteng")}
+    if route.active_tab_label != reference.active_tab_label or route.active_tab_label not in surface_tabs:
+        raise RuntimeError("mRemoteNG connection-document route active tab metadata drifted")
+    if route.selected_profile_name != reference.profile_name or route.workspace_state != reference.workspace_state:
+        raise RuntimeError("mRemoteNG connection-document route reference state metadata drifted")
     tabs_h = 35
     log_y = y + h - log_h
     draw_tabs(draw, preset, x, y, w, tabs_h)
@@ -2823,6 +3147,13 @@ def draw_detail_panel(
 def draw_securecrt_command_window(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
     c = preset.colors
     chrome = gui_design_securecrt_command_window_chrome()
+    send_route = gui_design_securecrt_command_window_send_route()
+    if (
+        send_route.command_input_object != "secureCrtCommandInput"
+        or send_route.send_control_object != "secureCrtCommandSend"
+        or send_route.command_property != "secureCrtCommandRouteCommand"
+    ):
+        raise RuntimeError("SecureCRT command-window send route metadata drifted")
     rounded(draw, (x, y, x + w, y + h), c.log, c.pane_border, 2)
     draw.rectangle((x + 1, y + 1, x + w - 1, y + chrome.static_header_height), fill=c.toolbar)
     draw_text(draw, chrome.title, x + chrome.static_title_x, y + chrome.static_title_y, c.control_text, 10, bold=True)
@@ -2886,21 +3217,27 @@ def draw_securecrt_command_window(draw: Any, preset: GuiDesignPreset, x: int, y:
 def draw_securecrt_session_status_strip(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
     c = preset.colors
     chrome = gui_design_securecrt_session_status_strip()
+    route = gui_design_securecrt_session_manager_route()
+    if route.status_strip_object != "secureCrtSessionStatusStrip":
+        raise RuntimeError("SecureCRT session-manager route status-strip object drifted")
     rounded(draw, (x, y, x + w, y + h), c.pane, c.control_border, 2)
     draw_text(draw, chrome.title, x + chrome.static_title_x, y + chrome.static_title_y, c.sidebar_muted, 9, bold=True)
     cell_x = x + chrome.static_cell_start_x
     for field in chrome.fields:
+        if field.key == route.status_field_key and field.value != route.target_value:
+            raise RuntimeError("SecureCRT session-manager route status value drifted")
         cell_w = field.static_width
         if cell_x + cell_w > x + w - 6:
             break
         is_status = field.role == "status"
         cell_fill = c.primary if is_status else c.terminal
         cell_text = c.primary_text if is_status else c.control_text
+        border = c.primary if field.key == route.status_field_key else c.control_border
         rounded(
             draw,
             (cell_x, y + field.static_y, cell_x + cell_w, y + field.static_y + field.static_height),
             cell_fill,
-            c.control_border,
+            border,
             2,
         )
         label_color = c.primary_text if is_status else c.sidebar_muted
@@ -2943,21 +3280,30 @@ def draw_termius_session_workflow(draw: Any, preset: GuiDesignPreset, x: int, y:
 def draw_termius_host_identity_strip(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
     c = preset.colors
     strip = gui_design_termius_host_identity_strip()
+    sync_route = gui_design_termius_sync_route()
+    host_route = gui_design_termius_host_selection_route()
+    if host_route.host_identity_object != "termiusHostIdentityStrip":
+        raise RuntimeError("Termius host-selection route identity object drifted")
     rounded(draw, (x, y, x + w, y + h), c.pane, c.control_border, 2)
     draw_text(draw, strip.title, x + strip.static_title_x, y + strip.static_title_y, c.sidebar_muted, 9, bold=True)
     cell_x = x + strip.static_cell_start_x
     for field in strip.fields:
+        if field.key == host_route.identity_field_key and field.value != host_route.host_value:
+            raise RuntimeError("Termius host-selection route host value drifted")
+        if field.key == sync_route.identity_field_key and field.value != sync_route.sync_state:
+            raise RuntimeError("Termius sync route identity field metadata drifted")
         cell_w = field.static_width
         if cell_x + cell_w > x + w - 6:
             break
         is_status = field.role == "status"
         cell_fill = c.primary if is_status else c.terminal
         cell_text = c.primary_text if is_status else c.control_text
+        border = c.primary if field.key == host_route.identity_field_key else c.control_border
         rounded(
             draw,
             (cell_x, y + field.static_y, cell_x + cell_w, y + field.static_y + field.static_height),
             cell_fill,
-            c.control_border,
+            border,
             2,
         )
         label_color = c.primary_text if is_status else c.sidebar_muted
@@ -3061,22 +3407,27 @@ def draw_remote_viewer(draw: Any, preset: GuiDesignPreset, surface: Any, x: int,
 def draw_mremoteng_document_toolbar(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
     c = preset.colors
     chrome = gui_design_mremoteng_document_toolbar_chrome()
+    route = gui_design_mremoteng_connection_document_route()
     interaction = gui_design_interaction_state(preset.id)
     toolbar_h = min(h, chrome.static_height)
     draw.rectangle((x, y, x + w, y + toolbar_h), fill=c.control, outline=c.pane_border)
     draw_text(draw, chrome.title, x + chrome.static_margin_x, y + 8, c.control_text, 10, bold=True)
     button_x = x + chrome.static_button_start_x
-    for control in gui_design_mremoteng_document_controls():
+    controls = gui_design_mremoteng_document_controls()
+    if route.document_control_key not in {control.key for control in controls}:
+        raise RuntimeError("mRemoteNG connection-document route target control is missing")
+    for control in controls:
         state = "checked" if control.key == "external-tool" and interaction.checked_toolbar_key == "files" else "normal"
         _fill, outline, text = interaction_button_colors(state, c)
+        routed_control = control.key == route.document_control_key
         button_box = (
             button_x,
             y + control.static_y,
             button_x + control.static_width,
             y + control.static_y + control.static_height,
         )
-        rounded(draw, button_box, c.toolbar, c.control_border, 2)
-        if state == "checked":
+        rounded(draw, button_box, c.control if routed_control else c.toolbar, c.primary if routed_control else c.control_border, 2)
+        if state == "checked" or routed_control:
             draw.rectangle(
                 (
                     button_x - 2,
@@ -3084,7 +3435,7 @@ def draw_mremoteng_document_toolbar(draw: Any, preset: GuiDesignPreset, x: int, 
                     button_x + control.static_width + 2,
                     y + control.static_y + control.static_height + 2,
                 ),
-                outline=outline,
+                outline=c.primary if routed_control else outline,
                 width=1,
             )
         draw_mremoteng_document_control_icon(
@@ -3162,6 +3513,10 @@ def draw_mremoteng_config_grid(draw: Any, preset: GuiDesignPreset, surface: Any,
 def draw_mremoteng_property_grid(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
     c = preset.colors
     chrome = gui_design_mremoteng_property_grid_chrome()
+    route = gui_design_mremoteng_connection_document_route()
+    route_rows = [row for row in chrome.rows if row.key == route.property_row_key]
+    if len(route_rows) != 1 or route_rows[0].effective_value != route.property_value:
+        raise RuntimeError("mRemoteNG connection-document route property row metadata drifted")
     rounded(draw, (x, y, x + w, y + h), c.log, c.pane_border, 3)
     draw.rectangle((x + 1, y + 1, x + w - 1, y + 30), fill=c.toolbar)
     draw_text(draw, chrome.title, x + 10, y + 10, c.control_text, 11, bold=True)
@@ -3184,7 +3539,8 @@ def draw_mremoteng_property_grid(draw: Any, preset: GuiDesignPreset, x: int, y: 
     for row_index, row in enumerate(chrome.rows):
         ry = table_y + row_h * (row_index + 1)
         fill = c.log if row.inherited else c.window
-        draw.rectangle((table_x, ry, x + w - 10, ry + row_h), fill=fill, outline=c.pane_border)
+        row_outline = c.primary if row.key == route.property_row_key else c.pane_border
+        draw.rectangle((table_x, ry, x + w - 10, ry + row_h), fill=fill, outline=row_outline)
         cx = table_x
         values = (row.property_label, row.inherited_from, row.effective_value, row.source)
         for index, value in enumerate(values):

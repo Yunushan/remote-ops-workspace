@@ -8,6 +8,8 @@ from remote_ops_workspace.moba_connected import (
     build_remote_monitoring_plan,
     build_ssh_connection_banner,
     moba_connected_profile_label,
+    moba_connected_session_identity_route,
+    moba_connected_session_route,
     moba_connected_tab_chrome_geometry_for,
     moba_connected_tab_chrome_geometry_items,
     moba_connected_tab_chrome_items,
@@ -70,6 +72,8 @@ def test_connected_session_state_tracks_browser_follow_monitoring_and_banner() -
     )
     assert state.terminal_transcript[3].text == "[operator@example ~]$ "
     assert state.to_dict()["telemetry_cells"][0]["display_text"] == "example.internal:22"
+    assert state.to_dict()["connected_route"]["key"] == "moba-active-connected-session-route"
+    assert state.to_dict()["identity_route"]["key"] == "moba-connected-session-identity-route"
 
 
 def test_connected_session_chrome_uses_target_identity_and_telemetry_segments() -> None:
@@ -105,6 +109,58 @@ def test_connected_session_chrome_uses_target_identity_and_telemetry_segments() 
         "connection",
         "process",
     ]
+
+
+def test_connected_session_route_ties_active_tab_to_visible_surfaces() -> None:
+    state = build_moba_connected_session_state(ssh_profile(), remote_path="/var/log")
+    route = moba_connected_session_route(state)
+
+    assert route.key == "moba-active-connected-session-route"
+    assert route.route_role == "active-tab-to-connected-workspace"
+    assert route.active_tab_key == "active-session"
+    assert route.active_tab_label == "example.internal (operator)"
+    assert route.reference_tab_label == "7. example.internal (operator)"
+    assert route.active_tab_object == "sessionTabs"
+    assert route.connected_panel_object == "mobaConnectedSession"
+    assert route.left_dock_object == "mobaConnectedLeftDock"
+    assert route.sftp_browser_object == "mobaSftpBrowser"
+    assert route.sftp_path_object == "mobaSftpPath"
+    assert route.sftp_table_object == "mobaSftpFileTable"
+    assert route.ssh_banner_object == "mobaSshBanner"
+    assert route.terminal_area_object == "mobaTerminalArea"
+    assert route.terminal_output_object == "terminalOutput"
+    assert route.telemetry_bar_object == "mobaTelemetryBar"
+    assert route.telemetry_identity_cell_key == "target"
+    assert route.target == "example.internal"
+    assert route.remote_path == "/var/log"
+    assert route.tab_label_property == "mobaConnectedRouteActiveTabLabel"
+    assert route.target_property == "mobaConnectedRouteTarget"
+    assert route.remote_path_property == "mobaConnectedRouteRemotePath"
+    assert route.render_source == "connected-session-state"
+    assert "yunus" not in " ".join(str(value).lower() for value in route.to_dict().values())
+
+
+def test_connected_session_identity_route_ties_visible_target_text_together() -> None:
+    state = build_moba_connected_session_state(ssh_profile(), remote_path="/var/log")
+    route = moba_connected_session_identity_route(state)
+
+    assert route.key == "moba-connected-session-identity-route"
+    assert route.route_role == "title-tab-banner-terminal-telemetry-identity"
+    assert route.window_title == "example.internal (operator)"
+    assert route.active_tab_label == "example.internal (operator)"
+    assert route.reference_tab_label == "7. example.internal (operator)"
+    assert route.banner_target == "example.internal"
+    assert route.web_console_line == "Web console: https://example.internal:9090/ or https://192.0.2.10:9090/"
+    assert route.terminal_prompt == "[operator@example ~]$ "
+    assert route.telemetry_target == "example.internal:22"
+    assert route.target_endpoint == "example.internal"
+    assert route.remote_path == "/var/log"
+    assert route.window_title_property == "mobaConnectedIdentityWindowTitle"
+    assert route.banner_target_property == "mobaConnectedIdentityBannerTarget"
+    assert route.terminal_prompt_property == "mobaConnectedIdentityTerminalPrompt"
+    assert route.telemetry_target_property == "mobaConnectedIdentityTelemetryTarget"
+    assert route.render_source == "connected-session-state"
+    assert "yunus" not in " ".join(str(value).lower() for value in route.to_dict().values())
 
 
 def test_bottom_telemetry_cells_match_reference_like_status_strip() -> None:

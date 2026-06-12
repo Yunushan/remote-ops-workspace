@@ -24,19 +24,19 @@
         "User-approved MobaXterm-style home reference screenshot with centered welcome title, primary/recover actions, session search, recent sessions and footer notice."
       ],
       "dimension_coverage": {
-        "layout": ["moba.titlebar-chrome", "moba.top-stack-geometry", "moba.top-menu-geometry", "moba.ribbon-geometry", "moba.quick-connect-chrome", "moba.quick-connect-suggestions", "moba.connected-quick-connect-idle", "moba.home-welcome-surface", "moba.connected-left-dock", "moba.connected-dock-frame", "moba.remote-monitoring-compact-dock", "moba.remote-monitoring-footer-geometry", "moba.session-edge-controls", "moba.right-utility-rail", "moba.ssh-banner-row-geometry", "moba.terminal-transcript-geometry", "moba.bottom-telemetry", "moba.bottom-telemetry-geometry", "moba.bottom-status-geometry", "moba.reference-line-anchors", "moba.reference-topology"],
-        "navigation": ["moba.titlebar-chrome", "moba.top-stack-geometry", "moba.top-menu-chrome", "moba.top-menu-geometry", "moba.quick-connect-rail", "moba.quick-connect-chrome", "moba.quick-connect-suggestions", "moba.connected-quick-connect-idle", "moba.home-welcome-surface", "moba.rail-section-labels", "moba.session-edge-controls", "moba.bottom-edge-controls", "moba.reference-line-anchors"],
-        "panes": ["moba.connected-left-dock", "moba.connected-dock-frame", "moba.sftp-dock-chrome", "moba.sftp-dock-density", "moba.sftp-browser-chrome", "moba.sftp-browser-geometry", "moba.ssh-banner", "moba.ssh-banner-chrome", "moba.ssh-banner-capability-card", "moba.ssh-banner-row-geometry", "moba.terminal-transcript", "moba.terminal-transcript-geometry"],
-        "tabs": ["moba.titlebar-chrome", "moba.top-stack-geometry", "moba.home-welcome-surface", "moba.live-dock-switch", "moba.connected-tab-chrome", "moba.connected-tab-geometry", "moba.session-edge-controls", "moba.bottom-edge-controls", "moba.connected-session-chrome", "moba.reference-line-anchors"],
-        "sidebars": ["moba.top-stack-geometry", "moba.quick-connect-rail", "moba.quick-connect-chrome", "moba.quick-connect-suggestions", "moba.connected-quick-connect-idle", "moba.rail-section-labels", "moba.connected-left-dock", "moba.connected-dock-frame", "moba.remote-monitoring-footer-geometry", "moba.reference-line-anchors"],
+        "layout": ["moba.titlebar-chrome", "moba.top-stack-geometry", "moba.top-menu-geometry", "moba.ribbon-geometry", "moba.quick-connect-chrome", "moba.quick-connect-suggestions", "moba.connected-quick-connect-idle", "moba.home-welcome-surface", "moba.home-welcome-geometry", "moba.rail-geometry", "moba.connected-left-dock", "moba.connected-dock-frame", "moba.connected-session-route", "moba.connected-session-identity-route", "moba.sftp-routed-file-rows", "moba.remote-monitoring-compact-dock", "moba.remote-monitoring-footer-geometry", "moba.monitoring-control-geometry", "moba.session-edge-controls", "moba.session-edge-geometry", "moba.right-utility-rail", "moba.right-utility-rail-chrome", "moba.ssh-banner-row-geometry", "moba.terminal-transcript-geometry", "moba.bottom-telemetry", "moba.bottom-telemetry-geometry", "moba.bottom-status-geometry", "moba.reference-line-anchors", "moba.reference-topology"],
+        "navigation": ["moba.titlebar-chrome", "moba.top-stack-geometry", "moba.top-menu-chrome", "moba.top-menu-geometry", "moba.quick-connect-rail", "moba.quick-connect-chrome", "moba.quick-connect-suggestions", "moba.connected-quick-connect-idle", "moba.home-welcome-surface", "moba.home-welcome-geometry", "moba.rail-section-labels", "moba.rail-geometry", "moba.session-edge-controls", "moba.session-edge-geometry", "moba.bottom-edge-controls", "moba.reference-line-anchors"],
+        "panes": ["moba.connected-left-dock", "moba.connected-dock-frame", "moba.connected-session-route", "moba.connected-session-identity-route", "moba.sftp-dock-chrome", "moba.sftp-dock-density", "moba.sftp-browser-chrome", "moba.sftp-browser-geometry", "moba.sftp-follow-folder-route", "moba.sftp-routed-file-rows", "moba.ssh-banner", "moba.ssh-banner-chrome", "moba.ssh-banner-capability-card", "moba.ssh-banner-row-geometry", "moba.terminal-transcript", "moba.terminal-transcript-geometry"],
+        "tabs": ["moba.titlebar-chrome", "moba.top-stack-geometry", "moba.home-welcome-surface", "moba.home-welcome-geometry", "moba.live-dock-switch", "moba.connected-tab-chrome", "moba.connected-tab-geometry", "moba.connected-session-route", "moba.connected-session-identity-route", "moba.session-edge-controls", "moba.session-edge-geometry", "moba.bottom-edge-controls", "moba.connected-session-chrome", "moba.reference-line-anchors"],
+        "sidebars": ["moba.top-stack-geometry", "moba.quick-connect-rail", "moba.quick-connect-chrome", "moba.quick-connect-suggestions", "moba.connected-quick-connect-idle", "moba.rail-section-labels", "moba.rail-geometry", "moba.session-tree-geometry", "moba.connected-left-dock", "moba.connected-dock-frame", "moba.connected-session-route", "moba.connected-session-identity-route", "moba.remote-monitoring-footer-geometry", "moba.reference-line-anchors"],
         "toolbars": ["moba.top-stack-geometry", "moba.top-menu-chrome", "moba.top-menu-geometry", "moba.menu-ribbon", "moba.ribbon-pictograms", "moba.ribbon-geometry", "moba.sftp-dock-chrome", "moba.sftp-toolbar-groups", "moba.sftp-toolbar-geometry", "moba.sftp-dock-density"],
-        "session_trees": ["moba.session-tree"],
-        "connected_session_behavior": ["moba.titlebar-chrome", "moba.live-dock-switch", "moba.ssh-banner", "moba.ssh-banner-chrome", "moba.ssh-banner-capability-card", "moba.ssh-banner-row-geometry", "moba.terminal-transcript", "moba.terminal-transcript-geometry", "moba.quick-connect-suggestions", "moba.connected-quick-connect-idle", "moba.session-edge-controls", "moba.right-utility-rail", "moba.connected-tab-chrome", "moba.connected-tab-geometry", "moba.connected-dock-frame", "moba.sftp-toolbar-geometry", "moba.bottom-edge-controls", "moba.bottom-telemetry-geometry", "moba.connected-session-chrome", "moba.monitoring-controls", "moba.remote-monitoring-compact-dock", "moba.remote-monitoring-footer-geometry"],
-        "file_monitoring_panels": ["moba.sftp-table", "moba.sftp-dock-chrome", "moba.sftp-toolbar-groups", "moba.sftp-toolbar-geometry", "moba.sftp-dock-density", "moba.sftp-browser-chrome", "moba.sftp-browser-geometry", "moba.connected-dock-frame", "moba.connected-quick-connect-idle", "moba.remote-monitoring", "moba.monitoring-controls", "moba.remote-monitoring-compact-dock", "moba.remote-monitoring-footer-geometry"],
-        "status_bars": ["moba.status-segments", "moba.bottom-status-chrome", "moba.bottom-status-geometry", "moba.bottom-edge-controls", "moba.bottom-telemetry", "moba.bottom-telemetry-geometry", "moba.connected-session-chrome", "moba.remote-monitoring-compact-dock", "moba.remote-monitoring-footer-geometry", "moba.reference-line-anchors"],
-        "density": ["moba.density-spacing", "moba.titlebar-chrome", "moba.top-stack-geometry", "moba.top-menu-chrome", "moba.top-menu-geometry", "moba.ribbon-geometry", "moba.quick-connect-chrome", "moba.quick-connect-suggestions", "moba.connected-quick-connect-idle", "moba.home-welcome-surface", "moba.rail-section-labels", "moba.sftp-dock-chrome", "moba.sftp-toolbar-groups", "moba.sftp-toolbar-geometry", "moba.sftp-dock-density", "moba.sftp-browser-chrome", "moba.sftp-browser-geometry", "moba.connected-dock-frame", "moba.remote-monitoring-compact-dock", "moba.remote-monitoring-footer-geometry", "moba.ssh-banner-chrome", "moba.ssh-banner-capability-card", "moba.ssh-banner-row-geometry", "moba.terminal-transcript", "moba.terminal-transcript-geometry", "moba.bottom-telemetry-geometry", "moba.bottom-status-chrome", "moba.bottom-status-geometry", "moba.bottom-edge-controls", "moba.session-edge-controls", "moba.right-utility-rail", "moba.connected-tab-chrome", "moba.connected-tab-geometry", "moba.reference-line-anchors"],
-        "spacing": ["moba.density-spacing", "moba.titlebar-chrome", "moba.top-stack-geometry", "moba.top-menu-chrome", "moba.top-menu-geometry", "moba.ribbon-geometry", "moba.quick-connect-chrome", "moba.quick-connect-suggestions", "moba.connected-quick-connect-idle", "moba.home-welcome-surface", "moba.rail-section-labels", "moba.sftp-dock-chrome", "moba.sftp-toolbar-groups", "moba.sftp-toolbar-geometry", "moba.sftp-dock-density", "moba.sftp-browser-chrome", "moba.sftp-browser-geometry", "moba.connected-dock-frame", "moba.remote-monitoring-compact-dock", "moba.remote-monitoring-footer-geometry", "moba.ssh-banner-chrome", "moba.ssh-banner-capability-card", "moba.ssh-banner-row-geometry", "moba.terminal-transcript", "moba.terminal-transcript-geometry", "moba.bottom-telemetry-geometry", "moba.bottom-status-chrome", "moba.bottom-status-geometry", "moba.bottom-edge-controls", "moba.session-edge-controls", "moba.right-utility-rail", "moba.connected-tab-chrome", "moba.connected-tab-geometry", "moba.reference-line-anchors"],
-        "interaction_states": ["moba.interaction-states", "moba.titlebar-chrome", "moba.top-stack-geometry", "moba.top-menu-chrome", "moba.top-menu-geometry", "moba.ribbon-geometry", "moba.quick-connect-chrome", "moba.quick-connect-suggestions", "moba.connected-quick-connect-idle", "moba.home-welcome-surface", "moba.rail-section-labels", "moba.sftp-dock-chrome", "moba.sftp-toolbar-groups", "moba.sftp-toolbar-geometry", "moba.session-edge-controls", "moba.bottom-edge-controls", "moba.right-utility-rail", "moba.connected-tab-chrome", "moba.connected-tab-geometry", "moba.connected-session-chrome", "moba.monitoring-controls", "moba.remote-monitoring-compact-dock", "moba.remote-monitoring-footer-geometry", "moba.ssh-banner-capability-card", "moba.ssh-banner-row-geometry", "moba.terminal-transcript-geometry"]
+        "session_trees": ["moba.session-tree", "moba.session-tree-geometry"],
+        "connected_session_behavior": ["moba.titlebar-chrome", "moba.live-dock-switch", "moba.ssh-banner", "moba.ssh-banner-chrome", "moba.ssh-banner-capability-card", "moba.ssh-banner-row-geometry", "moba.terminal-transcript", "moba.terminal-transcript-geometry", "moba.quick-connect-suggestions", "moba.connected-quick-connect-idle", "moba.session-edge-controls", "moba.session-edge-geometry", "moba.right-utility-rail", "moba.right-utility-rail-chrome", "moba.connected-tab-chrome", "moba.connected-tab-geometry", "moba.connected-dock-frame", "moba.connected-session-route", "moba.connected-session-identity-route", "moba.sftp-toolbar-geometry", "moba.sftp-follow-folder-route", "moba.sftp-routed-file-rows", "moba.bottom-edge-controls", "moba.bottom-telemetry-geometry", "moba.connected-session-chrome", "moba.monitoring-controls", "moba.monitoring-control-geometry", "moba.remote-monitoring-compact-dock", "moba.remote-monitoring-footer-geometry", "moba.monitoring-telemetry-route"],
+        "file_monitoring_panels": ["moba.sftp-table", "moba.sftp-dock-chrome", "moba.sftp-toolbar-groups", "moba.sftp-toolbar-geometry", "moba.sftp-dock-density", "moba.sftp-browser-chrome", "moba.sftp-browser-geometry", "moba.sftp-follow-folder-route", "moba.sftp-routed-file-rows", "moba.connected-dock-frame", "moba.connected-session-route", "moba.connected-quick-connect-idle", "moba.remote-monitoring", "moba.monitoring-controls", "moba.monitoring-control-geometry", "moba.remote-monitoring-compact-dock", "moba.remote-monitoring-footer-geometry", "moba.monitoring-telemetry-route"],
+        "status_bars": ["moba.status-segments", "moba.bottom-status-chrome", "moba.bottom-status-geometry", "moba.bottom-edge-controls", "moba.bottom-telemetry", "moba.bottom-telemetry-geometry", "moba.connected-session-chrome", "moba.connected-session-route", "moba.connected-session-identity-route", "moba.remote-monitoring-compact-dock", "moba.remote-monitoring-footer-geometry", "moba.monitoring-telemetry-route", "moba.sftp-follow-folder-route", "moba.reference-line-anchors"],
+        "density": ["moba.density-spacing", "moba.titlebar-chrome", "moba.top-stack-geometry", "moba.top-menu-chrome", "moba.top-menu-geometry", "moba.ribbon-geometry", "moba.quick-connect-chrome", "moba.quick-connect-suggestions", "moba.connected-quick-connect-idle", "moba.home-welcome-surface", "moba.home-welcome-geometry", "moba.rail-section-labels", "moba.rail-geometry", "moba.session-tree-geometry", "moba.sftp-dock-chrome", "moba.sftp-toolbar-groups", "moba.sftp-toolbar-geometry", "moba.sftp-dock-density", "moba.sftp-browser-chrome", "moba.sftp-browser-geometry", "moba.sftp-routed-file-rows", "moba.connected-dock-frame", "moba.connected-session-route", "moba.connected-session-identity-route", "moba.remote-monitoring-compact-dock", "moba.remote-monitoring-footer-geometry", "moba.monitoring-control-geometry", "moba.ssh-banner-chrome", "moba.ssh-banner-capability-card", "moba.ssh-banner-row-geometry", "moba.terminal-transcript", "moba.terminal-transcript-geometry", "moba.bottom-telemetry-geometry", "moba.bottom-status-chrome", "moba.bottom-status-geometry", "moba.bottom-edge-controls", "moba.session-edge-controls", "moba.session-edge-geometry", "moba.right-utility-rail", "moba.right-utility-rail-chrome", "moba.connected-tab-chrome", "moba.connected-tab-geometry", "moba.reference-line-anchors"],
+        "spacing": ["moba.density-spacing", "moba.titlebar-chrome", "moba.top-stack-geometry", "moba.top-menu-chrome", "moba.top-menu-geometry", "moba.ribbon-geometry", "moba.quick-connect-chrome", "moba.quick-connect-suggestions", "moba.connected-quick-connect-idle", "moba.home-welcome-surface", "moba.home-welcome-geometry", "moba.rail-section-labels", "moba.rail-geometry", "moba.session-tree-geometry", "moba.sftp-dock-chrome", "moba.sftp-toolbar-groups", "moba.sftp-toolbar-geometry", "moba.sftp-dock-density", "moba.sftp-browser-chrome", "moba.sftp-browser-geometry", "moba.sftp-routed-file-rows", "moba.connected-dock-frame", "moba.connected-session-route", "moba.connected-session-identity-route", "moba.remote-monitoring-compact-dock", "moba.remote-monitoring-footer-geometry", "moba.monitoring-control-geometry", "moba.ssh-banner-chrome", "moba.ssh-banner-capability-card", "moba.ssh-banner-row-geometry", "moba.terminal-transcript", "moba.terminal-transcript-geometry", "moba.bottom-telemetry-geometry", "moba.bottom-status-chrome", "moba.bottom-status-geometry", "moba.bottom-edge-controls", "moba.session-edge-controls", "moba.session-edge-geometry", "moba.right-utility-rail", "moba.right-utility-rail-chrome", "moba.connected-tab-chrome", "moba.connected-tab-geometry", "moba.reference-line-anchors"],
+        "interaction_states": ["moba.interaction-states", "moba.titlebar-chrome", "moba.top-stack-geometry", "moba.top-menu-chrome", "moba.top-menu-geometry", "moba.ribbon-geometry", "moba.quick-connect-chrome", "moba.quick-connect-suggestions", "moba.connected-quick-connect-idle", "moba.home-welcome-surface", "moba.home-welcome-geometry", "moba.rail-section-labels", "moba.rail-geometry", "moba.sftp-dock-chrome", "moba.sftp-toolbar-groups", "moba.sftp-toolbar-geometry", "moba.sftp-follow-folder-route", "moba.sftp-routed-file-rows", "moba.connected-session-route", "moba.connected-session-identity-route", "moba.session-edge-controls", "moba.session-edge-geometry", "moba.bottom-edge-controls", "moba.right-utility-rail", "moba.right-utility-rail-chrome", "moba.connected-tab-chrome", "moba.connected-tab-geometry", "moba.connected-session-chrome", "moba.monitoring-controls", "moba.monitoring-control-geometry", "moba.remote-monitoring-compact-dock", "moba.remote-monitoring-footer-geometry", "moba.monitoring-telemetry-route", "moba.ssh-banner-capability-card", "moba.ssh-banner-row-geometry", "moba.terminal-transcript-geometry"]
       },
       "requirements": [
         {
@@ -121,9 +121,10 @@
           "id": "moba.quick-connect-rail",
           "description": "Left chrome includes quick connect plus a role-based vertical icon rail for collapse, sessions, favorites, tools, macros and SFTP.",
           "source_tokens": {
-            "scripts/render_gui_design_previews.py": ["gui_design_moba_rail_items", "draw_moba_rail_icon"],
-            "src/remote_ops_workspace/gui.py": ["quickConnect", "mobaRail", "create_moba_rail", "mobaRailRole", "show_moba_sftp_rail"],
-            "scripts/check_real_gui_render.py": ["EXPECTED_MOBA_RAIL_ROLES", "must not use stacked text"]
+            "src/remote_ops_workspace/gui_designs.py": ["rail_icon_key", "GUI_DESIGN_MOBA_RAIL_ITEMS"],
+            "scripts/render_gui_design_previews.py": ["gui_design_moba_rail_items", "draw_moba_rail_icon", "item.rail_icon_key"],
+            "src/remote_ops_workspace/gui.py": ["quickConnect", "mobaRail", "create_moba_rail", "mobaRailRole", "mobaRailStaticIconKey", "show_moba_sftp_rail"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_MOBA_RAIL_ROLES", "mobaRailStaticIconKey", "must not use stacked text"]
           }
         },
         {
@@ -173,12 +174,35 @@
           }
         },
         {
+          "id": "moba.rail-geometry",
+          "description": "MobaXterm-style left rail geometry pins rail width, icon x/y, static and live icon sizes, button bounds, active highlight bounds, rotated label height and generated-icon source through shared metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiMobaRailChrome", "GUI_DESIGN_MOBA_RAIL_CHROME", "GUI_DESIGN_MOBA_RAIL_ITEM_GEOMETRY", "gui_design_moba_rail_item_geometry_for"],
+            "scripts/render_gui_design_previews.py": ["gui_design_moba_rail_chrome", "gui_design_moba_rail_item_geometry_for", "rail_chrome.static_icon_size"],
+            "src/remote_ops_workspace/gui.py": ["mobaRailStaticIconY", "mobaRailButtonHeight", "mobaRailLabelHeight", "mobaRailRenderSource"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_MOBA_RAIL_CHROME", "moba-rail-geometry", "expected_moba_rail_item_geometry"],
+            "configs/gui_visual_metrics.json": ["moba-rail-labels", "sftp-glyphs-inside-connected-dock"],
+            "docs/GUI_DESIGN.md": ["MobaXterm-style left rail geometry"]
+          }
+        },
+        {
           "id": "moba.session-tree",
           "description": "MobaXterm-style saved user sessions keep the compact user-session tree while connected sessions can switch to SFTP.",
           "source_tokens": {
             "src/remote_ops_workspace/gui_designs.py": ["MobaXterm-style saved user sessions", "\"mobaxterm\": ("],
             "src/remote_ops_workspace/gui.py": ["gui_design_tree_root_copy", "profile_tree_label", "show_moba_profile_tree"],
             "scripts/render_gui_design_previews.py": ["gui_design_tree_rows"]
+          }
+        },
+        {
+          "id": "moba.session-tree-geometry",
+          "description": "MobaXterm-style saved-session tree geometry pins the user-session header, indentation, row heights, generated icon source, group/profile icon offsets, text offsets and selected-row bounds through shared static/live metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiMobaSessionTreeChrome", "GUI_DESIGN_MOBA_SESSION_TREE_CHROME", "gui_design_moba_session_tree_chrome", "GUI_DESIGN_TREE_ROW_ICONS"],
+            "scripts/render_gui_design_previews.py": ["gui_design_moba_session_tree_chrome", "chrome.profile_target_x", "chrome.selected_height"],
+            "src/remote_ops_workspace/gui.py": ["mobaSessionTreeProfileRowHeight", "TREE_ROW_STATIC_HEIGHT_ROLE", "GENERATED_PROFILE_TREE_ICON_PRESETS"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_MOBA_SESSION_TREE_CHROME", "moba-session-tree-geometry", "expected_moba_session_tree_chrome"],
+            "docs/GUI_DESIGN.md": ["MobaXterm-style saved-session tree geometry"]
           }
         },
         {
@@ -260,11 +284,23 @@
           "description": "Connected MobaXterm-style session edge shortcut cluster tracks the small paperclip/settings controls near the tab and terminal edge with shared action metadata, generated icons and live widget properties.",
           "source_tokens": {
             "src/remote_ops_workspace/gui_designs.py": ["GuiMobaSessionEdgeAction", "GUI_DESIGN_MOBA_SESSION_EDGE_ACTIONS", "gui_design_moba_session_edge_actions"],
-            "scripts/render_gui_design_previews.py": ["draw_moba_session_edge_controls", "gui_design_moba_session_edge_actions", "action.static_y"],
-            "src/remote_ops_workspace/gui.py": ["mobaSessionEdgeControls", "mobaSessionEdgeAction", "mobaSessionEdgeIconKey"],
+            "scripts/render_gui_design_previews.py": ["draw_moba_session_edge_controls", "gui_design_moba_session_edge_actions", "action.relative_y"],
+            "src/remote_ops_workspace/gui.py": ["mobaSessionEdgeControls", "mobaSessionEdgeAction", "mobaSessionEdgeIconKey", "mobaSessionEdgePlacement"],
             "scripts/check_real_gui_render.py": ["EXPECTED_MOBA_SESSION_EDGE_KEYS", "session-edge-controls", "expected_moba_session_edge_actions"],
             "configs/gui_visual_metrics.json": ["session-edge-controls", "session-edge-attachment", "session-edge-settings-control", "session-edge-controls-above-right-utility-rail"],
             "docs/GUI_DESIGN.md": ["session edge shortcut"]
+          }
+        },
+        {
+          "id": "moba.session-edge-geometry",
+          "description": "Connected MobaXterm-style session edge shortcut icons pin static y, relative y, icon size, button size and generated-icon source through shared static/live placement metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["static_size", "live_icon_size", "button_size", "relative_y", "render_source"],
+            "scripts/render_gui_design_previews.py": ["action.relative_y", "action.static_size", "rail.session_edge_top_y"],
+            "src/remote_ops_workspace/gui.py": ["mobaSessionEdgeRelativeY", "mobaSessionEdgeButtonSize", "mobaSessionEdgeRenderSource"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_MOBA_SESSION_EDGE_BY_KEY", "session-edge-geometry", "mobaSessionEdgeButtonSize"],
+            "configs/gui_visual_metrics.json": ["session-edge-controls", "session-edge-attachment", "session-edge-settings-control"],
+            "docs/GUI_DESIGN.md": ["MobaXterm-style session-edge shortcut geometry"]
           }
         },
         {
@@ -276,6 +312,18 @@
             "src/remote_ops_workspace/gui.py": ["mobaRightUtilityRail", "mobaRightUtilityAction", "mobaRightUtilityKey", "mobaRightUtilityIconKey", "mobaRightUtilityStaticY", "mobaRightUtilityButtonSize"],
             "scripts/check_real_gui_render.py": ["EXPECTED_MOBA_RIGHT_UTILITY_KEYS", "EXPECTED_MOBA_RIGHT_UTILITY_ICON_KEYS", "EXPECTED_MOBA_RIGHT_UTILITY_BY_KEY", "right-utility-rail-geometry", "mobaRightUtilityIconKey"],
             "configs/gui_visual_metrics.json": ["right-utility-rail", "right-utility-action-stack", "right-utility-settings-gear", "right-utility-stack-inside-right-utility-rail"]
+          }
+        },
+        {
+          "id": "moba.right-utility-rail-chrome",
+          "description": "Connected MobaXterm-style right utility rail pins the rail width, live width, margins, action spacing and session-edge shortcut icon geometry through shared static/live chrome metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiMobaRightUtilityRailChrome", "GUI_DESIGN_MOBA_RIGHT_UTILITY_RAIL_CHROME", "gui_design_moba_right_utility_rail_chrome", "session_edge_top_y"],
+            "scripts/render_gui_design_previews.py": ["gui_design_moba_right_utility_rail_chrome", "right_rail.static_width", "rail.session_edge_icon_x", "rail.session_edge_top_y"],
+            "src/remote_ops_workspace/gui.py": ["mobaRightUtilityRailStaticWidth", "mobaRightUtilityRailMargins", "mobaRightUtilityRailSessionEdgeIconSize", "mobaRightUtilityRailSessionEdgeTopY"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME", "right-utility-rail-chrome", "expected_moba_right_utility_rail_chrome"],
+            "configs/gui_visual_metrics.json": ["right-utility-rail", "right-utility-action-stack", "session-edge-controls"],
+            "docs/GUI_DESIGN.md": ["MobaXterm-style right utility rail chrome"]
           }
         },
         {
@@ -309,6 +357,28 @@
             "scripts/check_real_gui_render.py": ["sftp-browser-geometry", "expected_moba_sftp_browser_geometry", "mobaSftpRowIconYOffset"],
             "configs/gui_visual_metrics.json": ["sftp-path-table-chrome", "sftp-file-row-density", "sftp-selected-parent-row", "sftp-parent-row-icon"],
             "docs/GUI_DESIGN.md": ["MobaXterm-style SFTP browser geometry"]
+          }
+        },
+        {
+          "id": "moba.sftp-follow-folder-route",
+          "description": "MobaXterm-style SFTP Follow terminal folder workflow ties the checked follow-folder control, active remote path field, follow SFTP list plan and file table state through shared static/live route metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiMobaSftpFollowFolderRoute", "GUI_DESIGN_MOBA_SFTP_FOLLOW_FOLDER_ROUTE", "gui_design_moba_sftp_follow_folder_route"],
+            "scripts/render_gui_design_previews.py": ["gui_design_moba_sftp_follow_folder_route", "follow_route.source_control_key", "follow_route.target_path_object"],
+            "src/remote_ops_workspace/gui.py": ["mobaSftpFollowRouteKey", "mobaSftpFollowRoutePath", "mobaSftpFollowRoutePlan", "mobaMonitoringFollowEnabled"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_MOBA_SFTP_FOLLOW_FOLDER_ROUTE", "sftp-follow-folder-route", "expected_moba_sftp_follow_folder_route", "route_paths"],
+            "docs/GUI_DESIGN.md": ["MobaXterm-style SFTP follow-folder route"]
+          }
+        },
+        {
+          "id": "moba.sftp-routed-file-rows",
+          "description": "MobaXterm-style SFTP file rows carry row-level follow-folder route evidence, active remote path metadata, selected parent-row state and stable row indexes instead of being generic file-list rows.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiMobaSftpRoutedFileRows", "GUI_DESIGN_MOBA_SFTP_ROUTED_FILE_ROWS", "gui_design_moba_sftp_routed_file_rows"],
+            "scripts/render_gui_design_previews.py": ["gui_design_moba_sftp_routed_file_rows", "routed_rows.follow_route_key", "routed_rows.selected_row_kind"],
+            "src/remote_ops_workspace/gui.py": ["mobaSftpRoutedRowsKey", "SFTP_ROW_ROUTE_KEY_ROLE", "SFTP_ROW_SELECTED_BY_ROUTE_ROLE"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_MOBA_SFTP_ROUTED_FILE_ROWS", "sftp-routed-file-rows", "expected_moba_sftp_routed_file_rows", "routed_row_paths"],
+            "docs/GUI_DESIGN.md": ["MobaXterm-style SFTP routed file rows"]
           }
         },
         {
@@ -387,6 +457,17 @@
           }
         },
         {
+          "id": "moba.monitoring-telemetry-route",
+          "description": "MobaXterm-style remote monitoring keeps the dock compact while explicitly routing CPU, memory, disk, network, connection and process evidence into the bottom telemetry bar through shared static/live metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiMobaMonitoringTelemetryRoute", "GUI_DESIGN_MOBA_MONITORING_TELEMETRY_ROUTE", "gui_design_moba_monitoring_telemetry_route"],
+            "scripts/render_gui_design_previews.py": ["gui_design_moba_monitoring_telemetry_route", "telemetry_route.visible_dock_metric_keys", "telemetry_route.telemetry_surface"],
+            "src/remote_ops_workspace/gui.py": ["mobaMonitoringTelemetryRouteKey", "mobaMonitoringTelemetryMetricCellKeys", "mobaMonitoringTelemetryRouted"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_MOBA_MONITORING_TELEMETRY_ROUTE", "monitoring-telemetry-route", "expected_moba_monitoring_telemetry_route"],
+            "docs/GUI_DESIGN.md": ["MobaXterm-style monitoring telemetry route"]
+          }
+        },
+        {
           "id": "moba.remote-monitoring-footer-geometry",
           "description": "MobaXterm-style remote-monitoring footer pins the divider span, footer height, content-left offset, metric gap and live controls frame width so the lower-left monitoring/follow-folder band stays reference-like in static and live evidence.",
           "source_tokens": {
@@ -406,6 +487,18 @@
             "src/remote_ops_workspace/gui.py": ["mobaMonitoringControlKey", "mobaMonitoringControlIconKey", "mobaFollowTerminalFolder"],
             "scripts/check_real_gui_render.py": ["EXPECTED_MOBA_MONITORING_CONTROL_KEYS", "moba-monitoring-controls", "expected_moba_monitoring_controls"],
             "configs/gui_visual_metrics.json": ["monitoring-controls", "monitoring-control-row", "monitoring-control-icon", "follow-folder-control-row", "follow-folder-checkmark"]
+          }
+        },
+        {
+          "id": "moba.monitoring-control-geometry",
+          "description": "MobaXterm-style monitoring footer pins the Remote monitoring and Follow terminal folder control baselines, font sizes, checkbox offset, checkmark stroke points and live widget widths through shared static/live metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["label_y_offset", "label_font_size", "check_y_offset", "checkmark_points", "live_width"],
+            "scripts/render_gui_design_previews.py": ["geometry.label_y_offset", "geometry.label_font_size", "geometry.checkmark_points", "geometry.label_bold"],
+            "src/remote_ops_workspace/gui.py": ["mobaMonitoringControlLabelYOffset", "mobaMonitoringControlCheckmarkPoints", "mobaMonitoringControlLiveWidth", "QFont"],
+            "scripts/check_real_gui_render.py": ["moba-monitoring-control-geometry", "mobaMonitoringControlLabelFontSize", "mobaMonitoringControlCheckmarkPoints", "expected_moba_monitoring_control_geometry"],
+            "configs/gui_visual_metrics.json": ["monitoring-control-row", "monitoring-control-icon", "follow-folder-control-row", "follow-folder-checkmark"],
+            "docs/GUI_DESIGN.md": ["MobaXterm-style monitoring control geometry"]
           }
         },
         {
@@ -518,6 +611,28 @@
           }
         },
         {
+          "id": "moba.connected-session-route",
+          "description": "MobaXterm-style active connected-session route ties the selected SSH tab to the SFTP dock, SFTP path/table, SSH banner, terminal transcript and bottom telemetry identity through shared static/live metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/moba_connected.py": ["MobaConnectedSessionRoute", "moba_connected_session_route", "active-tab-to-connected-workspace"],
+            "scripts/render_gui_design_previews.py": ["moba_connected_session_route", "connected_route.reference_tab_label", "connected_route.telemetry_identity_cell_key"],
+            "src/remote_ops_workspace/gui.py": ["mobaConnectedRouteKey", "mobaConnectedRouteActiveTabLabel", "mobaConnectedRouteTelemetryBarObject"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_MOBA_CONNECTED_SESSION_ROUTE", "connected-session-route", "expected_moba_connected_session_route"],
+            "docs/GUI_DESIGN.md": ["MobaXterm-style connected-session route"]
+          }
+        },
+        {
+          "id": "moba.connected-session-identity-route",
+          "description": "MobaXterm-style connected-session identity route keeps the window title, active tab label, SSH banner target, web console line, terminal prompt and bottom telemetry target synchronized through shared static/live metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/moba_connected.py": ["MobaConnectedSessionIdentityRoute", "moba_connected_session_identity_route", "title-tab-banner-terminal-telemetry-identity"],
+            "scripts/render_gui_design_previews.py": ["moba_connected_session_identity_route", "identity_route.terminal_prompt", "identity_route.telemetry_target"],
+            "src/remote_ops_workspace/gui.py": ["mobaConnectedIdentityRouteKey", "mobaConnectedIdentityWindowTitle", "mobaConnectedIdentityTelemetryTarget"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_MOBA_CONNECTED_SESSION_IDENTITY_ROUTE", "connected-session-identity-route", "expected_moba_connected_session_identity_route"],
+            "docs/GUI_DESIGN.md": ["MobaXterm-style connected-session identity route"]
+          }
+        },
+        {
           "id": "moba.status-segments",
           "description": "MobaXterm-style window status bar exposes SFTP, CPU monitoring and SSH-browser workflow state.",
           "source_tokens": {
@@ -576,6 +691,17 @@
           }
         },
         {
+          "id": "moba.home-welcome-geometry",
+          "description": "MobaXterm-style home welcome geometry pins centered surface margins, hero spacing, logo/title/action/search/recent/footer offsets and live widget sizes through shared metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiMobaHomeWelcomeGeometry", "GUI_DESIGN_MOBA_HOME_WELCOME_GEOMETRY", "gui_design_moba_home_welcome_geometry"],
+            "scripts/render_gui_design_previews.py": ["gui_design_moba_home_welcome_geometry", "geometry.button_y_offset", "geometry.recent_item_step"],
+            "src/remote_ops_workspace/gui.py": ["mobaHomeActionStaticWidth", "mobaHomeSearchHeight", "mobaHomeFooterYOffset"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_MOBA_HOME_WELCOME_GEOMETRY", "moba-home-welcome-geometry", "expected_moba_home_welcome_geometry"],
+            "docs/GUI_DESIGN.md": ["MobaXterm-style home welcome geometry"]
+          }
+        },
+        {
           "id": "moba.interaction-states",
           "description": "MobaXterm-style interaction state tracks quick-connect focus, checked SFTP rail state and disabled sample ribbon affordance without user-specific data.",
           "source_tokens": {
@@ -591,19 +717,19 @@
         "SecureCRT-style terminal-first operator surface with restrained dark chrome, wide tabs and session tree."
       ],
       "dimension_coverage": {
-        "layout": ["securecrt.terminal-density", "securecrt.top-chrome", "securecrt.workspace-surface", "securecrt.session-status-strip", "securecrt.session-status-geometry", "securecrt.command-window-geometry", "securecrt.session-manager-chrome", "securecrt.session-manager-geometry", "securecrt.reference-line-anchors", "securecrt.reference-topology"],
-        "navigation": ["securecrt.top-chrome", "securecrt.session-manager-sidebar", "securecrt.session-manager-chrome", "securecrt.session-manager-geometry", "securecrt.reference-line-anchors"],
-        "panes": ["securecrt.workspace-surface", "securecrt.session-status-strip", "securecrt.session-status-geometry", "securecrt.command-window", "securecrt.command-window-chrome", "securecrt.command-window-geometry", "securecrt.reference-line-anchors"],
-        "tabs": ["securecrt.session-tabs", "securecrt.tab-model", "securecrt.reference-state", "securecrt.session-status-strip", "securecrt.session-status-geometry", "securecrt.reference-line-anchors"],
-        "sidebars": ["securecrt.session-manager-sidebar", "securecrt.session-manager-chrome", "securecrt.session-manager-geometry", "securecrt.reference-line-anchors"],
-        "toolbars": ["securecrt.top-chrome", "securecrt.session-toolbar", "securecrt.session-manager-chrome", "securecrt.session-manager-geometry", "securecrt.reference-line-anchors"],
-        "session_trees": ["securecrt.session-tree", "securecrt.session-glyphs", "securecrt.session-manager-chrome", "securecrt.session-manager-geometry"],
-        "connected_session_behavior": ["securecrt.workspace-surface", "securecrt.session-status-strip", "securecrt.session-status-geometry", "securecrt.command-window", "securecrt.command-window-chrome", "securecrt.command-window-geometry", "securecrt.reference-state"],
+        "layout": ["securecrt.terminal-density", "securecrt.top-chrome", "securecrt.workspace-surface", "securecrt.session-status-strip", "securecrt.session-status-geometry", "securecrt.command-window-geometry", "securecrt.command-window-send-route", "securecrt.session-manager-chrome", "securecrt.session-manager-geometry", "securecrt.session-manager-route", "securecrt.reference-line-anchors", "securecrt.reference-topology"],
+        "navigation": ["securecrt.top-chrome", "securecrt.session-manager-sidebar", "securecrt.session-manager-chrome", "securecrt.session-manager-geometry", "securecrt.session-manager-route", "securecrt.reference-line-anchors"],
+        "panes": ["securecrt.workspace-surface", "securecrt.session-status-strip", "securecrt.session-status-geometry", "securecrt.command-window", "securecrt.command-window-chrome", "securecrt.command-window-geometry", "securecrt.command-window-send-route", "securecrt.session-manager-route", "securecrt.reference-line-anchors"],
+        "tabs": ["securecrt.session-tabs", "securecrt.tab-model", "securecrt.reference-state", "securecrt.session-status-strip", "securecrt.session-status-geometry", "securecrt.session-manager-route", "securecrt.reference-line-anchors"],
+        "sidebars": ["securecrt.session-manager-sidebar", "securecrt.session-manager-chrome", "securecrt.session-manager-geometry", "securecrt.session-manager-route", "securecrt.reference-line-anchors"],
+        "toolbars": ["securecrt.top-chrome", "securecrt.session-toolbar", "securecrt.session-manager-chrome", "securecrt.session-manager-geometry", "securecrt.session-manager-route", "securecrt.reference-line-anchors"],
+        "session_trees": ["securecrt.session-tree", "securecrt.session-glyphs", "securecrt.session-manager-chrome", "securecrt.session-manager-geometry", "securecrt.session-manager-route"],
+        "connected_session_behavior": ["securecrt.workspace-surface", "securecrt.session-status-strip", "securecrt.session-status-geometry", "securecrt.command-window", "securecrt.command-window-chrome", "securecrt.command-window-geometry", "securecrt.command-window-send-route", "securecrt.session-manager-route", "securecrt.reference-state"],
         "file_monitoring_panels": ["securecrt.workspace-surface"],
-        "status_bars": ["securecrt.status-bar", "securecrt.reference-state", "securecrt.session-status-strip", "securecrt.session-status-geometry", "securecrt.reference-line-anchors"],
-        "density": ["securecrt.terminal-density", "securecrt.top-chrome", "securecrt.session-status-strip", "securecrt.session-status-geometry", "securecrt.session-manager-chrome", "securecrt.session-manager-geometry", "securecrt.reference-line-anchors"],
-        "spacing": ["securecrt.top-chrome", "securecrt.session-tabs", "securecrt.session-status-strip", "securecrt.session-status-geometry", "securecrt.command-window-geometry", "securecrt.session-manager-chrome", "securecrt.session-manager-geometry", "securecrt.reference-line-anchors"],
-        "interaction_states": ["securecrt.interaction-states", "securecrt.top-chrome", "securecrt.reference-state", "securecrt.session-status-strip", "securecrt.session-manager-chrome", "securecrt.session-manager-geometry"]
+        "status_bars": ["securecrt.status-bar", "securecrt.reference-state", "securecrt.session-status-strip", "securecrt.session-status-geometry", "securecrt.command-window-send-route", "securecrt.session-manager-route", "securecrt.reference-line-anchors"],
+        "density": ["securecrt.terminal-density", "securecrt.top-chrome", "securecrt.session-status-strip", "securecrt.session-status-geometry", "securecrt.session-manager-chrome", "securecrt.session-manager-geometry", "securecrt.session-manager-route", "securecrt.reference-line-anchors"],
+        "spacing": ["securecrt.top-chrome", "securecrt.session-tabs", "securecrt.session-status-strip", "securecrt.session-status-geometry", "securecrt.command-window-geometry", "securecrt.command-window-send-route", "securecrt.session-manager-chrome", "securecrt.session-manager-geometry", "securecrt.session-manager-route", "securecrt.reference-line-anchors"],
+        "interaction_states": ["securecrt.interaction-states", "securecrt.top-chrome", "securecrt.reference-state", "securecrt.session-status-strip", "securecrt.command-window-send-route", "securecrt.session-manager-chrome", "securecrt.session-manager-geometry", "securecrt.session-manager-route"]
       },
       "requirements": [
         {
@@ -688,6 +814,17 @@
           }
         },
         {
+          "id": "securecrt.session-manager-route",
+          "description": "SecureCRT-style selected Session Manager row routes to the active SSH2 tab, Connect action and target status-strip cell through shared static and live metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiSecureCrtSessionManagerRoute", "GUI_DESIGN_SECURECRT_SESSION_MANAGER_ROUTE", "gui_design_securecrt_session_manager_route"],
+            "src/remote_ops_workspace/gui.py": ["secureCrtSessionRouteKey", "secureCrtSessionRouteActive", "secureCrtSessionRouteActiveTab"],
+            "scripts/render_gui_design_previews.py": ["gui_design_securecrt_session_manager_route", "route.session_manager_action_key", "route.active_tab_label"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_SECURECRT_SESSION_MANAGER_ROUTE", "securecrt-session-manager-route", "expected_securecrt_session_manager_route"],
+            "docs/GUI_DESIGN.md": ["SecureCRT-style Session Manager route"]
+          }
+        },
+        {
           "id": "securecrt.session-tree",
           "description": "SecureCRT-style tree uses a Session Database root, foldered sessions and SSH2/SFTP terminal entries.",
           "source_tokens": {
@@ -769,6 +906,17 @@
           }
         },
         {
+          "id": "securecrt.command-window-send-route",
+          "description": "SecureCRT-style Command Window send route ties the target scope, command input, Send control and ready status to one shared live/static workflow contract.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiSecureCrtCommandWindowSendRoute", "GUI_DESIGN_SECURECRT_COMMAND_WINDOW_SEND_ROUTE", "gui_design_securecrt_command_window_send_route"],
+            "src/remote_ops_workspace/gui.py": ["secureCrtCommandRouteKey", "secureCrtCommandRouteCommand", "secureCrtCommandRouteSendLabel"],
+            "scripts/render_gui_design_previews.py": ["gui_design_securecrt_command_window_send_route", "send_route.command_input_object", "send_route.send_control_object"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_SECURECRT_COMMAND_WINDOW_SEND_ROUTE", "securecrt-command-window-send-route", "expected_securecrt_command_window_send_route"],
+            "docs/GUI_DESIGN.md": ["SecureCRT-style command-window send route"]
+          }
+        },
+        {
           "id": "securecrt.session-status-strip",
           "description": "SecureCRT-style session status strip uses shared static/live metadata for session, target, protocol, cipher, SFTP tab, log file and connected state so the terminal workspace carries reference-like connected-session context.",
           "source_tokens": {
@@ -837,19 +985,19 @@
         "Termius-style SSH-focused dark workspace with compact hosts, vault cues and vertical session tabs."
       ],
       "dimension_coverage": {
-        "layout": ["termius.vertical-tabs", "termius.workspace-surface", "termius.hosts-sidebar-chrome", "termius.header-chip-chrome", "termius.host-identity-strip", "termius.host-identity-geometry", "termius.reference-line-anchors", "termius.reference-topology"],
-        "navigation": ["termius.hosts-sidebar", "termius.hosts-sidebar-chrome", "termius.vertical-tabs", "termius.reference-line-anchors"],
-        "panes": ["termius.workspace-surface", "termius.host-identity-strip", "termius.host-identity-geometry", "termius.workflow-cards", "termius.reference-line-anchors"],
-        "tabs": ["termius.vertical-tabs", "termius.tab-model", "termius.reference-state", "termius.host-identity-strip", "termius.reference-line-anchors"],
-        "sidebars": ["termius.hosts-sidebar", "termius.hosts-sidebar-chrome", "termius.reference-line-anchors"],
-        "toolbars": ["termius.host-toolbar", "termius.hosts-sidebar-chrome", "termius.header-chip-chrome", "termius.host-identity-strip", "termius.host-identity-geometry", "termius.reference-line-anchors"],
-        "session_trees": ["termius.host-tree", "termius.host-glyphs", "termius.hosts-sidebar-chrome"],
-        "connected_session_behavior": ["termius.workspace-surface", "termius.host-identity-strip", "termius.host-identity-geometry", "termius.workflow-cards", "termius.header-chip-chrome", "termius.reference-state"],
-        "file_monitoring_panels": ["termius.workspace-surface", "termius.host-identity-strip", "termius.workflow-cards"],
-        "status_bars": ["termius.status-bar", "termius.header-chip-chrome", "termius.host-identity-strip", "termius.host-identity-geometry", "termius.reference-state", "termius.reference-line-anchors"],
-        "density": ["termius.dark-hosts", "termius.hosts-sidebar-chrome", "termius.host-identity-strip", "termius.host-identity-geometry", "termius.reference-line-anchors"],
-        "spacing": ["termius.vertical-tabs", "termius.hosts-sidebar-chrome", "termius.host-identity-strip", "termius.host-identity-geometry", "termius.reference-line-anchors"],
-        "interaction_states": ["termius.interaction-states", "termius.reference-state", "termius.hosts-sidebar-chrome", "termius.host-identity-strip"]
+        "layout": ["termius.vertical-tabs", "termius.workspace-surface", "termius.hosts-sidebar-chrome", "termius.header-chip-chrome", "termius.host-identity-strip", "termius.host-identity-geometry", "termius.host-selection-route", "termius.sync-route", "termius.reference-line-anchors", "termius.reference-topology"],
+        "navigation": ["termius.hosts-sidebar", "termius.hosts-sidebar-chrome", "termius.host-selection-route", "termius.sync-route", "termius.vertical-tabs", "termius.reference-line-anchors"],
+        "panes": ["termius.workspace-surface", "termius.host-identity-strip", "termius.host-identity-geometry", "termius.host-selection-route", "termius.sync-route", "termius.workflow-cards", "termius.reference-line-anchors"],
+        "tabs": ["termius.vertical-tabs", "termius.tab-model", "termius.reference-state", "termius.host-identity-strip", "termius.host-selection-route", "termius.reference-line-anchors"],
+        "sidebars": ["termius.hosts-sidebar", "termius.hosts-sidebar-chrome", "termius.host-selection-route", "termius.sync-route", "termius.reference-line-anchors"],
+        "toolbars": ["termius.host-toolbar", "termius.hosts-sidebar-chrome", "termius.header-chip-chrome", "termius.host-identity-strip", "termius.host-identity-geometry", "termius.host-selection-route", "termius.sync-route", "termius.reference-line-anchors"],
+        "session_trees": ["termius.host-tree", "termius.host-glyphs", "termius.hosts-sidebar-chrome", "termius.host-selection-route"],
+        "connected_session_behavior": ["termius.workspace-surface", "termius.host-identity-strip", "termius.host-identity-geometry", "termius.workflow-cards", "termius.header-chip-chrome", "termius.host-selection-route", "termius.sync-route", "termius.reference-state"],
+        "file_monitoring_panels": ["termius.workspace-surface", "termius.host-identity-strip", "termius.host-selection-route", "termius.sync-route", "termius.workflow-cards"],
+        "status_bars": ["termius.status-bar", "termius.header-chip-chrome", "termius.host-identity-strip", "termius.host-identity-geometry", "termius.host-selection-route", "termius.sync-route", "termius.reference-state", "termius.reference-line-anchors"],
+        "density": ["termius.dark-hosts", "termius.hosts-sidebar-chrome", "termius.host-identity-strip", "termius.host-identity-geometry", "termius.host-selection-route", "termius.reference-line-anchors"],
+        "spacing": ["termius.vertical-tabs", "termius.hosts-sidebar-chrome", "termius.host-identity-strip", "termius.host-identity-geometry", "termius.host-selection-route", "termius.reference-line-anchors"],
+        "interaction_states": ["termius.interaction-states", "termius.reference-state", "termius.hosts-sidebar-chrome", "termius.host-identity-strip", "termius.host-selection-route", "termius.sync-route"]
       },
       "requirements": [
         {
@@ -1002,6 +1150,28 @@
           }
         },
         {
+          "id": "termius.sync-route",
+          "description": "Termius-style sync route ties the Hosts sidebar Sync action, Sync current header chip and Host identity Sync status to one shared live/static workflow contract.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiTermiusSyncRoute", "GUI_DESIGN_TERMIUS_SYNC_ROUTE", "gui_design_termius_sync_route"],
+            "src/remote_ops_workspace/gui.py": ["termiusSyncRouteKey", "termiusSyncRouteState", "termiusSyncRouteHeaderChipKey"],
+            "scripts/render_gui_design_previews.py": ["gui_design_termius_sync_route", "sync_route.hosts_action_key", "sync_route.identity_field_key"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_TERMIUS_SYNC_ROUTE", "termius-sync-route", "expected_termius_sync_route"],
+            "docs/GUI_DESIGN.md": ["Termius-style sync route"]
+          }
+        },
+        {
+          "id": "termius.host-selection-route",
+          "description": "Termius-style selected host route ties the selected host tree row, active host tab, Hosts panel and Host identity cell through shared static/live metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiTermiusHostSelectionRoute", "GUI_DESIGN_TERMIUS_HOST_SELECTION_ROUTE", "gui_design_termius_host_selection_route"],
+            "src/remote_ops_workspace/gui.py": ["termiusHostRouteKey", "termiusHostRouteActiveTab", "TERMIUS_HOST_ROUTE_SELECTED_ROLE"],
+            "scripts/render_gui_design_previews.py": ["gui_design_termius_host_selection_route", "host_route.active_tab_label", "host_route.identity_field_key"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_TERMIUS_HOST_SELECTION_ROUTE", "termius-host-selection-route", "expected_termius_host_selection_route"],
+            "docs/GUI_DESIGN.md": ["Termius-style host-selection route"]
+          }
+        },
+        {
           "id": "termius.live-workflow-cards",
           "description": "Live Termius-style home tab exposes workflow evidence cards for vault identity, port forwarding and snippets.",
           "source_tokens": {
@@ -1047,19 +1217,19 @@
         "Remmina-style light remote-desktop workspace with protocol profiles and viewer tabs."
       ],
       "dimension_coverage": {
-        "layout": ["remmina.light-desktop", "remmina.viewer-surface", "remmina.profile-list-chrome", "remmina.profile-list-geometry", "remmina.reference-line-anchors", "remmina.reference-topology"],
-        "navigation": ["remmina.connection-profile-sidebar", "remmina.profile-list-chrome", "remmina.profile-list-geometry", "remmina.reference-line-anchors"],
-        "panes": ["remmina.viewer-surface", "remmina.viewer-controls", "remmina.viewer-control-chrome", "remmina.reference-line-anchors"],
-        "tabs": ["remmina.viewer-tabs", "remmina.reference-state", "remmina.reference-line-anchors"],
-        "sidebars": ["remmina.connection-profile-sidebar", "remmina.profile-list-chrome", "remmina.profile-list-geometry", "remmina.reference-line-anchors"],
-        "toolbars": ["remmina.viewer-toolbar", "remmina.viewer-control-chrome", "remmina.profile-list-chrome", "remmina.profile-list-geometry", "remmina.reference-line-anchors"],
+        "layout": ["remmina.light-desktop", "remmina.viewer-surface", "remmina.profile-list-chrome", "remmina.profile-list-geometry", "remmina.profile-viewer-route", "remmina.clipboard-route", "remmina.reference-line-anchors", "remmina.reference-topology"],
+        "navigation": ["remmina.connection-profile-sidebar", "remmina.profile-list-chrome", "remmina.profile-list-geometry", "remmina.profile-viewer-route", "remmina.clipboard-route", "remmina.reference-line-anchors"],
+        "panes": ["remmina.viewer-surface", "remmina.viewer-controls", "remmina.viewer-control-chrome", "remmina.profile-viewer-route", "remmina.clipboard-route", "remmina.reference-line-anchors"],
+        "tabs": ["remmina.viewer-tabs", "remmina.reference-state", "remmina.profile-viewer-route", "remmina.clipboard-route", "remmina.reference-line-anchors"],
+        "sidebars": ["remmina.connection-profile-sidebar", "remmina.profile-list-chrome", "remmina.profile-list-geometry", "remmina.profile-viewer-route", "remmina.clipboard-route", "remmina.reference-line-anchors"],
+        "toolbars": ["remmina.viewer-toolbar", "remmina.viewer-control-chrome", "remmina.profile-list-chrome", "remmina.profile-list-geometry", "remmina.profile-viewer-route", "remmina.clipboard-route", "remmina.reference-line-anchors"],
         "session_trees": ["remmina.protocol-tree", "remmina.profile-list-chrome", "remmina.profile-list-geometry", "remmina.protocol-glyphs"],
-        "connected_session_behavior": ["remmina.viewer-surface", "remmina.profile-list-chrome", "remmina.profile-list-geometry", "remmina.viewer-controls", "remmina.viewer-control-chrome", "remmina.reference-state"],
-        "file_monitoring_panels": ["remmina.viewer-surface", "remmina.import-workflow"],
-        "status_bars": ["remmina.status-bar", "remmina.reference-state", "remmina.reference-line-anchors"],
-        "density": ["remmina.light-desktop", "remmina.profile-list-chrome", "remmina.profile-list-geometry", "remmina.reference-line-anchors"],
-        "spacing": ["remmina.viewer-tabs", "remmina.profile-list-chrome", "remmina.profile-list-geometry", "remmina.reference-line-anchors"],
-        "interaction_states": ["remmina.interaction-states", "remmina.profile-list-chrome", "remmina.profile-list-geometry", "remmina.reference-state"]
+        "connected_session_behavior": ["remmina.viewer-surface", "remmina.profile-list-chrome", "remmina.profile-list-geometry", "remmina.viewer-controls", "remmina.viewer-control-chrome", "remmina.profile-viewer-route", "remmina.clipboard-route", "remmina.reference-state"],
+        "file_monitoring_panels": ["remmina.viewer-surface", "remmina.import-workflow", "remmina.clipboard-route"],
+        "status_bars": ["remmina.status-bar", "remmina.reference-state", "remmina.profile-viewer-route", "remmina.clipboard-route", "remmina.reference-line-anchors"],
+        "density": ["remmina.light-desktop", "remmina.profile-list-chrome", "remmina.profile-list-geometry", "remmina.profile-viewer-route", "remmina.clipboard-route", "remmina.reference-line-anchors"],
+        "spacing": ["remmina.viewer-tabs", "remmina.profile-list-chrome", "remmina.profile-list-geometry", "remmina.profile-viewer-route", "remmina.clipboard-route", "remmina.reference-line-anchors"],
+        "interaction_states": ["remmina.interaction-states", "remmina.profile-list-chrome", "remmina.profile-list-geometry", "remmina.profile-viewer-route", "remmina.clipboard-route", "remmina.reference-state"]
       },
       "requirements": [
         {
@@ -1201,6 +1371,28 @@
           }
         },
         {
+          "id": "remmina.profile-viewer-route",
+          "description": "Remmina-style selected profile route ties the selected RDP profile row, active RDP viewer tab, scale status and Scale 100% viewer control through shared static/live metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiRemminaProfileViewerRoute", "GUI_DESIGN_REMMINA_PROFILE_VIEWER_ROUTE", "gui_design_remmina_profile_viewer_route"],
+            "src/remote_ops_workspace/gui.py": ["remminaProfileViewerRouteKey", "remminaProfileViewerRouteActive", "remminaProfileViewerRouteActiveTab"],
+            "scripts/render_gui_design_previews.py": ["gui_design_remmina_profile_viewer_route", "route.viewer_control_key", "route.active_tab_label"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_REMMINA_PROFILE_VIEWER_ROUTE", "remmina-profile-viewer-route", "expected_remmina_profile_viewer_route"],
+            "docs/GUI_DESIGN.md": ["Remmina-style profile-viewer route"]
+          }
+        },
+        {
+          "id": "remmina.clipboard-route",
+          "description": "Remmina-style Clipboard viewer control route ties the Clipboard control, active RDP tab, Clipboard on status segment and clipboard-enabled workspace detail through shared static/live metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiRemminaClipboardRoute", "GUI_DESIGN_REMMINA_CLIPBOARD_ROUTE", "gui_design_remmina_clipboard_route"],
+            "src/remote_ops_workspace/gui.py": ["remminaClipboardRouteKey", "remminaClipboardRouteActive", "remminaClipboardRouteState"],
+            "scripts/render_gui_design_previews.py": ["gui_design_remmina_clipboard_route", "clipboard_route.viewer_control_key", "clipboard_route.status_segment"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_REMMINA_CLIPBOARD_ROUTE", "remmina-clipboard-route", "expected_remmina_clipboard_route"],
+            "docs/GUI_DESIGN.md": ["Remmina-style clipboard route"]
+          }
+        },
+        {
           "id": "remmina.live-workflow-cards",
           "description": "Live Remmina-style home tab exposes workflow evidence cards for protocol viewer tabs, scaling controls and clipboard sync.",
           "source_tokens": {
@@ -1245,19 +1437,19 @@
         "mRemoteNG-style classic connection manager with persistent tree, document tabs and grouped sessions."
       ],
       "dimension_coverage": {
-        "layout": ["mremoteng.classic-tree", "mremoteng.top-chrome", "mremoteng.workspace-surface", "mremoteng.property-grid-chrome", "mremoteng.reference-line-anchors", "mremoteng.reference-topology"],
-        "navigation": ["mremoteng.top-chrome", "mremoteng.connections-sidebar", "mremoteng.nested-connection-tree", "mremoteng.reference-line-anchors"],
-        "panes": ["mremoteng.workspace-surface", "mremoteng.document-controls", "mremoteng.document-control-chrome", "mremoteng.document-control-geometry", "mremoteng.property-grid-chrome", "mremoteng.reference-line-anchors"],
-        "tabs": ["mremoteng.document-tabs", "mremoteng.tab-model", "mremoteng.reference-state", "mremoteng.reference-line-anchors"],
-        "sidebars": ["mremoteng.connections-sidebar", "mremoteng.reference-line-anchors"],
-        "toolbars": ["mremoteng.top-chrome", "mremoteng.connection-toolbar", "mremoteng.document-controls", "mremoteng.document-control-chrome", "mremoteng.document-control-geometry", "mremoteng.reference-line-anchors"],
-        "session_trees": ["mremoteng.nested-connection-tree", "mremoteng.connection-glyphs"],
-        "connected_session_behavior": ["mremoteng.workspace-surface", "mremoteng.document-controls", "mremoteng.document-control-chrome", "mremoteng.document-control-geometry", "mremoteng.property-grid-chrome", "mremoteng.reference-state"],
+        "layout": ["mremoteng.classic-tree", "mremoteng.top-chrome", "mremoteng.workspace-surface", "mremoteng.property-grid-chrome", "mremoteng.connection-document-route", "mremoteng.reference-line-anchors", "mremoteng.reference-topology"],
+        "navigation": ["mremoteng.top-chrome", "mremoteng.connections-sidebar", "mremoteng.nested-connection-tree", "mremoteng.connection-document-route", "mremoteng.reference-line-anchors"],
+        "panes": ["mremoteng.workspace-surface", "mremoteng.document-controls", "mremoteng.document-control-chrome", "mremoteng.document-control-geometry", "mremoteng.property-grid-chrome", "mremoteng.connection-document-route", "mremoteng.reference-line-anchors"],
+        "tabs": ["mremoteng.document-tabs", "mremoteng.tab-model", "mremoteng.reference-state", "mremoteng.connection-document-route", "mremoteng.reference-line-anchors"],
+        "sidebars": ["mremoteng.connections-sidebar", "mremoteng.connection-document-route", "mremoteng.reference-line-anchors"],
+        "toolbars": ["mremoteng.top-chrome", "mremoteng.connection-toolbar", "mremoteng.document-controls", "mremoteng.document-control-chrome", "mremoteng.document-control-geometry", "mremoteng.connection-document-route", "mremoteng.reference-line-anchors"],
+        "session_trees": ["mremoteng.nested-connection-tree", "mremoteng.connection-glyphs", "mremoteng.connection-document-route"],
+        "connected_session_behavior": ["mremoteng.workspace-surface", "mremoteng.document-controls", "mremoteng.document-control-chrome", "mremoteng.document-control-geometry", "mremoteng.property-grid-chrome", "mremoteng.connection-document-route", "mremoteng.reference-state"],
         "file_monitoring_panels": ["mremoteng.workspace-surface", "mremoteng.import-groups"],
-        "status_bars": ["mremoteng.status-bar", "mremoteng.reference-state", "mremoteng.reference-line-anchors"],
-        "density": ["mremoteng.classic-tree", "mremoteng.top-chrome", "mremoteng.reference-line-anchors"],
-        "spacing": ["mremoteng.top-chrome", "mremoteng.document-tabs", "mremoteng.document-control-geometry", "mremoteng.property-grid-chrome", "mremoteng.reference-line-anchors"],
-        "interaction_states": ["mremoteng.top-chrome", "mremoteng.interaction-states", "mremoteng.property-grid-chrome", "mremoteng.reference-state"]
+        "status_bars": ["mremoteng.status-bar", "mremoteng.reference-state", "mremoteng.connection-document-route", "mremoteng.reference-line-anchors"],
+        "density": ["mremoteng.classic-tree", "mremoteng.top-chrome", "mremoteng.connection-document-route", "mremoteng.reference-line-anchors"],
+        "spacing": ["mremoteng.top-chrome", "mremoteng.document-tabs", "mremoteng.document-control-geometry", "mremoteng.property-grid-chrome", "mremoteng.connection-document-route", "mremoteng.reference-line-anchors"],
+        "interaction_states": ["mremoteng.top-chrome", "mremoteng.interaction-states", "mremoteng.property-grid-chrome", "mremoteng.connection-document-route", "mremoteng.reference-state"]
       },
       "requirements": [
         {
@@ -1408,6 +1600,17 @@
             "scripts/check_real_gui_render.py": ["check_live_mremoteng_property_grid", "expected_mremoteng_property_grid", "mremoteng-property-grid"],
             "configs/gui_visual_metrics.json": ["mremoteng", "property-grid-rows", "property-grid-header-rule"],
             "docs/GUI_DESIGN.md": ["mRemoteNG-style property grid"]
+          }
+        },
+        {
+          "id": "mremoteng.connection-document-route",
+          "description": "mRemoteNG-style selected connection route ties the selected Connections tree item, active SSH document tab, Reconnect document control and Protocol property-grid row through shared static/live metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiMRemoteNgConnectionDocumentRoute", "GUI_DESIGN_MREMOTENG_CONNECTION_DOCUMENT_ROUTE", "gui_design_mremoteng_connection_document_route"],
+            "src/remote_ops_workspace/gui.py": ["mRemoteNgConnectionRouteKey", "mRemoteNgConnectionRouteActive", "mRemoteNgConnectionRouteActiveTab"],
+            "scripts/render_gui_design_previews.py": ["gui_design_mremoteng_connection_document_route", "route.document_control_key", "route.active_tab_label"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE", "mremoteng-connection-document-route", "expected_mremoteng_connection_document_route"],
+            "docs/GUI_DESIGN.md": ["mRemoteNG-style connection-document route"]
           }
         },
         {

@@ -23,22 +23,30 @@ from remote_ops_workspace.gui_designs import (  # noqa: E402
     gui_design_moba_bottom_edge_controls,
     gui_design_moba_connected_dock_frame,
     gui_design_moba_home_welcome_chrome,
+    gui_design_moba_home_welcome_geometry,
     gui_design_moba_monitoring_control_geometry,
     gui_design_moba_monitoring_controls,
     gui_design_moba_monitoring_metrics,
+    gui_design_moba_monitoring_telemetry_route,
     gui_design_moba_quick_connect_chrome,
     gui_design_moba_quick_connect_suggestion_chrome,
+    gui_design_moba_rail_chrome,
+    gui_design_moba_rail_item_geometry,
     gui_design_moba_rail_items,
     gui_design_moba_remote_monitoring_dock_chrome,
     gui_design_moba_ribbon_action_geometry,
     gui_design_moba_ribbon_actions,
     gui_design_moba_ribbon_edge_actions,
     gui_design_moba_right_utility_actions,
+    gui_design_moba_right_utility_rail_chrome,
     gui_design_moba_session_edge_actions,
+    gui_design_moba_session_tree_chrome,
     gui_design_moba_sftp_browser_chrome,
     gui_design_moba_sftp_dock_actions,
     gui_design_moba_sftp_dock_layout,
     gui_design_moba_sftp_file_row_icons,
+    gui_design_moba_sftp_follow_folder_route,
+    gui_design_moba_sftp_routed_file_rows,
     gui_design_moba_sftp_toolbar_action_geometry,
     gui_design_moba_ssh_banner_chrome,
     gui_design_moba_ssh_banner_row_geometry,
@@ -49,22 +57,29 @@ from remote_ops_workspace.gui_designs import (  # noqa: E402
     gui_design_moba_top_menu_geometry,
     gui_design_moba_top_menu_items,
     gui_design_moba_top_stack_geometry,
+    gui_design_mremoteng_connection_document_route,
     gui_design_mremoteng_document_controls,
     gui_design_mremoteng_document_toolbar_chrome,
     gui_design_mremoteng_property_grid_chrome,
     gui_design_mremoteng_top_chrome,
     gui_design_reference_state,
+    gui_design_remmina_clipboard_route,
     gui_design_remmina_profile_list_chrome,
+    gui_design_remmina_profile_viewer_route,
     gui_design_remmina_viewer_controls,
     gui_design_securecrt_command_window_chrome,
+    gui_design_securecrt_command_window_send_route,
     gui_design_securecrt_session_manager_chrome,
+    gui_design_securecrt_session_manager_route,
     gui_design_securecrt_session_status_strip,
     gui_design_securecrt_top_chrome,
     gui_design_sidebar_copy,
     gui_design_status_segments,
     gui_design_termius_header_chips,
     gui_design_termius_host_identity_strip,
+    gui_design_termius_host_selection_route,
     gui_design_termius_hosts_chrome,
+    gui_design_termius_sync_route,
     gui_design_toolbar_actions,
     gui_design_tree_root_icon,
     gui_design_tree_row_icon,
@@ -76,6 +91,8 @@ from remote_ops_workspace.moba_connected import (  # noqa: E402
     build_moba_connected_session_state,
     build_moba_terminal_transcript,
     build_ssh_connection_banner,
+    moba_connected_session_identity_route,
+    moba_connected_session_route,
     moba_connected_tab_chrome_geometry_items,
     moba_telemetry_cell_geometry,
     moba_telemetry_cells,
@@ -127,6 +144,24 @@ EXPECTED_MOBA_CONNECTED_DOCK_FRAME = gui_design_moba_connected_dock_frame()
 EXPECTED_MOBA_QUICK_CONNECT_CHROME = gui_design_moba_quick_connect_chrome()
 EXPECTED_MOBA_QUICK_CONNECT_SUGGESTION_CHROME = gui_design_moba_quick_connect_suggestion_chrome()
 EXPECTED_MOBA_HOME_WELCOME_CHROME = gui_design_moba_home_welcome_chrome()
+EXPECTED_MOBA_HOME_WELCOME_GEOMETRY = gui_design_moba_home_welcome_geometry()
+EXPECTED_MOBA_CONNECTED_STATE = build_moba_connected_session_state(
+    Profile(
+        name="edge-prod",
+        protocol="ssh",
+        host="edge-prod.example.invalid",
+        port=22,
+        username="operator",
+    ),
+    remote_path="/var/log",
+    terminal_cwd="/var/log",
+    monitoring_output=(
+        "cpu=7 mem_mb=410/7680 disk_mb=2867/49152 users=1 processes=158 "
+        "net_up_mbps=0.01 net_down_mbps=0.01"
+    ),
+)
+EXPECTED_MOBA_CONNECTED_SESSION_ROUTE = moba_connected_session_route(EXPECTED_MOBA_CONNECTED_STATE)
+EXPECTED_MOBA_CONNECTED_SESSION_IDENTITY_ROUTE = moba_connected_session_identity_route(EXPECTED_MOBA_CONNECTED_STATE)
 EXPECTED_MOBA_TERMINAL_TRANSCRIPT = build_moba_terminal_transcript(
     Profile(
         name="edge-prod",
@@ -179,9 +214,11 @@ EXPECTED_MOBA_RIGHT_UTILITY_KEYS = {action.key for action in gui_design_moba_rig
 EXPECTED_MOBA_RIGHT_UTILITY_ICON_KEYS = {action.key: action.icon_key for action in gui_design_moba_right_utility_actions()}
 EXPECTED_MOBA_RIGHT_UTILITY_ACTIONS = tuple(gui_design_moba_right_utility_actions())
 EXPECTED_MOBA_RIGHT_UTILITY_BY_KEY = {action.key: action for action in EXPECTED_MOBA_RIGHT_UTILITY_ACTIONS}
+EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME = gui_design_moba_right_utility_rail_chrome()
 EXPECTED_MOBA_SESSION_EDGE_ACTIONS = tuple(gui_design_moba_session_edge_actions())
 EXPECTED_MOBA_SESSION_EDGE_KEYS = {action.key for action in EXPECTED_MOBA_SESSION_EDGE_ACTIONS}
 EXPECTED_MOBA_SESSION_EDGE_ICON_KEYS = {action.key: action.icon_key for action in EXPECTED_MOBA_SESSION_EDGE_ACTIONS}
+EXPECTED_MOBA_SESSION_EDGE_BY_KEY = {action.key: action for action in EXPECTED_MOBA_SESSION_EDGE_ACTIONS}
 EXPECTED_MOBA_SSH_BANNER_CHROME = gui_design_moba_ssh_banner_chrome()
 EXPECTED_MOBA_SSH_BANNER = build_ssh_connection_banner(
     Profile(
@@ -227,19 +264,36 @@ EXPECTED_MOBA_MONITORING_CONTROL_GEOMETRY_BY_KEY = {
     geometry.key: geometry for geometry in EXPECTED_MOBA_MONITORING_CONTROL_GEOMETRY
 }
 EXPECTED_MOBA_REMOTE_MONITORING_DOCK_CHROME = gui_design_moba_remote_monitoring_dock_chrome()
+EXPECTED_MOBA_MONITORING_TELEMETRY_ROUTE = gui_design_moba_monitoring_telemetry_route()
+EXPECTED_MOBA_SFTP_FOLLOW_FOLDER_ROUTE = gui_design_moba_sftp_follow_folder_route()
+EXPECTED_MOBA_SFTP_ROUTED_FILE_ROWS = gui_design_moba_sftp_routed_file_rows()
 EXPECTED_MOBA_STATUS_KEYS = {segment.key for segment in gui_design_moba_status_segments()}
 EXPECTED_MOBA_STATUS_CHROME = gui_design_moba_status_bar_chrome()
 EXPECTED_MOBA_BOTTOM_EDGE_CONTROLS = tuple(gui_design_moba_bottom_edge_controls())
 EXPECTED_MOBA_BOTTOM_EDGE_KEYS = {control.key for control in EXPECTED_MOBA_BOTTOM_EDGE_CONTROLS}
 EXPECTED_MOBA_BOTTOM_EDGE_ICON_KEYS = {control.key: control.icon_key for control in EXPECTED_MOBA_BOTTOM_EDGE_CONTROLS}
 EXPECTED_SECURECRT_COMMAND_WINDOW_CHROME = gui_design_securecrt_command_window_chrome()
+EXPECTED_SECURECRT_COMMAND_WINDOW_SEND_ROUTE = gui_design_securecrt_command_window_send_route()
 EXPECTED_SECURECRT_SESSION_STATUS_STRIP = gui_design_securecrt_session_status_strip()
 EXPECTED_SECURECRT_SESSION_STATUS_KEYS = [field.key for field in EXPECTED_SECURECRT_SESSION_STATUS_STRIP.fields]
 EXPECTED_SECURECRT_SESSION_MANAGER_CHROME = gui_design_securecrt_session_manager_chrome()
+EXPECTED_SECURECRT_SESSION_MANAGER_ROUTE = gui_design_securecrt_session_manager_route()
 EXPECTED_SECURECRT_SESSION_MANAGER_ACTION_KEYS = [action.key for action in EXPECTED_SECURECRT_SESSION_MANAGER_CHROME.actions]
 EXPECTED_SECURECRT_SESSION_MANAGER_ICON_KEYS = {
     action.key: action.icon_key for action in EXPECTED_SECURECRT_SESSION_MANAGER_CHROME.actions
 }
+EXPECTED_MOBA_SESSION_TREE_ICON_ROWS = (
+    ("User sessions", gui_design_tree_root_icon("mobaxterm")),
+    ("default", gui_design_tree_row_icon("mobaxterm", "default", "", True)),
+    ("example.jump-ssh", gui_design_tree_row_icon("mobaxterm", "example.jump-ssh", "", False)),
+    ("example.rdp", gui_design_tree_row_icon("mobaxterm", "example.rdp", "", False)),
+    ("prod", gui_design_tree_row_icon("mobaxterm", "prod", "", True)),
+    ("edge-prod", gui_design_tree_row_icon("mobaxterm", "edge-prod", "", False)),
+    ("win-admin", gui_design_tree_row_icon("mobaxterm", "win-admin", "", False)),
+    ("files", gui_design_tree_row_icon("mobaxterm", "files", "", True)),
+    ("sftp-ops", gui_design_tree_row_icon("mobaxterm", "sftp-ops", "", False)),
+    ("sync-stage", gui_design_tree_row_icon("mobaxterm", "sync-stage", "", False)),
+)
 EXPECTED_SECURECRT_TREE_ICON_ROWS = (
     ("Session Database", gui_design_tree_root_icon("securecrt")),
     ("Folder: Sessions", gui_design_tree_row_icon("securecrt", "Sessions", "", True)),
@@ -249,6 +303,7 @@ EXPECTED_SECURECRT_TREE_ICON_ROWS = (
     ("jump-host (SSH2)", gui_design_tree_row_icon("securecrt", "jump-host (SSH2)", "", False)),
 )
 EXPECTED_PRODUCT_TREE_ICON_ROWS = {
+    "mobaxterm": EXPECTED_MOBA_SESSION_TREE_ICON_ROWS,
     "securecrt": EXPECTED_SECURECRT_TREE_ICON_ROWS,
     "termius": (
         ("Personal Vault", gui_design_tree_root_icon("termius")),
@@ -291,6 +346,7 @@ EXPECTED_PRODUCT_TREE_ICON_SIZES = {
 EXPECTED_SECURECRT_TREE_ICON_KEYS = EXPECTED_PRODUCT_TREE_ICON_KEYS["securecrt"]
 EXPECTED_SECURECRT_TREE_ROW_KINDS = EXPECTED_PRODUCT_TREE_ROW_KINDS["securecrt"]
 EXPECTED_SECURECRT_TREE_ICON_SIZES = EXPECTED_PRODUCT_TREE_ICON_SIZES["securecrt"]
+EXPECTED_MOBA_SESSION_TREE_CHROME = gui_design_moba_session_tree_chrome()
 EXPECTED_SECURECRT_TOP_CHROME = gui_design_securecrt_top_chrome()
 EXPECTED_SECURECRT_TOP_MENU_KEYS = [item.key for item in EXPECTED_SECURECRT_TOP_CHROME.menu_items]
 EXPECTED_SECURECRT_TOP_MENU_LABELS = [item.label for item in EXPECTED_SECURECRT_TOP_CHROME.menu_items]
@@ -302,12 +358,16 @@ EXPECTED_REMMINA_VIEWER_CONTROL_KEYS = [control.key for control in gui_design_re
 EXPECTED_REMMINA_PROFILE_LIST_CHROME = gui_design_remmina_profile_list_chrome()
 EXPECTED_REMMINA_PROFILE_COLUMN_KEYS = [column.key for column in EXPECTED_REMMINA_PROFILE_LIST_CHROME.columns]
 EXPECTED_REMMINA_PROFILE_ROW_KEYS = [row.key for row in EXPECTED_REMMINA_PROFILE_LIST_CHROME.rows]
+EXPECTED_REMMINA_PROFILE_VIEWER_ROUTE = gui_design_remmina_profile_viewer_route()
+EXPECTED_REMMINA_CLIPBOARD_ROUTE = gui_design_remmina_clipboard_route()
 EXPECTED_TERMIUS_HEADER_CHIP_KEYS = [chip.key for chip in gui_design_termius_header_chips()]
 EXPECTED_TERMIUS_HOSTS_CHROME = gui_design_termius_hosts_chrome()
 EXPECTED_TERMIUS_HOSTS_ACTION_KEYS = [action.key for action in EXPECTED_TERMIUS_HOSTS_CHROME.actions]
 EXPECTED_TERMIUS_HOSTS_ICON_KEYS = {action.key: action.icon_key for action in EXPECTED_TERMIUS_HOSTS_CHROME.actions}
 EXPECTED_TERMIUS_HOST_IDENTITY_STRIP = gui_design_termius_host_identity_strip()
 EXPECTED_TERMIUS_HOST_IDENTITY_KEYS = [field.key for field in EXPECTED_TERMIUS_HOST_IDENTITY_STRIP.fields]
+EXPECTED_TERMIUS_SYNC_ROUTE = gui_design_termius_sync_route()
+EXPECTED_TERMIUS_HOST_SELECTION_ROUTE = gui_design_termius_host_selection_route()
 EXPECTED_MREMOTENG_TOP_CHROME = gui_design_mremoteng_top_chrome()
 EXPECTED_MREMOTENG_TOP_MENU_KEYS = [item.key for item in EXPECTED_MREMOTENG_TOP_CHROME.menu_items]
 EXPECTED_MREMOTENG_TOP_MENU_LABELS = [item.label for item in EXPECTED_MREMOTENG_TOP_CHROME.menu_items]
@@ -318,6 +378,7 @@ EXPECTED_MREMOTENG_TOP_TOOLBAR_ICON_KEYS = {
 EXPECTED_MREMOTENG_DOCUMENT_CONTROL_KEYS = [control.key for control in gui_design_mremoteng_document_controls()]
 EXPECTED_MREMOTENG_DOCUMENT_TOOLBAR_CHROME = gui_design_mremoteng_document_toolbar_chrome()
 EXPECTED_MREMOTENG_PROPERTY_GRID_CHROME = gui_design_mremoteng_property_grid_chrome()
+EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE = gui_design_mremoteng_connection_document_route()
 EXPECTED_MREMOTENG_PROPERTY_COLUMN_KEYS = [column.key for column in EXPECTED_MREMOTENG_PROPERTY_GRID_CHROME.columns]
 EXPECTED_MREMOTENG_PROPERTY_ROW_KEYS = [row.key for row in EXPECTED_MREMOTENG_PROPERTY_GRID_CHROME.rows]
 COMMON_REQUIRED_WIDGETS = {
@@ -365,6 +426,11 @@ NON_MOBA_PRESENT_WIDGETS = {
 PRODUCT_STYLE_PRESETS = {"mobaxterm", "securecrt", "termius", "remmina", "mremoteng"}
 EXPECTED_MOBA_RAIL_ROLES = {"collapse", "sessions", "favorites", "tools", "macros", "sftp"}
 EXPECTED_MOBA_RAIL_LABELS = {item.role: item.label for item in gui_design_moba_rail_items() if item.label}
+EXPECTED_MOBA_RAIL_ITEMS = tuple(gui_design_moba_rail_items())
+EXPECTED_MOBA_RAIL_ITEM_BY_ROLE = {item.role: item for item in EXPECTED_MOBA_RAIL_ITEMS}
+EXPECTED_MOBA_RAIL_CHROME = gui_design_moba_rail_chrome()
+EXPECTED_MOBA_RAIL_ITEM_GEOMETRY = tuple(gui_design_moba_rail_item_geometry())
+EXPECTED_MOBA_RAIL_ITEM_GEOMETRY_BY_ROLE = {geometry.role: geometry for geometry in EXPECTED_MOBA_RAIL_ITEM_GEOMETRY}
 MOBA_REQUIRED_WIDGETS = {
     "mobaQuickConnectChrome": "Moba quick connect chrome",
     "quickConnect": "Moba quick connect field",
@@ -1053,6 +1119,23 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
             for property_name, expected_value in geometry_properties.items():
                 if button.property(property_name) != expected_value:
                     errors.append(f"mobaxterm live GUI {label} ribbon property {property_name} drifted")
+        rail_widget = window.findChild(QWidget, "mobaRail")
+        if rail_widget is not None:
+            rail_properties = {
+                "mobaRailStaticWidth": EXPECTED_MOBA_RAIL_CHROME.rail_width,
+                "mobaRailIconX": EXPECTED_MOBA_RAIL_CHROME.icon_x,
+                "mobaRailStaticIconSize": EXPECTED_MOBA_RAIL_CHROME.static_icon_size,
+                "mobaRailLiveIconSize": EXPECTED_MOBA_RAIL_CHROME.live_icon_size,
+                "mobaRailButtonHeight": EXPECTED_MOBA_RAIL_CHROME.button_height,
+                "mobaRailLabelHeight": EXPECTED_MOBA_RAIL_CHROME.label_height,
+            }
+            for property_name, expected_value in rail_properties.items():
+                if int(rail_widget.property(property_name) or -1) != expected_value:
+                    errors.append(f"mobaxterm live GUI rail property {property_name} drifted")
+            if str(rail_widget.property("mobaRailRenderSource") or "") != EXPECTED_MOBA_RAIL_CHROME.render_source:
+                errors.append("mobaxterm live GUI rail render source drifted")
+            if rail_widget.width() != EXPECTED_MOBA_RAIL_CHROME.rail_width:
+                errors.append("mobaxterm live GUI rail live width drifted")
         rail_buttons = [
             button
             for button in window.findChildren(QToolButton)
@@ -1068,13 +1151,62 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                 errors.append(f"mobaxterm live GUI rail role {role!r} must not use stacked text")
             if button.icon().isNull():
                 errors.append(f"mobaxterm live GUI rail role {role!r} must use a generated icon")
+            expected_item = EXPECTED_MOBA_RAIL_ITEM_BY_ROLE.get(role)
+            expected_geometry = EXPECTED_MOBA_RAIL_ITEM_GEOMETRY_BY_ROLE.get(role)
+            if expected_item is not None:
+                if str(button.property("mobaRailIconKey") or "") != expected_item.icon_key:
+                    errors.append(f"mobaxterm live GUI rail role {role!r} icon key drifted")
+                if str(button.property("mobaRailStaticIconKey") or "") != expected_item.rail_icon_key:
+                    errors.append(f"mobaxterm live GUI rail role {role!r} static icon key drifted")
+            if expected_geometry is not None:
+                geometry_properties = {
+                    "mobaRailStaticIconX": EXPECTED_MOBA_RAIL_CHROME.icon_x,
+                    "mobaRailStaticIconY": expected_geometry.static_icon_y,
+                    "mobaRailStaticIconSize": EXPECTED_MOBA_RAIL_CHROME.static_icon_size,
+                    "mobaRailLiveIconSize": EXPECTED_MOBA_RAIL_CHROME.live_icon_size,
+                    "mobaRailButtonWidth": EXPECTED_MOBA_RAIL_CHROME.button_width,
+                    "mobaRailButtonHeight": EXPECTED_MOBA_RAIL_CHROME.button_height,
+                    "mobaRailActiveX": EXPECTED_MOBA_RAIL_CHROME.active_x,
+                    "mobaRailActiveYOffset": EXPECTED_MOBA_RAIL_CHROME.active_y_offset,
+                    "mobaRailActiveWidth": EXPECTED_MOBA_RAIL_CHROME.active_width,
+                    "mobaRailActiveHeight": EXPECTED_MOBA_RAIL_CHROME.active_height,
+                }
+                for property_name, expected_value in geometry_properties.items():
+                    if int(button.property(property_name) or -1) != expected_value:
+                        errors.append(f"mobaxterm live GUI rail role {role!r} property {property_name} drifted")
+                if str(button.property("mobaRailRenderSource") or "") != EXPECTED_MOBA_RAIL_CHROME.render_source:
+                    errors.append(f"mobaxterm live GUI rail role {role!r} render source drifted")
+                if button.iconSize().width() != EXPECTED_MOBA_RAIL_CHROME.live_icon_size:
+                    errors.append(f"mobaxterm live GUI rail role {role!r} icon size drifted")
+                if button.width() != EXPECTED_MOBA_RAIL_CHROME.button_width:
+                    errors.append(f"mobaxterm live GUI rail role {role!r} button width drifted")
+                if button.height() != EXPECTED_MOBA_RAIL_CHROME.button_height:
+                    errors.append(f"mobaxterm live GUI rail role {role!r} button height drifted")
         rail_labels = {
-            str(label.property("mobaRailRole") or ""): label.text()
+            str(label.property("mobaRailRole") or ""): label
             for label in window.findChildren(QLabel, "mobaRailLabel")
         }
         for role, expected_label in EXPECTED_MOBA_RAIL_LABELS.items():
-            if rail_labels.get(role) != expected_label:
+            label = rail_labels.get(role)
+            if label is None or label.text() != expected_label:
                 errors.append(f"mobaxterm live GUI rail role {role!r} missing vertical label: {expected_label}")
+                continue
+            expected_geometry = EXPECTED_MOBA_RAIL_ITEM_GEOMETRY_BY_ROLE.get(role)
+            if expected_geometry is None:
+                continue
+            label_properties = {
+                "mobaRailStaticLabelY": expected_geometry.static_label_y,
+                "mobaRailLabelWidth": EXPECTED_MOBA_RAIL_CHROME.label_width,
+                "mobaRailLabelHeight": EXPECTED_MOBA_RAIL_CHROME.label_height,
+                "mobaRailLabelFontSize": EXPECTED_MOBA_RAIL_CHROME.label_font_size,
+            }
+            for property_name, expected_value in label_properties.items():
+                if int(label.property(property_name) or -1) != expected_value:
+                    errors.append(f"mobaxterm live GUI rail label {role!r} property {property_name} drifted")
+            if label.width() != EXPECTED_MOBA_RAIL_CHROME.label_width:
+                errors.append(f"mobaxterm live GUI rail label {role!r} width drifted")
+            if label.height() != EXPECTED_MOBA_RAIL_CHROME.label_height:
+                errors.append(f"mobaxterm live GUI rail label {role!r} height drifted")
         sftp_buttons = window.findChildren(QToolButton, "mobaSftpAction")
         sftp_action_keys = {str(button.property("mobaSftpActionKey") or "") for button in sftp_buttons}
         missing_sftp_actions = sorted(EXPECTED_MOBA_SFTP_ACTION_KEYS - sftp_action_keys)
@@ -1210,6 +1342,34 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                 row_icon.icon_key for row_icon in EXPECTED_MOBA_SFTP_FILE_ROW_ICONS
             ]:
                 errors.append("mobaxterm live GUI SFTP file row icon-key metadata drifted")
+            routed_row_properties = {
+                "mobaSftpRoutedRowsKey": EXPECTED_MOBA_SFTP_ROUTED_FILE_ROWS.key,
+                "mobaSftpRoutedRowsRole": EXPECTED_MOBA_SFTP_ROUTED_FILE_ROWS.route_role,
+                "mobaSftpRoutedRowsFollowRouteKey": EXPECTED_MOBA_SFTP_ROUTED_FILE_ROWS.follow_route_key,
+                "mobaSftpRoutedRowsTargetTableObject": EXPECTED_MOBA_SFTP_ROUTED_FILE_ROWS.target_table_object,
+                "mobaSftpRoutedRowsContractProperty": EXPECTED_MOBA_SFTP_ROUTED_FILE_ROWS.row_contract_property,
+                "mobaSftpRoutedRowsRouteProperty": EXPECTED_MOBA_SFTP_ROUTED_FILE_ROWS.row_route_property,
+                "mobaSftpRoutedRowsPathProperty": EXPECTED_MOBA_SFTP_ROUTED_FILE_ROWS.row_path_property,
+                "mobaSftpRoutedRowsIndexProperty": EXPECTED_MOBA_SFTP_ROUTED_FILE_ROWS.row_index_property,
+                "mobaSftpRoutedRowsSelectedProperty": EXPECTED_MOBA_SFTP_ROUTED_FILE_ROWS.row_selected_property,
+                "mobaSftpRoutedRowsParentRowName": EXPECTED_MOBA_SFTP_ROUTED_FILE_ROWS.parent_row_name,
+                "mobaSftpRoutedRowsSelectedRowKind": EXPECTED_MOBA_SFTP_ROUTED_FILE_ROWS.selected_row_kind,
+                "mobaSftpRoutedRowsRenderSource": EXPECTED_MOBA_SFTP_ROUTED_FILE_ROWS.render_source,
+                "mobaSftpRoutedRowsRoutePathProperty": EXPECTED_MOBA_SFTP_FOLLOW_FOLDER_ROUTE.target_path_property,
+            }
+            for property_name, expected_value in routed_row_properties.items():
+                if str(sftp_table.property(property_name) or "") != expected_value:
+                    errors.append(f"mobaxterm live GUI SFTP routed-row table property {property_name} drifted")
+            routed_rows_source_path = str(sftp_table.property("mobaSftpRoutedRowsSourcePath") or "")
+            if not routed_rows_source_path.startswith("/"):
+                errors.append("mobaxterm live GUI SFTP routed-row table missing absolute source path")
+            elif sftp_path is not None and routed_rows_source_path != sftp_path.text():
+                errors.append("mobaxterm live GUI SFTP routed-row table source path must match SFTP path")
+            if not bool(sftp_table.property("mobaSftpRoutedRowsEnabled")):
+                errors.append("mobaxterm live GUI SFTP routed-row table must be enabled by follow-folder state")
+            routed_rows_plan = str(sftp_table.property("mobaSftpRoutedRowsPlan") or "")
+            if "ls -la /" not in routed_rows_plan:
+                errors.append("mobaxterm live GUI SFTP routed-row table missing follow-folder list plan")
             if sftp_table.topLevelItemCount() < 4:
                 errors.append("mobaxterm live GUI SFTP file table must expose multiple reference rows")
             elif (parent_item := sftp_table.topLevelItem(0)) is None:
@@ -1230,6 +1390,12 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
             row_kind_role = user_role + 42
             icon_size_role = user_role + 43
             icon_render_role = user_role + 44
+            row_contract_key_role = user_role + 45
+            row_route_key_role = user_role + 46
+            row_source_path_role = user_role + 47
+            row_index_role = user_role + 48
+            row_selected_by_route_role = user_role + 49
+            routed_row_paths: list[str] = []
             for row_index in range(sftp_table.topLevelItemCount()):
                 item = sftp_table.topLevelItem(row_index)
                 if item is None:
@@ -1253,6 +1419,26 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                     errors.append(f"mobaxterm live GUI SFTP row {item.text(0)!r} icon size drifted")
                 if item.icon(0).isNull():
                     errors.append(f"mobaxterm live GUI SFTP row {item.text(0)!r} must expose a generated icon")
+                row_contract_key = str(item.data(0, row_contract_key_role) or "")
+                if row_contract_key != EXPECTED_MOBA_SFTP_ROUTED_FILE_ROWS.key:
+                    errors.append(f"mobaxterm live GUI SFTP row {item.text(0)!r} routed-row contract key drifted")
+                row_route_key = str(item.data(0, row_route_key_role) or "")
+                if row_route_key != EXPECTED_MOBA_SFTP_ROUTED_FILE_ROWS.follow_route_key:
+                    errors.append(f"mobaxterm live GUI SFTP row {item.text(0)!r} follow-folder route key drifted")
+                row_source_path = str(item.data(0, row_source_path_role) or "")
+                routed_row_paths.append(row_source_path)
+                if not row_source_path.startswith("/"):
+                    errors.append(f"mobaxterm live GUI SFTP row {item.text(0)!r} missing absolute source path")
+                row_route_index = int(item.data(0, row_index_role) or -1)
+                if row_route_index != row_index:
+                    errors.append(f"mobaxterm live GUI SFTP row {item.text(0)!r} routed-row index drifted")
+                selected_by_route = bool(item.data(0, row_selected_by_route_role))
+                if selected_by_route != (row_index == 0):
+                    errors.append(f"mobaxterm live GUI SFTP row {item.text(0)!r} selected-by-route metadata drifted")
+            if routed_row_paths and len(set(routed_row_paths)) != 1:
+                errors.append(f"mobaxterm live GUI SFTP routed row paths diverged: {routed_row_paths}")
+            if sftp_path is not None and routed_row_paths and any(path != sftp_path.text() for path in routed_row_paths):
+                errors.append("mobaxterm live GUI SFTP routed row paths must match the active SFTP path")
         sftp_dock = window.findChild(QFrame, "mobaSftpBrowser")
         if sftp_dock is None:
             errors.append("mobaxterm live GUI SFTP dock missing density container")
@@ -1319,6 +1505,20 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                 EXPECTED_MOBA_REMOTE_MONITORING_DOCK_CHROME.telemetry_surface
             ):
                 errors.append("mobaxterm live GUI monitoring telemetry surface metadata drifted")
+            monitoring_route_properties = {
+                "mobaMonitoringTelemetryRouteKey": EXPECTED_MOBA_MONITORING_TELEMETRY_ROUTE.key,
+                "mobaMonitoringTelemetryRouteRole": EXPECTED_MOBA_MONITORING_TELEMETRY_ROUTE.route_role,
+                "mobaMonitoringTelemetryTargetBarObject": EXPECTED_MOBA_MONITORING_TELEMETRY_ROUTE.target_bar_object,
+                "mobaMonitoringTelemetryTargetCellObject": EXPECTED_MOBA_MONITORING_TELEMETRY_ROUTE.target_cell_object,
+                "mobaMonitoringTelemetryIdentityCellKey": EXPECTED_MOBA_MONITORING_TELEMETRY_ROUTE.target_identity_cell_key,
+            }
+            for property_name, expected_value in monitoring_route_properties.items():
+                if str(monitoring_panel.property(property_name) or "") != expected_value:
+                    errors.append(f"mobaxterm live GUI monitoring route property {property_name} drifted")
+            if list(monitoring_panel.property("mobaMonitoringTelemetryMetricCellKeys") or []) != list(
+                EXPECTED_MOBA_MONITORING_TELEMETRY_ROUTE.target_metric_cell_keys
+            ):
+                errors.append("mobaxterm live GUI monitoring route metric-cell keys drifted")
             if sorted(monitoring_panel.property("mobaRemoteMonitoringMetricKeys") or []) != sorted(
                 EXPECTED_MOBA_MONITORING_METRIC_KEYS
             ):
@@ -1373,6 +1573,10 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
             telemetry_surface = str(label.property("mobaMonitoringMetricTelemetrySurface") or "")
             if telemetry_surface != EXPECTED_MOBA_REMOTE_MONITORING_DOCK_CHROME.telemetry_surface:
                 errors.append("mobaxterm live GUI monitoring metric telemetry surface metadata drifted")
+            if str(label.property("mobaMonitoringTelemetryRouteKey") or "") != (
+                EXPECTED_MOBA_MONITORING_TELEMETRY_ROUTE.key
+            ):
+                errors.append("mobaxterm live GUI monitoring metric route metadata drifted")
         monitoring_controls = [
             *window.findChildren(QToolButton, "mobaMonitoringControl"),
             *window.findChildren(QCheckBox, "mobaFollowTerminalFolder"),
@@ -1423,8 +1627,12 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                     "mobaMonitoringControlIconX": geometry.icon_x,
                     "mobaMonitoringControlIconSize": geometry.icon_size,
                     "mobaMonitoringControlLabelX": geometry.label_x,
+                    "mobaMonitoringControlLabelYOffset": geometry.label_y_offset,
+                    "mobaMonitoringControlLabelFontSize": geometry.label_font_size,
                     "mobaMonitoringControlCheckSize": geometry.check_size,
+                    "mobaMonitoringControlCheckYOffset": geometry.check_y_offset,
                     "mobaMonitoringControlRowHeight": geometry.row_height,
+                    "mobaMonitoringControlLiveWidth": geometry.live_width,
                 }
                 for property_name, expected_value in geometry_properties.items():
                     if int(widget.property(property_name) or -1) != expected_value:
@@ -1432,12 +1640,34 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                             f"mobaxterm live GUI monitoring control {control.key!r} "
                             f"{property_name} drifted"
                         )
+                if bool(widget.property("mobaMonitoringControlLabelBold")) != geometry.label_bold:
+                    errors.append(
+                        f"mobaxterm live GUI monitoring control {control.key!r} "
+                        "mobaMonitoringControlLabelBold drifted"
+                    )
+                if [tuple(point) for point in (widget.property("mobaMonitoringControlCheckmarkPoints") or [])] != list(
+                    geometry.checkmark_points
+                ):
+                    errors.append(
+                        f"mobaxterm live GUI monitoring control {control.key!r} "
+                        "mobaMonitoringControlCheckmarkPoints drifted"
+                    )
+                if widget.width() != geometry.live_width:
+                    errors.append(f"mobaxterm live GUI monitoring control {control.key!r} live width drifted")
+                if widget.font().pointSize() != geometry.label_font_size:
+                    errors.append(f"mobaxterm live GUI monitoring control {control.key!r} font size drifted")
+                if widget.font().bold() != geometry.label_bold:
+                    errors.append(f"mobaxterm live GUI monitoring control {control.key!r} font weight drifted")
                 if widget.iconSize().width() != geometry.icon_size or widget.iconSize().height() != geometry.icon_size:
                     errors.append(f"mobaxterm live GUI monitoring control {control.key!r} icon size drifted")
             if str(widget.property("mobaMonitoringTelemetrySurface") or "") != (
                 EXPECTED_MOBA_REMOTE_MONITORING_DOCK_CHROME.telemetry_surface
             ):
                 errors.append(f"mobaxterm live GUI monitoring control {control.key!r} telemetry surface drifted")
+            if str(widget.property("mobaMonitoringTelemetryRouteKey") or "") != (
+                EXPECTED_MOBA_MONITORING_TELEMETRY_ROUTE.key
+            ):
+                errors.append(f"mobaxterm live GUI monitoring control {control.key!r} telemetry route drifted")
             if control.key == "remote-monitoring":
                 command = str(widget.property("mobaMonitoringCommand") or "")
                 if "sh -lc" not in command or "/proc" not in command:
@@ -1452,6 +1682,68 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                     errors.append("mobaxterm live GUI follow-terminal-folder control missing SFTP plan evidence")
                 if not str(widget.property("mobaMonitoringFollowPath") or "").startswith("/"):
                     errors.append("mobaxterm live GUI follow-terminal-folder control missing remote path metadata")
+        follow_route = EXPECTED_MOBA_SFTP_FOLLOW_FOLDER_ROUTE
+        follow_widget = monitoring_control_by_key.get(follow_route.source_control_key)
+        route_widgets = (
+            ("SFTP browser", sftp_dock),
+            ("SFTP path", sftp_path),
+            ("SFTP table", sftp_table),
+            ("monitoring panel", monitoring_panel),
+            ("follow control", follow_widget),
+        )
+        route_paths: list[str] = []
+        route_plans: list[str] = []
+        route_enabled: list[bool] = []
+        route_identity_properties = {
+            "mobaSftpFollowRouteKey": follow_route.key,
+            "mobaSftpFollowRouteRole": follow_route.route_role,
+            "mobaSftpFollowRouteSourceControlKey": follow_route.source_control_key,
+            "mobaSftpFollowRouteSourceControlObject": follow_route.source_control_object,
+            "mobaSftpFollowRouteSourcePathProperty": follow_route.source_path_property,
+            "mobaSftpFollowRouteSourcePlanProperty": follow_route.source_plan_property,
+            "mobaSftpFollowRouteSourceEnabledProperty": follow_route.source_enabled_property,
+            "mobaSftpFollowRouteTargetBrowserObject": follow_route.target_browser_object,
+            "mobaSftpFollowRouteTargetPathObject": follow_route.target_path_object,
+            "mobaSftpFollowRouteTargetTableObject": follow_route.target_table_object,
+            "mobaSftpFollowRouteTargetPathProperty": follow_route.target_path_property,
+            "mobaSftpFollowRouteTargetPlanProperty": follow_route.target_plan_property,
+            "mobaSftpFollowRouteTargetEnabledProperty": follow_route.target_enabled_property,
+            "mobaSftpFollowRouteRenderSource": follow_route.render_source,
+        }
+        for label, widget in route_widgets:
+            if widget is None:
+                errors.append(f"mobaxterm live GUI follow-folder route missing {label}")
+                continue
+            for property_name, expected_value in route_identity_properties.items():
+                if str(widget.property(property_name) or "") != expected_value:
+                    errors.append(
+                        f"mobaxterm live GUI follow-folder route {label} "
+                        f"property {property_name} drifted"
+                    )
+            route_path = str(widget.property(follow_route.target_path_property) or "")
+            route_plan = str(widget.property(follow_route.target_plan_property) or "")
+            route_paths.append(route_path)
+            route_plans.append(route_plan)
+            route_enabled.append(bool(widget.property(follow_route.target_enabled_property)))
+        if route_paths and (not all(path.startswith("/") for path in route_paths) or len(set(route_paths)) != 1):
+            errors.append(f"mobaxterm live GUI follow-folder route path metadata diverged: {route_paths}")
+        if sftp_path is not None and route_paths and any(path != sftp_path.text() for path in route_paths):
+            errors.append("mobaxterm live GUI follow-folder route path must match SFTP path strip text")
+        if route_plans and any(
+            route_path not in plan or "ls -la " not in plan
+            for route_path, plan in zip(route_paths, route_plans, strict=False)
+        ):
+            errors.append("mobaxterm live GUI follow-folder route plan must list the routed SFTP path")
+        if follow_widget is not None:
+            source_path = str(follow_widget.property(follow_route.source_path_property) or "")
+            source_plan = str(follow_widget.property(follow_route.source_plan_property) or "")
+            source_enabled = bool(follow_widget.property(follow_route.source_enabled_property))
+            if route_paths and source_path != route_paths[0]:
+                errors.append("mobaxterm live GUI follow-folder route source path drifted")
+            if route_plans and source_plan != route_plans[0]:
+                errors.append("mobaxterm live GUI follow-folder route source plan drifted")
+            if route_enabled and (source_enabled != follow_widget.isChecked() or any(value != source_enabled for value in route_enabled)):
+                errors.append("mobaxterm live GUI follow-folder route enabled state drifted")
         expected_title = EXPECTED_LIVE_REFERENCE_TAB_LABELS["mobaxterm"]
         if window.windowTitle() != expected_title:
             errors.append(f"mobaxterm live GUI window title must be connected target label: {expected_title}")
@@ -1645,6 +1937,25 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                 errors.append("mobaxterm live GUI telemetry start-x metadata drifted")
             if int(telemetry_bar.property("mobaTelemetryBarHeight") or 0) != 24:
                 errors.append("mobaxterm live GUI telemetry bar height metadata drifted")
+            telemetry_route_properties = {
+                "mobaMonitoringTelemetryRouteKey": EXPECTED_MOBA_MONITORING_TELEMETRY_ROUTE.key,
+                "mobaMonitoringTelemetryRouteRole": EXPECTED_MOBA_MONITORING_TELEMETRY_ROUTE.route_role,
+                "mobaMonitoringTelemetrySourcePanelObject": (
+                    EXPECTED_MOBA_MONITORING_TELEMETRY_ROUTE.source_panel_object
+                ),
+                "mobaMonitoringTelemetrySourceControl": EXPECTED_MOBA_MONITORING_TELEMETRY_ROUTE.source_control_key,
+                "mobaMonitoringTelemetrySurface": EXPECTED_MOBA_MONITORING_TELEMETRY_ROUTE.telemetry_surface,
+                "mobaMonitoringTelemetryIdentityCellKey": (
+                    EXPECTED_MOBA_MONITORING_TELEMETRY_ROUTE.target_identity_cell_key
+                ),
+            }
+            for property_name, expected_value in telemetry_route_properties.items():
+                if str(telemetry_bar.property(property_name) or "") != expected_value:
+                    errors.append(f"mobaxterm live GUI telemetry route property {property_name} drifted")
+            if list(telemetry_bar.property("mobaMonitoringTelemetryMetricCellKeys") or []) != list(
+                EXPECTED_MOBA_MONITORING_TELEMETRY_ROUTE.target_metric_cell_keys
+            ):
+                errors.append("mobaxterm live GUI telemetry route metric-cell keys drifted")
         telemetry_keys = {
             str(widget.property("mobaTelemetryKey") or "")
             for widget in [*telemetry_labels, *telemetry_icons, *telemetry_cells]
@@ -1667,6 +1978,9 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
             live_label = labels_by_key.get(expected_cell.key)
             if live_cell is None or live_icon is None or live_label is None:
                 continue
+            expected_routed = expected_cell.key in EXPECTED_MOBA_MONITORING_TELEMETRY_ROUTE.target_metric_cell_keys
+            if bool(live_cell.property("mobaMonitoringTelemetryRouted")) != expected_routed:
+                errors.append(f"mobaxterm live GUI telemetry cell {expected_cell.key!r} route flag drifted")
             if str(live_cell.property("mobaTelemetryIconKey") or "") != expected_cell.icon_key:
                 errors.append(f"mobaxterm live GUI telemetry cell {expected_cell.key!r} icon key drifted")
             if str(live_cell.property("mobaTelemetryIconAccent") or "") != expected_cell.icon_accent:
@@ -1759,6 +2073,31 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
             for property_name, expected_value in geometry_properties.items():
                 if int(widget.property(property_name) or -1) != expected_value:
                     errors.append(f"mobaxterm live GUI tab chrome {key!r} {property_name} drifted")
+        utility_rail = window.findChild(QFrame, "mobaRightUtilityRail")
+        if utility_rail is None:
+            errors.append("mobaxterm live GUI missing right utility rail")
+        else:
+            rail_properties = {
+                "mobaRightUtilityRailStaticWidth": EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.static_width,
+                "mobaRightUtilityRailLiveWidth": EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.live_width,
+                "mobaRightUtilityRailActionSpacing": EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.action_spacing,
+                "mobaRightUtilityRailSessionEdgeTopY": EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.session_edge_top_y,
+                "mobaRightUtilityRailSessionEdgeHeight": EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.session_edge_height,
+                "mobaRightUtilityRailSessionEdgeIconX": EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.session_edge_icon_x,
+                "mobaRightUtilityRailSessionEdgeIconSize": EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.session_edge_icon_size,
+            }
+            for property_name, expected_value in rail_properties.items():
+                if int(utility_rail.property(property_name) or -1) != expected_value:
+                    errors.append(f"mobaxterm live GUI right utility rail {property_name} drifted")
+            if list(utility_rail.property("mobaRightUtilityRailMargins") or []) != [
+                EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.margin_left,
+                EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.margin_top,
+                EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.margin_right,
+                EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.margin_bottom,
+            ]:
+                errors.append("mobaxterm live GUI right utility rail margins drifted")
+            if utility_rail.width() != EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.live_width:
+                errors.append("mobaxterm live GUI right utility rail live width drifted")
         utility_buttons = window.findChildren(QToolButton, "mobaRightUtilityAction")
         utility_keys = {str(button.property("mobaRightUtilityKey") or "") for button in utility_buttons}
         missing_utility_keys = sorted(EXPECTED_MOBA_RIGHT_UTILITY_KEYS - utility_keys)
@@ -1798,6 +2137,25 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                     errors.append(f"mobaxterm live GUI right utility action {key!r} button size drifted")
             if button.icon().isNull():
                 errors.append(f"mobaxterm live GUI right utility action {key!r} must use a generated icon")
+        edge_controls = window.findChild(QFrame, "mobaSessionEdgeControls")
+        if edge_controls is not None:
+            control_properties = {
+                "mobaSessionEdgeTopY": EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.session_edge_top_y,
+                "mobaSessionEdgeStaticHeight": EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.session_edge_height,
+                "mobaSessionEdgeIconX": EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.session_edge_icon_x,
+                "mobaSessionEdgeIconSize": EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.session_edge_icon_size,
+            }
+            for property_name, expected_value in control_properties.items():
+                if int(edge_controls.property(property_name) or -1) != expected_value:
+                    errors.append(f"mobaxterm live GUI session edge controls {property_name} drifted")
+            if str(edge_controls.property("mobaSessionEdgePlacement") or "") != "tab-strip-overlay":
+                errors.append("mobaxterm live GUI session edge controls placement drifted")
+            expected_relative_y = [
+                action.relative_y(EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.session_edge_top_y)
+                for action in EXPECTED_MOBA_SESSION_EDGE_ACTIONS
+            ]
+            if list(edge_controls.property("mobaSessionEdgeRelativeY") or []) != expected_relative_y:
+                errors.append("mobaxterm live GUI session edge controls relative y offsets drifted")
         edge_buttons = window.findChildren(QToolButton, "mobaSessionEdgeAction")
         edge_keys = {str(button.property("mobaSessionEdgeKey") or "") for button in edge_buttons}
         missing_edge_keys = sorted(EXPECTED_MOBA_SESSION_EDGE_KEYS - edge_keys)
@@ -1816,6 +2174,36 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                 )
             if button.icon().isNull():
                 errors.append(f"mobaxterm live GUI session edge shortcut {key!r} must use a generated icon")
+            expected_action = EXPECTED_MOBA_SESSION_EDGE_BY_KEY.get(key)
+            if expected_action is not None:
+                relative_y = expected_action.relative_y(EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.session_edge_top_y)
+                geometry_properties = {
+                    "mobaSessionEdgeStaticY": expected_action.static_y,
+                    "mobaSessionEdgeRelativeY": relative_y,
+                    "mobaSessionEdgeStaticSize": expected_action.static_size,
+                    "mobaSessionEdgeLiveIconSize": expected_action.live_icon_size,
+                    "mobaSessionEdgeButtonSize": expected_action.button_size,
+                }
+                for property_name, expected_value in geometry_properties.items():
+                    if int(button.property(property_name) or -1) != expected_value:
+                        errors.append(f"mobaxterm live GUI session edge shortcut {key!r} {property_name} drifted")
+                if str(button.property("mobaSessionEdgeRenderSource") or "") != expected_action.render_source:
+                    errors.append(f"mobaxterm live GUI session edge shortcut {key!r} render source drifted")
+                if button.y() != relative_y:
+                    errors.append(f"mobaxterm live GUI session edge shortcut {key!r} relative placement drifted")
+                if button.width() != expected_action.button_size or button.height() != expected_action.button_size:
+                    errors.append(f"mobaxterm live GUI session edge shortcut {key!r} button size drifted")
+                if button.iconSize().width() != expected_action.live_icon_size:
+                    errors.append(f"mobaxterm live GUI session edge shortcut {key!r} live icon size drifted")
+            if int(button.property("mobaSessionEdgeIconX") or -1) != EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.session_edge_icon_x:
+                errors.append(f"mobaxterm live GUI session edge shortcut {key!r} icon x drifted")
+            if (
+                int(button.property("mobaSessionEdgeIconSize") or -1)
+                != EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.session_edge_icon_size
+            ):
+                errors.append(f"mobaxterm live GUI session edge shortcut {key!r} icon size metadata drifted")
+            if button.iconSize().width() != EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.session_edge_icon_size:
+                errors.append(f"mobaxterm live GUI session edge shortcut {key!r} icon size drifted")
         status_notice = window.findChild(QLabel, "productStatusNotice")
         if status_notice is None:
             errors.append("mobaxterm live GUI missing bottom status notice")
@@ -1888,6 +2276,8 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
             errors.append(f"{preset_id} live GUI status segment missing text: {text}")
 
     if preset_id == "mobaxterm":
+        errors.extend(check_live_moba_connected_session_route(window))
+        errors.extend(check_live_moba_connected_session_identity_route(window))
         errors.extend(check_live_moba_home_welcome(window))
     else:
         errors.extend(check_live_workflow_cards(window, preset_id))
@@ -1897,24 +2287,173 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
             errors.extend(check_live_securecrt_top_chrome(window))
             errors.extend(check_live_securecrt_session_manager_chrome(window))
             errors.extend(check_live_securecrt_session_status_strip(window))
+            errors.extend(check_live_securecrt_session_manager_route(window))
             errors.extend(check_live_securecrt_command_window(window))
         if preset_id == "remmina":
             errors.extend(check_live_remmina_profile_list_chrome(window))
             errors.extend(check_live_remmina_viewer_controls(window))
+            errors.extend(check_live_remmina_profile_viewer_route(window))
+            errors.extend(check_live_remmina_clipboard_route(window))
         if preset_id == "termius":
             errors.extend(check_live_termius_hosts_chrome(window))
             errors.extend(check_live_termius_header_chips(window))
             errors.extend(check_live_termius_host_identity_strip(window))
+            errors.extend(check_live_termius_host_selection_route(window))
+            errors.extend(check_live_termius_sync_route(window))
         if preset_id == "mremoteng":
             errors.extend(check_live_mremoteng_top_chrome(window))
             errors.extend(check_live_mremoteng_document_controls(window))
             errors.extend(check_live_mremoteng_property_grid(window))
+            errors.extend(check_live_mremoteng_connection_document_route(window))
     errors.extend(check_live_interaction_state(window, preset_id))
     return errors
 
 
 def live_tab_labels(tabs: Any) -> set[str]:
     return {tabs.tabText(index) for index in range(tabs.count())}
+
+
+def check_live_moba_connected_session_route(window: Any) -> list[str]:
+    from PyQt6.QtWidgets import QLineEdit, QTabWidget, QTextEdit, QWidget
+
+    route = EXPECTED_MOBA_CONNECTED_SESSION_ROUTE
+    errors: list[str] = []
+    tabs = window.findChild(QTabWidget, route.active_tab_object)
+    if tabs is None:
+        return ["mobaxterm live GUI connected-session route missing session tabs"]
+    if route.active_tab_label not in live_tab_labels(tabs):
+        errors.append(f"mobaxterm live GUI connected-session route missing active tab {route.active_tab_label!r}")
+
+    route_widgets = [
+        ("tabs", tabs),
+        ("connected-panel", window.findChild(QWidget, route.connected_panel_object)),
+        ("left-dock", window.findChild(QWidget, route.left_dock_object)),
+        ("sftp-browser", window.findChild(QWidget, route.sftp_browser_object)),
+        ("sftp-path", window.findChild(QWidget, route.sftp_path_object)),
+        ("sftp-table", window.findChild(QWidget, route.sftp_table_object)),
+        ("ssh-banner", window.findChild(QWidget, route.ssh_banner_object)),
+        ("terminal-area", window.findChild(QWidget, route.terminal_area_object)),
+        ("terminal-output", window.findChild(QWidget, route.terminal_output_object)),
+        ("telemetry-bar", window.findChild(QWidget, route.telemetry_bar_object)),
+    ]
+    route_properties = {
+        "mobaConnectedRouteKey": route.key,
+        "mobaConnectedRouteRole": route.route_role,
+        "mobaConnectedRouteActiveTabKey": route.active_tab_key,
+        route.tab_label_property: route.active_tab_label,
+        "mobaConnectedRouteReferenceTabLabel": route.reference_tab_label,
+        "mobaConnectedRouteActiveTabObject": route.active_tab_object,
+        "mobaConnectedRouteConnectedPanelObject": route.connected_panel_object,
+        "mobaConnectedRouteLeftDockObject": route.left_dock_object,
+        "mobaConnectedRouteSftpBrowserObject": route.sftp_browser_object,
+        "mobaConnectedRouteSftpPathObject": route.sftp_path_object,
+        "mobaConnectedRouteSftpTableObject": route.sftp_table_object,
+        "mobaConnectedRouteSshBannerObject": route.ssh_banner_object,
+        "mobaConnectedRouteTerminalAreaObject": route.terminal_area_object,
+        "mobaConnectedRouteTerminalOutputObject": route.terminal_output_object,
+        "mobaConnectedRouteTelemetryBarObject": route.telemetry_bar_object,
+        "mobaConnectedRouteTelemetryIdentityCellKey": route.telemetry_identity_cell_key,
+        route.target_property: route.target,
+        route.remote_path_property: route.remote_path,
+        "mobaConnectedRouteRenderSource": route.render_source,
+    }
+    for label, widget in route_widgets:
+        if widget is None:
+            errors.append(f"mobaxterm live GUI connected-session route missing {label}")
+            continue
+        for property_name, expected_value in route_properties.items():
+            actual_value = str(widget.property(property_name) or "")
+            if actual_value != expected_value:
+                errors.append(
+                    f"mobaxterm live GUI connected-session route {label} property "
+                    f"{property_name} {actual_value!r} must equal {expected_value!r}"
+                )
+
+    path = window.findChild(QLineEdit, route.sftp_path_object)
+    if path is not None and path.text() != route.remote_path:
+        errors.append("mobaxterm live GUI connected-session route SFTP path text drifted")
+    terminal_output = window.findChild(QTextEdit, route.terminal_output_object)
+    if terminal_output is not None and not bool(terminal_output.property("mobaPlainTerminalMode")):
+        errors.append("mobaxterm live GUI connected-session route terminal output must be plain Moba mode")
+    telemetry_identity_cells = [
+        widget
+        for widget in window.findChildren(QWidget, "mobaTelemetryCell")
+        if str(widget.property("mobaTelemetryKey") or "") == route.telemetry_identity_cell_key
+    ]
+    if len(telemetry_identity_cells) != 1:
+        errors.append("mobaxterm live GUI connected-session route must expose one telemetry identity cell")
+    elif str(telemetry_identity_cells[0].property("mobaTelemetryDisplayText") or "") != (
+        EXPECTED_MOBA_TELEMETRY_CELLS[0].display_text
+    ):
+        errors.append("mobaxterm live GUI connected-session route telemetry identity target drifted")
+    return errors
+
+
+def check_live_moba_connected_session_identity_route(window: Any) -> list[str]:
+    from PyQt6.QtWidgets import QLabel, QTabWidget, QTextEdit, QWidget
+
+    route = EXPECTED_MOBA_CONNECTED_SESSION_IDENTITY_ROUTE
+    errors: list[str] = []
+    tabs = window.findChild(QTabWidget, "sessionTabs")
+    banner_target = window.findChild(QLabel, "mobaSshBannerTargetLine")
+    terminal_output = window.findChild(QTextEdit, "terminalOutput")
+    telemetry_identity_cells = [
+        widget
+        for widget in window.findChildren(QWidget, "mobaTelemetryCell")
+        if str(widget.property("mobaTelemetryKey") or "") == "target"
+    ]
+    identity_widgets = [
+        ("window", window),
+        ("tabs", tabs),
+        ("banner-target", banner_target),
+        ("terminal-output", terminal_output),
+        ("telemetry-target", telemetry_identity_cells[0] if telemetry_identity_cells else None),
+    ]
+    identity_properties = {
+        "mobaConnectedIdentityRouteKey": route.key,
+        "mobaConnectedIdentityRouteRole": route.route_role,
+        route.window_title_property: route.window_title,
+        "mobaConnectedIdentityActiveTabLabel": route.active_tab_label,
+        "mobaConnectedIdentityReferenceTabLabel": route.reference_tab_label,
+        route.banner_target_property: route.banner_target,
+        "mobaConnectedIdentityWebConsoleLine": route.web_console_line,
+        route.terminal_prompt_property: route.terminal_prompt,
+        route.telemetry_target_property: route.telemetry_target,
+        "mobaConnectedIdentityTargetEndpoint": route.target_endpoint,
+        "mobaConnectedIdentityRemotePath": route.remote_path,
+        "mobaConnectedIdentityRenderSource": route.render_source,
+    }
+    if window.windowTitle() != route.window_title:
+        errors.append("mobaxterm live GUI connected identity window title drifted")
+    if tabs is None or route.active_tab_label not in live_tab_labels(tabs):
+        errors.append("mobaxterm live GUI connected identity active tab label drifted")
+    if banner_target is None or banner_target.text() != f"> SSH session to {route.banner_target}":
+        errors.append("mobaxterm live GUI connected identity banner target drifted")
+    if terminal_output is None:
+        errors.append("mobaxterm live GUI connected identity missing terminal output")
+    else:
+        terminal_text = terminal_output.toPlainText()
+        if route.web_console_line not in terminal_text:
+            errors.append("mobaxterm live GUI connected identity web console line drifted")
+        if route.terminal_prompt not in terminal_text:
+            errors.append("mobaxterm live GUI connected identity terminal prompt drifted")
+    if len(telemetry_identity_cells) != 1:
+        errors.append("mobaxterm live GUI connected identity must expose one target telemetry cell")
+    elif str(telemetry_identity_cells[0].property("mobaTelemetryDisplayText") or "") != route.telemetry_target:
+        errors.append("mobaxterm live GUI connected identity telemetry target drifted")
+
+    for label, widget in identity_widgets:
+        if widget is None:
+            errors.append(f"mobaxterm live GUI connected identity route missing {label}")
+            continue
+        for property_name, expected_value in identity_properties.items():
+            actual_value = str(widget.property(property_name) or "")
+            if actual_value != expected_value:
+                errors.append(
+                    f"mobaxterm live GUI connected identity {label} property "
+                    f"{property_name} {actual_value!r} must equal {expected_value!r}"
+                )
+    return errors
 
 
 def check_live_tree_content(window: Any, preset_id: str) -> list[str]:
@@ -1933,6 +2472,8 @@ def check_live_tree_content(window: Any, preset_id: str) -> list[str]:
     if preset_id in EXPECTED_PRODUCT_TREE_ICON_ROWS:
         user_role = int(Qt.ItemDataRole.UserRole)
         errors.extend(check_product_tree_icon_metadata(tree, preset_id, user_role))
+        if preset_id == "mobaxterm":
+            errors.extend(check_moba_session_tree_geometry(tree, user_role))
     return errors
 
 
@@ -1988,6 +2529,63 @@ def check_securecrt_tree_icon_metadata(tree: Any, user_role: int) -> list[str]:
     return check_product_tree_icon_metadata(tree, "securecrt", user_role)
 
 
+def check_moba_session_tree_geometry(tree: Any, user_role: int) -> list[str]:
+    errors: list[str] = []
+    chrome = EXPECTED_MOBA_SESSION_TREE_CHROME
+    expected_properties = {
+        "mobaSessionTreeHeaderHeight": chrome.header_height,
+        "mobaSessionTreeHeaderIconX": chrome.header_icon_x,
+        "mobaSessionTreeHeaderTextX": chrome.header_text_x,
+        "mobaSessionTreeRowStartY": chrome.row_start_y,
+        "mobaSessionTreeIndentation": chrome.indentation,
+        "mobaSessionTreeRootRowHeight": chrome.root_row_height,
+        "mobaSessionTreeGroupRowHeight": chrome.group_row_height,
+        "mobaSessionTreeProfileRowHeight": chrome.profile_row_height,
+        "mobaSessionTreeGroupIconX": chrome.group_icon_x,
+        "mobaSessionTreeGroupLabelX": chrome.group_label_x,
+        "mobaSessionTreeProfileIconX": chrome.profile_icon_x,
+        "mobaSessionTreeProfileLabelX": chrome.profile_label_x,
+        "mobaSessionTreeProfileTargetX": chrome.profile_target_x,
+        "mobaSessionTreeSelectedLeft": chrome.selected_left,
+        "mobaSessionTreeSelectedHeight": chrome.selected_height,
+        "mobaSessionTreeRenderSource": chrome.render_source,
+    }
+    for property_name, expected_value in expected_properties.items():
+        if tree.property(property_name) != expected_value:
+            errors.append(f"mobaxterm live GUI session tree property {property_name} drifted")
+    if tree.indentation() != chrome.indentation:
+        errors.append("mobaxterm live GUI session tree indentation drifted")
+    if tree.isAnimated() != chrome.animated:
+        errors.append("mobaxterm live GUI session tree animation state drifted")
+    if tree.uniformRowHeights() != chrome.uniform_row_heights:
+        errors.append("mobaxterm live GUI session tree uniform-row-height state drifted")
+
+    rows = collect_tree_icon_metadata(tree, user_role)
+    expected_row_geometry = {
+        "User sessions": (chrome.root_row_height, chrome.header_icon_x, chrome.header_text_x, 0),
+        "default": (chrome.group_row_height, chrome.group_icon_x, chrome.group_label_x, 0),
+        "prod": (chrome.group_row_height, chrome.group_icon_x, chrome.group_label_x, 0),
+        "files": (chrome.group_row_height, chrome.group_icon_x, chrome.group_label_x, 0),
+        "edge-prod": (chrome.profile_row_height, chrome.profile_icon_x, chrome.profile_label_x, chrome.profile_target_x),
+        "sftp-ops": (chrome.profile_row_height, chrome.profile_icon_x, chrome.profile_label_x, chrome.profile_target_x),
+    }
+    for label, (row_height, icon_x, label_x, target_x) in expected_row_geometry.items():
+        metadata = rows.get(label)
+        if metadata is None:
+            errors.append(f"mobaxterm live GUI session tree missing geometry row: {label}")
+            continue
+        expected = {
+            "row_height": row_height,
+            "static_icon_x": icon_x,
+            "static_label_x": label_x,
+            "static_target_x": target_x,
+        }
+        for key, expected_value in expected.items():
+            if metadata[key] != expected_value:
+                errors.append(f"mobaxterm live GUI session tree row {label!r} {key} drifted")
+    return errors
+
+
 def collect_tree_icon_metadata(tree: Any, user_role: int) -> dict[str, dict[str, object]]:
     rows: dict[str, dict[str, object]] = {}
 
@@ -1998,6 +2596,10 @@ def collect_tree_icon_metadata(tree: Any, user_role: int) -> dict[str, dict[str,
             "row_kind": str(item.data(0, user_role + 32) or ""),
             "icon_size": int(item.data(0, user_role + 33) or 0),
             "icon_render": str(item.data(0, user_role + 34) or ""),
+            "row_height": int(item.data(0, user_role + 35) or 0),
+            "static_icon_x": int(item.data(0, user_role + 36) or 0),
+            "static_label_x": int(item.data(0, user_role + 37) or 0),
+            "static_target_x": int(item.data(0, user_role + 38) or 0),
             "has_icon": not item.icon(0).isNull(),
         }
         for child_index in range(item.childCount()):
@@ -2328,6 +2930,7 @@ def check_live_moba_home_welcome(window: Any) -> list[str]:
     from PyQt6.QtWidgets import QFrame, QLabel, QLineEdit, QPushButton
 
     chrome = EXPECTED_MOBA_HOME_WELCOME_CHROME
+    geometry = EXPECTED_MOBA_HOME_WELCOME_GEOMETRY
     surface = gui_design_workspace_surface("mobaxterm")
     panel = window.findChild(QFrame, "mobaHomeWelcomeSurface")
     if panel is None:
@@ -2348,6 +2951,29 @@ def check_live_moba_home_welcome(window: Any) -> list[str]:
         errors.append("mobaxterm home welcome search width metadata drifted")
     if int(panel.property("mobaHomeActionSpacing") or 0) != chrome.action_spacing:
         errors.append("mobaxterm home welcome action spacing metadata drifted")
+    expected_geometry_properties = {
+        "mobaHomeGeometryRenderSource": geometry.render_source,
+        "mobaHomeCenterSideMargin": geometry.center_side_margin,
+        "mobaHomeHeroMinY": geometry.hero_min_y,
+        "mobaHomeHeroHeight": geometry.hero_height,
+        "mobaHomeLogoSize": geometry.logo_size,
+        "mobaHomeTitleGap": geometry.title_gap,
+        "mobaHomeTitleYOffset": geometry.title_y_offset,
+        "mobaHomeSubtitleYOffset": geometry.subtitle_y_offset,
+        "mobaHomeButtonYOffset": geometry.button_y_offset,
+        "mobaHomePrimaryActionWidth": geometry.primary_width,
+        "mobaHomeSecondaryActionWidth": geometry.secondary_width,
+        "mobaHomeActionGap": geometry.action_gap,
+        "mobaHomeButtonHeight": geometry.button_height,
+        "mobaHomeSearchYGap": geometry.search_y_gap,
+        "mobaHomeSearchHeight": geometry.search_height,
+        "mobaHomeRecentYGap": geometry.recent_y_gap,
+        "mobaHomeRecentItemStep": geometry.recent_item_step,
+        "mobaHomeFooterYOffset": geometry.footer_y_offset,
+    }
+    for property_name, expected_value in expected_geometry_properties.items():
+        if panel.property(property_name) != expected_value:
+            errors.append(f"mobaxterm home welcome geometry property {property_name} drifted")
 
     title = panel.findChild(QLabel, "mobaHomeTitle")
     subtitle = panel.findChild(QLabel, "mobaHomeSubtitle")
@@ -2360,14 +2986,31 @@ def check_live_moba_home_welcome(window: Any) -> list[str]:
         errors.append("mobaxterm home welcome missing generated logo")
     elif str(logo.property("mobaHomeIconKey") or "") != chrome.icon_key:
         errors.append("mobaxterm home welcome logo icon key drifted")
+    elif (
+        int(logo.property("mobaHomeLogoSize") or 0) != geometry.logo_size
+        or int(logo.property("mobaHomeLogoBoxWidth") or 0) != geometry.live_logo_box_width
+        or int(logo.property("mobaHomeLogoBoxHeight") or 0) != geometry.live_logo_box_height
+        or int(logo.property("mobaHomeLogoPixmapSize") or 0) != geometry.live_logo_pixmap_size
+    ):
+        errors.append("mobaxterm home welcome logo geometry metadata drifted")
+    if title is not None:
+        if int(title.property("mobaHomeTitleFontSize") or 0) != geometry.title_font_size:
+            errors.append("mobaxterm home welcome title font metadata drifted")
+        if int(title.property("mobaHomeTitleYOffset") or 0) != geometry.title_y_offset:
+            errors.append("mobaxterm home welcome title y-offset metadata drifted")
+    if subtitle is not None:
+        if int(subtitle.property("mobaHomeSubtitleFontSize") or 0) != geometry.subtitle_font_size:
+            errors.append("mobaxterm home welcome subtitle font metadata drifted")
+        if int(subtitle.property("mobaHomeSubtitleYOffset") or 0) != geometry.subtitle_y_offset:
+            errors.append("mobaxterm home welcome subtitle y-offset metadata drifted")
 
     action_buttons = panel.findChildren(QPushButton)
     action_by_key = {str(button.property("mobaHomeActionKey") or ""): button for button in action_buttons}
     expected_actions = {
-        "primary": (surface.home_actions[0], chrome.primary_action_icon_key),
-        "secondary": (surface.home_actions[1], chrome.secondary_action_icon_key),
+        "primary": (surface.home_actions[0], chrome.primary_action_icon_key, geometry.primary_width),
+        "secondary": (surface.home_actions[1], chrome.secondary_action_icon_key, geometry.secondary_width),
     }
-    for key, (expected_text, expected_icon_key) in expected_actions.items():
+    for key, (expected_text, expected_icon_key, expected_width) in expected_actions.items():
         button = action_by_key.get(key)
         if button is None:
             errors.append(f"mobaxterm home welcome missing {key} action")
@@ -2378,6 +3021,16 @@ def check_live_moba_home_welcome(window: Any) -> list[str]:
             errors.append(f"mobaxterm home welcome {key} action icon key drifted")
         if button.icon().isNull():
             errors.append(f"mobaxterm home welcome {key} action must use a generated icon")
+        action_properties = {
+            "mobaHomeActionStaticWidth": expected_width,
+            "mobaHomeActionStaticHeight": geometry.button_height,
+            "mobaHomeActionIconX": geometry.button_icon_x,
+            "mobaHomeActionIconY": geometry.button_icon_y,
+            "mobaHomeActionIconSize": geometry.button_icon_size,
+        }
+        for property_name, expected_value in action_properties.items():
+            if int(button.property(property_name) or 0) != expected_value:
+                errors.append(f"mobaxterm home welcome {key} action property {property_name} drifted")
 
     search = panel.findChild(QLineEdit, "homeSearch")
     if search is None:
@@ -2389,10 +3042,24 @@ def check_live_moba_home_welcome(window: Any) -> list[str]:
             errors.append("mobaxterm home welcome search placeholder metadata drifted")
         if int(search.property("mobaHomeSearchWidth") or 0) != chrome.search_width:
             errors.append("mobaxterm home welcome search field width metadata drifted")
+        search_properties = {
+            "mobaHomeSearchHeight": geometry.search_height,
+            "mobaHomeSearchTextX": geometry.search_text_x,
+            "mobaHomeSearchTextY": geometry.search_text_y,
+            "mobaHomeSearchFontSize": geometry.search_font_size,
+        }
+        for property_name, expected_value in search_properties.items():
+            if int(search.property(property_name) or 0) != expected_value:
+                errors.append(f"mobaxterm home welcome search property {property_name} drifted")
 
     recent_title = panel.findChild(QLabel, "recentSessionsTitle")
     if recent_title is None or recent_title.text() != chrome.recent_title:
         errors.append("mobaxterm home welcome recent title drifted")
+    elif (
+        int(recent_title.property("mobaHomeRecentTitleFontSize") or 0) != geometry.recent_title_font_size
+        or int(recent_title.property("mobaHomeRecentTitleTopMargin") or 0) != geometry.live_recent_title_top_margin
+    ):
+        errors.append("mobaxterm home welcome recent title geometry metadata drifted")
     recent_labels = panel.findChildren(QLabel, "mobaRecentSession")
     expected_recent = [item for column in surface.recent_columns for item in column]
     actual_recent = [label.text() for label in recent_labels]
@@ -2402,12 +3069,24 @@ def check_live_moba_home_welcome(window: Any) -> list[str]:
         if label.property("mobaHomeRecentColumn") is None or label.property("mobaHomeRecentRow") is None:
             errors.append("mobaxterm home welcome recent label missing grid metadata")
             break
+        if int(label.property("mobaHomeRecentItemStep") or 0) != geometry.recent_item_step:
+            errors.append("mobaxterm home welcome recent item step metadata drifted")
+            break
+        if int(label.property("mobaHomeRecentColumnPadding") or 0) != geometry.recent_column_padding:
+            errors.append("mobaxterm home welcome recent column padding metadata drifted")
+            break
 
     footer = panel.findChild(QLabel, "mobaHomeFooter")
     if footer is None or footer.text() != surface.footer:
         errors.append("mobaxterm home welcome footer drifted")
     elif str(footer.property("mobaHomeFooter") or "") != surface.footer:
         errors.append("mobaxterm home welcome footer metadata drifted")
+    elif (
+        int(footer.property("mobaHomeFooterYOffset") or 0) != geometry.footer_y_offset
+        or int(footer.property("mobaHomeFooterFontSize") or 0) != geometry.footer_font_size
+        or int(footer.property("mobaHomeFooterTopMargin") or 0) != geometry.live_footer_top_margin
+    ):
+        errors.append("mobaxterm home welcome footer geometry metadata drifted")
     return errors
 
 
@@ -2951,6 +3630,166 @@ def check_live_securecrt_session_status_strip(window: Any) -> list[str]:
     return []
 
 
+def check_live_securecrt_session_manager_route(window: Any) -> list[str]:
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtWidgets import QLabel, QTabWidget, QToolButton, QTreeWidget, QWidget
+
+    route = EXPECTED_SECURECRT_SESSION_MANAGER_ROUTE
+    tree = window.findChild(QTreeWidget, route.selected_tree_object)
+    manager_panel = window.findChild(QWidget, route.session_manager_object)
+    status_panel = window.findChild(QWidget, route.status_strip_object)
+    tabs = window.findChild(QTabWidget, "sessionTabs")
+    errors: list[str] = []
+    if tree is None:
+        errors.append("securecrt live GUI session-manager route missing profile tree")
+    if manager_panel is None:
+        errors.append("securecrt live GUI session-manager route missing Session Manager panel")
+    if status_panel is None:
+        errors.append("securecrt live GUI session-manager route missing status strip")
+    if tabs is None:
+        errors.append("securecrt live GUI session-manager route missing session tabs")
+    if errors:
+        return errors
+
+    common_route_props = {
+        "secureCrtSessionRouteKey": route.key,
+        "secureCrtSessionRouteRole": route.route_role,
+        "secureCrtSessionRouteSelectedProfile": route.selected_profile_name,
+        "secureCrtSessionRouteSelectedTreeLabel": route.selected_tree_label,
+        "secureCrtSessionRouteSessionManagerObject": route.session_manager_object,
+        "secureCrtSessionRouteActionKey": route.session_manager_action_key,
+        "secureCrtSessionRouteActionObject": route.session_manager_action_object,
+        "secureCrtSessionRouteStatusStripObject": route.status_strip_object,
+        "secureCrtSessionRouteStatusFieldKey": route.status_field_key,
+        "secureCrtSessionRouteStatusFieldObject": route.status_field_object,
+        route.tab_label_property: route.active_tab_label,
+        "secureCrtSessionRouteTarget": route.target_value,
+        "secureCrtSessionRouteProtocol": route.protocol_value,
+        "secureCrtSessionRouteSession": route.session_value,
+        route.status_value_property: route.target_value,
+        "secureCrtSessionRouteRenderSource": route.render_source,
+    }
+    for label, widget in (
+        ("profile-tree", tree),
+        ("session-manager", manager_panel),
+        ("status-strip", status_panel),
+    ):
+        for property_name, expected_value in common_route_props.items():
+            actual_value = str(widget.property(property_name) or "")
+            if actual_value != expected_value:
+                errors.append(
+                    f"securecrt live GUI session-manager route {label} property "
+                    f"{property_name} {actual_value!r} must equal {expected_value!r}"
+                )
+
+    tab_route_props = {
+        "secureCrtSessionRouteKey": route.key,
+        "secureCrtSessionRouteRole": route.route_role,
+        "secureCrtSessionRouteSelectedProfile": route.selected_profile_name,
+        "secureCrtSessionRouteSelectedTreeLabel": route.selected_tree_label,
+        route.tab_label_property: route.active_tab_label,
+        "secureCrtSessionRouteTarget": route.target_value,
+        "secureCrtSessionRouteProtocol": route.protocol_value,
+        "secureCrtSessionRouteSession": route.session_value,
+        "secureCrtSessionRouteRenderSource": route.render_source,
+    }
+    for property_name, expected_value in tab_route_props.items():
+        actual_value = str(tabs.property(property_name) or "")
+        if actual_value != expected_value:
+            errors.append(
+                f"securecrt live GUI session-manager route tabs property "
+                f"{property_name} {actual_value!r} must equal {expected_value!r}"
+            )
+    if route.active_tab_label not in live_tab_labels(tabs):
+        errors.append(f"securecrt live GUI session-manager route missing active tab {route.active_tab_label!r}")
+
+    selected = tree.currentItem()
+    if selected is None:
+        errors.append("securecrt live GUI session-manager route missing selected tree item")
+    else:
+        base_role = int(Qt.ItemDataRole.UserRole)
+        expected_item_data = {
+            base_role: route.selected_profile_name,
+            base_role + 71: route.key,
+            base_role + 72: route.route_role,
+            base_role + 73: route.selected_profile_name,
+            base_role + 74: route.active_tab_label,
+            base_role + 75: route.target_value,
+            base_role + 76: route.protocol_value,
+        }
+        if route.selected_tree_label not in selected.text(0):
+            errors.append("securecrt live GUI session-manager route selected tree label drifted")
+        for role, expected_value in expected_item_data.items():
+            actual_value = str(selected.data(0, role) or "")
+            if actual_value != expected_value:
+                errors.append(f"securecrt live GUI session-manager route tree role {role} drifted")
+        if selected.data(0, base_role + 77) is not True:
+            errors.append("securecrt live GUI session-manager route tree item is not marked selected")
+
+    buttons = manager_panel.findChildren(QToolButton, route.session_manager_action_object)
+    target_buttons = [
+        button
+        for button in buttons
+        if str(button.property("secureCrtSessionManagerActionKey") or "") == route.session_manager_action_key
+    ]
+    if len(target_buttons) != 1:
+        errors.append("securecrt live GUI session-manager route must expose one target Session Manager action")
+    else:
+        target_button = target_buttons[0]
+        expected_button_props = {
+            "secureCrtSessionRouteKey": route.key,
+            "secureCrtSessionRouteRole": route.route_role,
+            "secureCrtSessionRouteSelectedProfile": route.selected_profile_name,
+            "secureCrtSessionRouteSelectedTreeLabel": route.selected_tree_label,
+            route.tab_label_property: route.active_tab_label,
+            "secureCrtSessionRouteTarget": route.target_value,
+            "secureCrtSessionRouteProtocol": route.protocol_value,
+            "secureCrtSessionRouteSession": route.session_value,
+            route.status_value_property: route.target_value,
+            "secureCrtSessionRouteRenderSource": route.render_source,
+            route.action_active_property: "true",
+        }
+        for property_name, expected_value in expected_button_props.items():
+            actual_value = str(target_button.property(property_name) or "")
+            if actual_value != expected_value:
+                errors.append(f"securecrt live GUI session-manager route action property {property_name} drifted")
+        if target_button.text() and target_button.text() != "Connect":
+            errors.append("securecrt live GUI session-manager route target action text drifted")
+    for button in buttons:
+        if str(button.property("secureCrtSessionManagerActionKey") or "") == route.session_manager_action_key:
+            continue
+        if str(button.property(route.action_active_property) or "") != "false":
+            errors.append("securecrt live GUI session-manager route non-target action must not be active")
+
+    status_cells = status_panel.findChildren(QLabel, route.status_field_object)
+    target_cells = [
+        cell for cell in status_cells if str(cell.property("secureCrtSessionStatusKey") or "") == route.status_field_key
+    ]
+    if len(target_cells) != 1:
+        errors.append("securecrt live GUI session-manager route must expose one target status cell")
+    else:
+        target_cell = target_cells[0]
+        expected_status_props = {
+            "secureCrtSessionRouteKey": route.key,
+            "secureCrtSessionRouteRole": route.route_role,
+            "secureCrtSessionRouteSelectedProfile": route.selected_profile_name,
+            route.tab_label_property: route.active_tab_label,
+            "secureCrtSessionRouteTarget": route.target_value,
+            "secureCrtSessionRouteProtocol": route.protocol_value,
+            "secureCrtSessionRouteSession": route.session_value,
+            route.status_value_property: route.target_value,
+            "secureCrtSessionRouteRenderSource": route.render_source,
+            "secureCrtSessionStatusValue": route.target_value,
+        }
+        for property_name, expected_value in expected_status_props.items():
+            actual_value = str(target_cell.property(property_name) or "")
+            if actual_value != expected_value:
+                errors.append(f"securecrt live GUI session-manager route status property {property_name} drifted")
+        if route.target_value not in target_cell.text():
+            errors.append("securecrt live GUI session-manager route target status text drifted")
+    return errors
+
+
 def check_live_securecrt_command_window(window: Any) -> list[str]:
     from PyQt6.QtWidgets import QLabel, QWidget
 
@@ -3025,6 +3864,70 @@ def check_live_securecrt_command_window(window: Any) -> list[str]:
         return ["securecrt live GUI command-window send static width drifted"]
     if send_live_width != chrome.live_send_min_width or send.minimumWidth() != chrome.live_send_min_width:
         return ["securecrt live GUI command-window send live width drifted"]
+    status = panel.findChild(QLabel, "secureCrtCommandStatus")
+    if status is None:
+        return ["securecrt live GUI command-window missing status label"]
+    route_errors = check_securecrt_command_window_send_route(panel, target, command_input, send, status)
+    if route_errors:
+        return route_errors
+    return []
+
+
+def check_securecrt_command_window_send_route(panel: Any, target: Any, command_input: Any, send: Any, status: Any) -> list[str]:
+    route = EXPECTED_SECURECRT_COMMAND_WINDOW_SEND_ROUTE
+    chrome = EXPECTED_SECURECRT_COMMAND_WINDOW_CHROME
+    expected_texts = {
+        route.target_scope_object: chrome.target_scope,
+        route.command_input_object: chrome.command,
+        route.send_control_object: chrome.send_label,
+        route.status_object: chrome.status,
+    }
+    if panel.objectName() != route.source_window_object:
+        return [
+            f"securecrt live GUI command-window send route source "
+            f"{panel.objectName()!r} must equal {route.source_window_object!r}"
+        ]
+    route_widgets = {
+        route.source_window_object: panel,
+        route.target_scope_object: target,
+        route.command_input_object: command_input,
+        route.send_control_object: send,
+        route.status_object: status,
+    }
+    for object_name, widget in route_widgets.items():
+        if widget.objectName() != object_name:
+            return [
+                f"securecrt live GUI command-window send route widget "
+                f"{widget.objectName()!r} must equal {object_name!r}"
+            ]
+        expected_route_props = {
+            "secureCrtCommandRouteKey": route.key,
+            "secureCrtCommandRouteRole": route.route_role,
+            "secureCrtCommandRouteSourceWindowObject": route.source_window_object,
+            "secureCrtCommandRouteTargetScopeObject": route.target_scope_object,
+            "secureCrtCommandRouteCommandInputObject": route.command_input_object,
+            "secureCrtCommandRouteSendControlObject": route.send_control_object,
+            "secureCrtCommandRouteStatusObject": route.status_object,
+            "secureCrtCommandRouteCommand": chrome.command,
+            "secureCrtCommandRouteTargetScope": chrome.target_scope,
+            "secureCrtCommandRouteSendLabel": chrome.send_label,
+            "secureCrtCommandRouteStatus": chrome.status,
+            "secureCrtCommandRouteRenderSource": route.render_source,
+        }
+        for prop_name, expected_value in expected_route_props.items():
+            actual_value = str(widget.property(prop_name) or "")
+            if actual_value != expected_value:
+                return [
+                    f"securecrt live GUI command-window send route {object_name}.{prop_name} "
+                    f"{actual_value!r} must equal {expected_value!r}"
+                ]
+    for object_name, expected_text in expected_texts.items():
+        actual_text = route_widgets[object_name].text()
+        if actual_text != expected_text:
+            return [
+                f"securecrt live GUI command-window send route {object_name} text "
+                f"{actual_text!r} must equal {expected_text!r}"
+            ]
     return []
 
 
@@ -3228,6 +4131,181 @@ def check_live_remmina_profile_list_chrome(window: Any) -> list[str]:
     return []
 
 
+def check_live_remmina_profile_viewer_route(window: Any) -> list[str]:
+    from PyQt6.QtWidgets import QFrame, QLabel, QTabWidget, QToolButton, QWidget
+
+    route = EXPECTED_REMMINA_PROFILE_VIEWER_ROUTE
+    profile_panel = window.findChild(QWidget, "remminaProfileListChrome")
+    viewer_panel = window.findChild(QWidget, route.viewer_controls_object)
+    tabs = window.findChild(QTabWidget, "sessionTabs")
+    errors: list[str] = []
+    if profile_panel is None:
+        errors.append("remmina live GUI profile-viewer route missing profile-list panel")
+    if viewer_panel is None:
+        errors.append("remmina live GUI profile-viewer route missing viewer controls panel")
+    if tabs is None:
+        errors.append("remmina live GUI profile-viewer route missing session tabs")
+    if errors:
+        return errors
+
+    common_route_props = {
+        "remminaProfileViewerRouteKey": route.key,
+        "remminaProfileViewerRouteRole": route.route_role,
+        "remminaProfileViewerSelectedProfileKey": route.selected_profile_key,
+        "remminaProfileViewerSelectedProfileObject": route.selected_profile_object,
+        "remminaProfileViewerControlsObject": route.viewer_controls_object,
+        "remminaProfileViewerControlKey": route.viewer_control_key,
+        "remminaProfileViewerControlObject": route.viewer_control_object,
+        route.tab_label_property: route.active_tab_label,
+        "remminaProfileViewerProtocol": route.protocol,
+        "remminaProfileViewerStatus": route.profile_status,
+        "remminaProfileViewerRenderSource": route.render_source,
+    }
+    for label, widget in (("profile-list", profile_panel), ("viewer-controls", viewer_panel)):
+        for property_name, expected_value in common_route_props.items():
+            actual_value = str(widget.property(property_name) or "")
+            if actual_value != expected_value:
+                errors.append(
+                    f"remmina live GUI profile-viewer route {label} property "
+                    f"{property_name} {actual_value!r} must equal {expected_value!r}"
+                )
+
+    if route.active_tab_label not in live_tab_labels(tabs):
+        errors.append(f"remmina live GUI profile-viewer route missing active tab {route.active_tab_label!r}")
+
+    rows = profile_panel.findChildren(QFrame, route.selected_profile_object)
+    selected_rows = [row for row in rows if str(row.property("remminaProfileRowKey") or "") == route.selected_profile_key]
+    if len(selected_rows) != 1:
+        errors.append("remmina live GUI profile-viewer route must expose one selected profile row")
+    else:
+        selected_row = selected_rows[0]
+        selected = str(selected_row.property(route.selected_row_property) or "")
+        if selected != "true":
+            errors.append("remmina live GUI profile-viewer route selected profile row is not selected")
+        row_route_props = {
+            "remminaProfileViewerRouteKey": route.key,
+            "remminaProfileViewerRouteRole": route.route_role,
+            "remminaProfileViewerControlKey": route.viewer_control_key,
+            route.tab_label_property: route.active_tab_label,
+            "remminaProfileViewerProtocol": route.protocol,
+            "remminaProfileViewerStatus": route.profile_status,
+        }
+        for property_name, expected_value in row_route_props.items():
+            actual_value = str(selected_row.property(property_name) or "")
+            if actual_value != expected_value:
+                errors.append(f"remmina live GUI selected profile route property {property_name} drifted")
+        status_cells = [
+            cell
+            for cell in selected_row.findChildren(QLabel, "remminaProfileListCell")
+            if str(cell.property("remminaProfileColumnKey") or "") == "status"
+        ]
+        if not status_cells:
+            errors.append("remmina live GUI profile-viewer route selected row missing status cell")
+        elif str(status_cells[0].property("remminaProfileCellValue") or "") != route.profile_status:
+            errors.append("remmina live GUI profile-viewer route selected row status drifted")
+
+    buttons = viewer_panel.findChildren(QToolButton, route.viewer_control_object)
+    target_buttons = [
+        button for button in buttons if str(button.property("remminaViewerControlKey") or "") == route.viewer_control_key
+    ]
+    if len(target_buttons) != 1:
+        errors.append("remmina live GUI profile-viewer route must expose one target viewer control")
+    else:
+        button = target_buttons[0]
+        expected_control_props = {
+            "remminaProfileViewerRouteKey": route.key,
+            "remminaProfileViewerRouteRole": route.route_role,
+            "remminaProfileViewerSelectedProfileKey": route.selected_profile_key,
+            route.tab_label_property: route.active_tab_label,
+            "remminaProfileViewerStatus": route.profile_status,
+            route.control_active_property: "true",
+        }
+        for property_name, expected_value in expected_control_props.items():
+            actual_value = str(button.property(property_name) or "")
+            if actual_value != expected_value:
+                errors.append(f"remmina live GUI routed viewer control property {property_name} drifted")
+        if button.text() != "Scale 100%":
+            errors.append("remmina live GUI routed viewer control label must be Scale 100%")
+
+    inactive_route_states = [
+        str(button.property(route.control_active_property) or "")
+        for button in buttons
+        if str(button.property("remminaViewerControlKey") or "") != route.viewer_control_key
+    ]
+    if any(state != "false" for state in inactive_route_states):
+        errors.append("remmina live GUI non-routed viewer controls must not expose active route state")
+    return errors
+
+
+def check_live_remmina_clipboard_route(window: Any) -> list[str]:
+    from PyQt6.QtWidgets import QTabWidget, QToolButton, QWidget
+
+    route = EXPECTED_REMMINA_CLIPBOARD_ROUTE
+    viewer_panel = window.findChild(QWidget, route.viewer_controls_object)
+    tabs = window.findChild(QTabWidget, "sessionTabs")
+    errors: list[str] = []
+    if viewer_panel is None:
+        errors.append("remmina live GUI clipboard route missing viewer controls panel")
+    if tabs is None:
+        errors.append("remmina live GUI clipboard route missing session tabs")
+    if errors:
+        return errors
+
+    common_route_props = {
+        "remminaClipboardRouteKey": route.key,
+        "remminaClipboardRouteRole": route.route_role,
+        "remminaClipboardViewerControlsObject": route.viewer_controls_object,
+        "remminaClipboardViewerControlKey": route.viewer_control_key,
+        "remminaClipboardViewerControlObject": route.viewer_control_object,
+        route.tab_label_property: route.active_tab_label,
+        "remminaClipboardRouteProtocol": route.protocol,
+        route.clipboard_state_property: route.clipboard_state,
+        "remminaClipboardRouteStatusSegment": route.status_segment,
+        "remminaClipboardRouteDetailLine": route.detail_line,
+        "remminaClipboardRouteActivityLine": route.activity_line,
+        "remminaClipboardRouteRenderSource": route.render_source,
+    }
+    for property_name, expected_value in common_route_props.items():
+        actual_value = str(viewer_panel.property(property_name) or "")
+        if actual_value != expected_value:
+            errors.append(
+                f"remmina live GUI clipboard route panel property "
+                f"{property_name} {actual_value!r} must equal {expected_value!r}"
+            )
+
+    if route.active_tab_label not in live_tab_labels(tabs):
+        errors.append(f"remmina live GUI clipboard route missing active tab {route.active_tab_label!r}")
+
+    buttons = viewer_panel.findChildren(QToolButton, route.viewer_control_object)
+    target_buttons = [
+        button for button in buttons if str(button.property("remminaViewerControlKey") or "") == route.viewer_control_key
+    ]
+    if len(target_buttons) != 1:
+        errors.append("remmina live GUI clipboard route must expose one Clipboard viewer control")
+    else:
+        button = target_buttons[0]
+        button_route_props = dict(common_route_props)
+        button_route_props.pop("remminaClipboardViewerControlsObject")
+        button_route_props.pop("remminaClipboardViewerControlKey")
+        button_route_props.pop("remminaClipboardViewerControlObject")
+        button_route_props[route.control_active_property] = "true"
+        for property_name, expected_value in button_route_props.items():
+            actual_value = str(button.property(property_name) or "")
+            if actual_value != expected_value:
+                errors.append(f"remmina live GUI clipboard routed control property {property_name} drifted")
+        if button.text() != "Clipboard":
+            errors.append("remmina live GUI clipboard routed control label must be Clipboard")
+
+    inactive_route_states = [
+        str(button.property(route.control_active_property) or "")
+        for button in buttons
+        if str(button.property("remminaViewerControlKey") or "") != route.viewer_control_key
+    ]
+    if any(state != "false" for state in inactive_route_states):
+        errors.append("remmina live GUI non-clipboard viewer controls must not expose active clipboard route")
+    return errors
+
+
 def check_live_termius_header_chips(window: Any) -> list[str]:
     from PyQt6.QtWidgets import QLabel, QWidget
 
@@ -3383,6 +4461,205 @@ def check_live_termius_host_identity_strip(window: Any) -> list[str]:
             return [f"termius live GUI host-identity field {field.key!r} minimum width drifted"]
         if cell.minimumHeight() != field.live_cell_height:
             return [f"termius live GUI host-identity field {field.key!r} height drifted"]
+    return []
+
+
+def check_live_termius_host_selection_route(window: Any) -> list[str]:
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtWidgets import QLabel, QTabWidget, QTreeWidget, QWidget
+
+    route = EXPECTED_TERMIUS_HOST_SELECTION_ROUTE
+    tree = window.findChild(QTreeWidget, route.selected_tree_object)
+    hosts_panel = window.findChild(QWidget, route.hosts_panel_object)
+    identity_panel = window.findChild(QWidget, route.host_identity_object)
+    tabs = window.findChild(QTabWidget, "sessionTabs")
+    errors: list[str] = []
+    if tree is None:
+        errors.append("termius live GUI host-selection route missing profile tree")
+    if hosts_panel is None:
+        errors.append("termius live GUI host-selection route missing Hosts panel")
+    if identity_panel is None:
+        errors.append("termius live GUI host-selection route missing Host identity strip")
+    if tabs is None:
+        errors.append("termius live GUI host-selection route missing session tabs")
+    if errors:
+        return errors
+
+    common_route_props = {
+        "termiusHostRouteKey": route.key,
+        "termiusHostRouteRole": route.route_role,
+        "termiusHostRouteSelectedProfile": route.selected_profile_name,
+        "termiusHostRouteSelectedTreeLabel": route.selected_tree_label,
+        "termiusHostRouteHostsPanelObject": route.hosts_panel_object,
+        "termiusHostRouteIdentityObject": route.host_identity_object,
+        "termiusHostRouteIdentityFieldKey": route.identity_field_key,
+        "termiusHostRouteIdentityCellObject": route.identity_cell_object,
+        route.tab_label_property: route.active_tab_label,
+        "termiusHostRouteTarget": route.target_value,
+        "termiusHostRouteProtocol": route.protocol_value,
+        route.identity_value_property: route.host_value,
+        "termiusHostRouteRenderSource": route.render_source,
+    }
+    for label, widget in (
+        ("profile-tree", tree),
+        ("hosts-panel", hosts_panel),
+        ("identity-strip", identity_panel),
+    ):
+        for property_name, expected_value in common_route_props.items():
+            actual_value = str(widget.property(property_name) or "")
+            if actual_value != expected_value:
+                errors.append(
+                    f"termius live GUI host-selection route {label} property "
+                    f"{property_name} {actual_value!r} must equal {expected_value!r}"
+                )
+
+    tab_route_props = {
+        "termiusHostRouteKey": route.key,
+        "termiusHostRouteRole": route.route_role,
+        "termiusHostRouteSelectedProfile": route.selected_profile_name,
+        "termiusHostRouteSelectedTreeLabel": route.selected_tree_label,
+        route.tab_label_property: route.active_tab_label,
+        "termiusHostRouteTarget": route.target_value,
+        "termiusHostRouteProtocol": route.protocol_value,
+        route.identity_value_property: route.host_value,
+        "termiusHostRouteRenderSource": route.render_source,
+    }
+    for property_name, expected_value in tab_route_props.items():
+        actual_value = str(tabs.property(property_name) or "")
+        if actual_value != expected_value:
+            errors.append(
+                f"termius live GUI host-selection route tabs property "
+                f"{property_name} {actual_value!r} must equal {expected_value!r}"
+            )
+    if route.active_tab_label not in live_tab_labels(tabs):
+        errors.append(f"termius live GUI host-selection route missing active tab {route.active_tab_label!r}")
+
+    selected = tree.currentItem()
+    if selected is None:
+        errors.append("termius live GUI host-selection route missing selected tree item")
+    else:
+        base_role = int(Qt.ItemDataRole.UserRole)
+        expected_item_data = {
+            base_role: route.selected_profile_name,
+            base_role + 81: route.key,
+            base_role + 82: route.route_role,
+            base_role + 83: route.selected_profile_name,
+            base_role + 84: route.active_tab_label,
+            base_role + 85: route.target_value,
+            base_role + 86: route.protocol_value,
+        }
+        if route.selected_tree_label not in selected.text(0):
+            errors.append("termius live GUI host-selection route selected tree label drifted")
+        for role, expected_value in expected_item_data.items():
+            actual_value = str(selected.data(0, role) or "")
+            if actual_value != expected_value:
+                errors.append(f"termius live GUI host-selection route tree role {role} drifted")
+        if selected.data(0, base_role + 87) is not True:
+            errors.append("termius live GUI host-selection route tree item is not marked selected")
+
+    identity_cells = identity_panel.findChildren(QLabel, route.identity_cell_object)
+    target_cells = [
+        cell for cell in identity_cells if str(cell.property("termiusHostIdentityKey") or "") == route.identity_field_key
+    ]
+    if len(target_cells) != 1:
+        errors.append("termius live GUI host-selection route must expose one Host identity cell")
+    else:
+        target_cell = target_cells[0]
+        expected_cell_props = {
+            "termiusHostRouteKey": route.key,
+            "termiusHostRouteRole": route.route_role,
+            "termiusHostRouteSelectedProfile": route.selected_profile_name,
+            "termiusHostRouteSelectedTreeLabel": route.selected_tree_label,
+            route.tab_label_property: route.active_tab_label,
+            "termiusHostRouteTarget": route.target_value,
+            "termiusHostRouteProtocol": route.protocol_value,
+            route.identity_value_property: route.host_value,
+            "termiusHostRouteRenderSource": route.render_source,
+            "termiusHostIdentityValue": route.host_value,
+        }
+        for property_name, expected_value in expected_cell_props.items():
+            actual_value = str(target_cell.property(property_name) or "")
+            if actual_value != expected_value:
+                errors.append(f"termius live GUI host-selection route identity property {property_name} drifted")
+        if target_cell.text() != f"Host: {route.host_value}":
+            errors.append("termius live GUI host-selection route Host identity text drifted")
+    return errors
+
+
+def check_live_termius_sync_route(window: Any) -> list[str]:
+    from PyQt6.QtWidgets import QLabel, QToolButton
+
+    route = EXPECTED_TERMIUS_SYNC_ROUTE
+    expected_action = next(action for action in EXPECTED_TERMIUS_HOSTS_CHROME.actions if action.key == route.hosts_action_key)
+    expected_chip = next(chip for chip in gui_design_termius_header_chips() if chip.key == route.header_chip_key)
+    expected_field = next(field for field in EXPECTED_TERMIUS_HOST_IDENTITY_STRIP.fields if field.key == route.identity_field_key)
+    sync_button = next(
+        (
+            button
+            for button in window.findChildren(QToolButton, route.hosts_action_object)
+            if str(button.property("termiusHostsActionKey") or "") == route.hosts_action_key
+        ),
+        None,
+    )
+    sync_chip = next(
+        (
+            label
+            for label in window.findChildren(QLabel, route.header_chip_object)
+            if str(label.property("termiusHeaderChipKey") or "") == route.header_chip_key
+        ),
+        None,
+    )
+    sync_cell = next(
+        (
+            label
+            for label in window.findChildren(QLabel, route.identity_cell_object)
+            if str(label.property("termiusHostIdentityKey") or "") == route.identity_field_key
+        ),
+        None,
+    )
+    route_widgets = {
+        route.hosts_action_object: sync_button,
+        route.header_chip_object: sync_chip,
+        route.identity_cell_object: sync_cell,
+    }
+    missing = [object_name for object_name, widget in route_widgets.items() if widget is None]
+    if missing:
+        return [f"termius live GUI sync route missing widget(s): {missing}"]
+    expected_common_props = {
+        "termiusSyncRouteKey": route.key,
+        "termiusSyncRouteRole": route.route_role,
+        "termiusSyncRouteHostsActionKey": route.hosts_action_key,
+        "termiusSyncRouteHostsActionObject": route.hosts_action_object,
+        "termiusSyncRouteHeaderChipKey": route.header_chip_key,
+        "termiusSyncRouteHeaderChipObject": route.header_chip_object,
+        "termiusSyncRouteIdentityFieldKey": route.identity_field_key,
+        "termiusSyncRouteIdentityCellObject": route.identity_cell_object,
+        "termiusSyncRouteState": route.sync_state,
+        "termiusSyncRouteRenderSource": route.render_source,
+    }
+    for object_name, widget in route_widgets.items():
+        if widget is None:
+            continue
+        if widget.objectName() != object_name:
+            return [f"termius live GUI sync route object {widget.objectName()!r} must equal {object_name!r}"]
+        for prop_name, expected_value in expected_common_props.items():
+            actual_value = str(widget.property(prop_name) or "")
+            if actual_value != expected_value:
+                return [
+                    f"termius live GUI sync route {object_name}.{prop_name} "
+                    f"{actual_value!r} must equal {expected_value!r}"
+                ]
+    if str(sync_button.property(route.action_label_property) or "") != expected_action.label:
+        return ["termius live GUI sync route action label drifted"]
+    if str(sync_chip.property(route.chip_label_property) or "") != expected_chip.label or sync_chip.text() != expected_chip.label:
+        return ["termius live GUI sync route header chip label drifted"]
+    if (
+        str(sync_cell.property(route.identity_value_property) or "") != expected_field.value
+        or sync_cell.text() != f"{expected_field.label}: {expected_field.value}"
+    ):
+        return ["termius live GUI sync route identity value drifted"]
+    if expected_field.value != route.sync_state:
+        return ["termius live GUI sync route expected field value must equal route state"]
     return []
 
 
@@ -3566,6 +4843,160 @@ def check_live_mremoteng_property_grid(window: Any) -> list[str]:
     return []
 
 
+def check_live_mremoteng_connection_document_route(window: Any) -> list[str]:
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtWidgets import QLabel, QTabWidget, QToolButton, QTreeWidget, QWidget
+
+    route = EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE
+    tree = window.findChild(QTreeWidget, route.selected_tree_object)
+    controls_panel = window.findChild(QWidget, route.document_controls_object)
+    property_grid = window.findChild(QWidget, route.property_grid_object)
+    tabs = window.findChild(QTabWidget, "sessionTabs")
+    errors: list[str] = []
+    if tree is None:
+        errors.append("mremoteng live GUI connection-document route missing connection tree")
+    if controls_panel is None:
+        errors.append("mremoteng live GUI connection-document route missing document controls")
+    if property_grid is None:
+        errors.append("mremoteng live GUI connection-document route missing property grid")
+    if tabs is None:
+        errors.append("mremoteng live GUI connection-document route missing session tabs")
+    if errors:
+        return errors
+
+    common_route_props = {
+        "mRemoteNgConnectionRouteKey": route.key,
+        "mRemoteNgConnectionRouteRole": route.route_role,
+        "mRemoteNgConnectionRouteSelectedProfile": route.selected_profile_name,
+        "mRemoteNgConnectionRouteSelectedTreeLabel": route.selected_tree_label,
+        "mRemoteNgConnectionRouteDocumentControlsObject": route.document_controls_object,
+        "mRemoteNgConnectionRouteDocumentControlKey": route.document_control_key,
+        "mRemoteNgConnectionRouteDocumentControlObject": route.document_control_object,
+        "mRemoteNgConnectionRoutePropertyGridObject": route.property_grid_object,
+        "mRemoteNgConnectionRoutePropertyRowKey": route.property_row_key,
+        "mRemoteNgConnectionRoutePropertyCellObject": route.property_cell_object,
+        route.tab_label_property: route.active_tab_label,
+        "mRemoteNgConnectionRouteProtocol": route.protocol,
+        "mRemoteNgConnectionRouteState": route.workspace_state,
+        route.property_value_property: route.property_value,
+        "mRemoteNgConnectionRouteRenderSource": route.render_source,
+    }
+    for label, widget in (
+        ("connection-tree", tree),
+        ("document-controls", controls_panel),
+        ("property-grid", property_grid),
+    ):
+        for property_name, expected_value in common_route_props.items():
+            actual_value = str(widget.property(property_name) or "")
+            if actual_value != expected_value:
+                errors.append(
+                    f"mremoteng live GUI connection-document route {label} property "
+                    f"{property_name} {actual_value!r} must equal {expected_value!r}"
+                )
+
+    if route.active_tab_label not in live_tab_labels(tabs):
+        errors.append(f"mremoteng live GUI connection-document route missing active tab {route.active_tab_label!r}")
+
+    selected = tree.currentItem()
+    if selected is None:
+        errors.append("mremoteng live GUI connection-document route missing selected tree item")
+    else:
+        base_role = int(Qt.ItemDataRole.UserRole)
+        expected_item_data = {
+            base_role: route.selected_profile_name,
+            base_role + 61: route.key,
+            base_role + 62: route.route_role,
+            base_role + 63: route.selected_profile_name,
+            base_role + 64: route.active_tab_label,
+            base_role + 65: route.protocol,
+            base_role + 66: route.workspace_state,
+        }
+        if route.selected_tree_label not in selected.text(0):
+            errors.append("mremoteng live GUI connection-document route selected tree label drifted")
+        for role, expected_value in expected_item_data.items():
+            actual_value = str(selected.data(0, role) or "")
+            if actual_value != expected_value:
+                errors.append(f"mremoteng live GUI connection-document route tree role {role} drifted")
+        if selected.data(0, base_role + 67) is not True:
+            errors.append("mremoteng live GUI connection-document route tree item is not marked selected")
+
+    buttons = controls_panel.findChildren(QToolButton, route.document_control_object)
+    target_buttons = [
+        button
+        for button in buttons
+        if str(button.property("mRemoteNgDocumentControlKey") or "") == route.document_control_key
+    ]
+    if len(target_buttons) != 1:
+        errors.append("mremoteng live GUI connection-document route must expose one target document control")
+    else:
+        target_button = target_buttons[0]
+        expected_button_props = {
+            "mRemoteNgConnectionRouteKey": route.key,
+            "mRemoteNgConnectionRouteRole": route.route_role,
+            "mRemoteNgConnectionRouteSelectedProfile": route.selected_profile_name,
+            "mRemoteNgConnectionRouteSelectedTreeLabel": route.selected_tree_label,
+            route.tab_label_property: route.active_tab_label,
+            "mRemoteNgConnectionRouteProtocol": route.protocol,
+            "mRemoteNgConnectionRouteState": route.workspace_state,
+            "mRemoteNgConnectionRoutePropertyRowKey": route.property_row_key,
+            route.property_value_property: route.property_value,
+            route.control_active_property: "true",
+        }
+        for property_name, expected_value in expected_button_props.items():
+            actual_value = str(target_button.property(property_name) or "")
+            if actual_value != expected_value:
+                errors.append(f"mremoteng live GUI routed document control property {property_name} drifted")
+        if target_button.text() != "Reconnect":
+            errors.append("mremoteng live GUI routed document control label must be Reconnect")
+
+    inactive_route_states = [
+        str(button.property(route.control_active_property) or "")
+        for button in buttons
+        if str(button.property("mRemoteNgDocumentControlKey") or "") != route.document_control_key
+    ]
+    if any(state != "false" for state in inactive_route_states):
+        errors.append("mremoteng live GUI non-routed document controls must not expose active route state")
+
+    row_frames = property_grid.findChildren(QWidget, "mRemoteNgPropertyGridRow")
+    route_rows = [row for row in row_frames if str(row.property("mRemoteNgPropertyRowKey") or "") == route.property_row_key]
+    if len(route_rows) != 1:
+        errors.append("mremoteng live GUI connection-document route must expose one property-grid route row")
+    else:
+        route_row = route_rows[0]
+        expected_row_props = {
+            "mRemoteNgConnectionRouteKey": route.key,
+            "mRemoteNgConnectionRouteRole": route.route_role,
+            "mRemoteNgConnectionRouteSelectedProfile": route.selected_profile_name,
+            route.tab_label_property: route.active_tab_label,
+            "mRemoteNgConnectionRouteProtocol": route.protocol,
+            "mRemoteNgConnectionRouteState": route.workspace_state,
+            "mRemoteNgConnectionRoutePropertyRowKey": route.property_row_key,
+            "mRemoteNgConnectionRoutePropertyCellObject": route.property_cell_object,
+            route.property_value_property: route.property_value,
+            "mRemoteNgConnectionRouteRenderSource": route.render_source,
+        }
+        for property_name, expected_value in expected_row_props.items():
+            actual_value = str(route_row.property(property_name) or "")
+            if actual_value != expected_value:
+                errors.append(f"mremoteng live GUI property-grid route row property {property_name} drifted")
+
+    route_cells = [
+        cell
+        for cell in property_grid.findChildren(QLabel, route.property_cell_object)
+        if str(cell.property("mRemoteNgPropertyRowKey") or "") == route.property_row_key
+        and str(cell.property("mRemoteNgPropertyColumnKey") or "") == "effective"
+    ]
+    if len(route_cells) != 1:
+        errors.append("mremoteng live GUI connection-document route must expose one effective-value route cell")
+    else:
+        route_cell = route_cells[0]
+        if str(route_cell.property("mRemoteNgPropertyCellValue") or "") != route.property_value:
+            errors.append("mremoteng live GUI connection-document route property effective value drifted")
+        if str(route_cell.property(route.property_value_property) or "") != route.property_value:
+            errors.append("mremoteng live GUI connection-document route property value metadata drifted")
+    return errors
+
+
 def live_contract_checks_for_preset(preset_id: str) -> list[str]:
     checks = [
         "required-widget-visibility",
@@ -3575,7 +5006,10 @@ def live_contract_checks_for_preset(preset_id: str) -> list[str]:
         "status-segments",
         "interaction-state",
     ]
-    checks.append("moba-home-welcome" if preset_id == "mobaxterm" else "workflow-cards")
+    if preset_id == "mobaxterm":
+        checks.extend(["moba-home-welcome", "moba-home-welcome-geometry"])
+    else:
+        checks.append("workflow-cards")
     if live_layout_contracts_for_preset(preset_id):
         checks.append("layout-geometry")
     if live_topology_contracts_for_preset(preset_id):
@@ -3587,6 +5021,8 @@ def live_contract_checks_for_preset(preset_id: str) -> list[str]:
                 "quick-connect-chrome",
                 "quick-connect-suggestions",
                 "connected-quick-connect-idle",
+                "moba-session-tree-icons",
+                "moba-session-tree-geometry",
                 "top-stack-geometry",
                 "titlebar-chrome",
                 "top-menu-chrome",
@@ -3596,22 +5032,28 @@ def live_contract_checks_for_preset(preset_id: str) -> list[str]:
                 "generated-ribbon-icons",
                 "moba-rail-roles",
                 "moba-rail-labels",
+                "moba-rail-geometry",
                 "connected-tab-chrome",
                 "connected-tab-geometry",
                 "connected-dock-frame",
                 "session-edge-controls",
+                "session-edge-geometry",
                 "right-utility-rail",
+                "right-utility-rail-chrome",
                 "right-utility-rail-geometry",
                 "connected-sftp-dock",
                 "sftp-toolbar-groups",
                 "sftp-toolbar-geometry",
                 "sftp-file-row-icons",
+                "sftp-routed-file-rows",
                 "sftp-dock-density",
                 "sftp-browser-chrome",
                 "sftp-browser-geometry",
+                "sftp-follow-folder-route",
                 "sftp-dock-chrome",
                 "remote-monitoring-dock",
                 "remote-monitoring-footer-geometry",
+                "monitoring-telemetry-route",
                 "moba-monitoring-controls",
                 "moba-monitoring-control-geometry",
                 "ssh-banner",
@@ -3625,6 +5067,8 @@ def live_contract_checks_for_preset(preset_id: str) -> list[str]:
                 "bottom-status-chrome",
                 "bottom-status-geometry",
                 "bottom-edge-controls",
+                "connected-session-route",
+                "connected-session-identity-route",
             ]
         )
     else:
@@ -3642,29 +5086,36 @@ def live_contract_checks_for_preset(preset_id: str) -> list[str]:
             checks.append("securecrt-top-chrome")
             checks.append("securecrt-session-manager-chrome")
             checks.append("securecrt-session-manager-geometry")
+            checks.append("securecrt-session-manager-route")
             checks.append("securecrt-tree-icons")
             checks.append("securecrt-session-status-strip")
             checks.append("securecrt-session-status-geometry")
             checks.append("securecrt-command-window")
             checks.append("securecrt-command-window-geometry")
+            checks.append("securecrt-command-window-send-route")
         if preset_id == "remmina":
             checks.append("remmina-tree-icons")
             checks.append("remmina-profile-list-chrome")
             checks.append("remmina-profile-list-geometry")
             checks.append("remmina-viewer-controls")
             checks.append("remmina-viewer-control-geometry")
+            checks.append("remmina-profile-viewer-route")
+            checks.append("remmina-clipboard-route")
         if preset_id == "termius":
             checks.append("termius-tree-icons")
             checks.append("termius-hosts-chrome")
             checks.append("termius-header-chips")
             checks.append("termius-host-identity-strip")
             checks.append("termius-host-identity-geometry")
+            checks.append("termius-host-selection-route")
+            checks.append("termius-sync-route")
         if preset_id == "mremoteng":
             checks.append("mremoteng-tree-icons")
             checks.append("mremoteng-top-chrome")
             checks.append("mremoteng-document-controls")
             checks.append("mremoteng-document-control-geometry")
             checks.append("mremoteng-property-grid")
+            checks.append("mremoteng-connection-document-route")
     return checks
 
 
@@ -3698,8 +5149,79 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
         "expected_reference_tab_label": EXPECTED_LIVE_REFERENCE_TAB_LABELS.get(preset_id),
         "expected_tree_labels": sorted(EXPECTED_LIVE_TREE_LABELS.get(preset_id, set())),
         "expected_product_tree_icons": product_tree_icon_summary(preset_id),
+        "expected_moba_session_tree_chrome": (
+            {
+                "header_height": EXPECTED_MOBA_SESSION_TREE_CHROME.header_height,
+                "header_icon_x": EXPECTED_MOBA_SESSION_TREE_CHROME.header_icon_x,
+                "header_text_x": EXPECTED_MOBA_SESSION_TREE_CHROME.header_text_x,
+                "row_start_y": EXPECTED_MOBA_SESSION_TREE_CHROME.row_start_y,
+                "indentation": EXPECTED_MOBA_SESSION_TREE_CHROME.indentation,
+                "root_row_height": EXPECTED_MOBA_SESSION_TREE_CHROME.root_row_height,
+                "group_row_height": EXPECTED_MOBA_SESSION_TREE_CHROME.group_row_height,
+                "profile_row_height": EXPECTED_MOBA_SESSION_TREE_CHROME.profile_row_height,
+                "group_icon_x": EXPECTED_MOBA_SESSION_TREE_CHROME.group_icon_x,
+                "group_label_x": EXPECTED_MOBA_SESSION_TREE_CHROME.group_label_x,
+                "profile_icon_x": EXPECTED_MOBA_SESSION_TREE_CHROME.profile_icon_x,
+                "profile_label_x": EXPECTED_MOBA_SESSION_TREE_CHROME.profile_label_x,
+                "profile_target_x": EXPECTED_MOBA_SESSION_TREE_CHROME.profile_target_x,
+                "selected_left": EXPECTED_MOBA_SESSION_TREE_CHROME.selected_left,
+                "selected_height": EXPECTED_MOBA_SESSION_TREE_CHROME.selected_height,
+                "render_source": EXPECTED_MOBA_SESSION_TREE_CHROME.render_source,
+            }
+            if preset_id == "mobaxterm"
+            else {}
+        ),
         "expected_status_segments": list(gui_design_status_segments(preset_id)),
         "expected_moba_rail_labels": EXPECTED_MOBA_RAIL_LABELS if preset_id == "mobaxterm" else {},
+        "expected_moba_rail_chrome": (
+            {
+                "rail_width": EXPECTED_MOBA_RAIL_CHROME.rail_width,
+                "icon_x": EXPECTED_MOBA_RAIL_CHROME.icon_x,
+                "static_icon_size": EXPECTED_MOBA_RAIL_CHROME.static_icon_size,
+                "live_icon_size": EXPECTED_MOBA_RAIL_CHROME.live_icon_size,
+                "generated_icon_size": EXPECTED_MOBA_RAIL_CHROME.generated_icon_size,
+                "button_width": EXPECTED_MOBA_RAIL_CHROME.button_width,
+                "button_height": EXPECTED_MOBA_RAIL_CHROME.button_height,
+                "active_x": EXPECTED_MOBA_RAIL_CHROME.active_x,
+                "active_y_offset": EXPECTED_MOBA_RAIL_CHROME.active_y_offset,
+                "active_width": EXPECTED_MOBA_RAIL_CHROME.active_width,
+                "active_height": EXPECTED_MOBA_RAIL_CHROME.active_height,
+                "label_width": EXPECTED_MOBA_RAIL_CHROME.label_width,
+                "label_height": EXPECTED_MOBA_RAIL_CHROME.label_height,
+                "label_step": EXPECTED_MOBA_RAIL_CHROME.label_step,
+                "unlabeled_gap_after": EXPECTED_MOBA_RAIL_CHROME.unlabeled_gap_after,
+                "label_font_size": EXPECTED_MOBA_RAIL_CHROME.label_font_size,
+                "render_source": EXPECTED_MOBA_RAIL_CHROME.render_source,
+            }
+            if preset_id == "mobaxterm"
+            else {}
+        ),
+        "expected_moba_rail_items": (
+            [
+                {
+                    "role": item.role,
+                    "label": item.label,
+                    "icon_key": item.icon_key,
+                    "rail_icon_key": item.rail_icon_key,
+                    "object_name": item.object_name,
+                }
+                for item in EXPECTED_MOBA_RAIL_ITEMS
+            ]
+            if preset_id == "mobaxterm"
+            else []
+        ),
+        "expected_moba_rail_item_geometry": (
+            [
+                {
+                    "role": geometry.role,
+                    "static_icon_y": geometry.static_icon_y,
+                    "static_label_y": geometry.static_label_y,
+                }
+                for geometry in EXPECTED_MOBA_RAIL_ITEM_GEOMETRY
+            ]
+            if preset_id == "mobaxterm"
+            else []
+        ),
         "expected_moba_top_menu": (
             [{"key": item.key, "label": item.label, "primary_action": item.primary_action} for item in EXPECTED_MOBA_TOP_MENU_ITEMS]
             if preset_id == "mobaxterm"
@@ -3764,6 +5286,16 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
             if preset_id == "mobaxterm"
             else {}
         ),
+        "expected_moba_connected_session_route": (
+            EXPECTED_MOBA_CONNECTED_SESSION_ROUTE.to_dict()
+            if preset_id == "mobaxterm"
+            else {}
+        ),
+        "expected_moba_connected_session_identity_route": (
+            EXPECTED_MOBA_CONNECTED_SESSION_IDENTITY_ROUTE.to_dict()
+            if preset_id == "mobaxterm"
+            else {}
+        ),
         "expected_moba_quick_connect_chrome": (
             {
                 "placeholder": EXPECTED_MOBA_QUICK_CONNECT_CHROME.placeholder,
@@ -3812,6 +5344,59 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
             if preset_id == "mobaxterm"
             else {}
         ),
+        "expected_moba_home_welcome_geometry": (
+            {
+                "center_side_margin": EXPECTED_MOBA_HOME_WELCOME_GEOMETRY.center_side_margin,
+                "hero_min_y": EXPECTED_MOBA_HOME_WELCOME_GEOMETRY.hero_min_y,
+                "hero_height": EXPECTED_MOBA_HOME_WELCOME_GEOMETRY.hero_height,
+                "logo_size": EXPECTED_MOBA_HOME_WELCOME_GEOMETRY.logo_size,
+                "logo_inner_padding": EXPECTED_MOBA_HOME_WELCOME_GEOMETRY.logo_inner_padding,
+                "logo_icon_size": EXPECTED_MOBA_HOME_WELCOME_GEOMETRY.logo_icon_size,
+                "logo_cluster_width": EXPECTED_MOBA_HOME_WELCOME_GEOMETRY.logo_cluster_width,
+                "title_gap": EXPECTED_MOBA_HOME_WELCOME_GEOMETRY.title_gap,
+                "title_y_offset": EXPECTED_MOBA_HOME_WELCOME_GEOMETRY.title_y_offset,
+                "title_font_size": EXPECTED_MOBA_HOME_WELCOME_GEOMETRY.title_font_size,
+                "subtitle_y_offset": EXPECTED_MOBA_HOME_WELCOME_GEOMETRY.subtitle_y_offset,
+                "subtitle_font_size": EXPECTED_MOBA_HOME_WELCOME_GEOMETRY.subtitle_font_size,
+                "button_y_offset": EXPECTED_MOBA_HOME_WELCOME_GEOMETRY.button_y_offset,
+                "primary_width": EXPECTED_MOBA_HOME_WELCOME_GEOMETRY.primary_width,
+                "secondary_width": EXPECTED_MOBA_HOME_WELCOME_GEOMETRY.secondary_width,
+                "action_gap": EXPECTED_MOBA_HOME_WELCOME_GEOMETRY.action_gap,
+                "button_height": EXPECTED_MOBA_HOME_WELCOME_GEOMETRY.button_height,
+                "button_icon_x": EXPECTED_MOBA_HOME_WELCOME_GEOMETRY.button_icon_x,
+                "button_icon_y": EXPECTED_MOBA_HOME_WELCOME_GEOMETRY.button_icon_y,
+                "button_icon_size": EXPECTED_MOBA_HOME_WELCOME_GEOMETRY.button_icon_size,
+                "button_label_x": EXPECTED_MOBA_HOME_WELCOME_GEOMETRY.button_label_x,
+                "button_label_y": EXPECTED_MOBA_HOME_WELCOME_GEOMETRY.button_label_y,
+                "button_font_size": EXPECTED_MOBA_HOME_WELCOME_GEOMETRY.button_font_size,
+                "search_y_gap": EXPECTED_MOBA_HOME_WELCOME_GEOMETRY.search_y_gap,
+                "search_height": EXPECTED_MOBA_HOME_WELCOME_GEOMETRY.search_height,
+                "search_text_x": EXPECTED_MOBA_HOME_WELCOME_GEOMETRY.search_text_x,
+                "search_text_y": EXPECTED_MOBA_HOME_WELCOME_GEOMETRY.search_text_y,
+                "search_font_size": EXPECTED_MOBA_HOME_WELCOME_GEOMETRY.search_font_size,
+                "recent_y_gap": EXPECTED_MOBA_HOME_WELCOME_GEOMETRY.recent_y_gap,
+                "recent_title_font_size": EXPECTED_MOBA_HOME_WELCOME_GEOMETRY.recent_title_font_size,
+                "recent_item_y_offset": EXPECTED_MOBA_HOME_WELCOME_GEOMETRY.recent_item_y_offset,
+                "recent_item_step": EXPECTED_MOBA_HOME_WELCOME_GEOMETRY.recent_item_step,
+                "recent_column_padding": EXPECTED_MOBA_HOME_WELCOME_GEOMETRY.recent_column_padding,
+                "footer_y_offset": EXPECTED_MOBA_HOME_WELCOME_GEOMETRY.footer_y_offset,
+                "footer_font_size": EXPECTED_MOBA_HOME_WELCOME_GEOMETRY.footer_font_size,
+                "live_max_extra_width": EXPECTED_MOBA_HOME_WELCOME_GEOMETRY.live_max_extra_width,
+                "live_layout_spacing": EXPECTED_MOBA_HOME_WELCOME_GEOMETRY.live_layout_spacing,
+                "live_title_row_spacing": EXPECTED_MOBA_HOME_WELCOME_GEOMETRY.live_title_row_spacing,
+                "live_title_column_spacing": EXPECTED_MOBA_HOME_WELCOME_GEOMETRY.live_title_column_spacing,
+                "live_logo_box_width": EXPECTED_MOBA_HOME_WELCOME_GEOMETRY.live_logo_box_width,
+                "live_logo_box_height": EXPECTED_MOBA_HOME_WELCOME_GEOMETRY.live_logo_box_height,
+                "live_logo_pixmap_size": EXPECTED_MOBA_HOME_WELCOME_GEOMETRY.live_logo_pixmap_size,
+                "live_recent_title_top_margin": EXPECTED_MOBA_HOME_WELCOME_GEOMETRY.live_recent_title_top_margin,
+                "live_recent_column_spacing": EXPECTED_MOBA_HOME_WELCOME_GEOMETRY.live_recent_column_spacing,
+                "live_recent_row_spacing": EXPECTED_MOBA_HOME_WELCOME_GEOMETRY.live_recent_row_spacing,
+                "live_footer_top_margin": EXPECTED_MOBA_HOME_WELCOME_GEOMETRY.live_footer_top_margin,
+                "render_source": EXPECTED_MOBA_HOME_WELCOME_GEOMETRY.render_source,
+            }
+            if preset_id == "mobaxterm"
+            else {}
+        ),
         "expected_moba_tab_chrome_keys": sorted(EXPECTED_MOBA_TAB_CHROME_KEYS) if preset_id == "mobaxterm" else [],
         "expected_moba_static_tab_chrome_keys": (
             sorted(EXPECTED_MOBA_STATIC_TAB_CHROME_KEYS) if preset_id == "mobaxterm" else []
@@ -3824,6 +5409,23 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
         "expected_moba_right_utility_keys": sorted(EXPECTED_MOBA_RIGHT_UTILITY_KEYS)
         if preset_id == "mobaxterm"
         else [],
+        "expected_moba_right_utility_rail_chrome": (
+            {
+                "static_width": EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.static_width,
+                "live_width": EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.live_width,
+                "margin_left": EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.margin_left,
+                "margin_top": EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.margin_top,
+                "margin_right": EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.margin_right,
+                "margin_bottom": EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.margin_bottom,
+                "action_spacing": EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.action_spacing,
+                "session_edge_top_y": EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.session_edge_top_y,
+                "session_edge_height": EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.session_edge_height,
+                "session_edge_icon_x": EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.session_edge_icon_x,
+                "session_edge_icon_size": EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.session_edge_icon_size,
+            }
+            if preset_id == "mobaxterm"
+            else {}
+        ),
         "expected_moba_right_utility_actions": (
             [
                 {
@@ -3849,6 +5451,11 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
                     "icon_key": action.icon_key,
                     "label": action.label,
                     "static_y": action.static_y,
+                    "relative_y": action.relative_y(EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.session_edge_top_y),
+                    "static_size": action.static_size,
+                    "live_icon_size": action.live_icon_size,
+                    "button_size": action.button_size,
+                    "render_source": action.render_source,
                 }
                 for action in EXPECTED_MOBA_SESSION_EDGE_ACTIONS
             ]
@@ -3904,6 +5511,24 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
             ]
             if preset_id == "mobaxterm"
             else []
+        ),
+        "expected_moba_sftp_routed_file_rows": (
+            {
+                "key": EXPECTED_MOBA_SFTP_ROUTED_FILE_ROWS.key,
+                "route_role": EXPECTED_MOBA_SFTP_ROUTED_FILE_ROWS.route_role,
+                "follow_route_key": EXPECTED_MOBA_SFTP_ROUTED_FILE_ROWS.follow_route_key,
+                "target_table_object": EXPECTED_MOBA_SFTP_ROUTED_FILE_ROWS.target_table_object,
+                "row_contract_property": EXPECTED_MOBA_SFTP_ROUTED_FILE_ROWS.row_contract_property,
+                "row_route_property": EXPECTED_MOBA_SFTP_ROUTED_FILE_ROWS.row_route_property,
+                "row_path_property": EXPECTED_MOBA_SFTP_ROUTED_FILE_ROWS.row_path_property,
+                "row_index_property": EXPECTED_MOBA_SFTP_ROUTED_FILE_ROWS.row_index_property,
+                "row_selected_property": EXPECTED_MOBA_SFTP_ROUTED_FILE_ROWS.row_selected_property,
+                "parent_row_name": EXPECTED_MOBA_SFTP_ROUTED_FILE_ROWS.parent_row_name,
+                "selected_row_kind": EXPECTED_MOBA_SFTP_ROUTED_FILE_ROWS.selected_row_kind,
+                "render_source": EXPECTED_MOBA_SFTP_ROUTED_FILE_ROWS.render_source,
+            }
+            if preset_id == "mobaxterm"
+            else {}
         ),
         "expected_moba_sftp_browser_chrome": (
             {
@@ -3997,6 +5622,46 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
             if preset_id == "mobaxterm"
             else {}
         ),
+        "expected_moba_monitoring_telemetry_route": (
+            {
+                "key": EXPECTED_MOBA_MONITORING_TELEMETRY_ROUTE.key,
+                "route_role": EXPECTED_MOBA_MONITORING_TELEMETRY_ROUTE.route_role,
+                "source_panel_object": EXPECTED_MOBA_MONITORING_TELEMETRY_ROUTE.source_panel_object,
+                "source_control_key": EXPECTED_MOBA_MONITORING_TELEMETRY_ROUTE.source_control_key,
+                "source_metric_keys": list(EXPECTED_MOBA_MONITORING_TELEMETRY_ROUTE.source_metric_keys),
+                "visible_dock_metric_keys": list(
+                    EXPECTED_MOBA_MONITORING_TELEMETRY_ROUTE.visible_dock_metric_keys
+                ),
+                "telemetry_surface": EXPECTED_MOBA_MONITORING_TELEMETRY_ROUTE.telemetry_surface,
+                "target_bar_object": EXPECTED_MOBA_MONITORING_TELEMETRY_ROUTE.target_bar_object,
+                "target_cell_object": EXPECTED_MOBA_MONITORING_TELEMETRY_ROUTE.target_cell_object,
+                "target_identity_cell_key": EXPECTED_MOBA_MONITORING_TELEMETRY_ROUTE.target_identity_cell_key,
+                "target_metric_cell_keys": list(EXPECTED_MOBA_MONITORING_TELEMETRY_ROUTE.target_metric_cell_keys),
+                "render_source": EXPECTED_MOBA_MONITORING_TELEMETRY_ROUTE.render_source,
+            }
+            if preset_id == "mobaxterm"
+            else {}
+        ),
+        "expected_moba_sftp_follow_folder_route": (
+            {
+                "key": EXPECTED_MOBA_SFTP_FOLLOW_FOLDER_ROUTE.key,
+                "route_role": EXPECTED_MOBA_SFTP_FOLLOW_FOLDER_ROUTE.route_role,
+                "source_control_key": EXPECTED_MOBA_SFTP_FOLLOW_FOLDER_ROUTE.source_control_key,
+                "source_control_object": EXPECTED_MOBA_SFTP_FOLLOW_FOLDER_ROUTE.source_control_object,
+                "source_path_property": EXPECTED_MOBA_SFTP_FOLLOW_FOLDER_ROUTE.source_path_property,
+                "source_plan_property": EXPECTED_MOBA_SFTP_FOLLOW_FOLDER_ROUTE.source_plan_property,
+                "source_enabled_property": EXPECTED_MOBA_SFTP_FOLLOW_FOLDER_ROUTE.source_enabled_property,
+                "target_browser_object": EXPECTED_MOBA_SFTP_FOLLOW_FOLDER_ROUTE.target_browser_object,
+                "target_path_object": EXPECTED_MOBA_SFTP_FOLLOW_FOLDER_ROUTE.target_path_object,
+                "target_table_object": EXPECTED_MOBA_SFTP_FOLLOW_FOLDER_ROUTE.target_table_object,
+                "target_path_property": EXPECTED_MOBA_SFTP_FOLLOW_FOLDER_ROUTE.target_path_property,
+                "target_plan_property": EXPECTED_MOBA_SFTP_FOLLOW_FOLDER_ROUTE.target_plan_property,
+                "target_enabled_property": EXPECTED_MOBA_SFTP_FOLLOW_FOLDER_ROUTE.target_enabled_property,
+                "render_source": EXPECTED_MOBA_SFTP_FOLLOW_FOLDER_ROUTE.render_source,
+            }
+            if preset_id == "mobaxterm"
+            else {}
+        ),
         "expected_moba_monitoring_controls": (
             [
                 {
@@ -4020,8 +5685,14 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
                     "icon_x": geometry.icon_x,
                     "icon_size": geometry.icon_size,
                     "label_x": geometry.label_x,
+                    "label_y_offset": geometry.label_y_offset,
+                    "label_font_size": geometry.label_font_size,
+                    "label_bold": geometry.label_bold,
                     "check_size": geometry.check_size,
+                    "check_y_offset": geometry.check_y_offset,
+                    "checkmark_points": [list(point) for point in geometry.checkmark_points],
                     "row_height": geometry.row_height,
+                    "live_width": geometry.live_width,
                 }
                 for geometry in EXPECTED_MOBA_MONITORING_CONTROL_GEOMETRY
             ]
@@ -4175,6 +5846,34 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
             if preset_id == "securecrt"
             else {}
         ),
+        "expected_securecrt_session_manager_route": (
+            {
+                "key": EXPECTED_SECURECRT_SESSION_MANAGER_ROUTE.key,
+                "route_role": EXPECTED_SECURECRT_SESSION_MANAGER_ROUTE.route_role,
+                "selected_profile_name": EXPECTED_SECURECRT_SESSION_MANAGER_ROUTE.selected_profile_name,
+                "selected_tree_label": EXPECTED_SECURECRT_SESSION_MANAGER_ROUTE.selected_tree_label,
+                "selected_tree_object": EXPECTED_SECURECRT_SESSION_MANAGER_ROUTE.selected_tree_object,
+                "session_manager_object": EXPECTED_SECURECRT_SESSION_MANAGER_ROUTE.session_manager_object,
+                "session_manager_action_key": EXPECTED_SECURECRT_SESSION_MANAGER_ROUTE.session_manager_action_key,
+                "session_manager_action_object": (
+                    EXPECTED_SECURECRT_SESSION_MANAGER_ROUTE.session_manager_action_object
+                ),
+                "status_strip_object": EXPECTED_SECURECRT_SESSION_MANAGER_ROUTE.status_strip_object,
+                "status_field_key": EXPECTED_SECURECRT_SESSION_MANAGER_ROUTE.status_field_key,
+                "status_field_object": EXPECTED_SECURECRT_SESSION_MANAGER_ROUTE.status_field_object,
+                "active_tab_label": EXPECTED_SECURECRT_SESSION_MANAGER_ROUTE.active_tab_label,
+                "target_value": EXPECTED_SECURECRT_SESSION_MANAGER_ROUTE.target_value,
+                "protocol_value": EXPECTED_SECURECRT_SESSION_MANAGER_ROUTE.protocol_value,
+                "session_value": EXPECTED_SECURECRT_SESSION_MANAGER_ROUTE.session_value,
+                "selected_tree_property": EXPECTED_SECURECRT_SESSION_MANAGER_ROUTE.selected_tree_property,
+                "action_active_property": EXPECTED_SECURECRT_SESSION_MANAGER_ROUTE.action_active_property,
+                "tab_label_property": EXPECTED_SECURECRT_SESSION_MANAGER_ROUTE.tab_label_property,
+                "status_value_property": EXPECTED_SECURECRT_SESSION_MANAGER_ROUTE.status_value_property,
+                "render_source": EXPECTED_SECURECRT_SESSION_MANAGER_ROUTE.render_source,
+            }
+            if preset_id == "securecrt"
+            else {}
+        ),
         "expected_securecrt_tree_icons": (
             product_tree_icon_summary("securecrt")
             if preset_id == "securecrt"
@@ -4198,6 +5897,24 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
                 "static_send_right_margin": EXPECTED_SECURECRT_COMMAND_WINDOW_CHROME.static_send_right_margin,
                 "live_target_min_width": EXPECTED_SECURECRT_COMMAND_WINDOW_CHROME.live_target_min_width,
                 "live_send_min_width": EXPECTED_SECURECRT_COMMAND_WINDOW_CHROME.live_send_min_width,
+            }
+            if preset_id == "securecrt"
+            else {}
+        ),
+        "expected_securecrt_command_window_send_route": (
+            {
+                "key": EXPECTED_SECURECRT_COMMAND_WINDOW_SEND_ROUTE.key,
+                "route_role": EXPECTED_SECURECRT_COMMAND_WINDOW_SEND_ROUTE.route_role,
+                "source_window_object": EXPECTED_SECURECRT_COMMAND_WINDOW_SEND_ROUTE.source_window_object,
+                "target_scope_object": EXPECTED_SECURECRT_COMMAND_WINDOW_SEND_ROUTE.target_scope_object,
+                "command_input_object": EXPECTED_SECURECRT_COMMAND_WINDOW_SEND_ROUTE.command_input_object,
+                "send_control_object": EXPECTED_SECURECRT_COMMAND_WINDOW_SEND_ROUTE.send_control_object,
+                "status_object": EXPECTED_SECURECRT_COMMAND_WINDOW_SEND_ROUTE.status_object,
+                "command_property": EXPECTED_SECURECRT_COMMAND_WINDOW_SEND_ROUTE.command_property,
+                "target_scope_property": EXPECTED_SECURECRT_COMMAND_WINDOW_SEND_ROUTE.target_scope_property,
+                "send_label_property": EXPECTED_SECURECRT_COMMAND_WINDOW_SEND_ROUTE.send_label_property,
+                "status_property": EXPECTED_SECURECRT_COMMAND_WINDOW_SEND_ROUTE.status_property,
+                "render_source": EXPECTED_SECURECRT_COMMAND_WINDOW_SEND_ROUTE.render_source,
             }
             if preset_id == "securecrt"
             else {}
@@ -4297,6 +6014,47 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
             if preset_id == "remmina"
             else {}
         ),
+        "expected_remmina_profile_viewer_route": (
+            {
+                "key": EXPECTED_REMMINA_PROFILE_VIEWER_ROUTE.key,
+                "route_role": EXPECTED_REMMINA_PROFILE_VIEWER_ROUTE.route_role,
+                "selected_profile_key": EXPECTED_REMMINA_PROFILE_VIEWER_ROUTE.selected_profile_key,
+                "selected_profile_object": EXPECTED_REMMINA_PROFILE_VIEWER_ROUTE.selected_profile_object,
+                "viewer_controls_object": EXPECTED_REMMINA_PROFILE_VIEWER_ROUTE.viewer_controls_object,
+                "viewer_control_key": EXPECTED_REMMINA_PROFILE_VIEWER_ROUTE.viewer_control_key,
+                "viewer_control_object": EXPECTED_REMMINA_PROFILE_VIEWER_ROUTE.viewer_control_object,
+                "active_tab_label": EXPECTED_REMMINA_PROFILE_VIEWER_ROUTE.active_tab_label,
+                "protocol": EXPECTED_REMMINA_PROFILE_VIEWER_ROUTE.protocol,
+                "profile_status": EXPECTED_REMMINA_PROFILE_VIEWER_ROUTE.profile_status,
+                "selected_row_property": EXPECTED_REMMINA_PROFILE_VIEWER_ROUTE.selected_row_property,
+                "control_active_property": EXPECTED_REMMINA_PROFILE_VIEWER_ROUTE.control_active_property,
+                "tab_label_property": EXPECTED_REMMINA_PROFILE_VIEWER_ROUTE.tab_label_property,
+                "render_source": EXPECTED_REMMINA_PROFILE_VIEWER_ROUTE.render_source,
+            }
+            if preset_id == "remmina"
+            else {}
+        ),
+        "expected_remmina_clipboard_route": (
+            {
+                "key": EXPECTED_REMMINA_CLIPBOARD_ROUTE.key,
+                "route_role": EXPECTED_REMMINA_CLIPBOARD_ROUTE.route_role,
+                "viewer_controls_object": EXPECTED_REMMINA_CLIPBOARD_ROUTE.viewer_controls_object,
+                "viewer_control_key": EXPECTED_REMMINA_CLIPBOARD_ROUTE.viewer_control_key,
+                "viewer_control_object": EXPECTED_REMMINA_CLIPBOARD_ROUTE.viewer_control_object,
+                "active_tab_label": EXPECTED_REMMINA_CLIPBOARD_ROUTE.active_tab_label,
+                "protocol": EXPECTED_REMMINA_CLIPBOARD_ROUTE.protocol,
+                "clipboard_state": EXPECTED_REMMINA_CLIPBOARD_ROUTE.clipboard_state,
+                "status_segment": EXPECTED_REMMINA_CLIPBOARD_ROUTE.status_segment,
+                "detail_line": EXPECTED_REMMINA_CLIPBOARD_ROUTE.detail_line,
+                "activity_line": EXPECTED_REMMINA_CLIPBOARD_ROUTE.activity_line,
+                "control_active_property": EXPECTED_REMMINA_CLIPBOARD_ROUTE.control_active_property,
+                "tab_label_property": EXPECTED_REMMINA_CLIPBOARD_ROUTE.tab_label_property,
+                "clipboard_state_property": EXPECTED_REMMINA_CLIPBOARD_ROUTE.clipboard_state_property,
+                "render_source": EXPECTED_REMMINA_CLIPBOARD_ROUTE.render_source,
+            }
+            if preset_id == "remmina"
+            else {}
+        ),
         "expected_termius_header_chips": (
             [
                 {
@@ -4352,6 +6110,49 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
                     }
                     for field in EXPECTED_TERMIUS_HOST_IDENTITY_STRIP.fields
                 ],
+            }
+            if preset_id == "termius"
+            else {}
+        ),
+        "expected_termius_host_selection_route": (
+            {
+                "key": EXPECTED_TERMIUS_HOST_SELECTION_ROUTE.key,
+                "route_role": EXPECTED_TERMIUS_HOST_SELECTION_ROUTE.route_role,
+                "selected_profile_name": EXPECTED_TERMIUS_HOST_SELECTION_ROUTE.selected_profile_name,
+                "selected_tree_label": EXPECTED_TERMIUS_HOST_SELECTION_ROUTE.selected_tree_label,
+                "selected_tree_object": EXPECTED_TERMIUS_HOST_SELECTION_ROUTE.selected_tree_object,
+                "hosts_panel_object": EXPECTED_TERMIUS_HOST_SELECTION_ROUTE.hosts_panel_object,
+                "host_identity_object": EXPECTED_TERMIUS_HOST_SELECTION_ROUTE.host_identity_object,
+                "identity_field_key": EXPECTED_TERMIUS_HOST_SELECTION_ROUTE.identity_field_key,
+                "identity_cell_object": EXPECTED_TERMIUS_HOST_SELECTION_ROUTE.identity_cell_object,
+                "active_tab_label": EXPECTED_TERMIUS_HOST_SELECTION_ROUTE.active_tab_label,
+                "target_value": EXPECTED_TERMIUS_HOST_SELECTION_ROUTE.target_value,
+                "protocol_value": EXPECTED_TERMIUS_HOST_SELECTION_ROUTE.protocol_value,
+                "host_value": EXPECTED_TERMIUS_HOST_SELECTION_ROUTE.host_value,
+                "selected_tree_property": EXPECTED_TERMIUS_HOST_SELECTION_ROUTE.selected_tree_property,
+                "tab_label_property": EXPECTED_TERMIUS_HOST_SELECTION_ROUTE.tab_label_property,
+                "identity_value_property": EXPECTED_TERMIUS_HOST_SELECTION_ROUTE.identity_value_property,
+                "render_source": EXPECTED_TERMIUS_HOST_SELECTION_ROUTE.render_source,
+            }
+            if preset_id == "termius"
+            else {}
+        ),
+        "expected_termius_sync_route": (
+            {
+                "key": EXPECTED_TERMIUS_SYNC_ROUTE.key,
+                "route_role": EXPECTED_TERMIUS_SYNC_ROUTE.route_role,
+                "hosts_action_key": EXPECTED_TERMIUS_SYNC_ROUTE.hosts_action_key,
+                "hosts_action_object": EXPECTED_TERMIUS_SYNC_ROUTE.hosts_action_object,
+                "header_chip_key": EXPECTED_TERMIUS_SYNC_ROUTE.header_chip_key,
+                "header_chip_object": EXPECTED_TERMIUS_SYNC_ROUTE.header_chip_object,
+                "identity_field_key": EXPECTED_TERMIUS_SYNC_ROUTE.identity_field_key,
+                "identity_cell_object": EXPECTED_TERMIUS_SYNC_ROUTE.identity_cell_object,
+                "sync_state": EXPECTED_TERMIUS_SYNC_ROUTE.sync_state,
+                "action_label_property": EXPECTED_TERMIUS_SYNC_ROUTE.action_label_property,
+                "chip_label_property": EXPECTED_TERMIUS_SYNC_ROUTE.chip_label_property,
+                "identity_value_property": EXPECTED_TERMIUS_SYNC_ROUTE.identity_value_property,
+                "status_property": EXPECTED_TERMIUS_SYNC_ROUTE.status_property,
+                "render_source": EXPECTED_TERMIUS_SYNC_ROUTE.render_source,
             }
             if preset_id == "termius"
             else {}
@@ -4440,6 +6241,32 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
                     }
                     for row in EXPECTED_MREMOTENG_PROPERTY_GRID_CHROME.rows
                 ],
+            }
+            if preset_id == "mremoteng"
+            else {}
+        ),
+        "expected_mremoteng_connection_document_route": (
+            {
+                "key": EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.key,
+                "route_role": EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.route_role,
+                "selected_profile_name": EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.selected_profile_name,
+                "selected_tree_label": EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.selected_tree_label,
+                "selected_tree_object": EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.selected_tree_object,
+                "document_controls_object": EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.document_controls_object,
+                "document_control_key": EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.document_control_key,
+                "document_control_object": EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.document_control_object,
+                "property_grid_object": EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.property_grid_object,
+                "property_row_key": EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.property_row_key,
+                "property_cell_object": EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.property_cell_object,
+                "active_tab_label": EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.active_tab_label,
+                "protocol": EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.protocol,
+                "workspace_state": EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.workspace_state,
+                "property_value": EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.property_value,
+                "selected_tree_property": EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.selected_tree_property,
+                "control_active_property": EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.control_active_property,
+                "tab_label_property": EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.tab_label_property,
+                "property_value_property": EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.property_value_property,
+                "render_source": EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.render_source,
             }
             if preset_id == "mremoteng"
             else {}

@@ -2,8 +2,8 @@
   "contact_sheet": {
     "height": 1392,
     "path": "all-gui-designs-contact-sheet.png",
-    "sha256": "3a0ece04e6ea98b387c515669ef5f354f2b5f984d6079bbd613d557360216e87",
-    "size_bytes": 398750,
+    "sha256": "1bcaba10d736d09207135478648d82cc13cea1ab101655c0e90bd3385fbb9a9e",
+    "size_bytes": 399165,
     "width": 1272
   },
   "contact_thumb": {
@@ -50,8 +50,8 @@
       "image": {
         "height": 760,
         "path": "securecrt.png",
-        "sha256": "d8ec5f08f478f1d36b767f45352c276e59aba5298d0a4da796c8042e5d7d3dc1",
-        "size_bytes": 89806,
+        "sha256": "b3636d4a715b8694aa0e574e03d2a27fb78691953cd05427083c215bec6cb6d0",
+        "size_bytes": 89895,
         "width": 1280
       },
       "label": "SecureCRT-style",
@@ -66,8 +66,8 @@
       "image": {
         "height": 760,
         "path": "termius.png",
-        "sha256": "ca7fa054df6adbe7cd822e82ded3318ed1310bb4944413a6ca7a828b0098143a",
-        "size_bytes": 88355,
+        "sha256": "e860239bfe26ee52ec823e855204699eb8092f1df3b2cfbd1bae94bf898c40bd",
+        "size_bytes": 88387,
         "width": 1280
       },
       "label": "Termius-style",
@@ -82,8 +82,8 @@
       "image": {
         "height": 760,
         "path": "remmina.png",
-        "sha256": "8d684d067fa8b1f142ec587ca93978cd2f62e151a0b4a5f482ebd31ba52c0705",
-        "size_bytes": 77152,
+        "sha256": "2b238777d35126681e03aaf4b99c3d7f4169c63db370ed84bfbadfb6962bc90b",
+        "size_bytes": 77174,
         "width": 1280
       },
       "label": "Remmina-style",
@@ -98,8 +98,8 @@
       "image": {
         "height": 760,
         "path": "mremoteng.png",
-        "sha256": "15fea49cd2209ee32baf650070d3d3e38d25956a01234c812e171254a7c7cbed",
-        "size_bytes": 84239,
+        "sha256": "694b92cc3f204489328460fd7e25c19c41f43269878ebc88925a306712bbaf87",
+        "size_bytes": 84482,
         "width": 1280
       },
       "label": "mRemoteNG-style",
@@ -121,8 +121,8 @@
       "image": {
         "height": 760,
         "path": "mobaxterm-home.png",
-        "sha256": "30baf108980ed89d48caf6ca9329a7b326d193ca8306d6a091377701fe885563",
-        "size_bytes": 56089,
+        "sha256": "51cc346ecfc01510418046efc2f1f5e6100853b8524e56f6987113f6be27cd9b",
+        "size_bytes": 56046,
         "width": 1280
       },
       "label": "MobaXterm-style Home",

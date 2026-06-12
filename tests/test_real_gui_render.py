@@ -69,8 +69,12 @@ def test_real_gui_render_manifest_contract_names_required_widgets() -> None:
     assert checker.MOBA_CONNECTED_REQUIRED_WIDGETS["mobaConnectedLeftDock"] == "Moba connected SFTP/monitoring dock"
     assert checker.MOBA_CONNECTED_REQUIRED_WIDGETS["mobaSftpBrowser"] == "Moba SFTP browser"
     assert checker.PRODUCT_STYLE_PRESETS == {"mobaxterm", "securecrt", "termius", "remmina", "mremoteng"}
+    assert checker.EXPECTED_MOBA_SESSION_TREE_CHROME.profile_row_height == 34
+    assert checker.EXPECTED_PRODUCT_TREE_ICON_KEYS["mobaxterm"]["sftp-ops"] == "sftp"
     assert checker.EXPECTED_MOBA_RAIL_ROLES == {"collapse", "sessions", "favorites", "tools", "macros", "sftp"}
     assert checker.EXPECTED_MOBA_CONNECTED_DOCK_FRAME.rail_width == 24
+    assert checker.EXPECTED_MOBA_RAIL_CHROME.rail_width == 24
+    assert checker.EXPECTED_MOBA_RAIL_ITEM_GEOMETRY_BY_ROLE["sftp"].static_label_y == 354
     assert checker.EXPECTED_MOBA_TOP_MENU_KEYS == [
         "terminal",
         "sessions",
@@ -165,6 +169,13 @@ def test_real_gui_render_manifest_contract_names_required_widgets() -> None:
     assert checker.EXPECTED_MOBA_REMOTE_MONITORING_DOCK_CHROME.compact is True
     assert checker.EXPECTED_MOBA_REMOTE_MONITORING_DOCK_CHROME.visible_metric_keys == ()
     assert checker.EXPECTED_MOBA_REMOTE_MONITORING_DOCK_CHROME.telemetry_surface == "bottom-telemetry-bar"
+    assert checker.EXPECTED_MOBA_MONITORING_TELEMETRY_ROUTE.key == "remote-monitoring-to-bottom-telemetry"
+    assert checker.EXPECTED_MOBA_MONITORING_TELEMETRY_ROUTE.target_bar_object == "mobaTelemetryBar"
+    assert checker.EXPECTED_MOBA_CONNECTED_SESSION_ROUTE.key == "moba-active-connected-session-route"
+    assert checker.EXPECTED_MOBA_CONNECTED_SESSION_ROUTE.active_tab_key == "active-session"
+    assert checker.EXPECTED_MOBA_CONNECTED_SESSION_ROUTE.telemetry_identity_cell_key == "target"
+    assert checker.EXPECTED_MOBA_CONNECTED_SESSION_IDENTITY_ROUTE.key == "moba-connected-session-identity-route"
+    assert checker.EXPECTED_MOBA_CONNECTED_SESSION_IDENTITY_ROUTE.telemetry_target == "edge-prod.example.invalid:22"
     assert [control.icon_key for control in checker.EXPECTED_MOBA_MONITORING_CONTROLS] == [
         "monitor",
         "follow-folder",
@@ -205,6 +216,12 @@ def test_real_gui_render_manifest_contract_names_required_widgets() -> None:
     assert checker.EXPECTED_REMMINA_PROFILE_COLUMN_KEYS == ["name", "protocol", "server"]
     assert checker.EXPECTED_REMMINA_PROFILE_ROW_KEYS == ["win-admin", "linux-console", "sftp-ops"]
     assert checker.EXPECTED_REMMINA_PROFILE_LIST_CHROME.filter_placeholder == "Filter by name or protocol"
+    assert checker.EXPECTED_REMMINA_PROFILE_VIEWER_ROUTE.key == "remmina-selected-profile-viewer-route"
+    assert checker.EXPECTED_REMMINA_PROFILE_VIEWER_ROUTE.active_tab_label == "RDP - win-admin"
+    assert checker.EXPECTED_REMMINA_PROFILE_VIEWER_ROUTE.viewer_control_key == "scale-100"
+    assert checker.EXPECTED_REMMINA_CLIPBOARD_ROUTE.key == "remmina-clipboard-sync-route"
+    assert checker.EXPECTED_REMMINA_CLIPBOARD_ROUTE.viewer_control_key == "clipboard"
+    assert checker.EXPECTED_REMMINA_CLIPBOARD_ROUTE.status_segment == "Clipboard on"
     assert checker.EXPECTED_TERMIUS_HEADER_CHIP_KEYS == [
         "vault-unlocked",
         "sync-current",
@@ -260,6 +277,11 @@ def test_real_gui_render_manifest_contract_names_required_widgets() -> None:
         "inheritance",
     ]
     assert checker.EXPECTED_MREMOTENG_PROPERTY_GRID_CHROME.scope_label == "edge-prod [SSH]"
+    assert checker.EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.key == (
+        "mremoteng-selected-connection-document-route"
+    )
+    assert checker.EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.document_control_key == "reconnect"
+    assert checker.EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.property_row_key == "protocol"
 
 
 def test_real_gui_render_defaults_to_every_preset() -> None:
@@ -408,10 +430,13 @@ def test_real_gui_render_contract_checks_live_workspace_surface_text() -> None:
     assert "Identity: prod-ed25519" in checker.required_termius_host_identity_texts()
     assert "check_live_reference_state" in source
     assert "check_live_securecrt_session_status_strip" in source
+    assert "check_live_securecrt_session_manager_route" in source
     assert "check_live_termius_host_identity_strip" in source
+    assert "check_live_termius_host_selection_route" in source
     assert "check_live_securecrt_command_window" in source
     assert "check_live_securecrt_top_chrome" in source
     assert "check_live_mremoteng_top_chrome" in source
+    assert "check_live_remmina_clipboard_route" in source
     assert "gui_design_reference_state" in source
 
 
@@ -682,7 +707,9 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
     assert {"dock-left-of-ssh-banner", "sftp-table-inside-dock"} <= set(moba["topology_contract_ids"])
     assert "moba-rail-roles" in moba["contract_checks"]
     assert "moba-rail-labels" in moba["contract_checks"]
+    assert "moba-rail-geometry" in moba["contract_checks"]
     assert "moba-home-welcome" in moba["contract_checks"]
+    assert "moba-home-welcome-geometry" in moba["contract_checks"]
     assert "titlebar-chrome" in moba["contract_checks"]
     assert "top-stack-geometry" in moba["contract_checks"]
     assert "top-menu-chrome" in moba["contract_checks"]
@@ -691,10 +718,15 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
     assert "quick-connect-chrome" in moba["contract_checks"]
     assert "quick-connect-suggestions" in moba["contract_checks"]
     assert "connected-quick-connect-idle" in moba["contract_checks"]
+    assert "moba-session-tree-icons" in moba["contract_checks"]
+    assert "moba-session-tree-geometry" in moba["contract_checks"]
     assert "connected-tab-chrome" in moba["contract_checks"]
     assert "connected-tab-geometry" in moba["contract_checks"]
     assert "connected-dock-frame" in moba["contract_checks"]
+    assert "connected-session-route" in moba["contract_checks"]
+    assert "connected-session-identity-route" in moba["contract_checks"]
     assert "session-edge-controls" in moba["contract_checks"]
+    assert "session-edge-geometry" in moba["contract_checks"]
     assert "right-utility-rail" in moba["contract_checks"]
     assert "ssh-banner-chrome" in moba["contract_checks"]
     assert "terminal-transcript" in moba["contract_checks"]
@@ -705,6 +737,8 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
     assert "sftp-dock-density" in moba["contract_checks"]
     assert "sftp-browser-chrome" in moba["contract_checks"]
     assert "sftp-browser-geometry" in moba["contract_checks"]
+    assert "sftp-follow-folder-route" in moba["contract_checks"]
+    assert "sftp-routed-file-rows" in moba["contract_checks"]
     assert "bottom-status-chrome" in moba["contract_checks"]
     assert "bottom-status-geometry" in moba["contract_checks"]
     assert "bottom-telemetry-geometry" in moba["contract_checks"]
@@ -712,8 +746,104 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
     assert "live-topology" in moba["contract_checks"]
     assert "remote-monitoring-dock" in moba["contract_checks"]
     assert "remote-monitoring-footer-geometry" in moba["contract_checks"]
+    assert "monitoring-telemetry-route" in moba["contract_checks"]
     assert "moba-monitoring-controls" in moba["contract_checks"]
+    assert moba["expected_product_tree_icons"][:4] == [
+        {"label": "User sessions", "icon_key": "folder", "row_kind": "root", "static_size": 16},
+        {"label": "default", "icon_key": "folder", "row_kind": "group", "static_size": 15},
+        {"label": "example.jump-ssh", "icon_key": "pin", "row_kind": "profile", "static_size": 14},
+        {"label": "example.rdp", "icon_key": "rdp", "row_kind": "profile", "static_size": 14},
+    ]
+    assert moba["expected_moba_session_tree_chrome"] == {
+        "header_height": 28,
+        "header_icon_x": 9,
+        "header_text_x": 31,
+        "row_start_y": 38,
+        "indentation": 16,
+        "root_row_height": 28,
+        "group_row_height": 24,
+        "profile_row_height": 34,
+        "group_icon_x": 29,
+        "group_label_x": 51,
+        "profile_icon_x": 39,
+        "profile_label_x": 61,
+        "profile_target_x": 61,
+        "selected_left": 28,
+        "selected_height": 34,
+        "render_source": "generated-pixmap",
+    }
     assert "terminal" in moba["expected_moba_sftp_action_keys"]
+    assert moba["expected_moba_rail_chrome"] == {
+        "rail_width": 24,
+        "icon_x": 5,
+        "static_icon_size": 16,
+        "live_icon_size": 20,
+        "generated_icon_size": 22,
+        "button_width": 24,
+        "button_height": 26,
+        "active_x": 2,
+        "active_y_offset": -3,
+        "active_width": 20,
+        "active_height": 30,
+        "label_width": 24,
+        "label_height": 54,
+        "label_step": 58,
+        "unlabeled_gap_after": 8,
+        "label_font_size": 10,
+        "render_source": "generated-pixmap",
+    }
+    assert moba["expected_moba_rail_items"] == [
+        {
+            "role": "collapse",
+            "label": "",
+            "icon_key": "session",
+            "rail_icon_key": "collapse",
+            "object_name": "mobaRailButton",
+        },
+        {
+            "role": "sessions",
+            "label": "Sessions",
+            "icon_key": "session",
+            "rail_icon_key": "session",
+            "object_name": "mobaRailButton",
+        },
+        {
+            "role": "favorites",
+            "label": "",
+            "icon_key": "sessions",
+            "rail_icon_key": "star",
+            "object_name": "mobaRailAccent",
+        },
+        {
+            "role": "tools",
+            "label": "Tools",
+            "icon_key": "tools",
+            "rail_icon_key": "tools",
+            "object_name": "mobaRailButton",
+        },
+        {
+            "role": "macros",
+            "label": "Macros",
+            "icon_key": "multiexec",
+            "rail_icon_key": "macros",
+            "object_name": "mobaRailButton",
+        },
+        {
+            "role": "sftp",
+            "label": "SFTP",
+            "icon_key": "packages",
+            "rail_icon_key": "sftp",
+            "object_name": "mobaRailButton",
+        },
+    ]
+    assert moba["expected_moba_rail_item_geometry"] == [
+        {"role": "collapse", "static_icon_y": 8, "static_label_y": 0},
+        {"role": "sessions", "static_icon_y": 42, "static_label_y": 68},
+        {"role": "favorites", "static_icon_y": 126, "static_label_y": 0},
+        {"role": "tools", "static_icon_y": 160, "static_label_y": 186},
+        {"role": "macros", "static_icon_y": 244, "static_label_y": 270},
+        {"role": "sftp", "static_icon_y": 328, "static_label_y": 354},
+    ]
     assert [item["key"] for item in moba["expected_moba_sftp_toolbar_groups"]] == [
         "parent-folder",
         "download",
@@ -880,6 +1010,20 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
             "render_source": "generated-pixmap",
         },
     ]
+    assert moba["expected_moba_sftp_routed_file_rows"] == {
+        "key": "sftp-follow-folder-file-rows",
+        "route_role": "follow-folder-visible-file-list",
+        "follow_route_key": "sftp-follow-terminal-folder-route",
+        "target_table_object": "mobaSftpFileTable",
+        "row_contract_property": "mobaSftpRowContractKey",
+        "row_route_property": "mobaSftpRowFollowRouteKey",
+        "row_path_property": "mobaSftpRowSourcePath",
+        "row_index_property": "mobaSftpRowIndex",
+        "row_selected_property": "mobaSftpRowSelectedByRoute",
+        "parent_row_name": "..",
+        "selected_row_kind": "parent-dir",
+        "render_source": "state-file-entries",
+    }
     assert "network" in moba["expected_moba_monitoring_metric_keys"]
     assert moba["expected_moba_remote_monitoring_dock_chrome"] == {
         "title_control_key": "remote-monitoring",
@@ -896,6 +1040,44 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "icon_center_x": 104,
         "metric_row_gap": 21,
         "live_controls_width": 260,
+    }
+    assert moba["expected_moba_monitoring_telemetry_route"] == {
+        "key": "remote-monitoring-to-bottom-telemetry",
+        "route_role": "compact-dock-bottom-telemetry",
+        "source_panel_object": "mobaRemoteMonitoring",
+        "source_control_key": "remote-monitoring",
+        "source_metric_keys": ["cpu", "memory", "disk", "network", "load", "processes"],
+        "visible_dock_metric_keys": [],
+        "telemetry_surface": "bottom-telemetry-bar",
+        "target_bar_object": "mobaTelemetryBar",
+        "target_cell_object": "mobaTelemetryCell",
+        "target_identity_cell_key": "target",
+        "target_metric_cell_keys": [
+            "cpu",
+            "memory",
+            "disk",
+            "net-up",
+            "net-down",
+            "connections",
+            "processes",
+        ],
+        "render_source": "generated-pixmap",
+    }
+    assert moba["expected_moba_sftp_follow_folder_route"] == {
+        "key": "sftp-follow-terminal-folder-route",
+        "route_role": "terminal-cwd-to-sftp-browser",
+        "source_control_key": "follow-terminal-folder",
+        "source_control_object": "mobaFollowTerminalFolder",
+        "source_path_property": "mobaMonitoringFollowPath",
+        "source_plan_property": "mobaMonitoringFollowPlan",
+        "source_enabled_property": "mobaMonitoringFollowEnabled",
+        "target_browser_object": "mobaSftpBrowser",
+        "target_path_object": "mobaSftpPath",
+        "target_table_object": "mobaSftpFileTable",
+        "target_path_property": "mobaSftpFollowRoutePath",
+        "target_plan_property": "mobaSftpFollowRoutePlan",
+        "target_enabled_property": "mobaSftpFollowRouteEnabled",
+        "render_source": "state-model",
     }
     assert moba["expected_moba_monitoring_controls"] == [
         {
@@ -921,8 +1103,14 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
             "icon_x": 104,
             "icon_size": 20,
             "label_x": 132,
+            "label_y_offset": 2,
+            "label_font_size": 12,
+            "label_bold": True,
             "check_size": 0,
+            "check_y_offset": 0,
+            "checkmark_points": [],
             "row_height": 22,
+            "live_width": 146,
         },
         {
             "key": "follow-terminal-folder",
@@ -931,8 +1119,14 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
             "icon_x": 60,
             "icon_size": 16,
             "label_x": 80,
+            "label_y_offset": 3,
+            "label_font_size": 11,
+            "label_bold": False,
             "check_size": 10,
+            "check_y_offset": 3,
+            "checkmark_points": [[2, 5], [5, 9], [10, 1]],
             "row_height": 19,
+            "live_width": 208,
         },
     ]
     assert "sftp-ready" in moba["expected_moba_status_keys"]
@@ -1008,6 +1202,50 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "quick_connect_height": 24,
         "status_y": 738,
     }
+    assert moba["expected_moba_connected_session_route"] == {
+        "key": "moba-active-connected-session-route",
+        "route_role": "active-tab-to-connected-workspace",
+        "active_tab_key": "active-session",
+        "active_tab_label": "edge-prod.example.invalid (operator)",
+        "reference_tab_label": "7. edge-prod.example.invalid (operator)",
+        "active_tab_object": "sessionTabs",
+        "connected_panel_object": "mobaConnectedSession",
+        "left_dock_object": "mobaConnectedLeftDock",
+        "sftp_browser_object": "mobaSftpBrowser",
+        "sftp_path_object": "mobaSftpPath",
+        "sftp_table_object": "mobaSftpFileTable",
+        "ssh_banner_object": "mobaSshBanner",
+        "terminal_area_object": "mobaTerminalArea",
+        "terminal_output_object": "terminalOutput",
+        "telemetry_bar_object": "mobaTelemetryBar",
+        "telemetry_identity_cell_key": "target",
+        "target": "edge-prod.example.invalid:22",
+        "remote_path": "/var/log",
+        "tab_label_property": "mobaConnectedRouteActiveTabLabel",
+        "target_property": "mobaConnectedRouteTarget",
+        "remote_path_property": "mobaConnectedRouteRemotePath",
+        "render_source": "connected-session-state",
+    }
+    assert moba["expected_moba_connected_session_identity_route"] == {
+        "key": "moba-connected-session-identity-route",
+        "route_role": "title-tab-banner-terminal-telemetry-identity",
+        "window_title": "edge-prod.example.invalid (operator)",
+        "active_tab_label": "edge-prod.example.invalid (operator)",
+        "reference_tab_label": "7. edge-prod.example.invalid (operator)",
+        "banner_target": "edge-prod.example.invalid",
+        "web_console_line": (
+            "Web console: https://edge-prod.example.invalid:9090/ or https://192.0.2.10:9090/"
+        ),
+        "terminal_prompt": "[operator@edge-prod ~]$ ",
+        "telemetry_target": "edge-prod.example.invalid:22",
+        "target_endpoint": "edge-prod.example.invalid:22",
+        "remote_path": "/var/log",
+        "window_title_property": "mobaConnectedIdentityWindowTitle",
+        "banner_target_property": "mobaConnectedIdentityBannerTarget",
+        "terminal_prompt_property": "mobaConnectedIdentityTerminalPrompt",
+        "telemetry_target_property": "mobaConnectedIdentityTelemetryTarget",
+        "render_source": "connected-session-state",
+    }
     assert moba["expected_moba_quick_connect_chrome"] == {
         "placeholder": "Quick connect...",
         "dropdown_marker": "v",
@@ -1036,9 +1274,58 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "primary_action_icon_key": "session",
         "secondary_action_icon_key": "tunneling",
         "search_width": 405,
-        "action_spacing": 96,
+        "action_spacing": 62,
         "recent_title": "Recent sessions",
         "surface_width": 640,
+    }
+    assert moba["expected_moba_home_welcome_geometry"] == {
+        "center_side_margin": 80,
+        "hero_min_y": 115,
+        "hero_height": 330,
+        "logo_size": 46,
+        "logo_inner_padding": 7,
+        "logo_icon_size": 32,
+        "logo_cluster_width": 360,
+        "title_gap": 28,
+        "title_y_offset": 9,
+        "title_font_size": 28,
+        "subtitle_y_offset": 57,
+        "subtitle_font_size": 12,
+        "button_y_offset": 94,
+        "primary_width": 206,
+        "secondary_width": 220,
+        "action_gap": 62,
+        "button_height": 28,
+        "button_icon_x": 13,
+        "button_icon_y": 6,
+        "button_icon_size": 16,
+        "button_label_x": 40,
+        "button_label_y": 8,
+        "button_font_size": 11,
+        "search_y_gap": 45,
+        "search_height": 25,
+        "search_text_x": 10,
+        "search_text_y": 6,
+        "search_font_size": 12,
+        "recent_y_gap": 52,
+        "recent_title_font_size": 12,
+        "recent_item_y_offset": 28,
+        "recent_item_step": 22,
+        "recent_column_padding": 12,
+        "footer_y_offset": 120,
+        "footer_font_size": 10,
+        "live_max_extra_width": 120,
+        "live_layout_spacing": 13,
+        "live_title_row_spacing": 18,
+        "live_title_column_spacing": 3,
+        "live_logo_box_width": 64,
+        "live_logo_box_height": 56,
+        "live_logo_pixmap_size": 56,
+        "live_recent_title_top_margin": 9,
+        "live_recent_column_spacing": 44,
+        "live_recent_row_spacing": 5,
+        "live_footer_top_margin": 12,
+        "render_source": "generated-pixmap",
     }
     assert moba["expected_workflow_card_titles"] == []
     assert moba["expected_moba_sftp_browser_chrome"] == {
@@ -1303,7 +1590,21 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         },
     ]
     assert moba["expected_moba_right_utility_keys"] == ["clip", "settings", "tools"]
+    assert "right-utility-rail-chrome" in moba["contract_checks"]
     assert "right-utility-rail-geometry" in moba["contract_checks"]
+    assert moba["expected_moba_right_utility_rail_chrome"] == {
+        "static_width": 30,
+        "live_width": 30,
+        "margin_left": 2,
+        "margin_top": 2,
+        "margin_right": 2,
+        "margin_bottom": 2,
+        "action_spacing": 8,
+        "session_edge_top_y": 108,
+        "session_edge_height": 50,
+        "session_edge_icon_x": 9,
+        "session_edge_icon_size": 16,
+    }
     assert moba["expected_moba_right_utility_actions"] == [
         {
             "key": "clip",
@@ -1340,8 +1641,28 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         },
     ]
     assert moba["expected_moba_session_edge_actions"] == [
-        {"key": "attachment", "icon_key": "clip", "label": "Session attachment", "static_y": 112},
-        {"key": "settings", "icon_key": "gear", "label": "Session settings", "static_y": 130},
+        {
+            "key": "attachment",
+            "icon_key": "clip",
+            "label": "Session attachment",
+            "static_y": 112,
+            "relative_y": 4,
+            "static_size": 16,
+            "live_icon_size": 16,
+            "button_size": 22,
+            "render_source": "generated-pixmap",
+        },
+        {
+            "key": "settings",
+            "icon_key": "gear",
+            "label": "Session settings",
+            "static_y": 130,
+            "relative_y": 22,
+            "static_size": 16,
+            "live_icon_size": 16,
+            "button_size": 22,
+            "render_source": "generated-pixmap",
+        },
     ]
     assert moba["expected_moba_ssh_banner_chrome"] == {
         "title": "Remote Ops Workspace Personal Edition v1.0",
@@ -1460,11 +1781,13 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
     assert "securecrt-top-chrome" in securecrt["contract_checks"]
     assert "securecrt-session-manager-chrome" in securecrt["contract_checks"]
     assert "securecrt-session-manager-geometry" in securecrt["contract_checks"]
+    assert "securecrt-session-manager-route" in securecrt["contract_checks"]
     assert "securecrt-tree-icons" in securecrt["contract_checks"]
     assert "securecrt-session-status-strip" in securecrt["contract_checks"]
     assert "securecrt-session-status-geometry" in securecrt["contract_checks"]
     assert "securecrt-command-window" in securecrt["contract_checks"]
     assert "securecrt-command-window-geometry" in securecrt["contract_checks"]
+    assert "securecrt-command-window-send-route" in securecrt["contract_checks"]
     assert "live-topology" in securecrt["contract_checks"]
     assert "active-tab: edge-prod (SSH2)" in securecrt["expected_reference_state_texts"]
     assert securecrt["expected_reference_status_segments"] == ["SSH2", "Session Manager", "2 active tabs"]
@@ -1504,6 +1827,20 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "static_send_right_margin": 10,
         "live_target_min_width": 112,
         "live_send_min_width": 48,
+    }
+    assert securecrt["expected_securecrt_command_window_send_route"] == {
+        "key": "securecrt-command-window-send-route",
+        "route_role": "command-input-to-active-sessions",
+        "source_window_object": "secureCrtCommandWindow",
+        "target_scope_object": "secureCrtCommandTarget",
+        "command_input_object": "secureCrtCommandInput",
+        "send_control_object": "secureCrtCommandSend",
+        "status_object": "secureCrtCommandStatus",
+        "command_property": "secureCrtCommandRouteCommand",
+        "target_scope_property": "secureCrtCommandRouteTargetScope",
+        "send_label_property": "secureCrtCommandRouteSendLabel",
+        "status_property": "secureCrtCommandRouteStatus",
+        "render_source": "state-model",
     }
     assert securecrt["expected_securecrt_session_manager_chrome"] == {
         "title": "Session Manager",
@@ -1564,6 +1901,28 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
             },
         ],
     }
+    assert securecrt["expected_securecrt_session_manager_route"] == {
+        "key": "securecrt-session-manager-route",
+        "route_role": "session-manager-selection-to-active-tab",
+        "selected_profile_name": "edge-prod",
+        "selected_tree_label": "edge-prod (SSH2)",
+        "selected_tree_object": "profileTree",
+        "session_manager_object": "secureCrtSessionManagerChrome",
+        "session_manager_action_key": "connect",
+        "session_manager_action_object": "secureCrtSessionManagerAction",
+        "status_strip_object": "secureCrtSessionStatusStrip",
+        "status_field_key": "target",
+        "status_field_object": "secureCrtSessionStatusCell",
+        "active_tab_label": "edge-prod (SSH2)",
+        "target_value": "edge-prod.example.invalid:22",
+        "protocol_value": "SSH2",
+        "session_value": "edge-prod",
+        "selected_tree_property": "secureCrtSessionRouteSelected",
+        "action_active_property": "secureCrtSessionRouteActive",
+        "tab_label_property": "secureCrtSessionRouteActiveTab",
+        "status_value_property": "secureCrtSessionRouteStatusValue",
+        "render_source": "session-manager-state",
+    }
     assert securecrt["expected_securecrt_tree_icons"][:3] == [
         {"label": "Session Database", "icon_key": "database", "row_kind": "root", "static_size": 16},
         {"label": "Folder: Sessions", "icon_key": "folder", "row_kind": "group", "static_size": 14},
@@ -1606,6 +1965,8 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
     assert "remmina-tree-icons" in remmina["contract_checks"]
     assert "remmina-profile-list-chrome" in remmina["contract_checks"]
     assert "remmina-viewer-controls" in remmina["contract_checks"]
+    assert "remmina-profile-viewer-route" in remmina["contract_checks"]
+    assert "remmina-clipboard-route" in remmina["contract_checks"]
     assert remmina["expected_product_tree_icons"][:3] == [
         {"label": "Profile Groups", "icon_key": "folder", "row_kind": "root", "static_size": 16},
         {"label": "Group: RDP", "icon_key": "folder", "row_kind": "group", "static_size": 14},
@@ -1635,6 +1996,39 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
     }
     assert "remmina-viewer-control-geometry" in remmina["contract_checks"]
     assert "remmina-profile-list-geometry" in remmina["contract_checks"]
+    assert remmina["expected_remmina_profile_viewer_route"] == {
+        "key": "remmina-selected-profile-viewer-route",
+        "route_role": "selected-profile-to-viewer-tab",
+        "selected_profile_key": "win-admin",
+        "selected_profile_object": "remminaProfileListRow",
+        "viewer_controls_object": "remminaViewerControls",
+        "viewer_control_key": "scale-100",
+        "viewer_control_object": "remminaViewerControl",
+        "active_tab_label": "RDP - win-admin",
+        "protocol": "RDP",
+        "profile_status": "scale 100%",
+        "selected_row_property": "selectedRow",
+        "control_active_property": "remminaProfileViewerRouteActive",
+        "tab_label_property": "remminaProfileViewerRouteActiveTab",
+        "render_source": "profile-list-state",
+    }
+    assert remmina["expected_remmina_clipboard_route"] == {
+        "key": "remmina-clipboard-sync-route",
+        "route_role": "viewer-control-to-clipboard-state",
+        "viewer_controls_object": "remminaViewerControls",
+        "viewer_control_key": "clipboard",
+        "viewer_control_object": "remminaViewerControl",
+        "active_tab_label": "RDP - win-admin",
+        "protocol": "RDP",
+        "clipboard_state": "clipboard on",
+        "status_segment": "Clipboard on",
+        "detail_line": "Clipboard: enabled",
+        "activity_line": "Clipboard: on",
+        "control_active_property": "remminaClipboardRouteActive",
+        "tab_label_property": "remminaClipboardRouteActiveTab",
+        "clipboard_state_property": "remminaClipboardRouteState",
+        "render_source": "viewer-control-state",
+    }
     assert remmina["expected_remmina_viewer_controls"] == [
         {
             "key": "fit",
@@ -1724,6 +2118,8 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
     assert "termius-header-chips" in termius["contract_checks"]
     assert "termius-host-identity-strip" in termius["contract_checks"]
     assert "termius-host-identity-geometry" in termius["contract_checks"]
+    assert "termius-host-selection-route" in termius["contract_checks"]
+    assert "termius-sync-route" in termius["contract_checks"]
     assert termius["expected_product_tree_icons"][:3] == [
         {"label": "Personal Vault", "icon_key": "database", "row_kind": "root", "static_size": 16},
         {"label": "Vault / Personal", "icon_key": "folder", "row_kind": "group", "static_size": 14},
@@ -1782,6 +2178,41 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "live_min_width": 132,
         "live_cell_height": 22,
     }
+    assert termius["expected_termius_sync_route"] == {
+        "key": "termius-host-sync-route",
+        "route_role": "hosts-sync-to-identity-status",
+        "hosts_action_key": "sync-hosts",
+        "hosts_action_object": "termiusHostsAction",
+        "header_chip_key": "sync-current",
+        "header_chip_object": "termiusHeaderChip",
+        "identity_field_key": "sync",
+        "identity_cell_object": "termiusHostIdentityCell",
+        "sync_state": "current",
+        "action_label_property": "termiusSyncRouteActionLabel",
+        "chip_label_property": "termiusSyncRouteChipLabel",
+        "identity_value_property": "termiusSyncRouteIdentityValue",
+        "status_property": "termiusSyncRouteState",
+        "render_source": "state-model",
+    }
+    assert termius["expected_termius_host_selection_route"] == {
+        "key": "termius-host-selection-route",
+        "route_role": "host-list-selection-to-active-tab",
+        "selected_profile_name": "edge-prod",
+        "selected_tree_label": "edge-prod  ssh host",
+        "selected_tree_object": "profileTree",
+        "hosts_panel_object": "termiusHostsChrome",
+        "host_identity_object": "termiusHostIdentityStrip",
+        "identity_field_key": "host",
+        "identity_cell_object": "termiusHostIdentityCell",
+        "active_tab_label": "edge-prod",
+        "target_value": "edge-prod.example.invalid:22",
+        "protocol_value": "SSH + Vault",
+        "host_value": "edge-prod",
+        "selected_tree_property": "termiusHostRouteSelected",
+        "tab_label_property": "termiusHostRouteActiveTab",
+        "identity_value_property": "termiusHostRouteIdentityValue",
+        "render_source": "host-list-state",
+    }
 
     mremoteng = summaries["mremoteng"]
     assert "mremoteng-tree-icons" in mremoteng["contract_checks"]
@@ -1789,6 +2220,7 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
     assert "mremoteng-document-controls" in mremoteng["contract_checks"]
     assert "mremoteng-document-control-geometry" in mremoteng["contract_checks"]
     assert "mremoteng-property-grid" in mremoteng["contract_checks"]
+    assert "mremoteng-connection-document-route" in mremoteng["contract_checks"]
     assert mremoteng["expected_product_tree_icons"][:3] == [
         {"label": "Connections", "icon_key": "database", "row_kind": "root", "static_size": 16},
         {"label": "Container: prod", "icon_key": "folder", "row_kind": "group", "static_size": 14},
@@ -1911,6 +2343,28 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "effective_value": "edge-prod.example.invalid",
         "source": "Connections.xml/prod/edge-prod",
         "inherited": False,
+    }
+    assert mremoteng["expected_mremoteng_connection_document_route"] == {
+        "key": "mremoteng-selected-connection-document-route",
+        "route_role": "connection-tree-to-document-workspace",
+        "selected_profile_name": "edge-prod",
+        "selected_tree_label": "edge-prod [SSH]",
+        "selected_tree_object": "profileTree",
+        "document_controls_object": "mRemoteNgDocumentControls",
+        "document_control_key": "reconnect",
+        "document_control_object": "mRemoteNgDocumentControl",
+        "property_grid_object": "mRemoteNgPropertyGrid",
+        "property_row_key": "protocol",
+        "property_cell_object": "mRemoteNgPropertyGridCell",
+        "active_tab_label": "edge-prod [SSH]",
+        "protocol": "SSH",
+        "workspace_state": "document open",
+        "property_value": "SSH",
+        "selected_tree_property": "mRemoteNgConnectionRouteSelected",
+        "control_active_property": "mRemoteNgConnectionRouteActive",
+        "tab_label_property": "mRemoteNgConnectionRouteActiveTab",
+        "property_value_property": "mRemoteNgConnectionRoutePropertyValue",
+        "render_source": "connection-tree-state",
     }
 
     native = summaries["native"]

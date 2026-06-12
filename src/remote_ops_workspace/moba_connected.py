@@ -389,8 +389,102 @@ class MobaConnectedSessionState:
             "monitoring_plan": self.monitoring_plan.to_dict(),
             "monitoring": self.monitoring.to_dict(),
             "telemetry_cells": [cell.to_dict() for cell in moba_telemetry_cells(self)],
+            "connected_route": moba_connected_session_route(self).to_dict(),
+            "identity_route": moba_connected_session_identity_route(self).to_dict(),
             "banner": self.banner.to_dict(),
             "terminal_transcript": [line.to_dict() for line in self.terminal_transcript],
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class MobaConnectedSessionRoute:
+    key: str
+    route_role: str
+    active_tab_key: str
+    active_tab_label: str
+    reference_tab_label: str
+    active_tab_object: str
+    connected_panel_object: str
+    left_dock_object: str
+    sftp_browser_object: str
+    sftp_path_object: str
+    sftp_table_object: str
+    ssh_banner_object: str
+    terminal_area_object: str
+    terminal_output_object: str
+    telemetry_bar_object: str
+    telemetry_identity_cell_key: str
+    target: str
+    remote_path: str
+    tab_label_property: str
+    target_property: str
+    remote_path_property: str
+    render_source: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "route_role": self.route_role,
+            "active_tab_key": self.active_tab_key,
+            "active_tab_label": self.active_tab_label,
+            "reference_tab_label": self.reference_tab_label,
+            "active_tab_object": self.active_tab_object,
+            "connected_panel_object": self.connected_panel_object,
+            "left_dock_object": self.left_dock_object,
+            "sftp_browser_object": self.sftp_browser_object,
+            "sftp_path_object": self.sftp_path_object,
+            "sftp_table_object": self.sftp_table_object,
+            "ssh_banner_object": self.ssh_banner_object,
+            "terminal_area_object": self.terminal_area_object,
+            "terminal_output_object": self.terminal_output_object,
+            "telemetry_bar_object": self.telemetry_bar_object,
+            "telemetry_identity_cell_key": self.telemetry_identity_cell_key,
+            "target": self.target,
+            "remote_path": self.remote_path,
+            "tab_label_property": self.tab_label_property,
+            "target_property": self.target_property,
+            "remote_path_property": self.remote_path_property,
+            "render_source": self.render_source,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class MobaConnectedSessionIdentityRoute:
+    key: str
+    route_role: str
+    window_title: str
+    active_tab_label: str
+    reference_tab_label: str
+    banner_target: str
+    web_console_line: str
+    terminal_prompt: str
+    telemetry_target: str
+    target_endpoint: str
+    remote_path: str
+    window_title_property: str
+    banner_target_property: str
+    terminal_prompt_property: str
+    telemetry_target_property: str
+    render_source: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "route_role": self.route_role,
+            "window_title": self.window_title,
+            "active_tab_label": self.active_tab_label,
+            "reference_tab_label": self.reference_tab_label,
+            "banner_target": self.banner_target,
+            "web_console_line": self.web_console_line,
+            "terminal_prompt": self.terminal_prompt,
+            "telemetry_target": self.telemetry_target,
+            "target_endpoint": self.target_endpoint,
+            "remote_path": self.remote_path,
+            "window_title_property": self.window_title_property,
+            "banner_target_property": self.banner_target_property,
+            "terminal_prompt_property": self.terminal_prompt_property,
+            "telemetry_target_property": self.telemetry_target_property,
+            "render_source": self.render_source,
         }
 
 
@@ -445,6 +539,56 @@ def moba_connected_tab_label(state: MobaConnectedSessionState, *, ordinal: int |
 
 def moba_connected_window_title(state: MobaConnectedSessionState) -> str:
     return state.connection_label
+
+
+def moba_connected_session_route(state: MobaConnectedSessionState) -> MobaConnectedSessionRoute:
+    return MobaConnectedSessionRoute(
+        key="moba-active-connected-session-route",
+        route_role="active-tab-to-connected-workspace",
+        active_tab_key="active-session",
+        active_tab_label=moba_connected_tab_label(state),
+        reference_tab_label=moba_connected_tab_label(state, ordinal=7),
+        active_tab_object="sessionTabs",
+        connected_panel_object="mobaConnectedSession",
+        left_dock_object="mobaConnectedLeftDock",
+        sftp_browser_object="mobaSftpBrowser",
+        sftp_path_object="mobaSftpPath",
+        sftp_table_object="mobaSftpFileTable",
+        ssh_banner_object="mobaSshBanner",
+        terminal_area_object="mobaTerminalArea",
+        terminal_output_object="terminalOutput",
+        telemetry_bar_object="mobaTelemetryBar",
+        telemetry_identity_cell_key="target",
+        target=state.target,
+        remote_path=state.remote_path,
+        tab_label_property="mobaConnectedRouteActiveTabLabel",
+        target_property="mobaConnectedRouteTarget",
+        remote_path_property="mobaConnectedRouteRemotePath",
+        render_source="connected-session-state",
+    )
+
+
+def moba_connected_session_identity_route(state: MobaConnectedSessionState) -> MobaConnectedSessionIdentityRoute:
+    transcript_by_key = {line.key: line.text for line in state.terminal_transcript}
+    telemetry_by_key = {cell.key: cell.display_text for cell in moba_telemetry_cells(state)}
+    return MobaConnectedSessionIdentityRoute(
+        key="moba-connected-session-identity-route",
+        route_role="title-tab-banner-terminal-telemetry-identity",
+        window_title=moba_connected_window_title(state),
+        active_tab_label=moba_connected_tab_label(state),
+        reference_tab_label=moba_connected_tab_label(state, ordinal=7),
+        banner_target=state.banner.title,
+        web_console_line=transcript_by_key.get("web-console", ""),
+        terminal_prompt=transcript_by_key.get("prompt-ready", ""),
+        telemetry_target=telemetry_by_key.get("target", ""),
+        target_endpoint=state.target,
+        remote_path=state.remote_path,
+        window_title_property="mobaConnectedIdentityWindowTitle",
+        banner_target_property="mobaConnectedIdentityBannerTarget",
+        terminal_prompt_property="mobaConnectedIdentityTerminalPrompt",
+        telemetry_target_property="mobaConnectedIdentityTelemetryTarget",
+        render_source="connected-session-state",
+    )
 
 
 def build_moba_terminal_transcript(profile: Profile, remote_path: str) -> tuple[MobaTerminalTranscriptLine, ...]:

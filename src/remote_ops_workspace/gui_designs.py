@@ -157,13 +157,93 @@ class GuiMobaHomeWelcomeChrome:
 
 
 @dataclass(frozen=True)
+class GuiMobaHomeWelcomeGeometry:
+    center_side_margin: int
+    hero_min_y: int
+    hero_height: int
+    logo_size: int
+    logo_inner_padding: int
+    logo_icon_size: int
+    logo_cluster_width: int
+    title_gap: int
+    title_y_offset: int
+    title_font_size: int
+    subtitle_y_offset: int
+    subtitle_font_size: int
+    button_y_offset: int
+    primary_width: int
+    secondary_width: int
+    action_gap: int
+    button_height: int
+    button_icon_x: int
+    button_icon_y: int
+    button_icon_size: int
+    button_label_x: int
+    button_label_y: int
+    button_font_size: int
+    search_y_gap: int
+    search_height: int
+    search_text_x: int
+    search_text_y: int
+    search_font_size: int
+    recent_y_gap: int
+    recent_title_font_size: int
+    recent_item_y_offset: int
+    recent_item_step: int
+    recent_column_padding: int
+    footer_y_offset: int
+    footer_font_size: int
+    live_max_extra_width: int
+    live_layout_spacing: int
+    live_title_row_spacing: int
+    live_title_column_spacing: int
+    live_logo_box_width: int
+    live_logo_box_height: int
+    live_logo_pixmap_size: int
+    live_recent_title_top_margin: int
+    live_recent_column_spacing: int
+    live_recent_row_spacing: int
+    live_footer_top_margin: int
+    render_source: str
+
+
+@dataclass(frozen=True)
 class GuiMobaRailItem:
     role: str
     label: str
     object_name: str
     icon_key: str
+    rail_icon_key: str
     color: str
     tooltip: str
+
+
+@dataclass(frozen=True)
+class GuiMobaRailChrome:
+    rail_width: int
+    icon_x: int
+    static_icon_size: int
+    live_icon_size: int
+    generated_icon_size: int
+    button_width: int
+    button_height: int
+    active_x: int
+    active_y_offset: int
+    active_width: int
+    active_height: int
+    label_width: int
+    label_height: int
+    label_step: int
+    unlabeled_gap_after: int
+    label_font_size: int
+    render_source: str
+
+
+@dataclass(frozen=True)
+class GuiMobaRailItemGeometry:
+    role: str
+    static_icon_y: int
+    static_label_y: int
 
 
 @dataclass(frozen=True)
@@ -182,6 +262,21 @@ class GuiMobaRightUtilityAction:
 
 
 @dataclass(frozen=True)
+class GuiMobaRightUtilityRailChrome:
+    static_width: int
+    live_width: int
+    margin_left: int
+    margin_top: int
+    margin_right: int
+    margin_bottom: int
+    action_spacing: int
+    session_edge_top_y: int
+    session_edge_height: int
+    session_edge_icon_x: int
+    session_edge_icon_size: int
+
+
+@dataclass(frozen=True)
 class GuiMobaSessionEdgeAction:
     key: str
     icon_key: str
@@ -189,6 +284,13 @@ class GuiMobaSessionEdgeAction:
     color: str
     tooltip: str
     static_y: int
+    static_size: int
+    live_icon_size: int
+    button_size: int
+    render_source: str
+
+    def relative_y(self, top_y: int) -> int:
+        return self.static_y - top_y
 
 
 @dataclass(frozen=True)
@@ -281,6 +383,22 @@ class GuiMobaSftpFileRowIcon:
 
 
 @dataclass(frozen=True)
+class GuiMobaSftpRoutedFileRows:
+    key: str
+    route_role: str
+    follow_route_key: str
+    target_table_object: str
+    row_contract_property: str
+    row_route_property: str
+    row_path_property: str
+    row_index_property: str
+    row_selected_property: str
+    parent_row_name: str
+    selected_row_kind: str
+    render_source: str
+
+
+@dataclass(frozen=True)
 class GuiMobaSftpDockLayout:
     inner_margin: int
     toolbar_height: int
@@ -342,8 +460,14 @@ class GuiMobaMonitoringControlGeometry:
     icon_x: int
     icon_size: int
     label_x: int
+    label_y_offset: int
+    label_font_size: int
+    label_bold: bool
     check_size: int
+    check_y_offset: int
+    checkmark_points: tuple[tuple[int, int], ...]
     row_height: int
+    live_width: int
 
 
 @dataclass(frozen=True)
@@ -362,6 +486,40 @@ class GuiMobaRemoteMonitoringDockChrome:
     icon_center_x: int
     metric_row_gap: int
     live_controls_width: int
+
+
+@dataclass(frozen=True)
+class GuiMobaMonitoringTelemetryRoute:
+    key: str
+    route_role: str
+    source_panel_object: str
+    source_control_key: str
+    source_metric_keys: tuple[str, ...]
+    visible_dock_metric_keys: tuple[str, ...]
+    telemetry_surface: str
+    target_bar_object: str
+    target_cell_object: str
+    target_identity_cell_key: str
+    target_metric_cell_keys: tuple[str, ...]
+    render_source: str
+
+
+@dataclass(frozen=True)
+class GuiMobaSftpFollowFolderRoute:
+    key: str
+    route_role: str
+    source_control_key: str
+    source_control_object: str
+    source_path_property: str
+    source_plan_property: str
+    source_enabled_property: str
+    target_browser_object: str
+    target_path_object: str
+    target_table_object: str
+    target_path_property: str
+    target_plan_property: str
+    target_enabled_property: str
+    render_source: str
 
 
 @dataclass(frozen=True)
@@ -482,6 +640,22 @@ class GuiSecureCrtCommandWindowChrome:
 
 
 @dataclass(frozen=True)
+class GuiSecureCrtCommandWindowSendRoute:
+    key: str
+    route_role: str
+    source_window_object: str
+    target_scope_object: str
+    command_input_object: str
+    send_control_object: str
+    status_object: str
+    command_property: str
+    target_scope_property: str
+    send_label_property: str
+    status_property: str
+    render_source: str
+
+
+@dataclass(frozen=True)
 class GuiSecureCrtSessionStatusField:
     key: str
     label: str
@@ -552,6 +726,30 @@ class GuiSecureCrtSessionManagerChrome:
     live_spacing: int
     live_title_spacing: int
     live_filter_height: int
+
+
+@dataclass(frozen=True)
+class GuiSecureCrtSessionManagerRoute:
+    key: str
+    route_role: str
+    selected_profile_name: str
+    selected_tree_label: str
+    selected_tree_object: str
+    session_manager_object: str
+    session_manager_action_key: str
+    session_manager_action_object: str
+    status_strip_object: str
+    status_field_key: str
+    status_field_object: str
+    active_tab_label: str
+    target_value: str
+    protocol_value: str
+    session_value: str
+    selected_tree_property: str
+    action_active_property: str
+    tab_label_property: str
+    status_value_property: str
+    render_source: str
 
 
 @dataclass(frozen=True)
@@ -687,6 +885,43 @@ class GuiRemminaProfileListChrome:
 
 
 @dataclass(frozen=True)
+class GuiRemminaProfileViewerRoute:
+    key: str
+    route_role: str
+    selected_profile_key: str
+    selected_profile_object: str
+    viewer_controls_object: str
+    viewer_control_key: str
+    viewer_control_object: str
+    active_tab_label: str
+    protocol: str
+    profile_status: str
+    selected_row_property: str
+    control_active_property: str
+    tab_label_property: str
+    render_source: str
+
+
+@dataclass(frozen=True)
+class GuiRemminaClipboardRoute:
+    key: str
+    route_role: str
+    viewer_controls_object: str
+    viewer_control_key: str
+    viewer_control_object: str
+    active_tab_label: str
+    protocol: str
+    clipboard_state: str
+    status_segment: str
+    detail_line: str
+    activity_line: str
+    control_active_property: str
+    tab_label_property: str
+    clipboard_state_property: str
+    render_source: str
+
+
+@dataclass(frozen=True)
 class GuiTermiusHeaderChip:
     key: str
     label: str
@@ -741,6 +976,45 @@ class GuiTermiusHostIdentityStrip:
     live_margin_right: int
     live_margin_bottom: int
     live_spacing: int
+
+
+@dataclass(frozen=True)
+class GuiTermiusSyncRoute:
+    key: str
+    route_role: str
+    hosts_action_key: str
+    hosts_action_object: str
+    header_chip_key: str
+    header_chip_object: str
+    identity_field_key: str
+    identity_cell_object: str
+    sync_state: str
+    action_label_property: str
+    chip_label_property: str
+    identity_value_property: str
+    status_property: str
+    render_source: str
+
+
+@dataclass(frozen=True)
+class GuiTermiusHostSelectionRoute:
+    key: str
+    route_role: str
+    selected_profile_name: str
+    selected_tree_label: str
+    selected_tree_object: str
+    hosts_panel_object: str
+    host_identity_object: str
+    identity_field_key: str
+    identity_cell_object: str
+    active_tab_label: str
+    target_value: str
+    protocol_value: str
+    host_value: str
+    selected_tree_property: str
+    tab_label_property: str
+    identity_value_property: str
+    render_source: str
 
 
 @dataclass(frozen=True)
@@ -810,6 +1084,30 @@ class GuiMRemoteNgPropertyGridChrome:
     rows: tuple[GuiMRemoteNgPropertyRow, ...]
 
 
+@dataclass(frozen=True)
+class GuiMRemoteNgConnectionDocumentRoute:
+    key: str
+    route_role: str
+    selected_profile_name: str
+    selected_tree_label: str
+    selected_tree_object: str
+    document_controls_object: str
+    document_control_key: str
+    document_control_object: str
+    property_grid_object: str
+    property_row_key: str
+    property_cell_object: str
+    active_tab_label: str
+    protocol: str
+    workspace_state: str
+    property_value: str
+    selected_tree_property: str
+    control_active_property: str
+    tab_label_property: str
+    property_value_property: str
+    render_source: str
+
+
 GUI_DESIGN_MOBA_RIBBON_ACTIONS: tuple[GuiMobaRibbonAction, ...] = (
     GuiMobaRibbonAction("session", "Session", "#44a6ff"),
     GuiMobaRibbonAction("servers", "Servers", "#26c6c9"),
@@ -877,6 +1175,7 @@ GUI_DESIGN_MOBA_RAIL_ITEMS: tuple[GuiMobaRailItem, ...] = (
         label="",
         object_name="mobaRailButton",
         icon_key="session",
+        rail_icon_key="collapse",
         color="#44a6ff",
         tooltip="Collapse or restore the sessions panel",
     ),
@@ -885,6 +1184,7 @@ GUI_DESIGN_MOBA_RAIL_ITEMS: tuple[GuiMobaRailItem, ...] = (
         label="Sessions",
         object_name="mobaRailButton",
         icon_key="session",
+        rail_icon_key="session",
         color="#44a6ff",
         tooltip="Show saved sessions",
     ),
@@ -893,6 +1193,7 @@ GUI_DESIGN_MOBA_RAIL_ITEMS: tuple[GuiMobaRailItem, ...] = (
         label="",
         object_name="mobaRailAccent",
         icon_key="sessions",
+        rail_icon_key="star",
         color="#f5d000",
         tooltip="Show favorite sessions status",
     ),
@@ -901,6 +1202,7 @@ GUI_DESIGN_MOBA_RAIL_ITEMS: tuple[GuiMobaRailItem, ...] = (
         label="Tools",
         object_name="mobaRailButton",
         icon_key="tools",
+        rail_icon_key="tools",
         color="#e45d3f",
         tooltip="Show tools status",
     ),
@@ -909,6 +1211,7 @@ GUI_DESIGN_MOBA_RAIL_ITEMS: tuple[GuiMobaRailItem, ...] = (
         label="Macros",
         object_name="mobaRailButton",
         icon_key="multiexec",
+        rail_icon_key="macros",
         color="#446ee8",
         tooltip="Show macros status",
     ),
@@ -917,9 +1220,41 @@ GUI_DESIGN_MOBA_RAIL_ITEMS: tuple[GuiMobaRailItem, ...] = (
         label="SFTP",
         object_name="mobaRailButton",
         icon_key="packages",
+        rail_icon_key="sftp",
         color="#f4a742",
         tooltip="Show connected SFTP browser",
     ),
+)
+
+
+GUI_DESIGN_MOBA_RAIL_CHROME = GuiMobaRailChrome(
+    rail_width=24,
+    icon_x=5,
+    static_icon_size=16,
+    live_icon_size=20,
+    generated_icon_size=22,
+    button_width=24,
+    button_height=26,
+    active_x=2,
+    active_y_offset=-3,
+    active_width=20,
+    active_height=30,
+    label_width=24,
+    label_height=54,
+    label_step=58,
+    unlabeled_gap_after=8,
+    label_font_size=10,
+    render_source="generated-pixmap",
+)
+
+
+GUI_DESIGN_MOBA_RAIL_ITEM_GEOMETRY: tuple[GuiMobaRailItemGeometry, ...] = (
+    GuiMobaRailItemGeometry("collapse", 8, 0),
+    GuiMobaRailItemGeometry("sessions", 42, 68),
+    GuiMobaRailItemGeometry("favorites", 126, 0),
+    GuiMobaRailItemGeometry("tools", 160, 186),
+    GuiMobaRailItemGeometry("macros", 244, 270),
+    GuiMobaRailItemGeometry("sftp", 328, 354),
 )
 
 
@@ -1053,6 +1388,21 @@ GUI_DESIGN_MOBA_RIGHT_UTILITY_ACTIONS: tuple[GuiMobaRightUtilityAction, ...] = (
 )
 
 
+GUI_DESIGN_MOBA_RIGHT_UTILITY_RAIL_CHROME = GuiMobaRightUtilityRailChrome(
+    static_width=30,
+    live_width=30,
+    margin_left=2,
+    margin_top=2,
+    margin_right=2,
+    margin_bottom=2,
+    action_spacing=8,
+    session_edge_top_y=108,
+    session_edge_height=50,
+    session_edge_icon_x=9,
+    session_edge_icon_size=16,
+)
+
+
 GUI_DESIGN_MOBA_SESSION_EDGE_ACTIONS: tuple[GuiMobaSessionEdgeAction, ...] = (
     GuiMobaSessionEdgeAction(
         key="attachment",
@@ -1061,6 +1411,10 @@ GUI_DESIGN_MOBA_SESSION_EDGE_ACTIONS: tuple[GuiMobaSessionEdgeAction, ...] = (
         color="#2f8cff",
         tooltip="Show attached session tools",
         static_y=112,
+        static_size=16,
+        live_icon_size=16,
+        button_size=22,
+        render_source="generated-pixmap",
     ),
     GuiMobaSessionEdgeAction(
         key="settings",
@@ -1069,6 +1423,10 @@ GUI_DESIGN_MOBA_SESSION_EDGE_ACTIONS: tuple[GuiMobaSessionEdgeAction, ...] = (
         color="#38bdf8",
         tooltip="Show session settings",
         static_y=130,
+        static_size=16,
+        live_icon_size=16,
+        button_size=22,
+        render_source="generated-pixmap",
     ),
 )
 
@@ -1126,9 +1484,58 @@ GUI_DESIGN_MOBA_HOME_WELCOME_CHROME = GuiMobaHomeWelcomeChrome(
     primary_action_icon_key="session",
     secondary_action_icon_key="tunneling",
     search_width=405,
-    action_spacing=96,
+    action_spacing=62,
     recent_title="Recent sessions",
     surface_width=640,
+)
+GUI_DESIGN_MOBA_HOME_WELCOME_GEOMETRY = GuiMobaHomeWelcomeGeometry(
+    center_side_margin=80,
+    hero_min_y=115,
+    hero_height=330,
+    logo_size=46,
+    logo_inner_padding=7,
+    logo_icon_size=32,
+    logo_cluster_width=360,
+    title_gap=28,
+    title_y_offset=9,
+    title_font_size=28,
+    subtitle_y_offset=57,
+    subtitle_font_size=12,
+    button_y_offset=94,
+    primary_width=206,
+    secondary_width=220,
+    action_gap=GUI_DESIGN_MOBA_HOME_WELCOME_CHROME.action_spacing,
+    button_height=28,
+    button_icon_x=13,
+    button_icon_y=6,
+    button_icon_size=16,
+    button_label_x=40,
+    button_label_y=8,
+    button_font_size=11,
+    search_y_gap=45,
+    search_height=25,
+    search_text_x=10,
+    search_text_y=6,
+    search_font_size=12,
+    recent_y_gap=52,
+    recent_title_font_size=12,
+    recent_item_y_offset=28,
+    recent_item_step=22,
+    recent_column_padding=12,
+    footer_y_offset=120,
+    footer_font_size=10,
+    live_max_extra_width=120,
+    live_layout_spacing=13,
+    live_title_row_spacing=18,
+    live_title_column_spacing=3,
+    live_logo_box_width=64,
+    live_logo_box_height=56,
+    live_logo_pixmap_size=56,
+    live_recent_title_top_margin=9,
+    live_recent_column_spacing=44,
+    live_recent_row_spacing=5,
+    live_footer_top_margin=12,
+    render_source="generated-pixmap",
 )
 
 
@@ -1189,6 +1596,23 @@ GUI_DESIGN_MOBA_SFTP_FILE_ROW_ICONS: tuple[GuiMobaSftpFileRowIcon, ...] = (
     GuiMobaSftpFileRowIcon("dir", "folder", "dir", 14, "generated-pixmap"),
     GuiMobaSftpFileRowIcon("file", "file", "file", 14, "generated-pixmap"),
 )
+
+
+GUI_DESIGN_MOBA_SFTP_ROUTED_FILE_ROWS = GuiMobaSftpRoutedFileRows(
+    key="sftp-follow-folder-file-rows",
+    route_role="follow-folder-visible-file-list",
+    follow_route_key="sftp-follow-terminal-folder-route",
+    target_table_object="mobaSftpFileTable",
+    row_contract_property="mobaSftpRowContractKey",
+    row_route_property="mobaSftpRowFollowRouteKey",
+    row_path_property="mobaSftpRowSourcePath",
+    row_index_property="mobaSftpRowIndex",
+    row_selected_property="mobaSftpRowSelectedByRoute",
+    parent_row_name=GUI_DESIGN_MOBA_SFTP_BROWSER_CHROME.parent_row_label,
+    selected_row_kind=GUI_DESIGN_MOBA_SFTP_BROWSER_CHROME.selected_row_kind,
+    render_source="state-file-entries",
+)
+
 
 GUI_DESIGN_MOBA_SFTP_DOCK_LAYOUT = GuiMobaSftpDockLayout(
     inner_margin=6,
@@ -1297,8 +1721,14 @@ GUI_DESIGN_MOBA_MONITORING_CONTROL_GEOMETRY: tuple[GuiMobaMonitoringControlGeome
         icon_x=104,
         icon_size=20,
         label_x=132,
+        label_y_offset=2,
+        label_font_size=12,
+        label_bold=True,
         check_size=0,
+        check_y_offset=0,
+        checkmark_points=(),
         row_height=22,
+        live_width=146,
     ),
     GuiMobaMonitoringControlGeometry(
         key="follow-terminal-folder",
@@ -1307,8 +1737,14 @@ GUI_DESIGN_MOBA_MONITORING_CONTROL_GEOMETRY: tuple[GuiMobaMonitoringControlGeome
         icon_x=60,
         icon_size=16,
         label_x=80,
+        label_y_offset=3,
+        label_font_size=11,
+        label_bold=False,
         check_size=10,
+        check_y_offset=3,
+        checkmark_points=((2, 5), (5, 9), (10, 1)),
         row_height=19,
+        live_width=208,
     ),
 )
 
@@ -1327,6 +1763,38 @@ GUI_DESIGN_MOBA_REMOTE_MONITORING_DOCK_CHROME = GuiMobaRemoteMonitoringDockChrom
     icon_center_x=104,
     metric_row_gap=21,
     live_controls_width=260,
+)
+
+GUI_DESIGN_MOBA_MONITORING_TELEMETRY_ROUTE = GuiMobaMonitoringTelemetryRoute(
+    key="remote-monitoring-to-bottom-telemetry",
+    route_role="compact-dock-bottom-telemetry",
+    source_panel_object="mobaRemoteMonitoring",
+    source_control_key=GUI_DESIGN_MOBA_REMOTE_MONITORING_DOCK_CHROME.title_control_key,
+    source_metric_keys=tuple(metric.key for metric in GUI_DESIGN_MOBA_MONITORING_METRICS),
+    visible_dock_metric_keys=GUI_DESIGN_MOBA_REMOTE_MONITORING_DOCK_CHROME.visible_metric_keys,
+    telemetry_surface=GUI_DESIGN_MOBA_REMOTE_MONITORING_DOCK_CHROME.telemetry_surface,
+    target_bar_object="mobaTelemetryBar",
+    target_cell_object="mobaTelemetryCell",
+    target_identity_cell_key="target",
+    target_metric_cell_keys=("cpu", "memory", "disk", "net-up", "net-down", "connections", "processes"),
+    render_source="generated-pixmap",
+)
+
+GUI_DESIGN_MOBA_SFTP_FOLLOW_FOLDER_ROUTE = GuiMobaSftpFollowFolderRoute(
+    key="sftp-follow-terminal-folder-route",
+    route_role="terminal-cwd-to-sftp-browser",
+    source_control_key=GUI_DESIGN_MOBA_REMOTE_MONITORING_DOCK_CHROME.follow_control_key,
+    source_control_object="mobaFollowTerminalFolder",
+    source_path_property="mobaMonitoringFollowPath",
+    source_plan_property="mobaMonitoringFollowPlan",
+    source_enabled_property="mobaMonitoringFollowEnabled",
+    target_browser_object="mobaSftpBrowser",
+    target_path_object="mobaSftpPath",
+    target_table_object="mobaSftpFileTable",
+    target_path_property="mobaSftpFollowRoutePath",
+    target_plan_property="mobaSftpFollowRoutePlan",
+    target_enabled_property="mobaSftpFollowRouteEnabled",
+    render_source="state-model",
 )
 
 
@@ -1422,6 +1890,21 @@ GUI_DESIGN_SECURECRT_COMMAND_WINDOW_CHROME = GuiSecureCrtCommandWindowChrome(
     live_row_spacing=8,
     live_target_min_width=112,
     live_send_min_width=48,
+)
+
+GUI_DESIGN_SECURECRT_COMMAND_WINDOW_SEND_ROUTE = GuiSecureCrtCommandWindowSendRoute(
+    key="securecrt-command-window-send-route",
+    route_role="command-input-to-active-sessions",
+    source_window_object="secureCrtCommandWindow",
+    target_scope_object="secureCrtCommandTarget",
+    command_input_object="secureCrtCommandInput",
+    send_control_object="secureCrtCommandSend",
+    status_object="secureCrtCommandStatus",
+    command_property="secureCrtCommandRouteCommand",
+    target_scope_property="secureCrtCommandRouteTargetScope",
+    send_label_property="secureCrtCommandRouteSendLabel",
+    status_property="secureCrtCommandRouteStatus",
+    render_source="state-model",
 )
 
 GUI_DESIGN_SECURECRT_SESSION_STATUS_STRIP = GuiSecureCrtSessionStatusStrip(
@@ -1617,6 +2100,29 @@ GUI_DESIGN_SECURECRT_SESSION_MANAGER_CHROME = GuiSecureCrtSessionManagerChrome(
     live_spacing=5,
     live_title_spacing=5,
     live_filter_height=24,
+)
+
+GUI_DESIGN_SECURECRT_SESSION_MANAGER_ROUTE = GuiSecureCrtSessionManagerRoute(
+    key="securecrt-session-manager-route",
+    route_role="session-manager-selection-to-active-tab",
+    selected_profile_name="edge-prod",
+    selected_tree_label="edge-prod (SSH2)",
+    selected_tree_object="profileTree",
+    session_manager_object="secureCrtSessionManagerChrome",
+    session_manager_action_key="connect",
+    session_manager_action_object="secureCrtSessionManagerAction",
+    status_strip_object="secureCrtSessionStatusStrip",
+    status_field_key="target",
+    status_field_object="secureCrtSessionStatusCell",
+    active_tab_label="edge-prod (SSH2)",
+    target_value="edge-prod.example.invalid:22",
+    protocol_value="SSH2",
+    session_value="edge-prod",
+    selected_tree_property="secureCrtSessionRouteSelected",
+    action_active_property="secureCrtSessionRouteActive",
+    tab_label_property="secureCrtSessionRouteActiveTab",
+    status_value_property="secureCrtSessionRouteStatusValue",
+    render_source="session-manager-state",
 )
 
 GUI_DESIGN_SECURECRT_TOP_CHROME = GuiSecureCrtTopChrome(
@@ -1837,6 +2343,42 @@ GUI_DESIGN_REMMINA_PROFILE_LIST_CHROME = GuiRemminaProfileListChrome(
     live_row_min_height=24,
 )
 
+
+GUI_DESIGN_REMMINA_PROFILE_VIEWER_ROUTE = GuiRemminaProfileViewerRoute(
+    key="remmina-selected-profile-viewer-route",
+    route_role="selected-profile-to-viewer-tab",
+    selected_profile_key="win-admin",
+    selected_profile_object="remminaProfileListRow",
+    viewer_controls_object="remminaViewerControls",
+    viewer_control_key="scale-100",
+    viewer_control_object="remminaViewerControl",
+    active_tab_label="RDP - win-admin",
+    protocol="RDP",
+    profile_status="scale 100%",
+    selected_row_property="selectedRow",
+    control_active_property="remminaProfileViewerRouteActive",
+    tab_label_property="remminaProfileViewerRouteActiveTab",
+    render_source="profile-list-state",
+)
+
+GUI_DESIGN_REMMINA_CLIPBOARD_ROUTE = GuiRemminaClipboardRoute(
+    key="remmina-clipboard-sync-route",
+    route_role="viewer-control-to-clipboard-state",
+    viewer_controls_object="remminaViewerControls",
+    viewer_control_key="clipboard",
+    viewer_control_object="remminaViewerControl",
+    active_tab_label="RDP - win-admin",
+    protocol="RDP",
+    clipboard_state="clipboard on",
+    status_segment="Clipboard on",
+    detail_line="Clipboard: enabled",
+    activity_line="Clipboard: on",
+    control_active_property="remminaClipboardRouteActive",
+    tab_label_property="remminaClipboardRouteActiveTab",
+    clipboard_state_property="remminaClipboardRouteState",
+    render_source="viewer-control-state",
+)
+
 GUI_DESIGN_TERMIUS_HEADER_CHIPS: tuple[GuiTermiusHeaderChip, ...] = (
     GuiTermiusHeaderChip("vault-unlocked", "Vault unlocked", "Vault identity is available for this host"),
     GuiTermiusHeaderChip("sync-current", "Sync current", "Host inventory and settings are current"),
@@ -1981,6 +2523,43 @@ GUI_DESIGN_TERMIUS_HOST_IDENTITY_STRIP = GuiTermiusHostIdentityStrip(
     live_spacing=6,
 )
 
+GUI_DESIGN_TERMIUS_SYNC_ROUTE = GuiTermiusSyncRoute(
+    key="termius-host-sync-route",
+    route_role="hosts-sync-to-identity-status",
+    hosts_action_key="sync-hosts",
+    hosts_action_object="termiusHostsAction",
+    header_chip_key="sync-current",
+    header_chip_object="termiusHeaderChip",
+    identity_field_key="sync",
+    identity_cell_object="termiusHostIdentityCell",
+    sync_state="current",
+    action_label_property="termiusSyncRouteActionLabel",
+    chip_label_property="termiusSyncRouteChipLabel",
+    identity_value_property="termiusSyncRouteIdentityValue",
+    status_property="termiusSyncRouteState",
+    render_source="state-model",
+)
+
+GUI_DESIGN_TERMIUS_HOST_SELECTION_ROUTE = GuiTermiusHostSelectionRoute(
+    key="termius-host-selection-route",
+    route_role="host-list-selection-to-active-tab",
+    selected_profile_name="edge-prod",
+    selected_tree_label="edge-prod  ssh host",
+    selected_tree_object="profileTree",
+    hosts_panel_object="termiusHostsChrome",
+    host_identity_object="termiusHostIdentityStrip",
+    identity_field_key="host",
+    identity_cell_object="termiusHostIdentityCell",
+    active_tab_label="edge-prod",
+    target_value="edge-prod.example.invalid:22",
+    protocol_value="SSH + Vault",
+    host_value="edge-prod",
+    selected_tree_property="termiusHostRouteSelected",
+    tab_label_property="termiusHostRouteActiveTab",
+    identity_value_property="termiusHostRouteIdentityValue",
+    render_source="host-list-state",
+)
+
 GUI_DESIGN_MREMOTENG_DOCUMENT_TOOLBAR_CHROME = GuiMRemoteNgDocumentToolbarChrome(
     title="Connections.xml",
     filter_placeholder="Filter connection tree",
@@ -2103,6 +2682,30 @@ GUI_DESIGN_MREMOTENG_PROPERTY_GRID_CHROME = GuiMRemoteNgPropertyGridChrome(
 )
 
 
+GUI_DESIGN_MREMOTENG_CONNECTION_DOCUMENT_ROUTE = GuiMRemoteNgConnectionDocumentRoute(
+    key="mremoteng-selected-connection-document-route",
+    route_role="connection-tree-to-document-workspace",
+    selected_profile_name="edge-prod",
+    selected_tree_label="edge-prod [SSH]",
+    selected_tree_object="profileTree",
+    document_controls_object="mRemoteNgDocumentControls",
+    document_control_key="reconnect",
+    document_control_object="mRemoteNgDocumentControl",
+    property_grid_object="mRemoteNgPropertyGrid",
+    property_row_key="protocol",
+    property_cell_object="mRemoteNgPropertyGridCell",
+    active_tab_label="edge-prod [SSH]",
+    protocol="SSH",
+    workspace_state="document open",
+    property_value="SSH",
+    selected_tree_property="mRemoteNgConnectionRouteSelected",
+    control_active_property="mRemoteNgConnectionRouteActive",
+    tab_label_property="mRemoteNgConnectionRouteActiveTab",
+    property_value_property="mRemoteNgConnectionRoutePropertyValue",
+    render_source="connection-tree-state",
+)
+
+
 GUI_DESIGN_SIDEBAR_COPY: dict[str, tuple[str, str]] = {
     DEFAULT_GUI_DESIGN_ID: ("Profiles", "Saved sessions and local layouts"),
     "mobaxterm": ("User sessions", "Quick connect and session tree"),
@@ -2204,6 +2807,45 @@ class GuiDesignTreeRowIcon:
     static_size: int
 
 
+@dataclass(frozen=True)
+class GuiMobaSessionTreeChrome:
+    header_height: int
+    header_icon_x: int
+    header_icon_y: int
+    header_icon_size: int
+    header_text_x: int
+    header_text_y: int
+    header_font_size: int
+    row_start_y: int
+    indentation: int
+    root_row_height: int
+    group_row_height: int
+    profile_row_height: int
+    group_arrow_x: int
+    group_arrow_y_offset: int
+    group_icon_x: int
+    group_icon_y_offset: int
+    group_label_x: int
+    group_label_y_offset: int
+    group_font_size: int
+    profile_icon_x: int
+    profile_icon_y_offset: int
+    profile_label_x: int
+    profile_label_y_offset: int
+    profile_label_font_size: int
+    profile_target_x: int
+    profile_target_y_offset: int
+    profile_target_font_size: int
+    selected_left: int
+    selected_top_offset: int
+    selected_right_inset: int
+    selected_height: int
+    root_is_decorated: bool
+    animated: bool
+    uniform_row_heights: bool
+    render_source: str
+
+
 GUI_DESIGN_TREE_ROOT_ICONS: dict[str, GuiDesignTreeRowIcon] = {
     DEFAULT_GUI_DESIGN_ID: GuiDesignTreeRowIcon("Profiles", "folder", "root", 16),
     "mobaxterm": GuiDesignTreeRowIcon("User sessions", "folder", "root", 16),
@@ -2215,6 +2857,17 @@ GUI_DESIGN_TREE_ROOT_ICONS: dict[str, GuiDesignTreeRowIcon] = {
 
 
 GUI_DESIGN_TREE_ROW_ICONS: dict[str, tuple[GuiDesignTreeRowIcon, ...]] = {
+    "mobaxterm": (
+        GuiDesignTreeRowIcon("default", "folder", "group", 15),
+        GuiDesignTreeRowIcon("example.jump-ssh", "pin", "profile", 14),
+        GuiDesignTreeRowIcon("example.rdp", "rdp", "profile", 14),
+        GuiDesignTreeRowIcon("prod", "folder", "group", 15),
+        GuiDesignTreeRowIcon("edge-prod", "ssh", "profile", 14),
+        GuiDesignTreeRowIcon("win-admin", "rdp", "profile", 14),
+        GuiDesignTreeRowIcon("files", "folder", "group", 15),
+        GuiDesignTreeRowIcon("sftp-ops", "sftp", "profile", 14),
+        GuiDesignTreeRowIcon("sync-stage", "ssh", "profile", 14),
+    ),
     "securecrt": (
         GuiDesignTreeRowIcon("Sessions", "folder", "group", 14),
         GuiDesignTreeRowIcon("edge-prod (SSH2)", "ssh2", "profile", 14),
@@ -2254,6 +2907,44 @@ GUI_DESIGN_TREE_ROW_ICONS: dict[str, tuple[GuiDesignTreeRowIcon, ...]] = {
         GuiDesignTreeRowIcon("net-tools [SSH]", "ssh", "profile", 14),
     ),
 }
+
+GUI_DESIGN_MOBA_SESSION_TREE_CHROME = GuiMobaSessionTreeChrome(
+    header_height=28,
+    header_icon_x=9,
+    header_icon_y=7,
+    header_icon_size=14,
+    header_text_x=31,
+    header_text_y=8,
+    header_font_size=10,
+    row_start_y=38,
+    indentation=16,
+    root_row_height=28,
+    group_row_height=24,
+    profile_row_height=34,
+    group_arrow_x=13,
+    group_arrow_y_offset=2,
+    group_icon_x=29,
+    group_icon_y_offset=1,
+    group_label_x=51,
+    group_label_y_offset=1,
+    group_font_size=10,
+    profile_icon_x=39,
+    profile_icon_y_offset=1,
+    profile_label_x=61,
+    profile_label_y_offset=0,
+    profile_label_font_size=10,
+    profile_target_x=61,
+    profile_target_y_offset=14,
+    profile_target_font_size=8,
+    selected_left=28,
+    selected_top_offset=-3,
+    selected_right_inset=8,
+    selected_height=34,
+    root_is_decorated=True,
+    animated=True,
+    uniform_row_heights=True,
+    render_source="generated-pixmap",
+)
 GUI_DESIGN_TREE_ROWS: dict[str, tuple[tuple[str, str, bool], ...]] = {
     DEFAULT_GUI_DESIGN_ID: (
         ("default", "", True),
@@ -3314,6 +4005,10 @@ QToolButton#secureCrtSessionManagerAction {{
 QToolButton#secureCrtSessionManagerAction:hover {{
   border-color: {colors.primary};
 }}
+QToolButton#secureCrtSessionManagerAction[secureCrtSessionRouteActive="true"] {{
+  border-color: {colors.primary};
+  background: {colors.control};
+}}
 QLabel#secureCrtSessionStatusTitle {{
   color: {colors.sidebar_muted};
   font-weight: 700;
@@ -3341,6 +4036,10 @@ QToolButton#remminaViewerControl {{
 }}
 QToolButton#remminaViewerControl:hover {{
   border-color: {colors.primary};
+}}
+QToolButton#remminaViewerControl[remminaProfileViewerRouteActive="true"] {{
+  border-color: {colors.primary};
+  background: {colors.toolbar};
 }}
 QFrame#remminaProfileListChrome {{
   background: {colors.pane};
@@ -3451,6 +4150,10 @@ QToolButton#mRemoteNgDocumentControl {{
 }}
 QToolButton#mRemoteNgDocumentControl:hover {{
   border-color: {colors.primary};
+}}
+QToolButton#mRemoteNgDocumentControl[mRemoteNgConnectionRouteActive="true"] {{
+  border-color: {colors.primary};
+  background: {colors.control};
 }}
 QLineEdit#mRemoteNgDocumentFilter {{
   background: {colors.window};
@@ -4148,12 +4851,35 @@ def gui_design_moba_home_welcome_chrome() -> GuiMobaHomeWelcomeChrome:
     return GUI_DESIGN_MOBA_HOME_WELCOME_CHROME
 
 
+def gui_design_moba_home_welcome_geometry() -> GuiMobaHomeWelcomeGeometry:
+    return GUI_DESIGN_MOBA_HOME_WELCOME_GEOMETRY
+
+
 def gui_design_moba_rail_items() -> tuple[GuiMobaRailItem, ...]:
     return GUI_DESIGN_MOBA_RAIL_ITEMS
 
 
+def gui_design_moba_rail_chrome() -> GuiMobaRailChrome:
+    return GUI_DESIGN_MOBA_RAIL_CHROME
+
+
+def gui_design_moba_rail_item_geometry() -> tuple[GuiMobaRailItemGeometry, ...]:
+    return GUI_DESIGN_MOBA_RAIL_ITEM_GEOMETRY
+
+
+def gui_design_moba_rail_item_geometry_for(role: str) -> GuiMobaRailItemGeometry:
+    for geometry in GUI_DESIGN_MOBA_RAIL_ITEM_GEOMETRY:
+        if geometry.role == role:
+            return geometry
+    raise KeyError(role)
+
+
 def gui_design_moba_right_utility_actions() -> tuple[GuiMobaRightUtilityAction, ...]:
     return GUI_DESIGN_MOBA_RIGHT_UTILITY_ACTIONS
+
+
+def gui_design_moba_right_utility_rail_chrome() -> GuiMobaRightUtilityRailChrome:
+    return GUI_DESIGN_MOBA_RIGHT_UTILITY_RAIL_CHROME
 
 
 def gui_design_moba_session_edge_actions() -> tuple[GuiMobaSessionEdgeAction, ...]:
@@ -4190,6 +4916,10 @@ def gui_design_moba_sftp_file_row_icon(kind: str) -> GuiMobaSftpFileRowIcon:
     return GUI_DESIGN_MOBA_SFTP_FILE_ROW_ICONS[-1]
 
 
+def gui_design_moba_sftp_routed_file_rows() -> GuiMobaSftpRoutedFileRows:
+    return GUI_DESIGN_MOBA_SFTP_ROUTED_FILE_ROWS
+
+
 def gui_design_moba_sftp_dock_layout() -> GuiMobaSftpDockLayout:
     return GUI_DESIGN_MOBA_SFTP_DOCK_LAYOUT
 
@@ -4219,6 +4949,14 @@ def gui_design_moba_monitoring_control_geometry_for(key: str) -> GuiMobaMonitori
 
 def gui_design_moba_remote_monitoring_dock_chrome() -> GuiMobaRemoteMonitoringDockChrome:
     return GUI_DESIGN_MOBA_REMOTE_MONITORING_DOCK_CHROME
+
+
+def gui_design_moba_monitoring_telemetry_route() -> GuiMobaMonitoringTelemetryRoute:
+    return GUI_DESIGN_MOBA_MONITORING_TELEMETRY_ROUTE
+
+
+def gui_design_moba_sftp_follow_folder_route() -> GuiMobaSftpFollowFolderRoute:
+    return GUI_DESIGN_MOBA_SFTP_FOLLOW_FOLDER_ROUTE
 
 
 def gui_design_moba_status_segments() -> tuple[GuiMobaStatusSegment, ...]:
@@ -4263,12 +5001,20 @@ def gui_design_securecrt_command_window_chrome() -> GuiSecureCrtCommandWindowChr
     return GUI_DESIGN_SECURECRT_COMMAND_WINDOW_CHROME
 
 
+def gui_design_securecrt_command_window_send_route() -> GuiSecureCrtCommandWindowSendRoute:
+    return GUI_DESIGN_SECURECRT_COMMAND_WINDOW_SEND_ROUTE
+
+
 def gui_design_securecrt_session_status_strip() -> GuiSecureCrtSessionStatusStrip:
     return GUI_DESIGN_SECURECRT_SESSION_STATUS_STRIP
 
 
 def gui_design_securecrt_session_manager_chrome() -> GuiSecureCrtSessionManagerChrome:
     return GUI_DESIGN_SECURECRT_SESSION_MANAGER_CHROME
+
+
+def gui_design_securecrt_session_manager_route() -> GuiSecureCrtSessionManagerRoute:
+    return GUI_DESIGN_SECURECRT_SESSION_MANAGER_ROUTE
 
 
 def gui_design_securecrt_top_chrome() -> GuiSecureCrtTopChrome:
@@ -4287,6 +5033,14 @@ def gui_design_remmina_profile_list_chrome() -> GuiRemminaProfileListChrome:
     return GUI_DESIGN_REMMINA_PROFILE_LIST_CHROME
 
 
+def gui_design_remmina_profile_viewer_route() -> GuiRemminaProfileViewerRoute:
+    return GUI_DESIGN_REMMINA_PROFILE_VIEWER_ROUTE
+
+
+def gui_design_remmina_clipboard_route() -> GuiRemminaClipboardRoute:
+    return GUI_DESIGN_REMMINA_CLIPBOARD_ROUTE
+
+
 def gui_design_termius_header_chips() -> tuple[GuiTermiusHeaderChip, ...]:
     return GUI_DESIGN_TERMIUS_HEADER_CHIPS
 
@@ -4299,6 +5053,14 @@ def gui_design_termius_host_identity_strip() -> GuiTermiusHostIdentityStrip:
     return GUI_DESIGN_TERMIUS_HOST_IDENTITY_STRIP
 
 
+def gui_design_termius_sync_route() -> GuiTermiusSyncRoute:
+    return GUI_DESIGN_TERMIUS_SYNC_ROUTE
+
+
+def gui_design_termius_host_selection_route() -> GuiTermiusHostSelectionRoute:
+    return GUI_DESIGN_TERMIUS_HOST_SELECTION_ROUTE
+
+
 def gui_design_mremoteng_document_toolbar_chrome() -> GuiMRemoteNgDocumentToolbarChrome:
     return GUI_DESIGN_MREMOTENG_DOCUMENT_TOOLBAR_CHROME
 
@@ -4309,6 +5071,10 @@ def gui_design_mremoteng_document_controls() -> tuple[GuiMRemoteNgDocumentContro
 
 def gui_design_mremoteng_property_grid_chrome() -> GuiMRemoteNgPropertyGridChrome:
     return GUI_DESIGN_MREMOTENG_PROPERTY_GRID_CHROME
+
+
+def gui_design_mremoteng_connection_document_route() -> GuiMRemoteNgConnectionDocumentRoute:
+    return GUI_DESIGN_MREMOTENG_CONNECTION_DOCUMENT_ROUTE
 
 
 def gui_design_sidebar_copy(preset_id: str) -> tuple[str, str]:
@@ -4352,6 +5118,10 @@ def gui_design_tree_row_icon(preset_id: str, name: str, target: str, group: bool
 
 def gui_design_tree_row_icon_key(preset_id: str, name: str, target: str, group: bool) -> str:
     return gui_design_tree_row_icon(preset_id, name, target, group).icon_key
+
+
+def gui_design_moba_session_tree_chrome() -> GuiMobaSessionTreeChrome:
+    return GUI_DESIGN_MOBA_SESSION_TREE_CHROME
 
 
 def _tree_row_icon_from_values(preset_id: str, name: str, target: str, group: bool) -> GuiDesignTreeRowIcon:

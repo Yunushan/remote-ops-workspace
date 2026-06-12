@@ -16,12 +16,16 @@ from .gui_designs import (
     gui_design_moba_bottom_edge_controls,
     gui_design_moba_connected_dock_frame,
     gui_design_moba_home_welcome_chrome,
+    gui_design_moba_home_welcome_geometry,
     gui_design_moba_monitoring_control_geometry,
     gui_design_moba_monitoring_control_geometry_for,
     gui_design_moba_monitoring_controls,
     gui_design_moba_monitoring_metrics,
+    gui_design_moba_monitoring_telemetry_route,
     gui_design_moba_quick_connect_chrome,
     gui_design_moba_quick_connect_suggestion_chrome,
+    gui_design_moba_rail_chrome,
+    gui_design_moba_rail_item_geometry_for,
     gui_design_moba_rail_items,
     gui_design_moba_remote_monitoring_dock_chrome,
     gui_design_moba_ribbon_action_geometry,
@@ -29,12 +33,16 @@ from .gui_designs import (
     gui_design_moba_ribbon_actions,
     gui_design_moba_ribbon_edge_actions,
     gui_design_moba_right_utility_actions,
+    gui_design_moba_right_utility_rail_chrome,
     gui_design_moba_session_edge_actions,
+    gui_design_moba_session_tree_chrome,
     gui_design_moba_sftp_browser_chrome,
     gui_design_moba_sftp_dock_actions,
     gui_design_moba_sftp_dock_layout,
     gui_design_moba_sftp_file_row_icon,
     gui_design_moba_sftp_file_row_icons,
+    gui_design_moba_sftp_follow_folder_route,
+    gui_design_moba_sftp_routed_file_rows,
     gui_design_moba_sftp_toolbar_action_geometry,
     gui_design_moba_sftp_toolbar_action_geometry_for,
     gui_design_moba_ssh_banner_chrome,
@@ -48,22 +56,29 @@ from .gui_designs import (
     gui_design_moba_top_menu_geometry_for,
     gui_design_moba_top_menu_items,
     gui_design_moba_top_stack_geometry,
+    gui_design_mremoteng_connection_document_route,
     gui_design_mremoteng_document_controls,
     gui_design_mremoteng_document_toolbar_chrome,
     gui_design_mremoteng_property_grid_chrome,
     gui_design_mremoteng_top_chrome,
     gui_design_reference_state,
+    gui_design_remmina_clipboard_route,
     gui_design_remmina_profile_list_chrome,
+    gui_design_remmina_profile_viewer_route,
     gui_design_remmina_viewer_controls,
     gui_design_securecrt_command_window_chrome,
+    gui_design_securecrt_command_window_send_route,
     gui_design_securecrt_session_manager_chrome,
+    gui_design_securecrt_session_manager_route,
     gui_design_securecrt_session_status_strip,
     gui_design_securecrt_top_chrome,
     gui_design_sidebar_copy,
     gui_design_status_segments,
     gui_design_termius_header_chips,
     gui_design_termius_host_identity_strip,
+    gui_design_termius_host_selection_route,
     gui_design_termius_hosts_chrome,
+    gui_design_termius_sync_route,
     gui_design_toolbar_actions,
     gui_design_tree_root_copy,
     gui_design_tree_root_icon,
@@ -84,6 +99,8 @@ from .moba_connected import (
     MobaConnectedSessionState,
     build_moba_connected_session_state,
     moba_connected_profile_label,
+    moba_connected_session_identity_route,
+    moba_connected_session_route,
     moba_connected_tab_chrome_geometry_for,
     moba_connected_tab_chrome_geometry_items,
     moba_connected_tab_chrome_items,
@@ -328,6 +345,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
         from PyQt6.QtGui import (
             QBrush,
             QColor,
+            QFont,
             QIcon,
             QKeySequence,
             QPainter,
@@ -374,11 +392,41 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
     TREE_ROW_KIND_ROLE = int(Qt.ItemDataRole.UserRole) + 32
     TREE_ICON_SIZE_ROLE = int(Qt.ItemDataRole.UserRole) + 33
     TREE_ICON_RENDER_ROLE = int(Qt.ItemDataRole.UserRole) + 34
+    TREE_ROW_STATIC_HEIGHT_ROLE = int(Qt.ItemDataRole.UserRole) + 35
+    TREE_ROW_STATIC_ICON_X_ROLE = int(Qt.ItemDataRole.UserRole) + 36
+    TREE_ROW_STATIC_LABEL_X_ROLE = int(Qt.ItemDataRole.UserRole) + 37
+    TREE_ROW_STATIC_TARGET_X_ROLE = int(Qt.ItemDataRole.UserRole) + 38
     SFTP_ROW_ICON_KEY_ROLE = int(Qt.ItemDataRole.UserRole) + 41
     SFTP_ROW_KIND_ROLE = int(Qt.ItemDataRole.UserRole) + 42
     SFTP_ROW_ICON_SIZE_ROLE = int(Qt.ItemDataRole.UserRole) + 43
     SFTP_ROW_ICON_RENDER_ROLE = int(Qt.ItemDataRole.UserRole) + 44
-    GENERATED_PROFILE_TREE_ICON_PRESETS = {"securecrt", "termius", "remmina", "mremoteng"}
+    SFTP_ROW_CONTRACT_KEY_ROLE = int(Qt.ItemDataRole.UserRole) + 45
+    SFTP_ROW_ROUTE_KEY_ROLE = int(Qt.ItemDataRole.UserRole) + 46
+    SFTP_ROW_SOURCE_PATH_ROLE = int(Qt.ItemDataRole.UserRole) + 47
+    SFTP_ROW_INDEX_ROLE = int(Qt.ItemDataRole.UserRole) + 48
+    SFTP_ROW_SELECTED_BY_ROUTE_ROLE = int(Qt.ItemDataRole.UserRole) + 49
+    MREMOTENG_ROUTE_KEY_ROLE = int(Qt.ItemDataRole.UserRole) + 61
+    MREMOTENG_ROUTE_ROLE_ROLE = int(Qt.ItemDataRole.UserRole) + 62
+    MREMOTENG_ROUTE_PROFILE_ROLE = int(Qt.ItemDataRole.UserRole) + 63
+    MREMOTENG_ROUTE_TAB_ROLE = int(Qt.ItemDataRole.UserRole) + 64
+    MREMOTENG_ROUTE_PROTOCOL_ROLE = int(Qt.ItemDataRole.UserRole) + 65
+    MREMOTENG_ROUTE_STATE_ROLE = int(Qt.ItemDataRole.UserRole) + 66
+    MREMOTENG_ROUTE_SELECTED_ROLE = int(Qt.ItemDataRole.UserRole) + 67
+    SECURECRT_ROUTE_KEY_ROLE = int(Qt.ItemDataRole.UserRole) + 71
+    SECURECRT_ROUTE_ROLE_ROLE = int(Qt.ItemDataRole.UserRole) + 72
+    SECURECRT_ROUTE_PROFILE_ROLE = int(Qt.ItemDataRole.UserRole) + 73
+    SECURECRT_ROUTE_TAB_ROLE = int(Qt.ItemDataRole.UserRole) + 74
+    SECURECRT_ROUTE_TARGET_ROLE = int(Qt.ItemDataRole.UserRole) + 75
+    SECURECRT_ROUTE_PROTOCOL_ROLE = int(Qt.ItemDataRole.UserRole) + 76
+    SECURECRT_ROUTE_SELECTED_ROLE = int(Qt.ItemDataRole.UserRole) + 77
+    TERMIUS_HOST_ROUTE_KEY_ROLE = int(Qt.ItemDataRole.UserRole) + 81
+    TERMIUS_HOST_ROUTE_ROLE_ROLE = int(Qt.ItemDataRole.UserRole) + 82
+    TERMIUS_HOST_ROUTE_PROFILE_ROLE = int(Qt.ItemDataRole.UserRole) + 83
+    TERMIUS_HOST_ROUTE_TAB_ROLE = int(Qt.ItemDataRole.UserRole) + 84
+    TERMIUS_HOST_ROUTE_TARGET_ROLE = int(Qt.ItemDataRole.UserRole) + 85
+    TERMIUS_HOST_ROUTE_PROTOCOL_ROLE = int(Qt.ItemDataRole.UserRole) + 86
+    TERMIUS_HOST_ROUTE_SELECTED_ROLE = int(Qt.ItemDataRole.UserRole) + 87
+    GENERATED_PROFILE_TREE_ICON_PRESETS = {"mobaxterm", "securecrt", "termius", "remmina", "mremoteng"}
 
     class TerminalPane(QWidget):
         STOP_POLICY = ProcessStopPolicy()
@@ -609,13 +657,88 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             widget.setProperty("mobaSftpStaticMaxRows", density.static_max_rows)
             widget.setProperty("mobaSftpToolbarSeparatorWidth", density.toolbar_separator_width)
 
+        def apply_sftp_follow_folder_route_properties(self, widget, route) -> None:
+            follow_plan = self.state.follow_folder_plan.printable_batch()
+            properties = {
+                "mobaSftpFollowRouteKey": route.key,
+                "mobaSftpFollowRouteRole": route.route_role,
+                "mobaSftpFollowRouteSourceControlKey": route.source_control_key,
+                "mobaSftpFollowRouteSourceControlObject": route.source_control_object,
+                "mobaSftpFollowRouteSourcePathProperty": route.source_path_property,
+                "mobaSftpFollowRouteSourcePlanProperty": route.source_plan_property,
+                "mobaSftpFollowRouteSourceEnabledProperty": route.source_enabled_property,
+                "mobaSftpFollowRouteTargetBrowserObject": route.target_browser_object,
+                "mobaSftpFollowRouteTargetPathObject": route.target_path_object,
+                "mobaSftpFollowRouteTargetTableObject": route.target_table_object,
+                "mobaSftpFollowRouteTargetPathProperty": route.target_path_property,
+                "mobaSftpFollowRouteTargetPlanProperty": route.target_plan_property,
+                "mobaSftpFollowRouteTargetEnabledProperty": route.target_enabled_property,
+                "mobaSftpFollowRouteRenderSource": route.render_source,
+                "mobaSftpFollowRoutePath": self.state.remote_path,
+                "mobaSftpFollowRoutePlan": follow_plan,
+                "mobaSftpFollowRouteEnabled": self.state.follow_terminal_folder,
+            }
+            for key, value in properties.items():
+                widget.setProperty(key, value)
+
+        def apply_sftp_routed_file_rows_properties(self, widget, rows, route) -> None:
+            properties = {
+                "mobaSftpRoutedRowsKey": rows.key,
+                "mobaSftpRoutedRowsRole": rows.route_role,
+                "mobaSftpRoutedRowsFollowRouteKey": rows.follow_route_key,
+                "mobaSftpRoutedRowsTargetTableObject": rows.target_table_object,
+                "mobaSftpRoutedRowsContractProperty": rows.row_contract_property,
+                "mobaSftpRoutedRowsRouteProperty": rows.row_route_property,
+                "mobaSftpRoutedRowsPathProperty": rows.row_path_property,
+                "mobaSftpRoutedRowsIndexProperty": rows.row_index_property,
+                "mobaSftpRoutedRowsSelectedProperty": rows.row_selected_property,
+                "mobaSftpRoutedRowsParentRowName": rows.parent_row_name,
+                "mobaSftpRoutedRowsSelectedRowKind": rows.selected_row_kind,
+                "mobaSftpRoutedRowsRenderSource": rows.render_source,
+                "mobaSftpRoutedRowsSourcePath": self.state.remote_path,
+                "mobaSftpRoutedRowsEnabled": self.state.follow_terminal_folder,
+                "mobaSftpRoutedRowsPlan": self.state.follow_folder_plan.printable_batch(),
+                "mobaSftpRoutedRowsRoutePathProperty": route.target_path_property,
+            }
+            for key, value in properties.items():
+                widget.setProperty(key, value)
+
+        def apply_connected_session_route_properties(self, widget) -> None:
+            route = moba_connected_session_route(self.state)
+            properties = {
+                "mobaConnectedRouteKey": route.key,
+                "mobaConnectedRouteRole": route.route_role,
+                "mobaConnectedRouteActiveTabKey": route.active_tab_key,
+                "mobaConnectedRouteActiveTabLabel": route.active_tab_label,
+                "mobaConnectedRouteReferenceTabLabel": route.reference_tab_label,
+                "mobaConnectedRouteActiveTabObject": route.active_tab_object,
+                "mobaConnectedRouteConnectedPanelObject": route.connected_panel_object,
+                "mobaConnectedRouteLeftDockObject": route.left_dock_object,
+                "mobaConnectedRouteSftpBrowserObject": route.sftp_browser_object,
+                "mobaConnectedRouteSftpPathObject": route.sftp_path_object,
+                "mobaConnectedRouteSftpTableObject": route.sftp_table_object,
+                "mobaConnectedRouteSshBannerObject": route.ssh_banner_object,
+                "mobaConnectedRouteTerminalAreaObject": route.terminal_area_object,
+                "mobaConnectedRouteTerminalOutputObject": route.terminal_output_object,
+                "mobaConnectedRouteTelemetryBarObject": route.telemetry_bar_object,
+                "mobaConnectedRouteTelemetryIdentityCellKey": route.telemetry_identity_cell_key,
+                route.target_property: route.target,
+                route.remote_path_property: route.remote_path,
+                "mobaConnectedRouteRenderSource": route.render_source,
+            }
+            for key, value in properties.items():
+                widget.setProperty(key, value)
+
         def __init__(self, state: MobaConnectedSessionState) -> None:
             super().__init__()
             self.setObjectName("mobaConnectedLeftDock")
             self.state = state
             frame = gui_design_moba_connected_dock_frame()
             density = gui_design_moba_sftp_dock_layout()
+            follow_route = gui_design_moba_sftp_follow_folder_route()
+            routed_rows = gui_design_moba_sftp_routed_file_rows()
             self.apply_connected_dock_frame_properties(self)
+            self.apply_connected_session_route_properties(self)
             self.setMinimumWidth(frame.dock_width)
             self.setMinimumHeight(frame.dock_height)
 
@@ -628,7 +751,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             browser.setMinimumHeight(frame.dock_height)
             self.browser = browser
             self.apply_connected_dock_frame_properties(browser)
+            self.apply_connected_session_route_properties(browser)
             self.apply_sftp_dock_density_properties(browser, density)
+            self.apply_sftp_follow_folder_route_properties(browser, follow_route)
             outer_layout.addWidget(browser)
 
             layout = QVBoxLayout(browser)
@@ -673,6 +798,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             path.setProperty("mobaSftpDropdownRightOffset", chrome.dropdown_right_offset)
             path.setProperty("mobaSftpDropdownY", chrome.dropdown_y)
             path.setProperty("mobaSftpDropdownFontSize", chrome.dropdown_font_size)
+            self.apply_sftp_follow_folder_route_properties(path, follow_route)
+            self.apply_connected_session_route_properties(path)
             path.setFixedHeight(density.path_height)
             path.setToolTip(self.state.follow_folder_plan.printable_batch())
             layout.addSpacing(density.path_gap)
@@ -709,6 +836,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 "mobaSftpFileRowIconKeys",
                 [row_icon.icon_key for row_icon in gui_design_moba_sftp_file_row_icons()],
             )
+            self.apply_sftp_follow_folder_route_properties(self.file_table, follow_route)
+            self.apply_sftp_routed_file_rows_properties(self.file_table, routed_rows, follow_route)
+            self.apply_connected_session_route_properties(self.file_table)
             self.file_table.setIconSize(QSize(density.toolbar_icon_size, density.toolbar_icon_size))
             self.file_table.setRootIsDecorated(False)
             self.file_table.setUniformRowHeights(True)
@@ -720,12 +850,26 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 self.file_table.setColumnWidth(column_index, column.static_width)
             parent_item = QTreeWidgetItem([chrome.parent_row_label, "", ""])
             self.apply_sftp_file_row_icon(parent_item, chrome.parent_row_kind)
+            self.apply_sftp_routed_file_row_metadata(
+                parent_item,
+                routed_rows,
+                row_index=0,
+                name=chrome.parent_row_label,
+                selected=True,
+            )
             parent_item.setSizeHint(0, QSize(0, density.file_row_height))
             parent_item.setToolTip(0, "parent directory")
             self.file_table.addTopLevelItem(parent_item)
-            for entry in self.state.file_entries:
+            for row_index, entry in enumerate(self.state.file_entries, start=1):
                 item = QTreeWidgetItem([entry.name, str(entry.size_kb), entry.modified])
                 self.apply_sftp_file_row_icon(item, entry.kind)
+                self.apply_sftp_routed_file_row_metadata(
+                    item,
+                    routed_rows,
+                    row_index=row_index,
+                    name=entry.name,
+                    selected=False,
+                )
                 item.setSizeHint(0, QSize(0, density.file_row_height))
                 item.setToolTip(0, f"{entry.kind}: {entry.name}")
                 self.file_table.addTopLevelItem(item)
@@ -744,6 +888,17 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             item.setData(0, SFTP_ROW_ICON_SIZE_ROLE, row_icon.static_size)
             item.setData(0, SFTP_ROW_ICON_RENDER_ROLE, row_icon.render_source)
             item.setIcon(0, self.sftp_file_row_icon(row_icon.icon_key, size=row_icon.static_size))
+
+        def apply_sftp_routed_file_row_metadata(self, item: QTreeWidgetItem, rows, *, row_index: int, name: str, selected: bool) -> None:
+            item.setData(0, SFTP_ROW_CONTRACT_KEY_ROLE, rows.key)
+            item.setData(0, SFTP_ROW_ROUTE_KEY_ROLE, rows.follow_route_key)
+            item.setData(0, SFTP_ROW_SOURCE_PATH_ROLE, self.state.remote_path)
+            item.setData(0, SFTP_ROW_INDEX_ROLE, row_index)
+            item.setData(0, SFTP_ROW_SELECTED_BY_ROUTE_ROLE, selected)
+            item.setToolTip(1, f"{rows.row_path_property}: {self.state.remote_path}")
+            item.setToolTip(2, f"{rows.row_route_property}: {rows.follow_route_key}")
+            if item.text(0) != name:
+                item.setText(0, name)
 
         def sftp_file_row_icon(self, icon_key: str, *, size: int) -> QIcon:
             pixmap = QPixmap(size, size)
@@ -786,6 +941,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
         def build_remote_monitoring(self, density) -> QFrame:
             chrome = gui_design_moba_remote_monitoring_dock_chrome()
+            route = gui_design_moba_monitoring_telemetry_route()
+            follow_route = gui_design_moba_sftp_follow_folder_route()
             metric_keys = [metric.key for metric in gui_design_moba_monitoring_metrics()]
             panel = QFrame()
             panel.setObjectName("mobaRemoteMonitoring")
@@ -796,6 +953,12 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             panel.setProperty("mobaRemoteMonitoringTelemetrySurface", chrome.telemetry_surface)
             panel.setProperty("mobaRemoteMonitoringMetricKeys", metric_keys)
             panel.setProperty("mobaRemoteMonitoringVisibleMetricKeys", list(chrome.visible_metric_keys))
+            panel.setProperty("mobaMonitoringTelemetryRouteKey", route.key)
+            panel.setProperty("mobaMonitoringTelemetryRouteRole", route.route_role)
+            panel.setProperty("mobaMonitoringTelemetryTargetBarObject", route.target_bar_object)
+            panel.setProperty("mobaMonitoringTelemetryTargetCellObject", route.target_cell_object)
+            panel.setProperty("mobaMonitoringTelemetryMetricCellKeys", list(route.target_metric_cell_keys))
+            panel.setProperty("mobaMonitoringTelemetryIdentityCellKey", route.target_identity_cell_key)
             panel.setProperty("mobaRemoteMonitoringRefreshSeconds", chrome.refresh_seconds)
             panel.setProperty("mobaRemoteMonitoringStaticHeight", chrome.static_height)
             panel.setProperty("mobaRemoteMonitoringDividerOffset", chrome.divider_offset)
@@ -807,6 +970,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             panel.setProperty("mobaRemoteMonitoringLiveControlsWidth", chrome.live_controls_width)
             panel.setProperty("mobaRemoteMonitoringCommand", self.state.monitoring_plan.printable())
             panel.setProperty("mobaRemoteMonitoringFollowPlan", self.state.follow_folder_plan.printable_batch())
+            self.apply_sftp_follow_folder_route_properties(panel, follow_route)
             panel.setProperty(
                 "mobaMonitoringControlGeometryKeys",
                 [geometry.key for geometry in gui_design_moba_monitoring_control_geometry()],
@@ -828,7 +992,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 widget.setGeometry(
                     geometry.anchor_x,
                     geometry.static_y,
-                    250 - geometry.anchor_x,
+                    geometry.live_width,
                     max(geometry.row_height + 4, geometry.icon_size + 4),
                 )
             for metric in gui_design_moba_monitoring_metrics():
@@ -837,6 +1001,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 label.setProperty("mobaMonitoringMetricKey", metric.key)
                 label.setProperty("mobaMonitoringMetricVisibleInDock", metric.key in chrome.visible_metric_keys)
                 label.setProperty("mobaMonitoringMetricTelemetrySurface", chrome.telemetry_surface)
+                label.setProperty("mobaMonitoringTelemetryRouteKey", route.key)
                 label.setVisible(False)
             return panel
 
@@ -854,15 +1019,27 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             widget.setProperty("mobaMonitoringControlIconKey", control.icon_key)
             widget.setProperty("mobaMonitoringControlType", control.control_type)
             widget.setProperty("mobaMonitoringControlDefaultChecked", control.checked)
-            widget.setProperty("mobaMonitoringTelemetrySurface", gui_design_moba_remote_monitoring_dock_chrome().telemetry_surface)
+            route = gui_design_moba_monitoring_telemetry_route()
+            widget.setProperty("mobaMonitoringTelemetryRouteKey", route.key)
+            widget.setProperty("mobaMonitoringTelemetrySurface", route.telemetry_surface)
             geometry = gui_design_moba_monitoring_control_geometry_for(control.key)
             widget.setProperty("mobaMonitoringControlStaticX", geometry.anchor_x)
             widget.setProperty("mobaMonitoringControlStaticY", geometry.static_y)
             widget.setProperty("mobaMonitoringControlIconX", geometry.icon_x)
             widget.setProperty("mobaMonitoringControlIconSize", geometry.icon_size)
             widget.setProperty("mobaMonitoringControlLabelX", geometry.label_x)
+            widget.setProperty("mobaMonitoringControlLabelYOffset", geometry.label_y_offset)
+            widget.setProperty("mobaMonitoringControlLabelFontSize", geometry.label_font_size)
+            widget.setProperty("mobaMonitoringControlLabelBold", geometry.label_bold)
             widget.setProperty("mobaMonitoringControlCheckSize", geometry.check_size)
+            widget.setProperty("mobaMonitoringControlCheckYOffset", geometry.check_y_offset)
+            widget.setProperty("mobaMonitoringControlCheckmarkPoints", [list(point) for point in geometry.checkmark_points])
             widget.setProperty("mobaMonitoringControlRowHeight", geometry.row_height)
+            widget.setProperty("mobaMonitoringControlLiveWidth", geometry.live_width)
+            control_font = QFont()
+            control_font.setPointSize(geometry.label_font_size)
+            control_font.setBold(geometry.label_bold)
+            widget.setFont(control_font)
             widget.setCheckable(True)
             widget.setChecked(self.monitoring_control_checked(control))
             widget.setToolTip(self.monitoring_control_tooltip(control))
@@ -876,8 +1053,12 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     gui_design_moba_remote_monitoring_dock_chrome().refresh_seconds,
                 )
             if control.key == "follow-terminal-folder":
-                widget.setProperty("mobaMonitoringFollowPlan", self.state.follow_folder_plan.printable_batch())
+                follow_route = gui_design_moba_sftp_follow_folder_route()
+                follow_plan = self.state.follow_folder_plan.printable_batch()
+                widget.setProperty("mobaMonitoringFollowPlan", follow_plan)
                 widget.setProperty("mobaMonitoringFollowPath", self.state.remote_path)
+                widget.setProperty("mobaMonitoringFollowEnabled", self.state.follow_terminal_folder)
+                self.apply_sftp_follow_folder_route_properties(widget, follow_route)
             return widget
 
         def monitoring_control_checked(self, control) -> bool:
@@ -1077,6 +1258,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.setObjectName("mobaConnectedSession")
             self.state = state
             self.terminal_pane = terminal_pane
+            self.apply_connected_session_route_properties(self)
+            self.apply_connected_identity_route_properties(self)
 
             root = QVBoxLayout(self)
             root.setContentsMargins(0, 0, 0, 0)
@@ -1084,9 +1267,55 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             root.addWidget(self.build_terminal_area(), 1)
             root.addWidget(self.build_telemetry_bar())
 
+        def apply_connected_session_route_properties(self, widget) -> None:
+            route = moba_connected_session_route(self.state)
+            properties = {
+                "mobaConnectedRouteKey": route.key,
+                "mobaConnectedRouteRole": route.route_role,
+                "mobaConnectedRouteActiveTabKey": route.active_tab_key,
+                "mobaConnectedRouteActiveTabLabel": route.active_tab_label,
+                "mobaConnectedRouteReferenceTabLabel": route.reference_tab_label,
+                "mobaConnectedRouteActiveTabObject": route.active_tab_object,
+                "mobaConnectedRouteConnectedPanelObject": route.connected_panel_object,
+                "mobaConnectedRouteLeftDockObject": route.left_dock_object,
+                "mobaConnectedRouteSftpBrowserObject": route.sftp_browser_object,
+                "mobaConnectedRouteSftpPathObject": route.sftp_path_object,
+                "mobaConnectedRouteSftpTableObject": route.sftp_table_object,
+                "mobaConnectedRouteSshBannerObject": route.ssh_banner_object,
+                "mobaConnectedRouteTerminalAreaObject": route.terminal_area_object,
+                "mobaConnectedRouteTerminalOutputObject": route.terminal_output_object,
+                "mobaConnectedRouteTelemetryBarObject": route.telemetry_bar_object,
+                "mobaConnectedRouteTelemetryIdentityCellKey": route.telemetry_identity_cell_key,
+                route.target_property: route.target,
+                route.remote_path_property: route.remote_path,
+                "mobaConnectedRouteRenderSource": route.render_source,
+            }
+            for key, value in properties.items():
+                widget.setProperty(key, value)
+
+        def apply_connected_identity_route_properties(self, widget) -> None:
+            route = moba_connected_session_identity_route(self.state)
+            properties = {
+                "mobaConnectedIdentityRouteKey": route.key,
+                "mobaConnectedIdentityRouteRole": route.route_role,
+                "mobaConnectedIdentityWindowTitle": route.window_title,
+                "mobaConnectedIdentityActiveTabLabel": route.active_tab_label,
+                "mobaConnectedIdentityReferenceTabLabel": route.reference_tab_label,
+                "mobaConnectedIdentityBannerTarget": route.banner_target,
+                "mobaConnectedIdentityWebConsoleLine": route.web_console_line,
+                "mobaConnectedIdentityTerminalPrompt": route.terminal_prompt,
+                "mobaConnectedIdentityTelemetryTarget": route.telemetry_target,
+                "mobaConnectedIdentityTargetEndpoint": route.target_endpoint,
+                "mobaConnectedIdentityRemotePath": route.remote_path,
+                "mobaConnectedIdentityRenderSource": route.render_source,
+            }
+            for key, value in properties.items():
+                widget.setProperty(key, value)
+
         def build_terminal_area(self) -> QWidget:
             area = QWidget()
             area.setObjectName("mobaTerminalArea")
+            self.apply_connected_session_route_properties(area)
             layout = QHBoxLayout(area)
             layout.setContentsMargins(0, 0, 0, 0)
             layout.setSpacing(0)
@@ -1107,11 +1336,14 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             lines = self.state.terminal_transcript
             self.terminal_pane.output.setProperty("mobaTerminalTranscriptKeys", [line.key for line in lines])
             self.terminal_pane.output.setProperty("mobaTerminalTranscriptTones", [line.tone for line in lines])
+            self.apply_connected_session_route_properties(self.terminal_pane.output)
+            self.apply_connected_identity_route_properties(self.terminal_pane.output)
             self.terminal_pane.output.setPlainText("\n".join(line.text for line in lines))
             self.terminal_pane.output.moveCursor(QTextCursor.MoveOperation.End)
 
         def apply_moba_plain_terminal_mode(self) -> None:
             geometry = gui_design_moba_terminal_transcript_row_geometry()
+            self.apply_connected_session_route_properties(self.terminal_pane)
             self.terminal_pane.setProperty("mobaPlainTerminalMode", True)
             self.terminal_pane.setProperty("mobaTerminalHeaderVisible", False)
             self.terminal_pane.setProperty("mobaTerminalCommandRowVisible", False)
@@ -1127,12 +1359,21 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.terminal_pane.output.setProperty("mobaTerminalTranscriptFontSize", [row.font_size for row in geometry])
 
         def build_right_utility_rail(self) -> QFrame:
+            chrome = gui_design_moba_right_utility_rail_chrome()
             rail = QFrame()
             rail.setObjectName("mobaRightUtilityRail")
-            rail.setFixedWidth(28)
+            rail.setProperty("mobaRightUtilityRailStaticWidth", chrome.static_width)
+            rail.setProperty("mobaRightUtilityRailLiveWidth", chrome.live_width)
+            rail.setProperty("mobaRightUtilityRailMargins", [chrome.margin_left, chrome.margin_top, chrome.margin_right, chrome.margin_bottom])
+            rail.setProperty("mobaRightUtilityRailActionSpacing", chrome.action_spacing)
+            rail.setProperty("mobaRightUtilityRailSessionEdgeTopY", chrome.session_edge_top_y)
+            rail.setProperty("mobaRightUtilityRailSessionEdgeHeight", chrome.session_edge_height)
+            rail.setProperty("mobaRightUtilityRailSessionEdgeIconX", chrome.session_edge_icon_x)
+            rail.setProperty("mobaRightUtilityRailSessionEdgeIconSize", chrome.session_edge_icon_size)
+            rail.setFixedWidth(chrome.live_width)
             layout = QVBoxLayout(rail)
-            layout.setContentsMargins(2, 2, 2, 2)
-            layout.setSpacing(8)
+            layout.setContentsMargins(chrome.margin_left, chrome.margin_top, chrome.margin_right, chrome.margin_bottom)
+            layout.setSpacing(chrome.action_spacing)
             layout.addWidget(self.build_session_edge_controls())
             for action in gui_design_moba_right_utility_actions():
                 button = QToolButton()
@@ -1155,27 +1396,47 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             return rail
 
         def build_session_edge_controls(self) -> QFrame:
+            chrome = gui_design_moba_right_utility_rail_chrome()
             controls = QFrame()
             controls.setObjectName("mobaSessionEdgeControls")
             actions = gui_design_moba_session_edge_actions()
             controls.setProperty("mobaSessionEdgeActionKeys", [action.key for action in actions])
-            controls.setFixedHeight(50)
-            layout = QVBoxLayout(controls)
-            layout.setContentsMargins(0, 0, 0, 0)
-            layout.setSpacing(0)
+            controls.setProperty("mobaSessionEdgePlacement", "tab-strip-overlay")
+            controls.setProperty("mobaSessionEdgeTopY", chrome.session_edge_top_y)
+            controls.setProperty("mobaSessionEdgeStaticHeight", chrome.session_edge_height)
+            controls.setProperty("mobaSessionEdgeIconX", chrome.session_edge_icon_x)
+            controls.setProperty("mobaSessionEdgeIconSize", chrome.session_edge_icon_size)
+            controls.setProperty(
+                "mobaSessionEdgeRelativeY",
+                [action.relative_y(chrome.session_edge_top_y) for action in actions],
+            )
+            controls.setFixedWidth(chrome.live_width)
+            controls.setFixedHeight(chrome.session_edge_height)
             for action in actions:
-                button = QToolButton()
+                relative_y = action.relative_y(chrome.session_edge_top_y)
+                button = QToolButton(controls)
                 button.setObjectName("mobaSessionEdgeAction")
                 button.setProperty("mobaSessionEdgeKey", action.key)
                 button.setProperty("mobaSessionEdgeIconKey", action.icon_key)
                 button.setProperty("mobaSessionEdgeStaticY", action.static_y)
+                button.setProperty("mobaSessionEdgeRelativeY", relative_y)
+                button.setProperty("mobaSessionEdgeIconX", chrome.session_edge_icon_x)
+                button.setProperty("mobaSessionEdgeIconSize", chrome.session_edge_icon_size)
+                button.setProperty("mobaSessionEdgeStaticSize", action.static_size)
+                button.setProperty("mobaSessionEdgeLiveIconSize", action.live_icon_size)
+                button.setProperty("mobaSessionEdgeButtonSize", action.button_size)
+                button.setProperty("mobaSessionEdgeRenderSource", action.render_source)
                 button.setToolTip(action.tooltip)
                 button.setIcon(self.moba_utility_icon(action.icon_key, action.color))
-                button.setIconSize(QSize(17, 17))
-                button.setFixedSize(QSize(22, 22))
+                button.setIconSize(QSize(action.live_icon_size, action.live_icon_size))
+                button.setFixedSize(QSize(action.button_size, action.button_size))
                 button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
-                layout.addWidget(button)
-            layout.addStretch(1)
+                button.setGeometry(
+                    chrome.session_edge_icon_x,
+                    relative_y,
+                    action.button_size,
+                    action.button_size,
+                )
             return controls
 
         def moba_utility_icon(self, icon_key: str, fill: str) -> QIcon:
@@ -1231,6 +1492,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             chrome = gui_design_moba_ssh_banner_chrome()
             slot = QFrame()
             slot.setObjectName("mobaSshBannerSlot")
+            self.apply_connected_session_route_properties(slot)
             slot.setProperty("mobaBannerLeftOffset", chrome.static_left_offset)
             slot.setProperty("mobaBannerTopOffset", chrome.static_top_offset)
             slot.setProperty("mobaBannerTerminalGap", chrome.terminal_gap)
@@ -1268,6 +1530,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             chrome = gui_design_moba_ssh_banner_chrome()
             banner = QFrame()
             banner.setObjectName("mobaSshBanner")
+            self.apply_connected_session_route_properties(banner)
+            self.apply_connected_identity_route_properties(banner)
             banner.setProperty("mobaBannerTitle", chrome.title)
             banner.setProperty("mobaBannerSubtitle", chrome.subtitle)
             banner.setProperty("mobaBannerTargetIntro", chrome.target_intro)
@@ -1296,6 +1560,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             target = QLabel(f"> {chrome.target_intro} {self.state.banner.title}")
             target.setParent(banner)
             target.setObjectName("mobaSshBannerTargetLine")
+            self.apply_connected_identity_route_properties(target)
             target.setProperty("mobaSshBannerTarget", self.state.banner.title)
             target.setProperty("mobaSshBannerTargetIntro", chrome.target_intro)
             self.apply_ssh_banner_row_geometry(target, "target")
@@ -1323,10 +1588,20 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
         def build_telemetry_bar(self) -> QFrame:
             bar = QFrame()
             bar.setObjectName("mobaTelemetryBar")
+            self.apply_connected_session_route_properties(bar)
+            self.apply_connected_identity_route_properties(bar)
+            route = gui_design_moba_monitoring_telemetry_route()
             geometry_items = moba_telemetry_cell_geometry()
             bar.setProperty("mobaTelemetryGeometryKeys", [geometry.key for geometry in geometry_items])
             bar.setProperty("mobaTelemetryStartX", geometry_items[0].static_x)
             bar.setProperty("mobaTelemetryBarHeight", 24)
+            bar.setProperty("mobaMonitoringTelemetryRouteKey", route.key)
+            bar.setProperty("mobaMonitoringTelemetryRouteRole", route.route_role)
+            bar.setProperty("mobaMonitoringTelemetrySourcePanelObject", route.source_panel_object)
+            bar.setProperty("mobaMonitoringTelemetrySourceControl", route.source_control_key)
+            bar.setProperty("mobaMonitoringTelemetrySurface", route.telemetry_surface)
+            bar.setProperty("mobaMonitoringTelemetryMetricCellKeys", list(route.target_metric_cell_keys))
+            bar.setProperty("mobaMonitoringTelemetryIdentityCellKey", route.target_identity_cell_key)
             bar.setFixedHeight(24)
             layout = QHBoxLayout(bar)
             layout.setContentsMargins(geometry_items[0].static_x, 0, 7, 0)
@@ -1340,12 +1615,15 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 cell_frame.setProperty("mobaTelemetryIconAccent", cell.icon_accent)
                 cell_frame.setProperty("mobaTelemetryIconSize", cell.icon_size)
                 cell_frame.setProperty("mobaTelemetryDisplayText", cell.display_text)
+                if cell.key == "target":
+                    self.apply_connected_identity_route_properties(cell_frame)
                 cell_frame.setProperty("mobaTelemetryCellStaticX", geometry.static_x)
                 cell_frame.setProperty("mobaTelemetryCellStaticY", geometry.static_y)
                 cell_frame.setProperty("mobaTelemetryCellWidth", geometry.width)
                 cell_frame.setProperty("mobaTelemetryCellHeight", geometry.height)
                 cell_frame.setProperty("mobaTelemetrySeparatorTop", geometry.separator_top)
                 cell_frame.setProperty("mobaTelemetrySeparatorBottom", geometry.separator_bottom)
+                cell_frame.setProperty("mobaMonitoringTelemetryRouted", cell.key in route.target_metric_cell_keys)
                 cell_frame.setToolTip(cell.label)
                 cell_frame.setFixedWidth(geometry.width)
                 cell_frame.setFixedHeight(geometry.height)
@@ -1369,6 +1647,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 label.setObjectName("mobaTelemetryItem")
                 label.setProperty("mobaTelemetryKey", cell.key)
                 label.setProperty("mobaTelemetryDisplayText", cell.display_text)
+                if cell.key == "target":
+                    self.apply_connected_identity_route_properties(label)
                 label.setProperty("mobaTelemetryLabelX", geometry.label_x)
                 label.setProperty("mobaTelemetryLabelY", geometry.label_y)
                 label.setProperty("mobaTelemetryLabelFontSize", geometry.label_font_size)
@@ -1708,12 +1988,18 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
     class MobaRailLabel(QLabel):
         def __init__(self, label: str, role: str) -> None:
             super().__init__(label)
+            chrome = gui_design_moba_rail_chrome()
+            geometry = gui_design_moba_rail_item_geometry_for(role)
             self.setObjectName("mobaRailLabel")
             self.setProperty("mobaRailRole", role)
             self.setProperty("mobaRailLabel", label)
+            self.setProperty("mobaRailStaticLabelY", geometry.static_label_y)
+            self.setProperty("mobaRailLabelWidth", chrome.label_width)
+            self.setProperty("mobaRailLabelHeight", chrome.label_height)
+            self.setProperty("mobaRailLabelFontSize", chrome.label_font_size)
             self.setToolTip(label)
             self.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.setFixedSize(28, 58)
+            self.setFixedSize(chrome.label_width, chrome.label_height)
 
         def paintEvent(self, event) -> None:  # noqa: N802
             painter = QPainter(self)
@@ -2388,10 +2674,18 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
         def create_moba_rail(self) -> QWidget:
             frame = gui_design_moba_connected_dock_frame()
+            rail_chrome = gui_design_moba_rail_chrome()
             rail = QWidget()
             rail.setObjectName("mobaRail")
             rail.setProperty("mobaConnectedDockRailWidth", frame.rail_width)
-            rail.setFixedWidth(frame.rail_width)
+            rail.setProperty("mobaRailStaticWidth", rail_chrome.rail_width)
+            rail.setProperty("mobaRailIconX", rail_chrome.icon_x)
+            rail.setProperty("mobaRailStaticIconSize", rail_chrome.static_icon_size)
+            rail.setProperty("mobaRailLiveIconSize", rail_chrome.live_icon_size)
+            rail.setProperty("mobaRailButtonHeight", rail_chrome.button_height)
+            rail.setProperty("mobaRailLabelHeight", rail_chrome.label_height)
+            rail.setProperty("mobaRailRenderSource", rail_chrome.render_source)
+            rail.setFixedWidth(rail_chrome.rail_width)
             layout = QVBoxLayout(rail)
             layout.setContentsMargins(0, 0, 0, 0)
             layout.setSpacing(0)
@@ -2405,11 +2699,26 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 "sftp": self.show_moba_sftp_rail,
             }
             for item in gui_design_moba_rail_items():
+                geometry = gui_design_moba_rail_item_geometry_for(item.role)
                 button = QToolButton()
                 button.setObjectName(item.object_name)
                 button.setProperty("mobaRailRole", item.role)
-                button.setIcon(self.moba_ribbon_icon(item.icon_key, item.color, size=22))
-                button.setIconSize(QSize(20, 20))
+                button.setProperty("mobaRailIconKey", item.icon_key)
+                button.setProperty("mobaRailStaticIconKey", item.rail_icon_key)
+                button.setProperty("mobaRailStaticIconX", rail_chrome.icon_x)
+                button.setProperty("mobaRailStaticIconY", geometry.static_icon_y)
+                button.setProperty("mobaRailStaticIconSize", rail_chrome.static_icon_size)
+                button.setProperty("mobaRailLiveIconSize", rail_chrome.live_icon_size)
+                button.setProperty("mobaRailButtonWidth", rail_chrome.button_width)
+                button.setProperty("mobaRailButtonHeight", rail_chrome.button_height)
+                button.setProperty("mobaRailActiveX", rail_chrome.active_x)
+                button.setProperty("mobaRailActiveYOffset", rail_chrome.active_y_offset)
+                button.setProperty("mobaRailActiveWidth", rail_chrome.active_width)
+                button.setProperty("mobaRailActiveHeight", rail_chrome.active_height)
+                button.setProperty("mobaRailRenderSource", rail_chrome.render_source)
+                button.setIcon(self.moba_ribbon_icon(item.icon_key, item.color, size=rail_chrome.generated_icon_size))
+                button.setIconSize(QSize(rail_chrome.live_icon_size, rail_chrome.live_icon_size))
+                button.setFixedSize(rail_chrome.button_width, rail_chrome.button_height)
                 button.setToolTip(item.tooltip)
                 button.setCheckable(item.role != "collapse")
                 button.setAutoRaise(False)
@@ -2654,6 +2963,27 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             title = moba_connected_window_title(state)
             self.setWindowTitle(title)
             self.apply_moba_titlebar_chrome(title)
+            self.apply_moba_connected_identity_route_properties(state, self)
+            self.apply_moba_connected_identity_route_properties(state, self.tabs)
+
+        def apply_moba_connected_identity_route_properties(self, state: MobaConnectedSessionState, widget) -> None:
+            route = moba_connected_session_identity_route(state)
+            properties = {
+                "mobaConnectedIdentityRouteKey": route.key,
+                "mobaConnectedIdentityRouteRole": route.route_role,
+                "mobaConnectedIdentityWindowTitle": route.window_title,
+                "mobaConnectedIdentityActiveTabLabel": route.active_tab_label,
+                "mobaConnectedIdentityReferenceTabLabel": route.reference_tab_label,
+                "mobaConnectedIdentityBannerTarget": route.banner_target,
+                "mobaConnectedIdentityWebConsoleLine": route.web_console_line,
+                "mobaConnectedIdentityTerminalPrompt": route.terminal_prompt,
+                "mobaConnectedIdentityTelemetryTarget": route.telemetry_target,
+                "mobaConnectedIdentityTargetEndpoint": route.target_endpoint,
+                "mobaConnectedIdentityRemotePath": route.remote_path,
+                "mobaConnectedIdentityRenderSource": route.render_source,
+            }
+            for key, value in properties.items():
+                widget.setProperty(key, value)
 
         def current_moba_connected_dock_is_active(self) -> bool:
             return (
@@ -2754,10 +3084,219 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             selected_name = self.selected_profile_name()
             self.profile_list.clear()
             profiles = sorted(self.store.load(), key=lambda item: (item.group, item.name))
+            mremoteng_route = (
+                gui_design_mremoteng_connection_document_route()
+                if self.current_design_id() == "mremoteng"
+                else None
+            )
+            securecrt_route = (
+                gui_design_securecrt_session_manager_route()
+                if self.current_design_id() == "securecrt"
+                else None
+            )
+            termius_host_route = (
+                gui_design_termius_host_selection_route()
+                if self.current_design_id() == "termius"
+                else None
+            )
+            self.profile_list.setProperty("mRemoteNgConnectionRouteKey", mremoteng_route.key if mremoteng_route else "")
+            self.profile_list.setProperty(
+                "mRemoteNgConnectionRouteRole",
+                mremoteng_route.route_role if mremoteng_route else "",
+            )
+            self.profile_list.setProperty(
+                "mRemoteNgConnectionRouteSelectedProfile",
+                mremoteng_route.selected_profile_name if mremoteng_route else "",
+            )
+            self.profile_list.setProperty(
+                "mRemoteNgConnectionRouteSelectedTreeLabel",
+                mremoteng_route.selected_tree_label if mremoteng_route else "",
+            )
+            self.profile_list.setProperty(
+                "mRemoteNgConnectionRouteDocumentControlsObject",
+                mremoteng_route.document_controls_object if mremoteng_route else "",
+            )
+            self.profile_list.setProperty(
+                "mRemoteNgConnectionRouteDocumentControlKey",
+                mremoteng_route.document_control_key if mremoteng_route else "",
+            )
+            self.profile_list.setProperty(
+                "mRemoteNgConnectionRouteDocumentControlObject",
+                mremoteng_route.document_control_object if mremoteng_route else "",
+            )
+            self.profile_list.setProperty(
+                "mRemoteNgConnectionRoutePropertyGridObject",
+                mremoteng_route.property_grid_object if mremoteng_route else "",
+            )
+            self.profile_list.setProperty(
+                "mRemoteNgConnectionRoutePropertyRowKey",
+                mremoteng_route.property_row_key if mremoteng_route else "",
+            )
+            self.profile_list.setProperty(
+                "mRemoteNgConnectionRoutePropertyCellObject",
+                mremoteng_route.property_cell_object if mremoteng_route else "",
+            )
+            self.profile_list.setProperty(
+                "mRemoteNgConnectionRouteActiveTab",
+                mremoteng_route.active_tab_label if mremoteng_route else "",
+            )
+            self.profile_list.setProperty(
+                "mRemoteNgConnectionRouteProtocol",
+                mremoteng_route.protocol if mremoteng_route else "",
+            )
+            self.profile_list.setProperty(
+                "mRemoteNgConnectionRouteState",
+                mremoteng_route.workspace_state if mremoteng_route else "",
+            )
+            self.profile_list.setProperty(
+                "mRemoteNgConnectionRoutePropertyValue",
+                mremoteng_route.property_value if mremoteng_route else "",
+            )
+            self.profile_list.setProperty(
+                "mRemoteNgConnectionRouteRenderSource",
+                mremoteng_route.render_source if mremoteng_route else "",
+            )
+            self.profile_list.setProperty(
+                "secureCrtSessionRouteKey",
+                securecrt_route.key if securecrt_route else "",
+            )
+            self.profile_list.setProperty(
+                "secureCrtSessionRouteRole",
+                securecrt_route.route_role if securecrt_route else "",
+            )
+            self.profile_list.setProperty(
+                "secureCrtSessionRouteSelectedProfile",
+                securecrt_route.selected_profile_name if securecrt_route else "",
+            )
+            self.profile_list.setProperty(
+                "secureCrtSessionRouteSelectedTreeLabel",
+                securecrt_route.selected_tree_label if securecrt_route else "",
+            )
+            self.profile_list.setProperty(
+                "secureCrtSessionRouteSessionManagerObject",
+                securecrt_route.session_manager_object if securecrt_route else "",
+            )
+            self.profile_list.setProperty(
+                "secureCrtSessionRouteActionKey",
+                securecrt_route.session_manager_action_key if securecrt_route else "",
+            )
+            self.profile_list.setProperty(
+                "secureCrtSessionRouteActionObject",
+                securecrt_route.session_manager_action_object if securecrt_route else "",
+            )
+            self.profile_list.setProperty(
+                "secureCrtSessionRouteStatusStripObject",
+                securecrt_route.status_strip_object if securecrt_route else "",
+            )
+            self.profile_list.setProperty(
+                "secureCrtSessionRouteStatusFieldKey",
+                securecrt_route.status_field_key if securecrt_route else "",
+            )
+            self.profile_list.setProperty(
+                "secureCrtSessionRouteStatusFieldObject",
+                securecrt_route.status_field_object if securecrt_route else "",
+            )
+            self.profile_list.setProperty(
+                "secureCrtSessionRouteActiveTab",
+                securecrt_route.active_tab_label if securecrt_route else "",
+            )
+            self.profile_list.setProperty(
+                "secureCrtSessionRouteTarget",
+                securecrt_route.target_value if securecrt_route else "",
+            )
+            self.profile_list.setProperty(
+                "secureCrtSessionRouteProtocol",
+                securecrt_route.protocol_value if securecrt_route else "",
+            )
+            self.profile_list.setProperty(
+                "secureCrtSessionRouteSession",
+                securecrt_route.session_value if securecrt_route else "",
+            )
+            self.profile_list.setProperty(
+                "secureCrtSessionRouteStatusValue",
+                securecrt_route.target_value if securecrt_route else "",
+            )
+            self.profile_list.setProperty(
+                "secureCrtSessionRouteRenderSource",
+                securecrt_route.render_source if securecrt_route else "",
+            )
+            if securecrt_route is not None:
+                self.tabs.setProperty("secureCrtSessionRouteKey", securecrt_route.key)
+                self.tabs.setProperty("secureCrtSessionRouteRole", securecrt_route.route_role)
+                self.tabs.setProperty("secureCrtSessionRouteSelectedProfile", securecrt_route.selected_profile_name)
+                self.tabs.setProperty("secureCrtSessionRouteSelectedTreeLabel", securecrt_route.selected_tree_label)
+                self.tabs.setProperty("secureCrtSessionRouteActiveTab", securecrt_route.active_tab_label)
+                self.tabs.setProperty("secureCrtSessionRouteTarget", securecrt_route.target_value)
+                self.tabs.setProperty("secureCrtSessionRouteProtocol", securecrt_route.protocol_value)
+                self.tabs.setProperty("secureCrtSessionRouteSession", securecrt_route.session_value)
+                self.tabs.setProperty("secureCrtSessionRouteRenderSource", securecrt_route.render_source)
+            self.profile_list.setProperty(
+                "termiusHostRouteKey",
+                termius_host_route.key if termius_host_route else "",
+            )
+            self.profile_list.setProperty(
+                "termiusHostRouteRole",
+                termius_host_route.route_role if termius_host_route else "",
+            )
+            self.profile_list.setProperty(
+                "termiusHostRouteSelectedProfile",
+                termius_host_route.selected_profile_name if termius_host_route else "",
+            )
+            self.profile_list.setProperty(
+                "termiusHostRouteSelectedTreeLabel",
+                termius_host_route.selected_tree_label if termius_host_route else "",
+            )
+            self.profile_list.setProperty(
+                "termiusHostRouteHostsPanelObject",
+                termius_host_route.hosts_panel_object if termius_host_route else "",
+            )
+            self.profile_list.setProperty(
+                "termiusHostRouteIdentityObject",
+                termius_host_route.host_identity_object if termius_host_route else "",
+            )
+            self.profile_list.setProperty(
+                "termiusHostRouteIdentityFieldKey",
+                termius_host_route.identity_field_key if termius_host_route else "",
+            )
+            self.profile_list.setProperty(
+                "termiusHostRouteIdentityCellObject",
+                termius_host_route.identity_cell_object if termius_host_route else "",
+            )
+            self.profile_list.setProperty(
+                "termiusHostRouteActiveTab",
+                termius_host_route.active_tab_label if termius_host_route else "",
+            )
+            self.profile_list.setProperty(
+                "termiusHostRouteTarget",
+                termius_host_route.target_value if termius_host_route else "",
+            )
+            self.profile_list.setProperty(
+                "termiusHostRouteProtocol",
+                termius_host_route.protocol_value if termius_host_route else "",
+            )
+            self.profile_list.setProperty(
+                "termiusHostRouteIdentityValue",
+                termius_host_route.host_value if termius_host_route else "",
+            )
+            self.profile_list.setProperty(
+                "termiusHostRouteRenderSource",
+                termius_host_route.render_source if termius_host_route else "",
+            )
+            if termius_host_route is not None:
+                self.tabs.setProperty("termiusHostRouteKey", termius_host_route.key)
+                self.tabs.setProperty("termiusHostRouteRole", termius_host_route.route_role)
+                self.tabs.setProperty("termiusHostRouteSelectedProfile", termius_host_route.selected_profile_name)
+                self.tabs.setProperty("termiusHostRouteSelectedTreeLabel", termius_host_route.selected_tree_label)
+                self.tabs.setProperty("termiusHostRouteActiveTab", termius_host_route.active_tab_label)
+                self.tabs.setProperty("termiusHostRouteTarget", termius_host_route.target_value)
+                self.tabs.setProperty("termiusHostRouteProtocol", termius_host_route.protocol_value)
+                self.tabs.setProperty("termiusHostRouteIdentityValue", termius_host_route.host_value)
+                self.tabs.setProperty("termiusHostRouteRenderSource", termius_host_route.render_source)
             root_label, root_tooltip = gui_design_tree_root_copy(self.current_design_id())
             root = QTreeWidgetItem([root_label])
             root.setData(0, Qt.ItemDataRole.UserRole, None)
             self.apply_profile_tree_icon(root, gui_design_tree_root_icon(self.current_design_id()))
+            self.apply_moba_profile_tree_geometry(root, "root")
             root.setToolTip(0, root_tooltip)
             self.profile_list.addTopLevelItem(root)
             group_nodes: dict[tuple[str, ...], QTreeWidgetItem] = {}
@@ -2772,6 +3311,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                         group_item.setData(0, Qt.ItemDataRole.UserRole, None)
                         group_icon = gui_design_tree_row_icon(self.current_design_id(), part, "", True)
                         self.apply_profile_tree_icon(group_item, group_icon)
+                        self.apply_moba_profile_tree_geometry(group_item, "group")
                         group_item.setToolTip(0, self.profile_group_tooltip(path))
                         parent.addChild(group_item)
                         group_nodes[key] = group_item
@@ -2785,7 +3325,47 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     False,
                 )
                 self.apply_profile_tree_icon(item, profile_icon, protocol=profile.protocol)
-                item.setToolTip(0, self.profile_tree_tooltip(profile))
+                self.apply_moba_profile_tree_geometry(item, "profile")
+                tooltip = self.profile_tree_tooltip(profile)
+                if mremoteng_route is not None:
+                    routed = profile.name == mremoteng_route.selected_profile_name
+                    item.setData(0, MREMOTENG_ROUTE_KEY_ROLE, mremoteng_route.key)
+                    item.setData(0, MREMOTENG_ROUTE_ROLE_ROLE, mremoteng_route.route_role)
+                    item.setData(0, MREMOTENG_ROUTE_PROFILE_ROLE, mremoteng_route.selected_profile_name)
+                    item.setData(0, MREMOTENG_ROUTE_TAB_ROLE, mremoteng_route.active_tab_label)
+                    item.setData(0, MREMOTENG_ROUTE_PROTOCOL_ROLE, mremoteng_route.protocol)
+                    item.setData(0, MREMOTENG_ROUTE_STATE_ROLE, mremoteng_route.workspace_state)
+                    item.setData(0, MREMOTENG_ROUTE_SELECTED_ROLE, routed)
+                    if routed:
+                        tooltip = f"{tooltip}\n{mremoteng_route.key}: {mremoteng_route.active_tab_label}"
+                        item.setSelected(True)
+                if securecrt_route is not None:
+                    routed = profile.name == securecrt_route.selected_profile_name
+                    item.setData(0, SECURECRT_ROUTE_KEY_ROLE, securecrt_route.key)
+                    item.setData(0, SECURECRT_ROUTE_ROLE_ROLE, securecrt_route.route_role)
+                    item.setData(0, SECURECRT_ROUTE_PROFILE_ROLE, securecrt_route.selected_profile_name)
+                    item.setData(0, SECURECRT_ROUTE_TAB_ROLE, securecrt_route.active_tab_label)
+                    item.setData(0, SECURECRT_ROUTE_TARGET_ROLE, securecrt_route.target_value)
+                    item.setData(0, SECURECRT_ROUTE_PROTOCOL_ROLE, securecrt_route.protocol_value)
+                    item.setData(0, SECURECRT_ROUTE_SELECTED_ROLE, routed)
+                    if routed:
+                        tooltip = f"{tooltip}\n{securecrt_route.key}: {securecrt_route.active_tab_label}"
+                        item.setSelected(True)
+                        self.profile_list.setCurrentItem(item)
+                if termius_host_route is not None:
+                    routed = profile.name == termius_host_route.selected_profile_name
+                    item.setData(0, TERMIUS_HOST_ROUTE_KEY_ROLE, termius_host_route.key)
+                    item.setData(0, TERMIUS_HOST_ROUTE_ROLE_ROLE, termius_host_route.route_role)
+                    item.setData(0, TERMIUS_HOST_ROUTE_PROFILE_ROLE, termius_host_route.selected_profile_name)
+                    item.setData(0, TERMIUS_HOST_ROUTE_TAB_ROLE, termius_host_route.active_tab_label)
+                    item.setData(0, TERMIUS_HOST_ROUTE_TARGET_ROLE, termius_host_route.target_value)
+                    item.setData(0, TERMIUS_HOST_ROUTE_PROTOCOL_ROLE, termius_host_route.protocol_value)
+                    item.setData(0, TERMIUS_HOST_ROUTE_SELECTED_ROLE, routed)
+                    if routed:
+                        tooltip = f"{tooltip}\n{termius_host_route.key}: {termius_host_route.active_tab_label}"
+                        item.setSelected(True)
+                        self.profile_list.setCurrentItem(item)
+                item.setToolTip(0, tooltip)
                 parent.addChild(item)
             self.profile_list.expandAll()
             if hasattr(self, "securecrt_session_filter"):
@@ -2913,6 +3493,31 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 item.setIcon(0, self.style().standardIcon(self.standard_icon(icon_name)))
                 return
             item.setIcon(0, self.profile_icon_for_protocol(protocol))
+
+        def apply_moba_profile_tree_geometry(self, item: QTreeWidgetItem, row_kind: str) -> None:
+            if self.current_design_id() != "mobaxterm":
+                return
+            chrome = gui_design_moba_session_tree_chrome()
+            if row_kind == "root":
+                row_height = chrome.root_row_height
+                icon_x = chrome.header_icon_x
+                label_x = chrome.header_text_x
+                target_x = 0
+            elif row_kind == "group":
+                row_height = chrome.group_row_height
+                icon_x = chrome.group_icon_x
+                label_x = chrome.group_label_x
+                target_x = 0
+            else:
+                row_height = chrome.profile_row_height
+                icon_x = chrome.profile_icon_x
+                label_x = chrome.profile_label_x
+                target_x = chrome.profile_target_x
+            item.setSizeHint(0, QSize(0, row_height))
+            item.setData(0, TREE_ROW_STATIC_HEIGHT_ROLE, row_height)
+            item.setData(0, TREE_ROW_STATIC_ICON_X_ROLE, icon_x)
+            item.setData(0, TREE_ROW_STATIC_LABEL_X_ROLE, label_x)
+            item.setData(0, TREE_ROW_STATIC_TARGET_X_ROLE, target_x)
 
         def profile_tree_generated_icon(self, icon_key: str, *, group: bool, size: int = 16) -> QIcon:
             pixmap = QPixmap(size, size)
@@ -3121,13 +3726,52 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 self.main_toolbar.setMaximumHeight(16777215)
 
         def configure_profile_tree_for_design(self, is_moba: bool, list_spacing: int) -> None:
-            self.profile_list.setIndentation(16 if is_moba else 18)
-            self.profile_list.setRootIsDecorated(True)
-            self.profile_list.setAnimated(is_moba)
+            moba_chrome = gui_design_moba_session_tree_chrome()
+            self.profile_list.setIndentation(moba_chrome.indentation if is_moba else 18)
+            self.profile_list.setRootIsDecorated(moba_chrome.root_is_decorated if is_moba else True)
+            self.profile_list.setAnimated(moba_chrome.animated if is_moba else False)
             self.profile_list.setAllColumnsShowFocus(True)
             self.profile_list.setItemsExpandable(True)
             self.profile_list.setExpandsOnDoubleClick(True)
+            self.profile_list.setUniformRowHeights(moba_chrome.uniform_row_heights if is_moba else True)
             self.profile_list.setProperty("listSpacing", list_spacing)
+            if is_moba:
+                self.profile_list.setProperty("mobaSessionTreeHeaderHeight", moba_chrome.header_height)
+                self.profile_list.setProperty("mobaSessionTreeHeaderIconX", moba_chrome.header_icon_x)
+                self.profile_list.setProperty("mobaSessionTreeHeaderTextX", moba_chrome.header_text_x)
+                self.profile_list.setProperty("mobaSessionTreeRowStartY", moba_chrome.row_start_y)
+                self.profile_list.setProperty("mobaSessionTreeIndentation", moba_chrome.indentation)
+                self.profile_list.setProperty("mobaSessionTreeRootRowHeight", moba_chrome.root_row_height)
+                self.profile_list.setProperty("mobaSessionTreeGroupRowHeight", moba_chrome.group_row_height)
+                self.profile_list.setProperty("mobaSessionTreeProfileRowHeight", moba_chrome.profile_row_height)
+                self.profile_list.setProperty("mobaSessionTreeGroupIconX", moba_chrome.group_icon_x)
+                self.profile_list.setProperty("mobaSessionTreeGroupLabelX", moba_chrome.group_label_x)
+                self.profile_list.setProperty("mobaSessionTreeProfileIconX", moba_chrome.profile_icon_x)
+                self.profile_list.setProperty("mobaSessionTreeProfileLabelX", moba_chrome.profile_label_x)
+                self.profile_list.setProperty("mobaSessionTreeProfileTargetX", moba_chrome.profile_target_x)
+                self.profile_list.setProperty("mobaSessionTreeSelectedLeft", moba_chrome.selected_left)
+                self.profile_list.setProperty("mobaSessionTreeSelectedHeight", moba_chrome.selected_height)
+                self.profile_list.setProperty("mobaSessionTreeRenderSource", moba_chrome.render_source)
+            else:
+                for property_name in (
+                    "mobaSessionTreeHeaderHeight",
+                    "mobaSessionTreeHeaderIconX",
+                    "mobaSessionTreeHeaderTextX",
+                    "mobaSessionTreeRowStartY",
+                    "mobaSessionTreeIndentation",
+                    "mobaSessionTreeRootRowHeight",
+                    "mobaSessionTreeGroupRowHeight",
+                    "mobaSessionTreeProfileRowHeight",
+                    "mobaSessionTreeGroupIconX",
+                    "mobaSessionTreeGroupLabelX",
+                    "mobaSessionTreeProfileIconX",
+                    "mobaSessionTreeProfileLabelX",
+                    "mobaSessionTreeProfileTargetX",
+                    "mobaSessionTreeSelectedLeft",
+                    "mobaSessionTreeSelectedHeight",
+                    "mobaSessionTreeRenderSource",
+                ):
+                    self.profile_list.setProperty(property_name, None)
 
         def update_quick_connect_suggestions(self) -> None:
             self.quick_connect_suggestions.clear()
@@ -4020,6 +4664,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
         def build_moba_home_welcome(self, surface) -> QFrame:
             chrome = gui_design_moba_home_welcome_chrome()
+            geometry = gui_design_moba_home_welcome_geometry()
             panel = QFrame()
             panel.setObjectName("mobaHomeWelcomeSurface")
             panel.setProperty("designPreset", "mobaxterm")
@@ -4028,29 +4673,59 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             panel.setProperty("mobaHomeSearchWidth", chrome.search_width)
             panel.setProperty("mobaHomeRecentTitle", chrome.recent_title)
             panel.setProperty("mobaHomeActionSpacing", chrome.action_spacing)
+            panel.setProperty("mobaHomeGeometryRenderSource", geometry.render_source)
+            panel.setProperty("mobaHomeCenterSideMargin", geometry.center_side_margin)
+            panel.setProperty("mobaHomeHeroMinY", geometry.hero_min_y)
+            panel.setProperty("mobaHomeHeroHeight", geometry.hero_height)
+            panel.setProperty("mobaHomeLogoSize", geometry.logo_size)
+            panel.setProperty("mobaHomeTitleGap", geometry.title_gap)
+            panel.setProperty("mobaHomeTitleYOffset", geometry.title_y_offset)
+            panel.setProperty("mobaHomeSubtitleYOffset", geometry.subtitle_y_offset)
+            panel.setProperty("mobaHomeButtonYOffset", geometry.button_y_offset)
+            panel.setProperty("mobaHomePrimaryActionWidth", geometry.primary_width)
+            panel.setProperty("mobaHomeSecondaryActionWidth", geometry.secondary_width)
+            panel.setProperty("mobaHomeActionGap", geometry.action_gap)
+            panel.setProperty("mobaHomeButtonHeight", geometry.button_height)
+            panel.setProperty("mobaHomeSearchYGap", geometry.search_y_gap)
+            panel.setProperty("mobaHomeSearchHeight", geometry.search_height)
+            panel.setProperty("mobaHomeRecentYGap", geometry.recent_y_gap)
+            panel.setProperty("mobaHomeRecentItemStep", geometry.recent_item_step)
+            panel.setProperty("mobaHomeFooterYOffset", geometry.footer_y_offset)
             panel.setMinimumWidth(chrome.surface_width)
-            panel.setMaximumWidth(chrome.surface_width + 120)
+            panel.setMaximumWidth(chrome.surface_width + geometry.live_max_extra_width)
 
             panel_layout = QVBoxLayout(panel)
             panel_layout.setContentsMargins(0, 0, 0, 0)
-            panel_layout.setSpacing(13)
+            panel_layout.setSpacing(geometry.live_layout_spacing)
 
             title_row = QHBoxLayout()
-            title_row.setSpacing(18)
+            title_row.setSpacing(geometry.live_title_row_spacing)
             title_row.addStretch(1)
             logo = QLabel()
             logo.setObjectName("mobaHomeLogo")
             logo.setProperty("mobaHomeIconKey", chrome.icon_key)
-            logo.setFixedSize(QSize(64, 56))
+            logo.setProperty("mobaHomeLogoSize", geometry.logo_size)
+            logo.setProperty("mobaHomeLogoBoxWidth", geometry.live_logo_box_width)
+            logo.setProperty("mobaHomeLogoBoxHeight", geometry.live_logo_box_height)
+            logo.setProperty("mobaHomeLogoPixmapSize", geometry.live_logo_pixmap_size)
+            logo.setFixedSize(QSize(geometry.live_logo_box_width, geometry.live_logo_box_height))
             logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            logo.setPixmap(self.moba_ribbon_icon(chrome.icon_key, "#1a1a1a", size=56).pixmap(QSize(56, 56)))
+            logo.setPixmap(
+                self.moba_ribbon_icon(chrome.icon_key, "#1a1a1a", size=geometry.live_logo_pixmap_size).pixmap(
+                    QSize(geometry.live_logo_pixmap_size, geometry.live_logo_pixmap_size)
+                )
+            )
             title_column = QVBoxLayout()
-            title_column.setSpacing(3)
+            title_column.setSpacing(geometry.live_title_column_spacing)
             title = QLabel(chrome.title)
             title.setObjectName("mobaHomeTitle")
+            title.setProperty("mobaHomeTitleFontSize", geometry.title_font_size)
+            title.setProperty("mobaHomeTitleYOffset", geometry.title_y_offset)
             title.setAlignment(Qt.AlignmentFlag.AlignVCenter)
             subtitle = QLabel(chrome.subtitle)
             subtitle.setObjectName("mobaHomeSubtitle")
+            subtitle.setProperty("mobaHomeSubtitleFontSize", geometry.subtitle_font_size)
+            subtitle.setProperty("mobaHomeSubtitleYOffset", geometry.subtitle_y_offset)
             subtitle.setAlignment(Qt.AlignmentFlag.AlignVCenter)
             title_column.addWidget(title)
             title_column.addWidget(subtitle)
@@ -4060,21 +4735,37 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             panel_layout.addLayout(title_row)
 
             action_row = QHBoxLayout()
-            action_row.setSpacing(chrome.action_spacing)
+            action_row.setSpacing(geometry.action_gap)
             action_row.addStretch(1)
             primary_action, secondary_action = surface.home_actions[:2]
             start_button = QPushButton(primary_action)
             start_button.setObjectName("mobaHomePrimaryAction")
             start_button.setProperty("mobaHomeActionKey", "primary")
             start_button.setProperty("mobaHomeActionIconKey", chrome.primary_action_icon_key)
-            start_button.setIcon(self.moba_ribbon_icon(chrome.primary_action_icon_key, "#4db7ff", size=18))
-            start_button.setMinimumWidth(200)
+            start_button.setProperty("mobaHomeActionStaticWidth", geometry.primary_width)
+            start_button.setProperty("mobaHomeActionStaticHeight", geometry.button_height)
+            start_button.setProperty("mobaHomeActionIconX", geometry.button_icon_x)
+            start_button.setProperty("mobaHomeActionIconY", geometry.button_icon_y)
+            start_button.setProperty("mobaHomeActionIconSize", geometry.button_icon_size)
+            start_button.setIcon(
+                self.moba_ribbon_icon(chrome.primary_action_icon_key, "#4db7ff", size=geometry.button_icon_size)
+            )
+            start_button.setMinimumWidth(geometry.primary_width)
+            start_button.setFixedHeight(geometry.button_height)
             recover_button = QPushButton(secondary_action)
             recover_button.setObjectName("mobaHomeAction")
             recover_button.setProperty("mobaHomeActionKey", "secondary")
             recover_button.setProperty("mobaHomeActionIconKey", chrome.secondary_action_icon_key)
-            recover_button.setIcon(self.moba_ribbon_icon(chrome.secondary_action_icon_key, "#35d7c7", size=18))
-            recover_button.setMinimumWidth(218)
+            recover_button.setProperty("mobaHomeActionStaticWidth", geometry.secondary_width)
+            recover_button.setProperty("mobaHomeActionStaticHeight", geometry.button_height)
+            recover_button.setProperty("mobaHomeActionIconX", geometry.button_icon_x)
+            recover_button.setProperty("mobaHomeActionIconY", geometry.button_icon_y)
+            recover_button.setProperty("mobaHomeActionIconSize", geometry.button_icon_size)
+            recover_button.setIcon(
+                self.moba_ribbon_icon(chrome.secondary_action_icon_key, "#35d7c7", size=geometry.button_icon_size)
+            )
+            recover_button.setMinimumWidth(geometry.secondary_width)
+            recover_button.setFixedHeight(geometry.button_height)
             start_button.clicked.connect(self.open_local_terminal_tab)
             recover_button.clicked.connect(self.recover_previous_sessions)
             action_row.addWidget(start_button)
@@ -4086,29 +4777,38 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             search.setObjectName("homeSearch")
             search.setProperty("mobaHomeSearchPlaceholder", surface.home_search_placeholder)
             search.setProperty("mobaHomeSearchWidth", chrome.search_width)
+            search.setProperty("mobaHomeSearchHeight", geometry.search_height)
+            search.setProperty("mobaHomeSearchTextX", geometry.search_text_x)
+            search.setProperty("mobaHomeSearchTextY", geometry.search_text_y)
+            search.setProperty("mobaHomeSearchFontSize", geometry.search_font_size)
             search.setPlaceholderText(surface.home_search_placeholder)
             search.setMinimumWidth(chrome.search_width)
             search.setMaximumWidth(chrome.search_width)
+            search.setFixedHeight(geometry.search_height)
             search.returnPressed.connect(lambda: self.run_home_search(search.text()))
             panel_layout.addWidget(search, 0, Qt.AlignmentFlag.AlignCenter)
 
             recent_title = QLabel(chrome.recent_title)
             recent_title.setObjectName("recentSessionsTitle")
             recent_title.setProperty("mobaHomeRecentTitle", chrome.recent_title)
+            recent_title.setProperty("mobaHomeRecentTitleFontSize", geometry.recent_title_font_size)
+            recent_title.setProperty("mobaHomeRecentTitleTopMargin", geometry.live_recent_title_top_margin)
             recent_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            recent_title.setContentsMargins(0, 9, 0, 0)
+            recent_title.setContentsMargins(0, geometry.live_recent_title_top_margin, 0, 0)
             panel_layout.addWidget(recent_title)
 
             recent_grid = QHBoxLayout()
-            recent_grid.setSpacing(44)
+            recent_grid.setSpacing(geometry.live_recent_column_spacing)
             for column_index, column in enumerate(surface.recent_columns):
                 column_layout = QVBoxLayout()
-                column_layout.setSpacing(5)
+                column_layout.setSpacing(geometry.live_recent_row_spacing)
                 for row_index, item in enumerate(column):
                     label = QLabel(item)
                     label.setObjectName("mobaRecentSession")
                     label.setProperty("mobaHomeRecentColumn", column_index)
                     label.setProperty("mobaHomeRecentRow", row_index)
+                    label.setProperty("mobaHomeRecentItemStep", geometry.recent_item_step)
+                    label.setProperty("mobaHomeRecentColumnPadding", geometry.recent_column_padding)
                     column_layout.addWidget(label)
                 recent_grid.addLayout(column_layout)
             panel_layout.addLayout(recent_grid)
@@ -4116,8 +4816,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             footer = QLabel(surface.footer)
             footer.setObjectName("mobaHomeFooter")
             footer.setProperty("mobaHomeFooter", surface.footer)
+            footer.setProperty("mobaHomeFooterYOffset", geometry.footer_y_offset)
+            footer.setProperty("mobaHomeFooterFontSize", geometry.footer_font_size)
+            footer.setProperty("mobaHomeFooterTopMargin", geometry.live_footer_top_margin)
             footer.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            footer.setContentsMargins(0, 12, 0, 0)
+            footer.setContentsMargins(0, geometry.live_footer_top_margin, 0, 0)
             panel_layout.addWidget(footer)
             return panel
 
@@ -4204,10 +4907,26 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
         def build_mremoteng_document_controls_evidence(self) -> QFrame:
             chrome = gui_design_mremoteng_document_toolbar_chrome()
+            route = gui_design_mremoteng_connection_document_route()
             state = gui_design_interaction_state("mremoteng")
             panel = QFrame()
             panel.setObjectName("mRemoteNgDocumentControls")
             panel.setProperty("designPreset", "mremoteng")
+            panel.setProperty("mRemoteNgConnectionRouteKey", route.key)
+            panel.setProperty("mRemoteNgConnectionRouteRole", route.route_role)
+            panel.setProperty("mRemoteNgConnectionRouteSelectedProfile", route.selected_profile_name)
+            panel.setProperty("mRemoteNgConnectionRouteSelectedTreeLabel", route.selected_tree_label)
+            panel.setProperty("mRemoteNgConnectionRouteDocumentControlsObject", route.document_controls_object)
+            panel.setProperty("mRemoteNgConnectionRouteDocumentControlKey", route.document_control_key)
+            panel.setProperty("mRemoteNgConnectionRouteDocumentControlObject", route.document_control_object)
+            panel.setProperty("mRemoteNgConnectionRoutePropertyGridObject", route.property_grid_object)
+            panel.setProperty("mRemoteNgConnectionRoutePropertyRowKey", route.property_row_key)
+            panel.setProperty("mRemoteNgConnectionRoutePropertyCellObject", route.property_cell_object)
+            panel.setProperty("mRemoteNgConnectionRouteActiveTab", route.active_tab_label)
+            panel.setProperty("mRemoteNgConnectionRouteProtocol", route.protocol)
+            panel.setProperty("mRemoteNgConnectionRouteState", route.workspace_state)
+            panel.setProperty("mRemoteNgConnectionRoutePropertyValue", route.property_value)
+            panel.setProperty("mRemoteNgConnectionRouteRenderSource", route.render_source)
             panel.setProperty("mRemoteNgDocumentTitleWidth", chrome.title_width)
             panel.setProperty("mRemoteNgDocumentStaticHeight", chrome.static_height)
             panel.setProperty("mRemoteNgDocumentStaticButtonStartX", chrome.static_button_start_x)
@@ -4247,6 +4966,23 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 button.setProperty("mRemoteNgDocumentLiveMinWidth", control.live_min_width)
                 button.setProperty("mRemoteNgDocumentLiveButtonHeight", control.live_button_height)
                 button.setProperty("mRemoteNgDocumentRenderSource", control.render_source)
+                if control.key == route.document_control_key:
+                    button.setProperty("mRemoteNgConnectionRouteKey", route.key)
+                    button.setProperty("mRemoteNgConnectionRouteRole", route.route_role)
+                    button.setProperty("mRemoteNgConnectionRouteSelectedProfile", route.selected_profile_name)
+                    button.setProperty("mRemoteNgConnectionRouteSelectedTreeLabel", route.selected_tree_label)
+                    button.setProperty("mRemoteNgConnectionRouteDocumentControlsObject", route.document_controls_object)
+                    button.setProperty("mRemoteNgConnectionRouteDocumentControlKey", route.document_control_key)
+                    button.setProperty("mRemoteNgConnectionRouteDocumentControlObject", route.document_control_object)
+                    button.setProperty("mRemoteNgConnectionRouteActiveTab", route.active_tab_label)
+                    button.setProperty("mRemoteNgConnectionRouteProtocol", route.protocol)
+                    button.setProperty("mRemoteNgConnectionRouteState", route.workspace_state)
+                    button.setProperty("mRemoteNgConnectionRoutePropertyRowKey", route.property_row_key)
+                    button.setProperty("mRemoteNgConnectionRoutePropertyValue", route.property_value)
+                    button.setProperty("mRemoteNgConnectionRouteRenderSource", route.render_source)
+                    button.setProperty(route.control_active_property, "true")
+                else:
+                    button.setProperty(route.control_active_property, "false")
                 button.setText(control.label)
                 button.setToolTip(control.tooltip)
                 control_state = "checked" if control.key == "external-tool" and state.checked_toolbar_key == "files" else "normal"
@@ -4331,11 +5067,27 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
         def build_mremoteng_property_grid_evidence(self) -> QFrame:
             chrome = gui_design_mremoteng_property_grid_chrome()
+            route = gui_design_mremoteng_connection_document_route()
             panel = QFrame()
             panel.setObjectName("mRemoteNgPropertyGrid")
             panel.setProperty("designPreset", "mremoteng")
             panel.setProperty("mRemoteNgPropertyColumnKeys", [column.key for column in chrome.columns])
             panel.setProperty("mRemoteNgPropertyRowKeys", [row.key for row in chrome.rows])
+            panel.setProperty("mRemoteNgConnectionRouteKey", route.key)
+            panel.setProperty("mRemoteNgConnectionRouteRole", route.route_role)
+            panel.setProperty("mRemoteNgConnectionRouteSelectedProfile", route.selected_profile_name)
+            panel.setProperty("mRemoteNgConnectionRouteSelectedTreeLabel", route.selected_tree_label)
+            panel.setProperty("mRemoteNgConnectionRouteDocumentControlsObject", route.document_controls_object)
+            panel.setProperty("mRemoteNgConnectionRouteDocumentControlKey", route.document_control_key)
+            panel.setProperty("mRemoteNgConnectionRouteDocumentControlObject", route.document_control_object)
+            panel.setProperty("mRemoteNgConnectionRoutePropertyGridObject", route.property_grid_object)
+            panel.setProperty("mRemoteNgConnectionRoutePropertyRowKey", route.property_row_key)
+            panel.setProperty("mRemoteNgConnectionRoutePropertyCellObject", route.property_cell_object)
+            panel.setProperty("mRemoteNgConnectionRouteActiveTab", route.active_tab_label)
+            panel.setProperty("mRemoteNgConnectionRouteProtocol", route.protocol)
+            panel.setProperty("mRemoteNgConnectionRouteState", route.workspace_state)
+            panel.setProperty("mRemoteNgConnectionRoutePropertyValue", route.property_value)
+            panel.setProperty("mRemoteNgConnectionRouteRenderSource", route.render_source)
             panel.setMaximumHeight(176)
             layout = QVBoxLayout(panel)
             layout.setContentsMargins(7, 6, 7, 6)
@@ -4373,6 +5125,17 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 row_frame.setProperty("mRemoteNgPropertyRowKey", row.key)
                 row_frame.setProperty("mRemoteNgPropertyInherited", "true" if row.inherited else "false")
                 row_frame.setProperty("inherited", "true" if row.inherited else "false")
+                if row.key == route.property_row_key:
+                    row_frame.setProperty("mRemoteNgConnectionRouteKey", route.key)
+                    row_frame.setProperty("mRemoteNgConnectionRouteRole", route.route_role)
+                    row_frame.setProperty("mRemoteNgConnectionRouteSelectedProfile", route.selected_profile_name)
+                    row_frame.setProperty("mRemoteNgConnectionRouteActiveTab", route.active_tab_label)
+                    row_frame.setProperty("mRemoteNgConnectionRouteProtocol", route.protocol)
+                    row_frame.setProperty("mRemoteNgConnectionRouteState", route.workspace_state)
+                    row_frame.setProperty("mRemoteNgConnectionRoutePropertyRowKey", route.property_row_key)
+                    row_frame.setProperty("mRemoteNgConnectionRoutePropertyCellObject", route.property_cell_object)
+                    row_frame.setProperty("mRemoteNgConnectionRoutePropertyValue", route.property_value)
+                    row_frame.setProperty("mRemoteNgConnectionRouteRenderSource", route.render_source)
                 row_layout = QHBoxLayout(row_frame)
                 row_layout.setContentsMargins(0, 0, 0, 0)
                 row_layout.setSpacing(3)
@@ -4388,6 +5151,12 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     cell.setProperty("mRemoteNgPropertyRowKey", row.key)
                     cell.setProperty("mRemoteNgPropertyColumnKey", column.key)
                     cell.setProperty("mRemoteNgPropertyCellValue", values[column.key])
+                    if row.key == route.property_row_key:
+                        cell.setProperty("mRemoteNgConnectionRouteKey", route.key)
+                        cell.setProperty("mRemoteNgConnectionRouteActiveTab", route.active_tab_label)
+                        cell.setProperty("mRemoteNgConnectionRoutePropertyRowKey", route.property_row_key)
+                        cell.setProperty("mRemoteNgConnectionRoutePropertyCellObject", route.property_cell_object)
+                        cell.setProperty("mRemoteNgConnectionRoutePropertyValue", route.property_value)
                     cell.setMinimumWidth(max(72, min(column.static_width, 190)))
                     cell.setToolTip(f"{row.property_label}: {values[column.key]}")
                     row_layout.addWidget(cell)
@@ -4395,6 +5164,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             return panel
 
         def build_termius_header_chips_evidence(self) -> QFrame:
+            sync_route = gui_design_termius_sync_route()
             panel = QFrame()
             panel.setObjectName("termiusHeaderChips")
             panel.setProperty("designPreset", "termius")
@@ -4409,14 +5179,41 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 label.setToolTip(chip.tooltip)
                 label.setMinimumWidth(104)
                 label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                if chip.key == sync_route.header_chip_key:
+                    label.setProperty("termiusSyncRouteKey", sync_route.key)
+                    label.setProperty("termiusSyncRouteRole", sync_route.route_role)
+                    label.setProperty("termiusSyncRouteHostsActionKey", sync_route.hosts_action_key)
+                    label.setProperty("termiusSyncRouteHostsActionObject", sync_route.hosts_action_object)
+                    label.setProperty("termiusSyncRouteHeaderChipKey", sync_route.header_chip_key)
+                    label.setProperty("termiusSyncRouteHeaderChipObject", sync_route.header_chip_object)
+                    label.setProperty("termiusSyncRouteIdentityFieldKey", sync_route.identity_field_key)
+                    label.setProperty("termiusSyncRouteIdentityCellObject", sync_route.identity_cell_object)
+                    label.setProperty("termiusSyncRouteState", sync_route.sync_state)
+                    label.setProperty("termiusSyncRouteChipLabel", chip.label)
+                    label.setProperty("termiusSyncRouteRenderSource", sync_route.render_source)
                 layout.addWidget(label)
             return panel
 
         def build_termius_host_identity_strip_evidence(self) -> QFrame:
             strip = gui_design_termius_host_identity_strip()
+            sync_route = gui_design_termius_sync_route()
+            host_route = gui_design_termius_host_selection_route()
             panel = QFrame()
             panel.setObjectName("termiusHostIdentityStrip")
             panel.setProperty("designPreset", "termius")
+            panel.setProperty("termiusHostRouteKey", host_route.key)
+            panel.setProperty("termiusHostRouteRole", host_route.route_role)
+            panel.setProperty("termiusHostRouteSelectedProfile", host_route.selected_profile_name)
+            panel.setProperty("termiusHostRouteSelectedTreeLabel", host_route.selected_tree_label)
+            panel.setProperty("termiusHostRouteHostsPanelObject", host_route.hosts_panel_object)
+            panel.setProperty("termiusHostRouteIdentityObject", host_route.host_identity_object)
+            panel.setProperty("termiusHostRouteIdentityFieldKey", host_route.identity_field_key)
+            panel.setProperty("termiusHostRouteIdentityCellObject", host_route.identity_cell_object)
+            panel.setProperty("termiusHostRouteActiveTab", host_route.active_tab_label)
+            panel.setProperty("termiusHostRouteTarget", host_route.target_value)
+            panel.setProperty("termiusHostRouteProtocol", host_route.protocol_value)
+            panel.setProperty("termiusHostRouteIdentityValue", host_route.host_value)
+            panel.setProperty("termiusHostRouteRenderSource", host_route.render_source)
             panel.setProperty("termiusHostIdentityFieldKeys", [field.key for field in strip.fields])
             panel.setProperty("termiusHostIdentityTitleWidth", strip.title_width)
             panel.setProperty("termiusHostIdentityStaticTitleX", strip.static_title_x)
@@ -4458,14 +5255,61 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 cell.setMinimumWidth(field.live_min_width)
                 cell.setMinimumHeight(field.live_cell_height)
                 cell.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+                if field.key == sync_route.identity_field_key:
+                    cell.setProperty("termiusSyncRouteKey", sync_route.key)
+                    cell.setProperty("termiusSyncRouteRole", sync_route.route_role)
+                    cell.setProperty("termiusSyncRouteHostsActionKey", sync_route.hosts_action_key)
+                    cell.setProperty("termiusSyncRouteHostsActionObject", sync_route.hosts_action_object)
+                    cell.setProperty("termiusSyncRouteHeaderChipKey", sync_route.header_chip_key)
+                    cell.setProperty("termiusSyncRouteHeaderChipObject", sync_route.header_chip_object)
+                    cell.setProperty("termiusSyncRouteIdentityFieldKey", sync_route.identity_field_key)
+                    cell.setProperty("termiusSyncRouteIdentityCellObject", sync_route.identity_cell_object)
+                    cell.setProperty("termiusSyncRouteState", sync_route.sync_state)
+                    cell.setProperty("termiusSyncRouteIdentityValue", field.value)
+                    cell.setProperty("termiusSyncRouteRenderSource", sync_route.render_source)
+                if field.key == host_route.identity_field_key:
+                    cell.setProperty("termiusHostRouteKey", host_route.key)
+                    cell.setProperty("termiusHostRouteRole", host_route.route_role)
+                    cell.setProperty("termiusHostRouteSelectedProfile", host_route.selected_profile_name)
+                    cell.setProperty("termiusHostRouteSelectedTreeLabel", host_route.selected_tree_label)
+                    cell.setProperty("termiusHostRouteActiveTab", host_route.active_tab_label)
+                    cell.setProperty("termiusHostRouteTarget", host_route.target_value)
+                    cell.setProperty("termiusHostRouteProtocol", host_route.protocol_value)
+                    cell.setProperty("termiusHostRouteIdentityValue", host_route.host_value)
+                    cell.setProperty("termiusHostRouteRenderSource", host_route.render_source)
                 layout.addWidget(cell)
             layout.addStretch(1)
             return panel
 
         def build_remmina_viewer_controls_evidence(self) -> QFrame:
+            route = gui_design_remmina_profile_viewer_route()
+            clipboard_route = gui_design_remmina_clipboard_route()
             panel = QFrame()
             panel.setObjectName("remminaViewerControls")
             panel.setProperty("designPreset", "remmina")
+            panel.setProperty("remminaProfileViewerRouteKey", route.key)
+            panel.setProperty("remminaProfileViewerRouteRole", route.route_role)
+            panel.setProperty("remminaProfileViewerSelectedProfileKey", route.selected_profile_key)
+            panel.setProperty("remminaProfileViewerSelectedProfileObject", route.selected_profile_object)
+            panel.setProperty("remminaProfileViewerControlsObject", route.viewer_controls_object)
+            panel.setProperty("remminaProfileViewerControlKey", route.viewer_control_key)
+            panel.setProperty("remminaProfileViewerControlObject", route.viewer_control_object)
+            panel.setProperty("remminaProfileViewerRouteActiveTab", route.active_tab_label)
+            panel.setProperty("remminaProfileViewerProtocol", route.protocol)
+            panel.setProperty("remminaProfileViewerStatus", route.profile_status)
+            panel.setProperty("remminaProfileViewerRenderSource", route.render_source)
+            panel.setProperty("remminaClipboardRouteKey", clipboard_route.key)
+            panel.setProperty("remminaClipboardRouteRole", clipboard_route.route_role)
+            panel.setProperty("remminaClipboardViewerControlsObject", clipboard_route.viewer_controls_object)
+            panel.setProperty("remminaClipboardViewerControlKey", clipboard_route.viewer_control_key)
+            panel.setProperty("remminaClipboardViewerControlObject", clipboard_route.viewer_control_object)
+            panel.setProperty("remminaClipboardRouteActiveTab", clipboard_route.active_tab_label)
+            panel.setProperty("remminaClipboardRouteProtocol", clipboard_route.protocol)
+            panel.setProperty("remminaClipboardRouteState", clipboard_route.clipboard_state)
+            panel.setProperty("remminaClipboardRouteStatusSegment", clipboard_route.status_segment)
+            panel.setProperty("remminaClipboardRouteDetailLine", clipboard_route.detail_line)
+            panel.setProperty("remminaClipboardRouteActivityLine", clipboard_route.activity_line)
+            panel.setProperty("remminaClipboardRouteRenderSource", clipboard_route.render_source)
             layout = QHBoxLayout(panel)
             layout.setContentsMargins(7, 5, 7, 5)
             layout.setSpacing(6)
@@ -4486,6 +5330,28 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 button.setProperty("remminaViewerControlLiveMinWidth", control.live_min_width)
                 button.setProperty("remminaViewerControlLiveButtonHeight", control.live_button_height)
                 button.setProperty("remminaViewerControlRenderSource", control.render_source)
+                if control.key == route.viewer_control_key:
+                    button.setProperty("remminaProfileViewerRouteKey", route.key)
+                    button.setProperty("remminaProfileViewerRouteRole", route.route_role)
+                    button.setProperty("remminaProfileViewerSelectedProfileKey", route.selected_profile_key)
+                    button.setProperty("remminaProfileViewerRouteActiveTab", route.active_tab_label)
+                    button.setProperty("remminaProfileViewerStatus", route.profile_status)
+                    button.setProperty(route.control_active_property, "true")
+                else:
+                    button.setProperty(route.control_active_property, "false")
+                if control.key == clipboard_route.viewer_control_key:
+                    button.setProperty("remminaClipboardRouteKey", clipboard_route.key)
+                    button.setProperty("remminaClipboardRouteRole", clipboard_route.route_role)
+                    button.setProperty(clipboard_route.tab_label_property, clipboard_route.active_tab_label)
+                    button.setProperty("remminaClipboardRouteProtocol", clipboard_route.protocol)
+                    button.setProperty(clipboard_route.clipboard_state_property, clipboard_route.clipboard_state)
+                    button.setProperty("remminaClipboardRouteStatusSegment", clipboard_route.status_segment)
+                    button.setProperty("remminaClipboardRouteDetailLine", clipboard_route.detail_line)
+                    button.setProperty("remminaClipboardRouteActivityLine", clipboard_route.activity_line)
+                    button.setProperty("remminaClipboardRouteRenderSource", clipboard_route.render_source)
+                    button.setProperty(clipboard_route.control_active_property, "true")
+                else:
+                    button.setProperty(clipboard_route.control_active_property, "false")
                 button.setText(control.label)
                 button.setToolTip(control.tooltip)
                 button.setIcon(self.remmina_viewer_control_icon(control.icon_key, size=control.live_icon_size))
@@ -4555,9 +5421,26 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
         def build_securecrt_session_manager_chrome(self) -> QFrame:
             chrome = gui_design_securecrt_session_manager_chrome()
+            route = gui_design_securecrt_session_manager_route()
             panel = QFrame()
             panel.setObjectName("secureCrtSessionManagerChrome")
             panel.setProperty("designPreset", "securecrt")
+            panel.setProperty("secureCrtSessionRouteKey", route.key)
+            panel.setProperty("secureCrtSessionRouteRole", route.route_role)
+            panel.setProperty("secureCrtSessionRouteSelectedProfile", route.selected_profile_name)
+            panel.setProperty("secureCrtSessionRouteSelectedTreeLabel", route.selected_tree_label)
+            panel.setProperty("secureCrtSessionRouteSessionManagerObject", route.session_manager_object)
+            panel.setProperty("secureCrtSessionRouteActionKey", route.session_manager_action_key)
+            panel.setProperty("secureCrtSessionRouteActionObject", route.session_manager_action_object)
+            panel.setProperty("secureCrtSessionRouteStatusStripObject", route.status_strip_object)
+            panel.setProperty("secureCrtSessionRouteStatusFieldKey", route.status_field_key)
+            panel.setProperty("secureCrtSessionRouteStatusFieldObject", route.status_field_object)
+            panel.setProperty("secureCrtSessionRouteActiveTab", route.active_tab_label)
+            panel.setProperty("secureCrtSessionRouteTarget", route.target_value)
+            panel.setProperty("secureCrtSessionRouteProtocol", route.protocol_value)
+            panel.setProperty("secureCrtSessionRouteSession", route.session_value)
+            panel.setProperty("secureCrtSessionRouteStatusValue", route.target_value)
+            panel.setProperty("secureCrtSessionRouteRenderSource", route.render_source)
             panel.setProperty("secureCrtSessionManagerActionKeys", [action.key for action in chrome.actions])
             panel.setProperty("secureCrtSessionFilterPlaceholder", chrome.filter_placeholder)
             panel.setProperty("secureCrtSessionManagerStaticTitleX", chrome.static_title_x)
@@ -4601,6 +5484,20 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 button.setProperty("secureCrtSessionManagerLiveIconSize", action.live_icon_size)
                 button.setProperty("secureCrtSessionManagerLiveButtonSize", action.live_button_size)
                 button.setProperty("secureCrtSessionManagerRenderSource", action.render_source)
+                button.setProperty("secureCrtSessionRouteKey", route.key)
+                button.setProperty("secureCrtSessionRouteRole", route.route_role)
+                button.setProperty("secureCrtSessionRouteSelectedProfile", route.selected_profile_name)
+                button.setProperty("secureCrtSessionRouteSelectedTreeLabel", route.selected_tree_label)
+                button.setProperty("secureCrtSessionRouteActiveTab", route.active_tab_label)
+                button.setProperty("secureCrtSessionRouteTarget", route.target_value)
+                button.setProperty("secureCrtSessionRouteProtocol", route.protocol_value)
+                button.setProperty("secureCrtSessionRouteSession", route.session_value)
+                button.setProperty("secureCrtSessionRouteStatusValue", route.target_value)
+                button.setProperty("secureCrtSessionRouteRenderSource", route.render_source)
+                button.setProperty(
+                    "secureCrtSessionRouteActive",
+                    "true" if action.key == route.session_manager_action_key else "false",
+                )
                 button.setToolTip(action.tooltip)
                 button.setIcon(self.securecrt_session_manager_action_icon(action.icon_key, size=action.live_icon_size))
                 button.setIconSize(QSize(action.live_icon_size, action.live_icon_size))
@@ -4666,9 +5563,24 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
         def build_termius_hosts_chrome(self) -> QFrame:
             chrome = gui_design_termius_hosts_chrome()
+            sync_route = gui_design_termius_sync_route()
+            host_route = gui_design_termius_host_selection_route()
             panel = QFrame()
             panel.setObjectName("termiusHostsChrome")
             panel.setProperty("designPreset", "termius")
+            panel.setProperty("termiusHostRouteKey", host_route.key)
+            panel.setProperty("termiusHostRouteRole", host_route.route_role)
+            panel.setProperty("termiusHostRouteSelectedProfile", host_route.selected_profile_name)
+            panel.setProperty("termiusHostRouteSelectedTreeLabel", host_route.selected_tree_label)
+            panel.setProperty("termiusHostRouteHostsPanelObject", host_route.hosts_panel_object)
+            panel.setProperty("termiusHostRouteIdentityObject", host_route.host_identity_object)
+            panel.setProperty("termiusHostRouteIdentityFieldKey", host_route.identity_field_key)
+            panel.setProperty("termiusHostRouteIdentityCellObject", host_route.identity_cell_object)
+            panel.setProperty("termiusHostRouteActiveTab", host_route.active_tab_label)
+            panel.setProperty("termiusHostRouteTarget", host_route.target_value)
+            panel.setProperty("termiusHostRouteProtocol", host_route.protocol_value)
+            panel.setProperty("termiusHostRouteIdentityValue", host_route.host_value)
+            panel.setProperty("termiusHostRouteRenderSource", host_route.render_source)
             panel.setProperty("termiusHostsActionKeys", [action.key for action in chrome.actions])
             panel.setProperty("termiusHostSearchPlaceholder", chrome.filter_placeholder)
             panel.setMaximumHeight(94)
@@ -4689,6 +5601,18 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 button.setProperty("termiusHostsActionLabel", action.label)
                 button.setProperty("termiusHostsStaticX", action.static_x)
                 button.setToolTip(action.tooltip)
+                if action.key == sync_route.hosts_action_key:
+                    button.setProperty("termiusSyncRouteKey", sync_route.key)
+                    button.setProperty("termiusSyncRouteRole", sync_route.route_role)
+                    button.setProperty("termiusSyncRouteHostsActionKey", sync_route.hosts_action_key)
+                    button.setProperty("termiusSyncRouteHostsActionObject", sync_route.hosts_action_object)
+                    button.setProperty("termiusSyncRouteHeaderChipKey", sync_route.header_chip_key)
+                    button.setProperty("termiusSyncRouteHeaderChipObject", sync_route.header_chip_object)
+                    button.setProperty("termiusSyncRouteIdentityFieldKey", sync_route.identity_field_key)
+                    button.setProperty("termiusSyncRouteIdentityCellObject", sync_route.identity_cell_object)
+                    button.setProperty("termiusSyncRouteState", sync_route.sync_state)
+                    button.setProperty("termiusSyncRouteActionLabel", action.label)
+                    button.setProperty("termiusSyncRouteRenderSource", sync_route.render_source)
                 button.setIcon(self.style().standardIcon(self.standard_icon(self.termius_hosts_icon_name(action.icon_key))))
                 button.setIconSize(QSize(14, 14))
                 button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
@@ -4728,11 +5652,23 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
         def build_remmina_profile_list_chrome(self) -> QFrame:
             chrome = gui_design_remmina_profile_list_chrome()
+            route = gui_design_remmina_profile_viewer_route()
             panel = QFrame()
             panel.setObjectName("remminaProfileListChrome")
             panel.setProperty("designPreset", "remmina")
             panel.setProperty("remminaProfileColumnKeys", [column.key for column in chrome.columns])
             panel.setProperty("remminaProfileRowKeys", [row.key for row in chrome.rows])
+            panel.setProperty("remminaProfileViewerRouteKey", route.key)
+            panel.setProperty("remminaProfileViewerRouteRole", route.route_role)
+            panel.setProperty("remminaProfileViewerSelectedProfileKey", route.selected_profile_key)
+            panel.setProperty("remminaProfileViewerSelectedProfileObject", route.selected_profile_object)
+            panel.setProperty("remminaProfileViewerControlsObject", route.viewer_controls_object)
+            panel.setProperty("remminaProfileViewerControlKey", route.viewer_control_key)
+            panel.setProperty("remminaProfileViewerControlObject", route.viewer_control_object)
+            panel.setProperty("remminaProfileViewerRouteActiveTab", route.active_tab_label)
+            panel.setProperty("remminaProfileViewerProtocol", route.protocol)
+            panel.setProperty("remminaProfileViewerStatus", route.profile_status)
+            panel.setProperty("remminaProfileViewerRenderSource", route.render_source)
             panel.setProperty("remminaProfileStaticFilterX", chrome.static_filter_x)
             panel.setProperty("remminaProfileStaticFilterY", chrome.static_filter_y)
             panel.setProperty("remminaProfileStaticFilterHeight", chrome.static_filter_height)
@@ -4789,6 +5725,14 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 row_frame.setProperty("remminaProfileRowKey", row.key)
                 row_frame.setProperty("remminaProfileProtocol", row.protocol)
                 row_frame.setProperty("selectedRow", "true" if row.selected else "false")
+                if row.key == route.selected_profile_key:
+                    row_frame.setProperty("remminaProfileViewerRouteKey", route.key)
+                    row_frame.setProperty("remminaProfileViewerRouteRole", route.route_role)
+                    row_frame.setProperty("remminaProfileViewerControlKey", route.viewer_control_key)
+                    row_frame.setProperty("remminaProfileViewerRouteActiveTab", route.active_tab_label)
+                    row_frame.setProperty("remminaProfileViewerProtocol", route.protocol)
+                    row_frame.setProperty("remminaProfileViewerStatus", route.profile_status)
+                    row_frame.setProperty(route.selected_row_property, "true" if row.selected else "false")
                 row_frame.setProperty("remminaProfileStaticRowHeight", chrome.static_row_height)
                 row_frame.setProperty("remminaProfileStaticRowStep", chrome.static_row_step)
                 row_frame.setProperty("remminaProfileLiveRowMinHeight", chrome.live_row_min_height)
@@ -4815,6 +5759,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     cell.setProperty("remminaProfileCellValue", values[column.key])
                     cell.setProperty("remminaProfileColumnWidth", column.static_width)
                     cell.setProperty("remminaProfileColumnLiveMinWidth", column.live_min_width)
+                    if row.key == route.selected_profile_key:
+                        cell.setProperty("remminaProfileViewerRouteKey", route.key)
+                        cell.setProperty("remminaProfileViewerRouteActiveTab", route.active_tab_label)
+                        cell.setProperty("remminaProfileViewerStatus", route.profile_status)
                     cell.setMinimumWidth(column.live_min_width)
                     cell.setToolTip(f"{row.name}: {row.status}")
                     row_layout.addWidget(cell)
@@ -4824,6 +5772,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 status.setProperty("remminaProfileColumnKey", "status")
                 status.setProperty("remminaProfileCellValue", row.status)
                 status.setProperty("remminaProfileStaticStatusY", chrome.static_status_y)
+                if row.key == route.selected_profile_key:
+                    status.setProperty("remminaProfileViewerRouteKey", route.key)
+                    status.setProperty("remminaProfileViewerRouteActiveTab", route.active_tab_label)
+                    status.setProperty("remminaProfileViewerStatus", route.profile_status)
                 status.setToolTip(f"{row.name}: {row.status}")
                 row_layout.addWidget(status, 1)
                 layout.addWidget(row_frame)
@@ -4831,9 +5783,26 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
         def build_securecrt_session_status_strip_evidence(self) -> QFrame:
             chrome = gui_design_securecrt_session_status_strip()
+            route = gui_design_securecrt_session_manager_route()
             panel = QFrame()
             panel.setObjectName("secureCrtSessionStatusStrip")
             panel.setProperty("designPreset", "securecrt")
+            panel.setProperty("secureCrtSessionRouteKey", route.key)
+            panel.setProperty("secureCrtSessionRouteRole", route.route_role)
+            panel.setProperty("secureCrtSessionRouteSelectedProfile", route.selected_profile_name)
+            panel.setProperty("secureCrtSessionRouteSelectedTreeLabel", route.selected_tree_label)
+            panel.setProperty("secureCrtSessionRouteSessionManagerObject", route.session_manager_object)
+            panel.setProperty("secureCrtSessionRouteActionKey", route.session_manager_action_key)
+            panel.setProperty("secureCrtSessionRouteActionObject", route.session_manager_action_object)
+            panel.setProperty("secureCrtSessionRouteStatusStripObject", route.status_strip_object)
+            panel.setProperty("secureCrtSessionRouteStatusFieldKey", route.status_field_key)
+            panel.setProperty("secureCrtSessionRouteStatusFieldObject", route.status_field_object)
+            panel.setProperty("secureCrtSessionRouteActiveTab", route.active_tab_label)
+            panel.setProperty("secureCrtSessionRouteTarget", route.target_value)
+            panel.setProperty("secureCrtSessionRouteProtocol", route.protocol_value)
+            panel.setProperty("secureCrtSessionRouteSession", route.session_value)
+            panel.setProperty("secureCrtSessionRouteStatusValue", route.target_value)
+            panel.setProperty("secureCrtSessionRouteRenderSource", route.render_source)
             panel.setProperty("secureCrtSessionStatusFieldKeys", [field.key for field in chrome.fields])
             panel.setProperty("secureCrtSessionStatusTitleWidth", chrome.title_width)
             panel.setProperty("secureCrtSessionStatusStaticTitleX", chrome.static_title_x)
@@ -4871,6 +5840,16 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 cell.setProperty("secureCrtSessionStatusStaticValueY", field.static_value_y)
                 cell.setProperty("secureCrtSessionStatusLiveMinWidth", field.live_min_width)
                 cell.setProperty("secureCrtSessionStatusLiveCellHeight", field.live_cell_height)
+                if field.key == route.status_field_key:
+                    cell.setProperty("secureCrtSessionRouteKey", route.key)
+                    cell.setProperty("secureCrtSessionRouteRole", route.route_role)
+                    cell.setProperty("secureCrtSessionRouteSelectedProfile", route.selected_profile_name)
+                    cell.setProperty("secureCrtSessionRouteActiveTab", route.active_tab_label)
+                    cell.setProperty("secureCrtSessionRouteTarget", route.target_value)
+                    cell.setProperty("secureCrtSessionRouteProtocol", route.protocol_value)
+                    cell.setProperty("secureCrtSessionRouteSession", route.session_value)
+                    cell.setProperty("secureCrtSessionRouteStatusValue", route.target_value)
+                    cell.setProperty("secureCrtSessionRouteRenderSource", route.render_source)
                 cell.setToolTip(field.tooltip)
                 cell.setMinimumWidth(field.live_min_width)
                 cell.setMinimumHeight(field.live_cell_height)
@@ -4881,6 +5860,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
         def build_securecrt_command_window_evidence(self) -> QFrame:
             chrome = gui_design_securecrt_command_window_chrome()
+            send_route = gui_design_securecrt_command_window_send_route()
             panel = QFrame()
             panel.setObjectName("secureCrtCommandWindow")
             panel.setProperty("secureCrtCommandWindowKey", chrome.key)
@@ -4938,6 +5918,24 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             status = QLabel(chrome.status)
             status.setObjectName("secureCrtCommandStatus")
             status.setProperty("secureCrtCommandWindowKey", chrome.key)
+            route_widgets = (panel, target, command_input, send, status)
+            route_value_properties = {
+                "secureCrtCommandRouteCommand": chrome.command,
+                "secureCrtCommandRouteTargetScope": chrome.target_scope,
+                "secureCrtCommandRouteSendLabel": chrome.send_label,
+                "secureCrtCommandRouteStatus": chrome.status,
+            }
+            for route_widget in route_widgets:
+                route_widget.setProperty("secureCrtCommandRouteKey", send_route.key)
+                route_widget.setProperty("secureCrtCommandRouteRole", send_route.route_role)
+                route_widget.setProperty("secureCrtCommandRouteSourceWindowObject", send_route.source_window_object)
+                route_widget.setProperty("secureCrtCommandRouteTargetScopeObject", send_route.target_scope_object)
+                route_widget.setProperty("secureCrtCommandRouteCommandInputObject", send_route.command_input_object)
+                route_widget.setProperty("secureCrtCommandRouteSendControlObject", send_route.send_control_object)
+                route_widget.setProperty("secureCrtCommandRouteStatusObject", send_route.status_object)
+                route_widget.setProperty("secureCrtCommandRouteRenderSource", send_route.render_source)
+                for route_property, route_value in route_value_properties.items():
+                    route_widget.setProperty(route_property, route_value)
             command_row.addWidget(target)
             command_row.addWidget(command_input, 1)
             command_row.addWidget(send)
@@ -5035,6 +6033,26 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             title = tab_title or moba_connected_tab_label(state)
             index = self.add_workspace_tab(panel, title, role="terminal")
             active_tab = next(item for item in moba_connected_tab_chrome_items(state) if item.key == "active-session")
+            route = moba_connected_session_route(state)
+            self.tabs.setProperty("mobaConnectedRouteKey", route.key)
+            self.tabs.setProperty("mobaConnectedRouteRole", route.route_role)
+            self.tabs.setProperty("mobaConnectedRouteActiveTabKey", route.active_tab_key)
+            self.tabs.setProperty("mobaConnectedRouteActiveTabLabel", route.active_tab_label)
+            self.tabs.setProperty("mobaConnectedRouteReferenceTabLabel", route.reference_tab_label)
+            self.tabs.setProperty("mobaConnectedRouteActiveTabObject", route.active_tab_object)
+            self.tabs.setProperty("mobaConnectedRouteConnectedPanelObject", route.connected_panel_object)
+            self.tabs.setProperty("mobaConnectedRouteLeftDockObject", route.left_dock_object)
+            self.tabs.setProperty("mobaConnectedRouteSftpBrowserObject", route.sftp_browser_object)
+            self.tabs.setProperty("mobaConnectedRouteSftpPathObject", route.sftp_path_object)
+            self.tabs.setProperty("mobaConnectedRouteSftpTableObject", route.sftp_table_object)
+            self.tabs.setProperty("mobaConnectedRouteSshBannerObject", route.ssh_banner_object)
+            self.tabs.setProperty("mobaConnectedRouteTerminalAreaObject", route.terminal_area_object)
+            self.tabs.setProperty("mobaConnectedRouteTerminalOutputObject", route.terminal_output_object)
+            self.tabs.setProperty("mobaConnectedRouteTelemetryBarObject", route.telemetry_bar_object)
+            self.tabs.setProperty("mobaConnectedRouteTelemetryIdentityCellKey", route.telemetry_identity_cell_key)
+            self.tabs.setProperty(route.target_property, route.target)
+            self.tabs.setProperty(route.remote_path_property, route.remote_path)
+            self.tabs.setProperty("mobaConnectedRouteRenderSource", route.render_source)
             self.apply_moba_tab_chrome(
                 index,
                 key=active_tab.key,

@@ -6,11 +6,15 @@ from remote_ops_workspace.gui_designs import (
     gui_design_moba_bottom_edge_controls,
     gui_design_moba_connected_dock_frame,
     gui_design_moba_home_welcome_chrome,
+    gui_design_moba_home_welcome_geometry,
     gui_design_moba_monitoring_control_geometry,
     gui_design_moba_monitoring_controls,
     gui_design_moba_monitoring_metrics,
+    gui_design_moba_monitoring_telemetry_route,
     gui_design_moba_quick_connect_chrome,
     gui_design_moba_quick_connect_suggestion_chrome,
+    gui_design_moba_rail_chrome,
+    gui_design_moba_rail_item_geometry,
     gui_design_moba_rail_items,
     gui_design_moba_remote_monitoring_dock_chrome,
     gui_design_moba_ribbon_action_geometry,
@@ -18,12 +22,16 @@ from remote_ops_workspace.gui_designs import (
     gui_design_moba_ribbon_actions,
     gui_design_moba_ribbon_edge_actions,
     gui_design_moba_right_utility_actions,
+    gui_design_moba_right_utility_rail_chrome,
     gui_design_moba_session_edge_actions,
+    gui_design_moba_session_tree_chrome,
     gui_design_moba_sftp_browser_chrome,
     gui_design_moba_sftp_dock_actions,
     gui_design_moba_sftp_dock_layout,
     gui_design_moba_sftp_file_row_icon,
     gui_design_moba_sftp_file_row_icons,
+    gui_design_moba_sftp_follow_folder_route,
+    gui_design_moba_sftp_routed_file_rows,
     gui_design_moba_sftp_toolbar_action_geometry,
     gui_design_moba_sftp_toolbar_action_geometry_for,
     gui_design_moba_ssh_banner_chrome,
@@ -38,6 +46,7 @@ from remote_ops_workspace.gui_designs import (
     gui_design_moba_top_menu_geometry_for,
     gui_design_moba_top_menu_items,
     gui_design_moba_top_stack_geometry,
+    gui_design_mremoteng_connection_document_route,
     gui_design_mremoteng_document_controls,
     gui_design_mremoteng_document_toolbar_chrome,
     gui_design_mremoteng_property_grid_chrome,
@@ -45,19 +54,26 @@ from remote_ops_workspace.gui_designs import (
     gui_design_preset_ids,
     gui_design_preset_labels,
     gui_design_reference_state,
+    gui_design_remmina_clipboard_route,
     gui_design_remmina_profile_list_chrome,
+    gui_design_remmina_profile_viewer_route,
     gui_design_remmina_viewer_controls,
     gui_design_securecrt_command_window_chrome,
+    gui_design_securecrt_command_window_send_route,
     gui_design_securecrt_session_manager_chrome,
+    gui_design_securecrt_session_manager_route,
     gui_design_securecrt_session_status_strip,
     gui_design_securecrt_top_chrome,
     gui_design_termius_header_chips,
     gui_design_termius_host_identity_strip,
+    gui_design_termius_host_selection_route,
     gui_design_termius_hosts_chrome,
+    gui_design_termius_sync_route,
     gui_design_tree_root_icon,
     gui_design_tree_row_icon,
     gui_design_tree_row_icons,
     gui_design_workflow_cards,
+    gui_design_workspace_surface,
 )
 
 
@@ -344,15 +360,48 @@ def test_mobaxterm_home_welcome_chrome_is_shared_metadata() -> None:
     assert chrome.primary_action_icon_key == "session"
     assert chrome.secondary_action_icon_key == "tunneling"
     assert chrome.search_width == 405
-    assert chrome.action_spacing == 96
+    assert chrome.action_spacing == 62
     assert chrome.recent_title == "Recent sessions"
     assert chrome.surface_width == 640
+
+
+def test_mobaxterm_home_welcome_geometry_is_shared_metadata() -> None:
+    chrome = gui_design_moba_home_welcome_chrome()
+    geometry = gui_design_moba_home_welcome_geometry()
+
+    assert geometry.center_side_margin == 80
+    assert geometry.hero_min_y == 115
+    assert geometry.hero_height == 330
+    assert geometry.logo_size == 46
+    assert geometry.logo_inner_padding == 7
+    assert geometry.logo_icon_size == 32
+    assert geometry.logo_cluster_width == 360
+    assert geometry.title_gap == 28
+    assert geometry.title_y_offset == 9
+    assert geometry.title_font_size == 28
+    assert geometry.subtitle_y_offset == 57
+    assert geometry.subtitle_font_size == 12
+    assert geometry.button_y_offset == 94
+    assert geometry.primary_width == 206
+    assert geometry.secondary_width == 220
+    assert geometry.action_gap == chrome.action_spacing == 62
+    assert geometry.button_height == 28
+    assert geometry.search_y_gap == 45
+    assert geometry.search_height == 25
+    assert geometry.recent_y_gap == 52
+    assert geometry.recent_item_step == 22
+    assert geometry.footer_y_offset == 120
+    assert geometry.live_logo_box_width == 64
+    assert geometry.live_logo_box_height == 56
+    assert geometry.live_logo_pixmap_size == 56
+    assert geometry.render_source == "generated-pixmap"
 
 
 def test_mobaxterm_rail_items_include_vertical_reference_labels() -> None:
     items = gui_design_moba_rail_items()
 
     assert [item.role for item in items] == ["collapse", "sessions", "favorites", "tools", "macros", "sftp"]
+    assert [item.rail_icon_key for item in items] == ["collapse", "session", "star", "tools", "macros", "sftp"]
     assert {item.role: item.label for item in items if item.label} == {
         "sessions": "Sessions",
         "tools": "Tools",
@@ -361,6 +410,31 @@ def test_mobaxterm_rail_items_include_vertical_reference_labels() -> None:
     }
     assert all(item.icon_key for item in items)
     assert all(item.color.startswith("#") for item in items)
+
+
+def test_mobaxterm_rail_geometry_is_shared_metadata() -> None:
+    chrome = gui_design_moba_rail_chrome()
+    geometry = gui_design_moba_rail_item_geometry()
+
+    assert chrome.rail_width == 24
+    assert chrome.icon_x == 5
+    assert chrome.static_icon_size == 16
+    assert chrome.live_icon_size == 20
+    assert chrome.generated_icon_size == 22
+    assert (chrome.button_width, chrome.button_height) == (24, 26)
+    assert (chrome.active_x, chrome.active_y_offset, chrome.active_width, chrome.active_height) == (2, -3, 20, 30)
+    assert (chrome.label_width, chrome.label_height, chrome.label_step) == (24, 54, 58)
+    assert chrome.unlabeled_gap_after == 8
+    assert chrome.label_font_size == 10
+    assert chrome.render_source == "generated-pixmap"
+    assert [(item.role, item.static_icon_y, item.static_label_y) for item in geometry] == [
+        ("collapse", 8, 0),
+        ("sessions", 42, 68),
+        ("favorites", 126, 0),
+        ("tools", 160, 186),
+        ("macros", 244, 270),
+        ("sftp", 328, 354),
+    ]
 
 
 def test_mobaxterm_connected_interaction_state_checks_sftp_rail() -> None:
@@ -391,6 +465,19 @@ def test_mobaxterm_right_utility_actions_are_shared_metadata() -> None:
     assert all(action.color.startswith("#") for action in actions)
 
 
+def test_mobaxterm_right_utility_rail_chrome_is_shared_metadata() -> None:
+    chrome = gui_design_moba_right_utility_rail_chrome()
+
+    assert chrome.static_width == 30
+    assert chrome.live_width == 30
+    assert (chrome.margin_left, chrome.margin_top, chrome.margin_right, chrome.margin_bottom) == (2, 2, 2, 2)
+    assert chrome.action_spacing == 8
+    assert chrome.session_edge_top_y == 108
+    assert chrome.session_edge_height == 50
+    assert chrome.session_edge_icon_x == 9
+    assert chrome.session_edge_icon_size == 16
+
+
 def test_mobaxterm_session_edge_actions_are_shared_metadata() -> None:
     actions = gui_design_moba_session_edge_actions()
 
@@ -398,6 +485,11 @@ def test_mobaxterm_session_edge_actions_are_shared_metadata() -> None:
     assert [action.icon_key for action in actions] == ["clip", "gear"]
     assert [action.label for action in actions] == ["Session attachment", "Session settings"]
     assert [action.static_y for action in actions] == [112, 130]
+    assert [action.relative_y(108) for action in actions] == [4, 22]
+    assert [action.static_size for action in actions] == [16, 16]
+    assert [action.live_icon_size for action in actions] == [16, 16]
+    assert [action.button_size for action in actions] == [22, 22]
+    assert [action.render_source for action in actions] == ["generated-pixmap", "generated-pixmap"]
     assert all(action.tooltip for action in actions)
     assert all(action.color.startswith("#") for action in actions)
 
@@ -501,6 +593,25 @@ def test_mobaxterm_sftp_browser_chrome_is_shared_metadata() -> None:
     }
 
 
+def test_mobaxterm_sftp_follow_folder_route_is_shared_metadata() -> None:
+    route = gui_design_moba_sftp_follow_folder_route()
+
+    assert route.key == "sftp-follow-terminal-folder-route"
+    assert route.route_role == "terminal-cwd-to-sftp-browser"
+    assert route.source_control_key == "follow-terminal-folder"
+    assert route.source_control_object == "mobaFollowTerminalFolder"
+    assert route.source_path_property == "mobaMonitoringFollowPath"
+    assert route.source_plan_property == "mobaMonitoringFollowPlan"
+    assert route.source_enabled_property == "mobaMonitoringFollowEnabled"
+    assert route.target_browser_object == "mobaSftpBrowser"
+    assert route.target_path_object == "mobaSftpPath"
+    assert route.target_table_object == "mobaSftpFileTable"
+    assert route.target_path_property == "mobaSftpFollowRoutePath"
+    assert route.target_plan_property == "mobaSftpFollowRoutePlan"
+    assert route.target_enabled_property == "mobaSftpFollowRouteEnabled"
+    assert route.render_source == "state-model"
+
+
 def test_mobaxterm_sftp_file_row_icons_are_shared_metadata() -> None:
     row_icons = gui_design_moba_sftp_file_row_icons()
 
@@ -513,6 +624,25 @@ def test_mobaxterm_sftp_file_row_icons_are_shared_metadata() -> None:
     assert [item.render_source for item in row_icons] == ["generated-pixmap"] * 3
     assert gui_design_moba_sftp_file_row_icon("parent-dir").icon_key == "folder-up"
     assert gui_design_moba_sftp_file_row_icon("unknown").icon_key == "file"
+
+
+def test_mobaxterm_sftp_routed_file_rows_are_shared_metadata() -> None:
+    route = gui_design_moba_sftp_follow_folder_route()
+    rows = gui_design_moba_sftp_routed_file_rows()
+    chrome = gui_design_moba_sftp_browser_chrome()
+
+    assert rows.key == "sftp-follow-folder-file-rows"
+    assert rows.route_role == "follow-folder-visible-file-list"
+    assert rows.follow_route_key == route.key
+    assert rows.target_table_object == route.target_table_object == "mobaSftpFileTable"
+    assert rows.row_contract_property == "mobaSftpRowContractKey"
+    assert rows.row_route_property == "mobaSftpRowFollowRouteKey"
+    assert rows.row_path_property == "mobaSftpRowSourcePath"
+    assert rows.row_index_property == "mobaSftpRowIndex"
+    assert rows.row_selected_property == "mobaSftpRowSelectedByRoute"
+    assert rows.parent_row_name == chrome.parent_row_label == ".."
+    assert rows.selected_row_kind == chrome.selected_row_kind == "parent-dir"
+    assert rows.render_source == "state-file-entries"
 
 
 def test_mobaxterm_sftp_dock_layout_is_shared_density_metadata() -> None:
@@ -573,8 +703,14 @@ def test_mobaxterm_monitoring_control_geometry_is_shared_metadata() -> None:
     assert [item.icon_x for item in geometry] == [104, 60]
     assert [item.icon_size for item in geometry] == [20, 16]
     assert [item.label_x for item in geometry] == [132, 80]
+    assert [item.label_y_offset for item in geometry] == [2, 3]
+    assert [item.label_font_size for item in geometry] == [12, 11]
+    assert [item.label_bold for item in geometry] == [True, False]
     assert [item.check_size for item in geometry] == [0, 10]
+    assert [item.check_y_offset for item in geometry] == [0, 3]
+    assert [item.checkmark_points for item in geometry] == [(), ((2, 5), (5, 9), (10, 1))]
     assert [item.row_height for item in geometry] == [22, 19]
+    assert [item.live_width for item in geometry] == [146, 208]
 
 
 def test_mobaxterm_remote_monitoring_dock_chrome_is_compact_shared_metadata() -> None:
@@ -596,6 +732,33 @@ def test_mobaxterm_remote_monitoring_dock_chrome_is_compact_shared_metadata() ->
     assert chrome.icon_center_x == layout.monitoring_icon_center_x
     assert chrome.metric_row_gap == layout.monitoring_metric_row_gap
     assert chrome.live_controls_width == 260
+
+
+def test_mobaxterm_monitoring_telemetry_route_is_shared_metadata() -> None:
+    chrome = gui_design_moba_remote_monitoring_dock_chrome()
+    metrics = gui_design_moba_monitoring_metrics()
+    route = gui_design_moba_monitoring_telemetry_route()
+
+    assert route.key == "remote-monitoring-to-bottom-telemetry"
+    assert route.route_role == "compact-dock-bottom-telemetry"
+    assert route.source_panel_object == "mobaRemoteMonitoring"
+    assert route.source_control_key == chrome.title_control_key == "remote-monitoring"
+    assert route.source_metric_keys == tuple(metric.key for metric in metrics)
+    assert route.visible_dock_metric_keys == chrome.visible_metric_keys == ()
+    assert route.telemetry_surface == chrome.telemetry_surface == "bottom-telemetry-bar"
+    assert route.target_bar_object == "mobaTelemetryBar"
+    assert route.target_cell_object == "mobaTelemetryCell"
+    assert route.target_identity_cell_key == "target"
+    assert route.target_metric_cell_keys == (
+        "cpu",
+        "memory",
+        "disk",
+        "net-up",
+        "net-down",
+        "connections",
+        "processes",
+    )
+    assert route.render_source == "generated-pixmap"
 
 
 def test_mobaxterm_status_bar_chrome_is_shared_metadata() -> None:
@@ -722,6 +885,28 @@ def test_securecrt_command_window_chrome_is_shared_metadata() -> None:
     assert chrome.live_send_min_width == 48
 
 
+def test_securecrt_command_window_send_route_is_shared_metadata() -> None:
+    chrome = gui_design_securecrt_command_window_chrome()
+    route = gui_design_securecrt_command_window_send_route()
+
+    assert route.key == "securecrt-command-window-send-route"
+    assert route.route_role == "command-input-to-active-sessions"
+    assert route.source_window_object == "secureCrtCommandWindow"
+    assert route.target_scope_object == "secureCrtCommandTarget"
+    assert route.command_input_object == "secureCrtCommandInput"
+    assert route.send_control_object == "secureCrtCommandSend"
+    assert route.status_object == "secureCrtCommandStatus"
+    assert route.command_property == "secureCrtCommandRouteCommand"
+    assert route.target_scope_property == "secureCrtCommandRouteTargetScope"
+    assert route.send_label_property == "secureCrtCommandRouteSendLabel"
+    assert route.status_property == "secureCrtCommandRouteStatus"
+    assert route.render_source == "state-model"
+    assert chrome.command == "$ row doctor --json"
+    assert chrome.target_scope == "All Sessions"
+    assert chrome.send_label == "Send"
+    assert chrome.status == "ready"
+
+
 def test_securecrt_session_status_strip_is_shared_metadata() -> None:
     strip = gui_design_securecrt_session_status_strip()
 
@@ -795,6 +980,42 @@ def test_securecrt_session_manager_chrome_is_shared_metadata() -> None:
     assert all(action.tooltip for action in chrome.actions)
 
 
+def test_securecrt_session_manager_route_is_shared_metadata() -> None:
+    route = gui_design_securecrt_session_manager_route()
+    manager = gui_design_securecrt_session_manager_chrome()
+    strip = gui_design_securecrt_session_status_strip()
+    reference = gui_design_reference_state("securecrt")
+
+    assert route.key == "securecrt-session-manager-route"
+    assert route.route_role == "session-manager-selection-to-active-tab"
+    assert route.selected_profile_name == "edge-prod"
+    assert route.selected_tree_label == "edge-prod (SSH2)"
+    assert route.selected_tree_object == "profileTree"
+    assert route.session_manager_object == "secureCrtSessionManagerChrome"
+    assert route.session_manager_action_key == "connect"
+    assert route.session_manager_action_object == "secureCrtSessionManagerAction"
+    assert route.status_strip_object == "secureCrtSessionStatusStrip"
+    assert route.status_field_key == "target"
+    assert route.status_field_object == "secureCrtSessionStatusCell"
+    assert route.active_tab_label == reference.active_tab_label == "edge-prod (SSH2)"
+    assert route.target_value == reference.target_label == "edge-prod.example.invalid:22"
+    assert route.protocol_value == "SSH2"
+    assert route.session_value == "edge-prod"
+    assert route.selected_tree_property == "secureCrtSessionRouteSelected"
+    assert route.action_active_property == "secureCrtSessionRouteActive"
+    assert route.tab_label_property == "secureCrtSessionRouteActiveTab"
+    assert route.status_value_property == "secureCrtSessionRouteStatusValue"
+    assert route.render_source == "session-manager-state"
+    assert any(
+        action.key == route.session_manager_action_key and action.label == "Connect"
+        for action in manager.actions
+    )
+    assert any(
+        field.key == route.status_field_key and field.value == route.target_value
+        for field in strip.fields
+    )
+
+
 def test_securecrt_session_tree_icons_are_shared_metadata() -> None:
     root = gui_design_tree_root_icon("securecrt")
     rows = gui_design_tree_row_icons("securecrt")
@@ -819,6 +1040,17 @@ def test_securecrt_session_tree_icons_are_shared_metadata() -> None:
 
 
 def test_product_session_tree_icons_are_shared_metadata() -> None:
+    assert [(row.label, row.icon_key, row.row_kind, row.static_size) for row in gui_design_tree_row_icons("mobaxterm")] == [
+        ("default", "folder", "group", 15),
+        ("example.jump-ssh", "pin", "profile", 14),
+        ("example.rdp", "rdp", "profile", 14),
+        ("prod", "folder", "group", 15),
+        ("edge-prod", "ssh", "profile", 14),
+        ("win-admin", "rdp", "profile", 14),
+        ("files", "folder", "group", 15),
+        ("sftp-ops", "sftp", "profile", 14),
+        ("sync-stage", "ssh", "profile", 14),
+    ]
     assert [(row.label, row.icon_key, row.row_kind) for row in gui_design_tree_row_icons("termius")] == [
         ("Personal", "folder", "group"),
         ("edge-prod", "host", "profile"),
@@ -848,8 +1080,33 @@ def test_product_session_tree_icons_are_shared_metadata() -> None:
         ("net-tools [SSH]", "ssh", "profile"),
     ]
     assert gui_design_tree_root_icon("termius").icon_key == "database"
+    assert gui_design_tree_root_icon("mobaxterm").icon_key == "folder"
     assert gui_design_tree_row_icon("remmina", "linux-console", "", False).icon_key == "vnc"
     assert gui_design_tree_row_icon("mremoteng", "win-admin [RDP]", "", False).icon_key == "rdp"
+
+
+def test_mobaxterm_session_tree_chrome_is_shared_metadata() -> None:
+    chrome = gui_design_moba_session_tree_chrome()
+
+    assert chrome.header_height == 28
+    assert chrome.header_icon_x == 9
+    assert chrome.header_text_x == 31
+    assert chrome.row_start_y == 38
+    assert chrome.indentation == 16
+    assert chrome.root_row_height == 28
+    assert chrome.group_row_height == 24
+    assert chrome.profile_row_height == 34
+    assert chrome.group_icon_x == 29
+    assert chrome.group_label_x == 51
+    assert chrome.profile_icon_x == 39
+    assert chrome.profile_label_x == 61
+    assert chrome.profile_target_x == 61
+    assert chrome.selected_left == 28
+    assert chrome.selected_height == 34
+    assert chrome.root_is_decorated is True
+    assert chrome.animated is True
+    assert chrome.uniform_row_heights is True
+    assert chrome.render_source == "generated-pixmap"
 
 
 def test_securecrt_top_chrome_is_shared_metadata() -> None:
@@ -974,6 +1231,58 @@ def test_remmina_profile_list_chrome_is_shared_metadata() -> None:
     assert chrome.live_row_min_height == 24
 
 
+def test_remmina_profile_viewer_route_is_shared_metadata() -> None:
+    route = gui_design_remmina_profile_viewer_route()
+    chrome = gui_design_remmina_profile_list_chrome()
+    controls = gui_design_remmina_viewer_controls()
+
+    assert route.key == "remmina-selected-profile-viewer-route"
+    assert route.route_role == "selected-profile-to-viewer-tab"
+    assert route.selected_profile_key == "win-admin"
+    assert route.selected_profile_object == "remminaProfileListRow"
+    assert route.viewer_controls_object == "remminaViewerControls"
+    assert route.viewer_control_key == "scale-100"
+    assert route.viewer_control_object == "remminaViewerControl"
+    assert route.active_tab_label == "RDP - win-admin"
+    assert route.protocol == "RDP"
+    assert route.profile_status == "scale 100%"
+    assert route.selected_row_property == "selectedRow"
+    assert route.control_active_property == "remminaProfileViewerRouteActive"
+    assert route.tab_label_property == "remminaProfileViewerRouteActiveTab"
+    assert route.render_source == "profile-list-state"
+    assert any(row.key == route.selected_profile_key and row.selected for row in chrome.rows)
+    assert any(control.key == route.viewer_control_key and control.label == "Scale 100%" for control in controls)
+
+
+def test_remmina_clipboard_route_is_shared_metadata() -> None:
+    route = gui_design_remmina_clipboard_route()
+    controls = gui_design_remmina_viewer_controls()
+    reference = gui_design_reference_state("remmina")
+    surface = gui_design_workspace_surface("remmina")
+
+    assert route.key == "remmina-clipboard-sync-route"
+    assert route.route_role == "viewer-control-to-clipboard-state"
+    assert route.viewer_controls_object == "remminaViewerControls"
+    assert route.viewer_control_key == "clipboard"
+    assert route.viewer_control_object == "remminaViewerControl"
+    assert route.active_tab_label == "RDP - win-admin"
+    assert route.protocol == "RDP"
+    assert route.clipboard_state == "clipboard on"
+    assert route.status_segment == "Clipboard on"
+    assert route.detail_line == "Clipboard: enabled"
+    assert route.activity_line == "Clipboard: on"
+    assert route.control_active_property == "remminaClipboardRouteActive"
+    assert route.tab_label_property == "remminaClipboardRouteActiveTab"
+    assert route.clipboard_state_property == "remminaClipboardRouteState"
+    assert route.render_source == "viewer-control-state"
+    assert route.active_tab_label == reference.active_tab_label
+    assert route.status_segment in reference.status_segments
+    assert route.clipboard_state == surface.secondary_state
+    assert route.detail_line in surface.detail_lines
+    assert route.activity_line in surface.activity_lines
+    assert any(control.key == route.viewer_control_key and control.label == "Clipboard" for control in controls)
+
+
 def test_termius_header_chips_are_shared_metadata() -> None:
     chips = gui_design_termius_header_chips()
 
@@ -1033,6 +1342,56 @@ def test_termius_host_identity_strip_is_shared_metadata() -> None:
     assert strip.static_cell_gap == 6
     assert strip.live_spacing == 6
     assert all(field.tooltip for field in strip.fields)
+
+
+def test_termius_sync_route_is_shared_metadata() -> None:
+    route = gui_design_termius_sync_route()
+    hosts = gui_design_termius_hosts_chrome()
+    chips = gui_design_termius_header_chips()
+    strip = gui_design_termius_host_identity_strip()
+
+    assert route.key == "termius-host-sync-route"
+    assert route.route_role == "hosts-sync-to-identity-status"
+    assert route.hosts_action_key == "sync-hosts"
+    assert route.hosts_action_object == "termiusHostsAction"
+    assert route.header_chip_key == "sync-current"
+    assert route.header_chip_object == "termiusHeaderChip"
+    assert route.identity_field_key == "sync"
+    assert route.identity_cell_object == "termiusHostIdentityCell"
+    assert route.sync_state == "current"
+    assert route.action_label_property == "termiusSyncRouteActionLabel"
+    assert route.chip_label_property == "termiusSyncRouteChipLabel"
+    assert route.identity_value_property == "termiusSyncRouteIdentityValue"
+    assert route.status_property == "termiusSyncRouteState"
+    assert route.render_source == "state-model"
+    assert any(action.key == route.hosts_action_key and action.label == "Sync" for action in hosts.actions)
+    assert any(chip.key == route.header_chip_key and chip.label == "Sync current" for chip in chips)
+    assert any(field.key == route.identity_field_key and field.value == route.sync_state for field in strip.fields)
+
+
+def test_termius_host_selection_route_is_shared_metadata() -> None:
+    route = gui_design_termius_host_selection_route()
+    strip = gui_design_termius_host_identity_strip()
+    reference = gui_design_reference_state("termius")
+
+    assert route.key == "termius-host-selection-route"
+    assert route.route_role == "host-list-selection-to-active-tab"
+    assert route.selected_profile_name == reference.profile_name == "edge-prod"
+    assert route.selected_tree_label == "edge-prod  ssh host"
+    assert route.selected_tree_object == "profileTree"
+    assert route.hosts_panel_object == "termiusHostsChrome"
+    assert route.host_identity_object == "termiusHostIdentityStrip"
+    assert route.identity_field_key == "host"
+    assert route.identity_cell_object == "termiusHostIdentityCell"
+    assert route.active_tab_label == reference.active_tab_label == "edge-prod"
+    assert route.target_value == reference.target_label == "edge-prod.example.invalid:22"
+    assert route.protocol_value == reference.protocol_label == "SSH + Vault"
+    assert route.host_value == "edge-prod"
+    assert route.selected_tree_property == "termiusHostRouteSelected"
+    assert route.tab_label_property == "termiusHostRouteActiveTab"
+    assert route.identity_value_property == "termiusHostRouteIdentityValue"
+    assert route.render_source == "host-list-state"
+    assert any(field.key == route.identity_field_key and field.value == route.host_value for field in strip.fields)
 
 
 def test_mremoteng_document_controls_are_shared_metadata() -> None:
@@ -1134,6 +1493,36 @@ def test_mremoteng_property_grid_is_shared_metadata() -> None:
     assert [row.inherited for row in chrome.rows] == [True, False, True, True, False]
     assert chrome.rows[1].effective_value == "edge-prod.example.invalid"
     assert chrome.rows[2].source == "Connections.xml/prod"
+
+
+def test_mremoteng_connection_document_route_is_shared_metadata() -> None:
+    route = gui_design_mremoteng_connection_document_route()
+    controls = gui_design_mremoteng_document_controls()
+    chrome = gui_design_mremoteng_property_grid_chrome()
+    reference = gui_design_reference_state("mremoteng")
+
+    assert route.key == "mremoteng-selected-connection-document-route"
+    assert route.route_role == "connection-tree-to-document-workspace"
+    assert route.selected_profile_name == "edge-prod"
+    assert route.selected_tree_label == "edge-prod [SSH]"
+    assert route.selected_tree_object == "profileTree"
+    assert route.document_controls_object == "mRemoteNgDocumentControls"
+    assert route.document_control_key == "reconnect"
+    assert route.document_control_object == "mRemoteNgDocumentControl"
+    assert route.property_grid_object == "mRemoteNgPropertyGrid"
+    assert route.property_row_key == "protocol"
+    assert route.property_cell_object == "mRemoteNgPropertyGridCell"
+    assert route.active_tab_label == reference.active_tab_label == "edge-prod [SSH]"
+    assert route.protocol == "SSH"
+    assert route.workspace_state == reference.workspace_state == "document open"
+    assert route.property_value == "SSH"
+    assert route.selected_tree_property == "mRemoteNgConnectionRouteSelected"
+    assert route.control_active_property == "mRemoteNgConnectionRouteActive"
+    assert route.tab_label_property == "mRemoteNgConnectionRouteActiveTab"
+    assert route.property_value_property == "mRemoteNgConnectionRoutePropertyValue"
+    assert route.render_source == "connection-tree-state"
+    assert any(control.key == route.document_control_key and control.label == "Reconnect" for control in controls)
+    assert any(row.key == route.property_row_key and row.effective_value == route.property_value for row in chrome.rows)
 
 
 def test_gui_design_workflow_cards_are_shared_metadata() -> None:

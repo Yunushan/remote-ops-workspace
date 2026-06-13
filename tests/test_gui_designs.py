@@ -1,10 +1,15 @@
 from remote_ops_workspace.gui_designs import (
     DEFAULT_GUI_DESIGN_ID,
     GUI_DESIGN_PRESETS,
+    PRODUCT_GUI_PRESET_IDS,
+    PRODUCT_REFERENCE_TAB_PRESET_IDS,
     get_gui_design_preset,
+    gui_design_command_surface_actions,
+    gui_design_home_tab_label,
     gui_design_interaction_state,
     gui_design_moba_bottom_edge_controls,
     gui_design_moba_connected_dock_frame,
+    gui_design_moba_follow_terminal_folder_control_route,
     gui_design_moba_home_welcome_chrome,
     gui_design_moba_home_welcome_geometry,
     gui_design_moba_monitoring_control_geometry,
@@ -16,11 +21,15 @@ from remote_ops_workspace.gui_designs import (
     gui_design_moba_rail_chrome,
     gui_design_moba_rail_item_geometry,
     gui_design_moba_rail_items,
+    gui_design_moba_remote_monitoring_control_route,
     gui_design_moba_remote_monitoring_dock_chrome,
     gui_design_moba_ribbon_action_geometry,
     gui_design_moba_ribbon_action_geometry_for,
     gui_design_moba_ribbon_actions,
+    gui_design_moba_ribbon_edge_action_route,
     gui_design_moba_ribbon_edge_actions,
+    gui_design_moba_ribbon_tooltips,
+    gui_design_moba_right_utility_action_route,
     gui_design_moba_right_utility_actions,
     gui_design_moba_right_utility_rail_chrome,
     gui_design_moba_session_edge_actions,
@@ -48,30 +57,63 @@ from remote_ops_workspace.gui_designs import (
     gui_design_moba_top_stack_geometry,
     gui_design_mremoteng_connection_document_route,
     gui_design_mremoteng_document_controls,
+    gui_design_mremoteng_document_filter_route,
     gui_design_mremoteng_document_toolbar_chrome,
+    gui_design_mremoteng_inheritance_route,
     gui_design_mremoteng_property_grid_chrome,
     gui_design_mremoteng_top_chrome,
+    gui_design_preset_catalog_route,
+    gui_design_preset_command_surface_route,
+    gui_design_preset_focus_interaction_route,
+    gui_design_preset_home_search_route,
     gui_design_preset_ids,
+    gui_design_preset_isolation_route,
+    gui_design_preset_keyboard_shortcut_route,
     gui_design_preset_labels,
+    gui_design_preset_reference_control_route,
+    gui_design_preset_reference_input_route,
+    gui_design_preset_reference_session_action_route,
+    gui_design_preset_reference_status_bar_route,
+    gui_design_preset_reference_surface_route,
+    gui_design_preset_reference_tab_chrome_route,
+    gui_design_preset_reference_tab_route,
+    gui_design_preset_reference_transcript_route,
+    gui_design_preset_selection_route,
+    gui_design_preset_transition_route,
+    gui_design_preset_visual_signature,
+    gui_design_product_identity_route,
     gui_design_reference_state,
     gui_design_remmina_clipboard_route,
+    gui_design_remmina_profile_filter_route,
     gui_design_remmina_profile_list_chrome,
     gui_design_remmina_profile_viewer_route,
+    gui_design_remmina_screenshot_route,
+    gui_design_remmina_sftp_transfer_route,
     gui_design_remmina_viewer_controls,
     gui_design_securecrt_command_window_chrome,
     gui_design_securecrt_command_window_send_route,
     gui_design_securecrt_session_manager_chrome,
+    gui_design_securecrt_session_manager_filter_route,
     gui_design_securecrt_session_manager_route,
     gui_design_securecrt_session_status_strip,
+    gui_design_securecrt_sftp_browser_route,
+    gui_design_securecrt_sftp_tab_route,
     gui_design_securecrt_top_chrome,
+    gui_design_status_segments,
+    gui_design_tab_items,
+    gui_design_termius_files_browser_route,
     gui_design_termius_header_chips,
     gui_design_termius_host_identity_strip,
     gui_design_termius_host_selection_route,
     gui_design_termius_hosts_chrome,
+    gui_design_termius_port_forward_route,
+    gui_design_termius_snippet_route,
     gui_design_termius_sync_route,
+    gui_design_toolbar_actions,
     gui_design_tree_root_icon,
     gui_design_tree_row_icon,
     gui_design_tree_row_icons,
+    gui_design_tree_rows,
     gui_design_workflow_cards,
     gui_design_workspace_surface,
 )
@@ -210,6 +252,32 @@ def test_mobaxterm_ribbon_actions_are_shared_metadata() -> None:
     assert [action.icon_key for action in edge_actions] == ["xserver", "exit"]
     assert all(action.color.startswith("#") for action in actions)
     assert all(action.color.startswith("#") for action in edge_actions)
+
+
+def test_mobaxterm_ribbon_edge_action_route_is_shared_metadata() -> None:
+    route = gui_design_moba_ribbon_edge_action_route()
+    edge_actions = {action.key: action for action in gui_design_moba_ribbon_edge_actions()}
+
+    assert route.key == "moba-ribbon-edge-action-route"
+    assert route.route_role == "far-right-ribbon-edge-actions-to-workflow-controls"
+    assert route.toolbar_object == "mainToolbar"
+    assert route.spacer_object == "mobaToolbarSpacer"
+    assert route.xserver_action_key == "xserver"
+    assert route.xserver_action_label == edge_actions["xserver"].label == "X server"
+    assert route.xserver_action_object == "mobaXServerAction"
+    assert route.xserver_icon_key == edge_actions["xserver"].icon_key == "xserver"
+    assert route.xserver_handler == "show_moba_x_server_status"
+    assert route.xserver_dialog_detail == "X server workflow"
+    assert route.exit_action_key == "exit"
+    assert route.exit_action_label == edge_actions["exit"].label == "Exit"
+    assert route.exit_action_object == "mobaExitAction"
+    assert route.exit_icon_key == edge_actions["exit"].icon_key == "exit"
+    assert route.exit_handler == "close"
+    assert route.route_key_property == "mobaRibbonEdgeRouteKey"
+    assert route.action_keys_property == "mobaRibbonEdgeRouteActionKeys"
+    assert route.handler_property == "mobaRibbonEdgeRouteHandler"
+    assert route.to_dict()["xserver_action_label"] == "X server"
+    assert route.to_dict()["exit_action_label"] == "Exit"
 
 
 def test_mobaxterm_ribbon_action_geometry_tracks_reference_offsets() -> None:
@@ -463,6 +531,28 @@ def test_mobaxterm_right_utility_actions_are_shared_metadata() -> None:
     assert [action.render_source for action in actions] == ["generated-pixmap"] * 3
     assert all(action.tooltip for action in actions)
     assert all(action.color.startswith("#") for action in actions)
+
+
+def test_mobaxterm_right_utility_action_route_is_shared_metadata() -> None:
+    route = gui_design_moba_right_utility_action_route()
+    actions = gui_design_moba_right_utility_actions()
+
+    assert route.key == "moba-right-utility-action-route"
+    assert route.route_role == "right-utility-rail-actions-to-terminal-workflows"
+    assert route.rail_object == "mobaRightUtilityRail"
+    assert route.action_object == "mobaRightUtilityAction"
+    assert route.action_keys == tuple(action.key for action in actions)
+    assert route.action_labels == tuple(action.label for action in actions)
+    assert route.action_icon_keys == tuple(action.icon_key for action in actions)
+    assert route.action_handlers == (
+        "show_moba_clipboard_hints",
+        "show_moba_terminal_settings",
+        "show_moba_tools_status",
+    )
+    assert route.route_key_property == "mobaRightUtilityRouteKey"
+    assert route.handler_property == "mobaRightUtilityRouteHandler"
+    assert route.action_keys_property == "mobaRightUtilityRouteActionKeys"
+    assert route.render_source == "gui-design-moba-right-utility-route"
 
 
 def test_mobaxterm_right_utility_rail_chrome_is_shared_metadata() -> None:
@@ -761,6 +851,61 @@ def test_mobaxterm_monitoring_telemetry_route_is_shared_metadata() -> None:
     assert route.render_source == "generated-pixmap"
 
 
+def test_mobaxterm_remote_monitoring_control_route_is_shared_metadata() -> None:
+    chrome = gui_design_moba_remote_monitoring_dock_chrome()
+    telemetry_route = gui_design_moba_monitoring_telemetry_route()
+    control = next(item for item in gui_design_moba_monitoring_controls() if item.key == "remote-monitoring")
+    route = gui_design_moba_remote_monitoring_control_route()
+
+    assert route.key == "moba-remote-monitoring-control-route"
+    assert route.route_role == "remote-monitoring-control-to-telemetry-refresh"
+    assert route.source_panel_object == "mobaRemoteMonitoring"
+    assert route.source_control_object == "mobaMonitoringControl"
+    assert route.source_control_key == chrome.title_control_key == control.key
+    assert route.source_control_label == control.label == "Remote monitoring"
+    assert route.source_control_type == control.control_type == "toggle"
+    assert route.expected_checked is control.checked is True
+    assert route.command_property == "mobaMonitoringCommand"
+    assert route.refresh_seconds_property == "mobaMonitoringRefreshSeconds"
+    assert route.checked_property == "mobaMonitoringControlChecked"
+    assert route.telemetry_route_key == telemetry_route.key
+    assert route.telemetry_surface == telemetry_route.telemetry_surface
+    assert route.target_bar_object == telemetry_route.target_bar_object
+    assert route.target_metric_cell_keys == telemetry_route.target_metric_cell_keys
+    assert route.captured_command_property == "mobaRemoteMonitoringControlCapturedCommand"
+    assert route.captured_refresh_seconds_property == "mobaRemoteMonitoringControlCapturedRefreshSeconds"
+    assert route.to_dict()["target_metric_cell_keys"] == list(telemetry_route.target_metric_cell_keys)
+    assert route.render_source == "state-model"
+
+
+def test_mobaxterm_follow_terminal_folder_control_route_is_shared_metadata() -> None:
+    chrome = gui_design_moba_remote_monitoring_dock_chrome()
+    follow_route = gui_design_moba_sftp_follow_folder_route()
+    control = next(item for item in gui_design_moba_monitoring_controls() if item.key == "follow-terminal-folder")
+    route = gui_design_moba_follow_terminal_folder_control_route()
+
+    assert route.key == "moba-follow-terminal-folder-control-route"
+    assert route.route_role == "follow-terminal-folder-control-to-sftp-browser-sync"
+    assert route.source_panel_object == "mobaRemoteMonitoring"
+    assert route.source_control_object == follow_route.source_control_object == "mobaFollowTerminalFolder"
+    assert route.source_control_key == chrome.follow_control_key == control.key
+    assert route.source_control_label == control.label == "Follow terminal folder"
+    assert route.source_control_type == control.control_type == "checkbox"
+    assert route.expected_checked is control.checked is True
+    assert route.source_path_property == follow_route.source_path_property == "mobaMonitoringFollowPath"
+    assert route.source_plan_property == follow_route.source_plan_property == "mobaMonitoringFollowPlan"
+    assert route.source_enabled_property == follow_route.source_enabled_property == "mobaMonitoringFollowEnabled"
+    assert route.target_browser_object == follow_route.target_browser_object == "mobaSftpBrowser"
+    assert route.target_path_object == follow_route.target_path_object == "mobaSftpPath"
+    assert route.target_table_object == follow_route.target_table_object == "mobaSftpFileTable"
+    assert route.target_plan_property == follow_route.target_plan_property == "mobaSftpFollowRoutePlan"
+    assert route.captured_checked_property == "mobaFollowTerminalFolderControlCapturedChecked"
+    assert route.captured_path_property == "mobaFollowTerminalFolderControlCapturedPath"
+    assert route.captured_plan_property == "mobaFollowTerminalFolderControlCapturedPlan"
+    assert route.to_dict()["source_control_label"] == "Follow terminal folder"
+    assert route.render_source == "state-model"
+
+
 def test_mobaxterm_status_bar_chrome_is_shared_metadata() -> None:
     chrome = gui_design_moba_status_bar_chrome()
     segments = gui_design_moba_status_segments()
@@ -1016,6 +1161,84 @@ def test_securecrt_session_manager_route_is_shared_metadata() -> None:
     )
 
 
+def test_securecrt_session_manager_filter_route_is_shared_metadata() -> None:
+    route = gui_design_securecrt_session_manager_filter_route()
+    session_route = gui_design_securecrt_session_manager_route()
+    manager = gui_design_securecrt_session_manager_chrome()
+
+    assert route.key == "securecrt-session-manager-filter-route"
+    assert route.route_role == "session-manager-filter-to-visible-session-row"
+    assert route.session_manager_object == session_route.session_manager_object
+    assert route.filter_object == "secureCrtSessionFilter"
+    assert route.selected_tree_object == session_route.selected_tree_object
+    assert route.selected_profile_name == session_route.selected_profile_name
+    assert route.selected_tree_label == session_route.selected_tree_label
+    assert route.expected_query == "edge"
+    assert route.expected_placeholder == manager.filter_placeholder
+    assert route.matched_result_label == "edge-prod (SSH2)"
+    assert route.filter_route_property == "secureCrtSessionFilterRouteKey"
+    assert route.filter_query_property == "secureCrtSessionFilterRouteQuery"
+    assert route.filter_placeholder_property == "secureCrtSessionFilterRoutePlaceholder"
+    assert route.matched_result_property == "secureCrtSessionFilterRouteMatchedLabel"
+    assert route.change_signal == "textChanged"
+    assert route.handler_name == "filter_profile_tree"
+    assert route.render_source == "session-manager-filter-state"
+    assert route.to_dict()["matched_result_label"] == route.matched_result_label
+
+
+def test_securecrt_sftp_tab_route_is_shared_metadata() -> None:
+    route = gui_design_securecrt_sftp_tab_route()
+    cards = {card.key: card for card in gui_design_workflow_cards("securecrt")}
+    strip = gui_design_securecrt_session_status_strip()
+    tabs = {label for label, _status, _active in gui_design_tab_items("securecrt")}
+    tree_rows = {name.strip() for name, _target, _group in gui_design_tree_rows("securecrt")}
+
+    assert route.key == "securecrt-sftp-tab-route"
+    assert route.route_role == "workflow-card-to-sftp-tab-status"
+    assert route.workflow_card_key == "sftp-tab"
+    assert route.selected_profile_name == "files-prod"
+    assert route.selected_tree_label == "files-prod (SFTP)"
+    assert route.sftp_tab_label == "files-prod"
+    assert route.status_field_key == "sftp"
+    assert route.status_value == "files-prod tab"
+    assert route.transfer_state == "files-prod attached"
+    assert cards[route.workflow_card_key].title == route.workflow_title == "SFTP tab"
+    assert cards[route.workflow_card_key].primary == route.transfer_state
+    assert cards[route.workflow_card_key].secondary == route.workflow_secondary
+    assert any(
+        field.key == route.status_field_key and field.value == route.status_value
+        for field in strip.fields
+    )
+    assert route.sftp_tab_label in tabs
+    assert route.selected_tree_label in tree_rows
+    assert route.workflow_key_property == "secureCrtSftpTabRouteWorkflowKey"
+    assert route.to_dict()["status_value"] == route.status_value
+
+
+def test_securecrt_sftp_browser_route_is_shared_metadata() -> None:
+    tab_route = gui_design_securecrt_sftp_tab_route()
+    route = gui_design_securecrt_sftp_browser_route()
+    rows = {row.name: row for row in route.file_rows}
+
+    assert route.key == "securecrt-sftp-browser-route"
+    assert route.route_role == "sftp-tab-to-transfer-browser"
+    assert route.sftp_tab_route_key == tab_route.key
+    assert route.selected_profile_name == tab_route.selected_profile_name
+    assert route.selected_tree_label == tab_route.selected_tree_label
+    assert route.sftp_tab_label == tab_route.sftp_tab_label
+    assert route.remote_path == "/srv/files"
+    assert route.toolbar_actions == ("upload", "download", "refresh")
+    assert route.active_row_name == "deploy.log"
+    assert route.transfer_queue_label == "1 queued"
+    assert route.transfer_status == "ready"
+    assert rows[route.active_row_name].selected is True
+    assert rows[route.active_row_name].kind == "file"
+    assert route.path_property == "secureCrtSftpBrowserPath"
+    assert route.queue_state_property == "secureCrtSftpBrowserQueueState"
+    assert route.to_dict()["toolbar_actions"] == ["upload", "download", "refresh"]
+    assert route.to_dict()["file_rows"][2]["name"] == route.active_row_name
+
+
 def test_securecrt_session_tree_icons_are_shared_metadata() -> None:
     root = gui_design_tree_root_icon("securecrt")
     rows = gui_design_tree_row_icons("securecrt")
@@ -1254,6 +1477,35 @@ def test_remmina_profile_viewer_route_is_shared_metadata() -> None:
     assert any(control.key == route.viewer_control_key and control.label == "Scale 100%" for control in controls)
 
 
+def test_remmina_profile_filter_route_is_shared_metadata() -> None:
+    route = gui_design_remmina_profile_filter_route()
+    viewer_route = gui_design_remmina_profile_viewer_route()
+    chrome = gui_design_remmina_profile_list_chrome()
+
+    assert route.key == "remmina-profile-filter-route"
+    assert route.route_role == "profile-filter-to-visible-viewer-row"
+    assert route.profile_list_object == "remminaProfileListChrome"
+    assert route.filter_object == "remminaProfileFilter"
+    assert route.selected_profile_key == viewer_route.selected_profile_key
+    assert route.selected_profile_object == viewer_route.selected_profile_object
+    assert route.matched_profile_name == "win-admin"
+    assert route.matched_protocol == viewer_route.protocol == "RDP"
+    assert route.matched_status == viewer_route.profile_status == "scale 100%"
+    assert route.expected_query == "rdp"
+    assert route.expected_placeholder == chrome.filter_placeholder
+    assert route.active_tab_label == viewer_route.active_tab_label
+    assert route.filter_route_property == "remminaProfileFilterRouteKey"
+    assert route.filter_query_property == "remminaProfileFilterRouteQuery"
+    assert route.filter_placeholder_property == "remminaProfileFilterRoutePlaceholder"
+    assert route.matched_profile_property == "remminaProfileFilterRouteMatchedProfile"
+    assert route.matched_protocol_property == "remminaProfileFilterRouteMatchedProtocol"
+    assert route.active_tab_property == "remminaProfileFilterRouteActiveTab"
+    assert route.change_signal == "textChanged"
+    assert route.handler_name == "filter_remmina_profile_rows"
+    assert route.render_source == "profile-filter-state"
+    assert route.to_dict()["expected_query"] == "rdp"
+
+
 def test_remmina_clipboard_route_is_shared_metadata() -> None:
     route = gui_design_remmina_clipboard_route()
     controls = gui_design_remmina_viewer_controls()
@@ -1281,6 +1533,71 @@ def test_remmina_clipboard_route_is_shared_metadata() -> None:
     assert route.detail_line in surface.detail_lines
     assert route.activity_line in surface.activity_lines
     assert any(control.key == route.viewer_control_key and control.label == "Clipboard" for control in controls)
+
+
+def test_remmina_screenshot_route_is_shared_metadata() -> None:
+    route = gui_design_remmina_screenshot_route()
+    viewer_route = gui_design_remmina_profile_viewer_route()
+    controls = gui_design_remmina_viewer_controls()
+    reference = gui_design_reference_state("remmina")
+    surface = gui_design_workspace_surface("remmina")
+
+    assert route.key == "remmina-screenshot-capture-route"
+    assert route.route_role == "viewer-control-to-screenshot-capture"
+    assert route.viewer_controls_object == viewer_route.viewer_controls_object == "remminaViewerControls"
+    assert route.viewer_control_key == "screenshot"
+    assert route.viewer_control_object == viewer_route.viewer_control_object == "remminaViewerControl"
+    assert route.active_tab_label == viewer_route.active_tab_label == "RDP - win-admin"
+    assert route.protocol == viewer_route.protocol == "RDP"
+    assert route.capture_state == "screenshot ready"
+    assert route.capture_artifact == "win-admin-rdp-screenshot.png"
+    assert route.status_segment == "RDP/VNC ready"
+    assert route.detail_line == "Screenshot: win-admin-rdp-screenshot.png"
+    assert route.activity_line == "Screenshot: capture ready"
+    assert route.control_active_property == "remminaScreenshotRouteActive"
+    assert route.tab_label_property == "remminaScreenshotRouteActiveTab"
+    assert route.capture_state_property == "remminaScreenshotRouteState"
+    assert route.capture_artifact_property == "remminaScreenshotRouteArtifact"
+    assert route.render_source == "viewer-control-state"
+    assert route.to_dict()["capture_artifact"] == "win-admin-rdp-screenshot.png"
+    assert route.active_tab_label == reference.active_tab_label
+    assert route.status_segment in reference.status_segments
+    assert route.detail_line in surface.detail_lines
+    assert route.activity_line in surface.activity_lines
+    assert any(control.key == route.viewer_control_key and control.label == "Screenshot" for control in controls)
+
+
+def test_remmina_sftp_transfer_route_is_shared_metadata() -> None:
+    route = gui_design_remmina_sftp_transfer_route()
+    chrome = gui_design_remmina_profile_list_chrome()
+    surface = gui_design_workspace_surface("remmina")
+    rows = {row.key: row for row in chrome.rows}
+    file_rows = {row.name: row for row in route.file_rows}
+
+    assert route.key == "remmina-sftp-transfer-route"
+    assert route.route_role == "transfer-toolbar-to-sftp-profile-browser"
+    assert route.profile_list_object == "remminaProfileListChrome"
+    assert route.selected_profile_key == "sftp-ops"
+    assert rows[route.selected_profile_key].name == route.selected_profile_name == "sftp-ops"
+    assert rows[route.selected_profile_key].protocol == route.selected_profile_protocol == "SFTP"
+    assert rows[route.selected_profile_key].status == route.selected_profile_status == "file sharing"
+    assert route.selected_tree_label == "sftp-ops"
+    assert route.toolbar_action_key == "queue"
+    assert route.toolbar_action_label == "Transfer"
+    assert route.toolbar_action_object == "productToolbarButton"
+    assert route.active_tab_label == "sftp-ops"
+    assert route.remote_path == "/var/log"
+    assert route.toolbar_actions == ("upload", "download", "queue")
+    assert route.active_row_name == "app.log"
+    assert file_rows[route.active_row_name].selected is True
+    assert route.transfer_queue_label == "1 queued"
+    assert route.transfer_status == "ready"
+    assert route.detail_line in surface.detail_lines
+    assert route.activity_line in surface.activity_lines
+    assert route.path_property == "remminaSftpTransferRoutePath"
+    assert route.queue_state_property == "remminaSftpTransferRouteQueueState"
+    assert route.to_dict()["toolbar_actions"] == ["upload", "download", "queue"]
+    assert route.to_dict()["file_rows"][2]["name"] == route.active_row_name
 
 
 def test_termius_header_chips_are_shared_metadata() -> None:
@@ -1392,6 +1709,109 @@ def test_termius_host_selection_route_is_shared_metadata() -> None:
     assert route.identity_value_property == "termiusHostRouteIdentityValue"
     assert route.render_source == "host-list-state"
     assert any(field.key == route.identity_field_key and field.value == route.host_value for field in strip.fields)
+
+
+def test_termius_port_forward_route_is_shared_metadata() -> None:
+    route = gui_design_termius_port_forward_route()
+    chips = gui_design_termius_header_chips()
+    strip = gui_design_termius_host_identity_strip()
+    reference = gui_design_reference_state("termius")
+    host_route = gui_design_termius_host_selection_route()
+
+    assert route.key == "termius-port-forward-route"
+    assert route.route_role == "port-forward-chip-to-host-identity-forward"
+    assert route.header_chip_key == "port-forward-ready"
+    assert route.header_chip_object == "termiusHeaderChip"
+    assert route.host_identity_object == "termiusHostIdentityStrip"
+    assert route.identity_field_key == "forward"
+    assert route.identity_cell_object == "termiusHostIdentityCell"
+    assert route.active_tab_label == host_route.active_tab_label == "edge-prod"
+    assert route.selected_profile_name == reference.profile_name == "edge-prod"
+    assert route.forward_value == "8080 -> localhost:80"
+    assert route.forward_state == "ready"
+    assert route.local_port == 8080
+    assert route.remote_host == "localhost"
+    assert route.remote_port == 80
+    assert route.status_segment == "Port fwd ready"
+    assert route.chip_label_property == "termiusPortForwardRouteChipLabel"
+    assert route.identity_value_property == "termiusPortForwardRouteIdentityValue"
+    assert route.active_tab_property == "termiusPortForwardRouteActiveTab"
+    assert route.status_property == "termiusPortForwardRouteState"
+    assert route.render_source == "state-model"
+    assert any(chip.key == route.header_chip_key and chip.label == route.status_segment for chip in chips)
+    assert any(field.key == route.identity_field_key and field.value == route.forward_value for field in strip.fields)
+    assert route.status_segment in reference.status_segments
+    assert route.to_dict()["forward_value"] == route.forward_value
+
+
+def test_termius_snippet_route_is_shared_metadata() -> None:
+    route = gui_design_termius_snippet_route()
+    cards = gui_design_workflow_cards("termius")
+    strip = gui_design_termius_host_identity_strip()
+    reference = gui_design_reference_state("termius")
+    surface = gui_design_workspace_surface("termius")
+    host_route = gui_design_termius_host_selection_route()
+
+    assert route.key == "termius-snippet-route"
+    assert route.route_role == "workflow-card-to-host-identity-snippet"
+    assert route.workflow_card_key == "snippet"
+    assert route.workflow_card_object == "productWorkflowCard"
+    assert route.workflow_title_object == "productWorkflowTitle"
+    assert route.workflow_primary_object == "productWorkflowPrimary"
+    assert route.workflow_secondary_object == "productWorkflowSecondary"
+    assert route.host_identity_object == "termiusHostIdentityStrip"
+    assert route.identity_field_key == "snippet"
+    assert route.identity_cell_object == "termiusHostIdentityCell"
+    assert route.active_tab_label == host_route.active_tab_label == "edge-prod"
+    assert route.selected_profile_name == reference.profile_name == "edge-prod"
+    assert route.workflow_title == "Snippet"
+    assert route.snippet_command == "row vault status"
+    assert route.snippet_state == "one-click command"
+    assert route.detail_line == "Snippet  : row vault status"
+    assert route.workflow_key_property == "termiusSnippetRouteWorkflowKey"
+    assert route.command_property == "termiusSnippetRouteCommand"
+    assert route.identity_value_property == "termiusSnippetRouteIdentityValue"
+    assert route.active_tab_property == "termiusSnippetRouteActiveTab"
+    assert route.status_property == "termiusSnippetRouteState"
+    assert route.render_source == "state-model"
+    assert any(
+        card.key == route.workflow_card_key
+        and card.title == route.workflow_title
+        and card.primary == route.snippet_command
+        and card.secondary == route.snippet_state
+        for card in cards
+    )
+    assert any(field.key == route.identity_field_key and field.value == route.snippet_command for field in strip.fields)
+    assert route.detail_line in surface.detail_lines
+    assert route.to_dict()["snippet_command"] == route.snippet_command
+
+
+def test_termius_files_browser_route_is_shared_metadata() -> None:
+    route = gui_design_termius_files_browser_route()
+    host_route = gui_design_termius_host_selection_route()
+    strip = gui_design_termius_host_identity_strip()
+    fields = {field.key: field for field in strip.fields}
+    rows = {row.name: row for row in route.file_rows}
+
+    assert route.key == "termius-files-browser-route"
+    assert route.route_role == "host-files-tab-to-sftp-browser"
+    assert route.host_selection_route_key == host_route.key
+    assert route.host_identity_object == host_route.host_identity_object
+    assert route.identity_field_key == "files"
+    assert fields[route.identity_field_key].value == route.files_state == "SFTP ready"
+    assert route.active_tab_label == host_route.active_tab_label == "edge-prod"
+    assert route.selected_profile_name == host_route.selected_profile_name == "edge-prod"
+    assert route.selected_tree_label == host_route.selected_tree_label
+    assert route.remote_path == "/workspace"
+    assert route.toolbar_actions == ("upload", "download", "sync")
+    assert route.active_row_name == "deploy.yml"
+    assert rows[route.active_row_name].selected is True
+    assert route.transfer_queue_label == "sync idle"
+    assert route.transfer_status == "ready"
+    assert route.path_property == "termiusFilesRoutePath"
+    assert route.queue_state_property == "termiusFilesRouteQueueState"
+    assert route.to_dict()["toolbar_actions"] == ["upload", "download", "sync"]
+    assert route.to_dict()["file_rows"][2]["name"] == route.active_row_name
 
 
 def test_mremoteng_document_controls_are_shared_metadata() -> None:
@@ -1525,6 +1945,82 @@ def test_mremoteng_connection_document_route_is_shared_metadata() -> None:
     assert any(row.key == route.property_row_key and row.effective_value == route.property_value for row in chrome.rows)
 
 
+def test_mremoteng_document_filter_route_is_shared_metadata() -> None:
+    route = gui_design_mremoteng_document_filter_route()
+    connection_route = gui_design_mremoteng_connection_document_route()
+    chrome = gui_design_mremoteng_document_toolbar_chrome()
+
+    assert route.key == "mremoteng-document-filter-route"
+    assert route.route_role == "document-filter-to-selected-connection-row"
+    assert route.document_controls_object == connection_route.document_controls_object
+    assert route.filter_object == "mRemoteNgDocumentFilter"
+    assert route.selected_tree_object == connection_route.selected_tree_object
+    assert route.selected_profile_name == connection_route.selected_profile_name
+    assert route.selected_tree_label == connection_route.selected_tree_label == "edge-prod [SSH]"
+    assert route.matched_protocol == connection_route.protocol == "SSH"
+    assert route.matched_state == connection_route.workspace_state == "document open"
+    assert route.expected_query == "edge"
+    assert route.expected_placeholder == chrome.filter_placeholder
+    assert route.active_tab_label == connection_route.active_tab_label
+    assert route.filter_route_property == "mRemoteNgDocumentFilterRouteKey"
+    assert route.filter_query_property == "mRemoteNgDocumentFilterRouteQuery"
+    assert route.filter_placeholder_property == "mRemoteNgDocumentFilterRoutePlaceholder"
+    assert route.matched_tree_property == "mRemoteNgDocumentFilterRouteMatchedTreeLabel"
+    assert route.matched_protocol_property == "mRemoteNgDocumentFilterRouteMatchedProtocol"
+    assert route.active_tab_property == "mRemoteNgDocumentFilterRouteActiveTab"
+    assert route.change_signal == "textChanged"
+    assert route.handler_name == "filter_profile_tree"
+    assert route.render_source == "connection-tree-filter-state"
+    assert route.to_dict()["expected_query"] == "edge"
+
+
+def test_mremoteng_inheritance_route_is_shared_metadata() -> None:
+    route = gui_design_mremoteng_inheritance_route()
+    connection_route = gui_design_mremoteng_connection_document_route()
+    chrome = gui_design_mremoteng_property_grid_chrome()
+    cards = gui_design_workflow_cards("mremoteng")
+
+    assert route.key == "mremoteng-inheritance-route"
+    assert route.route_role == "workflow-card-to-property-grid-inheritance"
+    assert route.workflow_card_key == "inheritance-grid"
+    assert route.workflow_card_object == "productWorkflowCard"
+    assert route.workflow_title_object == "productWorkflowTitle"
+    assert route.workflow_primary_object == "productWorkflowPrimary"
+    assert route.workflow_secondary_object == "productWorkflowSecondary"
+    assert route.property_grid_object == connection_route.property_grid_object == "mRemoteNgPropertyGrid"
+    assert route.property_row_key == "credential"
+    assert route.property_cell_object == connection_route.property_cell_object == "mRemoteNgPropertyGridCell"
+    assert route.active_tab_label == connection_route.active_tab_label == "edge-prod [SSH]"
+    assert route.selected_profile_name == connection_route.selected_profile_name == "edge-prod"
+    assert route.selected_tree_label == connection_route.selected_tree_label == "edge-prod [SSH]"
+    assert route.workflow_title == "Config inheritance"
+    assert route.inherited_property_label == "Credential"
+    assert route.inherited_value == "operator key reference"
+    assert route.inherited_source == "Connections.xml/prod"
+    assert route.inheritance_state == "credentials inherited"
+    assert route.workflow_key_property == "mRemoteNgInheritanceRouteWorkflowKey"
+    assert route.inherited_value_property == "mRemoteNgInheritanceRouteInheritedValue"
+    assert route.active_tab_property == "mRemoteNgInheritanceRouteActiveTab"
+    assert route.status_property == "mRemoteNgInheritanceRouteState"
+    assert route.render_source == "property-grid-state"
+    assert any(
+        card.key == route.workflow_card_key
+        and card.title == route.workflow_title
+        and card.primary == route.inheritance_state
+        and card.secondary == "property grid visible"
+        for card in cards
+    )
+    assert any(
+        row.key == route.property_row_key
+        and row.property_label == route.inherited_property_label
+        and row.effective_value == route.inherited_value
+        and row.source == route.inherited_source
+        and row.inherited
+        for row in chrome.rows
+    )
+    assert route.to_dict()["inherited_value"] == route.inherited_value
+
+
 def test_gui_design_workflow_cards_are_shared_metadata() -> None:
     for preset in GUI_DESIGN_PRESETS:
         cards = gui_design_workflow_cards(preset.id)
@@ -1555,6 +2051,7 @@ def test_gui_design_reference_states_are_shared_metadata() -> None:
     }
     for preset_id, (profile, protocol, tab, sidebar) in expected.items():
         reference = gui_design_reference_state(preset_id)
+        route = gui_design_product_identity_route(preset_id)
 
         assert reference.profile_name == profile
         assert reference.protocol_label == protocol
@@ -1569,6 +2066,666 @@ def test_gui_design_reference_states_are_shared_metadata() -> None:
             "sidebar",
             "state",
         }
+        assert route.key == f"{preset_id}-product-identity-route"
+        assert route.route_role == "tree-tab-reference-status-workspace-identity"
+        assert route.selected_profile_name == profile
+        assert route.active_tab_label == tab
+        assert route.sidebar_label == sidebar
+        assert route.status_segments == reference.status_segments
+        assert route.reference_state_object == "productReferenceState"
+        assert route.reference_item_object == "productReferenceStateItem"
+        assert route.tree_object == "profileTree"
+        assert route.tabs_object == "sessionTabs"
+        assert route.status_segment_object == "productStatusSegment"
+        assert route.workspace_surface_object == "productWorkspaceSurface"
+        assert route.active_tab_property == "productIdentityActiveTab"
+        assert route.status_segments_property == "productIdentityStatusSegments"
+    assert gui_design_product_identity_route("securecrt").selected_tree_label == "edge-prod (SSH2)"
+    assert gui_design_product_identity_route("termius").selected_tree_label == "edge-prod  ssh host"
+    assert gui_design_product_identity_route("remmina").selected_tree_label == "RDP - win-admin"
+    assert gui_design_product_identity_route("mremoteng").selected_tree_label == "edge-prod [SSH]"
+
+
+def test_gui_design_preset_reference_tab_routes_are_shared_metadata() -> None:
+    assert PRODUCT_REFERENCE_TAB_PRESET_IDS == ("securecrt", "termius", "remmina", "mremoteng")
+
+    for preset_id in PRODUCT_REFERENCE_TAB_PRESET_IDS:
+        route = gui_design_preset_reference_tab_route(preset_id)
+        identity_route = gui_design_product_identity_route(preset_id)
+
+        assert route.key == f"{preset_id}-reference-tab-activation-route"
+        assert route.route_role == "reference-profile-tab-can-be-active-surface"
+        assert route.preset_id == preset_id
+        assert route.reference_profile == identity_route.selected_profile_name
+        assert route.active_tab_label == identity_route.active_tab_label
+        assert route.home_tab_label == gui_design_home_tab_label(preset_id)
+        assert route.tabs_object == "sessionTabs"
+        assert route.home_tab_role == "home"
+        assert route.reference_tab_role == "terminal"
+        assert route.activated_label_property == "presetReferenceTabActivatedLabel"
+        assert route.returned_home_label_property == "presetReferenceTabReturnedHomeLabel"
+        assert route.active_tab_property == "presetReferenceTabActiveLabel"
+        assert route.home_tab_property == "presetReferenceTabHomeLabel"
+        assert route.reference_profile_property == "presetReferenceTabProfile"
+        assert route.render_source == "gui-design-reference-tab-route"
+
+    assert gui_design_preset_reference_tab_route("securecrt").active_tab_label == "edge-prod (SSH2)"
+    assert gui_design_preset_reference_tab_route("termius").active_tab_label == "edge-prod"
+    assert gui_design_preset_reference_tab_route("remmina").reference_profile == "win-admin"
+    assert gui_design_preset_reference_tab_route("mremoteng").home_tab_label == "Start Page"
+
+
+def test_gui_design_preset_keyboard_shortcut_routes_are_shared_metadata() -> None:
+    assert PRODUCT_GUI_PRESET_IDS == ("mobaxterm", "securecrt", "termius", "remmina", "mremoteng")
+
+    for preset_id in PRODUCT_GUI_PRESET_IDS:
+        route = gui_design_preset_keyboard_shortcut_route(preset_id)
+
+        assert route.key == f"{preset_id}-keyboard-shortcut-route"
+        assert route.route_role == "product-preset-keyboard-shortcuts"
+        assert route.preset_id == preset_id
+        assert route.shortcut_object == "presetKeyboardShortcut"
+        assert route.expected_shortcut_keys == (
+            "refresh-profiles",
+            "new-profile",
+            "edit-profile",
+            "connect-selected",
+            "new-local-terminal",
+            "close-current-tab",
+            "recover-previous-sessions",
+            "split-horizontal",
+            "split-vertical",
+            "open-selected-layout",
+            "find-log-text",
+        )
+        assert route.expected_sequences == (
+            "Ctrl+R",
+            "Ctrl+N",
+            "Ctrl+E",
+            "Ctrl+Return",
+            "Ctrl+T",
+            "Ctrl+W",
+            "Ctrl+Shift+T",
+            "Ctrl+Shift+H",
+            "Ctrl+Shift+V",
+            "Ctrl+L",
+            "Ctrl+F",
+        )
+        assert route.expected_action_labels == (
+            "Refresh profiles",
+            "New profile",
+            "Edit selected profile",
+            "Connect selected profile",
+            "New local terminal",
+            "Close current tab",
+            "Recover previous sessions",
+            "Split horizontal",
+            "Split vertical",
+            "Open selected layout",
+            "Find log text",
+        )
+        assert route.expected_shortcut_count == 11
+        assert route.shortcut_key_property == "presetKeyboardShortcutKey"
+        assert route.shortcut_sequence_property == "presetKeyboardShortcutSequence"
+        assert route.shortcut_action_property == "presetKeyboardShortcutActionLabel"
+        assert route.captured_property == "presetKeyboardShortcutsCaptured"
+        assert route.captured_keys_property == "presetKeyboardShortcutCapturedKeys"
+        assert route.captured_sequences_property == "presetKeyboardShortcutCapturedSequences"
+        assert route.captured_action_labels_property == "presetKeyboardShortcutCapturedActionLabels"
+        assert route.captured_count_property == "presetKeyboardShortcutCapturedCount"
+        assert route.render_source == "gui-design-keyboard-shortcuts"
+
+    assert "Ctrl+T" in gui_design_preset_keyboard_shortcut_route("mobaxterm").expected_sequences
+    assert "Ctrl+Shift+T" in gui_design_preset_keyboard_shortcut_route("securecrt").expected_sequences
+
+
+def test_gui_design_preset_command_surface_routes_are_shared_metadata() -> None:
+    expected_objects = {
+        "mobaxterm": ("mobaRibbonButton", 12, "sessions", "games"),
+        "securecrt": ("productToolbarButton", 11, "connect", "remove"),
+        "termius": ("productToolbarButton", 11, "connect", "remove"),
+        "remmina": ("productToolbarButton", 11, "connect", "remove"),
+        "mremoteng": ("productToolbarButton", 11, "connect", "remove"),
+    }
+
+    for preset_id in PRODUCT_GUI_PRESET_IDS:
+        route = gui_design_preset_command_surface_route(preset_id)
+        state = gui_design_interaction_state(preset_id)
+        actions = gui_design_command_surface_actions(preset_id)
+        command_object, expected_count, active_key, disabled_key = expected_objects[preset_id]
+
+        assert route.key == f"{preset_id}-command-surface-route"
+        assert route.route_role == "product-preset-command-surface-route"
+        assert route.preset_id == preset_id
+        assert route.toolbar_object == "mainToolbar"
+        assert route.command_object == command_object
+        assert route.expected_action_keys == tuple(key for key, _label, _tooltip in actions)
+        assert route.expected_action_labels == tuple(label for _key, label, _tooltip in actions)
+        assert route.expected_action_tooltips == tuple(tooltip for _key, _label, tooltip in actions)
+        assert route.expected_action_count == expected_count == len(actions)
+        states = dict(route.expected_action_states)
+        assert states[active_key] == "active"
+        assert states[disabled_key] == "disabled"
+        if state.checked_toolbar_key in states:
+            assert states[state.checked_toolbar_key] == "checked"
+        assert route.key_property == "presetCommandSurfaceActionKey"
+        assert route.label_property == "presetCommandSurfaceActionLabel"
+        assert route.tooltip_property == "presetCommandSurfaceActionTooltip"
+        assert route.state_property == "interactionState"
+        assert route.captured_property == "presetCommandSurfaceCaptured"
+        assert route.captured_keys_property == "presetCommandSurfaceCapturedKeys"
+        assert route.captured_labels_property == "presetCommandSurfaceCapturedLabels"
+        assert route.captured_tooltips_property == "presetCommandSurfaceCapturedTooltips"
+        assert route.captured_states_property == "presetCommandSurfaceCapturedStates"
+        assert route.captured_count_property == "presetCommandSurfaceCapturedCount"
+        assert route.render_source == "gui-design-command-surface-route"
+
+    moba_tooltips = gui_design_moba_ribbon_tooltips()
+    assert gui_design_command_surface_actions("mobaxterm")[0] == (
+        "session",
+        "Session",
+        moba_tooltips["session"],
+    )
+    assert gui_design_command_surface_actions("securecrt") == gui_design_toolbar_actions("securecrt")
+
+
+def test_gui_design_preset_focus_interaction_routes_are_shared_metadata() -> None:
+    expected_focus_objects = {
+        "mobaxterm": ("quick-connect", "quickConnect", "sessions", "sftp", "games"),
+        "securecrt": ("session-filter", "secureCrtSessionFilter", "connect", "files", "remove"),
+        "termius": ("host-search", "termiusHostSearch", "connect", "doctor", "remove"),
+        "remmina": ("profile-filter", "remminaProfileFilter", "connect", "queue", "remove"),
+        "mremoteng": ("tree-filter", "mRemoteNgDocumentFilter", "connect", "files", "remove"),
+    }
+
+    for preset_id in PRODUCT_GUI_PRESET_IDS:
+        route = gui_design_preset_focus_interaction_route(preset_id)
+        state = gui_design_interaction_state(preset_id)
+        focused_control, focus_object, active_key, checked_key, disabled_key = expected_focus_objects[preset_id]
+
+        assert route.key == f"{preset_id}-focus-interaction-route"
+        assert route.route_role == "product-preset-focus-interaction-route"
+        assert route.preset_id == preset_id
+        assert route.focused_control == focused_control == state.focused_control
+        assert route.focus_object == focus_object
+        assert route.active_toolbar_key == active_key == state.active_toolbar_key
+        assert route.checked_toolbar_key == checked_key == state.checked_toolbar_key
+        assert route.disabled_toolbar_key == disabled_key == state.disabled_toolbar_key
+        assert route.selected_tree_label == state.selected_tree_label
+        assert route.active_tab_status == state.active_tab_status
+        assert route.status_note == state.status_note
+        assert route.status_bar_object == "statusBar"
+        assert route.profile_tree_object == "profileTree"
+        assert route.focused_state_property == "interactionState"
+        assert route.captured_property == "presetFocusInteractionCaptured"
+        assert route.captured_focus_property == "presetFocusInteractionCapturedFocus"
+        assert route.captured_focus_state_property == "presetFocusInteractionCapturedState"
+        assert route.captured_status_message_property == "presetFocusInteractionStatusMessage"
+        assert route.captured_selected_tree_property == "presetFocusInteractionCapturedSelectedTreeLabel"
+        assert route.captured_toolbar_states_property == "presetFocusInteractionToolbarStates"
+        assert route.render_source == "gui-design-focus-interaction-route"
+
+    assert gui_design_preset_focus_interaction_route("mobaxterm").status_note.startswith("quick connect")
+    assert gui_design_preset_focus_interaction_route("mremoteng").focus_object == "mRemoteNgDocumentFilter"
+
+
+def test_gui_design_preset_home_search_routes_are_shared_metadata() -> None:
+    expected_entry = {
+        "mobaxterm": (
+            "quick-connect",
+            "quickConnect",
+            "mobaHomeWelcomeSurface",
+            "mobaRecentSession",
+            "Quick connect...",
+        ),
+        "securecrt": ("session-filter", "secureCrtSessionFilter", "welcomePanel", "recentSessionsLabel", "Filter sessions"),
+        "termius": ("host-search", "termiusHostSearch", "welcomePanel", "recentSessionsLabel", "Search hosts"),
+        "remmina": (
+            "profile-filter",
+            "remminaProfileFilter",
+            "welcomePanel",
+            "recentSessionsLabel",
+            "Filter by name or protocol",
+        ),
+        "mremoteng": (
+            "tree-filter",
+            "mRemoteNgDocumentFilter",
+            "welcomePanel",
+            "recentSessionsLabel",
+            "Filter connection tree",
+        ),
+    }
+
+    for preset_id in PRODUCT_GUI_PRESET_IDS:
+        route = gui_design_preset_home_search_route(preset_id)
+        surface = gui_design_workspace_surface(preset_id)
+        focused_control, entry_object, container, recent_object, entry_placeholder = expected_entry[preset_id]
+
+        assert route.key == f"{preset_id}-home-search-route"
+        assert route.route_role == "product-preset-home-search-entry-route"
+        assert route.preset_id == preset_id
+        assert route.home_search_object == "homeSearch"
+        assert route.entry_search_control == focused_control
+        assert route.entry_search_object == entry_object
+        assert route.container_object == container
+        assert route.recent_label_object == recent_object
+        assert route.placeholder_text == surface.home_search_placeholder
+        assert route.entry_placeholder_text == entry_placeholder
+        assert route.expected_home_actions == surface.home_actions
+        assert route.expected_recent_labels == tuple(item for column in surface.recent_columns for item in column)
+        assert route.expected_recent_count == len(route.expected_recent_labels)
+        assert route.placeholder_property == "presetHomeSearchPlaceholder"
+        assert route.entry_placeholder_property == "presetHomeSearchEntryPlaceholder"
+        assert route.captured_property == "presetHomeSearchCaptured"
+        assert route.captured_placeholder_property == "presetHomeSearchCapturedPlaceholder"
+        assert route.captured_entry_placeholder_property == "presetHomeSearchCapturedEntryPlaceholder"
+        assert route.captured_recent_labels_property == "presetHomeSearchCapturedRecentLabels"
+        assert route.render_source == "gui-design-home-search-route"
+
+    assert gui_design_preset_home_search_route("mobaxterm").placeholder_text == "Find existing session or server name..."
+    assert gui_design_preset_home_search_route("securecrt").entry_placeholder_text == "Filter sessions"
+
+
+def test_gui_design_preset_reference_tab_chrome_routes_are_shared_metadata() -> None:
+    for preset_id in PRODUCT_REFERENCE_TAB_PRESET_IDS:
+        route = gui_design_preset_reference_tab_chrome_route(preset_id)
+        tab_route = gui_design_preset_reference_tab_route(preset_id)
+        preset = get_gui_design_preset(preset_id)
+
+        assert route.key == f"{preset_id}-reference-tab-chrome-evidence-route"
+        assert route.route_role == "active-reference-tab-chrome-evidence"
+        assert route.preset_id == preset_id
+        assert route.reference_profile == tab_route.reference_profile
+        assert route.active_tab_label == tab_route.active_tab_label
+        assert route.home_tab_label == tab_route.home_tab_label
+        assert route.tabs_object == "sessionTabs"
+        assert route.tab_bar_object == "sessionTabBar"
+        assert route.reference_tab_role == "terminal"
+        assert route.new_session_tab_role == "new-session"
+        assert route.expected_tab_position == preset.tab_position
+        assert route.expected_tooltip.startswith(f"{tab_route.active_tab_label}: ")
+        assert route.expected_closeable is True
+        assert route.expected_selected_during_capture is True
+        assert route.captured_property == "presetReferenceTabChromeCaptured"
+        assert route.captured_label_property == "presetReferenceTabChromeLabel"
+        assert route.captured_tooltip_property == "presetReferenceTabChromeTooltip"
+        assert route.captured_index_property == "presetReferenceTabChromeIndex"
+        assert route.captured_role_property == "presetReferenceTabChromeRole"
+        assert route.captured_position_property == "presetReferenceTabChromePosition"
+        assert route.captured_closeable_property == "presetReferenceTabChromeCloseable"
+        assert route.captured_selected_property == "presetReferenceTabChromeSelected"
+        assert route.render_source == "gui-design-reference-tab-chrome"
+
+    assert gui_design_preset_reference_tab_chrome_route("securecrt").expected_tooltip.endswith("SSH2 connected")
+    assert gui_design_preset_reference_tab_chrome_route("termius").expected_tab_position == "west"
+
+
+def test_gui_design_preset_reference_status_bar_routes_are_shared_metadata() -> None:
+    for preset_id in PRODUCT_REFERENCE_TAB_PRESET_IDS:
+        route = gui_design_preset_reference_status_bar_route(preset_id)
+        tab_route = gui_design_preset_reference_tab_route(preset_id)
+        identity_route = gui_design_product_identity_route(preset_id)
+
+        assert route.key == f"{preset_id}-reference-status-bar-evidence-route"
+        assert route.route_role == "active-reference-status-bar-evidence"
+        assert route.preset_id == preset_id
+        assert route.reference_profile == tab_route.reference_profile
+        assert route.active_tab_label == tab_route.active_tab_label
+        assert route.status_bar_object == "statusBar"
+        assert route.status_notice_object == "productStatusNotice"
+        assert route.status_segment_object == "productStatusSegment"
+        assert route.expected_status_message == "No running process panes"
+        assert route.expected_status_segments == identity_route.status_segments
+        assert route.expected_segment_count == len(identity_route.status_segments)
+        assert route.captured_property == "presetReferenceStatusCaptured"
+        assert route.captured_tab_property == "presetReferenceStatusCapturedTab"
+        assert route.captured_message_property == "presetReferenceStatusMessage"
+        assert route.captured_segments_property == "presetReferenceStatusSegments"
+        assert route.captured_segment_count_property == "presetReferenceStatusSegmentCount"
+        assert route.captured_segment_tooltips_property == "presetReferenceStatusSegmentTooltips"
+        assert route.captured_notice_property == "presetReferenceStatusNotice"
+        assert route.render_source == "gui-design-reference-status-bar"
+
+    assert "Session Manager" in gui_design_preset_reference_status_bar_route("securecrt").expected_status_segments
+    assert "Clipboard on" in gui_design_preset_reference_status_bar_route("remmina").expected_status_segments
+
+
+def test_gui_design_preset_reference_session_action_routes_are_shared_metadata() -> None:
+    for preset_id in PRODUCT_REFERENCE_TAB_PRESET_IDS:
+        route = gui_design_preset_reference_session_action_route(preset_id)
+        tab_route = gui_design_preset_reference_tab_route(preset_id)
+
+        assert route.key == f"{preset_id}-reference-session-actions-route"
+        assert route.route_role == "active-reference-session-actions"
+        assert route.preset_id == preset_id
+        assert route.reference_profile == tab_route.reference_profile
+        assert route.active_tab_label == tab_route.active_tab_label
+        assert route.tabs_object == "sessionTabs"
+        assert route.tab_bar_object == "sessionTabBar"
+        assert route.reference_tab_role == "terminal"
+        assert route.action_object == "sessionTabContextAction"
+        assert route.expected_action_keys == (
+            "new-local-terminal",
+            "split-horizontal",
+            "split-vertical",
+            "duplicate-tab",
+            "close-tab",
+            "close-other-tabs",
+            "recover-previous-sessions",
+        )
+        assert route.expected_action_labels == (
+            "New local terminal",
+            "Split horizontal",
+            "Split vertical",
+            "Duplicate tab",
+            "Close tab",
+            "Close other tabs",
+            "Recover previous sessions",
+        )
+        assert route.expected_action_count == len(route.expected_action_keys)
+        assert route.always_enabled_action_keys == tuple(
+            key for key in route.expected_action_keys if key != "close-other-tabs"
+        )
+        assert route.conditional_enabled_action_keys == ("close-other-tabs",)
+        assert route.action_key_property == "sessionTabContextActionKey"
+        assert route.action_label_property == "sessionTabContextActionLabel"
+        assert route.action_enabled_property == "sessionTabContextActionEnabled"
+        assert route.captured_property == "presetReferenceSessionActionsCaptured"
+        assert route.captured_tab_property == "presetReferenceSessionActionsCapturedTab"
+        assert route.captured_action_keys_property == "presetReferenceSessionActionKeys"
+        assert route.captured_action_labels_property == "presetReferenceSessionActionLabels"
+        assert route.captured_action_count_property == "presetReferenceSessionActionCount"
+        assert route.captured_enabled_keys_property == "presetReferenceSessionActionEnabledKeys"
+        assert route.captured_disabled_keys_property == "presetReferenceSessionActionDisabledKeys"
+        assert route.render_source == "gui-design-reference-session-actions"
+
+    assert "close-other-tabs" in gui_design_preset_reference_session_action_route("securecrt").expected_action_keys
+    assert "recover-previous-sessions" in gui_design_preset_reference_session_action_route("termius").expected_action_keys
+
+
+def test_gui_design_preset_reference_surface_routes_are_shared_metadata() -> None:
+    for preset_id in PRODUCT_REFERENCE_TAB_PRESET_IDS:
+        route = gui_design_preset_reference_surface_route(preset_id)
+        tab_route = gui_design_preset_reference_tab_route(preset_id)
+        identity_route = gui_design_product_identity_route(preset_id)
+
+        assert route.key == f"{preset_id}-reference-surface-evidence-route"
+        assert route.route_role == "active-reference-tab-surface-evidence"
+        assert route.preset_id == preset_id
+        assert route.reference_profile == tab_route.reference_profile
+        assert route.active_tab_label == tab_route.active_tab_label
+        assert route.expected_title == tab_route.reference_profile
+        assert route.expected_source == f"profile:{tab_route.reference_profile}"
+        assert route.command_target_fragment in identity_route.target_label
+        assert route.terminal_pane_object == "terminalPane"
+        assert route.terminal_title_object == "terminalTitle"
+        assert route.terminal_source_object == "terminalSource"
+        assert route.terminal_command_object == "terminalCommand"
+        assert route.terminal_output_object == "terminalOutput"
+        assert route.captured_property == "presetReferenceSurfaceCaptured"
+        assert route.captured_tab_property == "presetReferenceSurfaceCapturedTab"
+        assert route.actual_command_property == "presetReferenceSurfaceActualCommand"
+        assert route.actual_output_property == "presetReferenceSurfaceActualOutput"
+        assert route.render_source == "gui-design-reference-surface"
+
+    assert gui_design_preset_reference_surface_route("securecrt").command_executables == ("ssh",)
+    assert gui_design_preset_reference_surface_route("termius").command_target_fragment == "edge-prod.example.invalid"
+    assert gui_design_preset_reference_surface_route("remmina").command_executables == (
+        "mstsc",
+        "xfreerdp",
+        "wlfreerdp",
+    )
+    assert gui_design_preset_reference_surface_route("mremoteng").expected_title == "edge-prod"
+
+
+def test_gui_design_preset_reference_control_routes_are_shared_metadata() -> None:
+    for preset_id in PRODUCT_REFERENCE_TAB_PRESET_IDS:
+        route = gui_design_preset_reference_control_route(preset_id)
+        surface_route = gui_design_preset_reference_surface_route(preset_id)
+
+        assert route.key == f"{preset_id}-reference-control-evidence-route"
+        assert route.route_role == "active-reference-tab-terminal-controls"
+        assert route.preset_id == preset_id
+        assert route.reference_profile == surface_route.reference_profile
+        assert route.active_tab_label == surface_route.active_tab_label
+        assert route.terminal_pane_object == "terminalPane"
+        assert route.terminal_status_object == "paneStatus"
+        assert route.terminal_action_object == "terminalAction"
+        assert route.action_keys == ("start", "restart", "stop", "copy", "clear")
+        assert route.action_labels == ("Start", "Restart", "Stop", "Copy", "Clear")
+        assert route.action_tooltips == (
+            "Start process",
+            "Restart process",
+            "Stop process",
+            "Copy launch command",
+            "Clear terminal output",
+        )
+        assert route.allowed_status_states == ("ready", "starting", "running", "stopping", "error")
+        assert route.action_key_property == "terminalActionKey"
+        assert route.action_label_property == "terminalActionLabel"
+        assert route.action_tooltip_property == "terminalActionTooltip"
+        assert route.status_state_property == "state"
+        assert route.captured_property == "presetReferenceControlsCaptured"
+        assert route.captured_actions_property == "presetReferenceControlCapturedActionKeys"
+        assert route.captured_status_property == "presetReferenceControlStatusState"
+        assert route.captured_status_text_property == "presetReferenceControlStatusText"
+        assert route.render_source == "gui-design-reference-controls"
+
+    assert gui_design_preset_reference_control_route("securecrt").reference_profile == "edge-prod"
+    assert gui_design_preset_reference_control_route("remmina").active_tab_label == "RDP - win-admin"
+
+
+def test_gui_design_preset_reference_input_routes_are_shared_metadata() -> None:
+    for preset_id in PRODUCT_REFERENCE_TAB_PRESET_IDS:
+        route = gui_design_preset_reference_input_route(preset_id)
+        surface_route = gui_design_preset_reference_surface_route(preset_id)
+
+        assert route.key == f"{preset_id}-reference-input-evidence-route"
+        assert route.route_role == "active-reference-tab-terminal-input"
+        assert route.preset_id == preset_id
+        assert route.reference_profile == surface_route.reference_profile
+        assert route.active_tab_label == surface_route.active_tab_label
+        assert route.terminal_pane_object == "terminalPane"
+        assert route.terminal_input_object == "terminalInput"
+        assert route.placeholder_text == "stdin, shell command or interactive input"
+        assert route.expected_initial_text == ""
+        assert route.allowed_enabled_states == (True, False)
+        assert route.captured_property == "presetReferenceInputCaptured"
+        assert route.captured_tab_property == "presetReferenceInputCapturedTab"
+        assert route.captured_placeholder_property == "presetReferenceInputPlaceholder"
+        assert route.captured_text_property == "presetReferenceInputText"
+        assert route.captured_enabled_property == "presetReferenceInputEnabled"
+        assert route.render_source == "gui-design-reference-input"
+
+    assert gui_design_preset_reference_input_route("termius").active_tab_label == "edge-prod"
+    assert gui_design_preset_reference_input_route("mremoteng").reference_profile == "edge-prod"
+
+
+def test_gui_design_preset_reference_transcript_routes_are_shared_metadata() -> None:
+    for preset_id in PRODUCT_REFERENCE_TAB_PRESET_IDS:
+        route = gui_design_preset_reference_transcript_route(preset_id)
+        surface_route = gui_design_preset_reference_surface_route(preset_id)
+
+        assert route.key == f"{preset_id}-reference-transcript-evidence-route"
+        assert route.route_role == "active-reference-tab-terminal-transcript"
+        assert route.preset_id == preset_id
+        assert route.reference_profile == surface_route.reference_profile
+        assert route.active_tab_label == surface_route.active_tab_label
+        assert route.terminal_pane_object == "terminalPane"
+        assert route.terminal_output_object == "terminalOutput"
+        assert route.command_echo_prefix == "$ "
+        assert route.required_fragments == (surface_route.command_target_fragment,)
+        assert route.minimum_line_count == 1
+        assert route.captured_property == "presetReferenceTranscriptCaptured"
+        assert route.captured_tab_property == "presetReferenceTranscriptCapturedTab"
+        assert route.captured_text_property == "presetReferenceTranscriptText"
+        assert route.captured_line_count_property == "presetReferenceTranscriptLineCount"
+        assert route.captured_command_echo_property == "presetReferenceTranscriptCommandEcho"
+        assert route.render_source == "gui-design-reference-transcript"
+
+    assert gui_design_preset_reference_transcript_route("securecrt").required_fragments == (
+        "edge-prod.example.invalid",
+    )
+    assert gui_design_preset_reference_transcript_route("remmina").required_fragments == (
+        "admin-win.example.invalid",
+    )
+
+
+def test_gui_design_preset_catalog_route_tracks_selector_options() -> None:
+    route = gui_design_preset_catalog_route()
+    product_presets = tuple(preset for preset in GUI_DESIGN_PRESETS if preset.id != DEFAULT_GUI_DESIGN_ID)
+
+    assert route.key == "gui-preset-selector-catalog-route"
+    assert route.route_role == "preset-catalog-to-design-selector-options"
+    assert route.selector_object == "designSelect"
+    assert route.option_ids == tuple(gui_design_preset_ids())
+    assert route.option_labels == tuple(gui_design_preset_labels())
+    assert route.product_preset_ids == tuple(preset.id for preset in product_presets)
+    assert route.product_preset_labels == tuple(preset.label for preset in product_presets)
+    assert route.default_preset_id == DEFAULT_GUI_DESIGN_ID
+    assert route.default_preset_label == get_gui_design_preset(DEFAULT_GUI_DESIGN_ID).label
+    assert route.option_count == len(GUI_DESIGN_PRESETS)
+    assert route.product_option_count == len(product_presets)
+    assert route.selector_property == "presetCatalogRouteOptionIds"
+    assert route.option_labels_property == "presetCatalogRouteOptionLabels"
+    assert route.product_ids_property == "presetCatalogRouteProductPresetIds"
+    assert route.default_property == "presetCatalogRouteDefaultPresetId"
+    assert route.render_source == "gui-design-preset-catalog"
+
+
+def test_gui_design_preset_isolation_routes_are_shared_metadata() -> None:
+    for preset in GUI_DESIGN_PRESETS:
+        route = gui_design_preset_isolation_route(preset.id)
+
+        assert route.key == f"{preset.id}-preset-isolation-route"
+        assert route.route_role == "active-preset-visible-hidden-widget-isolation"
+        assert route.preset_id == preset.id
+        assert route.visible_objects
+        assert "mainToolbar" in route.visible_objects
+        assert "sessionTabs" in route.visible_objects
+        assert not (set(route.visible_objects) & set(route.hidden_objects))
+        assert route.visible_property == "presetIsolationVisibleObjects"
+        assert route.hidden_property == "presetIsolationHiddenObjects"
+        assert route.render_source == "gui-design-preset-visibility"
+
+    assert "mobaQuickConnectChrome" in gui_design_preset_isolation_route("mobaxterm").visible_objects
+    assert "layoutToolbar" in gui_design_preset_isolation_route("mobaxterm").hidden_objects
+    assert "mobaRail" in gui_design_preset_isolation_route("securecrt").hidden_objects
+    assert "secureCrtSessionManagerChrome" in gui_design_preset_isolation_route("securecrt").visible_objects
+    assert "termiusHostsChrome" in gui_design_preset_isolation_route("termius").visible_objects
+    assert "remminaProfileListChrome" in gui_design_preset_isolation_route("remmina").visible_objects
+    assert "mRemoteNgPropertyGrid" in gui_design_preset_isolation_route("mremoteng").visible_objects
+
+
+def test_gui_design_preset_transition_routes_are_shared_metadata() -> None:
+    ids = gui_design_preset_ids()
+
+    for preset in GUI_DESIGN_PRESETS:
+        route = gui_design_preset_transition_route(preset.id)
+        isolation_route = gui_design_preset_isolation_route(preset.id)
+
+        assert route.key == f"{preset.id}-preset-transition-route"
+        assert route.route_role == "selector-style-switch-resets-inactive-product-chrome"
+        assert route.to_preset_id == preset.id
+        assert route.to_preset_index == ids.index(preset.id)
+        assert route.selector_object == "designSelect"
+        assert route.from_preset_ids == tuple(source_id for source_id in ids if source_id != preset.id)
+        assert preset.id not in route.from_preset_ids
+        assert set(route.reset_objects) == set(isolation_route.hidden_objects)
+        assert route.route_property == "presetTransitionRouteKey"
+        assert route.from_property == "presetTransitionFromPresetIds"
+        assert route.to_property == "presetTransitionToPresetId"
+        assert route.reset_property == "presetTransitionResetObjects"
+        assert route.render_source == "gui-design-preset-transition"
+
+    assert "native" in gui_design_preset_transition_route("mobaxterm").from_preset_ids
+    assert "mobaRail" in gui_design_preset_transition_route("securecrt").reset_objects
+    assert "secureCrtMenuBar" in gui_design_preset_transition_route("termius").reset_objects
+    assert "termiusHostsChrome" in gui_design_preset_transition_route("remmina").reset_objects
+    assert "remminaProfileListChrome" in gui_design_preset_transition_route("mremoteng").reset_objects
+
+
+def test_gui_design_preset_selection_routes_are_shared_metadata() -> None:
+    ids = gui_design_preset_ids()
+
+    for preset in GUI_DESIGN_PRESETS:
+        route = gui_design_preset_selection_route(preset.id)
+
+        assert route.key == f"{preset.id}-preset-selection-route"
+        assert route.route_role == "selector-to-toolbar-sidebar-tabs-status-workspace"
+        assert route.preset_id == preset.id
+        assert route.preset_label == preset.label
+        assert route.preset_index == ids.index(preset.id)
+        assert route.selector_object == "designSelect"
+        assert route.main_toolbar_object == "mainToolbar"
+        assert route.layout_toolbar_object == "layoutToolbar"
+        assert route.left_panel_header_object == "leftPanelHeader"
+        assert route.profile_tree_object == "profileTree"
+        assert route.tabs_object == "sessionTabs"
+        assert route.status_bar_object == "statusBar"
+        assert route.status_segment_object == "productStatusSegment"
+        assert route.workspace_surface_object == "productWorkspaceSurface"
+        assert route.reference_state_object == "productReferenceState"
+        assert route.home_tab_label == gui_design_home_tab_label(preset.id)
+        assert route.sidebar_title
+        assert route.status_segments == gui_design_status_segments(preset.id)
+        assert route.tab_position == preset.tab_position
+        assert route.document_mode is preset.document_mode
+        assert route.profile_width == preset.profile_width
+        assert route.log_height == preset.log_height
+        assert route.toolbar_icon_size == preset.toolbar_icon_size
+        assert route.selector_property == "presetSelectionRoutePresetId"
+        assert route.preset_label_property == "presetSelectionRoutePresetLabel"
+        assert route.home_tab_property == "presetSelectionRouteHomeTabLabel"
+        assert route.sidebar_title_property == "presetSelectionRouteSidebarTitle"
+        assert route.status_segments_property == "presetSelectionRouteStatusSegments"
+        assert route.render_source == "gui-design-preset-metadata"
+
+
+def test_gui_design_preset_visual_signatures_are_shared_metadata() -> None:
+    for preset in GUI_DESIGN_PRESETS:
+        signature = gui_design_preset_visual_signature(preset.id)
+
+        assert signature.key == f"{preset.id}-visual-signature"
+        assert signature.route_role == "preset-palette-density-to-live-static-style"
+        assert signature.preset_id == preset.id
+        assert signature.preset_label == preset.label
+        assert signature.density == preset.density
+        assert signature.tab_position == preset.tab_position
+        assert signature.document_mode is preset.document_mode
+        assert signature.profile_width == preset.profile_width
+        assert signature.log_height == preset.log_height
+        assert signature.toolbar_icon_size == preset.toolbar_icon_size
+        assert signature.list_spacing == preset.list_spacing
+        assert dict(signature.palette_items()) == {
+            "window": preset.colors.window,
+            "toolbar": preset.colors.toolbar,
+            "toolbar_border": preset.colors.toolbar_border,
+            "control": preset.colors.control,
+            "control_text": preset.colors.control_text,
+            "primary": preset.colors.primary,
+            "sidebar": preset.colors.sidebar,
+            "sidebar_selected": preset.colors.sidebar_selected,
+            "pane": preset.colors.pane,
+            "pane_border": preset.colors.pane_border,
+            "tab": preset.colors.tab,
+            "tab_selected": preset.colors.tab_selected,
+            "terminal": preset.colors.terminal,
+            "terminal_text": preset.colors.terminal_text,
+            "terminal_accent": preset.colors.terminal_accent,
+            "status": preset.colors.status,
+        }
+        assert signature.window_object == "remoteOpsMain"
+        assert signature.main_toolbar_object == "mainToolbar"
+        assert signature.layout_toolbar_object == "layoutToolbar"
+        assert signature.left_panel_object == "leftPanel"
+        assert signature.profile_tree_object == "profileTree"
+        assert signature.tabs_object == "sessionTabs"
+        assert signature.activity_log_object == "activityLog"
+        assert signature.status_bar_object == "statusBar"
+        assert signature.density_property == "presetVisualSignatureDensity"
+        assert signature.palette_property == "presetVisualSignaturePalette"
+        assert signature.render_source == "gui-design-preset-style"
 
 
 def test_gui_design_styles_avoid_fragile_decoration_patterns() -> None:

@@ -97,6 +97,15 @@ def test_real_gui_render_manifest_contract_names_required_widgets() -> None:
         "Macros",
         "Help",
     ]
+    assert checker.EXPECTED_MOBA_RIBBON_EDGE_ACTION_ROUTE.key == "moba-ribbon-edge-action-route"
+    assert checker.EXPECTED_MOBA_RIBBON_EDGE_ACTION_ROUTE.xserver_handler == "show_moba_x_server_status"
+    assert checker.EXPECTED_MOBA_RIBBON_EDGE_ACTION_ROUTE.exit_handler == "close"
+    assert checker.EXPECTED_MOBA_RIGHT_UTILITY_ACTION_ROUTE.key == "moba-right-utility-action-route"
+    assert checker.EXPECTED_MOBA_RIGHT_UTILITY_ACTION_ROUTE.action_handlers == (
+        "show_moba_clipboard_hints",
+        "show_moba_terminal_settings",
+        "show_moba_tools_status",
+    )
     assert checker.EXPECTED_SECURECRT_TOP_MENU_KEYS == [
         "file",
         "edit",
@@ -171,6 +180,12 @@ def test_real_gui_render_manifest_contract_names_required_widgets() -> None:
     assert checker.EXPECTED_MOBA_REMOTE_MONITORING_DOCK_CHROME.telemetry_surface == "bottom-telemetry-bar"
     assert checker.EXPECTED_MOBA_MONITORING_TELEMETRY_ROUTE.key == "remote-monitoring-to-bottom-telemetry"
     assert checker.EXPECTED_MOBA_MONITORING_TELEMETRY_ROUTE.target_bar_object == "mobaTelemetryBar"
+    assert (
+        checker.EXPECTED_MOBA_FOLLOW_TERMINAL_FOLDER_CONTROL_ROUTE.key
+        == "moba-follow-terminal-folder-control-route"
+    )
+    assert checker.EXPECTED_MOBA_FOLLOW_TERMINAL_FOLDER_CONTROL_ROUTE.source_control_key == "follow-terminal-folder"
+    assert checker.EXPECTED_MOBA_FOLLOW_TERMINAL_FOLDER_CONTROL_ROUTE.target_path_object == "mobaSftpPath"
     assert checker.EXPECTED_MOBA_CONNECTED_SESSION_ROUTE.key == "moba-active-connected-session-route"
     assert checker.EXPECTED_MOBA_CONNECTED_SESSION_ROUTE.active_tab_key == "active-session"
     assert checker.EXPECTED_MOBA_CONNECTED_SESSION_ROUTE.telemetry_identity_cell_key == "target"
@@ -219,9 +234,14 @@ def test_real_gui_render_manifest_contract_names_required_widgets() -> None:
     assert checker.EXPECTED_REMMINA_PROFILE_VIEWER_ROUTE.key == "remmina-selected-profile-viewer-route"
     assert checker.EXPECTED_REMMINA_PROFILE_VIEWER_ROUTE.active_tab_label == "RDP - win-admin"
     assert checker.EXPECTED_REMMINA_PROFILE_VIEWER_ROUTE.viewer_control_key == "scale-100"
+    assert checker.EXPECTED_REMMINA_PROFILE_FILTER_ROUTE.key == "remmina-profile-filter-route"
+    assert checker.EXPECTED_REMMINA_PROFILE_FILTER_ROUTE.expected_query == "rdp"
+    assert checker.EXPECTED_REMMINA_PROFILE_FILTER_ROUTE.selected_profile_key == "win-admin"
     assert checker.EXPECTED_REMMINA_CLIPBOARD_ROUTE.key == "remmina-clipboard-sync-route"
     assert checker.EXPECTED_REMMINA_CLIPBOARD_ROUTE.viewer_control_key == "clipboard"
     assert checker.EXPECTED_REMMINA_CLIPBOARD_ROUTE.status_segment == "Clipboard on"
+    assert checker.EXPECTED_REMMINA_SCREENSHOT_ROUTE.key == "remmina-screenshot-capture-route"
+    assert checker.EXPECTED_REMMINA_SFTP_TRANSFER_ROUTE.key == "remmina-sftp-transfer-route"
     assert checker.EXPECTED_TERMIUS_HEADER_CHIP_KEYS == [
         "vault-unlocked",
         "sync-current",
@@ -282,6 +302,13 @@ def test_real_gui_render_manifest_contract_names_required_widgets() -> None:
     )
     assert checker.EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.document_control_key == "reconnect"
     assert checker.EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.property_row_key == "protocol"
+    assert checker.EXPECTED_MREMOTENG_DOCUMENT_FILTER_ROUTE.key == "mremoteng-document-filter-route"
+    assert checker.EXPECTED_MREMOTENG_DOCUMENT_FILTER_ROUTE.expected_query == "edge"
+    assert checker.EXPECTED_MREMOTENG_DOCUMENT_FILTER_ROUTE.selected_tree_label == "edge-prod [SSH]"
+    assert checker.EXPECTED_MREMOTENG_INHERITANCE_ROUTE.key == "mremoteng-inheritance-route"
+    assert checker.EXPECTED_MREMOTENG_INHERITANCE_ROUTE.workflow_card_key == "inheritance-grid"
+    assert checker.EXPECTED_MREMOTENG_INHERITANCE_ROUTE.property_row_key == "credential"
+    assert checker.EXPECTED_MREMOTENG_INHERITANCE_ROUTE.inherited_value == "operator key reference"
 
 
 def test_real_gui_render_defaults_to_every_preset() -> None:
@@ -315,6 +342,9 @@ def test_real_gui_render_uses_preset_specific_widget_contracts() -> None:
     assert checker.required_widgets_for_preset("securecrt")["secureCrtMenuBar"] == "SecureCRT top menu bar"
     assert checker.required_widgets_for_preset("remmina")["remminaProfileListChrome"] == (
         "Remmina profile list chrome"
+    )
+    assert checker.required_widgets_for_preset("remmina")["remminaSftpTransferPanel"] == (
+        "Remmina SFTP transfer panel"
     )
     assert checker.required_widgets_for_preset("mremoteng")["mRemoteNgMenuBar"] == "mRemoteNG top menu bar"
     assert checker.required_widgets_for_preset("mremoteng")["mRemoteNgPropertyGrid"] == (
@@ -379,6 +409,7 @@ def test_real_gui_render_collects_live_tab_and_tree_labels() -> None:
 
     assert checker.live_tab_labels(tabs) == {"Start Page", "edge-prod (SSH2)", "+"}
     assert checker.collect_tree_labels(tree) == {"Session Database", "Folder: examples"}
+    assert set(checker.collect_tree_items_by_label(tree)) == {"Session Database", "Folder: examples"}
 
 
 def test_real_gui_render_contract_checks_live_workflow_cards() -> None:
@@ -405,6 +436,7 @@ def test_real_gui_render_contract_checks_live_workspace_surface_text() -> None:
         "win-admin (RDP)",
         "Scale    : 100%",
         "Viewer tab: win-admin",
+        "SFTP transfer: queue ready",
     } <= remmina_required
     assert "active-tab: RDP - win-admin" in remmina_reference
     assert "sidebar: Connection Profiles" in remmina_reference
@@ -422,6 +454,7 @@ def test_real_gui_render_contract_checks_live_workspace_surface_text() -> None:
     }
     assert "Target: edge-prod.example.invalid:22" in checker.required_securecrt_session_status_texts()
     assert "Cipher: chacha20-poly1305" in checker.required_securecrt_session_status_texts()
+    assert "SFTP: files-prod tab" in checker.required_securecrt_session_status_texts()
     assert "Options" in checker.required_securecrt_top_chrome_texts()
     assert "New Session" in checker.required_securecrt_top_chrome_texts()
     assert "Connections" in checker.required_mremoteng_top_chrome_texts()
@@ -431,13 +464,100 @@ def test_real_gui_render_contract_checks_live_workspace_surface_text() -> None:
     assert "check_live_reference_state" in source
     assert "check_live_securecrt_session_status_strip" in source
     assert "check_live_securecrt_session_manager_route" in source
+    assert "check_live_securecrt_session_manager_filter_route" in source
+    assert "check_live_securecrt_sftp_tab_route" in source
+    assert "check_live_securecrt_sftp_browser_route" in source
     assert "check_live_termius_host_identity_strip" in source
     assert "check_live_termius_host_selection_route" in source
+    assert "check_live_termius_port_forward_route" in source
+    assert "check_live_termius_snippet_route" in source
     assert "check_live_securecrt_command_window" in source
     assert "check_live_securecrt_top_chrome" in source
     assert "check_live_mremoteng_top_chrome" in source
     assert "check_live_remmina_clipboard_route" in source
+    assert "check_live_remmina_screenshot_route" in source
+    assert "check_live_remmina_sftp_transfer_route" in source
     assert "gui_design_reference_state" in source
+    assert "check_live_preset_reference_tab_route" in source
+    assert "reference-tab-activation-route" in source
+    assert "check_live_preset_reference_surface_route" in source
+    assert "check_live_preset_reference_tab_chrome_route" in source
+    assert "reference-tab-chrome-evidence-route" in source
+    assert "expected_preset_reference_tab_chrome_route" in source
+    assert "check_live_preset_reference_status_bar_route" in source
+    assert "reference-status-bar-evidence-route" in source
+    assert "expected_preset_reference_status_bar_route" in source
+    assert "check_live_preset_reference_session_action_route" in source
+    assert "reference-session-actions-route" in source
+    assert "expected_preset_reference_session_action_route" in source
+    assert "check_live_moba_connected_session_action_route" in source
+    assert "connected-session-actions-route" in source
+    assert "build_tab_context_menu" in source
+    assert "connected session action menu" in source
+    assert "route.menu_object" in source
+    assert "expected_moba_connected_session_action_route" in source
+    assert "EXPECTED_MOBA_REMOTE_MONITORING_CONTROL_ROUTE" in source
+    assert "remote-monitoring-control-route" in source
+    assert "expected_moba_remote_monitoring_control_route" in source
+    assert "EXPECTED_MOBA_FOLLOW_TERMINAL_FOLDER_CONTROL_ROUTE" in source
+    assert "follow-terminal-folder-control-route" in source
+    assert "expected_moba_follow_terminal_folder_control_route" in source
+    assert "EXPECTED_SECURECRT_SESSION_MANAGER_FILTER_ROUTE" in source
+    assert "securecrt-session-manager-filter-route" in source
+    assert "expected_securecrt_session_manager_filter_route" in source
+    assert "EXPECTED_SECURECRT_SFTP_TAB_ROUTE" in source
+    assert "securecrt-sftp-tab-route" in source
+    assert "expected_securecrt_sftp_tab_route" in source
+    assert "EXPECTED_SECURECRT_SFTP_BROWSER_ROUTE" in source
+    assert "securecrt-sftp-browser-route" in source
+    assert "expected_securecrt_sftp_browser_route" in source
+    assert "EXPECTED_MREMOTENG_DOCUMENT_FILTER_ROUTE" in source
+    assert "check_live_mremoteng_document_filter_route" in source
+    assert "mremoteng-document-filter-route" in source
+    assert "expected_mremoteng_document_filter_route" in source
+    assert "EXPECTED_MREMOTENG_INHERITANCE_ROUTE" in source
+    assert "check_live_mremoteng_inheritance_route" in source
+    assert "mremoteng-inheritance-route" in source
+    assert "expected_mremoteng_inheritance_route" in source
+    assert "EXPECTED_REMMINA_SCREENSHOT_ROUTE" in source
+    assert "remmina-screenshot-route" in source
+    assert "expected_remmina_screenshot_route" in source
+    assert "EXPECTED_REMMINA_SFTP_TRANSFER_ROUTE" in source
+    assert "remmina-sftp-transfer-route" in source
+    assert "expected_remmina_sftp_transfer_route" in source
+    assert "EXPECTED_TERMIUS_PORT_FORWARD_ROUTE" in source
+    assert "termius-port-forward-route" in source
+    assert "expected_termius_port_forward_route" in source
+    assert "EXPECTED_TERMIUS_SNIPPET_ROUTE" in source
+    assert "termius-snippet-route" in source
+    assert "expected_termius_snippet_route" in source
+    assert "check_live_termius_files_browser_route" in source
+    assert "EXPECTED_TERMIUS_FILES_BROWSER_ROUTE" in source
+    assert "termius-files-browser-route" in source
+    assert "expected_termius_files_browser_route" in source
+    assert "reference-surface-evidence-route" in source
+    assert "expected_preset_reference_surface_route" in source
+    assert "check_live_preset_reference_control_route" in source
+    assert "reference-control-evidence-route" in source
+    assert "expected_preset_reference_control_route" in source
+    assert "check_live_preset_reference_input_route" in source
+    assert "reference-input-evidence-route" in source
+    assert "expected_preset_reference_input_route" in source
+    assert "check_live_preset_reference_transcript_route" in source
+    assert "reference-transcript-evidence-route" in source
+    assert "expected_preset_reference_transcript_route" in source
+    assert "check_live_preset_keyboard_shortcut_route" in source
+    assert "preset-keyboard-shortcut-route" in source
+    assert "expected_preset_keyboard_shortcut_route" in source
+    assert "check_live_preset_command_surface_route" in source
+    assert "preset-command-surface-route" in source
+    assert "expected_preset_command_surface_route" in source
+    assert "check_live_preset_focus_interaction_route" in source
+    assert "preset-focus-interaction-route" in source
+    assert "expected_preset_focus_interaction_route" in source
+    assert "check_live_preset_home_search_route" in source
+    assert "preset-home-search-route" in source
+    assert "expected_preset_home_search_route" in source
 
 
 def test_real_gui_render_manifest_records_complete_capture_set(tmp_path: Path) -> None:
@@ -685,6 +805,447 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
 
     summaries = manifest["preset_live_contracts"]
     assert set(summaries) == {"native", "mobaxterm", "securecrt", "remmina", "termius", "mremoteng"}
+    for preset_id, summary in summaries.items():
+        catalog_route = summary["expected_preset_catalog_route"]
+        isolation_route = summary["expected_preset_isolation_route"]
+        keyboard_shortcut_route = summary["expected_preset_keyboard_shortcut_route"]
+        command_surface_route = summary["expected_preset_command_surface_route"]
+        focus_interaction_route = summary["expected_preset_focus_interaction_route"]
+        home_search_route = summary["expected_preset_home_search_route"]
+        moba_connected_session_action_route = summary["expected_moba_connected_session_action_route"]
+        moba_remote_monitoring_control_route = summary["expected_moba_remote_monitoring_control_route"]
+        moba_follow_terminal_folder_control_route = summary[
+            "expected_moba_follow_terminal_folder_control_route"
+        ]
+        reference_control_route = summary["expected_preset_reference_control_route"]
+        reference_input_route = summary["expected_preset_reference_input_route"]
+        reference_session_action_route = summary["expected_preset_reference_session_action_route"]
+        reference_status_bar_route = summary["expected_preset_reference_status_bar_route"]
+        reference_surface_route = summary["expected_preset_reference_surface_route"]
+        reference_tab_route = summary["expected_preset_reference_tab_route"]
+        reference_tab_chrome_route = summary["expected_preset_reference_tab_chrome_route"]
+        reference_transcript_route = summary["expected_preset_reference_transcript_route"]
+        selection_route = summary["expected_preset_selection_route"]
+        transition_route = summary["expected_preset_transition_route"]
+        visual_signature = summary["expected_preset_visual_signature"]
+        assert "preset-catalog-route" in summary["contract_checks"]
+        assert "preset-isolation-route" in summary["contract_checks"]
+        assert "preset-selection-route" in summary["contract_checks"]
+        assert "preset-transition-route" in summary["contract_checks"]
+        assert "preset-visual-signature" in summary["contract_checks"]
+        assert catalog_route["key"] == "gui-preset-selector-catalog-route"
+        assert catalog_route["selector_object"] == "designSelect"
+        assert catalog_route["default_preset_id"] == "native"
+        assert catalog_route["option_ids"] == ["native", "mobaxterm", "securecrt", "termius", "remmina", "mremoteng"]
+        assert catalog_route["option_count"] == 6
+        assert catalog_route["product_preset_ids"] == ["mobaxterm", "securecrt", "termius", "remmina", "mremoteng"]
+        assert catalog_route["product_option_count"] == 5
+        assert catalog_route["render_source"] == "gui-design-preset-catalog"
+        assert isolation_route["key"] == f"{preset_id}-preset-isolation-route"
+        assert isolation_route["route_role"] == "active-preset-visible-hidden-widget-isolation"
+        assert isolation_route["preset_id"] == preset_id
+        assert isolation_route["visible_objects"]
+        assert "mainToolbar" in isolation_route["visible_objects"]
+        assert "sessionTabs" in isolation_route["visible_objects"]
+        assert not (set(isolation_route["visible_objects"]) & set(isolation_route["hidden_objects"]))
+        assert isolation_route["visible_property"] == "presetIsolationVisibleObjects"
+        assert isolation_route["hidden_property"] == "presetIsolationHiddenObjects"
+        assert isolation_route["render_source"] == "gui-design-preset-visibility"
+        assert selection_route["key"] == f"{preset_id}-preset-selection-route"
+        assert selection_route["preset_id"] == preset_id
+        assert selection_route["selector_object"] == "designSelect"
+        assert selection_route["main_toolbar_object"] == "mainToolbar"
+        assert selection_route["layout_toolbar_object"] == "layoutToolbar"
+        assert selection_route["left_panel_header_object"] == "leftPanelHeader"
+        assert selection_route["profile_tree_object"] == "profileTree"
+        assert selection_route["tabs_object"] == "sessionTabs"
+        assert selection_route["status_bar_object"] == "statusBar"
+        assert selection_route["status_segment_object"] == "productStatusSegment"
+        assert selection_route["workspace_surface_object"] == "productWorkspaceSurface"
+        assert selection_route["reference_state_object"] == "productReferenceState"
+        assert selection_route["status_segments"]
+        assert selection_route["render_source"] == "gui-design-preset-metadata"
+        assert transition_route["key"] == f"{preset_id}-preset-transition-route"
+        assert transition_route["route_role"] == "selector-style-switch-resets-inactive-product-chrome"
+        assert transition_route["to_preset_id"] == preset_id
+        assert transition_route["selector_object"] == "designSelect"
+        assert preset_id not in transition_route["from_preset_ids"]
+        assert transition_route["from_preset_ids"]
+        assert set(transition_route["reset_objects"]) == set(isolation_route["hidden_objects"])
+        assert transition_route["route_property"] == "presetTransitionRouteKey"
+        assert transition_route["from_property"] == "presetTransitionFromPresetIds"
+        assert transition_route["to_property"] == "presetTransitionToPresetId"
+        assert transition_route["reset_property"] == "presetTransitionResetObjects"
+        assert transition_route["render_source"] == "gui-design-preset-transition"
+        if preset_id in checker.EXPECTED_PRESET_KEYBOARD_SHORTCUT_ROUTES:
+            assert "preset-keyboard-shortcut-route" in summary["contract_checks"]
+            assert keyboard_shortcut_route["key"] == f"{preset_id}-keyboard-shortcut-route"
+            if preset_id == "mobaxterm":
+                assert keyboard_shortcut_route["key"] == "mobaxterm-keyboard-shortcut-route"
+            assert keyboard_shortcut_route["route_role"] == "product-preset-keyboard-shortcuts"
+            assert keyboard_shortcut_route["preset_id"] == preset_id
+            assert keyboard_shortcut_route["shortcut_object"] == "presetKeyboardShortcut"
+            assert keyboard_shortcut_route["expected_shortcut_keys"] == [
+                "refresh-profiles",
+                "new-profile",
+                "edit-profile",
+                "connect-selected",
+                "new-local-terminal",
+                "close-current-tab",
+                "recover-previous-sessions",
+                "split-horizontal",
+                "split-vertical",
+                "open-selected-layout",
+                "find-log-text",
+            ]
+            assert keyboard_shortcut_route["expected_sequences"] == [
+                "Ctrl+R",
+                "Ctrl+N",
+                "Ctrl+E",
+                "Ctrl+Return",
+                "Ctrl+T",
+                "Ctrl+W",
+                "Ctrl+Shift+T",
+                "Ctrl+Shift+H",
+                "Ctrl+Shift+V",
+                "Ctrl+L",
+                "Ctrl+F",
+            ]
+            assert keyboard_shortcut_route["expected_action_labels"] == [
+                "Refresh profiles",
+                "New profile",
+                "Edit selected profile",
+                "Connect selected profile",
+                "New local terminal",
+                "Close current tab",
+                "Recover previous sessions",
+                "Split horizontal",
+                "Split vertical",
+                "Open selected layout",
+                "Find log text",
+            ]
+            assert keyboard_shortcut_route["expected_shortcut_count"] == 11
+            assert keyboard_shortcut_route["shortcut_key_property"] == "presetKeyboardShortcutKey"
+            assert keyboard_shortcut_route["captured_sequences_property"] == "presetKeyboardShortcutCapturedSequences"
+            assert keyboard_shortcut_route["render_source"] == "gui-design-keyboard-shortcuts"
+        else:
+            assert "preset-keyboard-shortcut-route" not in summary["contract_checks"]
+            assert keyboard_shortcut_route == {}
+        if preset_id in checker.EXPECTED_PRESET_COMMAND_SURFACE_ROUTES:
+            assert "preset-command-surface-route" in summary["contract_checks"]
+            assert command_surface_route["key"] == f"{preset_id}-command-surface-route"
+            assert command_surface_route["route_role"] == "product-preset-command-surface-route"
+            assert command_surface_route["preset_id"] == preset_id
+            assert command_surface_route["toolbar_object"] == "mainToolbar"
+            assert command_surface_route["command_object"] in {"mobaRibbonButton", "productToolbarButton"}
+            assert command_surface_route["expected_action_count"] == len(
+                command_surface_route["expected_action_keys"]
+            )
+            assert command_surface_route["expected_action_count"] == len(
+                command_surface_route["expected_action_labels"]
+            )
+            assert command_surface_route["expected_action_count"] == len(
+                command_surface_route["expected_action_tooltips"]
+            )
+            assert command_surface_route["expected_action_states"]
+            assert command_surface_route["key_property"] == "presetCommandSurfaceActionKey"
+            assert command_surface_route["label_property"] == "presetCommandSurfaceActionLabel"
+            assert command_surface_route["tooltip_property"] == "presetCommandSurfaceActionTooltip"
+            assert command_surface_route["state_property"] == "interactionState"
+            assert command_surface_route["captured_keys_property"] == "presetCommandSurfaceCapturedKeys"
+            assert command_surface_route["captured_states_property"] == "presetCommandSurfaceCapturedStates"
+            assert command_surface_route["render_source"] == "gui-design-command-surface-route"
+        else:
+            assert "preset-command-surface-route" not in summary["contract_checks"]
+            assert command_surface_route == {}
+        if preset_id in checker.EXPECTED_PRESET_FOCUS_INTERACTION_ROUTES:
+            assert "preset-focus-interaction-route" in summary["contract_checks"]
+            assert focus_interaction_route["key"] == f"{preset_id}-focus-interaction-route"
+            assert focus_interaction_route["route_role"] == "product-preset-focus-interaction-route"
+            assert focus_interaction_route["preset_id"] == preset_id
+            assert focus_interaction_route["focus_object"] in {
+                "quickConnect",
+                "secureCrtSessionFilter",
+                "termiusHostSearch",
+                "remminaProfileFilter",
+                "mRemoteNgDocumentFilter",
+            }
+            assert focus_interaction_route["focused_control"]
+            assert focus_interaction_route["active_toolbar_key"]
+            assert focus_interaction_route["checked_toolbar_key"]
+            assert focus_interaction_route["disabled_toolbar_key"]
+            assert focus_interaction_route["selected_tree_label"]
+            assert focus_interaction_route["active_tab_status"]
+            assert focus_interaction_route["status_note"]
+            assert focus_interaction_route["status_bar_object"] == "statusBar"
+            assert focus_interaction_route["profile_tree_object"] == "profileTree"
+            assert focus_interaction_route["focused_state_property"] == "interactionState"
+            assert focus_interaction_route["captured_focus_property"] == "presetFocusInteractionCapturedFocus"
+            assert (
+                focus_interaction_route["captured_selected_tree_property"]
+                == "presetFocusInteractionCapturedSelectedTreeLabel"
+            )
+            assert focus_interaction_route["captured_toolbar_states_property"] == "presetFocusInteractionToolbarStates"
+            assert focus_interaction_route["render_source"] == "gui-design-focus-interaction-route"
+        else:
+            assert "preset-focus-interaction-route" not in summary["contract_checks"]
+            assert focus_interaction_route == {}
+        if preset_id in checker.EXPECTED_PRESET_HOME_SEARCH_ROUTES:
+            assert "preset-home-search-route" in summary["contract_checks"]
+            assert home_search_route["key"] == f"{preset_id}-home-search-route"
+            assert home_search_route["route_role"] == "product-preset-home-search-entry-route"
+            assert home_search_route["preset_id"] == preset_id
+            assert home_search_route["home_search_object"] == "homeSearch"
+            assert home_search_route["entry_search_object"] in {
+                "quickConnect",
+                "secureCrtSessionFilter",
+                "termiusHostSearch",
+                "remminaProfileFilter",
+                "mRemoteNgDocumentFilter",
+            }
+            assert home_search_route["container_object"] in {"mobaHomeWelcomeSurface", "welcomePanel"}
+            assert home_search_route["placeholder_text"]
+            assert home_search_route["entry_placeholder_text"]
+            assert home_search_route["expected_home_actions"]
+            assert home_search_route["expected_recent_count"] == len(home_search_route["expected_recent_labels"])
+            assert home_search_route["captured_placeholder_property"] == "presetHomeSearchCapturedPlaceholder"
+            assert home_search_route["captured_entry_placeholder_property"] == "presetHomeSearchCapturedEntryPlaceholder"
+            assert home_search_route["captured_recent_labels_property"] == "presetHomeSearchCapturedRecentLabels"
+            assert home_search_route["render_source"] == "gui-design-home-search-route"
+        else:
+            assert "preset-home-search-route" not in summary["contract_checks"]
+            assert home_search_route == {}
+        if preset_id == "mobaxterm":
+            assert "connected-session-actions-route" in summary["contract_checks"]
+            assert "remote-monitoring-control-route" in summary["contract_checks"]
+            assert "follow-terminal-folder-control-route" in summary["contract_checks"]
+            assert moba_connected_session_action_route["key"] == "moba-connected-session-actions-route"
+            assert (
+                moba_connected_session_action_route["route_role"]
+                == "active-connected-tab-context-session-actions"
+            )
+            assert moba_connected_session_action_route["profile_name"] == "edge-prod"
+            assert moba_connected_session_action_route["active_tab_key"] == "active-session"
+            assert moba_connected_session_action_route["tabs_object"] == "sessionTabs"
+            assert moba_connected_session_action_route["tab_bar_object"] == "sessionTabBar"
+            assert moba_connected_session_action_route["menu_object"] == "mobaConnectedSessionTabContextMenu"
+            assert moba_connected_session_action_route["expected_action_count"] == 7
+            assert moba_connected_session_action_route["conditional_enabled_action_keys"] == ["close-other-tabs"]
+            assert (
+                moba_connected_session_action_route["captured_enabled_keys_property"]
+                == "mobaConnectedSessionActionEnabledKeys"
+            )
+            assert moba_connected_session_action_route["render_source"] == "connected-session-state"
+            assert moba_remote_monitoring_control_route["key"] == "moba-remote-monitoring-control-route"
+            assert (
+                moba_remote_monitoring_control_route["route_role"]
+                == "remote-monitoring-control-to-telemetry-refresh"
+            )
+            assert moba_remote_monitoring_control_route["source_control_key"] == "remote-monitoring"
+            assert moba_remote_monitoring_control_route["expected_checked"] is True
+            assert moba_remote_monitoring_control_route["telemetry_route_key"] == "remote-monitoring-to-bottom-telemetry"
+            assert moba_remote_monitoring_control_route["captured_command_property"] == (
+                "mobaRemoteMonitoringControlCapturedCommand"
+            )
+            assert (
+                moba_follow_terminal_folder_control_route["key"]
+                == "moba-follow-terminal-folder-control-route"
+            )
+            assert (
+                moba_follow_terminal_folder_control_route["route_role"]
+                == "follow-terminal-folder-control-to-sftp-browser-sync"
+            )
+            assert moba_follow_terminal_folder_control_route["source_control_key"] == "follow-terminal-folder"
+            assert moba_follow_terminal_folder_control_route["source_control_object"] == "mobaFollowTerminalFolder"
+            assert moba_follow_terminal_folder_control_route["source_control_label"] == "Follow terminal folder"
+            assert moba_follow_terminal_folder_control_route["expected_checked"] is True
+            assert moba_follow_terminal_folder_control_route["target_path_object"] == "mobaSftpPath"
+            assert moba_follow_terminal_folder_control_route["target_table_object"] == "mobaSftpFileTable"
+            assert moba_follow_terminal_folder_control_route["captured_plan_property"] == (
+                "mobaFollowTerminalFolderControlCapturedPlan"
+            )
+        else:
+            assert "connected-session-actions-route" not in summary["contract_checks"]
+            assert "remote-monitoring-control-route" not in summary["contract_checks"]
+            assert "follow-terminal-folder-control-route" not in summary["contract_checks"]
+            assert moba_connected_session_action_route == {}
+            assert moba_remote_monitoring_control_route == {}
+            assert moba_follow_terminal_folder_control_route == {}
+        if preset_id in checker.EXPECTED_PRESET_REFERENCE_TAB_ROUTES:
+            identity_route = summary["expected_product_identity_route"]
+            assert "reference-tab-activation-route" in summary["contract_checks"]
+            assert "reference-tab-chrome-evidence-route" in summary["contract_checks"]
+            assert "reference-status-bar-evidence-route" in summary["contract_checks"]
+            assert "reference-session-actions-route" in summary["contract_checks"]
+            assert "reference-surface-evidence-route" in summary["contract_checks"]
+            assert "reference-control-evidence-route" in summary["contract_checks"]
+            assert "reference-input-evidence-route" in summary["contract_checks"]
+            assert "reference-transcript-evidence-route" in summary["contract_checks"]
+            assert reference_tab_route["key"] == f"{preset_id}-reference-tab-activation-route"
+            assert reference_tab_route["route_role"] == "reference-profile-tab-can-be-active-surface"
+            assert reference_tab_route["preset_id"] == preset_id
+            assert reference_tab_route["reference_profile"] == identity_route["selected_profile_name"]
+            assert reference_tab_route["active_tab_label"] == identity_route["active_tab_label"]
+            assert reference_tab_route["home_tab_label"] == selection_route["home_tab_label"]
+            assert reference_tab_route["tabs_object"] == "sessionTabs"
+            assert reference_tab_route["home_tab_role"] == "home"
+            assert reference_tab_route["reference_tab_role"] == "terminal"
+            assert reference_tab_route["activated_label_property"] == "presetReferenceTabActivatedLabel"
+            assert reference_tab_route["returned_home_label_property"] == "presetReferenceTabReturnedHomeLabel"
+            assert reference_tab_route["render_source"] == "gui-design-reference-tab-route"
+            assert reference_tab_chrome_route["key"] == f"{preset_id}-reference-tab-chrome-evidence-route"
+            assert reference_tab_chrome_route["route_role"] == "active-reference-tab-chrome-evidence"
+            assert reference_tab_chrome_route["reference_profile"] == reference_tab_route["reference_profile"]
+            assert reference_tab_chrome_route["active_tab_label"] == reference_tab_route["active_tab_label"]
+            assert reference_tab_chrome_route["tabs_object"] == "sessionTabs"
+            assert reference_tab_chrome_route["tab_bar_object"] == "sessionTabBar"
+            assert reference_tab_chrome_route["reference_tab_role"] == "terminal"
+            assert reference_tab_chrome_route["new_session_tab_role"] == "new-session"
+            assert reference_tab_chrome_route["expected_tab_position"] == visual_signature["tab_position"]
+            assert reference_tab_chrome_route["expected_tooltip"].startswith(reference_tab_route["active_tab_label"])
+            assert reference_tab_chrome_route["expected_closeable"] is True
+            assert reference_tab_chrome_route["expected_selected_during_capture"] is True
+            assert reference_tab_chrome_route["captured_tooltip_property"] == "presetReferenceTabChromeTooltip"
+            assert reference_tab_chrome_route["captured_position_property"] == "presetReferenceTabChromePosition"
+            assert reference_tab_chrome_route["captured_closeable_property"] == "presetReferenceTabChromeCloseable"
+            assert reference_tab_chrome_route["render_source"] == "gui-design-reference-tab-chrome"
+            assert reference_status_bar_route["key"] == f"{preset_id}-reference-status-bar-evidence-route"
+            assert reference_status_bar_route["route_role"] == "active-reference-status-bar-evidence"
+            assert reference_status_bar_route["reference_profile"] == reference_tab_route["reference_profile"]
+            assert reference_status_bar_route["active_tab_label"] == reference_tab_route["active_tab_label"]
+            assert reference_status_bar_route["status_bar_object"] == "statusBar"
+            assert reference_status_bar_route["status_notice_object"] == "productStatusNotice"
+            assert reference_status_bar_route["status_segment_object"] == "productStatusSegment"
+            assert reference_status_bar_route["expected_status_message"] == "No running process panes"
+            assert reference_status_bar_route["expected_status_segments"] == identity_route["status_segments"]
+            assert reference_status_bar_route["expected_segment_count"] == len(identity_route["status_segments"])
+            assert reference_status_bar_route["captured_message_property"] == "presetReferenceStatusMessage"
+            assert reference_status_bar_route["captured_segments_property"] == "presetReferenceStatusSegments"
+            assert reference_status_bar_route["captured_notice_property"] == "presetReferenceStatusNotice"
+            assert reference_status_bar_route["render_source"] == "gui-design-reference-status-bar"
+            assert reference_session_action_route["key"] == f"{preset_id}-reference-session-actions-route"
+            assert reference_session_action_route["route_role"] == "active-reference-session-actions"
+            assert reference_session_action_route["reference_profile"] == reference_tab_route["reference_profile"]
+            assert reference_session_action_route["active_tab_label"] == reference_tab_route["active_tab_label"]
+            assert reference_session_action_route["tabs_object"] == "sessionTabs"
+            assert reference_session_action_route["tab_bar_object"] == "sessionTabBar"
+            assert reference_session_action_route["reference_tab_role"] == "terminal"
+            assert reference_session_action_route["action_object"] == "sessionTabContextAction"
+            assert reference_session_action_route["expected_action_keys"] == [
+                "new-local-terminal",
+                "split-horizontal",
+                "split-vertical",
+                "duplicate-tab",
+                "close-tab",
+                "close-other-tabs",
+                "recover-previous-sessions",
+            ]
+            assert reference_session_action_route["expected_action_labels"] == [
+                "New local terminal",
+                "Split horizontal",
+                "Split vertical",
+                "Duplicate tab",
+                "Close tab",
+                "Close other tabs",
+                "Recover previous sessions",
+            ]
+            assert reference_session_action_route["expected_action_count"] == 7
+            assert reference_session_action_route["always_enabled_action_keys"] == [
+                "new-local-terminal",
+                "split-horizontal",
+                "split-vertical",
+                "duplicate-tab",
+                "close-tab",
+                "recover-previous-sessions",
+            ]
+            assert reference_session_action_route["conditional_enabled_action_keys"] == ["close-other-tabs"]
+            assert reference_session_action_route["action_key_property"] == "sessionTabContextActionKey"
+            assert reference_session_action_route["captured_action_keys_property"] == "presetReferenceSessionActionKeys"
+            assert (
+                reference_session_action_route["captured_enabled_keys_property"]
+                == "presetReferenceSessionActionEnabledKeys"
+            )
+            assert reference_session_action_route["render_source"] == "gui-design-reference-session-actions"
+            assert reference_surface_route["key"] == f"{preset_id}-reference-surface-evidence-route"
+            assert reference_surface_route["route_role"] == "active-reference-tab-surface-evidence"
+            assert reference_surface_route["preset_id"] == preset_id
+            assert reference_surface_route["reference_profile"] == reference_tab_route["reference_profile"]
+            assert reference_surface_route["active_tab_label"] == reference_tab_route["active_tab_label"]
+            assert reference_surface_route["expected_title"] == reference_tab_route["reference_profile"]
+            assert reference_surface_route["expected_source"] == f"profile:{reference_tab_route['reference_profile']}"
+            assert reference_surface_route["command_target_fragment"] in identity_route["target_label"]
+            assert reference_surface_route["terminal_pane_object"] == "terminalPane"
+            assert reference_surface_route["terminal_command_object"] == "terminalCommand"
+            assert reference_surface_route["terminal_output_object"] == "terminalOutput"
+            assert reference_surface_route["captured_property"] == "presetReferenceSurfaceCaptured"
+            assert reference_surface_route["actual_command_property"] == "presetReferenceSurfaceActualCommand"
+            assert reference_surface_route["render_source"] == "gui-design-reference-surface"
+            assert reference_control_route["key"] == f"{preset_id}-reference-control-evidence-route"
+            assert reference_control_route["route_role"] == "active-reference-tab-terminal-controls"
+            assert reference_control_route["reference_profile"] == reference_surface_route["reference_profile"]
+            assert reference_control_route["active_tab_label"] == reference_surface_route["active_tab_label"]
+            assert reference_control_route["terminal_pane_object"] == "terminalPane"
+            assert reference_control_route["terminal_status_object"] == "paneStatus"
+            assert reference_control_route["terminal_action_object"] == "terminalAction"
+            assert reference_control_route["action_keys"] == ["start", "restart", "stop", "copy", "clear"]
+            assert reference_control_route["action_labels"] == ["Start", "Restart", "Stop", "Copy", "Clear"]
+            assert reference_control_route["captured_actions_property"] == "presetReferenceControlCapturedActionKeys"
+            assert reference_control_route["captured_status_property"] == "presetReferenceControlStatusState"
+            assert reference_control_route["render_source"] == "gui-design-reference-controls"
+            assert reference_input_route["key"] == f"{preset_id}-reference-input-evidence-route"
+            assert reference_input_route["route_role"] == "active-reference-tab-terminal-input"
+            assert reference_input_route["reference_profile"] == reference_surface_route["reference_profile"]
+            assert reference_input_route["active_tab_label"] == reference_surface_route["active_tab_label"]
+            assert reference_input_route["terminal_input_object"] == "terminalInput"
+            assert reference_input_route["placeholder_text"] == "stdin, shell command or interactive input"
+            assert reference_input_route["expected_initial_text"] == ""
+            assert reference_input_route["allowed_enabled_states"] == [True, False]
+            assert reference_input_route["captured_placeholder_property"] == "presetReferenceInputPlaceholder"
+            assert reference_input_route["captured_enabled_property"] == "presetReferenceInputEnabled"
+            assert reference_input_route["render_source"] == "gui-design-reference-input"
+            assert reference_transcript_route["key"] == f"{preset_id}-reference-transcript-evidence-route"
+            assert reference_transcript_route["route_role"] == "active-reference-tab-terminal-transcript"
+            assert reference_transcript_route["reference_profile"] == reference_surface_route["reference_profile"]
+            assert reference_transcript_route["active_tab_label"] == reference_surface_route["active_tab_label"]
+            assert reference_transcript_route["terminal_output_object"] == "terminalOutput"
+            assert reference_transcript_route["command_echo_prefix"] == "$ "
+            assert reference_surface_route["command_target_fragment"] in reference_transcript_route["required_fragments"]
+            assert reference_transcript_route["minimum_line_count"] == 1
+            assert reference_transcript_route["captured_text_property"] == "presetReferenceTranscriptText"
+            assert reference_transcript_route["captured_line_count_property"] == "presetReferenceTranscriptLineCount"
+            assert reference_transcript_route["captured_command_echo_property"] == "presetReferenceTranscriptCommandEcho"
+            assert reference_transcript_route["render_source"] == "gui-design-reference-transcript"
+        else:
+            assert "reference-tab-activation-route" not in summary["contract_checks"]
+            assert "reference-tab-chrome-evidence-route" not in summary["contract_checks"]
+            assert "reference-status-bar-evidence-route" not in summary["contract_checks"]
+            assert "reference-session-actions-route" not in summary["contract_checks"]
+            assert "reference-surface-evidence-route" not in summary["contract_checks"]
+            assert "reference-control-evidence-route" not in summary["contract_checks"]
+            assert "reference-input-evidence-route" not in summary["contract_checks"]
+            assert "reference-transcript-evidence-route" not in summary["contract_checks"]
+            assert reference_tab_route == {}
+            assert reference_tab_chrome_route == {}
+            assert reference_status_bar_route == {}
+            assert reference_session_action_route == {}
+            assert reference_surface_route == {}
+            assert reference_control_route == {}
+            assert reference_input_route == {}
+            assert reference_transcript_route == {}
+        assert visual_signature["key"] == f"{preset_id}-visual-signature"
+        assert visual_signature["preset_id"] == preset_id
+        assert visual_signature["palette"]["window"].startswith("#")
+        assert visual_signature["palette"]["terminal"].startswith("#")
+        assert visual_signature["palette"]["terminal_accent"].startswith("#")
+        assert visual_signature["window_object"] == "remoteOpsMain"
+        assert visual_signature["main_toolbar_object"] == "mainToolbar"
+        assert visual_signature["profile_tree_object"] == "profileTree"
+        assert visual_signature["tabs_object"] == "sessionTabs"
+        assert visual_signature["activity_log_object"] == "activityLog"
+        assert visual_signature["status_bar_object"] == "statusBar"
+        assert visual_signature["density_property"] == "presetVisualSignatureDensity"
+        assert visual_signature["palette_property"] == "presetVisualSignaturePalette"
+        assert visual_signature["render_source"] == "gui-design-preset-style"
 
     moba = summaries["mobaxterm"]
     assert "mobaQuickConnectChrome" in moba["required_widgets"]
@@ -715,6 +1276,7 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
     assert "top-menu-chrome" in moba["contract_checks"]
     assert "top-menu-geometry" in moba["contract_checks"]
     assert "ribbon-geometry" in moba["contract_checks"]
+    assert "ribbon-edge-action-route" in moba["contract_checks"]
     assert "quick-connect-chrome" in moba["contract_checks"]
     assert "quick-connect-suggestions" in moba["contract_checks"]
     assert "connected-quick-connect-idle" in moba["contract_checks"]
@@ -747,6 +1309,8 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
     assert "remote-monitoring-dock" in moba["contract_checks"]
     assert "remote-monitoring-footer-geometry" in moba["contract_checks"]
     assert "monitoring-telemetry-route" in moba["contract_checks"]
+    assert "remote-monitoring-control-route" in moba["contract_checks"]
+    assert "follow-terminal-folder-control-route" in moba["contract_checks"]
     assert "moba-monitoring-controls" in moba["contract_checks"]
     assert moba["expected_product_tree_icons"][:4] == [
         {"label": "User sessions", "icon_key": "folder", "row_kind": "root", "static_size": 16},
@@ -1063,6 +1627,60 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         ],
         "render_source": "generated-pixmap",
     }
+    assert moba["expected_moba_remote_monitoring_control_route"] == {
+        "key": "moba-remote-monitoring-control-route",
+        "route_role": "remote-monitoring-control-to-telemetry-refresh",
+        "source_panel_object": "mobaRemoteMonitoring",
+        "source_control_object": "mobaMonitoringControl",
+        "source_control_key": "remote-monitoring",
+        "source_control_label": "Remote monitoring",
+        "source_control_type": "toggle",
+        "expected_checked": True,
+        "command_property": "mobaMonitoringCommand",
+        "refresh_seconds_property": "mobaMonitoringRefreshSeconds",
+        "checked_property": "mobaMonitoringControlChecked",
+        "telemetry_route_key": "remote-monitoring-to-bottom-telemetry",
+        "telemetry_surface": "bottom-telemetry-bar",
+        "target_bar_object": "mobaTelemetryBar",
+        "target_metric_cell_keys": [
+            "cpu",
+            "memory",
+            "disk",
+            "net-up",
+            "net-down",
+            "connections",
+            "processes",
+        ],
+        "captured_property": "mobaRemoteMonitoringControlCaptured",
+        "captured_checked_property": "mobaRemoteMonitoringControlCapturedChecked",
+        "captured_command_property": "mobaRemoteMonitoringControlCapturedCommand",
+        "captured_refresh_seconds_property": "mobaRemoteMonitoringControlCapturedRefreshSeconds",
+        "render_source": "state-model",
+    }
+    assert moba["expected_moba_follow_terminal_folder_control_route"] == {
+        "key": "moba-follow-terminal-folder-control-route",
+        "route_role": "follow-terminal-folder-control-to-sftp-browser-sync",
+        "source_panel_object": "mobaRemoteMonitoring",
+        "source_control_object": "mobaFollowTerminalFolder",
+        "source_control_key": "follow-terminal-folder",
+        "source_control_label": "Follow terminal folder",
+        "source_control_type": "checkbox",
+        "expected_checked": True,
+        "source_path_property": "mobaMonitoringFollowPath",
+        "source_plan_property": "mobaMonitoringFollowPlan",
+        "source_enabled_property": "mobaMonitoringFollowEnabled",
+        "target_browser_object": "mobaSftpBrowser",
+        "target_path_object": "mobaSftpPath",
+        "target_table_object": "mobaSftpFileTable",
+        "target_path_property": "mobaSftpFollowRoutePath",
+        "target_plan_property": "mobaSftpFollowRoutePlan",
+        "target_enabled_property": "mobaSftpFollowRouteEnabled",
+        "captured_property": "mobaFollowTerminalFolderControlCaptured",
+        "captured_checked_property": "mobaFollowTerminalFolderControlCapturedChecked",
+        "captured_path_property": "mobaFollowTerminalFolderControlCapturedPath",
+        "captured_plan_property": "mobaFollowTerminalFolderControlCapturedPlan",
+        "render_source": "state-model",
+    }
     assert moba["expected_moba_sftp_follow_folder_route"] == {
         "key": "sftp-follow-terminal-folder-route",
         "route_role": "terminal-cwd-to-sftp-browser",
@@ -1078,6 +1696,27 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "target_plan_property": "mobaSftpFollowRoutePlan",
         "target_enabled_property": "mobaSftpFollowRouteEnabled",
         "render_source": "state-model",
+    }
+    assert "sftp-terminal-folder-route" in moba["contract_checks"]
+    assert moba["expected_moba_sftp_terminal_folder_route"] == {
+        "key": "moba-sftp-terminal-folder-route",
+        "route_role": "terminal-cwd-follow-checkbox-to-sftp-path-and-rows",
+        "terminal_area_object": "mobaTerminalArea",
+        "terminal_output_object": "terminalOutput",
+        "source_control_object": "mobaFollowTerminalFolder",
+        "target_browser_object": "mobaSftpBrowser",
+        "target_path_object": "mobaSftpPath",
+        "target_table_object": "mobaSftpFileTable",
+        "parent_row_label": "..",
+        "selected_row_kind": "parent-dir",
+        "remote_path": "/var/log",
+        "list_command": "ls -la /var/log",
+        "follow_enabled": True,
+        "path_property": "mobaSftpTerminalFolderRoutePath",
+        "plan_property": "mobaSftpTerminalFolderRoutePlan",
+        "enabled_property": "mobaSftpTerminalFolderRouteEnabled",
+        "row_route_property": "mobaSftpTerminalFolderRouteKey",
+        "render_source": "connected-session-state",
     }
     assert moba["expected_moba_monitoring_controls"] == [
         {
@@ -1165,6 +1804,32 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
     assert moba["expected_moba_ribbon_action_geometry"] == [
         geometry.to_dict() for geometry in checker.EXPECTED_MOBA_RIBBON_ACTION_GEOMETRY
     ]
+    assert moba["expected_moba_ribbon_edge_action_route"] == {
+        "key": "moba-ribbon-edge-action-route",
+        "route_role": "far-right-ribbon-edge-actions-to-workflow-controls",
+        "toolbar_object": "mainToolbar",
+        "spacer_object": "mobaToolbarSpacer",
+        "xserver_action_key": "xserver",
+        "xserver_action_label": "X server",
+        "xserver_action_object": "mobaXServerAction",
+        "xserver_icon_key": "xserver",
+        "xserver_handler": "show_moba_x_server_status",
+        "xserver_dialog_title": "X server",
+        "xserver_dialog_detail": "X server workflow",
+        "exit_action_key": "exit",
+        "exit_action_label": "Exit",
+        "exit_action_object": "mobaExitAction",
+        "exit_icon_key": "exit",
+        "exit_handler": "close",
+        "route_key_property": "mobaRibbonEdgeRouteKey",
+        "action_key_property": "mobaRibbonEdgeRouteActionKey",
+        "action_label_property": "mobaRibbonEdgeRouteActionLabel",
+        "action_object_property": "mobaRibbonEdgeRouteActionObject",
+        "icon_key_property": "mobaRibbonEdgeRouteIconKey",
+        "handler_property": "mobaRibbonEdgeRouteHandler",
+        "action_keys_property": "mobaRibbonEdgeRouteActionKeys",
+        "render_source": "gui-design-moba-ribbon-edge-route",
+    }
     assert moba["expected_moba_titlebar_chrome"] == {
         "icon_key": "moba-window",
         "static_height": 22,
@@ -1224,6 +1889,59 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "tab_label_property": "mobaConnectedRouteActiveTabLabel",
         "target_property": "mobaConnectedRouteTarget",
         "remote_path_property": "mobaConnectedRouteRemotePath",
+        "render_source": "connected-session-state",
+    }
+    assert moba["expected_moba_connected_session_action_route"] == {
+        "key": "moba-connected-session-actions-route",
+        "route_role": "active-connected-tab-context-session-actions",
+        "profile_name": "edge-prod",
+        "target": "edge-prod.example.invalid:22",
+        "active_tab_key": "active-session",
+        "active_tab_label": "edge-prod.example.invalid (operator)",
+        "reference_tab_label": "7. edge-prod.example.invalid (operator)",
+        "tabs_object": "sessionTabs",
+        "tab_bar_object": "sessionTabBar",
+        "reference_tab_role": "terminal",
+        "menu_object": "mobaConnectedSessionTabContextMenu",
+        "action_object": "mobaConnectedSessionTabContextAction",
+        "expected_action_keys": [
+            "new-local-terminal",
+            "split-horizontal",
+            "split-vertical",
+            "duplicate-tab",
+            "close-tab",
+            "close-other-tabs",
+            "recover-previous-sessions",
+        ],
+        "expected_action_labels": [
+            "New local terminal",
+            "Split horizontal",
+            "Split vertical",
+            "Duplicate tab",
+            "Close tab",
+            "Close other tabs",
+            "Recover previous sessions",
+        ],
+        "expected_action_count": 7,
+        "always_enabled_action_keys": [
+            "new-local-terminal",
+            "split-horizontal",
+            "split-vertical",
+            "duplicate-tab",
+            "close-tab",
+            "recover-previous-sessions",
+        ],
+        "conditional_enabled_action_keys": ["close-other-tabs"],
+        "action_key_property": "sessionTabContextActionKey",
+        "action_label_property": "sessionTabContextActionLabel",
+        "action_enabled_property": "sessionTabContextActionEnabled",
+        "captured_property": "mobaConnectedSessionActionCaptured",
+        "captured_tab_property": "mobaConnectedSessionActionCapturedTab",
+        "captured_action_keys_property": "mobaConnectedSessionActionKeys",
+        "captured_action_labels_property": "mobaConnectedSessionActionLabels",
+        "captured_action_count_property": "mobaConnectedSessionActionCount",
+        "captured_enabled_keys_property": "mobaConnectedSessionActionEnabledKeys",
+        "captured_disabled_keys_property": "mobaConnectedSessionActionDisabledKeys",
         "render_source": "connected-session-state",
     }
     assert moba["expected_moba_connected_session_identity_route"] == {
@@ -1592,6 +2310,7 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
     assert moba["expected_moba_right_utility_keys"] == ["clip", "settings", "tools"]
     assert "right-utility-rail-chrome" in moba["contract_checks"]
     assert "right-utility-rail-geometry" in moba["contract_checks"]
+    assert "right-utility-action-route" in moba["contract_checks"]
     assert moba["expected_moba_right_utility_rail_chrome"] == {
         "static_width": 30,
         "live_width": 30,
@@ -1640,6 +2359,32 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
             "render_source": "generated-pixmap",
         },
     ]
+    assert moba["expected_moba_right_utility_action_route"] == {
+        "key": "moba-right-utility-action-route",
+        "route_role": "right-utility-rail-actions-to-terminal-workflows",
+        "rail_object": "mobaRightUtilityRail",
+        "action_object": "mobaRightUtilityAction",
+        "action_keys": ["clip", "settings", "tools"],
+        "action_labels": [
+            "Clipboard and transfer hints",
+            "Terminal settings",
+            "Terminal tools",
+        ],
+        "action_icon_keys": ["clip", "gear", "spark"],
+        "action_handlers": [
+            "show_moba_clipboard_hints",
+            "show_moba_terminal_settings",
+            "show_moba_tools_status",
+        ],
+        "route_key_property": "mobaRightUtilityRouteKey",
+        "action_key_property": "mobaRightUtilityRouteActionKey",
+        "action_label_property": "mobaRightUtilityRouteActionLabel",
+        "action_object_property": "mobaRightUtilityRouteActionObject",
+        "icon_key_property": "mobaRightUtilityRouteIconKey",
+        "handler_property": "mobaRightUtilityRouteHandler",
+        "action_keys_property": "mobaRightUtilityRouteActionKeys",
+        "render_source": "gui-design-moba-right-utility-route",
+    }
     assert moba["expected_moba_session_edge_actions"] == [
         {
             "key": "attachment",
@@ -1782,15 +2527,27 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
     assert "securecrt-session-manager-chrome" in securecrt["contract_checks"]
     assert "securecrt-session-manager-geometry" in securecrt["contract_checks"]
     assert "securecrt-session-manager-route" in securecrt["contract_checks"]
+    assert "securecrt-session-manager-filter-route" in securecrt["contract_checks"]
+    assert "securecrt-sftp-tab-route" in securecrt["contract_checks"]
+    assert "securecrt-sftp-browser-route" in securecrt["contract_checks"]
     assert "securecrt-tree-icons" in securecrt["contract_checks"]
     assert "securecrt-session-status-strip" in securecrt["contract_checks"]
     assert "securecrt-session-status-geometry" in securecrt["contract_checks"]
     assert "securecrt-command-window" in securecrt["contract_checks"]
     assert "securecrt-command-window-geometry" in securecrt["contract_checks"]
     assert "securecrt-command-window-send-route" in securecrt["contract_checks"]
+    assert "product-identity-route" in securecrt["contract_checks"]
     assert "live-topology" in securecrt["contract_checks"]
     assert "active-tab: edge-prod (SSH2)" in securecrt["expected_reference_state_texts"]
     assert securecrt["expected_reference_status_segments"] == ["SSH2", "Session Manager", "2 active tabs"]
+    assert securecrt["expected_product_identity_route"]["key"] == "securecrt-product-identity-route"
+    assert securecrt["expected_product_identity_route"]["active_tab_label"] == "edge-prod (SSH2)"
+    assert securecrt["expected_product_identity_route"]["selected_tree_label"] == "edge-prod (SSH2)"
+    assert securecrt["expected_product_identity_route"]["status_segments"] == [
+        "SSH2",
+        "Session Manager",
+        "2 active tabs",
+    ]
     assert [item["label"] for item in securecrt["expected_securecrt_top_chrome"]["menu_items"]] == [
         "File",
         "Edit",
@@ -1923,6 +2680,98 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "status_value_property": "secureCrtSessionRouteStatusValue",
         "render_source": "session-manager-state",
     }
+    assert securecrt["expected_securecrt_session_manager_filter_route"] == {
+        "key": "securecrt-session-manager-filter-route",
+        "route_role": "session-manager-filter-to-visible-session-row",
+        "session_manager_object": "secureCrtSessionManagerChrome",
+        "filter_object": "secureCrtSessionFilter",
+        "selected_tree_object": "profileTree",
+        "selected_profile_name": "edge-prod",
+        "selected_tree_label": "edge-prod (SSH2)",
+        "expected_query": "edge",
+        "expected_placeholder": "Filter sessions",
+        "matched_result_label": "edge-prod (SSH2)",
+        "filter_route_property": "secureCrtSessionFilterRouteKey",
+        "filter_query_property": "secureCrtSessionFilterRouteQuery",
+        "filter_placeholder_property": "secureCrtSessionFilterRoutePlaceholder",
+        "matched_result_property": "secureCrtSessionFilterRouteMatchedLabel",
+        "change_signal": "textChanged",
+        "handler_name": "filter_profile_tree",
+        "render_source": "session-manager-filter-state",
+    }
+    assert securecrt["expected_securecrt_sftp_tab_route"] == {
+        "key": "securecrt-sftp-tab-route",
+        "route_role": "workflow-card-to-sftp-tab-status",
+        "workflow_card_key": "sftp-tab",
+        "workflow_card_object": "productWorkflowCard",
+        "workflow_title_object": "productWorkflowTitle",
+        "workflow_primary_object": "productWorkflowPrimary",
+        "workflow_secondary_object": "productWorkflowSecondary",
+        "session_manager_object": "secureCrtSessionManagerChrome",
+        "selected_tree_object": "profileTree",
+        "selected_profile_name": "files-prod",
+        "selected_tree_label": "files-prod (SFTP)",
+        "active_tab_label": "edge-prod (SSH2)",
+        "sftp_tab_label": "files-prod",
+        "status_strip_object": "secureCrtSessionStatusStrip",
+        "status_field_key": "sftp",
+        "status_field_object": "secureCrtSessionStatusCell",
+        "status_value": "files-prod tab",
+        "transfer_state": "files-prod attached",
+        "workflow_title": "SFTP tab",
+        "workflow_primary": "files-prod attached",
+        "workflow_secondary": "terminal plus transfer workflow",
+        "workflow_key_property": "secureCrtSftpTabRouteWorkflowKey",
+        "tab_label_property": "secureCrtSftpTabRouteTabLabel",
+        "status_property": "secureCrtSftpTabRouteStatus",
+        "transfer_state_property": "secureCrtSftpTabRouteTransferState",
+        "render_source": "sftp-tab-status-state",
+    }
+    assert securecrt["expected_securecrt_sftp_browser_route"] == {
+        "key": "securecrt-sftp-browser-route",
+        "route_role": "sftp-tab-to-transfer-browser",
+        "sftp_tab_route_key": "securecrt-sftp-tab-route",
+        "browser_object": "secureCrtSftpBrowser",
+        "toolbar_object": "secureCrtSftpToolbar",
+        "path_object": "secureCrtSftpPath",
+        "table_object": "secureCrtSftpTable",
+        "row_object": "secureCrtSftpRow",
+        "queue_object": "secureCrtSftpQueue",
+        "selected_profile_name": "files-prod",
+        "selected_tree_label": "files-prod (SFTP)",
+        "sftp_tab_label": "files-prod",
+        "remote_path": "/srv/files",
+        "toolbar_actions": ["upload", "download", "refresh"],
+        "file_rows": [
+            {"key": "parent", "kind": "folder", "name": "..", "size": "", "modified": "parent", "selected": False},
+            {
+                "key": "releases",
+                "kind": "folder",
+                "name": "releases",
+                "size": "-",
+                "modified": "2026-06-06",
+                "selected": False,
+            },
+            {
+                "key": "deploy-log",
+                "kind": "file",
+                "name": "deploy.log",
+                "size": "14 KB",
+                "modified": "2026-06-06",
+                "selected": True,
+            },
+        ],
+        "active_row_name": "deploy.log",
+        "transfer_queue_label": "1 queued",
+        "transfer_status": "ready",
+        "path_property": "secureCrtSftpBrowserPath",
+        "toolbar_actions_property": "secureCrtSftpBrowserToolbarActions",
+        "row_name_property": "secureCrtSftpBrowserRowName",
+        "row_kind_property": "secureCrtSftpBrowserRowKind",
+        "row_selected_property": "secureCrtSftpBrowserRowSelected",
+        "queue_state_property": "secureCrtSftpBrowserQueueState",
+        "render_source": "sftp-browser-state",
+    }
     assert securecrt["expected_securecrt_tree_icons"][:3] == [
         {"label": "Session Database", "icon_key": "database", "row_kind": "root", "static_size": 16},
         {"label": "Folder: Sessions", "icon_key": "folder", "row_kind": "group", "static_size": 14},
@@ -1966,15 +2815,28 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
     assert "remmina-profile-list-chrome" in remmina["contract_checks"]
     assert "remmina-viewer-controls" in remmina["contract_checks"]
     assert "remmina-profile-viewer-route" in remmina["contract_checks"]
+    assert "remmina-profile-filter-route" in remmina["contract_checks"]
     assert "remmina-clipboard-route" in remmina["contract_checks"]
+    assert "remmina-screenshot-route" in remmina["contract_checks"]
+    assert "remmina-sftp-transfer-route" in remmina["contract_checks"]
+    assert "product-identity-route" in remmina["contract_checks"]
     assert remmina["expected_product_tree_icons"][:3] == [
         {"label": "Profile Groups", "icon_key": "folder", "row_kind": "root", "static_size": 16},
         {"label": "Group: RDP", "icon_key": "folder", "row_kind": "group", "static_size": 14},
         {"label": "RDP - win-admin", "icon_key": "rdp", "row_kind": "profile", "static_size": 14},
     ]
     assert remmina["required_widgets"]["remminaProfileListChrome"] == "Remmina profile list chrome"
+    assert remmina["required_widgets"]["remminaSftpTransferPanel"] == "Remmina SFTP transfer panel"
     assert "profile-list-chrome" in remmina["layout_contract_ids"]
     assert remmina["expected_reference_tab_label"] == "RDP - win-admin"
+    assert remmina["expected_product_identity_route"]["key"] == "remmina-product-identity-route"
+    assert remmina["expected_product_identity_route"]["active_tab_label"] == "RDP - win-admin"
+    assert remmina["expected_product_identity_route"]["selected_tree_label"] == "RDP - win-admin"
+    assert remmina["expected_product_identity_route"]["status_segments"] == [
+        "RDP/VNC ready",
+        "Scale 100%",
+        "Clipboard on",
+    ]
     assert remmina["expected_remmina_profile_list_chrome"]["title"] == "Connection list"
     assert remmina["expected_remmina_profile_list_chrome"]["static_filter_x"] == 110
     assert remmina["expected_remmina_profile_list_chrome"]["static_row_height"] == 22
@@ -2012,6 +2874,29 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "tab_label_property": "remminaProfileViewerRouteActiveTab",
         "render_source": "profile-list-state",
     }
+    assert remmina["expected_remmina_profile_filter_route"] == {
+        "key": "remmina-profile-filter-route",
+        "route_role": "profile-filter-to-visible-viewer-row",
+        "profile_list_object": "remminaProfileListChrome",
+        "filter_object": "remminaProfileFilter",
+        "selected_profile_key": "win-admin",
+        "selected_profile_object": "remminaProfileListRow",
+        "matched_profile_name": "win-admin",
+        "matched_protocol": "RDP",
+        "matched_status": "scale 100%",
+        "expected_query": "rdp",
+        "expected_placeholder": "Filter by name or protocol",
+        "active_tab_label": "RDP - win-admin",
+        "filter_route_property": "remminaProfileFilterRouteKey",
+        "filter_query_property": "remminaProfileFilterRouteQuery",
+        "filter_placeholder_property": "remminaProfileFilterRoutePlaceholder",
+        "matched_profile_property": "remminaProfileFilterRouteMatchedProfile",
+        "matched_protocol_property": "remminaProfileFilterRouteMatchedProtocol",
+        "active_tab_property": "remminaProfileFilterRouteActiveTab",
+        "change_signal": "textChanged",
+        "handler_name": "filter_remmina_profile_rows",
+        "render_source": "profile-filter-state",
+    }
     assert remmina["expected_remmina_clipboard_route"] == {
         "key": "remmina-clipboard-sync-route",
         "route_role": "viewer-control-to-clipboard-state",
@@ -2028,6 +2913,89 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "tab_label_property": "remminaClipboardRouteActiveTab",
         "clipboard_state_property": "remminaClipboardRouteState",
         "render_source": "viewer-control-state",
+    }
+    assert remmina["expected_remmina_screenshot_route"] == {
+        "key": "remmina-screenshot-capture-route",
+        "route_role": "viewer-control-to-screenshot-capture",
+        "viewer_controls_object": "remminaViewerControls",
+        "viewer_control_key": "screenshot",
+        "viewer_control_object": "remminaViewerControl",
+        "active_tab_label": "RDP - win-admin",
+        "protocol": "RDP",
+        "capture_state": "screenshot ready",
+        "capture_artifact": "win-admin-rdp-screenshot.png",
+        "status_segment": "RDP/VNC ready",
+        "detail_line": "Screenshot: win-admin-rdp-screenshot.png",
+        "activity_line": "Screenshot: capture ready",
+        "control_active_property": "remminaScreenshotRouteActive",
+        "tab_label_property": "remminaScreenshotRouteActiveTab",
+        "capture_state_property": "remminaScreenshotRouteState",
+        "capture_artifact_property": "remminaScreenshotRouteArtifact",
+        "render_source": "viewer-control-state",
+    }
+    assert remmina["expected_remmina_sftp_transfer_route"] == {
+        "key": "remmina-sftp-transfer-route",
+        "route_role": "transfer-toolbar-to-sftp-profile-browser",
+        "profile_list_object": "remminaProfileListChrome",
+        "selected_profile_key": "sftp-ops",
+        "selected_profile_name": "sftp-ops",
+        "selected_profile_protocol": "SFTP",
+        "selected_profile_status": "file sharing",
+        "selected_profile_object": "remminaProfileListRow",
+        "selected_tree_label": "sftp-ops",
+        "toolbar_action_key": "queue",
+        "toolbar_action_label": "Transfer",
+        "toolbar_action_object": "productToolbarButton",
+        "active_tab_label": "sftp-ops",
+        "transfer_panel_object": "remminaSftpTransferPanel",
+        "toolbar_object": "remminaSftpTransferToolbar",
+        "path_object": "remminaSftpTransferPath",
+        "table_object": "remminaSftpTransferTable",
+        "row_object": "remminaSftpTransferRow",
+        "queue_object": "remminaSftpTransferQueue",
+        "remote_path": "/var/log",
+        "toolbar_actions": ["upload", "download", "queue"],
+        "file_rows": [
+            {
+                "key": "parent",
+                "kind": "folder",
+                "name": "..",
+                "size": "",
+                "modified": "parent",
+                "selected": False,
+            },
+            {
+                "key": "logs",
+                "kind": "folder",
+                "name": "logs",
+                "size": "-",
+                "modified": "2026-06-06",
+                "selected": False,
+            },
+            {
+                "key": "app-log",
+                "kind": "file",
+                "name": "app.log",
+                "size": "12 KB",
+                "modified": "2026-06-06",
+                "selected": True,
+            },
+        ],
+        "active_row_name": "app.log",
+        "transfer_queue_label": "1 queued",
+        "transfer_status": "ready",
+        "detail_line": "Shared   : file workflow ready",
+        "activity_line": "SFTP transfer: queue ready",
+        "selected_profile_property": "remminaSftpTransferRouteSelectedProfile",
+        "toolbar_active_property": "remminaSftpTransferRouteActive",
+        "tab_label_property": "remminaSftpTransferRouteActiveTab",
+        "path_property": "remminaSftpTransferRoutePath",
+        "toolbar_actions_property": "remminaSftpTransferRouteToolbarActions",
+        "row_name_property": "remminaSftpTransferRouteRowName",
+        "row_kind_property": "remminaSftpTransferRouteRowKind",
+        "row_selected_property": "remminaSftpTransferRouteRowSelected",
+        "queue_state_property": "remminaSftpTransferRouteQueueState",
+        "render_source": "sftp-transfer-state",
     }
     assert remmina["expected_remmina_viewer_controls"] == [
         {
@@ -2120,6 +3088,10 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
     assert "termius-host-identity-geometry" in termius["contract_checks"]
     assert "termius-host-selection-route" in termius["contract_checks"]
     assert "termius-sync-route" in termius["contract_checks"]
+    assert "termius-port-forward-route" in termius["contract_checks"]
+    assert "termius-snippet-route" in termius["contract_checks"]
+    assert "termius-files-browser-route" in termius["contract_checks"]
+    assert "product-identity-route" in termius["contract_checks"]
     assert termius["expected_product_tree_icons"][:3] == [
         {"label": "Personal Vault", "icon_key": "database", "row_kind": "root", "static_size": 16},
         {"label": "Vault / Personal", "icon_key": "folder", "row_kind": "group", "static_size": 14},
@@ -2130,6 +3102,14 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
     assert "hosts-sidebar-chrome" in termius["layout_contract_ids"]
     assert "host-identity-strip" in termius["layout_contract_ids"]
     assert termius["expected_reference_tab_label"] == "edge-prod"
+    assert termius["expected_product_identity_route"]["key"] == "termius-product-identity-route"
+    assert termius["expected_product_identity_route"]["active_tab_label"] == "edge-prod"
+    assert termius["expected_product_identity_route"]["selected_tree_label"] == "edge-prod  ssh host"
+    assert termius["expected_product_identity_route"]["status_segments"] == [
+        "Vault unlocked",
+        "Port fwd ready",
+        "Sync current",
+    ]
     assert termius["expected_termius_header_chips"] == [
         {"key": "vault-unlocked", "label": "Vault unlocked"},
         {"key": "sync-current", "label": "Sync current"},
@@ -2213,6 +3193,110 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "identity_value_property": "termiusHostRouteIdentityValue",
         "render_source": "host-list-state",
     }
+    assert termius["expected_termius_port_forward_route"] == {
+        "key": "termius-port-forward-route",
+        "route_role": "port-forward-chip-to-host-identity-forward",
+        "header_chip_key": "port-forward-ready",
+        "header_chip_object": "termiusHeaderChip",
+        "host_identity_object": "termiusHostIdentityStrip",
+        "identity_field_key": "forward",
+        "identity_cell_object": "termiusHostIdentityCell",
+        "active_tab_label": "edge-prod",
+        "selected_profile_name": "edge-prod",
+        "forward_value": "8080 -> localhost:80",
+        "forward_state": "ready",
+        "local_port": 8080,
+        "remote_host": "localhost",
+        "remote_port": 80,
+        "status_segment": "Port fwd ready",
+        "chip_label_property": "termiusPortForwardRouteChipLabel",
+        "identity_value_property": "termiusPortForwardRouteIdentityValue",
+        "active_tab_property": "termiusPortForwardRouteActiveTab",
+        "status_property": "termiusPortForwardRouteState",
+        "render_source": "state-model",
+    }
+    assert termius["expected_termius_snippet_route"] == {
+        "key": "termius-snippet-route",
+        "route_role": "workflow-card-to-host-identity-snippet",
+        "workflow_card_key": "snippet",
+        "workflow_card_object": "productWorkflowCard",
+        "workflow_title_object": "productWorkflowTitle",
+        "workflow_primary_object": "productWorkflowPrimary",
+        "workflow_secondary_object": "productWorkflowSecondary",
+        "host_identity_object": "termiusHostIdentityStrip",
+        "identity_field_key": "snippet",
+        "identity_cell_object": "termiusHostIdentityCell",
+        "active_tab_label": "edge-prod",
+        "selected_profile_name": "edge-prod",
+        "workflow_title": "Snippet",
+        "snippet_command": "row vault status",
+        "snippet_state": "one-click command",
+        "detail_line": "Snippet  : row vault status",
+        "workflow_key_property": "termiusSnippetRouteWorkflowKey",
+        "command_property": "termiusSnippetRouteCommand",
+        "identity_value_property": "termiusSnippetRouteIdentityValue",
+        "active_tab_property": "termiusSnippetRouteActiveTab",
+        "status_property": "termiusSnippetRouteState",
+        "render_source": "state-model",
+    }
+    assert termius["expected_termius_files_browser_route"] == {
+        "key": "termius-files-browser-route",
+        "route_role": "host-files-tab-to-sftp-browser",
+        "host_selection_route_key": "termius-host-selection-route",
+        "host_identity_object": "termiusHostIdentityStrip",
+        "identity_field_key": "files",
+        "identity_cell_object": "termiusHostIdentityCell",
+        "files_browser_object": "termiusFilesBrowser",
+        "toolbar_object": "termiusFilesToolbar",
+        "path_object": "termiusFilesPath",
+        "table_object": "termiusFilesTable",
+        "row_object": "termiusFilesRow",
+        "queue_object": "termiusFilesQueue",
+        "active_tab_label": "edge-prod",
+        "selected_profile_name": "edge-prod",
+        "selected_tree_label": "edge-prod  ssh host",
+        "files_state": "SFTP ready",
+        "remote_path": "/workspace",
+        "toolbar_actions": ["upload", "download", "sync"],
+        "file_rows": [
+            {
+                "key": "parent",
+                "kind": "folder",
+                "name": "..",
+                "size": "",
+                "modified": "parent",
+                "selected": False,
+            },
+            {
+                "key": "src",
+                "kind": "folder",
+                "name": "src",
+                "size": "-",
+                "modified": "2026-06-06",
+                "selected": False,
+            },
+            {
+                "key": "deploy-yml",
+                "kind": "file",
+                "name": "deploy.yml",
+                "size": "3 KB",
+                "modified": "2026-06-06",
+                "selected": True,
+            },
+        ],
+        "active_row_name": "deploy.yml",
+        "transfer_queue_label": "sync idle",
+        "transfer_status": "ready",
+        "identity_value_property": "termiusFilesRouteIdentityValue",
+        "active_tab_property": "termiusFilesRouteActiveTab",
+        "path_property": "termiusFilesRoutePath",
+        "toolbar_actions_property": "termiusFilesRouteToolbarActions",
+        "row_name_property": "termiusFilesRouteRowName",
+        "row_kind_property": "termiusFilesRouteRowKind",
+        "row_selected_property": "termiusFilesRouteRowSelected",
+        "queue_state_property": "termiusFilesRouteQueueState",
+        "render_source": "files-browser-state",
+    }
 
     mremoteng = summaries["mremoteng"]
     assert "mremoteng-tree-icons" in mremoteng["contract_checks"]
@@ -2221,6 +3305,9 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
     assert "mremoteng-document-control-geometry" in mremoteng["contract_checks"]
     assert "mremoteng-property-grid" in mremoteng["contract_checks"]
     assert "mremoteng-connection-document-route" in mremoteng["contract_checks"]
+    assert "mremoteng-document-filter-route" in mremoteng["contract_checks"]
+    assert "mremoteng-inheritance-route" in mremoteng["contract_checks"]
+    assert "product-identity-route" in mremoteng["contract_checks"]
     assert mremoteng["expected_product_tree_icons"][:3] == [
         {"label": "Connections", "icon_key": "database", "row_kind": "root", "static_size": 16},
         {"label": "Container: prod", "icon_key": "folder", "row_kind": "group", "static_size": 14},
@@ -2231,6 +3318,14 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
     assert "property-grid" in mremoteng["layout_contract_ids"]
     assert "document-tree-filter" in mremoteng["layout_contract_ids"]
     assert mremoteng["expected_reference_tab_label"] == "edge-prod [SSH]"
+    assert mremoteng["expected_product_identity_route"]["key"] == "mremoteng-product-identity-route"
+    assert mremoteng["expected_product_identity_route"]["active_tab_label"] == "edge-prod [SSH]"
+    assert mremoteng["expected_product_identity_route"]["selected_tree_label"] == "edge-prod [SSH]"
+    assert mremoteng["expected_product_identity_route"]["status_segments"] == [
+        "Connections.xml",
+        "Inheritance on",
+        "2 open panes",
+    ]
     assert [item["label"] for item in mremoteng["expected_mremoteng_top_chrome"]["menu_items"]] == [
         "File",
         "View",
@@ -2365,6 +3460,54 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "tab_label_property": "mRemoteNgConnectionRouteActiveTab",
         "property_value_property": "mRemoteNgConnectionRoutePropertyValue",
         "render_source": "connection-tree-state",
+    }
+    assert mremoteng["expected_mremoteng_document_filter_route"] == {
+        "key": "mremoteng-document-filter-route",
+        "route_role": "document-filter-to-selected-connection-row",
+        "document_controls_object": "mRemoteNgDocumentControls",
+        "filter_object": "mRemoteNgDocumentFilter",
+        "selected_tree_object": "profileTree",
+        "selected_profile_name": "edge-prod",
+        "selected_tree_label": "edge-prod [SSH]",
+        "matched_protocol": "SSH",
+        "matched_state": "document open",
+        "expected_query": "edge",
+        "expected_placeholder": "Filter connection tree",
+        "active_tab_label": "edge-prod [SSH]",
+        "filter_route_property": "mRemoteNgDocumentFilterRouteKey",
+        "filter_query_property": "mRemoteNgDocumentFilterRouteQuery",
+        "filter_placeholder_property": "mRemoteNgDocumentFilterRoutePlaceholder",
+        "matched_tree_property": "mRemoteNgDocumentFilterRouteMatchedTreeLabel",
+        "matched_protocol_property": "mRemoteNgDocumentFilterRouteMatchedProtocol",
+        "active_tab_property": "mRemoteNgDocumentFilterRouteActiveTab",
+        "change_signal": "textChanged",
+        "handler_name": "filter_profile_tree",
+        "render_source": "connection-tree-filter-state",
+    }
+    assert mremoteng["expected_mremoteng_inheritance_route"] == {
+        "key": "mremoteng-inheritance-route",
+        "route_role": "workflow-card-to-property-grid-inheritance",
+        "workflow_card_key": "inheritance-grid",
+        "workflow_card_object": "productWorkflowCard",
+        "workflow_title_object": "productWorkflowTitle",
+        "workflow_primary_object": "productWorkflowPrimary",
+        "workflow_secondary_object": "productWorkflowSecondary",
+        "property_grid_object": "mRemoteNgPropertyGrid",
+        "property_row_key": "credential",
+        "property_cell_object": "mRemoteNgPropertyGridCell",
+        "active_tab_label": "edge-prod [SSH]",
+        "selected_profile_name": "edge-prod",
+        "selected_tree_label": "edge-prod [SSH]",
+        "workflow_title": "Config inheritance",
+        "inherited_property_label": "Credential",
+        "inherited_value": "operator key reference",
+        "inherited_source": "Connections.xml/prod",
+        "inheritance_state": "credentials inherited",
+        "workflow_key_property": "mRemoteNgInheritanceRouteWorkflowKey",
+        "inherited_value_property": "mRemoteNgInheritanceRouteInheritedValue",
+        "active_tab_property": "mRemoteNgInheritanceRouteActiveTab",
+        "status_property": "mRemoteNgInheritanceRouteState",
+        "render_source": "property-grid-state",
     }
 
     native = summaries["native"]

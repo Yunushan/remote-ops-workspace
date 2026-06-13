@@ -20,6 +20,9 @@
         {"id": "ribbon", "box": [0, 44, 1280, 108], "mean_luminance": [20, 60], "min_unique_colors": 160},
         {"id": "ribbon-pictograms", "box": [10, 48, 860, 82], "mean_luminance": [20, 95], "min_unique_colors": 50},
         {"id": "ribbon-right-actions", "box": [1138, 44, 1270, 108], "mean_luminance": [25, 55], "min_unique_colors": 90},
+        {"id": "command-surface-active-sessions", "box": [258, 48, 314, 100], "mean_luminance": [20, 80], "min_unique_colors": 20},
+        {"id": "command-surface-disabled-games", "box": [198, 48, 244, 100], "mean_luminance": [20, 80], "min_unique_colors": 15},
+        {"id": "command-surface-checked-sftp-rail", "box": [0, 450, 24, 520], "mean_luminance": [10, 60], "min_unique_colors": 15},
         {"id": "moba-rail-labels", "box": [0, 132, 24, 520], "mean_luminance": [10, 60], "min_unique_colors": 45},
         {"id": "connected-left-dock", "box": [24, 132, 390, 738], "mean_luminance": [15, 45], "min_unique_colors": 140},
         {"id": "connected-tab-strip", "box": [390, 108, 966, 136], "mean_luminance": [20, 70], "min_unique_colors": 55},
@@ -91,6 +94,9 @@
       "topology": [
         {"id": "titlebar-controls-inside-titlebar", "from": "titlebar-window-controls", "relation": "inside", "to": "titlebar-chrome"},
         {"id": "ribbon-right-actions-inside-ribbon", "from": "ribbon-right-actions", "relation": "inside", "to": "ribbon"},
+        {"id": "command-surface-active-sessions-inside-ribbon", "from": "command-surface-active-sessions", "relation": "inside", "to": "ribbon"},
+        {"id": "command-surface-disabled-games-inside-ribbon", "from": "command-surface-disabled-games", "relation": "inside", "to": "ribbon"},
+        {"id": "command-surface-checked-sftp-rail-inside-moba-rail", "from": "command-surface-checked-sftp-rail", "relation": "inside", "to": "moba-rail-labels"},
         {"id": "ribbon-above-connected-dock", "from": "ribbon", "relation": "above", "to": "connected-left-dock", "min_gap": 16, "max_gap": 40},
         {"id": "ribbon-above-connected-terminal", "from": "ribbon", "relation": "above", "to": "connected-terminal", "min_gap": 16, "max_gap": 40},
         {"id": "dock-left-of-terminal", "from": "connected-left-dock", "relation": "left_of", "to": "connected-terminal", "max_gap": 0},
@@ -110,6 +116,9 @@
     "securecrt": {
       "regions": [
         {"id": "toolbar", "box": [0, 34, 1280, 88], "mean_luminance": [35, 75], "min_unique_colors": 130},
+        {"id": "command-surface-active-connect", "box": [342, 39, 416, 84], "mean_luminance": [30, 80], "min_unique_colors": 20},
+        {"id": "command-surface-checked-sftp", "box": [422, 39, 482, 84], "mean_luminance": [30, 85], "min_unique_colors": 20},
+        {"id": "command-surface-disabled-delete", "box": [270, 39, 337, 84], "mean_luminance": [25, 70], "min_unique_colors": 15},
         {"id": "session-manager", "box": [18, 106, 270, 736], "mean_luminance": [20, 50], "min_unique_colors": 140},
         {"id": "session-manager-filter-focus", "box": [32, 196, 256, 226], "mean_luminance": [20, 40], "min_unique_colors": 60},
         {"id": "session-manager-tree-root", "box": [32, 254, 256, 300], "mean_luminance": [25, 45], "min_unique_colors": 180},
@@ -127,6 +136,8 @@
       ],
       "color_anchors": [
         {"id": "connect-toolbar-accent", "point": [374, 51], "rgb_min": [185, 140, 45], "rgb_max": [235, 190, 95]},
+        {"id": "command-surface-active-connect-outline", "point": [342, 39], "rgb_min": [185, 140, 45], "rgb_max": [235, 190, 95]},
+        {"id": "command-surface-checked-sftp-outline", "point": [422, 39], "rgb_min": [185, 140, 45], "rgb_max": [235, 190, 95]},
         {"id": "active-tab-border", "point": [291, 109], "rgb_min": [185, 140, 45], "rgb_max": [235, 190, 95]},
         {"id": "active-tab-focus-outline", "point": [320, 109], "rgb_min": [185, 140, 45], "rgb_max": [235, 190, 95]},
         {"id": "session-filter-focus-outline", "point": [34, 197], "rgb_min": [185, 140, 45], "rgb_max": [235, 190, 95]},
@@ -146,6 +157,8 @@
       ],
       "line_anchors": [
         {"id": "toolbar-bottom-rule", "from": [0, 88], "to": [1279, 88], "rgb_min": [30, 30, 30], "rgb_max": [45, 45, 45], "min_match_ratio": 0.99},
+        {"id": "command-surface-active-connect-top", "from": [342, 39], "to": [416, 39], "rgb_min": [185, 140, 45], "rgb_max": [235, 190, 95], "min_match_ratio": 0.95},
+        {"id": "command-surface-checked-sftp-top", "from": [422, 39], "to": [480, 39], "rgb_min": [185, 140, 45], "rgb_max": [235, 190, 95], "min_match_ratio": 0.95},
         {"id": "session-manager-workspace-divider", "from": [288, 106], "to": [288, 736], "rgb_min": [40, 40, 40], "rgb_max": [70, 70, 70], "min_match_ratio": 0.9},
         {"id": "tab-strip-baseline", "from": [288, 132], "to": [1262, 132], "rgb_min": [5, 5, 5], "rgb_max": [70, 70, 70], "min_match_ratio": 0.92},
         {"id": "active-tab-focus-outline-top", "from": [291, 109], "to": [390, 109], "rgb_min": [185, 140, 45], "rgb_max": [235, 190, 95], "min_match_ratio": 0.99},
@@ -159,6 +172,9 @@
       ],
       "topology": [
         {"id": "toolbar-above-session-manager", "from": "toolbar", "relation": "above", "to": "session-manager", "min_gap": 12, "max_gap": 30},
+        {"id": "command-surface-active-connect-inside-toolbar", "from": "command-surface-active-connect", "relation": "inside", "to": "toolbar"},
+        {"id": "command-surface-checked-sftp-inside-toolbar", "from": "command-surface-checked-sftp", "relation": "inside", "to": "toolbar"},
+        {"id": "command-surface-disabled-delete-inside-toolbar", "from": "command-surface-disabled-delete", "relation": "inside", "to": "toolbar"},
         {"id": "session-manager-left-of-terminal", "from": "session-manager", "relation": "left_of", "to": "terminal-surface", "min_gap": 12, "max_gap": 30},
         {"id": "session-filter-focus-inside-session-manager", "from": "session-manager-filter-focus", "relation": "inside", "to": "session-manager"},
         {"id": "session-tree-root-inside-session-manager", "from": "session-manager-tree-root", "relation": "inside", "to": "session-manager"},
@@ -177,6 +193,9 @@
     "termius": {
       "regions": [
         {"id": "toolbar", "box": [0, 34, 1280, 88], "mean_luminance": [30, 65], "min_unique_colors": 140},
+        {"id": "command-surface-active-connect", "box": [382, 45, 466, 75], "mean_luminance": [120, 190], "min_unique_colors": 45},
+        {"id": "command-surface-checked-vault", "box": [742, 45, 818, 75], "mean_luminance": [25, 80], "min_unique_colors": 30},
+        {"id": "command-surface-disabled-remove", "box": [298, 45, 376, 75], "mean_luminance": [25, 65], "min_unique_colors": 25},
         {"id": "hosts-sidebar", "box": [18, 106, 292, 736], "mean_luminance": [15, 45], "min_unique_colors": 140},
         {"id": "hosts-search-focus", "box": [32, 196, 278, 226], "mean_luminance": [30, 55], "min_unique_colors": 90},
         {"id": "selected-host-row", "box": [26, 386, 286, 424], "mean_luminance": [45, 65], "min_unique_colors": 150},
@@ -221,6 +240,9 @@
       ],
       "topology": [
         {"id": "toolbar-above-hosts-sidebar", "from": "toolbar", "relation": "above", "to": "hosts-sidebar", "min_gap": 12, "max_gap": 30},
+        {"id": "command-surface-active-connect-inside-toolbar", "from": "command-surface-active-connect", "relation": "inside", "to": "toolbar"},
+        {"id": "command-surface-checked-vault-inside-toolbar", "from": "command-surface-checked-vault", "relation": "inside", "to": "toolbar"},
+        {"id": "command-surface-disabled-remove-inside-toolbar", "from": "command-surface-disabled-remove", "relation": "inside", "to": "toolbar"},
         {"id": "host-search-focus-inside-hosts-sidebar", "from": "hosts-search-focus", "relation": "inside", "to": "hosts-sidebar"},
         {"id": "selected-host-row-inside-hosts-sidebar", "from": "selected-host-row", "relation": "inside", "to": "hosts-sidebar"},
         {"id": "hosts-sidebar-left-of-west-tab-rail", "from": "hosts-sidebar", "relation": "left_of", "to": "west-tab-rail", "min_gap": 12, "max_gap": 30},
@@ -235,6 +257,9 @@
     "remmina": {
       "regions": [
         {"id": "toolbar", "box": [0, 34, 1280, 88], "mean_luminance": [225, 255], "min_unique_colors": 120},
+        {"id": "command-surface-active-connect", "box": [388, 45, 473, 75], "mean_luminance": [100, 245], "min_unique_colors": 35},
+        {"id": "command-surface-checked-transfer", "box": [562, 44, 650, 74], "mean_luminance": [190, 215], "min_unique_colors": 110},
+        {"id": "command-surface-disabled-delete", "box": [304, 45, 382, 75], "mean_luminance": [225, 255], "min_unique_colors": 20},
         {"id": "connection-profiles", "box": [18, 106, 320, 736], "mean_luminance": [235, 255], "min_unique_colors": 120},
         {"id": "profile-filter-focus", "box": [136, 172, 307, 197], "mean_luminance": [225, 255], "min_unique_colors": 90},
         {"id": "profile-list-chrome", "box": [28, 168, 312, 296], "mean_luminance": [225, 255], "min_unique_colors": 190},
@@ -280,6 +305,9 @@
       "topology": [
         {"id": "toolbar-above-connection-profiles", "from": "toolbar", "relation": "above", "to": "connection-profiles", "min_gap": 12, "max_gap": 30},
         {"id": "transfer-toolbar-checked-inside-toolbar", "from": "transfer-toolbar-checked", "relation": "inside", "to": "toolbar"},
+        {"id": "command-surface-active-connect-inside-toolbar", "from": "command-surface-active-connect", "relation": "inside", "to": "toolbar"},
+        {"id": "command-surface-checked-transfer-inside-toolbar", "from": "command-surface-checked-transfer", "relation": "inside", "to": "toolbar"},
+        {"id": "command-surface-disabled-delete-inside-toolbar", "from": "command-surface-disabled-delete", "relation": "inside", "to": "toolbar"},
         {"id": "profile-filter-focus-inside-profile-list", "from": "profile-filter-focus", "relation": "inside", "to": "profile-list-chrome"},
         {"id": "connection-list-selected-inside-profile-list", "from": "connection-list-selected-row", "relation": "inside", "to": "profile-list-chrome"},
         {"id": "protocol-tree-selected-inside-profiles", "from": "protocol-tree-selected-row", "relation": "inside", "to": "connection-profiles"},

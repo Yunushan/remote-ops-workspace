@@ -9,12 +9,15 @@ from .doctor import run_doctor
 from .file_transfer import build_sftp_queue_plan, parse_transfer_item_spec, preview_local_path
 from .gui_designs import (
     GUI_DESIGN_PRESETS,
+    PRODUCT_GUI_PRESET_IDS,
+    PRODUCT_REFERENCE_TAB_PRESET_IDS,
     GuiDesignPreset,
     get_gui_design_preset,
     gui_design_home_tab_label,
     gui_design_interaction_state,
     gui_design_moba_bottom_edge_controls,
     gui_design_moba_connected_dock_frame,
+    gui_design_moba_follow_terminal_folder_control_route,
     gui_design_moba_home_welcome_chrome,
     gui_design_moba_home_welcome_geometry,
     gui_design_moba_monitoring_control_geometry,
@@ -27,11 +30,15 @@ from .gui_designs import (
     gui_design_moba_rail_chrome,
     gui_design_moba_rail_item_geometry_for,
     gui_design_moba_rail_items,
+    gui_design_moba_remote_monitoring_control_route,
     gui_design_moba_remote_monitoring_dock_chrome,
     gui_design_moba_ribbon_action_geometry,
     gui_design_moba_ribbon_action_geometry_for,
     gui_design_moba_ribbon_actions,
+    gui_design_moba_ribbon_edge_action_route,
     gui_design_moba_ribbon_edge_actions,
+    gui_design_moba_ribbon_tooltips,
+    gui_design_moba_right_utility_action_route,
     gui_design_moba_right_utility_actions,
     gui_design_moba_right_utility_rail_chrome,
     gui_design_moba_session_edge_actions,
@@ -58,26 +65,55 @@ from .gui_designs import (
     gui_design_moba_top_stack_geometry,
     gui_design_mremoteng_connection_document_route,
     gui_design_mremoteng_document_controls,
+    gui_design_mremoteng_document_filter_route,
     gui_design_mremoteng_document_toolbar_chrome,
+    gui_design_mremoteng_inheritance_route,
     gui_design_mremoteng_property_grid_chrome,
     gui_design_mremoteng_top_chrome,
+    gui_design_preset_catalog_route,
+    gui_design_preset_command_surface_route,
+    gui_design_preset_focus_interaction_route,
+    gui_design_preset_home_search_route,
+    gui_design_preset_isolation_route,
+    gui_design_preset_keyboard_shortcut_route,
+    gui_design_preset_reference_control_route,
+    gui_design_preset_reference_input_route,
+    gui_design_preset_reference_session_action_route,
+    gui_design_preset_reference_status_bar_route,
+    gui_design_preset_reference_surface_route,
+    gui_design_preset_reference_tab_chrome_route,
+    gui_design_preset_reference_tab_route,
+    gui_design_preset_reference_transcript_route,
+    gui_design_preset_selection_route,
+    gui_design_preset_transition_route,
+    gui_design_preset_visual_signature,
+    gui_design_product_identity_route,
     gui_design_reference_state,
     gui_design_remmina_clipboard_route,
+    gui_design_remmina_profile_filter_route,
     gui_design_remmina_profile_list_chrome,
     gui_design_remmina_profile_viewer_route,
+    gui_design_remmina_screenshot_route,
+    gui_design_remmina_sftp_transfer_route,
     gui_design_remmina_viewer_controls,
     gui_design_securecrt_command_window_chrome,
     gui_design_securecrt_command_window_send_route,
     gui_design_securecrt_session_manager_chrome,
+    gui_design_securecrt_session_manager_filter_route,
     gui_design_securecrt_session_manager_route,
     gui_design_securecrt_session_status_strip,
+    gui_design_securecrt_sftp_browser_route,
+    gui_design_securecrt_sftp_tab_route,
     gui_design_securecrt_top_chrome,
     gui_design_sidebar_copy,
     gui_design_status_segments,
+    gui_design_termius_files_browser_route,
     gui_design_termius_header_chips,
     gui_design_termius_host_identity_strip,
     gui_design_termius_host_selection_route,
     gui_design_termius_hosts_chrome,
+    gui_design_termius_port_forward_route,
+    gui_design_termius_snippet_route,
     gui_design_termius_sync_route,
     gui_design_toolbar_actions,
     gui_design_tree_root_copy,
@@ -99,6 +135,7 @@ from .moba_connected import (
     MobaConnectedSessionState,
     build_moba_connected_session_state,
     moba_connected_profile_label,
+    moba_connected_session_action_route,
     moba_connected_session_identity_route,
     moba_connected_session_route,
     moba_connected_tab_chrome_geometry_for,
@@ -106,6 +143,7 @@ from .moba_connected import (
     moba_connected_tab_chrome_items,
     moba_connected_tab_label,
     moba_connected_window_title,
+    moba_sftp_terminal_folder_route,
     moba_telemetry_cell_geometry,
     moba_telemetry_cell_geometry_for,
     moba_telemetry_cells,
@@ -405,6 +443,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
     SFTP_ROW_SOURCE_PATH_ROLE = int(Qt.ItemDataRole.UserRole) + 47
     SFTP_ROW_INDEX_ROLE = int(Qt.ItemDataRole.UserRole) + 48
     SFTP_ROW_SELECTED_BY_ROUTE_ROLE = int(Qt.ItemDataRole.UserRole) + 49
+    SFTP_ROW_TERMINAL_FOLDER_ROUTE_KEY_ROLE = int(Qt.ItemDataRole.UserRole) + 50
     MREMOTENG_ROUTE_KEY_ROLE = int(Qt.ItemDataRole.UserRole) + 61
     MREMOTENG_ROUTE_ROLE_ROLE = int(Qt.ItemDataRole.UserRole) + 62
     MREMOTENG_ROUTE_PROFILE_ROLE = int(Qt.ItemDataRole.UserRole) + 63
@@ -412,6 +451,13 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
     MREMOTENG_ROUTE_PROTOCOL_ROLE = int(Qt.ItemDataRole.UserRole) + 65
     MREMOTENG_ROUTE_STATE_ROLE = int(Qt.ItemDataRole.UserRole) + 66
     MREMOTENG_ROUTE_SELECTED_ROLE = int(Qt.ItemDataRole.UserRole) + 67
+    MREMOTENG_FILTER_ROUTE_KEY_ROLE = int(Qt.ItemDataRole.UserRole) + 91
+    MREMOTENG_FILTER_ROUTE_ROLE_ROLE = int(Qt.ItemDataRole.UserRole) + 92
+    MREMOTENG_FILTER_ROUTE_QUERY_ROLE = int(Qt.ItemDataRole.UserRole) + 93
+    MREMOTENG_FILTER_ROUTE_PROFILE_ROLE = int(Qt.ItemDataRole.UserRole) + 94
+    MREMOTENG_FILTER_ROUTE_LABEL_ROLE = int(Qt.ItemDataRole.UserRole) + 95
+    MREMOTENG_FILTER_ROUTE_MATCHED_ROLE = int(Qt.ItemDataRole.UserRole) + 96
+    MREMOTENG_FILTER_ROUTE_RENDER_SOURCE_ROLE = int(Qt.ItemDataRole.UserRole) + 97
     SECURECRT_ROUTE_KEY_ROLE = int(Qt.ItemDataRole.UserRole) + 71
     SECURECRT_ROUTE_ROLE_ROLE = int(Qt.ItemDataRole.UserRole) + 72
     SECURECRT_ROUTE_PROFILE_ROLE = int(Qt.ItemDataRole.UserRole) + 73
@@ -419,6 +465,20 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
     SECURECRT_ROUTE_TARGET_ROLE = int(Qt.ItemDataRole.UserRole) + 75
     SECURECRT_ROUTE_PROTOCOL_ROLE = int(Qt.ItemDataRole.UserRole) + 76
     SECURECRT_ROUTE_SELECTED_ROLE = int(Qt.ItemDataRole.UserRole) + 77
+    SECURECRT_FILTER_ROUTE_KEY_ROLE = int(Qt.ItemDataRole.UserRole) + 81
+    SECURECRT_FILTER_ROUTE_ROLE_ROLE = int(Qt.ItemDataRole.UserRole) + 82
+    SECURECRT_FILTER_ROUTE_QUERY_ROLE = int(Qt.ItemDataRole.UserRole) + 83
+    SECURECRT_FILTER_ROUTE_PROFILE_ROLE = int(Qt.ItemDataRole.UserRole) + 84
+    SECURECRT_FILTER_ROUTE_LABEL_ROLE = int(Qt.ItemDataRole.UserRole) + 85
+    SECURECRT_FILTER_ROUTE_MATCHED_ROLE = int(Qt.ItemDataRole.UserRole) + 86
+    SECURECRT_FILTER_ROUTE_RENDER_SOURCE_ROLE = int(Qt.ItemDataRole.UserRole) + 87
+    SECURECRT_SFTP_ROUTE_KEY_ROLE = int(Qt.ItemDataRole.UserRole) + 101
+    SECURECRT_SFTP_ROUTE_ROLE_ROLE = int(Qt.ItemDataRole.UserRole) + 102
+    SECURECRT_SFTP_ROUTE_PROFILE_ROLE = int(Qt.ItemDataRole.UserRole) + 103
+    SECURECRT_SFTP_ROUTE_TREE_LABEL_ROLE = int(Qt.ItemDataRole.UserRole) + 104
+    SECURECRT_SFTP_ROUTE_TAB_ROLE = int(Qt.ItemDataRole.UserRole) + 105
+    SECURECRT_SFTP_ROUTE_STATUS_ROLE = int(Qt.ItemDataRole.UserRole) + 106
+    SECURECRT_SFTP_ROUTE_TRANSFER_ROLE = int(Qt.ItemDataRole.UserRole) + 107
     TERMIUS_HOST_ROUTE_KEY_ROLE = int(Qt.ItemDataRole.UserRole) + 81
     TERMIUS_HOST_ROUTE_ROLE_ROLE = int(Qt.ItemDataRole.UserRole) + 82
     TERMIUS_HOST_ROUTE_PROFILE_ROLE = int(Qt.ItemDataRole.UserRole) + 83
@@ -513,6 +573,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             button.setObjectName("terminalAction")
             button.setText(label)
             button.setToolTip(tooltip)
+            action_key = label.lower().replace(" ", "-")
+            button.setProperty("terminalActionKey", action_key)
+            button.setProperty("terminalActionLabel", label)
+            button.setProperty("terminalActionTooltip", tooltip)
             icon = getattr(QStyle.StandardPixmap, icon_name, QStyle.StandardPixmap.SP_FileIcon)
             button.setIcon(self.style().standardIcon(icon))
             button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
@@ -681,6 +745,28 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             for key, value in properties.items():
                 widget.setProperty(key, value)
 
+        def apply_sftp_terminal_folder_route_properties(self, widget) -> None:
+            route = moba_sftp_terminal_folder_route(self.state)
+            properties = {
+                "mobaSftpTerminalFolderRouteKey": route.key,
+                "mobaSftpTerminalFolderRouteRole": route.route_role,
+                "mobaSftpTerminalFolderRouteTerminalAreaObject": route.terminal_area_object,
+                "mobaSftpTerminalFolderRouteTerminalOutputObject": route.terminal_output_object,
+                "mobaSftpTerminalFolderRouteSourceControlObject": route.source_control_object,
+                "mobaSftpTerminalFolderRouteTargetBrowserObject": route.target_browser_object,
+                "mobaSftpTerminalFolderRouteTargetPathObject": route.target_path_object,
+                "mobaSftpTerminalFolderRouteTargetTableObject": route.target_table_object,
+                "mobaSftpTerminalFolderRouteParentRowLabel": route.parent_row_label,
+                "mobaSftpTerminalFolderRouteSelectedRowKind": route.selected_row_kind,
+                "mobaSftpTerminalFolderRoutePath": route.remote_path,
+                "mobaSftpTerminalFolderRoutePlan": route.list_command,
+                "mobaSftpTerminalFolderRouteEnabled": route.follow_enabled,
+                "mobaSftpTerminalFolderRouteRowRouteProperty": route.row_route_property,
+                "mobaSftpTerminalFolderRouteRenderSource": route.render_source,
+            }
+            for key, value in properties.items():
+                widget.setProperty(key, value)
+
         def apply_sftp_routed_file_rows_properties(self, widget, rows, route) -> None:
             properties = {
                 "mobaSftpRoutedRowsKey": rows.key,
@@ -754,6 +840,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.apply_connected_session_route_properties(browser)
             self.apply_sftp_dock_density_properties(browser, density)
             self.apply_sftp_follow_folder_route_properties(browser, follow_route)
+            self.apply_sftp_terminal_folder_route_properties(browser)
             outer_layout.addWidget(browser)
 
             layout = QVBoxLayout(browser)
@@ -799,6 +886,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             path.setProperty("mobaSftpDropdownY", chrome.dropdown_y)
             path.setProperty("mobaSftpDropdownFontSize", chrome.dropdown_font_size)
             self.apply_sftp_follow_folder_route_properties(path, follow_route)
+            self.apply_sftp_terminal_folder_route_properties(path)
             self.apply_connected_session_route_properties(path)
             path.setFixedHeight(density.path_height)
             path.setToolTip(self.state.follow_folder_plan.printable_batch())
@@ -838,6 +926,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             )
             self.apply_sftp_follow_folder_route_properties(self.file_table, follow_route)
             self.apply_sftp_routed_file_rows_properties(self.file_table, routed_rows, follow_route)
+            self.apply_sftp_terminal_folder_route_properties(self.file_table)
             self.apply_connected_session_route_properties(self.file_table)
             self.file_table.setIconSize(QSize(density.toolbar_icon_size, density.toolbar_icon_size))
             self.file_table.setRootIsDecorated(False)
@@ -895,6 +984,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             item.setData(0, SFTP_ROW_SOURCE_PATH_ROLE, self.state.remote_path)
             item.setData(0, SFTP_ROW_INDEX_ROLE, row_index)
             item.setData(0, SFTP_ROW_SELECTED_BY_ROUTE_ROLE, selected)
+            item.setData(0, SFTP_ROW_TERMINAL_FOLDER_ROUTE_KEY_ROLE, moba_sftp_terminal_folder_route(self.state).key)
             item.setToolTip(1, f"{rows.row_path_property}: {self.state.remote_path}")
             item.setToolTip(2, f"{rows.row_route_property}: {rows.follow_route_key}")
             if item.text(0) != name:
@@ -942,6 +1032,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
         def build_remote_monitoring(self, density) -> QFrame:
             chrome = gui_design_moba_remote_monitoring_dock_chrome()
             route = gui_design_moba_monitoring_telemetry_route()
+            control_route = gui_design_moba_remote_monitoring_control_route()
+            follow_control_route = gui_design_moba_follow_terminal_folder_control_route()
             follow_route = gui_design_moba_sftp_follow_folder_route()
             metric_keys = [metric.key for metric in gui_design_moba_monitoring_metrics()]
             panel = QFrame()
@@ -970,7 +1062,19 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             panel.setProperty("mobaRemoteMonitoringLiveControlsWidth", chrome.live_controls_width)
             panel.setProperty("mobaRemoteMonitoringCommand", self.state.monitoring_plan.printable())
             panel.setProperty("mobaRemoteMonitoringFollowPlan", self.state.follow_folder_plan.printable_batch())
+            self.apply_remote_monitoring_control_route_properties(panel, control_route)
+            panel.setProperty(control_route.captured_property, True)
+            panel.setProperty(control_route.captured_checked_property, control_route.expected_checked)
+            panel.setProperty(control_route.captured_command_property, self.state.monitoring_plan.printable())
+            panel.setProperty(control_route.captured_refresh_seconds_property, chrome.refresh_seconds)
+            follow_plan = self.state.follow_folder_plan.printable_batch()
+            self.apply_follow_terminal_folder_control_route_properties(panel, follow_control_route)
+            panel.setProperty(follow_control_route.captured_property, True)
+            panel.setProperty(follow_control_route.captured_checked_property, self.state.follow_terminal_folder)
+            panel.setProperty(follow_control_route.captured_path_property, self.state.remote_path)
+            panel.setProperty(follow_control_route.captured_plan_property, follow_plan)
             self.apply_sftp_follow_folder_route_properties(panel, follow_route)
+            self.apply_sftp_terminal_folder_route_properties(panel)
             panel.setProperty(
                 "mobaMonitoringControlGeometryKeys",
                 [geometry.key for geometry in gui_design_moba_monitoring_control_geometry()],
@@ -1004,6 +1108,62 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 label.setProperty("mobaMonitoringTelemetryRouteKey", route.key)
                 label.setVisible(False)
             return panel
+
+        @staticmethod
+        def apply_remote_monitoring_control_route_properties(widget, route) -> None:
+            properties = {
+                "mobaRemoteMonitoringControlRouteKey": route.key,
+                "mobaRemoteMonitoringControlRouteRole": route.route_role,
+                "mobaRemoteMonitoringControlSourcePanelObject": route.source_panel_object,
+                "mobaRemoteMonitoringControlSourceObject": route.source_control_object,
+                "mobaRemoteMonitoringControlSourceKey": route.source_control_key,
+                "mobaRemoteMonitoringControlSourceLabel": route.source_control_label,
+                "mobaRemoteMonitoringControlSourceType": route.source_control_type,
+                "mobaRemoteMonitoringControlExpectedChecked": route.expected_checked,
+                "mobaRemoteMonitoringControlCommandProperty": route.command_property,
+                "mobaRemoteMonitoringControlRefreshProperty": route.refresh_seconds_property,
+                "mobaRemoteMonitoringControlCheckedProperty": route.checked_property,
+                "mobaRemoteMonitoringControlTelemetryRouteKey": route.telemetry_route_key,
+                "mobaRemoteMonitoringControlTelemetrySurface": route.telemetry_surface,
+                "mobaRemoteMonitoringControlTargetBarObject": route.target_bar_object,
+                "mobaRemoteMonitoringControlTargetMetricCellKeys": list(route.target_metric_cell_keys),
+                "mobaRemoteMonitoringControlCapturedProperty": route.captured_property,
+                "mobaRemoteMonitoringControlCapturedCheckedProperty": route.captured_checked_property,
+                "mobaRemoteMonitoringControlCapturedCommandProperty": route.captured_command_property,
+                "mobaRemoteMonitoringControlCapturedRefreshProperty": route.captured_refresh_seconds_property,
+                "mobaRemoteMonitoringControlRenderSource": route.render_source,
+            }
+            for key, value in properties.items():
+                widget.setProperty(key, value)
+
+        @staticmethod
+        def apply_follow_terminal_folder_control_route_properties(widget, route) -> None:
+            properties = {
+                "mobaFollowTerminalFolderControlRouteKey": route.key,
+                "mobaFollowTerminalFolderControlRouteRole": route.route_role,
+                "mobaFollowTerminalFolderControlSourcePanelObject": route.source_panel_object,
+                "mobaFollowTerminalFolderControlSourceObject": route.source_control_object,
+                "mobaFollowTerminalFolderControlSourceKey": route.source_control_key,
+                "mobaFollowTerminalFolderControlSourceLabel": route.source_control_label,
+                "mobaFollowTerminalFolderControlSourceType": route.source_control_type,
+                "mobaFollowTerminalFolderControlExpectedChecked": route.expected_checked,
+                "mobaFollowTerminalFolderControlSourcePathProperty": route.source_path_property,
+                "mobaFollowTerminalFolderControlSourcePlanProperty": route.source_plan_property,
+                "mobaFollowTerminalFolderControlSourceEnabledProperty": route.source_enabled_property,
+                "mobaFollowTerminalFolderControlTargetBrowserObject": route.target_browser_object,
+                "mobaFollowTerminalFolderControlTargetPathObject": route.target_path_object,
+                "mobaFollowTerminalFolderControlTargetTableObject": route.target_table_object,
+                "mobaFollowTerminalFolderControlTargetPathProperty": route.target_path_property,
+                "mobaFollowTerminalFolderControlTargetPlanProperty": route.target_plan_property,
+                "mobaFollowTerminalFolderControlTargetEnabledProperty": route.target_enabled_property,
+                "mobaFollowTerminalFolderControlCapturedProperty": route.captured_property,
+                "mobaFollowTerminalFolderControlCapturedCheckedProperty": route.captured_checked_property,
+                "mobaFollowTerminalFolderControlCapturedPathProperty": route.captured_path_property,
+                "mobaFollowTerminalFolderControlCapturedPlanProperty": route.captured_plan_property,
+                "mobaFollowTerminalFolderControlRenderSource": route.render_source,
+            }
+            for key, value in properties.items():
+                widget.setProperty(key, value)
 
         def monitoring_control_widget(self, control):
             if control.control_type == "checkbox":
@@ -1047,18 +1207,35 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             widget.setIconSize(QSize(geometry.icon_size, geometry.icon_size))
             widget.setMinimumHeight(geometry.row_height)
             if control.key == "remote-monitoring":
+                control_route = gui_design_moba_remote_monitoring_control_route()
+                self.apply_remote_monitoring_control_route_properties(widget, control_route)
+                widget.setProperty(control_route.checked_property, widget.isChecked())
+                widget.setProperty(control_route.captured_property, True)
+                widget.setProperty(control_route.captured_checked_property, widget.isChecked())
+                widget.setProperty(control_route.captured_command_property, self.state.monitoring_plan.printable())
+                widget.setProperty(
+                    control_route.captured_refresh_seconds_property,
+                    gui_design_moba_remote_monitoring_dock_chrome().refresh_seconds,
+                )
                 widget.setProperty("mobaMonitoringCommand", self.state.monitoring_plan.printable())
                 widget.setProperty(
                     "mobaMonitoringRefreshSeconds",
                     gui_design_moba_remote_monitoring_dock_chrome().refresh_seconds,
                 )
             if control.key == "follow-terminal-folder":
+                control_route = gui_design_moba_follow_terminal_folder_control_route()
                 follow_route = gui_design_moba_sftp_follow_folder_route()
                 follow_plan = self.state.follow_folder_plan.printable_batch()
+                self.apply_follow_terminal_folder_control_route_properties(widget, control_route)
                 widget.setProperty("mobaMonitoringFollowPlan", follow_plan)
                 widget.setProperty("mobaMonitoringFollowPath", self.state.remote_path)
                 widget.setProperty("mobaMonitoringFollowEnabled", self.state.follow_terminal_folder)
+                widget.setProperty(control_route.captured_property, True)
+                widget.setProperty(control_route.captured_checked_property, widget.isChecked())
+                widget.setProperty(control_route.captured_path_property, self.state.remote_path)
+                widget.setProperty(control_route.captured_plan_property, follow_plan)
                 self.apply_sftp_follow_folder_route_properties(widget, follow_route)
+                self.apply_sftp_terminal_folder_route_properties(widget)
             return widget
 
         def monitoring_control_checked(self, control) -> bool:
@@ -1312,10 +1489,33 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             for key, value in properties.items():
                 widget.setProperty(key, value)
 
+        def apply_sftp_terminal_folder_route_properties(self, widget) -> None:
+            route = moba_sftp_terminal_folder_route(self.state)
+            properties = {
+                "mobaSftpTerminalFolderRouteKey": route.key,
+                "mobaSftpTerminalFolderRouteRole": route.route_role,
+                "mobaSftpTerminalFolderRouteTerminalAreaObject": route.terminal_area_object,
+                "mobaSftpTerminalFolderRouteTerminalOutputObject": route.terminal_output_object,
+                "mobaSftpTerminalFolderRouteSourceControlObject": route.source_control_object,
+                "mobaSftpTerminalFolderRouteTargetBrowserObject": route.target_browser_object,
+                "mobaSftpTerminalFolderRouteTargetPathObject": route.target_path_object,
+                "mobaSftpTerminalFolderRouteTargetTableObject": route.target_table_object,
+                "mobaSftpTerminalFolderRouteParentRowLabel": route.parent_row_label,
+                "mobaSftpTerminalFolderRouteSelectedRowKind": route.selected_row_kind,
+                "mobaSftpTerminalFolderRoutePath": route.remote_path,
+                "mobaSftpTerminalFolderRoutePlan": route.list_command,
+                "mobaSftpTerminalFolderRouteEnabled": route.follow_enabled,
+                "mobaSftpTerminalFolderRouteRowRouteProperty": route.row_route_property,
+                "mobaSftpTerminalFolderRouteRenderSource": route.render_source,
+            }
+            for key, value in properties.items():
+                widget.setProperty(key, value)
+
         def build_terminal_area(self) -> QWidget:
             area = QWidget()
             area.setObjectName("mobaTerminalArea")
             self.apply_connected_session_route_properties(area)
+            self.apply_sftp_terminal_folder_route_properties(area)
             layout = QHBoxLayout(area)
             layout.setContentsMargins(0, 0, 0, 0)
             layout.setSpacing(0)
@@ -1338,6 +1538,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.terminal_pane.output.setProperty("mobaTerminalTranscriptTones", [line.tone for line in lines])
             self.apply_connected_session_route_properties(self.terminal_pane.output)
             self.apply_connected_identity_route_properties(self.terminal_pane.output)
+            self.apply_sftp_terminal_folder_route_properties(self.terminal_pane.output)
             self.terminal_pane.output.setPlainText("\n".join(line.text for line in lines))
             self.terminal_pane.output.moveCursor(QTextCursor.MoveOperation.End)
 
@@ -1360,8 +1561,15 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
         def build_right_utility_rail(self) -> QFrame:
             chrome = gui_design_moba_right_utility_rail_chrome()
+            route = gui_design_moba_right_utility_action_route()
             rail = QFrame()
             rail.setObjectName("mobaRightUtilityRail")
+            rail.setProperty("mobaRightUtilityRouteKey", route.key)
+            rail.setProperty("mobaRightUtilityRouteRole", route.route_role)
+            rail.setProperty("mobaRightUtilityRouteRailObject", route.rail_object)
+            rail.setProperty("mobaRightUtilityRouteActionObject", route.action_object)
+            rail.setProperty(route.action_keys_property, list(route.action_keys))
+            rail.setProperty("mobaRightUtilityRouteRenderSource", route.render_source)
             rail.setProperty("mobaRightUtilityRailStaticWidth", chrome.static_width)
             rail.setProperty("mobaRightUtilityRailLiveWidth", chrome.live_width)
             rail.setProperty("mobaRightUtilityRailMargins", [chrome.margin_left, chrome.margin_top, chrome.margin_right, chrome.margin_bottom])
@@ -1375,11 +1583,21 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             layout.setContentsMargins(chrome.margin_left, chrome.margin_top, chrome.margin_right, chrome.margin_bottom)
             layout.setSpacing(chrome.action_spacing)
             layout.addWidget(self.build_session_edge_controls())
+            route_handlers = dict(zip(route.action_keys, route.action_handlers, strict=True))
             for action in gui_design_moba_right_utility_actions():
                 button = QToolButton()
                 button.setObjectName("mobaRightUtilityAction")
                 button.setProperty("mobaRightUtilityKey", action.key)
                 button.setProperty("mobaRightUtilityIconKey", action.icon_key)
+                button.setProperty("mobaRightUtilityRouteKey", route.key)
+                button.setProperty("mobaRightUtilityRouteRole", route.route_role)
+                button.setProperty(route.action_key_property, action.key)
+                button.setProperty(route.action_label_property, action.label)
+                button.setProperty(route.action_object_property, route.action_object)
+                button.setProperty(route.icon_key_property, action.icon_key)
+                button.setProperty("mobaRightUtilityRouteHandler", route_handlers[action.key])
+                button.setProperty(route.action_keys_property, list(route.action_keys))
+                button.setProperty("mobaRightUtilityRouteRenderSource", route.render_source)
                 button.setProperty("mobaRightUtilityStaticX", action.static_x)
                 button.setProperty("mobaRightUtilityStaticY", action.static_y)
                 button.setProperty("mobaRightUtilityStaticSize", action.static_size)
@@ -1391,6 +1609,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 button.setIconSize(QSize(action.live_icon_size, action.live_icon_size))
                 button.setFixedSize(QSize(action.button_size, action.button_size))
                 button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+                button.clicked.connect(getattr(self, route_handlers[action.key]))
                 layout.addWidget(button)
             layout.addStretch(1)
             return rail
@@ -2061,6 +2280,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.design_select.setMinimumWidth(170)
             for preset in GUI_DESIGN_PRESETS:
                 self.design_select.addItem(preset.label, preset.id)
+            self.apply_preset_catalog_route_properties(self.design_select, gui_design_preset_catalog_route())
             self.new_layout_button = self.toolbar_button("New Layout", "SP_FileIcon", "Create layout")
             self.edit_layout_button = self.toolbar_button("Edit Layout", "SP_FileDialogDetailedView", "Edit selected layout")
             self.remove_layout_button = self.toolbar_button("Remove Layout", "SP_TrashIcon", "Remove selected layout")
@@ -2077,6 +2297,15 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.moba_toolbar_spacer.setObjectName("mobaToolbarSpacer")
             self.moba_toolbar_spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
             self.main_toolbar.addWidget(self.moba_toolbar_spacer)
+            moba_edge_route = gui_design_moba_ribbon_edge_action_route()
+            edge_action_keys = [moba_edge_route.xserver_action_key, moba_edge_route.exit_action_key]
+            for widget in (self.main_toolbar, self.moba_toolbar_spacer):
+                widget.setProperty("mobaRibbonEdgeRouteKey", moba_edge_route.key)
+                widget.setProperty("mobaRibbonEdgeRouteRole", moba_edge_route.route_role)
+                widget.setProperty("mobaRibbonEdgeRouteToolbarObject", moba_edge_route.toolbar_object)
+                widget.setProperty("mobaRibbonEdgeRouteSpacerObject", moba_edge_route.spacer_object)
+                widget.setProperty(moba_edge_route.action_keys_property, edge_action_keys)
+                widget.setProperty("mobaRibbonEdgeRouteRenderSource", moba_edge_route.render_source)
             moba_edge_actions = {action.key: action for action in gui_design_moba_ribbon_edge_actions()}
             x_server_action = moba_edge_actions["xserver"]
             self.moba_x_server_button = self.toolbar_button(
@@ -2088,12 +2317,28 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.moba_x_server_button.setProperty("mobaIconKey", x_server_action.icon_key)
             self.moba_x_server_button.setIcon(self.moba_ribbon_icon(x_server_action.icon_key, x_server_action.color))
             self.apply_moba_ribbon_action_geometry(self.moba_x_server_button, x_server_action.key)
+            self.apply_moba_ribbon_edge_action_route(
+                self.moba_x_server_button,
+                moba_edge_route.xserver_action_key,
+                moba_edge_route.xserver_action_label,
+                moba_edge_route.xserver_action_object,
+                moba_edge_route.xserver_icon_key,
+                moba_edge_route.xserver_handler,
+            )
             exit_action = moba_edge_actions["exit"]
             self.moba_exit_button = self.toolbar_button(exit_action.label, "SP_DialogCloseButton", exit_action.tooltip)
             self.moba_exit_button.setObjectName("mobaExitAction")
             self.moba_exit_button.setProperty("mobaIconKey", exit_action.icon_key)
             self.moba_exit_button.setIcon(self.moba_ribbon_icon(exit_action.icon_key, exit_action.color))
             self.apply_moba_ribbon_action_geometry(self.moba_exit_button, exit_action.key)
+            self.apply_moba_ribbon_edge_action_route(
+                self.moba_exit_button,
+                moba_edge_route.exit_action_key,
+                moba_edge_route.exit_action_label,
+                moba_edge_route.exit_action_object,
+                moba_edge_route.exit_icon_key,
+                moba_edge_route.exit_handler,
+            )
             self.main_toolbar.addWidget(self.moba_x_server_button)
             self.main_toolbar.addWidget(self.moba_exit_button)
             self.main_toolbar_buttons = [
@@ -2193,6 +2438,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.left_panel = self.create_left_panel()
             self.tabs = QTabWidget()
             self.tabs.setObjectName("sessionTabs")
+            self.tabs.tabBar().setObjectName("sessionTabBar")
             self.tabs.setTabsClosable(True)
             self.tabs.setMovable(True)
             self.tabs.setElideMode(Qt.TextElideMode.ElideRight)
@@ -2245,22 +2491,94 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.quick_connect.returnPressed.connect(self.run_quick_connect)
             self.quick_connect_suggestions.itemActivated.connect(lambda item, _column: self.run_quick_connect_candidate(item))
             self.quick_connect_suggestions.itemDoubleClicked.connect(lambda item, _column: self.run_quick_connect_candidate(item))
-            QShortcut(QKeySequence("Ctrl+R"), self, activated=self.refresh_profiles)
-            QShortcut(QKeySequence("Ctrl+N"), self, activated=self.create_profile)
-            QShortcut(QKeySequence("Ctrl+E"), self, activated=self.edit_selected_profile)
-            QShortcut(QKeySequence("Ctrl+Return"), self, activated=lambda: self.connect_selected(False))
-            QShortcut(QKeySequence("Ctrl+T"), self, activated=self.open_local_terminal_tab)
-            QShortcut(QKeySequence("Ctrl+W"), self, activated=self.close_current_tab)
-            QShortcut(QKeySequence("Ctrl+Shift+T"), self, activated=self.recover_previous_sessions)
-            QShortcut(QKeySequence("Ctrl+Shift+H"), self, activated=lambda: self.add_split("horizontal"))
-            QShortcut(QKeySequence("Ctrl+Shift+V"), self, activated=lambda: self.add_split("vertical"))
-            QShortcut(QKeySequence("Ctrl+L"), self, activated=self.open_selected_layout)
-            QShortcut(QKeySequence("Ctrl+F"), self, activated=self.search_input.setFocus)
+            self.keyboard_shortcuts = self.create_keyboard_shortcuts()
             self.refresh_profiles()
             self.refresh_layouts()
             self.populate_view_design_menu()
             self.add_welcome_tab()
             self.apply_selected_design()
+
+        def keyboard_shortcut_specs(self) -> list[dict[str, object]]:
+            return [
+                {
+                    "key": "refresh-profiles",
+                    "sequence": "Ctrl+R",
+                    "action_label": "Refresh profiles",
+                    "callback": self.refresh_profiles,
+                },
+                {
+                    "key": "new-profile",
+                    "sequence": "Ctrl+N",
+                    "action_label": "New profile",
+                    "callback": self.create_profile,
+                },
+                {
+                    "key": "edit-profile",
+                    "sequence": "Ctrl+E",
+                    "action_label": "Edit selected profile",
+                    "callback": self.edit_selected_profile,
+                },
+                {
+                    "key": "connect-selected",
+                    "sequence": "Ctrl+Return",
+                    "action_label": "Connect selected profile",
+                    "callback": lambda: self.connect_selected(False),
+                },
+                {
+                    "key": "new-local-terminal",
+                    "sequence": "Ctrl+T",
+                    "action_label": "New local terminal",
+                    "callback": self.open_local_terminal_tab,
+                },
+                {
+                    "key": "close-current-tab",
+                    "sequence": "Ctrl+W",
+                    "action_label": "Close current tab",
+                    "callback": self.close_current_tab,
+                },
+                {
+                    "key": "recover-previous-sessions",
+                    "sequence": "Ctrl+Shift+T",
+                    "action_label": "Recover previous sessions",
+                    "callback": self.recover_previous_sessions,
+                },
+                {
+                    "key": "split-horizontal",
+                    "sequence": "Ctrl+Shift+H",
+                    "action_label": "Split horizontal",
+                    "callback": lambda: self.add_split("horizontal"),
+                },
+                {
+                    "key": "split-vertical",
+                    "sequence": "Ctrl+Shift+V",
+                    "action_label": "Split vertical",
+                    "callback": lambda: self.add_split("vertical"),
+                },
+                {
+                    "key": "open-selected-layout",
+                    "sequence": "Ctrl+L",
+                    "action_label": "Open selected layout",
+                    "callback": self.open_selected_layout,
+                },
+                {
+                    "key": "find-log-text",
+                    "sequence": "Ctrl+F",
+                    "action_label": "Find log text",
+                    "callback": self.search_input.setFocus,
+                },
+            ]
+
+        def create_keyboard_shortcuts(self) -> list:
+            shortcuts = []
+            for spec in self.keyboard_shortcut_specs():
+                shortcut = QShortcut(QKeySequence(str(spec["sequence"])), self)
+                shortcut.setObjectName("presetKeyboardShortcut")
+                shortcut.setProperty("presetKeyboardShortcutKey", str(spec["key"]))
+                shortcut.setProperty("presetKeyboardShortcutSequence", str(spec["sequence"]))
+                shortcut.setProperty("presetKeyboardShortcutActionLabel", str(spec["action_label"]))
+                shortcut.activated.connect(spec["callback"])
+                shortcuts.append(shortcut)
+            return shortcuts
 
         def build_menu_bar(self) -> None:
             self.menuBar().setObjectName("mobaTopMenuBar")
@@ -2557,6 +2875,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 painter.drawLine(8, mid, size - 8, mid)
 
         def create_status_segments(self) -> list[QLabel]:
+            self.statusBar().setObjectName("statusBar")
             self.status_notice_label = QLabel()
             self.status_notice_label.setObjectName("productStatusNotice")
             self.statusBar().addWidget(self.status_notice_label, 1)
@@ -2629,6 +2948,31 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             button.setMinimumWidth(geometry.width)
             button.setIconSize(QSize(geometry.icon_size, geometry.icon_size))
 
+        def apply_moba_ribbon_edge_action_route(
+            self,
+            button: QToolButton,
+            action_key: str,
+            action_label: str,
+            action_object: str,
+            icon_key: str,
+            handler: str,
+        ) -> None:
+            route = gui_design_moba_ribbon_edge_action_route()
+            button.setProperty("mobaRibbonEdgeRouteKey", route.key)
+            button.setProperty("mobaRibbonEdgeRouteRole", route.route_role)
+            button.setProperty("mobaRibbonEdgeRouteToolbarObject", route.toolbar_object)
+            button.setProperty("mobaRibbonEdgeRouteSpacerObject", route.spacer_object)
+            button.setProperty(route.action_key_property, action_key)
+            button.setProperty(route.action_label_property, action_label)
+            button.setProperty(route.action_object_property, action_object)
+            button.setProperty(route.icon_key_property, icon_key)
+            button.setProperty("mobaRibbonEdgeRouteHandler", handler)
+            button.setProperty(route.action_keys_property, [route.xserver_action_key, route.exit_action_key])
+            button.setProperty("mobaRibbonEdgeRouteRenderSource", route.render_source)
+            if action_key == route.xserver_action_key:
+                button.setProperty("mobaRibbonEdgeRouteDialogTitle", route.xserver_dialog_title)
+                button.setProperty("mobaRibbonEdgeRouteDialogDetail", route.xserver_dialog_detail)
+
         def build_moba_ribbon_buttons(self) -> list[QToolButton]:
             slots = {
                 "session": self.create_profile,
@@ -2644,20 +2988,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 "settings": self.edit_selected_profile,
                 "help": self.show_moba_help_dialog,
             }
-            tooltips = {
-                "session": "Create a new saved session",
-                "servers": "Refresh saved sessions",
-                "tools": "Edit selected profile",
-                "games": "Show optional tool status",
-                "sessions": "Connect selected profile",
-                "view": "Cycle to the next visual preset",
-                "split": "Open a horizontal split",
-                "multiexec": "Show selected launch command",
-                "tunneling": "Show tunneling workflow status",
-                "packages": "Show package and file-transfer workflows",
-                "settings": "Edit selected profile",
-                "help": "Show help and diagnostics workflows",
-            }
+            tooltips = gui_design_moba_ribbon_tooltips()
             buttons: list[QToolButton] = []
             for action in gui_design_moba_ribbon_actions():
                 button = self.toolbar_button(action.label, "SP_FileIcon", tooltips[action.icon_key])
@@ -2786,10 +3117,16 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             mremoteng_toolbar_actions = {
                 action.key: action for action in gui_design_mremoteng_top_chrome().toolbar_actions
             }
+            remmina_transfer_route = (
+                gui_design_remmina_sftp_transfer_route() if preset.id == "remmina" else None
+            )
             for button, (key, label, tooltip) in zip(self.product_toolbar_buttons, actions, strict=False):
+                button.setObjectName("productToolbarButton")
                 button.setText(label)
                 button.setToolTip(tooltip)
                 button.setProperty("productToolbarKey", key)
+                button.setProperty("productToolbarLabel", label)
+                button.setProperty("productToolbarTooltip", tooltip)
                 securecrt_action = securecrt_toolbar_actions.get(key) if preset.id == "securecrt" else None
                 mremoteng_action = mremoteng_toolbar_actions.get(key) if preset.id == "mremoteng" else None
                 button.setProperty("secureCrtTopToolbarKey", securecrt_action.key if securecrt_action else "")
@@ -2802,6 +3139,70 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 button.setProperty("mRemoteNgTopToolbarIconKey", mremoteng_action.icon_key if mremoteng_action else "")
                 button.setProperty("mRemoteNgTopToolbarStaticX", mremoteng_action.static_x if mremoteng_action else 0)
                 button.setProperty("mRemoteNgTopToolbarStaticWidth", mremoteng_action.static_width if mremoteng_action else 0)
+                is_remmina_transfer = (
+                    remmina_transfer_route is not None and key == remmina_transfer_route.toolbar_action_key
+                )
+                button.setProperty(
+                    "remminaSftpTransferRouteKey",
+                    remmina_transfer_route.key if is_remmina_transfer else "",
+                )
+                button.setProperty(
+                    "remminaSftpTransferRouteRole",
+                    remmina_transfer_route.route_role if is_remmina_transfer else "",
+                )
+                button.setProperty(
+                    "remminaSftpTransferRouteToolbarActionKey",
+                    remmina_transfer_route.toolbar_action_key if is_remmina_transfer else "",
+                )
+                button.setProperty(
+                    "remminaSftpTransferRouteToolbarActionLabel",
+                    remmina_transfer_route.toolbar_action_label if is_remmina_transfer else "",
+                )
+                button.setProperty(
+                    "remminaSftpTransferRouteToolbarActionObject",
+                    remmina_transfer_route.toolbar_action_object if is_remmina_transfer else "",
+                )
+                button.setProperty(
+                    "remminaSftpTransferRouteSelectedProfileKey",
+                    remmina_transfer_route.selected_profile_key if is_remmina_transfer else "",
+                )
+                button.setProperty(
+                    "remminaSftpTransferRouteSelectedProfile",
+                    remmina_transfer_route.selected_profile_name if is_remmina_transfer else "",
+                )
+                button.setProperty(
+                    "remminaSftpTransferRouteProtocol",
+                    remmina_transfer_route.selected_profile_protocol if is_remmina_transfer else "",
+                )
+                button.setProperty(
+                    "remminaSftpTransferRouteStatus",
+                    remmina_transfer_route.selected_profile_status if is_remmina_transfer else "",
+                )
+                button.setProperty(
+                    "remminaSftpTransferRouteActiveTab",
+                    remmina_transfer_route.active_tab_label if is_remmina_transfer else "",
+                )
+                button.setProperty(
+                    "remminaSftpTransferRoutePath",
+                    remmina_transfer_route.remote_path if is_remmina_transfer else "",
+                )
+                button.setProperty(
+                    "remminaSftpTransferRouteQueueState",
+                    remmina_transfer_route.transfer_status if is_remmina_transfer else "",
+                )
+                button.setProperty(
+                    "remminaSftpTransferRouteQueueLabel",
+                    remmina_transfer_route.transfer_queue_label if is_remmina_transfer else "",
+                )
+                button.setProperty(
+                    "remminaSftpTransferRouteRenderSource",
+                    remmina_transfer_route.render_source if is_remmina_transfer else "",
+                )
+                if remmina_transfer_route is not None:
+                    button.setProperty(
+                        remmina_transfer_route.toolbar_active_property,
+                        "true" if is_remmina_transfer else "false",
+                    )
                 button.setMinimumWidth(
                     securecrt_action.static_width
                     if securecrt_action
@@ -2892,6 +3293,47 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             )
             self.select_profile_tree_label(state.selected_tree_label)
             self.statusBar().showMessage(f"{preset.label}: {state.status_note}")
+            focus_interaction_route = (
+                gui_design_preset_focus_interaction_route(preset.id)
+                if preset.id in PRODUCT_GUI_PRESET_IDS
+                else None
+            )
+            self.apply_focus_interaction_route_for_design(focus_interaction_route, preset.id)
+
+        def focus_interaction_widgets(self) -> dict[str, object]:
+            return {
+                "quick-connect": self.quick_connect,
+                "search-log": self.search_input,
+                "session-filter": self.securecrt_session_filter,
+                "host-search": self.termius_host_search,
+                "profile-filter": self.remmina_profile_filter,
+                "tree-filter": getattr(self, "mremoteng_document_filter", self.search_input),
+            }
+
+        def selected_profile_tree_label(self) -> str:
+            selected = self.profile_list.currentItem()
+            return selected.text(0) if selected is not None else ""
+
+        def captured_toolbar_interaction_states(self, preset_id: str) -> dict[str, str]:
+            captured: dict[str, str] = {}
+            expected_state = gui_design_interaction_state(preset_id)
+            for button, (key, _label, _tooltip) in zip(
+                self.product_toolbar_buttons,
+                gui_design_toolbar_actions(preset_id),
+                strict=False,
+            ):
+                button_state = str(button.property("interactionState") or "")
+                if button_state in {"active", "checked", "disabled"}:
+                    captured.setdefault(button_state, key)
+            for button in getattr(self, "moba_ribbon_buttons", []):
+                key = str(button.property("mobaIconKey") or "")
+                button_state = str(button.property("interactionState") or "")
+                if key and button_state in {"active", "checked", "disabled"}:
+                    captured[button_state] = key
+            captured.setdefault("active", expected_state.active_toolbar_key)
+            captured.setdefault("checked", expected_state.checked_toolbar_key)
+            captured.setdefault("disabled", expected_state.disabled_toolbar_key)
+            return captured
 
         def toolbar_interaction_state(self, key: str, state) -> str:
             if key == state.active_toolbar_key:
@@ -2909,6 +3351,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             widget.update()
 
         def configure_status_bar_for_design(self, preset: GuiDesignPreset) -> None:
+            selection_route = gui_design_preset_selection_route(preset.id)
             if preset.id == "mobaxterm":
                 chrome = gui_design_moba_status_bar_chrome()
                 status_bar = self.statusBar()
@@ -2935,6 +3378,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     label.setText(segment.text)
                     label.setToolTip(segment.tooltip)
                     label.setProperty("productStatusKey", segment.key)
+                    self.apply_preset_selection_route_properties(label, selection_route)
                 return
             self.statusBar().setFixedHeight(22)
             self.status_notice_label.setText("Remote Ops Workspace")
@@ -2948,6 +3392,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 label.setText(text)
                 label.setToolTip(f"{preset.label}: {text}")
                 label.setProperty("productStatusKey", text.lower().replace(" ", "-"))
+                self.apply_preset_selection_route_properties(label, selection_route)
 
         def show_moba_connected_dock(self, state: MobaConnectedSessionState) -> None:
             if not hasattr(self, "moba_left_stack"):
@@ -3089,8 +3534,23 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 if self.current_design_id() == "mremoteng"
                 else None
             )
+            mremoteng_filter_route = (
+                gui_design_mremoteng_document_filter_route()
+                if self.current_design_id() == "mremoteng"
+                else None
+            )
             securecrt_route = (
                 gui_design_securecrt_session_manager_route()
+                if self.current_design_id() == "securecrt"
+                else None
+            )
+            securecrt_filter_route = (
+                gui_design_securecrt_session_manager_filter_route()
+                if self.current_design_id() == "securecrt"
+                else None
+            )
+            securecrt_sftp_route = (
+                gui_design_securecrt_sftp_tab_route()
                 if self.current_design_id() == "securecrt"
                 else None
             )
@@ -3156,6 +3616,53 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 "mRemoteNgConnectionRouteRenderSource",
                 mremoteng_route.render_source if mremoteng_route else "",
             )
+            mremoteng_filter_props = {
+                "mRemoteNgDocumentFilterRouteKey": mremoteng_filter_route.key if mremoteng_filter_route else "",
+                "mRemoteNgDocumentFilterRouteRole": (
+                    mremoteng_filter_route.route_role if mremoteng_filter_route else ""
+                ),
+                "mRemoteNgDocumentFilterRouteDocumentControlsObject": (
+                    mremoteng_filter_route.document_controls_object if mremoteng_filter_route else ""
+                ),
+                "mRemoteNgDocumentFilterRouteFilterObject": (
+                    mremoteng_filter_route.filter_object if mremoteng_filter_route else ""
+                ),
+                "mRemoteNgDocumentFilterRouteSelectedTreeObject": (
+                    mremoteng_filter_route.selected_tree_object if mremoteng_filter_route else ""
+                ),
+                "mRemoteNgDocumentFilterRouteSelectedProfile": (
+                    mremoteng_filter_route.selected_profile_name if mremoteng_filter_route else ""
+                ),
+                "mRemoteNgDocumentFilterRouteMatchedTreeLabel": (
+                    mremoteng_filter_route.selected_tree_label if mremoteng_filter_route else ""
+                ),
+                "mRemoteNgDocumentFilterRouteMatchedProtocol": (
+                    mremoteng_filter_route.matched_protocol if mremoteng_filter_route else ""
+                ),
+                "mRemoteNgDocumentFilterRouteMatchedState": (
+                    mremoteng_filter_route.matched_state if mremoteng_filter_route else ""
+                ),
+                "mRemoteNgDocumentFilterRouteQuery": (
+                    mremoteng_filter_route.expected_query if mremoteng_filter_route else ""
+                ),
+                "mRemoteNgDocumentFilterRoutePlaceholder": (
+                    mremoteng_filter_route.expected_placeholder if mremoteng_filter_route else ""
+                ),
+                "mRemoteNgDocumentFilterRouteActiveTab": (
+                    mremoteng_filter_route.active_tab_label if mremoteng_filter_route else ""
+                ),
+                "mRemoteNgDocumentFilterRouteSignal": (
+                    mremoteng_filter_route.change_signal if mremoteng_filter_route else ""
+                ),
+                "mRemoteNgDocumentFilterRouteHandler": (
+                    mremoteng_filter_route.handler_name if mremoteng_filter_route else ""
+                ),
+                "mRemoteNgDocumentFilterRouteRenderSource": (
+                    mremoteng_filter_route.render_source if mremoteng_filter_route else ""
+                ),
+            }
+            for property_name, property_value in mremoteng_filter_props.items():
+                self.profile_list.setProperty(property_name, property_value)
             self.profile_list.setProperty(
                 "secureCrtSessionRouteKey",
                 securecrt_route.key if securecrt_route else "",
@@ -3220,6 +3727,106 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 "secureCrtSessionRouteRenderSource",
                 securecrt_route.render_source if securecrt_route else "",
             )
+            self.profile_list.setProperty(
+                "secureCrtSessionFilterRouteKey",
+                securecrt_filter_route.key if securecrt_filter_route else "",
+            )
+            self.profile_list.setProperty(
+                "secureCrtSessionFilterRouteRole",
+                securecrt_filter_route.route_role if securecrt_filter_route else "",
+            )
+            self.profile_list.setProperty(
+                "secureCrtSessionFilterRouteSessionManagerObject",
+                securecrt_filter_route.session_manager_object if securecrt_filter_route else "",
+            )
+            self.profile_list.setProperty(
+                "secureCrtSessionFilterRouteFilterObject",
+                securecrt_filter_route.filter_object if securecrt_filter_route else "",
+            )
+            self.profile_list.setProperty(
+                "secureCrtSessionFilterRouteSelectedTreeObject",
+                securecrt_filter_route.selected_tree_object if securecrt_filter_route else "",
+            )
+            self.profile_list.setProperty(
+                "secureCrtSessionFilterRouteSelectedProfile",
+                securecrt_filter_route.selected_profile_name if securecrt_filter_route else "",
+            )
+            self.profile_list.setProperty(
+                "secureCrtSessionFilterRouteSelectedTreeLabel",
+                securecrt_filter_route.selected_tree_label if securecrt_filter_route else "",
+            )
+            self.profile_list.setProperty(
+                "secureCrtSessionFilterRouteQuery",
+                securecrt_filter_route.expected_query if securecrt_filter_route else "",
+            )
+            self.profile_list.setProperty(
+                "secureCrtSessionFilterRoutePlaceholder",
+                securecrt_filter_route.expected_placeholder if securecrt_filter_route else "",
+            )
+            self.profile_list.setProperty(
+                "secureCrtSessionFilterRouteMatchedLabel",
+                securecrt_filter_route.matched_result_label if securecrt_filter_route else "",
+            )
+            self.profile_list.setProperty(
+                "secureCrtSessionFilterRouteSignal",
+                securecrt_filter_route.change_signal if securecrt_filter_route else "",
+            )
+            self.profile_list.setProperty(
+                "secureCrtSessionFilterRouteHandler",
+                securecrt_filter_route.handler_name if securecrt_filter_route else "",
+            )
+            self.profile_list.setProperty(
+                "secureCrtSessionFilterRouteRenderSource",
+                securecrt_filter_route.render_source if securecrt_filter_route else "",
+            )
+            securecrt_sftp_route_props = {
+                "secureCrtSftpTabRouteKey": securecrt_sftp_route.key if securecrt_sftp_route else "",
+                "secureCrtSftpTabRouteRole": securecrt_sftp_route.route_role if securecrt_sftp_route else "",
+                "secureCrtSftpTabRouteWorkflowKey": (
+                    securecrt_sftp_route.workflow_card_key if securecrt_sftp_route else ""
+                ),
+                "secureCrtSftpTabRouteWorkflowCardObject": (
+                    securecrt_sftp_route.workflow_card_object if securecrt_sftp_route else ""
+                ),
+                "secureCrtSftpTabRouteSessionManagerObject": (
+                    securecrt_sftp_route.session_manager_object if securecrt_sftp_route else ""
+                ),
+                "secureCrtSftpTabRouteSelectedTreeObject": (
+                    securecrt_sftp_route.selected_tree_object if securecrt_sftp_route else ""
+                ),
+                "secureCrtSftpTabRouteSelectedProfile": (
+                    securecrt_sftp_route.selected_profile_name if securecrt_sftp_route else ""
+                ),
+                "secureCrtSftpTabRouteSelectedTreeLabel": (
+                    securecrt_sftp_route.selected_tree_label if securecrt_sftp_route else ""
+                ),
+                "secureCrtSftpTabRouteActiveTab": (
+                    securecrt_sftp_route.active_tab_label if securecrt_sftp_route else ""
+                ),
+                "secureCrtSftpTabRouteTabLabel": (
+                    securecrt_sftp_route.sftp_tab_label if securecrt_sftp_route else ""
+                ),
+                "secureCrtSftpTabRouteStatusStripObject": (
+                    securecrt_sftp_route.status_strip_object if securecrt_sftp_route else ""
+                ),
+                "secureCrtSftpTabRouteStatusFieldKey": (
+                    securecrt_sftp_route.status_field_key if securecrt_sftp_route else ""
+                ),
+                "secureCrtSftpTabRouteStatusFieldObject": (
+                    securecrt_sftp_route.status_field_object if securecrt_sftp_route else ""
+                ),
+                "secureCrtSftpTabRouteStatus": (
+                    securecrt_sftp_route.status_value if securecrt_sftp_route else ""
+                ),
+                "secureCrtSftpTabRouteTransferState": (
+                    securecrt_sftp_route.transfer_state if securecrt_sftp_route else ""
+                ),
+                "secureCrtSftpTabRouteRenderSource": (
+                    securecrt_sftp_route.render_source if securecrt_sftp_route else ""
+                ),
+            }
+            for property_name, property_value in securecrt_sftp_route_props.items():
+                self.profile_list.setProperty(property_name, property_value)
             if securecrt_route is not None:
                 self.tabs.setProperty("secureCrtSessionRouteKey", securecrt_route.key)
                 self.tabs.setProperty("secureCrtSessionRouteRole", securecrt_route.route_role)
@@ -3230,6 +3837,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 self.tabs.setProperty("secureCrtSessionRouteProtocol", securecrt_route.protocol_value)
                 self.tabs.setProperty("secureCrtSessionRouteSession", securecrt_route.session_value)
                 self.tabs.setProperty("secureCrtSessionRouteRenderSource", securecrt_route.render_source)
+            if securecrt_sftp_route is not None:
+                for property_name, property_value in securecrt_sftp_route_props.items():
+                    self.tabs.setProperty(property_name, property_value)
             self.profile_list.setProperty(
                 "termiusHostRouteKey",
                 termius_host_route.key if termius_host_route else "",
@@ -3339,6 +3949,22 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     if routed:
                         tooltip = f"{tooltip}\n{mremoteng_route.key}: {mremoteng_route.active_tab_label}"
                         item.setSelected(True)
+                        self.profile_list.setCurrentItem(item)
+                if mremoteng_filter_route is not None:
+                    filter_routed = profile.name == mremoteng_filter_route.selected_profile_name
+                    item.setData(0, MREMOTENG_FILTER_ROUTE_KEY_ROLE, mremoteng_filter_route.key)
+                    item.setData(0, MREMOTENG_FILTER_ROUTE_ROLE_ROLE, mremoteng_filter_route.route_role)
+                    item.setData(0, MREMOTENG_FILTER_ROUTE_QUERY_ROLE, mremoteng_filter_route.expected_query)
+                    item.setData(0, MREMOTENG_FILTER_ROUTE_PROFILE_ROLE, mremoteng_filter_route.selected_profile_name)
+                    item.setData(0, MREMOTENG_FILTER_ROUTE_LABEL_ROLE, mremoteng_filter_route.selected_tree_label)
+                    item.setData(0, MREMOTENG_FILTER_ROUTE_MATCHED_ROLE, filter_routed)
+                    item.setData(0, MREMOTENG_FILTER_ROUTE_RENDER_SOURCE_ROLE, mremoteng_filter_route.render_source)
+                    if filter_routed:
+                        tooltip = (
+                            f"{tooltip}\n{mremoteng_filter_route.key}: "
+                            f"{mremoteng_filter_route.expected_query} -> "
+                            f"{mremoteng_filter_route.selected_tree_label}"
+                        )
                 if securecrt_route is not None:
                     routed = profile.name == securecrt_route.selected_profile_name
                     item.setData(0, SECURECRT_ROUTE_KEY_ROLE, securecrt_route.key)
@@ -3352,6 +3978,34 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                         tooltip = f"{tooltip}\n{securecrt_route.key}: {securecrt_route.active_tab_label}"
                         item.setSelected(True)
                         self.profile_list.setCurrentItem(item)
+                if securecrt_filter_route is not None:
+                    filter_routed = profile.name == securecrt_filter_route.selected_profile_name
+                    item.setData(0, SECURECRT_FILTER_ROUTE_KEY_ROLE, securecrt_filter_route.key)
+                    item.setData(0, SECURECRT_FILTER_ROUTE_ROLE_ROLE, securecrt_filter_route.route_role)
+                    item.setData(0, SECURECRT_FILTER_ROUTE_QUERY_ROLE, securecrt_filter_route.expected_query)
+                    item.setData(0, SECURECRT_FILTER_ROUTE_PROFILE_ROLE, securecrt_filter_route.selected_profile_name)
+                    item.setData(0, SECURECRT_FILTER_ROUTE_LABEL_ROLE, securecrt_filter_route.matched_result_label)
+                    item.setData(0, SECURECRT_FILTER_ROUTE_MATCHED_ROLE, filter_routed)
+                    item.setData(0, SECURECRT_FILTER_ROUTE_RENDER_SOURCE_ROLE, securecrt_filter_route.render_source)
+                    if filter_routed:
+                        tooltip = (
+                            f"{tooltip}\n{securecrt_filter_route.key}: "
+                            f"{securecrt_filter_route.expected_query} -> {securecrt_filter_route.matched_result_label}"
+                        )
+                if securecrt_sftp_route is not None:
+                    sftp_routed = profile.name == securecrt_sftp_route.selected_profile_name
+                    item.setData(0, SECURECRT_SFTP_ROUTE_KEY_ROLE, securecrt_sftp_route.key)
+                    item.setData(0, SECURECRT_SFTP_ROUTE_ROLE_ROLE, securecrt_sftp_route.route_role)
+                    item.setData(0, SECURECRT_SFTP_ROUTE_PROFILE_ROLE, securecrt_sftp_route.selected_profile_name)
+                    item.setData(0, SECURECRT_SFTP_ROUTE_TREE_LABEL_ROLE, securecrt_sftp_route.selected_tree_label)
+                    item.setData(0, SECURECRT_SFTP_ROUTE_TAB_ROLE, securecrt_sftp_route.sftp_tab_label)
+                    item.setData(0, SECURECRT_SFTP_ROUTE_STATUS_ROLE, securecrt_sftp_route.status_value)
+                    item.setData(0, SECURECRT_SFTP_ROUTE_TRANSFER_ROLE, securecrt_sftp_route.transfer_state)
+                    if sftp_routed:
+                        tooltip = (
+                            f"{tooltip}\n{securecrt_sftp_route.key}: "
+                            f"{securecrt_sftp_route.sftp_tab_label} -> {securecrt_sftp_route.status_value}"
+                        )
                 if termius_host_route is not None:
                     routed = profile.name == termius_host_route.selected_profile_name
                     item.setData(0, TERMIUS_HOST_ROUTE_KEY_ROLE, termius_host_route.key)
@@ -3370,6 +4024,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.profile_list.expandAll()
             if hasattr(self, "securecrt_session_filter"):
                 self.filter_profile_tree(self.securecrt_session_filter.text())
+            if self.current_design_id() == "mremoteng" and hasattr(self, "mremoteng_document_filter"):
+                self.filter_profile_tree(self.mremoteng_document_filter.text())
             if selected_name:
                 self.select_profile(selected_name)
             self.refresh_layouts()
@@ -3628,8 +4284,114 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 preset = get_gui_design_preset(str(preset_id))
             except ValueError:
                 preset = get_gui_design_preset("native")
+            catalog_route = gui_design_preset_catalog_route()
+            isolation_route = gui_design_preset_isolation_route(preset.id)
+            selection_route = gui_design_preset_selection_route(preset.id)
+            transition_route = gui_design_preset_transition_route(preset.id)
+            visual_signature = gui_design_preset_visual_signature(preset.id)
+            keyboard_shortcut_route = (
+                gui_design_preset_keyboard_shortcut_route(preset.id)
+                if preset.id in PRODUCT_GUI_PRESET_IDS
+                else None
+            )
+            command_surface_route = (
+                gui_design_preset_command_surface_route(preset.id)
+                if preset.id in PRODUCT_GUI_PRESET_IDS
+                else None
+            )
+            home_search_route = (
+                gui_design_preset_home_search_route(preset.id)
+                if preset.id in PRODUCT_GUI_PRESET_IDS
+                else None
+            )
+            reference_tab_route = (
+                gui_design_preset_reference_tab_route(preset.id)
+                if preset.id in PRODUCT_REFERENCE_TAB_PRESET_IDS
+                else None
+            )
+            reference_tab_chrome_route = (
+                gui_design_preset_reference_tab_chrome_route(preset.id)
+                if preset.id in PRODUCT_REFERENCE_TAB_PRESET_IDS
+                else None
+            )
+            reference_status_route = (
+                gui_design_preset_reference_status_bar_route(preset.id)
+                if preset.id in PRODUCT_REFERENCE_TAB_PRESET_IDS
+                else None
+            )
+            reference_session_action_route = (
+                gui_design_preset_reference_session_action_route(preset.id)
+                if preset.id in PRODUCT_REFERENCE_TAB_PRESET_IDS
+                else None
+            )
+            reference_surface_route = (
+                gui_design_preset_reference_surface_route(preset.id)
+                if preset.id in PRODUCT_REFERENCE_TAB_PRESET_IDS
+                else None
+            )
+            reference_control_route = (
+                gui_design_preset_reference_control_route(preset.id)
+                if preset.id in PRODUCT_REFERENCE_TAB_PRESET_IDS
+                else None
+            )
+            reference_input_route = (
+                gui_design_preset_reference_input_route(preset.id)
+                if preset.id in PRODUCT_REFERENCE_TAB_PRESET_IDS
+                else None
+            )
+            reference_transcript_route = (
+                gui_design_preset_reference_transcript_route(preset.id)
+                if preset.id in PRODUCT_REFERENCE_TAB_PRESET_IDS
+                else None
+            )
             is_moba = preset.id == "mobaxterm"
             self.setStyleSheet(preset.stylesheet)
+            for widget in (self, self.design_select, self.main_toolbar):
+                self.apply_preset_catalog_route_properties(widget, catalog_route)
+                self.apply_preset_isolation_route_properties(widget, isolation_route)
+                self.apply_preset_transition_route_properties(widget, transition_route)
+            self.apply_keyboard_shortcut_route_for_design(keyboard_shortcut_route)
+            for widget in (self, self.tabs):
+                if reference_tab_route is None:
+                    self.clear_preset_reference_tab_route_properties(widget)
+                    self.clear_preset_reference_tab_chrome_route_properties(widget)
+                    self.clear_preset_reference_status_bar_route_properties(widget)
+                    self.clear_preset_reference_session_action_route_properties(widget)
+                    self.clear_preset_reference_surface_route_properties(widget)
+                    self.clear_preset_reference_control_route_properties(widget)
+                    self.clear_preset_reference_input_route_properties(widget)
+                    self.clear_preset_reference_transcript_route_properties(widget)
+                else:
+                    self.apply_preset_reference_tab_route_properties(widget, reference_tab_route)
+                    self.apply_preset_reference_tab_chrome_route_properties(widget, reference_tab_chrome_route)
+                    self.apply_preset_reference_status_bar_route_properties(widget, reference_status_route)
+                    self.apply_preset_reference_session_action_route_properties(widget, reference_session_action_route)
+                    self.apply_preset_reference_surface_route_properties(widget, reference_surface_route)
+                    self.apply_preset_reference_control_route_properties(widget, reference_control_route)
+                    self.apply_preset_reference_input_route_properties(widget, reference_input_route)
+                    self.apply_preset_reference_transcript_route_properties(widget, reference_transcript_route)
+            for widget in (
+                self,
+                self.main_toolbar,
+                self.layout_toolbar,
+                self.left_panel,
+                self.profile_list,
+                self.tabs,
+                self.log,
+                self.statusBar(),
+            ):
+                self.apply_preset_visual_signature_properties(widget, visual_signature)
+            self.apply_preset_selection_route_properties(self, selection_route)
+            for widget in (
+                self.design_select,
+                self.main_toolbar,
+                self.layout_toolbar,
+                self.left_panel_header,
+                self.profile_list,
+                self.tabs,
+                self.statusBar(),
+            ):
+                self.apply_preset_selection_route_properties(widget, selection_route)
             self.configure_menu_bar_for_design(preset)
             self.moba_quick_connect_chrome.setVisible(is_moba)
             self.quick_connect.setVisible(is_moba)
@@ -3644,10 +4406,23 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.layout_toolbar.setIconSize(QSize(preset.toolbar_icon_size, preset.toolbar_icon_size))
             self.configure_toolbar_copy_for_design(preset)
             self.configure_status_bar_for_design(preset)
+            for widget in (self.statusBar(), self.status_notice_label, *self.status_segment_labels):
+                if reference_status_route is None:
+                    self.clear_preset_reference_status_bar_route_properties(widget)
+                else:
+                    self.apply_preset_reference_status_bar_route_properties(widget, reference_status_route)
+            if reference_session_action_route is None:
+                self.clear_preset_reference_session_action_route_properties(self.tabs.tabBar())
+            else:
+                self.apply_preset_reference_session_action_route_properties(
+                    self.tabs.tabBar(),
+                    reference_session_action_route,
+                )
             self.configure_toolbar_for_design(preset, is_moba, preset.toolbar_icon_size)
             if is_moba:
                 self.apply_moba_top_stack_geometry()
             self.configure_interaction_states_for_design(preset)
+            self.apply_command_surface_route_for_design(command_surface_route)
             moba_frame = gui_design_moba_connected_dock_frame()
             profile_width = moba_frame.side_width if is_moba else preset.profile_width
             self.left_panel.setMinimumWidth(min(profile_width, 430))
@@ -3660,11 +4435,1050 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.tabs.setTabPosition(self.tab_position_for_design(preset.tab_position))
             self.tabs.setDocumentMode(preset.document_mode)
             self.configure_workspace_tabs_for_design(is_moba)
+            self.apply_home_search_route_for_design(home_search_route)
             self.refresh_moba_left_dock_for_current_tab()
             self.log.setPlaceholderText(
                 f"{preset.description}\n\nLaunch output, dry-run commands and doctor reports appear here."
             )
             self.statusBar().showMessage(f"View: {preset.label}")
+
+        @staticmethod
+        def apply_preset_selection_route_properties(widget, route) -> None:
+            properties = {
+                "presetSelectionRouteKey": route.key,
+                "presetSelectionRouteRole": route.route_role,
+                "presetSelectionRoutePresetId": route.preset_id,
+                "presetSelectionRoutePresetLabel": route.preset_label,
+                "presetSelectionRoutePresetIndex": route.preset_index,
+                "presetSelectionRouteSelectorObject": route.selector_object,
+                "presetSelectionRouteMainToolbarObject": route.main_toolbar_object,
+                "presetSelectionRouteLayoutToolbarObject": route.layout_toolbar_object,
+                "presetSelectionRouteLeftPanelHeaderObject": route.left_panel_header_object,
+                "presetSelectionRouteProfileTreeObject": route.profile_tree_object,
+                "presetSelectionRouteTabsObject": route.tabs_object,
+                "presetSelectionRouteStatusBarObject": route.status_bar_object,
+                "presetSelectionRouteStatusSegmentObject": route.status_segment_object,
+                "presetSelectionRouteWorkspaceSurfaceObject": route.workspace_surface_object,
+                "presetSelectionRouteReferenceStateObject": route.reference_state_object,
+                "presetSelectionRouteHomeTabLabel": route.home_tab_label,
+                "presetSelectionRouteSidebarTitle": route.sidebar_title,
+                "presetSelectionRouteSidebarSubtitle": route.sidebar_subtitle,
+                "presetSelectionRouteStatusSegments": list(route.status_segments),
+                "presetSelectionRouteTabPosition": route.tab_position,
+                "presetSelectionRouteDocumentMode": route.document_mode,
+                "presetSelectionRouteProfileWidth": route.profile_width,
+                "presetSelectionRouteLogHeight": route.log_height,
+                "presetSelectionRouteToolbarIconSize": route.toolbar_icon_size,
+                "presetSelectionRouteRenderSource": route.render_source,
+            }
+            for key, value in properties.items():
+                widget.setProperty(key, value)
+
+        @staticmethod
+        def apply_preset_catalog_route_properties(widget, route) -> None:
+            properties = {
+                "presetCatalogRouteKey": route.key,
+                "presetCatalogRouteRole": route.route_role,
+                "presetCatalogRouteSelectorObject": route.selector_object,
+                "presetCatalogRouteOptionIds": list(route.option_ids),
+                "presetCatalogRouteOptionLabels": list(route.option_labels),
+                "presetCatalogRouteProductPresetIds": list(route.product_preset_ids),
+                "presetCatalogRouteProductPresetLabels": list(route.product_preset_labels),
+                "presetCatalogRouteDefaultPresetId": route.default_preset_id,
+                "presetCatalogRouteDefaultPresetLabel": route.default_preset_label,
+                "presetCatalogRouteOptionCount": route.option_count,
+                "presetCatalogRouteProductOptionCount": route.product_option_count,
+                "presetCatalogRouteSelectorProperty": route.selector_property,
+                "presetCatalogRouteOptionLabelsProperty": route.option_labels_property,
+                "presetCatalogRouteProductIdsProperty": route.product_ids_property,
+                "presetCatalogRouteDefaultProperty": route.default_property,
+                "presetCatalogRouteRenderSource": route.render_source,
+            }
+            for key, value in properties.items():
+                widget.setProperty(key, value)
+
+        @staticmethod
+        def apply_preset_isolation_route_properties(widget, route) -> None:
+            properties = {
+                "presetIsolationRouteKey": route.key,
+                "presetIsolationRouteRole": route.route_role,
+                "presetIsolationRoutePresetId": route.preset_id,
+                "presetIsolationVisibleObjects": list(route.visible_objects),
+                "presetIsolationHiddenObjects": list(route.hidden_objects),
+                "presetIsolationVisibleProperty": route.visible_property,
+                "presetIsolationHiddenProperty": route.hidden_property,
+                "presetIsolationRenderSource": route.render_source,
+            }
+            for key, value in properties.items():
+                widget.setProperty(key, value)
+
+        @staticmethod
+        def apply_preset_transition_route_properties(widget, route) -> None:
+            properties = {
+                "presetTransitionRouteKey": route.key,
+                "presetTransitionRouteRole": route.route_role,
+                "presetTransitionFromPresetIds": list(route.from_preset_ids),
+                "presetTransitionToPresetId": route.to_preset_id,
+                "presetTransitionToPresetIndex": route.to_preset_index,
+                "presetTransitionSelectorObject": route.selector_object,
+                "presetTransitionResetObjects": list(route.reset_objects),
+                "presetTransitionRouteProperty": route.route_property,
+                "presetTransitionFromProperty": route.from_property,
+                "presetTransitionToProperty": route.to_property,
+                "presetTransitionResetProperty": route.reset_property,
+                "presetTransitionRenderSource": route.render_source,
+            }
+            for key, value in properties.items():
+                widget.setProperty(key, value)
+
+        @staticmethod
+        def apply_preset_keyboard_shortcut_route_properties(widget, route) -> None:
+            properties = {
+                "presetKeyboardShortcutRouteKey": route.key,
+                "presetKeyboardShortcutRouteRole": route.route_role,
+                "presetKeyboardShortcutPresetId": route.preset_id,
+                "presetKeyboardShortcutObject": route.shortcut_object,
+                "presetKeyboardShortcutExpectedKeys": list(route.expected_shortcut_keys),
+                "presetKeyboardShortcutExpectedSequences": list(route.expected_sequences),
+                "presetKeyboardShortcutExpectedActionLabels": list(route.expected_action_labels),
+                "presetKeyboardShortcutExpectedCount": route.expected_shortcut_count,
+                "presetKeyboardShortcutKeyProperty": route.shortcut_key_property,
+                "presetKeyboardShortcutSequenceProperty": route.shortcut_sequence_property,
+                "presetKeyboardShortcutActionProperty": route.shortcut_action_property,
+                "presetKeyboardShortcutCapturedProperty": route.captured_property,
+                "presetKeyboardShortcutCapturedKeysProperty": route.captured_keys_property,
+                "presetKeyboardShortcutCapturedSequencesProperty": route.captured_sequences_property,
+                "presetKeyboardShortcutCapturedActionLabelsProperty": route.captured_action_labels_property,
+                "presetKeyboardShortcutCapturedCountProperty": route.captured_count_property,
+                "presetKeyboardShortcutRenderSource": route.render_source,
+            }
+            for key, value in properties.items():
+                widget.setProperty(key, value)
+
+        @staticmethod
+        def clear_preset_keyboard_shortcut_route_properties(widget) -> None:
+            for key in (
+                "presetKeyboardShortcutRouteKey",
+                "presetKeyboardShortcutRouteRole",
+                "presetKeyboardShortcutPresetId",
+                "presetKeyboardShortcutObject",
+                "presetKeyboardShortcutExpectedKeys",
+                "presetKeyboardShortcutExpectedSequences",
+                "presetKeyboardShortcutExpectedActionLabels",
+                "presetKeyboardShortcutExpectedCount",
+                "presetKeyboardShortcutKeyProperty",
+                "presetKeyboardShortcutSequenceProperty",
+                "presetKeyboardShortcutActionProperty",
+                "presetKeyboardShortcutCapturedProperty",
+                "presetKeyboardShortcutCapturedKeysProperty",
+                "presetKeyboardShortcutCapturedSequencesProperty",
+                "presetKeyboardShortcutCapturedActionLabelsProperty",
+                "presetKeyboardShortcutCapturedCountProperty",
+                "presetKeyboardShortcutsCaptured",
+                "presetKeyboardShortcutCapturedKeys",
+                "presetKeyboardShortcutCapturedSequences",
+                "presetKeyboardShortcutCapturedActionLabels",
+                "presetKeyboardShortcutCapturedCount",
+                "presetKeyboardShortcutRenderSource",
+            ):
+                widget.setProperty(key, None)
+
+        def apply_keyboard_shortcut_route_for_design(self, route) -> None:
+            shortcuts = getattr(self, "keyboard_shortcuts", [])
+            route_widgets = [self, *shortcuts]
+            if route is None:
+                for widget in route_widgets:
+                    self.clear_preset_keyboard_shortcut_route_properties(widget)
+                return
+            keys = [str(shortcut.property(route.shortcut_key_property) or "") for shortcut in shortcuts]
+            sequences = [str(shortcut.property(route.shortcut_sequence_property) or "") for shortcut in shortcuts]
+            action_labels = [str(shortcut.property(route.shortcut_action_property) or "") for shortcut in shortcuts]
+            for widget in route_widgets:
+                self.apply_preset_keyboard_shortcut_route_properties(widget, route)
+                widget.setProperty(route.captured_property, True)
+                widget.setProperty(route.captured_keys_property, keys)
+                widget.setProperty(route.captured_sequences_property, sequences)
+                widget.setProperty(route.captured_action_labels_property, action_labels)
+                widget.setProperty(route.captured_count_property, len(keys))
+
+        @staticmethod
+        def apply_preset_command_surface_route_properties(widget, route) -> None:
+            properties = {
+                "presetCommandSurfaceRouteKey": route.key,
+                "presetCommandSurfaceRouteRole": route.route_role,
+                "presetCommandSurfacePresetId": route.preset_id,
+                "presetCommandSurfaceToolbarObject": route.toolbar_object,
+                "presetCommandSurfaceCommandObject": route.command_object,
+                "presetCommandSurfaceExpectedKeys": list(route.expected_action_keys),
+                "presetCommandSurfaceExpectedLabels": list(route.expected_action_labels),
+                "presetCommandSurfaceExpectedTooltips": list(route.expected_action_tooltips),
+                "presetCommandSurfaceExpectedStates": dict(route.expected_action_states),
+                "presetCommandSurfaceExpectedCount": route.expected_action_count,
+                "presetCommandSurfaceKeyProperty": route.key_property,
+                "presetCommandSurfaceLabelProperty": route.label_property,
+                "presetCommandSurfaceTooltipProperty": route.tooltip_property,
+                "presetCommandSurfaceStateProperty": route.state_property,
+                "presetCommandSurfaceCapturedProperty": route.captured_property,
+                "presetCommandSurfaceCapturedKeysProperty": route.captured_keys_property,
+                "presetCommandSurfaceCapturedLabelsProperty": route.captured_labels_property,
+                "presetCommandSurfaceCapturedTooltipsProperty": route.captured_tooltips_property,
+                "presetCommandSurfaceCapturedStatesProperty": route.captured_states_property,
+                "presetCommandSurfaceCapturedCountProperty": route.captured_count_property,
+                "presetCommandSurfaceRenderSource": route.render_source,
+            }
+            for key, value in properties.items():
+                widget.setProperty(key, value)
+
+        @staticmethod
+        def clear_preset_command_surface_route_properties(widget) -> None:
+            for key in (
+                "presetCommandSurfaceRouteKey",
+                "presetCommandSurfaceRouteRole",
+                "presetCommandSurfacePresetId",
+                "presetCommandSurfaceToolbarObject",
+                "presetCommandSurfaceCommandObject",
+                "presetCommandSurfaceExpectedKeys",
+                "presetCommandSurfaceExpectedLabels",
+                "presetCommandSurfaceExpectedTooltips",
+                "presetCommandSurfaceExpectedStates",
+                "presetCommandSurfaceExpectedCount",
+                "presetCommandSurfaceKeyProperty",
+                "presetCommandSurfaceLabelProperty",
+                "presetCommandSurfaceTooltipProperty",
+                "presetCommandSurfaceStateProperty",
+                "presetCommandSurfaceCapturedProperty",
+                "presetCommandSurfaceCapturedKeysProperty",
+                "presetCommandSurfaceCapturedLabelsProperty",
+                "presetCommandSurfaceCapturedTooltipsProperty",
+                "presetCommandSurfaceCapturedStatesProperty",
+                "presetCommandSurfaceCapturedCountProperty",
+                "presetCommandSurfaceCaptured",
+                "presetCommandSurfaceCapturedKeys",
+                "presetCommandSurfaceCapturedLabels",
+                "presetCommandSurfaceCapturedTooltips",
+                "presetCommandSurfaceCapturedStates",
+                "presetCommandSurfaceCapturedCount",
+                "presetCommandSurfaceActionKey",
+                "presetCommandSurfaceActionLabel",
+                "presetCommandSurfaceActionTooltip",
+                "presetCommandSurfaceRenderSource",
+            ):
+                widget.setProperty(key, None)
+
+        def command_surface_buttons_for_route(self, route) -> list[QToolButton]:
+            if route.command_object == "mobaRibbonButton":
+                return list(getattr(self, "moba_ribbon_buttons", []))
+            return list(self.product_toolbar_buttons)
+
+        def apply_command_surface_route_for_design(self, route) -> None:
+            route_widgets = [
+                self,
+                self.main_toolbar,
+                *getattr(self, "moba_ribbon_buttons", []),
+                *self.product_toolbar_buttons,
+            ]
+            for widget in route_widgets:
+                self.clear_preset_command_surface_route_properties(widget)
+            if route is None:
+                return
+
+            buttons = self.command_surface_buttons_for_route(route)
+            captured_keys: list[str] = []
+            captured_labels: list[str] = []
+            captured_tooltips: list[str] = []
+            captured_states: dict[str, str] = {}
+            for button, key, label, tooltip in zip(
+                buttons,
+                route.expected_action_keys,
+                route.expected_action_labels,
+                route.expected_action_tooltips,
+                strict=False,
+            ):
+                button.setProperty(route.key_property, key)
+                button.setProperty(route.label_property, label)
+                button.setProperty(route.tooltip_property, tooltip)
+                captured_key = str(button.property(route.key_property) or "")
+                captured_keys.append(captured_key)
+                captured_labels.append(button.text())
+                captured_tooltips.append(button.toolTip())
+                captured_states[captured_key] = str(button.property(route.state_property) or "normal")
+
+            target_widgets = [self, self.main_toolbar, *buttons]
+            for widget in target_widgets:
+                self.apply_preset_command_surface_route_properties(widget, route)
+                widget.setProperty(route.captured_property, True)
+                widget.setProperty(route.captured_keys_property, captured_keys)
+                widget.setProperty(route.captured_labels_property, captured_labels)
+                widget.setProperty(route.captured_tooltips_property, captured_tooltips)
+                widget.setProperty(route.captured_states_property, captured_states)
+                widget.setProperty(route.captured_count_property, len(captured_keys))
+
+        @staticmethod
+        def apply_preset_focus_interaction_route_properties(widget, route) -> None:
+            properties = {
+                "presetFocusInteractionRouteKey": route.key,
+                "presetFocusInteractionRouteRole": route.route_role,
+                "presetFocusInteractionPresetId": route.preset_id,
+                "presetFocusInteractionFocusedControl": route.focused_control,
+                "presetFocusInteractionFocusObject": route.focus_object,
+                "presetFocusInteractionActiveToolbarKey": route.active_toolbar_key,
+                "presetFocusInteractionCheckedToolbarKey": route.checked_toolbar_key,
+                "presetFocusInteractionDisabledToolbarKey": route.disabled_toolbar_key,
+                "presetFocusInteractionSelectedTreeLabel": route.selected_tree_label,
+                "presetFocusInteractionActiveTabStatus": route.active_tab_status,
+                "presetFocusInteractionStatusNote": route.status_note,
+                "presetFocusInteractionStatusBarObject": route.status_bar_object,
+                "presetFocusInteractionProfileTreeObject": route.profile_tree_object,
+                "presetFocusInteractionFocusedStateProperty": route.focused_state_property,
+                "presetFocusInteractionCapturedProperty": route.captured_property,
+                "presetFocusInteractionCapturedFocusProperty": route.captured_focus_property,
+                "presetFocusInteractionCapturedStateProperty": route.captured_focus_state_property,
+                "presetFocusInteractionCapturedStatusMessageProperty": route.captured_status_message_property,
+                "presetFocusInteractionCapturedSelectedTreeProperty": route.captured_selected_tree_property,
+                "presetFocusInteractionCapturedToolbarStatesProperty": route.captured_toolbar_states_property,
+                "presetFocusInteractionRenderSource": route.render_source,
+            }
+            for key, value in properties.items():
+                widget.setProperty(key, value)
+
+        @staticmethod
+        def clear_preset_focus_interaction_route_properties(widget) -> None:
+            for key in (
+                "presetFocusInteractionRouteKey",
+                "presetFocusInteractionRouteRole",
+                "presetFocusInteractionPresetId",
+                "presetFocusInteractionFocusedControl",
+                "presetFocusInteractionFocusObject",
+                "presetFocusInteractionActiveToolbarKey",
+                "presetFocusInteractionCheckedToolbarKey",
+                "presetFocusInteractionDisabledToolbarKey",
+                "presetFocusInteractionSelectedTreeLabel",
+                "presetFocusInteractionActiveTabStatus",
+                "presetFocusInteractionStatusNote",
+                "presetFocusInteractionStatusBarObject",
+                "presetFocusInteractionProfileTreeObject",
+                "presetFocusInteractionFocusedStateProperty",
+                "presetFocusInteractionCapturedProperty",
+                "presetFocusInteractionCapturedFocusProperty",
+                "presetFocusInteractionCapturedStateProperty",
+                "presetFocusInteractionCapturedStatusMessageProperty",
+                "presetFocusInteractionCapturedSelectedTreeProperty",
+                "presetFocusInteractionCapturedToolbarStatesProperty",
+                "presetFocusInteractionCaptured",
+                "presetFocusInteractionCapturedFocus",
+                "presetFocusInteractionCapturedState",
+                "presetFocusInteractionStatusMessage",
+                "presetFocusInteractionCapturedSelectedTreeLabel",
+                "presetFocusInteractionToolbarStates",
+                "presetFocusInteractionRenderSource",
+            ):
+                widget.setProperty(key, None)
+
+        def apply_focus_interaction_route_for_design(self, route, preset_id: str) -> None:
+            focus_widgets = self.focus_interaction_widgets()
+            candidate_widgets = [self, self.statusBar(), self.profile_list, *focus_widgets.values()]
+            seen: set[int] = set()
+            route_widgets = []
+            for widget in candidate_widgets:
+                widget_id = id(widget)
+                if widget_id in seen:
+                    continue
+                seen.add(widget_id)
+                route_widgets.append(widget)
+                self.clear_preset_focus_interaction_route_properties(widget)
+            if route is None:
+                return
+            focused_widget = focus_widgets.get(route.focused_control)
+            if focused_widget is not None and focused_widget not in route_widgets:
+                route_widgets.append(focused_widget)
+            toolbar_states = self.captured_toolbar_interaction_states(preset_id)
+            captured_focus_state = (
+                str(focused_widget.property(route.focused_state_property) or "")
+                if focused_widget is not None
+                else ""
+            )
+            captured_status_message = self.statusBar().currentMessage()
+            captured_selected_tree_label = self.selected_profile_tree_label()
+            for widget in route_widgets:
+                self.apply_preset_focus_interaction_route_properties(widget, route)
+                widget.setProperty(route.captured_property, True)
+                widget.setProperty(route.captured_focus_property, route.focus_object)
+                widget.setProperty(route.captured_focus_state_property, captured_focus_state)
+                widget.setProperty(route.captured_status_message_property, captured_status_message)
+                widget.setProperty(route.captured_selected_tree_property, captured_selected_tree_label)
+                widget.setProperty(route.captured_toolbar_states_property, toolbar_states)
+
+        @staticmethod
+        def apply_preset_home_search_route_properties(widget, route) -> None:
+            properties = {
+                "presetHomeSearchRouteKey": route.key,
+                "presetHomeSearchRouteRole": route.route_role,
+                "presetHomeSearchPresetId": route.preset_id,
+                "presetHomeSearchHomeTabLabel": route.home_tab_label,
+                "presetHomeSearchObject": route.home_search_object,
+                "presetHomeSearchEntryControl": route.entry_search_control,
+                "presetHomeSearchEntryObject": route.entry_search_object,
+                "presetHomeSearchContainerObject": route.container_object,
+                "presetHomeSearchRecentLabelObject": route.recent_label_object,
+                "presetHomeSearchExpectedPlaceholder": route.placeholder_text,
+                "presetHomeSearchExpectedEntryPlaceholder": route.entry_placeholder_text,
+                "presetHomeSearchExpectedActions": list(route.expected_home_actions),
+                "presetHomeSearchExpectedRecentLabels": list(route.expected_recent_labels),
+                "presetHomeSearchExpectedRecentCount": route.expected_recent_count,
+                "presetHomeSearchPlaceholderProperty": route.placeholder_property,
+                "presetHomeSearchEntryPlaceholderProperty": route.entry_placeholder_property,
+                "presetHomeSearchCapturedProperty": route.captured_property,
+                "presetHomeSearchCapturedPlaceholderProperty": route.captured_placeholder_property,
+                "presetHomeSearchCapturedEntryPlaceholderProperty": route.captured_entry_placeholder_property,
+                "presetHomeSearchCapturedTextProperty": route.captured_text_property,
+                "presetHomeSearchCapturedEntryTextProperty": route.captured_entry_text_property,
+                "presetHomeSearchCapturedActionsProperty": route.captured_actions_property,
+                "presetHomeSearchCapturedRecentLabelsProperty": route.captured_recent_labels_property,
+                "presetHomeSearchCapturedRecentCountProperty": route.captured_recent_count_property,
+                "presetHomeSearchRenderSource": route.render_source,
+            }
+            for key, value in properties.items():
+                widget.setProperty(key, value)
+
+        @staticmethod
+        def clear_preset_home_search_route_properties(widget) -> None:
+            for key in (
+                "presetHomeSearchRouteKey",
+                "presetHomeSearchRouteRole",
+                "presetHomeSearchPresetId",
+                "presetHomeSearchHomeTabLabel",
+                "presetHomeSearchObject",
+                "presetHomeSearchEntryControl",
+                "presetHomeSearchEntryObject",
+                "presetHomeSearchContainerObject",
+                "presetHomeSearchRecentLabelObject",
+                "presetHomeSearchExpectedPlaceholder",
+                "presetHomeSearchExpectedEntryPlaceholder",
+                "presetHomeSearchExpectedActions",
+                "presetHomeSearchExpectedRecentLabels",
+                "presetHomeSearchExpectedRecentCount",
+                "presetHomeSearchPlaceholderProperty",
+                "presetHomeSearchEntryPlaceholderProperty",
+                "presetHomeSearchCapturedProperty",
+                "presetHomeSearchCapturedPlaceholderProperty",
+                "presetHomeSearchCapturedEntryPlaceholderProperty",
+                "presetHomeSearchCapturedTextProperty",
+                "presetHomeSearchCapturedEntryTextProperty",
+                "presetHomeSearchCapturedActionsProperty",
+                "presetHomeSearchCapturedRecentLabelsProperty",
+                "presetHomeSearchCapturedRecentCountProperty",
+                "presetHomeSearchCaptured",
+                "presetHomeSearchCapturedPlaceholder",
+                "presetHomeSearchCapturedEntryPlaceholder",
+                "presetHomeSearchCapturedText",
+                "presetHomeSearchCapturedEntryText",
+                "presetHomeSearchCapturedActions",
+                "presetHomeSearchCapturedRecentLabels",
+                "presetHomeSearchCapturedRecentCount",
+                "presetHomeSearchRenderSource",
+            ):
+                widget.setProperty(key, None)
+
+        def home_search_route_widgets(self, route) -> list:
+            container = self.findChild(QWidget, route.container_object)
+            home_search = self.findChild(QLineEdit, route.home_search_object)
+            entry_search = self.findChild(QLineEdit, route.entry_search_object)
+            recent_labels = (
+                container.findChildren(QLabel, route.recent_label_object)
+                if container is not None
+                else []
+            )
+            candidates = [self, self.tabs, container, home_search, entry_search, *recent_labels]
+            route_widgets = []
+            seen: set[int] = set()
+            for widget in candidates:
+                if widget is None:
+                    continue
+                widget_id = id(widget)
+                if widget_id in seen:
+                    continue
+                seen.add(widget_id)
+                route_widgets.append(widget)
+            return route_widgets
+
+        def apply_home_search_route_for_design(self, route) -> None:
+            for widget in [
+                self,
+                self.tabs,
+                *self.findChildren(QWidget, "welcomePanel"),
+                *self.findChildren(QWidget, "mobaHomeWelcomeSurface"),
+                *self.findChildren(QLineEdit, "homeSearch"),
+                *self.findChildren(QLineEdit, "quickConnect"),
+                *self.findChildren(QLineEdit, "secureCrtSessionFilter"),
+                *self.findChildren(QLineEdit, "termiusHostSearch"),
+                *self.findChildren(QLineEdit, "remminaProfileFilter"),
+                *self.findChildren(QLineEdit, "mRemoteNgDocumentFilter"),
+            ]:
+                self.clear_preset_home_search_route_properties(widget)
+            if route is None:
+                return
+            container = self.findChild(QWidget, route.container_object)
+            home_search = self.findChild(QLineEdit, route.home_search_object)
+            entry_search = self.findChild(QLineEdit, route.entry_search_object)
+            action_labels = (
+                [
+                    button.text()
+                    for button in container.findChildren(QPushButton)
+                    if button.text() in route.expected_home_actions
+                ]
+                if container is not None
+                else []
+            )
+            recent_labels = (
+                [label.text() for label in container.findChildren(QLabel, route.recent_label_object)]
+                if container is not None
+                else []
+            )
+            captured_placeholder = home_search.placeholderText() if home_search is not None else ""
+            captured_text = home_search.text() if home_search is not None else ""
+            captured_entry_placeholder = entry_search.placeholderText() if entry_search is not None else ""
+            captured_entry_text = entry_search.text() if entry_search is not None else ""
+            if home_search is not None:
+                home_search.setProperty(route.placeholder_property, route.placeholder_text)
+            if entry_search is not None:
+                entry_search.setProperty(route.entry_placeholder_property, route.entry_placeholder_text)
+            for widget in self.home_search_route_widgets(route):
+                self.apply_preset_home_search_route_properties(widget, route)
+                widget.setProperty(route.captured_property, True)
+                widget.setProperty(route.captured_placeholder_property, captured_placeholder)
+                widget.setProperty(route.captured_entry_placeholder_property, captured_entry_placeholder)
+                widget.setProperty(route.captured_text_property, captured_text)
+                widget.setProperty(route.captured_entry_text_property, captured_entry_text)
+                widget.setProperty(route.captured_actions_property, action_labels)
+                widget.setProperty(route.captured_recent_labels_property, recent_labels)
+                widget.setProperty(route.captured_recent_count_property, len(recent_labels))
+
+        @staticmethod
+        def apply_preset_reference_tab_route_properties(widget, route) -> None:
+            properties = {
+                "presetReferenceTabRouteKey": route.key,
+                "presetReferenceTabRouteRole": route.route_role,
+                "presetReferenceTabPresetId": route.preset_id,
+                "presetReferenceTabProfile": route.reference_profile,
+                "presetReferenceTabActiveLabel": route.active_tab_label,
+                "presetReferenceTabHomeLabel": route.home_tab_label,
+                "presetReferenceTabTabsObject": route.tabs_object,
+                "presetReferenceTabHomeRole": route.home_tab_role,
+                "presetReferenceTabReferenceRole": route.reference_tab_role,
+                "presetReferenceTabActivatedLabelProperty": route.activated_label_property,
+                "presetReferenceTabReturnedHomeLabelProperty": route.returned_home_label_property,
+                "presetReferenceTabActiveProperty": route.active_tab_property,
+                "presetReferenceTabHomeProperty": route.home_tab_property,
+                "presetReferenceTabProfileProperty": route.reference_profile_property,
+                "presetReferenceTabRenderSource": route.render_source,
+            }
+            for key, value in properties.items():
+                widget.setProperty(key, value)
+
+        @staticmethod
+        def clear_preset_reference_tab_route_properties(widget) -> None:
+            for key in (
+                "presetReferenceTabRouteKey",
+                "presetReferenceTabRouteRole",
+                "presetReferenceTabPresetId",
+                "presetReferenceTabProfile",
+                "presetReferenceTabActiveLabel",
+                "presetReferenceTabHomeLabel",
+                "presetReferenceTabTabsObject",
+                "presetReferenceTabHomeRole",
+                "presetReferenceTabReferenceRole",
+                "presetReferenceTabActivatedLabelProperty",
+                "presetReferenceTabReturnedHomeLabelProperty",
+                "presetReferenceTabActiveProperty",
+                "presetReferenceTabHomeProperty",
+                "presetReferenceTabProfileProperty",
+                "presetReferenceTabActivatedLabel",
+                "presetReferenceTabReturnedHomeLabel",
+                "presetReferenceTabRenderSource",
+            ):
+                widget.setProperty(key, None)
+
+        @staticmethod
+        def apply_preset_reference_tab_chrome_route_properties(widget, route) -> None:
+            properties = {
+                "presetReferenceTabChromeRouteKey": route.key,
+                "presetReferenceTabChromeRouteRole": route.route_role,
+                "presetReferenceTabChromePresetId": route.preset_id,
+                "presetReferenceTabChromeProfile": route.reference_profile,
+                "presetReferenceTabChromeActiveLabel": route.active_tab_label,
+                "presetReferenceTabChromeHomeLabel": route.home_tab_label,
+                "presetReferenceTabChromeTabsObject": route.tabs_object,
+                "presetReferenceTabChromeTabBarObject": route.tab_bar_object,
+                "presetReferenceTabChromeReferenceRole": route.reference_tab_role,
+                "presetReferenceTabChromeNewSessionRole": route.new_session_tab_role,
+                "presetReferenceTabChromeExpectedPosition": route.expected_tab_position,
+                "presetReferenceTabChromeExpectedTooltip": route.expected_tooltip,
+                "presetReferenceTabChromeExpectedCloseable": route.expected_closeable,
+                "presetReferenceTabChromeExpectedSelectedDuringCapture": route.expected_selected_during_capture,
+                "presetReferenceTabChromeCapturedProperty": route.captured_property,
+                "presetReferenceTabChromeCapturedLabelProperty": route.captured_label_property,
+                "presetReferenceTabChromeCapturedTooltipProperty": route.captured_tooltip_property,
+                "presetReferenceTabChromeCapturedIndexProperty": route.captured_index_property,
+                "presetReferenceTabChromeCapturedRoleProperty": route.captured_role_property,
+                "presetReferenceTabChromeCapturedPositionProperty": route.captured_position_property,
+                "presetReferenceTabChromeCapturedCloseableProperty": route.captured_closeable_property,
+                "presetReferenceTabChromeCapturedSelectedProperty": route.captured_selected_property,
+                "presetReferenceTabChromeRenderSource": route.render_source,
+            }
+            for key, value in properties.items():
+                widget.setProperty(key, value)
+
+        @staticmethod
+        def clear_preset_reference_tab_chrome_route_properties(widget) -> None:
+            for key in (
+                "presetReferenceTabChromeRouteKey",
+                "presetReferenceTabChromeRouteRole",
+                "presetReferenceTabChromePresetId",
+                "presetReferenceTabChromeProfile",
+                "presetReferenceTabChromeActiveLabel",
+                "presetReferenceTabChromeHomeLabel",
+                "presetReferenceTabChromeTabsObject",
+                "presetReferenceTabChromeTabBarObject",
+                "presetReferenceTabChromeReferenceRole",
+                "presetReferenceTabChromeNewSessionRole",
+                "presetReferenceTabChromeExpectedPosition",
+                "presetReferenceTabChromeExpectedTooltip",
+                "presetReferenceTabChromeExpectedCloseable",
+                "presetReferenceTabChromeExpectedSelectedDuringCapture",
+                "presetReferenceTabChromeCapturedProperty",
+                "presetReferenceTabChromeCapturedLabelProperty",
+                "presetReferenceTabChromeCapturedTooltipProperty",
+                "presetReferenceTabChromeCapturedIndexProperty",
+                "presetReferenceTabChromeCapturedRoleProperty",
+                "presetReferenceTabChromeCapturedPositionProperty",
+                "presetReferenceTabChromeCapturedCloseableProperty",
+                "presetReferenceTabChromeCapturedSelectedProperty",
+                "presetReferenceTabChromeCaptured",
+                "presetReferenceTabChromeLabel",
+                "presetReferenceTabChromeTooltip",
+                "presetReferenceTabChromeIndex",
+                "presetReferenceTabChromeRole",
+                "presetReferenceTabChromePosition",
+                "presetReferenceTabChromeCloseable",
+                "presetReferenceTabChromeSelected",
+                "presetReferenceTabChromeRenderSource",
+            ):
+                widget.setProperty(key, None)
+
+        @staticmethod
+        def apply_preset_reference_status_bar_route_properties(widget, route) -> None:
+            properties = {
+                "presetReferenceStatusRouteKey": route.key,
+                "presetReferenceStatusRouteRole": route.route_role,
+                "presetReferenceStatusPresetId": route.preset_id,
+                "presetReferenceStatusProfile": route.reference_profile,
+                "presetReferenceStatusActiveTab": route.active_tab_label,
+                "presetReferenceStatusBarObject": route.status_bar_object,
+                "presetReferenceStatusNoticeObject": route.status_notice_object,
+                "presetReferenceStatusSegmentObject": route.status_segment_object,
+                "presetReferenceStatusExpectedMessage": route.expected_status_message,
+                "presetReferenceStatusExpectedSegments": list(route.expected_status_segments),
+                "presetReferenceStatusExpectedSegmentCount": route.expected_segment_count,
+                "presetReferenceStatusCapturedProperty": route.captured_property,
+                "presetReferenceStatusCapturedTabProperty": route.captured_tab_property,
+                "presetReferenceStatusCapturedMessageProperty": route.captured_message_property,
+                "presetReferenceStatusCapturedSegmentsProperty": route.captured_segments_property,
+                "presetReferenceStatusCapturedSegmentCountProperty": route.captured_segment_count_property,
+                "presetReferenceStatusCapturedSegmentTooltipsProperty": route.captured_segment_tooltips_property,
+                "presetReferenceStatusCapturedNoticeProperty": route.captured_notice_property,
+                "presetReferenceStatusRenderSource": route.render_source,
+            }
+            for key, value in properties.items():
+                widget.setProperty(key, value)
+
+        @staticmethod
+        def clear_preset_reference_status_bar_route_properties(widget) -> None:
+            for key in (
+                "presetReferenceStatusRouteKey",
+                "presetReferenceStatusRouteRole",
+                "presetReferenceStatusPresetId",
+                "presetReferenceStatusProfile",
+                "presetReferenceStatusActiveTab",
+                "presetReferenceStatusBarObject",
+                "presetReferenceStatusNoticeObject",
+                "presetReferenceStatusSegmentObject",
+                "presetReferenceStatusExpectedMessage",
+                "presetReferenceStatusExpectedSegments",
+                "presetReferenceStatusExpectedSegmentCount",
+                "presetReferenceStatusCapturedProperty",
+                "presetReferenceStatusCapturedTabProperty",
+                "presetReferenceStatusCapturedMessageProperty",
+                "presetReferenceStatusCapturedSegmentsProperty",
+                "presetReferenceStatusCapturedSegmentCountProperty",
+                "presetReferenceStatusCapturedSegmentTooltipsProperty",
+                "presetReferenceStatusCapturedNoticeProperty",
+                "presetReferenceStatusCaptured",
+                "presetReferenceStatusCapturedTab",
+                "presetReferenceStatusMessage",
+                "presetReferenceStatusSegments",
+                "presetReferenceStatusSegmentCount",
+                "presetReferenceStatusSegmentTooltips",
+                "presetReferenceStatusNotice",
+                "presetReferenceStatusRenderSource",
+            ):
+                widget.setProperty(key, None)
+
+        @staticmethod
+        def apply_preset_reference_session_action_route_properties(widget, route) -> None:
+            properties = {
+                "presetReferenceSessionActionRouteKey": route.key,
+                "presetReferenceSessionActionRouteRole": route.route_role,
+                "presetReferenceSessionActionPresetId": route.preset_id,
+                "presetReferenceSessionActionProfile": route.reference_profile,
+                "presetReferenceSessionActionActiveTab": route.active_tab_label,
+                "presetReferenceSessionActionTabsObject": route.tabs_object,
+                "presetReferenceSessionActionTabBarObject": route.tab_bar_object,
+                "presetReferenceSessionActionReferenceRole": route.reference_tab_role,
+                "presetReferenceSessionActionObject": route.action_object,
+                "presetReferenceSessionActionExpectedKeys": list(route.expected_action_keys),
+                "presetReferenceSessionActionExpectedLabels": list(route.expected_action_labels),
+                "presetReferenceSessionActionExpectedCount": route.expected_action_count,
+                "presetReferenceSessionActionAlwaysEnabledKeys": list(route.always_enabled_action_keys),
+                "presetReferenceSessionActionConditionalEnabledKeys": list(route.conditional_enabled_action_keys),
+                "presetReferenceSessionActionActionKeyProperty": route.action_key_property,
+                "presetReferenceSessionActionActionLabelProperty": route.action_label_property,
+                "presetReferenceSessionActionActionEnabledProperty": route.action_enabled_property,
+                "presetReferenceSessionActionCapturedProperty": route.captured_property,
+                "presetReferenceSessionActionCapturedTabProperty": route.captured_tab_property,
+                "presetReferenceSessionActionCapturedKeysProperty": route.captured_action_keys_property,
+                "presetReferenceSessionActionCapturedLabelsProperty": route.captured_action_labels_property,
+                "presetReferenceSessionActionCapturedCountProperty": route.captured_action_count_property,
+                "presetReferenceSessionActionCapturedEnabledKeysProperty": route.captured_enabled_keys_property,
+                "presetReferenceSessionActionCapturedDisabledKeysProperty": route.captured_disabled_keys_property,
+                "presetReferenceSessionActionRenderSource": route.render_source,
+            }
+            for key, value in properties.items():
+                widget.setProperty(key, value)
+
+        @staticmethod
+        def clear_preset_reference_session_action_route_properties(widget) -> None:
+            for key in (
+                "presetReferenceSessionActionRouteKey",
+                "presetReferenceSessionActionRouteRole",
+                "presetReferenceSessionActionPresetId",
+                "presetReferenceSessionActionProfile",
+                "presetReferenceSessionActionActiveTab",
+                "presetReferenceSessionActionTabsObject",
+                "presetReferenceSessionActionTabBarObject",
+                "presetReferenceSessionActionReferenceRole",
+                "presetReferenceSessionActionObject",
+                "presetReferenceSessionActionExpectedKeys",
+                "presetReferenceSessionActionExpectedLabels",
+                "presetReferenceSessionActionExpectedCount",
+                "presetReferenceSessionActionAlwaysEnabledKeys",
+                "presetReferenceSessionActionConditionalEnabledKeys",
+                "presetReferenceSessionActionActionKeyProperty",
+                "presetReferenceSessionActionActionLabelProperty",
+                "presetReferenceSessionActionActionEnabledProperty",
+                "presetReferenceSessionActionCapturedProperty",
+                "presetReferenceSessionActionCapturedTabProperty",
+                "presetReferenceSessionActionCapturedKeysProperty",
+                "presetReferenceSessionActionCapturedLabelsProperty",
+                "presetReferenceSessionActionCapturedCountProperty",
+                "presetReferenceSessionActionCapturedEnabledKeysProperty",
+                "presetReferenceSessionActionCapturedDisabledKeysProperty",
+                "presetReferenceSessionActionsCaptured",
+                "presetReferenceSessionActionsCapturedTab",
+                "presetReferenceSessionActionKeys",
+                "presetReferenceSessionActionLabels",
+                "presetReferenceSessionActionCount",
+                "presetReferenceSessionActionEnabledKeys",
+                "presetReferenceSessionActionDisabledKeys",
+                "presetReferenceSessionActionRenderSource",
+            ):
+                widget.setProperty(key, None)
+
+        @staticmethod
+        def apply_moba_connected_session_action_route_properties(widget, route) -> None:
+            properties = {
+                "mobaConnectedSessionActionRouteKey": route.key,
+                "mobaConnectedSessionActionRouteRole": route.route_role,
+                "mobaConnectedSessionActionProfile": route.profile_name,
+                "mobaConnectedSessionActionTarget": route.target,
+                "mobaConnectedSessionActionActiveTabKey": route.active_tab_key,
+                "mobaConnectedSessionActionActiveTab": route.active_tab_label,
+                "mobaConnectedSessionActionReferenceTab": route.reference_tab_label,
+                "mobaConnectedSessionActionTabsObject": route.tabs_object,
+                "mobaConnectedSessionActionTabBarObject": route.tab_bar_object,
+                "mobaConnectedSessionActionReferenceRole": route.reference_tab_role,
+                "mobaConnectedSessionActionMenuObject": route.menu_object,
+                "mobaConnectedSessionActionObject": route.action_object,
+                "mobaConnectedSessionActionExpectedKeys": list(route.expected_action_keys),
+                "mobaConnectedSessionActionExpectedLabels": list(route.expected_action_labels),
+                "mobaConnectedSessionActionExpectedCount": route.expected_action_count,
+                "mobaConnectedSessionActionAlwaysEnabledKeys": list(route.always_enabled_action_keys),
+                "mobaConnectedSessionActionConditionalEnabledKeys": list(route.conditional_enabled_action_keys),
+                "mobaConnectedSessionActionActionKeyProperty": route.action_key_property,
+                "mobaConnectedSessionActionActionLabelProperty": route.action_label_property,
+                "mobaConnectedSessionActionActionEnabledProperty": route.action_enabled_property,
+                "mobaConnectedSessionActionCapturedProperty": route.captured_property,
+                "mobaConnectedSessionActionCapturedTabProperty": route.captured_tab_property,
+                "mobaConnectedSessionActionCapturedKeysProperty": route.captured_action_keys_property,
+                "mobaConnectedSessionActionCapturedLabelsProperty": route.captured_action_labels_property,
+                "mobaConnectedSessionActionCapturedCountProperty": route.captured_action_count_property,
+                "mobaConnectedSessionActionCapturedEnabledKeysProperty": route.captured_enabled_keys_property,
+                "mobaConnectedSessionActionCapturedDisabledKeysProperty": route.captured_disabled_keys_property,
+                "mobaConnectedSessionActionRenderSource": route.render_source,
+            }
+            for key, value in properties.items():
+                widget.setProperty(key, value)
+
+        @staticmethod
+        def apply_preset_reference_surface_route_properties(widget, route) -> None:
+            properties = {
+                "presetReferenceSurfaceRouteKey": route.key,
+                "presetReferenceSurfaceRouteRole": route.route_role,
+                "presetReferenceSurfacePresetId": route.preset_id,
+                "presetReferenceSurfaceProfile": route.reference_profile,
+                "presetReferenceSurfaceActiveTab": route.active_tab_label,
+                "presetReferenceSurfaceExpectedTitle": route.expected_title,
+                "presetReferenceSurfaceExpectedSource": route.expected_source,
+                "presetReferenceSurfaceCommandExecutables": list(route.command_executables),
+                "presetReferenceSurfaceCommandExecutableChoices": "|".join(route.command_executables),
+                "presetReferenceSurfaceCommandTargetFragment": route.command_target_fragment,
+                "presetReferenceSurfaceTerminalPaneObject": route.terminal_pane_object,
+                "presetReferenceSurfaceTitleObject": route.terminal_title_object,
+                "presetReferenceSurfaceSourceObject": route.terminal_source_object,
+                "presetReferenceSurfaceCommandObject": route.terminal_command_object,
+                "presetReferenceSurfaceOutputObject": route.terminal_output_object,
+                "presetReferenceSurfaceCapturedProperty": route.captured_property,
+                "presetReferenceSurfaceCapturedTabProperty": route.captured_tab_property,
+                "presetReferenceSurfaceActualTitleProperty": route.actual_title_property,
+                "presetReferenceSurfaceActualSourceProperty": route.actual_source_property,
+                "presetReferenceSurfaceActualCommandProperty": route.actual_command_property,
+                "presetReferenceSurfaceActualOutputProperty": route.actual_output_property,
+                "presetReferenceSurfaceRenderSource": route.render_source,
+            }
+            for key, value in properties.items():
+                widget.setProperty(key, value)
+
+        @staticmethod
+        def clear_preset_reference_surface_route_properties(widget) -> None:
+            for key in (
+                "presetReferenceSurfaceRouteKey",
+                "presetReferenceSurfaceRouteRole",
+                "presetReferenceSurfacePresetId",
+                "presetReferenceSurfaceProfile",
+                "presetReferenceSurfaceActiveTab",
+                "presetReferenceSurfaceExpectedTitle",
+                "presetReferenceSurfaceExpectedSource",
+                "presetReferenceSurfaceCommandExecutables",
+                "presetReferenceSurfaceCommandExecutableChoices",
+                "presetReferenceSurfaceCommandTargetFragment",
+                "presetReferenceSurfaceTerminalPaneObject",
+                "presetReferenceSurfaceTitleObject",
+                "presetReferenceSurfaceSourceObject",
+                "presetReferenceSurfaceCommandObject",
+                "presetReferenceSurfaceOutputObject",
+                "presetReferenceSurfaceCapturedProperty",
+                "presetReferenceSurfaceCapturedTabProperty",
+                "presetReferenceSurfaceActualTitleProperty",
+                "presetReferenceSurfaceActualSourceProperty",
+                "presetReferenceSurfaceActualCommandProperty",
+                "presetReferenceSurfaceActualOutputProperty",
+                "presetReferenceSurfaceCaptured",
+                "presetReferenceSurfaceCapturedTab",
+                "presetReferenceSurfaceActualTitle",
+                "presetReferenceSurfaceActualSource",
+                "presetReferenceSurfaceActualCommand",
+                "presetReferenceSurfaceActualOutput",
+                "presetReferenceSurfaceRenderSource",
+            ):
+                widget.setProperty(key, None)
+
+        @staticmethod
+        def apply_preset_reference_control_route_properties(widget, route) -> None:
+            properties = {
+                "presetReferenceControlRouteKey": route.key,
+                "presetReferenceControlRouteRole": route.route_role,
+                "presetReferenceControlPresetId": route.preset_id,
+                "presetReferenceControlProfile": route.reference_profile,
+                "presetReferenceControlActiveTab": route.active_tab_label,
+                "presetReferenceControlTerminalPaneObject": route.terminal_pane_object,
+                "presetReferenceControlStatusObject": route.terminal_status_object,
+                "presetReferenceControlActionObject": route.terminal_action_object,
+                "presetReferenceControlActionKeys": list(route.action_keys),
+                "presetReferenceControlActionLabels": list(route.action_labels),
+                "presetReferenceControlActionTooltips": list(route.action_tooltips),
+                "presetReferenceControlAllowedStatusStates": list(route.allowed_status_states),
+                "presetReferenceControlActionKeyProperty": route.action_key_property,
+                "presetReferenceControlActionLabelProperty": route.action_label_property,
+                "presetReferenceControlActionTooltipProperty": route.action_tooltip_property,
+                "presetReferenceControlStatusStateProperty": route.status_state_property,
+                "presetReferenceControlCapturedProperty": route.captured_property,
+                "presetReferenceControlCapturedActionsProperty": route.captured_actions_property,
+                "presetReferenceControlCapturedStatusProperty": route.captured_status_property,
+                "presetReferenceControlCapturedStatusTextProperty": route.captured_status_text_property,
+                "presetReferenceControlRenderSource": route.render_source,
+            }
+            for key, value in properties.items():
+                widget.setProperty(key, value)
+
+        @staticmethod
+        def clear_preset_reference_control_route_properties(widget) -> None:
+            for key in (
+                "presetReferenceControlRouteKey",
+                "presetReferenceControlRouteRole",
+                "presetReferenceControlPresetId",
+                "presetReferenceControlProfile",
+                "presetReferenceControlActiveTab",
+                "presetReferenceControlTerminalPaneObject",
+                "presetReferenceControlStatusObject",
+                "presetReferenceControlActionObject",
+                "presetReferenceControlActionKeys",
+                "presetReferenceControlActionLabels",
+                "presetReferenceControlActionTooltips",
+                "presetReferenceControlAllowedStatusStates",
+                "presetReferenceControlActionKeyProperty",
+                "presetReferenceControlActionLabelProperty",
+                "presetReferenceControlActionTooltipProperty",
+                "presetReferenceControlStatusStateProperty",
+                "presetReferenceControlCapturedProperty",
+                "presetReferenceControlCapturedActionsProperty",
+                "presetReferenceControlCapturedStatusProperty",
+                "presetReferenceControlCapturedStatusTextProperty",
+                "presetReferenceControlsCaptured",
+                "presetReferenceControlCapturedActionKeys",
+                "presetReferenceControlStatusState",
+                "presetReferenceControlStatusText",
+                "presetReferenceControlRenderSource",
+            ):
+                widget.setProperty(key, None)
+
+        @staticmethod
+        def apply_preset_reference_input_route_properties(widget, route) -> None:
+            properties = {
+                "presetReferenceInputRouteKey": route.key,
+                "presetReferenceInputRouteRole": route.route_role,
+                "presetReferenceInputPresetId": route.preset_id,
+                "presetReferenceInputProfile": route.reference_profile,
+                "presetReferenceInputActiveTab": route.active_tab_label,
+                "presetReferenceInputTerminalPaneObject": route.terminal_pane_object,
+                "presetReferenceInputObject": route.terminal_input_object,
+                "presetReferenceInputExpectedPlaceholder": route.placeholder_text,
+                "presetReferenceInputExpectedInitialText": route.expected_initial_text,
+                "presetReferenceInputAllowedEnabledStates": list(route.allowed_enabled_states),
+                "presetReferenceInputCapturedProperty": route.captured_property,
+                "presetReferenceInputCapturedTabProperty": route.captured_tab_property,
+                "presetReferenceInputCapturedPlaceholderProperty": route.captured_placeholder_property,
+                "presetReferenceInputCapturedTextProperty": route.captured_text_property,
+                "presetReferenceInputCapturedEnabledProperty": route.captured_enabled_property,
+                "presetReferenceInputRenderSource": route.render_source,
+            }
+            for key, value in properties.items():
+                widget.setProperty(key, value)
+
+        @staticmethod
+        def clear_preset_reference_input_route_properties(widget) -> None:
+            for key in (
+                "presetReferenceInputRouteKey",
+                "presetReferenceInputRouteRole",
+                "presetReferenceInputPresetId",
+                "presetReferenceInputProfile",
+                "presetReferenceInputActiveTab",
+                "presetReferenceInputTerminalPaneObject",
+                "presetReferenceInputObject",
+                "presetReferenceInputExpectedPlaceholder",
+                "presetReferenceInputExpectedInitialText",
+                "presetReferenceInputAllowedEnabledStates",
+                "presetReferenceInputCapturedProperty",
+                "presetReferenceInputCapturedTabProperty",
+                "presetReferenceInputCapturedPlaceholderProperty",
+                "presetReferenceInputCapturedTextProperty",
+                "presetReferenceInputCapturedEnabledProperty",
+                "presetReferenceInputCaptured",
+                "presetReferenceInputCapturedTab",
+                "presetReferenceInputPlaceholder",
+                "presetReferenceInputText",
+                "presetReferenceInputEnabled",
+                "presetReferenceInputRenderSource",
+            ):
+                widget.setProperty(key, None)
+
+        @staticmethod
+        def apply_preset_reference_transcript_route_properties(widget, route) -> None:
+            properties = {
+                "presetReferenceTranscriptRouteKey": route.key,
+                "presetReferenceTranscriptRouteRole": route.route_role,
+                "presetReferenceTranscriptPresetId": route.preset_id,
+                "presetReferenceTranscriptProfile": route.reference_profile,
+                "presetReferenceTranscriptActiveTab": route.active_tab_label,
+                "presetReferenceTranscriptTerminalPaneObject": route.terminal_pane_object,
+                "presetReferenceTranscriptOutputObject": route.terminal_output_object,
+                "presetReferenceTranscriptCommandEchoPrefix": route.command_echo_prefix,
+                "presetReferenceTranscriptRequiredFragments": list(route.required_fragments),
+                "presetReferenceTranscriptMinimumLineCount": route.minimum_line_count,
+                "presetReferenceTranscriptCapturedProperty": route.captured_property,
+                "presetReferenceTranscriptCapturedTabProperty": route.captured_tab_property,
+                "presetReferenceTranscriptCapturedTextProperty": route.captured_text_property,
+                "presetReferenceTranscriptCapturedLineCountProperty": route.captured_line_count_property,
+                "presetReferenceTranscriptCapturedCommandEchoProperty": route.captured_command_echo_property,
+                "presetReferenceTranscriptRenderSource": route.render_source,
+            }
+            for key, value in properties.items():
+                widget.setProperty(key, value)
+
+        @staticmethod
+        def clear_preset_reference_transcript_route_properties(widget) -> None:
+            for key in (
+                "presetReferenceTranscriptRouteKey",
+                "presetReferenceTranscriptRouteRole",
+                "presetReferenceTranscriptPresetId",
+                "presetReferenceTranscriptProfile",
+                "presetReferenceTranscriptActiveTab",
+                "presetReferenceTranscriptTerminalPaneObject",
+                "presetReferenceTranscriptOutputObject",
+                "presetReferenceTranscriptCommandEchoPrefix",
+                "presetReferenceTranscriptRequiredFragments",
+                "presetReferenceTranscriptMinimumLineCount",
+                "presetReferenceTranscriptCapturedProperty",
+                "presetReferenceTranscriptCapturedTabProperty",
+                "presetReferenceTranscriptCapturedTextProperty",
+                "presetReferenceTranscriptCapturedLineCountProperty",
+                "presetReferenceTranscriptCapturedCommandEchoProperty",
+                "presetReferenceTranscriptCaptured",
+                "presetReferenceTranscriptCapturedTab",
+                "presetReferenceTranscriptText",
+                "presetReferenceTranscriptLineCount",
+                "presetReferenceTranscriptCommandEcho",
+                "presetReferenceTranscriptRenderSource",
+            ):
+                widget.setProperty(key, None)
+
+        @staticmethod
+        def apply_preset_visual_signature_properties(widget, signature) -> None:
+            properties = {
+                "presetVisualSignatureKey": signature.key,
+                "presetVisualSignatureRole": signature.route_role,
+                "presetVisualSignaturePresetId": signature.preset_id,
+                "presetVisualSignaturePresetLabel": signature.preset_label,
+                "presetVisualSignatureDensity": signature.density,
+                "presetVisualSignatureTabPosition": signature.tab_position,
+                "presetVisualSignatureDocumentMode": signature.document_mode,
+                "presetVisualSignatureProfileWidth": signature.profile_width,
+                "presetVisualSignatureLogHeight": signature.log_height,
+                "presetVisualSignatureToolbarIconSize": signature.toolbar_icon_size,
+                "presetVisualSignatureListSpacing": signature.list_spacing,
+                "presetVisualSignaturePalette": dict(signature.palette_items()),
+                "presetVisualSignatureWindowObject": signature.window_object,
+                "presetVisualSignatureMainToolbarObject": signature.main_toolbar_object,
+                "presetVisualSignatureLayoutToolbarObject": signature.layout_toolbar_object,
+                "presetVisualSignatureLeftPanelObject": signature.left_panel_object,
+                "presetVisualSignatureProfileTreeObject": signature.profile_tree_object,
+                "presetVisualSignatureTabsObject": signature.tabs_object,
+                "presetVisualSignatureActivityLogObject": signature.activity_log_object,
+                "presetVisualSignatureStatusBarObject": signature.status_bar_object,
+                "presetVisualSignatureDensityProperty": signature.density_property,
+                "presetVisualSignaturePaletteProperty": signature.palette_property,
+                "presetVisualSignatureRenderSource": signature.render_source,
+            }
+            for key, value in properties.items():
+                widget.setProperty(key, value)
 
         def configure_toolbar_for_design(self, preset: GuiDesignPreset, is_moba: bool, icon_size: int) -> None:
             icon = QSize(icon_size, icon_size)
@@ -3920,6 +5734,42 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             if self.design_select.count() == 0:
                 return
             self.design_select.setCurrentIndex((self.design_select.currentIndex() + 1) % self.design_select.count())
+
+        def show_moba_clipboard_hints(self, *_args) -> None:
+            self.show_workflow_dialog(
+                "Clipboard and transfer hints",
+                "Clipboard, paste and transfer helper routes for the active terminal.",
+                [
+                    ("Clipboard", "available", "Copy selected terminal text or paste into the active session."),
+                    ("SFTP browser", "attached", "Use the left file browser for transfer previews."),
+                    ("Follow folder", "checked", "Keep the file browser aligned with the terminal working directory."),
+                ],
+                "\n".join(
+                    [
+                        "Right utility rail clipboard workflow",
+                        "Use project-owned controls for copy/paste hints and transfer routing.",
+                        "No captured clipboard content or user-specific data is stored in previews.",
+                    ]
+                ),
+            )
+
+        def show_moba_terminal_settings(self, *_args) -> None:
+            self.show_workflow_dialog(
+                "Terminal settings",
+                "Terminal appearance, interaction and session-edge settings for the active tab.",
+                [
+                    ("Font", "monospace", "Reference terminal rows use fixed-width text geometry."),
+                    ("Session edge", "enabled", "Attachment and settings controls remain on the right edge."),
+                    ("Telemetry", "bottom strip", "Remote monitoring metrics stay routed to bottom status cells."),
+                ],
+                "\n".join(
+                    [
+                        "Right utility rail settings workflow",
+                        "Adjust terminal-facing view options without changing the active connection identity.",
+                        "The route is measured separately from generic toolbar settings.",
+                    ]
+                ),
+            )
 
         def show_moba_tools_status(self, *_args) -> None:
             self.set_moba_rail_active("tools")
@@ -4185,6 +6035,12 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     return index
             return -1
 
+        def find_tab_by_label(self, label: str) -> int:
+            for index in range(self.tabs.count()):
+                if self.tabs.tabText(index) == label:
+                    return index
+            return -1
+
         def add_workspace_tab(self, widget: QWidget, title: str, *, select: bool = True, role: str = "session") -> int:
             widget.setProperty("tabRole", role)
             new_index = self.find_tab_by_role("new-session")
@@ -4306,27 +6162,144 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 self.moba_tab_guard = False
             self.refresh_moba_left_dock_for_current_tab()
 
+        def tab_context_session_action_specs(self, index: int) -> list[dict[str, object]]:
+            role = self.tab_role(index)
+            is_closeable_session = role not in {"home", "new-session"}
+            return [
+                {"key": "new-local-terminal", "label": "New local terminal", "enabled": True},
+                {"key": "split-horizontal", "label": "Split horizontal", "enabled": True},
+                {"key": "split-vertical", "label": "Split vertical", "enabled": True},
+                {"key": "duplicate-tab", "label": "Duplicate tab", "enabled": is_closeable_session},
+                {"key": "close-tab", "label": "Close tab", "enabled": is_closeable_session},
+                {
+                    "key": "close-other-tabs",
+                    "label": "Close other tabs",
+                    "enabled": self.count_closeable_tabs(except_index=index) > 0,
+                },
+                {"key": "recover-previous-sessions", "label": "Recover previous sessions", "enabled": True},
+            ]
+
+        def reference_session_action_route_for_tab(self, index: int):
+            preset_id = self.current_design_id()
+            if preset_id not in PRODUCT_REFERENCE_TAB_PRESET_IDS or index < 0:
+                return None
+            route = gui_design_preset_reference_session_action_route(preset_id)
+            if self.tabs.tabText(index) != route.active_tab_label:
+                return None
+            if self.tab_role(index) != route.reference_tab_role:
+                return None
+            return route
+
+        def moba_connected_session_action_route_for_tab(self, index: int):
+            if not self.current_design_is_moba() or index < 0:
+                return None
+            widget = self.tabs.widget(index)
+            state = getattr(widget, "moba_connected_state", None)
+            if state is None:
+                return None
+            route = moba_connected_session_action_route(state)
+            if self.tab_role(index) != route.reference_tab_role:
+                return None
+            if self.tabs.tabText(index) not in {route.active_tab_label, route.reference_tab_label}:
+                return None
+            return route
+
+        def session_action_route_for_tab(self, index: int):
+            return self.moba_connected_session_action_route_for_tab(index) or self.reference_session_action_route_for_tab(
+                index
+            )
+
+        @staticmethod
+        def session_action_capture_from_specs(
+            specs: list[dict[str, object]],
+        ) -> tuple[list[str], list[str], list[str], list[str]]:
+            action_keys = [str(spec["key"]) for spec in specs]
+            action_labels = [str(spec["label"]) for spec in specs]
+            enabled_keys = [str(spec["key"]) for spec in specs if bool(spec["enabled"])]
+            disabled_keys = [str(spec["key"]) for spec in specs if not bool(spec["enabled"])]
+            return action_keys, action_labels, enabled_keys, disabled_keys
+
+        def apply_session_action_spec_properties(self, action, spec: dict[str, object], route) -> None:
+            action.setObjectName(route.action_object if route is not None else "sessionTabContextAction")
+            action.setProperty("sessionTabContextActionKey", str(spec["key"]))
+            action.setProperty("sessionTabContextActionLabel", str(spec["label"]))
+            action.setProperty("sessionTabContextActionEnabled", bool(spec["enabled"]))
+            if route is not None:
+                if hasattr(route, "profile_name"):
+                    self.apply_moba_connected_session_action_route_properties(action, route)
+                else:
+                    self.apply_preset_reference_session_action_route_properties(action, route)
+
+        @staticmethod
+        def session_action_menu_object_name(route) -> str:
+            if route is None:
+                return "sessionTabContextMenu"
+            return str(getattr(route, "menu_object", "presetReferenceSessionTabContextMenu"))
+
+        def apply_session_action_menu_capture(self, menu, route, tab_title: str, actions: list[object]) -> None:
+            if route is None:
+                return
+            if hasattr(route, "profile_name"):
+                self.apply_moba_connected_session_action_route_properties(menu, route)
+            else:
+                self.apply_preset_reference_session_action_route_properties(menu, route)
+            action_keys = [str(action.property(route.action_key_property) or "") for action in actions]
+            action_labels = [str(action.property(route.action_label_property) or "") for action in actions]
+            enabled_keys = [
+                str(action.property(route.action_key_property) or "")
+                for action in actions
+                if bool(action.property(route.action_enabled_property))
+            ]
+            disabled_keys = [
+                str(action.property(route.action_key_property) or "")
+                for action in actions
+                if not bool(action.property(route.action_enabled_property))
+            ]
+            menu.setProperty(route.captured_property, True)
+            menu.setProperty(route.captured_tab_property, tab_title)
+            menu.setProperty(route.captured_action_keys_property, action_keys)
+            menu.setProperty(route.captured_action_labels_property, action_labels)
+            menu.setProperty(route.captured_action_count_property, len(action_keys))
+            menu.setProperty(route.captured_enabled_keys_property, enabled_keys)
+            menu.setProperty(route.captured_disabled_keys_property, disabled_keys)
+
+        def build_tab_context_menu(self, index: int):
+            if index < 0:
+                return None
+            route = self.session_action_route_for_tab(index)
+            specs = {str(spec["key"]): spec for spec in self.tab_context_session_action_specs(index)}
+            menu = QMenu(self)
+            menu.setObjectName(self.session_action_menu_object_name(route))
+            context_actions = []
+
+            def add_context_action(key: str, callback) -> None:
+                spec = specs[key]
+                action = menu.addAction(str(spec["label"]), callback)
+                action.setEnabled(bool(spec["enabled"]))
+                self.apply_session_action_spec_properties(action, spec, route)
+                context_actions.append(action)
+
+            add_context_action("new-local-terminal", self.open_local_terminal_tab)
+            add_context_action("split-horizontal", lambda: self.add_split("horizontal"))
+            add_context_action("split-vertical", lambda: self.add_split("vertical"))
+            menu.addSeparator()
+            add_context_action("duplicate-tab", self.duplicate_current_tab)
+            add_context_action("close-tab", self.close_current_tab)
+            add_context_action("close-other-tabs", lambda: self.close_other_tabs(index))
+            menu.addSeparator()
+            add_context_action("recover-previous-sessions", self.recover_previous_sessions)
+            self.apply_session_action_menu_capture(menu, route, self.tabs.tabText(index), context_actions)
+            return menu
+
         def show_tab_context_menu(self, position) -> None:
             index = self.tabs.tabBar().tabAt(position)
             if index < 0:
                 return
             if self.tab_role(index) != "new-session":
                 self.tabs.setCurrentIndex(index)
-            menu = QMenu(self)
-            menu.addAction("New local terminal", self.open_local_terminal_tab)
-            menu.addAction("Split horizontal", lambda: self.add_split("horizontal"))
-            menu.addAction("Split vertical", lambda: self.add_split("vertical"))
-            menu.addSeparator()
-            duplicate_action = menu.addAction("Duplicate tab", self.duplicate_current_tab)
-            close_action = menu.addAction("Close tab", self.close_current_tab)
-            close_others_action = menu.addAction("Close other tabs", lambda: self.close_other_tabs(index))
-            role = self.tab_role(index)
-            duplicate_action.setEnabled(role not in {"home", "new-session"})
-            close_action.setEnabled(role not in {"home", "new-session"})
-            close_others_action.setEnabled(self.count_closeable_tabs(except_index=index) > 0)
-            menu.addSeparator()
-            menu.addAction("Recover previous sessions", self.recover_previous_sessions)
-            menu.exec(self.tabs.tabBar().mapToGlobal(position))
+            menu = self.build_tab_context_menu(index)
+            if menu is not None:
+                menu.exec(self.tabs.tabBar().mapToGlobal(position))
 
         def count_closeable_tabs(self, *, except_index: int | None = None) -> int:
             count = 0
@@ -4448,6 +6421,21 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
             for index in range(self.profile_list.topLevelItemCount()):
                 apply_filter(self.profile_list.topLevelItem(index))
+
+        def filter_remmina_profile_rows(self, text: str) -> None:
+            if not hasattr(self, "remmina_profile_list_chrome"):
+                return
+            needle = text.strip().lower()
+            rows = self.remmina_profile_list_chrome.findChildren(QFrame, "remminaProfileListRow")
+            for row in rows:
+                values = [
+                    str(row.property("remminaProfileRowKey") or ""),
+                    str(row.property("remminaProfileName") or ""),
+                    str(row.property("remminaProfileProtocol") or ""),
+                    str(row.property("remminaProfileServer") or ""),
+                    str(row.property("remminaProfileStatus") or ""),
+                ]
+                row.setVisible(not needle or any(needle in value.lower() for value in values))
 
         def connect_selected(self, dry_run: bool) -> None:
             name = self.selected_profile_name()
@@ -4825,10 +6813,86 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             return panel
 
         def build_product_workflow_evidence(self) -> QFrame:
-            cards = gui_design_workflow_cards(self.current_design_id())
+            design_id = self.current_design_id()
+            cards = gui_design_workflow_cards(design_id)
+            snippet_route = gui_design_termius_snippet_route() if design_id == "termius" else None
+            inheritance_route = gui_design_mremoteng_inheritance_route() if design_id == "mremoteng" else None
+            securecrt_sftp_route = gui_design_securecrt_sftp_tab_route() if design_id == "securecrt" else None
             panel = QFrame()
             panel.setObjectName("productWorkflowEvidence")
-            panel.setProperty("designPreset", self.current_design_id())
+            panel.setProperty("designPreset", design_id)
+            if snippet_route is not None:
+                panel.setProperty("termiusSnippetRouteKey", snippet_route.key)
+                panel.setProperty("termiusSnippetRouteRole", snippet_route.route_role)
+                panel.setProperty("termiusSnippetRouteWorkflowKey", snippet_route.workflow_card_key)
+                panel.setProperty("termiusSnippetRouteWorkflowCardObject", snippet_route.workflow_card_object)
+                panel.setProperty("termiusSnippetRouteTitleObject", snippet_route.workflow_title_object)
+                panel.setProperty("termiusSnippetRoutePrimaryObject", snippet_route.workflow_primary_object)
+                panel.setProperty("termiusSnippetRouteSecondaryObject", snippet_route.workflow_secondary_object)
+                panel.setProperty("termiusSnippetRouteIdentityObject", snippet_route.host_identity_object)
+                panel.setProperty("termiusSnippetRouteIdentityFieldKey", snippet_route.identity_field_key)
+                panel.setProperty("termiusSnippetRouteIdentityCellObject", snippet_route.identity_cell_object)
+                panel.setProperty("termiusSnippetRouteActiveTab", snippet_route.active_tab_label)
+                panel.setProperty("termiusSnippetRouteSelectedProfile", snippet_route.selected_profile_name)
+                panel.setProperty("termiusSnippetRouteTitle", snippet_route.workflow_title)
+                panel.setProperty("termiusSnippetRouteCommand", snippet_route.snippet_command)
+                panel.setProperty("termiusSnippetRouteState", snippet_route.snippet_state)
+                panel.setProperty("termiusSnippetRouteDetailLine", snippet_route.detail_line)
+                panel.setProperty("termiusSnippetRouteRenderSource", snippet_route.render_source)
+            if inheritance_route is not None:
+                panel.setProperty("mRemoteNgInheritanceRouteKey", inheritance_route.key)
+                panel.setProperty("mRemoteNgInheritanceRouteRole", inheritance_route.route_role)
+                panel.setProperty("mRemoteNgInheritanceRouteWorkflowKey", inheritance_route.workflow_card_key)
+                panel.setProperty(
+                    "mRemoteNgInheritanceRouteWorkflowCardObject",
+                    inheritance_route.workflow_card_object,
+                )
+                panel.setProperty("mRemoteNgInheritanceRouteTitleObject", inheritance_route.workflow_title_object)
+                panel.setProperty("mRemoteNgInheritanceRoutePrimaryObject", inheritance_route.workflow_primary_object)
+                panel.setProperty(
+                    "mRemoteNgInheritanceRouteSecondaryObject",
+                    inheritance_route.workflow_secondary_object,
+                )
+                panel.setProperty("mRemoteNgInheritanceRoutePropertyGridObject", inheritance_route.property_grid_object)
+                panel.setProperty("mRemoteNgInheritanceRoutePropertyRowKey", inheritance_route.property_row_key)
+                panel.setProperty("mRemoteNgInheritanceRoutePropertyCellObject", inheritance_route.property_cell_object)
+                panel.setProperty("mRemoteNgInheritanceRouteActiveTab", inheritance_route.active_tab_label)
+                panel.setProperty("mRemoteNgInheritanceRouteSelectedProfile", inheritance_route.selected_profile_name)
+                panel.setProperty("mRemoteNgInheritanceRouteSelectedTreeLabel", inheritance_route.selected_tree_label)
+                panel.setProperty("mRemoteNgInheritanceRouteTitle", inheritance_route.workflow_title)
+                panel.setProperty("mRemoteNgInheritanceRouteInheritedValue", inheritance_route.inherited_value)
+                panel.setProperty("mRemoteNgInheritanceRouteInheritedSource", inheritance_route.inherited_source)
+                panel.setProperty("mRemoteNgInheritanceRouteState", inheritance_route.inheritance_state)
+                panel.setProperty("mRemoteNgInheritanceRouteRenderSource", inheritance_route.render_source)
+            if securecrt_sftp_route is not None:
+                panel.setProperty("secureCrtSftpTabRouteKey", securecrt_sftp_route.key)
+                panel.setProperty("secureCrtSftpTabRouteRole", securecrt_sftp_route.route_role)
+                panel.setProperty("secureCrtSftpTabRouteWorkflowKey", securecrt_sftp_route.workflow_card_key)
+                panel.setProperty(
+                    "secureCrtSftpTabRouteWorkflowCardObject",
+                    securecrt_sftp_route.workflow_card_object,
+                )
+                panel.setProperty("secureCrtSftpTabRouteTitleObject", securecrt_sftp_route.workflow_title_object)
+                panel.setProperty("secureCrtSftpTabRoutePrimaryObject", securecrt_sftp_route.workflow_primary_object)
+                panel.setProperty(
+                    "secureCrtSftpTabRouteSecondaryObject",
+                    securecrt_sftp_route.workflow_secondary_object,
+                )
+                panel.setProperty(
+                    "secureCrtSftpTabRouteSessionManagerObject",
+                    securecrt_sftp_route.session_manager_object,
+                )
+                panel.setProperty("secureCrtSftpTabRouteSelectedTreeObject", securecrt_sftp_route.selected_tree_object)
+                panel.setProperty("secureCrtSftpTabRouteSelectedProfile", securecrt_sftp_route.selected_profile_name)
+                panel.setProperty("secureCrtSftpTabRouteSelectedTreeLabel", securecrt_sftp_route.selected_tree_label)
+                panel.setProperty("secureCrtSftpTabRouteActiveTab", securecrt_sftp_route.active_tab_label)
+                panel.setProperty("secureCrtSftpTabRouteTabLabel", securecrt_sftp_route.sftp_tab_label)
+                panel.setProperty("secureCrtSftpTabRouteStatusStripObject", securecrt_sftp_route.status_strip_object)
+                panel.setProperty("secureCrtSftpTabRouteStatusFieldKey", securecrt_sftp_route.status_field_key)
+                panel.setProperty("secureCrtSftpTabRouteStatusFieldObject", securecrt_sftp_route.status_field_object)
+                panel.setProperty("secureCrtSftpTabRouteStatus", securecrt_sftp_route.status_value)
+                panel.setProperty("secureCrtSftpTabRouteTransferState", securecrt_sftp_route.transfer_state)
+                panel.setProperty("secureCrtSftpTabRouteRenderSource", securecrt_sftp_route.render_source)
             layout = QHBoxLayout(panel)
             layout.setContentsMargins(8, 8, 8, 8)
             layout.setSpacing(8)
@@ -4837,6 +6901,110 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 card_frame.setObjectName("productWorkflowCard")
                 card_frame.setProperty("workflowKey", card.key)
                 card_frame.setMinimumWidth(190)
+                if snippet_route is not None and card.key == snippet_route.workflow_card_key:
+                    card_frame.setProperty("termiusSnippetRouteKey", snippet_route.key)
+                    card_frame.setProperty("termiusSnippetRouteRole", snippet_route.route_role)
+                    card_frame.setProperty("termiusSnippetRouteWorkflowKey", snippet_route.workflow_card_key)
+                    card_frame.setProperty("termiusSnippetRouteWorkflowCardObject", snippet_route.workflow_card_object)
+                    card_frame.setProperty("termiusSnippetRouteIdentityObject", snippet_route.host_identity_object)
+                    card_frame.setProperty("termiusSnippetRouteIdentityFieldKey", snippet_route.identity_field_key)
+                    card_frame.setProperty("termiusSnippetRouteIdentityCellObject", snippet_route.identity_cell_object)
+                    card_frame.setProperty("termiusSnippetRouteActiveTab", snippet_route.active_tab_label)
+                    card_frame.setProperty("termiusSnippetRouteSelectedProfile", snippet_route.selected_profile_name)
+                    card_frame.setProperty("termiusSnippetRouteTitle", snippet_route.workflow_title)
+                    card_frame.setProperty("termiusSnippetRouteCommand", snippet_route.snippet_command)
+                    card_frame.setProperty("termiusSnippetRouteState", snippet_route.snippet_state)
+                    card_frame.setProperty("termiusSnippetRouteDetailLine", snippet_route.detail_line)
+                    card_frame.setProperty("termiusSnippetRouteRenderSource", snippet_route.render_source)
+                if inheritance_route is not None and card.key == inheritance_route.workflow_card_key:
+                    card_frame.setProperty("mRemoteNgInheritanceRouteKey", inheritance_route.key)
+                    card_frame.setProperty("mRemoteNgInheritanceRouteRole", inheritance_route.route_role)
+                    card_frame.setProperty(
+                        "mRemoteNgInheritanceRouteWorkflowKey",
+                        inheritance_route.workflow_card_key,
+                    )
+                    card_frame.setProperty(
+                        "mRemoteNgInheritanceRouteWorkflowCardObject",
+                        inheritance_route.workflow_card_object,
+                    )
+                    card_frame.setProperty(
+                        "mRemoteNgInheritanceRouteTitleObject",
+                        inheritance_route.workflow_title_object,
+                    )
+                    card_frame.setProperty(
+                        "mRemoteNgInheritanceRoutePrimaryObject",
+                        inheritance_route.workflow_primary_object,
+                    )
+                    card_frame.setProperty(
+                        "mRemoteNgInheritanceRouteSecondaryObject",
+                        inheritance_route.workflow_secondary_object,
+                    )
+                    card_frame.setProperty(
+                        "mRemoteNgInheritanceRoutePropertyGridObject",
+                        inheritance_route.property_grid_object,
+                    )
+                    card_frame.setProperty(
+                        "mRemoteNgInheritanceRoutePropertyRowKey",
+                        inheritance_route.property_row_key,
+                    )
+                    card_frame.setProperty(
+                        "mRemoteNgInheritanceRoutePropertyCellObject",
+                        inheritance_route.property_cell_object,
+                    )
+                    card_frame.setProperty("mRemoteNgInheritanceRouteActiveTab", inheritance_route.active_tab_label)
+                    card_frame.setProperty(
+                        "mRemoteNgInheritanceRouteSelectedProfile",
+                        inheritance_route.selected_profile_name,
+                    )
+                    card_frame.setProperty(
+                        "mRemoteNgInheritanceRouteSelectedTreeLabel",
+                        inheritance_route.selected_tree_label,
+                    )
+                    card_frame.setProperty("mRemoteNgInheritanceRouteTitle", inheritance_route.workflow_title)
+                    card_frame.setProperty(
+                        "mRemoteNgInheritanceRouteInheritedPropertyLabel",
+                        inheritance_route.inherited_property_label,
+                    )
+                    card_frame.setProperty(
+                        "mRemoteNgInheritanceRouteInheritedValue",
+                        inheritance_route.inherited_value,
+                    )
+                    card_frame.setProperty(
+                        "mRemoteNgInheritanceRouteInheritedSource",
+                        inheritance_route.inherited_source,
+                    )
+                    card_frame.setProperty("mRemoteNgInheritanceRouteState", inheritance_route.inheritance_state)
+                    card_frame.setProperty("mRemoteNgInheritanceRouteRenderSource", inheritance_route.render_source)
+                if securecrt_sftp_route is not None and card.key == securecrt_sftp_route.workflow_card_key:
+                    card_frame.setProperty("secureCrtSftpTabRouteKey", securecrt_sftp_route.key)
+                    card_frame.setProperty("secureCrtSftpTabRouteRole", securecrt_sftp_route.route_role)
+                    card_frame.setProperty(
+                        "secureCrtSftpTabRouteWorkflowKey",
+                        securecrt_sftp_route.workflow_card_key,
+                    )
+                    card_frame.setProperty(
+                        "secureCrtSftpTabRouteWorkflowCardObject",
+                        securecrt_sftp_route.workflow_card_object,
+                    )
+                    card_frame.setProperty(
+                        "secureCrtSftpTabRouteStatusStripObject",
+                        securecrt_sftp_route.status_strip_object,
+                    )
+                    card_frame.setProperty(
+                        "secureCrtSftpTabRouteStatusFieldKey",
+                        securecrt_sftp_route.status_field_key,
+                    )
+                    card_frame.setProperty("secureCrtSftpTabRouteActiveTab", securecrt_sftp_route.active_tab_label)
+                    card_frame.setProperty("secureCrtSftpTabRouteTabLabel", securecrt_sftp_route.sftp_tab_label)
+                    card_frame.setProperty("secureCrtSftpTabRouteStatus", securecrt_sftp_route.status_value)
+                    card_frame.setProperty(
+                        "secureCrtSftpTabRouteTransferState",
+                        securecrt_sftp_route.transfer_state,
+                    )
+                    card_frame.setProperty(
+                        "secureCrtSftpTabRouteRenderSource",
+                        securecrt_sftp_route.render_source,
+                    )
                 card_layout = QVBoxLayout(card_frame)
                 card_layout.setContentsMargins(8, 7, 8, 7)
                 card_layout.setSpacing(3)
@@ -4847,6 +7015,27 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 secondary = QLabel(card.secondary)
                 secondary.setObjectName("productWorkflowSecondary")
                 secondary.setWordWrap(True)
+                if snippet_route is not None and card.key == snippet_route.workflow_card_key:
+                    title.setProperty("termiusSnippetRouteKey", snippet_route.key)
+                    title.setProperty("termiusSnippetRouteTitle", card.title)
+                    primary.setProperty("termiusSnippetRouteKey", snippet_route.key)
+                    primary.setProperty("termiusSnippetRouteCommand", card.primary)
+                    secondary.setProperty("termiusSnippetRouteKey", snippet_route.key)
+                    secondary.setProperty("termiusSnippetRouteState", card.secondary)
+                if inheritance_route is not None and card.key == inheritance_route.workflow_card_key:
+                    title.setProperty("mRemoteNgInheritanceRouteKey", inheritance_route.key)
+                    title.setProperty("mRemoteNgInheritanceRouteTitle", card.title)
+                    primary.setProperty("mRemoteNgInheritanceRouteKey", inheritance_route.key)
+                    primary.setProperty("mRemoteNgInheritanceRouteState", card.primary)
+                    secondary.setProperty("mRemoteNgInheritanceRouteKey", inheritance_route.key)
+                    secondary.setProperty("mRemoteNgInheritanceRoutePropertyGridObject", inheritance_route.property_grid_object)
+                if securecrt_sftp_route is not None and card.key == securecrt_sftp_route.workflow_card_key:
+                    title.setProperty("secureCrtSftpTabRouteKey", securecrt_sftp_route.key)
+                    title.setProperty("secureCrtSftpTabRouteTitle", card.title)
+                    primary.setProperty("secureCrtSftpTabRouteKey", securecrt_sftp_route.key)
+                    primary.setProperty("secureCrtSftpTabRouteTransferState", card.primary)
+                    secondary.setProperty("secureCrtSftpTabRouteKey", securecrt_sftp_route.key)
+                    secondary.setProperty("secureCrtSftpTabRouteStatus", securecrt_sftp_route.status_value)
                 card_layout.addWidget(title)
                 card_layout.addWidget(primary)
                 card_layout.addWidget(secondary)
@@ -4854,9 +7043,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             return panel
 
         def build_product_workspace_surface_evidence(self, surface) -> QFrame:
+            selection_route = gui_design_preset_selection_route(self.current_design_id())
             panel = QFrame()
             panel.setObjectName("productWorkspaceSurface")
             panel.setProperty("designPreset", self.current_design_id())
+            self.apply_preset_selection_route_properties(panel, selection_route)
             layout = QVBoxLayout(panel)
             layout.setContentsMargins(10, 9, 10, 9)
             layout.setSpacing(8)
@@ -4876,13 +7067,16 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             if self.current_design_id() == "termius":
                 layout.addWidget(self.build_termius_header_chips_evidence())
                 layout.addWidget(self.build_termius_host_identity_strip_evidence())
+                layout.addWidget(self.build_termius_files_browser_evidence())
             if self.current_design_id() == "remmina":
                 layout.addWidget(self.build_remmina_viewer_controls_evidence())
+                layout.addWidget(self.build_remmina_sftp_transfer_evidence())
             if self.current_design_id() == "mremoteng":
                 layout.addWidget(self.build_mremoteng_document_controls_evidence())
                 layout.addWidget(self.build_mremoteng_property_grid_evidence())
             if self.current_design_id() == "securecrt":
                 layout.addWidget(self.build_securecrt_session_status_strip_evidence())
+                layout.addWidget(self.build_securecrt_sftp_browser_evidence())
 
             panes = QHBoxLayout()
             panes.setSpacing(8)
@@ -4908,6 +7102,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
         def build_mremoteng_document_controls_evidence(self) -> QFrame:
             chrome = gui_design_mremoteng_document_toolbar_chrome()
             route = gui_design_mremoteng_connection_document_route()
+            filter_route = gui_design_mremoteng_document_filter_route()
             state = gui_design_interaction_state("mremoteng")
             panel = QFrame()
             panel.setObjectName("mRemoteNgDocumentControls")
@@ -4927,6 +7122,25 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             panel.setProperty("mRemoteNgConnectionRouteState", route.workspace_state)
             panel.setProperty("mRemoteNgConnectionRoutePropertyValue", route.property_value)
             panel.setProperty("mRemoteNgConnectionRouteRenderSource", route.render_source)
+            filter_route_properties = {
+                "mRemoteNgDocumentFilterRouteKey": filter_route.key,
+                "mRemoteNgDocumentFilterRouteRole": filter_route.route_role,
+                "mRemoteNgDocumentFilterRouteDocumentControlsObject": filter_route.document_controls_object,
+                "mRemoteNgDocumentFilterRouteFilterObject": filter_route.filter_object,
+                "mRemoteNgDocumentFilterRouteSelectedTreeObject": filter_route.selected_tree_object,
+                "mRemoteNgDocumentFilterRouteSelectedProfile": filter_route.selected_profile_name,
+                "mRemoteNgDocumentFilterRouteMatchedTreeLabel": filter_route.selected_tree_label,
+                "mRemoteNgDocumentFilterRouteMatchedProtocol": filter_route.matched_protocol,
+                "mRemoteNgDocumentFilterRouteMatchedState": filter_route.matched_state,
+                "mRemoteNgDocumentFilterRouteQuery": filter_route.expected_query,
+                "mRemoteNgDocumentFilterRoutePlaceholder": filter_route.expected_placeholder,
+                "mRemoteNgDocumentFilterRouteActiveTab": filter_route.active_tab_label,
+                "mRemoteNgDocumentFilterRouteSignal": filter_route.change_signal,
+                "mRemoteNgDocumentFilterRouteHandler": filter_route.handler_name,
+                "mRemoteNgDocumentFilterRouteRenderSource": filter_route.render_source,
+            }
+            for property_name, property_value in filter_route_properties.items():
+                panel.setProperty(property_name, property_value)
             panel.setProperty("mRemoteNgDocumentTitleWidth", chrome.title_width)
             panel.setProperty("mRemoteNgDocumentStaticHeight", chrome.static_height)
             panel.setProperty("mRemoteNgDocumentStaticButtonStartX", chrome.static_button_start_x)
@@ -5007,6 +7221,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             filter_input.setPlaceholderText(chrome.filter_placeholder)
             filter_input.setProperty("mRemoteNgDocumentFilterWidth", chrome.live_filter_width)
             filter_input.setProperty("mRemoteNgDocumentFilterHeight", chrome.live_filter_height)
+            for property_name, property_value in filter_route_properties.items():
+                filter_input.setProperty(property_name, property_value)
             filter_input.setMinimumWidth(chrome.live_filter_width)
             filter_input.setMaximumWidth(chrome.live_filter_width)
             filter_input.setMinimumHeight(chrome.live_filter_height)
@@ -5015,6 +7231,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 filter_input,
                 "focused" if state.focused_control == "tree-filter" else "normal",
             )
+            filter_input.textChanged.connect(self.filter_profile_tree)
             layout.addWidget(filter_input)
             return panel
 
@@ -5068,6 +7285,28 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
         def build_mremoteng_property_grid_evidence(self) -> QFrame:
             chrome = gui_design_mremoteng_property_grid_chrome()
             route = gui_design_mremoteng_connection_document_route()
+            inheritance_route = gui_design_mremoteng_inheritance_route()
+            inheritance_route_properties = {
+                "mRemoteNgInheritanceRouteKey": inheritance_route.key,
+                "mRemoteNgInheritanceRouteRole": inheritance_route.route_role,
+                "mRemoteNgInheritanceRouteWorkflowKey": inheritance_route.workflow_card_key,
+                "mRemoteNgInheritanceRouteWorkflowCardObject": inheritance_route.workflow_card_object,
+                "mRemoteNgInheritanceRouteTitleObject": inheritance_route.workflow_title_object,
+                "mRemoteNgInheritanceRoutePrimaryObject": inheritance_route.workflow_primary_object,
+                "mRemoteNgInheritanceRouteSecondaryObject": inheritance_route.workflow_secondary_object,
+                "mRemoteNgInheritanceRoutePropertyGridObject": inheritance_route.property_grid_object,
+                "mRemoteNgInheritanceRoutePropertyRowKey": inheritance_route.property_row_key,
+                "mRemoteNgInheritanceRoutePropertyCellObject": inheritance_route.property_cell_object,
+                "mRemoteNgInheritanceRouteActiveTab": inheritance_route.active_tab_label,
+                "mRemoteNgInheritanceRouteSelectedProfile": inheritance_route.selected_profile_name,
+                "mRemoteNgInheritanceRouteSelectedTreeLabel": inheritance_route.selected_tree_label,
+                "mRemoteNgInheritanceRouteTitle": inheritance_route.workflow_title,
+                "mRemoteNgInheritanceRouteInheritedPropertyLabel": inheritance_route.inherited_property_label,
+                "mRemoteNgInheritanceRouteInheritedValue": inheritance_route.inherited_value,
+                "mRemoteNgInheritanceRouteInheritedSource": inheritance_route.inherited_source,
+                "mRemoteNgInheritanceRouteState": inheritance_route.inheritance_state,
+                "mRemoteNgInheritanceRouteRenderSource": inheritance_route.render_source,
+            }
             panel = QFrame()
             panel.setObjectName("mRemoteNgPropertyGrid")
             panel.setProperty("designPreset", "mremoteng")
@@ -5088,6 +7327,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             panel.setProperty("mRemoteNgConnectionRouteState", route.workspace_state)
             panel.setProperty("mRemoteNgConnectionRoutePropertyValue", route.property_value)
             panel.setProperty("mRemoteNgConnectionRouteRenderSource", route.render_source)
+            for property_name, property_value in inheritance_route_properties.items():
+                panel.setProperty(property_name, property_value)
             panel.setMaximumHeight(176)
             layout = QVBoxLayout(panel)
             layout.setContentsMargins(7, 6, 7, 6)
@@ -5136,6 +7377,16 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     row_frame.setProperty("mRemoteNgConnectionRoutePropertyCellObject", route.property_cell_object)
                     row_frame.setProperty("mRemoteNgConnectionRoutePropertyValue", route.property_value)
                     row_frame.setProperty("mRemoteNgConnectionRouteRenderSource", route.render_source)
+                if row.key == inheritance_route.property_row_key:
+                    for property_name, property_value in inheritance_route_properties.items():
+                        row_frame.setProperty(property_name, property_value)
+                    row_frame.setProperty(inheritance_route.workflow_key_property, inheritance_route.workflow_card_key)
+                    row_frame.setProperty(inheritance_route.active_tab_property, inheritance_route.active_tab_label)
+                    row_frame.setProperty(inheritance_route.status_property, inheritance_route.inheritance_state)
+                    row_frame.setProperty(
+                        inheritance_route.inherited_value_property,
+                        inheritance_route.inherited_value,
+                    )
                 row_layout = QHBoxLayout(row_frame)
                 row_layout.setContentsMargins(0, 0, 0, 0)
                 row_layout.setSpacing(3)
@@ -5157,6 +7408,16 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                         cell.setProperty("mRemoteNgConnectionRoutePropertyRowKey", route.property_row_key)
                         cell.setProperty("mRemoteNgConnectionRoutePropertyCellObject", route.property_cell_object)
                         cell.setProperty("mRemoteNgConnectionRoutePropertyValue", route.property_value)
+                    if row.key == inheritance_route.property_row_key:
+                        for property_name, property_value in inheritance_route_properties.items():
+                            cell.setProperty(property_name, property_value)
+                        cell.setProperty(inheritance_route.workflow_key_property, inheritance_route.workflow_card_key)
+                        cell.setProperty(inheritance_route.active_tab_property, inheritance_route.active_tab_label)
+                        cell.setProperty(inheritance_route.status_property, inheritance_route.inheritance_state)
+                        cell.setProperty(
+                            inheritance_route.inherited_value_property,
+                            inheritance_route.inherited_value,
+                        )
                     cell.setMinimumWidth(max(72, min(column.static_width, 190)))
                     cell.setToolTip(f"{row.property_label}: {values[column.key]}")
                     row_layout.addWidget(cell)
@@ -5165,9 +7426,26 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
         def build_termius_header_chips_evidence(self) -> QFrame:
             sync_route = gui_design_termius_sync_route()
+            port_forward_route = gui_design_termius_port_forward_route()
             panel = QFrame()
             panel.setObjectName("termiusHeaderChips")
             panel.setProperty("designPreset", "termius")
+            panel.setProperty("termiusPortForwardRouteKey", port_forward_route.key)
+            panel.setProperty("termiusPortForwardRouteRole", port_forward_route.route_role)
+            panel.setProperty("termiusPortForwardRouteHeaderChipKey", port_forward_route.header_chip_key)
+            panel.setProperty("termiusPortForwardRouteHeaderChipObject", port_forward_route.header_chip_object)
+            panel.setProperty("termiusPortForwardRouteIdentityObject", port_forward_route.host_identity_object)
+            panel.setProperty("termiusPortForwardRouteIdentityFieldKey", port_forward_route.identity_field_key)
+            panel.setProperty("termiusPortForwardRouteIdentityCellObject", port_forward_route.identity_cell_object)
+            panel.setProperty("termiusPortForwardRouteActiveTab", port_forward_route.active_tab_label)
+            panel.setProperty("termiusPortForwardRouteSelectedProfile", port_forward_route.selected_profile_name)
+            panel.setProperty("termiusPortForwardRouteForwardValue", port_forward_route.forward_value)
+            panel.setProperty("termiusPortForwardRouteState", port_forward_route.forward_state)
+            panel.setProperty("termiusPortForwardRouteLocalPort", port_forward_route.local_port)
+            panel.setProperty("termiusPortForwardRouteRemoteHost", port_forward_route.remote_host)
+            panel.setProperty("termiusPortForwardRouteRemotePort", port_forward_route.remote_port)
+            panel.setProperty("termiusPortForwardRouteStatusSegment", port_forward_route.status_segment)
+            panel.setProperty("termiusPortForwardRouteRenderSource", port_forward_route.render_source)
             layout = QHBoxLayout(panel)
             layout.setContentsMargins(7, 5, 7, 5)
             layout.setSpacing(8)
@@ -5191,6 +7469,24 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     label.setProperty("termiusSyncRouteState", sync_route.sync_state)
                     label.setProperty("termiusSyncRouteChipLabel", chip.label)
                     label.setProperty("termiusSyncRouteRenderSource", sync_route.render_source)
+                if chip.key == port_forward_route.header_chip_key:
+                    label.setProperty("termiusPortForwardRouteKey", port_forward_route.key)
+                    label.setProperty("termiusPortForwardRouteRole", port_forward_route.route_role)
+                    label.setProperty("termiusPortForwardRouteHeaderChipKey", port_forward_route.header_chip_key)
+                    label.setProperty("termiusPortForwardRouteHeaderChipObject", port_forward_route.header_chip_object)
+                    label.setProperty("termiusPortForwardRouteIdentityObject", port_forward_route.host_identity_object)
+                    label.setProperty("termiusPortForwardRouteIdentityFieldKey", port_forward_route.identity_field_key)
+                    label.setProperty("termiusPortForwardRouteIdentityCellObject", port_forward_route.identity_cell_object)
+                    label.setProperty("termiusPortForwardRouteActiveTab", port_forward_route.active_tab_label)
+                    label.setProperty("termiusPortForwardRouteSelectedProfile", port_forward_route.selected_profile_name)
+                    label.setProperty("termiusPortForwardRouteForwardValue", port_forward_route.forward_value)
+                    label.setProperty("termiusPortForwardRouteState", port_forward_route.forward_state)
+                    label.setProperty("termiusPortForwardRouteLocalPort", port_forward_route.local_port)
+                    label.setProperty("termiusPortForwardRouteRemoteHost", port_forward_route.remote_host)
+                    label.setProperty("termiusPortForwardRouteRemotePort", port_forward_route.remote_port)
+                    label.setProperty("termiusPortForwardRouteStatusSegment", port_forward_route.status_segment)
+                    label.setProperty(port_forward_route.chip_label_property, chip.label)
+                    label.setProperty("termiusPortForwardRouteRenderSource", port_forward_route.render_source)
                 layout.addWidget(label)
             return panel
 
@@ -5198,6 +7494,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             strip = gui_design_termius_host_identity_strip()
             sync_route = gui_design_termius_sync_route()
             host_route = gui_design_termius_host_selection_route()
+            port_forward_route = gui_design_termius_port_forward_route()
+            snippet_route = gui_design_termius_snippet_route()
+            files_route = gui_design_termius_files_browser_route()
             panel = QFrame()
             panel.setObjectName("termiusHostIdentityStrip")
             panel.setProperty("designPreset", "termius")
@@ -5214,6 +7513,50 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             panel.setProperty("termiusHostRouteProtocol", host_route.protocol_value)
             panel.setProperty("termiusHostRouteIdentityValue", host_route.host_value)
             panel.setProperty("termiusHostRouteRenderSource", host_route.render_source)
+            panel.setProperty("termiusPortForwardRouteKey", port_forward_route.key)
+            panel.setProperty("termiusPortForwardRouteRole", port_forward_route.route_role)
+            panel.setProperty("termiusPortForwardRouteHeaderChipKey", port_forward_route.header_chip_key)
+            panel.setProperty("termiusPortForwardRouteHeaderChipObject", port_forward_route.header_chip_object)
+            panel.setProperty("termiusPortForwardRouteIdentityObject", port_forward_route.host_identity_object)
+            panel.setProperty("termiusPortForwardRouteIdentityFieldKey", port_forward_route.identity_field_key)
+            panel.setProperty("termiusPortForwardRouteIdentityCellObject", port_forward_route.identity_cell_object)
+            panel.setProperty("termiusPortForwardRouteActiveTab", port_forward_route.active_tab_label)
+            panel.setProperty("termiusPortForwardRouteSelectedProfile", port_forward_route.selected_profile_name)
+            panel.setProperty("termiusPortForwardRouteForwardValue", port_forward_route.forward_value)
+            panel.setProperty("termiusPortForwardRouteState", port_forward_route.forward_state)
+            panel.setProperty("termiusPortForwardRouteLocalPort", port_forward_route.local_port)
+            panel.setProperty("termiusPortForwardRouteRemoteHost", port_forward_route.remote_host)
+            panel.setProperty("termiusPortForwardRouteRemotePort", port_forward_route.remote_port)
+            panel.setProperty("termiusPortForwardRouteStatusSegment", port_forward_route.status_segment)
+            panel.setProperty("termiusPortForwardRouteRenderSource", port_forward_route.render_source)
+            panel.setProperty("termiusSnippetRouteKey", snippet_route.key)
+            panel.setProperty("termiusSnippetRouteRole", snippet_route.route_role)
+            panel.setProperty("termiusSnippetRouteWorkflowKey", snippet_route.workflow_card_key)
+            panel.setProperty("termiusSnippetRouteWorkflowCardObject", snippet_route.workflow_card_object)
+            panel.setProperty("termiusSnippetRouteIdentityObject", snippet_route.host_identity_object)
+            panel.setProperty("termiusSnippetRouteIdentityFieldKey", snippet_route.identity_field_key)
+            panel.setProperty("termiusSnippetRouteIdentityCellObject", snippet_route.identity_cell_object)
+            panel.setProperty("termiusSnippetRouteActiveTab", snippet_route.active_tab_label)
+            panel.setProperty("termiusSnippetRouteSelectedProfile", snippet_route.selected_profile_name)
+            panel.setProperty("termiusSnippetRouteTitle", snippet_route.workflow_title)
+            panel.setProperty("termiusSnippetRouteCommand", snippet_route.snippet_command)
+            panel.setProperty("termiusSnippetRouteState", snippet_route.snippet_state)
+            panel.setProperty("termiusSnippetRouteDetailLine", snippet_route.detail_line)
+            panel.setProperty("termiusSnippetRouteRenderSource", snippet_route.render_source)
+            panel.setProperty("termiusFilesRouteKey", files_route.key)
+            panel.setProperty("termiusFilesRouteRole", files_route.route_role)
+            panel.setProperty("termiusFilesRouteHostSelectionKey", files_route.host_selection_route_key)
+            panel.setProperty("termiusFilesRouteIdentityObject", files_route.host_identity_object)
+            panel.setProperty("termiusFilesRouteIdentityFieldKey", files_route.identity_field_key)
+            panel.setProperty("termiusFilesRouteIdentityCellObject", files_route.identity_cell_object)
+            panel.setProperty("termiusFilesRouteBrowserObject", files_route.files_browser_object)
+            panel.setProperty("termiusFilesRouteActiveTab", files_route.active_tab_label)
+            panel.setProperty("termiusFilesRouteSelectedProfile", files_route.selected_profile_name)
+            panel.setProperty("termiusFilesRouteSelectedTreeLabel", files_route.selected_tree_label)
+            panel.setProperty("termiusFilesRouteState", files_route.files_state)
+            panel.setProperty("termiusFilesRoutePath", files_route.remote_path)
+            panel.setProperty("termiusFilesRouteQueueState", files_route.transfer_status)
+            panel.setProperty("termiusFilesRouteRenderSource", files_route.render_source)
             panel.setProperty("termiusHostIdentityFieldKeys", [field.key for field in strip.fields])
             panel.setProperty("termiusHostIdentityTitleWidth", strip.title_width)
             panel.setProperty("termiusHostIdentityStaticTitleX", strip.static_title_x)
@@ -5277,13 +7620,174 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     cell.setProperty("termiusHostRouteProtocol", host_route.protocol_value)
                     cell.setProperty("termiusHostRouteIdentityValue", host_route.host_value)
                     cell.setProperty("termiusHostRouteRenderSource", host_route.render_source)
+                if field.key == port_forward_route.identity_field_key:
+                    cell.setProperty("termiusPortForwardRouteKey", port_forward_route.key)
+                    cell.setProperty("termiusPortForwardRouteRole", port_forward_route.route_role)
+                    cell.setProperty("termiusPortForwardRouteHeaderChipKey", port_forward_route.header_chip_key)
+                    cell.setProperty("termiusPortForwardRouteHeaderChipObject", port_forward_route.header_chip_object)
+                    cell.setProperty("termiusPortForwardRouteIdentityObject", port_forward_route.host_identity_object)
+                    cell.setProperty("termiusPortForwardRouteIdentityFieldKey", port_forward_route.identity_field_key)
+                    cell.setProperty("termiusPortForwardRouteIdentityCellObject", port_forward_route.identity_cell_object)
+                    cell.setProperty("termiusPortForwardRouteActiveTab", port_forward_route.active_tab_label)
+                    cell.setProperty("termiusPortForwardRouteSelectedProfile", port_forward_route.selected_profile_name)
+                    cell.setProperty("termiusPortForwardRouteForwardValue", port_forward_route.forward_value)
+                    cell.setProperty("termiusPortForwardRouteState", port_forward_route.forward_state)
+                    cell.setProperty("termiusPortForwardRouteLocalPort", port_forward_route.local_port)
+                    cell.setProperty("termiusPortForwardRouteRemoteHost", port_forward_route.remote_host)
+                    cell.setProperty("termiusPortForwardRouteRemotePort", port_forward_route.remote_port)
+                    cell.setProperty("termiusPortForwardRouteStatusSegment", port_forward_route.status_segment)
+                    cell.setProperty("termiusPortForwardRouteIdentityValue", field.value)
+                    cell.setProperty("termiusPortForwardRouteRenderSource", port_forward_route.render_source)
+                if field.key == snippet_route.identity_field_key:
+                    cell.setProperty("termiusSnippetRouteKey", snippet_route.key)
+                    cell.setProperty("termiusSnippetRouteRole", snippet_route.route_role)
+                    cell.setProperty("termiusSnippetRouteWorkflowKey", snippet_route.workflow_card_key)
+                    cell.setProperty("termiusSnippetRouteWorkflowCardObject", snippet_route.workflow_card_object)
+                    cell.setProperty("termiusSnippetRouteIdentityObject", snippet_route.host_identity_object)
+                    cell.setProperty("termiusSnippetRouteIdentityFieldKey", snippet_route.identity_field_key)
+                    cell.setProperty("termiusSnippetRouteIdentityCellObject", snippet_route.identity_cell_object)
+                    cell.setProperty("termiusSnippetRouteActiveTab", snippet_route.active_tab_label)
+                    cell.setProperty("termiusSnippetRouteSelectedProfile", snippet_route.selected_profile_name)
+                    cell.setProperty("termiusSnippetRouteTitle", snippet_route.workflow_title)
+                    cell.setProperty("termiusSnippetRouteCommand", snippet_route.snippet_command)
+                    cell.setProperty("termiusSnippetRouteState", snippet_route.snippet_state)
+                    cell.setProperty("termiusSnippetRouteDetailLine", snippet_route.detail_line)
+                    cell.setProperty("termiusSnippetRouteIdentityValue", field.value)
+                    cell.setProperty("termiusSnippetRouteRenderSource", snippet_route.render_source)
+                if field.key == files_route.identity_field_key:
+                    cell.setProperty("termiusFilesRouteKey", files_route.key)
+                    cell.setProperty("termiusFilesRouteRole", files_route.route_role)
+                    cell.setProperty("termiusFilesRouteHostSelectionKey", files_route.host_selection_route_key)
+                    cell.setProperty("termiusFilesRouteIdentityObject", files_route.host_identity_object)
+                    cell.setProperty("termiusFilesRouteIdentityFieldKey", files_route.identity_field_key)
+                    cell.setProperty("termiusFilesRouteIdentityCellObject", files_route.identity_cell_object)
+                    cell.setProperty("termiusFilesRouteBrowserObject", files_route.files_browser_object)
+                    cell.setProperty("termiusFilesRouteActiveTab", files_route.active_tab_label)
+                    cell.setProperty("termiusFilesRouteSelectedProfile", files_route.selected_profile_name)
+                    cell.setProperty("termiusFilesRouteSelectedTreeLabel", files_route.selected_tree_label)
+                    cell.setProperty("termiusFilesRouteIdentityValue", field.value)
+                    cell.setProperty("termiusFilesRouteState", files_route.files_state)
+                    cell.setProperty("termiusFilesRoutePath", files_route.remote_path)
+                    cell.setProperty("termiusFilesRouteQueueState", files_route.transfer_status)
+                    cell.setProperty("termiusFilesRouteRenderSource", files_route.render_source)
                 layout.addWidget(cell)
             layout.addStretch(1)
+            return panel
+
+        def build_termius_files_browser_evidence(self) -> QFrame:
+            route = gui_design_termius_files_browser_route()
+            actions_value = "|".join(route.toolbar_actions)
+            route_props = {
+                "termiusFilesRouteKey": route.key,
+                "termiusFilesRouteRole": route.route_role,
+                "termiusFilesRouteHostSelectionKey": route.host_selection_route_key,
+                "termiusFilesRouteIdentityObject": route.host_identity_object,
+                "termiusFilesRouteIdentityFieldKey": route.identity_field_key,
+                "termiusFilesRouteIdentityCellObject": route.identity_cell_object,
+                "termiusFilesRouteBrowserObject": route.files_browser_object,
+                "termiusFilesRouteToolbarObject": route.toolbar_object,
+                "termiusFilesRoutePathObject": route.path_object,
+                "termiusFilesRouteTableObject": route.table_object,
+                "termiusFilesRouteRowObject": route.row_object,
+                "termiusFilesRouteQueueObject": route.queue_object,
+                route.active_tab_property: route.active_tab_label,
+                "termiusFilesRouteSelectedProfile": route.selected_profile_name,
+                "termiusFilesRouteSelectedTreeLabel": route.selected_tree_label,
+                route.identity_value_property: route.files_state,
+                "termiusFilesRouteState": route.files_state,
+                route.path_property: route.remote_path,
+                route.toolbar_actions_property: actions_value,
+                "termiusFilesRouteActiveRowName": route.active_row_name,
+                "termiusFilesRouteQueueLabel": route.transfer_queue_label,
+                "termiusFilesRouteQueueState": route.transfer_status,
+                "termiusFilesRouteRenderSource": route.render_source,
+            }
+            panel = QFrame()
+            panel.setObjectName(route.files_browser_object)
+            for property_name, value in route_props.items():
+                panel.setProperty(property_name, value)
+            layout = QVBoxLayout(panel)
+            layout.setContentsMargins(8, 7, 8, 7)
+            layout.setSpacing(5)
+
+            header = QHBoxLayout()
+            title = QLabel(f"Files - {route.selected_profile_name}")
+            title.setObjectName("termiusFilesTitle")
+            title.setProperty("termiusFilesRouteKey", route.key)
+            title.setProperty("termiusFilesRouteState", route.files_state)
+            queue = QLabel(f"Queue: {route.transfer_queue_label} ({route.transfer_status})")
+            queue.setObjectName(route.queue_object)
+            for property_name, value in route_props.items():
+                queue.setProperty(property_name, value)
+            header.addWidget(title)
+            header.addStretch(1)
+            header.addWidget(queue)
+            layout.addLayout(header)
+
+            toolbar = QFrame()
+            toolbar.setObjectName(route.toolbar_object)
+            for property_name, value in route_props.items():
+                toolbar.setProperty(property_name, value)
+            toolbar_layout = QHBoxLayout(toolbar)
+            toolbar_layout.setContentsMargins(0, 0, 0, 0)
+            toolbar_layout.setSpacing(6)
+            for action_key in route.toolbar_actions:
+                action = QLabel(action_key.title())
+                action.setObjectName("termiusFilesAction")
+                action.setProperty("termiusFilesRouteKey", route.key)
+                action.setProperty("termiusFilesRouteActionKey", action_key)
+                action.setProperty(route.toolbar_actions_property, actions_value)
+                toolbar_layout.addWidget(action)
+            toolbar_layout.addStretch(1)
+            layout.addWidget(toolbar)
+
+            path = QLabel(f"Remote path: {route.remote_path}")
+            path.setObjectName(route.path_object)
+            for property_name, value in route_props.items():
+                path.setProperty(property_name, value)
+            layout.addWidget(path)
+
+            table = QFrame()
+            table.setObjectName(route.table_object)
+            for property_name, value in route_props.items():
+                table.setProperty(property_name, value)
+            table_layout = QVBoxLayout(table)
+            table_layout.setContentsMargins(0, 0, 0, 0)
+            table_layout.setSpacing(2)
+            header_row = QLabel("Name        Size     Modified")
+            header_row.setObjectName("termiusFilesHeader")
+            table_layout.addWidget(header_row)
+            for row in route.file_rows:
+                row_frame = QFrame()
+                row_frame.setObjectName(route.row_object)
+                for property_name, value in route_props.items():
+                    row_frame.setProperty(property_name, value)
+                row_frame.setProperty(route.row_name_property, row.name)
+                row_frame.setProperty(route.row_kind_property, row.kind)
+                row_frame.setProperty(route.row_selected_property, row.selected)
+                row_frame.setProperty("termiusFilesRouteRowKey", row.key)
+                row_frame.setProperty("termiusFilesRouteRowSize", row.size)
+                row_frame.setProperty("termiusFilesRouteRowModified", row.modified)
+                row_layout = QHBoxLayout(row_frame)
+                row_layout.setContentsMargins(4, 1, 4, 1)
+                row_layout.setSpacing(8)
+                name = QLabel(row.name)
+                name.setObjectName("termiusFilesRowName")
+                size = QLabel(row.size)
+                size.setObjectName("termiusFilesRowSize")
+                modified = QLabel(row.modified)
+                modified.setObjectName("termiusFilesRowModified")
+                row_layout.addWidget(name, 2)
+                row_layout.addWidget(size, 1)
+                row_layout.addWidget(modified, 1)
+                table_layout.addWidget(row_frame)
+            layout.addWidget(table)
             return panel
 
         def build_remmina_viewer_controls_evidence(self) -> QFrame:
             route = gui_design_remmina_profile_viewer_route()
             clipboard_route = gui_design_remmina_clipboard_route()
+            screenshot_route = gui_design_remmina_screenshot_route()
             panel = QFrame()
             panel.setObjectName("remminaViewerControls")
             panel.setProperty("designPreset", "remmina")
@@ -5310,6 +7814,19 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             panel.setProperty("remminaClipboardRouteDetailLine", clipboard_route.detail_line)
             panel.setProperty("remminaClipboardRouteActivityLine", clipboard_route.activity_line)
             panel.setProperty("remminaClipboardRouteRenderSource", clipboard_route.render_source)
+            panel.setProperty("remminaScreenshotRouteKey", screenshot_route.key)
+            panel.setProperty("remminaScreenshotRouteRole", screenshot_route.route_role)
+            panel.setProperty("remminaScreenshotViewerControlsObject", screenshot_route.viewer_controls_object)
+            panel.setProperty("remminaScreenshotViewerControlKey", screenshot_route.viewer_control_key)
+            panel.setProperty("remminaScreenshotViewerControlObject", screenshot_route.viewer_control_object)
+            panel.setProperty("remminaScreenshotRouteActiveTab", screenshot_route.active_tab_label)
+            panel.setProperty("remminaScreenshotRouteProtocol", screenshot_route.protocol)
+            panel.setProperty("remminaScreenshotRouteState", screenshot_route.capture_state)
+            panel.setProperty("remminaScreenshotRouteArtifact", screenshot_route.capture_artifact)
+            panel.setProperty("remminaScreenshotRouteStatusSegment", screenshot_route.status_segment)
+            panel.setProperty("remminaScreenshotRouteDetailLine", screenshot_route.detail_line)
+            panel.setProperty("remminaScreenshotRouteActivityLine", screenshot_route.activity_line)
+            panel.setProperty("remminaScreenshotRouteRenderSource", screenshot_route.render_source)
             layout = QHBoxLayout(panel)
             layout.setContentsMargins(7, 5, 7, 5)
             layout.setSpacing(6)
@@ -5352,6 +7869,20 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     button.setProperty(clipboard_route.control_active_property, "true")
                 else:
                     button.setProperty(clipboard_route.control_active_property, "false")
+                if control.key == screenshot_route.viewer_control_key:
+                    button.setProperty("remminaScreenshotRouteKey", screenshot_route.key)
+                    button.setProperty("remminaScreenshotRouteRole", screenshot_route.route_role)
+                    button.setProperty(screenshot_route.tab_label_property, screenshot_route.active_tab_label)
+                    button.setProperty("remminaScreenshotRouteProtocol", screenshot_route.protocol)
+                    button.setProperty(screenshot_route.capture_state_property, screenshot_route.capture_state)
+                    button.setProperty(screenshot_route.capture_artifact_property, screenshot_route.capture_artifact)
+                    button.setProperty("remminaScreenshotRouteStatusSegment", screenshot_route.status_segment)
+                    button.setProperty("remminaScreenshotRouteDetailLine", screenshot_route.detail_line)
+                    button.setProperty("remminaScreenshotRouteActivityLine", screenshot_route.activity_line)
+                    button.setProperty("remminaScreenshotRouteRenderSource", screenshot_route.render_source)
+                    button.setProperty(screenshot_route.control_active_property, "true")
+                else:
+                    button.setProperty(screenshot_route.control_active_property, "false")
                 button.setText(control.label)
                 button.setToolTip(control.tooltip)
                 button.setIcon(self.remmina_viewer_control_icon(control.icon_key, size=control.live_icon_size))
@@ -5365,6 +7896,119 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     )
                 )
                 layout.addWidget(button)
+            return panel
+
+        def build_remmina_sftp_transfer_evidence(self) -> QFrame:
+            route = gui_design_remmina_sftp_transfer_route()
+            actions_value = "|".join(route.toolbar_actions)
+            route_props = {
+                "remminaSftpTransferRouteKey": route.key,
+                "remminaSftpTransferRouteRole": route.route_role,
+                "remminaSftpTransferRouteProfileListObject": route.profile_list_object,
+                "remminaSftpTransferRouteSelectedProfileKey": route.selected_profile_key,
+                route.selected_profile_property: route.selected_profile_name,
+                "remminaSftpTransferRouteProtocol": route.selected_profile_protocol,
+                "remminaSftpTransferRouteStatus": route.selected_profile_status,
+                "remminaSftpTransferRouteSelectedProfileObject": route.selected_profile_object,
+                "remminaSftpTransferRouteSelectedTreeLabel": route.selected_tree_label,
+                "remminaSftpTransferRouteToolbarActionKey": route.toolbar_action_key,
+                "remminaSftpTransferRouteToolbarActionLabel": route.toolbar_action_label,
+                "remminaSftpTransferRouteToolbarActionObject": route.toolbar_action_object,
+                route.tab_label_property: route.active_tab_label,
+                "remminaSftpTransferRoutePanelObject": route.transfer_panel_object,
+                "remminaSftpTransferRouteToolbarObject": route.toolbar_object,
+                "remminaSftpTransferRoutePathObject": route.path_object,
+                "remminaSftpTransferRouteTableObject": route.table_object,
+                "remminaSftpTransferRouteRowObject": route.row_object,
+                "remminaSftpTransferRouteQueueObject": route.queue_object,
+                route.path_property: route.remote_path,
+                route.toolbar_actions_property: actions_value,
+                "remminaSftpTransferRouteActiveRowName": route.active_row_name,
+                "remminaSftpTransferRouteQueueLabel": route.transfer_queue_label,
+                route.queue_state_property: route.transfer_status,
+                "remminaSftpTransferRouteDetailLine": route.detail_line,
+                "remminaSftpTransferRouteActivityLine": route.activity_line,
+                "remminaSftpTransferRouteRenderSource": route.render_source,
+            }
+            panel = QFrame()
+            panel.setObjectName(route.transfer_panel_object)
+            for property_name, value in route_props.items():
+                panel.setProperty(property_name, value)
+            layout = QVBoxLayout(panel)
+            layout.setContentsMargins(8, 7, 8, 7)
+            layout.setSpacing(5)
+
+            header = QHBoxLayout()
+            title = QLabel(f"SFTP transfer - {route.selected_profile_name}")
+            title.setObjectName("remminaSftpTransferTitle")
+            title.setProperty("remminaSftpTransferRouteKey", route.key)
+            queue = QLabel(f"Queue: {route.transfer_queue_label} ({route.transfer_status})")
+            queue.setObjectName(route.queue_object)
+            for property_name, value in route_props.items():
+                queue.setProperty(property_name, value)
+            header.addWidget(title)
+            header.addStretch(1)
+            header.addWidget(queue)
+            layout.addLayout(header)
+
+            toolbar = QFrame()
+            toolbar.setObjectName(route.toolbar_object)
+            for property_name, value in route_props.items():
+                toolbar.setProperty(property_name, value)
+            toolbar_layout = QHBoxLayout(toolbar)
+            toolbar_layout.setContentsMargins(0, 0, 0, 0)
+            toolbar_layout.setSpacing(6)
+            for action_key in route.toolbar_actions:
+                action = QLabel(action_key.title())
+                action.setObjectName("remminaSftpTransferAction")
+                action.setProperty("remminaSftpTransferRouteKey", route.key)
+                action.setProperty("remminaSftpTransferRouteActionKey", action_key)
+                action.setProperty(route.toolbar_actions_property, actions_value)
+                toolbar_layout.addWidget(action)
+            toolbar_layout.addStretch(1)
+            layout.addWidget(toolbar)
+
+            path = QLabel(f"Remote path: {route.remote_path}")
+            path.setObjectName(route.path_object)
+            for property_name, value in route_props.items():
+                path.setProperty(property_name, value)
+            layout.addWidget(path)
+
+            table = QFrame()
+            table.setObjectName(route.table_object)
+            for property_name, value in route_props.items():
+                table.setProperty(property_name, value)
+            table_layout = QVBoxLayout(table)
+            table_layout.setContentsMargins(0, 0, 0, 0)
+            table_layout.setSpacing(2)
+            header_row = QLabel("Name        Size     Modified")
+            header_row.setObjectName("remminaSftpTransferHeader")
+            table_layout.addWidget(header_row)
+            for row in route.file_rows:
+                row_frame = QFrame()
+                row_frame.setObjectName(route.row_object)
+                for property_name, value in route_props.items():
+                    row_frame.setProperty(property_name, value)
+                row_frame.setProperty(route.row_name_property, row.name)
+                row_frame.setProperty(route.row_kind_property, row.kind)
+                row_frame.setProperty(route.row_selected_property, row.selected)
+                row_frame.setProperty("remminaSftpTransferRouteRowKey", row.key)
+                row_frame.setProperty("remminaSftpTransferRouteRowSize", row.size)
+                row_frame.setProperty("remminaSftpTransferRouteRowModified", row.modified)
+                row_layout = QHBoxLayout(row_frame)
+                row_layout.setContentsMargins(4, 1, 4, 1)
+                row_layout.setSpacing(8)
+                name = QLabel(row.name)
+                name.setObjectName("remminaSftpTransferRowName")
+                size = QLabel(row.size)
+                size.setObjectName("remminaSftpTransferRowSize")
+                modified = QLabel(row.modified)
+                modified.setObjectName("remminaSftpTransferRowModified")
+                row_layout.addWidget(name, 2)
+                row_layout.addWidget(size, 1)
+                row_layout.addWidget(modified, 1)
+                table_layout.addWidget(row_frame)
+            layout.addWidget(table)
             return panel
 
         def remmina_viewer_control_icon(self, icon_key: str, *, size: int) -> QIcon:
@@ -5422,6 +8066,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
         def build_securecrt_session_manager_chrome(self) -> QFrame:
             chrome = gui_design_securecrt_session_manager_chrome()
             route = gui_design_securecrt_session_manager_route()
+            filter_route = gui_design_securecrt_session_manager_filter_route()
+            sftp_route = gui_design_securecrt_sftp_tab_route()
             panel = QFrame()
             panel.setObjectName("secureCrtSessionManagerChrome")
             panel.setProperty("designPreset", "securecrt")
@@ -5441,6 +8087,36 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             panel.setProperty("secureCrtSessionRouteSession", route.session_value)
             panel.setProperty("secureCrtSessionRouteStatusValue", route.target_value)
             panel.setProperty("secureCrtSessionRouteRenderSource", route.render_source)
+            panel.setProperty("secureCrtSftpTabRouteKey", sftp_route.key)
+            panel.setProperty("secureCrtSftpTabRouteRole", sftp_route.route_role)
+            panel.setProperty("secureCrtSftpTabRouteWorkflowKey", sftp_route.workflow_card_key)
+            panel.setProperty("secureCrtSftpTabRouteSelectedProfile", sftp_route.selected_profile_name)
+            panel.setProperty("secureCrtSftpTabRouteSelectedTreeLabel", sftp_route.selected_tree_label)
+            panel.setProperty("secureCrtSftpTabRouteActiveTab", sftp_route.active_tab_label)
+            panel.setProperty("secureCrtSftpTabRouteTabLabel", sftp_route.sftp_tab_label)
+            panel.setProperty("secureCrtSftpTabRouteStatusStripObject", sftp_route.status_strip_object)
+            panel.setProperty("secureCrtSftpTabRouteStatusFieldKey", sftp_route.status_field_key)
+            panel.setProperty("secureCrtSftpTabRouteStatusFieldObject", sftp_route.status_field_object)
+            panel.setProperty("secureCrtSftpTabRouteStatus", sftp_route.status_value)
+            panel.setProperty("secureCrtSftpTabRouteTransferState", sftp_route.transfer_state)
+            panel.setProperty("secureCrtSftpTabRouteRenderSource", sftp_route.render_source)
+            filter_route_properties = {
+                "secureCrtSessionFilterRouteKey": filter_route.key,
+                "secureCrtSessionFilterRouteRole": filter_route.route_role,
+                "secureCrtSessionFilterRouteSessionManagerObject": filter_route.session_manager_object,
+                "secureCrtSessionFilterRouteFilterObject": filter_route.filter_object,
+                "secureCrtSessionFilterRouteSelectedTreeObject": filter_route.selected_tree_object,
+                "secureCrtSessionFilterRouteSelectedProfile": filter_route.selected_profile_name,
+                "secureCrtSessionFilterRouteSelectedTreeLabel": filter_route.selected_tree_label,
+                "secureCrtSessionFilterRouteQuery": filter_route.expected_query,
+                "secureCrtSessionFilterRoutePlaceholder": filter_route.expected_placeholder,
+                "secureCrtSessionFilterRouteMatchedLabel": filter_route.matched_result_label,
+                "secureCrtSessionFilterRouteSignal": filter_route.change_signal,
+                "secureCrtSessionFilterRouteHandler": filter_route.handler_name,
+                "secureCrtSessionFilterRouteRenderSource": filter_route.render_source,
+            }
+            for property_name, property_value in filter_route_properties.items():
+                panel.setProperty(property_name, property_value)
             panel.setProperty("secureCrtSessionManagerActionKeys", [action.key for action in chrome.actions])
             panel.setProperty("secureCrtSessionFilterPlaceholder", chrome.filter_placeholder)
             panel.setProperty("secureCrtSessionManagerStaticTitleX", chrome.static_title_x)
@@ -5513,6 +8189,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.securecrt_session_filter.setObjectName("secureCrtSessionFilter")
             self.securecrt_session_filter.setPlaceholderText(chrome.filter_placeholder)
             self.securecrt_session_filter.setProperty("secureCrtSessionManagerLiveFilterHeight", chrome.live_filter_height)
+            for property_name, property_value in filter_route_properties.items():
+                self.securecrt_session_filter.setProperty(property_name, property_value)
             self.securecrt_session_filter.setMinimumHeight(chrome.live_filter_height)
             self.securecrt_session_filter.textChanged.connect(self.filter_profile_tree)
             layout.addWidget(self.securecrt_session_filter)
@@ -5653,6 +8331,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
         def build_remmina_profile_list_chrome(self) -> QFrame:
             chrome = gui_design_remmina_profile_list_chrome()
             route = gui_design_remmina_profile_viewer_route()
+            filter_route = gui_design_remmina_profile_filter_route()
+            transfer_route = gui_design_remmina_sftp_transfer_route()
             panel = QFrame()
             panel.setObjectName("remminaProfileListChrome")
             panel.setProperty("designPreset", "remmina")
@@ -5669,6 +8349,41 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             panel.setProperty("remminaProfileViewerProtocol", route.protocol)
             panel.setProperty("remminaProfileViewerStatus", route.profile_status)
             panel.setProperty("remminaProfileViewerRenderSource", route.render_source)
+            filter_route_properties = {
+                "remminaProfileFilterRouteKey": filter_route.key,
+                "remminaProfileFilterRouteRole": filter_route.route_role,
+                "remminaProfileFilterRouteProfileListObject": filter_route.profile_list_object,
+                "remminaProfileFilterRouteFilterObject": filter_route.filter_object,
+                "remminaProfileFilterRouteSelectedProfileKey": filter_route.selected_profile_key,
+                "remminaProfileFilterRouteSelectedProfileObject": filter_route.selected_profile_object,
+                "remminaProfileFilterRouteMatchedProfile": filter_route.matched_profile_name,
+                "remminaProfileFilterRouteMatchedProtocol": filter_route.matched_protocol,
+                "remminaProfileFilterRouteMatchedStatus": filter_route.matched_status,
+                "remminaProfileFilterRouteQuery": filter_route.expected_query,
+                "remminaProfileFilterRoutePlaceholder": filter_route.expected_placeholder,
+                "remminaProfileFilterRouteActiveTab": filter_route.active_tab_label,
+                "remminaProfileFilterRouteSignal": filter_route.change_signal,
+                "remminaProfileFilterRouteHandler": filter_route.handler_name,
+                "remminaProfileFilterRouteRenderSource": filter_route.render_source,
+            }
+            for property_name, property_value in filter_route_properties.items():
+                panel.setProperty(property_name, property_value)
+            panel.setProperty("remminaSftpTransferRouteKey", transfer_route.key)
+            panel.setProperty("remminaSftpTransferRouteRole", transfer_route.route_role)
+            panel.setProperty("remminaSftpTransferRouteProfileListObject", transfer_route.profile_list_object)
+            panel.setProperty("remminaSftpTransferRouteSelectedProfileKey", transfer_route.selected_profile_key)
+            panel.setProperty("remminaSftpTransferRouteSelectedProfile", transfer_route.selected_profile_name)
+            panel.setProperty("remminaSftpTransferRouteProtocol", transfer_route.selected_profile_protocol)
+            panel.setProperty("remminaSftpTransferRouteStatus", transfer_route.selected_profile_status)
+            panel.setProperty("remminaSftpTransferRouteSelectedProfileObject", transfer_route.selected_profile_object)
+            panel.setProperty("remminaSftpTransferRouteSelectedTreeLabel", transfer_route.selected_tree_label)
+            panel.setProperty("remminaSftpTransferRouteToolbarActionKey", transfer_route.toolbar_action_key)
+            panel.setProperty("remminaSftpTransferRouteToolbarActionLabel", transfer_route.toolbar_action_label)
+            panel.setProperty("remminaSftpTransferRouteActiveTab", transfer_route.active_tab_label)
+            panel.setProperty("remminaSftpTransferRoutePath", transfer_route.remote_path)
+            panel.setProperty("remminaSftpTransferRouteQueueState", transfer_route.transfer_status)
+            panel.setProperty("remminaSftpTransferRouteQueueLabel", transfer_route.transfer_queue_label)
+            panel.setProperty("remminaSftpTransferRouteRenderSource", transfer_route.render_source)
             panel.setProperty("remminaProfileStaticFilterX", chrome.static_filter_x)
             panel.setProperty("remminaProfileStaticFilterY", chrome.static_filter_y)
             panel.setProperty("remminaProfileStaticFilterHeight", chrome.static_filter_height)
@@ -5700,9 +8415,12 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             filter_input = QLineEdit()
             filter_input.setObjectName("remminaProfileFilter")
             filter_input.setPlaceholderText(chrome.filter_placeholder)
-            filter_input.setReadOnly(True)
+            filter_input.setReadOnly(False)
             filter_input.setProperty("remminaProfileFilterWidth", chrome.live_filter_width)
+            for property_name, property_value in filter_route_properties.items():
+                filter_input.setProperty(property_name, property_value)
             filter_input.setMinimumWidth(chrome.live_filter_width)
+            filter_input.textChanged.connect(self.filter_remmina_profile_rows)
             self.remmina_profile_filter = filter_input
             title_row.addWidget(filter_input, 1)
             layout.addLayout(title_row)
@@ -5723,8 +8441,19 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 row_frame = QFrame()
                 row_frame.setObjectName("remminaProfileListRow")
                 row_frame.setProperty("remminaProfileRowKey", row.key)
+                row_frame.setProperty("remminaProfileName", row.name)
                 row_frame.setProperty("remminaProfileProtocol", row.protocol)
+                row_frame.setProperty("remminaProfileServer", row.server)
+                row_frame.setProperty("remminaProfileStatus", row.status)
                 row_frame.setProperty("selectedRow", "true" if row.selected else "false")
+                row_frame.setProperty("remminaProfileFilterRouteKey", filter_route.key)
+                row_frame.setProperty("remminaProfileFilterRouteRole", filter_route.route_role)
+                row_frame.setProperty("remminaProfileFilterRouteQuery", filter_route.expected_query)
+                row_frame.setProperty(
+                    "remminaProfileFilterRouteMatched",
+                    "true" if row.key == filter_route.selected_profile_key else "false",
+                )
+                row_frame.setProperty("remminaProfileFilterRouteRenderSource", filter_route.render_source)
                 if row.key == route.selected_profile_key:
                     row_frame.setProperty("remminaProfileViewerRouteKey", route.key)
                     row_frame.setProperty("remminaProfileViewerRouteRole", route.route_role)
@@ -5733,6 +8462,24 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     row_frame.setProperty("remminaProfileViewerProtocol", route.protocol)
                     row_frame.setProperty("remminaProfileViewerStatus", route.profile_status)
                     row_frame.setProperty(route.selected_row_property, "true" if row.selected else "false")
+                if row.key == filter_route.selected_profile_key:
+                    row_frame.setProperty("remminaProfileFilterRouteSelectedProfileKey", filter_route.selected_profile_key)
+                    row_frame.setProperty("remminaProfileFilterRouteMatchedProfile", filter_route.matched_profile_name)
+                    row_frame.setProperty("remminaProfileFilterRouteMatchedProtocol", filter_route.matched_protocol)
+                    row_frame.setProperty("remminaProfileFilterRouteMatchedStatus", filter_route.matched_status)
+                    row_frame.setProperty("remminaProfileFilterRouteActiveTab", filter_route.active_tab_label)
+                if row.key == transfer_route.selected_profile_key:
+                    row_frame.setProperty("remminaSftpTransferRouteKey", transfer_route.key)
+                    row_frame.setProperty("remminaSftpTransferRouteRole", transfer_route.route_role)
+                    row_frame.setProperty("remminaSftpTransferRouteSelectedProfileKey", transfer_route.selected_profile_key)
+                    row_frame.setProperty("remminaSftpTransferRouteSelectedProfile", transfer_route.selected_profile_name)
+                    row_frame.setProperty("remminaSftpTransferRouteProtocol", transfer_route.selected_profile_protocol)
+                    row_frame.setProperty("remminaSftpTransferRouteStatus", transfer_route.selected_profile_status)
+                    row_frame.setProperty("remminaSftpTransferRouteActiveTab", transfer_route.active_tab_label)
+                    row_frame.setProperty("remminaSftpTransferRoutePath", transfer_route.remote_path)
+                    row_frame.setProperty("remminaSftpTransferRouteQueueState", transfer_route.transfer_status)
+                    row_frame.setProperty("remminaSftpTransferRouteQueueLabel", transfer_route.transfer_queue_label)
+                    row_frame.setProperty("remminaSftpTransferRouteRenderSource", transfer_route.render_source)
                 row_frame.setProperty("remminaProfileStaticRowHeight", chrome.static_row_height)
                 row_frame.setProperty("remminaProfileStaticRowStep", chrome.static_row_step)
                 row_frame.setProperty("remminaProfileLiveRowMinHeight", chrome.live_row_min_height)
@@ -5763,6 +8510,12 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                         cell.setProperty("remminaProfileViewerRouteKey", route.key)
                         cell.setProperty("remminaProfileViewerRouteActiveTab", route.active_tab_label)
                         cell.setProperty("remminaProfileViewerStatus", route.profile_status)
+                    if row.key == transfer_route.selected_profile_key:
+                        cell.setProperty("remminaSftpTransferRouteKey", transfer_route.key)
+                        cell.setProperty("remminaSftpTransferRouteSelectedProfileKey", transfer_route.selected_profile_key)
+                        cell.setProperty("remminaSftpTransferRouteActiveTab", transfer_route.active_tab_label)
+                        cell.setProperty("remminaSftpTransferRoutePath", transfer_route.remote_path)
+                        cell.setProperty("remminaSftpTransferRouteQueueState", transfer_route.transfer_status)
                     cell.setMinimumWidth(column.live_min_width)
                     cell.setToolTip(f"{row.name}: {row.status}")
                     row_layout.addWidget(cell)
@@ -5784,6 +8537,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
         def build_securecrt_session_status_strip_evidence(self) -> QFrame:
             chrome = gui_design_securecrt_session_status_strip()
             route = gui_design_securecrt_session_manager_route()
+            sftp_route = gui_design_securecrt_sftp_tab_route()
             panel = QFrame()
             panel.setObjectName("secureCrtSessionStatusStrip")
             panel.setProperty("designPreset", "securecrt")
@@ -5803,6 +8557,19 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             panel.setProperty("secureCrtSessionRouteSession", route.session_value)
             panel.setProperty("secureCrtSessionRouteStatusValue", route.target_value)
             panel.setProperty("secureCrtSessionRouteRenderSource", route.render_source)
+            panel.setProperty("secureCrtSftpTabRouteKey", sftp_route.key)
+            panel.setProperty("secureCrtSftpTabRouteRole", sftp_route.route_role)
+            panel.setProperty("secureCrtSftpTabRouteWorkflowKey", sftp_route.workflow_card_key)
+            panel.setProperty("secureCrtSftpTabRouteSelectedProfile", sftp_route.selected_profile_name)
+            panel.setProperty("secureCrtSftpTabRouteSelectedTreeLabel", sftp_route.selected_tree_label)
+            panel.setProperty("secureCrtSftpTabRouteActiveTab", sftp_route.active_tab_label)
+            panel.setProperty("secureCrtSftpTabRouteTabLabel", sftp_route.sftp_tab_label)
+            panel.setProperty("secureCrtSftpTabRouteStatusStripObject", sftp_route.status_strip_object)
+            panel.setProperty("secureCrtSftpTabRouteStatusFieldKey", sftp_route.status_field_key)
+            panel.setProperty("secureCrtSftpTabRouteStatusFieldObject", sftp_route.status_field_object)
+            panel.setProperty("secureCrtSftpTabRouteStatus", sftp_route.status_value)
+            panel.setProperty("secureCrtSftpTabRouteTransferState", sftp_route.transfer_state)
+            panel.setProperty("secureCrtSftpTabRouteRenderSource", sftp_route.render_source)
             panel.setProperty("secureCrtSessionStatusFieldKeys", [field.key for field in chrome.fields])
             panel.setProperty("secureCrtSessionStatusTitleWidth", chrome.title_width)
             panel.setProperty("secureCrtSessionStatusStaticTitleX", chrome.static_title_x)
@@ -5850,12 +8617,131 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     cell.setProperty("secureCrtSessionRouteSession", route.session_value)
                     cell.setProperty("secureCrtSessionRouteStatusValue", route.target_value)
                     cell.setProperty("secureCrtSessionRouteRenderSource", route.render_source)
+                if field.key == sftp_route.status_field_key:
+                    cell.setProperty("secureCrtSftpTabRouteKey", sftp_route.key)
+                    cell.setProperty("secureCrtSftpTabRouteRole", sftp_route.route_role)
+                    cell.setProperty("secureCrtSftpTabRouteWorkflowKey", sftp_route.workflow_card_key)
+                    cell.setProperty("secureCrtSftpTabRouteSelectedProfile", sftp_route.selected_profile_name)
+                    cell.setProperty("secureCrtSftpTabRouteSelectedTreeLabel", sftp_route.selected_tree_label)
+                    cell.setProperty("secureCrtSftpTabRouteActiveTab", sftp_route.active_tab_label)
+                    cell.setProperty("secureCrtSftpTabRouteTabLabel", sftp_route.sftp_tab_label)
+                    cell.setProperty("secureCrtSftpTabRouteStatusStripObject", sftp_route.status_strip_object)
+                    cell.setProperty("secureCrtSftpTabRouteStatusFieldKey", sftp_route.status_field_key)
+                    cell.setProperty("secureCrtSftpTabRouteStatusFieldObject", sftp_route.status_field_object)
+                    cell.setProperty("secureCrtSftpTabRouteStatus", sftp_route.status_value)
+                    cell.setProperty("secureCrtSftpTabRouteTransferState", sftp_route.transfer_state)
+                    cell.setProperty("secureCrtSftpTabRouteRenderSource", sftp_route.render_source)
                 cell.setToolTip(field.tooltip)
                 cell.setMinimumWidth(field.live_min_width)
                 cell.setMinimumHeight(field.live_cell_height)
                 cell.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
                 layout.addWidget(cell)
             layout.addStretch(1)
+            return panel
+
+        def build_securecrt_sftp_browser_evidence(self) -> QFrame:
+            route = gui_design_securecrt_sftp_browser_route()
+            actions_value = "|".join(route.toolbar_actions)
+            route_props = {
+                "secureCrtSftpBrowserRouteKey": route.key,
+                "secureCrtSftpBrowserRouteRole": route.route_role,
+                "secureCrtSftpBrowserTabRouteKey": route.sftp_tab_route_key,
+                "secureCrtSftpBrowserObject": route.browser_object,
+                "secureCrtSftpBrowserToolbarObject": route.toolbar_object,
+                "secureCrtSftpBrowserPathObject": route.path_object,
+                "secureCrtSftpBrowserTableObject": route.table_object,
+                "secureCrtSftpBrowserRowObject": route.row_object,
+                "secureCrtSftpBrowserQueueObject": route.queue_object,
+                "secureCrtSftpBrowserSelectedProfile": route.selected_profile_name,
+                "secureCrtSftpBrowserSelectedTreeLabel": route.selected_tree_label,
+                "secureCrtSftpBrowserTabLabel": route.sftp_tab_label,
+                route.path_property: route.remote_path,
+                route.toolbar_actions_property: actions_value,
+                "secureCrtSftpBrowserActiveRowName": route.active_row_name,
+                "secureCrtSftpBrowserQueueLabel": route.transfer_queue_label,
+                "secureCrtSftpBrowserQueueState": route.transfer_status,
+                "secureCrtSftpBrowserRenderSource": route.render_source,
+            }
+            panel = QFrame()
+            panel.setObjectName(route.browser_object)
+            for property_name, value in route_props.items():
+                panel.setProperty(property_name, value)
+            layout = QVBoxLayout(panel)
+            layout.setContentsMargins(8, 7, 8, 7)
+            layout.setSpacing(5)
+
+            header = QHBoxLayout()
+            title = QLabel(f"SFTP - {route.sftp_tab_label}")
+            title.setObjectName("secureCrtSftpTitle")
+            title.setProperty("secureCrtSftpBrowserRouteKey", route.key)
+            title.setProperty("secureCrtSftpBrowserTabLabel", route.sftp_tab_label)
+            queue = QLabel(f"Queue: {route.transfer_queue_label} ({route.transfer_status})")
+            queue.setObjectName(route.queue_object)
+            for property_name, value in route_props.items():
+                queue.setProperty(property_name, value)
+            header.addWidget(title)
+            header.addStretch(1)
+            header.addWidget(queue)
+            layout.addLayout(header)
+
+            toolbar = QFrame()
+            toolbar.setObjectName(route.toolbar_object)
+            for property_name, value in route_props.items():
+                toolbar.setProperty(property_name, value)
+            toolbar_layout = QHBoxLayout(toolbar)
+            toolbar_layout.setContentsMargins(0, 0, 0, 0)
+            toolbar_layout.setSpacing(6)
+            for action_key in route.toolbar_actions:
+                action = QLabel(action_key.title())
+                action.setObjectName("secureCrtSftpAction")
+                action.setProperty("secureCrtSftpBrowserRouteKey", route.key)
+                action.setProperty("secureCrtSftpBrowserActionKey", action_key)
+                action.setProperty(route.toolbar_actions_property, actions_value)
+                toolbar_layout.addWidget(action)
+            toolbar_layout.addStretch(1)
+            layout.addWidget(toolbar)
+
+            path = QLabel(f"Remote path: {route.remote_path}")
+            path.setObjectName(route.path_object)
+            for property_name, value in route_props.items():
+                path.setProperty(property_name, value)
+            layout.addWidget(path)
+
+            table = QFrame()
+            table.setObjectName(route.table_object)
+            for property_name, value in route_props.items():
+                table.setProperty(property_name, value)
+            table_layout = QVBoxLayout(table)
+            table_layout.setContentsMargins(0, 0, 0, 0)
+            table_layout.setSpacing(2)
+            header_row = QLabel("Name        Size     Modified")
+            header_row.setObjectName("secureCrtSftpHeader")
+            table_layout.addWidget(header_row)
+            for row in route.file_rows:
+                row_frame = QFrame()
+                row_frame.setObjectName(route.row_object)
+                for property_name, value in route_props.items():
+                    row_frame.setProperty(property_name, value)
+                row_frame.setProperty(route.row_name_property, row.name)
+                row_frame.setProperty(route.row_kind_property, row.kind)
+                row_frame.setProperty(route.row_selected_property, row.selected)
+                row_frame.setProperty("secureCrtSftpBrowserRowKey", row.key)
+                row_frame.setProperty("secureCrtSftpBrowserRowSize", row.size)
+                row_frame.setProperty("secureCrtSftpBrowserRowModified", row.modified)
+                row_layout = QHBoxLayout(row_frame)
+                row_layout.setContentsMargins(4, 1, 4, 1)
+                row_layout.setSpacing(8)
+                name = QLabel(row.name)
+                name.setObjectName("secureCrtSftpRowName")
+                size = QLabel(row.size)
+                size.setObjectName("secureCrtSftpRowSize")
+                modified = QLabel(row.modified)
+                modified.setObjectName("secureCrtSftpRowModified")
+                row_layout.addWidget(name, 2)
+                row_layout.addWidget(size, 1)
+                row_layout.addWidget(modified, 1)
+                table_layout.addWidget(row_frame)
+            layout.addWidget(table)
             return panel
 
         def build_securecrt_command_window_evidence(self) -> QFrame:
@@ -5945,9 +8831,13 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
         def build_product_reference_state_evidence(self) -> QFrame:
             reference = gui_design_reference_state(self.current_design_id())
+            route = gui_design_product_identity_route(self.current_design_id())
+            selection_route = gui_design_preset_selection_route(self.current_design_id())
             panel = QFrame()
             panel.setObjectName("productReferenceState")
             panel.setProperty("designPreset", self.current_design_id())
+            self.apply_product_identity_route_properties(panel, route)
+            self.apply_preset_selection_route_properties(panel, selection_route)
             layout = QHBoxLayout(panel)
             layout.setContentsMargins(7, 5, 7, 5)
             layout.setSpacing(8)
@@ -5955,10 +8845,36 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 label = QLabel(f"{key}: {value}")
                 label.setObjectName("productReferenceStateItem")
                 label.setProperty("referenceKey", key)
+                self.apply_product_identity_route_properties(label, route)
+                self.apply_preset_selection_route_properties(label, selection_route)
                 label.setToolTip(f"{reference.active_tab_label} {key}")
                 layout.addWidget(label)
             layout.addStretch(1)
             return panel
+
+        def apply_product_identity_route_properties(self, widget, route) -> None:
+            properties = {
+                "productIdentityRouteKey": route.key,
+                "productIdentityRouteRole": route.route_role,
+                "productIdentityPreset": route.preset_id,
+                "productIdentitySelectedTreeLabel": route.selected_tree_label,
+                "productIdentityReferenceStateObject": route.reference_state_object,
+                "productIdentityReferenceItemObject": route.reference_item_object,
+                "productIdentityTreeObject": route.tree_object,
+                "productIdentityTabsObject": route.tabs_object,
+                "productIdentityStatusSegmentObject": route.status_segment_object,
+                "productIdentityWorkspaceSurfaceObject": route.workspace_surface_object,
+                "productIdentityProfile": route.selected_profile_name,
+                "productIdentityTarget": route.target_label,
+                "productIdentityProtocol": route.protocol_label,
+                "productIdentityActiveTab": route.active_tab_label,
+                "productIdentitySidebar": route.sidebar_label,
+                "productIdentityWorkspaceState": route.workspace_state,
+                "productIdentityStatusSegments": list(route.status_segments),
+                "productIdentityRenderSource": route.render_source,
+            }
+            for key, value in properties.items():
+                widget.setProperty(key, value)
 
         def build_product_workspace_pane(
             self,
@@ -6010,9 +8926,216 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             pane = self.new_terminal_pane(plan)
             self.remember_terminal_plan(plan)
             index = self.add_workspace_tab(pane, tab_title or plan.title, role="terminal")
+            self.apply_reference_tab_route_to_terminal_tab(pane, tab_title or plan.title)
             if tab_status:
                 self.tabs.setTabToolTip(index, f"{tab_title or plan.title}: {tab_status}")
+            self.apply_reference_tab_chrome_route_to_terminal_tab(pane, tab_title or plan.title, index)
             self.update_session_status()
+            self.apply_reference_status_bar_route_to_terminal_tab(pane, tab_title or plan.title)
+            self.apply_reference_session_action_route_to_terminal_tab(pane, tab_title or plan.title, index)
+
+        def tab_position_name(self) -> str:
+            return {
+                QTabWidget.TabPosition.North: "north",
+                QTabWidget.TabPosition.South: "south",
+                QTabWidget.TabPosition.West: "west",
+                QTabWidget.TabPosition.East: "east",
+            }.get(self.tabs.tabPosition(), "north")
+
+        def apply_reference_tab_route_to_terminal_tab(self, pane: QWidget, tab_title: str) -> None:
+            preset_id = self.current_design_id()
+            if preset_id not in PRODUCT_REFERENCE_TAB_PRESET_IDS:
+                return
+            route = gui_design_preset_reference_tab_route(preset_id)
+            if tab_title != route.active_tab_label:
+                return
+            surface_route = gui_design_preset_reference_surface_route(preset_id)
+            control_route = gui_design_preset_reference_control_route(preset_id)
+            input_route = gui_design_preset_reference_input_route(preset_id)
+            transcript_route = gui_design_preset_reference_transcript_route(preset_id)
+            for widget in (pane, self.tabs):
+                self.apply_preset_reference_tab_route_properties(widget, route)
+                widget.setProperty(route.active_tab_property, route.active_tab_label)
+                widget.setProperty(route.reference_profile_property, route.reference_profile)
+            self.tabs.setProperty(route.activated_label_property, route.active_tab_label)
+            self.apply_reference_surface_route_to_terminal_tab(pane, tab_title, surface_route)
+            self.apply_reference_control_route_to_terminal_tab(pane, tab_title, control_route)
+            self.apply_reference_input_route_to_terminal_tab(pane, tab_title, input_route)
+            self.apply_reference_transcript_route_to_terminal_tab(pane, tab_title, transcript_route)
+
+        def apply_reference_tab_chrome_route_to_terminal_tab(
+            self,
+            pane: QWidget,
+            tab_title: str,
+            tab_index: int,
+        ) -> None:
+            preset_id = self.current_design_id()
+            if preset_id not in PRODUCT_REFERENCE_TAB_PRESET_IDS:
+                return
+            route = gui_design_preset_reference_tab_chrome_route(preset_id)
+            if tab_title != route.active_tab_label or tab_index < 0:
+                return
+            tab_role = self.tab_role(tab_index)
+            tooltip = self.tabs.tabToolTip(tab_index)
+            closeable = bool(self.tabs.tabsClosable() and tab_role == route.reference_tab_role)
+            selected = self.tabs.currentIndex() == tab_index
+            position = self.tab_position_name()
+            for widget in (pane, self.tabs, self.tabs.tabBar()):
+                self.apply_preset_reference_tab_chrome_route_properties(widget, route)
+                widget.setProperty(route.captured_property, True)
+                widget.setProperty(route.captured_label_property, self.tabs.tabText(tab_index))
+                widget.setProperty(route.captured_tooltip_property, tooltip)
+                widget.setProperty(route.captured_index_property, tab_index)
+                widget.setProperty(route.captured_role_property, tab_role)
+                widget.setProperty(route.captured_position_property, position)
+                widget.setProperty(route.captured_closeable_property, closeable)
+                widget.setProperty(route.captured_selected_property, selected)
+
+        def apply_reference_status_bar_route_to_terminal_tab(self, pane: QWidget, tab_title: str) -> None:
+            preset_id = self.current_design_id()
+            if preset_id not in PRODUCT_REFERENCE_TAB_PRESET_IDS:
+                return
+            route = gui_design_preset_reference_status_bar_route(preset_id)
+            if tab_title != route.active_tab_label:
+                return
+            segment_texts = [label.text() for label in self.status_segment_labels if label.text()]
+            segment_tooltips = [label.toolTip() for label in self.status_segment_labels if label.text()]
+            notice_text = self.status_notice_label.text()
+            message = self.statusBar().currentMessage()
+            for widget in (pane, self.tabs, self.statusBar(), self.status_notice_label, *self.status_segment_labels):
+                self.apply_preset_reference_status_bar_route_properties(widget, route)
+                widget.setProperty(route.captured_property, True)
+                widget.setProperty(route.captured_tab_property, tab_title)
+                widget.setProperty(route.captured_message_property, message)
+                widget.setProperty(route.captured_segments_property, segment_texts)
+                widget.setProperty(route.captured_segment_count_property, len(segment_texts))
+                widget.setProperty(route.captured_segment_tooltips_property, segment_tooltips)
+                widget.setProperty(route.captured_notice_property, notice_text)
+
+        def apply_reference_session_action_route_to_terminal_tab(
+            self,
+            pane: QWidget,
+            tab_title: str,
+            tab_index: int,
+        ) -> None:
+            preset_id = self.current_design_id()
+            if preset_id not in PRODUCT_REFERENCE_TAB_PRESET_IDS:
+                return
+            route = gui_design_preset_reference_session_action_route(preset_id)
+            if tab_title != route.active_tab_label or tab_index < 0:
+                return
+            specs = self.tab_context_session_action_specs(tab_index)
+            action_keys = [str(spec["key"]) for spec in specs]
+            action_labels = [str(spec["label"]) for spec in specs]
+            enabled_keys = [str(spec["key"]) for spec in specs if bool(spec["enabled"])]
+            disabled_keys = [str(spec["key"]) for spec in specs if not bool(spec["enabled"])]
+            for widget in (pane, self.tabs, self.tabs.tabBar()):
+                self.apply_preset_reference_session_action_route_properties(widget, route)
+                widget.setProperty(route.captured_property, True)
+                widget.setProperty(route.captured_tab_property, tab_title)
+                widget.setProperty(route.captured_action_keys_property, action_keys)
+                widget.setProperty(route.captured_action_labels_property, action_labels)
+                widget.setProperty(route.captured_action_count_property, len(action_keys))
+                widget.setProperty(route.captured_enabled_keys_property, enabled_keys)
+                widget.setProperty(route.captured_disabled_keys_property, disabled_keys)
+
+        def apply_moba_connected_session_action_route_to_tab(
+            self,
+            panel: QWidget,
+            state: MobaConnectedSessionState,
+            tab_title: str,
+            tab_index: int,
+        ) -> None:
+            if not self.current_design_is_moba() or tab_index < 0:
+                return
+            route = moba_connected_session_action_route(state)
+            if tab_title not in {route.active_tab_label, route.reference_tab_label}:
+                return
+            specs = self.tab_context_session_action_specs(tab_index)
+            action_keys, action_labels, enabled_keys, disabled_keys = self.session_action_capture_from_specs(specs)
+            for widget in (panel, self.tabs, self.tabs.tabBar()):
+                self.apply_moba_connected_session_action_route_properties(widget, route)
+                widget.setProperty(route.captured_property, True)
+                widget.setProperty(route.captured_tab_property, tab_title)
+                widget.setProperty(route.captured_action_keys_property, action_keys)
+                widget.setProperty(route.captured_action_labels_property, action_labels)
+                widget.setProperty(route.captured_action_count_property, len(action_keys))
+                widget.setProperty(route.captured_enabled_keys_property, enabled_keys)
+                widget.setProperty(route.captured_disabled_keys_property, disabled_keys)
+
+        def apply_reference_surface_route_to_terminal_tab(self, pane: QWidget, tab_title: str, route) -> None:
+            child_widgets = [
+                getattr(pane, "title", None),
+                getattr(pane, "source", None),
+                getattr(pane, "command_preview", None),
+                getattr(pane, "output", None),
+            ]
+            actual_title = getattr(getattr(pane, "title", None), "text", lambda: "")()
+            actual_source = getattr(getattr(pane, "source", None), "text", lambda: "")()
+            actual_command = getattr(getattr(pane, "plan", None), "printable", lambda: "")()
+            output_widget = getattr(pane, "output", None)
+            actual_output = getattr(output_widget, "toPlainText", lambda: "")()
+            for widget in (pane, self.tabs, *[item for item in child_widgets if item is not None]):
+                self.apply_preset_reference_surface_route_properties(widget, route)
+                widget.setProperty(route.captured_property, True)
+                widget.setProperty(route.captured_tab_property, tab_title)
+                widget.setProperty(route.actual_title_property, actual_title)
+                widget.setProperty(route.actual_source_property, actual_source)
+                widget.setProperty(route.actual_command_property, actual_command)
+                widget.setProperty(route.actual_output_property, actual_output)
+
+        def apply_reference_control_route_to_terminal_tab(self, pane: QWidget, tab_title: str, route) -> None:
+            action_buttons = [
+                getattr(pane, "start_button", None),
+                getattr(pane, "restart_button", None),
+                getattr(pane, "stop_button", None),
+                getattr(pane, "copy_button", None),
+                getattr(pane, "clear_button", None),
+            ]
+            action_buttons = [button for button in action_buttons if button is not None]
+            status_widget = getattr(pane, "status", None)
+            action_keys = [str(button.property(route.action_key_property) or "") for button in action_buttons]
+            status_state = str(status_widget.property(route.status_state_property) or "") if status_widget is not None else ""
+            status_text = status_widget.text() if status_widget is not None else ""
+            for widget in (pane, self.tabs, status_widget, *action_buttons):
+                if widget is None:
+                    continue
+                self.apply_preset_reference_control_route_properties(widget, route)
+                widget.setProperty(route.captured_property, True)
+                widget.setProperty(route.captured_actions_property, action_keys)
+                widget.setProperty(route.captured_status_property, status_state)
+                widget.setProperty(route.captured_status_text_property, status_text)
+                widget.setProperty("presetReferenceControlCapturedTab", tab_title)
+
+        def apply_reference_input_route_to_terminal_tab(self, pane: QWidget, tab_title: str, route) -> None:
+            input_widget = getattr(pane, "input", None)
+            placeholder = input_widget.placeholderText() if input_widget is not None else ""
+            text = input_widget.text() if input_widget is not None else ""
+            enabled = input_widget.isEnabled() if input_widget is not None else False
+            for widget in (pane, self.tabs, input_widget):
+                if widget is None:
+                    continue
+                self.apply_preset_reference_input_route_properties(widget, route)
+                widget.setProperty(route.captured_property, True)
+                widget.setProperty(route.captured_tab_property, tab_title)
+                widget.setProperty(route.captured_placeholder_property, placeholder)
+                widget.setProperty(route.captured_text_property, text)
+                widget.setProperty(route.captured_enabled_property, enabled)
+
+        def apply_reference_transcript_route_to_terminal_tab(self, pane: QWidget, tab_title: str, route) -> None:
+            output_widget = getattr(pane, "output", None)
+            transcript = output_widget.toPlainText() if output_widget is not None else ""
+            lines = transcript.splitlines()
+            command_echo = next((line for line in lines if line.startswith(route.command_echo_prefix)), "")
+            for widget in (pane, self.tabs, output_widget):
+                if widget is None:
+                    continue
+                self.apply_preset_reference_transcript_route_properties(widget, route)
+                widget.setProperty(route.captured_property, True)
+                widget.setProperty(route.captured_tab_property, tab_title)
+                widget.setProperty(route.captured_text_property, transcript)
+                widget.setProperty(route.captured_line_count_property, len(lines))
+                widget.setProperty(route.captured_command_echo_property, command_echo)
 
         def moba_connected_profile_supported(self, profile: Profile) -> bool:
             return self.current_design_is_moba() and profile.protocol.lower() in {"ssh", "sftp"}
@@ -6060,6 +9183,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 tooltip=active_tab.tooltip,
                 closeable=active_tab.closeable,
             )
+            self.apply_moba_connected_session_action_route_to_tab(panel, state, title, index)
             if tab_status:
                 self.tabs.setTabToolTip(index, f"{title}: {tab_status}")
             self.show_moba_connected_dock(state)

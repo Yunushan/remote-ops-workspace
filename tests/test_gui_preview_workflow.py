@@ -22,6 +22,71 @@ def test_preview_manifest_tracks_every_gui_design_preset() -> None:
     assert [item["id"] for item in manifest["state_previews"]] == ["mobaxterm-home"]
     assert manifest["state_previews"][0]["preset_id"] == "mobaxterm"
     assert manifest["state_previews"][0]["image"]["path"] == "mobaxterm-home.png"
+    mobaxterm = next(item for item in manifest["presets"] if item["id"] == "mobaxterm")
+    follow_route = mobaxterm["moba_follow_terminal_folder_control_route"]
+    assert follow_route["key"] == "moba-follow-terminal-folder-control-route"
+    assert follow_route["source_control_object"] == "mobaFollowTerminalFolder"
+    assert follow_route["target_path_object"] == "mobaSftpPath"
+    edge_route = mobaxterm["moba_ribbon_edge_action_route"]
+    assert edge_route["key"] == "moba-ribbon-edge-action-route"
+    assert edge_route["xserver_action_object"] == "mobaXServerAction"
+    assert edge_route["xserver_handler"] == "show_moba_x_server_status"
+    assert edge_route["exit_action_object"] == "mobaExitAction"
+    assert edge_route["exit_handler"] == "close"
+    utility_route = mobaxterm["moba_right_utility_action_route"]
+    assert utility_route["key"] == "moba-right-utility-action-route"
+    assert utility_route["rail_object"] == "mobaRightUtilityRail"
+    assert utility_route["action_object"] == "mobaRightUtilityAction"
+    assert utility_route["action_keys"] == ["clip", "settings", "tools"]
+    assert utility_route["action_handlers"] == [
+        "show_moba_clipboard_hints",
+        "show_moba_terminal_settings",
+        "show_moba_tools_status",
+    ]
+    securecrt = next(item for item in manifest["presets"] if item["id"] == "securecrt")
+    securecrt_sftp_route = securecrt["securecrt_sftp_tab_route"]
+    assert securecrt_sftp_route["key"] == "securecrt-sftp-tab-route"
+    assert securecrt_sftp_route["workflow_card_key"] == "sftp-tab"
+    assert securecrt_sftp_route["status_value"] == "files-prod tab"
+    securecrt_browser_route = securecrt["securecrt_sftp_browser_route"]
+    assert securecrt_browser_route["key"] == "securecrt-sftp-browser-route"
+    assert securecrt_browser_route["sftp_tab_route_key"] == securecrt_sftp_route["key"]
+    assert securecrt_browser_route["remote_path"] == "/srv/files"
+    assert securecrt_browser_route["toolbar_actions"] == ["upload", "download", "refresh"]
+    assert securecrt_browser_route["active_row_name"] == "deploy.log"
+    remmina = next(item for item in manifest["presets"] if item["id"] == "remmina")
+    screenshot_route = remmina["remmina_screenshot_route"]
+    assert screenshot_route["key"] == "remmina-screenshot-capture-route"
+    assert screenshot_route["viewer_control_key"] == "screenshot"
+    assert screenshot_route["capture_artifact"] == "win-admin-rdp-screenshot.png"
+    sftp_route = remmina["remmina_sftp_transfer_route"]
+    assert sftp_route["key"] == "remmina-sftp-transfer-route"
+    assert sftp_route["selected_profile_key"] == "sftp-ops"
+    assert sftp_route["remote_path"] == "/var/log"
+    assert sftp_route["toolbar_actions"] == ["upload", "download", "queue"]
+    assert sftp_route["active_row_name"] == "app.log"
+    termius = next(item for item in manifest["presets"] if item["id"] == "termius")
+    port_forward_route = termius["termius_port_forward_route"]
+    assert port_forward_route["key"] == "termius-port-forward-route"
+    assert port_forward_route["header_chip_key"] == "port-forward-ready"
+    assert port_forward_route["identity_field_key"] == "forward"
+    assert port_forward_route["forward_value"] == "8080 -> localhost:80"
+    snippet_route = termius["termius_snippet_route"]
+    assert snippet_route["key"] == "termius-snippet-route"
+    assert snippet_route["workflow_card_key"] == "snippet"
+    assert snippet_route["identity_field_key"] == "snippet"
+    assert snippet_route["snippet_command"] == "row vault status"
+    files_route = termius["termius_files_browser_route"]
+    assert files_route["key"] == "termius-files-browser-route"
+    assert files_route["remote_path"] == "/workspace"
+    assert files_route["toolbar_actions"] == ["upload", "download", "sync"]
+    assert files_route["active_row_name"] == "deploy.yml"
+    mremoteng = next(item for item in manifest["presets"] if item["id"] == "mremoteng")
+    inheritance_route = mremoteng["mremoteng_inheritance_route"]
+    assert inheritance_route["key"] == "mremoteng-inheritance-route"
+    assert inheritance_route["workflow_card_key"] == "inheritance-grid"
+    assert inheritance_route["property_row_key"] == "credential"
+    assert inheritance_route["inherited_value"] == "operator key reference"
 
 
 def test_preview_png_dimensions_match_manifest() -> None:
@@ -65,31 +130,31 @@ def test_gui_visual_metrics_cover_every_preview_preset() -> None:
     assert set(metrics["presets"]) == {item["id"] for item in manifest["presets"]}
     assert set(metrics["state_previews"]) == {item["id"] for item in manifest["state_previews"]}
     assert metrics["preview_size"] == [1280, 760]
-    assert checker.count_regions(metrics) == 106
-    assert checker.count_color_anchors(metrics) == 94
-    assert checker.count_line_anchors(metrics) == 70
-    assert checker.count_topology_contracts(metrics) == 71
-    assert len(metrics["presets"]["mobaxterm"]["regions"]) == 30
+    assert checker.count_regions(metrics) == 118
+    assert checker.count_color_anchors(metrics) == 96
+    assert checker.count_line_anchors(metrics) == 72
+    assert checker.count_topology_contracts(metrics) == 83
+    assert len(metrics["presets"]["mobaxterm"]["regions"]) == 33
     assert len(metrics["presets"]["mobaxterm"]["line_anchors"]) == 16
     assert len(metrics["state_previews"]["mobaxterm-home"]["regions"]) == 13
     assert len(metrics["state_previews"]["mobaxterm-home"]["color_anchors"]) == 9
     assert len(metrics["state_previews"]["mobaxterm-home"]["line_anchors"]) == 8
     assert len(metrics["state_previews"]["mobaxterm-home"]["topology"]) == 6
-    assert len(metrics["presets"]["securecrt"]["regions"]) == 15
-    assert len(metrics["presets"]["securecrt"]["line_anchors"]) == 11
-    assert len(metrics["presets"]["securecrt"]["topology"]) == 14
-    assert len(metrics["presets"]["termius"]["regions"]) == 13
+    assert len(metrics["presets"]["securecrt"]["regions"]) == 18
+    assert len(metrics["presets"]["securecrt"]["line_anchors"]) == 13
+    assert len(metrics["presets"]["securecrt"]["topology"]) == 17
+    assert len(metrics["presets"]["termius"]["regions"]) == 16
     assert len(metrics["presets"]["termius"]["line_anchors"]) == 11
-    assert len(metrics["presets"]["termius"]["topology"]) == 10
-    assert len(metrics["presets"]["remmina"]["regions"]) == 14
+    assert len(metrics["presets"]["termius"]["topology"]) == 13
+    assert len(metrics["presets"]["remmina"]["regions"]) == 17
     assert len(metrics["presets"]["remmina"]["line_anchors"]) == 11
-    assert len(metrics["presets"]["remmina"]["topology"]) == 11
+    assert len(metrics["presets"]["remmina"]["topology"]) == 14
     assert len(metrics["presets"]["mremoteng"]["regions"]) == 17
     assert len(metrics["presets"]["mremoteng"]["line_anchors"]) == 13
     assert len(metrics["presets"]["mremoteng"]["topology"]) == 14
-    assert len(metrics["presets"]["mobaxterm"]["topology"]) == 16
+    assert len(metrics["presets"]["mobaxterm"]["topology"]) == 19
     assert len(metrics["presets"]["mobaxterm"]["color_anchors"]) == 23
-    assert len(metrics["presets"]["securecrt"]["color_anchors"]) == 17
+    assert len(metrics["presets"]["securecrt"]["color_anchors"]) == 19
     assert len(metrics["presets"]["termius"]["color_anchors"]) == 14
     assert len(metrics["presets"]["remmina"]["color_anchors"]) == 13
     assert len(metrics["presets"]["mremoteng"]["color_anchors"]) == 18

@@ -67,6 +67,171 @@ sidebar identity, workspace state and status segments together. The static
 preview draws those values as compact reference-state chips, while the live PyQt
 home surface exposes matching `productReferenceStateItem` labels with stable
 `referenceKey` properties for the live render checker.
+The same presets now share a product identity route that binds the selected
+tree row, active tab, reference-state strip, workspace surface and bottom status
+segments to one static/live contract. `GuiProductIdentityRoute` exposes stable
+object names and `productIdentity*` widget properties, the static preview checks
+the route against the same reference-state metadata, and the live checker
+records `expected_product_identity_route` for SecureCRT-style, Termius-style,
+Remmina-style and mRemoteNG-style.
+Those same non-Moba product presets now expose a reference tab activation route.
+`GuiPresetReferenceTabRoute` derives the reference profile, active session tab
+label and home tab label from the product identity and preset-selection metadata.
+The live render checker opens the reference profile, selects that product tab,
+records `presetReferenceTabActivatedLabel`, returns to the home evidence tab and
+verifies `presetReferenceTabReturnedHomeLabel` before capture. Static preview
+manifests include `preset_reference_tab_route`, while live manifests include
+`expected_preset_reference_tab_route`.
+All product presets also expose a preset keyboard shortcut route.
+`GuiPresetKeyboardShortcutRoute` records the shared shortcut keys, key
+sequences, action labels and expected shortcut count for MobaXterm-style,
+SecureCRT-style, Termius-style, Remmina-style and mRemoteNG-style. The live GUI
+binds each `QShortcut` to the route and captures
+`presetKeyboardShortcutCapturedKeys`, `presetKeyboardShortcutCapturedSequences`
+and `presetKeyboardShortcutCapturedActionLabels`, while manifests expose
+`preset_keyboard_shortcut_route` and
+`expected_preset_keyboard_shortcut_route`.
+All product presets also expose a preset command surface route.
+`GuiPresetCommandSurfaceRoute` binds the visible MobaXterm-style ribbon or the
+product toolbar buttons to shared action key, label, tooltip, order and
+active/checked/disabled state metadata. The live GUI captures
+`presetCommandSurfaceCapturedKeys`, `presetCommandSurfaceCapturedLabels`,
+`presetCommandSurfaceCapturedTooltips` and
+`presetCommandSurfaceCapturedStates`, while manifests expose
+`preset_command_surface_route` and
+`expected_preset_command_surface_route`.
+The static command-surface state visual metrics sample the matching screenshot
+zones for active, checked and disabled command affordances across MobaXterm,
+SecureCRT, Termius, Remmina and mRemoteNG style presets, including Moba's SFTP
+rail state and the toolbar state boxes used by the other product presets.
+All product presets also expose a preset focus interaction route.
+`GuiPresetFocusInteractionRoute` binds the focused control, focus object,
+active/checked/disabled toolbar keys, selected tree row, active tab status and
+status note to one shared static/live contract. The live GUI captures
+`presetFocusInteractionCapturedFocus`,
+`presetFocusInteractionCapturedState`,
+`presetFocusInteractionCapturedSelectedTreeLabel` and
+`presetFocusInteractionToolbarStates`, while manifests expose
+`preset_focus_interaction_route` and
+`expected_preset_focus_interaction_route`.
+All product presets also expose a preset home search route.
+`GuiPresetHomeSearchRoute` binds the product Home tab search field, the active
+quick-connect/filter entry control, sanitized Home actions and recent labels to
+one shared static/live contract. The live GUI captures
+`presetHomeSearchCapturedPlaceholder`,
+`presetHomeSearchCapturedEntryPlaceholder`,
+`presetHomeSearchCapturedActions` and
+`presetHomeSearchCapturedRecentLabels`, while manifests expose
+`preset_home_search_route` and `expected_preset_home_search_route`.
+The visible tab chrome for that opened session is tracked separately through a
+reference tab chrome evidence route. `GuiPresetReferenceTabChromeRoute` records
+the active reference tab label, tooltip/status text, tab index, tab role, tab
+position, selected-during-capture state and closeability. Live captures store
+`presetReferenceTabChromeLabel`, `presetReferenceTabChromeTooltip`,
+`presetReferenceTabChromeIndex`, `presetReferenceTabChromePosition` and
+`presetReferenceTabChromeCloseable`, while manifests expose
+`preset_reference_tab_chrome_route` and
+`expected_preset_reference_tab_chrome_route`.
+The same active reference session now has a reference status-bar evidence route.
+`GuiPresetReferenceStatusBarRoute` binds the opened tab label to the live
+`statusBar`, `productStatusNotice` and `productStatusSegment` labels, captures
+the current status message, segment texts, segment count, segment tooltips and
+notice copy, and verifies the values against the product identity status
+segments. Static preview manifests include `preset_reference_status_bar_route`,
+while live manifests include `expected_preset_reference_status_bar_route`.
+The reference session action route covers the active tab context/session actions
+for those product presets. `GuiPresetReferenceSessionActionRoute` records the
+shared action keys, labels, count, always-enabled keys and conditional keys for
+the opened reference tab. Live captures store
+`presetReferenceSessionActionKeys`, `presetReferenceSessionActionLabels`,
+`presetReferenceSessionActionEnabledKeys` and
+`presetReferenceSessionActionDisabledKeys`, while manifests expose
+`preset_reference_session_action_route` and
+`expected_preset_reference_session_action_route`.
+MobaXterm-style connected session action route coverage uses the connected SSH
+tab instead of the generic product reference tab. `MobaConnectedSessionActionRoute`
+binds the active connected tab, tab bar and `mobaConnectedSession` panel to the
+same context/session action keys, labels, count and enabled-state capture. Live
+captures store `mobaConnectedSessionActionKeys`,
+`mobaConnectedSessionActionLabels`, `mobaConnectedSessionActionEnabledKeys` and
+`mobaConnectedSessionActionDisabledKeys`, while manifests expose
+`moba_connected_session_action_route` and
+`expected_moba_connected_session_action_route`.
+MobaXterm-style connected session action menu route coverage verifies the actual
+right-click tab menu path. The live GUI exposes `build_tab_context_menu()` for
+inspection, names the menu `mobaConnectedSessionTabContextMenu`, and stamps each
+actual `QAction` with the connected-session route key, action key, label and
+enabled-state properties before the menu is shown. The live checker builds that
+menu without executing it and compares the menu object, captured action list and
+enabled/disabled partition against `MobaConnectedSessionActionRoute`.
+The active tab itself is now covered by a reference surface evidence route.
+`GuiPresetReferenceSurfaceRoute` records the expected TerminalPane, title, source,
+command and output object names for the opened reference tab. The live GUI stores
+`presetReferenceSurfaceActualTitle`, `presetReferenceSurfaceActualSource`,
+`presetReferenceSurfaceActualCommand` and `presetReferenceSurfaceActualOutput`
+before returning home, and the live checker verifies the captured command family,
+target fragment and echoed output. Static preview manifests include
+`preset_reference_surface_route`, while live manifests include
+`expected_preset_reference_surface_route`.
+The same active reference tab now exposes a reference control evidence route.
+`GuiPresetReferenceControlRoute` defines the `paneStatus` status pill and
+Start, Restart, Stop, Copy and Clear `terminalAction` controls with stable
+`terminalActionKey`, label and tooltip properties. The live checker captures
+`presetReferenceControlCapturedActionKeys`, `presetReferenceControlStatusState`
+and `presetReferenceControlStatusText` while the reference tab is active.
+Static preview manifests include `preset_reference_control_route`, while live
+manifests include `expected_preset_reference_control_route`.
+The terminal input row is now tracked separately through a reference input evidence route.
+`GuiPresetReferenceInputRoute` binds the active reference tab to the `terminalInput` line
+edit, its placeholder, initial empty text and captured enabled state. The live checker
+records `presetReferenceInputPlaceholder`,
+`presetReferenceInputText` and `presetReferenceInputEnabled` while the reference
+tab is active. Static preview manifests include `preset_reference_input_route`,
+while live manifests include `expected_preset_reference_input_route`.
+The active terminal text is covered by a reference transcript evidence route.
+`GuiPresetReferenceTranscriptRoute` binds the reference tab to the `terminalOutput`
+widget, the `$ ` command echo prefix, required target fragments and minimum line
+count. The live checker records `presetReferenceTranscriptText`,
+`presetReferenceTranscriptLineCount` and `presetReferenceTranscriptCommandEcho`
+while manifests expose `preset_reference_transcript_route` and
+`expected_preset_reference_transcript_route`.
+Selectable preset switching is tracked through a shared preset-selection route.
+`GuiPresetSelectionRoute` binds the `designSelect` combo, main/layout toolbars,
+sidebar header, profile tree, session tabs, status bar, status segments and
+product workspace/reference evidence to the active preset id, label, home-tab
+label, sidebar copy and status copy. Static preview manifests include
+`preset_selection_route`, and the live render checker records
+`expected_preset_selection_route` for every product preset so a style change
+cannot update only part of the UI.
+The design selector catalog is tracked separately through
+`GuiPresetCatalogRoute`: it records the `designSelect` option ids and labels,
+the default Native option, and the product-style subset used for parity work.
+The PyQt combo, static preview manifest and live render manifest expose the same
+`preset_catalog_route` / `expected_preset_catalog_route` evidence, so adding or
+reordering a selectable style becomes an intentional contract change.
+Each preset also publishes a visual signature contract. `GuiPresetVisualSignature`
+ties density, tab position, document-tab behavior, pane/sidebar sizing, toolbar
+icon size and the core palette values to the selected preset. The live GUI
+stores those values on the main window, toolbars, left panel, profile tree,
+tabs, activity log and status bar through `presetVisualSignature*` properties,
+while the static preview and live render manifests expose
+`preset_visual_signature` / `expected_preset_visual_signature`. This makes
+palette and density drift visible before a product-style view can pass as
+matched.
+Preset isolation is tracked through a preset isolation route. `GuiPresetIsolationRoute`
+records the active visible objects and inactive product-specific objects that
+must be hidden or absent after a style switch. The live GUI exposes
+`presetIsolation*` properties on the window, selector and main toolbar; static
+previews include `preset_isolation_route`, and live manifests include
+`expected_preset_isolation_route`.
+Preset transition is tracked as a separate preset transition route.
+`GuiPresetTransitionRoute` records the valid source preset ids, target selector
+index and reset-object set derived from isolation metadata. The live render
+checker switches through a source style before each target style, then verifies
+`presetTransition*` properties and rejects inactive product chrome that remains
+visible after the transition. Static preview manifests include
+`preset_transition_route`, and live manifests include
+`expected_preset_transition_route`.
 The MobaXterm-style home welcome surface intentionally follows a separate,
 leaner contract: `gui_design_moba_home_welcome_chrome()` defines the centered
 title/subtitle, generated logo key, Start/Recover action icon keys, fixed
@@ -118,6 +283,22 @@ SecureCRT-style Session Manager route is tracked as a separate workflow
 contract: the selected `edge-prod (SSH2)` tree row, active SSH2 tab, Connect
 Session Manager action and Target status-strip cell all expose the same
 `secureCrtSessionRoute*` metadata in static and live evidence.
+SecureCRT-style Session Manager filter route is tracked separately: the focused
+`secureCrtSessionFilter` field, Session Manager panel and matched
+`edge-prod (SSH2)` tree row all expose `secureCrtSessionFilterRoute*` metadata,
+including the sample `edge` query, placeholder, `textChanged` signal and
+`filter_profile_tree` handler contract.
+SecureCRT-style SFTP tab route is tracked separately: the `SFTP tab` workflow
+card, `files-prod (SFTP)` Session Manager row, `files-prod` SFTP tab label and
+`SFTP: files-prod tab` status-strip cell share `secureCrtSftpTabRoute*`
+metadata, so file-transfer state is checked without exposing user-specific
+servers or credentials.
+SecureCRT-style SFTP browser route extends that evidence into the transfer
+pane: the `files-prod` SFTP tab, `/srv/files` remote path,
+Upload/Download/Refresh toolbar actions, `deploy.log` selected row and
+`1 queued` transfer queue share `secureCrtSftpBrowser*` metadata. The row names,
+path and timestamps are generic fixture data so previews never expose real user
+files or hosts.
 The static SecureCRT Session Manager tree now has a dedicated renderer for the
 Session Database root, foldered Sessions/Local Shells/Pinned groups, selected
 SSH2 row and connector lines. Visual metrics pin those regions and color
@@ -161,11 +342,28 @@ the selected `win-admin` RDP profile row, active `RDP - win-admin` viewer tab,
 `remminaProfileViewerRoute*` metadata in both the static renderer and real PyQt
 GUI, so the checker rejects disconnected selected-row, tab and viewer-control
 states.
+Remmina-style profile filter route is tracked separately too: the editable
+`remminaProfileFilter` field, `remminaProfileListChrome` panel and selected
+`win-admin` RDP row expose `remminaProfileFilterRoute*` metadata. The live
+checker types the sample `rdp` query to prove the selected row stays visible
+while non-matching profile rows are hidden.
 Remmina-style clipboard route is tracked separately too: the `Clipboard`
 viewer control, active `RDP - win-admin` tab, `Clipboard on` status segment,
 `Clipboard: enabled` workspace detail and `Clipboard: on` activity line share
 `remminaClipboardRoute*` metadata, so clipboard monitoring is checked as a real
 connected-session route instead of loose preview text.
+Remmina-style screenshot route is tracked as a dedicated viewer-control
+contract too: the `Screenshot` control, active `RDP - win-admin` tab,
+generic `win-admin-rdp-screenshot.png` capture artifact, screenshot workspace
+detail and screenshot activity line share `remminaScreenshotRoute*` metadata,
+so capture/export behavior is checked without exposing machine-specific
+filenames or credentials.
+Remmina-style SFTP transfer route is tracked separately too: the `Transfer`
+toolbar action, `sftp-ops` SFTP profile/tree row, `sftp-ops` tab, `/var/log`
+remote path, Upload/Download/Queue actions, selected `app.log` row and
+`1 queued` queue share `remminaSftpTransferRoute*` metadata from
+`GuiRemminaSftpTransferRoute`. Fixture names are generic and contain no
+user-specific hosts or credentials.
 Remmina interaction-state visual metrics now pin the focused profile filter,
 selected connection-list row, selected protocol-tree row, active RDP viewer tab,
 checked Transfer toolbar action and viewer-control glyph cluster. The live
@@ -191,6 +389,22 @@ Termius-style sync route is tracked separately: the Hosts sidebar Sync action,
 the `Sync current` header chip and the Host identity `Sync: current` status cell
 share `termiusSyncRoute*` properties from `GuiTermiusSyncRoute`, so the live
 checker proves the sync workflow is one route rather than disconnected labels.
+Termius-style port-forward route is tracked separately too: the
+`Port fwd ready` header chip, active `edge-prod` host tab and Host identity
+`Forward: 8080 -> localhost:80` cell share `termiusPortForwardRoute*`
+properties from `GuiTermiusPortForwardRoute`, including the local port,
+remote host, remote port and ready state.
+Termius-style snippet route is also a first-class workflow contract: the
+`Snippet` workflow card, active `edge-prod` host tab and Host identity
+`Snippet: row vault status` cell share `termiusSnippetRoute*` properties from
+`GuiTermiusSnippetRoute`, including the command text, detail line and
+one-click command state.
+Termius-style files browser route is tracked separately too: the
+`Files: SFTP ready` identity cell, active `edge-prod` host tab, `/workspace`
+remote path, Upload/Download/Sync actions, selected `deploy.yml` row and
+`sync idle` queue share `termiusFilesRoute*` metadata from
+`GuiTermiusFilesBrowserRoute`. Fixture names are generic and intentionally do
+not encode user-specific hostnames or credentials.
 Termius-style host-selection route is tracked separately too: the selected
 `edge-prod  ssh host` tree row, active `edge-prod` tab, Hosts panel and Host
 identity `Host: edge-prod` cell share `termiusHostRoute*` properties from
@@ -229,6 +443,17 @@ tab, `Reconnect` document control and `Protocol` property-grid row share
 GUI. The live checker verifies the routed tree item data roles, document-control
 active state and property-grid effective value so the selected connection cannot
 silently diverge from the open document surface.
+mRemoteNG-style document filter route is tracked separately too: the editable
+`mRemoteNgDocumentFilter`, `mRemoteNgDocumentControls` strip and selected
+`edge-prod [SSH]` tree row expose `mRemoteNgDocumentFilterRoute*` metadata. The
+live checker types the sample `edge` query to prove the selected connection row
+stays visible while non-matching connection rows are hidden.
+mRemoteNG-style inheritance route is now tracked as its own contract as well:
+the `Config inheritance` workflow card, active `edge-prod [SSH]` document tab and
+inherited `Credential` property-grid row share `mRemoteNgInheritanceRoute*`
+metadata. The static renderer checks the `credentials inherited` workflow state
+against the inherited effective value and source, while the live checker verifies
+the workflow card, property row and routed property cells from the same metadata.
 
 The MobaXterm-style preset also has a connected-session tab for SSH/SFTP
 profiles. In that mode the live left dock switches from the saved-session tree
@@ -271,6 +496,12 @@ MobaXterm-style top chrome stack geometry is now shared through
 `GuiMobaTopStackGeometry`, which pins the titlebar, menu row, ribbon, Quick
 Connect strip, connected tab strip, terminal content start and left-dock offsets
 across the static preview, live PyQt metadata and render manifest.
+MobaXterm-style ribbon edge action route is tracked separately too: the
+far-right `X server` and `Exit` buttons share
+`GuiMobaRibbonEdgeActionRoute` metadata with the `mainToolbar` spacer, generated
+`xserver`/`exit` icon keys, the `show_moba_x_server_status` workflow handler
+and close handler. The route proves the reference edge cluster remains a real
+workflow surface without copying proprietary assets.
 The connected left rail also shares section metadata for the Sessions, Tools,
 Macros and SFTP vertical labels; the static preview renders those labels
 rotated in the narrow rail, while the live PyQt rail exposes matching
@@ -341,6 +572,14 @@ checkbox all expose the same `mobaSftpFollowRouteKey`,
 `mobaSftpFollowRoutePath`, `mobaSftpFollowRoutePlan` and enabled-state metadata,
 so the render checker can reject a path strip, table or checkbox that no longer
 matches the follow-folder SFTP `ls -la` plan.
+MobaXterm-style SFTP terminal-folder route raises that workflow to the full
+connected-session surface. `MobaSftpTerminalFolderRoute` is derived from the
+active connected-session state and binds `mobaTerminalArea`, `terminalOutput`,
+`mobaFollowTerminalFolder`, `mobaSftpPath`, `mobaSftpFileTable`, the selected
+parent row and the generated SFTP list command to one `mobaSftpTerminalFolder*`
+property set. Static preview rendering validates the route against the same
+state, and the live checker records `expected_moba_sftp_terminal_folder_route`
+so terminal/output, checkbox, path strip and table cannot drift apart.
 MobaXterm-style SFTP routed file rows are tracked as a separate row-level
 contract. `GuiMobaSftpRoutedFileRows` ties the visible file-list rows to the
 follow-folder route key, active remote path, selected parent row and stable row
@@ -383,6 +622,26 @@ visible dock metric keys empty, and pins the routed bottom telemetry metric
 cells for CPU, memory, disk, network, connection and process evidence through
 `mobaMonitoringTelemetryRouteKey`, `mobaMonitoringTelemetryMetricCellKeys` and
 `mobaMonitoringTelemetryRouted` metadata.
+MobaXterm-style remote monitoring control route coverage tracks the actual
+Remote monitoring toggle separately from the panel chrome. `GuiMobaRemoteMonitoringControlRoute`
+binds the `mobaMonitoringControl` button to the compact dock, its checked state,
+SSH telemetry command, refresh cadence and bottom telemetry route. The live PyQt
+button and dock both expose `mobaRemoteMonitoringControlRouteKey`,
+`mobaRemoteMonitoringControlCapturedChecked`,
+`mobaRemoteMonitoringControlCapturedCommand` and
+`mobaRemoteMonitoringControlCapturedRefreshSeconds`, while static and live
+manifests expose the expected route shape for CI evidence.
+MobaXterm-style follow terminal folder control route coverage now tracks the
+visible `Follow terminal folder` checkbox as its own control route too.
+`GuiMobaFollowTerminalFolderControlRoute` binds `mobaFollowTerminalFolder` to
+the compact dock, active remote path, SFTP list plan, target SFTP path field and
+file table. The live checkbox and dock both expose
+`mobaFollowTerminalFolderControlRouteKey`,
+`mobaFollowTerminalFolderControlCapturedChecked`,
+`mobaFollowTerminalFolderControlCapturedPath` and
+`mobaFollowTerminalFolderControlCapturedPlan`, while static and live manifests
+publish the expected route shape separately from the broader SFTP follow-folder
+route.
 MobaXterm-style remote-monitoring footer geometry now pins the footer height,
 short divider span, content-left offset, metric-row gap and live controls-frame
 width so the lower-left monitoring band cannot drift away from the connected
@@ -464,6 +723,11 @@ MobaXterm-style right utility rail chrome is tracked separately:
 `GuiMobaRightUtilityRailChrome` pins the rail width, live width, margins, action
 spacing, session-edge height and session-edge icon offsets so the static preview
 and live PyQt panel cannot disagree on the narrow right-edge strip.
+MobaXterm-style right utility action route coverage ties the same rail to real
+workflow controls: `GuiMobaRightUtilityActionRoute` binds the clip, settings and
+tools buttons to generated icons, stable `mobaRightUtilityRoute*` properties and
+live handlers for clipboard/transfer hints, terminal settings and terminal tools.
+This keeps the right-edge command stack from passing as a purely decorative rail.
 The small session edge shortcut cluster beside the connected tab/terminal edge
 is tracked separately with `gui_design_moba_session_edge_actions()`: static
 previews draw the paperclip/settings icons from shared `static_y` coordinates,

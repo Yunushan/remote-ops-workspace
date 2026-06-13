@@ -391,6 +391,8 @@ class MobaConnectedSessionState:
             "telemetry_cells": [cell.to_dict() for cell in moba_telemetry_cells(self)],
             "connected_route": moba_connected_session_route(self).to_dict(),
             "identity_route": moba_connected_session_identity_route(self).to_dict(),
+            "session_action_route": moba_connected_session_action_route(self).to_dict(),
+            "sftp_terminal_folder_route": moba_sftp_terminal_folder_route(self).to_dict(),
             "banner": self.banner.to_dict(),
             "terminal_transcript": [line.to_dict() for line in self.terminal_transcript],
         }
@@ -484,6 +486,114 @@ class MobaConnectedSessionIdentityRoute:
             "banner_target_property": self.banner_target_property,
             "terminal_prompt_property": self.terminal_prompt_property,
             "telemetry_target_property": self.telemetry_target_property,
+            "render_source": self.render_source,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class MobaConnectedSessionActionRoute:
+    key: str
+    route_role: str
+    profile_name: str
+    target: str
+    active_tab_key: str
+    active_tab_label: str
+    reference_tab_label: str
+    tabs_object: str
+    tab_bar_object: str
+    reference_tab_role: str
+    menu_object: str
+    action_object: str
+    expected_action_keys: tuple[str, ...]
+    expected_action_labels: tuple[str, ...]
+    expected_action_count: int
+    always_enabled_action_keys: tuple[str, ...]
+    conditional_enabled_action_keys: tuple[str, ...]
+    action_key_property: str
+    action_label_property: str
+    action_enabled_property: str
+    captured_property: str
+    captured_tab_property: str
+    captured_action_keys_property: str
+    captured_action_labels_property: str
+    captured_action_count_property: str
+    captured_enabled_keys_property: str
+    captured_disabled_keys_property: str
+    render_source: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "route_role": self.route_role,
+            "profile_name": self.profile_name,
+            "target": self.target,
+            "active_tab_key": self.active_tab_key,
+            "active_tab_label": self.active_tab_label,
+            "reference_tab_label": self.reference_tab_label,
+            "tabs_object": self.tabs_object,
+            "tab_bar_object": self.tab_bar_object,
+            "reference_tab_role": self.reference_tab_role,
+            "menu_object": self.menu_object,
+            "action_object": self.action_object,
+            "expected_action_keys": list(self.expected_action_keys),
+            "expected_action_labels": list(self.expected_action_labels),
+            "expected_action_count": self.expected_action_count,
+            "always_enabled_action_keys": list(self.always_enabled_action_keys),
+            "conditional_enabled_action_keys": list(self.conditional_enabled_action_keys),
+            "action_key_property": self.action_key_property,
+            "action_label_property": self.action_label_property,
+            "action_enabled_property": self.action_enabled_property,
+            "captured_property": self.captured_property,
+            "captured_tab_property": self.captured_tab_property,
+            "captured_action_keys_property": self.captured_action_keys_property,
+            "captured_action_labels_property": self.captured_action_labels_property,
+            "captured_action_count_property": self.captured_action_count_property,
+            "captured_enabled_keys_property": self.captured_enabled_keys_property,
+            "captured_disabled_keys_property": self.captured_disabled_keys_property,
+            "render_source": self.render_source,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class MobaSftpTerminalFolderRoute:
+    key: str
+    route_role: str
+    terminal_area_object: str
+    terminal_output_object: str
+    source_control_object: str
+    target_browser_object: str
+    target_path_object: str
+    target_table_object: str
+    parent_row_label: str
+    selected_row_kind: str
+    remote_path: str
+    list_command: str
+    follow_enabled: bool
+    path_property: str
+    plan_property: str
+    enabled_property: str
+    row_route_property: str
+    render_source: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "route_role": self.route_role,
+            "terminal_area_object": self.terminal_area_object,
+            "terminal_output_object": self.terminal_output_object,
+            "source_control_object": self.source_control_object,
+            "target_browser_object": self.target_browser_object,
+            "target_path_object": self.target_path_object,
+            "target_table_object": self.target_table_object,
+            "parent_row_label": self.parent_row_label,
+            "selected_row_kind": self.selected_row_kind,
+            "remote_path": self.remote_path,
+            "list_command": self.list_command,
+            "follow_enabled": self.follow_enabled,
+            "path_property": self.path_property,
+            "plan_property": self.plan_property,
+            "enabled_property": self.enabled_property,
+            "row_route_property": self.row_route_property,
             "render_source": self.render_source,
         }
 
@@ -587,6 +697,91 @@ def moba_connected_session_identity_route(state: MobaConnectedSessionState) -> M
         banner_target_property="mobaConnectedIdentityBannerTarget",
         terminal_prompt_property="mobaConnectedIdentityTerminalPrompt",
         telemetry_target_property="mobaConnectedIdentityTelemetryTarget",
+        render_source="connected-session-state",
+    )
+
+
+MOBA_CONNECTED_SESSION_ACTION_KEYS = (
+    "new-local-terminal",
+    "split-horizontal",
+    "split-vertical",
+    "duplicate-tab",
+    "close-tab",
+    "close-other-tabs",
+    "recover-previous-sessions",
+)
+MOBA_CONNECTED_SESSION_ACTION_LABELS = (
+    "New local terminal",
+    "Split horizontal",
+    "Split vertical",
+    "Duplicate tab",
+    "Close tab",
+    "Close other tabs",
+    "Recover previous sessions",
+)
+MOBA_CONNECTED_SESSION_ALWAYS_ENABLED_ACTION_KEYS = (
+    "new-local-terminal",
+    "split-horizontal",
+    "split-vertical",
+    "duplicate-tab",
+    "close-tab",
+    "recover-previous-sessions",
+)
+MOBA_CONNECTED_SESSION_CONDITIONAL_ENABLED_ACTION_KEYS = ("close-other-tabs",)
+
+
+def moba_connected_session_action_route(state: MobaConnectedSessionState) -> MobaConnectedSessionActionRoute:
+    return MobaConnectedSessionActionRoute(
+        key="moba-connected-session-actions-route",
+        route_role="active-connected-tab-context-session-actions",
+        profile_name=state.profile_name,
+        target=state.target,
+        active_tab_key="active-session",
+        active_tab_label=moba_connected_tab_label(state),
+        reference_tab_label=moba_connected_tab_label(state, ordinal=7),
+        tabs_object="sessionTabs",
+        tab_bar_object="sessionTabBar",
+        reference_tab_role="terminal",
+        menu_object="mobaConnectedSessionTabContextMenu",
+        action_object="mobaConnectedSessionTabContextAction",
+        expected_action_keys=MOBA_CONNECTED_SESSION_ACTION_KEYS,
+        expected_action_labels=MOBA_CONNECTED_SESSION_ACTION_LABELS,
+        expected_action_count=len(MOBA_CONNECTED_SESSION_ACTION_KEYS),
+        always_enabled_action_keys=MOBA_CONNECTED_SESSION_ALWAYS_ENABLED_ACTION_KEYS,
+        conditional_enabled_action_keys=MOBA_CONNECTED_SESSION_CONDITIONAL_ENABLED_ACTION_KEYS,
+        action_key_property="sessionTabContextActionKey",
+        action_label_property="sessionTabContextActionLabel",
+        action_enabled_property="sessionTabContextActionEnabled",
+        captured_property="mobaConnectedSessionActionCaptured",
+        captured_tab_property="mobaConnectedSessionActionCapturedTab",
+        captured_action_keys_property="mobaConnectedSessionActionKeys",
+        captured_action_labels_property="mobaConnectedSessionActionLabels",
+        captured_action_count_property="mobaConnectedSessionActionCount",
+        captured_enabled_keys_property="mobaConnectedSessionActionEnabledKeys",
+        captured_disabled_keys_property="mobaConnectedSessionActionDisabledKeys",
+        render_source="connected-session-state",
+    )
+
+
+def moba_sftp_terminal_folder_route(state: MobaConnectedSessionState) -> MobaSftpTerminalFolderRoute:
+    return MobaSftpTerminalFolderRoute(
+        key="moba-sftp-terminal-folder-route",
+        route_role="terminal-cwd-follow-checkbox-to-sftp-path-and-rows",
+        terminal_area_object="mobaTerminalArea",
+        terminal_output_object="terminalOutput",
+        source_control_object="mobaFollowTerminalFolder",
+        target_browser_object="mobaSftpBrowser",
+        target_path_object="mobaSftpPath",
+        target_table_object="mobaSftpFileTable",
+        parent_row_label="..",
+        selected_row_kind="parent-dir",
+        remote_path=state.remote_path,
+        list_command=state.follow_folder_plan.printable_batch(),
+        follow_enabled=state.follow_terminal_folder,
+        path_property="mobaSftpTerminalFolderRoutePath",
+        plan_property="mobaSftpTerminalFolderRoutePlan",
+        enabled_property="mobaSftpTerminalFolderRouteEnabled",
+        row_route_property="mobaSftpTerminalFolderRouteKey",
         render_source="connected-session-state",
     )
 

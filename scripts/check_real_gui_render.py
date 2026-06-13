@@ -18,10 +18,13 @@ if str(SRC) not in sys.path:
 
 from remote_ops_workspace.gui_designs import (  # noqa: E402
     GUI_DESIGN_PRESETS,
+    PRODUCT_GUI_PRESET_IDS,
+    PRODUCT_REFERENCE_TAB_PRESET_IDS,
     gui_design_home_tab_label,
     gui_design_interaction_state,
     gui_design_moba_bottom_edge_controls,
     gui_design_moba_connected_dock_frame,
+    gui_design_moba_follow_terminal_folder_control_route,
     gui_design_moba_home_welcome_chrome,
     gui_design_moba_home_welcome_geometry,
     gui_design_moba_monitoring_control_geometry,
@@ -33,10 +36,13 @@ from remote_ops_workspace.gui_designs import (  # noqa: E402
     gui_design_moba_rail_chrome,
     gui_design_moba_rail_item_geometry,
     gui_design_moba_rail_items,
+    gui_design_moba_remote_monitoring_control_route,
     gui_design_moba_remote_monitoring_dock_chrome,
     gui_design_moba_ribbon_action_geometry,
     gui_design_moba_ribbon_actions,
+    gui_design_moba_ribbon_edge_action_route,
     gui_design_moba_ribbon_edge_actions,
+    gui_design_moba_right_utility_action_route,
     gui_design_moba_right_utility_actions,
     gui_design_moba_right_utility_rail_chrome,
     gui_design_moba_session_edge_actions,
@@ -59,26 +65,56 @@ from remote_ops_workspace.gui_designs import (  # noqa: E402
     gui_design_moba_top_stack_geometry,
     gui_design_mremoteng_connection_document_route,
     gui_design_mremoteng_document_controls,
+    gui_design_mremoteng_document_filter_route,
     gui_design_mremoteng_document_toolbar_chrome,
+    gui_design_mremoteng_inheritance_route,
     gui_design_mremoteng_property_grid_chrome,
     gui_design_mremoteng_top_chrome,
+    gui_design_preset_catalog_route,
+    gui_design_preset_command_surface_route,
+    gui_design_preset_focus_interaction_route,
+    gui_design_preset_home_search_route,
+    gui_design_preset_isolation_route,
+    gui_design_preset_keyboard_shortcut_route,
+    gui_design_preset_reference_control_route,
+    gui_design_preset_reference_input_route,
+    gui_design_preset_reference_session_action_route,
+    gui_design_preset_reference_status_bar_route,
+    gui_design_preset_reference_surface_route,
+    gui_design_preset_reference_tab_chrome_route,
+    gui_design_preset_reference_tab_route,
+    gui_design_preset_reference_transcript_route,
+    gui_design_preset_selection_route,
+    gui_design_preset_transition_route,
+    gui_design_preset_visual_signature,
+    gui_design_product_identity_route,
     gui_design_reference_state,
     gui_design_remmina_clipboard_route,
+    gui_design_remmina_profile_filter_route,
     gui_design_remmina_profile_list_chrome,
     gui_design_remmina_profile_viewer_route,
+    gui_design_remmina_screenshot_route,
+    gui_design_remmina_sftp_transfer_route,
     gui_design_remmina_viewer_controls,
     gui_design_securecrt_command_window_chrome,
     gui_design_securecrt_command_window_send_route,
     gui_design_securecrt_session_manager_chrome,
+    gui_design_securecrt_session_manager_filter_route,
     gui_design_securecrt_session_manager_route,
     gui_design_securecrt_session_status_strip,
+    gui_design_securecrt_sftp_browser_route,
+    gui_design_securecrt_sftp_tab_route,
     gui_design_securecrt_top_chrome,
     gui_design_sidebar_copy,
     gui_design_status_segments,
+    gui_design_tab_items,
+    gui_design_termius_files_browser_route,
     gui_design_termius_header_chips,
     gui_design_termius_host_identity_strip,
     gui_design_termius_host_selection_route,
     gui_design_termius_hosts_chrome,
+    gui_design_termius_port_forward_route,
+    gui_design_termius_snippet_route,
     gui_design_termius_sync_route,
     gui_design_toolbar_actions,
     gui_design_tree_root_icon,
@@ -91,9 +127,11 @@ from remote_ops_workspace.moba_connected import (  # noqa: E402
     build_moba_connected_session_state,
     build_moba_terminal_transcript,
     build_ssh_connection_banner,
+    moba_connected_session_action_route,
     moba_connected_session_identity_route,
     moba_connected_session_route,
     moba_connected_tab_chrome_geometry_items,
+    moba_sftp_terminal_folder_route,
     moba_telemetry_cell_geometry,
     moba_telemetry_cells,
 )
@@ -122,6 +160,75 @@ EXPECTED_LIVE_REFERENCE_TAB_LABELS = {
     "termius": "edge-prod",
     "remmina": "RDP - win-admin",
     "mremoteng": "edge-prod [SSH]",
+}
+EXPECTED_PRODUCT_IDENTITY_ROUTES = {
+    preset_id: gui_design_product_identity_route(preset_id)
+    for preset_id in ("securecrt", "termius", "remmina", "mremoteng")
+}
+EXPECTED_PRESET_REFERENCE_TAB_ROUTES = {
+    preset_id: gui_design_preset_reference_tab_route(preset_id)
+    for preset_id in PRODUCT_REFERENCE_TAB_PRESET_IDS
+}
+EXPECTED_PRESET_REFERENCE_TAB_CHROME_ROUTES = {
+    preset_id: gui_design_preset_reference_tab_chrome_route(preset_id)
+    for preset_id in PRODUCT_REFERENCE_TAB_PRESET_IDS
+}
+EXPECTED_PRESET_REFERENCE_STATUS_BAR_ROUTES = {
+    preset_id: gui_design_preset_reference_status_bar_route(preset_id)
+    for preset_id in PRODUCT_REFERENCE_TAB_PRESET_IDS
+}
+EXPECTED_PRESET_REFERENCE_SESSION_ACTION_ROUTES = {
+    preset_id: gui_design_preset_reference_session_action_route(preset_id)
+    for preset_id in PRODUCT_REFERENCE_TAB_PRESET_IDS
+}
+EXPECTED_PRESET_REFERENCE_SURFACE_ROUTES = {
+    preset_id: gui_design_preset_reference_surface_route(preset_id)
+    for preset_id in PRODUCT_REFERENCE_TAB_PRESET_IDS
+}
+EXPECTED_PRESET_REFERENCE_CONTROL_ROUTES = {
+    preset_id: gui_design_preset_reference_control_route(preset_id)
+    for preset_id in PRODUCT_REFERENCE_TAB_PRESET_IDS
+}
+EXPECTED_PRESET_REFERENCE_INPUT_ROUTES = {
+    preset_id: gui_design_preset_reference_input_route(preset_id)
+    for preset_id in PRODUCT_REFERENCE_TAB_PRESET_IDS
+}
+EXPECTED_PRESET_REFERENCE_TRANSCRIPT_ROUTES = {
+    preset_id: gui_design_preset_reference_transcript_route(preset_id)
+    for preset_id in PRODUCT_REFERENCE_TAB_PRESET_IDS
+}
+EXPECTED_PRESET_CATALOG_ROUTE = gui_design_preset_catalog_route()
+EXPECTED_PRESET_ISOLATION_ROUTES = {
+    preset.id: gui_design_preset_isolation_route(preset.id)
+    for preset in GUI_DESIGN_PRESETS
+}
+EXPECTED_PRESET_SELECTION_ROUTES = {
+    preset.id: gui_design_preset_selection_route(preset.id)
+    for preset in GUI_DESIGN_PRESETS
+}
+EXPECTED_PRESET_TRANSITION_ROUTES = {
+    preset.id: gui_design_preset_transition_route(preset.id)
+    for preset in GUI_DESIGN_PRESETS
+}
+EXPECTED_PRESET_VISUAL_SIGNATURES = {
+    preset.id: gui_design_preset_visual_signature(preset.id)
+    for preset in GUI_DESIGN_PRESETS
+}
+EXPECTED_PRESET_KEYBOARD_SHORTCUT_ROUTES = {
+    preset_id: gui_design_preset_keyboard_shortcut_route(preset_id)
+    for preset_id in PRODUCT_GUI_PRESET_IDS
+}
+EXPECTED_PRESET_COMMAND_SURFACE_ROUTES = {
+    preset_id: gui_design_preset_command_surface_route(preset_id)
+    for preset_id in PRODUCT_GUI_PRESET_IDS
+}
+EXPECTED_PRESET_FOCUS_INTERACTION_ROUTES = {
+    preset_id: gui_design_preset_focus_interaction_route(preset_id)
+    for preset_id in PRODUCT_GUI_PRESET_IDS
+}
+EXPECTED_PRESET_HOME_SEARCH_ROUTES = {
+    preset_id: gui_design_preset_home_search_route(preset_id)
+    for preset_id in PRODUCT_GUI_PRESET_IDS
 }
 EXPECTED_MOBA_TELEMETRY_KEYS = {
     "target",
@@ -162,6 +269,8 @@ EXPECTED_MOBA_CONNECTED_STATE = build_moba_connected_session_state(
 )
 EXPECTED_MOBA_CONNECTED_SESSION_ROUTE = moba_connected_session_route(EXPECTED_MOBA_CONNECTED_STATE)
 EXPECTED_MOBA_CONNECTED_SESSION_IDENTITY_ROUTE = moba_connected_session_identity_route(EXPECTED_MOBA_CONNECTED_STATE)
+EXPECTED_MOBA_CONNECTED_SESSION_ACTION_ROUTE = moba_connected_session_action_route(EXPECTED_MOBA_CONNECTED_STATE)
+EXPECTED_MOBA_SFTP_TERMINAL_FOLDER_ROUTE = moba_sftp_terminal_folder_route(EXPECTED_MOBA_CONNECTED_STATE)
 EXPECTED_MOBA_TERMINAL_TRANSCRIPT = build_moba_terminal_transcript(
     Profile(
         name="edge-prod",
@@ -206,6 +315,7 @@ EXPECTED_MOBA_RIBBON_ACTION_GEOMETRY_BY_KEY = {
     geometry.key: geometry for geometry in EXPECTED_MOBA_RIBBON_ACTION_GEOMETRY
 }
 EXPECTED_MOBA_RIBBON_EDGE_ACTIONS = tuple(gui_design_moba_ribbon_edge_actions())
+EXPECTED_MOBA_RIBBON_EDGE_ACTION_ROUTE = gui_design_moba_ribbon_edge_action_route()
 EXPECTED_MOBA_TAB_CHROME_KEYS = {"home", "active-session", "new-session"}
 EXPECTED_MOBA_STATIC_TAB_CHROME_KEYS = {"home", "inactive-session", "active-session", "new-session"}
 EXPECTED_MOBA_TAB_CHROME_GEOMETRY = tuple(moba_connected_tab_chrome_geometry_items())
@@ -214,6 +324,7 @@ EXPECTED_MOBA_RIGHT_UTILITY_KEYS = {action.key for action in gui_design_moba_rig
 EXPECTED_MOBA_RIGHT_UTILITY_ICON_KEYS = {action.key: action.icon_key for action in gui_design_moba_right_utility_actions()}
 EXPECTED_MOBA_RIGHT_UTILITY_ACTIONS = tuple(gui_design_moba_right_utility_actions())
 EXPECTED_MOBA_RIGHT_UTILITY_BY_KEY = {action.key: action for action in EXPECTED_MOBA_RIGHT_UTILITY_ACTIONS}
+EXPECTED_MOBA_RIGHT_UTILITY_ACTION_ROUTE = gui_design_moba_right_utility_action_route()
 EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME = gui_design_moba_right_utility_rail_chrome()
 EXPECTED_MOBA_SESSION_EDGE_ACTIONS = tuple(gui_design_moba_session_edge_actions())
 EXPECTED_MOBA_SESSION_EDGE_KEYS = {action.key for action in EXPECTED_MOBA_SESSION_EDGE_ACTIONS}
@@ -265,6 +376,8 @@ EXPECTED_MOBA_MONITORING_CONTROL_GEOMETRY_BY_KEY = {
 }
 EXPECTED_MOBA_REMOTE_MONITORING_DOCK_CHROME = gui_design_moba_remote_monitoring_dock_chrome()
 EXPECTED_MOBA_MONITORING_TELEMETRY_ROUTE = gui_design_moba_monitoring_telemetry_route()
+EXPECTED_MOBA_REMOTE_MONITORING_CONTROL_ROUTE = gui_design_moba_remote_monitoring_control_route()
+EXPECTED_MOBA_FOLLOW_TERMINAL_FOLDER_CONTROL_ROUTE = gui_design_moba_follow_terminal_folder_control_route()
 EXPECTED_MOBA_SFTP_FOLLOW_FOLDER_ROUTE = gui_design_moba_sftp_follow_folder_route()
 EXPECTED_MOBA_SFTP_ROUTED_FILE_ROWS = gui_design_moba_sftp_routed_file_rows()
 EXPECTED_MOBA_STATUS_KEYS = {segment.key for segment in gui_design_moba_status_segments()}
@@ -278,6 +391,9 @@ EXPECTED_SECURECRT_SESSION_STATUS_STRIP = gui_design_securecrt_session_status_st
 EXPECTED_SECURECRT_SESSION_STATUS_KEYS = [field.key for field in EXPECTED_SECURECRT_SESSION_STATUS_STRIP.fields]
 EXPECTED_SECURECRT_SESSION_MANAGER_CHROME = gui_design_securecrt_session_manager_chrome()
 EXPECTED_SECURECRT_SESSION_MANAGER_ROUTE = gui_design_securecrt_session_manager_route()
+EXPECTED_SECURECRT_SESSION_MANAGER_FILTER_ROUTE = gui_design_securecrt_session_manager_filter_route()
+EXPECTED_SECURECRT_SFTP_TAB_ROUTE = gui_design_securecrt_sftp_tab_route()
+EXPECTED_SECURECRT_SFTP_BROWSER_ROUTE = gui_design_securecrt_sftp_browser_route()
 EXPECTED_SECURECRT_SESSION_MANAGER_ACTION_KEYS = [action.key for action in EXPECTED_SECURECRT_SESSION_MANAGER_CHROME.actions]
 EXPECTED_SECURECRT_SESSION_MANAGER_ICON_KEYS = {
     action.key: action.icon_key for action in EXPECTED_SECURECRT_SESSION_MANAGER_CHROME.actions
@@ -359,7 +475,10 @@ EXPECTED_REMMINA_PROFILE_LIST_CHROME = gui_design_remmina_profile_list_chrome()
 EXPECTED_REMMINA_PROFILE_COLUMN_KEYS = [column.key for column in EXPECTED_REMMINA_PROFILE_LIST_CHROME.columns]
 EXPECTED_REMMINA_PROFILE_ROW_KEYS = [row.key for row in EXPECTED_REMMINA_PROFILE_LIST_CHROME.rows]
 EXPECTED_REMMINA_PROFILE_VIEWER_ROUTE = gui_design_remmina_profile_viewer_route()
+EXPECTED_REMMINA_PROFILE_FILTER_ROUTE = gui_design_remmina_profile_filter_route()
 EXPECTED_REMMINA_CLIPBOARD_ROUTE = gui_design_remmina_clipboard_route()
+EXPECTED_REMMINA_SCREENSHOT_ROUTE = gui_design_remmina_screenshot_route()
+EXPECTED_REMMINA_SFTP_TRANSFER_ROUTE = gui_design_remmina_sftp_transfer_route()
 EXPECTED_TERMIUS_HEADER_CHIP_KEYS = [chip.key for chip in gui_design_termius_header_chips()]
 EXPECTED_TERMIUS_HOSTS_CHROME = gui_design_termius_hosts_chrome()
 EXPECTED_TERMIUS_HOSTS_ACTION_KEYS = [action.key for action in EXPECTED_TERMIUS_HOSTS_CHROME.actions]
@@ -368,6 +487,9 @@ EXPECTED_TERMIUS_HOST_IDENTITY_STRIP = gui_design_termius_host_identity_strip()
 EXPECTED_TERMIUS_HOST_IDENTITY_KEYS = [field.key for field in EXPECTED_TERMIUS_HOST_IDENTITY_STRIP.fields]
 EXPECTED_TERMIUS_SYNC_ROUTE = gui_design_termius_sync_route()
 EXPECTED_TERMIUS_HOST_SELECTION_ROUTE = gui_design_termius_host_selection_route()
+EXPECTED_TERMIUS_PORT_FORWARD_ROUTE = gui_design_termius_port_forward_route()
+EXPECTED_TERMIUS_SNIPPET_ROUTE = gui_design_termius_snippet_route()
+EXPECTED_TERMIUS_FILES_BROWSER_ROUTE = gui_design_termius_files_browser_route()
 EXPECTED_MREMOTENG_TOP_CHROME = gui_design_mremoteng_top_chrome()
 EXPECTED_MREMOTENG_TOP_MENU_KEYS = [item.key for item in EXPECTED_MREMOTENG_TOP_CHROME.menu_items]
 EXPECTED_MREMOTENG_TOP_MENU_LABELS = [item.label for item in EXPECTED_MREMOTENG_TOP_CHROME.menu_items]
@@ -379,6 +501,8 @@ EXPECTED_MREMOTENG_DOCUMENT_CONTROL_KEYS = [control.key for control in gui_desig
 EXPECTED_MREMOTENG_DOCUMENT_TOOLBAR_CHROME = gui_design_mremoteng_document_toolbar_chrome()
 EXPECTED_MREMOTENG_PROPERTY_GRID_CHROME = gui_design_mremoteng_property_grid_chrome()
 EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE = gui_design_mremoteng_connection_document_route()
+EXPECTED_MREMOTENG_DOCUMENT_FILTER_ROUTE = gui_design_mremoteng_document_filter_route()
+EXPECTED_MREMOTENG_INHERITANCE_ROUTE = gui_design_mremoteng_inheritance_route()
 EXPECTED_MREMOTENG_PROPERTY_COLUMN_KEYS = [column.key for column in EXPECTED_MREMOTENG_PROPERTY_GRID_CHROME.columns]
 EXPECTED_MREMOTENG_PROPERTY_ROW_KEYS = [row.key for row in EXPECTED_MREMOTENG_PROPERTY_GRID_CHROME.rows]
 COMMON_REQUIRED_WIDGETS = {
@@ -414,6 +538,7 @@ TERMIUS_REQUIRED_WIDGETS = {
 }
 REMMINA_REQUIRED_WIDGETS = {
     "remminaProfileListChrome": "Remmina profile list chrome",
+    "remminaSftpTransferPanel": "Remmina SFTP transfer panel",
 }
 MREMOTENG_REQUIRED_WIDGETS = {
     "mRemoteNgMenuBar": "mRemoteNG top menu bar",
@@ -800,6 +925,15 @@ def _capture_live_gui(
             if index < 0:
                 errors.append(f"live GUI design selector missing preset: {preset.id}")
                 continue
+            transition_route = EXPECTED_PRESET_TRANSITION_ROUTES[preset.id]
+            source_index = design_select.findData(transition_route.from_preset_ids[0])
+            if source_index < 0:
+                errors.append(f"live GUI design selector missing transition source: {transition_route.from_preset_ids[0]}")
+                continue
+            if source_index != index:
+                design_select.setCurrentIndex(source_index)
+                window.resize(*REQUESTED_SIZE)
+                process_events(app)
             design_select.setCurrentIndex(index)
             window.resize(*REQUESTED_SIZE)
             process_events(app)
@@ -904,14 +1038,298 @@ def prepare_product_reference_tab(window: Any, preset_id: str) -> list[str]:
     profile_name = PRESET_REFERENCE_PROFILES.get(preset_id)
     if profile_name is None:
         return []
+    route = EXPECTED_PRESET_REFERENCE_TAB_ROUTES.get(preset_id)
+    if route is None:
+        return []
+    tab_chrome_route = EXPECTED_PRESET_REFERENCE_TAB_CHROME_ROUTES.get(preset_id)
+    status_route = EXPECTED_PRESET_REFERENCE_STATUS_BAR_ROUTES.get(preset_id)
+    session_action_route = EXPECTED_PRESET_REFERENCE_SESSION_ACTION_ROUTES.get(preset_id)
+    surface_route = EXPECTED_PRESET_REFERENCE_SURFACE_ROUTES.get(preset_id)
+    control_route = EXPECTED_PRESET_REFERENCE_CONTROL_ROUTES.get(preset_id)
+    input_route = EXPECTED_PRESET_REFERENCE_INPUT_ROUTES.get(preset_id)
+    transcript_route = EXPECTED_PRESET_REFERENCE_TRANSCRIPT_ROUTES.get(preset_id)
     try:
         profile = window.store.get(profile_name)
         window.launch_profile(profile, dry_run=False, prefix="CI REFERENCE")
     except (KeyError, LauncherError, ValueError) as exc:
         return [f"{preset_id} live GUI could not open reference profile {profile_name}: {exc}"]
-    home_index = window.find_tab_by_role("home")
+    errors: list[str] = []
+    if profile_name != route.reference_profile:
+        errors.append(f"{preset_id} live GUI reference profile {profile_name!r} drifted from route")
+    reference_index = find_live_tab_index(window.tabs, route.active_tab_label)
+    if reference_index < 0:
+        errors.append(f"{preset_id} live GUI could not activate reference tab: {route.active_tab_label}")
+    else:
+        window.tabs.setCurrentIndex(reference_index)
+        window.tabs.setProperty(route.activated_label_property, route.active_tab_label)
+        window.tabs.setProperty(route.active_tab_property, route.active_tab_label)
+        window.tabs.setProperty(route.reference_profile_property, route.reference_profile)
+        if tab_chrome_route is not None:
+            errors.extend(capture_product_reference_tab_chrome(window, preset_id, reference_index))
+        if surface_route is not None:
+            errors.extend(capture_product_reference_surface(window, preset_id, reference_index))
+        if control_route is not None:
+            errors.extend(capture_product_reference_controls(window, preset_id, reference_index))
+        if input_route is not None:
+            errors.extend(capture_product_reference_input(window, preset_id, reference_index))
+        if transcript_route is not None:
+            errors.extend(capture_product_reference_transcript(window, preset_id, reference_index))
+        if status_route is not None:
+            errors.extend(capture_product_reference_status_bar(window, preset_id, reference_index))
+        if session_action_route is not None:
+            errors.extend(capture_product_reference_session_actions(window, preset_id, reference_index))
+    home_index = window.find_tab_by_role(route.home_tab_role)
     if home_index >= 0:
         window.tabs.setCurrentIndex(home_index)
+        window.tabs.setProperty(route.returned_home_label_property, route.home_tab_label)
+        window.tabs.setProperty(route.home_tab_property, route.home_tab_label)
+    else:
+        errors.append(f"{preset_id} live GUI could not return to home tab: {route.home_tab_label}")
+    return errors
+
+
+def find_live_tab_index(tabs: Any, label: str) -> int:
+    for index in range(tabs.count()):
+        if tabs.tabText(index) == label:
+            return index
+    return -1
+
+
+def capture_product_reference_tab_chrome(window: Any, preset_id: str, reference_index: int) -> list[str]:
+    route = EXPECTED_PRESET_REFERENCE_TAB_CHROME_ROUTES.get(preset_id)
+    if route is None:
+        return []
+    tabs = window.tabs
+    reference_widget = tabs.widget(reference_index)
+    if reference_widget is None:
+        return [f"{preset_id} live GUI reference tab chrome missing active tab widget"]
+    tab_bar = tabs.tabBar()
+    tab_role = str(reference_widget.property("tabRole") or "")
+    closeable = bool(tabs.tabsClosable() and tab_role == route.reference_tab_role)
+    selected = tabs.currentIndex() == reference_index
+    tab_position = tabs.tabPosition().name.lower()
+    properties = {
+        route.captured_property: True,
+        route.captured_label_property: tabs.tabText(reference_index),
+        route.captured_tooltip_property: tabs.tabToolTip(reference_index),
+        route.captured_index_property: reference_index,
+        route.captured_role_property: tab_role,
+        route.captured_position_property: tab_position,
+        route.captured_closeable_property: closeable,
+        route.captured_selected_property: selected,
+    }
+    for widget in (tabs, reference_widget, tab_bar):
+        if widget is None:
+            continue
+        for property_name, value in properties.items():
+            widget.setProperty(property_name, value)
+    return []
+
+
+def capture_product_reference_status_bar(window: Any, preset_id: str, reference_index: int) -> list[str]:
+    from PyQt6.QtWidgets import QLabel
+
+    route = EXPECTED_PRESET_REFERENCE_STATUS_BAR_ROUTES.get(preset_id)
+    if route is None:
+        return []
+    tabs = window.tabs
+    reference_widget = tabs.widget(reference_index)
+    if reference_widget is None:
+        return [f"{preset_id} live GUI reference status-bar route missing active tab widget"]
+    status_bar = window.statusBar()
+    notice = window.findChild(QLabel, route.status_notice_object)
+    segment_labels = window.findChildren(QLabel, route.status_segment_object)
+    segment_texts = [label.text() for label in segment_labels if label.text()]
+    segment_tooltips = [label.toolTip() for label in segment_labels if label.text()]
+    properties = {
+        route.captured_property: True,
+        route.captured_tab_property: tabs.tabText(reference_index),
+        route.captured_message_property: status_bar.currentMessage(),
+        route.captured_segments_property: segment_texts,
+        route.captured_segment_count_property: len(segment_texts),
+        route.captured_segment_tooltips_property: segment_tooltips,
+        route.captured_notice_property: notice.text() if notice is not None else "",
+    }
+    for widget in (tabs, reference_widget, status_bar, notice, *segment_labels):
+        if widget is None:
+            continue
+        for property_name, value in properties.items():
+            widget.setProperty(property_name, value)
+    return []
+
+
+def capture_product_reference_session_actions(window: Any, preset_id: str, reference_index: int) -> list[str]:
+    route = EXPECTED_PRESET_REFERENCE_SESSION_ACTION_ROUTES.get(preset_id)
+    if route is None:
+        return []
+    tabs = window.tabs
+    reference_widget = tabs.widget(reference_index)
+    if reference_widget is None:
+        return [f"{preset_id} live GUI reference session action route missing active tab widget"]
+    tab_bar = tabs.tabBar()
+    if not hasattr(window, "tab_context_session_action_specs"):
+        return [f"{preset_id} live GUI reference session action route missing action spec helper"]
+    specs = window.tab_context_session_action_specs(reference_index)
+    action_keys = [str(spec["key"]) for spec in specs]
+    action_labels = [str(spec["label"]) for spec in specs]
+    enabled_keys = [str(spec["key"]) for spec in specs if bool(spec["enabled"])]
+    disabled_keys = [str(spec["key"]) for spec in specs if not bool(spec["enabled"])]
+    properties = {
+        route.captured_property: True,
+        route.captured_tab_property: tabs.tabText(reference_index),
+        route.captured_action_keys_property: action_keys,
+        route.captured_action_labels_property: action_labels,
+        route.captured_action_count_property: len(action_keys),
+        route.captured_enabled_keys_property: enabled_keys,
+        route.captured_disabled_keys_property: disabled_keys,
+    }
+    for widget in (tabs, reference_widget, tab_bar):
+        if widget is None:
+            continue
+        for property_name, value in properties.items():
+            widget.setProperty(property_name, value)
+    return []
+
+
+def capture_product_reference_surface(window: Any, preset_id: str, reference_index: int) -> list[str]:
+    from PyQt6.QtWidgets import QLabel, QTextEdit, QWidget
+
+    route = EXPECTED_PRESET_REFERENCE_SURFACE_ROUTES.get(preset_id)
+    if route is None:
+        return []
+    tabs = window.tabs
+    errors: list[str] = []
+    reference_widget = tabs.widget(reference_index)
+    if reference_widget is None:
+        return [f"{preset_id} live GUI reference surface missing active tab widget"]
+    pane = reference_widget
+    if str(pane.objectName()) != route.terminal_pane_object:
+        pane = reference_widget.findChild(QWidget, route.terminal_pane_object)
+    if pane is None:
+        return [f"{preset_id} live GUI reference surface missing terminal pane"]
+    title = pane.findChild(QLabel, route.terminal_title_object)
+    source = pane.findChild(QLabel, route.terminal_source_object)
+    command = pane.findChild(QLabel, route.terminal_command_object)
+    output = pane.findChild(QTextEdit, route.terminal_output_object)
+    actual_title = title.text() if title is not None else ""
+    actual_source = source.text() if source is not None else ""
+    actual_command = command.text() if command is not None else ""
+    actual_output = output.toPlainText() if output is not None else ""
+    if not actual_command and hasattr(pane, "plan"):
+        actual_command = pane.plan.printable()
+    properties = {
+        route.captured_property: True,
+        route.captured_tab_property: tabs.tabText(reference_index),
+        route.actual_title_property: actual_title,
+        route.actual_source_property: actual_source,
+        route.actual_command_property: actual_command,
+        route.actual_output_property: actual_output,
+    }
+    for widget in (tabs, pane, title, source, command, output):
+        if widget is None:
+            continue
+        for property_name, value in properties.items():
+            widget.setProperty(property_name, value)
+    return errors
+
+
+def capture_product_reference_controls(window: Any, preset_id: str, reference_index: int) -> list[str]:
+    from PyQt6.QtWidgets import QLabel, QToolButton, QWidget
+
+    route = EXPECTED_PRESET_REFERENCE_CONTROL_ROUTES.get(preset_id)
+    if route is None:
+        return []
+    tabs = window.tabs
+    reference_widget = tabs.widget(reference_index)
+    if reference_widget is None:
+        return [f"{preset_id} live GUI reference controls missing active tab widget"]
+    pane = reference_widget
+    if str(pane.objectName()) != route.terminal_pane_object:
+        pane = reference_widget.findChild(QWidget, route.terminal_pane_object)
+    if pane is None:
+        return [f"{preset_id} live GUI reference controls missing terminal pane"]
+    status = pane.findChild(QLabel, route.terminal_status_object)
+    buttons = pane.findChildren(QToolButton, route.terminal_action_object)
+    action_keys = [str(button.property(route.action_key_property) or "") for button in buttons]
+    status_state = str(status.property(route.status_state_property) or "") if status is not None else ""
+    status_text = status.text() if status is not None else ""
+    properties = {
+        route.captured_property: True,
+        route.captured_actions_property: action_keys,
+        route.captured_status_property: status_state,
+        route.captured_status_text_property: status_text,
+        "presetReferenceControlCapturedTab": tabs.tabText(reference_index),
+    }
+    for widget in (tabs, pane, status, *buttons):
+        if widget is None:
+            continue
+        for property_name, value in properties.items():
+            widget.setProperty(property_name, value)
+    return []
+
+
+def capture_product_reference_input(window: Any, preset_id: str, reference_index: int) -> list[str]:
+    from PyQt6.QtWidgets import QLineEdit, QWidget
+
+    route = EXPECTED_PRESET_REFERENCE_INPUT_ROUTES.get(preset_id)
+    if route is None:
+        return []
+    tabs = window.tabs
+    reference_widget = tabs.widget(reference_index)
+    if reference_widget is None:
+        return [f"{preset_id} live GUI reference input missing active tab widget"]
+    pane = reference_widget
+    if str(pane.objectName()) != route.terminal_pane_object:
+        pane = reference_widget.findChild(QWidget, route.terminal_pane_object)
+    if pane is None:
+        return [f"{preset_id} live GUI reference input missing terminal pane"]
+    input_widget = pane.findChild(QLineEdit, route.terminal_input_object)
+    if input_widget is None:
+        return [f"{preset_id} live GUI reference input widget missing"]
+    properties = {
+        route.captured_property: True,
+        route.captured_tab_property: tabs.tabText(reference_index),
+        route.captured_placeholder_property: input_widget.placeholderText(),
+        route.captured_text_property: input_widget.text(),
+        route.captured_enabled_property: input_widget.isEnabled(),
+    }
+    for widget in (tabs, pane, input_widget):
+        for property_name, value in properties.items():
+            widget.setProperty(property_name, value)
+    return []
+
+
+def capture_product_reference_transcript(window: Any, preset_id: str, reference_index: int) -> list[str]:
+    from PyQt6.QtWidgets import QTextEdit, QWidget
+
+    route = EXPECTED_PRESET_REFERENCE_TRANSCRIPT_ROUTES.get(preset_id)
+    if route is None:
+        return []
+    tabs = window.tabs
+    reference_widget = tabs.widget(reference_index)
+    if reference_widget is None:
+        return [f"{preset_id} live GUI reference transcript missing active tab widget"]
+    pane = reference_widget
+    if str(pane.objectName()) != route.terminal_pane_object:
+        pane = reference_widget.findChild(QWidget, route.terminal_pane_object)
+    if pane is None:
+        return [f"{preset_id} live GUI reference transcript missing terminal pane"]
+    output_widget = pane.findChild(QTextEdit, route.terminal_output_object)
+    if output_widget is None:
+        return [f"{preset_id} live GUI reference transcript output widget missing"]
+    transcript = output_widget.toPlainText()
+    lines = transcript.splitlines()
+    command_echo = next((line for line in lines if line.startswith(route.command_echo_prefix)), "")
+    properties = {
+        route.captured_property: True,
+        route.captured_tab_property: tabs.tabText(reference_index),
+        route.captured_text_property: transcript,
+        route.captured_line_count_property: len(lines),
+        route.captured_command_echo_property: command_echo,
+    }
+    for widget in (tabs, pane, output_widget):
+        for property_name, value in properties.items():
+            widget.setProperty(property_name, value)
     return []
 
 
@@ -1119,6 +1537,65 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
             for property_name, expected_value in geometry_properties.items():
                 if button.property(property_name) != expected_value:
                     errors.append(f"mobaxterm live GUI {label} ribbon property {property_name} drifted")
+        edge_route = EXPECTED_MOBA_RIBBON_EDGE_ACTION_ROUTE
+        edge_action_keys = [edge_route.xserver_action_key, edge_route.exit_action_key]
+        edge_common_properties = {
+            edge_route.route_key_property: edge_route.key,
+            "mobaRibbonEdgeRouteRole": edge_route.route_role,
+            "mobaRibbonEdgeRouteToolbarObject": edge_route.toolbar_object,
+            "mobaRibbonEdgeRouteSpacerObject": edge_route.spacer_object,
+            "mobaRibbonEdgeRouteRenderSource": edge_route.render_source,
+        }
+        for object_name in [edge_route.toolbar_object, edge_route.spacer_object]:
+            widget = window.findChild(QWidget, object_name)
+            if widget is None:
+                errors.append(f"mobaxterm live GUI ribbon edge route missing {object_name}")
+                continue
+            for property_name, expected_value in edge_common_properties.items():
+                if str(widget.property(property_name) or "") != expected_value:
+                    errors.append(f"mobaxterm live GUI ribbon edge route {object_name}.{property_name} drifted")
+            if list(widget.property(edge_route.action_keys_property) or []) != edge_action_keys:
+                errors.append(f"mobaxterm live GUI ribbon edge route {object_name} action keys drifted")
+        edge_buttons = {
+            edge_route.xserver_action_object: (
+                edge_route.xserver_action_key,
+                edge_route.xserver_action_label,
+                edge_route.xserver_icon_key,
+                edge_route.xserver_handler,
+            ),
+            edge_route.exit_action_object: (
+                edge_route.exit_action_key,
+                edge_route.exit_action_label,
+                edge_route.exit_icon_key,
+                edge_route.exit_handler,
+            ),
+        }
+        for object_name, (action_key, label, icon_key, handler) in edge_buttons.items():
+            button = window.findChild(QToolButton, object_name)
+            if button is None:
+                errors.append(f"mobaxterm live GUI ribbon edge route missing {object_name}")
+                continue
+            if button.text() != label:
+                errors.append(f"mobaxterm live GUI ribbon edge route {object_name} label drifted")
+            expected_properties = {
+                **edge_common_properties,
+                edge_route.action_key_property: action_key,
+                edge_route.action_label_property: label,
+                edge_route.action_object_property: object_name,
+                edge_route.icon_key_property: icon_key,
+                edge_route.handler_property: handler,
+                "mobaIconKey": icon_key,
+            }
+            for property_name, expected_value in expected_properties.items():
+                if str(button.property(property_name) or "") != expected_value:
+                    errors.append(f"mobaxterm live GUI ribbon edge route {object_name}.{property_name} drifted")
+            if list(button.property(edge_route.action_keys_property) or []) != edge_action_keys:
+                errors.append(f"mobaxterm live GUI ribbon edge route {object_name} action keys drifted")
+            if action_key == edge_route.xserver_action_key:
+                if str(button.property("mobaRibbonEdgeRouteDialogTitle") or "") != edge_route.xserver_dialog_title:
+                    errors.append("mobaxterm live GUI ribbon edge route X server dialog title drifted")
+                if str(button.property("mobaRibbonEdgeRouteDialogDetail") or "") != edge_route.xserver_dialog_detail:
+                    errors.append("mobaxterm live GUI ribbon edge route X server dialog detail drifted")
         rail_widget = window.findChild(QWidget, "mobaRail")
         if rail_widget is not None:
             rail_properties = {
@@ -1541,6 +2018,84 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
             follow_plan = str(monitoring_panel.property("mobaRemoteMonitoringFollowPlan") or "")
             if "ls -la /" not in follow_plan:
                 errors.append("mobaxterm live GUI monitoring panel must expose follow-folder SFTP plan evidence")
+            control_route = EXPECTED_MOBA_REMOTE_MONITORING_CONTROL_ROUTE
+            control_route_properties = {
+                "mobaRemoteMonitoringControlRouteKey": control_route.key,
+                "mobaRemoteMonitoringControlRouteRole": control_route.route_role,
+                "mobaRemoteMonitoringControlSourcePanelObject": control_route.source_panel_object,
+                "mobaRemoteMonitoringControlSourceObject": control_route.source_control_object,
+                "mobaRemoteMonitoringControlSourceKey": control_route.source_control_key,
+                "mobaRemoteMonitoringControlSourceLabel": control_route.source_control_label,
+                "mobaRemoteMonitoringControlSourceType": control_route.source_control_type,
+                "mobaRemoteMonitoringControlCommandProperty": control_route.command_property,
+                "mobaRemoteMonitoringControlRefreshProperty": control_route.refresh_seconds_property,
+                "mobaRemoteMonitoringControlCheckedProperty": control_route.checked_property,
+                "mobaRemoteMonitoringControlTelemetryRouteKey": control_route.telemetry_route_key,
+                "mobaRemoteMonitoringControlTelemetrySurface": control_route.telemetry_surface,
+                "mobaRemoteMonitoringControlTargetBarObject": control_route.target_bar_object,
+                "mobaRemoteMonitoringControlRenderSource": control_route.render_source,
+            }
+            for property_name, expected_value in control_route_properties.items():
+                if str(monitoring_panel.property(property_name) or "") != expected_value:
+                    errors.append(f"mobaxterm live GUI monitoring control route panel {property_name} drifted")
+            if bool(monitoring_panel.property("mobaRemoteMonitoringControlExpectedChecked")) != (
+                control_route.expected_checked
+            ):
+                errors.append("mobaxterm live GUI monitoring control route panel expected checked state drifted")
+            if list(monitoring_panel.property("mobaRemoteMonitoringControlTargetMetricCellKeys") or []) != list(
+                control_route.target_metric_cell_keys
+            ):
+                errors.append("mobaxterm live GUI monitoring control route panel target metric cells drifted")
+            if bool(monitoring_panel.property(control_route.captured_property)) is not True:
+                errors.append("mobaxterm live GUI monitoring control route panel captured flag missing")
+            if bool(monitoring_panel.property(control_route.captured_checked_property)) != control_route.expected_checked:
+                errors.append("mobaxterm live GUI monitoring control route panel captured checked state drifted")
+            captured_command = str(monitoring_panel.property(control_route.captured_command_property) or "")
+            if captured_command != command:
+                errors.append("mobaxterm live GUI monitoring control route panel captured command drifted")
+            if int(monitoring_panel.property(control_route.captured_refresh_seconds_property) or 0) != (
+                EXPECTED_MOBA_REMOTE_MONITORING_DOCK_CHROME.refresh_seconds
+            ):
+                errors.append("mobaxterm live GUI monitoring control route panel captured refresh cadence drifted")
+            follow_control_route = EXPECTED_MOBA_FOLLOW_TERMINAL_FOLDER_CONTROL_ROUTE
+            follow_control_route_properties = {
+                "mobaFollowTerminalFolderControlRouteKey": follow_control_route.key,
+                "mobaFollowTerminalFolderControlRouteRole": follow_control_route.route_role,
+                "mobaFollowTerminalFolderControlSourcePanelObject": follow_control_route.source_panel_object,
+                "mobaFollowTerminalFolderControlSourceObject": follow_control_route.source_control_object,
+                "mobaFollowTerminalFolderControlSourceKey": follow_control_route.source_control_key,
+                "mobaFollowTerminalFolderControlSourceLabel": follow_control_route.source_control_label,
+                "mobaFollowTerminalFolderControlSourceType": follow_control_route.source_control_type,
+                "mobaFollowTerminalFolderControlSourcePathProperty": follow_control_route.source_path_property,
+                "mobaFollowTerminalFolderControlSourcePlanProperty": follow_control_route.source_plan_property,
+                "mobaFollowTerminalFolderControlSourceEnabledProperty": follow_control_route.source_enabled_property,
+                "mobaFollowTerminalFolderControlTargetBrowserObject": follow_control_route.target_browser_object,
+                "mobaFollowTerminalFolderControlTargetPathObject": follow_control_route.target_path_object,
+                "mobaFollowTerminalFolderControlTargetTableObject": follow_control_route.target_table_object,
+                "mobaFollowTerminalFolderControlTargetPathProperty": follow_control_route.target_path_property,
+                "mobaFollowTerminalFolderControlTargetPlanProperty": follow_control_route.target_plan_property,
+                "mobaFollowTerminalFolderControlTargetEnabledProperty": follow_control_route.target_enabled_property,
+                "mobaFollowTerminalFolderControlRenderSource": follow_control_route.render_source,
+            }
+            for property_name, expected_value in follow_control_route_properties.items():
+                if str(monitoring_panel.property(property_name) or "") != expected_value:
+                    errors.append(f"mobaxterm live GUI follow-folder control route panel {property_name} drifted")
+            if bool(monitoring_panel.property("mobaFollowTerminalFolderControlExpectedChecked")) != (
+                follow_control_route.expected_checked
+            ):
+                errors.append("mobaxterm live GUI follow-folder control route panel expected checked state drifted")
+            if bool(monitoring_panel.property(follow_control_route.captured_property)) is not True:
+                errors.append("mobaxterm live GUI follow-folder control route panel captured flag missing")
+            if bool(monitoring_panel.property(follow_control_route.captured_checked_property)) != (
+                follow_control_route.expected_checked
+            ):
+                errors.append("mobaxterm live GUI follow-folder control route panel captured checked state drifted")
+            captured_follow_path = str(monitoring_panel.property(follow_control_route.captured_path_property) or "")
+            if not captured_follow_path.startswith("/"):
+                errors.append("mobaxterm live GUI follow-folder control route panel captured path missing")
+            captured_follow_plan = str(monitoring_panel.property(follow_control_route.captured_plan_property) or "")
+            if captured_follow_path not in captured_follow_plan or "ls -la " not in captured_follow_plan:
+                errors.append("mobaxterm live GUI follow-folder control route panel captured plan drifted")
             controls_frame = monitoring_panel.findChild(QFrame, "mobaMonitoringControls")
             if controls_frame is None:
                 errors.append("mobaxterm live GUI monitoring footer missing controls frame")
@@ -1669,6 +2224,38 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
             ):
                 errors.append(f"mobaxterm live GUI monitoring control {control.key!r} telemetry route drifted")
             if control.key == "remote-monitoring":
+                control_route = EXPECTED_MOBA_REMOTE_MONITORING_CONTROL_ROUTE
+                control_route_properties = {
+                    "mobaRemoteMonitoringControlRouteKey": control_route.key,
+                    "mobaRemoteMonitoringControlRouteRole": control_route.route_role,
+                    "mobaRemoteMonitoringControlSourcePanelObject": control_route.source_panel_object,
+                    "mobaRemoteMonitoringControlSourceObject": control_route.source_control_object,
+                    "mobaRemoteMonitoringControlSourceKey": control_route.source_control_key,
+                    "mobaRemoteMonitoringControlSourceLabel": control_route.source_control_label,
+                    "mobaRemoteMonitoringControlSourceType": control_route.source_control_type,
+                    "mobaRemoteMonitoringControlCommandProperty": control_route.command_property,
+                    "mobaRemoteMonitoringControlRefreshProperty": control_route.refresh_seconds_property,
+                    "mobaRemoteMonitoringControlCheckedProperty": control_route.checked_property,
+                    "mobaRemoteMonitoringControlTelemetryRouteKey": control_route.telemetry_route_key,
+                    "mobaRemoteMonitoringControlTelemetrySurface": control_route.telemetry_surface,
+                    "mobaRemoteMonitoringControlTargetBarObject": control_route.target_bar_object,
+                    "mobaRemoteMonitoringControlRenderSource": control_route.render_source,
+                }
+                for property_name, expected_value in control_route_properties.items():
+                    if str(widget.property(property_name) or "") != expected_value:
+                        errors.append(f"mobaxterm live GUI remote-monitoring control route {property_name} drifted")
+                if bool(widget.property("mobaRemoteMonitoringControlExpectedChecked")) != control_route.expected_checked:
+                    errors.append("mobaxterm live GUI remote-monitoring control route expected checked state drifted")
+                if list(widget.property("mobaRemoteMonitoringControlTargetMetricCellKeys") or []) != list(
+                    control_route.target_metric_cell_keys
+                ):
+                    errors.append("mobaxterm live GUI remote-monitoring control route target metric cells drifted")
+                if bool(widget.property(control_route.checked_property)) != widget.isChecked():
+                    errors.append("mobaxterm live GUI remote-monitoring control route checked property drifted")
+                if bool(widget.property(control_route.captured_property)) is not True:
+                    errors.append("mobaxterm live GUI remote-monitoring control route captured flag missing")
+                if bool(widget.property(control_route.captured_checked_property)) != widget.isChecked():
+                    errors.append("mobaxterm live GUI remote-monitoring control route captured checked state drifted")
                 command = str(widget.property("mobaMonitoringCommand") or "")
                 if "sh -lc" not in command or "/proc" not in command:
                     errors.append("mobaxterm live GUI remote-monitoring control missing command evidence")
@@ -1676,12 +2263,54 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                     EXPECTED_MOBA_REMOTE_MONITORING_DOCK_CHROME.refresh_seconds
                 ):
                     errors.append("mobaxterm live GUI remote-monitoring control refresh cadence drifted")
+                if str(widget.property(control_route.captured_command_property) or "") != command:
+                    errors.append("mobaxterm live GUI remote-monitoring control route captured command drifted")
+                if int(widget.property(control_route.captured_refresh_seconds_property) or 0) != (
+                    EXPECTED_MOBA_REMOTE_MONITORING_DOCK_CHROME.refresh_seconds
+                ):
+                    errors.append("mobaxterm live GUI remote-monitoring control route captured refresh cadence drifted")
             if control.key == "follow-terminal-folder":
+                follow_control_route = EXPECTED_MOBA_FOLLOW_TERMINAL_FOLDER_CONTROL_ROUTE
+                follow_control_route_properties = {
+                    "mobaFollowTerminalFolderControlRouteKey": follow_control_route.key,
+                    "mobaFollowTerminalFolderControlRouteRole": follow_control_route.route_role,
+                    "mobaFollowTerminalFolderControlSourcePanelObject": follow_control_route.source_panel_object,
+                    "mobaFollowTerminalFolderControlSourceObject": follow_control_route.source_control_object,
+                    "mobaFollowTerminalFolderControlSourceKey": follow_control_route.source_control_key,
+                    "mobaFollowTerminalFolderControlSourceLabel": follow_control_route.source_control_label,
+                    "mobaFollowTerminalFolderControlSourceType": follow_control_route.source_control_type,
+                    "mobaFollowTerminalFolderControlSourcePathProperty": follow_control_route.source_path_property,
+                    "mobaFollowTerminalFolderControlSourcePlanProperty": follow_control_route.source_plan_property,
+                    "mobaFollowTerminalFolderControlSourceEnabledProperty": follow_control_route.source_enabled_property,
+                    "mobaFollowTerminalFolderControlTargetBrowserObject": follow_control_route.target_browser_object,
+                    "mobaFollowTerminalFolderControlTargetPathObject": follow_control_route.target_path_object,
+                    "mobaFollowTerminalFolderControlTargetTableObject": follow_control_route.target_table_object,
+                    "mobaFollowTerminalFolderControlTargetPathProperty": follow_control_route.target_path_property,
+                    "mobaFollowTerminalFolderControlTargetPlanProperty": follow_control_route.target_plan_property,
+                    "mobaFollowTerminalFolderControlTargetEnabledProperty": follow_control_route.target_enabled_property,
+                    "mobaFollowTerminalFolderControlRenderSource": follow_control_route.render_source,
+                }
+                for property_name, expected_value in follow_control_route_properties.items():
+                    if str(widget.property(property_name) or "") != expected_value:
+                        errors.append(f"mobaxterm live GUI follow-folder control route {property_name} drifted")
+                if bool(widget.property("mobaFollowTerminalFolderControlExpectedChecked")) != (
+                    follow_control_route.expected_checked
+                ):
+                    errors.append("mobaxterm live GUI follow-folder control route expected checked state drifted")
+                if bool(widget.property(follow_control_route.captured_property)) is not True:
+                    errors.append("mobaxterm live GUI follow-folder control route captured flag missing")
+                if bool(widget.property(follow_control_route.captured_checked_property)) != widget.isChecked():
+                    errors.append("mobaxterm live GUI follow-folder control route captured checked state drifted")
                 follow_plan = str(widget.property("mobaMonitoringFollowPlan") or "")
                 if "ls -la /" not in follow_plan:
                     errors.append("mobaxterm live GUI follow-terminal-folder control missing SFTP plan evidence")
-                if not str(widget.property("mobaMonitoringFollowPath") or "").startswith("/"):
+                follow_path = str(widget.property("mobaMonitoringFollowPath") or "")
+                if not follow_path.startswith("/"):
                     errors.append("mobaxterm live GUI follow-terminal-folder control missing remote path metadata")
+                if str(widget.property(follow_control_route.captured_path_property) or "") != follow_path:
+                    errors.append("mobaxterm live GUI follow-folder control route captured path drifted")
+                if str(widget.property(follow_control_route.captured_plan_property) or "") != follow_plan:
+                    errors.append("mobaxterm live GUI follow-folder control route captured plan drifted")
         follow_route = EXPECTED_MOBA_SFTP_FOLLOW_FOLDER_ROUTE
         follow_widget = monitoring_control_by_key.get(follow_route.source_control_key)
         route_widgets = (
@@ -2077,6 +2706,20 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
         if utility_rail is None:
             errors.append("mobaxterm live GUI missing right utility rail")
         else:
+            route_properties = {
+                "mobaRightUtilityRouteKey": EXPECTED_MOBA_RIGHT_UTILITY_ACTION_ROUTE.key,
+                "mobaRightUtilityRouteRole": EXPECTED_MOBA_RIGHT_UTILITY_ACTION_ROUTE.route_role,
+                "mobaRightUtilityRouteRailObject": EXPECTED_MOBA_RIGHT_UTILITY_ACTION_ROUTE.rail_object,
+                "mobaRightUtilityRouteActionObject": EXPECTED_MOBA_RIGHT_UTILITY_ACTION_ROUTE.action_object,
+                "mobaRightUtilityRouteRenderSource": EXPECTED_MOBA_RIGHT_UTILITY_ACTION_ROUTE.render_source,
+            }
+            for property_name, expected_value in route_properties.items():
+                if str(utility_rail.property(property_name) or "") != expected_value:
+                    errors.append(f"mobaxterm live GUI right utility action route rail {property_name} drifted")
+            if list(utility_rail.property(EXPECTED_MOBA_RIGHT_UTILITY_ACTION_ROUTE.action_keys_property) or []) != list(
+                EXPECTED_MOBA_RIGHT_UTILITY_ACTION_ROUTE.action_keys
+            ):
+                errors.append("mobaxterm live GUI right utility action route rail keys drifted")
             rail_properties = {
                 "mobaRightUtilityRailStaticWidth": EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.static_width,
                 "mobaRightUtilityRailLiveWidth": EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.live_width,
@@ -2116,6 +2759,28 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                 )
             expected_action = EXPECTED_MOBA_RIGHT_UTILITY_BY_KEY.get(key)
             if expected_action is not None:
+                expected_index = EXPECTED_MOBA_RIGHT_UTILITY_ACTION_ROUTE.action_keys.index(key)
+                route_properties = {
+                    "mobaRightUtilityRouteKey": EXPECTED_MOBA_RIGHT_UTILITY_ACTION_ROUTE.key,
+                    "mobaRightUtilityRouteRole": EXPECTED_MOBA_RIGHT_UTILITY_ACTION_ROUTE.route_role,
+                    EXPECTED_MOBA_RIGHT_UTILITY_ACTION_ROUTE.action_key_property: key,
+                    EXPECTED_MOBA_RIGHT_UTILITY_ACTION_ROUTE.action_label_property: expected_action.label,
+                    EXPECTED_MOBA_RIGHT_UTILITY_ACTION_ROUTE.action_object_property: (
+                        EXPECTED_MOBA_RIGHT_UTILITY_ACTION_ROUTE.action_object
+                    ),
+                    EXPECTED_MOBA_RIGHT_UTILITY_ACTION_ROUTE.icon_key_property: expected_action.icon_key,
+                    EXPECTED_MOBA_RIGHT_UTILITY_ACTION_ROUTE.handler_property: (
+                        EXPECTED_MOBA_RIGHT_UTILITY_ACTION_ROUTE.action_handlers[expected_index]
+                    ),
+                    "mobaRightUtilityRouteRenderSource": EXPECTED_MOBA_RIGHT_UTILITY_ACTION_ROUTE.render_source,
+                }
+                for property_name, expected_value in route_properties.items():
+                    if str(button.property(property_name) or "") != expected_value:
+                        errors.append(f"mobaxterm live GUI right utility action {key!r} route {property_name} drifted")
+                if list(button.property(EXPECTED_MOBA_RIGHT_UTILITY_ACTION_ROUTE.action_keys_property) or []) != list(
+                    EXPECTED_MOBA_RIGHT_UTILITY_ACTION_ROUTE.action_keys
+                ):
+                    errors.append(f"mobaxterm live GUI right utility action {key!r} route keys drifted")
                 geometry_properties = {
                     "mobaRightUtilityStaticX": expected_action.static_x,
                     "mobaRightUtilityStaticY": expected_action.static_y,
@@ -2277,40 +2942,822 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
 
     if preset_id == "mobaxterm":
         errors.extend(check_live_moba_connected_session_route(window))
+        errors.extend(check_live_moba_connected_session_action_route(window))
         errors.extend(check_live_moba_connected_session_identity_route(window))
+        errors.extend(check_live_moba_sftp_terminal_folder_route(window))
         errors.extend(check_live_moba_home_welcome(window))
     else:
+        errors.extend(check_live_preset_catalog_route(window))
+        errors.extend(check_live_preset_isolation_route(window, preset_id))
+        errors.extend(check_live_preset_transition_route(window, preset_id))
+        errors.extend(check_live_preset_selection_route(window, preset_id))
+        errors.extend(check_live_preset_visual_signature(window, preset_id))
+        errors.extend(check_live_preset_keyboard_shortcut_route(window, preset_id))
+        errors.extend(check_live_preset_command_surface_route(window, preset_id))
+        errors.extend(check_live_preset_focus_interaction_route(window, preset_id))
+        errors.extend(check_live_preset_home_search_route(window, preset_id))
         errors.extend(check_live_workflow_cards(window, preset_id))
         errors.extend(check_live_workspace_surface(window, preset_id))
         errors.extend(check_live_reference_state(window, preset_id))
+        errors.extend(check_live_product_identity_route(window, preset_id))
+        errors.extend(check_live_preset_reference_tab_route(window, preset_id))
+        errors.extend(check_live_preset_reference_tab_chrome_route(window, preset_id))
+        errors.extend(check_live_preset_reference_status_bar_route(window, preset_id))
+        errors.extend(check_live_preset_reference_session_action_route(window, preset_id))
+        errors.extend(check_live_preset_reference_surface_route(window, preset_id))
+        errors.extend(check_live_preset_reference_control_route(window, preset_id))
+        errors.extend(check_live_preset_reference_input_route(window, preset_id))
+        errors.extend(check_live_preset_reference_transcript_route(window, preset_id))
         if preset_id == "securecrt":
             errors.extend(check_live_securecrt_top_chrome(window))
             errors.extend(check_live_securecrt_session_manager_chrome(window))
             errors.extend(check_live_securecrt_session_status_strip(window))
             errors.extend(check_live_securecrt_session_manager_route(window))
+            errors.extend(check_live_securecrt_session_manager_filter_route(window))
+            errors.extend(check_live_securecrt_sftp_tab_route(window))
+            errors.extend(check_live_securecrt_sftp_browser_route(window))
             errors.extend(check_live_securecrt_command_window(window))
         if preset_id == "remmina":
             errors.extend(check_live_remmina_profile_list_chrome(window))
             errors.extend(check_live_remmina_viewer_controls(window))
             errors.extend(check_live_remmina_profile_viewer_route(window))
+            errors.extend(check_live_remmina_profile_filter_route(window))
             errors.extend(check_live_remmina_clipboard_route(window))
+            errors.extend(check_live_remmina_screenshot_route(window))
+            errors.extend(check_live_remmina_sftp_transfer_route(window))
         if preset_id == "termius":
             errors.extend(check_live_termius_hosts_chrome(window))
             errors.extend(check_live_termius_header_chips(window))
             errors.extend(check_live_termius_host_identity_strip(window))
             errors.extend(check_live_termius_host_selection_route(window))
             errors.extend(check_live_termius_sync_route(window))
+            errors.extend(check_live_termius_port_forward_route(window))
+            errors.extend(check_live_termius_snippet_route(window))
+            errors.extend(check_live_termius_files_browser_route(window))
         if preset_id == "mremoteng":
             errors.extend(check_live_mremoteng_top_chrome(window))
             errors.extend(check_live_mremoteng_document_controls(window))
             errors.extend(check_live_mremoteng_property_grid(window))
             errors.extend(check_live_mremoteng_connection_document_route(window))
+            errors.extend(check_live_mremoteng_document_filter_route(window))
+            errors.extend(check_live_mremoteng_inheritance_route(window))
+    if preset_id == "mobaxterm":
+        errors.extend(check_live_preset_catalog_route(window))
+        errors.extend(check_live_preset_isolation_route(window, preset_id))
+        errors.extend(check_live_preset_transition_route(window, preset_id))
+        errors.extend(check_live_preset_selection_route(window, preset_id))
+        errors.extend(check_live_preset_visual_signature(window, preset_id))
+        errors.extend(check_live_preset_keyboard_shortcut_route(window, preset_id))
+        errors.extend(check_live_preset_command_surface_route(window, preset_id))
+        errors.extend(check_live_preset_focus_interaction_route(window, preset_id))
+        errors.extend(check_live_preset_home_search_route(window, preset_id))
     errors.extend(check_live_interaction_state(window, preset_id))
     return errors
 
 
 def live_tab_labels(tabs: Any) -> set[str]:
     return {tabs.tabText(index) for index in range(tabs.count())}
+
+
+def check_live_preset_catalog_route(window: Any) -> list[str]:
+    from PyQt6.QtWidgets import QComboBox, QWidget
+
+    route = EXPECTED_PRESET_CATALOG_ROUTE
+    errors: list[str] = []
+    selector = window.findChild(QComboBox, route.selector_object)
+    route_widgets: list[tuple[str, Any]] = [
+        ("window", window),
+        ("selector", selector),
+        ("main-toolbar", window.findChild(QWidget, "mainToolbar")),
+    ]
+    route_properties = {
+        "presetCatalogRouteKey": route.key,
+        "presetCatalogRouteRole": route.route_role,
+        "presetCatalogRouteSelectorObject": route.selector_object,
+        "presetCatalogRouteDefaultPresetId": route.default_preset_id,
+        "presetCatalogRouteDefaultPresetLabel": route.default_preset_label,
+        "presetCatalogRouteSelectorProperty": route.selector_property,
+        "presetCatalogRouteOptionLabelsProperty": route.option_labels_property,
+        "presetCatalogRouteProductIdsProperty": route.product_ids_property,
+        "presetCatalogRouteDefaultProperty": route.default_property,
+        "presetCatalogRouteRenderSource": route.render_source,
+    }
+    route_value_properties = {
+        "presetCatalogRouteOptionCount": route.option_count,
+        "presetCatalogRouteProductOptionCount": route.product_option_count,
+    }
+    route_list_properties = {
+        "presetCatalogRouteOptionIds": list(route.option_ids),
+        "presetCatalogRouteOptionLabels": list(route.option_labels),
+        "presetCatalogRouteProductPresetIds": list(route.product_preset_ids),
+        "presetCatalogRouteProductPresetLabels": list(route.product_preset_labels),
+    }
+    for label, widget in route_widgets:
+        if widget is None:
+            errors.append(f"live GUI preset catalog route missing {label}")
+            continue
+        for property_name, expected_value in route_properties.items():
+            actual_value = str(widget.property(property_name) or "")
+            if actual_value != expected_value:
+                errors.append(
+                    f"live GUI preset catalog {label} property "
+                    f"{property_name} {actual_value!r} must equal {expected_value!r}"
+                )
+        for property_name, expected_value in route_value_properties.items():
+            actual_value = widget.property(property_name)
+            if actual_value != expected_value:
+                errors.append(
+                    f"live GUI preset catalog {label} property "
+                    f"{property_name} {actual_value!r} must equal {expected_value!r}"
+                )
+        for property_name, expected_value in route_list_properties.items():
+            actual_value = list(widget.property(property_name) or [])
+            if actual_value != expected_value:
+                errors.append(f"live GUI preset catalog {label} property {property_name} drifted")
+
+    if selector is None:
+        errors.append("live GUI preset catalog missing selector")
+    else:
+        option_ids = [selector.itemData(index) for index in range(selector.count())]
+        option_labels = [selector.itemText(index) for index in range(selector.count())]
+        if option_ids != list(route.option_ids):
+            errors.append(f"live GUI preset catalog option ids drifted: {option_ids!r}")
+        if option_labels != list(route.option_labels):
+            errors.append(f"live GUI preset catalog option labels drifted: {option_labels!r}")
+        if selector.count() != route.option_count:
+            errors.append("live GUI preset catalog option count drifted")
+        if selector.findData(route.default_preset_id) != 0:
+            errors.append("live GUI preset catalog default preset must remain first")
+    return errors
+
+
+def check_live_preset_isolation_route(window: Any, preset_id: str) -> list[str]:
+    from PyQt6.QtWidgets import QWidget
+
+    route = EXPECTED_PRESET_ISOLATION_ROUTES[preset_id]
+    errors: list[str] = []
+    route_widgets: list[tuple[str, Any]] = [
+        ("window", window),
+        ("selector", window.findChild(QWidget, "designSelect")),
+        ("main-toolbar", window.findChild(QWidget, "mainToolbar")),
+    ]
+    route_properties = {
+        "presetIsolationRouteKey": route.key,
+        "presetIsolationRouteRole": route.route_role,
+        "presetIsolationRoutePresetId": route.preset_id,
+        "presetIsolationVisibleProperty": route.visible_property,
+        "presetIsolationHiddenProperty": route.hidden_property,
+        "presetIsolationRenderSource": route.render_source,
+    }
+    route_list_properties = {
+        route.visible_property: list(route.visible_objects),
+        route.hidden_property: list(route.hidden_objects),
+    }
+    for label, widget in route_widgets:
+        if widget is None:
+            errors.append(f"{preset_id} live GUI preset isolation route missing {label}")
+            continue
+        for property_name, expected_value in route_properties.items():
+            actual_value = str(widget.property(property_name) or "")
+            if actual_value != expected_value:
+                errors.append(
+                    f"{preset_id} live GUI preset isolation {label} property "
+                    f"{property_name} {actual_value!r} must equal {expected_value!r}"
+                )
+        for property_name, expected_value in route_list_properties.items():
+            actual_value = list(widget.property(property_name) or [])
+            if actual_value != expected_value:
+                errors.append(f"{preset_id} live GUI preset isolation {label} property {property_name} drifted")
+
+    overlap = set(route.visible_objects) & set(route.hidden_objects)
+    if overlap:
+        errors.append(f"{preset_id} live GUI preset isolation has overlapping objects: {sorted(overlap)}")
+    for object_name in route.visible_objects:
+        widget = window.findChild(QWidget, object_name)
+        if widget is None:
+            errors.append(f"{preset_id} live GUI preset isolation missing visible object {object_name}")
+        elif not widget.isVisible():
+            errors.append(f"{preset_id} live GUI preset isolation visible object is hidden: {object_name}")
+    for object_name in route.hidden_objects:
+        widget = window.findChild(QWidget, object_name)
+        if widget is not None and widget.isVisible():
+            errors.append(f"{preset_id} live GUI preset isolation hidden object is visible: {object_name}")
+    return errors
+
+
+def check_live_preset_transition_route(window: Any, preset_id: str) -> list[str]:
+    from PyQt6.QtWidgets import QComboBox, QWidget
+
+    route = EXPECTED_PRESET_TRANSITION_ROUTES[preset_id]
+    errors: list[str] = []
+    selector = window.findChild(QComboBox, route.selector_object)
+    route_widgets: list[tuple[str, Any]] = [
+        ("window", window),
+        ("selector", selector),
+        ("main-toolbar", window.findChild(QWidget, "mainToolbar")),
+    ]
+    route_properties = {
+        "presetTransitionRouteKey": route.key,
+        "presetTransitionRouteRole": route.route_role,
+        "presetTransitionToPresetId": route.to_preset_id,
+        "presetTransitionToPresetIndex": route.to_preset_index,
+        "presetTransitionSelectorObject": route.selector_object,
+        "presetTransitionRouteProperty": route.route_property,
+        "presetTransitionFromProperty": route.from_property,
+        "presetTransitionToProperty": route.to_property,
+        "presetTransitionResetProperty": route.reset_property,
+        "presetTransitionRenderSource": route.render_source,
+    }
+    route_list_properties = {
+        route.from_property: list(route.from_preset_ids),
+        route.reset_property: list(route.reset_objects),
+    }
+    for label, widget in route_widgets:
+        if widget is None:
+            errors.append(f"{preset_id} live GUI preset transition route missing {label}")
+            continue
+        for property_name, expected_value in route_properties.items():
+            actual_value = widget.property(property_name)
+            if actual_value != expected_value:
+                errors.append(
+                    f"{preset_id} live GUI preset transition {label} property "
+                    f"{property_name} drifted: {actual_value!r} != {expected_value!r}"
+                )
+        for property_name, expected_values in route_list_properties.items():
+            actual_values = list(widget.property(property_name) or [])
+            if actual_values != expected_values:
+                errors.append(
+                    f"{preset_id} live GUI preset transition {label} property "
+                    f"{property_name} drifted: {actual_values!r} != {expected_values!r}"
+                )
+    if selector is not None:
+        if selector.currentData() != route.to_preset_id:
+            errors.append(f"{preset_id} live GUI preset transition selector target drifted")
+        if selector.currentIndex() != route.to_preset_index:
+            errors.append(f"{preset_id} live GUI preset transition selector index drifted")
+        for source_id in route.from_preset_ids:
+            if selector.findData(source_id) < 0:
+                errors.append(f"{preset_id} live GUI preset transition missing source preset: {source_id}")
+    if route.to_preset_id in route.from_preset_ids:
+        errors.append(f"{preset_id} live GUI preset transition contains active preset as source")
+    if set(route.reset_objects) != set(EXPECTED_PRESET_ISOLATION_ROUTES[preset_id].hidden_objects):
+        errors.append(f"{preset_id} live GUI preset transition reset object set drifted from isolation")
+    for object_name in route.reset_objects:
+        widget = window.findChild(QWidget, object_name)
+        if widget is not None and widget.isVisible():
+            errors.append(f"{preset_id} live GUI preset transition reset object is visible: {object_name}")
+    return errors
+
+
+def check_live_preset_selection_route(window: Any, preset_id: str) -> list[str]:
+    from PyQt6.QtWidgets import QComboBox, QLabel, QTabWidget, QWidget
+
+    route = EXPECTED_PRESET_SELECTION_ROUTES[preset_id]
+    errors: list[str] = []
+    selector = window.findChild(QComboBox, route.selector_object)
+    tabs = window.findChild(QTabWidget, route.tabs_object)
+    status_bar = window.findChild(QWidget, route.status_bar_object)
+    route_widgets: list[tuple[str, Any]] = [
+        ("window", window),
+        ("selector", selector),
+        ("main-toolbar", window.findChild(QWidget, route.main_toolbar_object)),
+        ("layout-toolbar", window.findChild(QWidget, route.layout_toolbar_object)),
+        ("left-panel-header", window.findChild(QWidget, route.left_panel_header_object)),
+        ("profile-tree", window.findChild(QWidget, route.profile_tree_object)),
+        ("tabs", tabs),
+        ("status-bar", status_bar),
+    ]
+    if preset_id != "mobaxterm":
+        route_widgets.extend(
+            [
+                ("workspace-surface", window.findChild(QWidget, route.workspace_surface_object)),
+                ("reference-state", window.findChild(QWidget, route.reference_state_object)),
+            ]
+        )
+    route_properties = {
+        "presetSelectionRouteKey": route.key,
+        "presetSelectionRouteRole": route.route_role,
+        "presetSelectionRoutePresetId": route.preset_id,
+        "presetSelectionRoutePresetLabel": route.preset_label,
+        "presetSelectionRouteSelectorObject": route.selector_object,
+        "presetSelectionRouteMainToolbarObject": route.main_toolbar_object,
+        "presetSelectionRouteLayoutToolbarObject": route.layout_toolbar_object,
+        "presetSelectionRouteLeftPanelHeaderObject": route.left_panel_header_object,
+        "presetSelectionRouteProfileTreeObject": route.profile_tree_object,
+        "presetSelectionRouteTabsObject": route.tabs_object,
+        "presetSelectionRouteStatusBarObject": route.status_bar_object,
+        "presetSelectionRouteStatusSegmentObject": route.status_segment_object,
+        "presetSelectionRouteWorkspaceSurfaceObject": route.workspace_surface_object,
+        "presetSelectionRouteReferenceStateObject": route.reference_state_object,
+        "presetSelectionRouteHomeTabLabel": route.home_tab_label,
+        "presetSelectionRouteSidebarTitle": route.sidebar_title,
+        "presetSelectionRouteSidebarSubtitle": route.sidebar_subtitle,
+        "presetSelectionRouteTabPosition": route.tab_position,
+        "presetSelectionRouteRenderSource": route.render_source,
+    }
+    route_value_properties = {
+        "presetSelectionRoutePresetIndex": route.preset_index,
+        "presetSelectionRouteDocumentMode": route.document_mode,
+        "presetSelectionRouteProfileWidth": route.profile_width,
+        "presetSelectionRouteLogHeight": route.log_height,
+        "presetSelectionRouteToolbarIconSize": route.toolbar_icon_size,
+    }
+    for label, widget in route_widgets:
+        if widget is None:
+            errors.append(f"{preset_id} live GUI preset-selection route missing {label}")
+            continue
+        for property_name, expected_value in route_properties.items():
+            actual_value = str(widget.property(property_name) or "")
+            if actual_value != expected_value:
+                errors.append(
+                    f"{preset_id} live GUI preset-selection {label} property "
+                    f"{property_name} {actual_value!r} must equal {expected_value!r}"
+                )
+        for property_name, expected_value in route_value_properties.items():
+            actual_value = widget.property(property_name)
+            if actual_value != expected_value:
+                errors.append(
+                    f"{preset_id} live GUI preset-selection {label} property "
+                    f"{property_name} {actual_value!r} must equal {expected_value!r}"
+                )
+        actual_status_segments = list(widget.property("presetSelectionRouteStatusSegments") or [])
+        if actual_status_segments != list(route.status_segments):
+            errors.append(f"{preset_id} live GUI preset-selection {label} status segment metadata drifted")
+
+    if selector is None:
+        errors.append(f"{preset_id} live GUI preset-selection missing selector")
+    else:
+        if selector.currentData() != route.preset_id:
+            errors.append(f"{preset_id} live GUI preset-selection current data drifted")
+        if selector.currentIndex() != route.preset_index:
+            errors.append(f"{preset_id} live GUI preset-selection current index drifted")
+    if tabs is None:
+        errors.append(f"{preset_id} live GUI preset-selection missing tabs")
+    else:
+        if route.home_tab_label not in live_tab_labels(tabs):
+            errors.append(f"{preset_id} live GUI preset-selection home tab label drifted")
+        if tabs.documentMode() != route.document_mode:
+            errors.append(f"{preset_id} live GUI preset-selection tab document mode drifted")
+    left_title = window.findChild(QLabel, "leftPanelTitle")
+    if left_title is not None and left_title.text() != route.sidebar_title:
+        errors.append(f"{preset_id} live GUI preset-selection sidebar title drifted")
+    status_texts = {label.text() for label in window.findChildren(QLabel, route.status_segment_object)}
+    missing_status = sorted(set(route.status_segments) - status_texts)
+    if missing_status:
+        errors.append(f"{preset_id} live GUI preset-selection status text drifted: {missing_status}")
+    return errors
+
+
+def check_live_preset_visual_signature(window: Any, preset_id: str) -> list[str]:
+    from PyQt6.QtWidgets import QTabWidget, QWidget
+
+    signature = EXPECTED_PRESET_VISUAL_SIGNATURES[preset_id]
+    errors: list[str] = []
+    route_widgets: list[tuple[str, Any]] = [
+        ("window", window),
+        ("main-toolbar", window.findChild(QWidget, signature.main_toolbar_object)),
+        ("layout-toolbar", window.findChild(QWidget, signature.layout_toolbar_object)),
+        ("left-panel", window.findChild(QWidget, signature.left_panel_object)),
+        ("profile-tree", window.findChild(QWidget, signature.profile_tree_object)),
+        ("tabs", window.findChild(QWidget, signature.tabs_object)),
+        ("activity-log", window.findChild(QWidget, signature.activity_log_object)),
+        ("status-bar", window.findChild(QWidget, signature.status_bar_object)),
+    ]
+    string_properties = {
+        "presetVisualSignatureKey": signature.key,
+        "presetVisualSignatureRole": signature.route_role,
+        "presetVisualSignaturePresetId": signature.preset_id,
+        "presetVisualSignaturePresetLabel": signature.preset_label,
+        signature.density_property: signature.density,
+        "presetVisualSignatureTabPosition": signature.tab_position,
+        "presetVisualSignatureWindowObject": signature.window_object,
+        "presetVisualSignatureMainToolbarObject": signature.main_toolbar_object,
+        "presetVisualSignatureLayoutToolbarObject": signature.layout_toolbar_object,
+        "presetVisualSignatureLeftPanelObject": signature.left_panel_object,
+        "presetVisualSignatureProfileTreeObject": signature.profile_tree_object,
+        "presetVisualSignatureTabsObject": signature.tabs_object,
+        "presetVisualSignatureActivityLogObject": signature.activity_log_object,
+        "presetVisualSignatureStatusBarObject": signature.status_bar_object,
+        "presetVisualSignatureDensityProperty": signature.density_property,
+        "presetVisualSignaturePaletteProperty": signature.palette_property,
+        "presetVisualSignatureRenderSource": signature.render_source,
+    }
+    value_properties = {
+        "presetVisualSignatureDocumentMode": signature.document_mode,
+        "presetVisualSignatureProfileWidth": signature.profile_width,
+        "presetVisualSignatureLogHeight": signature.log_height,
+        "presetVisualSignatureToolbarIconSize": signature.toolbar_icon_size,
+        "presetVisualSignatureListSpacing": signature.list_spacing,
+    }
+    expected_palette = dict(signature.palette_items())
+    for label, widget in route_widgets:
+        if widget is None:
+            errors.append(f"{preset_id} live GUI visual signature missing {label}")
+            continue
+        for property_name, expected_value in string_properties.items():
+            actual_value = str(widget.property(property_name) or "")
+            if actual_value != expected_value:
+                errors.append(
+                    f"{preset_id} live GUI visual signature {label} property "
+                    f"{property_name} {actual_value!r} must equal {expected_value!r}"
+                )
+        for property_name, expected_value in value_properties.items():
+            actual_value = widget.property(property_name)
+            if actual_value != expected_value:
+                errors.append(
+                    f"{preset_id} live GUI visual signature {label} property "
+                    f"{property_name} {actual_value!r} must equal {expected_value!r}"
+                )
+        actual_palette = dict(widget.property(signature.palette_property) or {})
+        if actual_palette != expected_palette:
+            errors.append(f"{preset_id} live GUI visual signature {label} palette drifted")
+
+    stylesheet = window.styleSheet()
+    for color in (
+        signature.window_color,
+        signature.toolbar_color,
+        signature.primary_color,
+        signature.sidebar_color,
+        signature.terminal_color,
+        signature.status_color,
+    ):
+        if color not in stylesheet:
+            errors.append(f"{preset_id} live GUI stylesheet missing visual signature color {color}")
+    tabs = window.findChild(QTabWidget, signature.tabs_object)
+    if tabs is not None and tabs.documentMode() != signature.document_mode:
+        errors.append(f"{preset_id} live GUI visual signature tab document mode drifted")
+    return errors
+
+
+def check_live_preset_keyboard_shortcut_route(window: Any, preset_id: str) -> list[str]:
+    from PyQt6.QtGui import QShortcut
+
+    route = EXPECTED_PRESET_KEYBOARD_SHORTCUT_ROUTES.get(preset_id)
+    if route is None:
+        return []
+    errors: list[str] = []
+    shortcuts = window.findChildren(QShortcut, route.shortcut_object)
+    expected_properties = {
+        "presetKeyboardShortcutRouteKey": route.key,
+        "presetKeyboardShortcutRouteRole": route.route_role,
+        "presetKeyboardShortcutPresetId": route.preset_id,
+        "presetKeyboardShortcutObject": route.shortcut_object,
+        "presetKeyboardShortcutKeyProperty": route.shortcut_key_property,
+        "presetKeyboardShortcutSequenceProperty": route.shortcut_sequence_property,
+        "presetKeyboardShortcutActionProperty": route.shortcut_action_property,
+        "presetKeyboardShortcutCapturedProperty": route.captured_property,
+        "presetKeyboardShortcutCapturedKeysProperty": route.captured_keys_property,
+        "presetKeyboardShortcutCapturedSequencesProperty": route.captured_sequences_property,
+        "presetKeyboardShortcutCapturedActionLabelsProperty": route.captured_action_labels_property,
+        "presetKeyboardShortcutCapturedCountProperty": route.captured_count_property,
+        "presetKeyboardShortcutRenderSource": route.render_source,
+    }
+    for property_name, expected_value in expected_properties.items():
+        actual_value = str(window.property(property_name) or "")
+        if actual_value != expected_value:
+            errors.append(
+                f"{preset_id} live GUI keyboard shortcut route property "
+                f"{property_name} {actual_value!r} must equal {expected_value!r}"
+            )
+    expected_lists = {
+        "presetKeyboardShortcutExpectedKeys": list(route.expected_shortcut_keys),
+        "presetKeyboardShortcutExpectedSequences": list(route.expected_sequences),
+        "presetKeyboardShortcutExpectedActionLabels": list(route.expected_action_labels),
+    }
+    for property_name, expected_value in expected_lists.items():
+        if list(window.property(property_name) or []) != expected_value:
+            errors.append(f"{preset_id} live GUI keyboard shortcut route {property_name} drifted")
+    if int(window.property("presetKeyboardShortcutExpectedCount") or -1) != route.expected_shortcut_count:
+        errors.append(f"{preset_id} live GUI keyboard shortcut route expected count drifted")
+    if bool(window.property(route.captured_property)) is not True:
+        errors.append(f"{preset_id} live GUI keyboard shortcut route captured flag missing")
+    captured_keys = list(window.property(route.captured_keys_property) or [])
+    captured_sequences = list(window.property(route.captured_sequences_property) or [])
+    captured_action_labels = list(window.property(route.captured_action_labels_property) or [])
+    if captured_keys != list(route.expected_shortcut_keys):
+        errors.append(f"{preset_id} live GUI keyboard shortcut route captured keys drifted")
+    if captured_sequences != list(route.expected_sequences):
+        errors.append(f"{preset_id} live GUI keyboard shortcut route captured sequences drifted")
+    if captured_action_labels != list(route.expected_action_labels):
+        errors.append(f"{preset_id} live GUI keyboard shortcut route captured labels drifted")
+    if int(window.property(route.captured_count_property) or -1) != route.expected_shortcut_count:
+        errors.append(f"{preset_id} live GUI keyboard shortcut route captured count drifted")
+    if len(shortcuts) != route.expected_shortcut_count:
+        errors.append(
+            f"{preset_id} live GUI keyboard shortcut count {len(shortcuts)} "
+            f"must equal {route.expected_shortcut_count}"
+        )
+    by_key = {str(shortcut.property(route.shortcut_key_property) or ""): shortcut for shortcut in shortcuts}
+    missing_keys = sorted(set(route.expected_shortcut_keys) - set(by_key))
+    if missing_keys:
+        errors.append(f"{preset_id} live GUI keyboard shortcut route missing keys: {missing_keys}")
+    for key, sequence, action_label in zip(
+        route.expected_shortcut_keys,
+        route.expected_sequences,
+        route.expected_action_labels,
+        strict=True,
+    ):
+        shortcut = by_key.get(key)
+        if shortcut is None:
+            continue
+        if str(shortcut.property("presetKeyboardShortcutRouteKey") or "") != route.key:
+            errors.append(f"{preset_id} live GUI keyboard shortcut {key!r} missing route key")
+        if str(shortcut.property(route.shortcut_sequence_property) or "") != sequence:
+            errors.append(f"{preset_id} live GUI keyboard shortcut {key!r} sequence drifted")
+        if str(shortcut.property(route.shortcut_action_property) or "") != action_label:
+            errors.append(f"{preset_id} live GUI keyboard shortcut {key!r} action label drifted")
+        if not shortcut.isEnabled():
+            errors.append(f"{preset_id} live GUI keyboard shortcut {key!r} is disabled")
+    return errors
+
+
+def check_live_preset_command_surface_route(window: Any, preset_id: str) -> list[str]:
+    from PyQt6.QtWidgets import QToolBar, QToolButton
+
+    route = EXPECTED_PRESET_COMMAND_SURFACE_ROUTES.get(preset_id)
+    if route is None:
+        return []
+    errors: list[str] = []
+    toolbar = window.findChild(QToolBar, route.toolbar_object)
+    buttons = window.findChildren(QToolButton, route.command_object)
+    route_widgets: list[tuple[str, Any]] = [
+        ("window", window),
+        ("toolbar", toolbar),
+        *[(f"command-{index}", button) for index, button in enumerate(buttons)],
+    ]
+    expected_properties = {
+        "presetCommandSurfaceRouteKey": route.key,
+        "presetCommandSurfaceRouteRole": route.route_role,
+        "presetCommandSurfacePresetId": route.preset_id,
+        "presetCommandSurfaceToolbarObject": route.toolbar_object,
+        "presetCommandSurfaceCommandObject": route.command_object,
+        "presetCommandSurfaceKeyProperty": route.key_property,
+        "presetCommandSurfaceLabelProperty": route.label_property,
+        "presetCommandSurfaceTooltipProperty": route.tooltip_property,
+        "presetCommandSurfaceStateProperty": route.state_property,
+        "presetCommandSurfaceCapturedProperty": route.captured_property,
+        "presetCommandSurfaceCapturedKeysProperty": route.captured_keys_property,
+        "presetCommandSurfaceCapturedLabelsProperty": route.captured_labels_property,
+        "presetCommandSurfaceCapturedTooltipsProperty": route.captured_tooltips_property,
+        "presetCommandSurfaceCapturedStatesProperty": route.captured_states_property,
+        "presetCommandSurfaceCapturedCountProperty": route.captured_count_property,
+        "presetCommandSurfaceRenderSource": route.render_source,
+    }
+    expected_lists = {
+        "presetCommandSurfaceExpectedKeys": list(route.expected_action_keys),
+        "presetCommandSurfaceExpectedLabels": list(route.expected_action_labels),
+        "presetCommandSurfaceExpectedTooltips": list(route.expected_action_tooltips),
+    }
+    expected_states = dict(route.expected_action_states)
+    for label, widget in route_widgets:
+        if widget is None:
+            errors.append(f"{preset_id} live GUI command surface route missing {label}")
+            continue
+        for property_name, expected_value in expected_properties.items():
+            actual_value = str(widget.property(property_name) or "")
+            if actual_value != expected_value:
+                errors.append(
+                    f"{preset_id} live GUI command surface route {label} property "
+                    f"{property_name} {actual_value!r} must equal {expected_value!r}"
+                )
+        for property_name, expected_value in expected_lists.items():
+            if list(widget.property(property_name) or []) != expected_value:
+                errors.append(f"{preset_id} live GUI command surface route {label} {property_name} drifted")
+        if dict(widget.property("presetCommandSurfaceExpectedStates") or {}) != expected_states:
+            errors.append(f"{preset_id} live GUI command surface route {label} expected states drifted")
+        if int(widget.property("presetCommandSurfaceExpectedCount") or -1) != route.expected_action_count:
+            errors.append(f"{preset_id} live GUI command surface route {label} expected count drifted")
+        if bool(widget.property(route.captured_property)) is not True:
+            errors.append(f"{preset_id} live GUI command surface route {label} capture flag missing")
+        if list(widget.property(route.captured_keys_property) or []) != list(route.expected_action_keys):
+            errors.append(f"{preset_id} live GUI command surface route {label} captured keys drifted")
+        if list(widget.property(route.captured_labels_property) or []) != list(route.expected_action_labels):
+            errors.append(f"{preset_id} live GUI command surface route {label} captured labels drifted")
+        if list(widget.property(route.captured_tooltips_property) or []) != list(route.expected_action_tooltips):
+            errors.append(f"{preset_id} live GUI command surface route {label} captured tooltips drifted")
+        if dict(widget.property(route.captured_states_property) or {}) != expected_states:
+            errors.append(f"{preset_id} live GUI command surface route {label} captured states drifted")
+        if int(widget.property(route.captured_count_property) or -1) != route.expected_action_count:
+            errors.append(f"{preset_id} live GUI command surface route {label} captured count drifted")
+
+    if len(buttons) != route.expected_action_count:
+        errors.append(
+            f"{preset_id} live GUI command surface action count {len(buttons)} "
+            f"must equal {route.expected_action_count}"
+        )
+    by_key = {str(button.property(route.key_property) or ""): button for button in buttons}
+    missing_keys = sorted(set(route.expected_action_keys) - set(by_key))
+    if missing_keys:
+        errors.append(f"{preset_id} live GUI command surface route missing keys: {missing_keys}")
+    for key, label, tooltip in zip(
+        route.expected_action_keys,
+        route.expected_action_labels,
+        route.expected_action_tooltips,
+        strict=True,
+    ):
+        button = by_key.get(key)
+        if button is None:
+            continue
+        if button.text() != label:
+            errors.append(f"{preset_id} live GUI command surface {key!r} label drifted")
+        if button.toolTip() != tooltip:
+            errors.append(f"{preset_id} live GUI command surface {key!r} tooltip drifted")
+        if str(button.property(route.label_property) or "") != label:
+            errors.append(f"{preset_id} live GUI command surface {key!r} label property drifted")
+        if str(button.property(route.tooltip_property) or "") != tooltip:
+            errors.append(f"{preset_id} live GUI command surface {key!r} tooltip property drifted")
+        if str(button.property(route.state_property) or "normal") != expected_states[key]:
+            errors.append(f"{preset_id} live GUI command surface {key!r} state drifted")
+    return errors
+
+
+def check_live_preset_focus_interaction_route(window: Any, preset_id: str) -> list[str]:
+    from PyQt6.QtWidgets import QLineEdit, QStatusBar, QTreeWidget
+
+    route = EXPECTED_PRESET_FOCUS_INTERACTION_ROUTES.get(preset_id)
+    if route is None:
+        return []
+    errors: list[str] = []
+    focused = window.findChild(QLineEdit, route.focus_object)
+    status_bar = window.findChild(QStatusBar, route.status_bar_object)
+    tree = window.findChild(QTreeWidget, route.profile_tree_object)
+    route_widgets: list[tuple[str, Any]] = [
+        ("window", window),
+        ("focused-control", focused),
+        ("status-bar", status_bar),
+        ("profile-tree", tree),
+    ]
+    expected_properties = {
+        "presetFocusInteractionRouteKey": route.key,
+        "presetFocusInteractionRouteRole": route.route_role,
+        "presetFocusInteractionPresetId": route.preset_id,
+        "presetFocusInteractionFocusedControl": route.focused_control,
+        "presetFocusInteractionFocusObject": route.focus_object,
+        "presetFocusInteractionActiveToolbarKey": route.active_toolbar_key,
+        "presetFocusInteractionCheckedToolbarKey": route.checked_toolbar_key,
+        "presetFocusInteractionDisabledToolbarKey": route.disabled_toolbar_key,
+        "presetFocusInteractionSelectedTreeLabel": route.selected_tree_label,
+        "presetFocusInteractionActiveTabStatus": route.active_tab_status,
+        "presetFocusInteractionStatusNote": route.status_note,
+        "presetFocusInteractionStatusBarObject": route.status_bar_object,
+        "presetFocusInteractionProfileTreeObject": route.profile_tree_object,
+        "presetFocusInteractionFocusedStateProperty": route.focused_state_property,
+        "presetFocusInteractionCapturedProperty": route.captured_property,
+        "presetFocusInteractionCapturedFocusProperty": route.captured_focus_property,
+        "presetFocusInteractionCapturedStateProperty": route.captured_focus_state_property,
+        "presetFocusInteractionCapturedStatusMessageProperty": route.captured_status_message_property,
+        "presetFocusInteractionCapturedSelectedTreeProperty": route.captured_selected_tree_property,
+        "presetFocusInteractionCapturedToolbarStatesProperty": route.captured_toolbar_states_property,
+        "presetFocusInteractionRenderSource": route.render_source,
+    }
+    for label, widget in route_widgets:
+        if widget is None:
+            errors.append(f"{preset_id} live GUI focus interaction route missing {label}")
+            continue
+        for property_name, expected_value in expected_properties.items():
+            actual_value = str(widget.property(property_name) or "")
+            if actual_value != expected_value:
+                errors.append(
+                    f"{preset_id} live GUI focus interaction route {label} property "
+                    f"{property_name} {actual_value!r} must equal {expected_value!r}"
+                )
+        if bool(widget.property(route.captured_property)) is not True:
+            errors.append(f"{preset_id} live GUI focus interaction route {label} capture flag missing")
+        if str(widget.property(route.captured_focus_property) or "") != route.focus_object:
+            errors.append(f"{preset_id} live GUI focus interaction route {label} captured focus drifted")
+        if str(widget.property(route.captured_focus_state_property) or "") != "focused":
+            errors.append(f"{preset_id} live GUI focus interaction route {label} captured state drifted")
+        captured_message = str(widget.property(route.captured_status_message_property) or "")
+        if route.status_note not in captured_message:
+            errors.append(f"{preset_id} live GUI focus interaction route {label} status capture drifted")
+        captured_tree = str(widget.property(route.captured_selected_tree_property) or "")
+        if route.selected_tree_label not in captured_tree:
+            errors.append(f"{preset_id} live GUI focus interaction route {label} tree capture drifted")
+        toolbar_states = dict(widget.property(route.captured_toolbar_states_property) or {})
+        expected_toolbar_states = {
+            "active": route.active_toolbar_key,
+            "checked": route.checked_toolbar_key,
+            "disabled": route.disabled_toolbar_key,
+        }
+        if toolbar_states != expected_toolbar_states:
+            errors.append(
+                f"{preset_id} live GUI focus interaction route {label} toolbar states "
+                f"{toolbar_states!r} must equal {expected_toolbar_states!r}"
+            )
+    if focused is not None and str(focused.property(route.focused_state_property) or "") != "focused":
+        errors.append(f"{preset_id} live GUI focus interaction route focused widget must be focused")
+    return errors
+
+
+def check_live_preset_home_search_route(window: Any, preset_id: str) -> list[str]:
+    from PyQt6.QtWidgets import QLabel, QLineEdit, QPushButton, QTabWidget, QWidget
+
+    route = EXPECTED_PRESET_HOME_SEARCH_ROUTES.get(preset_id)
+    if route is None:
+        return []
+    errors: list[str] = []
+    tabs = window.findChild(QTabWidget, "sessionTabs")
+    home_search = window.findChild(QLineEdit, route.home_search_object)
+    entry_search = window.findChild(QLineEdit, route.entry_search_object)
+    container = window.findChild(QWidget, route.container_object)
+    recent_labels = container.findChildren(QLabel, route.recent_label_object) if container is not None else []
+    route_widgets: list[tuple[str, Any]] = [
+        ("window", window),
+        ("tabs", tabs),
+        ("home-search", home_search),
+        ("entry-search", entry_search),
+        ("container", container),
+        *[(f"recent-label-{index}", label) for index, label in enumerate(recent_labels)],
+    ]
+    expected_properties = {
+        "presetHomeSearchRouteKey": route.key,
+        "presetHomeSearchRouteRole": route.route_role,
+        "presetHomeSearchPresetId": route.preset_id,
+        "presetHomeSearchHomeTabLabel": route.home_tab_label,
+        "presetHomeSearchObject": route.home_search_object,
+        "presetHomeSearchEntryControl": route.entry_search_control,
+        "presetHomeSearchEntryObject": route.entry_search_object,
+        "presetHomeSearchContainerObject": route.container_object,
+        "presetHomeSearchRecentLabelObject": route.recent_label_object,
+        "presetHomeSearchExpectedPlaceholder": route.placeholder_text,
+        "presetHomeSearchExpectedEntryPlaceholder": route.entry_placeholder_text,
+        "presetHomeSearchPlaceholderProperty": route.placeholder_property,
+        "presetHomeSearchEntryPlaceholderProperty": route.entry_placeholder_property,
+        "presetHomeSearchCapturedProperty": route.captured_property,
+        "presetHomeSearchCapturedPlaceholderProperty": route.captured_placeholder_property,
+        "presetHomeSearchCapturedEntryPlaceholderProperty": route.captured_entry_placeholder_property,
+        "presetHomeSearchCapturedTextProperty": route.captured_text_property,
+        "presetHomeSearchCapturedEntryTextProperty": route.captured_entry_text_property,
+        "presetHomeSearchCapturedActionsProperty": route.captured_actions_property,
+        "presetHomeSearchCapturedRecentLabelsProperty": route.captured_recent_labels_property,
+        "presetHomeSearchCapturedRecentCountProperty": route.captured_recent_count_property,
+        "presetHomeSearchRenderSource": route.render_source,
+    }
+    expected_lists = {
+        "presetHomeSearchExpectedActions": list(route.expected_home_actions),
+        "presetHomeSearchExpectedRecentLabels": list(route.expected_recent_labels),
+    }
+    expected_values = {
+        "presetHomeSearchExpectedRecentCount": route.expected_recent_count,
+    }
+    for label, widget in route_widgets:
+        if widget is None:
+            errors.append(f"{preset_id} live GUI home search route missing {label}")
+            continue
+        for property_name, expected_value in expected_properties.items():
+            actual_value = str(widget.property(property_name) or "")
+            if actual_value != expected_value:
+                errors.append(
+                    f"{preset_id} live GUI home search route {label} property "
+                    f"{property_name} {actual_value!r} must equal {expected_value!r}"
+                )
+        for property_name, expected_value in expected_lists.items():
+            if list(widget.property(property_name) or []) != expected_value:
+                errors.append(f"{preset_id} live GUI home search route {label} {property_name} drifted")
+        for property_name, expected_value in expected_values.items():
+            if widget.property(property_name) != expected_value:
+                errors.append(f"{preset_id} live GUI home search route {label} {property_name} drifted")
+        if bool(widget.property(route.captured_property)) is not True:
+            errors.append(f"{preset_id} live GUI home search route {label} capture flag missing")
+        if str(widget.property(route.captured_placeholder_property) or "") != route.placeholder_text:
+            errors.append(f"{preset_id} live GUI home search route {label} captured placeholder drifted")
+        if str(widget.property(route.captured_entry_placeholder_property) or "") != route.entry_placeholder_text:
+            errors.append(f"{preset_id} live GUI home search route {label} captured entry placeholder drifted")
+        if str(widget.property(route.captured_text_property) or ""):
+            errors.append(f"{preset_id} live GUI home search route {label} captured home search text must start empty")
+        if str(widget.property(route.captured_entry_text_property) or ""):
+            errors.append(f"{preset_id} live GUI home search route {label} captured entry search text must start empty")
+        if list(widget.property(route.captured_actions_property) or []) != list(route.expected_home_actions):
+            errors.append(f"{preset_id} live GUI home search route {label} captured actions drifted")
+        if list(widget.property(route.captured_recent_labels_property) or []) != list(route.expected_recent_labels):
+            errors.append(f"{preset_id} live GUI home search route {label} captured recent labels drifted")
+        if int(widget.property(route.captured_recent_count_property) or -1) != route.expected_recent_count:
+            errors.append(f"{preset_id} live GUI home search route {label} captured recent count drifted")
+
+    if tabs is not None and route.home_tab_label not in live_tab_labels(tabs):
+        errors.append(f"{preset_id} live GUI home search route missing home tab {route.home_tab_label!r}")
+    if home_search is not None:
+        if home_search.placeholderText() != route.placeholder_text:
+            errors.append(f"{preset_id} live GUI home search placeholder drifted")
+        if str(home_search.property(route.placeholder_property) or "") != route.placeholder_text:
+            errors.append(f"{preset_id} live GUI home search placeholder metadata drifted")
+    if entry_search is not None:
+        if entry_search.placeholderText() != route.entry_placeholder_text:
+            errors.append(f"{preset_id} live GUI entry search placeholder drifted")
+        if str(entry_search.property(route.entry_placeholder_property) or "") != route.entry_placeholder_text:
+            errors.append(f"{preset_id} live GUI entry search placeholder metadata drifted")
+    if container is not None:
+        action_labels = [
+            button.text()
+            for button in container.findChildren(QPushButton)
+            if button.text() in route.expected_home_actions
+        ]
+        if action_labels != list(route.expected_home_actions):
+            errors.append(f"{preset_id} live GUI home search action labels drifted")
+        actual_recent = [label.text() for label in recent_labels]
+        if actual_recent != list(route.expected_recent_labels):
+            errors.append(f"{preset_id} live GUI home search recent labels drifted")
+    return errors
 
 
 def check_live_moba_connected_session_route(window: Any) -> list[str]:
@@ -2389,6 +3836,208 @@ def check_live_moba_connected_session_route(window: Any) -> list[str]:
     return errors
 
 
+def check_live_moba_connected_session_action_route(window: Any) -> list[str]:
+    from PyQt6.QtWidgets import QTabBar, QTabWidget, QWidget
+
+    route = EXPECTED_MOBA_CONNECTED_SESSION_ACTION_ROUTE
+    errors: list[str] = []
+    tabs = window.findChild(QTabWidget, route.tabs_object)
+    tab_bar = window.findChild(QTabBar, route.tab_bar_object)
+    connected_panel = window.findChild(QWidget, "mobaConnectedSession")
+    if tabs is None:
+        return ["mobaxterm live GUI connected session action route missing tabs widget"]
+    if tab_bar is None:
+        errors.append("mobaxterm live GUI connected session action route missing tab bar")
+    if connected_panel is None:
+        errors.append("mobaxterm live GUI connected session action route missing connected panel")
+    if route.active_tab_label not in live_tab_labels(tabs):
+        errors.append(
+            f"mobaxterm live GUI connected session action route missing active tab {route.active_tab_label!r}"
+        )
+    expected_properties = {
+        "mobaConnectedSessionActionRouteKey": route.key,
+        "mobaConnectedSessionActionRouteRole": route.route_role,
+        "mobaConnectedSessionActionProfile": route.profile_name,
+        "mobaConnectedSessionActionTarget": route.target,
+        "mobaConnectedSessionActionActiveTabKey": route.active_tab_key,
+        "mobaConnectedSessionActionActiveTab": route.active_tab_label,
+        "mobaConnectedSessionActionReferenceTab": route.reference_tab_label,
+        "mobaConnectedSessionActionTabsObject": route.tabs_object,
+        "mobaConnectedSessionActionTabBarObject": route.tab_bar_object,
+        "mobaConnectedSessionActionReferenceRole": route.reference_tab_role,
+        "mobaConnectedSessionActionMenuObject": route.menu_object,
+        "mobaConnectedSessionActionObject": route.action_object,
+        "mobaConnectedSessionActionActionKeyProperty": route.action_key_property,
+        "mobaConnectedSessionActionActionLabelProperty": route.action_label_property,
+        "mobaConnectedSessionActionActionEnabledProperty": route.action_enabled_property,
+        "mobaConnectedSessionActionRenderSource": route.render_source,
+        route.captured_tab_property: route.active_tab_label,
+    }
+    route_widgets = [("tabs", tabs), ("connected-panel", connected_panel)]
+    if tab_bar is not None:
+        route_widgets.append(("tab-bar", tab_bar))
+    for label, widget in route_widgets:
+        if widget is None:
+            continue
+        for property_name, expected_value in expected_properties.items():
+            actual_value = str(widget.property(property_name) or "")
+            if actual_value != expected_value:
+                errors.append(
+                    f"mobaxterm live GUI connected session action route {label} property "
+                    f"{property_name} {actual_value!r} must equal {expected_value!r}"
+                )
+        if list(widget.property("mobaConnectedSessionActionExpectedKeys") or []) != list(route.expected_action_keys):
+            errors.append(f"mobaxterm live GUI connected session action route {label} expected keys drifted")
+        if list(widget.property("mobaConnectedSessionActionExpectedLabels") or []) != list(
+            route.expected_action_labels
+        ):
+            errors.append(f"mobaxterm live GUI connected session action route {label} expected labels drifted")
+        if int(widget.property("mobaConnectedSessionActionExpectedCount") or -1) != route.expected_action_count:
+            errors.append(f"mobaxterm live GUI connected session action route {label} expected count drifted")
+        if list(widget.property("mobaConnectedSessionActionAlwaysEnabledKeys") or []) != list(
+            route.always_enabled_action_keys
+        ):
+            errors.append(f"mobaxterm live GUI connected session action route {label} always-enabled keys drifted")
+        if list(widget.property("mobaConnectedSessionActionConditionalEnabledKeys") or []) != list(
+            route.conditional_enabled_action_keys
+        ):
+            errors.append(f"mobaxterm live GUI connected session action route {label} conditional keys drifted")
+        if bool(widget.property(route.captured_property)) is not True:
+            errors.append(f"mobaxterm live GUI connected session action route {label} captured flag missing")
+        captured_keys = list(widget.property(route.captured_action_keys_property) or [])
+        captured_labels = list(widget.property(route.captured_action_labels_property) or [])
+        captured_enabled_keys = list(widget.property(route.captured_enabled_keys_property) or [])
+        captured_disabled_keys = list(widget.property(route.captured_disabled_keys_property) or [])
+        if captured_keys != list(route.expected_action_keys):
+            errors.append(f"mobaxterm live GUI connected session action route {label} captured keys drifted")
+        if captured_labels != list(route.expected_action_labels):
+            errors.append(f"mobaxterm live GUI connected session action route {label} captured labels drifted")
+        if int(widget.property(route.captured_action_count_property) or -1) != route.expected_action_count:
+            errors.append(f"mobaxterm live GUI connected session action route {label} captured count drifted")
+        missing_required_enabled = sorted(set(route.always_enabled_action_keys) - set(captured_enabled_keys))
+        if missing_required_enabled:
+            errors.append(
+                "mobaxterm live GUI connected session action route "
+                f"{label} required enabled keys missing: {missing_required_enabled}"
+            )
+        unexpected_enabled = sorted(set(captured_enabled_keys) - set(route.expected_action_keys))
+        if unexpected_enabled:
+            errors.append(
+                "mobaxterm live GUI connected session action route "
+                f"{label} has unexpected enabled keys: {unexpected_enabled}"
+            )
+        if sorted(set(captured_enabled_keys) | set(captured_disabled_keys)) != sorted(route.expected_action_keys):
+            errors.append(
+                f"mobaxterm live GUI connected session action route {label} enabled/disabled partition drifted"
+            )
+        if set(captured_enabled_keys) & set(captured_disabled_keys):
+            errors.append(f"mobaxterm live GUI connected session action route {label} enabled/disabled keys overlap")
+
+    reference_index = find_live_tab_index(tabs, route.active_tab_label)
+    if reference_index < 0:
+        errors.append("mobaxterm live GUI connected session action route active tab missing")
+    else:
+        reference_widget = tabs.widget(reference_index)
+        if reference_widget is None:
+            errors.append("mobaxterm live GUI connected session action route active tab widget missing")
+        elif str(reference_widget.property("mobaConnectedSessionActionRouteKey") or "") != route.key:
+            errors.append("mobaxterm live GUI connected session action route widget missing route key")
+        if not hasattr(window, "build_tab_context_menu"):
+            errors.append("mobaxterm live GUI connected session action menu builder missing")
+        else:
+            menu = window.build_tab_context_menu(reference_index)
+            if menu is None:
+                errors.append("mobaxterm live GUI connected session action menu builder returned no menu")
+            else:
+                if menu.objectName() != route.menu_object:
+                    errors.append(
+                        "mobaxterm live GUI connected session action menu object "
+                        f"{menu.objectName()!r} must equal {route.menu_object!r}"
+                    )
+                for property_name, expected_value in expected_properties.items():
+                    actual_value = str(menu.property(property_name) or "")
+                    if actual_value != expected_value:
+                        errors.append(
+                            "mobaxterm live GUI connected session action menu property "
+                            f"{property_name} {actual_value!r} must equal {expected_value!r}"
+                        )
+                menu_actions = [action for action in menu.actions() if not action.isSeparator()]
+                action_keys = [str(action.property(route.action_key_property) or "") for action in menu_actions]
+                action_labels = [str(action.property(route.action_label_property) or "") for action in menu_actions]
+                enabled_keys = [
+                    str(action.property(route.action_key_property) or "")
+                    for action in menu_actions
+                    if action.isEnabled()
+                ]
+                disabled_keys = [
+                    str(action.property(route.action_key_property) or "")
+                    for action in menu_actions
+                    if not action.isEnabled()
+                ]
+                if len(menu_actions) != route.expected_action_count:
+                    errors.append("mobaxterm live GUI connected session action menu action count drifted")
+                if action_keys != list(route.expected_action_keys):
+                    errors.append("mobaxterm live GUI connected session action menu action keys drifted")
+                if action_labels != list(route.expected_action_labels):
+                    errors.append("mobaxterm live GUI connected session action menu action labels drifted")
+                if list(menu.property(route.captured_action_keys_property) or []) != list(route.expected_action_keys):
+                    errors.append("mobaxterm live GUI connected session action menu captured keys drifted")
+                if list(menu.property(route.captured_action_labels_property) or []) != list(
+                    route.expected_action_labels
+                ):
+                    errors.append("mobaxterm live GUI connected session action menu captured labels drifted")
+                if int(menu.property(route.captured_action_count_property) or -1) != route.expected_action_count:
+                    errors.append("mobaxterm live GUI connected session action menu captured count drifted")
+                if list(menu.property(route.captured_enabled_keys_property) or []) != enabled_keys:
+                    errors.append("mobaxterm live GUI connected session action menu enabled capture drifted")
+                if list(menu.property(route.captured_disabled_keys_property) or []) != disabled_keys:
+                    errors.append("mobaxterm live GUI connected session action menu disabled capture drifted")
+                for action, expected_key, expected_label in zip(
+                    menu_actions, route.expected_action_keys, route.expected_action_labels, strict=False
+                ):
+                    if action.objectName() != route.action_object:
+                        errors.append(
+                            "mobaxterm live GUI connected session action menu action object "
+                            f"{action.objectName()!r} must equal {route.action_object!r}"
+                        )
+                    if action.text() != expected_label:
+                        errors.append(
+                            "mobaxterm live GUI connected session action menu action text "
+                            f"{action.text()!r} must equal {expected_label!r}"
+                        )
+                    if str(action.property("mobaConnectedSessionActionRouteKey") or "") != route.key:
+                        errors.append(
+                            "mobaxterm live GUI connected session action menu action missing route key "
+                            f"for {expected_key!r}"
+                        )
+                    if str(action.property(route.action_key_property) or "") != expected_key:
+                        errors.append(
+                            "mobaxterm live GUI connected session action menu action key "
+                            f"drifted for {expected_key!r}"
+                        )
+                    if str(action.property(route.action_label_property) or "") != expected_label:
+                        errors.append(
+                            "mobaxterm live GUI connected session action menu action label "
+                            f"drifted for {expected_key!r}"
+                        )
+                    if bool(action.property(route.action_enabled_property)) != action.isEnabled():
+                        errors.append(
+                            "mobaxterm live GUI connected session action menu enabled property "
+                            f"drifted for {expected_key!r}"
+                        )
+                missing_required_enabled = sorted(set(route.always_enabled_action_keys) - set(enabled_keys))
+                if missing_required_enabled:
+                    errors.append(
+                        "mobaxterm live GUI connected session action menu required enabled keys missing: "
+                        f"{missing_required_enabled}"
+                    )
+                if sorted(set(enabled_keys) | set(disabled_keys)) != sorted(route.expected_action_keys):
+                    errors.append("mobaxterm live GUI connected session action menu enabled/disabled partition drifted")
+                if set(enabled_keys) & set(disabled_keys):
+                    errors.append("mobaxterm live GUI connected session action menu enabled/disabled keys overlap")
+    return errors
+
+
 def check_live_moba_connected_session_identity_route(window: Any) -> list[str]:
     from PyQt6.QtWidgets import QLabel, QTabWidget, QTextEdit, QWidget
 
@@ -2456,6 +4105,84 @@ def check_live_moba_connected_session_identity_route(window: Any) -> list[str]:
     return errors
 
 
+def check_live_moba_sftp_terminal_folder_route(window: Any) -> list[str]:
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtWidgets import QCheckBox, QLineEdit, QTextEdit, QTreeWidget, QWidget
+
+    route = EXPECTED_MOBA_SFTP_TERMINAL_FOLDER_ROUTE
+    errors: list[str] = []
+    terminal_area = window.findChild(QWidget, route.terminal_area_object)
+    terminal_output = window.findChild(QTextEdit, route.terminal_output_object)
+    source_control = window.findChild(QCheckBox, route.source_control_object)
+    browser = window.findChild(QWidget, route.target_browser_object)
+    path = window.findChild(QLineEdit, route.target_path_object)
+    table = window.findChild(QTreeWidget, route.target_table_object)
+    route_widgets = [
+        ("terminal-area", terminal_area),
+        ("terminal-output", terminal_output),
+        ("follow-control", source_control),
+        ("sftp-browser", browser),
+        ("sftp-path", path),
+        ("sftp-table", table),
+    ]
+    route_properties = {
+        "mobaSftpTerminalFolderRouteKey": route.key,
+        "mobaSftpTerminalFolderRouteRole": route.route_role,
+        "mobaSftpTerminalFolderRouteTerminalAreaObject": route.terminal_area_object,
+        "mobaSftpTerminalFolderRouteTerminalOutputObject": route.terminal_output_object,
+        "mobaSftpTerminalFolderRouteSourceControlObject": route.source_control_object,
+        "mobaSftpTerminalFolderRouteTargetBrowserObject": route.target_browser_object,
+        "mobaSftpTerminalFolderRouteTargetPathObject": route.target_path_object,
+        "mobaSftpTerminalFolderRouteTargetTableObject": route.target_table_object,
+        "mobaSftpTerminalFolderRouteParentRowLabel": route.parent_row_label,
+        "mobaSftpTerminalFolderRouteSelectedRowKind": route.selected_row_kind,
+        route.path_property: route.remote_path,
+        route.plan_property: route.list_command,
+        "mobaSftpTerminalFolderRouteRowRouteProperty": route.row_route_property,
+        "mobaSftpTerminalFolderRouteRenderSource": route.render_source,
+    }
+    for label, widget in route_widgets:
+        if widget is None:
+            errors.append(f"mobaxterm live GUI SFTP terminal-folder route missing {label}")
+            continue
+        for property_name, expected_value in route_properties.items():
+            actual_value = str(widget.property(property_name) or "")
+            if actual_value != expected_value:
+                errors.append(
+                    f"mobaxterm live GUI SFTP terminal-folder route {label} property "
+                    f"{property_name} {actual_value!r} must equal {expected_value!r}"
+                )
+        if bool(widget.property(route.enabled_property)) != route.follow_enabled:
+            errors.append(f"mobaxterm live GUI SFTP terminal-folder route {label} enabled state drifted")
+
+    if source_control is not None and source_control.isChecked() != route.follow_enabled:
+        errors.append("mobaxterm live GUI SFTP terminal-folder follow checkbox state drifted")
+    if path is not None and path.text() != route.remote_path:
+        errors.append("mobaxterm live GUI SFTP terminal-folder path text drifted")
+    if table is not None:
+        if str(table.property(route.path_property) or "") != route.remote_path:
+            errors.append("mobaxterm live GUI SFTP terminal-folder table path property drifted")
+        if str(table.property(route.plan_property) or "") != route.list_command:
+            errors.append("mobaxterm live GUI SFTP terminal-folder table list command drifted")
+        if table.topLevelItemCount() == 0:
+            errors.append("mobaxterm live GUI SFTP terminal-folder table missing rows")
+        else:
+            parent_item = table.topLevelItem(0)
+            if parent_item.text(0) != route.parent_row_label:
+                errors.append("mobaxterm live GUI SFTP terminal-folder parent row label drifted")
+            parent_kind = str(parent_item.data(0, Qt.ItemDataRole.UserRole) or "")
+            if parent_kind != route.selected_row_kind:
+                errors.append("mobaxterm live GUI SFTP terminal-folder selected row kind drifted")
+            terminal_route_role = int(Qt.ItemDataRole.UserRole) + 50
+            row_route_keys = [
+                str(table.topLevelItem(index).data(0, terminal_route_role) or "")
+                for index in range(table.topLevelItemCount())
+            ]
+            if any(key != route.key for key in row_route_keys):
+                errors.append("mobaxterm live GUI SFTP terminal-folder row route keys drifted")
+    return errors
+
+
 def check_live_tree_content(window: Any, preset_id: str) -> list[str]:
     from PyQt6.QtCore import Qt
     from PyQt6.QtWidgets import QTreeWidget
@@ -2488,6 +4215,19 @@ def collect_tree_labels(tree: Any) -> set[str]:
     for index in range(tree.topLevelItemCount()):
         walk(tree.topLevelItem(index))
     return labels
+
+
+def collect_tree_items_by_label(tree: Any) -> dict[str, Any]:
+    items: dict[str, Any] = {}
+
+    def walk(item: Any) -> None:
+        items[item.text(0)] = item
+        for child_index in range(item.childCount()):
+            walk(item.child(child_index))
+
+    for index in range(tree.topLevelItemCount()):
+        walk(tree.topLevelItem(index))
+    return items
 
 
 def check_product_tree_icon_metadata(tree: Any, preset_id: str, user_role: int) -> list[str]:
@@ -3125,6 +4865,696 @@ def check_live_reference_state(window: Any, preset_id: str) -> list[str]:
     if missing_keys:
         return [f"{preset_id} live GUI product reference state missing keys: {missing_keys}"]
     return []
+
+
+def check_live_product_identity_route(window: Any, preset_id: str) -> list[str]:
+    from PyQt6.QtWidgets import QLabel, QTabWidget, QTreeWidget, QWidget
+
+    route = EXPECTED_PRODUCT_IDENTITY_ROUTES.get(preset_id)
+    if route is None:
+        return []
+    errors: list[str] = []
+    panel = window.findChild(QWidget, route.reference_state_object)
+    if panel is None:
+        return [f"{preset_id} live GUI product identity route missing reference state panel"]
+    route_properties = {
+        "productIdentityRouteKey": route.key,
+        "productIdentityRouteRole": route.route_role,
+        "productIdentityPreset": route.preset_id,
+        "productIdentitySelectedTreeLabel": route.selected_tree_label,
+        "productIdentityReferenceStateObject": route.reference_state_object,
+        "productIdentityReferenceItemObject": route.reference_item_object,
+        "productIdentityTreeObject": route.tree_object,
+        "productIdentityTabsObject": route.tabs_object,
+        "productIdentityStatusSegmentObject": route.status_segment_object,
+        "productIdentityWorkspaceSurfaceObject": route.workspace_surface_object,
+        "productIdentityProfile": route.selected_profile_name,
+        "productIdentityTarget": route.target_label,
+        "productIdentityProtocol": route.protocol_label,
+        "productIdentityActiveTab": route.active_tab_label,
+        "productIdentitySidebar": route.sidebar_label,
+        "productIdentityWorkspaceState": route.workspace_state,
+        "productIdentityRenderSource": route.render_source,
+    }
+    identity_widgets: list[tuple[str, Any]] = [
+        ("reference-state", panel),
+        *[
+            (f"reference-item:{str(label.property('referenceKey') or '')}", label)
+            for label in panel.findChildren(QLabel, route.reference_item_object)
+        ],
+    ]
+    for label, widget in identity_widgets:
+        for property_name, expected_value in route_properties.items():
+            actual_value = str(widget.property(property_name) or "")
+            if actual_value != expected_value:
+                errors.append(
+                    f"{preset_id} live GUI product identity {label} property "
+                    f"{property_name} {actual_value!r} must equal {expected_value!r}"
+                )
+        actual_status_segments = list(widget.property("productIdentityStatusSegments") or [])
+        if actual_status_segments != list(route.status_segments):
+            errors.append(f"{preset_id} live GUI product identity {label} status segments drifted")
+
+    reference_texts = {label.text() for _label, label in identity_widgets if isinstance(label, QLabel)}
+    for key, value in gui_design_reference_state(preset_id).items():
+        if f"{key}: {value}" not in reference_texts:
+            errors.append(f"{preset_id} live GUI product identity reference item drifted: {key}")
+
+    tabs = window.findChild(QTabWidget, route.tabs_object)
+    if tabs is None or route.active_tab_label not in live_tab_labels(tabs):
+        errors.append(f"{preset_id} live GUI product identity active tab label drifted")
+    tree = window.findChild(QTreeWidget, route.tree_object)
+    if tree is None:
+        errors.append(f"{preset_id} live GUI product identity missing profile tree")
+    else:
+        tree_labels = collect_tree_labels(tree)
+        if route.selected_tree_label not in tree_labels:
+            errors.append(f"{preset_id} live GUI product identity selected tree label drifted")
+    status_texts = {label.text() for label in window.findChildren(QLabel, route.status_segment_object)}
+    missing_status = sorted(set(route.status_segments) - status_texts)
+    if missing_status:
+        errors.append(f"{preset_id} live GUI product identity status segments drifted: {missing_status}")
+    workspace = window.findChild(QWidget, route.workspace_surface_object)
+    if workspace is None:
+        errors.append(f"{preset_id} live GUI product identity missing workspace surface")
+    return errors
+
+
+def check_live_preset_reference_tab_route(window: Any, preset_id: str) -> list[str]:
+    from PyQt6.QtWidgets import QTabWidget
+
+    route = EXPECTED_PRESET_REFERENCE_TAB_ROUTES.get(preset_id)
+    if route is None:
+        return []
+    errors: list[str] = []
+    tabs = window.findChild(QTabWidget, route.tabs_object)
+    if tabs is None:
+        return [f"{preset_id} live GUI reference tab route missing tabs widget"]
+    expected_properties = {
+        "presetReferenceTabRouteKey": route.key,
+        "presetReferenceTabRouteRole": route.route_role,
+        "presetReferenceTabPresetId": route.preset_id,
+        "presetReferenceTabProfile": route.reference_profile,
+        "presetReferenceTabActiveLabel": route.active_tab_label,
+        "presetReferenceTabHomeLabel": route.home_tab_label,
+        "presetReferenceTabTabsObject": route.tabs_object,
+        "presetReferenceTabHomeRole": route.home_tab_role,
+        "presetReferenceTabReferenceRole": route.reference_tab_role,
+        "presetReferenceTabActivatedLabelProperty": route.activated_label_property,
+        "presetReferenceTabReturnedHomeLabelProperty": route.returned_home_label_property,
+        "presetReferenceTabActiveProperty": route.active_tab_property,
+        "presetReferenceTabHomeProperty": route.home_tab_property,
+        "presetReferenceTabProfileProperty": route.reference_profile_property,
+        "presetReferenceTabRenderSource": route.render_source,
+        route.activated_label_property: route.active_tab_label,
+        route.returned_home_label_property: route.home_tab_label,
+        route.active_tab_property: route.active_tab_label,
+        route.home_tab_property: route.home_tab_label,
+        route.reference_profile_property: route.reference_profile,
+    }
+    for property_name, expected_value in expected_properties.items():
+        actual_value = str(tabs.property(property_name) or "")
+        if actual_value != expected_value:
+            errors.append(
+                f"{preset_id} live GUI reference tab route property "
+                f"{property_name} {actual_value!r} must equal {expected_value!r}"
+            )
+    tab_labels = live_tab_labels(tabs)
+    if route.active_tab_label not in tab_labels:
+        errors.append(f"{preset_id} live GUI reference tab route active tab label missing")
+    if route.home_tab_label not in tab_labels:
+        errors.append(f"{preset_id} live GUI reference tab route home tab label missing")
+    current_index = tabs.currentIndex()
+    if current_index < 0 or tabs.tabText(current_index) != route.home_tab_label:
+        errors.append(f"{preset_id} live GUI reference tab route must return to home tab before capture")
+    reference_index = find_live_tab_index(tabs, route.active_tab_label)
+    if reference_index >= 0:
+        reference_widget = tabs.widget(reference_index)
+        if str(reference_widget.property("tabRole") or "") != route.reference_tab_role:
+            errors.append(f"{preset_id} live GUI reference tab route tab role drifted")
+        if str(reference_widget.property("presetReferenceTabRouteKey") or "") != route.key:
+            errors.append(f"{preset_id} live GUI reference tab widget missing route key")
+    home_index = find_live_tab_index(tabs, route.home_tab_label)
+    if home_index >= 0:
+        home_widget = tabs.widget(home_index)
+        if str(home_widget.property("tabRole") or "") != route.home_tab_role:
+            errors.append(f"{preset_id} live GUI reference tab route home role drifted")
+    return errors
+
+
+def check_live_preset_reference_tab_chrome_route(window: Any, preset_id: str) -> list[str]:
+    from PyQt6.QtWidgets import QTabBar, QTabWidget
+
+    route = EXPECTED_PRESET_REFERENCE_TAB_CHROME_ROUTES.get(preset_id)
+    if route is None:
+        return []
+    errors: list[str] = []
+    tabs = window.findChild(QTabWidget, route.tabs_object)
+    tab_bar = window.findChild(QTabBar, route.tab_bar_object)
+    if tabs is None:
+        return [f"{preset_id} live GUI reference tab chrome missing tabs widget"]
+    if tab_bar is None:
+        errors.append(f"{preset_id} live GUI reference tab chrome missing tab bar")
+    expected_properties = {
+        "presetReferenceTabChromeRouteKey": route.key,
+        "presetReferenceTabChromeRouteRole": route.route_role,
+        "presetReferenceTabChromePresetId": route.preset_id,
+        "presetReferenceTabChromeProfile": route.reference_profile,
+        "presetReferenceTabChromeActiveLabel": route.active_tab_label,
+        "presetReferenceTabChromeHomeLabel": route.home_tab_label,
+        "presetReferenceTabChromeTabsObject": route.tabs_object,
+        "presetReferenceTabChromeTabBarObject": route.tab_bar_object,
+        "presetReferenceTabChromeReferenceRole": route.reference_tab_role,
+        "presetReferenceTabChromeNewSessionRole": route.new_session_tab_role,
+        "presetReferenceTabChromeExpectedPosition": route.expected_tab_position,
+        "presetReferenceTabChromeExpectedTooltip": route.expected_tooltip,
+        "presetReferenceTabChromeRenderSource": route.render_source,
+        route.captured_label_property: route.active_tab_label,
+        route.captured_tooltip_property: route.expected_tooltip,
+        route.captured_role_property: route.reference_tab_role,
+    }
+    for property_name, expected_value in expected_properties.items():
+        actual_value = str(tabs.property(property_name) or "")
+        if actual_value != expected_value:
+            errors.append(
+                f"{preset_id} live GUI reference tab chrome property "
+                f"{property_name} {actual_value!r} must equal {expected_value!r}"
+            )
+    expected_bool_properties = {
+        "presetReferenceTabChromeExpectedCloseable": route.expected_closeable,
+        "presetReferenceTabChromeExpectedSelectedDuringCapture": route.expected_selected_during_capture,
+        route.captured_closeable_property: route.expected_closeable,
+        route.captured_selected_property: route.expected_selected_during_capture,
+        route.captured_property: True,
+    }
+    for property_name, expected_value in expected_bool_properties.items():
+        if bool(tabs.property(property_name)) is not expected_value:
+            errors.append(f"{preset_id} live GUI reference tab chrome boolean {property_name} drifted")
+    captured_position = str(tabs.property(route.captured_position_property) or "")
+    if tab_position_name(route.expected_tab_position) not in captured_position:
+        errors.append(f"{preset_id} live GUI reference tab chrome captured tab position drifted")
+    reference_index = int(tabs.property(route.captured_index_property) or -1)
+    actual_reference_index = find_live_tab_index(tabs, route.active_tab_label)
+    if reference_index != actual_reference_index:
+        errors.append(f"{preset_id} live GUI reference tab chrome captured index drifted")
+    if actual_reference_index < 0:
+        return [*errors, f"{preset_id} live GUI reference tab chrome active tab missing"]
+    reference_widget = tabs.widget(actual_reference_index)
+    if reference_widget is None:
+        return [*errors, f"{preset_id} live GUI reference tab chrome active tab widget missing"]
+    if str(reference_widget.property("presetReferenceTabChromeRouteKey") or "") != route.key:
+        errors.append(f"{preset_id} live GUI reference tab chrome widget missing route key")
+    if tabs.tabText(actual_reference_index) != route.active_tab_label:
+        errors.append(f"{preset_id} live GUI reference tab chrome label drifted")
+    if tabs.tabToolTip(actual_reference_index) != route.expected_tooltip:
+        errors.append(f"{preset_id} live GUI reference tab chrome tooltip drifted")
+    if str(reference_widget.property("tabRole") or "") != route.reference_tab_role:
+        errors.append(f"{preset_id} live GUI reference tab chrome role drifted")
+    new_session_index = find_live_tab_index(tabs, "+")
+    if new_session_index >= 0 and actual_reference_index >= new_session_index:
+        errors.append(f"{preset_id} live GUI reference tab chrome must appear before new-session tab")
+    return errors
+
+
+def check_live_preset_reference_status_bar_route(window: Any, preset_id: str) -> list[str]:
+    from PyQt6.QtWidgets import QLabel, QStatusBar, QTabWidget
+
+    route = EXPECTED_PRESET_REFERENCE_STATUS_BAR_ROUTES.get(preset_id)
+    if route is None:
+        return []
+    errors: list[str] = []
+    tabs = window.findChild(QTabWidget, "sessionTabs")
+    status_bar = window.findChild(QStatusBar, route.status_bar_object)
+    notice = window.findChild(QLabel, route.status_notice_object)
+    segment_labels = window.findChildren(QLabel, route.status_segment_object)
+    if tabs is None:
+        return [f"{preset_id} live GUI reference status-bar route missing tabs widget"]
+    if status_bar is None:
+        return [f"{preset_id} live GUI reference status-bar route missing status bar"]
+    if notice is None:
+        errors.append(f"{preset_id} live GUI reference status-bar route missing notice label")
+    if len(segment_labels) < route.expected_segment_count:
+        errors.append(f"{preset_id} live GUI reference status-bar route missing segment labels")
+    expected_properties = {
+        "presetReferenceStatusRouteKey": route.key,
+        "presetReferenceStatusRouteRole": route.route_role,
+        "presetReferenceStatusPresetId": route.preset_id,
+        "presetReferenceStatusProfile": route.reference_profile,
+        "presetReferenceStatusActiveTab": route.active_tab_label,
+        "presetReferenceStatusBarObject": route.status_bar_object,
+        "presetReferenceStatusNoticeObject": route.status_notice_object,
+        "presetReferenceStatusSegmentObject": route.status_segment_object,
+        "presetReferenceStatusExpectedMessage": route.expected_status_message,
+        "presetReferenceStatusRenderSource": route.render_source,
+        route.captured_tab_property: route.active_tab_label,
+        route.captured_message_property: route.expected_status_message,
+    }
+    for property_name, expected_value in expected_properties.items():
+        actual_value = str(status_bar.property(property_name) or "")
+        if actual_value != expected_value:
+            errors.append(
+                f"{preset_id} live GUI reference status-bar property "
+                f"{property_name} {actual_value!r} must equal {expected_value!r}"
+            )
+    if list(status_bar.property("presetReferenceStatusExpectedSegments") or []) != list(route.expected_status_segments):
+        errors.append(f"{preset_id} live GUI reference status-bar expected segments drifted")
+    if int(status_bar.property("presetReferenceStatusExpectedSegmentCount") or -1) != route.expected_segment_count:
+        errors.append(f"{preset_id} live GUI reference status-bar expected segment count drifted")
+    if bool(status_bar.property(route.captured_property)) is not True:
+        errors.append(f"{preset_id} live GUI reference status-bar captured flag missing")
+    captured_segments = list(status_bar.property(route.captured_segments_property) or [])
+    if captured_segments != list(route.expected_status_segments):
+        errors.append(f"{preset_id} live GUI reference status-bar captured segments drifted")
+    if int(status_bar.property(route.captured_segment_count_property) or -1) != route.expected_segment_count:
+        errors.append(f"{preset_id} live GUI reference status-bar captured segment count drifted")
+    captured_tooltips = list(status_bar.property(route.captured_segment_tooltips_property) or [])
+    for segment in route.expected_status_segments:
+        if not any(segment in tooltip for tooltip in captured_tooltips):
+            errors.append(f"{preset_id} live GUI reference status-bar tooltip missing segment: {segment}")
+    notice_text = str(status_bar.property(route.captured_notice_property) or "")
+    if notice_text != "Remote Ops Workspace":
+        errors.append(f"{preset_id} live GUI reference status-bar notice drifted")
+    if status_bar.currentMessage() != route.expected_status_message:
+        errors.append(f"{preset_id} live GUI reference status-bar current message drifted")
+    reference_index = find_live_tab_index(tabs, route.active_tab_label)
+    if reference_index < 0:
+        errors.append(f"{preset_id} live GUI reference status-bar active tab missing")
+    else:
+        reference_widget = tabs.widget(reference_index)
+        if reference_widget is None:
+            errors.append(f"{preset_id} live GUI reference status-bar active tab widget missing")
+        elif str(reference_widget.property("presetReferenceStatusRouteKey") or "") != route.key:
+            errors.append(f"{preset_id} live GUI reference status-bar widget missing route key")
+    for label in segment_labels[: route.expected_segment_count]:
+        if str(label.property("presetReferenceStatusRouteKey") or "") != route.key:
+            errors.append(f"{preset_id} live GUI reference status-bar segment missing route key")
+            break
+    return errors
+
+
+def check_live_preset_reference_session_action_route(window: Any, preset_id: str) -> list[str]:
+    from PyQt6.QtWidgets import QTabBar, QTabWidget
+
+    route = EXPECTED_PRESET_REFERENCE_SESSION_ACTION_ROUTES.get(preset_id)
+    if route is None:
+        return []
+    errors: list[str] = []
+    tabs = window.findChild(QTabWidget, route.tabs_object)
+    tab_bar = window.findChild(QTabBar, route.tab_bar_object)
+    if tabs is None:
+        return [f"{preset_id} live GUI reference session action route missing tabs widget"]
+    if tab_bar is None:
+        errors.append(f"{preset_id} live GUI reference session action route missing tab bar")
+    expected_properties = {
+        "presetReferenceSessionActionRouteKey": route.key,
+        "presetReferenceSessionActionRouteRole": route.route_role,
+        "presetReferenceSessionActionPresetId": route.preset_id,
+        "presetReferenceSessionActionProfile": route.reference_profile,
+        "presetReferenceSessionActionActiveTab": route.active_tab_label,
+        "presetReferenceSessionActionTabsObject": route.tabs_object,
+        "presetReferenceSessionActionTabBarObject": route.tab_bar_object,
+        "presetReferenceSessionActionReferenceRole": route.reference_tab_role,
+        "presetReferenceSessionActionObject": route.action_object,
+        "presetReferenceSessionActionActionKeyProperty": route.action_key_property,
+        "presetReferenceSessionActionActionLabelProperty": route.action_label_property,
+        "presetReferenceSessionActionActionEnabledProperty": route.action_enabled_property,
+        "presetReferenceSessionActionRenderSource": route.render_source,
+        route.captured_tab_property: route.active_tab_label,
+    }
+    for property_name, expected_value in expected_properties.items():
+        actual_value = str(tabs.property(property_name) or "")
+        if actual_value != expected_value:
+            errors.append(
+                f"{preset_id} live GUI reference session action property "
+                f"{property_name} {actual_value!r} must equal {expected_value!r}"
+            )
+    if list(tabs.property("presetReferenceSessionActionExpectedKeys") or []) != list(route.expected_action_keys):
+        errors.append(f"{preset_id} live GUI reference session action expected keys drifted")
+    if list(tabs.property("presetReferenceSessionActionExpectedLabels") or []) != list(route.expected_action_labels):
+        errors.append(f"{preset_id} live GUI reference session action expected labels drifted")
+    if int(tabs.property("presetReferenceSessionActionExpectedCount") or -1) != route.expected_action_count:
+        errors.append(f"{preset_id} live GUI reference session action expected count drifted")
+    if list(tabs.property("presetReferenceSessionActionAlwaysEnabledKeys") or []) != list(
+        route.always_enabled_action_keys
+    ):
+        errors.append(f"{preset_id} live GUI reference session action always-enabled keys drifted")
+    if list(tabs.property("presetReferenceSessionActionConditionalEnabledKeys") or []) != list(
+        route.conditional_enabled_action_keys
+    ):
+        errors.append(f"{preset_id} live GUI reference session action conditional keys drifted")
+    if bool(tabs.property(route.captured_property)) is not True:
+        errors.append(f"{preset_id} live GUI reference session action captured flag missing")
+    captured_keys = list(tabs.property(route.captured_action_keys_property) or [])
+    captured_labels = list(tabs.property(route.captured_action_labels_property) or [])
+    captured_enabled_keys = list(tabs.property(route.captured_enabled_keys_property) or [])
+    captured_disabled_keys = list(tabs.property(route.captured_disabled_keys_property) or [])
+    if captured_keys != list(route.expected_action_keys):
+        errors.append(f"{preset_id} live GUI reference session action captured keys drifted")
+    if captured_labels != list(route.expected_action_labels):
+        errors.append(f"{preset_id} live GUI reference session action captured labels drifted")
+    if int(tabs.property(route.captured_action_count_property) or -1) != route.expected_action_count:
+        errors.append(f"{preset_id} live GUI reference session action captured count drifted")
+    missing_required_enabled = sorted(set(route.always_enabled_action_keys) - set(captured_enabled_keys))
+    if missing_required_enabled:
+        errors.append(
+            f"{preset_id} live GUI reference session action required enabled keys missing: {missing_required_enabled}"
+        )
+    unexpected_enabled = sorted(set(captured_enabled_keys) - set(route.expected_action_keys))
+    if unexpected_enabled:
+        errors.append(f"{preset_id} live GUI reference session action has unexpected enabled keys: {unexpected_enabled}")
+    if sorted(set(captured_enabled_keys) | set(captured_disabled_keys)) != sorted(route.expected_action_keys):
+        errors.append(f"{preset_id} live GUI reference session action enabled/disabled partition drifted")
+    if set(captured_enabled_keys) & set(captured_disabled_keys):
+        errors.append(f"{preset_id} live GUI reference session action enabled/disabled keys overlap")
+    reference_index = find_live_tab_index(tabs, route.active_tab_label)
+    if reference_index < 0:
+        errors.append(f"{preset_id} live GUI reference session action active tab missing")
+    else:
+        reference_widget = tabs.widget(reference_index)
+        if reference_widget is None:
+            errors.append(f"{preset_id} live GUI reference session action active tab widget missing")
+        elif str(reference_widget.property("presetReferenceSessionActionRouteKey") or "") != route.key:
+            errors.append(f"{preset_id} live GUI reference session action widget missing route key")
+    if tab_bar is not None and str(tab_bar.property("presetReferenceSessionActionRouteKey") or "") != route.key:
+        errors.append(f"{preset_id} live GUI reference session action tab bar missing route key")
+    return errors
+
+
+def check_live_preset_reference_surface_route(window: Any, preset_id: str) -> list[str]:
+    from PyQt6.QtWidgets import QLabel, QTabWidget, QTextEdit, QWidget
+
+    route = EXPECTED_PRESET_REFERENCE_SURFACE_ROUTES.get(preset_id)
+    if route is None:
+        return []
+    errors: list[str] = []
+    tabs = window.findChild(QTabWidget, "sessionTabs")
+    if tabs is None:
+        return [f"{preset_id} live GUI reference surface route missing tabs widget"]
+    expected_properties = {
+        "presetReferenceSurfaceRouteKey": route.key,
+        "presetReferenceSurfaceRouteRole": route.route_role,
+        "presetReferenceSurfacePresetId": route.preset_id,
+        "presetReferenceSurfaceProfile": route.reference_profile,
+        "presetReferenceSurfaceActiveTab": route.active_tab_label,
+        "presetReferenceSurfaceExpectedTitle": route.expected_title,
+        "presetReferenceSurfaceExpectedSource": route.expected_source,
+        "presetReferenceSurfaceCommandExecutableChoices": "|".join(route.command_executables),
+        "presetReferenceSurfaceCommandTargetFragment": route.command_target_fragment,
+        "presetReferenceSurfaceTerminalPaneObject": route.terminal_pane_object,
+        "presetReferenceSurfaceTitleObject": route.terminal_title_object,
+        "presetReferenceSurfaceSourceObject": route.terminal_source_object,
+        "presetReferenceSurfaceCommandObject": route.terminal_command_object,
+        "presetReferenceSurfaceOutputObject": route.terminal_output_object,
+        "presetReferenceSurfaceCapturedProperty": route.captured_property,
+        "presetReferenceSurfaceCapturedTabProperty": route.captured_tab_property,
+        "presetReferenceSurfaceActualTitleProperty": route.actual_title_property,
+        "presetReferenceSurfaceActualSourceProperty": route.actual_source_property,
+        "presetReferenceSurfaceActualCommandProperty": route.actual_command_property,
+        "presetReferenceSurfaceActualOutputProperty": route.actual_output_property,
+        "presetReferenceSurfaceRenderSource": route.render_source,
+        route.captured_tab_property: route.active_tab_label,
+        route.actual_title_property: route.expected_title,
+        route.actual_source_property: route.expected_source,
+    }
+    for property_name, expected_value in expected_properties.items():
+        actual_value = str(tabs.property(property_name) or "")
+        if actual_value != expected_value:
+            errors.append(
+                f"{preset_id} live GUI reference surface route property "
+                f"{property_name} {actual_value!r} must equal {expected_value!r}"
+            )
+    if not bool(tabs.property(route.captured_property)):
+        errors.append(f"{preset_id} live GUI reference surface route was not captured")
+
+    actual_command = str(tabs.property(route.actual_command_property) or "")
+    actual_output = str(tabs.property(route.actual_output_property) or "")
+    command_executable = command_executable_name(actual_command)
+    if command_executable not in route.command_executables:
+        errors.append(
+            f"{preset_id} live GUI reference surface command executable "
+            f"{command_executable!r} must be one of {route.command_executables!r}"
+        )
+    if route.command_target_fragment not in actual_command:
+        errors.append(f"{preset_id} live GUI reference surface command target fragment drifted")
+    if actual_command and actual_command not in actual_output:
+        errors.append(f"{preset_id} live GUI reference surface output did not echo command")
+
+    reference_index = find_live_tab_index(tabs, route.active_tab_label)
+    if reference_index < 0:
+        return [*errors, f"{preset_id} live GUI reference surface active tab missing"]
+    reference_widget = tabs.widget(reference_index)
+    pane = reference_widget
+    if str(pane.objectName()) != route.terminal_pane_object:
+        pane = reference_widget.findChild(QWidget, route.terminal_pane_object)
+    if pane is None:
+        return [*errors, f"{preset_id} live GUI reference surface missing terminal pane"]
+    if str(pane.property("presetReferenceSurfaceRouteKey") or "") != route.key:
+        errors.append(f"{preset_id} live GUI reference surface pane missing route key")
+
+    title = pane.findChild(QLabel, route.terminal_title_object)
+    source = pane.findChild(QLabel, route.terminal_source_object)
+    command = pane.findChild(QLabel, route.terminal_command_object)
+    output = pane.findChild(QTextEdit, route.terminal_output_object)
+    if title is None or title.text() != route.expected_title:
+        errors.append(f"{preset_id} live GUI reference surface title drifted")
+    if source is None or source.text() != route.expected_source:
+        errors.append(f"{preset_id} live GUI reference surface source drifted")
+    if command is None or command.text() != actual_command:
+        errors.append(f"{preset_id} live GUI reference surface command label drifted")
+    if output is None or actual_command not in output.toPlainText():
+        errors.append(f"{preset_id} live GUI reference surface terminal output drifted")
+    return errors
+
+
+def command_executable_name(command: str) -> str:
+    executable = command.strip().split(" ", 1)[0].strip("'\"")
+    executable = executable.rsplit("\\", 1)[-1].rsplit("/", 1)[-1]
+    return executable.lower()
+
+
+def check_live_preset_reference_control_route(window: Any, preset_id: str) -> list[str]:
+    from PyQt6.QtWidgets import QLabel, QTabWidget, QToolButton, QWidget
+
+    route = EXPECTED_PRESET_REFERENCE_CONTROL_ROUTES.get(preset_id)
+    if route is None:
+        return []
+    errors: list[str] = []
+    tabs = window.findChild(QTabWidget, "sessionTabs")
+    if tabs is None:
+        return [f"{preset_id} live GUI reference control route missing tabs widget"]
+    expected_properties = {
+        "presetReferenceControlRouteKey": route.key,
+        "presetReferenceControlRouteRole": route.route_role,
+        "presetReferenceControlPresetId": route.preset_id,
+        "presetReferenceControlProfile": route.reference_profile,
+        "presetReferenceControlActiveTab": route.active_tab_label,
+        "presetReferenceControlTerminalPaneObject": route.terminal_pane_object,
+        "presetReferenceControlStatusObject": route.terminal_status_object,
+        "presetReferenceControlActionObject": route.terminal_action_object,
+        "presetReferenceControlActionKeyProperty": route.action_key_property,
+        "presetReferenceControlActionLabelProperty": route.action_label_property,
+        "presetReferenceControlActionTooltipProperty": route.action_tooltip_property,
+        "presetReferenceControlStatusStateProperty": route.status_state_property,
+        "presetReferenceControlCapturedProperty": route.captured_property,
+        "presetReferenceControlCapturedActionsProperty": route.captured_actions_property,
+        "presetReferenceControlCapturedStatusProperty": route.captured_status_property,
+        "presetReferenceControlCapturedStatusTextProperty": route.captured_status_text_property,
+        "presetReferenceControlRenderSource": route.render_source,
+        "presetReferenceControlCapturedTab": route.active_tab_label,
+    }
+    for property_name, expected_value in expected_properties.items():
+        actual_value = str(tabs.property(property_name) or "")
+        if actual_value != expected_value:
+            errors.append(
+                f"{preset_id} live GUI reference control route property "
+                f"{property_name} {actual_value!r} must equal {expected_value!r}"
+            )
+    if list(tabs.property("presetReferenceControlActionKeys") or []) != list(route.action_keys):
+        errors.append(f"{preset_id} live GUI reference control route expected action keys drifted")
+    if list(tabs.property("presetReferenceControlActionLabels") or []) != list(route.action_labels):
+        errors.append(f"{preset_id} live GUI reference control route expected action labels drifted")
+    if sorted(tabs.property(route.captured_actions_property) or []) != sorted(route.action_keys):
+        errors.append(f"{preset_id} live GUI reference control route captured action keys drifted")
+    status_state = str(tabs.property(route.captured_status_property) or "")
+    if status_state not in route.allowed_status_states:
+        errors.append(f"{preset_id} live GUI reference control route captured invalid status state: {status_state}")
+    if not str(tabs.property(route.captured_status_text_property) or ""):
+        errors.append(f"{preset_id} live GUI reference control route captured empty status text")
+    if not bool(tabs.property(route.captured_property)):
+        errors.append(f"{preset_id} live GUI reference control route was not captured")
+
+    reference_index = find_live_tab_index(tabs, route.active_tab_label)
+    if reference_index < 0:
+        return [*errors, f"{preset_id} live GUI reference control active tab missing"]
+    reference_widget = tabs.widget(reference_index)
+    pane = reference_widget
+    if str(pane.objectName()) != route.terminal_pane_object:
+        pane = reference_widget.findChild(QWidget, route.terminal_pane_object)
+    if pane is None:
+        return [*errors, f"{preset_id} live GUI reference control terminal pane missing"]
+    status = pane.findChild(QLabel, route.terminal_status_object)
+    if status is None:
+        errors.append(f"{preset_id} live GUI reference control status widget missing")
+    elif str(status.property(route.status_state_property) or "") not in route.allowed_status_states:
+        errors.append(f"{preset_id} live GUI reference control status state drifted")
+    buttons = pane.findChildren(QToolButton, route.terminal_action_object)
+    by_key = {str(button.property(route.action_key_property) or ""): button for button in buttons}
+    for key, label, tooltip in zip(route.action_keys, route.action_labels, route.action_tooltips, strict=True):
+        button = by_key.get(key)
+        if button is None:
+            errors.append(f"{preset_id} live GUI reference control missing action: {key}")
+            continue
+        if button.text() != label:
+            errors.append(f"{preset_id} live GUI reference control action label drifted: {key}")
+        if button.toolTip() != tooltip:
+            errors.append(f"{preset_id} live GUI reference control action tooltip drifted: {key}")
+        if str(button.property(route.action_label_property) or "") != label:
+            errors.append(f"{preset_id} live GUI reference control action label property drifted: {key}")
+        if str(button.property(route.action_tooltip_property) or "") != tooltip:
+            errors.append(f"{preset_id} live GUI reference control action tooltip property drifted: {key}")
+    return errors
+
+
+def check_live_preset_reference_input_route(window: Any, preset_id: str) -> list[str]:
+    from PyQt6.QtWidgets import QLineEdit, QTabWidget, QWidget
+
+    route = EXPECTED_PRESET_REFERENCE_INPUT_ROUTES.get(preset_id)
+    if route is None:
+        return []
+    errors: list[str] = []
+    tabs = window.findChild(QTabWidget, "sessionTabs")
+    if tabs is None:
+        return [f"{preset_id} live GUI reference input route missing tabs widget"]
+    expected_properties = {
+        "presetReferenceInputRouteKey": route.key,
+        "presetReferenceInputRouteRole": route.route_role,
+        "presetReferenceInputPresetId": route.preset_id,
+        "presetReferenceInputProfile": route.reference_profile,
+        "presetReferenceInputActiveTab": route.active_tab_label,
+        "presetReferenceInputTerminalPaneObject": route.terminal_pane_object,
+        "presetReferenceInputObject": route.terminal_input_object,
+        "presetReferenceInputExpectedPlaceholder": route.placeholder_text,
+        "presetReferenceInputExpectedInitialText": route.expected_initial_text,
+        "presetReferenceInputCapturedProperty": route.captured_property,
+        "presetReferenceInputCapturedTabProperty": route.captured_tab_property,
+        "presetReferenceInputCapturedPlaceholderProperty": route.captured_placeholder_property,
+        "presetReferenceInputCapturedTextProperty": route.captured_text_property,
+        "presetReferenceInputCapturedEnabledProperty": route.captured_enabled_property,
+        "presetReferenceInputRenderSource": route.render_source,
+        route.captured_tab_property: route.active_tab_label,
+        route.captured_placeholder_property: route.placeholder_text,
+        route.captured_text_property: route.expected_initial_text,
+    }
+    for property_name, expected_value in expected_properties.items():
+        actual_value = str(tabs.property(property_name) or "")
+        if actual_value != expected_value:
+            errors.append(
+                f"{preset_id} live GUI reference input route property "
+                f"{property_name} {actual_value!r} must equal {expected_value!r}"
+            )
+    if list(tabs.property("presetReferenceInputAllowedEnabledStates") or []) != list(route.allowed_enabled_states):
+        errors.append(f"{preset_id} live GUI reference input route allowed enabled states drifted")
+    captured_enabled = tabs.property(route.captured_enabled_property)
+    if captured_enabled not in route.allowed_enabled_states:
+        errors.append(f"{preset_id} live GUI reference input route captured invalid enabled state")
+    if not bool(tabs.property(route.captured_property)):
+        errors.append(f"{preset_id} live GUI reference input route was not captured")
+
+    reference_index = find_live_tab_index(tabs, route.active_tab_label)
+    if reference_index < 0:
+        return [*errors, f"{preset_id} live GUI reference input active tab missing"]
+    reference_widget = tabs.widget(reference_index)
+    pane = reference_widget
+    if str(pane.objectName()) != route.terminal_pane_object:
+        pane = reference_widget.findChild(QWidget, route.terminal_pane_object)
+    if pane is None:
+        return [*errors, f"{preset_id} live GUI reference input terminal pane missing"]
+    input_widget = pane.findChild(QLineEdit, route.terminal_input_object)
+    if input_widget is None:
+        return [*errors, f"{preset_id} live GUI reference input widget missing"]
+    if input_widget.placeholderText() != route.placeholder_text:
+        errors.append(f"{preset_id} live GUI reference input placeholder drifted")
+    if input_widget.text() != route.expected_initial_text:
+        errors.append(f"{preset_id} live GUI reference input initial text drifted")
+    if input_widget.isEnabled() not in route.allowed_enabled_states:
+        errors.append(f"{preset_id} live GUI reference input enabled state drifted")
+    if str(input_widget.property("presetReferenceInputRouteKey") or "") != route.key:
+        errors.append(f"{preset_id} live GUI reference input widget missing route key")
+    return errors
+
+
+def check_live_preset_reference_transcript_route(window: Any, preset_id: str) -> list[str]:
+    from PyQt6.QtWidgets import QTabWidget, QTextEdit, QWidget
+
+    route = EXPECTED_PRESET_REFERENCE_TRANSCRIPT_ROUTES.get(preset_id)
+    if route is None:
+        return []
+    errors: list[str] = []
+    tabs = window.findChild(QTabWidget, "sessionTabs")
+    if tabs is None:
+        return [f"{preset_id} live GUI reference transcript route missing tabs widget"]
+    expected_properties = {
+        "presetReferenceTranscriptRouteKey": route.key,
+        "presetReferenceTranscriptRouteRole": route.route_role,
+        "presetReferenceTranscriptPresetId": route.preset_id,
+        "presetReferenceTranscriptProfile": route.reference_profile,
+        "presetReferenceTranscriptActiveTab": route.active_tab_label,
+        "presetReferenceTranscriptTerminalPaneObject": route.terminal_pane_object,
+        "presetReferenceTranscriptOutputObject": route.terminal_output_object,
+        "presetReferenceTranscriptCommandEchoPrefix": route.command_echo_prefix,
+        "presetReferenceTranscriptCapturedProperty": route.captured_property,
+        "presetReferenceTranscriptCapturedTabProperty": route.captured_tab_property,
+        "presetReferenceTranscriptCapturedTextProperty": route.captured_text_property,
+        "presetReferenceTranscriptCapturedLineCountProperty": route.captured_line_count_property,
+        "presetReferenceTranscriptCapturedCommandEchoProperty": route.captured_command_echo_property,
+        "presetReferenceTranscriptRenderSource": route.render_source,
+        route.captured_tab_property: route.active_tab_label,
+    }
+    for property_name, expected_value in expected_properties.items():
+        actual_value = str(tabs.property(property_name) or "")
+        if actual_value != expected_value:
+            errors.append(
+                f"{preset_id} live GUI reference transcript route property "
+                f"{property_name} {actual_value!r} must equal {expected_value!r}"
+            )
+    if list(tabs.property("presetReferenceTranscriptRequiredFragments") or []) != list(route.required_fragments):
+        errors.append(f"{preset_id} live GUI reference transcript required fragments drifted")
+    if int(tabs.property("presetReferenceTranscriptMinimumLineCount") or 0) != route.minimum_line_count:
+        errors.append(f"{preset_id} live GUI reference transcript minimum line count drifted")
+    captured_line_count = int(tabs.property(route.captured_line_count_property) or 0)
+    if captured_line_count < route.minimum_line_count:
+        errors.append(f"{preset_id} live GUI reference transcript captured too few lines")
+    transcript = str(tabs.property(route.captured_text_property) or "")
+    for fragment in route.required_fragments:
+        if fragment not in transcript:
+            errors.append(f"{preset_id} live GUI reference transcript missing fragment: {fragment}")
+    command_echo = str(tabs.property(route.captured_command_echo_property) or "")
+    if not command_echo.startswith(route.command_echo_prefix):
+        errors.append(f"{preset_id} live GUI reference transcript missing command echo")
+    if not bool(tabs.property(route.captured_property)):
+        errors.append(f"{preset_id} live GUI reference transcript route was not captured")
+
+    reference_index = find_live_tab_index(tabs, route.active_tab_label)
+    if reference_index < 0:
+        return [*errors, f"{preset_id} live GUI reference transcript active tab missing"]
+    reference_widget = tabs.widget(reference_index)
+    pane = reference_widget
+    if str(pane.objectName()) != route.terminal_pane_object:
+        pane = reference_widget.findChild(QWidget, route.terminal_pane_object)
+    if pane is None:
+        return [*errors, f"{preset_id} live GUI reference transcript terminal pane missing"]
+    output_widget = pane.findChild(QTextEdit, route.terminal_output_object)
+    if output_widget is None:
+        return [*errors, f"{preset_id} live GUI reference transcript output widget missing"]
+    output_text = output_widget.toPlainText()
+    if str(output_widget.property("presetReferenceTranscriptRouteKey") or "") != route.key:
+        errors.append(f"{preset_id} live GUI reference transcript output missing route key")
+    if command_echo and command_echo not in output_text:
+        errors.append(f"{preset_id} live GUI reference transcript command echo drifted")
+    for fragment in route.required_fragments:
+        if fragment not in output_text:
+            errors.append(f"{preset_id} live GUI reference transcript output fragment drifted: {fragment}")
+    return errors
 
 
 def required_reference_state_texts(preset_id: str) -> set[str]:
@@ -3790,6 +6220,366 @@ def check_live_securecrt_session_manager_route(window: Any) -> list[str]:
     return errors
 
 
+def check_live_securecrt_session_manager_filter_route(window: Any) -> list[str]:
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtWidgets import QLineEdit, QTreeWidget, QWidget
+
+    route = EXPECTED_SECURECRT_SESSION_MANAGER_FILTER_ROUTE
+    panel = window.findChild(QWidget, route.session_manager_object)
+    filter_input = window.findChild(QLineEdit, route.filter_object)
+    tree = window.findChild(QTreeWidget, route.selected_tree_object)
+    errors: list[str] = []
+    if panel is None:
+        errors.append("securecrt live GUI session-manager filter route missing Session Manager panel")
+    if filter_input is None:
+        errors.append("securecrt live GUI session-manager filter route missing filter input")
+    if tree is None:
+        errors.append("securecrt live GUI session-manager filter route missing profile tree")
+    if errors:
+        return errors
+
+    route_props = {
+        route.filter_route_property: route.key,
+        "secureCrtSessionFilterRouteRole": route.route_role,
+        "secureCrtSessionFilterRouteSessionManagerObject": route.session_manager_object,
+        "secureCrtSessionFilterRouteFilterObject": route.filter_object,
+        "secureCrtSessionFilterRouteSelectedTreeObject": route.selected_tree_object,
+        "secureCrtSessionFilterRouteSelectedProfile": route.selected_profile_name,
+        "secureCrtSessionFilterRouteSelectedTreeLabel": route.selected_tree_label,
+        route.filter_query_property: route.expected_query,
+        route.filter_placeholder_property: route.expected_placeholder,
+        route.matched_result_property: route.matched_result_label,
+        "secureCrtSessionFilterRouteSignal": route.change_signal,
+        "secureCrtSessionFilterRouteHandler": route.handler_name,
+        "secureCrtSessionFilterRouteRenderSource": route.render_source,
+    }
+    for label, widget in (
+        ("session-manager", panel),
+        ("filter-input", filter_input),
+        ("profile-tree", tree),
+    ):
+        for property_name, expected_value in route_props.items():
+            actual_value = str(widget.property(property_name) or "")
+            if actual_value != expected_value:
+                errors.append(
+                    f"securecrt live GUI session-manager filter route {label} property "
+                    f"{property_name} {actual_value!r} must equal {expected_value!r}"
+                )
+
+    if filter_input.placeholderText() != route.expected_placeholder:
+        errors.append("securecrt live GUI session-manager filter route placeholder text drifted")
+    if route.expected_query.lower() not in route.matched_result_label.lower():
+        errors.append("securecrt live GUI session-manager filter route query no longer matches selected row")
+
+    selected = tree.currentItem()
+    if selected is None:
+        errors.append("securecrt live GUI session-manager filter route missing selected tree item")
+        return errors
+    if route.matched_result_label not in selected.text(0):
+        errors.append("securecrt live GUI session-manager filter route selected row label drifted")
+    base_role = int(Qt.ItemDataRole.UserRole)
+    expected_item_data = {
+        base_role + 81: route.key,
+        base_role + 82: route.route_role,
+        base_role + 83: route.expected_query,
+        base_role + 84: route.selected_profile_name,
+        base_role + 85: route.matched_result_label,
+        base_role + 87: route.render_source,
+    }
+    for role, expected_value in expected_item_data.items():
+        actual_value = str(selected.data(0, role) or "")
+        if actual_value != expected_value:
+            errors.append(f"securecrt live GUI session-manager filter route tree role {role} drifted")
+    if selected.data(0, base_role + 86) is not True:
+        errors.append("securecrt live GUI session-manager filter route selected row is not marked matched")
+    return errors
+
+
+def check_live_securecrt_sftp_tab_route(window: Any) -> list[str]:
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtWidgets import QLabel, QTabWidget, QTreeWidget, QWidget
+
+    route = EXPECTED_SECURECRT_SFTP_TAB_ROUTE
+    workflow_panel = window.findChild(QWidget, "productWorkflowEvidence")
+    tree = window.findChild(QTreeWidget, route.selected_tree_object)
+    manager_panel = window.findChild(QWidget, route.session_manager_object)
+    status_panel = window.findChild(QWidget, route.status_strip_object)
+    tabs = window.findChild(QTabWidget, "sessionTabs")
+    errors: list[str] = []
+    if workflow_panel is None:
+        errors.append("securecrt live GUI SFTP tab route missing workflow evidence panel")
+    if tree is None:
+        errors.append("securecrt live GUI SFTP tab route missing profile tree")
+    if manager_panel is None:
+        errors.append("securecrt live GUI SFTP tab route missing Session Manager panel")
+    if status_panel is None:
+        errors.append("securecrt live GUI SFTP tab route missing status strip")
+    if tabs is None:
+        errors.append("securecrt live GUI SFTP tab route missing session tabs")
+    if errors:
+        return errors
+
+    panel_route_props = {
+        "secureCrtSftpTabRouteKey": route.key,
+        "secureCrtSftpTabRouteRole": route.route_role,
+        route.workflow_key_property: route.workflow_card_key,
+        "secureCrtSftpTabRouteWorkflowCardObject": route.workflow_card_object,
+        "secureCrtSftpTabRouteTitleObject": route.workflow_title_object,
+        "secureCrtSftpTabRoutePrimaryObject": route.workflow_primary_object,
+        "secureCrtSftpTabRouteSecondaryObject": route.workflow_secondary_object,
+        "secureCrtSftpTabRouteSessionManagerObject": route.session_manager_object,
+        "secureCrtSftpTabRouteSelectedTreeObject": route.selected_tree_object,
+        "secureCrtSftpTabRouteSelectedProfile": route.selected_profile_name,
+        "secureCrtSftpTabRouteSelectedTreeLabel": route.selected_tree_label,
+        "secureCrtSftpTabRouteActiveTab": route.active_tab_label,
+        route.tab_label_property: route.sftp_tab_label,
+        "secureCrtSftpTabRouteStatusStripObject": route.status_strip_object,
+        "secureCrtSftpTabRouteStatusFieldKey": route.status_field_key,
+        "secureCrtSftpTabRouteStatusFieldObject": route.status_field_object,
+        route.status_property: route.status_value,
+        route.transfer_state_property: route.transfer_state,
+        "secureCrtSftpTabRouteRenderSource": route.render_source,
+    }
+    shared_route_props = {
+        "secureCrtSftpTabRouteKey": route.key,
+        "secureCrtSftpTabRouteRole": route.route_role,
+        route.workflow_key_property: route.workflow_card_key,
+        "secureCrtSftpTabRouteSelectedProfile": route.selected_profile_name,
+        "secureCrtSftpTabRouteSelectedTreeLabel": route.selected_tree_label,
+        "secureCrtSftpTabRouteActiveTab": route.active_tab_label,
+        route.tab_label_property: route.sftp_tab_label,
+        "secureCrtSftpTabRouteStatusStripObject": route.status_strip_object,
+        "secureCrtSftpTabRouteStatusFieldKey": route.status_field_key,
+        "secureCrtSftpTabRouteStatusFieldObject": route.status_field_object,
+        route.status_property: route.status_value,
+        route.transfer_state_property: route.transfer_state,
+        "secureCrtSftpTabRouteRenderSource": route.render_source,
+    }
+    tree_tab_props = {
+        **shared_route_props,
+        "secureCrtSftpTabRouteWorkflowCardObject": route.workflow_card_object,
+        "secureCrtSftpTabRouteSessionManagerObject": route.session_manager_object,
+        "secureCrtSftpTabRouteSelectedTreeObject": route.selected_tree_object,
+    }
+    for label, widget, route_props in (
+        ("workflow-panel", workflow_panel, panel_route_props),
+        ("profile-tree", tree, tree_tab_props),
+        ("session-manager", manager_panel, shared_route_props),
+        ("status-strip", status_panel, shared_route_props),
+        ("tabs", tabs, tree_tab_props),
+    ):
+        for property_name, expected_value in route_props.items():
+            actual_value = str(widget.property(property_name) or "")
+            if actual_value != expected_value:
+                errors.append(
+                    f"securecrt live GUI SFTP tab route {label} property "
+                    f"{property_name} {actual_value!r} must equal {expected_value!r}"
+                )
+
+    workflow_cards = [
+        widget
+        for widget in workflow_panel.findChildren(QWidget, route.workflow_card_object)
+        if str(widget.property("workflowKey") or "") == route.workflow_card_key
+    ]
+    if len(workflow_cards) != 1:
+        errors.append("securecrt live GUI SFTP tab route must expose one workflow card")
+    else:
+        workflow_card = workflow_cards[0]
+        card_route_props = {
+            "secureCrtSftpTabRouteKey": route.key,
+            "secureCrtSftpTabRouteRole": route.route_role,
+            route.workflow_key_property: route.workflow_card_key,
+            "secureCrtSftpTabRouteWorkflowCardObject": route.workflow_card_object,
+            "secureCrtSftpTabRouteStatusStripObject": route.status_strip_object,
+            "secureCrtSftpTabRouteStatusFieldKey": route.status_field_key,
+            "secureCrtSftpTabRouteActiveTab": route.active_tab_label,
+            route.tab_label_property: route.sftp_tab_label,
+            route.status_property: route.status_value,
+            route.transfer_state_property: route.transfer_state,
+            "secureCrtSftpTabRouteRenderSource": route.render_source,
+        }
+        for property_name, expected_value in card_route_props.items():
+            actual_value = str(workflow_card.property(property_name) or "")
+            if actual_value != expected_value:
+                errors.append(f"securecrt live GUI SFTP tab workflow-card property {property_name} drifted")
+        card_labels = {label.objectName(): label for label in workflow_card.findChildren(QLabel)}
+        expected_card_text = {
+            route.workflow_title_object: route.workflow_title,
+            route.workflow_primary_object: route.workflow_primary,
+            route.workflow_secondary_object: route.workflow_secondary,
+        }
+        for object_name, expected_text in expected_card_text.items():
+            label = card_labels.get(object_name)
+            if label is None or label.text() != expected_text:
+                errors.append(f"securecrt live GUI SFTP tab workflow label {object_name} drifted")
+        title = card_labels.get(route.workflow_title_object)
+        primary = card_labels.get(route.workflow_primary_object)
+        secondary = card_labels.get(route.workflow_secondary_object)
+        if title is not None and str(title.property("secureCrtSftpTabRouteTitle") or "") != route.workflow_title:
+            errors.append("securecrt live GUI SFTP tab workflow title property drifted")
+        if primary is not None and str(primary.property(route.transfer_state_property) or "") != route.transfer_state:
+            errors.append("securecrt live GUI SFTP tab workflow transfer-state property drifted")
+        if secondary is not None and str(secondary.property(route.status_property) or "") != route.status_value:
+            errors.append("securecrt live GUI SFTP tab workflow status property drifted")
+
+    matched_items = [
+        item
+        for item_label, item in collect_tree_items_by_label(tree).items()
+        if item_label == route.selected_tree_label
+    ]
+    if len(matched_items) != 1:
+        errors.append("securecrt live GUI SFTP tab route must expose one SFTP tree row")
+    else:
+        matched_item = matched_items[0]
+        base_role = int(Qt.ItemDataRole.UserRole)
+        expected_item_data = {
+            base_role: route.selected_profile_name,
+            base_role + 101: route.key,
+            base_role + 102: route.route_role,
+            base_role + 103: route.selected_profile_name,
+            base_role + 104: route.selected_tree_label,
+            base_role + 105: route.sftp_tab_label,
+            base_role + 106: route.status_value,
+            base_role + 107: route.transfer_state,
+        }
+        for role, expected_value in expected_item_data.items():
+            actual_value = str(matched_item.data(0, role) or "")
+            if actual_value != expected_value:
+                errors.append(f"securecrt live GUI SFTP tab route tree role {role} drifted")
+
+    status_cells = status_panel.findChildren(QLabel, route.status_field_object)
+    target_cells = [
+        cell for cell in status_cells if str(cell.property("secureCrtSessionStatusKey") or "") == route.status_field_key
+    ]
+    if len(target_cells) != 1:
+        errors.append("securecrt live GUI SFTP tab route must expose one SFTP status cell")
+    else:
+        target_cell = target_cells[0]
+        for property_name, expected_value in shared_route_props.items():
+            actual_value = str(target_cell.property(property_name) or "")
+            if actual_value != expected_value:
+                errors.append(f"securecrt live GUI SFTP tab status-cell property {property_name} drifted")
+        if str(target_cell.property("secureCrtSessionStatusValue") or "") != route.status_value:
+            errors.append("securecrt live GUI SFTP tab status cell value metadata drifted")
+        if route.status_value not in target_cell.text():
+            errors.append("securecrt live GUI SFTP tab status text drifted")
+
+    static_tab_labels = {label for label, _status, _active in gui_design_tab_items("securecrt")}
+    if route.sftp_tab_label not in static_tab_labels:
+        errors.append("securecrt SFTP tab route static tab label drifted from shared metadata")
+    if route.active_tab_label not in live_tab_labels(tabs):
+        errors.append(f"securecrt live GUI SFTP tab route missing active SSH tab {route.active_tab_label!r}")
+    return errors
+
+
+def check_live_securecrt_sftp_browser_route(window: Any) -> list[str]:
+    from PyQt6.QtWidgets import QFrame, QLabel, QWidget
+
+    route = EXPECTED_SECURECRT_SFTP_BROWSER_ROUTE
+    tab_route = EXPECTED_SECURECRT_SFTP_TAB_ROUTE
+    browser = window.findChild(QWidget, route.browser_object)
+    toolbar = window.findChild(QWidget, route.toolbar_object)
+    path = window.findChild(QLabel, route.path_object)
+    table = window.findChild(QWidget, route.table_object)
+    queue = window.findChild(QLabel, route.queue_object)
+    errors: list[str] = []
+    if route.sftp_tab_route_key != tab_route.key:
+        errors.append("securecrt SFTP browser route tab key drifted from SFTP tab route")
+    if route.selected_profile_name != tab_route.selected_profile_name:
+        errors.append("securecrt SFTP browser route profile drifted from SFTP tab route")
+    if route.selected_tree_label != tab_route.selected_tree_label:
+        errors.append("securecrt SFTP browser route tree label drifted from SFTP tab route")
+    if route.sftp_tab_label != tab_route.sftp_tab_label:
+        errors.append("securecrt SFTP browser route tab label drifted from SFTP tab route")
+    if browser is None:
+        errors.append("securecrt live GUI missing SFTP browser route panel")
+    if toolbar is None:
+        errors.append("securecrt live GUI missing SFTP browser toolbar")
+    if path is None:
+        errors.append("securecrt live GUI missing SFTP browser path")
+    if table is None:
+        errors.append("securecrt live GUI missing SFTP browser table")
+    if queue is None:
+        errors.append("securecrt live GUI missing SFTP browser queue")
+    if errors:
+        return errors
+
+    actions_value = "|".join(route.toolbar_actions)
+    route_props = {
+        "secureCrtSftpBrowserRouteKey": route.key,
+        "secureCrtSftpBrowserRouteRole": route.route_role,
+        "secureCrtSftpBrowserTabRouteKey": route.sftp_tab_route_key,
+        "secureCrtSftpBrowserObject": route.browser_object,
+        "secureCrtSftpBrowserToolbarObject": route.toolbar_object,
+        "secureCrtSftpBrowserPathObject": route.path_object,
+        "secureCrtSftpBrowserTableObject": route.table_object,
+        "secureCrtSftpBrowserRowObject": route.row_object,
+        "secureCrtSftpBrowserQueueObject": route.queue_object,
+        "secureCrtSftpBrowserSelectedProfile": route.selected_profile_name,
+        "secureCrtSftpBrowserSelectedTreeLabel": route.selected_tree_label,
+        "secureCrtSftpBrowserTabLabel": route.sftp_tab_label,
+        route.path_property: route.remote_path,
+        route.toolbar_actions_property: actions_value,
+        "secureCrtSftpBrowserActiveRowName": route.active_row_name,
+        "secureCrtSftpBrowserQueueLabel": route.transfer_queue_label,
+        route.queue_state_property: route.transfer_status,
+        "secureCrtSftpBrowserRenderSource": route.render_source,
+    }
+    for label, widget in (
+        ("browser", browser),
+        ("toolbar", toolbar),
+        ("path", path),
+        ("table", table),
+        ("queue", queue),
+    ):
+        for property_name, expected_value in route_props.items():
+            actual_value = str(widget.property(property_name) or "")
+            if actual_value != expected_value:
+                errors.append(
+                    f"securecrt live GUI SFTP browser {label} property "
+                    f"{property_name} {actual_value!r} must equal {expected_value!r}"
+                )
+
+    if route.remote_path not in path.text():
+        errors.append("securecrt live GUI SFTP browser path text drifted")
+    if route.transfer_queue_label not in queue.text() or route.transfer_status not in queue.text():
+        errors.append("securecrt live GUI SFTP browser queue text drifted")
+
+    action_widgets = toolbar.findChildren(QLabel, "secureCrtSftpAction")
+    action_keys = [str(action.property("secureCrtSftpBrowserActionKey") or "") for action in action_widgets]
+    if action_keys != list(route.toolbar_actions):
+        errors.append(f"securecrt live GUI SFTP browser toolbar actions {action_keys!r} drifted")
+
+    rows = table.findChildren(QFrame, route.row_object)
+    expected_rows_by_name = {row.name: row for row in route.file_rows}
+    if len(rows) != len(route.file_rows):
+        errors.append("securecrt live GUI SFTP browser row count drifted")
+    selected_rows: list[str] = []
+    for row_widget in rows:
+        row_name = str(row_widget.property(route.row_name_property) or "")
+        expected_row = expected_rows_by_name.get(row_name)
+        if expected_row is None:
+            errors.append(f"securecrt live GUI SFTP browser unexpected row {row_name!r}")
+            continue
+        actual_kind = str(row_widget.property(route.row_kind_property) or "")
+        if actual_kind != expected_row.kind:
+            errors.append(f"securecrt live GUI SFTP browser row {row_name!r} kind drifted")
+        actual_selected = bool(row_widget.property(route.row_selected_property))
+        if actual_selected != expected_row.selected:
+            errors.append(f"securecrt live GUI SFTP browser row {row_name!r} selection drifted")
+        if str(row_widget.property("secureCrtSftpBrowserRowKey") or "") != expected_row.key:
+            errors.append(f"securecrt live GUI SFTP browser row {row_name!r} key drifted")
+        if str(row_widget.property("secureCrtSftpBrowserRowSize") or "") != expected_row.size:
+            errors.append(f"securecrt live GUI SFTP browser row {row_name!r} size drifted")
+        if str(row_widget.property("secureCrtSftpBrowserRowModified") or "") != expected_row.modified:
+            errors.append(f"securecrt live GUI SFTP browser row {row_name!r} modified time drifted")
+        if actual_selected:
+            selected_rows.append(row_name)
+    if selected_rows != [route.active_row_name]:
+        errors.append(f"securecrt live GUI SFTP browser selected row {selected_rows!r} drifted")
+    return errors
+
+
 def check_live_securecrt_command_window(window: Any) -> list[str]:
     from PyQt6.QtWidgets import QLabel, QWidget
 
@@ -4028,8 +6818,8 @@ def check_live_remmina_profile_list_chrome(window: Any) -> list[str]:
     filter_width = int(filter_input.property("remminaProfileFilterWidth") or 0)
     if filter_width != chrome.live_filter_width or filter_input.minimumWidth() != chrome.live_filter_width:
         return ["remmina live GUI profile filter width drifted"]
-    if not filter_input.isReadOnly():
-        return ["remmina live GUI profile filter must remain read-only evidence"]
+    if filter_input.isReadOnly():
+        return ["remmina live GUI profile filter must be editable for profile-filter route"]
     if str(filter_input.property("interactionState") or "") != "focused":
         return ["remmina live GUI profile filter must expose focused interactionState"]
     actual_column_keys = list(panel.property("remminaProfileColumnKeys") or [])
@@ -4237,6 +7027,103 @@ def check_live_remmina_profile_viewer_route(window: Any) -> list[str]:
     return errors
 
 
+def check_live_remmina_profile_filter_route(window: Any) -> list[str]:
+    from PyQt6.QtWidgets import QApplication, QFrame, QLineEdit, QTabWidget, QWidget
+
+    route = EXPECTED_REMMINA_PROFILE_FILTER_ROUTE
+    panel = window.findChild(QWidget, route.profile_list_object)
+    filter_input = window.findChild(QLineEdit, route.filter_object)
+    tabs = window.findChild(QTabWidget, "sessionTabs")
+    errors: list[str] = []
+    if panel is None:
+        errors.append("remmina live GUI profile-filter route missing profile list panel")
+    if filter_input is None:
+        errors.append("remmina live GUI profile-filter route missing filter input")
+    if tabs is None:
+        errors.append("remmina live GUI profile-filter route missing session tabs")
+    if errors:
+        return errors
+
+    route_props = {
+        route.filter_route_property: route.key,
+        "remminaProfileFilterRouteRole": route.route_role,
+        "remminaProfileFilterRouteProfileListObject": route.profile_list_object,
+        "remminaProfileFilterRouteFilterObject": route.filter_object,
+        "remminaProfileFilterRouteSelectedProfileKey": route.selected_profile_key,
+        "remminaProfileFilterRouteSelectedProfileObject": route.selected_profile_object,
+        route.matched_profile_property: route.matched_profile_name,
+        route.matched_protocol_property: route.matched_protocol,
+        "remminaProfileFilterRouteMatchedStatus": route.matched_status,
+        route.filter_query_property: route.expected_query,
+        route.filter_placeholder_property: route.expected_placeholder,
+        route.active_tab_property: route.active_tab_label,
+        "remminaProfileFilterRouteSignal": route.change_signal,
+        "remminaProfileFilterRouteHandler": route.handler_name,
+        "remminaProfileFilterRouteRenderSource": route.render_source,
+    }
+    for label, widget in (("profile-list", panel), ("filter-input", filter_input)):
+        for property_name, expected_value in route_props.items():
+            actual_value = str(widget.property(property_name) or "")
+            if actual_value != expected_value:
+                errors.append(
+                    f"remmina live GUI profile-filter route {label} property "
+                    f"{property_name} {actual_value!r} must equal {expected_value!r}"
+                )
+    if filter_input.placeholderText() != route.expected_placeholder:
+        errors.append("remmina live GUI profile-filter placeholder text drifted")
+    if filter_input.isReadOnly():
+        errors.append("remmina live GUI profile-filter input must be editable")
+    if route.active_tab_label not in live_tab_labels(tabs):
+        errors.append(f"remmina live GUI profile-filter route missing active tab {route.active_tab_label!r}")
+
+    rows = panel.findChildren(QFrame, route.selected_profile_object)
+    rows_by_key = {str(row.property("remminaProfileRowKey") or ""): row for row in rows}
+    target_row = rows_by_key.get(route.selected_profile_key)
+    if target_row is None:
+        errors.append("remmina live GUI profile-filter route missing selected profile row")
+    else:
+        target_props = {
+            route.filter_route_property: route.key,
+            "remminaProfileFilterRouteRole": route.route_role,
+            route.filter_query_property: route.expected_query,
+            "remminaProfileFilterRouteMatched": "true",
+            "remminaProfileFilterRouteSelectedProfileKey": route.selected_profile_key,
+            route.matched_profile_property: route.matched_profile_name,
+            route.matched_protocol_property: route.matched_protocol,
+            "remminaProfileFilterRouteMatchedStatus": route.matched_status,
+            route.active_tab_property: route.active_tab_label,
+            "remminaProfileFilterRouteRenderSource": route.render_source,
+        }
+        for property_name, expected_value in target_props.items():
+            actual_value = str(target_row.property(property_name) or "")
+            if actual_value != expected_value:
+                errors.append(f"remmina live GUI profile-filter selected row property {property_name} drifted")
+        if str(target_row.property("remminaProfileProtocol") or "") != route.matched_protocol:
+            errors.append("remmina live GUI profile-filter selected row protocol drifted")
+
+    original_text = filter_input.text()
+    try:
+        filter_input.setText(route.expected_query)
+        QApplication.processEvents()
+        for key, row in rows_by_key.items():
+            values = [
+                str(row.property("remminaProfileRowKey") or ""),
+                str(row.property("remminaProfileName") or ""),
+                str(row.property("remminaProfileProtocol") or ""),
+                str(row.property("remminaProfileServer") or ""),
+                str(row.property("remminaProfileStatus") or ""),
+            ]
+            should_match = any(route.expected_query.lower() in value.lower() for value in values)
+            if should_match and row.isHidden():
+                errors.append(f"remmina live GUI profile-filter hid matching row {key!r}")
+            if not should_match and not row.isHidden():
+                errors.append(f"remmina live GUI profile-filter left non-matching row {key!r} visible")
+    finally:
+        filter_input.setText(original_text)
+        QApplication.processEvents()
+    return errors
+
+
 def check_live_remmina_clipboard_route(window: Any) -> list[str]:
     from PyQt6.QtWidgets import QTabWidget, QToolButton, QWidget
 
@@ -4303,6 +7190,288 @@ def check_live_remmina_clipboard_route(window: Any) -> list[str]:
     ]
     if any(state != "false" for state in inactive_route_states):
         errors.append("remmina live GUI non-clipboard viewer controls must not expose active clipboard route")
+    return errors
+
+
+def check_live_remmina_screenshot_route(window: Any) -> list[str]:
+    from PyQt6.QtWidgets import QTabWidget, QToolButton, QWidget
+
+    route = EXPECTED_REMMINA_SCREENSHOT_ROUTE
+    viewer_panel = window.findChild(QWidget, route.viewer_controls_object)
+    tabs = window.findChild(QTabWidget, "sessionTabs")
+    errors: list[str] = []
+    if viewer_panel is None:
+        errors.append("remmina live GUI screenshot route missing viewer controls panel")
+    if tabs is None:
+        errors.append("remmina live GUI screenshot route missing session tabs")
+    if errors:
+        return errors
+
+    common_route_props = {
+        "remminaScreenshotRouteKey": route.key,
+        "remminaScreenshotRouteRole": route.route_role,
+        "remminaScreenshotViewerControlsObject": route.viewer_controls_object,
+        "remminaScreenshotViewerControlKey": route.viewer_control_key,
+        "remminaScreenshotViewerControlObject": route.viewer_control_object,
+        route.tab_label_property: route.active_tab_label,
+        "remminaScreenshotRouteProtocol": route.protocol,
+        route.capture_state_property: route.capture_state,
+        route.capture_artifact_property: route.capture_artifact,
+        "remminaScreenshotRouteStatusSegment": route.status_segment,
+        "remminaScreenshotRouteDetailLine": route.detail_line,
+        "remminaScreenshotRouteActivityLine": route.activity_line,
+        "remminaScreenshotRouteRenderSource": route.render_source,
+    }
+    for property_name, expected_value in common_route_props.items():
+        actual_value = str(viewer_panel.property(property_name) or "")
+        if actual_value != expected_value:
+            errors.append(
+                f"remmina live GUI screenshot route panel property "
+                f"{property_name} {actual_value!r} must equal {expected_value!r}"
+            )
+
+    if route.active_tab_label not in live_tab_labels(tabs):
+        errors.append(f"remmina live GUI screenshot route missing active tab {route.active_tab_label!r}")
+
+    buttons = viewer_panel.findChildren(QToolButton, route.viewer_control_object)
+    target_buttons = [
+        button for button in buttons if str(button.property("remminaViewerControlKey") or "") == route.viewer_control_key
+    ]
+    if len(target_buttons) != 1:
+        errors.append("remmina live GUI screenshot route must expose one Screenshot viewer control")
+    else:
+        button = target_buttons[0]
+        button_route_props = dict(common_route_props)
+        button_route_props.pop("remminaScreenshotViewerControlsObject")
+        button_route_props.pop("remminaScreenshotViewerControlKey")
+        button_route_props.pop("remminaScreenshotViewerControlObject")
+        button_route_props[route.control_active_property] = "true"
+        for property_name, expected_value in button_route_props.items():
+            actual_value = str(button.property(property_name) or "")
+            if actual_value != expected_value:
+                errors.append(f"remmina live GUI screenshot routed control property {property_name} drifted")
+        if button.text() != "Screenshot":
+            errors.append("remmina live GUI screenshot routed control label must be Screenshot")
+
+    inactive_route_states = [
+        str(button.property(route.control_active_property) or "")
+        for button in buttons
+        if str(button.property("remminaViewerControlKey") or "") != route.viewer_control_key
+    ]
+    if any(state != "false" for state in inactive_route_states):
+        errors.append("remmina live GUI non-screenshot viewer controls must not expose active screenshot route")
+    return errors
+
+
+def check_live_remmina_sftp_transfer_route(window: Any) -> list[str]:
+    from PyQt6.QtWidgets import QFrame, QLabel, QTabWidget, QToolButton, QWidget
+
+    route = EXPECTED_REMMINA_SFTP_TRANSFER_ROUTE
+    profile_panel = window.findChild(QWidget, route.profile_list_object)
+    transfer_panel = window.findChild(QWidget, route.transfer_panel_object)
+    toolbar = window.findChild(QWidget, route.toolbar_object)
+    path = window.findChild(QLabel, route.path_object)
+    table = window.findChild(QWidget, route.table_object)
+    queue = window.findChild(QLabel, route.queue_object)
+    tabs = window.findChild(QTabWidget, "sessionTabs")
+    errors: list[str] = []
+    missing = [
+        object_name
+        for object_name, widget in {
+            route.profile_list_object: profile_panel,
+            route.transfer_panel_object: transfer_panel,
+            route.toolbar_object: toolbar,
+            route.path_object: path,
+            route.table_object: table,
+            route.queue_object: queue,
+        }.items()
+        if widget is None
+    ]
+    if tabs is None:
+        missing.append("sessionTabs")
+    if missing:
+        return [f"remmina live GUI SFTP transfer route missing widget(s): {missing}"]
+
+    rows_by_key = {
+        row.key: row
+        for row in EXPECTED_REMMINA_PROFILE_LIST_CHROME.rows
+    }
+    expected_profile_row = rows_by_key.get(route.selected_profile_key)
+    if expected_profile_row is None:
+        errors.append("remmina live GUI SFTP transfer route selected profile model row missing")
+    else:
+        if expected_profile_row.name != route.selected_profile_name:
+            errors.append("remmina live GUI SFTP transfer route selected profile name drifted")
+        if expected_profile_row.protocol != route.selected_profile_protocol:
+            errors.append("remmina live GUI SFTP transfer route selected profile protocol drifted")
+        if expected_profile_row.status != route.selected_profile_status:
+            errors.append("remmina live GUI SFTP transfer route selected profile status drifted")
+
+    toolbar_actions = {key: label for key, label, _tooltip in gui_design_toolbar_actions("remmina")}
+    if toolbar_actions.get(route.toolbar_action_key) != route.toolbar_action_label:
+        errors.append("remmina live GUI SFTP transfer route toolbar action metadata drifted")
+
+    actions_value = "|".join(route.toolbar_actions)
+    expected_common_props = {
+        "remminaSftpTransferRouteKey": route.key,
+        "remminaSftpTransferRouteRole": route.route_role,
+        "remminaSftpTransferRouteSelectedProfileKey": route.selected_profile_key,
+        route.selected_profile_property: route.selected_profile_name,
+        "remminaSftpTransferRouteProtocol": route.selected_profile_protocol,
+        "remminaSftpTransferRouteStatus": route.selected_profile_status,
+        route.tab_label_property: route.active_tab_label,
+        route.path_property: route.remote_path,
+        route.queue_state_property: route.transfer_status,
+        "remminaSftpTransferRouteQueueLabel": route.transfer_queue_label,
+        "remminaSftpTransferRouteRenderSource": route.render_source,
+    }
+    expected_panel_props = {
+        **expected_common_props,
+        "remminaSftpTransferRouteProfileListObject": route.profile_list_object,
+        "remminaSftpTransferRouteSelectedProfileObject": route.selected_profile_object,
+        "remminaSftpTransferRouteSelectedTreeLabel": route.selected_tree_label,
+        "remminaSftpTransferRouteToolbarActionKey": route.toolbar_action_key,
+        "remminaSftpTransferRouteToolbarActionLabel": route.toolbar_action_label,
+        "remminaSftpTransferRouteToolbarActionObject": route.toolbar_action_object,
+        "remminaSftpTransferRoutePanelObject": route.transfer_panel_object,
+        "remminaSftpTransferRouteToolbarObject": route.toolbar_object,
+        "remminaSftpTransferRoutePathObject": route.path_object,
+        "remminaSftpTransferRouteTableObject": route.table_object,
+        "remminaSftpTransferRouteRowObject": route.row_object,
+        "remminaSftpTransferRouteQueueObject": route.queue_object,
+        route.toolbar_actions_property: actions_value,
+        "remminaSftpTransferRouteActiveRowName": route.active_row_name,
+        "remminaSftpTransferRouteDetailLine": route.detail_line,
+        "remminaSftpTransferRouteActivityLine": route.activity_line,
+    }
+    for object_name, widget in {
+        route.transfer_panel_object: transfer_panel,
+        route.toolbar_object: toolbar,
+        route.path_object: path,
+        route.table_object: table,
+        route.queue_object: queue,
+    }.items():
+        if widget is None:
+            continue
+        for prop_name, expected_value in expected_panel_props.items():
+            actual_value = str(widget.property(prop_name) or "")
+            if actual_value != expected_value:
+                errors.append(
+                    f"remmina live GUI SFTP transfer route {object_name}.{prop_name} "
+                    f"{actual_value!r} must equal {expected_value!r}"
+                )
+
+    if profile_panel is not None:
+        for prop_name, expected_value in {
+            **expected_common_props,
+            "remminaSftpTransferRouteProfileListObject": route.profile_list_object,
+            "remminaSftpTransferRouteSelectedProfileObject": route.selected_profile_object,
+            "remminaSftpTransferRouteSelectedTreeLabel": route.selected_tree_label,
+            "remminaSftpTransferRouteToolbarActionKey": route.toolbar_action_key,
+            "remminaSftpTransferRouteToolbarActionLabel": route.toolbar_action_label,
+        }.items():
+            actual_value = str(profile_panel.property(prop_name) or "")
+            if actual_value != expected_value:
+                errors.append(f"remmina live GUI SFTP transfer profile panel property {prop_name} drifted")
+
+    profile_rows = window.findChildren(QFrame, route.selected_profile_object)
+    routed_rows = [
+        row
+        for row in profile_rows
+        if str(row.property("remminaProfileRowKey") or "") == route.selected_profile_key
+    ]
+    if len(routed_rows) != 1:
+        errors.append("remmina live GUI SFTP transfer route must expose one selected SFTP profile row")
+    else:
+        row = routed_rows[0]
+        for prop_name, expected_value in expected_common_props.items():
+            actual_value = str(row.property(prop_name) or "")
+            if actual_value != expected_value:
+                errors.append(f"remmina live GUI SFTP transfer profile row property {prop_name} drifted")
+
+    toolbar_buttons = window.findChildren(QToolButton, route.toolbar_action_object)
+    target_buttons = [
+        button
+        for button in toolbar_buttons
+        if str(button.property("productToolbarKey") or "") == route.toolbar_action_key
+    ]
+    if len(target_buttons) != 1:
+        errors.append("remmina live GUI SFTP transfer route must expose one Transfer toolbar button")
+    else:
+        button = target_buttons[0]
+        expected_button_props = {
+            **expected_common_props,
+            "remminaSftpTransferRouteToolbarActionKey": route.toolbar_action_key,
+            "remminaSftpTransferRouteToolbarActionLabel": route.toolbar_action_label,
+            "remminaSftpTransferRouteToolbarActionObject": route.toolbar_action_object,
+            route.toolbar_active_property: "true",
+        }
+        for prop_name, expected_value in expected_button_props.items():
+            actual_value = str(button.property(prop_name) or "")
+            if actual_value != expected_value:
+                errors.append(f"remmina live GUI SFTP transfer toolbar button property {prop_name} drifted")
+        if button.text() != route.toolbar_action_label:
+            errors.append("remmina live GUI SFTP transfer toolbar button label drifted")
+
+    if path is not None and route.remote_path not in path.text():
+        errors.append("remmina live GUI SFTP transfer route path label drifted")
+    if queue is not None:
+        if route.transfer_queue_label not in queue.text() or route.transfer_status not in queue.text():
+            errors.append("remmina live GUI SFTP transfer route queue label drifted")
+
+    action_labels = [] if toolbar is None else toolbar.findChildren(QLabel, "remminaSftpTransferAction")
+    actual_action_keys = [str(action.property("remminaSftpTransferRouteActionKey") or "") for action in action_labels]
+    expected_action_keys = list(route.toolbar_actions)
+    if actual_action_keys != expected_action_keys:
+        errors.append(
+            f"remmina live GUI SFTP transfer action keys {actual_action_keys!r} "
+            f"must equal {expected_action_keys!r}"
+        )
+    for action, action_key in zip(action_labels, route.toolbar_actions, strict=False):
+        if action.text() != action_key.title():
+            errors.append(f"remmina live GUI SFTP transfer action label {action.text()!r} drifted")
+        if str(action.property(route.toolbar_actions_property) or "") != actions_value:
+            errors.append("remmina live GUI SFTP transfer action list property drifted")
+
+    row_widgets = [] if table is None else table.findChildren(QFrame, route.row_object)
+    if len(row_widgets) != len(route.file_rows):
+        errors.append(
+            f"remmina live GUI SFTP transfer row count {len(row_widgets)!r} "
+            f"must equal {len(route.file_rows)!r}"
+        )
+    for row_widget, expected_row in zip(row_widgets, route.file_rows, strict=False):
+        expected_row_props = {
+            route.row_name_property: expected_row.name,
+            route.row_kind_property: expected_row.kind,
+            "remminaSftpTransferRouteRowKey": expected_row.key,
+            "remminaSftpTransferRouteRowSize": expected_row.size,
+            "remminaSftpTransferRouteRowModified": expected_row.modified,
+        }
+        for prop_name, expected_value in expected_row_props.items():
+            actual_value = str(row_widget.property(prop_name) or "")
+            if actual_value != expected_value:
+                errors.append(
+                    f"remmina live GUI SFTP transfer row {expected_row.key}.{prop_name} "
+                    f"{actual_value!r} must equal {expected_value!r}"
+                )
+        actual_selected = bool(row_widget.property(route.row_selected_property))
+        if actual_selected != expected_row.selected:
+            errors.append(
+                f"remmina live GUI SFTP transfer row {expected_row.key} selected "
+                f"{actual_selected!r} must equal {expected_row.selected!r}"
+            )
+    selected_names = [
+        str(row_widget.property(route.row_name_property) or "")
+        for row_widget in row_widgets
+        if bool(row_widget.property(route.row_selected_property))
+    ]
+    if selected_names != [route.active_row_name]:
+        errors.append(
+            f"remmina live GUI SFTP transfer selected rows {selected_names!r} "
+            f"must equal {[route.active_row_name]!r}"
+        )
+    if tabs is not None and route.active_tab_label not in live_tab_labels(tabs):
+        errors.append(f"remmina live GUI SFTP transfer route missing tab {route.active_tab_label!r}")
     return errors
 
 
@@ -4663,6 +7832,369 @@ def check_live_termius_sync_route(window: Any) -> list[str]:
     return []
 
 
+def check_live_termius_port_forward_route(window: Any) -> list[str]:
+    from PyQt6.QtWidgets import QLabel, QTabWidget, QWidget
+
+    route = EXPECTED_TERMIUS_PORT_FORWARD_ROUTE
+    expected_chip = next(chip for chip in gui_design_termius_header_chips() if chip.key == route.header_chip_key)
+    expected_field = next(field for field in EXPECTED_TERMIUS_HOST_IDENTITY_STRIP.fields if field.key == route.identity_field_key)
+    header_panel = window.findChild(QWidget, "termiusHeaderChips")
+    identity_panel = window.findChild(QWidget, route.host_identity_object)
+    tabs = window.findChild(QTabWidget, "sessionTabs")
+    port_chip = next(
+        (
+            label
+            for label in window.findChildren(QLabel, route.header_chip_object)
+            if str(label.property("termiusHeaderChipKey") or "") == route.header_chip_key
+        ),
+        None,
+    )
+    port_cell = next(
+        (
+            label
+            for label in window.findChildren(QLabel, route.identity_cell_object)
+            if str(label.property("termiusHostIdentityKey") or "") == route.identity_field_key
+        ),
+        None,
+    )
+    errors: list[str] = []
+    route_widgets = {
+        "header-panel": header_panel,
+        route.header_chip_object: port_chip,
+        route.host_identity_object: identity_panel,
+        route.identity_cell_object: port_cell,
+    }
+    missing = [object_name for object_name, widget in route_widgets.items() if widget is None]
+    if tabs is None:
+        missing.append("sessionTabs")
+    if missing:
+        return [f"termius live GUI port-forward route missing widget(s): {missing}"]
+
+    expected_common_props = {
+        "termiusPortForwardRouteKey": route.key,
+        "termiusPortForwardRouteRole": route.route_role,
+        "termiusPortForwardRouteHeaderChipKey": route.header_chip_key,
+        "termiusPortForwardRouteHeaderChipObject": route.header_chip_object,
+        "termiusPortForwardRouteIdentityObject": route.host_identity_object,
+        "termiusPortForwardRouteIdentityFieldKey": route.identity_field_key,
+        "termiusPortForwardRouteIdentityCellObject": route.identity_cell_object,
+        route.active_tab_property: route.active_tab_label,
+        "termiusPortForwardRouteSelectedProfile": route.selected_profile_name,
+        "termiusPortForwardRouteForwardValue": route.forward_value,
+        route.status_property: route.forward_state,
+        "termiusPortForwardRouteRemoteHost": route.remote_host,
+        "termiusPortForwardRouteStatusSegment": route.status_segment,
+        "termiusPortForwardRouteRenderSource": route.render_source,
+    }
+    expected_int_props = {
+        "termiusPortForwardRouteLocalPort": route.local_port,
+        "termiusPortForwardRouteRemotePort": route.remote_port,
+    }
+    for object_name, widget in route_widgets.items():
+        if widget is None:
+            continue
+        for prop_name, expected_value in expected_common_props.items():
+            actual_value = str(widget.property(prop_name) or "")
+            if actual_value != expected_value:
+                errors.append(
+                    f"termius live GUI port-forward route {object_name}.{prop_name} "
+                    f"{actual_value!r} must equal {expected_value!r}"
+                )
+        for prop_name, expected_value in expected_int_props.items():
+            actual_value = int(widget.property(prop_name) or 0)
+            if actual_value != expected_value:
+                errors.append(
+                    f"termius live GUI port-forward route {object_name}.{prop_name} "
+                    f"{actual_value!r} must equal {expected_value!r}"
+                )
+
+    if port_chip is not None:
+        if str(port_chip.property(route.chip_label_property) or "") != expected_chip.label:
+            errors.append("termius live GUI port-forward route header chip label property drifted")
+        if port_chip.text() != expected_chip.label or expected_chip.label != route.status_segment:
+            errors.append("termius live GUI port-forward route header chip text drifted")
+    if port_cell is not None:
+        if str(port_cell.property(route.identity_value_property) or "") != expected_field.value:
+            errors.append("termius live GUI port-forward route identity value property drifted")
+        if port_cell.text() != f"{expected_field.label}: {expected_field.value}":
+            errors.append("termius live GUI port-forward route identity text drifted")
+        if expected_field.value != route.forward_value:
+            errors.append("termius live GUI port-forward route expected field value must equal route forward value")
+    if route.status_segment not in {label.text() for label in window.findChildren(QLabel, "productStatusSegment")}:
+        errors.append("termius live GUI port-forward route status segment is missing")
+    if tabs is not None and route.active_tab_label not in live_tab_labels(tabs):
+        errors.append(f"termius live GUI port-forward route missing active tab {route.active_tab_label!r}")
+    return errors
+
+
+def check_live_termius_snippet_route(window: Any) -> list[str]:
+    from PyQt6.QtWidgets import QLabel, QTabWidget, QWidget
+
+    route = EXPECTED_TERMIUS_SNIPPET_ROUTE
+    expected_card = next(card for card in gui_design_workflow_cards("termius") if card.key == route.workflow_card_key)
+    expected_field = next(field for field in EXPECTED_TERMIUS_HOST_IDENTITY_STRIP.fields if field.key == route.identity_field_key)
+    workflow_panel = window.findChild(QWidget, "productWorkflowEvidence")
+    identity_panel = window.findChild(QWidget, route.host_identity_object)
+    tabs = window.findChild(QTabWidget, "sessionTabs")
+    snippet_card = next(
+        (
+            card
+            for card in window.findChildren(QWidget, route.workflow_card_object)
+            if str(card.property("workflowKey") or "") == route.workflow_card_key
+        ),
+        None,
+    )
+    snippet_cell = next(
+        (
+            label
+            for label in window.findChildren(QLabel, route.identity_cell_object)
+            if str(label.property("termiusHostIdentityKey") or "") == route.identity_field_key
+        ),
+        None,
+    )
+    errors: list[str] = []
+    route_widgets = {
+        "workflow-panel": workflow_panel,
+        route.workflow_card_object: snippet_card,
+        route.host_identity_object: identity_panel,
+        route.identity_cell_object: snippet_cell,
+    }
+    missing = [object_name for object_name, widget in route_widgets.items() if widget is None]
+    if tabs is None:
+        missing.append("sessionTabs")
+    if missing:
+        return [f"termius live GUI snippet route missing widget(s): {missing}"]
+
+    expected_common_props = {
+        "termiusSnippetRouteKey": route.key,
+        "termiusSnippetRouteRole": route.route_role,
+        route.workflow_key_property: route.workflow_card_key,
+        "termiusSnippetRouteWorkflowCardObject": route.workflow_card_object,
+        "termiusSnippetRouteIdentityObject": route.host_identity_object,
+        "termiusSnippetRouteIdentityFieldKey": route.identity_field_key,
+        "termiusSnippetRouteIdentityCellObject": route.identity_cell_object,
+        route.active_tab_property: route.active_tab_label,
+        "termiusSnippetRouteSelectedProfile": route.selected_profile_name,
+        "termiusSnippetRouteTitle": route.workflow_title,
+        route.command_property: route.snippet_command,
+        route.status_property: route.snippet_state,
+        "termiusSnippetRouteDetailLine": route.detail_line,
+        "termiusSnippetRouteRenderSource": route.render_source,
+    }
+    for object_name, widget in route_widgets.items():
+        if widget is None:
+            continue
+        for prop_name, expected_value in expected_common_props.items():
+            actual_value = str(widget.property(prop_name) or "")
+            if actual_value != expected_value:
+                errors.append(
+                    f"termius live GUI snippet route {object_name}.{prop_name} "
+                    f"{actual_value!r} must equal {expected_value!r}"
+                )
+
+    if snippet_card is not None:
+        title = snippet_card.findChild(QLabel, route.workflow_title_object)
+        primary = snippet_card.findChild(QLabel, route.workflow_primary_object)
+        secondary = snippet_card.findChild(QLabel, route.workflow_secondary_object)
+        if title is None or title.text() != expected_card.title or expected_card.title != route.workflow_title:
+            errors.append("termius live GUI snippet route workflow title drifted")
+        if primary is None or primary.text() != expected_card.primary or expected_card.primary != route.snippet_command:
+            errors.append("termius live GUI snippet route workflow command drifted")
+        if secondary is None or secondary.text() != expected_card.secondary or expected_card.secondary != route.snippet_state:
+            errors.append("termius live GUI snippet route workflow state drifted")
+    if snippet_cell is not None:
+        if str(snippet_cell.property(route.identity_value_property) or "") != expected_field.value:
+            errors.append("termius live GUI snippet route identity value property drifted")
+        if snippet_cell.text() != f"{expected_field.label}: {expected_field.value}":
+            errors.append("termius live GUI snippet route identity text drifted")
+        if expected_field.value != route.snippet_command:
+            errors.append("termius live GUI snippet route expected field value must equal route command")
+    workspace_lines = {label.text() for label in window.findChildren(QLabel, "productWorkspaceLine")}
+    if route.detail_line not in workspace_lines:
+        errors.append("termius live GUI snippet route detail line is missing")
+    if tabs is not None and route.active_tab_label not in live_tab_labels(tabs):
+        errors.append(f"termius live GUI snippet route missing active tab {route.active_tab_label!r}")
+    return errors
+
+
+def check_live_termius_files_browser_route(window: Any) -> list[str]:
+    from PyQt6.QtWidgets import QFrame, QLabel, QTabWidget, QWidget
+
+    route = EXPECTED_TERMIUS_FILES_BROWSER_ROUTE
+    host_route = EXPECTED_TERMIUS_HOST_SELECTION_ROUTE
+    expected_field = next(field for field in EXPECTED_TERMIUS_HOST_IDENTITY_STRIP.fields if field.key == route.identity_field_key)
+    browser = window.findChild(QWidget, route.files_browser_object)
+    toolbar = window.findChild(QWidget, route.toolbar_object)
+    path = window.findChild(QLabel, route.path_object)
+    table = window.findChild(QWidget, route.table_object)
+    queue = window.findChild(QLabel, route.queue_object)
+    identity_panel = window.findChild(QWidget, route.host_identity_object)
+    tabs = window.findChild(QTabWidget, "sessionTabs")
+    files_cell = next(
+        (
+            label
+            for label in window.findChildren(QLabel, route.identity_cell_object)
+            if str(label.property("termiusHostIdentityKey") or "") == route.identity_field_key
+        ),
+        None,
+    )
+    errors: list[str] = []
+    missing = [
+        object_name
+        for object_name, widget in {
+            route.files_browser_object: browser,
+            route.toolbar_object: toolbar,
+            route.path_object: path,
+            route.table_object: table,
+            route.queue_object: queue,
+            route.host_identity_object: identity_panel,
+            route.identity_cell_object: files_cell,
+        }.items()
+        if widget is None
+    ]
+    if tabs is None:
+        missing.append("sessionTabs")
+    if missing:
+        return [f"termius live GUI files browser route missing widget(s): {missing}"]
+
+    if route.host_selection_route_key != host_route.key:
+        errors.append("termius live GUI files browser route host-selection key drifted")
+    if route.active_tab_label != host_route.active_tab_label:
+        errors.append("termius live GUI files browser route active tab drifted from host route")
+    if route.selected_profile_name != host_route.selected_profile_name:
+        errors.append("termius live GUI files browser route selected profile drifted from host route")
+    if route.selected_tree_label != host_route.selected_tree_label:
+        errors.append("termius live GUI files browser route selected tree label drifted from host route")
+    if expected_field.value != route.files_state:
+        errors.append("termius live GUI files browser route identity field value must equal route state")
+
+    actions_value = "|".join(route.toolbar_actions)
+    expected_common_props = {
+        "termiusFilesRouteKey": route.key,
+        "termiusFilesRouteRole": route.route_role,
+        "termiusFilesRouteHostSelectionKey": route.host_selection_route_key,
+        "termiusFilesRouteIdentityObject": route.host_identity_object,
+        "termiusFilesRouteIdentityFieldKey": route.identity_field_key,
+        "termiusFilesRouteIdentityCellObject": route.identity_cell_object,
+        "termiusFilesRouteBrowserObject": route.files_browser_object,
+        route.active_tab_property: route.active_tab_label,
+        "termiusFilesRouteSelectedProfile": route.selected_profile_name,
+        "termiusFilesRouteSelectedTreeLabel": route.selected_tree_label,
+        route.identity_value_property: route.files_state,
+        "termiusFilesRouteState": route.files_state,
+        route.path_property: route.remote_path,
+        "termiusFilesRouteQueueState": route.transfer_status,
+        "termiusFilesRouteRenderSource": route.render_source,
+    }
+    expected_browser_props = {
+        **expected_common_props,
+        "termiusFilesRouteToolbarObject": route.toolbar_object,
+        "termiusFilesRoutePathObject": route.path_object,
+        "termiusFilesRouteTableObject": route.table_object,
+        "termiusFilesRouteRowObject": route.row_object,
+        "termiusFilesRouteQueueObject": route.queue_object,
+        route.toolbar_actions_property: actions_value,
+        "termiusFilesRouteActiveRowName": route.active_row_name,
+        "termiusFilesRouteQueueLabel": route.transfer_queue_label,
+    }
+    for object_name, widget in {
+        route.files_browser_object: browser,
+        route.toolbar_object: toolbar,
+        route.path_object: path,
+        route.table_object: table,
+        route.queue_object: queue,
+    }.items():
+        if widget is None:
+            continue
+        for prop_name, expected_value in expected_browser_props.items():
+            actual_value = str(widget.property(prop_name) or "")
+            if actual_value != expected_value:
+                errors.append(
+                    f"termius live GUI files browser route {object_name}.{prop_name} "
+                    f"{actual_value!r} must equal {expected_value!r}"
+                )
+
+    for object_name, widget in {
+        route.host_identity_object: identity_panel,
+        route.identity_cell_object: files_cell,
+    }.items():
+        if widget is None:
+            continue
+        for prop_name, expected_value in expected_common_props.items():
+            actual_value = str(widget.property(prop_name) or "")
+            if actual_value != expected_value:
+                errors.append(
+                    f"termius live GUI files browser route {object_name}.{prop_name} "
+                    f"{actual_value!r} must equal {expected_value!r}"
+                )
+
+    if path is not None and route.remote_path not in path.text():
+        errors.append("termius live GUI files browser route path label drifted")
+    if queue is not None:
+        if route.transfer_queue_label not in queue.text() or route.transfer_status not in queue.text():
+            errors.append("termius live GUI files browser route queue label drifted")
+    if files_cell is not None:
+        if str(files_cell.property(route.identity_value_property) or "") != expected_field.value:
+            errors.append("termius live GUI files browser route identity value property drifted")
+        if files_cell.text() != f"{expected_field.label}: {expected_field.value}":
+            errors.append("termius live GUI files browser route identity text drifted")
+
+    action_labels = [] if toolbar is None else toolbar.findChildren(QLabel, "termiusFilesAction")
+    actual_action_keys = [str(action.property("termiusFilesRouteActionKey") or "") for action in action_labels]
+    expected_action_keys = list(route.toolbar_actions)
+    if actual_action_keys != expected_action_keys:
+        errors.append(
+            f"termius live GUI files browser route action keys {actual_action_keys!r} "
+            f"must equal {expected_action_keys!r}"
+        )
+    for action, action_key in zip(action_labels, route.toolbar_actions, strict=False):
+        if action.text() != action_key.title():
+            errors.append(f"termius live GUI files browser route action label {action.text()!r} drifted")
+        if str(action.property(route.toolbar_actions_property) or "") != actions_value:
+            errors.append("termius live GUI files browser route action list property drifted")
+
+    row_widgets = [] if table is None else table.findChildren(QFrame, route.row_object)
+    if len(row_widgets) != len(route.file_rows):
+        errors.append(
+            f"termius live GUI files browser route row count {len(row_widgets)!r} "
+            f"must equal {len(route.file_rows)!r}"
+        )
+    for row_widget, expected_row in zip(row_widgets, route.file_rows, strict=False):
+        expected_row_props = {
+            route.row_name_property: expected_row.name,
+            route.row_kind_property: expected_row.kind,
+            "termiusFilesRouteRowKey": expected_row.key,
+            "termiusFilesRouteRowSize": expected_row.size,
+            "termiusFilesRouteRowModified": expected_row.modified,
+        }
+        for prop_name, expected_value in expected_row_props.items():
+            actual_value = str(row_widget.property(prop_name) or "")
+            if actual_value != expected_value:
+                errors.append(
+                    f"termius live GUI files browser route row {expected_row.key}.{prop_name} "
+                    f"{actual_value!r} must equal {expected_value!r}"
+                )
+        actual_selected = bool(row_widget.property(route.row_selected_property))
+        if actual_selected != expected_row.selected:
+            errors.append(
+                f"termius live GUI files browser route row {expected_row.key} selected "
+                f"{actual_selected!r} must equal {expected_row.selected!r}"
+            )
+    selected_names = [
+        str(row_widget.property(route.row_name_property) or "")
+        for row_widget in row_widgets
+        if bool(row_widget.property(route.row_selected_property))
+    ]
+    if selected_names != [route.active_row_name]:
+        errors.append(
+            f"termius live GUI files browser route selected rows {selected_names!r} "
+            f"must equal {[route.active_row_name]!r}"
+        )
+    if tabs is not None and route.active_tab_label not in live_tab_labels(tabs):
+        errors.append(f"termius live GUI files browser route missing active tab {route.active_tab_label!r}")
+    return errors
+
+
 def check_live_mremoteng_document_controls(window: Any) -> list[str]:
     from PyQt6.QtWidgets import QLabel, QLineEdit, QToolButton, QWidget
 
@@ -4997,9 +8529,255 @@ def check_live_mremoteng_connection_document_route(window: Any) -> list[str]:
     return errors
 
 
+def check_live_mremoteng_document_filter_route(window: Any) -> list[str]:
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtWidgets import QApplication, QLineEdit, QTabWidget, QTreeWidget, QWidget
+
+    route = EXPECTED_MREMOTENG_DOCUMENT_FILTER_ROUTE
+    tree = window.findChild(QTreeWidget, route.selected_tree_object)
+    controls_panel = window.findChild(QWidget, route.document_controls_object)
+    filter_input = window.findChild(QLineEdit, route.filter_object)
+    tabs = window.findChild(QTabWidget, "sessionTabs")
+    errors: list[str] = []
+    if tree is None:
+        errors.append("mremoteng live GUI document-filter route missing connection tree")
+    if controls_panel is None:
+        errors.append("mremoteng live GUI document-filter route missing document controls")
+    if filter_input is None:
+        errors.append("mremoteng live GUI document-filter route missing filter input")
+    if tabs is None:
+        errors.append("mremoteng live GUI document-filter route missing session tabs")
+    if errors:
+        return errors
+
+    route_props = {
+        route.filter_route_property: route.key,
+        "mRemoteNgDocumentFilterRouteRole": route.route_role,
+        "mRemoteNgDocumentFilterRouteDocumentControlsObject": route.document_controls_object,
+        "mRemoteNgDocumentFilterRouteFilterObject": route.filter_object,
+        "mRemoteNgDocumentFilterRouteSelectedTreeObject": route.selected_tree_object,
+        "mRemoteNgDocumentFilterRouteSelectedProfile": route.selected_profile_name,
+        route.matched_tree_property: route.selected_tree_label,
+        route.matched_protocol_property: route.matched_protocol,
+        "mRemoteNgDocumentFilterRouteMatchedState": route.matched_state,
+        route.filter_query_property: route.expected_query,
+        route.filter_placeholder_property: route.expected_placeholder,
+        route.active_tab_property: route.active_tab_label,
+        "mRemoteNgDocumentFilterRouteSignal": route.change_signal,
+        "mRemoteNgDocumentFilterRouteHandler": route.handler_name,
+        "mRemoteNgDocumentFilterRouteRenderSource": route.render_source,
+    }
+    for widget_label, widget in (
+        ("connection-tree", tree),
+        ("document-controls", controls_panel),
+        ("filter", filter_input),
+    ):
+        for property_name, expected_value in route_props.items():
+            actual_value = str(widget.property(property_name) or "")
+            if actual_value != expected_value:
+                errors.append(
+                    f"mremoteng live GUI document-filter route {widget_label} property "
+                    f"{property_name} {actual_value!r} must equal {expected_value!r}"
+                )
+
+    if filter_input.placeholderText() != route.expected_placeholder:
+        errors.append("mremoteng live GUI document-filter route placeholder drifted")
+    if filter_input.isReadOnly():
+        errors.append("mremoteng live GUI document-filter route input must be editable")
+    if route.active_tab_label not in live_tab_labels(tabs):
+        errors.append(f"mremoteng live GUI document-filter route missing active tab {route.active_tab_label!r}")
+
+    def tree_items() -> list[Any]:
+        items: list[Any] = []
+
+        def walk(item: Any) -> None:
+            items.append(item)
+            for child_index in range(item.childCount()):
+                walk(item.child(child_index))
+
+        for index in range(tree.topLevelItemCount()):
+            walk(tree.topLevelItem(index))
+        return items
+
+    items = tree_items()
+    matched_items = [item for item in items if item.text(0) == route.selected_tree_label]
+    if len(matched_items) != 1:
+        errors.append("mremoteng live GUI document-filter route must expose one matched tree row")
+    else:
+        matched_item = matched_items[0]
+        base_role = int(Qt.ItemDataRole.UserRole)
+        expected_item_data = {
+            base_role: route.selected_profile_name,
+            base_role + 91: route.key,
+            base_role + 92: route.route_role,
+            base_role + 93: route.expected_query,
+            base_role + 94: route.selected_profile_name,
+            base_role + 95: route.selected_tree_label,
+            base_role + 97: route.render_source,
+        }
+        for role, expected_value in expected_item_data.items():
+            actual_value = str(matched_item.data(0, role) or "")
+            if actual_value != expected_value:
+                errors.append(f"mremoteng live GUI document-filter route tree role {role} drifted")
+        if matched_item.data(0, base_role + 96) is not True:
+            errors.append("mremoteng live GUI document-filter route matched row is not marked")
+
+    original_text = filter_input.text()
+    try:
+        filter_input.setText(route.expected_query)
+        QApplication.processEvents()
+        items_after_filter = tree_items()
+        matched_after_filter = [item for item in items_after_filter if item.text(0) == route.selected_tree_label]
+        if not matched_after_filter or matched_after_filter[0].isHidden():
+            errors.append("mremoteng live GUI document-filter route hides the matched selected row")
+        profile_items = [item for item in items_after_filter if item.data(0, int(Qt.ItemDataRole.UserRole))]
+        nonmatching_items = [
+            item
+            for item in profile_items
+            if route.expected_query.lower() not in item.text(0).lower()
+            and route.expected_query.lower() not in item.toolTip(0).lower()
+        ]
+        if not nonmatching_items:
+            errors.append("mremoteng live GUI document-filter route needs at least one nonmatching row")
+        elif not any(item.isHidden() for item in nonmatching_items):
+            errors.append("mremoteng live GUI document-filter route does not hide nonmatching rows")
+    finally:
+        filter_input.setText(original_text)
+        QApplication.processEvents()
+    return errors
+
+
+def check_live_mremoteng_inheritance_route(window: Any) -> list[str]:
+    from PyQt6.QtWidgets import QLabel, QTabWidget, QWidget
+
+    route = EXPECTED_MREMOTENG_INHERITANCE_ROUTE
+    workflow_panel = window.findChild(QWidget, "productWorkflowEvidence")
+    property_grid = window.findChild(QWidget, route.property_grid_object)
+    tabs = window.findChild(QTabWidget, "sessionTabs")
+    errors: list[str] = []
+    if workflow_panel is None:
+        errors.append("mremoteng live GUI inheritance route missing workflow evidence panel")
+    if property_grid is None:
+        errors.append("mremoteng live GUI inheritance route missing property grid")
+    if tabs is None:
+        errors.append("mremoteng live GUI inheritance route missing session tabs")
+    if errors:
+        return errors
+
+    common_route_props = {
+        "mRemoteNgInheritanceRouteKey": route.key,
+        "mRemoteNgInheritanceRouteRole": route.route_role,
+        route.workflow_key_property: route.workflow_card_key,
+        "mRemoteNgInheritanceRouteWorkflowCardObject": route.workflow_card_object,
+        "mRemoteNgInheritanceRouteTitleObject": route.workflow_title_object,
+        "mRemoteNgInheritanceRoutePrimaryObject": route.workflow_primary_object,
+        "mRemoteNgInheritanceRouteSecondaryObject": route.workflow_secondary_object,
+        "mRemoteNgInheritanceRoutePropertyGridObject": route.property_grid_object,
+        "mRemoteNgInheritanceRoutePropertyRowKey": route.property_row_key,
+        "mRemoteNgInheritanceRoutePropertyCellObject": route.property_cell_object,
+        route.active_tab_property: route.active_tab_label,
+        "mRemoteNgInheritanceRouteSelectedProfile": route.selected_profile_name,
+        "mRemoteNgInheritanceRouteSelectedTreeLabel": route.selected_tree_label,
+        "mRemoteNgInheritanceRouteTitle": route.workflow_title,
+        "mRemoteNgInheritanceRouteInheritedPropertyLabel": route.inherited_property_label,
+        route.inherited_value_property: route.inherited_value,
+        "mRemoteNgInheritanceRouteInheritedSource": route.inherited_source,
+        route.status_property: route.inheritance_state,
+        "mRemoteNgInheritanceRouteRenderSource": route.render_source,
+    }
+    panel_props = dict(common_route_props)
+    panel_props.pop(route.workflow_key_property)
+    panel_props["mRemoteNgInheritanceRouteWorkflowKey"] = route.workflow_card_key
+    panel_props.pop(route.inherited_value_property)
+    panel_props["mRemoteNgInheritanceRouteInheritedValue"] = route.inherited_value
+    panel_props.pop(route.active_tab_property)
+    panel_props["mRemoteNgInheritanceRouteActiveTab"] = route.active_tab_label
+    panel_props.pop(route.status_property)
+    panel_props["mRemoteNgInheritanceRouteState"] = route.inheritance_state
+
+    for label, widget, route_props in (
+        ("workflow-panel", workflow_panel, panel_props),
+        ("property-grid", property_grid, panel_props),
+    ):
+        for property_name, expected_value in route_props.items():
+            actual_value = str(widget.property(property_name) or "")
+            if actual_value != expected_value:
+                errors.append(
+                    f"mremoteng live GUI inheritance route {label} property "
+                    f"{property_name} {actual_value!r} must equal {expected_value!r}"
+                )
+
+    workflow_cards = [
+        widget
+        for widget in workflow_panel.findChildren(QWidget, route.workflow_card_object)
+        if str(widget.property("workflowKey") or "") == route.workflow_card_key
+    ]
+    if len(workflow_cards) != 1:
+        errors.append("mremoteng live GUI inheritance route must expose one workflow card")
+    else:
+        workflow_card = workflow_cards[0]
+        for property_name, expected_value in panel_props.items():
+            actual_value = str(workflow_card.property(property_name) or "")
+            if actual_value != expected_value:
+                errors.append(f"mremoteng live GUI inheritance workflow card property {property_name} drifted")
+        card_labels = {label.objectName(): label.text() for label in workflow_card.findChildren(QLabel)}
+        expected_card_text = {
+            route.workflow_title_object: route.workflow_title,
+            route.workflow_primary_object: route.inheritance_state,
+            route.workflow_secondary_object: "property grid visible",
+        }
+        for object_name, expected_text in expected_card_text.items():
+            if card_labels.get(object_name) != expected_text:
+                errors.append(f"mremoteng live GUI inheritance workflow label {object_name} drifted")
+
+    row_frames = property_grid.findChildren(QWidget, "mRemoteNgPropertyGridRow")
+    route_rows = [row for row in row_frames if str(row.property("mRemoteNgPropertyRowKey") or "") == route.property_row_key]
+    if len(route_rows) != 1:
+        errors.append("mremoteng live GUI inheritance route must expose one inherited property row")
+    else:
+        route_row = route_rows[0]
+        for property_name, expected_value in common_route_props.items():
+            actual_value = str(route_row.property(property_name) or "")
+            if actual_value != expected_value:
+                errors.append(f"mremoteng live GUI inheritance property-row property {property_name} drifted")
+        if str(route_row.property("mRemoteNgPropertyInherited") or "") != "true":
+            errors.append("mremoteng live GUI inheritance property row must remain inherited")
+
+    routed_cells = [
+        cell
+        for cell in property_grid.findChildren(QLabel, route.property_cell_object)
+        if str(cell.property("mRemoteNgPropertyRowKey") or "") == route.property_row_key
+    ]
+    cells_by_column = {str(cell.property("mRemoteNgPropertyColumnKey") or ""): cell for cell in routed_cells}
+    for column_key, expected_value in {
+        "property": route.inherited_property_label,
+        "effective": route.inherited_value,
+        "source": route.inherited_source,
+    }.items():
+        cell = cells_by_column.get(column_key)
+        if cell is None:
+            errors.append(f"mremoteng live GUI inheritance route missing {column_key!r} cell")
+            continue
+        if str(cell.property("mRemoteNgPropertyCellValue") or "") != expected_value:
+            errors.append(f"mremoteng live GUI inheritance route {column_key!r} cell value drifted")
+        for property_name, expected_route_value in common_route_props.items():
+            actual_value = str(cell.property(property_name) or "")
+            if actual_value != expected_route_value:
+                errors.append(f"mremoteng live GUI inheritance cell property {property_name} drifted")
+
+    if route.active_tab_label not in live_tab_labels(tabs):
+        errors.append(f"mremoteng live GUI inheritance route missing active tab {route.active_tab_label!r}")
+    return errors
+
+
 def live_contract_checks_for_preset(preset_id: str) -> list[str]:
     checks = [
         "required-widget-visibility",
+        "preset-catalog-route",
+        "preset-isolation-route",
+        "preset-selection-route",
+        "preset-transition-route",
+        "preset-visual-signature",
         "session-tabs",
         "home-tab-label",
         "profile-tree-content",
@@ -5010,6 +8788,30 @@ def live_contract_checks_for_preset(preset_id: str) -> list[str]:
         checks.extend(["moba-home-welcome", "moba-home-welcome-geometry"])
     else:
         checks.append("workflow-cards")
+    if preset_id in EXPECTED_PRESET_REFERENCE_TAB_ROUTES:
+        checks.append("reference-tab-activation-route")
+    if preset_id in EXPECTED_PRESET_REFERENCE_TAB_CHROME_ROUTES:
+        checks.append("reference-tab-chrome-evidence-route")
+    if preset_id in EXPECTED_PRESET_REFERENCE_STATUS_BAR_ROUTES:
+        checks.append("reference-status-bar-evidence-route")
+    if preset_id in EXPECTED_PRESET_REFERENCE_SESSION_ACTION_ROUTES:
+        checks.append("reference-session-actions-route")
+    if preset_id in EXPECTED_PRESET_REFERENCE_SURFACE_ROUTES:
+        checks.append("reference-surface-evidence-route")
+    if preset_id in EXPECTED_PRESET_REFERENCE_CONTROL_ROUTES:
+        checks.append("reference-control-evidence-route")
+    if preset_id in EXPECTED_PRESET_REFERENCE_INPUT_ROUTES:
+        checks.append("reference-input-evidence-route")
+    if preset_id in EXPECTED_PRESET_REFERENCE_TRANSCRIPT_ROUTES:
+        checks.append("reference-transcript-evidence-route")
+    if preset_id in EXPECTED_PRESET_KEYBOARD_SHORTCUT_ROUTES:
+        checks.append("preset-keyboard-shortcut-route")
+    if preset_id in EXPECTED_PRESET_COMMAND_SURFACE_ROUTES:
+        checks.append("preset-command-surface-route")
+    if preset_id in EXPECTED_PRESET_FOCUS_INTERACTION_ROUTES:
+        checks.append("preset-focus-interaction-route")
+    if preset_id in EXPECTED_PRESET_HOME_SEARCH_ROUTES:
+        checks.append("preset-home-search-route")
     if live_layout_contracts_for_preset(preset_id):
         checks.append("layout-geometry")
     if live_topology_contracts_for_preset(preset_id):
@@ -5029,18 +8831,21 @@ def live_contract_checks_for_preset(preset_id: str) -> list[str]:
                 "top-menu-geometry",
                 "ribbon-actions",
                 "ribbon-geometry",
+                "ribbon-edge-action-route",
                 "generated-ribbon-icons",
                 "moba-rail-roles",
                 "moba-rail-labels",
                 "moba-rail-geometry",
                 "connected-tab-chrome",
                 "connected-tab-geometry",
+                "connected-session-actions-route",
                 "connected-dock-frame",
                 "session-edge-controls",
                 "session-edge-geometry",
                 "right-utility-rail",
                 "right-utility-rail-chrome",
                 "right-utility-rail-geometry",
+                "right-utility-action-route",
                 "connected-sftp-dock",
                 "sftp-toolbar-groups",
                 "sftp-toolbar-geometry",
@@ -5050,10 +8855,13 @@ def live_contract_checks_for_preset(preset_id: str) -> list[str]:
                 "sftp-browser-chrome",
                 "sftp-browser-geometry",
                 "sftp-follow-folder-route",
+                "sftp-terminal-folder-route",
                 "sftp-dock-chrome",
                 "remote-monitoring-dock",
                 "remote-monitoring-footer-geometry",
                 "monitoring-telemetry-route",
+                "remote-monitoring-control-route",
+                "follow-terminal-folder-control-route",
                 "moba-monitoring-controls",
                 "moba-monitoring-control-geometry",
                 "ssh-banner",
@@ -5080,6 +8888,7 @@ def live_contract_checks_for_preset(preset_id: str) -> list[str]:
                 "toolbar-actions",
                 "workspace-surface",
                 "reference-state",
+                "product-identity-route",
             ]
         )
         if preset_id == "securecrt":
@@ -5087,6 +8896,9 @@ def live_contract_checks_for_preset(preset_id: str) -> list[str]:
             checks.append("securecrt-session-manager-chrome")
             checks.append("securecrt-session-manager-geometry")
             checks.append("securecrt-session-manager-route")
+            checks.append("securecrt-session-manager-filter-route")
+            checks.append("securecrt-sftp-tab-route")
+            checks.append("securecrt-sftp-browser-route")
             checks.append("securecrt-tree-icons")
             checks.append("securecrt-session-status-strip")
             checks.append("securecrt-session-status-geometry")
@@ -5100,7 +8912,10 @@ def live_contract_checks_for_preset(preset_id: str) -> list[str]:
             checks.append("remmina-viewer-controls")
             checks.append("remmina-viewer-control-geometry")
             checks.append("remmina-profile-viewer-route")
+            checks.append("remmina-profile-filter-route")
             checks.append("remmina-clipboard-route")
+            checks.append("remmina-screenshot-route")
+            checks.append("remmina-sftp-transfer-route")
         if preset_id == "termius":
             checks.append("termius-tree-icons")
             checks.append("termius-hosts-chrome")
@@ -5109,6 +8924,9 @@ def live_contract_checks_for_preset(preset_id: str) -> list[str]:
             checks.append("termius-host-identity-geometry")
             checks.append("termius-host-selection-route")
             checks.append("termius-sync-route")
+            checks.append("termius-port-forward-route")
+            checks.append("termius-snippet-route")
+            checks.append("termius-files-browser-route")
         if preset_id == "mremoteng":
             checks.append("mremoteng-tree-icons")
             checks.append("mremoteng-top-chrome")
@@ -5116,6 +8934,8 @@ def live_contract_checks_for_preset(preset_id: str) -> list[str]:
             checks.append("mremoteng-document-control-geometry")
             checks.append("mremoteng-property-grid")
             checks.append("mremoteng-connection-document-route")
+            checks.append("mremoteng-document-filter-route")
+            checks.append("mremoteng-inheritance-route")
     return checks
 
 
@@ -5237,6 +9057,11 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
             if preset_id == "mobaxterm"
             else []
         ),
+        "expected_moba_ribbon_edge_action_route": (
+            EXPECTED_MOBA_RIBBON_EDGE_ACTION_ROUTE.to_dict()
+            if preset_id == "mobaxterm"
+            else {}
+        ),
         "expected_moba_titlebar_chrome": (
             {
                 "icon_key": EXPECTED_MOBA_TITLEBAR_CHROME.icon_key,
@@ -5288,6 +9113,11 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
         ),
         "expected_moba_connected_session_route": (
             EXPECTED_MOBA_CONNECTED_SESSION_ROUTE.to_dict()
+            if preset_id == "mobaxterm"
+            else {}
+        ),
+        "expected_moba_connected_session_action_route": (
+            EXPECTED_MOBA_CONNECTED_SESSION_ACTION_ROUTE.to_dict()
             if preset_id == "mobaxterm"
             else {}
         ),
@@ -5443,6 +9273,11 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
             ]
             if preset_id == "mobaxterm"
             else []
+        ),
+        "expected_moba_right_utility_action_route": (
+            EXPECTED_MOBA_RIGHT_UTILITY_ACTION_ROUTE.to_dict()
+            if preset_id == "mobaxterm"
+            else {}
         ),
         "expected_moba_session_edge_actions": (
             [
@@ -5642,6 +9477,14 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
             if preset_id == "mobaxterm"
             else {}
         ),
+        "expected_moba_remote_monitoring_control_route": (
+            EXPECTED_MOBA_REMOTE_MONITORING_CONTROL_ROUTE.to_dict() if preset_id == "mobaxterm" else {}
+        ),
+        "expected_moba_follow_terminal_folder_control_route": (
+            EXPECTED_MOBA_FOLLOW_TERMINAL_FOLDER_CONTROL_ROUTE.to_dict()
+            if preset_id == "mobaxterm"
+            else {}
+        ),
         "expected_moba_sftp_follow_folder_route": (
             {
                 "key": EXPECTED_MOBA_SFTP_FOLLOW_FOLDER_ROUTE.key,
@@ -5661,6 +9504,9 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
             }
             if preset_id == "mobaxterm"
             else {}
+        ),
+        "expected_moba_sftp_terminal_folder_route": (
+            EXPECTED_MOBA_SFTP_TERMINAL_FOLDER_ROUTE.to_dict() if preset_id == "mobaxterm" else {}
         ),
         "expected_moba_monitoring_controls": (
             [
@@ -5783,6 +9629,76 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
         "expected_workspace_surface_texts": workspace_texts,
         "expected_reference_state_texts": reference_texts,
         "expected_reference_status_segments": list(gui_design_reference_state(preset_id).status_segments),
+        "expected_product_identity_route": (
+            EXPECTED_PRODUCT_IDENTITY_ROUTES[preset_id].to_dict()
+            if preset_id in EXPECTED_PRODUCT_IDENTITY_ROUTES
+            else {}
+        ),
+        "expected_preset_reference_tab_route": (
+            EXPECTED_PRESET_REFERENCE_TAB_ROUTES[preset_id].to_dict()
+            if preset_id in EXPECTED_PRESET_REFERENCE_TAB_ROUTES
+            else {}
+        ),
+        "expected_preset_reference_tab_chrome_route": (
+            EXPECTED_PRESET_REFERENCE_TAB_CHROME_ROUTES[preset_id].to_dict()
+            if preset_id in EXPECTED_PRESET_REFERENCE_TAB_CHROME_ROUTES
+            else {}
+        ),
+        "expected_preset_reference_status_bar_route": (
+            EXPECTED_PRESET_REFERENCE_STATUS_BAR_ROUTES[preset_id].to_dict()
+            if preset_id in EXPECTED_PRESET_REFERENCE_STATUS_BAR_ROUTES
+            else {}
+        ),
+        "expected_preset_reference_session_action_route": (
+            EXPECTED_PRESET_REFERENCE_SESSION_ACTION_ROUTES[preset_id].to_dict()
+            if preset_id in EXPECTED_PRESET_REFERENCE_SESSION_ACTION_ROUTES
+            else {}
+        ),
+        "expected_preset_reference_surface_route": (
+            EXPECTED_PRESET_REFERENCE_SURFACE_ROUTES[preset_id].to_dict()
+            if preset_id in EXPECTED_PRESET_REFERENCE_SURFACE_ROUTES
+            else {}
+        ),
+        "expected_preset_reference_control_route": (
+            EXPECTED_PRESET_REFERENCE_CONTROL_ROUTES[preset_id].to_dict()
+            if preset_id in EXPECTED_PRESET_REFERENCE_CONTROL_ROUTES
+            else {}
+        ),
+        "expected_preset_reference_input_route": (
+            EXPECTED_PRESET_REFERENCE_INPUT_ROUTES[preset_id].to_dict()
+            if preset_id in EXPECTED_PRESET_REFERENCE_INPUT_ROUTES
+            else {}
+        ),
+        "expected_preset_reference_transcript_route": (
+            EXPECTED_PRESET_REFERENCE_TRANSCRIPT_ROUTES[preset_id].to_dict()
+            if preset_id in EXPECTED_PRESET_REFERENCE_TRANSCRIPT_ROUTES
+            else {}
+        ),
+        "expected_preset_keyboard_shortcut_route": (
+            EXPECTED_PRESET_KEYBOARD_SHORTCUT_ROUTES[preset_id].to_dict()
+            if preset_id in EXPECTED_PRESET_KEYBOARD_SHORTCUT_ROUTES
+            else {}
+        ),
+        "expected_preset_command_surface_route": (
+            EXPECTED_PRESET_COMMAND_SURFACE_ROUTES[preset_id].to_dict()
+            if preset_id in EXPECTED_PRESET_COMMAND_SURFACE_ROUTES
+            else {}
+        ),
+        "expected_preset_focus_interaction_route": (
+            EXPECTED_PRESET_FOCUS_INTERACTION_ROUTES[preset_id].to_dict()
+            if preset_id in EXPECTED_PRESET_FOCUS_INTERACTION_ROUTES
+            else {}
+        ),
+        "expected_preset_home_search_route": (
+            EXPECTED_PRESET_HOME_SEARCH_ROUTES[preset_id].to_dict()
+            if preset_id in EXPECTED_PRESET_HOME_SEARCH_ROUTES
+            else {}
+        ),
+        "expected_preset_catalog_route": EXPECTED_PRESET_CATALOG_ROUTE.to_dict(),
+        "expected_preset_isolation_route": EXPECTED_PRESET_ISOLATION_ROUTES[preset_id].to_dict(),
+        "expected_preset_selection_route": EXPECTED_PRESET_SELECTION_ROUTES[preset_id].to_dict(),
+        "expected_preset_transition_route": EXPECTED_PRESET_TRANSITION_ROUTES[preset_id].to_dict(),
+        "expected_preset_visual_signature": EXPECTED_PRESET_VISUAL_SIGNATURES[preset_id].to_dict(),
         "expected_securecrt_top_chrome": (
             {
                 "window_title": EXPECTED_SECURECRT_TOP_CHROME.window_title,
@@ -5871,6 +9787,21 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
                 "status_value_property": EXPECTED_SECURECRT_SESSION_MANAGER_ROUTE.status_value_property,
                 "render_source": EXPECTED_SECURECRT_SESSION_MANAGER_ROUTE.render_source,
             }
+            if preset_id == "securecrt"
+            else {}
+        ),
+        "expected_securecrt_session_manager_filter_route": (
+            EXPECTED_SECURECRT_SESSION_MANAGER_FILTER_ROUTE.to_dict()
+            if preset_id == "securecrt"
+            else {}
+        ),
+        "expected_securecrt_sftp_tab_route": (
+            EXPECTED_SECURECRT_SFTP_TAB_ROUTE.to_dict()
+            if preset_id == "securecrt"
+            else {}
+        ),
+        "expected_securecrt_sftp_browser_route": (
+            EXPECTED_SECURECRT_SFTP_BROWSER_ROUTE.to_dict()
             if preset_id == "securecrt"
             else {}
         ),
@@ -6034,6 +9965,11 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
             if preset_id == "remmina"
             else {}
         ),
+        "expected_remmina_profile_filter_route": (
+            EXPECTED_REMMINA_PROFILE_FILTER_ROUTE.to_dict()
+            if preset_id == "remmina"
+            else {}
+        ),
         "expected_remmina_clipboard_route": (
             {
                 "key": EXPECTED_REMMINA_CLIPBOARD_ROUTE.key,
@@ -6052,6 +9988,16 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
                 "clipboard_state_property": EXPECTED_REMMINA_CLIPBOARD_ROUTE.clipboard_state_property,
                 "render_source": EXPECTED_REMMINA_CLIPBOARD_ROUTE.render_source,
             }
+            if preset_id == "remmina"
+            else {}
+        ),
+        "expected_remmina_screenshot_route": (
+            EXPECTED_REMMINA_SCREENSHOT_ROUTE.to_dict()
+            if preset_id == "remmina"
+            else {}
+        ),
+        "expected_remmina_sftp_transfer_route": (
+            EXPECTED_REMMINA_SFTP_TRANSFER_ROUTE.to_dict()
             if preset_id == "remmina"
             else {}
         ),
@@ -6154,6 +10100,21 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
                 "status_property": EXPECTED_TERMIUS_SYNC_ROUTE.status_property,
                 "render_source": EXPECTED_TERMIUS_SYNC_ROUTE.render_source,
             }
+            if preset_id == "termius"
+            else {}
+        ),
+        "expected_termius_port_forward_route": (
+            EXPECTED_TERMIUS_PORT_FORWARD_ROUTE.to_dict()
+            if preset_id == "termius"
+            else {}
+        ),
+        "expected_termius_snippet_route": (
+            EXPECTED_TERMIUS_SNIPPET_ROUTE.to_dict()
+            if preset_id == "termius"
+            else {}
+        ),
+        "expected_termius_files_browser_route": (
+            EXPECTED_TERMIUS_FILES_BROWSER_ROUTE.to_dict()
             if preset_id == "termius"
             else {}
         ),
@@ -6268,6 +10229,16 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
                 "property_value_property": EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.property_value_property,
                 "render_source": EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.render_source,
             }
+            if preset_id == "mremoteng"
+            else {}
+        ),
+        "expected_mremoteng_document_filter_route": (
+            EXPECTED_MREMOTENG_DOCUMENT_FILTER_ROUTE.to_dict()
+            if preset_id == "mremoteng"
+            else {}
+        ),
+        "expected_mremoteng_inheritance_route": (
+            EXPECTED_MREMOTENG_INHERITANCE_ROUTE.to_dict()
             if preset_id == "mremoteng"
             else {}
         ),

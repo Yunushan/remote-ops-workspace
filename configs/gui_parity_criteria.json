@@ -24,19 +24,19 @@
         "User-approved MobaXterm-style home reference screenshot with centered welcome title, primary/recover actions, session search, recent sessions and footer notice."
       ],
       "dimension_coverage": {
-        "layout": ["moba.titlebar-chrome", "moba.top-stack-geometry", "moba.top-menu-geometry", "moba.ribbon-geometry", "moba.quick-connect-chrome", "moba.quick-connect-suggestions", "moba.connected-quick-connect-idle", "moba.home-welcome-surface", "moba.home-welcome-geometry", "moba.rail-geometry", "moba.connected-left-dock", "moba.connected-dock-frame", "moba.connected-session-route", "moba.connected-session-identity-route", "moba.sftp-routed-file-rows", "moba.remote-monitoring-compact-dock", "moba.remote-monitoring-footer-geometry", "moba.monitoring-control-geometry", "moba.session-edge-controls", "moba.session-edge-geometry", "moba.right-utility-rail", "moba.right-utility-rail-chrome", "moba.ssh-banner-row-geometry", "moba.terminal-transcript-geometry", "moba.bottom-telemetry", "moba.bottom-telemetry-geometry", "moba.bottom-status-geometry", "moba.reference-line-anchors", "moba.reference-topology"],
-        "navigation": ["moba.titlebar-chrome", "moba.top-stack-geometry", "moba.top-menu-chrome", "moba.top-menu-geometry", "moba.quick-connect-rail", "moba.quick-connect-chrome", "moba.quick-connect-suggestions", "moba.connected-quick-connect-idle", "moba.home-welcome-surface", "moba.home-welcome-geometry", "moba.rail-section-labels", "moba.rail-geometry", "moba.session-edge-controls", "moba.session-edge-geometry", "moba.bottom-edge-controls", "moba.reference-line-anchors"],
-        "panes": ["moba.connected-left-dock", "moba.connected-dock-frame", "moba.connected-session-route", "moba.connected-session-identity-route", "moba.sftp-dock-chrome", "moba.sftp-dock-density", "moba.sftp-browser-chrome", "moba.sftp-browser-geometry", "moba.sftp-follow-folder-route", "moba.sftp-routed-file-rows", "moba.ssh-banner", "moba.ssh-banner-chrome", "moba.ssh-banner-capability-card", "moba.ssh-banner-row-geometry", "moba.terminal-transcript", "moba.terminal-transcript-geometry"],
-        "tabs": ["moba.titlebar-chrome", "moba.top-stack-geometry", "moba.home-welcome-surface", "moba.home-welcome-geometry", "moba.live-dock-switch", "moba.connected-tab-chrome", "moba.connected-tab-geometry", "moba.connected-session-route", "moba.connected-session-identity-route", "moba.session-edge-controls", "moba.session-edge-geometry", "moba.bottom-edge-controls", "moba.connected-session-chrome", "moba.reference-line-anchors"],
-        "sidebars": ["moba.top-stack-geometry", "moba.quick-connect-rail", "moba.quick-connect-chrome", "moba.quick-connect-suggestions", "moba.connected-quick-connect-idle", "moba.rail-section-labels", "moba.rail-geometry", "moba.session-tree-geometry", "moba.connected-left-dock", "moba.connected-dock-frame", "moba.connected-session-route", "moba.connected-session-identity-route", "moba.remote-monitoring-footer-geometry", "moba.reference-line-anchors"],
-        "toolbars": ["moba.top-stack-geometry", "moba.top-menu-chrome", "moba.top-menu-geometry", "moba.menu-ribbon", "moba.ribbon-pictograms", "moba.ribbon-geometry", "moba.sftp-dock-chrome", "moba.sftp-toolbar-groups", "moba.sftp-toolbar-geometry", "moba.sftp-dock-density"],
+        "layout": ["moba.titlebar-chrome", "moba.top-stack-geometry", "moba.top-menu-geometry", "moba.ribbon-geometry", "moba.ribbon-edge-action-route", "moba.quick-connect-chrome", "moba.quick-connect-suggestions", "moba.connected-quick-connect-idle", "moba.home-welcome-surface", "moba.home-welcome-geometry", "moba.preset-catalog-route", "moba.preset-selection-route", "moba.preset-isolation-route", "moba.preset-transition-route", "moba.visual-signature", "moba.rail-geometry", "moba.connected-left-dock", "moba.connected-dock-frame", "moba.connected-session-route", "moba.connected-session-identity-route", "moba.sftp-routed-file-rows", "moba.remote-monitoring-compact-dock", "moba.remote-monitoring-footer-geometry", "moba.remote-monitoring-control-route", "moba.follow-terminal-folder-control-route", "moba.monitoring-control-geometry", "moba.session-edge-controls", "moba.session-edge-geometry", "moba.right-utility-rail", "moba.right-utility-rail-chrome", "moba.right-utility-action-route", "moba.ssh-banner-row-geometry", "moba.terminal-transcript-geometry", "moba.bottom-telemetry", "moba.bottom-telemetry-geometry", "moba.bottom-status-geometry", "moba.reference-line-anchors", "moba.reference-topology"],
+        "navigation": ["moba.titlebar-chrome", "moba.top-stack-geometry", "moba.top-menu-chrome", "moba.top-menu-geometry", "moba.ribbon-edge-action-route", "moba.quick-connect-rail", "moba.quick-connect-chrome", "moba.quick-connect-suggestions", "moba.connected-quick-connect-idle", "moba.home-welcome-surface", "moba.home-welcome-geometry", "moba.preset-catalog-route", "moba.preset-selection-route", "moba.preset-isolation-route", "moba.preset-transition-route", "moba.keyboard-shortcut-route", "moba.command-surface-route", "moba.focus-interaction-route", "moba.home-search-route", "moba.connected-session-actions-route", "moba.connected-session-action-menu-route", "moba.rail-section-labels", "moba.rail-geometry", "moba.session-edge-controls", "moba.session-edge-geometry", "moba.right-utility-action-route", "moba.bottom-edge-controls", "moba.reference-line-anchors"],
+        "panes": ["moba.connected-left-dock", "moba.connected-dock-frame", "moba.connected-session-route", "moba.connected-session-actions-route", "moba.connected-session-action-menu-route", "moba.connected-session-identity-route", "moba.sftp-dock-chrome", "moba.sftp-dock-density", "moba.sftp-browser-chrome", "moba.sftp-browser-geometry", "moba.sftp-follow-folder-route", "moba.sftp-terminal-folder-route", "moba.sftp-routed-file-rows", "moba.ssh-banner", "moba.ssh-banner-chrome", "moba.ssh-banner-capability-card", "moba.ssh-banner-row-geometry", "moba.terminal-transcript", "moba.terminal-transcript-geometry"],
+        "tabs": ["moba.titlebar-chrome", "moba.top-stack-geometry", "moba.home-welcome-surface", "moba.home-welcome-geometry", "moba.preset-selection-route", "moba.preset-isolation-route", "moba.preset-transition-route", "moba.keyboard-shortcut-route", "moba.command-surface-route", "moba.focus-interaction-route", "moba.home-search-route", "moba.visual-signature", "moba.live-dock-switch", "moba.connected-tab-chrome", "moba.connected-tab-geometry", "moba.connected-session-route", "moba.connected-session-actions-route", "moba.connected-session-action-menu-route", "moba.connected-session-identity-route", "moba.session-edge-controls", "moba.session-edge-geometry", "moba.bottom-edge-controls", "moba.connected-session-chrome", "moba.reference-line-anchors"],
+        "sidebars": ["moba.top-stack-geometry", "moba.quick-connect-rail", "moba.quick-connect-chrome", "moba.quick-connect-suggestions", "moba.connected-quick-connect-idle", "moba.preset-selection-route", "moba.preset-isolation-route", "moba.preset-transition-route", "moba.focus-interaction-route", "moba.home-search-route", "moba.visual-signature", "moba.rail-section-labels", "moba.rail-geometry", "moba.session-tree-geometry", "moba.connected-left-dock", "moba.connected-dock-frame", "moba.connected-session-route", "moba.connected-session-identity-route", "moba.remote-monitoring-footer-geometry", "moba.reference-line-anchors"],
+        "toolbars": ["moba.top-stack-geometry", "moba.preset-catalog-route", "moba.preset-selection-route", "moba.preset-isolation-route", "moba.preset-transition-route", "moba.keyboard-shortcut-route", "moba.command-surface-route", "moba.focus-interaction-route", "moba.home-search-route", "moba.visual-signature", "moba.top-menu-chrome", "moba.top-menu-geometry", "moba.menu-ribbon", "moba.ribbon-pictograms", "moba.ribbon-geometry", "moba.ribbon-edge-action-route", "moba.right-utility-action-route", "moba.sftp-dock-chrome", "moba.sftp-toolbar-groups", "moba.sftp-toolbar-geometry", "moba.sftp-dock-density"],
         "session_trees": ["moba.session-tree", "moba.session-tree-geometry"],
-        "connected_session_behavior": ["moba.titlebar-chrome", "moba.live-dock-switch", "moba.ssh-banner", "moba.ssh-banner-chrome", "moba.ssh-banner-capability-card", "moba.ssh-banner-row-geometry", "moba.terminal-transcript", "moba.terminal-transcript-geometry", "moba.quick-connect-suggestions", "moba.connected-quick-connect-idle", "moba.session-edge-controls", "moba.session-edge-geometry", "moba.right-utility-rail", "moba.right-utility-rail-chrome", "moba.connected-tab-chrome", "moba.connected-tab-geometry", "moba.connected-dock-frame", "moba.connected-session-route", "moba.connected-session-identity-route", "moba.sftp-toolbar-geometry", "moba.sftp-follow-folder-route", "moba.sftp-routed-file-rows", "moba.bottom-edge-controls", "moba.bottom-telemetry-geometry", "moba.connected-session-chrome", "moba.monitoring-controls", "moba.monitoring-control-geometry", "moba.remote-monitoring-compact-dock", "moba.remote-monitoring-footer-geometry", "moba.monitoring-telemetry-route"],
-        "file_monitoring_panels": ["moba.sftp-table", "moba.sftp-dock-chrome", "moba.sftp-toolbar-groups", "moba.sftp-toolbar-geometry", "moba.sftp-dock-density", "moba.sftp-browser-chrome", "moba.sftp-browser-geometry", "moba.sftp-follow-folder-route", "moba.sftp-routed-file-rows", "moba.connected-dock-frame", "moba.connected-session-route", "moba.connected-quick-connect-idle", "moba.remote-monitoring", "moba.monitoring-controls", "moba.monitoring-control-geometry", "moba.remote-monitoring-compact-dock", "moba.remote-monitoring-footer-geometry", "moba.monitoring-telemetry-route"],
-        "status_bars": ["moba.status-segments", "moba.bottom-status-chrome", "moba.bottom-status-geometry", "moba.bottom-edge-controls", "moba.bottom-telemetry", "moba.bottom-telemetry-geometry", "moba.connected-session-chrome", "moba.connected-session-route", "moba.connected-session-identity-route", "moba.remote-monitoring-compact-dock", "moba.remote-monitoring-footer-geometry", "moba.monitoring-telemetry-route", "moba.sftp-follow-folder-route", "moba.reference-line-anchors"],
-        "density": ["moba.density-spacing", "moba.titlebar-chrome", "moba.top-stack-geometry", "moba.top-menu-chrome", "moba.top-menu-geometry", "moba.ribbon-geometry", "moba.quick-connect-chrome", "moba.quick-connect-suggestions", "moba.connected-quick-connect-idle", "moba.home-welcome-surface", "moba.home-welcome-geometry", "moba.rail-section-labels", "moba.rail-geometry", "moba.session-tree-geometry", "moba.sftp-dock-chrome", "moba.sftp-toolbar-groups", "moba.sftp-toolbar-geometry", "moba.sftp-dock-density", "moba.sftp-browser-chrome", "moba.sftp-browser-geometry", "moba.sftp-routed-file-rows", "moba.connected-dock-frame", "moba.connected-session-route", "moba.connected-session-identity-route", "moba.remote-monitoring-compact-dock", "moba.remote-monitoring-footer-geometry", "moba.monitoring-control-geometry", "moba.ssh-banner-chrome", "moba.ssh-banner-capability-card", "moba.ssh-banner-row-geometry", "moba.terminal-transcript", "moba.terminal-transcript-geometry", "moba.bottom-telemetry-geometry", "moba.bottom-status-chrome", "moba.bottom-status-geometry", "moba.bottom-edge-controls", "moba.session-edge-controls", "moba.session-edge-geometry", "moba.right-utility-rail", "moba.right-utility-rail-chrome", "moba.connected-tab-chrome", "moba.connected-tab-geometry", "moba.reference-line-anchors"],
-        "spacing": ["moba.density-spacing", "moba.titlebar-chrome", "moba.top-stack-geometry", "moba.top-menu-chrome", "moba.top-menu-geometry", "moba.ribbon-geometry", "moba.quick-connect-chrome", "moba.quick-connect-suggestions", "moba.connected-quick-connect-idle", "moba.home-welcome-surface", "moba.home-welcome-geometry", "moba.rail-section-labels", "moba.rail-geometry", "moba.session-tree-geometry", "moba.sftp-dock-chrome", "moba.sftp-toolbar-groups", "moba.sftp-toolbar-geometry", "moba.sftp-dock-density", "moba.sftp-browser-chrome", "moba.sftp-browser-geometry", "moba.sftp-routed-file-rows", "moba.connected-dock-frame", "moba.connected-session-route", "moba.connected-session-identity-route", "moba.remote-monitoring-compact-dock", "moba.remote-monitoring-footer-geometry", "moba.monitoring-control-geometry", "moba.ssh-banner-chrome", "moba.ssh-banner-capability-card", "moba.ssh-banner-row-geometry", "moba.terminal-transcript", "moba.terminal-transcript-geometry", "moba.bottom-telemetry-geometry", "moba.bottom-status-chrome", "moba.bottom-status-geometry", "moba.bottom-edge-controls", "moba.session-edge-controls", "moba.session-edge-geometry", "moba.right-utility-rail", "moba.right-utility-rail-chrome", "moba.connected-tab-chrome", "moba.connected-tab-geometry", "moba.reference-line-anchors"],
-        "interaction_states": ["moba.interaction-states", "moba.titlebar-chrome", "moba.top-stack-geometry", "moba.top-menu-chrome", "moba.top-menu-geometry", "moba.ribbon-geometry", "moba.quick-connect-chrome", "moba.quick-connect-suggestions", "moba.connected-quick-connect-idle", "moba.home-welcome-surface", "moba.home-welcome-geometry", "moba.rail-section-labels", "moba.rail-geometry", "moba.sftp-dock-chrome", "moba.sftp-toolbar-groups", "moba.sftp-toolbar-geometry", "moba.sftp-follow-folder-route", "moba.sftp-routed-file-rows", "moba.connected-session-route", "moba.connected-session-identity-route", "moba.session-edge-controls", "moba.session-edge-geometry", "moba.bottom-edge-controls", "moba.right-utility-rail", "moba.right-utility-rail-chrome", "moba.connected-tab-chrome", "moba.connected-tab-geometry", "moba.connected-session-chrome", "moba.monitoring-controls", "moba.monitoring-control-geometry", "moba.remote-monitoring-compact-dock", "moba.remote-monitoring-footer-geometry", "moba.monitoring-telemetry-route", "moba.ssh-banner-capability-card", "moba.ssh-banner-row-geometry", "moba.terminal-transcript-geometry"]
+        "connected_session_behavior": ["moba.titlebar-chrome", "moba.live-dock-switch", "moba.ssh-banner", "moba.ssh-banner-chrome", "moba.ssh-banner-capability-card", "moba.ssh-banner-row-geometry", "moba.terminal-transcript", "moba.terminal-transcript-geometry", "moba.quick-connect-suggestions", "moba.connected-quick-connect-idle", "moba.preset-selection-route", "moba.preset-isolation-route", "moba.preset-transition-route", "moba.keyboard-shortcut-route", "moba.command-surface-route", "moba.focus-interaction-route", "moba.home-search-route", "moba.ribbon-edge-action-route", "moba.session-edge-controls", "moba.session-edge-geometry", "moba.right-utility-rail", "moba.right-utility-rail-chrome", "moba.right-utility-action-route", "moba.connected-tab-chrome", "moba.connected-tab-geometry", "moba.connected-dock-frame", "moba.connected-session-route", "moba.connected-session-actions-route", "moba.connected-session-action-menu-route", "moba.connected-session-identity-route", "moba.sftp-toolbar-geometry", "moba.sftp-follow-folder-route", "moba.sftp-terminal-folder-route", "moba.sftp-routed-file-rows", "moba.bottom-edge-controls", "moba.bottom-telemetry-geometry", "moba.connected-session-chrome", "moba.monitoring-controls", "moba.monitoring-control-geometry", "moba.remote-monitoring-compact-dock", "moba.remote-monitoring-footer-geometry", "moba.monitoring-telemetry-route", "moba.remote-monitoring-control-route", "moba.follow-terminal-folder-control-route"],
+        "file_monitoring_panels": ["moba.sftp-table", "moba.sftp-dock-chrome", "moba.sftp-toolbar-groups", "moba.sftp-toolbar-geometry", "moba.sftp-dock-density", "moba.sftp-browser-chrome", "moba.sftp-browser-geometry", "moba.sftp-follow-folder-route", "moba.sftp-terminal-folder-route", "moba.sftp-routed-file-rows", "moba.connected-dock-frame", "moba.connected-session-route", "moba.connected-quick-connect-idle", "moba.remote-monitoring", "moba.monitoring-controls", "moba.monitoring-control-geometry", "moba.remote-monitoring-compact-dock", "moba.remote-monitoring-footer-geometry", "moba.monitoring-telemetry-route", "moba.remote-monitoring-control-route", "moba.follow-terminal-folder-control-route"],
+        "status_bars": ["moba.status-segments", "moba.preset-selection-route", "moba.visual-signature", "moba.bottom-status-chrome", "moba.bottom-status-geometry", "moba.bottom-edge-controls", "moba.bottom-telemetry", "moba.bottom-telemetry-geometry", "moba.connected-session-chrome", "moba.connected-session-route", "moba.connected-session-identity-route", "moba.remote-monitoring-compact-dock", "moba.remote-monitoring-footer-geometry", "moba.monitoring-telemetry-route", "moba.remote-monitoring-control-route", "moba.follow-terminal-folder-control-route", "moba.sftp-follow-folder-route", "moba.reference-line-anchors"],
+        "density": ["moba.density-spacing", "moba.visual-signature", "moba.titlebar-chrome", "moba.top-stack-geometry", "moba.top-menu-chrome", "moba.top-menu-geometry", "moba.ribbon-geometry", "moba.ribbon-edge-action-route", "moba.quick-connect-chrome", "moba.quick-connect-suggestions", "moba.connected-quick-connect-idle", "moba.home-welcome-surface", "moba.home-welcome-geometry", "moba.rail-section-labels", "moba.rail-geometry", "moba.session-tree-geometry", "moba.sftp-dock-chrome", "moba.sftp-toolbar-groups", "moba.sftp-toolbar-geometry", "moba.sftp-dock-density", "moba.sftp-browser-chrome", "moba.sftp-browser-geometry", "moba.sftp-routed-file-rows", "moba.connected-dock-frame", "moba.connected-session-route", "moba.connected-session-identity-route", "moba.remote-monitoring-compact-dock", "moba.remote-monitoring-footer-geometry", "moba.monitoring-control-geometry", "moba.ssh-banner-chrome", "moba.ssh-banner-capability-card", "moba.ssh-banner-row-geometry", "moba.terminal-transcript", "moba.terminal-transcript-geometry", "moba.bottom-telemetry-geometry", "moba.bottom-status-chrome", "moba.bottom-status-geometry", "moba.bottom-edge-controls", "moba.session-edge-controls", "moba.session-edge-geometry", "moba.right-utility-rail", "moba.right-utility-rail-chrome", "moba.right-utility-action-route", "moba.connected-tab-chrome", "moba.connected-tab-geometry", "moba.reference-line-anchors"],
+        "spacing": ["moba.density-spacing", "moba.visual-signature", "moba.titlebar-chrome", "moba.top-stack-geometry", "moba.top-menu-chrome", "moba.top-menu-geometry", "moba.ribbon-geometry", "moba.ribbon-edge-action-route", "moba.quick-connect-chrome", "moba.quick-connect-suggestions", "moba.connected-quick-connect-idle", "moba.home-welcome-surface", "moba.home-welcome-geometry", "moba.rail-section-labels", "moba.rail-geometry", "moba.session-tree-geometry", "moba.sftp-dock-chrome", "moba.sftp-toolbar-groups", "moba.sftp-toolbar-geometry", "moba.sftp-dock-density", "moba.sftp-browser-chrome", "moba.sftp-browser-geometry", "moba.sftp-routed-file-rows", "moba.connected-dock-frame", "moba.connected-session-route", "moba.connected-session-identity-route", "moba.remote-monitoring-compact-dock", "moba.remote-monitoring-footer-geometry", "moba.monitoring-control-geometry", "moba.ssh-banner-chrome", "moba.ssh-banner-capability-card", "moba.ssh-banner-row-geometry", "moba.terminal-transcript", "moba.terminal-transcript-geometry", "moba.bottom-telemetry-geometry", "moba.bottom-status-chrome", "moba.bottom-status-geometry", "moba.bottom-edge-controls", "moba.session-edge-controls", "moba.session-edge-geometry", "moba.right-utility-rail", "moba.right-utility-rail-chrome", "moba.right-utility-action-route", "moba.connected-tab-chrome", "moba.connected-tab-geometry", "moba.reference-line-anchors"],
+        "interaction_states": ["moba.interaction-states", "moba.preset-catalog-route", "moba.preset-selection-route", "moba.preset-isolation-route", "moba.preset-transition-route", "moba.keyboard-shortcut-route", "moba.command-surface-route", "moba.focus-interaction-route", "moba.home-search-route", "moba.titlebar-chrome", "moba.top-stack-geometry", "moba.top-menu-chrome", "moba.top-menu-geometry", "moba.ribbon-geometry", "moba.ribbon-edge-action-route", "moba.quick-connect-chrome", "moba.quick-connect-suggestions", "moba.connected-quick-connect-idle", "moba.home-welcome-surface", "moba.home-welcome-geometry", "moba.rail-section-labels", "moba.rail-geometry", "moba.sftp-dock-chrome", "moba.sftp-toolbar-groups", "moba.sftp-toolbar-geometry", "moba.sftp-follow-folder-route", "moba.sftp-terminal-folder-route", "moba.sftp-routed-file-rows", "moba.connected-session-route", "moba.connected-session-actions-route", "moba.connected-session-action-menu-route", "moba.connected-session-identity-route", "moba.session-edge-controls", "moba.session-edge-geometry", "moba.bottom-edge-controls", "moba.right-utility-rail", "moba.right-utility-rail-chrome", "moba.right-utility-action-route", "moba.connected-tab-chrome", "moba.connected-tab-geometry", "moba.connected-session-chrome", "moba.monitoring-controls", "moba.monitoring-control-geometry", "moba.remote-monitoring-compact-dock", "moba.remote-monitoring-footer-geometry", "moba.monitoring-telemetry-route", "moba.remote-monitoring-control-route", "moba.follow-terminal-folder-control-route", "moba.ssh-banner-capability-card", "moba.ssh-banner-row-geometry", "moba.terminal-transcript-geometry"]
       },
       "requirements": [
         {
@@ -92,6 +92,17 @@
             "scripts/render_gui_design_previews.py": ["gui_design_moba_ribbon_actions", "gui_design_moba_ribbon_edge_actions"],
             "src/remote_ops_workspace/gui.py": ["build_moba_ribbon_buttons", "gui_design_moba_ribbon_edge_actions", "mobaXServerAction", "mobaExitAction"],
             "configs/gui_visual_metrics.json": ["ribbon-right-actions", "ribbon-xserver-action", "ribbon-exit-action"]
+          }
+        },
+        {
+          "id": "moba.ribbon-edge-action-route",
+          "description": "MobaXterm-style far-right ribbon edge actions tie the X server and Exit buttons to stable route metadata, generated icons, toolbar placement and live workflow handlers.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiMobaRibbonEdgeActionRoute", "GUI_DESIGN_MOBA_RIBBON_EDGE_ACTION_ROUTE", "gui_design_moba_ribbon_edge_action_route"],
+            "scripts/render_gui_design_previews.py": ["gui_design_moba_ribbon_edge_action_route", "moba_ribbon_edge_action_route", "xserver_dialog_detail"],
+            "src/remote_ops_workspace/gui.py": ["apply_moba_ribbon_edge_action_route", "mobaRibbonEdgeRouteKey", "mobaRibbonEdgeRouteHandler"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_MOBA_RIBBON_EDGE_ACTION_ROUTE", "ribbon-edge-action-route", "expected_moba_ribbon_edge_action_route"],
+            "docs/GUI_DESIGN.md": ["MobaXterm-style ribbon edge action route"]
           }
         },
         {
@@ -327,6 +338,17 @@
           }
         },
         {
+          "id": "moba.right-utility-action-route",
+          "description": "Connected MobaXterm-style right utility rail actions tie the clip, settings and tools buttons to stable workflow route metadata, generated icons and live handlers.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiMobaRightUtilityActionRoute", "GUI_DESIGN_MOBA_RIGHT_UTILITY_ACTION_ROUTE", "gui_design_moba_right_utility_action_route"],
+            "scripts/render_gui_design_previews.py": ["gui_design_moba_right_utility_action_route", "moba_right_utility_action_route", "show_moba_clipboard_hints"],
+            "src/remote_ops_workspace/gui.py": ["show_moba_clipboard_hints", "show_moba_terminal_settings", "mobaRightUtilityRouteKey", "mobaRightUtilityRouteHandler"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_MOBA_RIGHT_UTILITY_ACTION_ROUTE", "right-utility-action-route", "expected_moba_right_utility_action_route"],
+            "docs/GUI_DESIGN.md": ["MobaXterm-style right utility action route"]
+          }
+        },
+        {
           "id": "moba.sftp-table",
           "description": "SFTP browser shows toolbar actions, remote path, a selected parent-folder row, file name, size and last-modified columns.",
           "source_tokens": {
@@ -368,6 +390,17 @@
             "src/remote_ops_workspace/gui.py": ["mobaSftpFollowRouteKey", "mobaSftpFollowRoutePath", "mobaSftpFollowRoutePlan", "mobaMonitoringFollowEnabled"],
             "scripts/check_real_gui_render.py": ["EXPECTED_MOBA_SFTP_FOLLOW_FOLDER_ROUTE", "sftp-follow-folder-route", "expected_moba_sftp_follow_folder_route", "route_paths"],
             "docs/GUI_DESIGN.md": ["MobaXterm-style SFTP follow-folder route"]
+          }
+        },
+        {
+          "id": "moba.sftp-terminal-folder-route",
+          "description": "MobaXterm-style terminal-folder route proves the terminal working directory, Follow terminal folder checkbox, SFTP path field, selected parent row and SFTP list command are synchronized as one connected-session workflow.",
+          "source_tokens": {
+            "src/remote_ops_workspace/moba_connected.py": ["MobaSftpTerminalFolderRoute", "moba_sftp_terminal_folder_route", "terminal-cwd-follow-checkbox-to-sftp-path-and-rows"],
+            "scripts/render_gui_design_previews.py": ["moba_sftp_terminal_folder_route", "folder_route.list_command", "folder_route.target_path_object"],
+            "src/remote_ops_workspace/gui.py": ["mobaSftpTerminalFolderRouteKey", "SFTP_ROW_TERMINAL_FOLDER_ROUTE_KEY_ROLE", "mobaSftpTerminalFolderRoutePlan"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_MOBA_SFTP_TERMINAL_FOLDER_ROUTE", "sftp-terminal-folder-route", "expected_moba_sftp_terminal_folder_route"],
+            "docs/GUI_DESIGN.md": ["MobaXterm-style SFTP terminal-folder route"]
           }
         },
         {
@@ -465,6 +498,28 @@
             "src/remote_ops_workspace/gui.py": ["mobaMonitoringTelemetryRouteKey", "mobaMonitoringTelemetryMetricCellKeys", "mobaMonitoringTelemetryRouted"],
             "scripts/check_real_gui_render.py": ["EXPECTED_MOBA_MONITORING_TELEMETRY_ROUTE", "monitoring-telemetry-route", "expected_moba_monitoring_telemetry_route"],
             "docs/GUI_DESIGN.md": ["MobaXterm-style monitoring telemetry route"]
+          }
+        },
+        {
+          "id": "moba.remote-monitoring-control-route",
+          "description": "MobaXterm-style Remote monitoring control route proves the live toggle exposes checked state, SSH telemetry command, refresh cadence and bottom telemetry route evidence instead of only passive panel chrome.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiMobaRemoteMonitoringControlRoute", "GUI_DESIGN_MOBA_REMOTE_MONITORING_CONTROL_ROUTE", "gui_design_moba_remote_monitoring_control_route"],
+            "scripts/render_gui_design_previews.py": ["moba_remote_monitoring_control_route", "remote_monitoring_control_route.telemetry_route_key", "moba_remote_monitoring_control_route.to_dict"],
+            "src/remote_ops_workspace/gui.py": ["apply_remote_monitoring_control_route_properties", "mobaRemoteMonitoringControlRouteKey", "mobaRemoteMonitoringControlCapturedCommand"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_MOBA_REMOTE_MONITORING_CONTROL_ROUTE", "remote-monitoring-control-route", "expected_moba_remote_monitoring_control_route"],
+            "docs/GUI_DESIGN.md": ["MobaXterm-style remote monitoring control route"]
+          }
+        },
+        {
+          "id": "moba.follow-terminal-folder-control-route",
+          "description": "MobaXterm-style Follow terminal folder control route proves the visible checkbox exposes checked state, active remote path, SFTP list plan and target SFTP browser/table linkage as first-class static/live evidence.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiMobaFollowTerminalFolderControlRoute", "GUI_DESIGN_MOBA_FOLLOW_TERMINAL_FOLDER_CONTROL_ROUTE", "gui_design_moba_follow_terminal_folder_control_route"],
+            "scripts/render_gui_design_previews.py": ["moba_follow_terminal_folder_control_route", "follow_terminal_folder_control_route.expected_checked", "moba_follow_terminal_folder_control_route.to_dict"],
+            "src/remote_ops_workspace/gui.py": ["apply_follow_terminal_folder_control_route_properties", "mobaFollowTerminalFolderControlRouteKey", "mobaFollowTerminalFolderControlCapturedPlan"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_MOBA_FOLLOW_TERMINAL_FOLDER_CONTROL_ROUTE", "follow-terminal-folder-control-route", "expected_moba_follow_terminal_folder_control_route"],
+            "docs/GUI_DESIGN.md": ["MobaXterm-style follow terminal folder control route"]
           }
         },
         {
@@ -622,6 +677,28 @@
           }
         },
         {
+          "id": "moba.connected-session-actions-route",
+          "description": "MobaXterm-style connected session action route proves the active SSH tab exposes stable context/session action keys, labels and enabled-state capture through the live tab menu path.",
+          "source_tokens": {
+            "src/remote_ops_workspace/moba_connected.py": ["MobaConnectedSessionActionRoute", "moba_connected_session_action_route", "active-connected-tab-context-session-actions"],
+            "scripts/render_gui_design_previews.py": ["moba_connected_session_action_route", "action_route.expected_action_keys", "moba_connected_action_route"],
+            "src/remote_ops_workspace/gui.py": ["mobaConnectedSessionActionRouteKey", "apply_moba_connected_session_action_route_to_tab", "route.captured_enabled_keys_property"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_MOBA_CONNECTED_SESSION_ACTION_ROUTE", "check_live_moba_connected_session_action_route", "connected-session-actions-route", "expected_moba_connected_session_action_route"],
+            "docs/GUI_DESIGN.md": ["MobaXterm-style connected session action route"]
+          }
+        },
+        {
+          "id": "moba.connected-session-action-menu-route",
+          "description": "MobaXterm-style connected session action menu route proves the live right-click menu is buildable, named and populated with actual QAction metadata matching the active SSH tab action route.",
+          "source_tokens": {
+            "src/remote_ops_workspace/moba_connected.py": ["menu_object", "mobaConnectedSessionTabContextMenu", "MobaConnectedSessionActionRoute"],
+            "src/remote_ops_workspace/gui.py": ["build_tab_context_menu", "apply_session_action_menu_capture", "session_action_menu_object_name"],
+            "scripts/check_real_gui_render.py": ["build_tab_context_menu", "connected session action menu", "route.menu_object"],
+            "scripts/render_gui_design_previews.py": ["action_route.menu_object", "mobaConnectedSessionTabContextMenu"],
+            "docs/GUI_DESIGN.md": ["MobaXterm-style connected session action menu route"]
+          }
+        },
+        {
           "id": "moba.connected-session-identity-route",
           "description": "MobaXterm-style connected-session identity route keeps the window title, active tab label, SSH banner target, web console line, terminal prompt and bottom telemetry target synchronized through shared static/live metadata.",
           "source_tokens": {
@@ -702,6 +779,123 @@
           }
         },
         {
+          "id": "moba.preset-selection-route",
+          "description": "MobaXterm-style preset-selection route proves the selected design combo value drives the toolbar, sidebar header, home tab label, status segments and Moba workspace evidence for the active preset.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetSelectionRoute", "gui_design_preset_selection_route", "selector-to-toolbar-sidebar-tabs-status-workspace"],
+            "src/remote_ops_workspace/gui.py": ["presetSelectionRouteKey", "presetSelectionRouteHomeTabLabel", "presetSelectionRouteStatusSegments"],
+            "scripts/render_gui_design_previews.py": ["preset_selection_route", "selection_route.home_tab_label", "selection_route.status_segments"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_SELECTION_ROUTES", "preset-selection-route", "expected_preset_selection_route"],
+            "docs/GUI_DESIGN.md": ["preset-selection route"]
+          }
+        },
+        {
+          "id": "moba.visual-signature",
+          "description": "MobaXterm-style visual signature keeps preset palette, density, tab behavior, toolbar icon size and pane/sidebar sizing synchronized between shared metadata, static previews and the live PyQt surface.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetVisualSignature", "gui_design_preset_visual_signature", "preset-palette-density-to-live-static-style"],
+            "src/remote_ops_workspace/gui.py": ["presetVisualSignatureDensity", "presetVisualSignaturePalette", "presetVisualSignatureRenderSource"],
+            "scripts/render_gui_design_previews.py": ["preset_visual_signature", "visual_signature.palette_items", "visual_signature.terminal_accent_color"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_VISUAL_SIGNATURES", "preset-visual-signature", "expected_preset_visual_signature"],
+            "docs/GUI_DESIGN.md": ["visual signature contract"]
+          }
+        },
+        {
+          "id": "moba.preset-isolation-route",
+          "description": "MobaXterm-style preset isolation route proves active product-specific chrome is visible while inactive product-specific widgets are hidden or absent after switching styles.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetIsolationRoute", "gui_design_preset_isolation_route", "active-preset-visible-hidden-widget-isolation"],
+            "src/remote_ops_workspace/gui.py": ["presetIsolationVisibleObjects", "presetIsolationHiddenObjects", "presetIsolationRenderSource"],
+            "scripts/render_gui_design_previews.py": ["preset_isolation_route", "isolation_route.visible_objects", "isolation_route.hidden_objects"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_ISOLATION_ROUTES", "preset-isolation-route", "expected_preset_isolation_route"],
+            "docs/GUI_DESIGN.md": ["preset isolation route"]
+          }
+        },
+        {
+          "id": "moba.preset-transition-route",
+          "description": "MobaXterm-style preset transition route proves switching from another selectable style to MobaXterm-style resets inactive product chrome from the previous style.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetTransitionRoute", "gui_design_preset_transition_route", "selector-style-switch-resets-inactive-product-chrome"],
+            "src/remote_ops_workspace/gui.py": ["presetTransitionFromPresetIds", "presetTransitionResetObjects", "presetTransitionRenderSource"],
+            "scripts/render_gui_design_previews.py": ["preset_transition_route", "transition_route.from_preset_ids", "transition_route.reset_objects"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_TRANSITION_ROUTES", "preset-transition-route", "expected_preset_transition_route"],
+            "docs/GUI_DESIGN.md": ["preset transition route"]
+          }
+        },
+        {
+          "id": "moba.keyboard-shortcut-route",
+          "description": "MobaXterm-style keyboard shortcut route proves the product preset exposes tracked shortcut keys, key sequences, action labels and live QShortcut bindings.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetKeyboardShortcutRoute", "gui_design_preset_keyboard_shortcut_route", "product-preset-keyboard-shortcuts"],
+            "src/remote_ops_workspace/gui.py": ["presetKeyboardShortcutCapturedSequences", "create_keyboard_shortcuts", "presetKeyboardShortcutActionLabel"],
+            "scripts/render_gui_design_previews.py": ["preset_keyboard_shortcut_route", "keyboard_shortcut_route.expected_sequences"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_KEYBOARD_SHORTCUT_ROUTES", "preset-keyboard-shortcut-route", "expected_preset_keyboard_shortcut_route"],
+            "docs/GUI_DESIGN.md": ["preset keyboard shortcut route"]
+          }
+        },
+        {
+          "id": "moba.command-surface-route",
+          "description": "MobaXterm-style command surface route proves the product preset exposes visible command action order, labels, tooltips and active/checked/disabled state from shared static/live metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": [
+              "GuiPresetCommandSurfaceRoute",
+              "gui_design_preset_command_surface_route",
+              "product-preset-command-surface-route"
+            ],
+            "src/remote_ops_workspace/gui.py": [
+              "presetCommandSurfaceCapturedKeys",
+              "apply_command_surface_route_for_design",
+              "presetCommandSurfaceCapturedStates"
+            ],
+            "scripts/render_gui_design_previews.py": [
+              "preset_command_surface_route",
+              "command_surface_route.expected_action_keys"
+            ],
+            "scripts/check_real_gui_render.py": [
+              "EXPECTED_PRESET_COMMAND_SURFACE_ROUTES",
+              "check_live_preset_command_surface_route",
+              "preset-command-surface-route",
+              "expected_preset_command_surface_route"
+            ],
+            "docs/GUI_DESIGN.md": [
+              "preset command surface route"
+            ]
+          }
+        },
+        {
+          "id": "moba.focus-interaction-route",
+          "description": "MobaXterm-style focus interaction route proves the product preset exposes focused control, active toolbar, checked toolbar, disabled toolbar and selected tree-row interaction evidence from shared static/live metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetFocusInteractionRoute", "gui_design_preset_focus_interaction_route", "product-preset-focus-interaction-route"],
+            "src/remote_ops_workspace/gui.py": ["presetFocusInteractionCapturedFocus", "apply_focus_interaction_route_for_design", "presetFocusInteractionToolbarStates"],
+            "scripts/render_gui_design_previews.py": ["preset_focus_interaction_route", "focus_interaction_route.focused_control"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_FOCUS_INTERACTION_ROUTES", "preset-focus-interaction-route", "expected_preset_focus_interaction_route"],
+            "docs/GUI_DESIGN.md": ["preset focus interaction route"]
+          }
+        },
+        {
+          "id": "moba.home-search-route",
+          "description": "MobaXterm-style home search route proves the product preset exposes Home search, quick-connect/filter entry, Home actions and recent labels from shared static/live metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetHomeSearchRoute", "gui_design_preset_home_search_route", "product-preset-home-search-entry-route"],
+            "src/remote_ops_workspace/gui.py": ["presetHomeSearchCapturedPlaceholder", "apply_home_search_route_for_design", "presetHomeSearchCapturedRecentLabels"],
+            "scripts/render_gui_design_previews.py": ["preset_home_search_route", "home_search_route.placeholder_text"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_HOME_SEARCH_ROUTES", "preset-home-search-route", "expected_preset_home_search_route"],
+            "docs/GUI_DESIGN.md": ["preset home search route"]
+          }
+        },
+        {
+          "id": "moba.preset-catalog-route",
+          "description": "MobaXterm-style preset catalog route proves the design selector exposes the complete ordered catalog, default Native option and product-style subset from shared static/live metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetCatalogRoute", "gui_design_preset_catalog_route", "preset-catalog-to-design-selector-options"],
+            "src/remote_ops_workspace/gui.py": ["presetCatalogRouteOptionIds", "presetCatalogRouteProductPresetIds", "presetCatalogRouteDefaultPresetId"],
+            "scripts/render_gui_design_previews.py": ["preset_catalog_route", "catalog_route.option_ids", "catalog_route.option_labels"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_CATALOG_ROUTE", "preset-catalog-route", "expected_preset_catalog_route"],
+            "docs/GUI_DESIGN.md": ["design selector catalog"]
+          }
+        },
+        {
           "id": "moba.interaction-states",
           "description": "MobaXterm-style interaction state tracks quick-connect focus, checked SFTP rail state and disabled sample ribbon affordance without user-specific data.",
           "source_tokens": {
@@ -717,19 +911,19 @@
         "SecureCRT-style terminal-first operator surface with restrained dark chrome, wide tabs and session tree."
       ],
       "dimension_coverage": {
-        "layout": ["securecrt.terminal-density", "securecrt.top-chrome", "securecrt.workspace-surface", "securecrt.session-status-strip", "securecrt.session-status-geometry", "securecrt.command-window-geometry", "securecrt.command-window-send-route", "securecrt.session-manager-chrome", "securecrt.session-manager-geometry", "securecrt.session-manager-route", "securecrt.reference-line-anchors", "securecrt.reference-topology"],
-        "navigation": ["securecrt.top-chrome", "securecrt.session-manager-sidebar", "securecrt.session-manager-chrome", "securecrt.session-manager-geometry", "securecrt.session-manager-route", "securecrt.reference-line-anchors"],
-        "panes": ["securecrt.workspace-surface", "securecrt.session-status-strip", "securecrt.session-status-geometry", "securecrt.command-window", "securecrt.command-window-chrome", "securecrt.command-window-geometry", "securecrt.command-window-send-route", "securecrt.session-manager-route", "securecrt.reference-line-anchors"],
-        "tabs": ["securecrt.session-tabs", "securecrt.tab-model", "securecrt.reference-state", "securecrt.session-status-strip", "securecrt.session-status-geometry", "securecrt.session-manager-route", "securecrt.reference-line-anchors"],
-        "sidebars": ["securecrt.session-manager-sidebar", "securecrt.session-manager-chrome", "securecrt.session-manager-geometry", "securecrt.session-manager-route", "securecrt.reference-line-anchors"],
-        "toolbars": ["securecrt.top-chrome", "securecrt.session-toolbar", "securecrt.session-manager-chrome", "securecrt.session-manager-geometry", "securecrt.session-manager-route", "securecrt.reference-line-anchors"],
-        "session_trees": ["securecrt.session-tree", "securecrt.session-glyphs", "securecrt.session-manager-chrome", "securecrt.session-manager-geometry", "securecrt.session-manager-route"],
-        "connected_session_behavior": ["securecrt.workspace-surface", "securecrt.session-status-strip", "securecrt.session-status-geometry", "securecrt.command-window", "securecrt.command-window-chrome", "securecrt.command-window-geometry", "securecrt.command-window-send-route", "securecrt.session-manager-route", "securecrt.reference-state"],
-        "file_monitoring_panels": ["securecrt.workspace-surface"],
-        "status_bars": ["securecrt.status-bar", "securecrt.reference-state", "securecrt.session-status-strip", "securecrt.session-status-geometry", "securecrt.command-window-send-route", "securecrt.session-manager-route", "securecrt.reference-line-anchors"],
-        "density": ["securecrt.terminal-density", "securecrt.top-chrome", "securecrt.session-status-strip", "securecrt.session-status-geometry", "securecrt.session-manager-chrome", "securecrt.session-manager-geometry", "securecrt.session-manager-route", "securecrt.reference-line-anchors"],
-        "spacing": ["securecrt.top-chrome", "securecrt.session-tabs", "securecrt.session-status-strip", "securecrt.session-status-geometry", "securecrt.command-window-geometry", "securecrt.command-window-send-route", "securecrt.session-manager-chrome", "securecrt.session-manager-geometry", "securecrt.session-manager-route", "securecrt.reference-line-anchors"],
-        "interaction_states": ["securecrt.interaction-states", "securecrt.top-chrome", "securecrt.reference-state", "securecrt.session-status-strip", "securecrt.command-window-send-route", "securecrt.session-manager-chrome", "securecrt.session-manager-geometry", "securecrt.session-manager-route"]
+        "layout": ["securecrt.terminal-density", "securecrt.visual-signature", "securecrt.top-chrome", "securecrt.workspace-surface", "securecrt.session-status-strip", "securecrt.session-status-geometry", "securecrt.command-window-geometry", "securecrt.command-window-send-route", "securecrt.session-manager-chrome", "securecrt.session-manager-geometry", "securecrt.session-manager-route", "securecrt.session-manager-filter-route", "securecrt.sftp-tab-route", "securecrt.sftp-browser-route", "securecrt.preset-catalog-route", "securecrt.preset-selection-route", "securecrt.preset-isolation-route", "securecrt.preset-transition-route", "securecrt.reference-tab-activation-route", "securecrt.reference-tab-chrome-evidence-route", "securecrt.reference-surface-evidence-route", "securecrt.reference-control-evidence-route", "securecrt.reference-input-evidence-route", "securecrt.reference-transcript-evidence-route", "securecrt.reference-line-anchors", "securecrt.reference-topology"],
+        "navigation": ["securecrt.top-chrome", "securecrt.session-manager-sidebar", "securecrt.session-manager-chrome", "securecrt.session-manager-geometry", "securecrt.session-manager-route", "securecrt.session-manager-filter-route", "securecrt.sftp-tab-route", "securecrt.sftp-browser-route", "securecrt.preset-catalog-route", "securecrt.preset-selection-route", "securecrt.preset-isolation-route", "securecrt.preset-transition-route", "securecrt.keyboard-shortcut-route", "securecrt.command-surface-route", "securecrt.focus-interaction-route", "securecrt.home-search-route", "securecrt.product-identity-route", "securecrt.reference-tab-activation-route", "securecrt.reference-tab-chrome-evidence-route", "securecrt.reference-session-actions-route", "securecrt.reference-line-anchors"],
+        "panes": ["securecrt.workspace-surface", "securecrt.session-status-strip", "securecrt.session-status-geometry", "securecrt.command-window", "securecrt.command-window-chrome", "securecrt.command-window-geometry", "securecrt.command-window-send-route", "securecrt.session-manager-route", "securecrt.session-manager-filter-route", "securecrt.sftp-tab-route", "securecrt.sftp-browser-route", "securecrt.reference-surface-evidence-route", "securecrt.reference-control-evidence-route", "securecrt.reference-input-evidence-route", "securecrt.reference-transcript-evidence-route", "securecrt.reference-line-anchors"],
+        "tabs": ["securecrt.session-tabs", "securecrt.visual-signature", "securecrt.tab-model", "securecrt.reference-state", "securecrt.session-status-strip", "securecrt.session-status-geometry", "securecrt.session-manager-route", "securecrt.session-manager-filter-route", "securecrt.sftp-tab-route", "securecrt.sftp-browser-route", "securecrt.preset-selection-route", "securecrt.preset-isolation-route", "securecrt.preset-transition-route", "securecrt.keyboard-shortcut-route", "securecrt.command-surface-route", "securecrt.focus-interaction-route", "securecrt.home-search-route", "securecrt.product-identity-route", "securecrt.reference-tab-activation-route", "securecrt.reference-tab-chrome-evidence-route", "securecrt.reference-status-bar-evidence-route", "securecrt.reference-session-actions-route", "securecrt.reference-surface-evidence-route", "securecrt.reference-line-anchors"],
+        "sidebars": ["securecrt.session-manager-sidebar", "securecrt.visual-signature", "securecrt.session-manager-chrome", "securecrt.session-manager-geometry", "securecrt.session-manager-route", "securecrt.session-manager-filter-route", "securecrt.sftp-tab-route", "securecrt.sftp-browser-route", "securecrt.preset-selection-route", "securecrt.preset-isolation-route", "securecrt.preset-transition-route", "securecrt.focus-interaction-route", "securecrt.home-search-route", "securecrt.reference-line-anchors"],
+        "toolbars": ["securecrt.top-chrome", "securecrt.visual-signature", "securecrt.session-toolbar", "securecrt.session-manager-chrome", "securecrt.session-manager-geometry", "securecrt.session-manager-route", "securecrt.sftp-tab-route", "securecrt.sftp-browser-route", "securecrt.preset-catalog-route", "securecrt.preset-selection-route", "securecrt.preset-isolation-route", "securecrt.preset-transition-route", "securecrt.keyboard-shortcut-route", "securecrt.command-surface-route", "securecrt.focus-interaction-route", "securecrt.home-search-route", "securecrt.reference-control-evidence-route", "securecrt.reference-line-anchors"],
+        "session_trees": ["securecrt.session-tree", "securecrt.session-glyphs", "securecrt.session-manager-chrome", "securecrt.session-manager-geometry", "securecrt.session-manager-route", "securecrt.session-manager-filter-route", "securecrt.sftp-tab-route", "securecrt.sftp-browser-route", "securecrt.product-identity-route"],
+        "connected_session_behavior": ["securecrt.workspace-surface", "securecrt.session-status-strip", "securecrt.session-status-geometry", "securecrt.command-window", "securecrt.command-window-chrome", "securecrt.command-window-geometry", "securecrt.command-window-send-route", "securecrt.session-manager-route", "securecrt.session-manager-filter-route", "securecrt.sftp-tab-route", "securecrt.sftp-browser-route", "securecrt.reference-state", "securecrt.preset-selection-route", "securecrt.preset-isolation-route", "securecrt.preset-transition-route", "securecrt.keyboard-shortcut-route", "securecrt.command-surface-route", "securecrt.focus-interaction-route", "securecrt.home-search-route", "securecrt.product-identity-route", "securecrt.reference-tab-activation-route", "securecrt.reference-tab-chrome-evidence-route", "securecrt.reference-status-bar-evidence-route", "securecrt.reference-session-actions-route", "securecrt.reference-surface-evidence-route", "securecrt.reference-control-evidence-route", "securecrt.reference-input-evidence-route", "securecrt.reference-transcript-evidence-route"],
+        "file_monitoring_panels": ["securecrt.workspace-surface", "securecrt.sftp-tab-route", "securecrt.sftp-browser-route"],
+        "status_bars": ["securecrt.status-bar", "securecrt.visual-signature", "securecrt.reference-state", "securecrt.session-status-strip", "securecrt.session-status-geometry", "securecrt.command-window-send-route", "securecrt.session-manager-route", "securecrt.sftp-tab-route", "securecrt.sftp-browser-route", "securecrt.preset-selection-route", "securecrt.product-identity-route", "securecrt.reference-status-bar-evidence-route", "securecrt.reference-line-anchors"],
+        "density": ["securecrt.terminal-density", "securecrt.visual-signature", "securecrt.top-chrome", "securecrt.session-status-strip", "securecrt.session-status-geometry", "securecrt.session-manager-chrome", "securecrt.session-manager-geometry", "securecrt.session-manager-route", "securecrt.sftp-tab-route", "securecrt.sftp-browser-route", "securecrt.reference-transcript-evidence-route", "securecrt.reference-line-anchors"],
+        "spacing": ["securecrt.visual-signature", "securecrt.top-chrome", "securecrt.session-tabs", "securecrt.session-status-strip", "securecrt.session-status-geometry", "securecrt.command-window-geometry", "securecrt.command-window-send-route", "securecrt.session-manager-chrome", "securecrt.session-manager-geometry", "securecrt.session-manager-route", "securecrt.session-manager-filter-route", "securecrt.sftp-tab-route", "securecrt.sftp-browser-route", "securecrt.reference-tab-chrome-evidence-route", "securecrt.reference-status-bar-evidence-route", "securecrt.reference-input-evidence-route", "securecrt.reference-line-anchors"],
+        "interaction_states": ["securecrt.interaction-states", "securecrt.top-chrome", "securecrt.reference-state", "securecrt.session-status-strip", "securecrt.command-window-send-route", "securecrt.session-manager-chrome", "securecrt.session-manager-geometry", "securecrt.session-manager-route", "securecrt.session-manager-filter-route", "securecrt.sftp-tab-route", "securecrt.sftp-browser-route", "securecrt.preset-catalog-route", "securecrt.preset-selection-route", "securecrt.preset-isolation-route", "securecrt.preset-transition-route", "securecrt.keyboard-shortcut-route", "securecrt.command-surface-route", "securecrt.focus-interaction-route", "securecrt.home-search-route", "securecrt.product-identity-route", "securecrt.reference-tab-activation-route", "securecrt.reference-tab-chrome-evidence-route", "securecrt.reference-status-bar-evidence-route", "securecrt.reference-session-actions-route", "securecrt.reference-surface-evidence-route", "securecrt.reference-control-evidence-route", "securecrt.reference-input-evidence-route", "securecrt.reference-transcript-evidence-route"]
       },
       "requirements": [
         {
@@ -822,6 +1016,39 @@
             "scripts/render_gui_design_previews.py": ["gui_design_securecrt_session_manager_route", "route.session_manager_action_key", "route.active_tab_label"],
             "scripts/check_real_gui_render.py": ["EXPECTED_SECURECRT_SESSION_MANAGER_ROUTE", "securecrt-session-manager-route", "expected_securecrt_session_manager_route"],
             "docs/GUI_DESIGN.md": ["SecureCRT-style Session Manager route"]
+          }
+        },
+        {
+          "id": "securecrt.session-manager-filter-route",
+          "description": "SecureCRT-style Session Manager filter field routes a sample query to the matched selected SSH2 row through shared static and live metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiSecureCrtSessionManagerFilterRoute", "GUI_DESIGN_SECURECRT_SESSION_MANAGER_FILTER_ROUTE", "gui_design_securecrt_session_manager_filter_route"],
+            "src/remote_ops_workspace/gui.py": ["secureCrtSessionFilterRouteKey", "SECURECRT_FILTER_ROUTE_MATCHED_ROLE", "filter_profile_tree"],
+            "scripts/render_gui_design_previews.py": ["gui_design_securecrt_session_manager_filter_route", "filter_route.expected_query", "filter_route.matched_result_label"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_SECURECRT_SESSION_MANAGER_FILTER_ROUTE", "securecrt-session-manager-filter-route", "expected_securecrt_session_manager_filter_route"],
+            "docs/GUI_DESIGN.md": ["SecureCRT-style Session Manager filter route"]
+          }
+        },
+        {
+          "id": "securecrt.sftp-tab-route",
+          "description": "SecureCRT-style SFTP tab route ties the SFTP workflow card, files-prod SFTP tree row, SFTP tab label and SFTP status-strip cell through shared static and live metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiSecureCrtSftpTabRoute", "GUI_DESIGN_SECURECRT_SFTP_TAB_ROUTE", "gui_design_securecrt_sftp_tab_route"],
+            "src/remote_ops_workspace/gui.py": ["secureCrtSftpTabRouteKey", "SECURECRT_SFTP_ROUTE_TAB_ROLE", "secureCrtSftpTabRouteTransferState"],
+            "scripts/render_gui_design_previews.py": ["gui_design_securecrt_sftp_tab_route", "securecrt_sftp_tab_route.status_field_key", "securecrt_sftp_tab_route.transfer_state"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_SECURECRT_SFTP_TAB_ROUTE", "securecrt-sftp-tab-route", "expected_securecrt_sftp_tab_route"],
+            "docs/GUI_DESIGN.md": ["SecureCRT-style SFTP tab route"]
+          }
+        },
+        {
+          "id": "securecrt.sftp-browser-route",
+          "description": "SecureCRT-style SFTP browser route ties the files-prod SFTP tab to a remote path, toolbar actions, transfer queue and selected file row through shared static and live metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiSecureCrtSftpBrowserRoute", "GUI_DESIGN_SECURECRT_SFTP_BROWSER_ROUTE", "gui_design_securecrt_sftp_browser_route"],
+            "src/remote_ops_workspace/gui.py": ["secureCrtSftpBrowserRouteKey", "secureCrtSftpBrowserPath", "secureCrtSftpBrowserQueueState"],
+            "scripts/render_gui_design_previews.py": ["gui_design_securecrt_sftp_browser_route", "draw_securecrt_sftp_browser", "securecrt_sftp_browser_route.active_row_name"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_SECURECRT_SFTP_BROWSER_ROUTE", "securecrt-sftp-browser-route", "expected_securecrt_sftp_browser_route"],
+            "docs/GUI_DESIGN.md": ["SecureCRT-style SFTP browser route"]
           }
         },
         {
@@ -959,6 +1186,222 @@
           }
         },
         {
+          "id": "securecrt.product-identity-route",
+          "description": "SecureCRT-style product identity route keeps the selected Session Manager row, active SSH2 tab, reference-state strip, workspace surface and status segments synchronized through shared static/live metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiProductIdentityRoute", "gui_design_product_identity_route", "tree-tab-reference-status-workspace-identity"],
+            "src/remote_ops_workspace/gui.py": ["productIdentityRouteKey", "productIdentityActiveTab", "productIdentityStatusSegments"],
+            "scripts/render_gui_design_previews.py": ["gui_design_product_identity_route", "product_identity_route.active_tab_label", "product_identity_route.status_segments"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRODUCT_IDENTITY_ROUTES", "product-identity-route", "expected_product_identity_route"],
+            "docs/GUI_DESIGN.md": ["product identity route"]
+          }
+        },
+        {
+          "id": "securecrt.reference-tab-activation-route",
+          "description": "SecureCRT-style reference tab activation route proves the opened SSH2 reference tab can become the active surface and returns to Start Page evidence before capture.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetReferenceTabRoute", "gui_design_preset_reference_tab_route", "reference-profile-tab-can-be-active-surface"],
+            "src/remote_ops_workspace/gui.py": ["presetReferenceTabActivatedLabel", "presetReferenceTabReturnedHomeLabel", "find_tab_by_label"],
+            "scripts/render_gui_design_previews.py": ["preset_reference_tab_route", "reference_tab_route.active_tab_label", "reference_tab_route.home_tab_label"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_REFERENCE_TAB_ROUTES", "reference-tab-activation-route", "expected_preset_reference_tab_route"],
+            "docs/GUI_DESIGN.md": ["reference tab activation route"]
+          }
+        },
+        {
+          "id": "securecrt.reference-tab-chrome-evidence-route",
+          "description": "SecureCRT-style reference tab chrome evidence route proves the opened SSH2 tab exposes label, tooltip/status, position, index, role and closeability before capture.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetReferenceTabChromeRoute", "gui_design_preset_reference_tab_chrome_route", "active-reference-tab-chrome-evidence"],
+            "src/remote_ops_workspace/gui.py": ["presetReferenceTabChromeTooltip", "apply_reference_tab_chrome_route_to_terminal_tab", "sessionTabBar"],
+            "scripts/render_gui_design_previews.py": ["preset_reference_tab_chrome_route", "reference_tab_chrome_route.expected_tooltip"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_REFERENCE_TAB_CHROME_ROUTES", "reference-tab-chrome-evidence-route", "expected_preset_reference_tab_chrome_route"],
+            "docs/GUI_DESIGN.md": ["reference tab chrome evidence route"]
+          }
+        },
+        {
+          "id": "securecrt.reference-status-bar-evidence-route",
+          "description": "SecureCRT-style reference status-bar evidence route proves the opened SSH2 tab drives the status bar message, status notice, segment texts, segment count and segment tooltips before capture.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetReferenceStatusBarRoute", "gui_design_preset_reference_status_bar_route", "active-reference-status-bar-evidence"],
+            "src/remote_ops_workspace/gui.py": ["presetReferenceStatusSegments", "apply_reference_status_bar_route_to_terminal_tab", "productStatusSegment"],
+            "scripts/render_gui_design_previews.py": ["preset_reference_status_bar_route", "reference_status_route.expected_status_segments"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_REFERENCE_STATUS_BAR_ROUTES", "reference-status-bar-evidence-route", "expected_preset_reference_status_bar_route"],
+            "docs/GUI_DESIGN.md": ["reference status-bar evidence route"]
+          }
+        },
+        {
+          "id": "securecrt.reference-session-actions-route",
+          "description": "SecureCRT-style reference session action route proves the opened SSH2 tab exposes the same context/session action keys, labels and enabled state that the live tab menu uses.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetReferenceSessionActionRoute", "gui_design_preset_reference_session_action_route", "active-reference-session-actions"],
+            "src/remote_ops_workspace/gui.py": ["sessionTabContextActionKey", "apply_reference_session_action_route_to_terminal_tab", "presetReferenceSessionActionEnabledKeys"],
+            "scripts/render_gui_design_previews.py": ["preset_reference_session_action_route", "reference_session_action_route.expected_action_keys"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_REFERENCE_SESSION_ACTION_ROUTES", "reference-session-actions-route", "expected_preset_reference_session_action_route"],
+            "docs/GUI_DESIGN.md": ["reference session action route"]
+          }
+        },
+        {
+          "id": "securecrt.reference-surface-evidence-route",
+          "description": "SecureCRT-style reference surface evidence route proves the opened SSH2 tab exposes a TerminalPane title, source, command and output echo before returning to Start Page evidence.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetReferenceSurfaceRoute", "gui_design_preset_reference_surface_route", "active-reference-tab-surface-evidence"],
+            "src/remote_ops_workspace/gui.py": ["presetReferenceSurfaceActualCommand", "presetReferenceSurfaceActualOutput", "apply_reference_surface_route_to_terminal_tab"],
+            "scripts/render_gui_design_previews.py": ["preset_reference_surface_route", "reference_surface_route.command_target_fragment"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_REFERENCE_SURFACE_ROUTES", "reference-surface-evidence-route", "expected_preset_reference_surface_route"],
+            "docs/GUI_DESIGN.md": ["reference surface evidence route"]
+          }
+        },
+        {
+          "id": "securecrt.reference-control-evidence-route",
+          "description": "SecureCRT-style reference control evidence route proves the opened SSH2 tab exposes TerminalPane status plus Start, Restart, Stop, Copy and Clear controls with stable keys.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetReferenceControlRoute", "gui_design_preset_reference_control_route", "active-reference-tab-terminal-controls"],
+            "src/remote_ops_workspace/gui.py": ["terminalActionKey", "presetReferenceControlCapturedActionKeys", "apply_reference_control_route_to_terminal_tab"],
+            "scripts/render_gui_design_previews.py": ["preset_reference_control_route", "reference_control_route.action_keys"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_REFERENCE_CONTROL_ROUTES", "reference-control-evidence-route", "expected_preset_reference_control_route"],
+            "docs/GUI_DESIGN.md": ["reference control evidence route"]
+          }
+        },
+        {
+          "id": "securecrt.reference-input-evidence-route",
+          "description": "SecureCRT-style reference input evidence route proves the opened SSH2 tab exposes the TerminalPane input field, placeholder, initial text and enabled state.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetReferenceInputRoute", "gui_design_preset_reference_input_route", "active-reference-tab-terminal-input"],
+            "src/remote_ops_workspace/gui.py": ["presetReferenceInputEnabled", "apply_reference_input_route_to_terminal_tab", "terminalInput"],
+            "scripts/render_gui_design_previews.py": ["preset_reference_input_route", "reference_input_route.placeholder_text"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_REFERENCE_INPUT_ROUTES", "reference-input-evidence-route", "expected_preset_reference_input_route"],
+            "docs/GUI_DESIGN.md": ["reference input evidence route"]
+          }
+        },
+        {
+          "id": "securecrt.reference-transcript-evidence-route",
+          "description": "SecureCRT-style reference transcript evidence route proves the opened SSH2 tab exposes terminal output text, command echo, line count and target fragments through stable metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetReferenceTranscriptRoute", "gui_design_preset_reference_transcript_route", "active-reference-tab-terminal-transcript"],
+            "src/remote_ops_workspace/gui.py": ["presetReferenceTranscriptCommandEcho", "apply_reference_transcript_route_to_terminal_tab", "terminalOutput"],
+            "scripts/render_gui_design_previews.py": ["preset_reference_transcript_route", "reference_transcript_route.required_fragments"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_REFERENCE_TRANSCRIPT_ROUTES", "reference-transcript-evidence-route", "expected_preset_reference_transcript_route"],
+            "docs/GUI_DESIGN.md": ["reference transcript evidence route"]
+          }
+        },
+        {
+          "id": "securecrt.preset-selection-route",
+          "description": "SecureCRT-style preset-selection route proves the selected design combo value drives the toolbar, sidebar header, home tab label, status segments and workspace/reference evidence for the active preset.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetSelectionRoute", "gui_design_preset_selection_route", "selector-to-toolbar-sidebar-tabs-status-workspace"],
+            "src/remote_ops_workspace/gui.py": ["presetSelectionRouteKey", "presetSelectionRouteHomeTabLabel", "presetSelectionRouteStatusSegments"],
+            "scripts/render_gui_design_previews.py": ["preset_selection_route", "selection_route.home_tab_label", "selection_route.status_segments"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_SELECTION_ROUTES", "preset-selection-route", "expected_preset_selection_route"],
+            "docs/GUI_DESIGN.md": ["preset-selection route"]
+          }
+        },
+        {
+          "id": "securecrt.visual-signature",
+          "description": "SecureCRT-style visual signature keeps preset palette, density, tab behavior, toolbar icon size and pane/sidebar sizing synchronized between shared metadata, static previews and the live PyQt surface.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetVisualSignature", "gui_design_preset_visual_signature", "preset-palette-density-to-live-static-style"],
+            "src/remote_ops_workspace/gui.py": ["presetVisualSignatureDensity", "presetVisualSignaturePalette", "presetVisualSignatureRenderSource"],
+            "scripts/render_gui_design_previews.py": ["preset_visual_signature", "visual_signature.palette_items", "visual_signature.terminal_accent_color"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_VISUAL_SIGNATURES", "preset-visual-signature", "expected_preset_visual_signature"],
+            "docs/GUI_DESIGN.md": ["visual signature contract"]
+          }
+        },
+        {
+          "id": "securecrt.preset-isolation-route",
+          "description": "SecureCRT-style preset isolation route proves active product-specific chrome is visible while inactive product-specific widgets are hidden or absent after switching styles.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetIsolationRoute", "gui_design_preset_isolation_route", "active-preset-visible-hidden-widget-isolation"],
+            "src/remote_ops_workspace/gui.py": ["presetIsolationVisibleObjects", "presetIsolationHiddenObjects", "presetIsolationRenderSource"],
+            "scripts/render_gui_design_previews.py": ["preset_isolation_route", "isolation_route.visible_objects", "isolation_route.hidden_objects"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_ISOLATION_ROUTES", "preset-isolation-route", "expected_preset_isolation_route"],
+            "docs/GUI_DESIGN.md": ["preset isolation route"]
+          }
+        },
+        {
+          "id": "securecrt.preset-transition-route",
+          "description": "SecureCRT-style preset transition route proves switching from another selectable style to SecureCRT-style resets inactive product chrome from the previous style.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetTransitionRoute", "gui_design_preset_transition_route", "selector-style-switch-resets-inactive-product-chrome"],
+            "src/remote_ops_workspace/gui.py": ["presetTransitionFromPresetIds", "presetTransitionResetObjects", "presetTransitionRenderSource"],
+            "scripts/render_gui_design_previews.py": ["preset_transition_route", "transition_route.from_preset_ids", "transition_route.reset_objects"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_TRANSITION_ROUTES", "preset-transition-route", "expected_preset_transition_route"],
+            "docs/GUI_DESIGN.md": ["preset transition route"]
+          }
+        },
+        {
+          "id": "securecrt.keyboard-shortcut-route",
+          "description": "SecureCRT-style keyboard shortcut route proves the product preset exposes tracked shortcut keys, key sequences, action labels and live QShortcut bindings.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetKeyboardShortcutRoute", "gui_design_preset_keyboard_shortcut_route", "product-preset-keyboard-shortcuts"],
+            "src/remote_ops_workspace/gui.py": ["presetKeyboardShortcutCapturedSequences", "create_keyboard_shortcuts", "presetKeyboardShortcutActionLabel"],
+            "scripts/render_gui_design_previews.py": ["preset_keyboard_shortcut_route", "keyboard_shortcut_route.expected_sequences"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_KEYBOARD_SHORTCUT_ROUTES", "preset-keyboard-shortcut-route", "expected_preset_keyboard_shortcut_route"],
+            "docs/GUI_DESIGN.md": ["preset keyboard shortcut route"]
+          }
+        },
+        {
+          "id": "securecrt.command-surface-route",
+          "description": "SecureCRT-style command surface route proves the product preset exposes visible command action order, labels, tooltips and active/checked/disabled state from shared static/live metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": [
+              "GuiPresetCommandSurfaceRoute",
+              "gui_design_preset_command_surface_route",
+              "product-preset-command-surface-route"
+            ],
+            "src/remote_ops_workspace/gui.py": [
+              "presetCommandSurfaceCapturedKeys",
+              "apply_command_surface_route_for_design",
+              "presetCommandSurfaceCapturedStates"
+            ],
+            "scripts/render_gui_design_previews.py": [
+              "preset_command_surface_route",
+              "command_surface_route.expected_action_keys"
+            ],
+            "scripts/check_real_gui_render.py": [
+              "EXPECTED_PRESET_COMMAND_SURFACE_ROUTES",
+              "check_live_preset_command_surface_route",
+              "preset-command-surface-route",
+              "expected_preset_command_surface_route"
+            ],
+            "docs/GUI_DESIGN.md": [
+              "preset command surface route"
+            ]
+          }
+        },
+        {
+          "id": "securecrt.focus-interaction-route",
+          "description": "SecureCRT-style focus interaction route proves the product preset exposes focused control, active toolbar, checked toolbar, disabled toolbar and selected tree-row interaction evidence from shared static/live metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetFocusInteractionRoute", "gui_design_preset_focus_interaction_route", "product-preset-focus-interaction-route"],
+            "src/remote_ops_workspace/gui.py": ["presetFocusInteractionCapturedFocus", "apply_focus_interaction_route_for_design", "presetFocusInteractionToolbarStates"],
+            "scripts/render_gui_design_previews.py": ["preset_focus_interaction_route", "focus_interaction_route.focused_control"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_FOCUS_INTERACTION_ROUTES", "preset-focus-interaction-route", "expected_preset_focus_interaction_route"],
+            "docs/GUI_DESIGN.md": ["preset focus interaction route"]
+          }
+        },
+        {
+          "id": "securecrt.home-search-route",
+          "description": "SecureCRT-style home search route proves the product preset exposes Home search, quick-connect/filter entry, Home actions and recent labels from shared static/live metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetHomeSearchRoute", "gui_design_preset_home_search_route", "product-preset-home-search-entry-route"],
+            "src/remote_ops_workspace/gui.py": ["presetHomeSearchCapturedPlaceholder", "apply_home_search_route_for_design", "presetHomeSearchCapturedRecentLabels"],
+            "scripts/render_gui_design_previews.py": ["preset_home_search_route", "home_search_route.placeholder_text"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_HOME_SEARCH_ROUTES", "preset-home-search-route", "expected_preset_home_search_route"],
+            "docs/GUI_DESIGN.md": ["preset home search route"]
+          }
+        },
+        {
+          "id": "securecrt.preset-catalog-route",
+          "description": "SecureCRT-style preset catalog route proves the design selector exposes the complete ordered catalog, default Native option and product-style subset from shared static/live metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetCatalogRoute", "gui_design_preset_catalog_route", "preset-catalog-to-design-selector-options"],
+            "src/remote_ops_workspace/gui.py": ["presetCatalogRouteOptionIds", "presetCatalogRouteProductPresetIds", "presetCatalogRouteDefaultPresetId"],
+            "scripts/render_gui_design_previews.py": ["preset_catalog_route", "catalog_route.option_ids", "catalog_route.option_labels"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_CATALOG_ROUTE", "preset-catalog-route", "expected_preset_catalog_route"],
+            "docs/GUI_DESIGN.md": ["design selector catalog"]
+          }
+        },
+        {
           "id": "securecrt.interaction-states",
           "description": "SecureCRT-style interaction state tracks Session Manager focus, active SSH2 connection, checked SFTP action and guarded delete affordance.",
           "source_tokens": {
@@ -985,19 +1428,19 @@
         "Termius-style SSH-focused dark workspace with compact hosts, vault cues and vertical session tabs."
       ],
       "dimension_coverage": {
-        "layout": ["termius.vertical-tabs", "termius.workspace-surface", "termius.hosts-sidebar-chrome", "termius.header-chip-chrome", "termius.host-identity-strip", "termius.host-identity-geometry", "termius.host-selection-route", "termius.sync-route", "termius.reference-line-anchors", "termius.reference-topology"],
-        "navigation": ["termius.hosts-sidebar", "termius.hosts-sidebar-chrome", "termius.host-selection-route", "termius.sync-route", "termius.vertical-tabs", "termius.reference-line-anchors"],
-        "panes": ["termius.workspace-surface", "termius.host-identity-strip", "termius.host-identity-geometry", "termius.host-selection-route", "termius.sync-route", "termius.workflow-cards", "termius.reference-line-anchors"],
-        "tabs": ["termius.vertical-tabs", "termius.tab-model", "termius.reference-state", "termius.host-identity-strip", "termius.host-selection-route", "termius.reference-line-anchors"],
-        "sidebars": ["termius.hosts-sidebar", "termius.hosts-sidebar-chrome", "termius.host-selection-route", "termius.sync-route", "termius.reference-line-anchors"],
-        "toolbars": ["termius.host-toolbar", "termius.hosts-sidebar-chrome", "termius.header-chip-chrome", "termius.host-identity-strip", "termius.host-identity-geometry", "termius.host-selection-route", "termius.sync-route", "termius.reference-line-anchors"],
-        "session_trees": ["termius.host-tree", "termius.host-glyphs", "termius.hosts-sidebar-chrome", "termius.host-selection-route"],
-        "connected_session_behavior": ["termius.workspace-surface", "termius.host-identity-strip", "termius.host-identity-geometry", "termius.workflow-cards", "termius.header-chip-chrome", "termius.host-selection-route", "termius.sync-route", "termius.reference-state"],
-        "file_monitoring_panels": ["termius.workspace-surface", "termius.host-identity-strip", "termius.host-selection-route", "termius.sync-route", "termius.workflow-cards"],
-        "status_bars": ["termius.status-bar", "termius.header-chip-chrome", "termius.host-identity-strip", "termius.host-identity-geometry", "termius.host-selection-route", "termius.sync-route", "termius.reference-state", "termius.reference-line-anchors"],
-        "density": ["termius.dark-hosts", "termius.hosts-sidebar-chrome", "termius.host-identity-strip", "termius.host-identity-geometry", "termius.host-selection-route", "termius.reference-line-anchors"],
-        "spacing": ["termius.vertical-tabs", "termius.hosts-sidebar-chrome", "termius.host-identity-strip", "termius.host-identity-geometry", "termius.host-selection-route", "termius.reference-line-anchors"],
-        "interaction_states": ["termius.interaction-states", "termius.reference-state", "termius.hosts-sidebar-chrome", "termius.host-identity-strip", "termius.host-selection-route", "termius.sync-route"]
+        "layout": ["termius.vertical-tabs", "termius.visual-signature", "termius.workspace-surface", "termius.hosts-sidebar-chrome", "termius.header-chip-chrome", "termius.host-identity-strip", "termius.host-identity-geometry", "termius.host-selection-route", "termius.sync-route", "termius.port-forward-route", "termius.snippet-route", "termius.files-browser-route", "termius.preset-catalog-route", "termius.preset-selection-route", "termius.preset-isolation-route", "termius.preset-transition-route", "termius.reference-tab-activation-route", "termius.reference-tab-chrome-evidence-route", "termius.reference-surface-evidence-route", "termius.reference-control-evidence-route", "termius.reference-input-evidence-route", "termius.reference-transcript-evidence-route", "termius.reference-line-anchors", "termius.reference-topology"],
+        "navigation": ["termius.hosts-sidebar", "termius.hosts-sidebar-chrome", "termius.host-selection-route", "termius.sync-route", "termius.port-forward-route", "termius.snippet-route", "termius.files-browser-route", "termius.preset-catalog-route", "termius.preset-selection-route", "termius.preset-isolation-route", "termius.preset-transition-route", "termius.keyboard-shortcut-route", "termius.command-surface-route", "termius.focus-interaction-route", "termius.home-search-route", "termius.product-identity-route", "termius.reference-tab-activation-route", "termius.reference-tab-chrome-evidence-route", "termius.reference-session-actions-route", "termius.vertical-tabs", "termius.reference-line-anchors"],
+        "panes": ["termius.workspace-surface", "termius.host-identity-strip", "termius.host-identity-geometry", "termius.host-selection-route", "termius.sync-route", "termius.port-forward-route", "termius.snippet-route", "termius.files-browser-route", "termius.workflow-cards", "termius.reference-surface-evidence-route", "termius.reference-control-evidence-route", "termius.reference-input-evidence-route", "termius.reference-transcript-evidence-route", "termius.reference-line-anchors"],
+        "tabs": ["termius.vertical-tabs", "termius.visual-signature", "termius.tab-model", "termius.reference-state", "termius.host-identity-strip", "termius.host-selection-route", "termius.port-forward-route", "termius.snippet-route", "termius.files-browser-route", "termius.preset-selection-route", "termius.preset-isolation-route", "termius.preset-transition-route", "termius.keyboard-shortcut-route", "termius.command-surface-route", "termius.focus-interaction-route", "termius.home-search-route", "termius.product-identity-route", "termius.reference-tab-activation-route", "termius.reference-tab-chrome-evidence-route", "termius.reference-status-bar-evidence-route", "termius.reference-session-actions-route", "termius.reference-surface-evidence-route", "termius.reference-line-anchors"],
+        "sidebars": ["termius.hosts-sidebar", "termius.visual-signature", "termius.hosts-sidebar-chrome", "termius.host-selection-route", "termius.sync-route", "termius.port-forward-route", "termius.snippet-route", "termius.files-browser-route", "termius.preset-selection-route", "termius.preset-isolation-route", "termius.preset-transition-route", "termius.focus-interaction-route", "termius.home-search-route", "termius.reference-line-anchors"],
+        "toolbars": ["termius.host-toolbar", "termius.visual-signature", "termius.hosts-sidebar-chrome", "termius.header-chip-chrome", "termius.host-identity-strip", "termius.host-identity-geometry", "termius.host-selection-route", "termius.sync-route", "termius.port-forward-route", "termius.snippet-route", "termius.files-browser-route", "termius.preset-catalog-route", "termius.preset-selection-route", "termius.preset-isolation-route", "termius.preset-transition-route", "termius.keyboard-shortcut-route", "termius.command-surface-route", "termius.focus-interaction-route", "termius.home-search-route", "termius.reference-control-evidence-route", "termius.reference-line-anchors"],
+        "session_trees": ["termius.host-tree", "termius.host-glyphs", "termius.hosts-sidebar-chrome", "termius.host-selection-route", "termius.files-browser-route", "termius.product-identity-route"],
+        "connected_session_behavior": ["termius.workspace-surface", "termius.host-identity-strip", "termius.host-identity-geometry", "termius.workflow-cards", "termius.header-chip-chrome", "termius.host-selection-route", "termius.sync-route", "termius.port-forward-route", "termius.snippet-route", "termius.files-browser-route", "termius.reference-state", "termius.preset-selection-route", "termius.preset-isolation-route", "termius.preset-transition-route", "termius.keyboard-shortcut-route", "termius.command-surface-route", "termius.focus-interaction-route", "termius.home-search-route", "termius.product-identity-route", "termius.reference-tab-activation-route", "termius.reference-tab-chrome-evidence-route", "termius.reference-status-bar-evidence-route", "termius.reference-session-actions-route", "termius.reference-surface-evidence-route", "termius.reference-control-evidence-route", "termius.reference-input-evidence-route", "termius.reference-transcript-evidence-route"],
+        "file_monitoring_panels": ["termius.workspace-surface", "termius.host-identity-strip", "termius.host-selection-route", "termius.sync-route", "termius.port-forward-route", "termius.snippet-route", "termius.files-browser-route", "termius.workflow-cards"],
+        "status_bars": ["termius.status-bar", "termius.visual-signature", "termius.header-chip-chrome", "termius.host-identity-strip", "termius.host-identity-geometry", "termius.host-selection-route", "termius.sync-route", "termius.port-forward-route", "termius.snippet-route", "termius.files-browser-route", "termius.reference-state", "termius.preset-selection-route", "termius.product-identity-route", "termius.reference-status-bar-evidence-route", "termius.reference-line-anchors"],
+        "density": ["termius.dark-hosts", "termius.visual-signature", "termius.hosts-sidebar-chrome", "termius.host-identity-strip", "termius.host-identity-geometry", "termius.host-selection-route", "termius.files-browser-route", "termius.reference-transcript-evidence-route", "termius.reference-line-anchors"],
+        "spacing": ["termius.vertical-tabs", "termius.visual-signature", "termius.hosts-sidebar-chrome", "termius.host-identity-strip", "termius.host-identity-geometry", "termius.host-selection-route", "termius.files-browser-route", "termius.reference-tab-chrome-evidence-route", "termius.reference-status-bar-evidence-route", "termius.reference-input-evidence-route", "termius.reference-line-anchors"],
+        "interaction_states": ["termius.interaction-states", "termius.reference-state", "termius.hosts-sidebar-chrome", "termius.host-identity-strip", "termius.host-selection-route", "termius.sync-route", "termius.port-forward-route", "termius.snippet-route", "termius.files-browser-route", "termius.preset-catalog-route", "termius.preset-selection-route", "termius.preset-isolation-route", "termius.preset-transition-route", "termius.keyboard-shortcut-route", "termius.command-surface-route", "termius.focus-interaction-route", "termius.home-search-route", "termius.product-identity-route", "termius.reference-tab-activation-route", "termius.reference-tab-chrome-evidence-route", "termius.reference-status-bar-evidence-route", "termius.reference-session-actions-route", "termius.reference-surface-evidence-route", "termius.reference-control-evidence-route", "termius.reference-input-evidence-route", "termius.reference-transcript-evidence-route"]
       },
       "requirements": [
         {
@@ -1161,6 +1604,39 @@
           }
         },
         {
+          "id": "termius.port-forward-route",
+          "description": "Termius-style port-forward route ties the Port fwd ready header chip, active host tab and Forward identity cell through shared static/live metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiTermiusPortForwardRoute", "GUI_DESIGN_TERMIUS_PORT_FORWARD_ROUTE", "gui_design_termius_port_forward_route"],
+            "src/remote_ops_workspace/gui.py": ["termiusPortForwardRouteKey", "termiusPortForwardRouteIdentityValue", "termiusPortForwardRouteState"],
+            "scripts/render_gui_design_previews.py": ["gui_design_termius_port_forward_route", "port_forward_route.identity_field_key", "port_forward_route.forward_value"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_TERMIUS_PORT_FORWARD_ROUTE", "termius-port-forward-route", "expected_termius_port_forward_route"],
+            "docs/GUI_DESIGN.md": ["Termius-style port-forward route"]
+          }
+        },
+        {
+          "id": "termius.snippet-route",
+          "description": "Termius-style snippet route ties the Snippet workflow card, active host tab and Host identity Snippet cell through shared static/live metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiTermiusSnippetRoute", "GUI_DESIGN_TERMIUS_SNIPPET_ROUTE", "gui_design_termius_snippet_route"],
+            "src/remote_ops_workspace/gui.py": ["termiusSnippetRouteKey", "termiusSnippetRouteCommand", "termiusSnippetRouteIdentityValue"],
+            "scripts/render_gui_design_previews.py": ["gui_design_termius_snippet_route", "snippet_route.identity_field_key", "snippet_route.snippet_command"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_TERMIUS_SNIPPET_ROUTE", "termius-snippet-route", "expected_termius_snippet_route"],
+            "docs/GUI_DESIGN.md": ["Termius-style snippet route"]
+          }
+        },
+        {
+          "id": "termius.files-browser-route",
+          "description": "Termius-style files browser route ties the active host files identity state to a remote path, toolbar actions, sync queue and selected file row through shared static and live metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiTermiusFilesBrowserRoute", "GUI_DESIGN_TERMIUS_FILES_BROWSER_ROUTE", "gui_design_termius_files_browser_route"],
+            "src/remote_ops_workspace/gui.py": ["termiusFilesRouteKey", "termiusFilesRoutePath", "termiusFilesRouteQueueState"],
+            "scripts/render_gui_design_previews.py": ["gui_design_termius_files_browser_route", "draw_termius_files_browser", "termius_files_browser_route.active_row_name"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_TERMIUS_FILES_BROWSER_ROUTE", "termius-files-browser-route", "expected_termius_files_browser_route"],
+            "docs/GUI_DESIGN.md": ["Termius-style files browser route"]
+          }
+        },
+        {
           "id": "termius.host-selection-route",
           "description": "Termius-style selected host route ties the selected host tree row, active host tab, Hosts panel and Host identity cell through shared static/live metadata.",
           "source_tokens": {
@@ -1191,6 +1667,222 @@
           }
         },
         {
+          "id": "termius.product-identity-route",
+          "description": "Termius-style product identity route keeps the selected Hosts row, active host tab, reference-state strip, workspace surface and status segments synchronized through shared static/live metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiProductIdentityRoute", "gui_design_product_identity_route", "tree-tab-reference-status-workspace-identity"],
+            "src/remote_ops_workspace/gui.py": ["productIdentityRouteKey", "productIdentityActiveTab", "productIdentityStatusSegments"],
+            "scripts/render_gui_design_previews.py": ["gui_design_product_identity_route", "product_identity_route.active_tab_label", "product_identity_route.status_segments"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRODUCT_IDENTITY_ROUTES", "product-identity-route", "expected_product_identity_route"],
+            "docs/GUI_DESIGN.md": ["product identity route"]
+          }
+        },
+        {
+          "id": "termius.reference-tab-activation-route",
+          "description": "Termius-style reference tab activation route proves the opened host reference tab can become the active surface and returns to Hosts evidence before capture.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetReferenceTabRoute", "gui_design_preset_reference_tab_route", "reference-profile-tab-can-be-active-surface"],
+            "src/remote_ops_workspace/gui.py": ["presetReferenceTabActivatedLabel", "presetReferenceTabReturnedHomeLabel", "find_tab_by_label"],
+            "scripts/render_gui_design_previews.py": ["preset_reference_tab_route", "reference_tab_route.active_tab_label", "reference_tab_route.home_tab_label"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_REFERENCE_TAB_ROUTES", "reference-tab-activation-route", "expected_preset_reference_tab_route"],
+            "docs/GUI_DESIGN.md": ["reference tab activation route"]
+          }
+        },
+        {
+          "id": "termius.reference-tab-chrome-evidence-route",
+          "description": "Termius-style reference tab chrome evidence route proves the opened host tab exposes label, tooltip/status, position, index, role and closeability before capture.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetReferenceTabChromeRoute", "gui_design_preset_reference_tab_chrome_route", "active-reference-tab-chrome-evidence"],
+            "src/remote_ops_workspace/gui.py": ["presetReferenceTabChromeTooltip", "apply_reference_tab_chrome_route_to_terminal_tab", "sessionTabBar"],
+            "scripts/render_gui_design_previews.py": ["preset_reference_tab_chrome_route", "reference_tab_chrome_route.expected_tooltip"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_REFERENCE_TAB_CHROME_ROUTES", "reference-tab-chrome-evidence-route", "expected_preset_reference_tab_chrome_route"],
+            "docs/GUI_DESIGN.md": ["reference tab chrome evidence route"]
+          }
+        },
+        {
+          "id": "termius.reference-status-bar-evidence-route",
+          "description": "Termius-style reference status-bar evidence route proves the opened host tab drives the status bar message, status notice, segment texts, segment count and segment tooltips before capture.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetReferenceStatusBarRoute", "gui_design_preset_reference_status_bar_route", "active-reference-status-bar-evidence"],
+            "src/remote_ops_workspace/gui.py": ["presetReferenceStatusSegments", "apply_reference_status_bar_route_to_terminal_tab", "productStatusSegment"],
+            "scripts/render_gui_design_previews.py": ["preset_reference_status_bar_route", "reference_status_route.expected_status_segments"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_REFERENCE_STATUS_BAR_ROUTES", "reference-status-bar-evidence-route", "expected_preset_reference_status_bar_route"],
+            "docs/GUI_DESIGN.md": ["reference status-bar evidence route"]
+          }
+        },
+        {
+          "id": "termius.reference-session-actions-route",
+          "description": "Termius-style reference session action route proves the opened host tab exposes the same context/session action keys, labels and enabled state that the live tab menu uses.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetReferenceSessionActionRoute", "gui_design_preset_reference_session_action_route", "active-reference-session-actions"],
+            "src/remote_ops_workspace/gui.py": ["sessionTabContextActionKey", "apply_reference_session_action_route_to_terminal_tab", "presetReferenceSessionActionEnabledKeys"],
+            "scripts/render_gui_design_previews.py": ["preset_reference_session_action_route", "reference_session_action_route.expected_action_keys"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_REFERENCE_SESSION_ACTION_ROUTES", "reference-session-actions-route", "expected_preset_reference_session_action_route"],
+            "docs/GUI_DESIGN.md": ["reference session action route"]
+          }
+        },
+        {
+          "id": "termius.reference-surface-evidence-route",
+          "description": "Termius-style reference surface evidence route proves the opened host tab exposes a TerminalPane title, source, command and output echo before returning to Hosts evidence.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetReferenceSurfaceRoute", "gui_design_preset_reference_surface_route", "active-reference-tab-surface-evidence"],
+            "src/remote_ops_workspace/gui.py": ["presetReferenceSurfaceActualCommand", "presetReferenceSurfaceActualOutput", "apply_reference_surface_route_to_terminal_tab"],
+            "scripts/render_gui_design_previews.py": ["preset_reference_surface_route", "reference_surface_route.command_target_fragment"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_REFERENCE_SURFACE_ROUTES", "reference-surface-evidence-route", "expected_preset_reference_surface_route"],
+            "docs/GUI_DESIGN.md": ["reference surface evidence route"]
+          }
+        },
+        {
+          "id": "termius.reference-control-evidence-route",
+          "description": "Termius-style reference control evidence route proves the opened host tab exposes TerminalPane status plus Start, Restart, Stop, Copy and Clear controls with stable keys.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetReferenceControlRoute", "gui_design_preset_reference_control_route", "active-reference-tab-terminal-controls"],
+            "src/remote_ops_workspace/gui.py": ["terminalActionKey", "presetReferenceControlCapturedActionKeys", "apply_reference_control_route_to_terminal_tab"],
+            "scripts/render_gui_design_previews.py": ["preset_reference_control_route", "reference_control_route.action_keys"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_REFERENCE_CONTROL_ROUTES", "reference-control-evidence-route", "expected_preset_reference_control_route"],
+            "docs/GUI_DESIGN.md": ["reference control evidence route"]
+          }
+        },
+        {
+          "id": "termius.reference-input-evidence-route",
+          "description": "Termius-style reference input evidence route proves the opened host tab exposes the TerminalPane input field, placeholder, initial text and enabled state.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetReferenceInputRoute", "gui_design_preset_reference_input_route", "active-reference-tab-terminal-input"],
+            "src/remote_ops_workspace/gui.py": ["presetReferenceInputEnabled", "apply_reference_input_route_to_terminal_tab", "terminalInput"],
+            "scripts/render_gui_design_previews.py": ["preset_reference_input_route", "reference_input_route.placeholder_text"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_REFERENCE_INPUT_ROUTES", "reference-input-evidence-route", "expected_preset_reference_input_route"],
+            "docs/GUI_DESIGN.md": ["reference input evidence route"]
+          }
+        },
+        {
+          "id": "termius.reference-transcript-evidence-route",
+          "description": "Termius-style reference transcript evidence route proves the opened host tab exposes terminal output text, command echo, line count and target fragments through stable metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetReferenceTranscriptRoute", "gui_design_preset_reference_transcript_route", "active-reference-tab-terminal-transcript"],
+            "src/remote_ops_workspace/gui.py": ["presetReferenceTranscriptCommandEcho", "apply_reference_transcript_route_to_terminal_tab", "terminalOutput"],
+            "scripts/render_gui_design_previews.py": ["preset_reference_transcript_route", "reference_transcript_route.required_fragments"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_REFERENCE_TRANSCRIPT_ROUTES", "reference-transcript-evidence-route", "expected_preset_reference_transcript_route"],
+            "docs/GUI_DESIGN.md": ["reference transcript evidence route"]
+          }
+        },
+        {
+          "id": "termius.preset-selection-route",
+          "description": "Termius-style preset-selection route proves the selected design combo value drives the toolbar, sidebar header, home tab label, status segments and workspace/reference evidence for the active preset.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetSelectionRoute", "gui_design_preset_selection_route", "selector-to-toolbar-sidebar-tabs-status-workspace"],
+            "src/remote_ops_workspace/gui.py": ["presetSelectionRouteKey", "presetSelectionRouteHomeTabLabel", "presetSelectionRouteStatusSegments"],
+            "scripts/render_gui_design_previews.py": ["preset_selection_route", "selection_route.home_tab_label", "selection_route.status_segments"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_SELECTION_ROUTES", "preset-selection-route", "expected_preset_selection_route"],
+            "docs/GUI_DESIGN.md": ["preset-selection route"]
+          }
+        },
+        {
+          "id": "termius.visual-signature",
+          "description": "Termius-style visual signature keeps preset palette, density, tab behavior, toolbar icon size and pane/sidebar sizing synchronized between shared metadata, static previews and the live PyQt surface.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetVisualSignature", "gui_design_preset_visual_signature", "preset-palette-density-to-live-static-style"],
+            "src/remote_ops_workspace/gui.py": ["presetVisualSignatureDensity", "presetVisualSignaturePalette", "presetVisualSignatureRenderSource"],
+            "scripts/render_gui_design_previews.py": ["preset_visual_signature", "visual_signature.palette_items", "visual_signature.terminal_accent_color"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_VISUAL_SIGNATURES", "preset-visual-signature", "expected_preset_visual_signature"],
+            "docs/GUI_DESIGN.md": ["visual signature contract"]
+          }
+        },
+        {
+          "id": "termius.preset-isolation-route",
+          "description": "Termius-style preset isolation route proves active product-specific chrome is visible while inactive product-specific widgets are hidden or absent after switching styles.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetIsolationRoute", "gui_design_preset_isolation_route", "active-preset-visible-hidden-widget-isolation"],
+            "src/remote_ops_workspace/gui.py": ["presetIsolationVisibleObjects", "presetIsolationHiddenObjects", "presetIsolationRenderSource"],
+            "scripts/render_gui_design_previews.py": ["preset_isolation_route", "isolation_route.visible_objects", "isolation_route.hidden_objects"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_ISOLATION_ROUTES", "preset-isolation-route", "expected_preset_isolation_route"],
+            "docs/GUI_DESIGN.md": ["preset isolation route"]
+          }
+        },
+        {
+          "id": "termius.preset-transition-route",
+          "description": "Termius-style preset transition route proves switching from another selectable style to Termius-style resets inactive product chrome from the previous style.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetTransitionRoute", "gui_design_preset_transition_route", "selector-style-switch-resets-inactive-product-chrome"],
+            "src/remote_ops_workspace/gui.py": ["presetTransitionFromPresetIds", "presetTransitionResetObjects", "presetTransitionRenderSource"],
+            "scripts/render_gui_design_previews.py": ["preset_transition_route", "transition_route.from_preset_ids", "transition_route.reset_objects"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_TRANSITION_ROUTES", "preset-transition-route", "expected_preset_transition_route"],
+            "docs/GUI_DESIGN.md": ["preset transition route"]
+          }
+        },
+        {
+          "id": "termius.keyboard-shortcut-route",
+          "description": "Termius-style keyboard shortcut route proves the product preset exposes tracked shortcut keys, key sequences, action labels and live QShortcut bindings.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetKeyboardShortcutRoute", "gui_design_preset_keyboard_shortcut_route", "product-preset-keyboard-shortcuts"],
+            "src/remote_ops_workspace/gui.py": ["presetKeyboardShortcutCapturedSequences", "create_keyboard_shortcuts", "presetKeyboardShortcutActionLabel"],
+            "scripts/render_gui_design_previews.py": ["preset_keyboard_shortcut_route", "keyboard_shortcut_route.expected_sequences"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_KEYBOARD_SHORTCUT_ROUTES", "preset-keyboard-shortcut-route", "expected_preset_keyboard_shortcut_route"],
+            "docs/GUI_DESIGN.md": ["preset keyboard shortcut route"]
+          }
+        },
+        {
+          "id": "termius.command-surface-route",
+          "description": "Termius-style command surface route proves the product preset exposes visible command action order, labels, tooltips and active/checked/disabled state from shared static/live metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": [
+              "GuiPresetCommandSurfaceRoute",
+              "gui_design_preset_command_surface_route",
+              "product-preset-command-surface-route"
+            ],
+            "src/remote_ops_workspace/gui.py": [
+              "presetCommandSurfaceCapturedKeys",
+              "apply_command_surface_route_for_design",
+              "presetCommandSurfaceCapturedStates"
+            ],
+            "scripts/render_gui_design_previews.py": [
+              "preset_command_surface_route",
+              "command_surface_route.expected_action_keys"
+            ],
+            "scripts/check_real_gui_render.py": [
+              "EXPECTED_PRESET_COMMAND_SURFACE_ROUTES",
+              "check_live_preset_command_surface_route",
+              "preset-command-surface-route",
+              "expected_preset_command_surface_route"
+            ],
+            "docs/GUI_DESIGN.md": [
+              "preset command surface route"
+            ]
+          }
+        },
+        {
+          "id": "termius.focus-interaction-route",
+          "description": "Termius-style focus interaction route proves the product preset exposes focused control, active toolbar, checked toolbar, disabled toolbar and selected tree-row interaction evidence from shared static/live metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetFocusInteractionRoute", "gui_design_preset_focus_interaction_route", "product-preset-focus-interaction-route"],
+            "src/remote_ops_workspace/gui.py": ["presetFocusInteractionCapturedFocus", "apply_focus_interaction_route_for_design", "presetFocusInteractionToolbarStates"],
+            "scripts/render_gui_design_previews.py": ["preset_focus_interaction_route", "focus_interaction_route.focused_control"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_FOCUS_INTERACTION_ROUTES", "preset-focus-interaction-route", "expected_preset_focus_interaction_route"],
+            "docs/GUI_DESIGN.md": ["preset focus interaction route"]
+          }
+        },
+        {
+          "id": "termius.home-search-route",
+          "description": "Termius-style home search route proves the product preset exposes Home search, quick-connect/filter entry, Home actions and recent labels from shared static/live metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetHomeSearchRoute", "gui_design_preset_home_search_route", "product-preset-home-search-entry-route"],
+            "src/remote_ops_workspace/gui.py": ["presetHomeSearchCapturedPlaceholder", "apply_home_search_route_for_design", "presetHomeSearchCapturedRecentLabels"],
+            "scripts/render_gui_design_previews.py": ["preset_home_search_route", "home_search_route.placeholder_text"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_HOME_SEARCH_ROUTES", "preset-home-search-route", "expected_preset_home_search_route"],
+            "docs/GUI_DESIGN.md": ["preset home search route"]
+          }
+        },
+        {
+          "id": "termius.preset-catalog-route",
+          "description": "Termius-style preset catalog route proves the design selector exposes the complete ordered catalog, default Native option and product-style subset from shared static/live metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetCatalogRoute", "gui_design_preset_catalog_route", "preset-catalog-to-design-selector-options"],
+            "src/remote_ops_workspace/gui.py": ["presetCatalogRouteOptionIds", "presetCatalogRouteProductPresetIds", "presetCatalogRouteDefaultPresetId"],
+            "scripts/render_gui_design_previews.py": ["preset_catalog_route", "catalog_route.option_ids", "catalog_route.option_labels"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_CATALOG_ROUTE", "preset-catalog-route", "expected_preset_catalog_route"],
+            "docs/GUI_DESIGN.md": ["design selector catalog"]
+          }
+        },
+        {
           "id": "termius.interaction-states",
           "description": "Termius-style interaction state tracks host-search focus, active connection, checked vault action and guarded remove action.",
           "source_tokens": {
@@ -1217,19 +1909,19 @@
         "Remmina-style light remote-desktop workspace with protocol profiles and viewer tabs."
       ],
       "dimension_coverage": {
-        "layout": ["remmina.light-desktop", "remmina.viewer-surface", "remmina.profile-list-chrome", "remmina.profile-list-geometry", "remmina.profile-viewer-route", "remmina.clipboard-route", "remmina.reference-line-anchors", "remmina.reference-topology"],
-        "navigation": ["remmina.connection-profile-sidebar", "remmina.profile-list-chrome", "remmina.profile-list-geometry", "remmina.profile-viewer-route", "remmina.clipboard-route", "remmina.reference-line-anchors"],
-        "panes": ["remmina.viewer-surface", "remmina.viewer-controls", "remmina.viewer-control-chrome", "remmina.profile-viewer-route", "remmina.clipboard-route", "remmina.reference-line-anchors"],
-        "tabs": ["remmina.viewer-tabs", "remmina.reference-state", "remmina.profile-viewer-route", "remmina.clipboard-route", "remmina.reference-line-anchors"],
-        "sidebars": ["remmina.connection-profile-sidebar", "remmina.profile-list-chrome", "remmina.profile-list-geometry", "remmina.profile-viewer-route", "remmina.clipboard-route", "remmina.reference-line-anchors"],
-        "toolbars": ["remmina.viewer-toolbar", "remmina.viewer-control-chrome", "remmina.profile-list-chrome", "remmina.profile-list-geometry", "remmina.profile-viewer-route", "remmina.clipboard-route", "remmina.reference-line-anchors"],
-        "session_trees": ["remmina.protocol-tree", "remmina.profile-list-chrome", "remmina.profile-list-geometry", "remmina.protocol-glyphs"],
-        "connected_session_behavior": ["remmina.viewer-surface", "remmina.profile-list-chrome", "remmina.profile-list-geometry", "remmina.viewer-controls", "remmina.viewer-control-chrome", "remmina.profile-viewer-route", "remmina.clipboard-route", "remmina.reference-state"],
-        "file_monitoring_panels": ["remmina.viewer-surface", "remmina.import-workflow", "remmina.clipboard-route"],
-        "status_bars": ["remmina.status-bar", "remmina.reference-state", "remmina.profile-viewer-route", "remmina.clipboard-route", "remmina.reference-line-anchors"],
-        "density": ["remmina.light-desktop", "remmina.profile-list-chrome", "remmina.profile-list-geometry", "remmina.profile-viewer-route", "remmina.clipboard-route", "remmina.reference-line-anchors"],
-        "spacing": ["remmina.viewer-tabs", "remmina.profile-list-chrome", "remmina.profile-list-geometry", "remmina.profile-viewer-route", "remmina.clipboard-route", "remmina.reference-line-anchors"],
-        "interaction_states": ["remmina.interaction-states", "remmina.profile-list-chrome", "remmina.profile-list-geometry", "remmina.profile-viewer-route", "remmina.clipboard-route", "remmina.reference-state"]
+        "layout": ["remmina.light-desktop", "remmina.visual-signature", "remmina.viewer-surface", "remmina.profile-list-chrome", "remmina.profile-list-geometry", "remmina.profile-viewer-route", "remmina.profile-filter-route", "remmina.clipboard-route", "remmina.screenshot-route", "remmina.sftp-transfer-route", "remmina.preset-catalog-route", "remmina.preset-selection-route", "remmina.preset-isolation-route", "remmina.preset-transition-route", "remmina.reference-tab-activation-route", "remmina.reference-tab-chrome-evidence-route", "remmina.reference-surface-evidence-route", "remmina.reference-control-evidence-route", "remmina.reference-input-evidence-route", "remmina.reference-transcript-evidence-route", "remmina.reference-line-anchors", "remmina.reference-topology"],
+        "navigation": ["remmina.connection-profile-sidebar", "remmina.profile-list-chrome", "remmina.profile-list-geometry", "remmina.profile-viewer-route", "remmina.profile-filter-route", "remmina.clipboard-route", "remmina.screenshot-route", "remmina.sftp-transfer-route", "remmina.preset-catalog-route", "remmina.preset-selection-route", "remmina.preset-isolation-route", "remmina.preset-transition-route", "remmina.keyboard-shortcut-route", "remmina.command-surface-route", "remmina.focus-interaction-route", "remmina.home-search-route", "remmina.product-identity-route", "remmina.reference-tab-activation-route", "remmina.reference-tab-chrome-evidence-route", "remmina.reference-session-actions-route", "remmina.reference-line-anchors"],
+        "panes": ["remmina.viewer-surface", "remmina.viewer-controls", "remmina.viewer-control-chrome", "remmina.profile-viewer-route", "remmina.clipboard-route", "remmina.screenshot-route", "remmina.sftp-transfer-route", "remmina.reference-surface-evidence-route", "remmina.reference-control-evidence-route", "remmina.reference-input-evidence-route", "remmina.reference-transcript-evidence-route", "remmina.reference-line-anchors"],
+        "tabs": ["remmina.viewer-tabs", "remmina.visual-signature", "remmina.reference-state", "remmina.profile-viewer-route", "remmina.profile-filter-route", "remmina.clipboard-route", "remmina.screenshot-route", "remmina.sftp-transfer-route", "remmina.preset-selection-route", "remmina.preset-isolation-route", "remmina.preset-transition-route", "remmina.keyboard-shortcut-route", "remmina.command-surface-route", "remmina.focus-interaction-route", "remmina.home-search-route", "remmina.product-identity-route", "remmina.reference-tab-activation-route", "remmina.reference-tab-chrome-evidence-route", "remmina.reference-status-bar-evidence-route", "remmina.reference-session-actions-route", "remmina.reference-surface-evidence-route", "remmina.reference-line-anchors"],
+        "sidebars": ["remmina.connection-profile-sidebar", "remmina.visual-signature", "remmina.profile-list-chrome", "remmina.profile-list-geometry", "remmina.profile-viewer-route", "remmina.profile-filter-route", "remmina.clipboard-route", "remmina.screenshot-route", "remmina.sftp-transfer-route", "remmina.preset-selection-route", "remmina.preset-isolation-route", "remmina.preset-transition-route", "remmina.focus-interaction-route", "remmina.home-search-route", "remmina.reference-line-anchors"],
+        "toolbars": ["remmina.viewer-toolbar", "remmina.visual-signature", "remmina.viewer-control-chrome", "remmina.profile-list-chrome", "remmina.profile-list-geometry", "remmina.profile-viewer-route", "remmina.clipboard-route", "remmina.screenshot-route", "remmina.sftp-transfer-route", "remmina.preset-catalog-route", "remmina.preset-selection-route", "remmina.preset-isolation-route", "remmina.preset-transition-route", "remmina.keyboard-shortcut-route", "remmina.command-surface-route", "remmina.focus-interaction-route", "remmina.home-search-route", "remmina.reference-control-evidence-route", "remmina.reference-line-anchors"],
+        "session_trees": ["remmina.protocol-tree", "remmina.profile-list-chrome", "remmina.profile-list-geometry", "remmina.profile-filter-route", "remmina.sftp-transfer-route", "remmina.protocol-glyphs", "remmina.product-identity-route"],
+        "connected_session_behavior": ["remmina.viewer-surface", "remmina.profile-list-chrome", "remmina.profile-list-geometry", "remmina.viewer-controls", "remmina.viewer-control-chrome", "remmina.profile-viewer-route", "remmina.profile-filter-route", "remmina.clipboard-route", "remmina.screenshot-route", "remmina.sftp-transfer-route", "remmina.reference-state", "remmina.preset-selection-route", "remmina.preset-isolation-route", "remmina.preset-transition-route", "remmina.keyboard-shortcut-route", "remmina.command-surface-route", "remmina.focus-interaction-route", "remmina.home-search-route", "remmina.product-identity-route", "remmina.reference-tab-activation-route", "remmina.reference-tab-chrome-evidence-route", "remmina.reference-status-bar-evidence-route", "remmina.reference-session-actions-route", "remmina.reference-surface-evidence-route", "remmina.reference-control-evidence-route", "remmina.reference-input-evidence-route", "remmina.reference-transcript-evidence-route"],
+        "file_monitoring_panels": ["remmina.viewer-surface", "remmina.import-workflow", "remmina.clipboard-route", "remmina.screenshot-route", "remmina.sftp-transfer-route"],
+        "status_bars": ["remmina.status-bar", "remmina.visual-signature", "remmina.reference-state", "remmina.profile-viewer-route", "remmina.profile-filter-route", "remmina.clipboard-route", "remmina.screenshot-route", "remmina.sftp-transfer-route", "remmina.preset-selection-route", "remmina.product-identity-route", "remmina.reference-status-bar-evidence-route", "remmina.reference-line-anchors"],
+        "density": ["remmina.light-desktop", "remmina.visual-signature", "remmina.profile-list-chrome", "remmina.profile-list-geometry", "remmina.profile-viewer-route", "remmina.profile-filter-route", "remmina.clipboard-route", "remmina.screenshot-route", "remmina.sftp-transfer-route", "remmina.reference-transcript-evidence-route", "remmina.reference-line-anchors"],
+        "spacing": ["remmina.viewer-tabs", "remmina.visual-signature", "remmina.profile-list-chrome", "remmina.profile-list-geometry", "remmina.profile-viewer-route", "remmina.profile-filter-route", "remmina.clipboard-route", "remmina.screenshot-route", "remmina.sftp-transfer-route", "remmina.reference-tab-chrome-evidence-route", "remmina.reference-status-bar-evidence-route", "remmina.reference-input-evidence-route", "remmina.reference-line-anchors"],
+        "interaction_states": ["remmina.interaction-states", "remmina.profile-list-chrome", "remmina.profile-list-geometry", "remmina.profile-viewer-route", "remmina.profile-filter-route", "remmina.clipboard-route", "remmina.screenshot-route", "remmina.sftp-transfer-route", "remmina.reference-state", "remmina.preset-catalog-route", "remmina.preset-selection-route", "remmina.preset-isolation-route", "remmina.preset-transition-route", "remmina.keyboard-shortcut-route", "remmina.command-surface-route", "remmina.focus-interaction-route", "remmina.home-search-route", "remmina.product-identity-route", "remmina.reference-tab-activation-route", "remmina.reference-tab-chrome-evidence-route", "remmina.reference-status-bar-evidence-route", "remmina.reference-session-actions-route", "remmina.reference-surface-evidence-route", "remmina.reference-control-evidence-route", "remmina.reference-input-evidence-route", "remmina.reference-transcript-evidence-route"]
       },
       "requirements": [
         {
@@ -1382,6 +2074,17 @@
           }
         },
         {
+          "id": "remmina.profile-filter-route",
+          "description": "Remmina-style profile filter routes an editable protocol query to the matched selected profile row and viewer tab through shared static and live metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiRemminaProfileFilterRoute", "GUI_DESIGN_REMMINA_PROFILE_FILTER_ROUTE", "gui_design_remmina_profile_filter_route"],
+            "src/remote_ops_workspace/gui.py": ["remminaProfileFilterRouteKey", "filter_remmina_profile_rows", "filter_input.textChanged.connect"],
+            "scripts/render_gui_design_previews.py": ["gui_design_remmina_profile_filter_route", "remmina_profile_filter_route.expected_query", "remmina_profile_filter_route.selected_profile_key"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_REMMINA_PROFILE_FILTER_ROUTE", "remmina-profile-filter-route", "expected_remmina_profile_filter_route"],
+            "docs/GUI_DESIGN.md": ["Remmina-style profile filter route"]
+          }
+        },
+        {
           "id": "remmina.clipboard-route",
           "description": "Remmina-style Clipboard viewer control route ties the Clipboard control, active RDP tab, Clipboard on status segment and clipboard-enabled workspace detail through shared static/live metadata.",
           "source_tokens": {
@@ -1390,6 +2093,28 @@
             "scripts/render_gui_design_previews.py": ["gui_design_remmina_clipboard_route", "clipboard_route.viewer_control_key", "clipboard_route.status_segment"],
             "scripts/check_real_gui_render.py": ["EXPECTED_REMMINA_CLIPBOARD_ROUTE", "remmina-clipboard-route", "expected_remmina_clipboard_route"],
             "docs/GUI_DESIGN.md": ["Remmina-style clipboard route"]
+          }
+        },
+        {
+          "id": "remmina.screenshot-route",
+          "description": "Remmina-style Screenshot viewer control route ties the Screenshot control, active RDP tab, generic capture artifact and screenshot workspace detail through shared static/live metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiRemminaScreenshotRoute", "GUI_DESIGN_REMMINA_SCREENSHOT_ROUTE", "gui_design_remmina_screenshot_route"],
+            "src/remote_ops_workspace/gui.py": ["remminaScreenshotRouteKey", "remminaScreenshotRouteActive", "remminaScreenshotRouteArtifact"],
+            "scripts/render_gui_design_previews.py": ["gui_design_remmina_screenshot_route", "screenshot_route.viewer_control_key", "screenshot_route.capture_artifact"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_REMMINA_SCREENSHOT_ROUTE", "remmina-screenshot-route", "expected_remmina_screenshot_route"],
+            "docs/GUI_DESIGN.md": ["Remmina-style screenshot route"]
+          }
+        },
+        {
+          "id": "remmina.sftp-transfer-route",
+          "description": "Remmina-style SFTP transfer route ties the Transfer toolbar action, SFTP profile row, SFTP tab, remote path, transfer queue and selected remote file row through shared static/live metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiRemminaSftpTransferRoute", "GUI_DESIGN_REMMINA_SFTP_TRANSFER_ROUTE", "gui_design_remmina_sftp_transfer_route"],
+            "src/remote_ops_workspace/gui.py": ["remminaSftpTransferRouteKey", "remminaSftpTransferRoutePath", "remminaSftpTransferRouteQueueState"],
+            "scripts/render_gui_design_previews.py": ["gui_design_remmina_sftp_transfer_route", "draw_remmina_sftp_transfer_panel", "sftp_transfer_route.active_row_name"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_REMMINA_SFTP_TRANSFER_ROUTE", "remmina-sftp-transfer-route", "expected_remmina_sftp_transfer_route"],
+            "docs/GUI_DESIGN.md": ["Remmina-style SFTP transfer route"]
           }
         },
         {
@@ -1409,6 +2134,222 @@
             "src/remote_ops_workspace/gui.py": ["build_product_reference_state_evidence", "productReferenceStateItem", "referenceKey"],
             "scripts/render_gui_design_previews.py": ["draw_product_reference_state", "gui_design_reference_state"],
             "scripts/check_real_gui_render.py": ["check_live_reference_state", "required_reference_state_texts", "expected_reference_state_texts"]
+          }
+        },
+        {
+          "id": "remmina.product-identity-route",
+          "description": "Remmina-style product identity route keeps the selected Connection Profiles row, active RDP viewer tab, reference-state strip, workspace surface and status segments synchronized through shared static/live metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiProductIdentityRoute", "gui_design_product_identity_route", "tree-tab-reference-status-workspace-identity"],
+            "src/remote_ops_workspace/gui.py": ["productIdentityRouteKey", "productIdentityActiveTab", "productIdentityStatusSegments"],
+            "scripts/render_gui_design_previews.py": ["gui_design_product_identity_route", "product_identity_route.active_tab_label", "product_identity_route.status_segments"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRODUCT_IDENTITY_ROUTES", "product-identity-route", "expected_product_identity_route"],
+            "docs/GUI_DESIGN.md": ["product identity route"]
+          }
+        },
+        {
+          "id": "remmina.reference-tab-activation-route",
+          "description": "Remmina-style reference tab activation route proves the opened RDP viewer reference tab can become the active surface and returns to Quick Connect evidence before capture.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetReferenceTabRoute", "gui_design_preset_reference_tab_route", "reference-profile-tab-can-be-active-surface"],
+            "src/remote_ops_workspace/gui.py": ["presetReferenceTabActivatedLabel", "presetReferenceTabReturnedHomeLabel", "find_tab_by_label"],
+            "scripts/render_gui_design_previews.py": ["preset_reference_tab_route", "reference_tab_route.active_tab_label", "reference_tab_route.home_tab_label"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_REFERENCE_TAB_ROUTES", "reference-tab-activation-route", "expected_preset_reference_tab_route"],
+            "docs/GUI_DESIGN.md": ["reference tab activation route"]
+          }
+        },
+        {
+          "id": "remmina.reference-tab-chrome-evidence-route",
+          "description": "Remmina-style reference tab chrome evidence route proves the opened RDP viewer tab exposes label, tooltip/status, position, index, role and closeability before capture.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetReferenceTabChromeRoute", "gui_design_preset_reference_tab_chrome_route", "active-reference-tab-chrome-evidence"],
+            "src/remote_ops_workspace/gui.py": ["presetReferenceTabChromeTooltip", "apply_reference_tab_chrome_route_to_terminal_tab", "sessionTabBar"],
+            "scripts/render_gui_design_previews.py": ["preset_reference_tab_chrome_route", "reference_tab_chrome_route.expected_tooltip"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_REFERENCE_TAB_CHROME_ROUTES", "reference-tab-chrome-evidence-route", "expected_preset_reference_tab_chrome_route"],
+            "docs/GUI_DESIGN.md": ["reference tab chrome evidence route"]
+          }
+        },
+        {
+          "id": "remmina.reference-status-bar-evidence-route",
+          "description": "Remmina-style reference status-bar evidence route proves the opened RDP viewer tab drives the status bar message, status notice, segment texts, segment count and segment tooltips before capture.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetReferenceStatusBarRoute", "gui_design_preset_reference_status_bar_route", "active-reference-status-bar-evidence"],
+            "src/remote_ops_workspace/gui.py": ["presetReferenceStatusSegments", "apply_reference_status_bar_route_to_terminal_tab", "productStatusSegment"],
+            "scripts/render_gui_design_previews.py": ["preset_reference_status_bar_route", "reference_status_route.expected_status_segments"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_REFERENCE_STATUS_BAR_ROUTES", "reference-status-bar-evidence-route", "expected_preset_reference_status_bar_route"],
+            "docs/GUI_DESIGN.md": ["reference status-bar evidence route"]
+          }
+        },
+        {
+          "id": "remmina.reference-session-actions-route",
+          "description": "Remmina-style reference session action route proves the opened RDP viewer tab exposes the same context/session action keys, labels and enabled state that the live tab menu uses.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetReferenceSessionActionRoute", "gui_design_preset_reference_session_action_route", "active-reference-session-actions"],
+            "src/remote_ops_workspace/gui.py": ["sessionTabContextActionKey", "apply_reference_session_action_route_to_terminal_tab", "presetReferenceSessionActionEnabledKeys"],
+            "scripts/render_gui_design_previews.py": ["preset_reference_session_action_route", "reference_session_action_route.expected_action_keys"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_REFERENCE_SESSION_ACTION_ROUTES", "reference-session-actions-route", "expected_preset_reference_session_action_route"],
+            "docs/GUI_DESIGN.md": ["reference session action route"]
+          }
+        },
+        {
+          "id": "remmina.reference-surface-evidence-route",
+          "description": "Remmina-style reference surface evidence route proves the opened RDP viewer tab exposes a TerminalPane title, source, command and output echo before returning to Quick Connect evidence.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetReferenceSurfaceRoute", "gui_design_preset_reference_surface_route", "active-reference-tab-surface-evidence"],
+            "src/remote_ops_workspace/gui.py": ["presetReferenceSurfaceActualCommand", "presetReferenceSurfaceActualOutput", "apply_reference_surface_route_to_terminal_tab"],
+            "scripts/render_gui_design_previews.py": ["preset_reference_surface_route", "reference_surface_route.command_target_fragment"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_REFERENCE_SURFACE_ROUTES", "reference-surface-evidence-route", "expected_preset_reference_surface_route"],
+            "docs/GUI_DESIGN.md": ["reference surface evidence route"]
+          }
+        },
+        {
+          "id": "remmina.reference-control-evidence-route",
+          "description": "Remmina-style reference control evidence route proves the opened RDP viewer tab exposes TerminalPane status plus Start, Restart, Stop, Copy and Clear controls with stable keys.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetReferenceControlRoute", "gui_design_preset_reference_control_route", "active-reference-tab-terminal-controls"],
+            "src/remote_ops_workspace/gui.py": ["terminalActionKey", "presetReferenceControlCapturedActionKeys", "apply_reference_control_route_to_terminal_tab"],
+            "scripts/render_gui_design_previews.py": ["preset_reference_control_route", "reference_control_route.action_keys"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_REFERENCE_CONTROL_ROUTES", "reference-control-evidence-route", "expected_preset_reference_control_route"],
+            "docs/GUI_DESIGN.md": ["reference control evidence route"]
+          }
+        },
+        {
+          "id": "remmina.reference-input-evidence-route",
+          "description": "Remmina-style reference input evidence route proves the opened RDP viewer tab exposes the TerminalPane input field, placeholder, initial text and enabled state.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetReferenceInputRoute", "gui_design_preset_reference_input_route", "active-reference-tab-terminal-input"],
+            "src/remote_ops_workspace/gui.py": ["presetReferenceInputEnabled", "apply_reference_input_route_to_terminal_tab", "terminalInput"],
+            "scripts/render_gui_design_previews.py": ["preset_reference_input_route", "reference_input_route.placeholder_text"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_REFERENCE_INPUT_ROUTES", "reference-input-evidence-route", "expected_preset_reference_input_route"],
+            "docs/GUI_DESIGN.md": ["reference input evidence route"]
+          }
+        },
+        {
+          "id": "remmina.reference-transcript-evidence-route",
+          "description": "Remmina-style reference transcript evidence route proves the opened RDP viewer tab exposes terminal output text, command echo, line count and target fragments through stable metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetReferenceTranscriptRoute", "gui_design_preset_reference_transcript_route", "active-reference-tab-terminal-transcript"],
+            "src/remote_ops_workspace/gui.py": ["presetReferenceTranscriptCommandEcho", "apply_reference_transcript_route_to_terminal_tab", "terminalOutput"],
+            "scripts/render_gui_design_previews.py": ["preset_reference_transcript_route", "reference_transcript_route.required_fragments"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_REFERENCE_TRANSCRIPT_ROUTES", "reference-transcript-evidence-route", "expected_preset_reference_transcript_route"],
+            "docs/GUI_DESIGN.md": ["reference transcript evidence route"]
+          }
+        },
+        {
+          "id": "remmina.preset-selection-route",
+          "description": "Remmina-style preset-selection route proves the selected design combo value drives the toolbar, sidebar header, home tab label, status segments and workspace/reference evidence for the active preset.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetSelectionRoute", "gui_design_preset_selection_route", "selector-to-toolbar-sidebar-tabs-status-workspace"],
+            "src/remote_ops_workspace/gui.py": ["presetSelectionRouteKey", "presetSelectionRouteHomeTabLabel", "presetSelectionRouteStatusSegments"],
+            "scripts/render_gui_design_previews.py": ["preset_selection_route", "selection_route.home_tab_label", "selection_route.status_segments"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_SELECTION_ROUTES", "preset-selection-route", "expected_preset_selection_route"],
+            "docs/GUI_DESIGN.md": ["preset-selection route"]
+          }
+        },
+        {
+          "id": "remmina.visual-signature",
+          "description": "Remmina-style visual signature keeps preset palette, density, tab behavior, toolbar icon size and pane/sidebar sizing synchronized between shared metadata, static previews and the live PyQt surface.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetVisualSignature", "gui_design_preset_visual_signature", "preset-palette-density-to-live-static-style"],
+            "src/remote_ops_workspace/gui.py": ["presetVisualSignatureDensity", "presetVisualSignaturePalette", "presetVisualSignatureRenderSource"],
+            "scripts/render_gui_design_previews.py": ["preset_visual_signature", "visual_signature.palette_items", "visual_signature.terminal_accent_color"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_VISUAL_SIGNATURES", "preset-visual-signature", "expected_preset_visual_signature"],
+            "docs/GUI_DESIGN.md": ["visual signature contract"]
+          }
+        },
+        {
+          "id": "remmina.preset-isolation-route",
+          "description": "Remmina-style preset isolation route proves active product-specific chrome is visible while inactive product-specific widgets are hidden or absent after switching styles.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetIsolationRoute", "gui_design_preset_isolation_route", "active-preset-visible-hidden-widget-isolation"],
+            "src/remote_ops_workspace/gui.py": ["presetIsolationVisibleObjects", "presetIsolationHiddenObjects", "presetIsolationRenderSource"],
+            "scripts/render_gui_design_previews.py": ["preset_isolation_route", "isolation_route.visible_objects", "isolation_route.hidden_objects"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_ISOLATION_ROUTES", "preset-isolation-route", "expected_preset_isolation_route"],
+            "docs/GUI_DESIGN.md": ["preset isolation route"]
+          }
+        },
+        {
+          "id": "remmina.preset-transition-route",
+          "description": "Remmina-style preset transition route proves switching from another selectable style to Remmina-style resets inactive product chrome from the previous style.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetTransitionRoute", "gui_design_preset_transition_route", "selector-style-switch-resets-inactive-product-chrome"],
+            "src/remote_ops_workspace/gui.py": ["presetTransitionFromPresetIds", "presetTransitionResetObjects", "presetTransitionRenderSource"],
+            "scripts/render_gui_design_previews.py": ["preset_transition_route", "transition_route.from_preset_ids", "transition_route.reset_objects"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_TRANSITION_ROUTES", "preset-transition-route", "expected_preset_transition_route"],
+            "docs/GUI_DESIGN.md": ["preset transition route"]
+          }
+        },
+        {
+          "id": "remmina.keyboard-shortcut-route",
+          "description": "Remmina-style keyboard shortcut route proves the product preset exposes tracked shortcut keys, key sequences, action labels and live QShortcut bindings.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetKeyboardShortcutRoute", "gui_design_preset_keyboard_shortcut_route", "product-preset-keyboard-shortcuts"],
+            "src/remote_ops_workspace/gui.py": ["presetKeyboardShortcutCapturedSequences", "create_keyboard_shortcuts", "presetKeyboardShortcutActionLabel"],
+            "scripts/render_gui_design_previews.py": ["preset_keyboard_shortcut_route", "keyboard_shortcut_route.expected_sequences"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_KEYBOARD_SHORTCUT_ROUTES", "preset-keyboard-shortcut-route", "expected_preset_keyboard_shortcut_route"],
+            "docs/GUI_DESIGN.md": ["preset keyboard shortcut route"]
+          }
+        },
+        {
+          "id": "remmina.command-surface-route",
+          "description": "Remmina-style command surface route proves the product preset exposes visible command action order, labels, tooltips and active/checked/disabled state from shared static/live metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": [
+              "GuiPresetCommandSurfaceRoute",
+              "gui_design_preset_command_surface_route",
+              "product-preset-command-surface-route"
+            ],
+            "src/remote_ops_workspace/gui.py": [
+              "presetCommandSurfaceCapturedKeys",
+              "apply_command_surface_route_for_design",
+              "presetCommandSurfaceCapturedStates"
+            ],
+            "scripts/render_gui_design_previews.py": [
+              "preset_command_surface_route",
+              "command_surface_route.expected_action_keys"
+            ],
+            "scripts/check_real_gui_render.py": [
+              "EXPECTED_PRESET_COMMAND_SURFACE_ROUTES",
+              "check_live_preset_command_surface_route",
+              "preset-command-surface-route",
+              "expected_preset_command_surface_route"
+            ],
+            "docs/GUI_DESIGN.md": [
+              "preset command surface route"
+            ]
+          }
+        },
+        {
+          "id": "remmina.focus-interaction-route",
+          "description": "Remmina-style focus interaction route proves the product preset exposes focused control, active toolbar, checked toolbar, disabled toolbar and selected tree-row interaction evidence from shared static/live metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetFocusInteractionRoute", "gui_design_preset_focus_interaction_route", "product-preset-focus-interaction-route"],
+            "src/remote_ops_workspace/gui.py": ["presetFocusInteractionCapturedFocus", "apply_focus_interaction_route_for_design", "presetFocusInteractionToolbarStates"],
+            "scripts/render_gui_design_previews.py": ["preset_focus_interaction_route", "focus_interaction_route.focused_control"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_FOCUS_INTERACTION_ROUTES", "preset-focus-interaction-route", "expected_preset_focus_interaction_route"],
+            "docs/GUI_DESIGN.md": ["preset focus interaction route"]
+          }
+        },
+        {
+          "id": "remmina.home-search-route",
+          "description": "Remmina-style home search route proves the product preset exposes Home search, quick-connect/filter entry, Home actions and recent labels from shared static/live metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetHomeSearchRoute", "gui_design_preset_home_search_route", "product-preset-home-search-entry-route"],
+            "src/remote_ops_workspace/gui.py": ["presetHomeSearchCapturedPlaceholder", "apply_home_search_route_for_design", "presetHomeSearchCapturedRecentLabels"],
+            "scripts/render_gui_design_previews.py": ["preset_home_search_route", "home_search_route.placeholder_text"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_HOME_SEARCH_ROUTES", "preset-home-search-route", "expected_preset_home_search_route"],
+            "docs/GUI_DESIGN.md": ["preset home search route"]
+          }
+        },
+        {
+          "id": "remmina.preset-catalog-route",
+          "description": "Remmina-style preset catalog route proves the design selector exposes the complete ordered catalog, default Native option and product-style subset from shared static/live metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetCatalogRoute", "gui_design_preset_catalog_route", "preset-catalog-to-design-selector-options"],
+            "src/remote_ops_workspace/gui.py": ["presetCatalogRouteOptionIds", "presetCatalogRouteProductPresetIds", "presetCatalogRouteDefaultPresetId"],
+            "scripts/render_gui_design_previews.py": ["preset_catalog_route", "catalog_route.option_ids", "catalog_route.option_labels"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_CATALOG_ROUTE", "preset-catalog-route", "expected_preset_catalog_route"],
+            "docs/GUI_DESIGN.md": ["design selector catalog"]
           }
         },
         {
@@ -1437,19 +2378,19 @@
         "mRemoteNG-style classic connection manager with persistent tree, document tabs and grouped sessions."
       ],
       "dimension_coverage": {
-        "layout": ["mremoteng.classic-tree", "mremoteng.top-chrome", "mremoteng.workspace-surface", "mremoteng.property-grid-chrome", "mremoteng.connection-document-route", "mremoteng.reference-line-anchors", "mremoteng.reference-topology"],
-        "navigation": ["mremoteng.top-chrome", "mremoteng.connections-sidebar", "mremoteng.nested-connection-tree", "mremoteng.connection-document-route", "mremoteng.reference-line-anchors"],
-        "panes": ["mremoteng.workspace-surface", "mremoteng.document-controls", "mremoteng.document-control-chrome", "mremoteng.document-control-geometry", "mremoteng.property-grid-chrome", "mremoteng.connection-document-route", "mremoteng.reference-line-anchors"],
-        "tabs": ["mremoteng.document-tabs", "mremoteng.tab-model", "mremoteng.reference-state", "mremoteng.connection-document-route", "mremoteng.reference-line-anchors"],
-        "sidebars": ["mremoteng.connections-sidebar", "mremoteng.connection-document-route", "mremoteng.reference-line-anchors"],
-        "toolbars": ["mremoteng.top-chrome", "mremoteng.connection-toolbar", "mremoteng.document-controls", "mremoteng.document-control-chrome", "mremoteng.document-control-geometry", "mremoteng.connection-document-route", "mremoteng.reference-line-anchors"],
-        "session_trees": ["mremoteng.nested-connection-tree", "mremoteng.connection-glyphs", "mremoteng.connection-document-route"],
-        "connected_session_behavior": ["mremoteng.workspace-surface", "mremoteng.document-controls", "mremoteng.document-control-chrome", "mremoteng.document-control-geometry", "mremoteng.property-grid-chrome", "mremoteng.connection-document-route", "mremoteng.reference-state"],
+        "layout": ["mremoteng.classic-tree", "mremoteng.visual-signature", "mremoteng.top-chrome", "mremoteng.workspace-surface", "mremoteng.property-grid-chrome", "mremoteng.connection-document-route", "mremoteng.document-filter-route", "mremoteng.inheritance-route", "mremoteng.preset-catalog-route", "mremoteng.preset-selection-route", "mremoteng.preset-isolation-route", "mremoteng.preset-transition-route", "mremoteng.reference-tab-activation-route", "mremoteng.reference-tab-chrome-evidence-route", "mremoteng.reference-surface-evidence-route", "mremoteng.reference-control-evidence-route", "mremoteng.reference-input-evidence-route", "mremoteng.reference-transcript-evidence-route", "mremoteng.reference-line-anchors", "mremoteng.reference-topology"],
+        "navigation": ["mremoteng.top-chrome", "mremoteng.connections-sidebar", "mremoteng.nested-connection-tree", "mremoteng.connection-document-route", "mremoteng.document-filter-route", "mremoteng.inheritance-route", "mremoteng.preset-catalog-route", "mremoteng.preset-selection-route", "mremoteng.preset-isolation-route", "mremoteng.preset-transition-route", "mremoteng.keyboard-shortcut-route", "mremoteng.command-surface-route", "mremoteng.focus-interaction-route", "mremoteng.home-search-route", "mremoteng.product-identity-route", "mremoteng.reference-tab-activation-route", "mremoteng.reference-tab-chrome-evidence-route", "mremoteng.reference-session-actions-route", "mremoteng.reference-line-anchors"],
+        "panes": ["mremoteng.workspace-surface", "mremoteng.document-controls", "mremoteng.document-control-chrome", "mremoteng.document-control-geometry", "mremoteng.property-grid-chrome", "mremoteng.connection-document-route", "mremoteng.document-filter-route", "mremoteng.inheritance-route", "mremoteng.reference-surface-evidence-route", "mremoteng.reference-control-evidence-route", "mremoteng.reference-input-evidence-route", "mremoteng.reference-transcript-evidence-route", "mremoteng.reference-line-anchors"],
+        "tabs": ["mremoteng.document-tabs", "mremoteng.visual-signature", "mremoteng.tab-model", "mremoteng.reference-state", "mremoteng.connection-document-route", "mremoteng.document-filter-route", "mremoteng.inheritance-route", "mremoteng.preset-selection-route", "mremoteng.preset-isolation-route", "mremoteng.preset-transition-route", "mremoteng.keyboard-shortcut-route", "mremoteng.command-surface-route", "mremoteng.focus-interaction-route", "mremoteng.home-search-route", "mremoteng.product-identity-route", "mremoteng.reference-tab-activation-route", "mremoteng.reference-tab-chrome-evidence-route", "mremoteng.reference-status-bar-evidence-route", "mremoteng.reference-session-actions-route", "mremoteng.reference-surface-evidence-route", "mremoteng.reference-line-anchors"],
+        "sidebars": ["mremoteng.connections-sidebar", "mremoteng.visual-signature", "mremoteng.connection-document-route", "mremoteng.document-filter-route", "mremoteng.inheritance-route", "mremoteng.preset-selection-route", "mremoteng.preset-isolation-route", "mremoteng.preset-transition-route", "mremoteng.focus-interaction-route", "mremoteng.home-search-route", "mremoteng.reference-line-anchors"],
+        "toolbars": ["mremoteng.top-chrome", "mremoteng.visual-signature", "mremoteng.connection-toolbar", "mremoteng.document-controls", "mremoteng.document-control-chrome", "mremoteng.document-control-geometry", "mremoteng.connection-document-route", "mremoteng.document-filter-route", "mremoteng.inheritance-route", "mremoteng.preset-catalog-route", "mremoteng.preset-selection-route", "mremoteng.preset-isolation-route", "mremoteng.preset-transition-route", "mremoteng.keyboard-shortcut-route", "mremoteng.command-surface-route", "mremoteng.focus-interaction-route", "mremoteng.home-search-route", "mremoteng.reference-control-evidence-route", "mremoteng.reference-line-anchors"],
+        "session_trees": ["mremoteng.nested-connection-tree", "mremoteng.connection-glyphs", "mremoteng.connection-document-route", "mremoteng.document-filter-route", "mremoteng.inheritance-route", "mremoteng.product-identity-route"],
+        "connected_session_behavior": ["mremoteng.workspace-surface", "mremoteng.document-controls", "mremoteng.document-control-chrome", "mremoteng.document-control-geometry", "mremoteng.property-grid-chrome", "mremoteng.connection-document-route", "mremoteng.document-filter-route", "mremoteng.inheritance-route", "mremoteng.reference-state", "mremoteng.preset-selection-route", "mremoteng.preset-isolation-route", "mremoteng.preset-transition-route", "mremoteng.keyboard-shortcut-route", "mremoteng.command-surface-route", "mremoteng.focus-interaction-route", "mremoteng.home-search-route", "mremoteng.product-identity-route", "mremoteng.reference-tab-activation-route", "mremoteng.reference-tab-chrome-evidence-route", "mremoteng.reference-status-bar-evidence-route", "mremoteng.reference-session-actions-route", "mremoteng.reference-surface-evidence-route", "mremoteng.reference-control-evidence-route", "mremoteng.reference-input-evidence-route", "mremoteng.reference-transcript-evidence-route"],
         "file_monitoring_panels": ["mremoteng.workspace-surface", "mremoteng.import-groups"],
-        "status_bars": ["mremoteng.status-bar", "mremoteng.reference-state", "mremoteng.connection-document-route", "mremoteng.reference-line-anchors"],
-        "density": ["mremoteng.classic-tree", "mremoteng.top-chrome", "mremoteng.connection-document-route", "mremoteng.reference-line-anchors"],
-        "spacing": ["mremoteng.top-chrome", "mremoteng.document-tabs", "mremoteng.document-control-geometry", "mremoteng.property-grid-chrome", "mremoteng.connection-document-route", "mremoteng.reference-line-anchors"],
-        "interaction_states": ["mremoteng.top-chrome", "mremoteng.interaction-states", "mremoteng.property-grid-chrome", "mremoteng.connection-document-route", "mremoteng.reference-state"]
+        "status_bars": ["mremoteng.status-bar", "mremoteng.visual-signature", "mremoteng.reference-state", "mremoteng.connection-document-route", "mremoteng.document-filter-route", "mremoteng.inheritance-route", "mremoteng.preset-selection-route", "mremoteng.product-identity-route", "mremoteng.reference-status-bar-evidence-route", "mremoteng.reference-line-anchors"],
+        "density": ["mremoteng.classic-tree", "mremoteng.visual-signature", "mremoteng.top-chrome", "mremoteng.connection-document-route", "mremoteng.document-filter-route", "mremoteng.inheritance-route", "mremoteng.reference-transcript-evidence-route", "mremoteng.reference-line-anchors"],
+        "spacing": ["mremoteng.visual-signature", "mremoteng.top-chrome", "mremoteng.document-tabs", "mremoteng.document-control-geometry", "mremoteng.property-grid-chrome", "mremoteng.connection-document-route", "mremoteng.document-filter-route", "mremoteng.inheritance-route", "mremoteng.reference-tab-chrome-evidence-route", "mremoteng.reference-status-bar-evidence-route", "mremoteng.reference-input-evidence-route", "mremoteng.reference-line-anchors"],
+        "interaction_states": ["mremoteng.top-chrome", "mremoteng.interaction-states", "mremoteng.property-grid-chrome", "mremoteng.connection-document-route", "mremoteng.document-filter-route", "mremoteng.inheritance-route", "mremoteng.reference-state", "mremoteng.preset-catalog-route", "mremoteng.preset-selection-route", "mremoteng.preset-isolation-route", "mremoteng.preset-transition-route", "mremoteng.keyboard-shortcut-route", "mremoteng.command-surface-route", "mremoteng.focus-interaction-route", "mremoteng.home-search-route", "mremoteng.product-identity-route", "mremoteng.reference-tab-activation-route", "mremoteng.reference-tab-chrome-evidence-route", "mremoteng.reference-status-bar-evidence-route", "mremoteng.reference-session-actions-route", "mremoteng.reference-surface-evidence-route", "mremoteng.reference-control-evidence-route", "mremoteng.reference-input-evidence-route", "mremoteng.reference-transcript-evidence-route"]
       },
       "requirements": [
         {
@@ -1614,6 +2555,28 @@
           }
         },
         {
+          "id": "mremoteng.document-filter-route",
+          "description": "mRemoteNG-style document filter routes an editable connection-tree query to the selected SSH document row through shared static and live metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiMRemoteNgDocumentFilterRoute", "GUI_DESIGN_MREMOTENG_DOCUMENT_FILTER_ROUTE", "gui_design_mremoteng_document_filter_route"],
+            "src/remote_ops_workspace/gui.py": ["mRemoteNgDocumentFilterRouteKey", "filter_input.textChanged.connect", "MREMOTENG_FILTER_ROUTE_KEY_ROLE"],
+            "scripts/render_gui_design_previews.py": ["gui_design_mremoteng_document_filter_route", "mremoteng_document_filter_route.expected_query", "mremoteng_document_filter_route.selected_tree_label"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_MREMOTENG_DOCUMENT_FILTER_ROUTE", "mremoteng-document-filter-route", "expected_mremoteng_document_filter_route"],
+            "docs/GUI_DESIGN.md": ["mRemoteNG-style document filter route"]
+          }
+        },
+        {
+          "id": "mremoteng.inheritance-route",
+          "description": "mRemoteNG-style inheritance route ties the Config inheritance workflow card, active document tab and inherited Credential property-grid row through shared static/live metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiMRemoteNgInheritanceRoute", "GUI_DESIGN_MREMOTENG_INHERITANCE_ROUTE", "gui_design_mremoteng_inheritance_route"],
+            "src/remote_ops_workspace/gui.py": ["mRemoteNgInheritanceRouteKey", "mRemoteNgInheritanceRouteInheritedValue", "mRemoteNgInheritanceRouteState"],
+            "scripts/render_gui_design_previews.py": ["gui_design_mremoteng_inheritance_route", "inheritance_route.property_row_key", "inheritance_route.inherited_value"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_MREMOTENG_INHERITANCE_ROUTE", "mremoteng-inheritance-route", "expected_mremoteng_inheritance_route"],
+            "docs/GUI_DESIGN.md": ["mRemoteNG-style inheritance route"]
+          }
+        },
+        {
           "id": "mremoteng.live-workflow-cards",
           "description": "Live mRemoteNG-style home tab exposes workflow evidence cards for document toolbar, RDP document and config inheritance behavior.",
           "source_tokens": {
@@ -1630,6 +2593,222 @@
             "src/remote_ops_workspace/gui.py": ["build_product_reference_state_evidence", "productReferenceStateItem", "referenceKey"],
             "scripts/render_gui_design_previews.py": ["draw_product_reference_state", "gui_design_reference_state"],
             "scripts/check_real_gui_render.py": ["check_live_reference_state", "required_reference_state_texts", "expected_reference_state_texts"]
+          }
+        },
+        {
+          "id": "mremoteng.product-identity-route",
+          "description": "mRemoteNG-style product identity route keeps the selected Connections row, active SSH document tab, reference-state strip, workspace surface and status segments synchronized through shared static/live metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiProductIdentityRoute", "gui_design_product_identity_route", "tree-tab-reference-status-workspace-identity"],
+            "src/remote_ops_workspace/gui.py": ["productIdentityRouteKey", "productIdentityActiveTab", "productIdentityStatusSegments"],
+            "scripts/render_gui_design_previews.py": ["gui_design_product_identity_route", "product_identity_route.active_tab_label", "product_identity_route.status_segments"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRODUCT_IDENTITY_ROUTES", "product-identity-route", "expected_product_identity_route"],
+            "docs/GUI_DESIGN.md": ["product identity route"]
+          }
+        },
+        {
+          "id": "mremoteng.reference-tab-activation-route",
+          "description": "mRemoteNG-style reference tab activation route proves the opened SSH document reference tab can become the active surface and returns to Start Page evidence before capture.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetReferenceTabRoute", "gui_design_preset_reference_tab_route", "reference-profile-tab-can-be-active-surface"],
+            "src/remote_ops_workspace/gui.py": ["presetReferenceTabActivatedLabel", "presetReferenceTabReturnedHomeLabel", "find_tab_by_label"],
+            "scripts/render_gui_design_previews.py": ["preset_reference_tab_route", "reference_tab_route.active_tab_label", "reference_tab_route.home_tab_label"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_REFERENCE_TAB_ROUTES", "reference-tab-activation-route", "expected_preset_reference_tab_route"],
+            "docs/GUI_DESIGN.md": ["reference tab activation route"]
+          }
+        },
+        {
+          "id": "mremoteng.reference-tab-chrome-evidence-route",
+          "description": "mRemoteNG-style reference tab chrome evidence route proves the opened SSH document tab exposes label, tooltip/status, position, index, role and closeability before capture.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetReferenceTabChromeRoute", "gui_design_preset_reference_tab_chrome_route", "active-reference-tab-chrome-evidence"],
+            "src/remote_ops_workspace/gui.py": ["presetReferenceTabChromeTooltip", "apply_reference_tab_chrome_route_to_terminal_tab", "sessionTabBar"],
+            "scripts/render_gui_design_previews.py": ["preset_reference_tab_chrome_route", "reference_tab_chrome_route.expected_tooltip"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_REFERENCE_TAB_CHROME_ROUTES", "reference-tab-chrome-evidence-route", "expected_preset_reference_tab_chrome_route"],
+            "docs/GUI_DESIGN.md": ["reference tab chrome evidence route"]
+          }
+        },
+        {
+          "id": "mremoteng.reference-status-bar-evidence-route",
+          "description": "mRemoteNG-style reference status-bar evidence route proves the opened SSH document tab drives the status bar message, status notice, segment texts, segment count and segment tooltips before capture.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetReferenceStatusBarRoute", "gui_design_preset_reference_status_bar_route", "active-reference-status-bar-evidence"],
+            "src/remote_ops_workspace/gui.py": ["presetReferenceStatusSegments", "apply_reference_status_bar_route_to_terminal_tab", "productStatusSegment"],
+            "scripts/render_gui_design_previews.py": ["preset_reference_status_bar_route", "reference_status_route.expected_status_segments"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_REFERENCE_STATUS_BAR_ROUTES", "reference-status-bar-evidence-route", "expected_preset_reference_status_bar_route"],
+            "docs/GUI_DESIGN.md": ["reference status-bar evidence route"]
+          }
+        },
+        {
+          "id": "mremoteng.reference-session-actions-route",
+          "description": "mRemoteNG-style reference session action route proves the opened SSH document tab exposes the same context/session action keys, labels and enabled state that the live tab menu uses.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetReferenceSessionActionRoute", "gui_design_preset_reference_session_action_route", "active-reference-session-actions"],
+            "src/remote_ops_workspace/gui.py": ["sessionTabContextActionKey", "apply_reference_session_action_route_to_terminal_tab", "presetReferenceSessionActionEnabledKeys"],
+            "scripts/render_gui_design_previews.py": ["preset_reference_session_action_route", "reference_session_action_route.expected_action_keys"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_REFERENCE_SESSION_ACTION_ROUTES", "reference-session-actions-route", "expected_preset_reference_session_action_route"],
+            "docs/GUI_DESIGN.md": ["reference session action route"]
+          }
+        },
+        {
+          "id": "mremoteng.reference-surface-evidence-route",
+          "description": "mRemoteNG-style reference surface evidence route proves the opened SSH document tab exposes a TerminalPane title, source, command and output echo before returning to Start Page evidence.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetReferenceSurfaceRoute", "gui_design_preset_reference_surface_route", "active-reference-tab-surface-evidence"],
+            "src/remote_ops_workspace/gui.py": ["presetReferenceSurfaceActualCommand", "presetReferenceSurfaceActualOutput", "apply_reference_surface_route_to_terminal_tab"],
+            "scripts/render_gui_design_previews.py": ["preset_reference_surface_route", "reference_surface_route.command_target_fragment"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_REFERENCE_SURFACE_ROUTES", "reference-surface-evidence-route", "expected_preset_reference_surface_route"],
+            "docs/GUI_DESIGN.md": ["reference surface evidence route"]
+          }
+        },
+        {
+          "id": "mremoteng.reference-control-evidence-route",
+          "description": "mRemoteNG-style reference control evidence route proves the opened SSH document tab exposes TerminalPane status plus Start, Restart, Stop, Copy and Clear controls with stable keys.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetReferenceControlRoute", "gui_design_preset_reference_control_route", "active-reference-tab-terminal-controls"],
+            "src/remote_ops_workspace/gui.py": ["terminalActionKey", "presetReferenceControlCapturedActionKeys", "apply_reference_control_route_to_terminal_tab"],
+            "scripts/render_gui_design_previews.py": ["preset_reference_control_route", "reference_control_route.action_keys"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_REFERENCE_CONTROL_ROUTES", "reference-control-evidence-route", "expected_preset_reference_control_route"],
+            "docs/GUI_DESIGN.md": ["reference control evidence route"]
+          }
+        },
+        {
+          "id": "mremoteng.reference-input-evidence-route",
+          "description": "mRemoteNG-style reference input evidence route proves the opened SSH document tab exposes the terminal input placeholder, initial text and enabled state through stable metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetReferenceInputRoute", "gui_design_preset_reference_input_route", "active-reference-tab-terminal-input"],
+            "src/remote_ops_workspace/gui.py": ["presetReferenceInputEnabled", "apply_reference_input_route_to_terminal_tab", "terminalInput"],
+            "scripts/render_gui_design_previews.py": ["preset_reference_input_route", "reference_input_route.placeholder_text"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_REFERENCE_INPUT_ROUTES", "reference-input-evidence-route", "expected_preset_reference_input_route"],
+            "docs/GUI_DESIGN.md": ["reference input evidence route"]
+          }
+        },
+        {
+          "id": "mremoteng.reference-transcript-evidence-route",
+          "description": "mRemoteNG-style reference transcript evidence route proves the opened SSH document tab exposes terminal output text, command echo, line count and target fragments through stable metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetReferenceTranscriptRoute", "gui_design_preset_reference_transcript_route", "active-reference-tab-terminal-transcript"],
+            "src/remote_ops_workspace/gui.py": ["presetReferenceTranscriptCommandEcho", "apply_reference_transcript_route_to_terminal_tab", "terminalOutput"],
+            "scripts/render_gui_design_previews.py": ["preset_reference_transcript_route", "reference_transcript_route.required_fragments"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_REFERENCE_TRANSCRIPT_ROUTES", "reference-transcript-evidence-route", "expected_preset_reference_transcript_route"],
+            "docs/GUI_DESIGN.md": ["reference transcript evidence route"]
+          }
+        },
+        {
+          "id": "mremoteng.preset-selection-route",
+          "description": "mRemoteNG-style preset-selection route proves the selected design combo value drives the toolbar, sidebar header, home tab label, status segments and workspace/reference evidence for the active preset.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetSelectionRoute", "gui_design_preset_selection_route", "selector-to-toolbar-sidebar-tabs-status-workspace"],
+            "src/remote_ops_workspace/gui.py": ["presetSelectionRouteKey", "presetSelectionRouteHomeTabLabel", "presetSelectionRouteStatusSegments"],
+            "scripts/render_gui_design_previews.py": ["preset_selection_route", "selection_route.home_tab_label", "selection_route.status_segments"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_SELECTION_ROUTES", "preset-selection-route", "expected_preset_selection_route"],
+            "docs/GUI_DESIGN.md": ["preset-selection route"]
+          }
+        },
+        {
+          "id": "mremoteng.visual-signature",
+          "description": "mRemoteNG-style visual signature keeps preset palette, density, tab behavior, toolbar icon size and pane/sidebar sizing synchronized between shared metadata, static previews and the live PyQt surface.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetVisualSignature", "gui_design_preset_visual_signature", "preset-palette-density-to-live-static-style"],
+            "src/remote_ops_workspace/gui.py": ["presetVisualSignatureDensity", "presetVisualSignaturePalette", "presetVisualSignatureRenderSource"],
+            "scripts/render_gui_design_previews.py": ["preset_visual_signature", "visual_signature.palette_items", "visual_signature.terminal_accent_color"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_VISUAL_SIGNATURES", "preset-visual-signature", "expected_preset_visual_signature"],
+            "docs/GUI_DESIGN.md": ["visual signature contract"]
+          }
+        },
+        {
+          "id": "mremoteng.preset-isolation-route",
+          "description": "mRemoteNG-style preset isolation route proves active product-specific chrome is visible while inactive product-specific widgets are hidden or absent after switching styles.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetIsolationRoute", "gui_design_preset_isolation_route", "active-preset-visible-hidden-widget-isolation"],
+            "src/remote_ops_workspace/gui.py": ["presetIsolationVisibleObjects", "presetIsolationHiddenObjects", "presetIsolationRenderSource"],
+            "scripts/render_gui_design_previews.py": ["preset_isolation_route", "isolation_route.visible_objects", "isolation_route.hidden_objects"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_ISOLATION_ROUTES", "preset-isolation-route", "expected_preset_isolation_route"],
+            "docs/GUI_DESIGN.md": ["preset isolation route"]
+          }
+        },
+        {
+          "id": "mremoteng.preset-transition-route",
+          "description": "mRemoteNG-style preset transition route proves switching from another selectable style to mRemoteNG-style resets inactive product chrome from the previous style.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetTransitionRoute", "gui_design_preset_transition_route", "selector-style-switch-resets-inactive-product-chrome"],
+            "src/remote_ops_workspace/gui.py": ["presetTransitionFromPresetIds", "presetTransitionResetObjects", "presetTransitionRenderSource"],
+            "scripts/render_gui_design_previews.py": ["preset_transition_route", "transition_route.from_preset_ids", "transition_route.reset_objects"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_TRANSITION_ROUTES", "preset-transition-route", "expected_preset_transition_route"],
+            "docs/GUI_DESIGN.md": ["preset transition route"]
+          }
+        },
+        {
+          "id": "mremoteng.keyboard-shortcut-route",
+          "description": "mRemoteNG-style keyboard shortcut route proves the product preset exposes tracked shortcut keys, key sequences, action labels and live QShortcut bindings.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetKeyboardShortcutRoute", "gui_design_preset_keyboard_shortcut_route", "product-preset-keyboard-shortcuts"],
+            "src/remote_ops_workspace/gui.py": ["presetKeyboardShortcutCapturedSequences", "create_keyboard_shortcuts", "presetKeyboardShortcutActionLabel"],
+            "scripts/render_gui_design_previews.py": ["preset_keyboard_shortcut_route", "keyboard_shortcut_route.expected_sequences"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_KEYBOARD_SHORTCUT_ROUTES", "preset-keyboard-shortcut-route", "expected_preset_keyboard_shortcut_route"],
+            "docs/GUI_DESIGN.md": ["preset keyboard shortcut route"]
+          }
+        },
+        {
+          "id": "mremoteng.command-surface-route",
+          "description": "mRemoteNG-style command surface route proves the product preset exposes visible command action order, labels, tooltips and active/checked/disabled state from shared static/live metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": [
+              "GuiPresetCommandSurfaceRoute",
+              "gui_design_preset_command_surface_route",
+              "product-preset-command-surface-route"
+            ],
+            "src/remote_ops_workspace/gui.py": [
+              "presetCommandSurfaceCapturedKeys",
+              "apply_command_surface_route_for_design",
+              "presetCommandSurfaceCapturedStates"
+            ],
+            "scripts/render_gui_design_previews.py": [
+              "preset_command_surface_route",
+              "command_surface_route.expected_action_keys"
+            ],
+            "scripts/check_real_gui_render.py": [
+              "EXPECTED_PRESET_COMMAND_SURFACE_ROUTES",
+              "check_live_preset_command_surface_route",
+              "preset-command-surface-route",
+              "expected_preset_command_surface_route"
+            ],
+            "docs/GUI_DESIGN.md": [
+              "preset command surface route"
+            ]
+          }
+        },
+        {
+          "id": "mremoteng.focus-interaction-route",
+          "description": "mRemoteNG-style focus interaction route proves the product preset exposes focused control, active toolbar, checked toolbar, disabled toolbar and selected tree-row interaction evidence from shared static/live metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetFocusInteractionRoute", "gui_design_preset_focus_interaction_route", "product-preset-focus-interaction-route"],
+            "src/remote_ops_workspace/gui.py": ["presetFocusInteractionCapturedFocus", "apply_focus_interaction_route_for_design", "presetFocusInteractionToolbarStates"],
+            "scripts/render_gui_design_previews.py": ["preset_focus_interaction_route", "focus_interaction_route.focused_control"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_FOCUS_INTERACTION_ROUTES", "preset-focus-interaction-route", "expected_preset_focus_interaction_route"],
+            "docs/GUI_DESIGN.md": ["preset focus interaction route"]
+          }
+        },
+        {
+          "id": "mremoteng.home-search-route",
+          "description": "mRemoteNG-style home search route proves the product preset exposes Home search, quick-connect/filter entry, Home actions and recent labels from shared static/live metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetHomeSearchRoute", "gui_design_preset_home_search_route", "product-preset-home-search-entry-route"],
+            "src/remote_ops_workspace/gui.py": ["presetHomeSearchCapturedPlaceholder", "apply_home_search_route_for_design", "presetHomeSearchCapturedRecentLabels"],
+            "scripts/render_gui_design_previews.py": ["preset_home_search_route", "home_search_route.placeholder_text"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_HOME_SEARCH_ROUTES", "preset-home-search-route", "expected_preset_home_search_route"],
+            "docs/GUI_DESIGN.md": ["preset home search route"]
+          }
+        },
+        {
+          "id": "mremoteng.preset-catalog-route",
+          "description": "mRemoteNG-style preset catalog route proves the design selector exposes the complete ordered catalog, default Native option and product-style subset from shared static/live metadata.",
+          "source_tokens": {
+            "src/remote_ops_workspace/gui_designs.py": ["GuiPresetCatalogRoute", "gui_design_preset_catalog_route", "preset-catalog-to-design-selector-options"],
+            "src/remote_ops_workspace/gui.py": ["presetCatalogRouteOptionIds", "presetCatalogRouteProductPresetIds", "presetCatalogRouteDefaultPresetId"],
+            "scripts/render_gui_design_previews.py": ["preset_catalog_route", "catalog_route.option_ids", "catalog_route.option_labels"],
+            "scripts/check_real_gui_render.py": ["EXPECTED_PRESET_CATALOG_ROUTE", "preset-catalog-route", "expected_preset_catalog_route"],
+            "docs/GUI_DESIGN.md": ["design selector catalog"]
           }
         },
         {

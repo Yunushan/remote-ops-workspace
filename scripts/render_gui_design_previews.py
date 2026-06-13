@@ -18,10 +18,15 @@ sys.path.insert(0, str(SRC))
 from remote_ops_workspace.gui import quick_connect_candidates  # noqa: E402
 from remote_ops_workspace.gui_designs import (  # noqa: E402
     GUI_DESIGN_PRESETS,
+    PRODUCT_GUI_PRESET_IDS,
+    PRODUCT_REFERENCE_TAB_PRESET_IDS,
     GuiDesignPreset,
+    gui_design_command_surface_actions,
+    gui_design_home_tab_label,
     gui_design_interaction_state,
     gui_design_moba_bottom_edge_controls,
     gui_design_moba_connected_dock_frame,
+    gui_design_moba_follow_terminal_folder_control_route,
     gui_design_moba_home_welcome_chrome,
     gui_design_moba_home_welcome_geometry,
     gui_design_moba_monitoring_control_geometry_for,
@@ -33,10 +38,13 @@ from remote_ops_workspace.gui_designs import (  # noqa: E402
     gui_design_moba_rail_chrome,
     gui_design_moba_rail_item_geometry_for,
     gui_design_moba_rail_items,
+    gui_design_moba_remote_monitoring_control_route,
     gui_design_moba_remote_monitoring_dock_chrome,
     gui_design_moba_ribbon_action_geometry_for,
     gui_design_moba_ribbon_actions,
+    gui_design_moba_ribbon_edge_action_route,
     gui_design_moba_ribbon_edge_actions,
+    gui_design_moba_right_utility_action_route,
     gui_design_moba_right_utility_actions,
     gui_design_moba_right_utility_rail_chrome,
     gui_design_moba_session_edge_actions,
@@ -60,44 +68,76 @@ from remote_ops_workspace.gui_designs import (  # noqa: E402
     gui_design_moba_top_stack_geometry,
     gui_design_mremoteng_connection_document_route,
     gui_design_mremoteng_document_controls,
+    gui_design_mremoteng_document_filter_route,
     gui_design_mremoteng_document_toolbar_chrome,
+    gui_design_mremoteng_inheritance_route,
     gui_design_mremoteng_property_grid_chrome,
     gui_design_mremoteng_top_chrome,
+    gui_design_preset_catalog_route,
+    gui_design_preset_command_surface_route,
+    gui_design_preset_focus_interaction_route,
+    gui_design_preset_home_search_route,
     gui_design_preset_ids,
+    gui_design_preset_isolation_route,
+    gui_design_preset_keyboard_shortcut_route,
+    gui_design_preset_reference_control_route,
+    gui_design_preset_reference_input_route,
+    gui_design_preset_reference_session_action_route,
+    gui_design_preset_reference_status_bar_route,
+    gui_design_preset_reference_surface_route,
+    gui_design_preset_reference_tab_chrome_route,
+    gui_design_preset_reference_tab_route,
+    gui_design_preset_reference_transcript_route,
+    gui_design_preset_selection_route,
+    gui_design_preset_transition_route,
+    gui_design_preset_visual_signature,
+    gui_design_product_identity_route,
     gui_design_reference_state,
     gui_design_remmina_clipboard_route,
+    gui_design_remmina_profile_filter_route,
     gui_design_remmina_profile_list_chrome,
     gui_design_remmina_profile_viewer_route,
+    gui_design_remmina_screenshot_route,
+    gui_design_remmina_sftp_transfer_route,
     gui_design_remmina_viewer_controls,
     gui_design_securecrt_command_window_chrome,
     gui_design_securecrt_command_window_send_route,
     gui_design_securecrt_session_manager_chrome,
+    gui_design_securecrt_session_manager_filter_route,
     gui_design_securecrt_session_manager_route,
     gui_design_securecrt_session_status_strip,
+    gui_design_securecrt_sftp_browser_route,
+    gui_design_securecrt_sftp_tab_route,
     gui_design_securecrt_top_chrome,
     gui_design_sidebar_copy,
     gui_design_status_segments,
     gui_design_tab_items,
+    gui_design_termius_files_browser_route,
     gui_design_termius_header_chips,
     gui_design_termius_host_identity_strip,
     gui_design_termius_host_selection_route,
     gui_design_termius_hosts_chrome,
+    gui_design_termius_port_forward_route,
+    gui_design_termius_snippet_route,
     gui_design_termius_sync_route,
     gui_design_toolbar_actions,
     gui_design_tree_root_copy,
     gui_design_tree_root_icon,
     gui_design_tree_row_icon_key,
     gui_design_tree_rows,
+    gui_design_workflow_cards,
     gui_design_workspace_surface,
 )
 from remote_ops_workspace.moba_connected import (  # noqa: E402
     MobaConnectedSessionState,
     build_moba_connected_session_state,
+    moba_connected_session_action_route,
     moba_connected_session_identity_route,
     moba_connected_session_route,
     moba_connected_tab_chrome_geometry_for,
     moba_connected_tab_chrome_items,
     moba_connected_window_title,
+    moba_sftp_terminal_folder_route,
     moba_telemetry_cell_geometry,
     moba_telemetry_cell_geometry_for,
     moba_telemetry_cells,
@@ -301,6 +341,652 @@ def preset_manifest(artifact: PreviewArtifact) -> dict[str, Any]:
     if artifact.preset is None:
         raise ValueError("preset artifact required")
     preset = artifact.preset
+    catalog_route = gui_design_preset_catalog_route()
+    isolation_route = gui_design_preset_isolation_route(preset.id)
+    selection_route = gui_design_preset_selection_route(preset.id)
+    transition_route = gui_design_preset_transition_route(preset.id)
+    keyboard_shortcut_route = (
+        gui_design_preset_keyboard_shortcut_route(preset.id)
+        if preset.id in PRODUCT_GUI_PRESET_IDS
+        else None
+    )
+    command_surface_route = (
+        gui_design_preset_command_surface_route(preset.id)
+        if preset.id in PRODUCT_GUI_PRESET_IDS
+        else None
+    )
+    focus_interaction_route = (
+        gui_design_preset_focus_interaction_route(preset.id)
+        if preset.id in PRODUCT_GUI_PRESET_IDS
+        else None
+    )
+    home_search_route = (
+        gui_design_preset_home_search_route(preset.id)
+        if preset.id in PRODUCT_GUI_PRESET_IDS
+        else None
+    )
+    reference_tab_route = (
+        gui_design_preset_reference_tab_route(preset.id)
+        if preset.id in PRODUCT_REFERENCE_TAB_PRESET_IDS
+        else None
+    )
+    reference_tab_chrome_route = (
+        gui_design_preset_reference_tab_chrome_route(preset.id)
+        if preset.id in PRODUCT_REFERENCE_TAB_PRESET_IDS
+        else None
+    )
+    reference_status_route = (
+        gui_design_preset_reference_status_bar_route(preset.id)
+        if preset.id in PRODUCT_REFERENCE_TAB_PRESET_IDS
+        else None
+    )
+    reference_session_action_route = (
+        gui_design_preset_reference_session_action_route(preset.id)
+        if preset.id in PRODUCT_REFERENCE_TAB_PRESET_IDS
+        else None
+    )
+    reference_surface_route = (
+        gui_design_preset_reference_surface_route(preset.id)
+        if preset.id in PRODUCT_REFERENCE_TAB_PRESET_IDS
+        else None
+    )
+    reference_control_route = (
+        gui_design_preset_reference_control_route(preset.id)
+        if preset.id in PRODUCT_REFERENCE_TAB_PRESET_IDS
+        else None
+    )
+    reference_input_route = (
+        gui_design_preset_reference_input_route(preset.id)
+        if preset.id in PRODUCT_REFERENCE_TAB_PRESET_IDS
+        else None
+    )
+    reference_transcript_route = (
+        gui_design_preset_reference_transcript_route(preset.id)
+        if preset.id in PRODUCT_REFERENCE_TAB_PRESET_IDS
+        else None
+    )
+    moba_connected_manifest_state = moba_preview_reference_state() if preset.id == "mobaxterm" else None
+    moba_connected_action_route = (
+        moba_connected_session_action_route(moba_connected_manifest_state)
+        if moba_connected_manifest_state is not None
+        else None
+    )
+    moba_remote_monitoring_control_route = (
+        gui_design_moba_remote_monitoring_control_route() if preset.id == "mobaxterm" else None
+    )
+    moba_follow_terminal_folder_control_route = (
+        gui_design_moba_follow_terminal_folder_control_route() if preset.id == "mobaxterm" else None
+    )
+    securecrt_session_manager_filter_route = (
+        gui_design_securecrt_session_manager_filter_route() if preset.id == "securecrt" else None
+    )
+    securecrt_sftp_tab_route = (
+        gui_design_securecrt_sftp_tab_route() if preset.id == "securecrt" else None
+    )
+    securecrt_sftp_browser_route = (
+        gui_design_securecrt_sftp_browser_route() if preset.id == "securecrt" else None
+    )
+    remmina_profile_filter_route = (
+        gui_design_remmina_profile_filter_route() if preset.id == "remmina" else None
+    )
+    remmina_screenshot_route = (
+        gui_design_remmina_screenshot_route() if preset.id == "remmina" else None
+    )
+    remmina_sftp_transfer_route = (
+        gui_design_remmina_sftp_transfer_route() if preset.id == "remmina" else None
+    )
+    mremoteng_document_filter_route = (
+        gui_design_mremoteng_document_filter_route() if preset.id == "mremoteng" else None
+    )
+    mremoteng_inheritance_route = (
+        gui_design_mremoteng_inheritance_route() if preset.id == "mremoteng" else None
+    )
+    termius_port_forward_route = (
+        gui_design_termius_port_forward_route() if preset.id == "termius" else None
+    )
+    termius_snippet_route = (
+        gui_design_termius_snippet_route() if preset.id == "termius" else None
+    )
+    termius_files_browser_route = (
+        gui_design_termius_files_browser_route() if preset.id == "termius" else None
+    )
+    moba_ribbon_edge_action_route = (
+        gui_design_moba_ribbon_edge_action_route() if preset.id == "mobaxterm" else None
+    )
+    moba_right_utility_action_route = (
+        gui_design_moba_right_utility_action_route() if preset.id == "mobaxterm" else None
+    )
+    visual_signature = gui_design_preset_visual_signature(preset.id)
+    if preset.id not in catalog_route.option_ids:
+        raise RuntimeError(f"{preset.id} preset catalog route missing active preset id")
+    if preset.label not in catalog_route.option_labels:
+        raise RuntimeError(f"{preset.id} preset catalog route missing active preset label")
+    if selection_route.preset_id != preset.id:
+        raise RuntimeError(f"{preset.id} preset-selection route preset id drifted")
+    if selection_route.preset_label != preset.label:
+        raise RuntimeError(f"{preset.id} preset-selection route label drifted")
+    if selection_route.home_tab_label != gui_design_home_tab_label(preset.id):
+        raise RuntimeError(f"{preset.id} preset-selection route home tab drifted")
+    if selection_route.status_segments != gui_design_status_segments(preset.id):
+        raise RuntimeError(f"{preset.id} preset-selection route status segments drifted")
+    if visual_signature.preset_id != preset.id:
+        raise RuntimeError(f"{preset.id} visual signature preset id drifted")
+    if visual_signature.density != preset.density:
+        raise RuntimeError(f"{preset.id} visual signature density drifted")
+    if visual_signature.tab_position != preset.tab_position:
+        raise RuntimeError(f"{preset.id} visual signature tab position drifted")
+    if visual_signature.palette_items()[0][1] != preset.colors.window:
+        raise RuntimeError(f"{preset.id} visual signature window color drifted")
+    if visual_signature.terminal_accent_color != preset.colors.terminal_accent:
+        raise RuntimeError(f"{preset.id} visual signature terminal accent drifted")
+    isolation_overlap = set(isolation_route.visible_objects) & set(isolation_route.hidden_objects)
+    if isolation_overlap:
+        raise RuntimeError(f"{preset.id} preset isolation route has overlapping objects: {sorted(isolation_overlap)}")
+    if isolation_route.preset_id != preset.id:
+        raise RuntimeError(f"{preset.id} preset isolation route preset id drifted")
+    if transition_route.to_preset_id != preset.id:
+        raise RuntimeError(f"{preset.id} preset transition route target preset id drifted")
+    if transition_route.to_preset_index != selection_route.preset_index:
+        raise RuntimeError(f"{preset.id} preset transition route target index drifted")
+    if set(transition_route.from_preset_ids) & {preset.id}:
+        raise RuntimeError(f"{preset.id} preset transition route includes active preset as a source")
+    if set(transition_route.reset_objects) != set(isolation_route.hidden_objects):
+        raise RuntimeError(f"{preset.id} preset transition route reset objects drifted from isolation")
+    if keyboard_shortcut_route is not None:
+        if keyboard_shortcut_route.preset_id != preset.id:
+            raise RuntimeError(f"{preset.id} keyboard shortcut route preset id drifted")
+        if keyboard_shortcut_route.expected_shortcut_count != len(
+            keyboard_shortcut_route.expected_shortcut_keys
+        ):
+            raise RuntimeError(f"{preset.id} keyboard shortcut route key count drifted")
+        if len(keyboard_shortcut_route.expected_shortcut_keys) != len(keyboard_shortcut_route.expected_sequences):
+            raise RuntimeError(f"{preset.id} keyboard shortcut route sequence count drifted")
+        if len(keyboard_shortcut_route.expected_sequences) != len(
+            keyboard_shortcut_route.expected_action_labels
+        ):
+            raise RuntimeError(f"{preset.id} keyboard shortcut route action label count drifted")
+        if "Ctrl+T" not in keyboard_shortcut_route.expected_sequences:
+            raise RuntimeError(f"{preset.id} keyboard shortcut route missing terminal shortcut")
+    if command_surface_route is not None:
+        actions = gui_design_command_surface_actions(preset.id)
+        expected_command_object = "mobaRibbonButton" if preset.id == "mobaxterm" else "productToolbarButton"
+        if command_surface_route.preset_id != preset.id:
+            raise RuntimeError(f"{preset.id} command surface route preset id drifted")
+        if command_surface_route.toolbar_object != "mainToolbar":
+            raise RuntimeError(f"{preset.id} command surface route toolbar object drifted")
+        if command_surface_route.command_object != expected_command_object:
+            raise RuntimeError(f"{preset.id} command surface route command object drifted")
+        if command_surface_route.expected_action_count != len(actions):
+            raise RuntimeError(f"{preset.id} command surface route action count drifted")
+        if command_surface_route.expected_action_keys != tuple(key for key, _label, _tooltip in actions):
+            raise RuntimeError(f"{preset.id} command surface route action keys drifted")
+        if command_surface_route.expected_action_labels != tuple(label for _key, label, _tooltip in actions):
+            raise RuntimeError(f"{preset.id} command surface route action labels drifted")
+        if command_surface_route.expected_action_tooltips != tuple(tooltip for _key, _label, tooltip in actions):
+            raise RuntimeError(f"{preset.id} command surface route action tooltips drifted")
+    if focus_interaction_route is not None:
+        interaction = gui_design_interaction_state(preset.id)
+        if focus_interaction_route.preset_id != preset.id:
+            raise RuntimeError(f"{preset.id} focus interaction route preset id drifted")
+        if focus_interaction_route.focused_control != interaction.focused_control:
+            raise RuntimeError(f"{preset.id} focus interaction route focused control drifted")
+        if focus_interaction_route.active_toolbar_key != interaction.active_toolbar_key:
+            raise RuntimeError(f"{preset.id} focus interaction route active key drifted")
+        if focus_interaction_route.checked_toolbar_key != interaction.checked_toolbar_key:
+            raise RuntimeError(f"{preset.id} focus interaction route checked key drifted")
+        if focus_interaction_route.disabled_toolbar_key != interaction.disabled_toolbar_key:
+            raise RuntimeError(f"{preset.id} focus interaction route disabled key drifted")
+        if focus_interaction_route.selected_tree_label != interaction.selected_tree_label:
+            raise RuntimeError(f"{preset.id} focus interaction route selected row drifted")
+        if focus_interaction_route.status_note != interaction.status_note:
+            raise RuntimeError(f"{preset.id} focus interaction route status note drifted")
+    if home_search_route is not None:
+        if focus_interaction_route is None:
+            raise RuntimeError(f"{preset.id} home search route missing focus interaction route")
+        surface = gui_design_workspace_surface(preset.id)
+        expected_recent_labels = tuple(item for column in surface.recent_columns for item in column)
+        if home_search_route.preset_id != preset.id:
+            raise RuntimeError(f"{preset.id} home search route preset id drifted")
+        if home_search_route.placeholder_text != surface.home_search_placeholder:
+            raise RuntimeError(f"{preset.id} home search route placeholder drifted")
+        if home_search_route.entry_search_object != focus_interaction_route.focus_object:
+            raise RuntimeError(f"{preset.id} home search route entry object drifted")
+        if home_search_route.expected_home_actions != surface.home_actions:
+            raise RuntimeError(f"{preset.id} home search route action metadata drifted")
+        if home_search_route.expected_recent_labels != expected_recent_labels:
+            raise RuntimeError(f"{preset.id} home search route recent label metadata drifted")
+    if moba_ribbon_edge_action_route is not None:
+        edge_actions = {action.key: action for action in gui_design_moba_ribbon_edge_actions()}
+        for action_key in (
+            moba_ribbon_edge_action_route.xserver_action_key,
+            moba_ribbon_edge_action_route.exit_action_key,
+        ):
+            if action_key not in edge_actions:
+                raise RuntimeError("Moba ribbon edge action route references a missing action")
+            gui_design_moba_ribbon_action_geometry_for(action_key)
+        xserver_action = edge_actions[moba_ribbon_edge_action_route.xserver_action_key]
+        exit_action = edge_actions[moba_ribbon_edge_action_route.exit_action_key]
+        if xserver_action.label != moba_ribbon_edge_action_route.xserver_action_label:
+            raise RuntimeError("Moba ribbon edge action route X server label drifted")
+        if xserver_action.icon_key != moba_ribbon_edge_action_route.xserver_icon_key:
+            raise RuntimeError("Moba ribbon edge action route X server icon drifted")
+        if exit_action.label != moba_ribbon_edge_action_route.exit_action_label:
+            raise RuntimeError("Moba ribbon edge action route Exit label drifted")
+        if exit_action.icon_key != moba_ribbon_edge_action_route.exit_icon_key:
+            raise RuntimeError("Moba ribbon edge action route Exit icon drifted")
+        if moba_ribbon_edge_action_route.xserver_dialog_detail != "X server workflow":
+            raise RuntimeError("Moba ribbon edge action route X server dialog detail drifted")
+        if moba_ribbon_edge_action_route.toolbar_object != "mainToolbar":
+            raise RuntimeError("Moba ribbon edge action route toolbar object drifted")
+        if moba_ribbon_edge_action_route.spacer_object != "mobaToolbarSpacer":
+            raise RuntimeError("Moba ribbon edge action route spacer object drifted")
+    if moba_right_utility_action_route is not None:
+        utility_actions = {action.key: action for action in gui_design_moba_right_utility_actions()}
+        if moba_right_utility_action_route.rail_object != "mobaRightUtilityRail":
+            raise RuntimeError("Moba right utility action route rail object drifted")
+        if moba_right_utility_action_route.action_object != "mobaRightUtilityAction":
+            raise RuntimeError("Moba right utility action route action object drifted")
+        if tuple(utility_actions) != moba_right_utility_action_route.action_keys:
+            raise RuntimeError("Moba right utility action route key order drifted")
+        if tuple(action.label for action in utility_actions.values()) != moba_right_utility_action_route.action_labels:
+            raise RuntimeError("Moba right utility action route label metadata drifted")
+        if tuple(action.icon_key for action in utility_actions.values()) != moba_right_utility_action_route.action_icon_keys:
+            raise RuntimeError("Moba right utility action route icon metadata drifted")
+        if "show_moba_clipboard_hints" not in moba_right_utility_action_route.action_handlers:
+            raise RuntimeError("Moba right utility action route clipboard handler missing")
+    if reference_tab_route is not None:
+        product_identity_route = gui_design_product_identity_route(preset.id)
+        if reference_tab_route.reference_profile != product_identity_route.selected_profile_name:
+            raise RuntimeError(f"{preset.id} reference tab route profile metadata drifted")
+        if reference_tab_route.active_tab_label != product_identity_route.active_tab_label:
+            raise RuntimeError(f"{preset.id} reference tab route active tab metadata drifted")
+        if reference_tab_route.home_tab_label != selection_route.home_tab_label:
+            raise RuntimeError(f"{preset.id} reference tab route home tab metadata drifted")
+    if reference_tab_chrome_route is not None:
+        if reference_tab_route is None:
+            raise RuntimeError(f"{preset.id} reference tab chrome route missing tab route")
+        if reference_tab_chrome_route.reference_profile != reference_tab_route.reference_profile:
+            raise RuntimeError(f"{preset.id} reference tab chrome route profile metadata drifted")
+        if reference_tab_chrome_route.active_tab_label != reference_tab_route.active_tab_label:
+            raise RuntimeError(f"{preset.id} reference tab chrome route active tab metadata drifted")
+        if reference_tab_chrome_route.expected_tab_position != selection_route.tab_position:
+            raise RuntimeError(f"{preset.id} reference tab chrome route tab position drifted")
+        if not reference_tab_chrome_route.expected_tooltip.startswith(reference_tab_route.active_tab_label):
+            raise RuntimeError(f"{preset.id} reference tab chrome route tooltip drifted")
+    if reference_status_route is not None:
+        product_identity_route = gui_design_product_identity_route(preset.id)
+        if reference_tab_route is None:
+            raise RuntimeError(f"{preset.id} reference status-bar route missing tab route")
+        if reference_status_route.reference_profile != reference_tab_route.reference_profile:
+            raise RuntimeError(f"{preset.id} reference status-bar route profile metadata drifted")
+        if reference_status_route.active_tab_label != reference_tab_route.active_tab_label:
+            raise RuntimeError(f"{preset.id} reference status-bar route active tab metadata drifted")
+        if reference_status_route.expected_status_segments != product_identity_route.status_segments:
+            raise RuntimeError(f"{preset.id} reference status-bar route status segment metadata drifted")
+        if reference_status_route.expected_segment_count != len(product_identity_route.status_segments):
+            raise RuntimeError(f"{preset.id} reference status-bar route segment count drifted")
+    if reference_session_action_route is not None:
+        if reference_tab_route is None:
+            raise RuntimeError(f"{preset.id} reference session action route missing tab route")
+        if reference_session_action_route.reference_profile != reference_tab_route.reference_profile:
+            raise RuntimeError(f"{preset.id} reference session action route profile metadata drifted")
+        if reference_session_action_route.active_tab_label != reference_tab_route.active_tab_label:
+            raise RuntimeError(f"{preset.id} reference session action route active tab metadata drifted")
+        if reference_session_action_route.expected_action_count != len(
+            reference_session_action_route.expected_action_keys
+        ):
+            raise RuntimeError(f"{preset.id} reference session action route action count drifted")
+        if len(reference_session_action_route.expected_action_keys) != len(
+            reference_session_action_route.expected_action_labels
+        ):
+            raise RuntimeError(f"{preset.id} reference session action route label metadata drifted")
+        if "close-other-tabs" not in reference_session_action_route.conditional_enabled_action_keys:
+            raise RuntimeError(f"{preset.id} reference session action route conditional action drifted")
+    if moba_connected_action_route is not None:
+        tab_items = moba_connected_tab_chrome_items(moba_connected_manifest_state)
+        if moba_connected_action_route.active_tab_key not in {item.key for item in tab_items if item.active}:
+            raise RuntimeError("Moba connected session action route active tab key drifted")
+        if moba_connected_action_route.reference_tab_label not in {item.label for item in tab_items}:
+            raise RuntimeError("Moba connected session action route reference tab label drifted")
+        if moba_connected_action_route.expected_action_count != len(
+            moba_connected_action_route.expected_action_keys
+        ):
+            raise RuntimeError("Moba connected session action route action count drifted")
+        if len(moba_connected_action_route.expected_action_keys) != len(
+            moba_connected_action_route.expected_action_labels
+        ):
+            raise RuntimeError("Moba connected session action route label metadata drifted")
+        if moba_connected_action_route.menu_object != "mobaConnectedSessionTabContextMenu":
+            raise RuntimeError("Moba connected session action route menu object drifted")
+        if "close-other-tabs" not in moba_connected_action_route.conditional_enabled_action_keys:
+            raise RuntimeError("Moba connected session action route conditional action drifted")
+    if moba_remote_monitoring_control_route is not None:
+        telemetry_route = gui_design_moba_monitoring_telemetry_route()
+        monitoring_controls = {control.key: control for control in gui_design_moba_monitoring_controls()}
+        remote_control = monitoring_controls.get(moba_remote_monitoring_control_route.source_control_key)
+        if remote_control is None:
+            raise RuntimeError("Moba remote-monitoring control route source control missing")
+        if moba_remote_monitoring_control_route.source_control_label != remote_control.label:
+            raise RuntimeError("Moba remote-monitoring control route label drifted")
+        if moba_remote_monitoring_control_route.source_control_type != remote_control.control_type:
+            raise RuntimeError("Moba remote-monitoring control route type drifted")
+        if moba_remote_monitoring_control_route.expected_checked != remote_control.checked:
+            raise RuntimeError("Moba remote-monitoring control route checked state drifted")
+        if moba_remote_monitoring_control_route.telemetry_route_key != telemetry_route.key:
+            raise RuntimeError("Moba remote-monitoring control route telemetry key drifted")
+        if moba_remote_monitoring_control_route.target_metric_cell_keys != telemetry_route.target_metric_cell_keys:
+            raise RuntimeError("Moba remote-monitoring control route telemetry cells drifted")
+    if moba_follow_terminal_folder_control_route is not None:
+        follow_route = gui_design_moba_sftp_follow_folder_route()
+        monitoring_controls = {control.key: control for control in gui_design_moba_monitoring_controls()}
+        follow_control = monitoring_controls.get(moba_follow_terminal_folder_control_route.source_control_key)
+        if follow_control is None:
+            raise RuntimeError("Moba follow-folder control route source control missing")
+        if moba_follow_terminal_folder_control_route.source_control_label != follow_control.label:
+            raise RuntimeError("Moba follow-folder control route label drifted")
+        if moba_follow_terminal_folder_control_route.source_control_type != follow_control.control_type:
+            raise RuntimeError("Moba follow-folder control route type drifted")
+        if moba_follow_terminal_folder_control_route.expected_checked != follow_control.checked:
+            raise RuntimeError("Moba follow-folder control route checked state drifted")
+        if moba_follow_terminal_folder_control_route.source_control_object != follow_route.source_control_object:
+            raise RuntimeError("Moba follow-folder control route source object drifted")
+        if moba_follow_terminal_folder_control_route.target_path_object != follow_route.target_path_object:
+            raise RuntimeError("Moba follow-folder control route target path drifted")
+        if moba_follow_terminal_folder_control_route.target_table_object != follow_route.target_table_object:
+            raise RuntimeError("Moba follow-folder control route target table drifted")
+    if securecrt_session_manager_filter_route is not None:
+        session_route = gui_design_securecrt_session_manager_route()
+        manager_chrome = gui_design_securecrt_session_manager_chrome()
+        if securecrt_session_manager_filter_route.session_manager_object != session_route.session_manager_object:
+            raise RuntimeError("SecureCRT Session Manager filter route panel object drifted")
+        if securecrt_session_manager_filter_route.selected_tree_object != session_route.selected_tree_object:
+            raise RuntimeError("SecureCRT Session Manager filter route tree object drifted")
+        if securecrt_session_manager_filter_route.selected_tree_label != session_route.selected_tree_label:
+            raise RuntimeError("SecureCRT Session Manager filter route selected row drifted")
+        if securecrt_session_manager_filter_route.expected_placeholder != manager_chrome.filter_placeholder:
+            raise RuntimeError("SecureCRT Session Manager filter route placeholder drifted")
+        if not securecrt_session_manager_filter_route.expected_query:
+            raise RuntimeError("SecureCRT Session Manager filter route query must be non-empty")
+    if securecrt_sftp_tab_route is not None:
+        status_strip = gui_design_securecrt_session_status_strip()
+        workflow_cards = {card.key: card for card in gui_design_workflow_cards("securecrt")}
+        workflow_card = workflow_cards.get(securecrt_sftp_tab_route.workflow_card_key)
+        status_fields = {field.key: field for field in status_strip.fields}
+        status_field = status_fields.get(securecrt_sftp_tab_route.status_field_key)
+        tab_labels = {label for label, _status, _active in gui_design_tab_items("securecrt")}
+        tree_labels = {name.strip() for name, _target, _group in gui_design_tree_rows("securecrt")}
+        if workflow_card is None:
+            raise RuntimeError("SecureCRT SFTP tab route workflow card is missing")
+        if status_field is None:
+            raise RuntimeError("SecureCRT SFTP tab route status field is missing")
+        if workflow_card.title != securecrt_sftp_tab_route.workflow_title:
+            raise RuntimeError("SecureCRT SFTP tab route workflow title drifted")
+        if workflow_card.primary != securecrt_sftp_tab_route.transfer_state:
+            raise RuntimeError("SecureCRT SFTP tab route workflow transfer state drifted")
+        if workflow_card.secondary != securecrt_sftp_tab_route.workflow_secondary:
+            raise RuntimeError("SecureCRT SFTP tab route workflow secondary copy drifted")
+        if status_field.value != securecrt_sftp_tab_route.status_value:
+            raise RuntimeError("SecureCRT SFTP tab route status value drifted")
+        if securecrt_sftp_tab_route.sftp_tab_label not in tab_labels:
+            raise RuntimeError("SecureCRT SFTP tab route tab label is missing")
+        if securecrt_sftp_tab_route.selected_tree_label not in tree_labels:
+            raise RuntimeError("SecureCRT SFTP tab route tree label is missing")
+    if securecrt_sftp_browser_route is not None:
+        if securecrt_sftp_tab_route is None:
+            raise RuntimeError("SecureCRT SFTP browser route missing SFTP tab route")
+        workflow_cards = {card.key: card for card in gui_design_workflow_cards("securecrt")}
+        workflow_card = workflow_cards.get(securecrt_sftp_tab_route.workflow_card_key)
+        if securecrt_sftp_browser_route.sftp_tab_route_key != securecrt_sftp_tab_route.key:
+            raise RuntimeError("SecureCRT SFTP browser route tab key drifted")
+        if securecrt_sftp_browser_route.selected_profile_name != securecrt_sftp_tab_route.selected_profile_name:
+            raise RuntimeError("SecureCRT SFTP browser route profile drifted")
+        if securecrt_sftp_browser_route.selected_tree_label != securecrt_sftp_tab_route.selected_tree_label:
+            raise RuntimeError("SecureCRT SFTP browser route tree label drifted")
+        if securecrt_sftp_browser_route.sftp_tab_label != securecrt_sftp_tab_route.sftp_tab_label:
+            raise RuntimeError("SecureCRT SFTP browser route tab label drifted")
+        if workflow_card is None or workflow_card.primary != securecrt_sftp_tab_route.transfer_state:
+            raise RuntimeError("SecureCRT SFTP browser route workflow card drifted")
+        if securecrt_sftp_browser_route.active_row_name not in {
+            row.name for row in securecrt_sftp_browser_route.file_rows
+        }:
+            raise RuntimeError("SecureCRT SFTP browser route active row missing")
+        if not any(row.selected for row in securecrt_sftp_browser_route.file_rows):
+            raise RuntimeError("SecureCRT SFTP browser route must expose a selected row")
+        if "refresh" not in securecrt_sftp_browser_route.toolbar_actions:
+            raise RuntimeError("SecureCRT SFTP browser route missing refresh action")
+    if remmina_profile_filter_route is not None:
+        profile_route = gui_design_remmina_profile_viewer_route()
+        profile_chrome = gui_design_remmina_profile_list_chrome()
+        rows_by_key = {row.key: row for row in profile_chrome.rows}
+        matched_row = rows_by_key.get(remmina_profile_filter_route.selected_profile_key)
+        if matched_row is None:
+            raise RuntimeError("Remmina profile-filter route selected row missing")
+        if remmina_profile_filter_route.profile_list_object != "remminaProfileListChrome":
+            raise RuntimeError("Remmina profile-filter route panel object drifted")
+        if remmina_profile_filter_route.filter_object != "remminaProfileFilter":
+            raise RuntimeError("Remmina profile-filter route input object drifted")
+        if remmina_profile_filter_route.selected_profile_key != profile_route.selected_profile_key:
+            raise RuntimeError("Remmina profile-filter route selected profile drifted")
+        if remmina_profile_filter_route.expected_placeholder != profile_chrome.filter_placeholder:
+            raise RuntimeError("Remmina profile-filter route placeholder drifted")
+        if remmina_profile_filter_route.expected_query.lower() not in matched_row.protocol.lower():
+            raise RuntimeError("Remmina profile-filter route query no longer matches selected row protocol")
+    if remmina_screenshot_route is not None:
+        profile_route = gui_design_remmina_profile_viewer_route()
+        reference = gui_design_reference_state("remmina")
+        surface = gui_design_workspace_surface("remmina")
+        controls_by_key = {control.key: control for control in gui_design_remmina_viewer_controls()}
+        screenshot_control = controls_by_key.get(remmina_screenshot_route.viewer_control_key)
+        if screenshot_control is None:
+            raise RuntimeError("Remmina screenshot route target control is missing")
+        if screenshot_control.label != "Screenshot":
+            raise RuntimeError("Remmina screenshot route control label drifted")
+        if remmina_screenshot_route.viewer_controls_object != profile_route.viewer_controls_object:
+            raise RuntimeError("Remmina screenshot route viewer controls object drifted")
+        if remmina_screenshot_route.viewer_control_object != profile_route.viewer_control_object:
+            raise RuntimeError("Remmina screenshot route control object drifted")
+        if remmina_screenshot_route.active_tab_label != reference.active_tab_label:
+            raise RuntimeError("Remmina screenshot route active tab metadata drifted")
+        if remmina_screenshot_route.status_segment not in reference.status_segments:
+            raise RuntimeError("Remmina screenshot route status segment metadata drifted")
+        if remmina_screenshot_route.detail_line not in surface.detail_lines:
+            raise RuntimeError("Remmina screenshot route detail-line metadata drifted")
+        if remmina_screenshot_route.activity_line not in surface.activity_lines:
+            raise RuntimeError("Remmina screenshot route activity-line metadata drifted")
+    if remmina_sftp_transfer_route is not None:
+        profile_chrome = gui_design_remmina_profile_list_chrome()
+        surface = gui_design_workspace_surface("remmina")
+        rows_by_key = {row.key: row for row in profile_chrome.rows}
+        profile_row = rows_by_key.get(remmina_sftp_transfer_route.selected_profile_key)
+        toolbar_actions = {
+            key: label for key, label, _tooltip in gui_design_toolbar_actions("remmina")
+        }
+        tab_labels = {label for label, _status, _active in gui_design_tab_items("remmina")}
+        tree_labels = {name.strip() for name, _target, _group in gui_design_tree_rows("remmina")}
+        if profile_row is None:
+            raise RuntimeError("Remmina SFTP transfer route selected profile row missing")
+        if remmina_sftp_transfer_route.profile_list_object != "remminaProfileListChrome":
+            raise RuntimeError("Remmina SFTP transfer route profile-list object drifted")
+        if profile_row.name != remmina_sftp_transfer_route.selected_profile_name:
+            raise RuntimeError("Remmina SFTP transfer route selected profile name drifted")
+        if profile_row.protocol != remmina_sftp_transfer_route.selected_profile_protocol:
+            raise RuntimeError("Remmina SFTP transfer route selected profile protocol drifted")
+        if profile_row.status != remmina_sftp_transfer_route.selected_profile_status:
+            raise RuntimeError("Remmina SFTP transfer route selected profile status drifted")
+        if toolbar_actions.get(remmina_sftp_transfer_route.toolbar_action_key) != remmina_sftp_transfer_route.toolbar_action_label:
+            raise RuntimeError("Remmina SFTP transfer route toolbar action drifted")
+        if remmina_sftp_transfer_route.active_tab_label not in tab_labels:
+            raise RuntimeError("Remmina SFTP transfer route tab label is missing")
+        if remmina_sftp_transfer_route.selected_tree_label not in tree_labels:
+            raise RuntimeError("Remmina SFTP transfer route tree label is missing")
+        if remmina_sftp_transfer_route.detail_line not in surface.detail_lines:
+            raise RuntimeError("Remmina SFTP transfer route detail-line metadata drifted")
+        if remmina_sftp_transfer_route.activity_line not in surface.activity_lines:
+            raise RuntimeError("Remmina SFTP transfer route activity-line metadata drifted")
+        if remmina_sftp_transfer_route.active_row_name not in {
+            row.name for row in remmina_sftp_transfer_route.file_rows
+        }:
+            raise RuntimeError("Remmina SFTP transfer route active row missing")
+        if not any(row.selected for row in remmina_sftp_transfer_route.file_rows):
+            raise RuntimeError("Remmina SFTP transfer route must expose a selected row")
+    if termius_port_forward_route is not None:
+        host_route = gui_design_termius_host_selection_route()
+        reference = gui_design_reference_state("termius")
+        chips = {chip.key: chip for chip in gui_design_termius_header_chips()}
+        fields = {field.key: field for field in gui_design_termius_host_identity_strip().fields}
+        chip = chips.get(termius_port_forward_route.header_chip_key)
+        field = fields.get(termius_port_forward_route.identity_field_key)
+        if chip is None:
+            raise RuntimeError("Termius port-forward route header chip is missing")
+        if field is None:
+            raise RuntimeError("Termius port-forward route identity field is missing")
+        if chip.label != termius_port_forward_route.status_segment:
+            raise RuntimeError("Termius port-forward route header chip label drifted")
+        if field.value != termius_port_forward_route.forward_value:
+            raise RuntimeError("Termius port-forward route identity value drifted")
+        if termius_port_forward_route.active_tab_label != host_route.active_tab_label:
+            raise RuntimeError("Termius port-forward route active tab drifted")
+        if termius_port_forward_route.selected_profile_name != reference.profile_name:
+            raise RuntimeError("Termius port-forward route selected profile drifted")
+        if termius_port_forward_route.status_segment not in reference.status_segments:
+            raise RuntimeError("Termius port-forward route status segment drifted")
+        if (
+            termius_port_forward_route.forward_value
+            != f"{termius_port_forward_route.local_port} -> "
+            f"{termius_port_forward_route.remote_host}:{termius_port_forward_route.remote_port}"
+        ):
+            raise RuntimeError("Termius port-forward route endpoint metadata drifted")
+    if termius_snippet_route is not None:
+        host_route = gui_design_termius_host_selection_route()
+        reference = gui_design_reference_state("termius")
+        surface = gui_design_workspace_surface("termius")
+        workflow_cards = {card.key: card for card in gui_design_workflow_cards("termius")}
+        fields = {field.key: field for field in gui_design_termius_host_identity_strip().fields}
+        workflow_card = workflow_cards.get(termius_snippet_route.workflow_card_key)
+        identity_field = fields.get(termius_snippet_route.identity_field_key)
+        if workflow_card is None:
+            raise RuntimeError("Termius snippet route workflow card is missing")
+        if identity_field is None:
+            raise RuntimeError("Termius snippet route identity field is missing")
+        if workflow_card.title != termius_snippet_route.workflow_title:
+            raise RuntimeError("Termius snippet route workflow title drifted")
+        if workflow_card.primary != termius_snippet_route.snippet_command:
+            raise RuntimeError("Termius snippet route workflow command drifted")
+        if workflow_card.secondary != termius_snippet_route.snippet_state:
+            raise RuntimeError("Termius snippet route workflow state drifted")
+        if identity_field.value != termius_snippet_route.snippet_command:
+            raise RuntimeError("Termius snippet route identity value drifted")
+        if termius_snippet_route.active_tab_label != host_route.active_tab_label:
+            raise RuntimeError("Termius snippet route active tab drifted")
+        if termius_snippet_route.selected_profile_name != reference.profile_name:
+            raise RuntimeError("Termius snippet route selected profile drifted")
+        if termius_snippet_route.detail_line not in surface.detail_lines:
+            raise RuntimeError("Termius snippet route detail-line metadata drifted")
+    if termius_files_browser_route is not None:
+        host_route = gui_design_termius_host_selection_route()
+        fields = {field.key: field for field in gui_design_termius_host_identity_strip().fields}
+        identity_field = fields.get(termius_files_browser_route.identity_field_key)
+        if termius_files_browser_route.host_selection_route_key != host_route.key:
+            raise RuntimeError("Termius files browser route host-selection key drifted")
+        if identity_field is None:
+            raise RuntimeError("Termius files browser route identity field is missing")
+        if identity_field.value != termius_files_browser_route.files_state:
+            raise RuntimeError("Termius files browser route identity value drifted")
+        if termius_files_browser_route.active_tab_label != host_route.active_tab_label:
+            raise RuntimeError("Termius files browser route active tab drifted")
+        if termius_files_browser_route.selected_profile_name != host_route.selected_profile_name:
+            raise RuntimeError("Termius files browser route selected profile drifted")
+        if termius_files_browser_route.selected_tree_label != host_route.selected_tree_label:
+            raise RuntimeError("Termius files browser route selected tree label drifted")
+        if termius_files_browser_route.active_row_name not in {
+            row.name for row in termius_files_browser_route.file_rows
+        }:
+            raise RuntimeError("Termius files browser route active row missing")
+        if not any(row.selected for row in termius_files_browser_route.file_rows):
+            raise RuntimeError("Termius files browser route must expose a selected row")
+        if "sync" not in termius_files_browser_route.toolbar_actions:
+            raise RuntimeError("Termius files browser route missing sync action")
+    if mremoteng_document_filter_route is not None:
+        connection_route = gui_design_mremoteng_connection_document_route()
+        document_chrome = gui_design_mremoteng_document_toolbar_chrome()
+        if mremoteng_document_filter_route.document_controls_object != connection_route.document_controls_object:
+            raise RuntimeError("mRemoteNG document-filter route controls object drifted")
+        if mremoteng_document_filter_route.selected_tree_object != connection_route.selected_tree_object:
+            raise RuntimeError("mRemoteNG document-filter route tree object drifted")
+        if mremoteng_document_filter_route.selected_tree_label != connection_route.selected_tree_label:
+            raise RuntimeError("mRemoteNG document-filter route selected tree row drifted")
+        if mremoteng_document_filter_route.expected_placeholder != document_chrome.filter_placeholder:
+            raise RuntimeError("mRemoteNG document-filter route placeholder drifted")
+        if mremoteng_document_filter_route.expected_query.lower() not in connection_route.selected_tree_label.lower():
+            raise RuntimeError("mRemoteNG document-filter route query no longer matches selected tree row")
+    if mremoteng_inheritance_route is not None:
+        connection_route = gui_design_mremoteng_connection_document_route()
+        property_chrome = gui_design_mremoteng_property_grid_chrome()
+        workflow_cards = {card.key: card for card in gui_design_workflow_cards("mremoteng")}
+        workflow_card = workflow_cards.get(mremoteng_inheritance_route.workflow_card_key)
+        inherited_rows = [row for row in property_chrome.rows if row.key == mremoteng_inheritance_route.property_row_key]
+        if workflow_card is None:
+            raise RuntimeError("mRemoteNG inheritance route workflow card is missing")
+        if len(inherited_rows) != 1:
+            raise RuntimeError("mRemoteNG inheritance route property row is missing")
+        inherited_row = inherited_rows[0]
+        if workflow_card.title != mremoteng_inheritance_route.workflow_title:
+            raise RuntimeError("mRemoteNG inheritance route workflow title drifted")
+        if workflow_card.primary != mremoteng_inheritance_route.inheritance_state:
+            raise RuntimeError("mRemoteNG inheritance route workflow state drifted")
+        if workflow_card.secondary != "property grid visible":
+            raise RuntimeError("mRemoteNG inheritance route workflow grid visibility copy drifted")
+        if inherited_row.property_label != mremoteng_inheritance_route.inherited_property_label:
+            raise RuntimeError("mRemoteNG inheritance route property label drifted")
+        if inherited_row.effective_value != mremoteng_inheritance_route.inherited_value:
+            raise RuntimeError("mRemoteNG inheritance route inherited value drifted")
+        if inherited_row.source != mremoteng_inheritance_route.inherited_source:
+            raise RuntimeError("mRemoteNG inheritance route inherited source drifted")
+        if not inherited_row.inherited:
+            raise RuntimeError("mRemoteNG inheritance route row must stay inherited")
+        if mremoteng_inheritance_route.active_tab_label != connection_route.active_tab_label:
+            raise RuntimeError("mRemoteNG inheritance route active tab drifted")
+        if mremoteng_inheritance_route.selected_tree_label != connection_route.selected_tree_label:
+            raise RuntimeError("mRemoteNG inheritance route selected tree row drifted")
+    if reference_surface_route is not None:
+        product_identity_route = gui_design_product_identity_route(preset.id)
+        if reference_tab_route is None:
+            raise RuntimeError(f"{preset.id} reference surface route missing tab route")
+        if reference_surface_route.reference_profile != reference_tab_route.reference_profile:
+            raise RuntimeError(f"{preset.id} reference surface route profile metadata drifted")
+        if reference_surface_route.active_tab_label != reference_tab_route.active_tab_label:
+            raise RuntimeError(f"{preset.id} reference surface route active tab metadata drifted")
+        if reference_surface_route.command_target_fragment not in product_identity_route.target_label:
+            raise RuntimeError(f"{preset.id} reference surface route target metadata drifted")
+    if reference_control_route is not None:
+        if reference_surface_route is None:
+            raise RuntimeError(f"{preset.id} reference control route missing surface route")
+        if reference_control_route.reference_profile != reference_surface_route.reference_profile:
+            raise RuntimeError(f"{preset.id} reference control route profile metadata drifted")
+        if reference_control_route.active_tab_label != reference_surface_route.active_tab_label:
+            raise RuntimeError(f"{preset.id} reference control route active tab metadata drifted")
+        if set(reference_control_route.action_keys) != {"start", "restart", "stop", "copy", "clear"}:
+            raise RuntimeError(f"{preset.id} reference control route action metadata drifted")
+    if reference_input_route is not None:
+        if reference_surface_route is None:
+            raise RuntimeError(f"{preset.id} reference input route missing surface route")
+        if reference_input_route.reference_profile != reference_surface_route.reference_profile:
+            raise RuntimeError(f"{preset.id} reference input route profile metadata drifted")
+        if reference_input_route.active_tab_label != reference_surface_route.active_tab_label:
+            raise RuntimeError(f"{preset.id} reference input route active tab metadata drifted")
+        if reference_input_route.placeholder_text != "stdin, shell command or interactive input":
+            raise RuntimeError(f"{preset.id} reference input route placeholder drifted")
+    if reference_transcript_route is not None:
+        if reference_surface_route is None:
+            raise RuntimeError(f"{preset.id} reference transcript route missing surface route")
+        if reference_transcript_route.reference_profile != reference_surface_route.reference_profile:
+            raise RuntimeError(f"{preset.id} reference transcript route profile metadata drifted")
+        if reference_transcript_route.active_tab_label != reference_surface_route.active_tab_label:
+            raise RuntimeError(f"{preset.id} reference transcript route active tab metadata drifted")
+        if reference_transcript_route.terminal_output_object != reference_surface_route.terminal_output_object:
+            raise RuntimeError(f"{preset.id} reference transcript route output object drifted")
+        if reference_surface_route.command_target_fragment not in reference_transcript_route.required_fragments:
+            raise RuntimeError(f"{preset.id} reference transcript route target fragment drifted")
     return {
         "id": preset.id,
         "label": preset.label,
@@ -309,6 +995,121 @@ def preset_manifest(artifact: PreviewArtifact) -> dict[str, Any]:
         "profile_width": preset.profile_width,
         "log_height": preset.log_height,
         "tab_position": preset.tab_position,
+        "preset_catalog_route": catalog_route.to_dict(),
+        "preset_isolation_route": isolation_route.to_dict(),
+        "preset_keyboard_shortcut_route": (
+            keyboard_shortcut_route.to_dict() if keyboard_shortcut_route is not None else {}
+        ),
+        "preset_command_surface_route": (
+            command_surface_route.to_dict() if command_surface_route is not None else {}
+        ),
+        "preset_focus_interaction_route": (
+            focus_interaction_route.to_dict() if focus_interaction_route is not None else {}
+        ),
+        "preset_home_search_route": home_search_route.to_dict() if home_search_route is not None else {},
+        "preset_reference_control_route": (
+            reference_control_route.to_dict() if reference_control_route is not None else {}
+        ),
+        "preset_reference_input_route": (
+            reference_input_route.to_dict() if reference_input_route is not None else {}
+        ),
+        "preset_reference_status_bar_route": (
+            reference_status_route.to_dict() if reference_status_route is not None else {}
+        ),
+        "preset_reference_session_action_route": (
+            reference_session_action_route.to_dict() if reference_session_action_route is not None else {}
+        ),
+        "moba_connected_session_action_route": (
+            moba_connected_action_route.to_dict() if moba_connected_action_route is not None else {}
+        ),
+        "moba_remote_monitoring_control_route": (
+            moba_remote_monitoring_control_route.to_dict()
+            if moba_remote_monitoring_control_route is not None
+            else {}
+        ),
+        "moba_follow_terminal_folder_control_route": (
+            moba_follow_terminal_folder_control_route.to_dict()
+            if moba_follow_terminal_folder_control_route is not None
+            else {}
+        ),
+        "moba_ribbon_edge_action_route": (
+            moba_ribbon_edge_action_route.to_dict()
+            if moba_ribbon_edge_action_route is not None
+            else {}
+        ),
+        "moba_right_utility_action_route": (
+            moba_right_utility_action_route.to_dict()
+            if moba_right_utility_action_route is not None
+            else {}
+        ),
+        "securecrt_session_manager_filter_route": (
+            securecrt_session_manager_filter_route.to_dict()
+            if securecrt_session_manager_filter_route is not None
+            else {}
+        ),
+        "securecrt_sftp_tab_route": (
+            securecrt_sftp_tab_route.to_dict()
+            if securecrt_sftp_tab_route is not None
+            else {}
+        ),
+        "securecrt_sftp_browser_route": (
+            securecrt_sftp_browser_route.to_dict()
+            if securecrt_sftp_browser_route is not None
+            else {}
+        ),
+        "remmina_profile_filter_route": (
+            remmina_profile_filter_route.to_dict()
+            if remmina_profile_filter_route is not None
+            else {}
+        ),
+        "remmina_screenshot_route": (
+            remmina_screenshot_route.to_dict()
+            if remmina_screenshot_route is not None
+            else {}
+        ),
+        "remmina_sftp_transfer_route": (
+            remmina_sftp_transfer_route.to_dict()
+            if remmina_sftp_transfer_route is not None
+            else {}
+        ),
+        "termius_port_forward_route": (
+            termius_port_forward_route.to_dict()
+            if termius_port_forward_route is not None
+            else {}
+        ),
+        "termius_snippet_route": (
+            termius_snippet_route.to_dict()
+            if termius_snippet_route is not None
+            else {}
+        ),
+        "termius_files_browser_route": (
+            termius_files_browser_route.to_dict()
+            if termius_files_browser_route is not None
+            else {}
+        ),
+        "mremoteng_document_filter_route": (
+            mremoteng_document_filter_route.to_dict()
+            if mremoteng_document_filter_route is not None
+            else {}
+        ),
+        "mremoteng_inheritance_route": (
+            mremoteng_inheritance_route.to_dict()
+            if mremoteng_inheritance_route is not None
+            else {}
+        ),
+        "preset_reference_transcript_route": (
+            reference_transcript_route.to_dict() if reference_transcript_route is not None else {}
+        ),
+        "preset_reference_surface_route": (
+            reference_surface_route.to_dict() if reference_surface_route is not None else {}
+        ),
+        "preset_reference_tab_chrome_route": (
+            reference_tab_chrome_route.to_dict() if reference_tab_chrome_route is not None else {}
+        ),
+        "preset_reference_tab_route": reference_tab_route.to_dict() if reference_tab_route is not None else {},
+        "preset_selection_route": selection_route.to_dict(),
+        "preset_transition_route": transition_route.to_dict(),
+        "preset_visual_signature": visual_signature.to_dict(),
         "image": image_manifest(artifact),
     }
 
@@ -611,6 +1412,10 @@ def render_mobaxterm_preset(preset: GuiDesignPreset):
     state = moba_preview_reference_state()
     connected_route = moba_connected_session_route(state)
     identity_route = moba_connected_session_identity_route(state)
+    action_route = moba_connected_session_action_route(state)
+    folder_route = moba_sftp_terminal_folder_route(state)
+    remote_monitoring_control_route = gui_design_moba_remote_monitoring_control_route()
+    follow_terminal_folder_control_route = gui_design_moba_follow_terminal_folder_control_route()
     tab_items = moba_connected_tab_chrome_items(state)
     if connected_route.active_tab_key not in {item.key for item in tab_items if item.active}:
         raise RuntimeError("Moba connected-session route active tab key drifted")
@@ -630,6 +1435,33 @@ def render_mobaxterm_preset(preset: GuiDesignPreset):
         raise RuntimeError("Moba connected-session identity route terminal prompt drifted")
     if identity_route.telemetry_target != moba_telemetry_cells(state)[0].display_text:
         raise RuntimeError("Moba connected-session identity route telemetry target drifted")
+    if action_route.reference_tab_label not in {item.label for item in tab_items}:
+        raise RuntimeError("Moba connected-session action route reference tab label drifted")
+    if action_route.expected_action_count != len(action_route.expected_action_keys):
+        raise RuntimeError("Moba connected-session action route action count drifted")
+    if action_route.menu_object != "mobaConnectedSessionTabContextMenu":
+        raise RuntimeError("Moba connected-session action route menu object drifted")
+    telemetry_route = gui_design_moba_monitoring_telemetry_route()
+    if remote_monitoring_control_route.telemetry_route_key != telemetry_route.key:
+        raise RuntimeError("Moba remote-monitoring control route telemetry key drifted")
+    if remote_monitoring_control_route.target_metric_cell_keys != telemetry_route.target_metric_cell_keys:
+        raise RuntimeError("Moba remote-monitoring control route telemetry cells drifted")
+    if follow_terminal_folder_control_route.source_control_key != gui_design_moba_remote_monitoring_dock_chrome().follow_control_key:
+        raise RuntimeError("Moba follow-terminal-folder control route source key drifted")
+    if follow_terminal_folder_control_route.expected_checked is not state.follow_terminal_folder:
+        raise RuntimeError("Moba follow-terminal-folder control route checked state drifted")
+    if follow_terminal_folder_control_route.target_path_object != folder_route.target_path_object:
+        raise RuntimeError("Moba follow-terminal-folder control route target path drifted")
+    if follow_terminal_folder_control_route.target_plan_property != "mobaSftpFollowRoutePlan":
+        raise RuntimeError("Moba follow-terminal-folder control route plan property drifted")
+    if folder_route.remote_path != state.remote_path:
+        raise RuntimeError("Moba SFTP terminal-folder route path drifted")
+    if folder_route.list_command != state.follow_folder_plan.printable_batch():
+        raise RuntimeError("Moba SFTP terminal-folder route plan drifted")
+    if folder_route.follow_enabled is not state.follow_terminal_folder:
+        raise RuntimeError("Moba SFTP terminal-folder route enabled state drifted")
+    if folder_route.target_path_object != connected_route.sftp_path_object:
+        raise RuntimeError("Moba SFTP terminal-folder route target path object drifted")
     image = Image.new("RGB", PREVIEW_SIZE, c.window)
     draw = ImageDraw.Draw(image)
 
@@ -2507,11 +3339,18 @@ def draw_remmina_profile_list_chrome(draw: Any, preset: GuiDesignPreset, x: int,
     c = preset.colors
     chrome = gui_design_remmina_profile_list_chrome()
     route = gui_design_remmina_profile_viewer_route()
+    filter_route = gui_design_remmina_profile_filter_route()
     selected_rows = [row for row in chrome.rows if row.selected]
     if len(selected_rows) != 1 or selected_rows[0].key != route.selected_profile_key:
         raise RuntimeError("Remmina profile-viewer route selected profile metadata drifted")
     if selected_rows[0].protocol != route.protocol or selected_rows[0].status != route.profile_status:
         raise RuntimeError("Remmina profile-viewer route protocol/status metadata drifted")
+    if filter_route.selected_profile_key != route.selected_profile_key:
+        raise RuntimeError("Remmina profile-filter route selected profile metadata drifted")
+    if filter_route.expected_placeholder != chrome.filter_placeholder:
+        raise RuntimeError("Remmina profile-filter route placeholder metadata drifted")
+    if filter_route.expected_query.lower() not in selected_rows[0].protocol.lower():
+        raise RuntimeError("Remmina profile-filter route query no longer matches selected protocol")
     interaction = gui_design_interaction_state(preset.id)
     rounded(draw, (x, y, x + w, y + h), c.pane, c.pane_border, 4)
     draw_text(draw, chrome.title, x + chrome.static_title_x, y + chrome.static_title_y, c.control_text, 10, bold=True)
@@ -2579,9 +3418,18 @@ def draw_securecrt_session_manager_chrome(draw: Any, preset: GuiDesignPreset, x:
     c = preset.colors
     chrome = gui_design_securecrt_session_manager_chrome()
     route = gui_design_securecrt_session_manager_route()
+    filter_route = gui_design_securecrt_session_manager_filter_route()
     interaction = gui_design_interaction_state(preset.id)
     if route.session_manager_object != "secureCrtSessionManagerChrome":
         raise RuntimeError("SecureCRT session-manager route object drifted")
+    if filter_route.filter_object != "secureCrtSessionFilter":
+        raise RuntimeError("SecureCRT Session Manager filter route object drifted")
+    if filter_route.expected_placeholder != chrome.filter_placeholder:
+        raise RuntimeError("SecureCRT Session Manager filter placeholder drifted")
+    if filter_route.matched_result_label != route.selected_tree_label:
+        raise RuntimeError("SecureCRT Session Manager filter match drifted")
+    if filter_route.expected_query.lower() not in route.selected_tree_label.lower():
+        raise RuntimeError("SecureCRT Session Manager filter query no longer matches selected row")
     rounded(draw, (x, y, x + w, y + h), c.pane, c.control_border, 3)
     draw_text(draw, chrome.title, x + chrome.static_title_x, y + chrome.static_title_y, c.control_text, 10, bold=True)
     for action in chrome.actions:
@@ -2640,6 +3488,7 @@ def draw_securecrt_session_manager_action_icon(
 def draw_securecrt_session_tree(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
     c = preset.colors
     interaction = gui_design_interaction_state(preset.id)
+    sftp_route = gui_design_securecrt_sftp_tab_route()
     root_title, root_subtitle = gui_design_tree_root_copy(preset.id)
     root_icon = gui_design_tree_root_icon(preset.id)
     draw.rectangle((x, y, x + w, y + h), fill=c.sidebar)
@@ -2665,6 +3514,8 @@ def draw_securecrt_session_tree(draw: Any, preset: GuiDesignPreset, x: int, y: i
         if selected:
             rounded(draw, (x + 18, row_top, x + w - 2, row_bottom), c.sidebar_selected, c.sidebar_selected, 4)
             draw.rectangle((x + 18, row_top, x + 22, row_bottom), fill=c.primary)
+        elif label == sftp_route.selected_tree_label:
+            rounded(draw, (x + 18, row_top, x + w - 2, row_bottom), c.sidebar, c.primary, 4)
         draw.line((branch_x, row_y + 11, branch_x + 20, row_y + 11), fill=c.toolbar_border)
         draw_sidebar_row_icon(draw, preset, sidebar_row_icon_key(preset.id, name, target, group), x + 28, row_y, 13, selected=selected, group=False)
         text = c.sidebar_selected_text if selected else c.sidebar_text
@@ -2841,6 +3692,17 @@ def draw_workspace(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h
 def draw_product_reference_state(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
     c = preset.colors
     reference = gui_design_reference_state(preset.id)
+    product_identity_route = gui_design_product_identity_route(preset.id)
+    if product_identity_route.selected_profile_name != reference.profile_name:
+        raise RuntimeError(f"{preset.id} product identity route profile metadata drifted")
+    if product_identity_route.active_tab_label != reference.active_tab_label:
+        raise RuntimeError(f"{preset.id} product identity route active tab metadata drifted")
+    if product_identity_route.target_label != reference.target_label:
+        raise RuntimeError(f"{preset.id} product identity route target metadata drifted")
+    if product_identity_route.protocol_label != reference.protocol_label:
+        raise RuntimeError(f"{preset.id} product identity route protocol metadata drifted")
+    if product_identity_route.status_segments != reference.status_segments:
+        raise RuntimeError(f"{preset.id} product identity route status segment metadata drifted")
     rounded(draw, (x, y, x + w, y + h), c.control, c.control_border, 3)
     chip_x = x + 8
     for key, value in reference.items():
@@ -2893,9 +3755,53 @@ def draw_securecrt_workspace(
     draw_product_terminal(draw, preset, surface, x + 12, terminal_y, term_w - 18, terminal_h)
     detail_x = x + term_w + 2
     detail_w = w - term_w - 14
-    draw_detail_panel(draw, preset, surface, detail_x, terminal_y, detail_w, terminal_h, heading="Session / SFTP")
+    browser_h = max(140, min(158, terminal_h // 2))
+    detail_h = terminal_h - browser_h - 8
+    draw_detail_panel(draw, preset, surface, detail_x, terminal_y, detail_w, detail_h, heading="Session / SFTP")
+    draw_securecrt_sftp_browser(draw, preset, detail_x, terminal_y + detail_h + 8, detail_w, browser_h)
     draw_securecrt_command_window(draw, preset, x + 12, command_y, w - 24, command_h)
     draw_product_activity_log(draw, preset, surface, x, log_y, w, y + h - log_y, "Session Log")
+
+
+def draw_securecrt_sftp_browser(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
+    c = preset.colors
+    route = gui_design_securecrt_sftp_browser_route()
+    tab_route = gui_design_securecrt_sftp_tab_route()
+    if route.sftp_tab_route_key != tab_route.key:
+        raise RuntimeError("SecureCRT SFTP browser route tab key drifted")
+    if route.sftp_tab_label != tab_route.sftp_tab_label:
+        raise RuntimeError("SecureCRT SFTP browser route tab label drifted")
+    if route.selected_tree_label != tab_route.selected_tree_label:
+        raise RuntimeError("SecureCRT SFTP browser route selected tree label drifted")
+    rounded(draw, (x, y, x + w, y + h), c.log, c.control_border, 3)
+    draw_text(draw, f"SFTP - {route.sftp_tab_label}", x + 10, y + 8, c.log_text, 10, bold=True)
+    draw_text(draw, route.transfer_queue_label, x + w - 58, y + 8, c.terminal_accent, 8, mono=True)
+    action_x = x + 10
+    action_y = y + 28
+    for action in route.toolbar_actions:
+        action_w = 52
+        rounded(draw, (action_x, action_y, action_x + action_w, action_y + 18), c.control, c.control_border, 2)
+        draw_text(draw, action.title(), action_x + 7, action_y + 5, c.control_text, 8)
+        action_x += action_w + 5
+    path_y = action_y + 24
+    rounded(draw, (x + 10, path_y, x + w - 10, path_y + 18), c.terminal, c.control_border, 2)
+    draw_text(draw, route.remote_path, x + 18, path_y + 5, c.terminal_accent, 8, mono=True)
+    header_y = path_y + 24
+    draw_text(draw, "Name", x + 12, header_y, c.sidebar_muted, 8, bold=True)
+    draw_text(draw, "Size", x + w - 104, header_y, c.sidebar_muted, 8, bold=True)
+    draw_text(draw, "Modified", x + w - 64, header_y, c.sidebar_muted, 8, bold=True)
+    row_y = header_y + 14
+    for row in route.file_rows:
+        row_h = 15
+        fill = c.control if row.selected else c.log
+        border = c.primary if row.selected else c.control_border
+        rounded(draw, (x + 10, row_y, x + w - 10, row_y + row_h), fill, border, 2)
+        icon = "[D]" if row.kind == "folder" else "[F]"
+        draw_text(draw, icon, x + 14, row_y + 4, c.terminal_accent, 7, mono=True)
+        draw_text(draw, row.name, x + 36, row_y + 4, c.log_text, 7, mono=True)
+        draw_text(draw, row.size, x + w - 104, row_y + 4, c.log_text, 7, mono=True)
+        draw_text(draw, row.modified, x + w - 64, row_y + 4, c.log_text, 7, mono=True)
+        row_y += row_h + 3
 
 
 def draw_termius_workspace(
@@ -2911,6 +3817,7 @@ def draw_termius_workspace(
     c = preset.colors
     sync_route = gui_design_termius_sync_route()
     host_route = gui_design_termius_host_selection_route()
+    port_forward_route = gui_design_termius_port_forward_route()
     reference = gui_design_reference_state(preset.id)
     if host_route.active_tab_label != reference.active_tab_label:
         raise RuntimeError("Termius host-selection route active tab metadata drifted")
@@ -2933,6 +3840,8 @@ def draw_termius_workspace(
     for index, chip in enumerate(gui_design_termius_header_chips()):
         if chip.key == sync_route.header_chip_key and sync_route.sync_state not in chip.label.lower():
             raise RuntimeError("Termius sync route header chip metadata drifted")
+        if chip.key == port_forward_route.header_chip_key and chip.label != port_forward_route.status_segment:
+            raise RuntimeError("Termius port-forward route header chip metadata drifted")
         chip_x = pane_x + pane_w - 360 + index * 116
         rounded(draw, (chip_x, y + 25, chip_x + 104, y + 51), c.control, c.control_border, 12)
         draw_text(draw, chip.label, chip_x + 10, y + 33, c.terminal_accent, 8, bold=True)
@@ -2947,6 +3856,8 @@ def draw_termius_workspace(
     terminal_h = flow_y - terminal_y - 10
     draw_product_terminal(draw, preset, surface, pane_x + 12, terminal_y, term_w - 18, terminal_h)
     detail_x = pane_x + term_w + 4
+    files_h = max(132, min(152, terminal_h // 2))
+    detail_h = terminal_h - files_h - 8
     draw_detail_panel(
         draw,
         preset,
@@ -2954,11 +3865,60 @@ def draw_termius_workspace(
         detail_x,
         terminal_y,
         pane_w - term_w - 16,
-        terminal_h,
+        detail_h,
         heading="Vault / Snippets",
+    )
+    draw_termius_files_browser(
+        draw,
+        preset,
+        detail_x,
+        terminal_y + detail_h + 8,
+        pane_w - term_w - 16,
+        files_h,
     )
     draw_termius_session_workflow(draw, preset, pane_x + 12, flow_y, pane_w - 24, y + pane_h - flow_y - 10)
     draw_product_activity_log(draw, preset, surface, x, log_y, w, y + h - log_y, "Sync Activity")
+
+
+def draw_termius_files_browser(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
+    c = preset.colors
+    route = gui_design_termius_files_browser_route()
+    host_route = gui_design_termius_host_selection_route()
+    if route.host_selection_route_key != host_route.key:
+        raise RuntimeError("Termius files browser route host-selection key drifted")
+    if route.active_tab_label != host_route.active_tab_label:
+        raise RuntimeError("Termius files browser route active tab drifted")
+    if route.selected_profile_name != host_route.selected_profile_name:
+        raise RuntimeError("Termius files browser route selected profile drifted")
+    rounded(draw, (x, y, x + w, y + h), c.log, c.control_border, 5)
+    draw_text(draw, f"Files - {route.selected_profile_name}", x + 10, y + 8, c.log_text, 10, bold=True)
+    draw_text(draw, route.transfer_queue_label, x + w - 66, y + 8, c.terminal_accent, 8, mono=True)
+    action_x = x + 10
+    action_y = y + 28
+    for action in route.toolbar_actions:
+        action_w = 58
+        rounded(draw, (action_x, action_y, action_x + action_w, action_y + 18), c.control, c.control_border, 6)
+        draw_text(draw, action.title(), action_x + 8, action_y + 5, c.control_text, 8)
+        action_x += action_w + 6
+    path_y = action_y + 24
+    rounded(draw, (x + 10, path_y, x + w - 10, path_y + 18), c.terminal, c.control_border, 5)
+    draw_text(draw, route.remote_path, x + 18, path_y + 5, c.terminal_accent, 8, mono=True)
+    header_y = path_y + 24
+    draw_text(draw, "Name", x + 12, header_y, c.sidebar_muted, 8, bold=True)
+    draw_text(draw, "Size", x + w - 104, header_y, c.sidebar_muted, 8, bold=True)
+    draw_text(draw, "Modified", x + w - 64, header_y, c.sidebar_muted, 8, bold=True)
+    row_y = header_y + 14
+    for row in route.file_rows:
+        row_h = 15
+        fill = c.control if row.selected else c.log
+        border = c.primary if row.selected else c.control_border
+        rounded(draw, (x + 10, row_y, x + w - 10, row_y + row_h), fill, border, 4)
+        icon = "[D]" if row.kind == "folder" else "[F]"
+        draw_text(draw, icon, x + 14, row_y + 4, c.terminal_accent, 7, mono=True)
+        draw_text(draw, row.name, x + 36, row_y + 4, c.log_text, 7, mono=True)
+        draw_text(draw, row.size, x + w - 104, row_y + 4, c.log_text, 7, mono=True)
+        draw_text(draw, row.modified, x + w - 64, row_y + 4, c.log_text, 7, mono=True)
+        row_y += row_h + 3
 
 
 def draw_remmina_workspace(
@@ -2983,6 +3943,8 @@ def draw_remmina_workspace(
     draw_text(draw, surface.title, x + 22, toolbar_y + 10, c.control_text, 13, bold=True)
     route = gui_design_remmina_profile_viewer_route()
     clipboard_route = gui_design_remmina_clipboard_route()
+    screenshot_route = gui_design_remmina_screenshot_route()
+    sftp_transfer_route = gui_design_remmina_sftp_transfer_route()
     reference = gui_design_reference_state("remmina")
     if route.active_tab_label != reference.active_tab_label:
         raise RuntimeError("Remmina profile-viewer route active tab metadata drifted")
@@ -2998,14 +3960,40 @@ def draw_remmina_workspace(
         raise RuntimeError("Remmina clipboard route detail-line metadata drifted")
     if clipboard_route.activity_line not in surface.activity_lines:
         raise RuntimeError("Remmina clipboard route activity-line metadata drifted")
+    if screenshot_route.active_tab_label != reference.active_tab_label:
+        raise RuntimeError("Remmina screenshot route active tab metadata drifted")
+    if screenshot_route.status_segment not in reference.status_segments:
+        raise RuntimeError("Remmina screenshot route status segment metadata drifted")
+    if screenshot_route.detail_line not in surface.detail_lines:
+        raise RuntimeError("Remmina screenshot route detail-line metadata drifted")
+    if screenshot_route.activity_line not in surface.activity_lines:
+        raise RuntimeError("Remmina screenshot route activity-line metadata drifted")
+    if not screenshot_route.capture_artifact.endswith(".png"):
+        raise RuntimeError("Remmina screenshot route capture artifact must be a PNG filename")
+    if sftp_transfer_route.detail_line not in surface.detail_lines:
+        raise RuntimeError("Remmina SFTP transfer route detail-line metadata drifted")
+    if sftp_transfer_route.activity_line not in surface.activity_lines:
+        raise RuntimeError("Remmina SFTP transfer route activity-line metadata drifted")
+    if sftp_transfer_route.active_tab_label not in {label for label, _status, _active in gui_design_tab_items("remmina")}:
+        raise RuntimeError("Remmina SFTP transfer route tab metadata drifted")
+    if sftp_transfer_route.toolbar_action_label != {
+        key: label for key, label, _tooltip in gui_design_toolbar_actions("remmina")
+    }.get(sftp_transfer_route.toolbar_action_key):
+        raise RuntimeError("Remmina SFTP transfer route toolbar metadata drifted")
     controls = gui_design_remmina_viewer_controls()
     if route.viewer_control_key not in {control.key for control in controls}:
         raise RuntimeError("Remmina profile-viewer route target control is missing")
     if clipboard_route.viewer_control_key not in {control.key for control in controls}:
         raise RuntimeError("Remmina clipboard route target control is missing")
+    if screenshot_route.viewer_control_key not in {control.key for control in controls}:
+        raise RuntimeError("Remmina screenshot route target control is missing")
     control_x = x + w - 410
     for control in controls:
-        routed_control = control.key in {route.viewer_control_key, clipboard_route.viewer_control_key}
+        routed_control = control.key in {
+            route.viewer_control_key,
+            clipboard_route.viewer_control_key,
+            screenshot_route.viewer_control_key,
+        }
         rounded(
             draw,
             (
@@ -3036,17 +4024,70 @@ def draw_remmina_workspace(
     viewer_w = int(w * 0.72)
     viewer_h = pane_h - 88
     draw_remote_viewer(draw, preset, surface, viewer_x, viewer_y, viewer_w, viewer_h)
+    transfer_h = max(132, min(150, viewer_h // 2))
+    options_h = viewer_h - transfer_h - 8
+    detail_x = viewer_x + viewer_w + 12
+    detail_w = w - viewer_w - 42
     draw_detail_panel(
         draw,
         preset,
         surface,
-        viewer_x + viewer_w + 12,
+        detail_x,
         viewer_y,
-        w - viewer_w - 42,
-        viewer_h,
+        detail_w,
+        options_h,
         heading="Profile Options",
     )
+    draw_remmina_sftp_transfer_panel(
+        draw,
+        preset,
+        detail_x,
+        viewer_y + options_h + 8,
+        detail_w,
+        transfer_h,
+    )
     draw_product_activity_log(draw, preset, surface, x, log_y, w, y + h - log_y, "Connection Activity")
+
+
+def draw_remmina_sftp_transfer_panel(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
+    c = preset.colors
+    route = gui_design_remmina_sftp_transfer_route()
+    profile_chrome = gui_design_remmina_profile_list_chrome()
+    rows_by_key = {row.key: row for row in profile_chrome.rows}
+    profile_row = rows_by_key.get(route.selected_profile_key)
+    if profile_row is None:
+        raise RuntimeError("Remmina SFTP transfer route selected profile row missing")
+    if profile_row.protocol != route.selected_profile_protocol:
+        raise RuntimeError("Remmina SFTP transfer route profile protocol drifted")
+    rounded(draw, (x, y, x + w, y + h), c.log, c.control_border, 4)
+    draw_text(draw, f"SFTP - {route.selected_profile_name}", x + 10, y + 8, c.log_text, 10, bold=True)
+    draw_text(draw, route.transfer_queue_label, x + w - 58, y + 8, c.terminal_accent, 8, mono=True)
+    action_x = x + 10
+    action_y = y + 28
+    for action in route.toolbar_actions:
+        action_w = 58
+        rounded(draw, (action_x, action_y, action_x + action_w, action_y + 18), c.control, c.control_border, 2)
+        draw_text(draw, action.title(), action_x + 7, action_y + 5, c.control_text, 8)
+        action_x += action_w + 5
+    path_y = action_y + 24
+    rounded(draw, (x + 10, path_y, x + w - 10, path_y + 18), c.terminal, c.control_border, 3)
+    draw_text(draw, route.remote_path, x + 18, path_y + 5, c.terminal_accent, 8, mono=True)
+    header_y = path_y + 24
+    draw_text(draw, "Name", x + 12, header_y, c.sidebar_muted, 8, bold=True)
+    draw_text(draw, "Size", x + w - 104, header_y, c.sidebar_muted, 8, bold=True)
+    draw_text(draw, "Modified", x + w - 64, header_y, c.sidebar_muted, 8, bold=True)
+    row_y = header_y + 14
+    for row in route.file_rows:
+        row_h = 15
+        fill = c.control if row.selected else c.log
+        border = c.primary if row.selected else c.control_border
+        rounded(draw, (x + 10, row_y, x + w - 10, row_y + row_h), fill, border, 3)
+        icon = "[D]" if row.kind == "folder" else "[F]"
+        draw_text(draw, icon, x + 14, row_y + 4, c.terminal_accent, 7, mono=True)
+        draw_text(draw, row.name, x + 36, row_y + 4, c.log_text, 7, mono=True)
+        draw_text(draw, row.size, x + w - 104, row_y + 4, c.log_text, 7, mono=True)
+        draw_text(draw, row.modified, x + w - 64, row_y + 4, c.log_text, 7, mono=True)
+        row_y += row_h + 3
 
 
 def draw_mremoteng_workspace(
@@ -3218,6 +4259,7 @@ def draw_securecrt_session_status_strip(draw: Any, preset: GuiDesignPreset, x: i
     c = preset.colors
     chrome = gui_design_securecrt_session_status_strip()
     route = gui_design_securecrt_session_manager_route()
+    sftp_route = gui_design_securecrt_sftp_tab_route()
     if route.status_strip_object != "secureCrtSessionStatusStrip":
         raise RuntimeError("SecureCRT session-manager route status-strip object drifted")
     rounded(draw, (x, y, x + w, y + h), c.pane, c.control_border, 2)
@@ -3232,7 +4274,7 @@ def draw_securecrt_session_status_strip(draw: Any, preset: GuiDesignPreset, x: i
         is_status = field.role == "status"
         cell_fill = c.primary if is_status else c.terminal
         cell_text = c.primary_text if is_status else c.control_text
-        border = c.primary if field.key == route.status_field_key else c.control_border
+        border = c.primary if field.key in {route.status_field_key, sftp_route.status_field_key} else c.control_border
         rounded(
             draw,
             (cell_x, y + field.static_y, cell_x + cell_w, y + field.static_y + field.static_height),
@@ -3257,6 +4299,8 @@ def draw_securecrt_session_status_strip(draw: Any, preset: GuiDesignPreset, x: i
 
 def draw_termius_session_workflow(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
     c = preset.colors
+    port_forward_route = gui_design_termius_port_forward_route()
+    snippet_route = gui_design_termius_snippet_route()
     rounded(draw, (x, y, x + w, y + h), c.log, c.pane_border, 5)
     draw_text(draw, "Host workflow", x + 12, y + 10, c.log_text, 12, bold=True)
     card_y = y + 34
@@ -3265,9 +4309,15 @@ def draw_termius_session_workflow(draw: Any, preset: GuiDesignPreset, x: int, y:
     card_w = (w - gap * 2 - 24) // 3
     cards = [
         ("host", "Vault identity", "prod-ed25519 unlocked", "agent key chained"),
-        ("sftp", "Port forward", "8080 -> localhost:80", "local tunnel ready"),
-        ("snippet", "Snippet", "row vault status", "one-click command"),
+        ("sftp", "Port forward", port_forward_route.forward_value, "local tunnel ready"),
+        ("snippet", snippet_route.workflow_title, snippet_route.snippet_command, snippet_route.snippet_state),
     ]
+    if port_forward_route.forward_state != "ready":
+        raise RuntimeError("Termius port-forward route workflow state drifted")
+    if snippet_route.workflow_card_key != "snippet":
+        raise RuntimeError("Termius snippet route workflow key drifted")
+    if snippet_route.snippet_state != "one-click command":
+        raise RuntimeError("Termius snippet route workflow state drifted")
     for index, (icon_key, title, primary, secondary) in enumerate(cards):
         cx = x + 12 + index * (card_w + gap)
         rounded(draw, (cx, card_y, cx + card_w, card_y + card_h), c.control, c.control_border, 8)
@@ -3282,8 +4332,14 @@ def draw_termius_host_identity_strip(draw: Any, preset: GuiDesignPreset, x: int,
     strip = gui_design_termius_host_identity_strip()
     sync_route = gui_design_termius_sync_route()
     host_route = gui_design_termius_host_selection_route()
+    port_forward_route = gui_design_termius_port_forward_route()
+    snippet_route = gui_design_termius_snippet_route()
     if host_route.host_identity_object != "termiusHostIdentityStrip":
         raise RuntimeError("Termius host-selection route identity object drifted")
+    if port_forward_route.host_identity_object != "termiusHostIdentityStrip":
+        raise RuntimeError("Termius port-forward route identity object drifted")
+    if snippet_route.host_identity_object != "termiusHostIdentityStrip":
+        raise RuntimeError("Termius snippet route identity object drifted")
     rounded(draw, (x, y, x + w, y + h), c.pane, c.control_border, 2)
     draw_text(draw, strip.title, x + strip.static_title_x, y + strip.static_title_y, c.sidebar_muted, 9, bold=True)
     cell_x = x + strip.static_cell_start_x
@@ -3292,13 +4348,22 @@ def draw_termius_host_identity_strip(draw: Any, preset: GuiDesignPreset, x: int,
             raise RuntimeError("Termius host-selection route host value drifted")
         if field.key == sync_route.identity_field_key and field.value != sync_route.sync_state:
             raise RuntimeError("Termius sync route identity field metadata drifted")
+        if field.key == port_forward_route.identity_field_key and field.value != port_forward_route.forward_value:
+            raise RuntimeError("Termius port-forward route identity field metadata drifted")
+        if field.key == snippet_route.identity_field_key and field.value != snippet_route.snippet_command:
+            raise RuntimeError("Termius snippet route identity field metadata drifted")
         cell_w = field.static_width
         if cell_x + cell_w > x + w - 6:
             break
         is_status = field.role == "status"
         cell_fill = c.primary if is_status else c.terminal
         cell_text = c.primary_text if is_status else c.control_text
-        border = c.primary if field.key == host_route.identity_field_key else c.control_border
+        routed_field_keys = {
+            host_route.identity_field_key,
+            port_forward_route.identity_field_key,
+            snippet_route.identity_field_key,
+        }
+        border = c.primary if field.key in routed_field_keys else c.control_border
         rounded(
             draw,
             (cell_x, y + field.static_y, cell_x + cell_w, y + field.static_y + field.static_height),
@@ -3408,6 +4473,7 @@ def draw_mremoteng_document_toolbar(draw: Any, preset: GuiDesignPreset, x: int, 
     c = preset.colors
     chrome = gui_design_mremoteng_document_toolbar_chrome()
     route = gui_design_mremoteng_connection_document_route()
+    filter_route = gui_design_mremoteng_document_filter_route()
     interaction = gui_design_interaction_state(preset.id)
     toolbar_h = min(h, chrome.static_height)
     draw.rectangle((x, y, x + w, y + toolbar_h), fill=c.control, outline=c.pane_border)
@@ -3416,6 +4482,12 @@ def draw_mremoteng_document_toolbar(draw: Any, preset: GuiDesignPreset, x: int, 
     controls = gui_design_mremoteng_document_controls()
     if route.document_control_key not in {control.key for control in controls}:
         raise RuntimeError("mRemoteNG connection-document route target control is missing")
+    if filter_route.selected_tree_label != route.selected_tree_label:
+        raise RuntimeError("mRemoteNG document-filter route selected tree metadata drifted")
+    if filter_route.expected_placeholder != chrome.filter_placeholder:
+        raise RuntimeError("mRemoteNG document-filter route placeholder metadata drifted")
+    if filter_route.expected_query.lower() not in route.selected_tree_label.lower():
+        raise RuntimeError("mRemoteNG document-filter route query no longer matches selected tree row")
     for control in controls:
         state = "checked" if control.key == "external-tool" and interaction.checked_toolbar_key == "files" else "normal"
         _fill, outline, text = interaction_button_colors(state, c)
@@ -3514,9 +4586,21 @@ def draw_mremoteng_property_grid(draw: Any, preset: GuiDesignPreset, x: int, y: 
     c = preset.colors
     chrome = gui_design_mremoteng_property_grid_chrome()
     route = gui_design_mremoteng_connection_document_route()
+    inheritance_route = gui_design_mremoteng_inheritance_route()
     route_rows = [row for row in chrome.rows if row.key == route.property_row_key]
     if len(route_rows) != 1 or route_rows[0].effective_value != route.property_value:
         raise RuntimeError("mRemoteNG connection-document route property row metadata drifted")
+    inheritance_rows = [row for row in chrome.rows if row.key == inheritance_route.property_row_key]
+    if len(inheritance_rows) != 1:
+        raise RuntimeError("mRemoteNG inheritance route property row metadata drifted")
+    inheritance_row = inheritance_rows[0]
+    if (
+        inheritance_row.property_label != inheritance_route.inherited_property_label
+        or inheritance_row.effective_value != inheritance_route.inherited_value
+        or inheritance_row.source != inheritance_route.inherited_source
+        or not inheritance_row.inherited
+    ):
+        raise RuntimeError("mRemoteNG inheritance route inherited-row metadata drifted")
     rounded(draw, (x, y, x + w, y + h), c.log, c.pane_border, 3)
     draw.rectangle((x + 1, y + 1, x + w - 1, y + 30), fill=c.toolbar)
     draw_text(draw, chrome.title, x + 10, y + 10, c.control_text, 11, bold=True)
@@ -3539,7 +4623,13 @@ def draw_mremoteng_property_grid(draw: Any, preset: GuiDesignPreset, x: int, y: 
     for row_index, row in enumerate(chrome.rows):
         ry = table_y + row_h * (row_index + 1)
         fill = c.log if row.inherited else c.window
-        row_outline = c.primary if row.key == route.property_row_key else c.pane_border
+        row_outline = (
+            c.status
+            if row.key == inheritance_route.property_row_key
+            else c.primary
+            if row.key == route.property_row_key
+            else c.pane_border
+        )
         draw.rectangle((table_x, ry, x + w - 10, ry + row_h), fill=fill, outline=row_outline)
         cx = table_x
         values = (row.property_label, row.inherited_from, row.effective_value, row.source)

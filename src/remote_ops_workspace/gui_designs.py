@@ -22,6 +22,62 @@ class GuiMobaRibbonEdgeAction:
 
 
 @dataclass(frozen=True)
+class GuiMobaRibbonEdgeActionRoute:
+    key: str
+    route_role: str
+    toolbar_object: str
+    spacer_object: str
+    xserver_action_key: str
+    xserver_action_label: str
+    xserver_action_object: str
+    xserver_icon_key: str
+    xserver_handler: str
+    xserver_dialog_title: str
+    xserver_dialog_detail: str
+    exit_action_key: str
+    exit_action_label: str
+    exit_action_object: str
+    exit_icon_key: str
+    exit_handler: str
+    route_key_property: str
+    action_key_property: str
+    action_label_property: str
+    action_object_property: str
+    icon_key_property: str
+    handler_property: str
+    action_keys_property: str
+    render_source: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "route_role": self.route_role,
+            "toolbar_object": self.toolbar_object,
+            "spacer_object": self.spacer_object,
+            "xserver_action_key": self.xserver_action_key,
+            "xserver_action_label": self.xserver_action_label,
+            "xserver_action_object": self.xserver_action_object,
+            "xserver_icon_key": self.xserver_icon_key,
+            "xserver_handler": self.xserver_handler,
+            "xserver_dialog_title": self.xserver_dialog_title,
+            "xserver_dialog_detail": self.xserver_dialog_detail,
+            "exit_action_key": self.exit_action_key,
+            "exit_action_label": self.exit_action_label,
+            "exit_action_object": self.exit_action_object,
+            "exit_icon_key": self.exit_icon_key,
+            "exit_handler": self.exit_handler,
+            "route_key_property": self.route_key_property,
+            "action_key_property": self.action_key_property,
+            "action_label_property": self.action_label_property,
+            "action_object_property": self.action_object_property,
+            "icon_key_property": self.icon_key_property,
+            "handler_property": self.handler_property,
+            "action_keys_property": self.action_keys_property,
+            "render_source": self.render_source,
+        }
+
+
+@dataclass(frozen=True)
 class GuiMobaRibbonActionGeometry:
     key: str
     static_x: int
@@ -262,6 +318,46 @@ class GuiMobaRightUtilityAction:
 
 
 @dataclass(frozen=True)
+class GuiMobaRightUtilityActionRoute:
+    key: str
+    route_role: str
+    rail_object: str
+    action_object: str
+    action_keys: tuple[str, ...]
+    action_labels: tuple[str, ...]
+    action_icon_keys: tuple[str, ...]
+    action_handlers: tuple[str, ...]
+    route_key_property: str
+    action_key_property: str
+    action_label_property: str
+    action_object_property: str
+    icon_key_property: str
+    handler_property: str
+    action_keys_property: str
+    render_source: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "route_role": self.route_role,
+            "rail_object": self.rail_object,
+            "action_object": self.action_object,
+            "action_keys": list(self.action_keys),
+            "action_labels": list(self.action_labels),
+            "action_icon_keys": list(self.action_icon_keys),
+            "action_handlers": list(self.action_handlers),
+            "route_key_property": self.route_key_property,
+            "action_key_property": self.action_key_property,
+            "action_label_property": self.action_label_property,
+            "action_object_property": self.action_object_property,
+            "icon_key_property": self.icon_key_property,
+            "handler_property": self.handler_property,
+            "action_keys_property": self.action_keys_property,
+            "render_source": self.render_source,
+        }
+
+
+@dataclass(frozen=True)
 class GuiMobaRightUtilityRailChrome:
     static_width: int
     live_width: int
@@ -291,6 +387,48 @@ class GuiMobaSessionEdgeAction:
 
     def relative_y(self, top_y: int) -> int:
         return self.static_y - top_y
+
+
+@dataclass(frozen=True)
+class GuiMobaSessionEdgeActionRoute:
+    key: str
+    route_role: str
+    controls_object: str
+    action_object: str
+    placement: str
+    action_keys: tuple[str, ...]
+    action_labels: tuple[str, ...]
+    action_icon_keys: tuple[str, ...]
+    action_handlers: tuple[str, ...]
+    route_key_property: str
+    action_key_property: str
+    action_label_property: str
+    action_object_property: str
+    icon_key_property: str
+    handler_property: str
+    action_keys_property: str
+    render_source: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "route_role": self.route_role,
+            "controls_object": self.controls_object,
+            "action_object": self.action_object,
+            "placement": self.placement,
+            "action_keys": list(self.action_keys),
+            "action_labels": list(self.action_labels),
+            "action_icon_keys": list(self.action_icon_keys),
+            "action_handlers": list(self.action_handlers),
+            "route_key_property": self.route_key_property,
+            "action_key_property": self.action_key_property,
+            "action_label_property": self.action_label_property,
+            "action_object_property": self.action_object_property,
+            "icon_key_property": self.icon_key_property,
+            "handler_property": self.handler_property,
+            "action_keys_property": self.action_keys_property,
+            "render_source": self.render_source,
+        }
 
 
 @dataclass(frozen=True)
@@ -502,6 +640,106 @@ class GuiMobaMonitoringTelemetryRoute:
     target_identity_cell_key: str
     target_metric_cell_keys: tuple[str, ...]
     render_source: str
+
+
+@dataclass(frozen=True)
+class GuiMobaRemoteMonitoringControlRoute:
+    key: str
+    route_role: str
+    source_panel_object: str
+    source_control_object: str
+    source_control_key: str
+    source_control_label: str
+    source_control_type: str
+    expected_checked: bool
+    command_property: str
+    refresh_seconds_property: str
+    checked_property: str
+    telemetry_route_key: str
+    telemetry_surface: str
+    target_bar_object: str
+    target_metric_cell_keys: tuple[str, ...]
+    captured_property: str
+    captured_checked_property: str
+    captured_command_property: str
+    captured_refresh_seconds_property: str
+    render_source: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "route_role": self.route_role,
+            "source_panel_object": self.source_panel_object,
+            "source_control_object": self.source_control_object,
+            "source_control_key": self.source_control_key,
+            "source_control_label": self.source_control_label,
+            "source_control_type": self.source_control_type,
+            "expected_checked": self.expected_checked,
+            "command_property": self.command_property,
+            "refresh_seconds_property": self.refresh_seconds_property,
+            "checked_property": self.checked_property,
+            "telemetry_route_key": self.telemetry_route_key,
+            "telemetry_surface": self.telemetry_surface,
+            "target_bar_object": self.target_bar_object,
+            "target_metric_cell_keys": list(self.target_metric_cell_keys),
+            "captured_property": self.captured_property,
+            "captured_checked_property": self.captured_checked_property,
+            "captured_command_property": self.captured_command_property,
+            "captured_refresh_seconds_property": self.captured_refresh_seconds_property,
+            "render_source": self.render_source,
+        }
+
+
+@dataclass(frozen=True)
+class GuiMobaFollowTerminalFolderControlRoute:
+    key: str
+    route_role: str
+    source_panel_object: str
+    source_control_object: str
+    source_control_key: str
+    source_control_label: str
+    source_control_type: str
+    expected_checked: bool
+    source_path_property: str
+    source_plan_property: str
+    source_enabled_property: str
+    target_browser_object: str
+    target_path_object: str
+    target_table_object: str
+    target_path_property: str
+    target_plan_property: str
+    target_enabled_property: str
+    captured_property: str
+    captured_checked_property: str
+    captured_path_property: str
+    captured_plan_property: str
+    render_source: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "route_role": self.route_role,
+            "source_panel_object": self.source_panel_object,
+            "source_control_object": self.source_control_object,
+            "source_control_key": self.source_control_key,
+            "source_control_label": self.source_control_label,
+            "source_control_type": self.source_control_type,
+            "expected_checked": self.expected_checked,
+            "source_path_property": self.source_path_property,
+            "source_plan_property": self.source_plan_property,
+            "source_enabled_property": self.source_enabled_property,
+            "target_browser_object": self.target_browser_object,
+            "target_path_object": self.target_path_object,
+            "target_table_object": self.target_table_object,
+            "target_path_property": self.target_path_property,
+            "target_plan_property": self.target_plan_property,
+            "target_enabled_property": self.target_enabled_property,
+            "captured_property": self.captured_property,
+            "captured_checked_property": self.captured_checked_property,
+            "captured_path_property": self.captured_path_property,
+            "captured_plan_property": self.captured_plan_property,
+            "render_source": self.render_source,
+        }
 
 
 @dataclass(frozen=True)
@@ -753,6 +991,186 @@ class GuiSecureCrtSessionManagerRoute:
 
 
 @dataclass(frozen=True)
+class GuiSecureCrtSessionManagerFilterRoute:
+    key: str
+    route_role: str
+    session_manager_object: str
+    filter_object: str
+    selected_tree_object: str
+    selected_profile_name: str
+    selected_tree_label: str
+    expected_query: str
+    expected_placeholder: str
+    matched_result_label: str
+    filter_route_property: str
+    filter_query_property: str
+    filter_placeholder_property: str
+    matched_result_property: str
+    change_signal: str
+    handler_name: str
+    render_source: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "route_role": self.route_role,
+            "session_manager_object": self.session_manager_object,
+            "filter_object": self.filter_object,
+            "selected_tree_object": self.selected_tree_object,
+            "selected_profile_name": self.selected_profile_name,
+            "selected_tree_label": self.selected_tree_label,
+            "expected_query": self.expected_query,
+            "expected_placeholder": self.expected_placeholder,
+            "matched_result_label": self.matched_result_label,
+            "filter_route_property": self.filter_route_property,
+            "filter_query_property": self.filter_query_property,
+            "filter_placeholder_property": self.filter_placeholder_property,
+            "matched_result_property": self.matched_result_property,
+            "change_signal": self.change_signal,
+            "handler_name": self.handler_name,
+            "render_source": self.render_source,
+        }
+
+
+@dataclass(frozen=True)
+class GuiSecureCrtSftpTabRoute:
+    key: str
+    route_role: str
+    workflow_card_key: str
+    workflow_card_object: str
+    workflow_title_object: str
+    workflow_primary_object: str
+    workflow_secondary_object: str
+    session_manager_object: str
+    selected_tree_object: str
+    selected_profile_name: str
+    selected_tree_label: str
+    active_tab_label: str
+    sftp_tab_label: str
+    status_strip_object: str
+    status_field_key: str
+    status_field_object: str
+    status_value: str
+    transfer_state: str
+    workflow_title: str
+    workflow_primary: str
+    workflow_secondary: str
+    workflow_key_property: str
+    tab_label_property: str
+    status_property: str
+    transfer_state_property: str
+    render_source: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "route_role": self.route_role,
+            "workflow_card_key": self.workflow_card_key,
+            "workflow_card_object": self.workflow_card_object,
+            "workflow_title_object": self.workflow_title_object,
+            "workflow_primary_object": self.workflow_primary_object,
+            "workflow_secondary_object": self.workflow_secondary_object,
+            "session_manager_object": self.session_manager_object,
+            "selected_tree_object": self.selected_tree_object,
+            "selected_profile_name": self.selected_profile_name,
+            "selected_tree_label": self.selected_tree_label,
+            "active_tab_label": self.active_tab_label,
+            "sftp_tab_label": self.sftp_tab_label,
+            "status_strip_object": self.status_strip_object,
+            "status_field_key": self.status_field_key,
+            "status_field_object": self.status_field_object,
+            "status_value": self.status_value,
+            "transfer_state": self.transfer_state,
+            "workflow_title": self.workflow_title,
+            "workflow_primary": self.workflow_primary,
+            "workflow_secondary": self.workflow_secondary,
+            "workflow_key_property": self.workflow_key_property,
+            "tab_label_property": self.tab_label_property,
+            "status_property": self.status_property,
+            "transfer_state_property": self.transfer_state_property,
+            "render_source": self.render_source,
+        }
+
+
+@dataclass(frozen=True)
+class GuiSecureCrtSftpBrowserRow:
+    key: str
+    kind: str
+    name: str
+    size: str
+    modified: str
+    selected: bool
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "kind": self.kind,
+            "name": self.name,
+            "size": self.size,
+            "modified": self.modified,
+            "selected": self.selected,
+        }
+
+
+@dataclass(frozen=True)
+class GuiSecureCrtSftpBrowserRoute:
+    key: str
+    route_role: str
+    sftp_tab_route_key: str
+    browser_object: str
+    toolbar_object: str
+    path_object: str
+    table_object: str
+    row_object: str
+    queue_object: str
+    selected_profile_name: str
+    selected_tree_label: str
+    sftp_tab_label: str
+    remote_path: str
+    toolbar_actions: tuple[str, ...]
+    file_rows: tuple[GuiSecureCrtSftpBrowserRow, ...]
+    active_row_name: str
+    transfer_queue_label: str
+    transfer_status: str
+    path_property: str
+    toolbar_actions_property: str
+    row_name_property: str
+    row_kind_property: str
+    row_selected_property: str
+    queue_state_property: str
+    render_source: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "route_role": self.route_role,
+            "sftp_tab_route_key": self.sftp_tab_route_key,
+            "browser_object": self.browser_object,
+            "toolbar_object": self.toolbar_object,
+            "path_object": self.path_object,
+            "table_object": self.table_object,
+            "row_object": self.row_object,
+            "queue_object": self.queue_object,
+            "selected_profile_name": self.selected_profile_name,
+            "selected_tree_label": self.selected_tree_label,
+            "sftp_tab_label": self.sftp_tab_label,
+            "remote_path": self.remote_path,
+            "toolbar_actions": list(self.toolbar_actions),
+            "file_rows": [row.to_dict() for row in self.file_rows],
+            "active_row_name": self.active_row_name,
+            "transfer_queue_label": self.transfer_queue_label,
+            "transfer_status": self.transfer_status,
+            "path_property": self.path_property,
+            "toolbar_actions_property": self.toolbar_actions_property,
+            "row_name_property": self.row_name_property,
+            "row_kind_property": self.row_kind_property,
+            "row_selected_property": self.row_selected_property,
+            "queue_state_property": self.queue_state_property,
+            "render_source": self.render_source,
+        }
+
+
+@dataclass(frozen=True)
 class GuiSecureCrtTopMenuItem:
     key: str
     label: str
@@ -903,6 +1321,56 @@ class GuiRemminaProfileViewerRoute:
 
 
 @dataclass(frozen=True)
+class GuiRemminaProfileFilterRoute:
+    key: str
+    route_role: str
+    profile_list_object: str
+    filter_object: str
+    selected_profile_key: str
+    selected_profile_object: str
+    matched_profile_name: str
+    matched_protocol: str
+    matched_status: str
+    expected_query: str
+    expected_placeholder: str
+    active_tab_label: str
+    filter_route_property: str
+    filter_query_property: str
+    filter_placeholder_property: str
+    matched_profile_property: str
+    matched_protocol_property: str
+    active_tab_property: str
+    change_signal: str
+    handler_name: str
+    render_source: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "route_role": self.route_role,
+            "profile_list_object": self.profile_list_object,
+            "filter_object": self.filter_object,
+            "selected_profile_key": self.selected_profile_key,
+            "selected_profile_object": self.selected_profile_object,
+            "matched_profile_name": self.matched_profile_name,
+            "matched_protocol": self.matched_protocol,
+            "matched_status": self.matched_status,
+            "expected_query": self.expected_query,
+            "expected_placeholder": self.expected_placeholder,
+            "active_tab_label": self.active_tab_label,
+            "filter_route_property": self.filter_route_property,
+            "filter_query_property": self.filter_query_property,
+            "filter_placeholder_property": self.filter_placeholder_property,
+            "matched_profile_property": self.matched_profile_property,
+            "matched_protocol_property": self.matched_protocol_property,
+            "active_tab_property": self.active_tab_property,
+            "change_signal": self.change_signal,
+            "handler_name": self.handler_name,
+            "render_source": self.render_source,
+        }
+
+
+@dataclass(frozen=True)
 class GuiRemminaClipboardRoute:
     key: str
     route_role: str
@@ -919,6 +1387,150 @@ class GuiRemminaClipboardRoute:
     tab_label_property: str
     clipboard_state_property: str
     render_source: str
+
+
+@dataclass(frozen=True)
+class GuiRemminaScreenshotRoute:
+    key: str
+    route_role: str
+    viewer_controls_object: str
+    viewer_control_key: str
+    viewer_control_object: str
+    active_tab_label: str
+    protocol: str
+    capture_state: str
+    capture_artifact: str
+    status_segment: str
+    detail_line: str
+    activity_line: str
+    control_active_property: str
+    tab_label_property: str
+    capture_state_property: str
+    capture_artifact_property: str
+    render_source: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "route_role": self.route_role,
+            "viewer_controls_object": self.viewer_controls_object,
+            "viewer_control_key": self.viewer_control_key,
+            "viewer_control_object": self.viewer_control_object,
+            "active_tab_label": self.active_tab_label,
+            "protocol": self.protocol,
+            "capture_state": self.capture_state,
+            "capture_artifact": self.capture_artifact,
+            "status_segment": self.status_segment,
+            "detail_line": self.detail_line,
+            "activity_line": self.activity_line,
+            "control_active_property": self.control_active_property,
+            "tab_label_property": self.tab_label_property,
+            "capture_state_property": self.capture_state_property,
+            "capture_artifact_property": self.capture_artifact_property,
+            "render_source": self.render_source,
+        }
+
+
+@dataclass(frozen=True)
+class GuiRemminaSftpTransferRow:
+    key: str
+    kind: str
+    name: str
+    size: str
+    modified: str
+    selected: bool
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "kind": self.kind,
+            "name": self.name,
+            "size": self.size,
+            "modified": self.modified,
+            "selected": self.selected,
+        }
+
+
+@dataclass(frozen=True)
+class GuiRemminaSftpTransferRoute:
+    key: str
+    route_role: str
+    profile_list_object: str
+    selected_profile_key: str
+    selected_profile_name: str
+    selected_profile_protocol: str
+    selected_profile_status: str
+    selected_profile_object: str
+    selected_tree_label: str
+    toolbar_action_key: str
+    toolbar_action_label: str
+    toolbar_action_object: str
+    active_tab_label: str
+    transfer_panel_object: str
+    toolbar_object: str
+    path_object: str
+    table_object: str
+    row_object: str
+    queue_object: str
+    remote_path: str
+    toolbar_actions: tuple[str, ...]
+    file_rows: tuple[GuiRemminaSftpTransferRow, ...]
+    active_row_name: str
+    transfer_queue_label: str
+    transfer_status: str
+    detail_line: str
+    activity_line: str
+    selected_profile_property: str
+    toolbar_active_property: str
+    tab_label_property: str
+    path_property: str
+    toolbar_actions_property: str
+    row_name_property: str
+    row_kind_property: str
+    row_selected_property: str
+    queue_state_property: str
+    render_source: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "route_role": self.route_role,
+            "profile_list_object": self.profile_list_object,
+            "selected_profile_key": self.selected_profile_key,
+            "selected_profile_name": self.selected_profile_name,
+            "selected_profile_protocol": self.selected_profile_protocol,
+            "selected_profile_status": self.selected_profile_status,
+            "selected_profile_object": self.selected_profile_object,
+            "selected_tree_label": self.selected_tree_label,
+            "toolbar_action_key": self.toolbar_action_key,
+            "toolbar_action_label": self.toolbar_action_label,
+            "toolbar_action_object": self.toolbar_action_object,
+            "active_tab_label": self.active_tab_label,
+            "transfer_panel_object": self.transfer_panel_object,
+            "toolbar_object": self.toolbar_object,
+            "path_object": self.path_object,
+            "table_object": self.table_object,
+            "row_object": self.row_object,
+            "queue_object": self.queue_object,
+            "remote_path": self.remote_path,
+            "toolbar_actions": list(self.toolbar_actions),
+            "file_rows": [row.to_dict() for row in self.file_rows],
+            "active_row_name": self.active_row_name,
+            "transfer_queue_label": self.transfer_queue_label,
+            "transfer_status": self.transfer_status,
+            "detail_line": self.detail_line,
+            "activity_line": self.activity_line,
+            "selected_profile_property": self.selected_profile_property,
+            "toolbar_active_property": self.toolbar_active_property,
+            "tab_label_property": self.tab_label_property,
+            "path_property": self.path_property,
+            "toolbar_actions_property": self.toolbar_actions_property,
+            "row_name_property": self.row_name_property,
+            "row_kind_property": self.row_kind_property,
+            "row_selected_property": self.row_selected_property,
+            "queue_state_property": self.queue_state_property,
+            "render_source": self.render_source,
+        }
 
 
 @dataclass(frozen=True)
@@ -1018,6 +1630,196 @@ class GuiTermiusHostSelectionRoute:
 
 
 @dataclass(frozen=True)
+class GuiTermiusPortForwardRoute:
+    key: str
+    route_role: str
+    header_chip_key: str
+    header_chip_object: str
+    host_identity_object: str
+    identity_field_key: str
+    identity_cell_object: str
+    active_tab_label: str
+    selected_profile_name: str
+    forward_value: str
+    forward_state: str
+    local_port: int
+    remote_host: str
+    remote_port: int
+    status_segment: str
+    chip_label_property: str
+    identity_value_property: str
+    active_tab_property: str
+    status_property: str
+    render_source: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "route_role": self.route_role,
+            "header_chip_key": self.header_chip_key,
+            "header_chip_object": self.header_chip_object,
+            "host_identity_object": self.host_identity_object,
+            "identity_field_key": self.identity_field_key,
+            "identity_cell_object": self.identity_cell_object,
+            "active_tab_label": self.active_tab_label,
+            "selected_profile_name": self.selected_profile_name,
+            "forward_value": self.forward_value,
+            "forward_state": self.forward_state,
+            "local_port": self.local_port,
+            "remote_host": self.remote_host,
+            "remote_port": self.remote_port,
+            "status_segment": self.status_segment,
+            "chip_label_property": self.chip_label_property,
+            "identity_value_property": self.identity_value_property,
+            "active_tab_property": self.active_tab_property,
+            "status_property": self.status_property,
+            "render_source": self.render_source,
+        }
+
+
+@dataclass(frozen=True)
+class GuiTermiusSnippetRoute:
+    key: str
+    route_role: str
+    workflow_card_key: str
+    workflow_card_object: str
+    workflow_title_object: str
+    workflow_primary_object: str
+    workflow_secondary_object: str
+    host_identity_object: str
+    identity_field_key: str
+    identity_cell_object: str
+    active_tab_label: str
+    selected_profile_name: str
+    workflow_title: str
+    snippet_command: str
+    snippet_state: str
+    detail_line: str
+    workflow_key_property: str
+    command_property: str
+    identity_value_property: str
+    active_tab_property: str
+    status_property: str
+    render_source: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "route_role": self.route_role,
+            "workflow_card_key": self.workflow_card_key,
+            "workflow_card_object": self.workflow_card_object,
+            "workflow_title_object": self.workflow_title_object,
+            "workflow_primary_object": self.workflow_primary_object,
+            "workflow_secondary_object": self.workflow_secondary_object,
+            "host_identity_object": self.host_identity_object,
+            "identity_field_key": self.identity_field_key,
+            "identity_cell_object": self.identity_cell_object,
+            "active_tab_label": self.active_tab_label,
+            "selected_profile_name": self.selected_profile_name,
+            "workflow_title": self.workflow_title,
+            "snippet_command": self.snippet_command,
+            "snippet_state": self.snippet_state,
+            "detail_line": self.detail_line,
+            "workflow_key_property": self.workflow_key_property,
+            "command_property": self.command_property,
+            "identity_value_property": self.identity_value_property,
+            "active_tab_property": self.active_tab_property,
+            "status_property": self.status_property,
+            "render_source": self.render_source,
+        }
+
+
+@dataclass(frozen=True)
+class GuiTermiusFilesBrowserRow:
+    key: str
+    kind: str
+    name: str
+    size: str
+    modified: str
+    selected: bool
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "kind": self.kind,
+            "name": self.name,
+            "size": self.size,
+            "modified": self.modified,
+            "selected": self.selected,
+        }
+
+
+@dataclass(frozen=True)
+class GuiTermiusFilesBrowserRoute:
+    key: str
+    route_role: str
+    host_selection_route_key: str
+    host_identity_object: str
+    identity_field_key: str
+    identity_cell_object: str
+    files_browser_object: str
+    toolbar_object: str
+    path_object: str
+    table_object: str
+    row_object: str
+    queue_object: str
+    active_tab_label: str
+    selected_profile_name: str
+    selected_tree_label: str
+    files_state: str
+    remote_path: str
+    toolbar_actions: tuple[str, ...]
+    file_rows: tuple[GuiTermiusFilesBrowserRow, ...]
+    active_row_name: str
+    transfer_queue_label: str
+    transfer_status: str
+    identity_value_property: str
+    active_tab_property: str
+    path_property: str
+    toolbar_actions_property: str
+    row_name_property: str
+    row_kind_property: str
+    row_selected_property: str
+    queue_state_property: str
+    render_source: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "route_role": self.route_role,
+            "host_selection_route_key": self.host_selection_route_key,
+            "host_identity_object": self.host_identity_object,
+            "identity_field_key": self.identity_field_key,
+            "identity_cell_object": self.identity_cell_object,
+            "files_browser_object": self.files_browser_object,
+            "toolbar_object": self.toolbar_object,
+            "path_object": self.path_object,
+            "table_object": self.table_object,
+            "row_object": self.row_object,
+            "queue_object": self.queue_object,
+            "active_tab_label": self.active_tab_label,
+            "selected_profile_name": self.selected_profile_name,
+            "selected_tree_label": self.selected_tree_label,
+            "files_state": self.files_state,
+            "remote_path": self.remote_path,
+            "toolbar_actions": list(self.toolbar_actions),
+            "file_rows": [row.to_dict() for row in self.file_rows],
+            "active_row_name": self.active_row_name,
+            "transfer_queue_label": self.transfer_queue_label,
+            "transfer_status": self.transfer_status,
+            "identity_value_property": self.identity_value_property,
+            "active_tab_property": self.active_tab_property,
+            "path_property": self.path_property,
+            "toolbar_actions_property": self.toolbar_actions_property,
+            "row_name_property": self.row_name_property,
+            "row_kind_property": self.row_kind_property,
+            "row_selected_property": self.row_selected_property,
+            "queue_state_property": self.queue_state_property,
+            "render_source": self.render_source,
+        }
+
+
+@dataclass(frozen=True)
 class GuiMRemoteNgDocumentControl:
     key: str
     icon_key: str
@@ -1108,6 +1910,110 @@ class GuiMRemoteNgConnectionDocumentRoute:
     render_source: str
 
 
+@dataclass(frozen=True)
+class GuiMRemoteNgDocumentFilterRoute:
+    key: str
+    route_role: str
+    document_controls_object: str
+    filter_object: str
+    selected_tree_object: str
+    selected_profile_name: str
+    selected_tree_label: str
+    matched_protocol: str
+    matched_state: str
+    expected_query: str
+    expected_placeholder: str
+    active_tab_label: str
+    filter_route_property: str
+    filter_query_property: str
+    filter_placeholder_property: str
+    matched_tree_property: str
+    matched_protocol_property: str
+    active_tab_property: str
+    change_signal: str
+    handler_name: str
+    render_source: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "route_role": self.route_role,
+            "document_controls_object": self.document_controls_object,
+            "filter_object": self.filter_object,
+            "selected_tree_object": self.selected_tree_object,
+            "selected_profile_name": self.selected_profile_name,
+            "selected_tree_label": self.selected_tree_label,
+            "matched_protocol": self.matched_protocol,
+            "matched_state": self.matched_state,
+            "expected_query": self.expected_query,
+            "expected_placeholder": self.expected_placeholder,
+            "active_tab_label": self.active_tab_label,
+            "filter_route_property": self.filter_route_property,
+            "filter_query_property": self.filter_query_property,
+            "filter_placeholder_property": self.filter_placeholder_property,
+            "matched_tree_property": self.matched_tree_property,
+            "matched_protocol_property": self.matched_protocol_property,
+            "active_tab_property": self.active_tab_property,
+            "change_signal": self.change_signal,
+            "handler_name": self.handler_name,
+            "render_source": self.render_source,
+        }
+
+
+@dataclass(frozen=True)
+class GuiMRemoteNgInheritanceRoute:
+    key: str
+    route_role: str
+    workflow_card_key: str
+    workflow_card_object: str
+    workflow_title_object: str
+    workflow_primary_object: str
+    workflow_secondary_object: str
+    property_grid_object: str
+    property_row_key: str
+    property_cell_object: str
+    active_tab_label: str
+    selected_profile_name: str
+    selected_tree_label: str
+    workflow_title: str
+    inherited_property_label: str
+    inherited_value: str
+    inherited_source: str
+    inheritance_state: str
+    workflow_key_property: str
+    inherited_value_property: str
+    active_tab_property: str
+    status_property: str
+    render_source: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "route_role": self.route_role,
+            "workflow_card_key": self.workflow_card_key,
+            "workflow_card_object": self.workflow_card_object,
+            "workflow_title_object": self.workflow_title_object,
+            "workflow_primary_object": self.workflow_primary_object,
+            "workflow_secondary_object": self.workflow_secondary_object,
+            "property_grid_object": self.property_grid_object,
+            "property_row_key": self.property_row_key,
+            "property_cell_object": self.property_cell_object,
+            "active_tab_label": self.active_tab_label,
+            "selected_profile_name": self.selected_profile_name,
+            "selected_tree_label": self.selected_tree_label,
+            "workflow_title": self.workflow_title,
+            "inherited_property_label": self.inherited_property_label,
+            "inherited_value": self.inherited_value,
+            "inherited_source": self.inherited_source,
+            "inheritance_state": self.inheritance_state,
+            "workflow_key_property": self.workflow_key_property,
+            "inherited_value_property": self.inherited_value_property,
+            "active_tab_property": self.active_tab_property,
+            "status_property": self.status_property,
+            "render_source": self.render_source,
+        }
+
+
 GUI_DESIGN_MOBA_RIBBON_ACTIONS: tuple[GuiMobaRibbonAction, ...] = (
     GuiMobaRibbonAction("session", "Session", "#44a6ff"),
     GuiMobaRibbonAction("servers", "Servers", "#26c6c9"),
@@ -1123,9 +2029,51 @@ GUI_DESIGN_MOBA_RIBBON_ACTIONS: tuple[GuiMobaRibbonAction, ...] = (
     GuiMobaRibbonAction("help", "Help", "#1c9ef1"),
 )
 
+GUI_DESIGN_MOBA_RIBBON_TOOLTIPS: dict[str, str] = {
+    "session": "Create a new saved session",
+    "servers": "Refresh saved sessions",
+    "tools": "Edit selected profile",
+    "games": "Show optional tool status",
+    "sessions": "Connect selected profile",
+    "view": "Cycle to the next visual preset",
+    "split": "Open a horizontal split",
+    "multiexec": "Show selected launch command",
+    "tunneling": "Show tunneling workflow status",
+    "packages": "Show package and file-transfer workflows",
+    "settings": "Edit selected profile",
+    "help": "Show help and diagnostics workflows",
+}
+
 GUI_DESIGN_MOBA_RIBBON_EDGE_ACTIONS: tuple[GuiMobaRibbonEdgeAction, ...] = (
     GuiMobaRibbonEdgeAction("xserver", "X server", "xserver", "#1a1a1a", "Show X server workflow status"),
     GuiMobaRibbonEdgeAction("exit", "Exit", "exit", "#e2473f", "Close Remote Ops Workspace"),
+)
+
+GUI_DESIGN_MOBA_RIBBON_EDGE_ACTION_ROUTE = GuiMobaRibbonEdgeActionRoute(
+    key="moba-ribbon-edge-action-route",
+    route_role="far-right-ribbon-edge-actions-to-workflow-controls",
+    toolbar_object="mainToolbar",
+    spacer_object="mobaToolbarSpacer",
+    xserver_action_key="xserver",
+    xserver_action_label="X server",
+    xserver_action_object="mobaXServerAction",
+    xserver_icon_key="xserver",
+    xserver_handler="show_moba_x_server_status",
+    xserver_dialog_title="X server",
+    xserver_dialog_detail="X server workflow",
+    exit_action_key="exit",
+    exit_action_label="Exit",
+    exit_action_object="mobaExitAction",
+    exit_icon_key="exit",
+    exit_handler="close",
+    route_key_property="mobaRibbonEdgeRouteKey",
+    action_key_property="mobaRibbonEdgeRouteActionKey",
+    action_label_property="mobaRibbonEdgeRouteActionLabel",
+    action_object_property="mobaRibbonEdgeRouteActionObject",
+    icon_key_property="mobaRibbonEdgeRouteIconKey",
+    handler_property="mobaRibbonEdgeRouteHandler",
+    action_keys_property="mobaRibbonEdgeRouteActionKeys",
+    render_source="gui-design-moba-ribbon-edge-route",
 )
 
 GUI_DESIGN_MOBA_RIBBON_ACTION_GEOMETRY: tuple[GuiMobaRibbonActionGeometry, ...] = (
@@ -1385,6 +2333,26 @@ GUI_DESIGN_MOBA_RIGHT_UTILITY_ACTIONS: tuple[GuiMobaRightUtilityAction, ...] = (
         button_size=22,
         render_source="generated-pixmap",
     ),
+)
+
+
+GUI_DESIGN_MOBA_RIGHT_UTILITY_ACTION_ROUTE = GuiMobaRightUtilityActionRoute(
+    key="moba-right-utility-action-route",
+    route_role="right-utility-rail-actions-to-terminal-workflows",
+    rail_object="mobaRightUtilityRail",
+    action_object="mobaRightUtilityAction",
+    action_keys=tuple(action.key for action in GUI_DESIGN_MOBA_RIGHT_UTILITY_ACTIONS),
+    action_labels=tuple(action.label for action in GUI_DESIGN_MOBA_RIGHT_UTILITY_ACTIONS),
+    action_icon_keys=tuple(action.icon_key for action in GUI_DESIGN_MOBA_RIGHT_UTILITY_ACTIONS),
+    action_handlers=("show_moba_clipboard_hints", "show_moba_terminal_settings", "show_moba_tools_status"),
+    route_key_property="mobaRightUtilityRouteKey",
+    action_key_property="mobaRightUtilityRouteActionKey",
+    action_label_property="mobaRightUtilityRouteActionLabel",
+    action_object_property="mobaRightUtilityRouteActionObject",
+    icon_key_property="mobaRightUtilityRouteIconKey",
+    handler_property="mobaRightUtilityRouteHandler",
+    action_keys_property="mobaRightUtilityRouteActionKeys",
+    render_source="gui-design-moba-right-utility-route",
 )
 
 
@@ -1780,6 +2748,54 @@ GUI_DESIGN_MOBA_MONITORING_TELEMETRY_ROUTE = GuiMobaMonitoringTelemetryRoute(
     render_source="generated-pixmap",
 )
 
+GUI_DESIGN_MOBA_REMOTE_MONITORING_CONTROL_ROUTE = GuiMobaRemoteMonitoringControlRoute(
+    key="moba-remote-monitoring-control-route",
+    route_role="remote-monitoring-control-to-telemetry-refresh",
+    source_panel_object=GUI_DESIGN_MOBA_MONITORING_TELEMETRY_ROUTE.source_panel_object,
+    source_control_object="mobaMonitoringControl",
+    source_control_key=GUI_DESIGN_MOBA_REMOTE_MONITORING_DOCK_CHROME.title_control_key,
+    source_control_label=GUI_DESIGN_MOBA_MONITORING_CONTROLS[0].label,
+    source_control_type=GUI_DESIGN_MOBA_MONITORING_CONTROLS[0].control_type,
+    expected_checked=GUI_DESIGN_MOBA_MONITORING_CONTROLS[0].checked,
+    command_property="mobaMonitoringCommand",
+    refresh_seconds_property="mobaMonitoringRefreshSeconds",
+    checked_property="mobaMonitoringControlChecked",
+    telemetry_route_key=GUI_DESIGN_MOBA_MONITORING_TELEMETRY_ROUTE.key,
+    telemetry_surface=GUI_DESIGN_MOBA_MONITORING_TELEMETRY_ROUTE.telemetry_surface,
+    target_bar_object=GUI_DESIGN_MOBA_MONITORING_TELEMETRY_ROUTE.target_bar_object,
+    target_metric_cell_keys=GUI_DESIGN_MOBA_MONITORING_TELEMETRY_ROUTE.target_metric_cell_keys,
+    captured_property="mobaRemoteMonitoringControlCaptured",
+    captured_checked_property="mobaRemoteMonitoringControlCapturedChecked",
+    captured_command_property="mobaRemoteMonitoringControlCapturedCommand",
+    captured_refresh_seconds_property="mobaRemoteMonitoringControlCapturedRefreshSeconds",
+    render_source="state-model",
+)
+
+GUI_DESIGN_MOBA_FOLLOW_TERMINAL_FOLDER_CONTROL_ROUTE = GuiMobaFollowTerminalFolderControlRoute(
+    key="moba-follow-terminal-folder-control-route",
+    route_role="follow-terminal-folder-control-to-sftp-browser-sync",
+    source_panel_object="mobaRemoteMonitoring",
+    source_control_object="mobaFollowTerminalFolder",
+    source_control_key=GUI_DESIGN_MOBA_REMOTE_MONITORING_DOCK_CHROME.follow_control_key,
+    source_control_label=GUI_DESIGN_MOBA_MONITORING_CONTROLS[1].label,
+    source_control_type=GUI_DESIGN_MOBA_MONITORING_CONTROLS[1].control_type,
+    expected_checked=GUI_DESIGN_MOBA_MONITORING_CONTROLS[1].checked,
+    source_path_property="mobaMonitoringFollowPath",
+    source_plan_property="mobaMonitoringFollowPlan",
+    source_enabled_property="mobaMonitoringFollowEnabled",
+    target_browser_object="mobaSftpBrowser",
+    target_path_object="mobaSftpPath",
+    target_table_object="mobaSftpFileTable",
+    target_path_property="mobaSftpFollowRoutePath",
+    target_plan_property="mobaSftpFollowRoutePlan",
+    target_enabled_property="mobaSftpFollowRouteEnabled",
+    captured_property="mobaFollowTerminalFolderControlCaptured",
+    captured_checked_property="mobaFollowTerminalFolderControlCapturedChecked",
+    captured_path_property="mobaFollowTerminalFolderControlCapturedPath",
+    captured_plan_property="mobaFollowTerminalFolderControlCapturedPlan",
+    render_source="state-model",
+)
+
 GUI_DESIGN_MOBA_SFTP_FOLLOW_FOLDER_ROUTE = GuiMobaSftpFollowFolderRoute(
     key="sftp-follow-terminal-folder-route",
     route_role="terminal-cwd-to-sftp-browser",
@@ -2125,6 +3141,87 @@ GUI_DESIGN_SECURECRT_SESSION_MANAGER_ROUTE = GuiSecureCrtSessionManagerRoute(
     render_source="session-manager-state",
 )
 
+GUI_DESIGN_SECURECRT_SESSION_MANAGER_FILTER_ROUTE = GuiSecureCrtSessionManagerFilterRoute(
+    key="securecrt-session-manager-filter-route",
+    route_role="session-manager-filter-to-visible-session-row",
+    session_manager_object="secureCrtSessionManagerChrome",
+    filter_object="secureCrtSessionFilter",
+    selected_tree_object="profileTree",
+    selected_profile_name=GUI_DESIGN_SECURECRT_SESSION_MANAGER_ROUTE.selected_profile_name,
+    selected_tree_label=GUI_DESIGN_SECURECRT_SESSION_MANAGER_ROUTE.selected_tree_label,
+    expected_query="edge",
+    expected_placeholder=GUI_DESIGN_SECURECRT_SESSION_MANAGER_CHROME.filter_placeholder,
+    matched_result_label=GUI_DESIGN_SECURECRT_SESSION_MANAGER_ROUTE.selected_tree_label,
+    filter_route_property="secureCrtSessionFilterRouteKey",
+    filter_query_property="secureCrtSessionFilterRouteQuery",
+    filter_placeholder_property="secureCrtSessionFilterRoutePlaceholder",
+    matched_result_property="secureCrtSessionFilterRouteMatchedLabel",
+    change_signal="textChanged",
+    handler_name="filter_profile_tree",
+    render_source="session-manager-filter-state",
+)
+
+GUI_DESIGN_SECURECRT_SFTP_TAB_ROUTE = GuiSecureCrtSftpTabRoute(
+    key="securecrt-sftp-tab-route",
+    route_role="workflow-card-to-sftp-tab-status",
+    workflow_card_key="sftp-tab",
+    workflow_card_object="productWorkflowCard",
+    workflow_title_object="productWorkflowTitle",
+    workflow_primary_object="productWorkflowPrimary",
+    workflow_secondary_object="productWorkflowSecondary",
+    session_manager_object=GUI_DESIGN_SECURECRT_SESSION_MANAGER_ROUTE.session_manager_object,
+    selected_tree_object=GUI_DESIGN_SECURECRT_SESSION_MANAGER_ROUTE.selected_tree_object,
+    selected_profile_name="files-prod",
+    selected_tree_label="files-prod (SFTP)",
+    active_tab_label=GUI_DESIGN_SECURECRT_SESSION_MANAGER_ROUTE.active_tab_label,
+    sftp_tab_label="files-prod",
+    status_strip_object=GUI_DESIGN_SECURECRT_SESSION_MANAGER_ROUTE.status_strip_object,
+    status_field_key="sftp",
+    status_field_object=GUI_DESIGN_SECURECRT_SESSION_MANAGER_ROUTE.status_field_object,
+    status_value="files-prod tab",
+    transfer_state="files-prod attached",
+    workflow_title="SFTP tab",
+    workflow_primary="files-prod attached",
+    workflow_secondary="terminal plus transfer workflow",
+    workflow_key_property="secureCrtSftpTabRouteWorkflowKey",
+    tab_label_property="secureCrtSftpTabRouteTabLabel",
+    status_property="secureCrtSftpTabRouteStatus",
+    transfer_state_property="secureCrtSftpTabRouteTransferState",
+    render_source="sftp-tab-status-state",
+)
+
+GUI_DESIGN_SECURECRT_SFTP_BROWSER_ROUTE = GuiSecureCrtSftpBrowserRoute(
+    key="securecrt-sftp-browser-route",
+    route_role="sftp-tab-to-transfer-browser",
+    sftp_tab_route_key=GUI_DESIGN_SECURECRT_SFTP_TAB_ROUTE.key,
+    browser_object="secureCrtSftpBrowser",
+    toolbar_object="secureCrtSftpToolbar",
+    path_object="secureCrtSftpPath",
+    table_object="secureCrtSftpTable",
+    row_object="secureCrtSftpRow",
+    queue_object="secureCrtSftpQueue",
+    selected_profile_name=GUI_DESIGN_SECURECRT_SFTP_TAB_ROUTE.selected_profile_name,
+    selected_tree_label=GUI_DESIGN_SECURECRT_SFTP_TAB_ROUTE.selected_tree_label,
+    sftp_tab_label=GUI_DESIGN_SECURECRT_SFTP_TAB_ROUTE.sftp_tab_label,
+    remote_path="/srv/files",
+    toolbar_actions=("upload", "download", "refresh"),
+    file_rows=(
+        GuiSecureCrtSftpBrowserRow("parent", "folder", "..", "", "parent", False),
+        GuiSecureCrtSftpBrowserRow("releases", "folder", "releases", "-", "2026-06-06", False),
+        GuiSecureCrtSftpBrowserRow("deploy-log", "file", "deploy.log", "14 KB", "2026-06-06", True),
+    ),
+    active_row_name="deploy.log",
+    transfer_queue_label="1 queued",
+    transfer_status="ready",
+    path_property="secureCrtSftpBrowserPath",
+    toolbar_actions_property="secureCrtSftpBrowserToolbarActions",
+    row_name_property="secureCrtSftpBrowserRowName",
+    row_kind_property="secureCrtSftpBrowserRowKind",
+    row_selected_property="secureCrtSftpBrowserRowSelected",
+    queue_state_property="secureCrtSftpBrowserQueueState",
+    render_source="sftp-browser-state",
+)
+
 GUI_DESIGN_SECURECRT_TOP_CHROME = GuiSecureCrtTopChrome(
     window_title="edge-prod (SSH2) - Remote Ops Workspace",
     menu_height=22,
@@ -2361,6 +3458,30 @@ GUI_DESIGN_REMMINA_PROFILE_VIEWER_ROUTE = GuiRemminaProfileViewerRoute(
     render_source="profile-list-state",
 )
 
+GUI_DESIGN_REMMINA_PROFILE_FILTER_ROUTE = GuiRemminaProfileFilterRoute(
+    key="remmina-profile-filter-route",
+    route_role="profile-filter-to-visible-viewer-row",
+    profile_list_object="remminaProfileListChrome",
+    filter_object="remminaProfileFilter",
+    selected_profile_key=GUI_DESIGN_REMMINA_PROFILE_VIEWER_ROUTE.selected_profile_key,
+    selected_profile_object=GUI_DESIGN_REMMINA_PROFILE_VIEWER_ROUTE.selected_profile_object,
+    matched_profile_name="win-admin",
+    matched_protocol=GUI_DESIGN_REMMINA_PROFILE_VIEWER_ROUTE.protocol,
+    matched_status=GUI_DESIGN_REMMINA_PROFILE_VIEWER_ROUTE.profile_status,
+    expected_query="rdp",
+    expected_placeholder=GUI_DESIGN_REMMINA_PROFILE_LIST_CHROME.filter_placeholder,
+    active_tab_label=GUI_DESIGN_REMMINA_PROFILE_VIEWER_ROUTE.active_tab_label,
+    filter_route_property="remminaProfileFilterRouteKey",
+    filter_query_property="remminaProfileFilterRouteQuery",
+    filter_placeholder_property="remminaProfileFilterRoutePlaceholder",
+    matched_profile_property="remminaProfileFilterRouteMatchedProfile",
+    matched_protocol_property="remminaProfileFilterRouteMatchedProtocol",
+    active_tab_property="remminaProfileFilterRouteActiveTab",
+    change_signal="textChanged",
+    handler_name="filter_remmina_profile_rows",
+    render_source="profile-filter-state",
+)
+
 GUI_DESIGN_REMMINA_CLIPBOARD_ROUTE = GuiRemminaClipboardRoute(
     key="remmina-clipboard-sync-route",
     route_role="viewer-control-to-clipboard-state",
@@ -2377,6 +3498,70 @@ GUI_DESIGN_REMMINA_CLIPBOARD_ROUTE = GuiRemminaClipboardRoute(
     tab_label_property="remminaClipboardRouteActiveTab",
     clipboard_state_property="remminaClipboardRouteState",
     render_source="viewer-control-state",
+)
+
+GUI_DESIGN_REMMINA_SCREENSHOT_ROUTE = GuiRemminaScreenshotRoute(
+    key="remmina-screenshot-capture-route",
+    route_role="viewer-control-to-screenshot-capture",
+    viewer_controls_object=GUI_DESIGN_REMMINA_PROFILE_VIEWER_ROUTE.viewer_controls_object,
+    viewer_control_key="screenshot",
+    viewer_control_object=GUI_DESIGN_REMMINA_PROFILE_VIEWER_ROUTE.viewer_control_object,
+    active_tab_label=GUI_DESIGN_REMMINA_PROFILE_VIEWER_ROUTE.active_tab_label,
+    protocol=GUI_DESIGN_REMMINA_PROFILE_VIEWER_ROUTE.protocol,
+    capture_state="screenshot ready",
+    capture_artifact="win-admin-rdp-screenshot.png",
+    status_segment="RDP/VNC ready",
+    detail_line="Screenshot: win-admin-rdp-screenshot.png",
+    activity_line="Screenshot: capture ready",
+    control_active_property="remminaScreenshotRouteActive",
+    tab_label_property="remminaScreenshotRouteActiveTab",
+    capture_state_property="remminaScreenshotRouteState",
+    capture_artifact_property="remminaScreenshotRouteArtifact",
+    render_source="viewer-control-state",
+)
+
+GUI_DESIGN_REMMINA_SFTP_TRANSFER_ROUTE = GuiRemminaSftpTransferRoute(
+    key="remmina-sftp-transfer-route",
+    route_role="transfer-toolbar-to-sftp-profile-browser",
+    profile_list_object="remminaProfileListChrome",
+    selected_profile_key="sftp-ops",
+    selected_profile_name="sftp-ops",
+    selected_profile_protocol="SFTP",
+    selected_profile_status="file sharing",
+    selected_profile_object="remminaProfileListRow",
+    selected_tree_label="sftp-ops",
+    toolbar_action_key="queue",
+    toolbar_action_label="Transfer",
+    toolbar_action_object="productToolbarButton",
+    active_tab_label="sftp-ops",
+    transfer_panel_object="remminaSftpTransferPanel",
+    toolbar_object="remminaSftpTransferToolbar",
+    path_object="remminaSftpTransferPath",
+    table_object="remminaSftpTransferTable",
+    row_object="remminaSftpTransferRow",
+    queue_object="remminaSftpTransferQueue",
+    remote_path="/var/log",
+    toolbar_actions=("upload", "download", "queue"),
+    file_rows=(
+        GuiRemminaSftpTransferRow("parent", "folder", "..", "", "parent", False),
+        GuiRemminaSftpTransferRow("logs", "folder", "logs", "-", "2026-06-06", False),
+        GuiRemminaSftpTransferRow("app-log", "file", "app.log", "12 KB", "2026-06-06", True),
+    ),
+    active_row_name="app.log",
+    transfer_queue_label="1 queued",
+    transfer_status="ready",
+    detail_line="Shared   : file workflow ready",
+    activity_line="SFTP transfer: queue ready",
+    selected_profile_property="remminaSftpTransferRouteSelectedProfile",
+    toolbar_active_property="remminaSftpTransferRouteActive",
+    tab_label_property="remminaSftpTransferRouteActiveTab",
+    path_property="remminaSftpTransferRoutePath",
+    toolbar_actions_property="remminaSftpTransferRouteToolbarActions",
+    row_name_property="remminaSftpTransferRouteRowName",
+    row_kind_property="remminaSftpTransferRouteRowKind",
+    row_selected_property="remminaSftpTransferRouteRowSelected",
+    queue_state_property="remminaSftpTransferRouteQueueState",
+    render_source="sftp-transfer-state",
 )
 
 GUI_DESIGN_TERMIUS_HEADER_CHIPS: tuple[GuiTermiusHeaderChip, ...] = (
@@ -2560,6 +3745,92 @@ GUI_DESIGN_TERMIUS_HOST_SELECTION_ROUTE = GuiTermiusHostSelectionRoute(
     render_source="host-list-state",
 )
 
+GUI_DESIGN_TERMIUS_PORT_FORWARD_ROUTE = GuiTermiusPortForwardRoute(
+    key="termius-port-forward-route",
+    route_role="port-forward-chip-to-host-identity-forward",
+    header_chip_key="port-forward-ready",
+    header_chip_object="termiusHeaderChip",
+    host_identity_object=GUI_DESIGN_TERMIUS_HOST_SELECTION_ROUTE.host_identity_object,
+    identity_field_key="forward",
+    identity_cell_object=GUI_DESIGN_TERMIUS_HOST_SELECTION_ROUTE.identity_cell_object,
+    active_tab_label=GUI_DESIGN_TERMIUS_HOST_SELECTION_ROUTE.active_tab_label,
+    selected_profile_name=GUI_DESIGN_TERMIUS_HOST_SELECTION_ROUTE.selected_profile_name,
+    forward_value="8080 -> localhost:80",
+    forward_state="ready",
+    local_port=8080,
+    remote_host="localhost",
+    remote_port=80,
+    status_segment="Port fwd ready",
+    chip_label_property="termiusPortForwardRouteChipLabel",
+    identity_value_property="termiusPortForwardRouteIdentityValue",
+    active_tab_property="termiusPortForwardRouteActiveTab",
+    status_property="termiusPortForwardRouteState",
+    render_source="state-model",
+)
+
+GUI_DESIGN_TERMIUS_SNIPPET_ROUTE = GuiTermiusSnippetRoute(
+    key="termius-snippet-route",
+    route_role="workflow-card-to-host-identity-snippet",
+    workflow_card_key="snippet",
+    workflow_card_object="productWorkflowCard",
+    workflow_title_object="productWorkflowTitle",
+    workflow_primary_object="productWorkflowPrimary",
+    workflow_secondary_object="productWorkflowSecondary",
+    host_identity_object=GUI_DESIGN_TERMIUS_HOST_SELECTION_ROUTE.host_identity_object,
+    identity_field_key="snippet",
+    identity_cell_object=GUI_DESIGN_TERMIUS_HOST_SELECTION_ROUTE.identity_cell_object,
+    active_tab_label=GUI_DESIGN_TERMIUS_HOST_SELECTION_ROUTE.active_tab_label,
+    selected_profile_name=GUI_DESIGN_TERMIUS_HOST_SELECTION_ROUTE.selected_profile_name,
+    workflow_title="Snippet",
+    snippet_command="row vault status",
+    snippet_state="one-click command",
+    detail_line="Snippet  : row vault status",
+    workflow_key_property="termiusSnippetRouteWorkflowKey",
+    command_property="termiusSnippetRouteCommand",
+    identity_value_property="termiusSnippetRouteIdentityValue",
+    active_tab_property="termiusSnippetRouteActiveTab",
+    status_property="termiusSnippetRouteState",
+    render_source="state-model",
+)
+
+GUI_DESIGN_TERMIUS_FILES_BROWSER_ROUTE = GuiTermiusFilesBrowserRoute(
+    key="termius-files-browser-route",
+    route_role="host-files-tab-to-sftp-browser",
+    host_selection_route_key=GUI_DESIGN_TERMIUS_HOST_SELECTION_ROUTE.key,
+    host_identity_object=GUI_DESIGN_TERMIUS_HOST_SELECTION_ROUTE.host_identity_object,
+    identity_field_key="files",
+    identity_cell_object=GUI_DESIGN_TERMIUS_HOST_SELECTION_ROUTE.identity_cell_object,
+    files_browser_object="termiusFilesBrowser",
+    toolbar_object="termiusFilesToolbar",
+    path_object="termiusFilesPath",
+    table_object="termiusFilesTable",
+    row_object="termiusFilesRow",
+    queue_object="termiusFilesQueue",
+    active_tab_label=GUI_DESIGN_TERMIUS_HOST_SELECTION_ROUTE.active_tab_label,
+    selected_profile_name=GUI_DESIGN_TERMIUS_HOST_SELECTION_ROUTE.selected_profile_name,
+    selected_tree_label=GUI_DESIGN_TERMIUS_HOST_SELECTION_ROUTE.selected_tree_label,
+    files_state="SFTP ready",
+    remote_path="/workspace",
+    toolbar_actions=("upload", "download", "sync"),
+    file_rows=(
+        GuiTermiusFilesBrowserRow("parent", "folder", "..", "", "parent", False),
+        GuiTermiusFilesBrowserRow("src", "folder", "src", "-", "2026-06-06", False),
+        GuiTermiusFilesBrowserRow("deploy-yml", "file", "deploy.yml", "3 KB", "2026-06-06", True),
+    ),
+    active_row_name="deploy.yml",
+    transfer_queue_label="sync idle",
+    transfer_status="ready",
+    identity_value_property="termiusFilesRouteIdentityValue",
+    active_tab_property="termiusFilesRouteActiveTab",
+    path_property="termiusFilesRoutePath",
+    toolbar_actions_property="termiusFilesRouteToolbarActions",
+    row_name_property="termiusFilesRouteRowName",
+    row_kind_property="termiusFilesRouteRowKind",
+    row_selected_property="termiusFilesRouteRowSelected",
+    queue_state_property="termiusFilesRouteQueueState",
+    render_source="files-browser-state",
+)
+
 GUI_DESIGN_MREMOTENG_DOCUMENT_TOOLBAR_CHROME = GuiMRemoteNgDocumentToolbarChrome(
     title="Connections.xml",
     filter_placeholder="Filter connection tree",
@@ -2703,6 +3974,58 @@ GUI_DESIGN_MREMOTENG_CONNECTION_DOCUMENT_ROUTE = GuiMRemoteNgConnectionDocumentR
     tab_label_property="mRemoteNgConnectionRouteActiveTab",
     property_value_property="mRemoteNgConnectionRoutePropertyValue",
     render_source="connection-tree-state",
+)
+
+
+GUI_DESIGN_MREMOTENG_DOCUMENT_FILTER_ROUTE = GuiMRemoteNgDocumentFilterRoute(
+    key="mremoteng-document-filter-route",
+    route_role="document-filter-to-selected-connection-row",
+    document_controls_object=GUI_DESIGN_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.document_controls_object,
+    filter_object="mRemoteNgDocumentFilter",
+    selected_tree_object=GUI_DESIGN_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.selected_tree_object,
+    selected_profile_name=GUI_DESIGN_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.selected_profile_name,
+    selected_tree_label=GUI_DESIGN_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.selected_tree_label,
+    matched_protocol=GUI_DESIGN_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.protocol,
+    matched_state=GUI_DESIGN_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.workspace_state,
+    expected_query="edge",
+    expected_placeholder=GUI_DESIGN_MREMOTENG_DOCUMENT_TOOLBAR_CHROME.filter_placeholder,
+    active_tab_label=GUI_DESIGN_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.active_tab_label,
+    filter_route_property="mRemoteNgDocumentFilterRouteKey",
+    filter_query_property="mRemoteNgDocumentFilterRouteQuery",
+    filter_placeholder_property="mRemoteNgDocumentFilterRoutePlaceholder",
+    matched_tree_property="mRemoteNgDocumentFilterRouteMatchedTreeLabel",
+    matched_protocol_property="mRemoteNgDocumentFilterRouteMatchedProtocol",
+    active_tab_property="mRemoteNgDocumentFilterRouteActiveTab",
+    change_signal="textChanged",
+    handler_name="filter_profile_tree",
+    render_source="connection-tree-filter-state",
+)
+
+
+GUI_DESIGN_MREMOTENG_INHERITANCE_ROUTE = GuiMRemoteNgInheritanceRoute(
+    key="mremoteng-inheritance-route",
+    route_role="workflow-card-to-property-grid-inheritance",
+    workflow_card_key="inheritance-grid",
+    workflow_card_object="productWorkflowCard",
+    workflow_title_object="productWorkflowTitle",
+    workflow_primary_object="productWorkflowPrimary",
+    workflow_secondary_object="productWorkflowSecondary",
+    property_grid_object=GUI_DESIGN_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.property_grid_object,
+    property_row_key="credential",
+    property_cell_object=GUI_DESIGN_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.property_cell_object,
+    active_tab_label=GUI_DESIGN_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.active_tab_label,
+    selected_profile_name=GUI_DESIGN_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.selected_profile_name,
+    selected_tree_label=GUI_DESIGN_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.selected_tree_label,
+    workflow_title="Config inheritance",
+    inherited_property_label="Credential",
+    inherited_value="operator key reference",
+    inherited_source="Connections.xml/prod",
+    inheritance_state="credentials inherited",
+    workflow_key_property="mRemoteNgInheritanceRouteWorkflowKey",
+    inherited_value_property="mRemoteNgInheritanceRouteInheritedValue",
+    active_tab_property="mRemoteNgInheritanceRouteActiveTab",
+    status_property="mRemoteNgInheritanceRouteState",
+    render_source="property-grid-state",
 )
 
 
@@ -3212,6 +4535,893 @@ class GuiProductReferenceState:
         )
 
 
+@dataclass(frozen=True)
+class GuiProductIdentityRoute:
+    key: str
+    route_role: str
+    preset_id: str
+    selected_profile_name: str
+    selected_tree_label: str
+    target_label: str
+    protocol_label: str
+    active_tab_label: str
+    sidebar_label: str
+    workspace_state: str
+    status_segments: tuple[str, ...]
+    reference_state_object: str
+    reference_item_object: str
+    tree_object: str
+    tabs_object: str
+    status_segment_object: str
+    workspace_surface_object: str
+    profile_property: str
+    target_property: str
+    protocol_property: str
+    active_tab_property: str
+    sidebar_property: str
+    workspace_state_property: str
+    status_segments_property: str
+    render_source: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "route_role": self.route_role,
+            "preset_id": self.preset_id,
+            "selected_profile_name": self.selected_profile_name,
+            "selected_tree_label": self.selected_tree_label,
+            "target_label": self.target_label,
+            "protocol_label": self.protocol_label,
+            "active_tab_label": self.active_tab_label,
+            "sidebar_label": self.sidebar_label,
+            "workspace_state": self.workspace_state,
+            "status_segments": list(self.status_segments),
+            "reference_state_object": self.reference_state_object,
+            "reference_item_object": self.reference_item_object,
+            "tree_object": self.tree_object,
+            "tabs_object": self.tabs_object,
+            "status_segment_object": self.status_segment_object,
+            "workspace_surface_object": self.workspace_surface_object,
+            "profile_property": self.profile_property,
+            "target_property": self.target_property,
+            "protocol_property": self.protocol_property,
+            "active_tab_property": self.active_tab_property,
+            "sidebar_property": self.sidebar_property,
+            "workspace_state_property": self.workspace_state_property,
+            "status_segments_property": self.status_segments_property,
+            "render_source": self.render_source,
+        }
+
+
+@dataclass(frozen=True)
+class GuiPresetReferenceTabRoute:
+    key: str
+    route_role: str
+    preset_id: str
+    reference_profile: str
+    active_tab_label: str
+    home_tab_label: str
+    tabs_object: str
+    home_tab_role: str
+    reference_tab_role: str
+    activated_label_property: str
+    returned_home_label_property: str
+    active_tab_property: str
+    home_tab_property: str
+    reference_profile_property: str
+    render_source: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "route_role": self.route_role,
+            "preset_id": self.preset_id,
+            "reference_profile": self.reference_profile,
+            "active_tab_label": self.active_tab_label,
+            "home_tab_label": self.home_tab_label,
+            "tabs_object": self.tabs_object,
+            "home_tab_role": self.home_tab_role,
+            "reference_tab_role": self.reference_tab_role,
+            "activated_label_property": self.activated_label_property,
+            "returned_home_label_property": self.returned_home_label_property,
+            "active_tab_property": self.active_tab_property,
+            "home_tab_property": self.home_tab_property,
+            "reference_profile_property": self.reference_profile_property,
+            "render_source": self.render_source,
+        }
+
+
+@dataclass(frozen=True)
+class GuiPresetReferenceTabChromeRoute:
+    key: str
+    route_role: str
+    preset_id: str
+    reference_profile: str
+    active_tab_label: str
+    home_tab_label: str
+    tabs_object: str
+    tab_bar_object: str
+    reference_tab_role: str
+    new_session_tab_role: str
+    expected_tab_position: str
+    expected_tooltip: str
+    expected_closeable: bool
+    expected_selected_during_capture: bool
+    captured_property: str
+    captured_label_property: str
+    captured_tooltip_property: str
+    captured_index_property: str
+    captured_role_property: str
+    captured_position_property: str
+    captured_closeable_property: str
+    captured_selected_property: str
+    render_source: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "route_role": self.route_role,
+            "preset_id": self.preset_id,
+            "reference_profile": self.reference_profile,
+            "active_tab_label": self.active_tab_label,
+            "home_tab_label": self.home_tab_label,
+            "tabs_object": self.tabs_object,
+            "tab_bar_object": self.tab_bar_object,
+            "reference_tab_role": self.reference_tab_role,
+            "new_session_tab_role": self.new_session_tab_role,
+            "expected_tab_position": self.expected_tab_position,
+            "expected_tooltip": self.expected_tooltip,
+            "expected_closeable": self.expected_closeable,
+            "expected_selected_during_capture": self.expected_selected_during_capture,
+            "captured_property": self.captured_property,
+            "captured_label_property": self.captured_label_property,
+            "captured_tooltip_property": self.captured_tooltip_property,
+            "captured_index_property": self.captured_index_property,
+            "captured_role_property": self.captured_role_property,
+            "captured_position_property": self.captured_position_property,
+            "captured_closeable_property": self.captured_closeable_property,
+            "captured_selected_property": self.captured_selected_property,
+            "render_source": self.render_source,
+        }
+
+
+@dataclass(frozen=True)
+class GuiPresetReferenceStatusBarRoute:
+    key: str
+    route_role: str
+    preset_id: str
+    reference_profile: str
+    active_tab_label: str
+    status_bar_object: str
+    status_notice_object: str
+    status_segment_object: str
+    expected_status_message: str
+    expected_status_segments: tuple[str, ...]
+    expected_segment_count: int
+    captured_property: str
+    captured_tab_property: str
+    captured_message_property: str
+    captured_segments_property: str
+    captured_segment_count_property: str
+    captured_segment_tooltips_property: str
+    captured_notice_property: str
+    render_source: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "route_role": self.route_role,
+            "preset_id": self.preset_id,
+            "reference_profile": self.reference_profile,
+            "active_tab_label": self.active_tab_label,
+            "status_bar_object": self.status_bar_object,
+            "status_notice_object": self.status_notice_object,
+            "status_segment_object": self.status_segment_object,
+            "expected_status_message": self.expected_status_message,
+            "expected_status_segments": list(self.expected_status_segments),
+            "expected_segment_count": self.expected_segment_count,
+            "captured_property": self.captured_property,
+            "captured_tab_property": self.captured_tab_property,
+            "captured_message_property": self.captured_message_property,
+            "captured_segments_property": self.captured_segments_property,
+            "captured_segment_count_property": self.captured_segment_count_property,
+            "captured_segment_tooltips_property": self.captured_segment_tooltips_property,
+            "captured_notice_property": self.captured_notice_property,
+            "render_source": self.render_source,
+        }
+
+
+@dataclass(frozen=True)
+class GuiPresetReferenceSessionActionRoute:
+    key: str
+    route_role: str
+    preset_id: str
+    reference_profile: str
+    active_tab_label: str
+    tabs_object: str
+    tab_bar_object: str
+    reference_tab_role: str
+    action_object: str
+    expected_action_keys: tuple[str, ...]
+    expected_action_labels: tuple[str, ...]
+    expected_action_count: int
+    always_enabled_action_keys: tuple[str, ...]
+    conditional_enabled_action_keys: tuple[str, ...]
+    action_key_property: str
+    action_label_property: str
+    action_enabled_property: str
+    captured_property: str
+    captured_tab_property: str
+    captured_action_keys_property: str
+    captured_action_labels_property: str
+    captured_action_count_property: str
+    captured_enabled_keys_property: str
+    captured_disabled_keys_property: str
+    render_source: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "route_role": self.route_role,
+            "preset_id": self.preset_id,
+            "reference_profile": self.reference_profile,
+            "active_tab_label": self.active_tab_label,
+            "tabs_object": self.tabs_object,
+            "tab_bar_object": self.tab_bar_object,
+            "reference_tab_role": self.reference_tab_role,
+            "action_object": self.action_object,
+            "expected_action_keys": list(self.expected_action_keys),
+            "expected_action_labels": list(self.expected_action_labels),
+            "expected_action_count": self.expected_action_count,
+            "always_enabled_action_keys": list(self.always_enabled_action_keys),
+            "conditional_enabled_action_keys": list(self.conditional_enabled_action_keys),
+            "action_key_property": self.action_key_property,
+            "action_label_property": self.action_label_property,
+            "action_enabled_property": self.action_enabled_property,
+            "captured_property": self.captured_property,
+            "captured_tab_property": self.captured_tab_property,
+            "captured_action_keys_property": self.captured_action_keys_property,
+            "captured_action_labels_property": self.captured_action_labels_property,
+            "captured_action_count_property": self.captured_action_count_property,
+            "captured_enabled_keys_property": self.captured_enabled_keys_property,
+            "captured_disabled_keys_property": self.captured_disabled_keys_property,
+            "render_source": self.render_source,
+        }
+
+
+@dataclass(frozen=True)
+class GuiPresetReferenceSurfaceRoute:
+    key: str
+    route_role: str
+    preset_id: str
+    reference_profile: str
+    active_tab_label: str
+    expected_title: str
+    expected_source: str
+    command_executables: tuple[str, ...]
+    command_target_fragment: str
+    terminal_pane_object: str
+    terminal_title_object: str
+    terminal_source_object: str
+    terminal_command_object: str
+    terminal_output_object: str
+    captured_property: str
+    captured_tab_property: str
+    actual_title_property: str
+    actual_source_property: str
+    actual_command_property: str
+    actual_output_property: str
+    render_source: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "route_role": self.route_role,
+            "preset_id": self.preset_id,
+            "reference_profile": self.reference_profile,
+            "active_tab_label": self.active_tab_label,
+            "expected_title": self.expected_title,
+            "expected_source": self.expected_source,
+            "command_executables": list(self.command_executables),
+            "command_target_fragment": self.command_target_fragment,
+            "terminal_pane_object": self.terminal_pane_object,
+            "terminal_title_object": self.terminal_title_object,
+            "terminal_source_object": self.terminal_source_object,
+            "terminal_command_object": self.terminal_command_object,
+            "terminal_output_object": self.terminal_output_object,
+            "captured_property": self.captured_property,
+            "captured_tab_property": self.captured_tab_property,
+            "actual_title_property": self.actual_title_property,
+            "actual_source_property": self.actual_source_property,
+            "actual_command_property": self.actual_command_property,
+            "actual_output_property": self.actual_output_property,
+            "render_source": self.render_source,
+        }
+
+
+@dataclass(frozen=True)
+class GuiPresetReferenceControlRoute:
+    key: str
+    route_role: str
+    preset_id: str
+    reference_profile: str
+    active_tab_label: str
+    terminal_pane_object: str
+    terminal_status_object: str
+    terminal_action_object: str
+    action_keys: tuple[str, ...]
+    action_labels: tuple[str, ...]
+    action_tooltips: tuple[str, ...]
+    allowed_status_states: tuple[str, ...]
+    action_key_property: str
+    action_label_property: str
+    action_tooltip_property: str
+    status_state_property: str
+    captured_property: str
+    captured_actions_property: str
+    captured_status_property: str
+    captured_status_text_property: str
+    render_source: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "route_role": self.route_role,
+            "preset_id": self.preset_id,
+            "reference_profile": self.reference_profile,
+            "active_tab_label": self.active_tab_label,
+            "terminal_pane_object": self.terminal_pane_object,
+            "terminal_status_object": self.terminal_status_object,
+            "terminal_action_object": self.terminal_action_object,
+            "action_keys": list(self.action_keys),
+            "action_labels": list(self.action_labels),
+            "action_tooltips": list(self.action_tooltips),
+            "allowed_status_states": list(self.allowed_status_states),
+            "action_key_property": self.action_key_property,
+            "action_label_property": self.action_label_property,
+            "action_tooltip_property": self.action_tooltip_property,
+            "status_state_property": self.status_state_property,
+            "captured_property": self.captured_property,
+            "captured_actions_property": self.captured_actions_property,
+            "captured_status_property": self.captured_status_property,
+            "captured_status_text_property": self.captured_status_text_property,
+            "render_source": self.render_source,
+        }
+
+
+@dataclass(frozen=True)
+class GuiPresetReferenceInputRoute:
+    key: str
+    route_role: str
+    preset_id: str
+    reference_profile: str
+    active_tab_label: str
+    terminal_pane_object: str
+    terminal_input_object: str
+    placeholder_text: str
+    expected_initial_text: str
+    allowed_enabled_states: tuple[bool, ...]
+    captured_property: str
+    captured_tab_property: str
+    captured_placeholder_property: str
+    captured_text_property: str
+    captured_enabled_property: str
+    render_source: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "route_role": self.route_role,
+            "preset_id": self.preset_id,
+            "reference_profile": self.reference_profile,
+            "active_tab_label": self.active_tab_label,
+            "terminal_pane_object": self.terminal_pane_object,
+            "terminal_input_object": self.terminal_input_object,
+            "placeholder_text": self.placeholder_text,
+            "expected_initial_text": self.expected_initial_text,
+            "allowed_enabled_states": list(self.allowed_enabled_states),
+            "captured_property": self.captured_property,
+            "captured_tab_property": self.captured_tab_property,
+            "captured_placeholder_property": self.captured_placeholder_property,
+            "captured_text_property": self.captured_text_property,
+            "captured_enabled_property": self.captured_enabled_property,
+            "render_source": self.render_source,
+        }
+
+
+@dataclass(frozen=True)
+class GuiPresetReferenceTranscriptRoute:
+    key: str
+    route_role: str
+    preset_id: str
+    reference_profile: str
+    active_tab_label: str
+    terminal_pane_object: str
+    terminal_output_object: str
+    command_echo_prefix: str
+    required_fragments: tuple[str, ...]
+    minimum_line_count: int
+    captured_property: str
+    captured_tab_property: str
+    captured_text_property: str
+    captured_line_count_property: str
+    captured_command_echo_property: str
+    render_source: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "route_role": self.route_role,
+            "preset_id": self.preset_id,
+            "reference_profile": self.reference_profile,
+            "active_tab_label": self.active_tab_label,
+            "terminal_pane_object": self.terminal_pane_object,
+            "terminal_output_object": self.terminal_output_object,
+            "command_echo_prefix": self.command_echo_prefix,
+            "required_fragments": list(self.required_fragments),
+            "minimum_line_count": self.minimum_line_count,
+            "captured_property": self.captured_property,
+            "captured_tab_property": self.captured_tab_property,
+            "captured_text_property": self.captured_text_property,
+            "captured_line_count_property": self.captured_line_count_property,
+            "captured_command_echo_property": self.captured_command_echo_property,
+            "render_source": self.render_source,
+        }
+
+
+@dataclass(frozen=True)
+class GuiPresetSelectionRoute:
+    key: str
+    route_role: str
+    preset_id: str
+    preset_label: str
+    preset_index: int
+    selector_object: str
+    main_toolbar_object: str
+    layout_toolbar_object: str
+    left_panel_header_object: str
+    profile_tree_object: str
+    tabs_object: str
+    status_bar_object: str
+    status_segment_object: str
+    workspace_surface_object: str
+    reference_state_object: str
+    home_tab_label: str
+    sidebar_title: str
+    sidebar_subtitle: str
+    status_segments: tuple[str, ...]
+    tab_position: str
+    document_mode: bool
+    profile_width: int
+    log_height: int
+    toolbar_icon_size: int
+    selector_property: str
+    preset_label_property: str
+    home_tab_property: str
+    sidebar_title_property: str
+    status_segments_property: str
+    render_source: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "route_role": self.route_role,
+            "preset_id": self.preset_id,
+            "preset_label": self.preset_label,
+            "preset_index": self.preset_index,
+            "selector_object": self.selector_object,
+            "main_toolbar_object": self.main_toolbar_object,
+            "layout_toolbar_object": self.layout_toolbar_object,
+            "left_panel_header_object": self.left_panel_header_object,
+            "profile_tree_object": self.profile_tree_object,
+            "tabs_object": self.tabs_object,
+            "status_bar_object": self.status_bar_object,
+            "status_segment_object": self.status_segment_object,
+            "workspace_surface_object": self.workspace_surface_object,
+            "reference_state_object": self.reference_state_object,
+            "home_tab_label": self.home_tab_label,
+            "sidebar_title": self.sidebar_title,
+            "sidebar_subtitle": self.sidebar_subtitle,
+            "status_segments": list(self.status_segments),
+            "tab_position": self.tab_position,
+            "document_mode": self.document_mode,
+            "profile_width": self.profile_width,
+            "log_height": self.log_height,
+            "toolbar_icon_size": self.toolbar_icon_size,
+            "selector_property": self.selector_property,
+            "preset_label_property": self.preset_label_property,
+            "home_tab_property": self.home_tab_property,
+            "sidebar_title_property": self.sidebar_title_property,
+            "status_segments_property": self.status_segments_property,
+            "render_source": self.render_source,
+        }
+
+
+@dataclass(frozen=True)
+class GuiPresetCatalogRoute:
+    key: str
+    route_role: str
+    selector_object: str
+    option_ids: tuple[str, ...]
+    option_labels: tuple[str, ...]
+    product_preset_ids: tuple[str, ...]
+    product_preset_labels: tuple[str, ...]
+    default_preset_id: str
+    default_preset_label: str
+    option_count: int
+    product_option_count: int
+    selector_property: str
+    option_labels_property: str
+    product_ids_property: str
+    default_property: str
+    render_source: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "route_role": self.route_role,
+            "selector_object": self.selector_object,
+            "option_ids": list(self.option_ids),
+            "option_labels": list(self.option_labels),
+            "product_preset_ids": list(self.product_preset_ids),
+            "product_preset_labels": list(self.product_preset_labels),
+            "default_preset_id": self.default_preset_id,
+            "default_preset_label": self.default_preset_label,
+            "option_count": self.option_count,
+            "product_option_count": self.product_option_count,
+            "selector_property": self.selector_property,
+            "option_labels_property": self.option_labels_property,
+            "product_ids_property": self.product_ids_property,
+            "default_property": self.default_property,
+            "render_source": self.render_source,
+        }
+
+
+@dataclass(frozen=True)
+class GuiPresetVisualSignature:
+    key: str
+    route_role: str
+    preset_id: str
+    preset_label: str
+    density: str
+    tab_position: str
+    document_mode: bool
+    profile_width: int
+    log_height: int
+    toolbar_icon_size: int
+    list_spacing: int
+    window_color: str
+    toolbar_color: str
+    toolbar_border_color: str
+    control_color: str
+    control_text_color: str
+    primary_color: str
+    sidebar_color: str
+    sidebar_selected_color: str
+    pane_color: str
+    pane_border_color: str
+    tab_color: str
+    tab_selected_color: str
+    terminal_color: str
+    terminal_text_color: str
+    terminal_accent_color: str
+    status_color: str
+    window_object: str
+    main_toolbar_object: str
+    layout_toolbar_object: str
+    left_panel_object: str
+    profile_tree_object: str
+    tabs_object: str
+    activity_log_object: str
+    status_bar_object: str
+    density_property: str
+    palette_property: str
+    render_source: str
+
+    def palette_items(self) -> tuple[tuple[str, str], ...]:
+        return (
+            ("window", self.window_color),
+            ("toolbar", self.toolbar_color),
+            ("toolbar_border", self.toolbar_border_color),
+            ("control", self.control_color),
+            ("control_text", self.control_text_color),
+            ("primary", self.primary_color),
+            ("sidebar", self.sidebar_color),
+            ("sidebar_selected", self.sidebar_selected_color),
+            ("pane", self.pane_color),
+            ("pane_border", self.pane_border_color),
+            ("tab", self.tab_color),
+            ("tab_selected", self.tab_selected_color),
+            ("terminal", self.terminal_color),
+            ("terminal_text", self.terminal_text_color),
+            ("terminal_accent", self.terminal_accent_color),
+            ("status", self.status_color),
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "route_role": self.route_role,
+            "preset_id": self.preset_id,
+            "preset_label": self.preset_label,
+            "density": self.density,
+            "tab_position": self.tab_position,
+            "document_mode": self.document_mode,
+            "profile_width": self.profile_width,
+            "log_height": self.log_height,
+            "toolbar_icon_size": self.toolbar_icon_size,
+            "list_spacing": self.list_spacing,
+            "palette": dict(self.palette_items()),
+            "window_object": self.window_object,
+            "main_toolbar_object": self.main_toolbar_object,
+            "layout_toolbar_object": self.layout_toolbar_object,
+            "left_panel_object": self.left_panel_object,
+            "profile_tree_object": self.profile_tree_object,
+            "tabs_object": self.tabs_object,
+            "activity_log_object": self.activity_log_object,
+            "status_bar_object": self.status_bar_object,
+            "density_property": self.density_property,
+            "palette_property": self.palette_property,
+            "render_source": self.render_source,
+        }
+
+
+@dataclass(frozen=True)
+class GuiPresetIsolationRoute:
+    key: str
+    route_role: str
+    preset_id: str
+    visible_objects: tuple[str, ...]
+    hidden_objects: tuple[str, ...]
+    visible_property: str
+    hidden_property: str
+    render_source: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "route_role": self.route_role,
+            "preset_id": self.preset_id,
+            "visible_objects": list(self.visible_objects),
+            "hidden_objects": list(self.hidden_objects),
+            "visible_property": self.visible_property,
+            "hidden_property": self.hidden_property,
+            "render_source": self.render_source,
+        }
+
+
+@dataclass(frozen=True)
+class GuiPresetKeyboardShortcutRoute:
+    key: str
+    route_role: str
+    preset_id: str
+    shortcut_object: str
+    expected_shortcut_keys: tuple[str, ...]
+    expected_sequences: tuple[str, ...]
+    expected_action_labels: tuple[str, ...]
+    expected_shortcut_count: int
+    shortcut_key_property: str
+    shortcut_sequence_property: str
+    shortcut_action_property: str
+    captured_property: str
+    captured_keys_property: str
+    captured_sequences_property: str
+    captured_action_labels_property: str
+    captured_count_property: str
+    render_source: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "route_role": self.route_role,
+            "preset_id": self.preset_id,
+            "shortcut_object": self.shortcut_object,
+            "expected_shortcut_keys": list(self.expected_shortcut_keys),
+            "expected_sequences": list(self.expected_sequences),
+            "expected_action_labels": list(self.expected_action_labels),
+            "expected_shortcut_count": self.expected_shortcut_count,
+            "shortcut_key_property": self.shortcut_key_property,
+            "shortcut_sequence_property": self.shortcut_sequence_property,
+            "shortcut_action_property": self.shortcut_action_property,
+            "captured_property": self.captured_property,
+            "captured_keys_property": self.captured_keys_property,
+            "captured_sequences_property": self.captured_sequences_property,
+            "captured_action_labels_property": self.captured_action_labels_property,
+            "captured_count_property": self.captured_count_property,
+            "render_source": self.render_source,
+        }
+
+
+@dataclass(frozen=True)
+class GuiPresetCommandSurfaceRoute:
+    key: str
+    route_role: str
+    preset_id: str
+    toolbar_object: str
+    command_object: str
+    expected_action_keys: tuple[str, ...]
+    expected_action_labels: tuple[str, ...]
+    expected_action_tooltips: tuple[str, ...]
+    expected_action_states: tuple[tuple[str, str], ...]
+    expected_action_count: int
+    key_property: str
+    label_property: str
+    tooltip_property: str
+    state_property: str
+    captured_property: str
+    captured_keys_property: str
+    captured_labels_property: str
+    captured_tooltips_property: str
+    captured_states_property: str
+    captured_count_property: str
+    render_source: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "route_role": self.route_role,
+            "preset_id": self.preset_id,
+            "toolbar_object": self.toolbar_object,
+            "command_object": self.command_object,
+            "expected_action_keys": list(self.expected_action_keys),
+            "expected_action_labels": list(self.expected_action_labels),
+            "expected_action_tooltips": list(self.expected_action_tooltips),
+            "expected_action_states": {key: state for key, state in self.expected_action_states},
+            "expected_action_count": self.expected_action_count,
+            "key_property": self.key_property,
+            "label_property": self.label_property,
+            "tooltip_property": self.tooltip_property,
+            "state_property": self.state_property,
+            "captured_property": self.captured_property,
+            "captured_keys_property": self.captured_keys_property,
+            "captured_labels_property": self.captured_labels_property,
+            "captured_tooltips_property": self.captured_tooltips_property,
+            "captured_states_property": self.captured_states_property,
+            "captured_count_property": self.captured_count_property,
+            "render_source": self.render_source,
+        }
+
+
+@dataclass(frozen=True)
+class GuiPresetFocusInteractionRoute:
+    key: str
+    route_role: str
+    preset_id: str
+    focused_control: str
+    focus_object: str
+    active_toolbar_key: str
+    checked_toolbar_key: str
+    disabled_toolbar_key: str
+    selected_tree_label: str
+    active_tab_status: str
+    status_note: str
+    status_bar_object: str
+    profile_tree_object: str
+    focused_state_property: str
+    captured_property: str
+    captured_focus_property: str
+    captured_focus_state_property: str
+    captured_status_message_property: str
+    captured_selected_tree_property: str
+    captured_toolbar_states_property: str
+    render_source: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "route_role": self.route_role,
+            "preset_id": self.preset_id,
+            "focused_control": self.focused_control,
+            "focus_object": self.focus_object,
+            "active_toolbar_key": self.active_toolbar_key,
+            "checked_toolbar_key": self.checked_toolbar_key,
+            "disabled_toolbar_key": self.disabled_toolbar_key,
+            "selected_tree_label": self.selected_tree_label,
+            "active_tab_status": self.active_tab_status,
+            "status_note": self.status_note,
+            "status_bar_object": self.status_bar_object,
+            "profile_tree_object": self.profile_tree_object,
+            "focused_state_property": self.focused_state_property,
+            "captured_property": self.captured_property,
+            "captured_focus_property": self.captured_focus_property,
+            "captured_focus_state_property": self.captured_focus_state_property,
+            "captured_status_message_property": self.captured_status_message_property,
+            "captured_selected_tree_property": self.captured_selected_tree_property,
+            "captured_toolbar_states_property": self.captured_toolbar_states_property,
+            "render_source": self.render_source,
+        }
+
+
+@dataclass(frozen=True)
+class GuiPresetHomeSearchRoute:
+    key: str
+    route_role: str
+    preset_id: str
+    home_tab_label: str
+    home_search_object: str
+    entry_search_control: str
+    entry_search_object: str
+    container_object: str
+    recent_label_object: str
+    placeholder_text: str
+    entry_placeholder_text: str
+    expected_home_actions: tuple[str, ...]
+    expected_recent_labels: tuple[str, ...]
+    expected_recent_count: int
+    placeholder_property: str
+    entry_placeholder_property: str
+    captured_property: str
+    captured_placeholder_property: str
+    captured_entry_placeholder_property: str
+    captured_text_property: str
+    captured_entry_text_property: str
+    captured_actions_property: str
+    captured_recent_labels_property: str
+    captured_recent_count_property: str
+    render_source: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "route_role": self.route_role,
+            "preset_id": self.preset_id,
+            "home_tab_label": self.home_tab_label,
+            "home_search_object": self.home_search_object,
+            "entry_search_control": self.entry_search_control,
+            "entry_search_object": self.entry_search_object,
+            "container_object": self.container_object,
+            "recent_label_object": self.recent_label_object,
+            "placeholder_text": self.placeholder_text,
+            "entry_placeholder_text": self.entry_placeholder_text,
+            "expected_home_actions": list(self.expected_home_actions),
+            "expected_recent_labels": list(self.expected_recent_labels),
+            "expected_recent_count": self.expected_recent_count,
+            "placeholder_property": self.placeholder_property,
+            "entry_placeholder_property": self.entry_placeholder_property,
+            "captured_property": self.captured_property,
+            "captured_placeholder_property": self.captured_placeholder_property,
+            "captured_entry_placeholder_property": self.captured_entry_placeholder_property,
+            "captured_text_property": self.captured_text_property,
+            "captured_entry_text_property": self.captured_entry_text_property,
+            "captured_actions_property": self.captured_actions_property,
+            "captured_recent_labels_property": self.captured_recent_labels_property,
+            "captured_recent_count_property": self.captured_recent_count_property,
+            "render_source": self.render_source,
+        }
+
+
+@dataclass(frozen=True)
+class GuiPresetTransitionRoute:
+    key: str
+    route_role: str
+    from_preset_ids: tuple[str, ...]
+    to_preset_id: str
+    to_preset_index: int
+    selector_object: str
+    reset_objects: tuple[str, ...]
+    route_property: str
+    from_property: str
+    to_property: str
+    reset_property: str
+    render_source: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "route_role": self.route_role,
+            "from_preset_ids": list(self.from_preset_ids),
+            "to_preset_id": self.to_preset_id,
+            "to_preset_index": self.to_preset_index,
+            "selector_object": self.selector_object,
+            "reset_objects": list(self.reset_objects),
+            "route_property": self.route_property,
+            "from_property": self.from_property,
+            "to_property": self.to_property,
+            "reset_property": self.reset_property,
+            "render_source": self.render_source,
+        }
+
+
 GUI_DESIGN_WORKSPACE_SURFACES: dict[str, GuiWorkspaceSurface] = {
     DEFAULT_GUI_DESIGN_ID: GuiWorkspaceSurface(
         title="Remote Ops Workspace",
@@ -3341,6 +5551,7 @@ GUI_DESIGN_WORKSPACE_SURFACES: dict[str, GuiWorkspaceSurface] = {
             "Protocol : RDP",
             "Scale    : 100%",
             "Clipboard: enabled",
+            "Screenshot: win-admin-rdp-screenshot.png",
             "Shared   : file workflow ready",
         ),
         activity_lines=(
@@ -3348,6 +5559,8 @@ GUI_DESIGN_WORKSPACE_SURFACES: dict[str, GuiWorkspaceSurface] = {
             "Protocol group: RDP",
             "Scale mode: 100%",
             "Clipboard: on",
+            "Screenshot: capture ready",
+            "SFTP transfer: queue ready",
         ),
         home_actions=("Connect", "New Profile"),
         home_search_placeholder="Search connection profiles...",
@@ -3480,6 +5693,30 @@ GUI_DESIGN_REFERENCE_STATES: dict[str, GuiProductReferenceState] = {
         status_segments=GUI_DESIGN_STATUS_COPY["mremoteng"],
     ),
 }
+
+
+GUI_DESIGN_PRODUCT_IDENTITY_TREE_LABELS = {
+    DEFAULT_GUI_DESIGN_ID: "edge-prod",
+    "securecrt": "edge-prod (SSH2)",
+    "termius": "edge-prod  ssh host",
+    "remmina": "RDP - win-admin",
+    "mremoteng": "edge-prod [SSH]",
+}
+PRODUCT_REFERENCE_TAB_PRESET_IDS = ("securecrt", "termius", "remmina", "mremoteng")
+PRODUCT_GUI_PRESET_IDS = ("mobaxterm", *PRODUCT_REFERENCE_TAB_PRESET_IDS)
+GUI_DESIGN_KEYBOARD_SHORTCUTS = (
+    ("refresh-profiles", "Ctrl+R", "Refresh profiles"),
+    ("new-profile", "Ctrl+N", "New profile"),
+    ("edit-profile", "Ctrl+E", "Edit selected profile"),
+    ("connect-selected", "Ctrl+Return", "Connect selected profile"),
+    ("new-local-terminal", "Ctrl+T", "New local terminal"),
+    ("close-current-tab", "Ctrl+W", "Close current tab"),
+    ("recover-previous-sessions", "Ctrl+Shift+T", "Recover previous sessions"),
+    ("split-horizontal", "Ctrl+Shift+H", "Split horizontal"),
+    ("split-vertical", "Ctrl+Shift+V", "Split vertical"),
+    ("open-selected-layout", "Ctrl+L", "Open selected layout"),
+    ("find-log-text", "Ctrl+F", "Find log text"),
+)
 
 
 def _stylesheet(
@@ -4797,12 +7034,414 @@ def gui_design_preset_labels() -> list[str]:
     return [preset.label for preset in GUI_DESIGN_PRESETS]
 
 
+def gui_design_preset_catalog_route() -> GuiPresetCatalogRoute:
+    option_ids = tuple(gui_design_preset_ids())
+    option_labels = tuple(gui_design_preset_labels())
+    product_presets = tuple(preset for preset in GUI_DESIGN_PRESETS if preset.id != DEFAULT_GUI_DESIGN_ID)
+    default_preset = next(preset for preset in GUI_DESIGN_PRESETS if preset.id == DEFAULT_GUI_DESIGN_ID)
+    return GuiPresetCatalogRoute(
+        key="gui-preset-selector-catalog-route",
+        route_role="preset-catalog-to-design-selector-options",
+        selector_object="designSelect",
+        option_ids=option_ids,
+        option_labels=option_labels,
+        product_preset_ids=tuple(preset.id for preset in product_presets),
+        product_preset_labels=tuple(preset.label for preset in product_presets),
+        default_preset_id=default_preset.id,
+        default_preset_label=default_preset.label,
+        option_count=len(option_ids),
+        product_option_count=len(product_presets),
+        selector_property="presetCatalogRouteOptionIds",
+        option_labels_property="presetCatalogRouteOptionLabels",
+        product_ids_property="presetCatalogRouteProductPresetIds",
+        default_property="presetCatalogRouteDefaultPresetId",
+        render_source="gui-design-preset-catalog",
+    )
+
+
+def gui_design_preset_visual_signature(preset_id: str) -> GuiPresetVisualSignature:
+    preset = get_gui_design_preset(preset_id)
+    colors = preset.colors
+    return GuiPresetVisualSignature(
+        key=f"{preset.id}-visual-signature",
+        route_role="preset-palette-density-to-live-static-style",
+        preset_id=preset.id,
+        preset_label=preset.label,
+        density=preset.density,
+        tab_position=preset.tab_position,
+        document_mode=preset.document_mode,
+        profile_width=preset.profile_width,
+        log_height=preset.log_height,
+        toolbar_icon_size=preset.toolbar_icon_size,
+        list_spacing=preset.list_spacing,
+        window_color=colors.window,
+        toolbar_color=colors.toolbar,
+        toolbar_border_color=colors.toolbar_border,
+        control_color=colors.control,
+        control_text_color=colors.control_text,
+        primary_color=colors.primary,
+        sidebar_color=colors.sidebar,
+        sidebar_selected_color=colors.sidebar_selected,
+        pane_color=colors.pane,
+        pane_border_color=colors.pane_border,
+        tab_color=colors.tab,
+        tab_selected_color=colors.tab_selected,
+        terminal_color=colors.terminal,
+        terminal_text_color=colors.terminal_text,
+        terminal_accent_color=colors.terminal_accent,
+        status_color=colors.status,
+        window_object="remoteOpsMain",
+        main_toolbar_object="mainToolbar",
+        layout_toolbar_object="layoutToolbar",
+        left_panel_object="leftPanel",
+        profile_tree_object="profileTree",
+        tabs_object="sessionTabs",
+        activity_log_object="activityLog",
+        status_bar_object="statusBar",
+        density_property="presetVisualSignatureDensity",
+        palette_property="presetVisualSignaturePalette",
+        render_source="gui-design-preset-style",
+    )
+
+
+def gui_design_preset_keyboard_shortcut_route(preset_id: str) -> GuiPresetKeyboardShortcutRoute:
+    if preset_id not in PRODUCT_GUI_PRESET_IDS:
+        raise ValueError(f"preset has no product keyboard shortcut route: {preset_id}")
+    shortcut_keys = tuple(item[0] for item in GUI_DESIGN_KEYBOARD_SHORTCUTS)
+    sequences = tuple(item[1] for item in GUI_DESIGN_KEYBOARD_SHORTCUTS)
+    action_labels = tuple(item[2] for item in GUI_DESIGN_KEYBOARD_SHORTCUTS)
+    return GuiPresetKeyboardShortcutRoute(
+        key=f"{preset_id}-keyboard-shortcut-route",
+        route_role="product-preset-keyboard-shortcuts",
+        preset_id=preset_id,
+        shortcut_object="presetKeyboardShortcut",
+        expected_shortcut_keys=shortcut_keys,
+        expected_sequences=sequences,
+        expected_action_labels=action_labels,
+        expected_shortcut_count=len(shortcut_keys),
+        shortcut_key_property="presetKeyboardShortcutKey",
+        shortcut_sequence_property="presetKeyboardShortcutSequence",
+        shortcut_action_property="presetKeyboardShortcutActionLabel",
+        captured_property="presetKeyboardShortcutsCaptured",
+        captured_keys_property="presetKeyboardShortcutCapturedKeys",
+        captured_sequences_property="presetKeyboardShortcutCapturedSequences",
+        captured_action_labels_property="presetKeyboardShortcutCapturedActionLabels",
+        captured_count_property="presetKeyboardShortcutCapturedCount",
+        render_source="gui-design-keyboard-shortcuts",
+    )
+
+
+def gui_design_command_surface_actions(preset_id: str) -> tuple[tuple[str, str, str], ...]:
+    if preset_id == "mobaxterm":
+        tooltips = gui_design_moba_ribbon_tooltips()
+        return tuple(
+            (action.icon_key, action.label, tooltips[action.icon_key])
+            for action in gui_design_moba_ribbon_actions()
+        )
+    return gui_design_toolbar_actions(preset_id)
+
+
+def gui_design_preset_command_surface_route(preset_id: str) -> GuiPresetCommandSurfaceRoute:
+    if preset_id not in PRODUCT_GUI_PRESET_IDS:
+        raise ValueError(f"preset has no product command surface route: {preset_id}")
+    state = gui_design_interaction_state(preset_id)
+    actions = gui_design_command_surface_actions(preset_id)
+    action_states: list[tuple[str, str]] = []
+    for key, _label, _tooltip in actions:
+        action_state = "normal"
+        if key == state.active_toolbar_key:
+            action_state = "active"
+        elif key == state.checked_toolbar_key:
+            action_state = "checked"
+        elif key == state.disabled_toolbar_key:
+            action_state = "disabled"
+        action_states.append((key, action_state))
+    return GuiPresetCommandSurfaceRoute(
+        key=f"{preset_id}-command-surface-route",
+        route_role="product-preset-command-surface-route",
+        preset_id=preset_id,
+        toolbar_object="mainToolbar",
+        command_object="mobaRibbonButton" if preset_id == "mobaxterm" else "productToolbarButton",
+        expected_action_keys=tuple(key for key, _label, _tooltip in actions),
+        expected_action_labels=tuple(label for _key, label, _tooltip in actions),
+        expected_action_tooltips=tuple(tooltip for _key, _label, tooltip in actions),
+        expected_action_states=tuple(action_states),
+        expected_action_count=len(actions),
+        key_property="presetCommandSurfaceActionKey",
+        label_property="presetCommandSurfaceActionLabel",
+        tooltip_property="presetCommandSurfaceActionTooltip",
+        state_property="interactionState",
+        captured_property="presetCommandSurfaceCaptured",
+        captured_keys_property="presetCommandSurfaceCapturedKeys",
+        captured_labels_property="presetCommandSurfaceCapturedLabels",
+        captured_tooltips_property="presetCommandSurfaceCapturedTooltips",
+        captured_states_property="presetCommandSurfaceCapturedStates",
+        captured_count_property="presetCommandSurfaceCapturedCount",
+        render_source="gui-design-command-surface-route",
+    )
+
+
+GUI_DESIGN_FOCUS_INTERACTION_OBJECTS: dict[str, str] = {
+    "quick-connect": "quickConnect",
+    "search-log": "toolbarSearch",
+    "session-filter": "secureCrtSessionFilter",
+    "host-search": "termiusHostSearch",
+    "profile-filter": "remminaProfileFilter",
+    "tree-filter": "mRemoteNgDocumentFilter",
+}
+
+
+def gui_design_home_search_entry_placeholder(preset_id: str, entry_search_control: str) -> str:
+    if preset_id == "mobaxterm":
+        return gui_design_moba_quick_connect_chrome().placeholder
+    if preset_id == "securecrt":
+        return gui_design_securecrt_session_manager_chrome().filter_placeholder
+    if preset_id == "termius":
+        return gui_design_termius_hosts_chrome().filter_placeholder
+    if preset_id == "remmina":
+        return gui_design_remmina_profile_list_chrome().filter_placeholder
+    if preset_id == "mremoteng":
+        return gui_design_mremoteng_document_toolbar_chrome().filter_placeholder
+    raise ValueError(f"preset has no product home/search entry placeholder: {entry_search_control}")
+
+
+def gui_design_preset_home_search_route(preset_id: str) -> GuiPresetHomeSearchRoute:
+    if preset_id not in PRODUCT_GUI_PRESET_IDS:
+        raise ValueError(f"preset has no product home/search route: {preset_id}")
+    surface = gui_design_workspace_surface(preset_id)
+    state = gui_design_interaction_state(preset_id)
+    entry_search_object = GUI_DESIGN_FOCUS_INTERACTION_OBJECTS[state.focused_control]
+    recent_labels = tuple(item for column in surface.recent_columns for item in column)
+    return GuiPresetHomeSearchRoute(
+        key=f"{preset_id}-home-search-route",
+        route_role="product-preset-home-search-entry-route",
+        preset_id=preset_id,
+        home_tab_label=gui_design_home_tab_label(preset_id),
+        home_search_object="homeSearch",
+        entry_search_control=state.focused_control,
+        entry_search_object=entry_search_object,
+        container_object="mobaHomeWelcomeSurface" if preset_id == "mobaxterm" else "welcomePanel",
+        recent_label_object="mobaRecentSession" if preset_id == "mobaxterm" else "recentSessionsLabel",
+        placeholder_text=surface.home_search_placeholder,
+        entry_placeholder_text=gui_design_home_search_entry_placeholder(preset_id, state.focused_control),
+        expected_home_actions=surface.home_actions,
+        expected_recent_labels=recent_labels,
+        expected_recent_count=len(recent_labels),
+        placeholder_property="presetHomeSearchPlaceholder",
+        entry_placeholder_property="presetHomeSearchEntryPlaceholder",
+        captured_property="presetHomeSearchCaptured",
+        captured_placeholder_property="presetHomeSearchCapturedPlaceholder",
+        captured_entry_placeholder_property="presetHomeSearchCapturedEntryPlaceholder",
+        captured_text_property="presetHomeSearchCapturedText",
+        captured_entry_text_property="presetHomeSearchCapturedEntryText",
+        captured_actions_property="presetHomeSearchCapturedActions",
+        captured_recent_labels_property="presetHomeSearchCapturedRecentLabels",
+        captured_recent_count_property="presetHomeSearchCapturedRecentCount",
+        render_source="gui-design-home-search-route",
+    )
+
+
+def gui_design_preset_focus_interaction_route(preset_id: str) -> GuiPresetFocusInteractionRoute:
+    if preset_id not in PRODUCT_GUI_PRESET_IDS:
+        raise ValueError(f"preset has no product focus interaction route: {preset_id}")
+    state = gui_design_interaction_state(preset_id)
+    return GuiPresetFocusInteractionRoute(
+        key=f"{preset_id}-focus-interaction-route",
+        route_role="product-preset-focus-interaction-route",
+        preset_id=preset_id,
+        focused_control=state.focused_control,
+        focus_object=GUI_DESIGN_FOCUS_INTERACTION_OBJECTS[state.focused_control],
+        active_toolbar_key=state.active_toolbar_key,
+        checked_toolbar_key=state.checked_toolbar_key,
+        disabled_toolbar_key=state.disabled_toolbar_key,
+        selected_tree_label=state.selected_tree_label,
+        active_tab_status=state.active_tab_status,
+        status_note=state.status_note,
+        status_bar_object="statusBar",
+        profile_tree_object="profileTree",
+        focused_state_property="interactionState",
+        captured_property="presetFocusInteractionCaptured",
+        captured_focus_property="presetFocusInteractionCapturedFocus",
+        captured_focus_state_property="presetFocusInteractionCapturedState",
+        captured_status_message_property="presetFocusInteractionStatusMessage",
+        captured_selected_tree_property="presetFocusInteractionCapturedSelectedTreeLabel",
+        captured_toolbar_states_property="presetFocusInteractionToolbarStates",
+        render_source="gui-design-focus-interaction-route",
+    )
+
+
+PRESET_ISOLATION_PRODUCT_OBJECTS: tuple[str, ...] = (
+    "mobaQuickConnectChrome",
+    "quickConnect",
+    "mobaRail",
+    "mobaConnectedLeftDock",
+    "mobaSftpBrowser",
+    "mobaRemoteMonitoring",
+    "mobaSshBanner",
+    "mobaTelemetryBar",
+    "mobaBottomEdgeControls",
+    "secureCrtMenuBar",
+    "secureCrtSessionManagerChrome",
+    "secureCrtSessionStatusStrip",
+    "secureCrtCommandWindow",
+    "termiusHostsChrome",
+    "termiusHeaderChips",
+    "termiusHostIdentityStrip",
+    "remminaProfileListChrome",
+    "remminaViewerControls",
+    "mRemoteNgMenuBar",
+    "mRemoteNgDocumentControls",
+    "mRemoteNgPropertyGrid",
+)
+
+PRESET_ISOLATION_VISIBLE_OBJECTS: dict[str, tuple[str, ...]] = {
+    DEFAULT_GUI_DESIGN_ID: (
+        "mainToolbar",
+        "layoutToolbar",
+        "leftPanelHeader",
+        "profileTree",
+        "sessionTabs",
+        "activityLog",
+        "productWorkflowEvidence",
+        "productWorkspaceSurface",
+        "productReferenceState",
+    ),
+    "mobaxterm": (
+        "mainToolbar",
+        "profileTree",
+        "sessionTabs",
+        "mobaQuickConnectChrome",
+        "quickConnect",
+        "mobaRail",
+        "mobaConnectedLeftDock",
+        "mobaSftpBrowser",
+        "mobaRemoteMonitoring",
+        "mobaSshBanner",
+        "mobaTelemetryBar",
+        "mobaBottomEdgeControls",
+    ),
+    "securecrt": (
+        "mainToolbar",
+        "layoutToolbar",
+        "leftPanelHeader",
+        "profileTree",
+        "sessionTabs",
+        "activityLog",
+        "productWorkflowEvidence",
+        "productWorkspaceSurface",
+        "productReferenceState",
+        "secureCrtMenuBar",
+        "secureCrtSessionManagerChrome",
+        "secureCrtSessionStatusStrip",
+        "secureCrtCommandWindow",
+    ),
+    "termius": (
+        "mainToolbar",
+        "layoutToolbar",
+        "leftPanelHeader",
+        "profileTree",
+        "sessionTabs",
+        "activityLog",
+        "productWorkflowEvidence",
+        "productWorkspaceSurface",
+        "productReferenceState",
+        "termiusHostsChrome",
+        "termiusHeaderChips",
+        "termiusHostIdentityStrip",
+    ),
+    "remmina": (
+        "mainToolbar",
+        "layoutToolbar",
+        "leftPanelHeader",
+        "profileTree",
+        "sessionTabs",
+        "activityLog",
+        "productWorkflowEvidence",
+        "productWorkspaceSurface",
+        "productReferenceState",
+        "remminaProfileListChrome",
+        "remminaViewerControls",
+    ),
+    "mremoteng": (
+        "mainToolbar",
+        "layoutToolbar",
+        "leftPanelHeader",
+        "profileTree",
+        "sessionTabs",
+        "activityLog",
+        "productWorkflowEvidence",
+        "productWorkspaceSurface",
+        "productReferenceState",
+        "mRemoteNgMenuBar",
+        "mRemoteNgDocumentControls",
+        "mRemoteNgPropertyGrid",
+    ),
+}
+
+
+def gui_design_preset_isolation_route(preset_id: str) -> GuiPresetIsolationRoute:
+    preset = get_gui_design_preset(preset_id)
+    visible_objects = PRESET_ISOLATION_VISIBLE_OBJECTS[preset.id]
+    hidden_objects = tuple(
+        object_name
+        for object_name in (
+            "layoutToolbar",
+            "leftPanelHeader",
+            "activityLog",
+            "productWorkflowEvidence",
+            "productWorkspaceSurface",
+            "productReferenceState",
+            *PRESET_ISOLATION_PRODUCT_OBJECTS,
+        )
+        if object_name not in visible_objects
+    )
+    return GuiPresetIsolationRoute(
+        key=f"{preset.id}-preset-isolation-route",
+        route_role="active-preset-visible-hidden-widget-isolation",
+        preset_id=preset.id,
+        visible_objects=visible_objects,
+        hidden_objects=hidden_objects,
+        visible_property="presetIsolationVisibleObjects",
+        hidden_property="presetIsolationHiddenObjects",
+        render_source="gui-design-preset-visibility",
+    )
+
+
+def gui_design_preset_transition_route(preset_id: str) -> GuiPresetTransitionRoute:
+    preset = get_gui_design_preset(preset_id)
+    preset_ids = gui_design_preset_ids()
+    source_ids = tuple(source_id for source_id in preset_ids if source_id != preset.id)
+    isolation_route = gui_design_preset_isolation_route(preset.id)
+    return GuiPresetTransitionRoute(
+        key=f"{preset.id}-preset-transition-route",
+        route_role="selector-style-switch-resets-inactive-product-chrome",
+        from_preset_ids=source_ids,
+        to_preset_id=preset.id,
+        to_preset_index=preset_ids.index(preset.id),
+        selector_object="designSelect",
+        reset_objects=isolation_route.hidden_objects,
+        route_property="presetTransitionRouteKey",
+        from_property="presetTransitionFromPresetIds",
+        to_property="presetTransitionToPresetId",
+        reset_property="presetTransitionResetObjects",
+        render_source="gui-design-preset-transition",
+    )
+
+
 def gui_design_moba_ribbon_actions() -> tuple[GuiMobaRibbonAction, ...]:
     return GUI_DESIGN_MOBA_RIBBON_ACTIONS
 
 
+def gui_design_moba_ribbon_tooltips() -> dict[str, str]:
+    return dict(GUI_DESIGN_MOBA_RIBBON_TOOLTIPS)
+
+
 def gui_design_moba_ribbon_edge_actions() -> tuple[GuiMobaRibbonEdgeAction, ...]:
     return GUI_DESIGN_MOBA_RIBBON_EDGE_ACTIONS
+
+
+def gui_design_moba_ribbon_edge_action_route() -> GuiMobaRibbonEdgeActionRoute:
+    return GUI_DESIGN_MOBA_RIBBON_EDGE_ACTION_ROUTE
 
 
 def gui_design_moba_ribbon_action_geometry() -> tuple[GuiMobaRibbonActionGeometry, ...]:
@@ -4876,6 +7515,10 @@ def gui_design_moba_rail_item_geometry_for(role: str) -> GuiMobaRailItemGeometry
 
 def gui_design_moba_right_utility_actions() -> tuple[GuiMobaRightUtilityAction, ...]:
     return GUI_DESIGN_MOBA_RIGHT_UTILITY_ACTIONS
+
+
+def gui_design_moba_right_utility_action_route() -> GuiMobaRightUtilityActionRoute:
+    return GUI_DESIGN_MOBA_RIGHT_UTILITY_ACTION_ROUTE
 
 
 def gui_design_moba_right_utility_rail_chrome() -> GuiMobaRightUtilityRailChrome:
@@ -4955,6 +7598,14 @@ def gui_design_moba_monitoring_telemetry_route() -> GuiMobaMonitoringTelemetryRo
     return GUI_DESIGN_MOBA_MONITORING_TELEMETRY_ROUTE
 
 
+def gui_design_moba_remote_monitoring_control_route() -> GuiMobaRemoteMonitoringControlRoute:
+    return GUI_DESIGN_MOBA_REMOTE_MONITORING_CONTROL_ROUTE
+
+
+def gui_design_moba_follow_terminal_folder_control_route() -> GuiMobaFollowTerminalFolderControlRoute:
+    return GUI_DESIGN_MOBA_FOLLOW_TERMINAL_FOLDER_CONTROL_ROUTE
+
+
 def gui_design_moba_sftp_follow_folder_route() -> GuiMobaSftpFollowFolderRoute:
     return GUI_DESIGN_MOBA_SFTP_FOLLOW_FOLDER_ROUTE
 
@@ -5017,6 +7668,18 @@ def gui_design_securecrt_session_manager_route() -> GuiSecureCrtSessionManagerRo
     return GUI_DESIGN_SECURECRT_SESSION_MANAGER_ROUTE
 
 
+def gui_design_securecrt_session_manager_filter_route() -> GuiSecureCrtSessionManagerFilterRoute:
+    return GUI_DESIGN_SECURECRT_SESSION_MANAGER_FILTER_ROUTE
+
+
+def gui_design_securecrt_sftp_tab_route() -> GuiSecureCrtSftpTabRoute:
+    return GUI_DESIGN_SECURECRT_SFTP_TAB_ROUTE
+
+
+def gui_design_securecrt_sftp_browser_route() -> GuiSecureCrtSftpBrowserRoute:
+    return GUI_DESIGN_SECURECRT_SFTP_BROWSER_ROUTE
+
+
 def gui_design_securecrt_top_chrome() -> GuiSecureCrtTopChrome:
     return GUI_DESIGN_SECURECRT_TOP_CHROME
 
@@ -5037,8 +7700,20 @@ def gui_design_remmina_profile_viewer_route() -> GuiRemminaProfileViewerRoute:
     return GUI_DESIGN_REMMINA_PROFILE_VIEWER_ROUTE
 
 
+def gui_design_remmina_profile_filter_route() -> GuiRemminaProfileFilterRoute:
+    return GUI_DESIGN_REMMINA_PROFILE_FILTER_ROUTE
+
+
 def gui_design_remmina_clipboard_route() -> GuiRemminaClipboardRoute:
     return GUI_DESIGN_REMMINA_CLIPBOARD_ROUTE
+
+
+def gui_design_remmina_screenshot_route() -> GuiRemminaScreenshotRoute:
+    return GUI_DESIGN_REMMINA_SCREENSHOT_ROUTE
+
+
+def gui_design_remmina_sftp_transfer_route() -> GuiRemminaSftpTransferRoute:
+    return GUI_DESIGN_REMMINA_SFTP_TRANSFER_ROUTE
 
 
 def gui_design_termius_header_chips() -> tuple[GuiTermiusHeaderChip, ...]:
@@ -5061,6 +7736,18 @@ def gui_design_termius_host_selection_route() -> GuiTermiusHostSelectionRoute:
     return GUI_DESIGN_TERMIUS_HOST_SELECTION_ROUTE
 
 
+def gui_design_termius_port_forward_route() -> GuiTermiusPortForwardRoute:
+    return GUI_DESIGN_TERMIUS_PORT_FORWARD_ROUTE
+
+
+def gui_design_termius_snippet_route() -> GuiTermiusSnippetRoute:
+    return GUI_DESIGN_TERMIUS_SNIPPET_ROUTE
+
+
+def gui_design_termius_files_browser_route() -> GuiTermiusFilesBrowserRoute:
+    return GUI_DESIGN_TERMIUS_FILES_BROWSER_ROUTE
+
+
 def gui_design_mremoteng_document_toolbar_chrome() -> GuiMRemoteNgDocumentToolbarChrome:
     return GUI_DESIGN_MREMOTENG_DOCUMENT_TOOLBAR_CHROME
 
@@ -5075,6 +7762,14 @@ def gui_design_mremoteng_property_grid_chrome() -> GuiMRemoteNgPropertyGridChrom
 
 def gui_design_mremoteng_connection_document_route() -> GuiMRemoteNgConnectionDocumentRoute:
     return GUI_DESIGN_MREMOTENG_CONNECTION_DOCUMENT_ROUTE
+
+
+def gui_design_mremoteng_document_filter_route() -> GuiMRemoteNgDocumentFilterRoute:
+    return GUI_DESIGN_MREMOTENG_DOCUMENT_FILTER_ROUTE
+
+
+def gui_design_mremoteng_inheritance_route() -> GuiMRemoteNgInheritanceRoute:
+    return GUI_DESIGN_MREMOTENG_INHERITANCE_ROUTE
 
 
 def gui_design_sidebar_copy(preset_id: str) -> tuple[str, str]:
@@ -5169,6 +7864,327 @@ def gui_design_workflow_cards(preset_id: str) -> tuple[GuiProductWorkflowCard, .
 
 def gui_design_reference_state(preset_id: str) -> GuiProductReferenceState:
     return GUI_DESIGN_REFERENCE_STATES.get(preset_id, GUI_DESIGN_REFERENCE_STATES[DEFAULT_GUI_DESIGN_ID])
+
+
+def gui_design_product_identity_route(preset_id: str) -> GuiProductIdentityRoute:
+    reference = gui_design_reference_state(preset_id)
+    selected_tree_label = GUI_DESIGN_PRODUCT_IDENTITY_TREE_LABELS.get(preset_id, reference.active_tab_label)
+    return GuiProductIdentityRoute(
+        key=f"{preset_id}-product-identity-route",
+        route_role="tree-tab-reference-status-workspace-identity",
+        preset_id=preset_id,
+        selected_profile_name=reference.profile_name,
+        selected_tree_label=selected_tree_label,
+        target_label=reference.target_label,
+        protocol_label=reference.protocol_label,
+        active_tab_label=reference.active_tab_label,
+        sidebar_label=reference.sidebar_label,
+        workspace_state=reference.workspace_state,
+        status_segments=reference.status_segments,
+        reference_state_object="productReferenceState",
+        reference_item_object="productReferenceStateItem",
+        tree_object="profileTree",
+        tabs_object="sessionTabs",
+        status_segment_object="productStatusSegment",
+        workspace_surface_object="productWorkspaceSurface",
+        profile_property="productIdentityProfile",
+        target_property="productIdentityTarget",
+        protocol_property="productIdentityProtocol",
+        active_tab_property="productIdentityActiveTab",
+        sidebar_property="productIdentitySidebar",
+        workspace_state_property="productIdentityWorkspaceState",
+        status_segments_property="productIdentityStatusSegments",
+        render_source="gui-design-reference-state",
+    )
+
+
+def gui_design_preset_reference_tab_route(preset_id: str) -> GuiPresetReferenceTabRoute:
+    if preset_id not in PRODUCT_REFERENCE_TAB_PRESET_IDS:
+        raise ValueError(f"preset has no product reference tab activation route: {preset_id}")
+    identity_route = gui_design_product_identity_route(preset_id)
+    return GuiPresetReferenceTabRoute(
+        key=f"{preset_id}-reference-tab-activation-route",
+        route_role="reference-profile-tab-can-be-active-surface",
+        preset_id=preset_id,
+        reference_profile=identity_route.selected_profile_name,
+        active_tab_label=identity_route.active_tab_label,
+        home_tab_label=gui_design_home_tab_label(preset_id),
+        tabs_object=identity_route.tabs_object,
+        home_tab_role="home",
+        reference_tab_role="terminal",
+        activated_label_property="presetReferenceTabActivatedLabel",
+        returned_home_label_property="presetReferenceTabReturnedHomeLabel",
+        active_tab_property="presetReferenceTabActiveLabel",
+        home_tab_property="presetReferenceTabHomeLabel",
+        reference_profile_property="presetReferenceTabProfile",
+        render_source="gui-design-reference-tab-route",
+    )
+
+
+def gui_design_preset_reference_tab_chrome_route(preset_id: str) -> GuiPresetReferenceTabChromeRoute:
+    if preset_id not in PRODUCT_REFERENCE_TAB_PRESET_IDS:
+        raise ValueError(f"preset has no active reference tab chrome route: {preset_id}")
+    tab_route = gui_design_preset_reference_tab_route(preset_id)
+    interaction = gui_design_interaction_state(preset_id)
+    preset = get_gui_design_preset(preset_id)
+    return GuiPresetReferenceTabChromeRoute(
+        key=f"{preset_id}-reference-tab-chrome-evidence-route",
+        route_role="active-reference-tab-chrome-evidence",
+        preset_id=preset_id,
+        reference_profile=tab_route.reference_profile,
+        active_tab_label=tab_route.active_tab_label,
+        home_tab_label=tab_route.home_tab_label,
+        tabs_object=tab_route.tabs_object,
+        tab_bar_object="sessionTabBar",
+        reference_tab_role=tab_route.reference_tab_role,
+        new_session_tab_role="new-session",
+        expected_tab_position=preset.tab_position,
+        expected_tooltip=f"{tab_route.active_tab_label}: {interaction.active_tab_status}",
+        expected_closeable=True,
+        expected_selected_during_capture=True,
+        captured_property="presetReferenceTabChromeCaptured",
+        captured_label_property="presetReferenceTabChromeLabel",
+        captured_tooltip_property="presetReferenceTabChromeTooltip",
+        captured_index_property="presetReferenceTabChromeIndex",
+        captured_role_property="presetReferenceTabChromeRole",
+        captured_position_property="presetReferenceTabChromePosition",
+        captured_closeable_property="presetReferenceTabChromeCloseable",
+        captured_selected_property="presetReferenceTabChromeSelected",
+        render_source="gui-design-reference-tab-chrome",
+    )
+
+
+def gui_design_preset_reference_status_bar_route(preset_id: str) -> GuiPresetReferenceStatusBarRoute:
+    if preset_id not in PRODUCT_REFERENCE_TAB_PRESET_IDS:
+        raise ValueError(f"preset has no active reference status-bar route: {preset_id}")
+    tab_route = gui_design_preset_reference_tab_route(preset_id)
+    identity_route = gui_design_product_identity_route(preset_id)
+    expected_status_segments = identity_route.status_segments
+    return GuiPresetReferenceStatusBarRoute(
+        key=f"{preset_id}-reference-status-bar-evidence-route",
+        route_role="active-reference-status-bar-evidence",
+        preset_id=preset_id,
+        reference_profile=tab_route.reference_profile,
+        active_tab_label=tab_route.active_tab_label,
+        status_bar_object="statusBar",
+        status_notice_object="productStatusNotice",
+        status_segment_object=identity_route.status_segment_object,
+        expected_status_message="No running process panes",
+        expected_status_segments=expected_status_segments,
+        expected_segment_count=len(expected_status_segments),
+        captured_property="presetReferenceStatusCaptured",
+        captured_tab_property="presetReferenceStatusCapturedTab",
+        captured_message_property="presetReferenceStatusMessage",
+        captured_segments_property="presetReferenceStatusSegments",
+        captured_segment_count_property="presetReferenceStatusSegmentCount",
+        captured_segment_tooltips_property="presetReferenceStatusSegmentTooltips",
+        captured_notice_property="presetReferenceStatusNotice",
+        render_source="gui-design-reference-status-bar",
+    )
+
+
+def gui_design_preset_reference_session_action_route(preset_id: str) -> GuiPresetReferenceSessionActionRoute:
+    if preset_id not in PRODUCT_REFERENCE_TAB_PRESET_IDS:
+        raise ValueError(f"preset has no active reference session-action route: {preset_id}")
+    tab_route = gui_design_preset_reference_tab_route(preset_id)
+    action_keys = (
+        "new-local-terminal",
+        "split-horizontal",
+        "split-vertical",
+        "duplicate-tab",
+        "close-tab",
+        "close-other-tabs",
+        "recover-previous-sessions",
+    )
+    action_labels = (
+        "New local terminal",
+        "Split horizontal",
+        "Split vertical",
+        "Duplicate tab",
+        "Close tab",
+        "Close other tabs",
+        "Recover previous sessions",
+    )
+    return GuiPresetReferenceSessionActionRoute(
+        key=f"{preset_id}-reference-session-actions-route",
+        route_role="active-reference-session-actions",
+        preset_id=preset_id,
+        reference_profile=tab_route.reference_profile,
+        active_tab_label=tab_route.active_tab_label,
+        tabs_object=tab_route.tabs_object,
+        tab_bar_object="sessionTabBar",
+        reference_tab_role=tab_route.reference_tab_role,
+        action_object="sessionTabContextAction",
+        expected_action_keys=action_keys,
+        expected_action_labels=action_labels,
+        expected_action_count=len(action_keys),
+        always_enabled_action_keys=tuple(key for key in action_keys if key != "close-other-tabs"),
+        conditional_enabled_action_keys=("close-other-tabs",),
+        action_key_property="sessionTabContextActionKey",
+        action_label_property="sessionTabContextActionLabel",
+        action_enabled_property="sessionTabContextActionEnabled",
+        captured_property="presetReferenceSessionActionsCaptured",
+        captured_tab_property="presetReferenceSessionActionsCapturedTab",
+        captured_action_keys_property="presetReferenceSessionActionKeys",
+        captured_action_labels_property="presetReferenceSessionActionLabels",
+        captured_action_count_property="presetReferenceSessionActionCount",
+        captured_enabled_keys_property="presetReferenceSessionActionEnabledKeys",
+        captured_disabled_keys_property="presetReferenceSessionActionDisabledKeys",
+        render_source="gui-design-reference-session-actions",
+    )
+
+
+def gui_design_preset_reference_surface_route(preset_id: str) -> GuiPresetReferenceSurfaceRoute:
+    if preset_id not in PRODUCT_REFERENCE_TAB_PRESET_IDS:
+        raise ValueError(f"preset has no active reference tab surface route: {preset_id}")
+    tab_route = gui_design_preset_reference_tab_route(preset_id)
+    identity_route = gui_design_product_identity_route(preset_id)
+    command_executables = ("mstsc", "xfreerdp", "wlfreerdp") if preset_id == "remmina" else ("ssh",)
+    command_target = identity_route.target_label.rsplit(":", 1)[0]
+    return GuiPresetReferenceSurfaceRoute(
+        key=f"{preset_id}-reference-surface-evidence-route",
+        route_role="active-reference-tab-surface-evidence",
+        preset_id=preset_id,
+        reference_profile=tab_route.reference_profile,
+        active_tab_label=tab_route.active_tab_label,
+        expected_title=tab_route.reference_profile,
+        expected_source=f"profile:{tab_route.reference_profile}",
+        command_executables=command_executables,
+        command_target_fragment=command_target,
+        terminal_pane_object="terminalPane",
+        terminal_title_object="terminalTitle",
+        terminal_source_object="terminalSource",
+        terminal_command_object="terminalCommand",
+        terminal_output_object="terminalOutput",
+        captured_property="presetReferenceSurfaceCaptured",
+        captured_tab_property="presetReferenceSurfaceCapturedTab",
+        actual_title_property="presetReferenceSurfaceActualTitle",
+        actual_source_property="presetReferenceSurfaceActualSource",
+        actual_command_property="presetReferenceSurfaceActualCommand",
+        actual_output_property="presetReferenceSurfaceActualOutput",
+        render_source="gui-design-reference-surface",
+    )
+
+
+def gui_design_preset_reference_control_route(preset_id: str) -> GuiPresetReferenceControlRoute:
+    if preset_id not in PRODUCT_REFERENCE_TAB_PRESET_IDS:
+        raise ValueError(f"preset has no active reference tab control route: {preset_id}")
+    surface_route = gui_design_preset_reference_surface_route(preset_id)
+    return GuiPresetReferenceControlRoute(
+        key=f"{preset_id}-reference-control-evidence-route",
+        route_role="active-reference-tab-terminal-controls",
+        preset_id=preset_id,
+        reference_profile=surface_route.reference_profile,
+        active_tab_label=surface_route.active_tab_label,
+        terminal_pane_object=surface_route.terminal_pane_object,
+        terminal_status_object="paneStatus",
+        terminal_action_object="terminalAction",
+        action_keys=("start", "restart", "stop", "copy", "clear"),
+        action_labels=("Start", "Restart", "Stop", "Copy", "Clear"),
+        action_tooltips=(
+            "Start process",
+            "Restart process",
+            "Stop process",
+            "Copy launch command",
+            "Clear terminal output",
+        ),
+        allowed_status_states=("ready", "starting", "running", "stopping", "error"),
+        action_key_property="terminalActionKey",
+        action_label_property="terminalActionLabel",
+        action_tooltip_property="terminalActionTooltip",
+        status_state_property="state",
+        captured_property="presetReferenceControlsCaptured",
+        captured_actions_property="presetReferenceControlCapturedActionKeys",
+        captured_status_property="presetReferenceControlStatusState",
+        captured_status_text_property="presetReferenceControlStatusText",
+        render_source="gui-design-reference-controls",
+    )
+
+
+def gui_design_preset_reference_input_route(preset_id: str) -> GuiPresetReferenceInputRoute:
+    if preset_id not in PRODUCT_REFERENCE_TAB_PRESET_IDS:
+        raise ValueError(f"preset has no active reference tab input route: {preset_id}")
+    surface_route = gui_design_preset_reference_surface_route(preset_id)
+    return GuiPresetReferenceInputRoute(
+        key=f"{preset_id}-reference-input-evidence-route",
+        route_role="active-reference-tab-terminal-input",
+        preset_id=preset_id,
+        reference_profile=surface_route.reference_profile,
+        active_tab_label=surface_route.active_tab_label,
+        terminal_pane_object=surface_route.terminal_pane_object,
+        terminal_input_object="terminalInput",
+        placeholder_text="stdin, shell command or interactive input",
+        expected_initial_text="",
+        allowed_enabled_states=(True, False),
+        captured_property="presetReferenceInputCaptured",
+        captured_tab_property="presetReferenceInputCapturedTab",
+        captured_placeholder_property="presetReferenceInputPlaceholder",
+        captured_text_property="presetReferenceInputText",
+        captured_enabled_property="presetReferenceInputEnabled",
+        render_source="gui-design-reference-input",
+    )
+
+
+def gui_design_preset_reference_transcript_route(preset_id: str) -> GuiPresetReferenceTranscriptRoute:
+    if preset_id not in PRODUCT_REFERENCE_TAB_PRESET_IDS:
+        raise ValueError(f"preset has no active reference tab transcript route: {preset_id}")
+    surface_route = gui_design_preset_reference_surface_route(preset_id)
+    return GuiPresetReferenceTranscriptRoute(
+        key=f"{preset_id}-reference-transcript-evidence-route",
+        route_role="active-reference-tab-terminal-transcript",
+        preset_id=preset_id,
+        reference_profile=surface_route.reference_profile,
+        active_tab_label=surface_route.active_tab_label,
+        terminal_pane_object=surface_route.terminal_pane_object,
+        terminal_output_object=surface_route.terminal_output_object,
+        command_echo_prefix="$ ",
+        required_fragments=(surface_route.command_target_fragment,),
+        minimum_line_count=1,
+        captured_property="presetReferenceTranscriptCaptured",
+        captured_tab_property="presetReferenceTranscriptCapturedTab",
+        captured_text_property="presetReferenceTranscriptText",
+        captured_line_count_property="presetReferenceTranscriptLineCount",
+        captured_command_echo_property="presetReferenceTranscriptCommandEcho",
+        render_source="gui-design-reference-transcript",
+    )
+
+
+def gui_design_preset_selection_route(preset_id: str) -> GuiPresetSelectionRoute:
+    preset = get_gui_design_preset(preset_id)
+    sidebar_title, sidebar_subtitle = gui_design_sidebar_copy(preset.id)
+    preset_ids = gui_design_preset_ids()
+    return GuiPresetSelectionRoute(
+        key=f"{preset.id}-preset-selection-route",
+        route_role="selector-to-toolbar-sidebar-tabs-status-workspace",
+        preset_id=preset.id,
+        preset_label=preset.label,
+        preset_index=preset_ids.index(preset.id),
+        selector_object="designSelect",
+        main_toolbar_object="mainToolbar",
+        layout_toolbar_object="layoutToolbar",
+        left_panel_header_object="leftPanelHeader",
+        profile_tree_object="profileTree",
+        tabs_object="sessionTabs",
+        status_bar_object="statusBar",
+        status_segment_object="productStatusSegment",
+        workspace_surface_object="productWorkspaceSurface",
+        reference_state_object="productReferenceState",
+        home_tab_label=gui_design_home_tab_label(preset.id),
+        sidebar_title=sidebar_title,
+        sidebar_subtitle=sidebar_subtitle,
+        status_segments=gui_design_status_segments(preset.id),
+        tab_position=preset.tab_position,
+        document_mode=preset.document_mode,
+        profile_width=preset.profile_width,
+        log_height=preset.log_height,
+        toolbar_icon_size=preset.toolbar_icon_size,
+        selector_property="presetSelectionRoutePresetId",
+        preset_label_property="presetSelectionRoutePresetLabel",
+        home_tab_property="presetSelectionRouteHomeTabLabel",
+        sidebar_title_property="presetSelectionRouteSidebarTitle",
+        status_segments_property="presetSelectionRouteStatusSegments",
+        render_source="gui-design-preset-metadata",
+    )
 
 
 def gui_design_interaction_state(preset_id: str) -> GuiInteractionState:

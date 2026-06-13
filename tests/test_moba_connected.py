@@ -8,6 +8,7 @@ from remote_ops_workspace.moba_connected import (
     build_remote_monitoring_plan,
     build_ssh_connection_banner,
     moba_connected_profile_label,
+    moba_connected_session_action_route,
     moba_connected_session_identity_route,
     moba_connected_session_route,
     moba_connected_tab_chrome_geometry_for,
@@ -15,6 +16,7 @@ from remote_ops_workspace.moba_connected import (
     moba_connected_tab_chrome_items,
     moba_connected_tab_label,
     moba_connected_window_title,
+    moba_sftp_terminal_folder_route,
     moba_telemetry_cell_geometry,
     moba_telemetry_cell_geometry_for,
     moba_telemetry_cells,
@@ -74,6 +76,8 @@ def test_connected_session_state_tracks_browser_follow_monitoring_and_banner() -
     assert state.to_dict()["telemetry_cells"][0]["display_text"] == "example.internal:22"
     assert state.to_dict()["connected_route"]["key"] == "moba-active-connected-session-route"
     assert state.to_dict()["identity_route"]["key"] == "moba-connected-session-identity-route"
+    assert state.to_dict()["session_action_route"]["key"] == "moba-connected-session-actions-route"
+    assert state.to_dict()["sftp_terminal_folder_route"]["key"] == "moba-sftp-terminal-folder-route"
 
 
 def test_connected_session_chrome_uses_target_identity_and_telemetry_segments() -> None:
@@ -140,6 +144,58 @@ def test_connected_session_route_ties_active_tab_to_visible_surfaces() -> None:
     assert "yunus" not in " ".join(str(value).lower() for value in route.to_dict().values())
 
 
+def test_connected_session_action_route_ties_context_menu_to_active_tab() -> None:
+    state = build_moba_connected_session_state(ssh_profile(), remote_path="/var/log")
+    route = moba_connected_session_action_route(state)
+
+    assert route.key == "moba-connected-session-actions-route"
+    assert route.route_role == "active-connected-tab-context-session-actions"
+    assert route.profile_name == "example-ssh"
+    assert route.target == "example.internal"
+    assert route.active_tab_key == "active-session"
+    assert route.active_tab_label == "example.internal (operator)"
+    assert route.reference_tab_label == "7. example.internal (operator)"
+    assert route.tabs_object == "sessionTabs"
+    assert route.tab_bar_object == "sessionTabBar"
+    assert route.reference_tab_role == "terminal"
+    assert route.menu_object == "mobaConnectedSessionTabContextMenu"
+    assert route.action_object == "mobaConnectedSessionTabContextAction"
+    assert route.expected_action_keys == (
+        "new-local-terminal",
+        "split-horizontal",
+        "split-vertical",
+        "duplicate-tab",
+        "close-tab",
+        "close-other-tabs",
+        "recover-previous-sessions",
+    )
+    assert route.expected_action_labels == (
+        "New local terminal",
+        "Split horizontal",
+        "Split vertical",
+        "Duplicate tab",
+        "Close tab",
+        "Close other tabs",
+        "Recover previous sessions",
+    )
+    assert route.expected_action_count == 7
+    assert route.always_enabled_action_keys == (
+        "new-local-terminal",
+        "split-horizontal",
+        "split-vertical",
+        "duplicate-tab",
+        "close-tab",
+        "recover-previous-sessions",
+    )
+    assert route.conditional_enabled_action_keys == ("close-other-tabs",)
+    assert route.action_key_property == "sessionTabContextActionKey"
+    assert route.to_dict()["menu_object"] == "mobaConnectedSessionTabContextMenu"
+    assert route.captured_action_keys_property == "mobaConnectedSessionActionKeys"
+    assert route.captured_enabled_keys_property == "mobaConnectedSessionActionEnabledKeys"
+    assert route.render_source == "connected-session-state"
+    assert "yunus" not in " ".join(str(value).lower() for value in route.to_dict().values())
+
+
 def test_connected_session_identity_route_ties_visible_target_text_together() -> None:
     state = build_moba_connected_session_state(ssh_profile(), remote_path="/var/log")
     route = moba_connected_session_identity_route(state)
@@ -159,6 +215,36 @@ def test_connected_session_identity_route_ties_visible_target_text_together() ->
     assert route.banner_target_property == "mobaConnectedIdentityBannerTarget"
     assert route.terminal_prompt_property == "mobaConnectedIdentityTerminalPrompt"
     assert route.telemetry_target_property == "mobaConnectedIdentityTelemetryTarget"
+    assert route.render_source == "connected-session-state"
+    assert "yunus" not in " ".join(str(value).lower() for value in route.to_dict().values())
+
+
+def test_sftp_terminal_folder_route_ties_terminal_checkbox_path_and_rows() -> None:
+    state = build_moba_connected_session_state(
+        ssh_profile(),
+        remote_path="/",
+        terminal_cwd="/var/log",
+        follow_terminal_folder=True,
+    )
+    route = moba_sftp_terminal_folder_route(state)
+
+    assert route.key == "moba-sftp-terminal-folder-route"
+    assert route.route_role == "terminal-cwd-follow-checkbox-to-sftp-path-and-rows"
+    assert route.terminal_area_object == "mobaTerminalArea"
+    assert route.terminal_output_object == "terminalOutput"
+    assert route.source_control_object == "mobaFollowTerminalFolder"
+    assert route.target_browser_object == "mobaSftpBrowser"
+    assert route.target_path_object == "mobaSftpPath"
+    assert route.target_table_object == "mobaSftpFileTable"
+    assert route.parent_row_label == ".."
+    assert route.selected_row_kind == "parent-dir"
+    assert route.remote_path == "/var/log"
+    assert route.list_command == "ls -la /var/log"
+    assert route.follow_enabled is True
+    assert route.path_property == "mobaSftpTerminalFolderRoutePath"
+    assert route.plan_property == "mobaSftpTerminalFolderRoutePlan"
+    assert route.enabled_property == "mobaSftpTerminalFolderRouteEnabled"
+    assert route.row_route_property == "mobaSftpTerminalFolderRouteKey"
     assert route.render_source == "connected-session-state"
     assert "yunus" not in " ".join(str(value).lower() for value in route.to_dict().values())
 

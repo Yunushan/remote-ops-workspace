@@ -1502,6 +1502,14 @@ def test_mobaxterm_bottom_edge_controls_use_shared_metadata() -> None:
     assert "draw_moba_bottom_edge_icon" in renderer_source
     assert "mobaBottomEdgeControls" in gui_source
     assert "mobaBottomEdgeControl" in gui_source
+    main_window_source = gui_source.split("class MainWindow", 1)[1]
+    assert "def moba_utility_icon" in main_window_source
+    assert main_window_source.index("def moba_utility_icon") < main_window_source.index(
+        "def create_moba_bottom_edge_controls"
+    )
+    assert '"arrow-left"' in main_window_source
+    assert '"arrow-right"' in main_window_source
+    assert '"close"' in main_window_source
     assert "activate_adjacent_tab" in gui_source
     assert "EXPECTED_MOBA_BOTTOM_EDGE_KEYS" in checker_source
     assert "expected_moba_bottom_edge_controls" in checker_source

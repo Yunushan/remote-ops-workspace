@@ -3110,6 +3110,57 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 painter.drawLine(mid, 8, mid, size - 8)
                 painter.drawLine(8, mid, size - 8, mid)
 
+        def moba_utility_icon(self, icon_key: str, fill: str, *, size: int = 20) -> QIcon:
+            pixmap = QPixmap(size, size)
+            pixmap.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(pixmap)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            color = QColor(fill)
+            try:
+                painter.setPen(QPen(color, 2))
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                mid = size // 2
+                if icon_key == "arrow-left":
+                    painter.drawLine(size - 3, 5, 6, mid)
+                    painter.drawLine(6, mid, size - 3, size - 5)
+                    painter.drawLine(6, mid, size - 1, mid)
+                elif icon_key == "arrow-right":
+                    painter.drawLine(3, 5, size - 6, mid)
+                    painter.drawLine(size - 6, mid, 3, size - 5)
+                    painter.drawLine(1, mid, size - 6, mid)
+                elif icon_key == "close":
+                    painter.drawLine(5, 5, size - 5, size - 5)
+                    painter.drawLine(size - 5, 5, 5, size - 5)
+                elif icon_key == "clip":
+                    painter.drawArc(5, 3, 10, 13, 35 * 16, 280 * 16)
+                    painter.drawArc(8, 5, 6, 10, 35 * 16, 280 * 16)
+                    painter.drawLine(9, 14, 6, 11)
+                elif icon_key == "spark":
+                    painter.drawLine(mid, 3, mid, size - 3)
+                    painter.drawLine(3, mid, size - 3, mid)
+                    painter.drawLine(5, 5, size - 5, size - 5)
+                    painter.drawLine(size - 5, 5, 5, size - 5)
+                elif icon_key == "gear":
+                    painter.drawEllipse(6, 6, size - 12, size - 12)
+                    painter.drawEllipse(8, 8, size - 16, size - 16)
+                    for start, end in (
+                        ((mid, 2), (mid, 6)),
+                        ((mid, size - 6), (mid, size - 2)),
+                        ((2, mid), (6, mid)),
+                        ((size - 6, mid), (size - 2, mid)),
+                        ((5, 5), (7, 7)),
+                        ((size - 7, 5), (size - 5, 7)),
+                        ((5, size - 5), (7, size - 7)),
+                        ((size - 7, size - 7), (size - 5, size - 5)),
+                    ):
+                        painter.drawLine(start[0], start[1], end[0], end[1])
+                else:
+                    painter.setPen(QPen(QColor("#9ca3af"), 2))
+                    painter.drawRect(4, 4, size - 8, size - 8)
+            finally:
+                painter.end()
+            return QIcon(pixmap)
+
         def create_status_segments(self) -> list[QLabel]:
             self.statusBar().setObjectName("statusBar")
             self.status_notice_label = QLabel()

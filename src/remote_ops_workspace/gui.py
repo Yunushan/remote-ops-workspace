@@ -41,6 +41,7 @@ from .gui_designs import (
     gui_design_moba_right_utility_action_route,
     gui_design_moba_right_utility_actions,
     gui_design_moba_right_utility_rail_chrome,
+    gui_design_moba_session_edge_action_route,
     gui_design_moba_session_edge_actions,
     gui_design_moba_session_tree_chrome,
     gui_design_moba_sftp_browser_chrome,
@@ -52,6 +53,7 @@ from .gui_designs import (
     gui_design_moba_sftp_routed_file_rows,
     gui_design_moba_sftp_toolbar_action_geometry,
     gui_design_moba_sftp_toolbar_action_geometry_for,
+    gui_design_moba_sftp_toolbar_action_route,
     gui_design_moba_ssh_banner_chrome,
     gui_design_moba_ssh_banner_row_geometry,
     gui_design_moba_ssh_banner_row_geometry_for,
@@ -721,6 +723,56 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             widget.setProperty("mobaSftpStaticMaxRows", density.static_max_rows)
             widget.setProperty("mobaSftpToolbarSeparatorWidth", density.toolbar_separator_width)
 
+        @staticmethod
+        def moba_sftp_toolbar_action_index(route, action_key: str) -> int:
+            try:
+                return route.action_keys.index(action_key)
+            except ValueError:
+                return 0
+
+        def apply_sftp_toolbar_action_route_properties(
+            self,
+            widget,
+            route,
+            *,
+            triggered: bool = False,
+            action_key: str | None = None,
+            status: str | None = None,
+        ) -> None:
+            action_value = action_key or route.action_keys[1]
+            action_index = self.moba_sftp_toolbar_action_index(route, action_value)
+            status_value = status or route.action_statuses[action_index]
+            properties = {
+                "mobaSftpToolbarRouteKey": route.key,
+                "mobaSftpToolbarRouteRole": route.route_role,
+                "mobaSftpToolbarRouteToolbarObject": route.toolbar_object,
+                "mobaSftpToolbarRouteActionObject": route.action_object,
+                "mobaSftpToolbarRouteTargetBrowserObject": route.target_browser_object,
+                "mobaSftpToolbarRouteTargetPathObject": route.target_path_object,
+                "mobaSftpToolbarRouteTargetTableObject": route.target_table_object,
+                "mobaSftpToolbarRouteQueueObject": route.queue_object,
+                route.action_key_property: action_value,
+                route.action_label_property: route.action_labels[action_index],
+                route.action_object_property: route.action_object,
+                route.icon_key_property: route.action_icon_keys[action_index],
+                route.group_key_property: route.action_group_keys[action_index],
+                route.tooltip_property: route.action_tooltips[action_index],
+                "mobaSftpToolbarRouteSignal": route.signal,
+                "mobaSftpToolbarRouteHandler": route.action_handlers[action_index],
+                route.action_keys_property: list(route.action_keys),
+                "mobaSftpToolbarRouteActionGroups": list(route.action_group_keys),
+                route.captured_property: triggered,
+                "mobaSftpToolbarRouteCapturedAction": action_value if triggered else "",
+                route.captured_status_property: status_value if triggered else "",
+                route.live_triggered_property: triggered,
+                "mobaSftpToolbarRouteLiveAction": action_value,
+                route.live_status_property: status_value,
+                "mobaSftpToolbarRouteActionStatuses": list(route.action_statuses),
+                "mobaSftpToolbarRouteRenderSource": route.render_source,
+            }
+            for key, value in properties.items():
+                widget.setProperty(key, value)
+
         def apply_sftp_follow_folder_route_properties(self, widget, route) -> None:
             follow_plan = self.state.follow_folder_plan.printable_batch()
             properties = {
@@ -819,6 +871,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             super().__init__()
             self.setObjectName("mobaConnectedLeftDock")
             self.state = state
+            self.monitoring_control_widgets = {}
             frame = gui_design_moba_connected_dock_frame()
             density = gui_design_moba_sftp_dock_layout()
             follow_route = gui_design_moba_sftp_follow_folder_route()
@@ -856,6 +909,12 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             toolbar.setObjectName("mobaSftpToolbar")
             toolbar.setProperty("mobaSftpToolbarHeight", density.toolbar_height)
             toolbar.setFixedHeight(density.toolbar_height)
+            toolbar_route = gui_design_moba_sftp_toolbar_action_route()
+            self.toolbar = toolbar
+            self.sftp_action_buttons = {}
+            self.apply_sftp_toolbar_action_route_properties(self, toolbar_route)
+            self.apply_sftp_toolbar_action_route_properties(toolbar, toolbar_route)
+            self.apply_sftp_toolbar_action_route_properties(browser, toolbar_route)
             toolbar_geometry = gui_design_moba_sftp_toolbar_action_geometry()
             toolbar_layout = QHBoxLayout(toolbar)
             toolbar_layout.setContentsMargins(
@@ -866,7 +925,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             )
             toolbar_layout.setSpacing(0)
             for action in gui_design_moba_sftp_dock_actions():
-                toolbar_layout.addWidget(self.tool_button(action, density))
+                button = self.tool_button(action, density)
+                self.sftp_action_buttons[action.key] = button
+                toolbar_layout.addWidget(button)
                 if action.separator_after:
                     toolbar_layout.addWidget(self.toolbar_separator(action, density))
             toolbar_layout.addStretch(1)
@@ -887,9 +948,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             path.setProperty("mobaSftpDropdownFontSize", chrome.dropdown_font_size)
             self.apply_sftp_follow_folder_route_properties(path, follow_route)
             self.apply_sftp_terminal_folder_route_properties(path)
+            self.apply_sftp_toolbar_action_route_properties(path, toolbar_route)
             self.apply_connected_session_route_properties(path)
             path.setFixedHeight(density.path_height)
             path.setToolTip(self.state.follow_folder_plan.printable_batch())
+            self.path = path
             layout.addSpacing(density.path_gap)
             layout.addWidget(path)
 
@@ -927,6 +990,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.apply_sftp_follow_folder_route_properties(self.file_table, follow_route)
             self.apply_sftp_routed_file_rows_properties(self.file_table, routed_rows, follow_route)
             self.apply_sftp_terminal_folder_route_properties(self.file_table)
+            self.apply_sftp_toolbar_action_route_properties(self.file_table, toolbar_route)
             self.apply_connected_session_route_properties(self.file_table)
             self.file_table.setIconSize(QSize(density.toolbar_icon_size, density.toolbar_icon_size))
             self.file_table.setRootIsDecorated(False)
@@ -966,6 +1030,13 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.file_table.setCurrentItem(parent_item)
             layout.addSpacing(density.table_header_gap)
             layout.addWidget(self.file_table, 1)
+
+            queue = QLabel("Queue: SFTP toolbar idle")
+            queue.setObjectName(toolbar_route.queue_object)
+            self.apply_sftp_toolbar_action_route_properties(queue, toolbar_route)
+            queue.setVisible(False)
+            self.sftp_transfer_queue = queue
+            layout.addWidget(queue)
 
             layout.addWidget(self.build_remote_monitoring(density))
 
@@ -1038,6 +1109,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             metric_keys = [metric.key for metric in gui_design_moba_monitoring_metrics()]
             panel = QFrame()
             panel.setObjectName("mobaRemoteMonitoring")
+            self.remote_monitoring_panel = panel
             panel.setProperty("mobaSftpMonitoringHeight", density.monitoring_height)
             panel.setProperty("mobaSftpMonitoringDividerOffset", density.monitoring_divider_offset)
             panel.setProperty("mobaSftpMonitoringMetricRowGap", density.monitoring_metric_row_gap)
@@ -1067,12 +1139,16 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             panel.setProperty(control_route.captured_checked_property, control_route.expected_checked)
             panel.setProperty(control_route.captured_command_property, self.state.monitoring_plan.printable())
             panel.setProperty(control_route.captured_refresh_seconds_property, chrome.refresh_seconds)
+            panel.setProperty(control_route.live_checked_property, control_route.expected_checked)
             follow_plan = self.state.follow_folder_plan.printable_batch()
             self.apply_follow_terminal_folder_control_route_properties(panel, follow_control_route)
             panel.setProperty(follow_control_route.captured_property, True)
             panel.setProperty(follow_control_route.captured_checked_property, self.state.follow_terminal_folder)
             panel.setProperty(follow_control_route.captured_path_property, self.state.remote_path)
             panel.setProperty(follow_control_route.captured_plan_property, follow_plan)
+            panel.setProperty(follow_control_route.live_checked_property, self.state.follow_terminal_folder)
+            panel.setProperty(follow_control_route.live_path_property, self.state.remote_path)
+            panel.setProperty(follow_control_route.live_plan_property, follow_plan)
             self.apply_sftp_follow_folder_route_properties(panel, follow_route)
             self.apply_sftp_terminal_folder_route_properties(panel)
             panel.setProperty(
@@ -1091,6 +1167,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             )
             for control in gui_design_moba_monitoring_controls():
                 widget = self.monitoring_control_widget(control)
+                self.monitoring_control_widgets[control.key] = widget
                 geometry = gui_design_moba_monitoring_control_geometry_for(control.key)
                 widget.setParent(controls)
                 widget.setGeometry(
@@ -1131,6 +1208,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 "mobaRemoteMonitoringControlCapturedCheckedProperty": route.captured_checked_property,
                 "mobaRemoteMonitoringControlCapturedCommandProperty": route.captured_command_property,
                 "mobaRemoteMonitoringControlCapturedRefreshProperty": route.captured_refresh_seconds_property,
+                route.signal_property: route.signal,
+                route.handler_property: route.handler,
+                route.live_checked_property: route.expected_checked,
                 "mobaRemoteMonitoringControlRenderSource": route.render_source,
             }
             for key, value in properties.items():
@@ -1160,6 +1240,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 "mobaFollowTerminalFolderControlCapturedCheckedProperty": route.captured_checked_property,
                 "mobaFollowTerminalFolderControlCapturedPathProperty": route.captured_path_property,
                 "mobaFollowTerminalFolderControlCapturedPlanProperty": route.captured_plan_property,
+                route.signal_property: route.signal,
+                route.handler_property: route.handler,
+                route.live_checked_property: route.expected_checked,
+                route.live_path_property: "",
+                route.live_plan_property: "",
                 "mobaFollowTerminalFolderControlRenderSource": route.render_source,
             }
             for key, value in properties.items():
@@ -1217,11 +1302,13 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     control_route.captured_refresh_seconds_property,
                     gui_design_moba_remote_monitoring_dock_chrome().refresh_seconds,
                 )
+                widget.setProperty(control_route.live_checked_property, widget.isChecked())
                 widget.setProperty("mobaMonitoringCommand", self.state.monitoring_plan.printable())
                 widget.setProperty(
                     "mobaMonitoringRefreshSeconds",
                     gui_design_moba_remote_monitoring_dock_chrome().refresh_seconds,
                 )
+                widget.toggled.connect(self.handle_moba_remote_monitoring_toggled)
             if control.key == "follow-terminal-folder":
                 control_route = gui_design_moba_follow_terminal_folder_control_route()
                 follow_route = gui_design_moba_sftp_follow_folder_route()
@@ -1234,14 +1321,77 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 widget.setProperty(control_route.captured_checked_property, widget.isChecked())
                 widget.setProperty(control_route.captured_path_property, self.state.remote_path)
                 widget.setProperty(control_route.captured_plan_property, follow_plan)
+                widget.setProperty(control_route.live_checked_property, widget.isChecked())
+                widget.setProperty(control_route.live_path_property, self.state.remote_path)
+                widget.setProperty(control_route.live_plan_property, follow_plan)
                 self.apply_sftp_follow_folder_route_properties(widget, follow_route)
                 self.apply_sftp_terminal_folder_route_properties(widget)
+                widget.toggled.connect(self.handle_moba_follow_terminal_folder_toggled)
             return widget
 
         def monitoring_control_checked(self, control) -> bool:
             if control.key == "follow-terminal-folder":
                 return self.state.follow_terminal_folder
             return bool(control.checked)
+
+        def handle_moba_remote_monitoring_toggled(self, checked: bool) -> None:
+            route = gui_design_moba_remote_monitoring_control_route()
+            command = self.state.monitoring_plan.printable()
+            refresh_seconds = gui_design_moba_remote_monitoring_dock_chrome().refresh_seconds
+            widgets = [
+                self,
+                getattr(self, "browser", None),
+                getattr(self, "remote_monitoring_panel", None),
+                self.monitoring_control_widgets.get(route.source_control_key),
+            ]
+            for widget in widgets:
+                if widget is None:
+                    continue
+                self.apply_remote_monitoring_control_route_properties(widget, route)
+                widget.setProperty(route.checked_property, bool(checked))
+                widget.setProperty(route.captured_property, True)
+                widget.setProperty(route.captured_checked_property, bool(checked))
+                widget.setProperty(route.captured_command_property, command)
+                widget.setProperty(route.captured_refresh_seconds_property, refresh_seconds)
+                widget.setProperty(route.live_checked_property, bool(checked))
+                widget.setProperty(route.command_property, command)
+                widget.setProperty(route.refresh_seconds_property, refresh_seconds)
+                widget.setProperty("mobaRemoteMonitoringLiveEnabled", bool(checked))
+
+        def handle_moba_follow_terminal_folder_toggled(self, checked: bool) -> None:
+            control_route = gui_design_moba_follow_terminal_folder_control_route()
+            follow_route = gui_design_moba_sftp_follow_folder_route()
+            follow_plan = self.state.follow_folder_plan.printable_batch()
+            widgets = [
+                self,
+                getattr(self, "browser", None),
+                getattr(self, "path", None),
+                getattr(self, "file_table", None),
+                getattr(self, "remote_monitoring_panel", None),
+                self.monitoring_control_widgets.get(control_route.source_control_key),
+            ]
+            for widget in widgets:
+                if widget is None:
+                    continue
+                self.apply_follow_terminal_folder_control_route_properties(widget, control_route)
+                self.apply_sftp_follow_folder_route_properties(widget, follow_route)
+                widget.setProperty(control_route.source_enabled_property, bool(checked))
+                widget.setProperty(control_route.target_enabled_property, bool(checked))
+                widget.setProperty(control_route.captured_property, True)
+                widget.setProperty(control_route.captured_checked_property, bool(checked))
+                widget.setProperty(control_route.captured_path_property, self.state.remote_path)
+                widget.setProperty(control_route.captured_plan_property, follow_plan)
+                widget.setProperty(control_route.live_checked_property, bool(checked))
+                widget.setProperty(control_route.live_path_property, self.state.remote_path)
+                widget.setProperty(control_route.live_plan_property, follow_plan)
+                widget.setProperty("mobaMonitoringFollowPath", self.state.remote_path)
+                widget.setProperty("mobaMonitoringFollowPlan", follow_plan)
+                widget.setProperty("mobaMonitoringFollowEnabled", bool(checked))
+                widget.setProperty("mobaSftpFollowRouteEnabled", bool(checked))
+                widget.setProperty("mobaSftpTerminalFolderRouteEnabled", bool(checked))
+                widget.setProperty("mobaSftpRoutedRowsEnabled", bool(checked))
+            if hasattr(self, "path"):
+                self.path.setToolTip(follow_plan if checked else "Follow terminal folder is disabled")
 
         def monitoring_control_tooltip(self, control) -> str:
             if control.key == "follow-terminal-folder":
@@ -1268,8 +1418,73 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 value = ""
             return f"{metric.label} {value}".strip()
 
+        def show_moba_sftp_toolbar_action(self, action_key: str) -> None:
+            action = next(
+                (item for item in gui_design_moba_sftp_dock_actions() if item.key == action_key),
+                None,
+            )
+            if action is None:
+                return
+            route = gui_design_moba_sftp_toolbar_action_route()
+            action_index = self.moba_sftp_toolbar_action_index(route, action.key)
+            status_value = route.action_statuses[action_index]
+            detail_by_key = {
+                "parent-folder": "Move the SFTP browser to the parent remote directory.",
+                "download": "Queue a download preview for the selected remote item.",
+                "upload": "Queue an upload preview from a local item into the active path.",
+                "connect": "Reconnect the attached SFTP browser for the active SSH tab.",
+                "new-folder": "Prepare a remote mkdir operation in the active path.",
+                "new-file": "Prepare a remote file-create operation in the active path.",
+                "delete": "Prepare a guarded delete preview for the selected remote item.",
+                "ascii-mode": "Toggle text transfer mode for SFTP queue previews.",
+                "split-view": "Toggle a split file browser view for transfer comparison.",
+                "tools": "Open SFTP helper tools for the active connected session.",
+                "terminal": "Open the terminal workflow at the active remote folder.",
+            }
+            queue = getattr(self, "sftp_transfer_queue", None)
+            if queue is not None:
+                queue.setText(f"Queue: {action.label} ({status_value})")
+            clicked_button = getattr(self, "sftp_action_buttons", {}).get(action.key)
+            route_widgets = (
+                self,
+                getattr(self, "browser", None),
+                getattr(self, "toolbar", None),
+                getattr(self, "path", None),
+                getattr(self, "file_table", None),
+                queue,
+                clicked_button,
+            )
+            for route_widget in route_widgets:
+                if route_widget is None:
+                    continue
+                self.apply_sftp_toolbar_action_route_properties(
+                    route_widget,
+                    route,
+                    triggered=True,
+                    action_key=action.key,
+                    status=status_value,
+                )
+                route_widget.setProperty("mobaSftpToolbarRouteLastActionKey", action.key)
+            message = "\n".join(
+                [
+                    "MobaXterm-style SFTP toolbar workflow",
+                    f"Action: {action.label}",
+                    f"Group: {action.group_key}",
+                    f"Remote path: {self.state.remote_path}",
+                    f"Route: {route.key}",
+                    f"Status: {status_value}",
+                    detail_by_key.get(action.key, action.tooltip),
+                ]
+            )
+            main_window = self.window()
+            if hasattr(main_window, "statusBar"):
+                main_window.statusBar().showMessage(f"Moba SFTP {action.key}: {status_value}")
+            if not bool(self.property("mobaSftpToolbarRouteSuppressDialog")):
+                QMessageBox.information(self, f"SFTP {action.label}", message)
+
         def tool_button(self, action, density) -> QToolButton:
             geometry = gui_design_moba_sftp_toolbar_action_geometry_for(action.key)
+            route = gui_design_moba_sftp_toolbar_action_route()
             button = QToolButton()
             button.setObjectName("mobaSftpAction")
             button.setProperty("mobaSftpActionKey", action.key)
@@ -1283,12 +1498,14 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             button.setProperty("mobaSftpActionIconY", geometry.icon_y)
             button.setProperty("mobaSftpActionIconSize", geometry.icon_size)
             button.setProperty("mobaSftpActionSeparatorX", geometry.separator_x)
+            self.apply_sftp_toolbar_action_route_properties(button, route, action_key=action.key)
             button.setText(action.label)
             button.setToolTip(action.tooltip)
             button.setIcon(self.sftp_action_icon(action.icon_key, action.color, size=geometry.icon_size))
             button.setIconSize(QSize(geometry.icon_size, geometry.icon_size))
             button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
             button.setFixedSize(QSize(geometry.button_size, geometry.button_size))
+            button.clicked.connect(lambda _checked=False, action_key=action.key: self.show_moba_sftp_toolbar_action(action_key))
             return button
 
         def toolbar_separator(self, action, density) -> QFrame:
@@ -1616,9 +1833,17 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
         def build_session_edge_controls(self) -> QFrame:
             chrome = gui_design_moba_right_utility_rail_chrome()
+            route = gui_design_moba_session_edge_action_route()
             controls = QFrame()
             controls.setObjectName("mobaSessionEdgeControls")
             actions = gui_design_moba_session_edge_actions()
+            controls.setProperty("mobaSessionEdgeRouteKey", route.key)
+            controls.setProperty("mobaSessionEdgeRouteRole", route.route_role)
+            controls.setProperty("mobaSessionEdgeRouteControlsObject", route.controls_object)
+            controls.setProperty("mobaSessionEdgeRouteActionObject", route.action_object)
+            controls.setProperty("mobaSessionEdgeRoutePlacement", route.placement)
+            controls.setProperty(route.action_keys_property, list(route.action_keys))
+            controls.setProperty("mobaSessionEdgeRouteRenderSource", route.render_source)
             controls.setProperty("mobaSessionEdgeActionKeys", [action.key for action in actions])
             controls.setProperty("mobaSessionEdgePlacement", "tab-strip-overlay")
             controls.setProperty("mobaSessionEdgeTopY", chrome.session_edge_top_y)
@@ -1631,12 +1856,22 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             )
             controls.setFixedWidth(chrome.live_width)
             controls.setFixedHeight(chrome.session_edge_height)
+            route_handlers = dict(zip(route.action_keys, route.action_handlers, strict=True))
             for action in actions:
                 relative_y = action.relative_y(chrome.session_edge_top_y)
                 button = QToolButton(controls)
                 button.setObjectName("mobaSessionEdgeAction")
                 button.setProperty("mobaSessionEdgeKey", action.key)
                 button.setProperty("mobaSessionEdgeIconKey", action.icon_key)
+                button.setProperty("mobaSessionEdgeRouteKey", route.key)
+                button.setProperty("mobaSessionEdgeRouteRole", route.route_role)
+                button.setProperty(route.action_key_property, action.key)
+                button.setProperty(route.action_label_property, action.label)
+                button.setProperty(route.action_object_property, route.action_object)
+                button.setProperty(route.icon_key_property, action.icon_key)
+                button.setProperty("mobaSessionEdgeRouteHandler", route_handlers[action.key])
+                button.setProperty(route.action_keys_property, list(route.action_keys))
+                button.setProperty("mobaSessionEdgeRouteRenderSource", route.render_source)
                 button.setProperty("mobaSessionEdgeStaticY", action.static_y)
                 button.setProperty("mobaSessionEdgeRelativeY", relative_y)
                 button.setProperty("mobaSessionEdgeIconX", chrome.session_edge_icon_x)
@@ -1656,6 +1891,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     action.button_size,
                     action.button_size,
                 )
+                button.clicked.connect(getattr(self, route_handlers[action.key]))
             return controls
 
         def moba_utility_icon(self, icon_key: str, fill: str) -> QIcon:
@@ -3203,6 +3439,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                         remmina_transfer_route.toolbar_active_property,
                         "true" if is_remmina_transfer else "false",
                     )
+                    if is_remmina_transfer:
+                        self.apply_remmina_sftp_transfer_action_route_properties(button, remmina_transfer_route)
                 button.setMinimumWidth(
                     securecrt_action.static_width
                     if securecrt_action
@@ -3616,6 +3854,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 "mRemoteNgConnectionRouteRenderSource",
                 mremoteng_route.render_source if mremoteng_route else "",
             )
+            if mremoteng_route is not None:
+                self.apply_mremoteng_reconnect_route_properties(self.profile_list, mremoteng_route)
             mremoteng_filter_props = {
                 "mRemoteNgDocumentFilterRouteKey": mremoteng_filter_route.key if mremoteng_filter_route else "",
                 "mRemoteNgDocumentFilterRouteRole": (
@@ -5735,6 +5975,42 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 return
             self.design_select.setCurrentIndex((self.design_select.currentIndex() + 1) % self.design_select.count())
 
+        def show_moba_session_attachment(self, *_args) -> None:
+            self.show_workflow_dialog(
+                "Session attachment",
+                "Active-tab attachment helpers for the connected terminal.",
+                [
+                    ("SFTP browser", "attached", "The left dock follows the active SSH session."),
+                    ("Transfer hints", "available", "Clipboard and file-transfer helper routes are ready."),
+                    ("Session context", "active tab", "Attachment shortcuts stay scoped to the selected terminal tab."),
+                ],
+                "\n".join(
+                    [
+                        "Session-edge attachment workflow",
+                        "Use the connected SFTP browser and helper actions without exposing personal paths.",
+                        "The route is measured separately from the larger right utility rail.",
+                    ]
+                ),
+            )
+
+        def show_moba_session_settings(self, *_args) -> None:
+            self.show_workflow_dialog(
+                "Session settings",
+                "Active-tab terminal settings for the connected MobaXterm-style workspace.",
+                [
+                    ("Terminal", "active", "Settings apply to the selected connected terminal tab."),
+                    ("SSH browser", "enabled", "The SFTP browser remains attached while settings are inspected."),
+                    ("X11 forwarding", "tracked", "The SSH banner keeps X11 status visible for the session."),
+                ],
+                "\n".join(
+                    [
+                        "Session-edge settings workflow",
+                        "Keep tab-local settings, SSH-browser state and terminal identity together.",
+                        "Preview evidence stays generic and does not include user credentials.",
+                    ]
+                ),
+            )
+
         def show_moba_clipboard_hints(self, *_args) -> None:
             self.show_workflow_dialog(
                 "Clipboard and transfer hints",
@@ -6812,6 +7088,81 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             panel_layout.addWidget(footer)
             return panel
 
+        @staticmethod
+        def apply_termius_snippet_run_route_properties(
+            widget,
+            route,
+            *,
+            triggered: bool = False,
+            command: str | None = None,
+            status: str | None = None,
+        ) -> None:
+            command_value = command or route.snippet_command
+            status_value = status or route.snippet_state
+            properties = {
+                "termiusSnippetRouteKey": route.key,
+                "termiusSnippetRouteRole": route.route_role,
+                route.workflow_key_property: route.workflow_card_key,
+                "termiusSnippetRouteWorkflowCardObject": route.workflow_card_object,
+                "termiusSnippetRouteTitleObject": route.workflow_title_object,
+                "termiusSnippetRoutePrimaryObject": route.workflow_primary_object,
+                "termiusSnippetRouteSecondaryObject": route.workflow_secondary_object,
+                "termiusSnippetRouteActionObject": route.action_object,
+                "termiusSnippetRouteShortcutObject": route.shortcut_object,
+                "termiusSnippetRouteIdentityObject": route.host_identity_object,
+                "termiusSnippetRouteIdentityFieldKey": route.identity_field_key,
+                "termiusSnippetRouteIdentityCellObject": route.identity_cell_object,
+                route.active_tab_property: route.active_tab_label,
+                "termiusSnippetRouteSelectedProfile": route.selected_profile_name,
+                "termiusSnippetRouteTitle": route.workflow_title,
+                route.command_property: command_value,
+                route.status_property: status_value,
+                "termiusSnippetRouteDetailLine": route.detail_line,
+                "termiusSnippetRouteActionLabel": route.action_label,
+                "termiusSnippetRouteShortcutSequence": route.shortcut_sequence,
+                route.captured_property: triggered,
+                route.captured_command_property: command_value if triggered else "",
+                route.captured_target_profile_property: route.selected_profile_name if triggered else "",
+                route.captured_status_property: status_value if triggered else "",
+                route.signal_property: route.signal,
+                route.secondary_signal_property: route.secondary_signal,
+                route.handler_property: route.handler,
+                route.live_triggered_property: triggered,
+                route.live_command_property: command_value,
+                route.live_target_profile_property: route.selected_profile_name,
+                route.live_status_property: status_value,
+                "termiusSnippetRouteRenderSource": route.render_source,
+            }
+            for property_name, value in properties.items():
+                widget.setProperty(property_name, value)
+
+        def handle_termius_snippet_run(self, _checked: bool = False) -> None:
+            route = gui_design_termius_snippet_route()
+            command = route.snippet_command
+            status = "ran"
+            route_widgets = (
+                getattr(self, "termius_snippet_workflow_panel", None),
+                getattr(self, "termius_snippet_card", None),
+                getattr(self, "termius_snippet_title", None),
+                getattr(self, "termius_snippet_primary", None),
+                getattr(self, "termius_snippet_secondary", None),
+                getattr(self, "termius_snippet_action", None),
+                getattr(self, "termius_snippet_shortcut", None),
+                getattr(self, "termius_snippet_identity_panel", None),
+                getattr(self, "termius_snippet_identity_cell", None),
+            )
+            for route_widget in route_widgets:
+                if route_widget is None:
+                    continue
+                self.apply_termius_snippet_run_route_properties(
+                    route_widget,
+                    route,
+                    triggered=True,
+                    command=command,
+                    status=status,
+                )
+            self.statusBar().showMessage(f"Termius snippet ran on {route.selected_profile_name}: {command}")
+
         def build_product_workflow_evidence(self) -> QFrame:
             design_id = self.current_design_id()
             cards = gui_design_workflow_cards(design_id)
@@ -6839,6 +7190,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 panel.setProperty("termiusSnippetRouteState", snippet_route.snippet_state)
                 panel.setProperty("termiusSnippetRouteDetailLine", snippet_route.detail_line)
                 panel.setProperty("termiusSnippetRouteRenderSource", snippet_route.render_source)
+                self.termius_snippet_workflow_panel = panel
+                self.apply_termius_snippet_run_route_properties(panel, snippet_route)
             if inheritance_route is not None:
                 panel.setProperty("mRemoteNgInheritanceRouteKey", inheritance_route.key)
                 panel.setProperty("mRemoteNgInheritanceRouteRole", inheritance_route.route_role)
@@ -6902,6 +7255,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 card_frame.setProperty("workflowKey", card.key)
                 card_frame.setMinimumWidth(190)
                 if snippet_route is not None and card.key == snippet_route.workflow_card_key:
+                    card_frame.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
                     card_frame.setProperty("termiusSnippetRouteKey", snippet_route.key)
                     card_frame.setProperty("termiusSnippetRouteRole", snippet_route.route_role)
                     card_frame.setProperty("termiusSnippetRouteWorkflowKey", snippet_route.workflow_card_key)
@@ -6916,6 +7270,13 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     card_frame.setProperty("termiusSnippetRouteState", snippet_route.snippet_state)
                     card_frame.setProperty("termiusSnippetRouteDetailLine", snippet_route.detail_line)
                     card_frame.setProperty("termiusSnippetRouteRenderSource", snippet_route.render_source)
+                    self.termius_snippet_card = card_frame
+                    self.apply_termius_snippet_run_route_properties(card_frame, snippet_route)
+                    shortcut = QShortcut(QKeySequence(snippet_route.shortcut_sequence), card_frame)
+                    shortcut.setObjectName(snippet_route.shortcut_object)
+                    self.termius_snippet_shortcut = shortcut
+                    self.apply_termius_snippet_run_route_properties(shortcut, snippet_route)
+                    shortcut.activated.connect(self.handle_termius_snippet_run)
                 if inheritance_route is not None and card.key == inheritance_route.workflow_card_key:
                     card_frame.setProperty("mRemoteNgInheritanceRouteKey", inheritance_route.key)
                     card_frame.setProperty("mRemoteNgInheritanceRouteRole", inheritance_route.route_role)
@@ -7016,12 +7377,18 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 secondary.setObjectName("productWorkflowSecondary")
                 secondary.setWordWrap(True)
                 if snippet_route is not None and card.key == snippet_route.workflow_card_key:
+                    self.termius_snippet_title = title
+                    self.termius_snippet_primary = primary
+                    self.termius_snippet_secondary = secondary
                     title.setProperty("termiusSnippetRouteKey", snippet_route.key)
                     title.setProperty("termiusSnippetRouteTitle", card.title)
                     primary.setProperty("termiusSnippetRouteKey", snippet_route.key)
                     primary.setProperty("termiusSnippetRouteCommand", card.primary)
                     secondary.setProperty("termiusSnippetRouteKey", snippet_route.key)
                     secondary.setProperty("termiusSnippetRouteState", card.secondary)
+                    self.apply_termius_snippet_run_route_properties(title, snippet_route)
+                    self.apply_termius_snippet_run_route_properties(primary, snippet_route)
+                    self.apply_termius_snippet_run_route_properties(secondary, snippet_route)
                 if inheritance_route is not None and card.key == inheritance_route.workflow_card_key:
                     title.setProperty("mRemoteNgInheritanceRouteKey", inheritance_route.key)
                     title.setProperty("mRemoteNgInheritanceRouteTitle", card.title)
@@ -7039,6 +7406,15 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 card_layout.addWidget(title)
                 card_layout.addWidget(primary)
                 card_layout.addWidget(secondary)
+                if snippet_route is not None and card.key == snippet_route.workflow_card_key:
+                    action = QToolButton()
+                    action.setObjectName(snippet_route.action_object)
+                    action.setText(snippet_route.action_label)
+                    action.setToolTip(f"{snippet_route.action_label} snippet: {snippet_route.snippet_command}")
+                    action.clicked.connect(self.handle_termius_snippet_run)
+                    self.termius_snippet_action = action
+                    self.apply_termius_snippet_run_route_properties(action, snippet_route)
+                    card_layout.addWidget(action, 0, Qt.AlignmentFlag.AlignLeft)
                 layout.addWidget(card_frame)
             return panel
 
@@ -7099,6 +7475,66 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 layout.addWidget(self.build_securecrt_command_window_evidence())
             return panel
 
+        @staticmethod
+        def apply_mremoteng_reconnect_route_properties(
+            widget,
+            route,
+            *,
+            triggered: bool = False,
+            reconnect_state: str | None = None,
+        ) -> None:
+            state_value = reconnect_state or route.workspace_state
+            properties = {
+                "mRemoteNgConnectionRouteKey": route.key,
+                "mRemoteNgConnectionRouteRole": route.route_role,
+                "mRemoteNgConnectionRouteSelectedProfile": route.selected_profile_name,
+                "mRemoteNgConnectionRouteSelectedTreeLabel": route.selected_tree_label,
+                "mRemoteNgConnectionRouteDocumentControlsObject": route.document_controls_object,
+                "mRemoteNgConnectionRouteDocumentControlKey": route.document_control_key,
+                "mRemoteNgConnectionRouteDocumentControlObject": route.document_control_object,
+                "mRemoteNgConnectionRoutePropertyGridObject": route.property_grid_object,
+                "mRemoteNgConnectionRoutePropertyRowKey": route.property_row_key,
+                "mRemoteNgConnectionRoutePropertyCellObject": route.property_cell_object,
+                route.tab_label_property: route.active_tab_label,
+                "mRemoteNgConnectionRouteProtocol": route.protocol,
+                "mRemoteNgConnectionRouteState": route.workspace_state,
+                route.property_value_property: route.property_value,
+                route.signal_property: route.signal,
+                route.handler_property: route.handler,
+                route.captured_property: triggered,
+                route.captured_state_property: state_value if triggered else "",
+                route.captured_profile_property: route.selected_profile_name if triggered else "",
+                route.live_triggered_property: triggered,
+                route.live_state_property: state_value,
+                route.live_profile_property: route.selected_profile_name,
+                "mRemoteNgConnectionRouteRenderSource": route.render_source,
+            }
+            for property_name, property_value in properties.items():
+                widget.setProperty(property_name, property_value)
+
+        def handle_mremoteng_document_reconnect(self, _checked: bool = False) -> None:
+            route = gui_design_mremoteng_connection_document_route()
+            route_widgets = (
+                getattr(self, "profile_list", None),
+                getattr(self, "mremoteng_document_controls_panel", None),
+                getattr(self, "mremoteng_reconnect_button", None),
+                getattr(self, "mremoteng_property_grid_panel", None),
+                getattr(self, "mremoteng_connection_route_row", None),
+                getattr(self, "mremoteng_connection_route_effective_cell", None),
+            )
+            for route_widget in route_widgets:
+                if route_widget is None:
+                    continue
+                self.apply_mremoteng_reconnect_route_properties(
+                    route_widget,
+                    route,
+                    triggered=True,
+                    reconnect_state=route.reconnect_state,
+                )
+            self.statusBar().showMessage(
+                f"mRemoteNG reconnected {route.selected_profile_name}: {route.protocol}"
+            )
+
         def build_mremoteng_document_controls_evidence(self) -> QFrame:
             chrome = gui_design_mremoteng_document_toolbar_chrome()
             route = gui_design_mremoteng_connection_document_route()
@@ -7122,6 +7558,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             panel.setProperty("mRemoteNgConnectionRouteState", route.workspace_state)
             panel.setProperty("mRemoteNgConnectionRoutePropertyValue", route.property_value)
             panel.setProperty("mRemoteNgConnectionRouteRenderSource", route.render_source)
+            self.mremoteng_document_controls_panel = panel
+            self.apply_mremoteng_reconnect_route_properties(panel, route)
             filter_route_properties = {
                 "mRemoteNgDocumentFilterRouteKey": filter_route.key,
                 "mRemoteNgDocumentFilterRouteRole": filter_route.route_role,
@@ -7195,6 +7633,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     button.setProperty("mRemoteNgConnectionRoutePropertyValue", route.property_value)
                     button.setProperty("mRemoteNgConnectionRouteRenderSource", route.render_source)
                     button.setProperty(route.control_active_property, "true")
+                    self.mremoteng_reconnect_button = button
+                    self.apply_mremoteng_reconnect_route_properties(button, route)
                 else:
                     button.setProperty(route.control_active_property, "false")
                 button.setText(control.label)
@@ -7208,11 +7648,14 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 button.setMinimumWidth(control.live_min_width)
                 button.setMinimumHeight(control.live_button_height)
                 button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-                button.clicked.connect(
-                    lambda _checked=False, label=control.label: self.statusBar().showMessage(
-                        f"mRemoteNG document control: {label}"
+                if control.key == route.document_control_key:
+                    button.clicked.connect(self.handle_mremoteng_document_reconnect)
+                else:
+                    button.clicked.connect(
+                        lambda _checked=False, label=control.label: self.statusBar().showMessage(
+                            f"mRemoteNG document control: {label}"
+                        )
                     )
-                )
                 layout.addWidget(button)
             layout.addStretch(1)
 
@@ -7327,6 +7770,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             panel.setProperty("mRemoteNgConnectionRouteState", route.workspace_state)
             panel.setProperty("mRemoteNgConnectionRoutePropertyValue", route.property_value)
             panel.setProperty("mRemoteNgConnectionRouteRenderSource", route.render_source)
+            self.mremoteng_property_grid_panel = panel
+            self.apply_mremoteng_reconnect_route_properties(panel, route)
             for property_name, property_value in inheritance_route_properties.items():
                 panel.setProperty(property_name, property_value)
             panel.setMaximumHeight(176)
@@ -7377,6 +7822,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     row_frame.setProperty("mRemoteNgConnectionRoutePropertyCellObject", route.property_cell_object)
                     row_frame.setProperty("mRemoteNgConnectionRoutePropertyValue", route.property_value)
                     row_frame.setProperty("mRemoteNgConnectionRouteRenderSource", route.render_source)
+                    self.mremoteng_connection_route_row = row_frame
+                    self.apply_mremoteng_reconnect_route_properties(row_frame, route)
                 if row.key == inheritance_route.property_row_key:
                     for property_name, property_value in inheritance_route_properties.items():
                         row_frame.setProperty(property_name, property_value)
@@ -7408,6 +7855,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                         cell.setProperty("mRemoteNgConnectionRoutePropertyRowKey", route.property_row_key)
                         cell.setProperty("mRemoteNgConnectionRoutePropertyCellObject", route.property_cell_object)
                         cell.setProperty("mRemoteNgConnectionRoutePropertyValue", route.property_value)
+                        self.apply_mremoteng_reconnect_route_properties(cell, route)
+                        if column.key == "effective":
+                            self.mremoteng_connection_route_effective_cell = cell
                     if row.key == inheritance_route.property_row_key:
                         for property_name, property_value in inheritance_route_properties.items():
                             cell.setProperty(property_name, property_value)
@@ -7543,6 +7993,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             panel.setProperty("termiusSnippetRouteState", snippet_route.snippet_state)
             panel.setProperty("termiusSnippetRouteDetailLine", snippet_route.detail_line)
             panel.setProperty("termiusSnippetRouteRenderSource", snippet_route.render_source)
+            self.termius_snippet_identity_panel = panel
+            self.apply_termius_snippet_run_route_properties(panel, snippet_route)
             panel.setProperty("termiusFilesRouteKey", files_route.key)
             panel.setProperty("termiusFilesRouteRole", files_route.route_role)
             panel.setProperty("termiusFilesRouteHostSelectionKey", files_route.host_selection_route_key)
@@ -7557,6 +8009,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             panel.setProperty("termiusFilesRoutePath", files_route.remote_path)
             panel.setProperty("termiusFilesRouteQueueState", files_route.transfer_status)
             panel.setProperty("termiusFilesRouteRenderSource", files_route.render_source)
+            self.termius_files_identity_panel = panel
+            self.apply_termius_files_sync_route_properties(panel, files_route)
             panel.setProperty("termiusHostIdentityFieldKeys", [field.key for field in strip.fields])
             panel.setProperty("termiusHostIdentityTitleWidth", strip.title_width)
             panel.setProperty("termiusHostIdentityStaticTitleX", strip.static_title_x)
@@ -7639,6 +8093,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     cell.setProperty("termiusPortForwardRouteIdentityValue", field.value)
                     cell.setProperty("termiusPortForwardRouteRenderSource", port_forward_route.render_source)
                 if field.key == snippet_route.identity_field_key:
+                    self.termius_snippet_identity_cell = cell
                     cell.setProperty("termiusSnippetRouteKey", snippet_route.key)
                     cell.setProperty("termiusSnippetRouteRole", snippet_route.route_role)
                     cell.setProperty("termiusSnippetRouteWorkflowKey", snippet_route.workflow_card_key)
@@ -7654,7 +8109,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     cell.setProperty("termiusSnippetRouteDetailLine", snippet_route.detail_line)
                     cell.setProperty("termiusSnippetRouteIdentityValue", field.value)
                     cell.setProperty("termiusSnippetRouteRenderSource", snippet_route.render_source)
+                    self.apply_termius_snippet_run_route_properties(cell, snippet_route)
                 if field.key == files_route.identity_field_key:
+                    self.termius_files_identity_cell = cell
                     cell.setProperty("termiusFilesRouteKey", files_route.key)
                     cell.setProperty("termiusFilesRouteRole", files_route.route_role)
                     cell.setProperty("termiusFilesRouteHostSelectionKey", files_route.host_selection_route_key)
@@ -7670,9 +8127,91 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     cell.setProperty("termiusFilesRoutePath", files_route.remote_path)
                     cell.setProperty("termiusFilesRouteQueueState", files_route.transfer_status)
                     cell.setProperty("termiusFilesRouteRenderSource", files_route.render_source)
+                    self.apply_termius_files_sync_route_properties(cell, files_route)
                 layout.addWidget(cell)
             layout.addStretch(1)
             return panel
+
+        @staticmethod
+        def apply_termius_files_sync_route_properties(
+            widget,
+            route,
+            *,
+            triggered: bool = False,
+            action_key: str | None = None,
+            status: str | None = None,
+        ) -> None:
+            actions_value = "|".join(route.toolbar_actions)
+            action_value = action_key or route.action_key
+            status_value = status or route.transfer_status
+            properties = {
+                "termiusFilesRouteKey": route.key,
+                "termiusFilesRouteRole": route.route_role,
+                "termiusFilesRouteHostSelectionKey": route.host_selection_route_key,
+                "termiusFilesRouteIdentityObject": route.host_identity_object,
+                "termiusFilesRouteIdentityFieldKey": route.identity_field_key,
+                "termiusFilesRouteIdentityCellObject": route.identity_cell_object,
+                "termiusFilesRouteBrowserObject": route.files_browser_object,
+                "termiusFilesRouteToolbarObject": route.toolbar_object,
+                "termiusFilesRoutePathObject": route.path_object,
+                "termiusFilesRouteTableObject": route.table_object,
+                "termiusFilesRouteRowObject": route.row_object,
+                "termiusFilesRouteQueueObject": route.queue_object,
+                route.active_tab_property: route.active_tab_label,
+                "termiusFilesRouteSelectedProfile": route.selected_profile_name,
+                "termiusFilesRouteSelectedTreeLabel": route.selected_tree_label,
+                route.identity_value_property: route.files_state,
+                "termiusFilesRouteState": route.files_state,
+                route.path_property: route.remote_path,
+                route.toolbar_actions_property: actions_value,
+                "termiusFilesRouteActiveRowName": route.active_row_name,
+                "termiusFilesRouteQueueLabel": route.transfer_queue_label,
+                route.queue_state_property: route.transfer_status,
+                "termiusFilesRouteActionObject": route.action_object,
+                "termiusFilesRouteActionKey": action_value,
+                "termiusFilesRouteActionLabel": route.action_label,
+                route.signal_property: route.signal,
+                route.handler_property: route.handler,
+                route.captured_property: triggered,
+                route.captured_action_property: action_value if triggered else "",
+                route.captured_status_property: status_value if triggered else "",
+                route.live_triggered_property: triggered,
+                route.live_action_property: action_value,
+                route.live_status_property: status_value,
+                "termiusFilesRouteRenderSource": route.render_source,
+            }
+            for property_name, value in properties.items():
+                widget.setProperty(property_name, value)
+
+        def handle_termius_files_sync(self, action_key: str | None = None) -> None:
+            route = gui_design_termius_files_browser_route()
+            action_value = action_key or route.action_key
+            status_value = route.action_status if action_value == route.action_key else route.transfer_status
+            queue = getattr(self, "termius_files_queue", None)
+            if queue is not None:
+                queue.setText(f"Queue: {route.transfer_queue_label} ({status_value})")
+            route_widgets = (
+                getattr(self, "termius_files_identity_panel", None),
+                getattr(self, "termius_files_identity_cell", None),
+                getattr(self, "termius_files_browser_panel", None),
+                getattr(self, "termius_files_toolbar", None),
+                getattr(self, "termius_files_path", None),
+                getattr(self, "termius_files_table", None),
+                queue,
+                getattr(self, "termius_files_action_button", None),
+                getattr(self, "termius_files_active_row", None),
+            )
+            for route_widget in route_widgets:
+                if route_widget is None:
+                    continue
+                self.apply_termius_files_sync_route_properties(
+                    route_widget,
+                    route,
+                    triggered=True,
+                    action_key=action_value,
+                    status=status_value,
+                )
+            self.statusBar().showMessage(f"Termius files {action_value}: {status_value}")
 
         def build_termius_files_browser_evidence(self) -> QFrame:
             route = gui_design_termius_files_browser_route()
@@ -7706,6 +8245,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             panel.setObjectName(route.files_browser_object)
             for property_name, value in route_props.items():
                 panel.setProperty(property_name, value)
+            self.termius_files_browser_panel = panel
+            self.apply_termius_files_sync_route_properties(panel, route)
             layout = QVBoxLayout(panel)
             layout.setContentsMargins(8, 7, 8, 7)
             layout.setSpacing(5)
@@ -7719,6 +8260,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             queue.setObjectName(route.queue_object)
             for property_name, value in route_props.items():
                 queue.setProperty(property_name, value)
+            self.termius_files_queue = queue
+            self.apply_termius_files_sync_route_properties(queue, route)
             header.addWidget(title)
             header.addStretch(1)
             header.addWidget(queue)
@@ -7728,15 +8271,29 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             toolbar.setObjectName(route.toolbar_object)
             for property_name, value in route_props.items():
                 toolbar.setProperty(property_name, value)
+            self.termius_files_toolbar = toolbar
+            self.apply_termius_files_sync_route_properties(toolbar, route)
             toolbar_layout = QHBoxLayout(toolbar)
             toolbar_layout.setContentsMargins(0, 0, 0, 0)
             toolbar_layout.setSpacing(6)
             for action_key in route.toolbar_actions:
-                action = QLabel(action_key.title())
-                action.setObjectName("termiusFilesAction")
+                action = QToolButton()
+                action.setObjectName(route.action_object)
                 action.setProperty("termiusFilesRouteKey", route.key)
                 action.setProperty("termiusFilesRouteActionKey", action_key)
                 action.setProperty(route.toolbar_actions_property, actions_value)
+                self.apply_termius_files_sync_route_properties(action, route, action_key=action_key)
+                if action_key == route.action_key:
+                    self.termius_files_action_button = action
+                    action.clicked.connect(lambda _checked=False, key=action_key: self.handle_termius_files_sync(key))
+                else:
+                    action.clicked.connect(
+                        lambda _checked=False, key=action_key: self.statusBar().showMessage(
+                            f"Termius files action: {key}"
+                        )
+                    )
+                action.setText(action_key.title())
+                action.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
                 toolbar_layout.addWidget(action)
             toolbar_layout.addStretch(1)
             layout.addWidget(toolbar)
@@ -7745,12 +8302,16 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             path.setObjectName(route.path_object)
             for property_name, value in route_props.items():
                 path.setProperty(property_name, value)
+            self.termius_files_path = path
+            self.apply_termius_files_sync_route_properties(path, route)
             layout.addWidget(path)
 
             table = QFrame()
             table.setObjectName(route.table_object)
             for property_name, value in route_props.items():
                 table.setProperty(property_name, value)
+            self.termius_files_table = table
+            self.apply_termius_files_sync_route_properties(table, route)
             table_layout = QVBoxLayout(table)
             table_layout.setContentsMargins(0, 0, 0, 0)
             table_layout.setSpacing(2)
@@ -7768,6 +8329,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 row_frame.setProperty("termiusFilesRouteRowKey", row.key)
                 row_frame.setProperty("termiusFilesRouteRowSize", row.size)
                 row_frame.setProperty("termiusFilesRouteRowModified", row.modified)
+                self.apply_termius_files_sync_route_properties(row_frame, route)
+                if row.name == route.active_row_name:
+                    self.termius_files_active_row = row_frame
                 row_layout = QHBoxLayout(row_frame)
                 row_layout.setContentsMargins(4, 1, 4, 1)
                 row_layout.setSpacing(8)
@@ -7783,6 +8347,145 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 table_layout.addWidget(row_frame)
             layout.addWidget(table)
             return panel
+
+        @staticmethod
+        def apply_remmina_screenshot_capture_route_properties(
+            widget,
+            route,
+            *,
+            captured: bool = False,
+            capture_state: str | None = None,
+        ) -> None:
+            state_value = capture_state or route.capture_state
+            properties = {
+                "remminaScreenshotRouteKey": route.key,
+                "remminaScreenshotRouteRole": route.route_role,
+                "remminaScreenshotViewerControlsObject": route.viewer_controls_object,
+                "remminaScreenshotViewerControlKey": route.viewer_control_key,
+                "remminaScreenshotViewerControlObject": route.viewer_control_object,
+                route.tab_label_property: route.active_tab_label,
+                "remminaScreenshotRouteProtocol": route.protocol,
+                route.capture_state_property: route.capture_state,
+                route.capture_artifact_property: route.capture_artifact,
+                "remminaScreenshotRouteStatusSegment": route.status_segment,
+                "remminaScreenshotRouteDetailLine": route.detail_line,
+                "remminaScreenshotRouteActivityLine": route.activity_line,
+                route.signal_property: route.signal,
+                route.handler_property: route.handler,
+                route.captured_property: captured,
+                route.captured_state_property: state_value if captured else "",
+                route.captured_artifact_property: route.capture_artifact if captured else "",
+                route.live_triggered_property: captured,
+                route.live_capture_state_property: state_value,
+                route.live_capture_artifact_property: route.capture_artifact,
+                "remminaScreenshotRouteRenderSource": route.render_source,
+            }
+            for property_name, value in properties.items():
+                widget.setProperty(property_name, value)
+
+        def handle_remmina_screenshot_capture(self, _checked: bool = False) -> None:
+            route = gui_design_remmina_screenshot_route()
+            state = "captured"
+            route_widgets = (
+                getattr(self, "remmina_viewer_controls_panel", None),
+                getattr(self, "remmina_screenshot_button", None),
+            )
+            for route_widget in route_widgets:
+                if route_widget is None:
+                    continue
+                self.apply_remmina_screenshot_capture_route_properties(
+                    route_widget,
+                    route,
+                    captured=True,
+                    capture_state=state,
+                )
+            self.statusBar().showMessage(f"Remmina screenshot captured: {route.capture_artifact}")
+
+        @staticmethod
+        def apply_remmina_sftp_transfer_action_route_properties(
+            widget,
+            route,
+            *,
+            triggered: bool = False,
+            action_key: str | None = None,
+            status: str | None = None,
+        ) -> None:
+            actions_value = "|".join(route.toolbar_actions)
+            action_value = action_key or route.action_key
+            status_value = status or route.transfer_status
+            properties = {
+                "remminaSftpTransferRouteKey": route.key,
+                "remminaSftpTransferRouteRole": route.route_role,
+                "remminaSftpTransferRouteProfileListObject": route.profile_list_object,
+                "remminaSftpTransferRouteSelectedProfileKey": route.selected_profile_key,
+                route.selected_profile_property: route.selected_profile_name,
+                "remminaSftpTransferRouteProtocol": route.selected_profile_protocol,
+                "remminaSftpTransferRouteStatus": route.selected_profile_status,
+                "remminaSftpTransferRouteSelectedProfileObject": route.selected_profile_object,
+                "remminaSftpTransferRouteSelectedTreeLabel": route.selected_tree_label,
+                "remminaSftpTransferRouteToolbarActionKey": route.toolbar_action_key,
+                "remminaSftpTransferRouteToolbarActionLabel": route.toolbar_action_label,
+                "remminaSftpTransferRouteToolbarActionObject": route.toolbar_action_object,
+                route.toolbar_active_property: "true",
+                route.tab_label_property: route.active_tab_label,
+                "remminaSftpTransferRoutePanelObject": route.transfer_panel_object,
+                "remminaSftpTransferRouteToolbarObject": route.toolbar_object,
+                "remminaSftpTransferRoutePathObject": route.path_object,
+                "remminaSftpTransferRouteTableObject": route.table_object,
+                "remminaSftpTransferRouteRowObject": route.row_object,
+                "remminaSftpTransferRouteQueueObject": route.queue_object,
+                route.path_property: route.remote_path,
+                route.toolbar_actions_property: actions_value,
+                "remminaSftpTransferRouteActiveRowName": route.active_row_name,
+                "remminaSftpTransferRouteQueueLabel": route.transfer_queue_label,
+                route.queue_state_property: route.transfer_status,
+                "remminaSftpTransferRouteDetailLine": route.detail_line,
+                "remminaSftpTransferRouteActivityLine": route.activity_line,
+                "remminaSftpTransferRouteActionObject": route.action_object,
+                "remminaSftpTransferRouteActionKey": action_value,
+                "remminaSftpTransferRouteActionLabel": route.action_label,
+                route.signal_property: route.signal,
+                route.handler_property: route.handler,
+                route.captured_property: triggered,
+                route.captured_action_property: action_value if triggered else "",
+                route.captured_status_property: status_value if triggered else "",
+                route.live_triggered_property: triggered,
+                route.live_action_property: action_value,
+                route.live_status_property: status_value,
+                "remminaSftpTransferRouteRenderSource": route.render_source,
+            }
+            for property_name, value in properties.items():
+                widget.setProperty(property_name, value)
+
+        def handle_remmina_sftp_transfer_action(self, action_key: str | None = None) -> None:
+            route = gui_design_remmina_sftp_transfer_route()
+            action_value = action_key or route.action_key
+            status_value = route.action_status if action_value == route.action_key else route.transfer_status
+            queue = getattr(self, "remmina_sftp_transfer_queue", None)
+            if queue is not None:
+                queue.setText(f"Queue: {route.transfer_queue_label} ({status_value})")
+            route_widgets = (
+                getattr(self, "remmina_sftp_profile_panel", None),
+                getattr(self, "remmina_sftp_profile_row", None),
+                getattr(self, "remmina_sftp_transfer_panel", None),
+                getattr(self, "remmina_sftp_transfer_toolbar", None),
+                getattr(self, "remmina_sftp_transfer_path", None),
+                getattr(self, "remmina_sftp_transfer_table", None),
+                queue,
+                getattr(self, "remmina_sftp_transfer_action_button", None),
+                getattr(self, "remmina_sftp_transfer_active_row", None),
+            )
+            for route_widget in route_widgets:
+                if route_widget is None:
+                    continue
+                self.apply_remmina_sftp_transfer_action_route_properties(
+                    route_widget,
+                    route,
+                    triggered=True,
+                    action_key=action_value,
+                    status=status_value,
+                )
+            self.statusBar().showMessage(f"Remmina SFTP {action_value}: {status_value}")
 
         def build_remmina_viewer_controls_evidence(self) -> QFrame:
             route = gui_design_remmina_profile_viewer_route()
@@ -7827,6 +8530,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             panel.setProperty("remminaScreenshotRouteDetailLine", screenshot_route.detail_line)
             panel.setProperty("remminaScreenshotRouteActivityLine", screenshot_route.activity_line)
             panel.setProperty("remminaScreenshotRouteRenderSource", screenshot_route.render_source)
+            self.remmina_viewer_controls_panel = panel
+            self.apply_remmina_screenshot_capture_route_properties(panel, screenshot_route)
             layout = QHBoxLayout(panel)
             layout.setContentsMargins(7, 5, 7, 5)
             layout.setSpacing(6)
@@ -7881,6 +8586,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     button.setProperty("remminaScreenshotRouteActivityLine", screenshot_route.activity_line)
                     button.setProperty("remminaScreenshotRouteRenderSource", screenshot_route.render_source)
                     button.setProperty(screenshot_route.control_active_property, "true")
+                    self.remmina_screenshot_button = button
+                    self.apply_remmina_screenshot_capture_route_properties(button, screenshot_route)
                 else:
                     button.setProperty(screenshot_route.control_active_property, "false")
                 button.setText(control.label)
@@ -7890,11 +8597,14 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
                 button.setMinimumWidth(control.live_min_width)
                 button.setMinimumHeight(control.live_button_height)
-                button.clicked.connect(
-                    lambda _checked=False, label=control.label: self.statusBar().showMessage(
-                        f"Remmina viewer control: {label}"
+                if control.key == screenshot_route.viewer_control_key:
+                    button.clicked.connect(self.handle_remmina_screenshot_capture)
+                else:
+                    button.clicked.connect(
+                        lambda _checked=False, label=control.label: self.statusBar().showMessage(
+                            f"Remmina viewer control: {label}"
+                        )
                     )
-                )
                 layout.addWidget(button)
             return panel
 
@@ -7934,6 +8644,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             panel.setObjectName(route.transfer_panel_object)
             for property_name, value in route_props.items():
                 panel.setProperty(property_name, value)
+            self.remmina_sftp_transfer_panel = panel
+            self.apply_remmina_sftp_transfer_action_route_properties(panel, route)
             layout = QVBoxLayout(panel)
             layout.setContentsMargins(8, 7, 8, 7)
             layout.setSpacing(5)
@@ -7946,6 +8658,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             queue.setObjectName(route.queue_object)
             for property_name, value in route_props.items():
                 queue.setProperty(property_name, value)
+            self.remmina_sftp_transfer_queue = queue
+            self.apply_remmina_sftp_transfer_action_route_properties(queue, route)
             header.addWidget(title)
             header.addStretch(1)
             header.addWidget(queue)
@@ -7955,15 +8669,31 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             toolbar.setObjectName(route.toolbar_object)
             for property_name, value in route_props.items():
                 toolbar.setProperty(property_name, value)
+            self.remmina_sftp_transfer_toolbar = toolbar
+            self.apply_remmina_sftp_transfer_action_route_properties(toolbar, route)
             toolbar_layout = QHBoxLayout(toolbar)
             toolbar_layout.setContentsMargins(0, 0, 0, 0)
             toolbar_layout.setSpacing(6)
             for action_key in route.toolbar_actions:
-                action = QLabel(action_key.title())
-                action.setObjectName("remminaSftpTransferAction")
+                action = QToolButton()
+                action.setObjectName(route.action_object)
                 action.setProperty("remminaSftpTransferRouteKey", route.key)
                 action.setProperty("remminaSftpTransferRouteActionKey", action_key)
                 action.setProperty(route.toolbar_actions_property, actions_value)
+                self.apply_remmina_sftp_transfer_action_route_properties(action, route, action_key=action_key)
+                if action_key == route.action_key:
+                    self.remmina_sftp_transfer_action_button = action
+                    action.clicked.connect(
+                        lambda _checked=False, key=action_key: self.handle_remmina_sftp_transfer_action(key)
+                    )
+                else:
+                    action.clicked.connect(
+                        lambda _checked=False, key=action_key: self.statusBar().showMessage(
+                            f"Remmina SFTP action: {key}"
+                        )
+                    )
+                action.setText(action_key.title())
+                action.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
                 toolbar_layout.addWidget(action)
             toolbar_layout.addStretch(1)
             layout.addWidget(toolbar)
@@ -7972,12 +8702,16 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             path.setObjectName(route.path_object)
             for property_name, value in route_props.items():
                 path.setProperty(property_name, value)
+            self.remmina_sftp_transfer_path = path
+            self.apply_remmina_sftp_transfer_action_route_properties(path, route)
             layout.addWidget(path)
 
             table = QFrame()
             table.setObjectName(route.table_object)
             for property_name, value in route_props.items():
                 table.setProperty(property_name, value)
+            self.remmina_sftp_transfer_table = table
+            self.apply_remmina_sftp_transfer_action_route_properties(table, route)
             table_layout = QVBoxLayout(table)
             table_layout.setContentsMargins(0, 0, 0, 0)
             table_layout.setSpacing(2)
@@ -7995,6 +8729,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 row_frame.setProperty("remminaSftpTransferRouteRowKey", row.key)
                 row_frame.setProperty("remminaSftpTransferRouteRowSize", row.size)
                 row_frame.setProperty("remminaSftpTransferRouteRowModified", row.modified)
+                self.apply_remmina_sftp_transfer_action_route_properties(row_frame, route)
+                if row.name == route.active_row_name:
+                    self.remmina_sftp_transfer_active_row = row_frame
                 row_layout = QHBoxLayout(row_frame)
                 row_layout.setContentsMargins(4, 1, 4, 1)
                 row_layout.setSpacing(8)
@@ -8384,6 +9121,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             panel.setProperty("remminaSftpTransferRouteQueueState", transfer_route.transfer_status)
             panel.setProperty("remminaSftpTransferRouteQueueLabel", transfer_route.transfer_queue_label)
             panel.setProperty("remminaSftpTransferRouteRenderSource", transfer_route.render_source)
+            self.remmina_sftp_profile_panel = panel
+            self.apply_remmina_sftp_transfer_action_route_properties(panel, transfer_route)
             panel.setProperty("remminaProfileStaticFilterX", chrome.static_filter_x)
             panel.setProperty("remminaProfileStaticFilterY", chrome.static_filter_y)
             panel.setProperty("remminaProfileStaticFilterHeight", chrome.static_filter_height)
@@ -8480,6 +9219,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     row_frame.setProperty("remminaSftpTransferRouteQueueState", transfer_route.transfer_status)
                     row_frame.setProperty("remminaSftpTransferRouteQueueLabel", transfer_route.transfer_queue_label)
                     row_frame.setProperty("remminaSftpTransferRouteRenderSource", transfer_route.render_source)
+                    self.remmina_sftp_profile_row = row_frame
+                    self.apply_remmina_sftp_transfer_action_route_properties(row_frame, transfer_route)
                 row_frame.setProperty("remminaProfileStaticRowHeight", chrome.static_row_height)
                 row_frame.setProperty("remminaProfileStaticRowStep", chrome.static_row_step)
                 row_frame.setProperty("remminaProfileLiveRowMinHeight", chrome.live_row_min_height)
@@ -8639,6 +9380,80 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             layout.addStretch(1)
             return panel
 
+        @staticmethod
+        def apply_securecrt_sftp_browser_action_route_properties(
+            widget,
+            route,
+            *,
+            triggered: bool = False,
+            action_key: str | None = None,
+            status: str | None = None,
+        ) -> None:
+            actions_value = "|".join(route.toolbar_actions)
+            action_value = action_key or route.action_key
+            status_value = status or route.transfer_status
+            properties = {
+                "secureCrtSftpBrowserRouteKey": route.key,
+                "secureCrtSftpBrowserRouteRole": route.route_role,
+                "secureCrtSftpBrowserTabRouteKey": route.sftp_tab_route_key,
+                "secureCrtSftpBrowserObject": route.browser_object,
+                "secureCrtSftpBrowserToolbarObject": route.toolbar_object,
+                "secureCrtSftpBrowserPathObject": route.path_object,
+                "secureCrtSftpBrowserTableObject": route.table_object,
+                "secureCrtSftpBrowserRowObject": route.row_object,
+                "secureCrtSftpBrowserQueueObject": route.queue_object,
+                "secureCrtSftpBrowserSelectedProfile": route.selected_profile_name,
+                "secureCrtSftpBrowserSelectedTreeLabel": route.selected_tree_label,
+                "secureCrtSftpBrowserTabLabel": route.sftp_tab_label,
+                route.path_property: route.remote_path,
+                route.toolbar_actions_property: actions_value,
+                "secureCrtSftpBrowserActiveRowName": route.active_row_name,
+                "secureCrtSftpBrowserQueueLabel": route.transfer_queue_label,
+                route.queue_state_property: route.transfer_status,
+                "secureCrtSftpBrowserActionObject": route.action_object,
+                "secureCrtSftpBrowserActionKey": action_value,
+                "secureCrtSftpBrowserActionLabel": route.action_label,
+                route.signal_property: route.signal,
+                route.handler_property: route.handler,
+                route.captured_property: triggered,
+                route.captured_action_property: action_value if triggered else "",
+                route.captured_status_property: status_value if triggered else "",
+                route.live_triggered_property: triggered,
+                route.live_action_property: action_value,
+                route.live_status_property: status_value,
+                "secureCrtSftpBrowserRenderSource": route.render_source,
+            }
+            for property_name, value in properties.items():
+                widget.setProperty(property_name, value)
+
+        def handle_securecrt_sftp_browser_action(self, action_key: str | None = None) -> None:
+            route = gui_design_securecrt_sftp_browser_route()
+            action_value = action_key or route.action_key
+            status_value = route.action_status if action_value == route.action_key else route.transfer_status
+            queue = getattr(self, "securecrt_sftp_queue", None)
+            if queue is not None:
+                queue.setText(f"Queue: {route.transfer_queue_label} ({status_value})")
+            route_widgets = (
+                getattr(self, "securecrt_sftp_browser_panel", None),
+                getattr(self, "securecrt_sftp_toolbar", None),
+                getattr(self, "securecrt_sftp_path", None),
+                getattr(self, "securecrt_sftp_table", None),
+                queue,
+                getattr(self, "securecrt_sftp_action_button", None),
+                getattr(self, "securecrt_sftp_active_row", None),
+            )
+            for route_widget in route_widgets:
+                if route_widget is None:
+                    continue
+                self.apply_securecrt_sftp_browser_action_route_properties(
+                    route_widget,
+                    route,
+                    triggered=True,
+                    action_key=action_value,
+                    status=status_value,
+                )
+            self.statusBar().showMessage(f"SecureCRT SFTP {action_value}: {status_value}")
+
         def build_securecrt_sftp_browser_evidence(self) -> QFrame:
             route = gui_design_securecrt_sftp_browser_route()
             actions_value = "|".join(route.toolbar_actions)
@@ -8666,6 +9481,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             panel.setObjectName(route.browser_object)
             for property_name, value in route_props.items():
                 panel.setProperty(property_name, value)
+            self.securecrt_sftp_browser_panel = panel
+            self.apply_securecrt_sftp_browser_action_route_properties(panel, route)
             layout = QVBoxLayout(panel)
             layout.setContentsMargins(8, 7, 8, 7)
             layout.setSpacing(5)
@@ -8679,6 +9496,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             queue.setObjectName(route.queue_object)
             for property_name, value in route_props.items():
                 queue.setProperty(property_name, value)
+            self.securecrt_sftp_queue = queue
+            self.apply_securecrt_sftp_browser_action_route_properties(queue, route)
             header.addWidget(title)
             header.addStretch(1)
             header.addWidget(queue)
@@ -8688,15 +9507,35 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             toolbar.setObjectName(route.toolbar_object)
             for property_name, value in route_props.items():
                 toolbar.setProperty(property_name, value)
+            self.securecrt_sftp_toolbar = toolbar
+            self.apply_securecrt_sftp_browser_action_route_properties(toolbar, route)
             toolbar_layout = QHBoxLayout(toolbar)
             toolbar_layout.setContentsMargins(0, 0, 0, 0)
             toolbar_layout.setSpacing(6)
             for action_key in route.toolbar_actions:
-                action = QLabel(action_key.title())
-                action.setObjectName("secureCrtSftpAction")
+                action = QToolButton()
+                action.setObjectName(route.action_object)
                 action.setProperty("secureCrtSftpBrowserRouteKey", route.key)
                 action.setProperty("secureCrtSftpBrowserActionKey", action_key)
                 action.setProperty(route.toolbar_actions_property, actions_value)
+                self.apply_securecrt_sftp_browser_action_route_properties(
+                    action,
+                    route,
+                    action_key=action_key,
+                )
+                if action_key == route.action_key:
+                    self.securecrt_sftp_action_button = action
+                    action.clicked.connect(
+                        lambda _checked=False, key=action_key: self.handle_securecrt_sftp_browser_action(key)
+                    )
+                else:
+                    action.clicked.connect(
+                        lambda _checked=False, key=action_key: self.statusBar().showMessage(
+                            f"SecureCRT SFTP action: {key}"
+                        )
+                    )
+                action.setText(action_key.title())
+                action.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
                 toolbar_layout.addWidget(action)
             toolbar_layout.addStretch(1)
             layout.addWidget(toolbar)
@@ -8705,12 +9544,16 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             path.setObjectName(route.path_object)
             for property_name, value in route_props.items():
                 path.setProperty(property_name, value)
+            self.securecrt_sftp_path = path
+            self.apply_securecrt_sftp_browser_action_route_properties(path, route)
             layout.addWidget(path)
 
             table = QFrame()
             table.setObjectName(route.table_object)
             for property_name, value in route_props.items():
                 table.setProperty(property_name, value)
+            self.securecrt_sftp_table = table
+            self.apply_securecrt_sftp_browser_action_route_properties(table, route)
             table_layout = QVBoxLayout(table)
             table_layout.setContentsMargins(0, 0, 0, 0)
             table_layout.setSpacing(2)
@@ -8728,6 +9571,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 row_frame.setProperty("secureCrtSftpBrowserRowKey", row.key)
                 row_frame.setProperty("secureCrtSftpBrowserRowSize", row.size)
                 row_frame.setProperty("secureCrtSftpBrowserRowModified", row.modified)
+                self.apply_securecrt_sftp_browser_action_route_properties(row_frame, route)
+                if row.name == route.active_row_name:
+                    self.securecrt_sftp_active_row = row_frame
                 row_layout = QHBoxLayout(row_frame)
                 row_layout.setContentsMargins(4, 1, 4, 1)
                 row_layout.setSpacing(8)
@@ -8744,11 +9590,85 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             layout.addWidget(table)
             return panel
 
+        @staticmethod
+        def apply_securecrt_command_window_send_route_properties(
+            widget,
+            route,
+            chrome,
+            *,
+            submitted: bool = False,
+            command: str | None = None,
+            status: str | None = None,
+        ) -> None:
+            command_value = chrome.command if command is None else command
+            status_value = chrome.status if status is None else status
+            properties = {
+                "secureCrtCommandRouteKey": route.key,
+                "secureCrtCommandRouteRole": route.route_role,
+                "secureCrtCommandRouteSourceWindowObject": route.source_window_object,
+                "secureCrtCommandRouteTargetScopeObject": route.target_scope_object,
+                "secureCrtCommandRouteCommandInputObject": route.command_input_object,
+                "secureCrtCommandRouteSendControlObject": route.send_control_object,
+                "secureCrtCommandRouteStatusObject": route.status_object,
+                "secureCrtCommandRouteCommand": command_value,
+                "secureCrtCommandRouteTargetScope": chrome.target_scope,
+                "secureCrtCommandRouteSendLabel": chrome.send_label,
+                "secureCrtCommandRouteStatus": status_value,
+                route.captured_property: submitted,
+                route.captured_command_property: command_value if submitted else "",
+                route.captured_target_scope_property: chrome.target_scope if submitted else "",
+                route.captured_status_property: status_value if submitted else "",
+                route.signal_property: route.signal,
+                route.secondary_signal_property: route.secondary_signal,
+                route.handler_property: route.handler,
+                "secureCrtCommandRouteLiveSubmitted": submitted,
+                "secureCrtCommandRouteLiveCommand": command_value,
+                "secureCrtCommandRouteLiveTargetScope": chrome.target_scope,
+                "secureCrtCommandRouteLiveStatus": status_value,
+                "secureCrtCommandRouteRenderSource": route.render_source,
+            }
+            for property_name, value in properties.items():
+                widget.setProperty(property_name, value)
+
+        def handle_securecrt_command_window_send(self, _checked: bool = False) -> None:
+            chrome = gui_design_securecrt_command_window_chrome()
+            route = gui_design_securecrt_command_window_send_route()
+            command_input = getattr(self, "securecrt_command_input", None)
+            command = command_input.text().strip() if command_input is not None else chrome.command
+            if not command:
+                command = chrome.command
+                if command_input is not None:
+                    command_input.setText(command)
+            status_text = "sent"
+            status = getattr(self, "securecrt_command_status", None)
+            if status is not None:
+                status.setText(status_text)
+            route_widgets = (
+                getattr(self, "securecrt_command_window", None),
+                getattr(self, "securecrt_command_target", None),
+                command_input,
+                getattr(self, "securecrt_command_send", None),
+                status,
+            )
+            for route_widget in route_widgets:
+                if route_widget is None:
+                    continue
+                self.apply_securecrt_command_window_send_route_properties(
+                    route_widget,
+                    route,
+                    chrome,
+                    submitted=True,
+                    command=command,
+                    status=status_text,
+                )
+            self.statusBar().showMessage(f"SecureCRT command sent to {chrome.target_scope}: {command}")
+
         def build_securecrt_command_window_evidence(self) -> QFrame:
             chrome = gui_design_securecrt_command_window_chrome()
             send_route = gui_design_securecrt_command_window_send_route()
             panel = QFrame()
             panel.setObjectName("secureCrtCommandWindow")
+            self.securecrt_command_window = panel
             panel.setProperty("secureCrtCommandWindowKey", chrome.key)
             panel.setProperty("secureCrtCommandStaticHeaderHeight", chrome.static_header_height)
             panel.setProperty("secureCrtCommandStaticTitleX", chrome.static_title_x)
@@ -8785,43 +9705,35 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             command_row.setSpacing(chrome.live_row_spacing)
             target = QLabel(chrome.target_scope)
             target.setObjectName("secureCrtCommandTarget")
+            self.securecrt_command_target = target
             target.setProperty("secureCrtCommandWindowKey", chrome.key)
             target.setProperty("secureCrtCommandStaticTargetWidth", chrome.static_target_width)
             target.setProperty("secureCrtCommandLiveTargetMinWidth", chrome.live_target_min_width)
             target.setMinimumWidth(chrome.live_target_min_width)
-            command_input = QLabel(chrome.command)
+            command_input = QLineEdit(chrome.command)
             command_input.setObjectName("secureCrtCommandInput")
+            self.securecrt_command_input = command_input
+            command_input.setProperty("secureCrtCommandWindowKey", chrome.key)
             command_input.setProperty("secureCrtCommandStaticInputX", chrome.static_input_x)
             command_input.setProperty("secureCrtCommandStaticInputTextX", chrome.static_input_text_x)
             command_input.setProperty("secureCrtCommandStaticInputTextY", chrome.static_input_text_y)
-            command_input.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-            send = QLabel(chrome.send_label)
+            command_input.setPlaceholderText(chrome.command)
+            command_input.returnPressed.connect(self.handle_securecrt_command_window_send)
+            send = QPushButton(chrome.send_label)
             send.setObjectName("secureCrtCommandSend")
+            self.securecrt_command_send = send
             send.setProperty("secureCrtCommandWindowKey", chrome.key)
             send.setProperty("secureCrtCommandStaticSendWidth", chrome.static_send_width)
             send.setProperty("secureCrtCommandLiveSendMinWidth", chrome.live_send_min_width)
             send.setMinimumWidth(chrome.live_send_min_width)
+            send.clicked.connect(self.handle_securecrt_command_window_send)
             status = QLabel(chrome.status)
             status.setObjectName("secureCrtCommandStatus")
+            self.securecrt_command_status = status
             status.setProperty("secureCrtCommandWindowKey", chrome.key)
             route_widgets = (panel, target, command_input, send, status)
-            route_value_properties = {
-                "secureCrtCommandRouteCommand": chrome.command,
-                "secureCrtCommandRouteTargetScope": chrome.target_scope,
-                "secureCrtCommandRouteSendLabel": chrome.send_label,
-                "secureCrtCommandRouteStatus": chrome.status,
-            }
             for route_widget in route_widgets:
-                route_widget.setProperty("secureCrtCommandRouteKey", send_route.key)
-                route_widget.setProperty("secureCrtCommandRouteRole", send_route.route_role)
-                route_widget.setProperty("secureCrtCommandRouteSourceWindowObject", send_route.source_window_object)
-                route_widget.setProperty("secureCrtCommandRouteTargetScopeObject", send_route.target_scope_object)
-                route_widget.setProperty("secureCrtCommandRouteCommandInputObject", send_route.command_input_object)
-                route_widget.setProperty("secureCrtCommandRouteSendControlObject", send_route.send_control_object)
-                route_widget.setProperty("secureCrtCommandRouteStatusObject", send_route.status_object)
-                route_widget.setProperty("secureCrtCommandRouteRenderSource", send_route.render_source)
-                for route_property, route_value in route_value_properties.items():
-                    route_widget.setProperty(route_property, route_value)
+                self.apply_securecrt_command_window_send_route_properties(route_widget, send_route, chrome)
             command_row.addWidget(target)
             command_row.addWidget(command_input, 1)
             command_row.addWidget(send)

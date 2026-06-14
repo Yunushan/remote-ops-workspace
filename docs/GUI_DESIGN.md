@@ -264,6 +264,13 @@ contract: the target selector, command input, Send control and ready status all
 share `secureCrtCommandRoute*` properties from `GuiSecureCrtCommandWindowSendRoute`,
 so the live checker can prove the visible controls describe one route rather
 than four unrelated labels.
+SecureCRT-style command-window live send route now requires real interactive
+widgets as well: the command field is a `QLineEdit`, the Send action is a
+`QPushButton`, `clicked` and `returnPressed` both call
+`handle_securecrt_command_window_send`, and the live checker submits sample
+commands through both paths before accepting the route. The handler only
+updates route evidence (`secureCrtCommandRouteLive*` and captured properties)
+inside the GUI state model; it does not execute external commands.
 The SecureCRT-style session status strip is shared metadata too. Session,
 target, protocol, cipher, attached SFTP tab, log file and connected state are
 defined once, drawn above the terminal panes in the static preview, exposed as
@@ -299,6 +306,11 @@ Upload/Download/Refresh toolbar actions, `deploy.log` selected row and
 `1 queued` transfer queue share `secureCrtSftpBrowser*` metadata. The row names,
 path and timestamps are generic fixture data so previews never expose real user
 files or hosts.
+SecureCRT-style SFTP browser live action route now clicks the generic `Refresh`
+toolbar control in the real GUI smoke checker and verifies
+`secureCrtSftpBrowserRouteCaptured*` plus `secureCrtSftpBrowserRouteLive*`
+state on the browser, toolbar, queue, routed action and selected file row. The
+action updates only the fixture queue status to `refreshed`.
 The static SecureCRT Session Manager tree now has a dedicated renderer for the
 Session Database root, foldered Sessions/Local Shells/Pinned groups, selected
 SSH2 row and connector lines. Visual metrics pin those regions and color
@@ -358,12 +370,23 @@ generic `win-admin-rdp-screenshot.png` capture artifact, screenshot workspace
 detail and screenshot activity line share `remminaScreenshotRoute*` metadata,
 so capture/export behavior is checked without exposing machine-specific
 filenames or credentials.
+Remmina-style screenshot live capture route extends that contract with a real
+clicked capture path. The live checker clicks the `Screenshot` control and
+verifies `remminaScreenshotRouteCaptured*` and `remminaScreenshotRouteLive*`
+state on both the control strip and the routed button, while keeping the
+artifact name generic.
 Remmina-style SFTP transfer route is tracked separately too: the `Transfer`
 toolbar action, `sftp-ops` SFTP profile/tree row, `sftp-ops` tab, `/var/log`
 remote path, Upload/Download/Queue actions, selected `app.log` row and
 `1 queued` queue share `remminaSftpTransferRoute*` metadata from
 `GuiRemminaSftpTransferRoute`. Fixture names are generic and contain no
 user-specific hosts or credentials.
+Remmina-style SFTP transfer live queue route extends that contract with a real
+clicked `Queue` action. The live checker clicks the routed action and verifies
+`remminaSftpTransferRouteCaptured*` and `remminaSftpTransferRouteLive*`
+metadata across the selected SFTP profile row, transfer panel, queue label,
+selected file row and action button. The action updates fixture state only; it
+does not start an external transfer.
 Remmina interaction-state visual metrics now pin the focused profile filter,
 selected connection-list row, selected protocol-tree row, active RDP viewer tab,
 checked Transfer toolbar action and viewer-control glyph cluster. The live
@@ -399,12 +422,21 @@ Termius-style snippet route is also a first-class workflow contract: the
 `Snippet: row vault status` cell share `termiusSnippetRoute*` properties from
 `GuiTermiusSnippetRoute`, including the command text, detail line and
 one-click command state.
+Termius-style snippet live run route extends that contract with a real `Run`
+action and `Return` shortcut. Both paths call `handle_termius_snippet_run`
+and update captured command, target profile and status properties across the
+workflow card and Host identity strip without executing an external command.
 Termius-style files browser route is tracked separately too: the
 `Files: SFTP ready` identity cell, active `edge-prod` host tab, `/workspace`
 remote path, Upload/Download/Sync actions, selected `deploy.yml` row and
 `sync idle` queue share `termiusFilesRoute*` metadata from
 `GuiTermiusFilesBrowserRoute`. Fixture names are generic and intentionally do
 not encode user-specific hostnames or credentials.
+Termius-style files browser live sync route now clicks the generic `Sync`
+toolbar control through `handle_termius_files_sync`, proving the files panel,
+host identity strip, queue, routed action and selected file row share one
+captured route state. The fixture queue changes only to `synced`, so the check
+does not imply a real external SFTP transfer.
 Termius-style host-selection route is tracked separately too: the selected
 `edge-prod  ssh host` tree row, active `edge-prod` tab, Hosts panel and Host
 identity `Host: edge-prod` cell share `termiusHostRoute*` properties from
@@ -443,6 +475,11 @@ tab, `Reconnect` document control and `Protocol` property-grid row share
 GUI. The live checker verifies the routed tree item data roles, document-control
 active state and property-grid effective value so the selected connection cannot
 silently diverge from the open document surface.
+mRemoteNG-style reconnect live route extends that contract with a real clicked
+path for the `Reconnect` document control. The live checker clicks the routed
+button and verifies `mRemoteNgConnectionRouteCaptured*` plus
+`mRemoteNgConnectionRouteLive*` state on the tree, document controls strip,
+routed button and property grid without embedding real host credentials.
 mRemoteNG-style document filter route is tracked separately too: the editable
 `mRemoteNgDocumentFilter`, `mRemoteNgDocumentControls` strip and selected
 `edge-prod [SSH]` tree row expose `mRemoteNgDocumentFilterRoute*` metadata. The
@@ -542,6 +579,18 @@ start, icon offset, icon size and separator boundary. The static preview uses
 those offsets through `gui_design_moba_sftp_toolbar_action_geometry`, and the
 live PyQt buttons expose `mobaSftpActionStaticX`, `mobaSftpActionIconX` and
 `mobaSftpActionSeparatorX` so the render checker can reject per-button drift.
+MobaXterm-style SFTP toolbar action route coverage now binds every toolbar icon
+to `GuiMobaSftpToolbarActionRoute`, stable `mobaSftpToolbarRoute*` properties,
+the active SFTP browser/path/table objects and the live
+`show_moba_sftp_toolbar_action` handler. This keeps the upload/download,
+manage, mode and terminal icons as real file-transfer workflow entry points
+instead of decorative toolbar glyphs.
+MobaXterm-style SFTP toolbar live action routing now clicks the generated
+Download icon in the real PyQt smoke path and verifies `clicked` signal
+metadata, captured action/status fields, live action/status fields and the
+hidden `mobaSftpTransferQueue` route object. The user-facing layout remains
+reference-like because the route result is surfaced through status metadata
+rather than adding a non-reference dock panel.
 The dock density is shared metadata too. `GuiMobaSftpDockLayout` defines the
 compact inner margin, toolbar height, path row height, table-header height, file
 row height, maximum static rows, monitoring panel height and divider offset.
@@ -642,6 +691,15 @@ file table. The live checkbox and dock both expose
 `mobaFollowTerminalFolderControlCapturedPlan`, while static and live manifests
 publish the expected route shape separately from the broader SFTP follow-folder
 route.
+MobaXterm-style monitoring live toggle route coverage now verifies those two
+footer controls as actual interactions. The Remote monitoring button exposes a
+`toggled` signal, `handle_moba_remote_monitoring_toggled` handler and
+`mobaRemoteMonitoringControlLiveChecked` state, while the Follow terminal folder
+checkbox exposes `handle_moba_follow_terminal_folder_toggled`,
+`mobaFollowTerminalFolderControlLiveChecked`,
+`mobaFollowTerminalFolderControlLivePath` and
+`mobaFollowTerminalFolderControlLivePlan`. The live checker flips each control
+when PyQt is available and rejects controls that do not update route state.
 MobaXterm-style remote-monitoring footer geometry now pins the footer height,
 short divider span, content-left offset, metric-row gap and live controls-frame
 width so the lower-left monitoring band cannot drift away from the connected
@@ -740,6 +798,11 @@ size, button size and generated-icon source metadata. The live PyQt controls
 publish `mobaSessionEdgeRelativeY`, `mobaSessionEdgeButtonSize` and
 `mobaSessionEdgeRenderSource` so render checks can catch placement or density
 drift instead of only verifying that the shortcut buttons exist.
+MobaXterm-style session-edge action route coverage now binds the small
+attachment/settings shortcuts to `GuiMobaSessionEdgeActionRoute`, stable
+`mobaSessionEdgeRoute*` properties and live `show_moba_session_attachment` /
+`show_moba_session_settings` handlers. This proves the tab-edge shortcut
+cluster is a real active-tab workflow surface, not a decorative icon stack.
 The bottom status bar has shared Moba-style chrome metadata too. Static and live
 evidence use project-owned notice text, a compact product note, keyed SFTP/CPU/
 SSH-browser workflow segments and a right-side marker instead of copying

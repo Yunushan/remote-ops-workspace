@@ -45,6 +45,7 @@ from remote_ops_workspace.gui_designs import (  # noqa: E402
     gui_design_moba_right_utility_action_route,
     gui_design_moba_right_utility_actions,
     gui_design_moba_right_utility_rail_chrome,
+    gui_design_moba_session_edge_action_route,
     gui_design_moba_session_edge_actions,
     gui_design_moba_session_tree_chrome,
     gui_design_moba_sftp_browser_chrome,
@@ -54,6 +55,7 @@ from remote_ops_workspace.gui_designs import (  # noqa: E402
     gui_design_moba_sftp_follow_folder_route,
     gui_design_moba_sftp_routed_file_rows,
     gui_design_moba_sftp_toolbar_action_geometry,
+    gui_design_moba_sftp_toolbar_action_route,
     gui_design_moba_ssh_banner_chrome,
     gui_design_moba_ssh_banner_row_geometry,
     gui_design_moba_status_bar_chrome,
@@ -330,6 +332,7 @@ EXPECTED_MOBA_SESSION_EDGE_ACTIONS = tuple(gui_design_moba_session_edge_actions(
 EXPECTED_MOBA_SESSION_EDGE_KEYS = {action.key for action in EXPECTED_MOBA_SESSION_EDGE_ACTIONS}
 EXPECTED_MOBA_SESSION_EDGE_ICON_KEYS = {action.key: action.icon_key for action in EXPECTED_MOBA_SESSION_EDGE_ACTIONS}
 EXPECTED_MOBA_SESSION_EDGE_BY_KEY = {action.key: action for action in EXPECTED_MOBA_SESSION_EDGE_ACTIONS}
+EXPECTED_MOBA_SESSION_EDGE_ACTION_ROUTE = gui_design_moba_session_edge_action_route()
 EXPECTED_MOBA_SSH_BANNER_CHROME = gui_design_moba_ssh_banner_chrome()
 EXPECTED_MOBA_SSH_BANNER = build_ssh_connection_banner(
     Profile(
@@ -355,6 +358,7 @@ EXPECTED_MOBA_SFTP_COLUMN_WIDTHS = [column.static_width for column in EXPECTED_M
 EXPECTED_MOBA_SFTP_ACTIONS = tuple(gui_design_moba_sftp_dock_actions())
 EXPECTED_MOBA_SFTP_ACTION_KEYS = {action.key for action in EXPECTED_MOBA_SFTP_ACTIONS}
 EXPECTED_MOBA_SFTP_SEPARATOR_AFTER_KEYS = [action.key for action in EXPECTED_MOBA_SFTP_ACTIONS if action.separator_after]
+EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_ROUTE = gui_design_moba_sftp_toolbar_action_route()
 EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_GEOMETRY = tuple(gui_design_moba_sftp_toolbar_action_geometry())
 EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_GEOMETRY_BY_KEY = {
     geometry.key: geometry for geometry in EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_GEOMETRY
@@ -531,6 +535,8 @@ SECURECRT_REQUIRED_WIDGETS = {
     "secureCrtMenuBar": "SecureCRT top menu bar",
     "secureCrtSessionStatusStrip": "SecureCRT session status strip",
     "secureCrtSessionManagerChrome": "SecureCRT Session Manager filter/action chrome",
+    "secureCrtCommandInput": "SecureCRT live command-window input",
+    "secureCrtCommandSend": "SecureCRT live command-window Send control",
 }
 TERMIUS_REQUIRED_WIDGETS = {
     "termiusHostsChrome": "Termius Hosts search/action chrome",
@@ -1684,6 +1690,42 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                 errors.append(f"mobaxterm live GUI rail label {role!r} width drifted")
             if label.height() != EXPECTED_MOBA_RAIL_CHROME.label_height:
                 errors.append(f"mobaxterm live GUI rail label {role!r} height drifted")
+        sftp_toolbar = window.findChild(QFrame, "mobaSftpToolbar")
+        sftp_queue = window.findChild(QLabel, EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_ROUTE.queue_object)
+        if sftp_toolbar is None:
+            errors.append("mobaxterm live GUI missing SFTP toolbar")
+        else:
+            route_properties = {
+                "mobaSftpToolbarRouteKey": EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_ROUTE.key,
+                "mobaSftpToolbarRouteRole": EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_ROUTE.route_role,
+                "mobaSftpToolbarRouteToolbarObject": EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_ROUTE.toolbar_object,
+                "mobaSftpToolbarRouteActionObject": EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_ROUTE.action_object,
+                "mobaSftpToolbarRouteTargetBrowserObject": (
+                    EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_ROUTE.target_browser_object
+                ),
+                "mobaSftpToolbarRouteTargetPathObject": EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_ROUTE.target_path_object,
+                "mobaSftpToolbarRouteTargetTableObject": EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_ROUTE.target_table_object,
+                "mobaSftpToolbarRouteQueueObject": EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_ROUTE.queue_object,
+                EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_ROUTE.signal_property: EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_ROUTE.signal,
+                "mobaSftpToolbarRouteRenderSource": EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_ROUTE.render_source,
+            }
+            for property_name, expected_value in route_properties.items():
+                if str(sftp_toolbar.property(property_name) or "") != expected_value:
+                    errors.append(f"mobaxterm live GUI SFTP toolbar route {property_name} drifted")
+            if list(sftp_toolbar.property(EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_ROUTE.action_keys_property) or []) != list(
+                EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_ROUTE.action_keys
+            ):
+                errors.append("mobaxterm live GUI SFTP toolbar route action keys drifted")
+            if list(sftp_toolbar.property(EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_ROUTE.action_groups_property) or []) != list(
+                EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_ROUTE.action_group_keys
+            ):
+                errors.append("mobaxterm live GUI SFTP toolbar route action groups drifted")
+            if list(sftp_toolbar.property("mobaSftpToolbarRouteActionStatuses") or []) != list(
+                EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_ROUTE.action_statuses
+            ):
+                errors.append("mobaxterm live GUI SFTP toolbar route action statuses drifted")
+        if sftp_queue is None:
+            errors.append("mobaxterm live GUI missing SFTP transfer queue route object")
         sftp_buttons = window.findChildren(QToolButton, "mobaSftpAction")
         sftp_action_keys = {str(button.property("mobaSftpActionKey") or "") for button in sftp_buttons}
         missing_sftp_actions = sorted(EXPECTED_MOBA_SFTP_ACTION_KEYS - sftp_action_keys)
@@ -1703,6 +1745,41 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                     errors.append(f"mobaxterm live GUI SFTP action {key!r} group key drifted")
                 if separator_after != expected_action.separator_after:
                     errors.append(f"mobaxterm live GUI SFTP action {key!r} separator flag drifted")
+                expected_index = EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_ROUTE.action_keys.index(key)
+                route_properties = {
+                    "mobaSftpToolbarRouteKey": EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_ROUTE.key,
+                    "mobaSftpToolbarRouteRole": EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_ROUTE.route_role,
+                    EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_ROUTE.action_key_property: key,
+                    EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_ROUTE.action_label_property: expected_action.label,
+                    EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_ROUTE.action_object_property: (
+                        EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_ROUTE.action_object
+                    ),
+                    EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_ROUTE.icon_key_property: expected_action.icon_key,
+                    EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_ROUTE.group_key_property: expected_action.group_key,
+                    EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_ROUTE.tooltip_property: expected_action.tooltip,
+                    EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_ROUTE.signal_property: (
+                        EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_ROUTE.signal
+                    ),
+                    EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_ROUTE.handler_property: (
+                        EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_ROUTE.action_handlers[expected_index]
+                    ),
+                    "mobaSftpToolbarRouteRenderSource": EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_ROUTE.render_source,
+                }
+                for property_name, expected_value in route_properties.items():
+                    if str(button.property(property_name) or "") != expected_value:
+                        errors.append(f"mobaxterm live GUI SFTP action {key!r} route {property_name} drifted")
+                if list(button.property(EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_ROUTE.action_keys_property) or []) != list(
+                    EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_ROUTE.action_keys
+                ):
+                    errors.append(f"mobaxterm live GUI SFTP action {key!r} route keys drifted")
+                if list(button.property(EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_ROUTE.action_groups_property) or []) != list(
+                    EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_ROUTE.action_group_keys
+                ):
+                    errors.append(f"mobaxterm live GUI SFTP action {key!r} route groups drifted")
+                if list(button.property("mobaSftpToolbarRouteActionStatuses") or []) != list(
+                    EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_ROUTE.action_statuses
+                ):
+                    errors.append(f"mobaxterm live GUI SFTP action {key!r} route statuses drifted")
             if expected_geometry is not None:
                 property_checks = {
                     "mobaSftpActionStaticX": expected_geometry.button_x,
@@ -1916,6 +1993,17 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                 errors.append(f"mobaxterm live GUI SFTP routed row paths diverged: {routed_row_paths}")
             if sftp_path is not None and routed_row_paths and any(path != sftp_path.text() for path in routed_row_paths):
                 errors.append("mobaxterm live GUI SFTP routed row paths must match the active SFTP path")
+        errors.extend(
+            check_live_moba_sftp_toolbar_action_route(
+                connected_dock,
+                sftp_browser,
+                sftp_toolbar,
+                sftp_path,
+                sftp_table,
+                sftp_queue,
+                sftp_buttons,
+            )
+        )
         sftp_dock = window.findChild(QFrame, "mobaSftpBrowser")
         if sftp_dock is None:
             errors.append("mobaxterm live GUI SFTP dock missing density container")
@@ -2019,6 +2107,12 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
             if "ls -la /" not in follow_plan:
                 errors.append("mobaxterm live GUI monitoring panel must expose follow-folder SFTP plan evidence")
             control_route = EXPECTED_MOBA_REMOTE_MONITORING_CONTROL_ROUTE
+            if control_route.signal != "toggled":
+                errors.append("mobaxterm live GUI monitoring control route signal drifted")
+            if control_route.handler != "handle_moba_remote_monitoring_toggled":
+                errors.append("mobaxterm live GUI monitoring control route handler drifted")
+            if control_route.live_checked_property != "mobaRemoteMonitoringControlLiveChecked":
+                errors.append("mobaxterm live GUI monitoring control route live checked property drifted")
             control_route_properties = {
                 "mobaRemoteMonitoringControlRouteKey": control_route.key,
                 "mobaRemoteMonitoringControlRouteRole": control_route.route_role,
@@ -2033,6 +2127,8 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                 "mobaRemoteMonitoringControlTelemetryRouteKey": control_route.telemetry_route_key,
                 "mobaRemoteMonitoringControlTelemetrySurface": control_route.telemetry_surface,
                 "mobaRemoteMonitoringControlTargetBarObject": control_route.target_bar_object,
+                control_route.signal_property: control_route.signal,
+                control_route.handler_property: control_route.handler,
                 "mobaRemoteMonitoringControlRenderSource": control_route.render_source,
             }
             for property_name, expected_value in control_route_properties.items():
@@ -2050,6 +2146,8 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                 errors.append("mobaxterm live GUI monitoring control route panel captured flag missing")
             if bool(monitoring_panel.property(control_route.captured_checked_property)) != control_route.expected_checked:
                 errors.append("mobaxterm live GUI monitoring control route panel captured checked state drifted")
+            if bool(monitoring_panel.property(control_route.live_checked_property)) != control_route.expected_checked:
+                errors.append("mobaxterm live GUI monitoring control route panel live checked state drifted")
             captured_command = str(monitoring_panel.property(control_route.captured_command_property) or "")
             if captured_command != command:
                 errors.append("mobaxterm live GUI monitoring control route panel captured command drifted")
@@ -2058,6 +2156,12 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
             ):
                 errors.append("mobaxterm live GUI monitoring control route panel captured refresh cadence drifted")
             follow_control_route = EXPECTED_MOBA_FOLLOW_TERMINAL_FOLDER_CONTROL_ROUTE
+            if follow_control_route.signal != "toggled":
+                errors.append("mobaxterm live GUI follow-folder control route signal drifted")
+            if follow_control_route.handler != "handle_moba_follow_terminal_folder_toggled":
+                errors.append("mobaxterm live GUI follow-folder control route handler drifted")
+            if follow_control_route.live_checked_property != "mobaFollowTerminalFolderControlLiveChecked":
+                errors.append("mobaxterm live GUI follow-folder control route live checked property drifted")
             follow_control_route_properties = {
                 "mobaFollowTerminalFolderControlRouteKey": follow_control_route.key,
                 "mobaFollowTerminalFolderControlRouteRole": follow_control_route.route_role,
@@ -2075,6 +2179,8 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                 "mobaFollowTerminalFolderControlTargetPathProperty": follow_control_route.target_path_property,
                 "mobaFollowTerminalFolderControlTargetPlanProperty": follow_control_route.target_plan_property,
                 "mobaFollowTerminalFolderControlTargetEnabledProperty": follow_control_route.target_enabled_property,
+                follow_control_route.signal_property: follow_control_route.signal,
+                follow_control_route.handler_property: follow_control_route.handler,
                 "mobaFollowTerminalFolderControlRenderSource": follow_control_route.render_source,
             }
             for property_name, expected_value in follow_control_route_properties.items():
@@ -2090,12 +2196,20 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                 follow_control_route.expected_checked
             ):
                 errors.append("mobaxterm live GUI follow-folder control route panel captured checked state drifted")
+            if bool(monitoring_panel.property(follow_control_route.live_checked_property)) != (
+                follow_control_route.expected_checked
+            ):
+                errors.append("mobaxterm live GUI follow-folder control route panel live checked state drifted")
             captured_follow_path = str(monitoring_panel.property(follow_control_route.captured_path_property) or "")
             if not captured_follow_path.startswith("/"):
                 errors.append("mobaxterm live GUI follow-folder control route panel captured path missing")
             captured_follow_plan = str(monitoring_panel.property(follow_control_route.captured_plan_property) or "")
             if captured_follow_path not in captured_follow_plan or "ls -la " not in captured_follow_plan:
                 errors.append("mobaxterm live GUI follow-folder control route panel captured plan drifted")
+            if str(monitoring_panel.property(follow_control_route.live_path_property) or "") != captured_follow_path:
+                errors.append("mobaxterm live GUI follow-folder control route panel live path drifted")
+            if str(monitoring_panel.property(follow_control_route.live_plan_property) or "") != captured_follow_plan:
+                errors.append("mobaxterm live GUI follow-folder control route panel live plan drifted")
             controls_frame = monitoring_panel.findChild(QFrame, "mobaMonitoringControls")
             if controls_frame is None:
                 errors.append("mobaxterm live GUI monitoring footer missing controls frame")
@@ -2225,6 +2339,12 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                 errors.append(f"mobaxterm live GUI monitoring control {control.key!r} telemetry route drifted")
             if control.key == "remote-monitoring":
                 control_route = EXPECTED_MOBA_REMOTE_MONITORING_CONTROL_ROUTE
+                if control_route.signal != "toggled":
+                    errors.append("mobaxterm live GUI remote-monitoring control route signal drifted")
+                if control_route.handler != "handle_moba_remote_monitoring_toggled":
+                    errors.append("mobaxterm live GUI remote-monitoring control route handler drifted")
+                if control_route.live_checked_property != "mobaRemoteMonitoringControlLiveChecked":
+                    errors.append("mobaxterm live GUI remote-monitoring control route live checked property drifted")
                 control_route_properties = {
                     "mobaRemoteMonitoringControlRouteKey": control_route.key,
                     "mobaRemoteMonitoringControlRouteRole": control_route.route_role,
@@ -2239,6 +2359,8 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                     "mobaRemoteMonitoringControlTelemetryRouteKey": control_route.telemetry_route_key,
                     "mobaRemoteMonitoringControlTelemetrySurface": control_route.telemetry_surface,
                     "mobaRemoteMonitoringControlTargetBarObject": control_route.target_bar_object,
+                    control_route.signal_property: control_route.signal,
+                    control_route.handler_property: control_route.handler,
                     "mobaRemoteMonitoringControlRenderSource": control_route.render_source,
                 }
                 for property_name, expected_value in control_route_properties.items():
@@ -2256,6 +2378,8 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                     errors.append("mobaxterm live GUI remote-monitoring control route captured flag missing")
                 if bool(widget.property(control_route.captured_checked_property)) != widget.isChecked():
                     errors.append("mobaxterm live GUI remote-monitoring control route captured checked state drifted")
+                if bool(widget.property(control_route.live_checked_property)) != widget.isChecked():
+                    errors.append("mobaxterm live GUI remote-monitoring control route live checked state drifted")
                 command = str(widget.property("mobaMonitoringCommand") or "")
                 if "sh -lc" not in command or "/proc" not in command:
                     errors.append("mobaxterm live GUI remote-monitoring control missing command evidence")
@@ -2269,8 +2393,21 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                     EXPECTED_MOBA_REMOTE_MONITORING_DOCK_CHROME.refresh_seconds
                 ):
                     errors.append("mobaxterm live GUI remote-monitoring control route captured refresh cadence drifted")
+                original_checked = widget.isChecked()
+                widget.setChecked(not original_checked)
+                if bool(widget.property(control_route.live_checked_property)) != (not original_checked):
+                    errors.append("mobaxterm live GUI remote-monitoring control route toggled state did not update")
+                widget.setChecked(original_checked)
+                if bool(widget.property(control_route.live_checked_property)) != original_checked:
+                    errors.append("mobaxterm live GUI remote-monitoring control route restored state did not update")
             if control.key == "follow-terminal-folder":
                 follow_control_route = EXPECTED_MOBA_FOLLOW_TERMINAL_FOLDER_CONTROL_ROUTE
+                if follow_control_route.signal != "toggled":
+                    errors.append("mobaxterm live GUI follow-folder control route signal drifted")
+                if follow_control_route.handler != "handle_moba_follow_terminal_folder_toggled":
+                    errors.append("mobaxterm live GUI follow-folder control route handler drifted")
+                if follow_control_route.live_checked_property != "mobaFollowTerminalFolderControlLiveChecked":
+                    errors.append("mobaxterm live GUI follow-folder control route live checked property drifted")
                 follow_control_route_properties = {
                     "mobaFollowTerminalFolderControlRouteKey": follow_control_route.key,
                     "mobaFollowTerminalFolderControlRouteRole": follow_control_route.route_role,
@@ -2288,6 +2425,8 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                     "mobaFollowTerminalFolderControlTargetPathProperty": follow_control_route.target_path_property,
                     "mobaFollowTerminalFolderControlTargetPlanProperty": follow_control_route.target_plan_property,
                     "mobaFollowTerminalFolderControlTargetEnabledProperty": follow_control_route.target_enabled_property,
+                    follow_control_route.signal_property: follow_control_route.signal,
+                    follow_control_route.handler_property: follow_control_route.handler,
                     "mobaFollowTerminalFolderControlRenderSource": follow_control_route.render_source,
                 }
                 for property_name, expected_value in follow_control_route_properties.items():
@@ -2301,6 +2440,8 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                     errors.append("mobaxterm live GUI follow-folder control route captured flag missing")
                 if bool(widget.property(follow_control_route.captured_checked_property)) != widget.isChecked():
                     errors.append("mobaxterm live GUI follow-folder control route captured checked state drifted")
+                if bool(widget.property(follow_control_route.live_checked_property)) != widget.isChecked():
+                    errors.append("mobaxterm live GUI follow-folder control route live checked state drifted")
                 follow_plan = str(widget.property("mobaMonitoringFollowPlan") or "")
                 if "ls -la /" not in follow_plan:
                     errors.append("mobaxterm live GUI follow-terminal-folder control missing SFTP plan evidence")
@@ -2311,6 +2452,17 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                     errors.append("mobaxterm live GUI follow-folder control route captured path drifted")
                 if str(widget.property(follow_control_route.captured_plan_property) or "") != follow_plan:
                     errors.append("mobaxterm live GUI follow-folder control route captured plan drifted")
+                if str(widget.property(follow_control_route.live_path_property) or "") != follow_path:
+                    errors.append("mobaxterm live GUI follow-folder control route live path drifted")
+                if str(widget.property(follow_control_route.live_plan_property) or "") != follow_plan:
+                    errors.append("mobaxterm live GUI follow-folder control route live plan drifted")
+                original_checked = widget.isChecked()
+                widget.setChecked(not original_checked)
+                if bool(widget.property(follow_control_route.live_checked_property)) != (not original_checked):
+                    errors.append("mobaxterm live GUI follow-folder control route toggled state did not update")
+                widget.setChecked(original_checked)
+                if bool(widget.property(follow_control_route.live_checked_property)) != original_checked:
+                    errors.append("mobaxterm live GUI follow-folder control route restored state did not update")
         follow_route = EXPECTED_MOBA_SFTP_FOLLOW_FOLDER_ROUTE
         follow_widget = monitoring_control_by_key.get(follow_route.source_control_key)
         route_widgets = (
@@ -2804,6 +2956,21 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                 errors.append(f"mobaxterm live GUI right utility action {key!r} must use a generated icon")
         edge_controls = window.findChild(QFrame, "mobaSessionEdgeControls")
         if edge_controls is not None:
+            route_properties = {
+                "mobaSessionEdgeRouteKey": EXPECTED_MOBA_SESSION_EDGE_ACTION_ROUTE.key,
+                "mobaSessionEdgeRouteRole": EXPECTED_MOBA_SESSION_EDGE_ACTION_ROUTE.route_role,
+                "mobaSessionEdgeRouteControlsObject": EXPECTED_MOBA_SESSION_EDGE_ACTION_ROUTE.controls_object,
+                "mobaSessionEdgeRouteActionObject": EXPECTED_MOBA_SESSION_EDGE_ACTION_ROUTE.action_object,
+                "mobaSessionEdgeRoutePlacement": EXPECTED_MOBA_SESSION_EDGE_ACTION_ROUTE.placement,
+                "mobaSessionEdgeRouteRenderSource": EXPECTED_MOBA_SESSION_EDGE_ACTION_ROUTE.render_source,
+            }
+            for property_name, expected_value in route_properties.items():
+                if str(edge_controls.property(property_name) or "") != expected_value:
+                    errors.append(f"mobaxterm live GUI session edge action route controls {property_name} drifted")
+            if list(edge_controls.property(EXPECTED_MOBA_SESSION_EDGE_ACTION_ROUTE.action_keys_property) or []) != list(
+                EXPECTED_MOBA_SESSION_EDGE_ACTION_ROUTE.action_keys
+            ):
+                errors.append("mobaxterm live GUI session edge action route controls keys drifted")
             control_properties = {
                 "mobaSessionEdgeTopY": EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.session_edge_top_y,
                 "mobaSessionEdgeStaticHeight": EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.session_edge_height,
@@ -2841,6 +3008,28 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                 errors.append(f"mobaxterm live GUI session edge shortcut {key!r} must use a generated icon")
             expected_action = EXPECTED_MOBA_SESSION_EDGE_BY_KEY.get(key)
             if expected_action is not None:
+                expected_index = EXPECTED_MOBA_SESSION_EDGE_ACTION_ROUTE.action_keys.index(key)
+                route_properties = {
+                    "mobaSessionEdgeRouteKey": EXPECTED_MOBA_SESSION_EDGE_ACTION_ROUTE.key,
+                    "mobaSessionEdgeRouteRole": EXPECTED_MOBA_SESSION_EDGE_ACTION_ROUTE.route_role,
+                    EXPECTED_MOBA_SESSION_EDGE_ACTION_ROUTE.action_key_property: key,
+                    EXPECTED_MOBA_SESSION_EDGE_ACTION_ROUTE.action_label_property: expected_action.label,
+                    EXPECTED_MOBA_SESSION_EDGE_ACTION_ROUTE.action_object_property: (
+                        EXPECTED_MOBA_SESSION_EDGE_ACTION_ROUTE.action_object
+                    ),
+                    EXPECTED_MOBA_SESSION_EDGE_ACTION_ROUTE.icon_key_property: expected_action.icon_key,
+                    EXPECTED_MOBA_SESSION_EDGE_ACTION_ROUTE.handler_property: (
+                        EXPECTED_MOBA_SESSION_EDGE_ACTION_ROUTE.action_handlers[expected_index]
+                    ),
+                    "mobaSessionEdgeRouteRenderSource": EXPECTED_MOBA_SESSION_EDGE_ACTION_ROUTE.render_source,
+                }
+                for property_name, expected_value in route_properties.items():
+                    if str(button.property(property_name) or "") != expected_value:
+                        errors.append(f"mobaxterm live GUI session edge shortcut {key!r} route {property_name} drifted")
+                if list(button.property(EXPECTED_MOBA_SESSION_EDGE_ACTION_ROUTE.action_keys_property) or []) != list(
+                    EXPECTED_MOBA_SESSION_EDGE_ACTION_ROUTE.action_keys
+                ):
+                    errors.append(f"mobaxterm live GUI session edge shortcut {key!r} route keys drifted")
                 relative_y = expected_action.relative_y(EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.session_edge_top_y)
                 geometry_properties = {
                     "mobaSessionEdgeStaticY": expected_action.static_y,
@@ -4181,6 +4370,145 @@ def check_live_moba_sftp_terminal_folder_route(window: Any) -> list[str]:
             if any(key != route.key for key in row_route_keys):
                 errors.append("mobaxterm live GUI SFTP terminal-folder row route keys drifted")
     return errors
+
+
+def check_live_moba_sftp_toolbar_action_route(
+    dock: Any,
+    browser: Any,
+    toolbar: Any,
+    path: Any,
+    table: Any,
+    queue: Any,
+    buttons: list[Any],
+) -> list[str]:
+    route = EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_ROUTE
+    target_action_key = "download"
+    target_index = route.action_keys.index(target_action_key)
+    target_status = route.action_statuses[target_index]
+    target_label = route.action_labels[target_index]
+    target_group = route.action_group_keys[target_index]
+    target_tooltip = route.action_tooltips[target_index]
+    target_button = next(
+        (
+            button
+            for button in buttons
+            if str(button.property(route.action_key_property) or "") == target_action_key
+        ),
+        None,
+    )
+    route_widgets = {
+        "dock": dock,
+        "browser": browser,
+        "toolbar": toolbar,
+        "path": path,
+        "table": table,
+        "queue": queue,
+        "target-action": target_button,
+    }
+    missing = [label for label, widget in route_widgets.items() if widget is None]
+    if missing:
+        return [f"mobaxterm live GUI SFTP toolbar action route missing widget(s): {missing}"]
+
+    expected_initial_props = {
+        route.route_key_property: route.key,
+        "mobaSftpToolbarRouteRole": route.route_role,
+        "mobaSftpToolbarRouteToolbarObject": route.toolbar_object,
+        "mobaSftpToolbarRouteActionObject": route.action_object,
+        "mobaSftpToolbarRouteTargetBrowserObject": route.target_browser_object,
+        "mobaSftpToolbarRouteTargetPathObject": route.target_path_object,
+        "mobaSftpToolbarRouteTargetTableObject": route.target_table_object,
+        "mobaSftpToolbarRouteQueueObject": route.queue_object,
+        route.action_key_property: target_action_key,
+        route.action_label_property: target_label,
+        route.action_object_property: route.action_object,
+        route.icon_key_property: route.action_icon_keys[target_index],
+        route.group_key_property: target_group,
+        route.tooltip_property: target_tooltip,
+        route.signal_property: route.signal,
+        route.handler_property: route.action_handlers[target_index],
+        route.captured_action_property: "",
+        route.captured_status_property: "",
+        route.live_action_property: target_action_key,
+        route.live_status_property: target_status,
+        "mobaSftpToolbarRouteRenderSource": route.render_source,
+    }
+    errors: list[str] = []
+    for label, widget in route_widgets.items():
+        for property_name, expected_value in expected_initial_props.items():
+            actual_value = str(widget.property(property_name) or "")
+            if actual_value != expected_value:
+                errors.append(
+                    f"mobaxterm live GUI SFTP toolbar action route {label}.{property_name} "
+                    f"{actual_value!r} must equal {expected_value!r}"
+                )
+        if list(widget.property(route.action_keys_property) or []) != list(route.action_keys):
+            errors.append(f"mobaxterm live GUI SFTP toolbar action route {label} action keys drifted")
+        if list(widget.property(route.action_groups_property) or []) != list(route.action_group_keys):
+            errors.append(f"mobaxterm live GUI SFTP toolbar action route {label} action groups drifted")
+        if list(widget.property("mobaSftpToolbarRouteActionStatuses") or []) != list(route.action_statuses):
+            errors.append(f"mobaxterm live GUI SFTP toolbar action route {label} action statuses drifted")
+        if bool(widget.property(route.captured_property)):
+            errors.append(f"mobaxterm live GUI SFTP toolbar action route {label} must start uncaptured")
+        if bool(widget.property(route.live_triggered_property)):
+            errors.append(f"mobaxterm live GUI SFTP toolbar action route {label} live trigger must start false")
+    if route.signal != "clicked":
+        errors.append("mobaxterm live GUI SFTP toolbar action route signal drifted")
+    if route.action_handlers[target_index] != "show_moba_sftp_toolbar_action":
+        errors.append("mobaxterm live GUI SFTP toolbar action route handler drifted")
+    if errors:
+        return errors
+
+    dock.setProperty("mobaSftpToolbarRouteSuppressDialog", True)
+    target_button.click()
+    return check_moba_sftp_toolbar_live_action(route_widgets, route, target_action_key, target_status)
+
+
+def check_moba_sftp_toolbar_live_action(
+    route_widgets: dict[str, Any],
+    route: Any,
+    action_key: str,
+    action_status: str,
+) -> list[str]:
+    action_index = route.action_keys.index(action_key)
+    expected_live_props = {
+        route.action_key_property: action_key,
+        route.action_label_property: route.action_labels[action_index],
+        route.action_object_property: route.action_object,
+        route.icon_key_property: route.action_icon_keys[action_index],
+        route.group_key_property: route.action_group_keys[action_index],
+        route.tooltip_property: route.action_tooltips[action_index],
+        route.signal_property: route.signal,
+        route.handler_property: route.action_handlers[action_index],
+        route.captured_action_property: action_key,
+        route.captured_status_property: action_status,
+        "mobaSftpToolbarRouteLiveAction": action_key,
+        route.live_status_property: action_status,
+        "mobaSftpToolbarRouteRenderSource": route.render_source,
+        "mobaSftpToolbarRouteLastActionKey": action_key,
+    }
+    for object_name, widget in route_widgets.items():
+        if bool(widget.property(route.captured_property)) is not True:
+            return [
+                f"mobaxterm live GUI SFTP toolbar action {object_name} "
+                f"{route.captured_property} was not captured"
+            ]
+        if bool(widget.property(route.live_triggered_property)) is not True:
+            return [
+                f"mobaxterm live GUI SFTP toolbar action {object_name} "
+                f"{route.live_triggered_property} was not triggered"
+            ]
+        for property_name, expected_value in expected_live_props.items():
+            actual_value = str(widget.property(property_name) or "")
+            if actual_value != expected_value:
+                return [
+                    f"mobaxterm live GUI SFTP toolbar action {object_name}.{property_name} "
+                    f"{actual_value!r} must equal {expected_value!r}"
+                ]
+        if object_name == "queue":
+            queue_text = widget.text()
+            if action_status not in queue_text or route.action_labels[action_index] not in queue_text:
+                return ["mobaxterm live GUI SFTP toolbar queue text did not show clicked action status"]
+    return []
 
 
 def check_live_tree_content(window: Any, preset_id: str) -> list[str]:
@@ -6473,7 +6801,7 @@ def check_live_securecrt_sftp_tab_route(window: Any) -> list[str]:
 
 
 def check_live_securecrt_sftp_browser_route(window: Any) -> list[str]:
-    from PyQt6.QtWidgets import QFrame, QLabel, QWidget
+    from PyQt6.QtWidgets import QFrame, QLabel, QToolButton, QWidget
 
     route = EXPECTED_SECURECRT_SFTP_BROWSER_ROUTE
     tab_route = EXPECTED_SECURECRT_SFTP_TAB_ROUTE
@@ -6523,7 +6851,23 @@ def check_live_securecrt_sftp_browser_route(window: Any) -> list[str]:
         "secureCrtSftpBrowserActiveRowName": route.active_row_name,
         "secureCrtSftpBrowserQueueLabel": route.transfer_queue_label,
         route.queue_state_property: route.transfer_status,
+        "secureCrtSftpBrowserActionObject": route.action_object,
+        "secureCrtSftpBrowserActionKey": route.action_key,
+        "secureCrtSftpBrowserActionLabel": route.action_label,
+        route.signal_property: route.signal,
+        route.handler_property: route.handler,
+        route.captured_action_property: "",
+        route.captured_status_property: "",
+        route.live_action_property: route.action_key,
+        route.live_status_property: route.transfer_status,
         "secureCrtSftpBrowserRenderSource": route.render_source,
+    }
+    route_widgets = {
+        "browser": browser,
+        "toolbar": toolbar,
+        "path": path,
+        "table": table,
+        "queue": queue,
     }
     for label, widget in (
         ("browser", browser),
@@ -6539,16 +6883,57 @@ def check_live_securecrt_sftp_browser_route(window: Any) -> list[str]:
                     f"securecrt live GUI SFTP browser {label} property "
                     f"{property_name} {actual_value!r} must equal {expected_value!r}"
                 )
+        if bool(widget.property(route.captured_property)):
+            errors.append(f"securecrt live GUI SFTP browser {label} action route must start uncaptured")
+        if bool(widget.property(route.live_triggered_property)):
+            errors.append(f"securecrt live GUI SFTP browser {label} live trigger must start false")
 
     if route.remote_path not in path.text():
         errors.append("securecrt live GUI SFTP browser path text drifted")
     if route.transfer_queue_label not in queue.text() or route.transfer_status not in queue.text():
         errors.append("securecrt live GUI SFTP browser queue text drifted")
 
-    action_widgets = toolbar.findChildren(QLabel, "secureCrtSftpAction")
+    action_widgets = toolbar.findChildren(QToolButton, route.action_object)
     action_keys = [str(action.property("secureCrtSftpBrowserActionKey") or "") for action in action_widgets]
     if action_keys != list(route.toolbar_actions):
         errors.append(f"securecrt live GUI SFTP browser toolbar actions {action_keys!r} drifted")
+    target_actions = [
+        action
+        for action in action_widgets
+        if str(action.property("secureCrtSftpBrowserActionKey") or "") == route.action_key
+    ]
+    if len(target_actions) != 1:
+        errors.append("securecrt live GUI SFTP browser must expose one routed Refresh action")
+    else:
+        target_action = target_actions[0]
+        route_widgets["refresh-action"] = target_action
+        if target_action.text() != route.action_label:
+            errors.append("securecrt live GUI SFTP browser routed action label drifted")
+        expected_action_props = {
+            "secureCrtSftpBrowserRouteKey": route.key,
+            "secureCrtSftpBrowserActionKey": route.action_key,
+            route.toolbar_actions_property: actions_value,
+            "secureCrtSftpBrowserActionObject": route.action_object,
+            "secureCrtSftpBrowserActionLabel": route.action_label,
+            route.signal_property: route.signal,
+            route.handler_property: route.handler,
+            route.captured_action_property: "",
+            route.captured_status_property: "",
+            route.live_action_property: route.action_key,
+            route.live_status_property: route.transfer_status,
+        }
+        for property_name, expected_value in expected_action_props.items():
+            actual_value = str(target_action.property(property_name) or "")
+            if actual_value != expected_value:
+                errors.append(f"securecrt live GUI SFTP routed action property {property_name} drifted")
+        if bool(target_action.property(route.captured_property)):
+            errors.append("securecrt live GUI SFTP routed action must start uncaptured")
+        if bool(target_action.property(route.live_triggered_property)):
+            errors.append("securecrt live GUI SFTP routed action live trigger must start false")
+        if route.signal != "clicked":
+            errors.append("securecrt live GUI SFTP browser action signal drifted")
+        if route.handler != "handle_securecrt_sftp_browser_action":
+            errors.append("securecrt live GUI SFTP browser action handler drifted")
 
     rows = table.findChildren(QFrame, route.row_object)
     expected_rows_by_name = {row.name: row for row in route.file_rows}
@@ -6575,13 +6960,53 @@ def check_live_securecrt_sftp_browser_route(window: Any) -> list[str]:
             errors.append(f"securecrt live GUI SFTP browser row {row_name!r} modified time drifted")
         if actual_selected:
             selected_rows.append(row_name)
+            route_widgets["active-row"] = row_widget
     if selected_rows != [route.active_row_name]:
         errors.append(f"securecrt live GUI SFTP browser selected row {selected_rows!r} drifted")
-    return errors
+    if errors:
+        return errors
+    target_actions[0].click()
+    return check_securecrt_sftp_browser_live_action(route_widgets, route)
+
+
+def check_securecrt_sftp_browser_live_action(route_widgets: dict[str, Any], route: Any) -> list[str]:
+    expected_live_props = {
+        "secureCrtSftpBrowserActionObject": route.action_object,
+        "secureCrtSftpBrowserActionKey": route.action_key,
+        "secureCrtSftpBrowserActionLabel": route.action_label,
+        route.signal_property: route.signal,
+        route.handler_property: route.handler,
+        route.captured_action_property: route.action_key,
+        route.captured_status_property: route.action_status,
+        route.live_action_property: route.action_key,
+        route.live_status_property: route.action_status,
+        "secureCrtSftpBrowserRenderSource": route.render_source,
+    }
+    for object_name, widget in route_widgets.items():
+        if bool(widget.property(route.captured_property)) is not True:
+            return [
+                f"securecrt live GUI SFTP browser action {object_name} "
+                f"{route.captured_property} was not captured"
+            ]
+        if bool(widget.property(route.live_triggered_property)) is not True:
+            return [
+                f"securecrt live GUI SFTP browser action {object_name} "
+                f"{route.live_triggered_property} was not triggered"
+            ]
+        for property_name, expected_value in expected_live_props.items():
+            actual_value = str(widget.property(property_name) or "")
+            if actual_value != expected_value:
+                return [
+                    f"securecrt live GUI SFTP browser action {object_name}.{property_name} "
+                    f"{actual_value!r} must equal {expected_value!r}"
+                ]
+        if object_name == "queue" and route.action_status not in widget.text():
+            return ["securecrt live GUI SFTP browser queue text did not show refreshed action status"]
+    return []
 
 
 def check_live_securecrt_command_window(window: Any) -> list[str]:
-    from PyQt6.QtWidgets import QLabel, QWidget
+    from PyQt6.QtWidgets import QLabel, QLineEdit, QPushButton, QWidget
 
     chrome = gui_design_securecrt_command_window_chrome()
     panel = window.findChild(QWidget, "secureCrtCommandWindow")
@@ -6610,29 +7035,34 @@ def check_live_securecrt_command_window(window: Any) -> list[str]:
                 f"securecrt live GUI command-window {prop_name} "
                 f"{actual_value!r} must equal {expected_value!r}"
             ]
-    labels = {label.text() for label in panel.findChildren(QLabel)}
-    missing = sorted(required_securecrt_command_window_texts() - labels)
-    if missing:
-        return [f"securecrt live GUI command-window missing text: {missing}"]
-    keyed_labels = panel.findChildren(QLabel, "secureCrtCommandTarget")
-    keyed_labels.extend(panel.findChildren(QLabel, "secureCrtCommandSend"))
-    keyed_labels.extend(panel.findChildren(QLabel, "secureCrtCommandStatus"))
-    for label in keyed_labels:
-        label_key = str(label.property("secureCrtCommandWindowKey") or "")
-        if label_key != chrome.key:
-            return [f"securecrt live GUI command-window label key {label_key!r} must equal {chrome.key!r}"]
     target = panel.findChild(QLabel, "secureCrtCommandTarget")
     if target is None:
         return ["securecrt live GUI command-window missing target label"]
+    command_input = panel.findChild(QLineEdit, "secureCrtCommandInput")
+    if command_input is None:
+        return ["securecrt live GUI command-window missing command input"]
+    send = panel.findChild(QPushButton, "secureCrtCommandSend")
+    if send is None:
+        return ["securecrt live GUI command-window missing send button"]
+    status = panel.findChild(QLabel, "secureCrtCommandStatus")
+    if status is None:
+        return ["securecrt live GUI command-window missing status label"]
+    visible_texts = {label.text() for label in panel.findChildren(QLabel)}
+    visible_texts.add(command_input.text())
+    visible_texts.add(send.text())
+    missing = sorted(required_securecrt_command_window_texts() - visible_texts)
+    if missing:
+        return [f"securecrt live GUI command-window missing text: {missing}"]
+    for widget in (target, command_input, send, status):
+        widget_key = str(widget.property("secureCrtCommandWindowKey") or "")
+        if widget_key != chrome.key:
+            return [f"securecrt live GUI command-window widget key {widget_key!r} must equal {chrome.key!r}"]
     target_static_width = int(target.property("secureCrtCommandStaticTargetWidth") or 0)
     target_live_width = int(target.property("secureCrtCommandLiveTargetMinWidth") or 0)
     if target_static_width != chrome.static_target_width:
         return ["securecrt live GUI command-window target static width drifted"]
     if target_live_width != chrome.live_target_min_width or target.minimumWidth() != chrome.live_target_min_width:
         return ["securecrt live GUI command-window target live width drifted"]
-    command_input = panel.findChild(QLabel, "secureCrtCommandInput")
-    if command_input is None:
-        return ["securecrt live GUI command-window missing command input"]
     expected_input_props = {
         "secureCrtCommandStaticInputX": chrome.static_input_x,
         "secureCrtCommandStaticInputTextX": chrome.static_input_text_x,
@@ -6645,18 +7075,12 @@ def check_live_securecrt_command_window(window: Any) -> list[str]:
                 f"securecrt live GUI command-window input {prop_name} "
                 f"{actual_value!r} must equal {expected_value!r}"
             ]
-    send = panel.findChild(QLabel, "secureCrtCommandSend")
-    if send is None:
-        return ["securecrt live GUI command-window missing send label"]
     send_static_width = int(send.property("secureCrtCommandStaticSendWidth") or 0)
     send_live_width = int(send.property("secureCrtCommandLiveSendMinWidth") or 0)
     if send_static_width != chrome.static_send_width:
         return ["securecrt live GUI command-window send static width drifted"]
     if send_live_width != chrome.live_send_min_width or send.minimumWidth() != chrome.live_send_min_width:
         return ["securecrt live GUI command-window send live width drifted"]
-    status = panel.findChild(QLabel, "secureCrtCommandStatus")
-    if status is None:
-        return ["securecrt live GUI command-window missing status label"]
     route_errors = check_securecrt_command_window_send_route(panel, target, command_input, send, status)
     if route_errors:
         return route_errors
@@ -6702,6 +7126,15 @@ def check_securecrt_command_window_send_route(panel: Any, target: Any, command_i
             "secureCrtCommandRouteTargetScope": chrome.target_scope,
             "secureCrtCommandRouteSendLabel": chrome.send_label,
             "secureCrtCommandRouteStatus": chrome.status,
+            route.captured_command_property: "",
+            route.captured_target_scope_property: "",
+            route.captured_status_property: "",
+            route.signal_property: route.signal,
+            route.secondary_signal_property: route.secondary_signal,
+            route.handler_property: route.handler,
+            route.live_command_property: chrome.command,
+            route.live_target_scope_property: chrome.target_scope,
+            route.live_status_property: chrome.status,
             "secureCrtCommandRouteRenderSource": route.render_source,
         }
         for prop_name, expected_value in expected_route_props.items():
@@ -6711,6 +7144,16 @@ def check_securecrt_command_window_send_route(panel: Any, target: Any, command_i
                     f"securecrt live GUI command-window send route {object_name}.{prop_name} "
                     f"{actual_value!r} must equal {expected_value!r}"
                 ]
+        if bool(widget.property(route.captured_property)):
+            return [
+                f"securecrt live GUI command-window send route {object_name}.{route.captured_property} "
+                "must start false"
+            ]
+        if bool(widget.property(route.live_submitted_property)):
+            return [
+                f"securecrt live GUI command-window send route {object_name}.{route.live_submitted_property} "
+                "must start false"
+            ]
     for object_name, expected_text in expected_texts.items():
         actual_text = route_widgets[object_name].text()
         if actual_text != expected_text:
@@ -6718,6 +7161,83 @@ def check_securecrt_command_window_send_route(panel: Any, target: Any, command_i
                 f"securecrt live GUI command-window send route {object_name} text "
                 f"{actual_text!r} must equal {expected_text!r}"
             ]
+    if route.signal != "clicked":
+        return ["securecrt live GUI command-window send route primary signal drifted"]
+    if route.secondary_signal != "returnPressed":
+        return ["securecrt live GUI command-window send route secondary signal drifted"]
+    if route.handler != "handle_securecrt_command_window_send":
+        return ["securecrt live GUI command-window send route handler drifted"]
+
+    click_command = "$ uptime"
+    command_input.setText(click_command)
+    send.click()
+    click_errors = check_securecrt_command_window_live_submission(
+        route_widgets,
+        route,
+        click_command,
+        trigger="clicked",
+    )
+    if click_errors:
+        return click_errors
+
+    enter_command = "$ whoami"
+    command_input.setText(enter_command)
+    command_input.returnPressed.emit()
+    return check_securecrt_command_window_live_submission(
+        route_widgets,
+        route,
+        enter_command,
+        trigger="returnPressed",
+    )
+
+
+def check_securecrt_command_window_live_submission(
+    route_widgets: dict[str, Any],
+    route: Any,
+    expected_command: str,
+    *,
+    trigger: str,
+) -> list[str]:
+    chrome = EXPECTED_SECURECRT_COMMAND_WINDOW_CHROME
+    expected_status = "sent"
+    expected_live_props = {
+        route.command_property: expected_command,
+        route.target_scope_property: chrome.target_scope,
+        route.captured_command_property: expected_command,
+        route.captured_target_scope_property: chrome.target_scope,
+        route.live_command_property: expected_command,
+        route.live_target_scope_property: chrome.target_scope,
+        route.status_property: expected_status,
+        route.captured_status_property: expected_status,
+        route.live_status_property: expected_status,
+        route.signal_property: route.signal,
+        route.secondary_signal_property: route.secondary_signal,
+        route.handler_property: route.handler,
+    }
+    for object_name, widget in route_widgets.items():
+        if bool(widget.property(route.captured_property)) is not True:
+            return [
+                f"securecrt live GUI command-window {trigger} route {object_name} "
+                f"{route.captured_property} was not captured"
+            ]
+        if bool(widget.property(route.live_submitted_property)) is not True:
+            return [
+                f"securecrt live GUI command-window {trigger} route {object_name} "
+                f"{route.live_submitted_property} was not submitted"
+            ]
+        for prop_name, expected_value in expected_live_props.items():
+            actual_value = str(widget.property(prop_name) or "")
+            if actual_value != expected_value:
+                return [
+                    f"securecrt live GUI command-window {trigger} route {object_name}.{prop_name} "
+                    f"{actual_value!r} must equal {expected_value!r}"
+                ]
+    status = route_widgets[route.status_object]
+    if status.text() != expected_status:
+        return [
+            f"securecrt live GUI command-window {trigger} status text "
+            f"{status.text()!r} must equal {expected_status!r}"
+        ]
     return []
 
 
@@ -7220,8 +7740,15 @@ def check_live_remmina_screenshot_route(window: Any) -> list[str]:
         "remminaScreenshotRouteStatusSegment": route.status_segment,
         "remminaScreenshotRouteDetailLine": route.detail_line,
         "remminaScreenshotRouteActivityLine": route.activity_line,
+        route.signal_property: route.signal,
+        route.handler_property: route.handler,
+        route.captured_state_property: "",
+        route.captured_artifact_property: "",
+        route.live_capture_state_property: route.capture_state,
+        route.live_capture_artifact_property: route.capture_artifact,
         "remminaScreenshotRouteRenderSource": route.render_source,
     }
+    route_widgets = {"viewer-controls": viewer_panel}
     for property_name, expected_value in common_route_props.items():
         actual_value = str(viewer_panel.property(property_name) or "")
         if actual_value != expected_value:
@@ -7229,6 +7756,10 @@ def check_live_remmina_screenshot_route(window: Any) -> list[str]:
                 f"remmina live GUI screenshot route panel property "
                 f"{property_name} {actual_value!r} must equal {expected_value!r}"
             )
+    if bool(viewer_panel.property(route.captured_property)):
+        errors.append(f"remmina live GUI screenshot route panel {route.captured_property} must start false")
+    if bool(viewer_panel.property(route.live_triggered_property)):
+        errors.append(f"remmina live GUI screenshot route panel {route.live_triggered_property} must start false")
 
     if route.active_tab_label not in live_tab_labels(tabs):
         errors.append(f"remmina live GUI screenshot route missing active tab {route.active_tab_label!r}")
@@ -7241,17 +7772,23 @@ def check_live_remmina_screenshot_route(window: Any) -> list[str]:
         errors.append("remmina live GUI screenshot route must expose one Screenshot viewer control")
     else:
         button = target_buttons[0]
+        route_widgets["screenshot-button"] = button
         button_route_props = dict(common_route_props)
-        button_route_props.pop("remminaScreenshotViewerControlsObject")
-        button_route_props.pop("remminaScreenshotViewerControlKey")
-        button_route_props.pop("remminaScreenshotViewerControlObject")
         button_route_props[route.control_active_property] = "true"
         for property_name, expected_value in button_route_props.items():
             actual_value = str(button.property(property_name) or "")
             if actual_value != expected_value:
                 errors.append(f"remmina live GUI screenshot routed control property {property_name} drifted")
+        if bool(button.property(route.captured_property)):
+            errors.append(f"remmina live GUI screenshot route button {route.captured_property} must start false")
+        if bool(button.property(route.live_triggered_property)):
+            errors.append(f"remmina live GUI screenshot route button {route.live_triggered_property} must start false")
         if button.text() != "Screenshot":
             errors.append("remmina live GUI screenshot routed control label must be Screenshot")
+        if route.signal != "clicked":
+            errors.append("remmina live GUI screenshot route signal drifted")
+        if route.handler != "handle_remmina_screenshot_capture":
+            errors.append("remmina live GUI screenshot route handler drifted")
 
     inactive_route_states = [
         str(button.property(route.control_active_property) or "")
@@ -7260,7 +7797,43 @@ def check_live_remmina_screenshot_route(window: Any) -> list[str]:
     ]
     if any(state != "false" for state in inactive_route_states):
         errors.append("remmina live GUI non-screenshot viewer controls must not expose active screenshot route")
-    return errors
+    if errors:
+        return errors
+    target_buttons[0].click()
+    return check_remmina_screenshot_live_capture(route_widgets, route)
+
+
+def check_remmina_screenshot_live_capture(route_widgets: dict[str, Any], route: Any) -> list[str]:
+    expected_state = "captured"
+    expected_live_props = {
+        route.capture_state_property: route.capture_state,
+        route.capture_artifact_property: route.capture_artifact,
+        route.captured_state_property: expected_state,
+        route.captured_artifact_property: route.capture_artifact,
+        route.signal_property: route.signal,
+        route.handler_property: route.handler,
+        route.live_capture_state_property: expected_state,
+        route.live_capture_artifact_property: route.capture_artifact,
+    }
+    for object_name, widget in route_widgets.items():
+        if bool(widget.property(route.captured_property)) is not True:
+            return [
+                f"remmina live GUI screenshot click route {object_name} "
+                f"{route.captured_property} was not captured"
+            ]
+        if bool(widget.property(route.live_triggered_property)) is not True:
+            return [
+                f"remmina live GUI screenshot click route {object_name} "
+                f"{route.live_triggered_property} was not triggered"
+            ]
+        for prop_name, expected_value in expected_live_props.items():
+            actual_value = str(widget.property(prop_name) or "")
+            if actual_value != expected_value:
+                return [
+                    f"remmina live GUI screenshot click route {object_name}.{prop_name} "
+                    f"{actual_value!r} must equal {expected_value!r}"
+                ]
+    return []
 
 
 def check_live_remmina_sftp_transfer_route(window: Any) -> list[str]:
@@ -7292,6 +7865,14 @@ def check_live_remmina_sftp_transfer_route(window: Any) -> list[str]:
     if missing:
         return [f"remmina live GUI SFTP transfer route missing widget(s): {missing}"]
 
+    route_widgets = {
+        "profile-panel": profile_panel,
+        "transfer-panel": transfer_panel,
+        "toolbar": toolbar,
+        "path": path,
+        "table": table,
+        "queue": queue,
+    }
     rows_by_key = {
         row.key: row
         for row in EXPECTED_REMMINA_PROFILE_LIST_CHROME.rows
@@ -7323,6 +7904,15 @@ def check_live_remmina_sftp_transfer_route(window: Any) -> list[str]:
         route.path_property: route.remote_path,
         route.queue_state_property: route.transfer_status,
         "remminaSftpTransferRouteQueueLabel": route.transfer_queue_label,
+        "remminaSftpTransferRouteActionObject": route.action_object,
+        "remminaSftpTransferRouteActionKey": route.action_key,
+        "remminaSftpTransferRouteActionLabel": route.action_label,
+        route.signal_property: route.signal,
+        route.handler_property: route.handler,
+        route.captured_action_property: "",
+        route.captured_status_property: "",
+        route.live_action_property: route.action_key,
+        route.live_status_property: route.transfer_status,
         "remminaSftpTransferRouteRenderSource": route.render_source,
     }
     expected_panel_props = {
@@ -7360,6 +7950,10 @@ def check_live_remmina_sftp_transfer_route(window: Any) -> list[str]:
                     f"remmina live GUI SFTP transfer route {object_name}.{prop_name} "
                     f"{actual_value!r} must equal {expected_value!r}"
                 )
+        if bool(widget.property(route.captured_property)):
+            errors.append(f"remmina live GUI SFTP transfer route {object_name} must start uncaptured")
+        if bool(widget.property(route.live_triggered_property)):
+            errors.append(f"remmina live GUI SFTP transfer route {object_name} live trigger must start false")
 
     if profile_panel is not None:
         for prop_name, expected_value in {
@@ -7373,6 +7967,10 @@ def check_live_remmina_sftp_transfer_route(window: Any) -> list[str]:
             actual_value = str(profile_panel.property(prop_name) or "")
             if actual_value != expected_value:
                 errors.append(f"remmina live GUI SFTP transfer profile panel property {prop_name} drifted")
+        if bool(profile_panel.property(route.captured_property)):
+            errors.append("remmina live GUI SFTP transfer profile panel must start uncaptured")
+        if bool(profile_panel.property(route.live_triggered_property)):
+            errors.append("remmina live GUI SFTP transfer profile panel live trigger must start false")
 
     profile_rows = window.findChildren(QFrame, route.selected_profile_object)
     routed_rows = [
@@ -7384,10 +7982,15 @@ def check_live_remmina_sftp_transfer_route(window: Any) -> list[str]:
         errors.append("remmina live GUI SFTP transfer route must expose one selected SFTP profile row")
     else:
         row = routed_rows[0]
+        route_widgets["profile-row"] = row
         for prop_name, expected_value in expected_common_props.items():
             actual_value = str(row.property(prop_name) or "")
             if actual_value != expected_value:
                 errors.append(f"remmina live GUI SFTP transfer profile row property {prop_name} drifted")
+        if bool(row.property(route.captured_property)):
+            errors.append("remmina live GUI SFTP transfer profile row must start uncaptured")
+        if bool(row.property(route.live_triggered_property)):
+            errors.append("remmina live GUI SFTP transfer profile row live trigger must start false")
 
     toolbar_buttons = window.findChildren(QToolButton, route.toolbar_action_object)
     target_buttons = [
@@ -7412,6 +8015,10 @@ def check_live_remmina_sftp_transfer_route(window: Any) -> list[str]:
                 errors.append(f"remmina live GUI SFTP transfer toolbar button property {prop_name} drifted")
         if button.text() != route.toolbar_action_label:
             errors.append("remmina live GUI SFTP transfer toolbar button label drifted")
+        if bool(button.property(route.captured_property)):
+            errors.append("remmina live GUI SFTP transfer toolbar button must start uncaptured")
+        if bool(button.property(route.live_triggered_property)):
+            errors.append("remmina live GUI SFTP transfer toolbar button live trigger must start false")
 
     if path is not None and route.remote_path not in path.text():
         errors.append("remmina live GUI SFTP transfer route path label drifted")
@@ -7419,19 +8026,56 @@ def check_live_remmina_sftp_transfer_route(window: Any) -> list[str]:
         if route.transfer_queue_label not in queue.text() or route.transfer_status not in queue.text():
             errors.append("remmina live GUI SFTP transfer route queue label drifted")
 
-    action_labels = [] if toolbar is None else toolbar.findChildren(QLabel, "remminaSftpTransferAction")
-    actual_action_keys = [str(action.property("remminaSftpTransferRouteActionKey") or "") for action in action_labels]
+    action_buttons = [] if toolbar is None else toolbar.findChildren(QToolButton, route.action_object)
+    actual_action_keys = [str(action.property("remminaSftpTransferRouteActionKey") or "") for action in action_buttons]
     expected_action_keys = list(route.toolbar_actions)
     if actual_action_keys != expected_action_keys:
         errors.append(
             f"remmina live GUI SFTP transfer action keys {actual_action_keys!r} "
             f"must equal {expected_action_keys!r}"
         )
-    for action, action_key in zip(action_labels, route.toolbar_actions, strict=False):
+    for action, action_key in zip(action_buttons, route.toolbar_actions, strict=False):
         if action.text() != action_key.title():
             errors.append(f"remmina live GUI SFTP transfer action label {action.text()!r} drifted")
         if str(action.property(route.toolbar_actions_property) or "") != actions_value:
             errors.append("remmina live GUI SFTP transfer action list property drifted")
+    target_actions = [
+        action
+        for action in action_buttons
+        if str(action.property("remminaSftpTransferRouteActionKey") or "") == route.action_key
+    ]
+    if len(target_actions) != 1:
+        errors.append("remmina live GUI SFTP transfer route must expose one routed Queue action")
+    else:
+        target_action = target_actions[0]
+        route_widgets["queue-action"] = target_action
+        expected_action_props = {
+            "remminaSftpTransferRouteKey": route.key,
+            "remminaSftpTransferRouteActionObject": route.action_object,
+            "remminaSftpTransferRouteActionKey": route.action_key,
+            "remminaSftpTransferRouteActionLabel": route.action_label,
+            route.toolbar_actions_property: actions_value,
+            route.signal_property: route.signal,
+            route.handler_property: route.handler,
+            route.captured_action_property: "",
+            route.captured_status_property: "",
+            route.live_action_property: route.action_key,
+            route.live_status_property: route.transfer_status,
+        }
+        for prop_name, expected_value in expected_action_props.items():
+            actual_value = str(target_action.property(prop_name) or "")
+            if actual_value != expected_value:
+                errors.append(f"remmina live GUI SFTP transfer routed action property {prop_name} drifted")
+        if target_action.text() != route.action_label:
+            errors.append("remmina live GUI SFTP transfer routed action label drifted")
+        if bool(target_action.property(route.captured_property)):
+            errors.append("remmina live GUI SFTP transfer routed action must start uncaptured")
+        if bool(target_action.property(route.live_triggered_property)):
+            errors.append("remmina live GUI SFTP transfer routed action live trigger must start false")
+        if route.signal != "clicked":
+            errors.append("remmina live GUI SFTP transfer route signal drifted")
+        if route.handler != "handle_remmina_sftp_transfer_action":
+            errors.append("remmina live GUI SFTP transfer route handler drifted")
 
     row_widgets = [] if table is None else table.findChildren(QFrame, route.row_object)
     if len(row_widgets) != len(route.file_rows):
@@ -7460,6 +8104,8 @@ def check_live_remmina_sftp_transfer_route(window: Any) -> list[str]:
                 f"remmina live GUI SFTP transfer row {expected_row.key} selected "
                 f"{actual_selected!r} must equal {expected_row.selected!r}"
             )
+        if expected_row.name == route.active_row_name:
+            route_widgets["active-row"] = row_widget
     selected_names = [
         str(row_widget.property(route.row_name_property) or "")
         for row_widget in row_widgets
@@ -7472,7 +8118,46 @@ def check_live_remmina_sftp_transfer_route(window: Any) -> list[str]:
         )
     if tabs is not None and route.active_tab_label not in live_tab_labels(tabs):
         errors.append(f"remmina live GUI SFTP transfer route missing tab {route.active_tab_label!r}")
-    return errors
+    if errors:
+        return errors
+    target_actions[0].click()
+    return check_remmina_sftp_transfer_live_action(route_widgets, route)
+
+
+def check_remmina_sftp_transfer_live_action(route_widgets: dict[str, Any], route: Any) -> list[str]:
+    expected_live_props = {
+        "remminaSftpTransferRouteActionObject": route.action_object,
+        "remminaSftpTransferRouteActionKey": route.action_key,
+        "remminaSftpTransferRouteActionLabel": route.action_label,
+        route.signal_property: route.signal,
+        route.handler_property: route.handler,
+        route.captured_action_property: route.action_key,
+        route.captured_status_property: route.action_status,
+        route.live_action_property: route.action_key,
+        route.live_status_property: route.action_status,
+        "remminaSftpTransferRouteRenderSource": route.render_source,
+    }
+    for object_name, widget in route_widgets.items():
+        if bool(widget.property(route.captured_property)) is not True:
+            return [
+                f"remmina live GUI SFTP transfer action {object_name} "
+                f"{route.captured_property} was not captured"
+            ]
+        if bool(widget.property(route.live_triggered_property)) is not True:
+            return [
+                f"remmina live GUI SFTP transfer action {object_name} "
+                f"{route.live_triggered_property} was not triggered"
+            ]
+        for prop_name, expected_value in expected_live_props.items():
+            actual_value = str(widget.property(prop_name) or "")
+            if actual_value != expected_value:
+                return [
+                    f"remmina live GUI SFTP transfer action {object_name}.{prop_name} "
+                    f"{actual_value!r} must equal {expected_value!r}"
+                ]
+        if object_name == "queue" and route.action_status not in widget.text():
+            return ["remmina live GUI SFTP transfer queue text did not show queued action status"]
+    return []
 
 
 def check_live_termius_header_chips(window: Any) -> list[str]:
@@ -7928,7 +8613,8 @@ def check_live_termius_port_forward_route(window: Any) -> list[str]:
 
 
 def check_live_termius_snippet_route(window: Any) -> list[str]:
-    from PyQt6.QtWidgets import QLabel, QTabWidget, QWidget
+    from PyQt6.QtGui import QShortcut
+    from PyQt6.QtWidgets import QLabel, QTabWidget, QToolButton, QWidget
 
     route = EXPECTED_TERMIUS_SNIPPET_ROUTE
     expected_card = next(card for card in gui_design_workflow_cards("termius") if card.key == route.workflow_card_key)
@@ -7944,6 +8630,8 @@ def check_live_termius_snippet_route(window: Any) -> list[str]:
         ),
         None,
     )
+    snippet_action = window.findChild(QToolButton, route.action_object)
+    snippet_shortcut = window.findChild(QShortcut, route.shortcut_object)
     snippet_cell = next(
         (
             label
@@ -7956,6 +8644,8 @@ def check_live_termius_snippet_route(window: Any) -> list[str]:
     route_widgets = {
         "workflow-panel": workflow_panel,
         route.workflow_card_object: snippet_card,
+        route.action_object: snippet_action,
+        route.shortcut_object: snippet_shortcut,
         route.host_identity_object: identity_panel,
         route.identity_cell_object: snippet_cell,
     }
@@ -7970,6 +8660,8 @@ def check_live_termius_snippet_route(window: Any) -> list[str]:
         "termiusSnippetRouteRole": route.route_role,
         route.workflow_key_property: route.workflow_card_key,
         "termiusSnippetRouteWorkflowCardObject": route.workflow_card_object,
+        "termiusSnippetRouteActionObject": route.action_object,
+        "termiusSnippetRouteShortcutObject": route.shortcut_object,
         "termiusSnippetRouteIdentityObject": route.host_identity_object,
         "termiusSnippetRouteIdentityFieldKey": route.identity_field_key,
         "termiusSnippetRouteIdentityCellObject": route.identity_cell_object,
@@ -7979,6 +8671,17 @@ def check_live_termius_snippet_route(window: Any) -> list[str]:
         route.command_property: route.snippet_command,
         route.status_property: route.snippet_state,
         "termiusSnippetRouteDetailLine": route.detail_line,
+        "termiusSnippetRouteActionLabel": route.action_label,
+        "termiusSnippetRouteShortcutSequence": route.shortcut_sequence,
+        route.captured_command_property: "",
+        route.captured_target_profile_property: "",
+        route.captured_status_property: "",
+        route.signal_property: route.signal,
+        route.secondary_signal_property: route.secondary_signal,
+        route.handler_property: route.handler,
+        route.live_command_property: route.snippet_command,
+        route.live_target_profile_property: route.selected_profile_name,
+        route.live_status_property: route.snippet_state,
         "termiusSnippetRouteRenderSource": route.render_source,
     }
     for object_name, widget in route_widgets.items():
@@ -7991,6 +8694,12 @@ def check_live_termius_snippet_route(window: Any) -> list[str]:
                     f"termius live GUI snippet route {object_name}.{prop_name} "
                     f"{actual_value!r} must equal {expected_value!r}"
                 )
+        if bool(widget.property(route.captured_property)):
+            errors.append(f"termius live GUI snippet route {object_name}.{route.captured_property} must start false")
+        if bool(widget.property(route.live_triggered_property)):
+            errors.append(
+                f"termius live GUI snippet route {object_name}.{route.live_triggered_property} must start false"
+            )
 
     if snippet_card is not None:
         title = snippet_card.findChild(QLabel, route.workflow_title_object)
@@ -8014,11 +8723,71 @@ def check_live_termius_snippet_route(window: Any) -> list[str]:
         errors.append("termius live GUI snippet route detail line is missing")
     if tabs is not None and route.active_tab_label not in live_tab_labels(tabs):
         errors.append(f"termius live GUI snippet route missing active tab {route.active_tab_label!r}")
+    if snippet_action is not None:
+        if snippet_action.text() != route.action_label:
+            errors.append("termius live GUI snippet route action label drifted")
+        if route.signal != "clicked":
+            errors.append("termius live GUI snippet route primary signal drifted")
+    if snippet_shortcut is not None:
+        if str(snippet_shortcut.key().toString()) != route.shortcut_sequence:
+            errors.append("termius live GUI snippet route shortcut sequence drifted")
+        if route.secondary_signal != "activated":
+            errors.append("termius live GUI snippet route secondary signal drifted")
+    if route.handler != "handle_termius_snippet_run":
+        errors.append("termius live GUI snippet route handler drifted")
+    if errors:
+        return errors
+    if snippet_action is not None:
+        snippet_action.click()
+        click_errors = check_termius_snippet_live_run(route_widgets, route, trigger="clicked")
+        if click_errors:
+            return click_errors
+    if snippet_shortcut is not None:
+        snippet_shortcut.activated.emit()
+        return check_termius_snippet_live_run(route_widgets, route, trigger="activated")
     return errors
 
 
+def check_termius_snippet_live_run(route_widgets: dict[str, Any], route: Any, *, trigger: str) -> list[str]:
+    expected_status = "ran"
+    expected_live_props = {
+        route.command_property: route.snippet_command,
+        route.status_property: expected_status,
+        route.captured_command_property: route.snippet_command,
+        route.captured_target_profile_property: route.selected_profile_name,
+        route.captured_status_property: expected_status,
+        route.signal_property: route.signal,
+        route.secondary_signal_property: route.secondary_signal,
+        route.handler_property: route.handler,
+        route.live_command_property: route.snippet_command,
+        route.live_target_profile_property: route.selected_profile_name,
+        route.live_status_property: expected_status,
+    }
+    for object_name, widget in route_widgets.items():
+        if widget is None:
+            continue
+        if bool(widget.property(route.captured_property)) is not True:
+            return [
+                f"termius live GUI snippet {trigger} route {object_name} "
+                f"{route.captured_property} was not captured"
+            ]
+        if bool(widget.property(route.live_triggered_property)) is not True:
+            return [
+                f"termius live GUI snippet {trigger} route {object_name} "
+                f"{route.live_triggered_property} was not triggered"
+            ]
+        for prop_name, expected_value in expected_live_props.items():
+            actual_value = str(widget.property(prop_name) or "")
+            if actual_value != expected_value:
+                return [
+                    f"termius live GUI snippet {trigger} route {object_name}.{prop_name} "
+                    f"{actual_value!r} must equal {expected_value!r}"
+                ]
+    return []
+
+
 def check_live_termius_files_browser_route(window: Any) -> list[str]:
-    from PyQt6.QtWidgets import QFrame, QLabel, QTabWidget, QWidget
+    from PyQt6.QtWidgets import QFrame, QLabel, QTabWidget, QToolButton, QWidget
 
     route = EXPECTED_TERMIUS_FILES_BROWSER_ROUTE
     host_route = EXPECTED_TERMIUS_HOST_SELECTION_ROUTE
@@ -8056,6 +8825,15 @@ def check_live_termius_files_browser_route(window: Any) -> list[str]:
         missing.append("sessionTabs")
     if missing:
         return [f"termius live GUI files browser route missing widget(s): {missing}"]
+    route_widgets = {
+        "browser": browser,
+        "toolbar": toolbar,
+        "path": path,
+        "table": table,
+        "queue": queue,
+        "identity-panel": identity_panel,
+        "identity-cell": files_cell,
+    }
 
     if route.host_selection_route_key != host_route.key:
         errors.append("termius live GUI files browser route host-selection key drifted")
@@ -8084,6 +8862,15 @@ def check_live_termius_files_browser_route(window: Any) -> list[str]:
         "termiusFilesRouteState": route.files_state,
         route.path_property: route.remote_path,
         "termiusFilesRouteQueueState": route.transfer_status,
+        "termiusFilesRouteActionObject": route.action_object,
+        "termiusFilesRouteActionKey": route.action_key,
+        "termiusFilesRouteActionLabel": route.action_label,
+        route.signal_property: route.signal,
+        route.handler_property: route.handler,
+        route.captured_action_property: "",
+        route.captured_status_property: "",
+        route.live_action_property: route.action_key,
+        route.live_status_property: route.transfer_status,
         "termiusFilesRouteRenderSource": route.render_source,
     }
     expected_browser_props = {
@@ -8113,6 +8900,10 @@ def check_live_termius_files_browser_route(window: Any) -> list[str]:
                     f"termius live GUI files browser route {object_name}.{prop_name} "
                     f"{actual_value!r} must equal {expected_value!r}"
                 )
+        if bool(widget.property(route.captured_property)):
+            errors.append(f"termius live GUI files browser route {object_name} must start uncaptured")
+        if bool(widget.property(route.live_triggered_property)):
+            errors.append(f"termius live GUI files browser route {object_name} live trigger must start false")
 
     for object_name, widget in {
         route.host_identity_object: identity_panel,
@@ -8127,6 +8918,10 @@ def check_live_termius_files_browser_route(window: Any) -> list[str]:
                     f"termius live GUI files browser route {object_name}.{prop_name} "
                     f"{actual_value!r} must equal {expected_value!r}"
                 )
+        if bool(widget.property(route.captured_property)):
+            errors.append(f"termius live GUI files browser route {object_name} must start uncaptured")
+        if bool(widget.property(route.live_triggered_property)):
+            errors.append(f"termius live GUI files browser route {object_name} live trigger must start false")
 
     if path is not None and route.remote_path not in path.text():
         errors.append("termius live GUI files browser route path label drifted")
@@ -8139,7 +8934,7 @@ def check_live_termius_files_browser_route(window: Any) -> list[str]:
         if files_cell.text() != f"{expected_field.label}: {expected_field.value}":
             errors.append("termius live GUI files browser route identity text drifted")
 
-    action_labels = [] if toolbar is None else toolbar.findChildren(QLabel, "termiusFilesAction")
+    action_labels = [] if toolbar is None else toolbar.findChildren(QToolButton, route.action_object)
     actual_action_keys = [str(action.property("termiusFilesRouteActionKey") or "") for action in action_labels]
     expected_action_keys = list(route.toolbar_actions)
     if actual_action_keys != expected_action_keys:
@@ -8152,6 +8947,43 @@ def check_live_termius_files_browser_route(window: Any) -> list[str]:
             errors.append(f"termius live GUI files browser route action label {action.text()!r} drifted")
         if str(action.property(route.toolbar_actions_property) or "") != actions_value:
             errors.append("termius live GUI files browser route action list property drifted")
+    target_actions = [
+        action
+        for action in action_labels
+        if str(action.property("termiusFilesRouteActionKey") or "") == route.action_key
+    ]
+    if len(target_actions) != 1:
+        errors.append("termius live GUI files browser route must expose one routed Sync action")
+    else:
+        target_action = target_actions[0]
+        route_widgets["sync-action"] = target_action
+        expected_action_props = {
+            "termiusFilesRouteKey": route.key,
+            "termiusFilesRouteActionObject": route.action_object,
+            "termiusFilesRouteActionKey": route.action_key,
+            "termiusFilesRouteActionLabel": route.action_label,
+            route.toolbar_actions_property: actions_value,
+            route.signal_property: route.signal,
+            route.handler_property: route.handler,
+            route.captured_action_property: "",
+            route.captured_status_property: "",
+            route.live_action_property: route.action_key,
+            route.live_status_property: route.transfer_status,
+        }
+        for prop_name, expected_value in expected_action_props.items():
+            actual_value = str(target_action.property(prop_name) or "")
+            if actual_value != expected_value:
+                errors.append(f"termius live GUI files routed action property {prop_name} drifted")
+        if target_action.text() != route.action_label:
+            errors.append("termius live GUI files routed action label drifted")
+        if bool(target_action.property(route.captured_property)):
+            errors.append("termius live GUI files routed action must start uncaptured")
+        if bool(target_action.property(route.live_triggered_property)):
+            errors.append("termius live GUI files routed action live trigger must start false")
+        if route.signal != "clicked":
+            errors.append("termius live GUI files browser action signal drifted")
+        if route.handler != "handle_termius_files_sync":
+            errors.append("termius live GUI files browser action handler drifted")
 
     row_widgets = [] if table is None else table.findChildren(QFrame, route.row_object)
     if len(row_widgets) != len(route.file_rows):
@@ -8180,6 +9012,8 @@ def check_live_termius_files_browser_route(window: Any) -> list[str]:
                 f"termius live GUI files browser route row {expected_row.key} selected "
                 f"{actual_selected!r} must equal {expected_row.selected!r}"
             )
+        if expected_row.name == route.active_row_name:
+            route_widgets["active-row"] = row_widget
     selected_names = [
         str(row_widget.property(route.row_name_property) or "")
         for row_widget in row_widgets
@@ -8192,7 +9026,46 @@ def check_live_termius_files_browser_route(window: Any) -> list[str]:
         )
     if tabs is not None and route.active_tab_label not in live_tab_labels(tabs):
         errors.append(f"termius live GUI files browser route missing active tab {route.active_tab_label!r}")
-    return errors
+    if errors:
+        return errors
+    target_actions[0].click()
+    return check_termius_files_sync_live_action(route_widgets, route)
+
+
+def check_termius_files_sync_live_action(route_widgets: dict[str, Any], route: Any) -> list[str]:
+    expected_live_props = {
+        "termiusFilesRouteActionObject": route.action_object,
+        "termiusFilesRouteActionKey": route.action_key,
+        "termiusFilesRouteActionLabel": route.action_label,
+        route.signal_property: route.signal,
+        route.handler_property: route.handler,
+        route.captured_action_property: route.action_key,
+        route.captured_status_property: route.action_status,
+        route.live_action_property: route.action_key,
+        route.live_status_property: route.action_status,
+        "termiusFilesRouteRenderSource": route.render_source,
+    }
+    for object_name, widget in route_widgets.items():
+        if bool(widget.property(route.captured_property)) is not True:
+            return [
+                f"termius live GUI files sync action {object_name} "
+                f"{route.captured_property} was not captured"
+            ]
+        if bool(widget.property(route.live_triggered_property)) is not True:
+            return [
+                f"termius live GUI files sync action {object_name} "
+                f"{route.live_triggered_property} was not triggered"
+            ]
+        for prop_name, expected_value in expected_live_props.items():
+            actual_value = str(widget.property(prop_name) or "")
+            if actual_value != expected_value:
+                return [
+                    f"termius live GUI files sync action {object_name}.{prop_name} "
+                    f"{actual_value!r} must equal {expected_value!r}"
+                ]
+        if object_name == "queue" and route.action_status not in widget.text():
+            return ["termius live GUI files sync queue text did not show synced action status"]
+    return []
 
 
 def check_live_mremoteng_document_controls(window: Any) -> list[str]:
@@ -8411,7 +9284,18 @@ def check_live_mremoteng_connection_document_route(window: Any) -> list[str]:
         "mRemoteNgConnectionRouteProtocol": route.protocol,
         "mRemoteNgConnectionRouteState": route.workspace_state,
         route.property_value_property: route.property_value,
+        route.signal_property: route.signal,
+        route.handler_property: route.handler,
+        route.captured_state_property: "",
+        route.captured_profile_property: "",
+        route.live_state_property: route.workspace_state,
+        route.live_profile_property: route.selected_profile_name,
         "mRemoteNgConnectionRouteRenderSource": route.render_source,
+    }
+    route_widgets = {
+        "connection-tree": tree,
+        "document-controls": controls_panel,
+        "property-grid": property_grid,
     }
     for label, widget in (
         ("connection-tree", tree),
@@ -8425,6 +9309,10 @@ def check_live_mremoteng_connection_document_route(window: Any) -> list[str]:
                     f"mremoteng live GUI connection-document route {label} property "
                     f"{property_name} {actual_value!r} must equal {expected_value!r}"
                 )
+        if bool(widget.property(route.captured_property)):
+            errors.append(f"mremoteng live GUI connection-document route {label} must start uncaptured")
+        if bool(widget.property(route.live_triggered_property)):
+            errors.append(f"mremoteng live GUI connection-document route {label} live trigger must start false")
 
     if route.active_tab_label not in live_tab_labels(tabs):
         errors.append(f"mremoteng live GUI connection-document route missing active tab {route.active_tab_label!r}")
@@ -8462,24 +9350,45 @@ def check_live_mremoteng_connection_document_route(window: Any) -> list[str]:
         errors.append("mremoteng live GUI connection-document route must expose one target document control")
     else:
         target_button = target_buttons[0]
+        route_widgets["reconnect-button"] = target_button
         expected_button_props = {
             "mRemoteNgConnectionRouteKey": route.key,
             "mRemoteNgConnectionRouteRole": route.route_role,
             "mRemoteNgConnectionRouteSelectedProfile": route.selected_profile_name,
             "mRemoteNgConnectionRouteSelectedTreeLabel": route.selected_tree_label,
+            "mRemoteNgConnectionRouteDocumentControlsObject": route.document_controls_object,
+            "mRemoteNgConnectionRouteDocumentControlKey": route.document_control_key,
+            "mRemoteNgConnectionRouteDocumentControlObject": route.document_control_object,
+            "mRemoteNgConnectionRoutePropertyGridObject": route.property_grid_object,
             route.tab_label_property: route.active_tab_label,
             "mRemoteNgConnectionRouteProtocol": route.protocol,
             "mRemoteNgConnectionRouteState": route.workspace_state,
             "mRemoteNgConnectionRoutePropertyRowKey": route.property_row_key,
+            "mRemoteNgConnectionRoutePropertyCellObject": route.property_cell_object,
             route.property_value_property: route.property_value,
+            route.signal_property: route.signal,
+            route.handler_property: route.handler,
+            route.captured_state_property: "",
+            route.captured_profile_property: "",
+            route.live_state_property: route.workspace_state,
+            route.live_profile_property: route.selected_profile_name,
+            "mRemoteNgConnectionRouteRenderSource": route.render_source,
             route.control_active_property: "true",
         }
         for property_name, expected_value in expected_button_props.items():
             actual_value = str(target_button.property(property_name) or "")
             if actual_value != expected_value:
                 errors.append(f"mremoteng live GUI routed document control property {property_name} drifted")
+        if bool(target_button.property(route.captured_property)):
+            errors.append("mremoteng live GUI routed Reconnect control must start uncaptured")
+        if bool(target_button.property(route.live_triggered_property)):
+            errors.append("mremoteng live GUI routed Reconnect control live trigger must start false")
         if target_button.text() != "Reconnect":
             errors.append("mremoteng live GUI routed document control label must be Reconnect")
+        if route.signal != "clicked":
+            errors.append("mremoteng live GUI reconnect route signal drifted")
+        if route.handler != "handle_mremoteng_document_reconnect":
+            errors.append("mremoteng live GUI reconnect route handler drifted")
 
     inactive_route_states = [
         str(button.property(route.control_active_property) or "")
@@ -8495,22 +9404,38 @@ def check_live_mremoteng_connection_document_route(window: Any) -> list[str]:
         errors.append("mremoteng live GUI connection-document route must expose one property-grid route row")
     else:
         route_row = route_rows[0]
+        route_widgets["property-row"] = route_row
         expected_row_props = {
             "mRemoteNgConnectionRouteKey": route.key,
             "mRemoteNgConnectionRouteRole": route.route_role,
             "mRemoteNgConnectionRouteSelectedProfile": route.selected_profile_name,
+            "mRemoteNgConnectionRouteSelectedTreeLabel": route.selected_tree_label,
+            "mRemoteNgConnectionRouteDocumentControlsObject": route.document_controls_object,
+            "mRemoteNgConnectionRouteDocumentControlKey": route.document_control_key,
+            "mRemoteNgConnectionRouteDocumentControlObject": route.document_control_object,
+            "mRemoteNgConnectionRoutePropertyGridObject": route.property_grid_object,
             route.tab_label_property: route.active_tab_label,
             "mRemoteNgConnectionRouteProtocol": route.protocol,
             "mRemoteNgConnectionRouteState": route.workspace_state,
             "mRemoteNgConnectionRoutePropertyRowKey": route.property_row_key,
             "mRemoteNgConnectionRoutePropertyCellObject": route.property_cell_object,
             route.property_value_property: route.property_value,
+            route.signal_property: route.signal,
+            route.handler_property: route.handler,
+            route.captured_state_property: "",
+            route.captured_profile_property: "",
+            route.live_state_property: route.workspace_state,
+            route.live_profile_property: route.selected_profile_name,
             "mRemoteNgConnectionRouteRenderSource": route.render_source,
         }
         for property_name, expected_value in expected_row_props.items():
             actual_value = str(route_row.property(property_name) or "")
             if actual_value != expected_value:
                 errors.append(f"mremoteng live GUI property-grid route row property {property_name} drifted")
+        if bool(route_row.property(route.captured_property)):
+            errors.append("mremoteng live GUI property-grid route row must start uncaptured")
+        if bool(route_row.property(route.live_triggered_property)):
+            errors.append("mremoteng live GUI property-grid route row live trigger must start false")
 
     route_cells = [
         cell
@@ -8522,11 +9447,52 @@ def check_live_mremoteng_connection_document_route(window: Any) -> list[str]:
         errors.append("mremoteng live GUI connection-document route must expose one effective-value route cell")
     else:
         route_cell = route_cells[0]
+        route_widgets["property-effective-cell"] = route_cell
         if str(route_cell.property("mRemoteNgPropertyCellValue") or "") != route.property_value:
             errors.append("mremoteng live GUI connection-document route property effective value drifted")
         if str(route_cell.property(route.property_value_property) or "") != route.property_value:
             errors.append("mremoteng live GUI connection-document route property value metadata drifted")
-    return errors
+        if bool(route_cell.property(route.captured_property)):
+            errors.append("mremoteng live GUI property effective route cell must start uncaptured")
+        if bool(route_cell.property(route.live_triggered_property)):
+            errors.append("mremoteng live GUI property effective route cell live trigger must start false")
+    if errors:
+        return errors
+    target_buttons[0].click()
+    return check_mremoteng_reconnect_live_route(route_widgets, route)
+
+
+def check_mremoteng_reconnect_live_route(route_widgets: dict[str, Any], route: Any) -> list[str]:
+    expected_live_props = {
+        "mRemoteNgConnectionRouteState": route.workspace_state,
+        route.property_value_property: route.property_value,
+        route.signal_property: route.signal,
+        route.handler_property: route.handler,
+        route.captured_state_property: route.reconnect_state,
+        route.captured_profile_property: route.selected_profile_name,
+        route.live_state_property: route.reconnect_state,
+        route.live_profile_property: route.selected_profile_name,
+        "mRemoteNgConnectionRouteRenderSource": route.render_source,
+    }
+    for object_name, widget in route_widgets.items():
+        if bool(widget.property(route.captured_property)) is not True:
+            return [
+                f"mremoteng live GUI reconnect route {object_name} "
+                f"{route.captured_property} was not captured"
+            ]
+        if bool(widget.property(route.live_triggered_property)) is not True:
+            return [
+                f"mremoteng live GUI reconnect route {object_name} "
+                f"{route.live_triggered_property} was not triggered"
+            ]
+        for prop_name, expected_value in expected_live_props.items():
+            actual_value = str(widget.property(prop_name) or "")
+            if actual_value != expected_value:
+                return [
+                    f"mremoteng live GUI reconnect route {object_name}.{prop_name} "
+                    f"{actual_value!r} must equal {expected_value!r}"
+                ]
+    return []
 
 
 def check_live_mremoteng_document_filter_route(window: Any) -> list[str]:
@@ -8842,6 +9808,7 @@ def live_contract_checks_for_preset(preset_id: str) -> list[str]:
                 "connected-dock-frame",
                 "session-edge-controls",
                 "session-edge-geometry",
+                "session-edge-action-route",
                 "right-utility-rail",
                 "right-utility-rail-chrome",
                 "right-utility-rail-geometry",
@@ -8849,6 +9816,7 @@ def live_contract_checks_for_preset(preset_id: str) -> list[str]:
                 "connected-sftp-dock",
                 "sftp-toolbar-groups",
                 "sftp-toolbar-geometry",
+                "sftp-toolbar-action-route",
                 "sftp-file-row-icons",
                 "sftp-routed-file-rows",
                 "sftp-dock-density",
@@ -8899,12 +9867,14 @@ def live_contract_checks_for_preset(preset_id: str) -> list[str]:
             checks.append("securecrt-session-manager-filter-route")
             checks.append("securecrt-sftp-tab-route")
             checks.append("securecrt-sftp-browser-route")
+            checks.append("securecrt-sftp-browser-live-action-route")
             checks.append("securecrt-tree-icons")
             checks.append("securecrt-session-status-strip")
             checks.append("securecrt-session-status-geometry")
             checks.append("securecrt-command-window")
             checks.append("securecrt-command-window-geometry")
             checks.append("securecrt-command-window-send-route")
+            checks.append("securecrt-command-window-live-send-route")
         if preset_id == "remmina":
             checks.append("remmina-tree-icons")
             checks.append("remmina-profile-list-chrome")
@@ -8915,7 +9885,9 @@ def live_contract_checks_for_preset(preset_id: str) -> list[str]:
             checks.append("remmina-profile-filter-route")
             checks.append("remmina-clipboard-route")
             checks.append("remmina-screenshot-route")
+            checks.append("remmina-screenshot-live-capture-route")
             checks.append("remmina-sftp-transfer-route")
+            checks.append("remmina-sftp-transfer-live-queue-route")
         if preset_id == "termius":
             checks.append("termius-tree-icons")
             checks.append("termius-hosts-chrome")
@@ -8926,7 +9898,9 @@ def live_contract_checks_for_preset(preset_id: str) -> list[str]:
             checks.append("termius-sync-route")
             checks.append("termius-port-forward-route")
             checks.append("termius-snippet-route")
+            checks.append("termius-snippet-live-run-route")
             checks.append("termius-files-browser-route")
+            checks.append("termius-files-browser-live-sync-route")
         if preset_id == "mremoteng":
             checks.append("mremoteng-tree-icons")
             checks.append("mremoteng-top-chrome")
@@ -8934,6 +9908,7 @@ def live_contract_checks_for_preset(preset_id: str) -> list[str]:
             checks.append("mremoteng-document-control-geometry")
             checks.append("mremoteng-property-grid")
             checks.append("mremoteng-connection-document-route")
+            checks.append("mremoteng-connection-reconnect-live-route")
             checks.append("mremoteng-document-filter-route")
             checks.append("mremoteng-inheritance-route")
     return checks
@@ -9297,6 +10272,11 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
             if preset_id == "mobaxterm"
             else []
         ),
+        "expected_moba_session_edge_action_route": (
+            EXPECTED_MOBA_SESSION_EDGE_ACTION_ROUTE.to_dict()
+            if preset_id == "mobaxterm"
+            else {}
+        ),
         "expected_moba_sftp_action_keys": sorted(EXPECTED_MOBA_SFTP_ACTION_KEYS)
         if preset_id == "mobaxterm"
         else [],
@@ -9311,6 +10291,11 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
             ]
             if preset_id == "mobaxterm"
             else []
+        ),
+        "expected_moba_sftp_toolbar_action_route": (
+            EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_ROUTE.to_dict()
+            if preset_id == "mobaxterm"
+            else {}
         ),
         "expected_moba_sftp_separator_after_keys": (
             EXPECTED_MOBA_SFTP_SEPARATOR_AFTER_KEYS if preset_id == "mobaxterm" else []
@@ -9845,6 +10830,28 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
                 "target_scope_property": EXPECTED_SECURECRT_COMMAND_WINDOW_SEND_ROUTE.target_scope_property,
                 "send_label_property": EXPECTED_SECURECRT_COMMAND_WINDOW_SEND_ROUTE.send_label_property,
                 "status_property": EXPECTED_SECURECRT_COMMAND_WINDOW_SEND_ROUTE.status_property,
+                "captured_property": EXPECTED_SECURECRT_COMMAND_WINDOW_SEND_ROUTE.captured_property,
+                "captured_command_property": (
+                    EXPECTED_SECURECRT_COMMAND_WINDOW_SEND_ROUTE.captured_command_property
+                ),
+                "captured_target_scope_property": (
+                    EXPECTED_SECURECRT_COMMAND_WINDOW_SEND_ROUTE.captured_target_scope_property
+                ),
+                "captured_status_property": EXPECTED_SECURECRT_COMMAND_WINDOW_SEND_ROUTE.captured_status_property,
+                "signal": EXPECTED_SECURECRT_COMMAND_WINDOW_SEND_ROUTE.signal,
+                "secondary_signal": EXPECTED_SECURECRT_COMMAND_WINDOW_SEND_ROUTE.secondary_signal,
+                "handler": EXPECTED_SECURECRT_COMMAND_WINDOW_SEND_ROUTE.handler,
+                "signal_property": EXPECTED_SECURECRT_COMMAND_WINDOW_SEND_ROUTE.signal_property,
+                "secondary_signal_property": (
+                    EXPECTED_SECURECRT_COMMAND_WINDOW_SEND_ROUTE.secondary_signal_property
+                ),
+                "handler_property": EXPECTED_SECURECRT_COMMAND_WINDOW_SEND_ROUTE.handler_property,
+                "live_submitted_property": EXPECTED_SECURECRT_COMMAND_WINDOW_SEND_ROUTE.live_submitted_property,
+                "live_command_property": EXPECTED_SECURECRT_COMMAND_WINDOW_SEND_ROUTE.live_command_property,
+                "live_target_scope_property": (
+                    EXPECTED_SECURECRT_COMMAND_WINDOW_SEND_ROUTE.live_target_scope_property
+                ),
+                "live_status_property": EXPECTED_SECURECRT_COMMAND_WINDOW_SEND_ROUTE.live_status_property,
                 "render_source": EXPECTED_SECURECRT_COMMAND_WINDOW_SEND_ROUTE.render_source,
             }
             if preset_id == "securecrt"
@@ -10207,28 +11214,7 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
             else {}
         ),
         "expected_mremoteng_connection_document_route": (
-            {
-                "key": EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.key,
-                "route_role": EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.route_role,
-                "selected_profile_name": EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.selected_profile_name,
-                "selected_tree_label": EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.selected_tree_label,
-                "selected_tree_object": EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.selected_tree_object,
-                "document_controls_object": EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.document_controls_object,
-                "document_control_key": EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.document_control_key,
-                "document_control_object": EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.document_control_object,
-                "property_grid_object": EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.property_grid_object,
-                "property_row_key": EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.property_row_key,
-                "property_cell_object": EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.property_cell_object,
-                "active_tab_label": EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.active_tab_label,
-                "protocol": EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.protocol,
-                "workspace_state": EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.workspace_state,
-                "property_value": EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.property_value,
-                "selected_tree_property": EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.selected_tree_property,
-                "control_active_property": EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.control_active_property,
-                "tab_label_property": EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.tab_label_property,
-                "property_value_property": EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.property_value_property,
-                "render_source": EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.render_source,
-            }
+            EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.to_dict()
             if preset_id == "mremoteng"
             else {}
         ),

@@ -66,6 +66,8 @@ def test_real_gui_render_manifest_contract_names_required_widgets() -> None:
     assert checker.REQUIRED_WIDGETS["activityLog"] == "activity log"
     assert checker.COMMON_REQUIRED_WIDGETS["productWorkflowEvidence"] == "product workflow evidence strip"
     assert checker.COMMON_REQUIRED_WIDGETS["productWorkspaceSurface"] == "product workspace evidence surface"
+    assert checker.SECURECRT_REQUIRED_WIDGETS["secureCrtCommandInput"] == "SecureCRT live command-window input"
+    assert checker.SECURECRT_REQUIRED_WIDGETS["secureCrtCommandSend"] == "SecureCRT live command-window Send control"
     assert checker.MOBA_CONNECTED_REQUIRED_WIDGETS["mobaConnectedLeftDock"] == "Moba connected SFTP/monitoring dock"
     assert checker.MOBA_CONNECTED_REQUIRED_WIDGETS["mobaSftpBrowser"] == "Moba SFTP browser"
     assert checker.PRODUCT_STYLE_PRESETS == {"mobaxterm", "securecrt", "termius", "remmina", "mremoteng"}
@@ -106,6 +108,18 @@ def test_real_gui_render_manifest_contract_names_required_widgets() -> None:
         "show_moba_terminal_settings",
         "show_moba_tools_status",
     )
+    assert checker.EXPECTED_MOBA_SESSION_EDGE_ACTION_ROUTE.key == "moba-session-edge-action-route"
+    assert checker.EXPECTED_MOBA_SESSION_EDGE_ACTION_ROUTE.action_handlers == (
+        "show_moba_session_attachment",
+        "show_moba_session_settings",
+    )
+    assert checker.EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_ROUTE.key == "moba-sftp-toolbar-action-route"
+    assert checker.EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_ROUTE.action_keys == tuple(
+        action.key for action in checker.EXPECTED_MOBA_SFTP_ACTIONS
+    )
+    assert set(checker.EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_ROUTE.action_handlers) == {
+        "show_moba_sftp_toolbar_action"
+    }
     assert checker.EXPECTED_SECURECRT_TOP_MENU_KEYS == [
         "file",
         "edit",
@@ -184,8 +198,14 @@ def test_real_gui_render_manifest_contract_names_required_widgets() -> None:
         checker.EXPECTED_MOBA_FOLLOW_TERMINAL_FOLDER_CONTROL_ROUTE.key
         == "moba-follow-terminal-folder-control-route"
     )
+    assert checker.EXPECTED_MOBA_REMOTE_MONITORING_CONTROL_ROUTE.handler == "handle_moba_remote_monitoring_toggled"
+    assert checker.EXPECTED_MOBA_REMOTE_MONITORING_CONTROL_ROUTE.signal == "toggled"
     assert checker.EXPECTED_MOBA_FOLLOW_TERMINAL_FOLDER_CONTROL_ROUTE.source_control_key == "follow-terminal-folder"
     assert checker.EXPECTED_MOBA_FOLLOW_TERMINAL_FOLDER_CONTROL_ROUTE.target_path_object == "mobaSftpPath"
+    assert checker.EXPECTED_MOBA_FOLLOW_TERMINAL_FOLDER_CONTROL_ROUTE.handler == (
+        "handle_moba_follow_terminal_folder_toggled"
+    )
+    assert checker.EXPECTED_MOBA_FOLLOW_TERMINAL_FOLDER_CONTROL_ROUTE.signal == "toggled"
     assert checker.EXPECTED_MOBA_CONNECTED_SESSION_ROUTE.key == "moba-active-connected-session-route"
     assert checker.EXPECTED_MOBA_CONNECTED_SESSION_ROUTE.active_tab_key == "active-session"
     assert checker.EXPECTED_MOBA_CONNECTED_SESSION_ROUTE.telemetry_identity_cell_key == "target"
@@ -201,6 +221,12 @@ def test_real_gui_render_manifest_contract_names_required_widgets() -> None:
     assert checker.EXPECTED_MOBA_BOTTOM_EDGE_ICON_KEYS["close-active"] == "close"
     assert checker.EXPECTED_SECURECRT_COMMAND_WINDOW_CHROME.key == "send-to-all-sessions"
     assert checker.EXPECTED_SECURECRT_COMMAND_WINDOW_CHROME.command == "$ row doctor --json"
+    assert checker.EXPECTED_SECURECRT_COMMAND_WINDOW_SEND_ROUTE.signal == "clicked"
+    assert checker.EXPECTED_SECURECRT_COMMAND_WINDOW_SEND_ROUTE.secondary_signal == "returnPressed"
+    assert checker.EXPECTED_SECURECRT_COMMAND_WINDOW_SEND_ROUTE.handler == "handle_securecrt_command_window_send"
+    assert checker.EXPECTED_SECURECRT_COMMAND_WINDOW_SEND_ROUTE.live_submitted_property == (
+        "secureCrtCommandRouteLiveSubmitted"
+    )
     assert checker.EXPECTED_SECURECRT_TREE_ICON_KEYS["Session Database"] == "database"
     assert checker.EXPECTED_SECURECRT_TREE_ICON_KEYS["edge-prod (SSH2)"] == "ssh2"
     assert checker.EXPECTED_SECURECRT_TREE_ICON_KEYS["files-prod (SFTP)"] == "sftp"
@@ -241,7 +267,13 @@ def test_real_gui_render_manifest_contract_names_required_widgets() -> None:
     assert checker.EXPECTED_REMMINA_CLIPBOARD_ROUTE.viewer_control_key == "clipboard"
     assert checker.EXPECTED_REMMINA_CLIPBOARD_ROUTE.status_segment == "Clipboard on"
     assert checker.EXPECTED_REMMINA_SCREENSHOT_ROUTE.key == "remmina-screenshot-capture-route"
+    assert checker.EXPECTED_REMMINA_SCREENSHOT_ROUTE.handler == "handle_remmina_screenshot_capture"
+    assert checker.EXPECTED_REMMINA_SCREENSHOT_ROUTE.live_triggered_property == "remminaScreenshotRouteLiveTriggered"
     assert checker.EXPECTED_REMMINA_SFTP_TRANSFER_ROUTE.key == "remmina-sftp-transfer-route"
+    assert checker.EXPECTED_REMMINA_SFTP_TRANSFER_ROUTE.handler == "handle_remmina_sftp_transfer_action"
+    assert checker.EXPECTED_REMMINA_SFTP_TRANSFER_ROUTE.live_triggered_property == (
+        "remminaSftpTransferRouteLiveTriggered"
+    )
     assert checker.EXPECTED_TERMIUS_HEADER_CHIP_KEYS == [
         "vault-unlocked",
         "sync-current",
@@ -302,6 +334,10 @@ def test_real_gui_render_manifest_contract_names_required_widgets() -> None:
     )
     assert checker.EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.document_control_key == "reconnect"
     assert checker.EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.property_row_key == "protocol"
+    assert checker.EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.handler == "handle_mremoteng_document_reconnect"
+    assert checker.EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE.live_triggered_property == (
+        "mRemoteNgConnectionRouteLiveTriggered"
+    )
     assert checker.EXPECTED_MREMOTENG_DOCUMENT_FILTER_ROUTE.key == "mremoteng-document-filter-route"
     assert checker.EXPECTED_MREMOTENG_DOCUMENT_FILTER_ROUTE.expected_query == "edge"
     assert checker.EXPECTED_MREMOTENG_DOCUMENT_FILTER_ROUTE.selected_tree_label == "edge-prod [SSH]"
@@ -467,16 +503,25 @@ def test_real_gui_render_contract_checks_live_workspace_surface_text() -> None:
     assert "check_live_securecrt_session_manager_filter_route" in source
     assert "check_live_securecrt_sftp_tab_route" in source
     assert "check_live_securecrt_sftp_browser_route" in source
+    assert "check_securecrt_sftp_browser_live_action" in source
+    assert "securecrt-sftp-browser-live-action-route" in source
+    assert "handle_securecrt_sftp_browser_action" in source
     assert "check_live_termius_host_identity_strip" in source
     assert "check_live_termius_host_selection_route" in source
     assert "check_live_termius_port_forward_route" in source
     assert "check_live_termius_snippet_route" in source
+    assert "check_termius_snippet_live_run" in source
     assert "check_live_securecrt_command_window" in source
+    assert "check_securecrt_command_window_live_submission" in source
     assert "check_live_securecrt_top_chrome" in source
     assert "check_live_mremoteng_top_chrome" in source
     assert "check_live_remmina_clipboard_route" in source
     assert "check_live_remmina_screenshot_route" in source
+    assert "check_remmina_screenshot_live_capture" in source
     assert "check_live_remmina_sftp_transfer_route" in source
+    assert "check_remmina_sftp_transfer_live_action" in source
+    assert "remmina-sftp-transfer-live-queue-route" in source
+    assert "handle_remmina_sftp_transfer_action" in source
     assert "gui_design_reference_state" in source
     assert "check_live_preset_reference_tab_route" in source
     assert "reference-tab-activation-route" in source
@@ -499,9 +544,13 @@ def test_real_gui_render_contract_checks_live_workspace_surface_text() -> None:
     assert "EXPECTED_MOBA_REMOTE_MONITORING_CONTROL_ROUTE" in source
     assert "remote-monitoring-control-route" in source
     assert "expected_moba_remote_monitoring_control_route" in source
+    assert "handle_moba_remote_monitoring_toggled" in source
+    assert "mobaRemoteMonitoringControlLiveChecked" in source
     assert "EXPECTED_MOBA_FOLLOW_TERMINAL_FOLDER_CONTROL_ROUTE" in source
     assert "follow-terminal-folder-control-route" in source
     assert "expected_moba_follow_terminal_folder_control_route" in source
+    assert "handle_moba_follow_terminal_folder_toggled" in source
+    assert "mobaFollowTerminalFolderControlLiveChecked" in source
     assert "EXPECTED_SECURECRT_SESSION_MANAGER_FILTER_ROUTE" in source
     assert "securecrt-session-manager-filter-route" in source
     assert "expected_securecrt_session_manager_filter_route" in source
@@ -511,6 +560,10 @@ def test_real_gui_render_contract_checks_live_workspace_surface_text() -> None:
     assert "EXPECTED_SECURECRT_SFTP_BROWSER_ROUTE" in source
     assert "securecrt-sftp-browser-route" in source
     assert "expected_securecrt_sftp_browser_route" in source
+    assert "EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE" in source
+    assert "check_mremoteng_reconnect_live_route" in source
+    assert "mremoteng-connection-reconnect-live-route" in source
+    assert "handle_mremoteng_document_reconnect" in source
     assert "EXPECTED_MREMOTENG_DOCUMENT_FILTER_ROUTE" in source
     assert "check_live_mremoteng_document_filter_route" in source
     assert "mremoteng-document-filter-route" in source
@@ -521,20 +574,30 @@ def test_real_gui_render_contract_checks_live_workspace_surface_text() -> None:
     assert "expected_mremoteng_inheritance_route" in source
     assert "EXPECTED_REMMINA_SCREENSHOT_ROUTE" in source
     assert "remmina-screenshot-route" in source
+    assert "remmina-screenshot-live-capture-route" in source
     assert "expected_remmina_screenshot_route" in source
+    assert "handle_remmina_screenshot_capture" in source
+    assert "route.live_triggered_property" in source
     assert "EXPECTED_REMMINA_SFTP_TRANSFER_ROUTE" in source
     assert "remmina-sftp-transfer-route" in source
+    assert "remmina-sftp-transfer-live-queue-route" in source
     assert "expected_remmina_sftp_transfer_route" in source
     assert "EXPECTED_TERMIUS_PORT_FORWARD_ROUTE" in source
     assert "termius-port-forward-route" in source
     assert "expected_termius_port_forward_route" in source
     assert "EXPECTED_TERMIUS_SNIPPET_ROUTE" in source
     assert "termius-snippet-route" in source
+    assert "termius-snippet-live-run-route" in source
     assert "expected_termius_snippet_route" in source
+    assert "handle_termius_snippet_run" in source
+    assert "route.live_triggered_property" in source
     assert "check_live_termius_files_browser_route" in source
+    assert "check_termius_files_sync_live_action" in source
     assert "EXPECTED_TERMIUS_FILES_BROWSER_ROUTE" in source
     assert "termius-files-browser-route" in source
+    assert "termius-files-browser-live-sync-route" in source
     assert "expected_termius_files_browser_route" in source
+    assert "handle_termius_files_sync" in source
     assert "reference-surface-evidence-route" in source
     assert "expected_preset_reference_surface_route" in source
     assert "check_live_preset_reference_control_route" in source
@@ -1047,6 +1110,12 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
             assert moba_remote_monitoring_control_route["captured_command_property"] == (
                 "mobaRemoteMonitoringControlCapturedCommand"
             )
+            assert moba_remote_monitoring_control_route["signal"] == "toggled"
+            assert moba_remote_monitoring_control_route["handler"] == "handle_moba_remote_monitoring_toggled"
+            assert (
+                moba_remote_monitoring_control_route["live_checked_property"]
+                == "mobaRemoteMonitoringControlLiveChecked"
+            )
             assert (
                 moba_follow_terminal_folder_control_route["key"]
                 == "moba-follow-terminal-folder-control-route"
@@ -1063,6 +1132,14 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
             assert moba_follow_terminal_folder_control_route["target_table_object"] == "mobaSftpFileTable"
             assert moba_follow_terminal_folder_control_route["captured_plan_property"] == (
                 "mobaFollowTerminalFolderControlCapturedPlan"
+            )
+            assert moba_follow_terminal_folder_control_route["signal"] == "toggled"
+            assert moba_follow_terminal_folder_control_route["handler"] == (
+                "handle_moba_follow_terminal_folder_toggled"
+            )
+            assert (
+                moba_follow_terminal_folder_control_route["live_checked_property"]
+                == "mobaFollowTerminalFolderControlLiveChecked"
             )
         else:
             assert "connected-session-actions-route" not in summary["contract_checks"]
@@ -1289,12 +1366,14 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
     assert "connected-session-identity-route" in moba["contract_checks"]
     assert "session-edge-controls" in moba["contract_checks"]
     assert "session-edge-geometry" in moba["contract_checks"]
+    assert "session-edge-action-route" in moba["contract_checks"]
     assert "right-utility-rail" in moba["contract_checks"]
     assert "ssh-banner-chrome" in moba["contract_checks"]
     assert "terminal-transcript" in moba["contract_checks"]
     assert "terminal-transcript-geometry" in moba["contract_checks"]
     assert "sftp-toolbar-groups" in moba["contract_checks"]
     assert "sftp-toolbar-geometry" in moba["contract_checks"]
+    assert "sftp-toolbar-action-route" in moba["contract_checks"]
     assert "sftp-dock-chrome" in moba["contract_checks"]
     assert "sftp-dock-density" in moba["contract_checks"]
     assert "sftp-browser-chrome" in moba["contract_checks"]
@@ -1427,6 +1506,114 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "delete",
         "tools",
     ]
+    assert moba["expected_moba_sftp_toolbar_action_route"] == {
+        "key": "moba-sftp-toolbar-action-route",
+        "route_role": "sftp-toolbar-actions-to-file-transfer-workflows",
+        "toolbar_object": "mobaSftpToolbar",
+        "action_object": "mobaSftpAction",
+        "target_browser_object": "mobaSftpBrowser",
+        "target_path_object": "mobaSftpPath",
+        "target_table_object": "mobaSftpFileTable",
+        "queue_object": "mobaSftpTransferQueue",
+        "action_keys": [
+            "parent-folder",
+            "download",
+            "upload",
+            "connect",
+            "new-folder",
+            "new-file",
+            "delete",
+            "ascii-mode",
+            "split-view",
+            "tools",
+            "terminal",
+        ],
+        "action_labels": [
+            "Parent folder",
+            "Download",
+            "Upload",
+            "Reconnect",
+            "New folder",
+            "New file",
+            "Delete",
+            "ASCII",
+            "Split",
+            "Tools",
+            "Terminal",
+        ],
+        "action_icon_keys": [
+            "parent-folder",
+            "download",
+            "upload",
+            "connect",
+            "new-folder",
+            "new-file",
+            "delete",
+            "ascii-mode",
+            "split-view",
+            "tools",
+            "terminal",
+        ],
+        "action_group_keys": [
+            "navigation",
+            "transfer",
+            "transfer",
+            "manage",
+            "manage",
+            "manage",
+            "manage",
+            "mode",
+            "mode",
+            "mode",
+            "terminal",
+        ],
+        "action_tooltips": [
+            "Go to parent directory",
+            "Download selected remote item",
+            "Upload local item",
+            "Reconnect SFTP browser",
+            "Create remote folder",
+            "Create remote file",
+            "Delete selected remote item",
+            "Toggle text transfer mode",
+            "Toggle split file view",
+            "Show SFTP tools",
+            "Open terminal at remote folder",
+        ],
+        "action_handlers": ["show_moba_sftp_toolbar_action"] * 11,
+        "action_statuses": [
+            "navigated",
+            "queued",
+            "queued",
+            "reconnected",
+            "prepared",
+            "prepared",
+            "prepared",
+            "toggled",
+            "toggled",
+            "opened",
+            "opened",
+        ],
+        "signal": "clicked",
+        "route_key_property": "mobaSftpToolbarRouteKey",
+        "action_key_property": "mobaSftpToolbarRouteActionKey",
+        "action_label_property": "mobaSftpToolbarRouteActionLabel",
+        "action_object_property": "mobaSftpToolbarRouteActionObject",
+        "icon_key_property": "mobaSftpToolbarRouteIconKey",
+        "group_key_property": "mobaSftpToolbarRouteGroupKey",
+        "tooltip_property": "mobaSftpToolbarRouteTooltip",
+        "signal_property": "mobaSftpToolbarRouteSignal",
+        "handler_property": "mobaSftpToolbarRouteHandler",
+        "action_keys_property": "mobaSftpToolbarRouteActionKeys",
+        "action_groups_property": "mobaSftpToolbarRouteActionGroups",
+        "captured_property": "mobaSftpToolbarRouteCaptured",
+        "captured_action_property": "mobaSftpToolbarRouteCapturedAction",
+        "captured_status_property": "mobaSftpToolbarRouteCapturedStatus",
+        "live_triggered_property": "mobaSftpToolbarRouteLiveTriggered",
+        "live_action_property": "mobaSftpToolbarRouteLiveAction",
+        "live_status_property": "mobaSftpToolbarRouteLiveStatus",
+        "render_source": "gui-design-moba-sftp-toolbar-route",
+    }
     assert moba["expected_moba_sftp_toolbar_action_geometry"] == [
         {
             "key": "parent-folder",
@@ -1655,6 +1842,11 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "captured_checked_property": "mobaRemoteMonitoringControlCapturedChecked",
         "captured_command_property": "mobaRemoteMonitoringControlCapturedCommand",
         "captured_refresh_seconds_property": "mobaRemoteMonitoringControlCapturedRefreshSeconds",
+        "signal": "toggled",
+        "handler": "handle_moba_remote_monitoring_toggled",
+        "signal_property": "mobaRemoteMonitoringControlSignal",
+        "handler_property": "mobaRemoteMonitoringControlHandler",
+        "live_checked_property": "mobaRemoteMonitoringControlLiveChecked",
         "render_source": "state-model",
     }
     assert moba["expected_moba_follow_terminal_folder_control_route"] == {
@@ -1679,6 +1871,13 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "captured_checked_property": "mobaFollowTerminalFolderControlCapturedChecked",
         "captured_path_property": "mobaFollowTerminalFolderControlCapturedPath",
         "captured_plan_property": "mobaFollowTerminalFolderControlCapturedPlan",
+        "signal": "toggled",
+        "handler": "handle_moba_follow_terminal_folder_toggled",
+        "signal_property": "mobaFollowTerminalFolderControlSignal",
+        "handler_property": "mobaFollowTerminalFolderControlHandler",
+        "live_checked_property": "mobaFollowTerminalFolderControlLiveChecked",
+        "live_path_property": "mobaFollowTerminalFolderControlLivePath",
+        "live_plan_property": "mobaFollowTerminalFolderControlLivePlan",
         "render_source": "state-model",
     }
     assert moba["expected_moba_sftp_follow_folder_route"] == {
@@ -2409,6 +2608,28 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
             "render_source": "generated-pixmap",
         },
     ]
+    assert moba["expected_moba_session_edge_action_route"] == {
+        "key": "moba-session-edge-action-route",
+        "route_role": "session-edge-shortcuts-to-active-tab-workflows",
+        "controls_object": "mobaSessionEdgeControls",
+        "action_object": "mobaSessionEdgeAction",
+        "placement": "tab-strip-overlay",
+        "action_keys": ["attachment", "settings"],
+        "action_labels": ["Session attachment", "Session settings"],
+        "action_icon_keys": ["clip", "gear"],
+        "action_handlers": [
+            "show_moba_session_attachment",
+            "show_moba_session_settings",
+        ],
+        "route_key_property": "mobaSessionEdgeRouteKey",
+        "action_key_property": "mobaSessionEdgeRouteActionKey",
+        "action_label_property": "mobaSessionEdgeRouteActionLabel",
+        "action_object_property": "mobaSessionEdgeRouteActionObject",
+        "icon_key_property": "mobaSessionEdgeRouteIconKey",
+        "handler_property": "mobaSessionEdgeRouteHandler",
+        "action_keys_property": "mobaSessionEdgeRouteActionKeys",
+        "render_source": "gui-design-moba-session-edge-route",
+    }
     assert moba["expected_moba_ssh_banner_chrome"] == {
         "title": "Remote Ops Workspace Personal Edition v1.0",
         "subtitle": "(SSH client, SFTP browser and remote tools)",
@@ -2530,12 +2751,14 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
     assert "securecrt-session-manager-filter-route" in securecrt["contract_checks"]
     assert "securecrt-sftp-tab-route" in securecrt["contract_checks"]
     assert "securecrt-sftp-browser-route" in securecrt["contract_checks"]
+    assert "securecrt-sftp-browser-live-action-route" in securecrt["contract_checks"]
     assert "securecrt-tree-icons" in securecrt["contract_checks"]
     assert "securecrt-session-status-strip" in securecrt["contract_checks"]
     assert "securecrt-session-status-geometry" in securecrt["contract_checks"]
     assert "securecrt-command-window" in securecrt["contract_checks"]
     assert "securecrt-command-window-geometry" in securecrt["contract_checks"]
     assert "securecrt-command-window-send-route" in securecrt["contract_checks"]
+    assert "securecrt-command-window-live-send-route" in securecrt["contract_checks"]
     assert "product-identity-route" in securecrt["contract_checks"]
     assert "live-topology" in securecrt["contract_checks"]
     assert "active-tab: edge-prod (SSH2)" in securecrt["expected_reference_state_texts"]
@@ -2597,6 +2820,20 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "target_scope_property": "secureCrtCommandRouteTargetScope",
         "send_label_property": "secureCrtCommandRouteSendLabel",
         "status_property": "secureCrtCommandRouteStatus",
+        "captured_property": "secureCrtCommandRouteCaptured",
+        "captured_command_property": "secureCrtCommandRouteCapturedCommand",
+        "captured_target_scope_property": "secureCrtCommandRouteCapturedTargetScope",
+        "captured_status_property": "secureCrtCommandRouteCapturedStatus",
+        "signal": "clicked",
+        "secondary_signal": "returnPressed",
+        "handler": "handle_securecrt_command_window_send",
+        "signal_property": "secureCrtCommandRouteSignal",
+        "secondary_signal_property": "secureCrtCommandRouteSecondarySignal",
+        "handler_property": "secureCrtCommandRouteHandler",
+        "live_submitted_property": "secureCrtCommandRouteLiveSubmitted",
+        "live_command_property": "secureCrtCommandRouteLiveCommand",
+        "live_target_scope_property": "secureCrtCommandRouteLiveTargetScope",
+        "live_status_property": "secureCrtCommandRouteLiveStatus",
         "render_source": "state-model",
     }
     assert securecrt["expected_securecrt_session_manager_chrome"] == {
@@ -2770,6 +3007,20 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "row_kind_property": "secureCrtSftpBrowserRowKind",
         "row_selected_property": "secureCrtSftpBrowserRowSelected",
         "queue_state_property": "secureCrtSftpBrowserQueueState",
+        "action_object": "secureCrtSftpAction",
+        "action_key": "refresh",
+        "action_label": "Refresh",
+        "action_status": "refreshed",
+        "signal": "clicked",
+        "handler": "handle_securecrt_sftp_browser_action",
+        "signal_property": "secureCrtSftpBrowserRouteSignal",
+        "handler_property": "secureCrtSftpBrowserRouteHandler",
+        "captured_property": "secureCrtSftpBrowserRouteCaptured",
+        "captured_action_property": "secureCrtSftpBrowserRouteCapturedAction",
+        "captured_status_property": "secureCrtSftpBrowserRouteCapturedStatus",
+        "live_triggered_property": "secureCrtSftpBrowserRouteLiveTriggered",
+        "live_action_property": "secureCrtSftpBrowserRouteLiveAction",
+        "live_status_property": "secureCrtSftpBrowserRouteLiveStatus",
         "render_source": "sftp-browser-state",
     }
     assert securecrt["expected_securecrt_tree_icons"][:3] == [
@@ -2818,7 +3069,9 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
     assert "remmina-profile-filter-route" in remmina["contract_checks"]
     assert "remmina-clipboard-route" in remmina["contract_checks"]
     assert "remmina-screenshot-route" in remmina["contract_checks"]
+    assert "remmina-screenshot-live-capture-route" in remmina["contract_checks"]
     assert "remmina-sftp-transfer-route" in remmina["contract_checks"]
+    assert "remmina-sftp-transfer-live-queue-route" in remmina["contract_checks"]
     assert "product-identity-route" in remmina["contract_checks"]
     assert remmina["expected_product_tree_icons"][:3] == [
         {"label": "Profile Groups", "icon_key": "folder", "row_kind": "root", "static_size": 16},
@@ -2931,6 +3184,16 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "tab_label_property": "remminaScreenshotRouteActiveTab",
         "capture_state_property": "remminaScreenshotRouteState",
         "capture_artifact_property": "remminaScreenshotRouteArtifact",
+        "signal": "clicked",
+        "handler": "handle_remmina_screenshot_capture",
+        "signal_property": "remminaScreenshotRouteSignal",
+        "handler_property": "remminaScreenshotRouteHandler",
+        "captured_property": "remminaScreenshotRouteCaptured",
+        "captured_state_property": "remminaScreenshotRouteCapturedState",
+        "captured_artifact_property": "remminaScreenshotRouteCapturedArtifact",
+        "live_triggered_property": "remminaScreenshotRouteLiveTriggered",
+        "live_capture_state_property": "remminaScreenshotRouteLiveState",
+        "live_capture_artifact_property": "remminaScreenshotRouteLiveArtifact",
         "render_source": "viewer-control-state",
     }
     assert remmina["expected_remmina_sftp_transfer_route"] == {
@@ -2995,6 +3258,20 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "row_kind_property": "remminaSftpTransferRouteRowKind",
         "row_selected_property": "remminaSftpTransferRouteRowSelected",
         "queue_state_property": "remminaSftpTransferRouteQueueState",
+        "action_object": "remminaSftpTransferAction",
+        "action_key": "queue",
+        "action_label": "Queue",
+        "action_status": "queued",
+        "signal": "clicked",
+        "handler": "handle_remmina_sftp_transfer_action",
+        "signal_property": "remminaSftpTransferRouteSignal",
+        "handler_property": "remminaSftpTransferRouteHandler",
+        "captured_property": "remminaSftpTransferRouteCaptured",
+        "captured_action_property": "remminaSftpTransferRouteCapturedAction",
+        "captured_status_property": "remminaSftpTransferRouteCapturedStatus",
+        "live_triggered_property": "remminaSftpTransferRouteLiveTriggered",
+        "live_action_property": "remminaSftpTransferRouteLiveAction",
+        "live_status_property": "remminaSftpTransferRouteLiveStatus",
         "render_source": "sftp-transfer-state",
     }
     assert remmina["expected_remmina_viewer_controls"] == [
@@ -3090,7 +3367,9 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
     assert "termius-sync-route" in termius["contract_checks"]
     assert "termius-port-forward-route" in termius["contract_checks"]
     assert "termius-snippet-route" in termius["contract_checks"]
+    assert "termius-snippet-live-run-route" in termius["contract_checks"]
     assert "termius-files-browser-route" in termius["contract_checks"]
+    assert "termius-files-browser-live-sync-route" in termius["contract_checks"]
     assert "product-identity-route" in termius["contract_checks"]
     assert termius["expected_product_tree_icons"][:3] == [
         {"label": "Personal Vault", "icon_key": "database", "row_kind": "root", "static_size": 16},
@@ -3223,6 +3502,8 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "workflow_title_object": "productWorkflowTitle",
         "workflow_primary_object": "productWorkflowPrimary",
         "workflow_secondary_object": "productWorkflowSecondary",
+        "action_object": "termiusSnippetRunAction",
+        "shortcut_object": "termiusSnippetRunShortcut",
         "host_identity_object": "termiusHostIdentityStrip",
         "identity_field_key": "snippet",
         "identity_cell_object": "termiusHostIdentityCell",
@@ -3232,11 +3513,27 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "snippet_command": "row vault status",
         "snippet_state": "one-click command",
         "detail_line": "Snippet  : row vault status",
+        "action_label": "Run",
+        "shortcut_sequence": "Return",
         "workflow_key_property": "termiusSnippetRouteWorkflowKey",
         "command_property": "termiusSnippetRouteCommand",
         "identity_value_property": "termiusSnippetRouteIdentityValue",
         "active_tab_property": "termiusSnippetRouteActiveTab",
         "status_property": "termiusSnippetRouteState",
+        "captured_property": "termiusSnippetRouteCaptured",
+        "captured_command_property": "termiusSnippetRouteCapturedCommand",
+        "captured_target_profile_property": "termiusSnippetRouteCapturedTargetProfile",
+        "captured_status_property": "termiusSnippetRouteCapturedStatus",
+        "signal": "clicked",
+        "secondary_signal": "activated",
+        "handler": "handle_termius_snippet_run",
+        "signal_property": "termiusSnippetRouteSignal",
+        "secondary_signal_property": "termiusSnippetRouteSecondarySignal",
+        "handler_property": "termiusSnippetRouteHandler",
+        "live_triggered_property": "termiusSnippetRouteLiveTriggered",
+        "live_command_property": "termiusSnippetRouteLiveCommand",
+        "live_target_profile_property": "termiusSnippetRouteLiveTargetProfile",
+        "live_status_property": "termiusSnippetRouteLiveStatus",
         "render_source": "state-model",
     }
     assert termius["expected_termius_files_browser_route"] == {
@@ -3295,6 +3592,20 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "row_kind_property": "termiusFilesRouteRowKind",
         "row_selected_property": "termiusFilesRouteRowSelected",
         "queue_state_property": "termiusFilesRouteQueueState",
+        "action_object": "termiusFilesAction",
+        "action_key": "sync",
+        "action_label": "Sync",
+        "action_status": "synced",
+        "signal": "clicked",
+        "handler": "handle_termius_files_sync",
+        "signal_property": "termiusFilesRouteSignal",
+        "handler_property": "termiusFilesRouteHandler",
+        "captured_property": "termiusFilesRouteCaptured",
+        "captured_action_property": "termiusFilesRouteCapturedAction",
+        "captured_status_property": "termiusFilesRouteCapturedStatus",
+        "live_triggered_property": "termiusFilesRouteLiveTriggered",
+        "live_action_property": "termiusFilesRouteLiveAction",
+        "live_status_property": "termiusFilesRouteLiveStatus",
         "render_source": "files-browser-state",
     }
 
@@ -3305,6 +3616,7 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
     assert "mremoteng-document-control-geometry" in mremoteng["contract_checks"]
     assert "mremoteng-property-grid" in mremoteng["contract_checks"]
     assert "mremoteng-connection-document-route" in mremoteng["contract_checks"]
+    assert "mremoteng-connection-reconnect-live-route" in mremoteng["contract_checks"]
     assert "mremoteng-document-filter-route" in mremoteng["contract_checks"]
     assert "mremoteng-inheritance-route" in mremoteng["contract_checks"]
     assert "product-identity-route" in mremoteng["contract_checks"]
@@ -3459,6 +3771,17 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "control_active_property": "mRemoteNgConnectionRouteActive",
         "tab_label_property": "mRemoteNgConnectionRouteActiveTab",
         "property_value_property": "mRemoteNgConnectionRoutePropertyValue",
+        "signal": "clicked",
+        "handler": "handle_mremoteng_document_reconnect",
+        "reconnect_state": "reconnected",
+        "signal_property": "mRemoteNgConnectionRouteSignal",
+        "handler_property": "mRemoteNgConnectionRouteHandler",
+        "captured_property": "mRemoteNgConnectionRouteCaptured",
+        "captured_state_property": "mRemoteNgConnectionRouteCapturedState",
+        "captured_profile_property": "mRemoteNgConnectionRouteCapturedProfile",
+        "live_triggered_property": "mRemoteNgConnectionRouteLiveTriggered",
+        "live_state_property": "mRemoteNgConnectionRouteLiveState",
+        "live_profile_property": "mRemoteNgConnectionRouteLiveProfile",
         "render_source": "connection-tree-state",
     }
     assert mremoteng["expected_mremoteng_document_filter_route"] == {

@@ -47,6 +47,7 @@ from remote_ops_workspace.gui_designs import (  # noqa: E402
     gui_design_moba_right_utility_action_route,
     gui_design_moba_right_utility_actions,
     gui_design_moba_right_utility_rail_chrome,
+    gui_design_moba_session_edge_action_route,
     gui_design_moba_session_edge_actions,
     gui_design_moba_session_tree_chrome,
     gui_design_moba_sftp_browser_chrome,
@@ -57,6 +58,7 @@ from remote_ops_workspace.gui_designs import (  # noqa: E402
     gui_design_moba_sftp_routed_file_rows,
     gui_design_moba_sftp_toolbar_action_geometry,
     gui_design_moba_sftp_toolbar_action_geometry_for,
+    gui_design_moba_sftp_toolbar_action_route,
     gui_design_moba_ssh_banner_chrome,
     gui_design_moba_ssh_banner_row_geometry_for,
     gui_design_moba_status_bar_chrome,
@@ -420,6 +422,9 @@ def preset_manifest(artifact: PreviewArtifact) -> dict[str, Any]:
     securecrt_session_manager_filter_route = (
         gui_design_securecrt_session_manager_filter_route() if preset.id == "securecrt" else None
     )
+    securecrt_command_window_send_route = (
+        gui_design_securecrt_command_window_send_route() if preset.id == "securecrt" else None
+    )
     securecrt_sftp_tab_route = (
         gui_design_securecrt_sftp_tab_route() if preset.id == "securecrt" else None
     )
@@ -434,6 +439,9 @@ def preset_manifest(artifact: PreviewArtifact) -> dict[str, Any]:
     )
     remmina_sftp_transfer_route = (
         gui_design_remmina_sftp_transfer_route() if preset.id == "remmina" else None
+    )
+    mremoteng_connection_document_route = (
+        gui_design_mremoteng_connection_document_route() if preset.id == "mremoteng" else None
     )
     mremoteng_document_filter_route = (
         gui_design_mremoteng_document_filter_route() if preset.id == "mremoteng" else None
@@ -455,6 +463,12 @@ def preset_manifest(artifact: PreviewArtifact) -> dict[str, Any]:
     )
     moba_right_utility_action_route = (
         gui_design_moba_right_utility_action_route() if preset.id == "mobaxterm" else None
+    )
+    moba_session_edge_action_route = (
+        gui_design_moba_session_edge_action_route() if preset.id == "mobaxterm" else None
+    )
+    moba_sftp_toolbar_action_route = (
+        gui_design_moba_sftp_toolbar_action_route() if preset.id == "mobaxterm" else None
     )
     visual_signature = gui_design_preset_visual_signature(preset.id)
     if preset.id not in catalog_route.option_ids:
@@ -594,6 +608,52 @@ def preset_manifest(artifact: PreviewArtifact) -> dict[str, Any]:
             raise RuntimeError("Moba right utility action route icon metadata drifted")
         if "show_moba_clipboard_hints" not in moba_right_utility_action_route.action_handlers:
             raise RuntimeError("Moba right utility action route clipboard handler missing")
+    if moba_session_edge_action_route is not None:
+        session_edge_actions = {action.key: action for action in gui_design_moba_session_edge_actions()}
+        if moba_session_edge_action_route.controls_object != "mobaSessionEdgeControls":
+            raise RuntimeError("Moba session-edge action route controls object drifted")
+        if moba_session_edge_action_route.action_object != "mobaSessionEdgeAction":
+            raise RuntimeError("Moba session-edge action route action object drifted")
+        if moba_session_edge_action_route.placement != "tab-strip-overlay":
+            raise RuntimeError("Moba session-edge action route placement drifted")
+        if tuple(session_edge_actions) != moba_session_edge_action_route.action_keys:
+            raise RuntimeError("Moba session-edge action route key order drifted")
+        if tuple(action.label for action in session_edge_actions.values()) != moba_session_edge_action_route.action_labels:
+            raise RuntimeError("Moba session-edge action route label metadata drifted")
+        if tuple(action.icon_key for action in session_edge_actions.values()) != moba_session_edge_action_route.action_icon_keys:
+            raise RuntimeError("Moba session-edge action route icon metadata drifted")
+        if "show_moba_session_attachment" not in moba_session_edge_action_route.action_handlers:
+            raise RuntimeError("Moba session-edge action route attachment handler missing")
+    if moba_sftp_toolbar_action_route is not None:
+        sftp_actions = {action.key: action for action in gui_design_moba_sftp_dock_actions()}
+        if moba_sftp_toolbar_action_route.toolbar_object != "mobaSftpToolbar":
+            raise RuntimeError("Moba SFTP toolbar action route toolbar object drifted")
+        if moba_sftp_toolbar_action_route.action_object != "mobaSftpAction":
+            raise RuntimeError("Moba SFTP toolbar action route action object drifted")
+        if moba_sftp_toolbar_action_route.target_path_object != "mobaSftpPath":
+            raise RuntimeError("Moba SFTP toolbar action route path object drifted")
+        if moba_sftp_toolbar_action_route.target_table_object != "mobaSftpFileTable":
+            raise RuntimeError("Moba SFTP toolbar action route table object drifted")
+        if tuple(sftp_actions) != moba_sftp_toolbar_action_route.action_keys:
+            raise RuntimeError("Moba SFTP toolbar action route key order drifted")
+        if tuple(action.label for action in sftp_actions.values()) != moba_sftp_toolbar_action_route.action_labels:
+            raise RuntimeError("Moba SFTP toolbar action route label metadata drifted")
+        if tuple(action.icon_key for action in sftp_actions.values()) != moba_sftp_toolbar_action_route.action_icon_keys:
+            raise RuntimeError("Moba SFTP toolbar action route icon metadata drifted")
+        if tuple(action.group_key for action in sftp_actions.values()) != moba_sftp_toolbar_action_route.action_group_keys:
+            raise RuntimeError("Moba SFTP toolbar action route group metadata drifted")
+        if "show_moba_sftp_toolbar_action" not in moba_sftp_toolbar_action_route.action_handlers:
+            raise RuntimeError("Moba SFTP toolbar action route handler missing")
+        if "queued" not in moba_sftp_toolbar_action_route.action_statuses:
+            raise RuntimeError("Moba SFTP toolbar action route queued status missing")
+        if moba_sftp_toolbar_action_route.signal != "clicked":
+            raise RuntimeError("Moba SFTP toolbar action route signal drifted")
+        if moba_sftp_toolbar_action_route.signal_property != "mobaSftpToolbarRouteSignal":
+            raise RuntimeError("Moba SFTP toolbar action route signal property drifted")
+        if moba_sftp_toolbar_action_route.captured_action_property != "mobaSftpToolbarRouteCapturedAction":
+            raise RuntimeError("Moba SFTP toolbar action route captured action property drifted")
+        if moba_sftp_toolbar_action_route.live_action_property != "mobaSftpToolbarRouteLiveAction":
+            raise RuntimeError("Moba SFTP toolbar action route live action property drifted")
     if reference_tab_route is not None:
         product_identity_route = gui_design_product_identity_route(preset.id)
         if reference_tab_route.reference_profile != product_identity_route.selected_profile_name:
@@ -676,6 +736,10 @@ def preset_manifest(artifact: PreviewArtifact) -> dict[str, Any]:
             raise RuntimeError("Moba remote-monitoring control route telemetry key drifted")
         if moba_remote_monitoring_control_route.target_metric_cell_keys != telemetry_route.target_metric_cell_keys:
             raise RuntimeError("Moba remote-monitoring control route telemetry cells drifted")
+        if moba_remote_monitoring_control_route.signal != "toggled":
+            raise RuntimeError("Moba remote-monitoring control route signal drifted")
+        if moba_remote_monitoring_control_route.handler != "handle_moba_remote_monitoring_toggled":
+            raise RuntimeError("Moba remote-monitoring control route handler drifted")
     if moba_follow_terminal_folder_control_route is not None:
         follow_route = gui_design_moba_sftp_follow_folder_route()
         monitoring_controls = {control.key: control for control in gui_design_moba_monitoring_controls()}
@@ -694,6 +758,10 @@ def preset_manifest(artifact: PreviewArtifact) -> dict[str, Any]:
             raise RuntimeError("Moba follow-folder control route target path drifted")
         if moba_follow_terminal_folder_control_route.target_table_object != follow_route.target_table_object:
             raise RuntimeError("Moba follow-folder control route target table drifted")
+        if moba_follow_terminal_folder_control_route.signal != "toggled":
+            raise RuntimeError("Moba follow-folder control route signal drifted")
+        if moba_follow_terminal_folder_control_route.handler != "handle_moba_follow_terminal_folder_toggled":
+            raise RuntimeError("Moba follow-folder control route handler drifted")
     if securecrt_session_manager_filter_route is not None:
         session_route = gui_design_securecrt_session_manager_route()
         manager_chrome = gui_design_securecrt_session_manager_chrome()
@@ -707,6 +775,17 @@ def preset_manifest(artifact: PreviewArtifact) -> dict[str, Any]:
             raise RuntimeError("SecureCRT Session Manager filter route placeholder drifted")
         if not securecrt_session_manager_filter_route.expected_query:
             raise RuntimeError("SecureCRT Session Manager filter route query must be non-empty")
+    if securecrt_command_window_send_route is not None:
+        if securecrt_command_window_send_route.signal != "clicked":
+            raise RuntimeError("SecureCRT command-window send route primary signal drifted")
+        if securecrt_command_window_send_route.secondary_signal != "returnPressed":
+            raise RuntimeError("SecureCRT command-window send route secondary signal drifted")
+        if securecrt_command_window_send_route.handler != "handle_securecrt_command_window_send":
+            raise RuntimeError("SecureCRT command-window send route handler drifted")
+        if securecrt_command_window_send_route.live_command_property != "secureCrtCommandRouteLiveCommand":
+            raise RuntimeError("SecureCRT command-window send route live command property drifted")
+        if securecrt_command_window_send_route.live_submitted_property != "secureCrtCommandRouteLiveSubmitted":
+            raise RuntimeError("SecureCRT command-window send route live submitted property drifted")
     if securecrt_sftp_tab_route is not None:
         status_strip = gui_design_securecrt_session_status_strip()
         workflow_cards = {card.key: card for card in gui_design_workflow_cards("securecrt")}
@@ -754,6 +833,12 @@ def preset_manifest(artifact: PreviewArtifact) -> dict[str, Any]:
             raise RuntimeError("SecureCRT SFTP browser route must expose a selected row")
         if "refresh" not in securecrt_sftp_browser_route.toolbar_actions:
             raise RuntimeError("SecureCRT SFTP browser route missing refresh action")
+        if securecrt_sftp_browser_route.action_key != "refresh":
+            raise RuntimeError("SecureCRT SFTP browser live action key drifted")
+        if securecrt_sftp_browser_route.handler != "handle_securecrt_sftp_browser_action":
+            raise RuntimeError("SecureCRT SFTP browser live action handler drifted")
+        if securecrt_sftp_browser_route.live_triggered_property != "secureCrtSftpBrowserRouteLiveTriggered":
+            raise RuntimeError("SecureCRT SFTP browser live action trigger property drifted")
     if remmina_profile_filter_route is not None:
         profile_route = gui_design_remmina_profile_viewer_route()
         profile_chrome = gui_design_remmina_profile_list_chrome()
@@ -793,6 +878,12 @@ def preset_manifest(artifact: PreviewArtifact) -> dict[str, Any]:
             raise RuntimeError("Remmina screenshot route detail-line metadata drifted")
         if remmina_screenshot_route.activity_line not in surface.activity_lines:
             raise RuntimeError("Remmina screenshot route activity-line metadata drifted")
+        if remmina_screenshot_route.signal != "clicked":
+            raise RuntimeError("Remmina screenshot route live capture signal drifted")
+        if remmina_screenshot_route.handler != "handle_remmina_screenshot_capture":
+            raise RuntimeError("Remmina screenshot route live capture handler drifted")
+        if remmina_screenshot_route.live_triggered_property != "remminaScreenshotRouteLiveTriggered":
+            raise RuntimeError("Remmina screenshot route live capture trigger property drifted")
     if remmina_sftp_transfer_route is not None:
         profile_chrome = gui_design_remmina_profile_list_chrome()
         surface = gui_design_workspace_surface("remmina")
@@ -882,6 +973,16 @@ def preset_manifest(artifact: PreviewArtifact) -> dict[str, Any]:
             raise RuntimeError("Termius snippet route selected profile drifted")
         if termius_snippet_route.detail_line not in surface.detail_lines:
             raise RuntimeError("Termius snippet route detail-line metadata drifted")
+        if termius_snippet_route.action_object != "termiusSnippetRunAction":
+            raise RuntimeError("Termius snippet route action object drifted")
+        if termius_snippet_route.shortcut_object != "termiusSnippetRunShortcut":
+            raise RuntimeError("Termius snippet route shortcut object drifted")
+        if termius_snippet_route.action_label != "Run":
+            raise RuntimeError("Termius snippet route action label drifted")
+        if termius_snippet_route.shortcut_sequence != "Return":
+            raise RuntimeError("Termius snippet route shortcut sequence drifted")
+        if termius_snippet_route.handler != "handle_termius_snippet_run":
+            raise RuntimeError("Termius snippet route handler drifted")
     if termius_files_browser_route is not None:
         host_route = gui_design_termius_host_selection_route()
         fields = {field.key: field for field in gui_design_termius_host_identity_strip().fields}
@@ -906,6 +1007,12 @@ def preset_manifest(artifact: PreviewArtifact) -> dict[str, Any]:
             raise RuntimeError("Termius files browser route must expose a selected row")
         if "sync" not in termius_files_browser_route.toolbar_actions:
             raise RuntimeError("Termius files browser route missing sync action")
+        if termius_files_browser_route.action_key != "sync":
+            raise RuntimeError("Termius files browser live sync action key drifted")
+        if termius_files_browser_route.handler != "handle_termius_files_sync":
+            raise RuntimeError("Termius files browser live sync handler drifted")
+        if termius_files_browser_route.live_triggered_property != "termiusFilesRouteLiveTriggered":
+            raise RuntimeError("Termius files browser live sync trigger property drifted")
     if mremoteng_document_filter_route is not None:
         connection_route = gui_design_mremoteng_connection_document_route()
         document_chrome = gui_design_mremoteng_document_toolbar_chrome()
@@ -919,6 +1026,12 @@ def preset_manifest(artifact: PreviewArtifact) -> dict[str, Any]:
             raise RuntimeError("mRemoteNG document-filter route placeholder drifted")
         if mremoteng_document_filter_route.expected_query.lower() not in connection_route.selected_tree_label.lower():
             raise RuntimeError("mRemoteNG document-filter route query no longer matches selected tree row")
+        if connection_route.signal != "clicked":
+            raise RuntimeError("mRemoteNG reconnect live route signal drifted")
+        if connection_route.handler != "handle_mremoteng_document_reconnect":
+            raise RuntimeError("mRemoteNG reconnect live route handler drifted")
+        if connection_route.reconnect_state != "reconnected":
+            raise RuntimeError("mRemoteNG reconnect live route state drifted")
     if mremoteng_inheritance_route is not None:
         connection_route = gui_design_mremoteng_connection_document_route()
         property_chrome = gui_design_mremoteng_property_grid_chrome()
@@ -1042,9 +1155,24 @@ def preset_manifest(artifact: PreviewArtifact) -> dict[str, Any]:
             if moba_right_utility_action_route is not None
             else {}
         ),
+        "moba_session_edge_action_route": (
+            moba_session_edge_action_route.to_dict()
+            if moba_session_edge_action_route is not None
+            else {}
+        ),
+        "moba_sftp_toolbar_action_route": (
+            moba_sftp_toolbar_action_route.to_dict()
+            if moba_sftp_toolbar_action_route is not None
+            else {}
+        ),
         "securecrt_session_manager_filter_route": (
             securecrt_session_manager_filter_route.to_dict()
             if securecrt_session_manager_filter_route is not None
+            else {}
+        ),
+        "securecrt_command_window_send_route": (
+            securecrt_command_window_send_route.to_dict()
+            if securecrt_command_window_send_route is not None
             else {}
         ),
         "securecrt_sftp_tab_route": (
@@ -1070,6 +1198,11 @@ def preset_manifest(artifact: PreviewArtifact) -> dict[str, Any]:
         "remmina_sftp_transfer_route": (
             remmina_sftp_transfer_route.to_dict()
             if remmina_sftp_transfer_route is not None
+            else {}
+        ),
+        "mremoteng_connection_document_route": (
+            mremoteng_connection_document_route.to_dict()
+            if mremoteng_connection_document_route is not None
             else {}
         ),
         "termius_port_forward_route": (
@@ -1446,6 +1579,10 @@ def render_mobaxterm_preset(preset: GuiDesignPreset):
         raise RuntimeError("Moba remote-monitoring control route telemetry key drifted")
     if remote_monitoring_control_route.target_metric_cell_keys != telemetry_route.target_metric_cell_keys:
         raise RuntimeError("Moba remote-monitoring control route telemetry cells drifted")
+    if remote_monitoring_control_route.signal != "toggled":
+        raise RuntimeError("Moba remote-monitoring control route signal drifted")
+    if remote_monitoring_control_route.handler != "handle_moba_remote_monitoring_toggled":
+        raise RuntimeError("Moba remote-monitoring control route handler drifted")
     if follow_terminal_folder_control_route.source_control_key != gui_design_moba_remote_monitoring_dock_chrome().follow_control_key:
         raise RuntimeError("Moba follow-terminal-folder control route source key drifted")
     if follow_terminal_folder_control_route.expected_checked is not state.follow_terminal_folder:
@@ -1454,6 +1591,10 @@ def render_mobaxterm_preset(preset: GuiDesignPreset):
         raise RuntimeError("Moba follow-terminal-folder control route target path drifted")
     if follow_terminal_folder_control_route.target_plan_property != "mobaSftpFollowRoutePlan":
         raise RuntimeError("Moba follow-terminal-folder control route plan property drifted")
+    if follow_terminal_folder_control_route.signal != "toggled":
+        raise RuntimeError("Moba follow-terminal-folder control route signal drifted")
+    if follow_terminal_folder_control_route.handler != "handle_moba_follow_terminal_folder_toggled":
+        raise RuntimeError("Moba follow-terminal-folder control route handler drifted")
     if folder_route.remote_path != state.remote_path:
         raise RuntimeError("Moba SFTP terminal-folder route path drifted")
     if folder_route.list_command != state.follow_folder_plan.printable_batch():
@@ -3773,6 +3914,12 @@ def draw_securecrt_sftp_browser(draw: Any, preset: GuiDesignPreset, x: int, y: i
         raise RuntimeError("SecureCRT SFTP browser route tab label drifted")
     if route.selected_tree_label != tab_route.selected_tree_label:
         raise RuntimeError("SecureCRT SFTP browser route selected tree label drifted")
+    if route.action_key not in route.toolbar_actions:
+        raise RuntimeError("SecureCRT SFTP browser live action missing from toolbar actions")
+    if route.signal != "clicked":
+        raise RuntimeError("SecureCRT SFTP browser live action signal drifted")
+    if route.handler != "handle_securecrt_sftp_browser_action":
+        raise RuntimeError("SecureCRT SFTP browser live action handler drifted")
     rounded(draw, (x, y, x + w, y + h), c.log, c.control_border, 3)
     draw_text(draw, f"SFTP - {route.sftp_tab_label}", x + 10, y + 8, c.log_text, 10, bold=True)
     draw_text(draw, route.transfer_queue_label, x + w - 58, y + 8, c.terminal_accent, 8, mono=True)
@@ -3890,6 +4037,12 @@ def draw_termius_files_browser(draw: Any, preset: GuiDesignPreset, x: int, y: in
         raise RuntimeError("Termius files browser route active tab drifted")
     if route.selected_profile_name != host_route.selected_profile_name:
         raise RuntimeError("Termius files browser route selected profile drifted")
+    if route.action_key not in route.toolbar_actions:
+        raise RuntimeError("Termius files browser live action missing from toolbar actions")
+    if route.signal != "clicked":
+        raise RuntimeError("Termius files browser live action signal drifted")
+    if route.handler != "handle_termius_files_sync":
+        raise RuntimeError("Termius files browser live action handler drifted")
     rounded(draw, (x, y, x + w, y + h), c.log, c.control_border, 5)
     draw_text(draw, f"Files - {route.selected_profile_name}", x + 10, y + 8, c.log_text, 10, bold=True)
     draw_text(draw, route.transfer_queue_label, x + w - 66, y + 8, c.terminal_accent, 8, mono=True)
@@ -3970,6 +4123,12 @@ def draw_remmina_workspace(
         raise RuntimeError("Remmina screenshot route activity-line metadata drifted")
     if not screenshot_route.capture_artifact.endswith(".png"):
         raise RuntimeError("Remmina screenshot route capture artifact must be a PNG filename")
+    if screenshot_route.signal != "clicked":
+        raise RuntimeError("Remmina screenshot route live capture signal drifted")
+    if screenshot_route.handler != "handle_remmina_screenshot_capture":
+        raise RuntimeError("Remmina screenshot route live capture handler drifted")
+    if screenshot_route.live_triggered_property != "remminaScreenshotRouteLiveTriggered":
+        raise RuntimeError("Remmina screenshot route live capture trigger property drifted")
     if sftp_transfer_route.detail_line not in surface.detail_lines:
         raise RuntimeError("Remmina SFTP transfer route detail-line metadata drifted")
     if sftp_transfer_route.activity_line not in surface.activity_lines:
@@ -4059,6 +4218,14 @@ def draw_remmina_sftp_transfer_panel(draw: Any, preset: GuiDesignPreset, x: int,
         raise RuntimeError("Remmina SFTP transfer route selected profile row missing")
     if profile_row.protocol != route.selected_profile_protocol:
         raise RuntimeError("Remmina SFTP transfer route profile protocol drifted")
+    if route.action_key not in route.toolbar_actions:
+        raise RuntimeError("Remmina SFTP transfer route action key must be part of toolbar actions")
+    if route.signal != "clicked":
+        raise RuntimeError("Remmina SFTP transfer route live signal metadata drifted")
+    if route.handler != "handle_remmina_sftp_transfer_action":
+        raise RuntimeError("Remmina SFTP transfer route live handler metadata drifted")
+    if route.live_triggered_property != "remminaSftpTransferRouteLiveTriggered":
+        raise RuntimeError("Remmina SFTP transfer route live trigger metadata drifted")
     rounded(draw, (x, y, x + w, y + h), c.log, c.control_border, 4)
     draw_text(draw, f"SFTP - {route.selected_profile_name}", x + 10, y + 8, c.log_text, 10, bold=True)
     draw_text(draw, route.transfer_queue_label, x + w - 58, y + 8, c.terminal_accent, 8, mono=True)
@@ -4108,6 +4275,12 @@ def draw_mremoteng_workspace(
         raise RuntimeError("mRemoteNG connection-document route active tab metadata drifted")
     if route.selected_profile_name != reference.profile_name or route.workspace_state != reference.workspace_state:
         raise RuntimeError("mRemoteNG connection-document route reference state metadata drifted")
+    if route.signal != "clicked":
+        raise RuntimeError("mRemoteNG reconnect live route signal drifted")
+    if route.handler != "handle_mremoteng_document_reconnect":
+        raise RuntimeError("mRemoteNG reconnect live route handler drifted")
+    if route.live_triggered_property != "mRemoteNgConnectionRouteLiveTriggered":
+        raise RuntimeError("mRemoteNG reconnect live route trigger property drifted")
     tabs_h = 35
     log_y = y + h - log_h
     draw_tabs(draw, preset, x, y, w, tabs_h)
@@ -4193,6 +4366,9 @@ def draw_securecrt_command_window(draw: Any, preset: GuiDesignPreset, x: int, y:
         send_route.command_input_object != "secureCrtCommandInput"
         or send_route.send_control_object != "secureCrtCommandSend"
         or send_route.command_property != "secureCrtCommandRouteCommand"
+        or send_route.signal != "clicked"
+        or send_route.secondary_signal != "returnPressed"
+        or send_route.handler != "handle_securecrt_command_window_send"
     ):
         raise RuntimeError("SecureCRT command-window send route metadata drifted")
     rounded(draw, (x, y, x + w, y + h), c.log, c.pane_border, 2)
@@ -4318,6 +4494,8 @@ def draw_termius_session_workflow(draw: Any, preset: GuiDesignPreset, x: int, y:
         raise RuntimeError("Termius snippet route workflow key drifted")
     if snippet_route.snippet_state != "one-click command":
         raise RuntimeError("Termius snippet route workflow state drifted")
+    if snippet_route.action_label != "Run" or snippet_route.shortcut_sequence != "Return":
+        raise RuntimeError("Termius snippet route live action metadata drifted")
     for index, (icon_key, title, primary, secondary) in enumerate(cards):
         cx = x + 12 + index * (card_w + gap)
         rounded(draw, (cx, card_y, cx + card_w, card_y + card_h), c.control, c.control_border, 8)
@@ -4325,6 +4503,11 @@ def draw_termius_session_workflow(draw: Any, preset: GuiDesignPreset, x: int, y:
         draw_text(draw, title, cx + 40, card_y + 10, c.control_text, 10, bold=True)
         draw_text(draw, primary, cx + 40, card_y + 28, c.terminal_accent, 9, mono=True)
         draw_text(draw, secondary, cx + 40, card_y + 45, c.sidebar_muted, 8)
+        if icon_key == snippet_route.workflow_card_key:
+            action_x = cx + card_w - 54
+            action_y = card_y + card_h - 25
+            rounded(draw, (action_x, action_y, action_x + 42, action_y + 18), c.primary, c.primary, 5)
+            draw_text(draw, snippet_route.action_label, action_x + 12, action_y + 4, c.primary_text, 8, bold=True)
 
 
 def draw_termius_host_identity_strip(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
@@ -4482,6 +4665,12 @@ def draw_mremoteng_document_toolbar(draw: Any, preset: GuiDesignPreset, x: int, 
     controls = gui_design_mremoteng_document_controls()
     if route.document_control_key not in {control.key for control in controls}:
         raise RuntimeError("mRemoteNG connection-document route target control is missing")
+    if route.signal != "clicked":
+        raise RuntimeError("mRemoteNG reconnect live route signal drifted")
+    if route.handler != "handle_mremoteng_document_reconnect":
+        raise RuntimeError("mRemoteNG reconnect live route handler drifted")
+    if route.reconnect_state != "reconnected":
+        raise RuntimeError("mRemoteNG reconnect live route state drifted")
     if filter_route.selected_tree_label != route.selected_tree_label:
         raise RuntimeError("mRemoteNG document-filter route selected tree metadata drifted")
     if filter_route.expected_placeholder != chrome.filter_placeholder:

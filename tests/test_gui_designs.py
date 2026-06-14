@@ -32,6 +32,7 @@ from remote_ops_workspace.gui_designs import (
     gui_design_moba_right_utility_action_route,
     gui_design_moba_right_utility_actions,
     gui_design_moba_right_utility_rail_chrome,
+    gui_design_moba_session_edge_action_route,
     gui_design_moba_session_edge_actions,
     gui_design_moba_session_tree_chrome,
     gui_design_moba_sftp_browser_chrome,
@@ -43,6 +44,7 @@ from remote_ops_workspace.gui_designs import (
     gui_design_moba_sftp_routed_file_rows,
     gui_design_moba_sftp_toolbar_action_geometry,
     gui_design_moba_sftp_toolbar_action_geometry_for,
+    gui_design_moba_sftp_toolbar_action_route,
     gui_design_moba_ssh_banner_chrome,
     gui_design_moba_ssh_banner_row_geometry,
     gui_design_moba_ssh_banner_row_geometry_for,
@@ -584,6 +586,25 @@ def test_mobaxterm_session_edge_actions_are_shared_metadata() -> None:
     assert all(action.color.startswith("#") for action in actions)
 
 
+def test_mobaxterm_session_edge_action_route_is_shared_metadata() -> None:
+    route = gui_design_moba_session_edge_action_route()
+    actions = gui_design_moba_session_edge_actions()
+
+    assert route.key == "moba-session-edge-action-route"
+    assert route.route_role == "session-edge-shortcuts-to-active-tab-workflows"
+    assert route.controls_object == "mobaSessionEdgeControls"
+    assert route.action_object == "mobaSessionEdgeAction"
+    assert route.placement == "tab-strip-overlay"
+    assert route.action_keys == tuple(action.key for action in actions)
+    assert route.action_labels == tuple(action.label for action in actions)
+    assert route.action_icon_keys == tuple(action.icon_key for action in actions)
+    assert route.action_handlers == ("show_moba_session_attachment", "show_moba_session_settings")
+    assert route.route_key_property == "mobaSessionEdgeRouteKey"
+    assert route.handler_property == "mobaSessionEdgeRouteHandler"
+    assert route.action_keys_property == "mobaSessionEdgeRouteActionKeys"
+    assert route.render_source == "gui-design-moba-session-edge-route"
+
+
 def test_mobaxterm_sftp_dock_actions_are_shared_metadata() -> None:
     actions = gui_design_moba_sftp_dock_actions()
 
@@ -622,6 +643,49 @@ def test_mobaxterm_sftp_dock_actions_are_shared_metadata() -> None:
         "delete",
         "tools",
     ]
+
+
+def test_mobaxterm_sftp_toolbar_action_route_is_shared_metadata() -> None:
+    route = gui_design_moba_sftp_toolbar_action_route()
+    actions = gui_design_moba_sftp_dock_actions()
+
+    assert route.key == "moba-sftp-toolbar-action-route"
+    assert route.route_role == "sftp-toolbar-actions-to-file-transfer-workflows"
+    assert route.toolbar_object == "mobaSftpToolbar"
+    assert route.action_object == "mobaSftpAction"
+    assert route.target_browser_object == "mobaSftpBrowser"
+    assert route.target_path_object == "mobaSftpPath"
+    assert route.target_table_object == "mobaSftpFileTable"
+    assert route.queue_object == "mobaSftpTransferQueue"
+    assert route.action_keys == tuple(action.key for action in actions)
+    assert route.action_labels == tuple(action.label for action in actions)
+    assert route.action_icon_keys == tuple(action.icon_key for action in actions)
+    assert route.action_group_keys == tuple(action.group_key for action in actions)
+    assert route.action_tooltips == tuple(action.tooltip for action in actions)
+    assert set(route.action_handlers) == {"show_moba_sftp_toolbar_action"}
+    assert route.action_statuses == (
+        "navigated",
+        "queued",
+        "queued",
+        "reconnected",
+        "prepared",
+        "prepared",
+        "prepared",
+        "toggled",
+        "toggled",
+        "opened",
+        "opened",
+    )
+    assert route.signal == "clicked"
+    assert route.route_key_property == "mobaSftpToolbarRouteKey"
+    assert route.signal_property == "mobaSftpToolbarRouteSignal"
+    assert route.handler_property == "mobaSftpToolbarRouteHandler"
+    assert route.action_groups_property == "mobaSftpToolbarRouteActionGroups"
+    assert route.captured_action_property == "mobaSftpToolbarRouteCapturedAction"
+    assert route.captured_status_property == "mobaSftpToolbarRouteCapturedStatus"
+    assert route.live_action_property == "mobaSftpToolbarRouteLiveAction"
+    assert route.live_status_property == "mobaSftpToolbarRouteLiveStatus"
+    assert route.render_source == "gui-design-moba-sftp-toolbar-route"
 
 
 def test_mobaxterm_sftp_toolbar_geometry_is_shared_metadata() -> None:
@@ -874,6 +938,11 @@ def test_mobaxterm_remote_monitoring_control_route_is_shared_metadata() -> None:
     assert route.target_metric_cell_keys == telemetry_route.target_metric_cell_keys
     assert route.captured_command_property == "mobaRemoteMonitoringControlCapturedCommand"
     assert route.captured_refresh_seconds_property == "mobaRemoteMonitoringControlCapturedRefreshSeconds"
+    assert route.signal == "toggled"
+    assert route.handler == "handle_moba_remote_monitoring_toggled"
+    assert route.signal_property == "mobaRemoteMonitoringControlSignal"
+    assert route.handler_property == "mobaRemoteMonitoringControlHandler"
+    assert route.live_checked_property == "mobaRemoteMonitoringControlLiveChecked"
     assert route.to_dict()["target_metric_cell_keys"] == list(telemetry_route.target_metric_cell_keys)
     assert route.render_source == "state-model"
 
@@ -902,6 +971,13 @@ def test_mobaxterm_follow_terminal_folder_control_route_is_shared_metadata() -> 
     assert route.captured_checked_property == "mobaFollowTerminalFolderControlCapturedChecked"
     assert route.captured_path_property == "mobaFollowTerminalFolderControlCapturedPath"
     assert route.captured_plan_property == "mobaFollowTerminalFolderControlCapturedPlan"
+    assert route.signal == "toggled"
+    assert route.handler == "handle_moba_follow_terminal_folder_toggled"
+    assert route.signal_property == "mobaFollowTerminalFolderControlSignal"
+    assert route.handler_property == "mobaFollowTerminalFolderControlHandler"
+    assert route.live_checked_property == "mobaFollowTerminalFolderControlLiveChecked"
+    assert route.live_path_property == "mobaFollowTerminalFolderControlLivePath"
+    assert route.live_plan_property == "mobaFollowTerminalFolderControlLivePlan"
     assert route.to_dict()["source_control_label"] == "Follow terminal folder"
     assert route.render_source == "state-model"
 
@@ -1045,7 +1121,23 @@ def test_securecrt_command_window_send_route_is_shared_metadata() -> None:
     assert route.target_scope_property == "secureCrtCommandRouteTargetScope"
     assert route.send_label_property == "secureCrtCommandRouteSendLabel"
     assert route.status_property == "secureCrtCommandRouteStatus"
+    assert route.captured_property == "secureCrtCommandRouteCaptured"
+    assert route.captured_command_property == "secureCrtCommandRouteCapturedCommand"
+    assert route.captured_target_scope_property == "secureCrtCommandRouteCapturedTargetScope"
+    assert route.captured_status_property == "secureCrtCommandRouteCapturedStatus"
+    assert route.signal == "clicked"
+    assert route.secondary_signal == "returnPressed"
+    assert route.handler == "handle_securecrt_command_window_send"
+    assert route.signal_property == "secureCrtCommandRouteSignal"
+    assert route.secondary_signal_property == "secureCrtCommandRouteSecondarySignal"
+    assert route.handler_property == "secureCrtCommandRouteHandler"
+    assert route.live_submitted_property == "secureCrtCommandRouteLiveSubmitted"
+    assert route.live_command_property == "secureCrtCommandRouteLiveCommand"
+    assert route.live_target_scope_property == "secureCrtCommandRouteLiveTargetScope"
+    assert route.live_status_property == "secureCrtCommandRouteLiveStatus"
     assert route.render_source == "state-model"
+    assert route.to_dict()["handler"] == route.handler
+    assert route.to_dict()["live_command_property"] == route.live_command_property
     assert chrome.command == "$ row doctor --json"
     assert chrome.target_scope == "All Sessions"
     assert chrome.send_label == "Send"
@@ -1235,7 +1327,23 @@ def test_securecrt_sftp_browser_route_is_shared_metadata() -> None:
     assert rows[route.active_row_name].kind == "file"
     assert route.path_property == "secureCrtSftpBrowserPath"
     assert route.queue_state_property == "secureCrtSftpBrowserQueueState"
+    assert route.action_object == "secureCrtSftpAction"
+    assert route.action_key == "refresh"
+    assert route.action_label == "Refresh"
+    assert route.action_status == "refreshed"
+    assert route.signal == "clicked"
+    assert route.handler == "handle_securecrt_sftp_browser_action"
+    assert route.signal_property == "secureCrtSftpBrowserRouteSignal"
+    assert route.handler_property == "secureCrtSftpBrowserRouteHandler"
+    assert route.captured_property == "secureCrtSftpBrowserRouteCaptured"
+    assert route.captured_action_property == "secureCrtSftpBrowserRouteCapturedAction"
+    assert route.captured_status_property == "secureCrtSftpBrowserRouteCapturedStatus"
+    assert route.live_triggered_property == "secureCrtSftpBrowserRouteLiveTriggered"
+    assert route.live_action_property == "secureCrtSftpBrowserRouteLiveAction"
+    assert route.live_status_property == "secureCrtSftpBrowserRouteLiveStatus"
     assert route.to_dict()["toolbar_actions"] == ["upload", "download", "refresh"]
+    assert route.to_dict()["handler"] == "handle_securecrt_sftp_browser_action"
+    assert route.to_dict()["live_triggered_property"] == "secureCrtSftpBrowserRouteLiveTriggered"
     assert route.to_dict()["file_rows"][2]["name"] == route.active_row_name
 
 
@@ -1558,8 +1666,20 @@ def test_remmina_screenshot_route_is_shared_metadata() -> None:
     assert route.tab_label_property == "remminaScreenshotRouteActiveTab"
     assert route.capture_state_property == "remminaScreenshotRouteState"
     assert route.capture_artifact_property == "remminaScreenshotRouteArtifact"
+    assert route.signal == "clicked"
+    assert route.handler == "handle_remmina_screenshot_capture"
+    assert route.signal_property == "remminaScreenshotRouteSignal"
+    assert route.handler_property == "remminaScreenshotRouteHandler"
+    assert route.captured_property == "remminaScreenshotRouteCaptured"
+    assert route.captured_state_property == "remminaScreenshotRouteCapturedState"
+    assert route.captured_artifact_property == "remminaScreenshotRouteCapturedArtifact"
+    assert route.live_triggered_property == "remminaScreenshotRouteLiveTriggered"
+    assert route.live_capture_state_property == "remminaScreenshotRouteLiveState"
+    assert route.live_capture_artifact_property == "remminaScreenshotRouteLiveArtifact"
     assert route.render_source == "viewer-control-state"
     assert route.to_dict()["capture_artifact"] == "win-admin-rdp-screenshot.png"
+    assert route.to_dict()["handler"] == "handle_remmina_screenshot_capture"
+    assert route.to_dict()["live_triggered_property"] == "remminaScreenshotRouteLiveTriggered"
     assert route.active_tab_label == reference.active_tab_label
     assert route.status_segment in reference.status_segments
     assert route.detail_line in surface.detail_lines
@@ -1596,8 +1716,24 @@ def test_remmina_sftp_transfer_route_is_shared_metadata() -> None:
     assert route.activity_line in surface.activity_lines
     assert route.path_property == "remminaSftpTransferRoutePath"
     assert route.queue_state_property == "remminaSftpTransferRouteQueueState"
+    assert route.action_object == "remminaSftpTransferAction"
+    assert route.action_key == "queue"
+    assert route.action_label == "Queue"
+    assert route.action_status == "queued"
+    assert route.signal == "clicked"
+    assert route.handler == "handle_remmina_sftp_transfer_action"
+    assert route.signal_property == "remminaSftpTransferRouteSignal"
+    assert route.handler_property == "remminaSftpTransferRouteHandler"
+    assert route.captured_property == "remminaSftpTransferRouteCaptured"
+    assert route.captured_action_property == "remminaSftpTransferRouteCapturedAction"
+    assert route.captured_status_property == "remminaSftpTransferRouteCapturedStatus"
+    assert route.live_triggered_property == "remminaSftpTransferRouteLiveTriggered"
+    assert route.live_action_property == "remminaSftpTransferRouteLiveAction"
+    assert route.live_status_property == "remminaSftpTransferRouteLiveStatus"
     assert route.to_dict()["toolbar_actions"] == ["upload", "download", "queue"]
     assert route.to_dict()["file_rows"][2]["name"] == route.active_row_name
+    assert route.to_dict()["handler"] == "handle_remmina_sftp_transfer_action"
+    assert route.to_dict()["live_triggered_property"] == "remminaSftpTransferRouteLiveTriggered"
 
 
 def test_termius_header_chips_are_shared_metadata() -> None:
@@ -1759,6 +1895,8 @@ def test_termius_snippet_route_is_shared_metadata() -> None:
     assert route.workflow_title_object == "productWorkflowTitle"
     assert route.workflow_primary_object == "productWorkflowPrimary"
     assert route.workflow_secondary_object == "productWorkflowSecondary"
+    assert route.action_object == "termiusSnippetRunAction"
+    assert route.shortcut_object == "termiusSnippetRunShortcut"
     assert route.host_identity_object == "termiusHostIdentityStrip"
     assert route.identity_field_key == "snippet"
     assert route.identity_cell_object == "termiusHostIdentityCell"
@@ -1768,11 +1906,27 @@ def test_termius_snippet_route_is_shared_metadata() -> None:
     assert route.snippet_command == "row vault status"
     assert route.snippet_state == "one-click command"
     assert route.detail_line == "Snippet  : row vault status"
+    assert route.action_label == "Run"
+    assert route.shortcut_sequence == "Return"
     assert route.workflow_key_property == "termiusSnippetRouteWorkflowKey"
     assert route.command_property == "termiusSnippetRouteCommand"
     assert route.identity_value_property == "termiusSnippetRouteIdentityValue"
     assert route.active_tab_property == "termiusSnippetRouteActiveTab"
     assert route.status_property == "termiusSnippetRouteState"
+    assert route.captured_property == "termiusSnippetRouteCaptured"
+    assert route.captured_command_property == "termiusSnippetRouteCapturedCommand"
+    assert route.captured_target_profile_property == "termiusSnippetRouteCapturedTargetProfile"
+    assert route.captured_status_property == "termiusSnippetRouteCapturedStatus"
+    assert route.signal == "clicked"
+    assert route.secondary_signal == "activated"
+    assert route.handler == "handle_termius_snippet_run"
+    assert route.signal_property == "termiusSnippetRouteSignal"
+    assert route.secondary_signal_property == "termiusSnippetRouteSecondarySignal"
+    assert route.handler_property == "termiusSnippetRouteHandler"
+    assert route.live_triggered_property == "termiusSnippetRouteLiveTriggered"
+    assert route.live_command_property == "termiusSnippetRouteLiveCommand"
+    assert route.live_target_profile_property == "termiusSnippetRouteLiveTargetProfile"
+    assert route.live_status_property == "termiusSnippetRouteLiveStatus"
     assert route.render_source == "state-model"
     assert any(
         card.key == route.workflow_card_key
@@ -1784,6 +1938,8 @@ def test_termius_snippet_route_is_shared_metadata() -> None:
     assert any(field.key == route.identity_field_key and field.value == route.snippet_command for field in strip.fields)
     assert route.detail_line in surface.detail_lines
     assert route.to_dict()["snippet_command"] == route.snippet_command
+    assert route.to_dict()["action_object"] == route.action_object
+    assert route.to_dict()["handler"] == route.handler
 
 
 def test_termius_files_browser_route_is_shared_metadata() -> None:
@@ -1810,8 +1966,24 @@ def test_termius_files_browser_route_is_shared_metadata() -> None:
     assert route.transfer_status == "ready"
     assert route.path_property == "termiusFilesRoutePath"
     assert route.queue_state_property == "termiusFilesRouteQueueState"
+    assert route.action_object == "termiusFilesAction"
+    assert route.action_key == "sync"
+    assert route.action_label == "Sync"
+    assert route.action_status == "synced"
+    assert route.signal == "clicked"
+    assert route.handler == "handle_termius_files_sync"
+    assert route.signal_property == "termiusFilesRouteSignal"
+    assert route.handler_property == "termiusFilesRouteHandler"
+    assert route.captured_property == "termiusFilesRouteCaptured"
+    assert route.captured_action_property == "termiusFilesRouteCapturedAction"
+    assert route.captured_status_property == "termiusFilesRouteCapturedStatus"
+    assert route.live_triggered_property == "termiusFilesRouteLiveTriggered"
+    assert route.live_action_property == "termiusFilesRouteLiveAction"
+    assert route.live_status_property == "termiusFilesRouteLiveStatus"
     assert route.to_dict()["toolbar_actions"] == ["upload", "download", "sync"]
     assert route.to_dict()["file_rows"][2]["name"] == route.active_row_name
+    assert route.to_dict()["action_key"] == route.action_key
+    assert route.to_dict()["handler"] == route.handler
 
 
 def test_mremoteng_document_controls_are_shared_metadata() -> None:
@@ -1940,7 +2112,20 @@ def test_mremoteng_connection_document_route_is_shared_metadata() -> None:
     assert route.control_active_property == "mRemoteNgConnectionRouteActive"
     assert route.tab_label_property == "mRemoteNgConnectionRouteActiveTab"
     assert route.property_value_property == "mRemoteNgConnectionRoutePropertyValue"
+    assert route.signal == "clicked"
+    assert route.handler == "handle_mremoteng_document_reconnect"
+    assert route.reconnect_state == "reconnected"
+    assert route.signal_property == "mRemoteNgConnectionRouteSignal"
+    assert route.handler_property == "mRemoteNgConnectionRouteHandler"
+    assert route.captured_property == "mRemoteNgConnectionRouteCaptured"
+    assert route.captured_state_property == "mRemoteNgConnectionRouteCapturedState"
+    assert route.captured_profile_property == "mRemoteNgConnectionRouteCapturedProfile"
+    assert route.live_triggered_property == "mRemoteNgConnectionRouteLiveTriggered"
+    assert route.live_state_property == "mRemoteNgConnectionRouteLiveState"
+    assert route.live_profile_property == "mRemoteNgConnectionRouteLiveProfile"
     assert route.render_source == "connection-tree-state"
+    assert route.to_dict()["handler"] == "handle_mremoteng_document_reconnect"
+    assert route.to_dict()["live_triggered_property"] == "mRemoteNgConnectionRouteLiveTriggered"
     assert any(control.key == route.document_control_key and control.label == "Reconnect" for control in controls)
     assert any(row.key == route.property_row_key and row.effective_value == route.property_value for row in chrome.rows)
 

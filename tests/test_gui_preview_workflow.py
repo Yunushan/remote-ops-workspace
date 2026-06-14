@@ -27,6 +27,15 @@ def test_preview_manifest_tracks_every_gui_design_preset() -> None:
     assert follow_route["key"] == "moba-follow-terminal-folder-control-route"
     assert follow_route["source_control_object"] == "mobaFollowTerminalFolder"
     assert follow_route["target_path_object"] == "mobaSftpPath"
+    assert follow_route["signal"] == "toggled"
+    assert follow_route["handler"] == "handle_moba_follow_terminal_folder_toggled"
+    assert follow_route["live_checked_property"] == "mobaFollowTerminalFolderControlLiveChecked"
+    remote_monitoring_route = mobaxterm["moba_remote_monitoring_control_route"]
+    assert remote_monitoring_route["key"] == "moba-remote-monitoring-control-route"
+    assert remote_monitoring_route["source_control_object"] == "mobaMonitoringControl"
+    assert remote_monitoring_route["signal"] == "toggled"
+    assert remote_monitoring_route["handler"] == "handle_moba_remote_monitoring_toggled"
+    assert remote_monitoring_route["live_checked_property"] == "mobaRemoteMonitoringControlLiveChecked"
     edge_route = mobaxterm["moba_ribbon_edge_action_route"]
     assert edge_route["key"] == "moba-ribbon-edge-action-route"
     assert edge_route["xserver_action_object"] == "mobaXServerAction"
@@ -43,7 +52,64 @@ def test_preview_manifest_tracks_every_gui_design_preset() -> None:
         "show_moba_terminal_settings",
         "show_moba_tools_status",
     ]
+    session_edge_route = mobaxterm["moba_session_edge_action_route"]
+    assert session_edge_route["key"] == "moba-session-edge-action-route"
+    assert session_edge_route["controls_object"] == "mobaSessionEdgeControls"
+    assert session_edge_route["action_object"] == "mobaSessionEdgeAction"
+    assert session_edge_route["action_keys"] == ["attachment", "settings"]
+    assert session_edge_route["action_handlers"] == [
+        "show_moba_session_attachment",
+        "show_moba_session_settings",
+    ]
+    sftp_toolbar_route = mobaxterm["moba_sftp_toolbar_action_route"]
+    assert sftp_toolbar_route["key"] == "moba-sftp-toolbar-action-route"
+    assert sftp_toolbar_route["toolbar_object"] == "mobaSftpToolbar"
+    assert sftp_toolbar_route["action_object"] == "mobaSftpAction"
+    assert sftp_toolbar_route["target_path_object"] == "mobaSftpPath"
+    assert sftp_toolbar_route["target_table_object"] == "mobaSftpFileTable"
+    assert sftp_toolbar_route["queue_object"] == "mobaSftpTransferQueue"
+    assert sftp_toolbar_route["action_keys"] == [
+        "parent-folder",
+        "download",
+        "upload",
+        "connect",
+        "new-folder",
+        "new-file",
+        "delete",
+        "ascii-mode",
+        "split-view",
+        "tools",
+        "terminal",
+    ]
+    assert set(sftp_toolbar_route["action_handlers"]) == {"show_moba_sftp_toolbar_action"}
+    assert sftp_toolbar_route["action_statuses"] == [
+        "navigated",
+        "queued",
+        "queued",
+        "reconnected",
+        "prepared",
+        "prepared",
+        "prepared",
+        "toggled",
+        "toggled",
+        "opened",
+        "opened",
+    ]
+    assert sftp_toolbar_route["signal"] == "clicked"
+    assert sftp_toolbar_route["signal_property"] == "mobaSftpToolbarRouteSignal"
+    assert sftp_toolbar_route["captured_action_property"] == "mobaSftpToolbarRouteCapturedAction"
+    assert sftp_toolbar_route["captured_status_property"] == "mobaSftpToolbarRouteCapturedStatus"
+    assert sftp_toolbar_route["live_action_property"] == "mobaSftpToolbarRouteLiveAction"
+    assert sftp_toolbar_route["live_status_property"] == "mobaSftpToolbarRouteLiveStatus"
     securecrt = next(item for item in manifest["presets"] if item["id"] == "securecrt")
+    securecrt_command_route = securecrt["securecrt_command_window_send_route"]
+    assert securecrt_command_route["key"] == "securecrt-command-window-send-route"
+    assert securecrt_command_route["command_input_object"] == "secureCrtCommandInput"
+    assert securecrt_command_route["send_control_object"] == "secureCrtCommandSend"
+    assert securecrt_command_route["signal"] == "clicked"
+    assert securecrt_command_route["secondary_signal"] == "returnPressed"
+    assert securecrt_command_route["handler"] == "handle_securecrt_command_window_send"
+    assert securecrt_command_route["live_submitted_property"] == "secureCrtCommandRouteLiveSubmitted"
     securecrt_sftp_route = securecrt["securecrt_sftp_tab_route"]
     assert securecrt_sftp_route["key"] == "securecrt-sftp-tab-route"
     assert securecrt_sftp_route["workflow_card_key"] == "sftp-tab"
@@ -54,17 +120,26 @@ def test_preview_manifest_tracks_every_gui_design_preset() -> None:
     assert securecrt_browser_route["remote_path"] == "/srv/files"
     assert securecrt_browser_route["toolbar_actions"] == ["upload", "download", "refresh"]
     assert securecrt_browser_route["active_row_name"] == "deploy.log"
+    assert securecrt_browser_route["action_key"] == "refresh"
+    assert securecrt_browser_route["handler"] == "handle_securecrt_sftp_browser_action"
+    assert securecrt_browser_route["live_triggered_property"] == "secureCrtSftpBrowserRouteLiveTriggered"
     remmina = next(item for item in manifest["presets"] if item["id"] == "remmina")
     screenshot_route = remmina["remmina_screenshot_route"]
     assert screenshot_route["key"] == "remmina-screenshot-capture-route"
     assert screenshot_route["viewer_control_key"] == "screenshot"
     assert screenshot_route["capture_artifact"] == "win-admin-rdp-screenshot.png"
+    assert screenshot_route["signal"] == "clicked"
+    assert screenshot_route["handler"] == "handle_remmina_screenshot_capture"
+    assert screenshot_route["live_triggered_property"] == "remminaScreenshotRouteLiveTriggered"
     sftp_route = remmina["remmina_sftp_transfer_route"]
     assert sftp_route["key"] == "remmina-sftp-transfer-route"
     assert sftp_route["selected_profile_key"] == "sftp-ops"
     assert sftp_route["remote_path"] == "/var/log"
     assert sftp_route["toolbar_actions"] == ["upload", "download", "queue"]
     assert sftp_route["active_row_name"] == "app.log"
+    assert sftp_route["action_key"] == "queue"
+    assert sftp_route["handler"] == "handle_remmina_sftp_transfer_action"
+    assert sftp_route["live_triggered_property"] == "remminaSftpTransferRouteLiveTriggered"
     termius = next(item for item in manifest["presets"] if item["id"] == "termius")
     port_forward_route = termius["termius_port_forward_route"]
     assert port_forward_route["key"] == "termius-port-forward-route"
@@ -76,12 +151,25 @@ def test_preview_manifest_tracks_every_gui_design_preset() -> None:
     assert snippet_route["workflow_card_key"] == "snippet"
     assert snippet_route["identity_field_key"] == "snippet"
     assert snippet_route["snippet_command"] == "row vault status"
+    assert snippet_route["action_object"] == "termiusSnippetRunAction"
+    assert snippet_route["shortcut_object"] == "termiusSnippetRunShortcut"
+    assert snippet_route["action_label"] == "Run"
+    assert snippet_route["shortcut_sequence"] == "Return"
+    assert snippet_route["handler"] == "handle_termius_snippet_run"
     files_route = termius["termius_files_browser_route"]
     assert files_route["key"] == "termius-files-browser-route"
     assert files_route["remote_path"] == "/workspace"
     assert files_route["toolbar_actions"] == ["upload", "download", "sync"]
     assert files_route["active_row_name"] == "deploy.yml"
+    assert files_route["action_key"] == "sync"
+    assert files_route["handler"] == "handle_termius_files_sync"
+    assert files_route["live_triggered_property"] == "termiusFilesRouteLiveTriggered"
     mremoteng = next(item for item in manifest["presets"] if item["id"] == "mremoteng")
+    connection_route = mremoteng["mremoteng_connection_document_route"]
+    assert connection_route["key"] == "mremoteng-selected-connection-document-route"
+    assert connection_route["document_control_key"] == "reconnect"
+    assert connection_route["handler"] == "handle_mremoteng_document_reconnect"
+    assert connection_route["live_triggered_property"] == "mRemoteNgConnectionRouteLiveTriggered"
     inheritance_route = mremoteng["mremoteng_inheritance_route"]
     assert inheritance_route["key"] == "mremoteng-inheritance-route"
     assert inheritance_route["workflow_card_key"] == "inheritance-grid"

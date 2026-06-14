@@ -456,6 +456,82 @@ class GuiMobaSftpToolbarActionGeometry:
 
 
 @dataclass(frozen=True)
+class GuiMobaSftpToolbarActionRoute:
+    key: str
+    route_role: str
+    toolbar_object: str
+    action_object: str
+    target_browser_object: str
+    target_path_object: str
+    target_table_object: str
+    queue_object: str
+    action_keys: tuple[str, ...]
+    action_labels: tuple[str, ...]
+    action_icon_keys: tuple[str, ...]
+    action_group_keys: tuple[str, ...]
+    action_tooltips: tuple[str, ...]
+    action_handlers: tuple[str, ...]
+    action_statuses: tuple[str, ...]
+    signal: str
+    route_key_property: str
+    action_key_property: str
+    action_label_property: str
+    action_object_property: str
+    icon_key_property: str
+    group_key_property: str
+    tooltip_property: str
+    signal_property: str
+    handler_property: str
+    action_keys_property: str
+    action_groups_property: str
+    captured_property: str
+    captured_action_property: str
+    captured_status_property: str
+    live_triggered_property: str
+    live_action_property: str
+    live_status_property: str
+    render_source: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "route_role": self.route_role,
+            "toolbar_object": self.toolbar_object,
+            "action_object": self.action_object,
+            "target_browser_object": self.target_browser_object,
+            "target_path_object": self.target_path_object,
+            "target_table_object": self.target_table_object,
+            "queue_object": self.queue_object,
+            "action_keys": list(self.action_keys),
+            "action_labels": list(self.action_labels),
+            "action_icon_keys": list(self.action_icon_keys),
+            "action_group_keys": list(self.action_group_keys),
+            "action_tooltips": list(self.action_tooltips),
+            "action_handlers": list(self.action_handlers),
+            "action_statuses": list(self.action_statuses),
+            "signal": self.signal,
+            "route_key_property": self.route_key_property,
+            "action_key_property": self.action_key_property,
+            "action_label_property": self.action_label_property,
+            "action_object_property": self.action_object_property,
+            "icon_key_property": self.icon_key_property,
+            "group_key_property": self.group_key_property,
+            "tooltip_property": self.tooltip_property,
+            "signal_property": self.signal_property,
+            "handler_property": self.handler_property,
+            "action_keys_property": self.action_keys_property,
+            "action_groups_property": self.action_groups_property,
+            "captured_property": self.captured_property,
+            "captured_action_property": self.captured_action_property,
+            "captured_status_property": self.captured_status_property,
+            "live_triggered_property": self.live_triggered_property,
+            "live_action_property": self.live_action_property,
+            "live_status_property": self.live_status_property,
+            "render_source": self.render_source,
+        }
+
+
+@dataclass(frozen=True)
 class GuiMobaSftpTableColumn:
     key: str
     label: str
@@ -663,6 +739,11 @@ class GuiMobaRemoteMonitoringControlRoute:
     captured_checked_property: str
     captured_command_property: str
     captured_refresh_seconds_property: str
+    signal: str
+    handler: str
+    signal_property: str
+    handler_property: str
+    live_checked_property: str
     render_source: str
 
     def to_dict(self) -> dict[str, object]:
@@ -686,6 +767,11 @@ class GuiMobaRemoteMonitoringControlRoute:
             "captured_checked_property": self.captured_checked_property,
             "captured_command_property": self.captured_command_property,
             "captured_refresh_seconds_property": self.captured_refresh_seconds_property,
+            "signal": self.signal,
+            "handler": self.handler,
+            "signal_property": self.signal_property,
+            "handler_property": self.handler_property,
+            "live_checked_property": self.live_checked_property,
             "render_source": self.render_source,
         }
 
@@ -713,6 +799,13 @@ class GuiMobaFollowTerminalFolderControlRoute:
     captured_checked_property: str
     captured_path_property: str
     captured_plan_property: str
+    signal: str
+    handler: str
+    signal_property: str
+    handler_property: str
+    live_checked_property: str
+    live_path_property: str
+    live_plan_property: str
     render_source: str
 
     def to_dict(self) -> dict[str, object]:
@@ -738,6 +831,13 @@ class GuiMobaFollowTerminalFolderControlRoute:
             "captured_checked_property": self.captured_checked_property,
             "captured_path_property": self.captured_path_property,
             "captured_plan_property": self.captured_plan_property,
+            "signal": self.signal,
+            "handler": self.handler,
+            "signal_property": self.signal_property,
+            "handler_property": self.handler_property,
+            "live_checked_property": self.live_checked_property,
+            "live_path_property": self.live_path_property,
+            "live_plan_property": self.live_plan_property,
             "render_source": self.render_source,
         }
 
@@ -890,7 +990,51 @@ class GuiSecureCrtCommandWindowSendRoute:
     target_scope_property: str
     send_label_property: str
     status_property: str
+    captured_property: str
+    captured_command_property: str
+    captured_target_scope_property: str
+    captured_status_property: str
+    signal: str
+    secondary_signal: str
+    handler: str
+    signal_property: str
+    secondary_signal_property: str
+    handler_property: str
+    live_submitted_property: str
+    live_command_property: str
+    live_target_scope_property: str
+    live_status_property: str
     render_source: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "route_role": self.route_role,
+            "source_window_object": self.source_window_object,
+            "target_scope_object": self.target_scope_object,
+            "command_input_object": self.command_input_object,
+            "send_control_object": self.send_control_object,
+            "status_object": self.status_object,
+            "command_property": self.command_property,
+            "target_scope_property": self.target_scope_property,
+            "send_label_property": self.send_label_property,
+            "status_property": self.status_property,
+            "captured_property": self.captured_property,
+            "captured_command_property": self.captured_command_property,
+            "captured_target_scope_property": self.captured_target_scope_property,
+            "captured_status_property": self.captured_status_property,
+            "signal": self.signal,
+            "secondary_signal": self.secondary_signal,
+            "handler": self.handler,
+            "signal_property": self.signal_property,
+            "secondary_signal_property": self.secondary_signal_property,
+            "handler_property": self.handler_property,
+            "live_submitted_property": self.live_submitted_property,
+            "live_command_property": self.live_command_property,
+            "live_target_scope_property": self.live_target_scope_property,
+            "live_status_property": self.live_status_property,
+            "render_source": self.render_source,
+        }
 
 
 @dataclass(frozen=True)
@@ -1138,6 +1282,20 @@ class GuiSecureCrtSftpBrowserRoute:
     row_kind_property: str
     row_selected_property: str
     queue_state_property: str
+    action_object: str
+    action_key: str
+    action_label: str
+    action_status: str
+    signal: str
+    handler: str
+    signal_property: str
+    handler_property: str
+    captured_property: str
+    captured_action_property: str
+    captured_status_property: str
+    live_triggered_property: str
+    live_action_property: str
+    live_status_property: str
     render_source: str
 
     def to_dict(self) -> dict[str, object]:
@@ -1166,6 +1324,20 @@ class GuiSecureCrtSftpBrowserRoute:
             "row_kind_property": self.row_kind_property,
             "row_selected_property": self.row_selected_property,
             "queue_state_property": self.queue_state_property,
+            "action_object": self.action_object,
+            "action_key": self.action_key,
+            "action_label": self.action_label,
+            "action_status": self.action_status,
+            "signal": self.signal,
+            "handler": self.handler,
+            "signal_property": self.signal_property,
+            "handler_property": self.handler_property,
+            "captured_property": self.captured_property,
+            "captured_action_property": self.captured_action_property,
+            "captured_status_property": self.captured_status_property,
+            "live_triggered_property": self.live_triggered_property,
+            "live_action_property": self.live_action_property,
+            "live_status_property": self.live_status_property,
             "render_source": self.render_source,
         }
 
@@ -1407,6 +1579,16 @@ class GuiRemminaScreenshotRoute:
     tab_label_property: str
     capture_state_property: str
     capture_artifact_property: str
+    signal: str
+    handler: str
+    signal_property: str
+    handler_property: str
+    captured_property: str
+    captured_state_property: str
+    captured_artifact_property: str
+    live_triggered_property: str
+    live_capture_state_property: str
+    live_capture_artifact_property: str
     render_source: str
 
     def to_dict(self) -> dict[str, object]:
@@ -1427,6 +1609,16 @@ class GuiRemminaScreenshotRoute:
             "tab_label_property": self.tab_label_property,
             "capture_state_property": self.capture_state_property,
             "capture_artifact_property": self.capture_artifact_property,
+            "signal": self.signal,
+            "handler": self.handler,
+            "signal_property": self.signal_property,
+            "handler_property": self.handler_property,
+            "captured_property": self.captured_property,
+            "captured_state_property": self.captured_state_property,
+            "captured_artifact_property": self.captured_artifact_property,
+            "live_triggered_property": self.live_triggered_property,
+            "live_capture_state_property": self.live_capture_state_property,
+            "live_capture_artifact_property": self.live_capture_artifact_property,
             "render_source": self.render_source,
         }
 
@@ -1489,6 +1681,20 @@ class GuiRemminaSftpTransferRoute:
     row_kind_property: str
     row_selected_property: str
     queue_state_property: str
+    action_object: str
+    action_key: str
+    action_label: str
+    action_status: str
+    signal: str
+    handler: str
+    signal_property: str
+    handler_property: str
+    captured_property: str
+    captured_action_property: str
+    captured_status_property: str
+    live_triggered_property: str
+    live_action_property: str
+    live_status_property: str
     render_source: str
 
     def to_dict(self) -> dict[str, object]:
@@ -1529,6 +1735,20 @@ class GuiRemminaSftpTransferRoute:
             "row_kind_property": self.row_kind_property,
             "row_selected_property": self.row_selected_property,
             "queue_state_property": self.queue_state_property,
+            "action_object": self.action_object,
+            "action_key": self.action_key,
+            "action_label": self.action_label,
+            "action_status": self.action_status,
+            "signal": self.signal,
+            "handler": self.handler,
+            "signal_property": self.signal_property,
+            "handler_property": self.handler_property,
+            "captured_property": self.captured_property,
+            "captured_action_property": self.captured_action_property,
+            "captured_status_property": self.captured_status_property,
+            "live_triggered_property": self.live_triggered_property,
+            "live_action_property": self.live_action_property,
+            "live_status_property": self.live_status_property,
             "render_source": self.render_source,
         }
 
@@ -1686,6 +1906,8 @@ class GuiTermiusSnippetRoute:
     workflow_title_object: str
     workflow_primary_object: str
     workflow_secondary_object: str
+    action_object: str
+    shortcut_object: str
     host_identity_object: str
     identity_field_key: str
     identity_cell_object: str
@@ -1695,11 +1917,27 @@ class GuiTermiusSnippetRoute:
     snippet_command: str
     snippet_state: str
     detail_line: str
+    action_label: str
+    shortcut_sequence: str
     workflow_key_property: str
     command_property: str
     identity_value_property: str
     active_tab_property: str
     status_property: str
+    captured_property: str
+    captured_command_property: str
+    captured_target_profile_property: str
+    captured_status_property: str
+    signal: str
+    secondary_signal: str
+    handler: str
+    signal_property: str
+    secondary_signal_property: str
+    handler_property: str
+    live_triggered_property: str
+    live_command_property: str
+    live_target_profile_property: str
+    live_status_property: str
     render_source: str
 
     def to_dict(self) -> dict[str, object]:
@@ -1711,6 +1949,8 @@ class GuiTermiusSnippetRoute:
             "workflow_title_object": self.workflow_title_object,
             "workflow_primary_object": self.workflow_primary_object,
             "workflow_secondary_object": self.workflow_secondary_object,
+            "action_object": self.action_object,
+            "shortcut_object": self.shortcut_object,
             "host_identity_object": self.host_identity_object,
             "identity_field_key": self.identity_field_key,
             "identity_cell_object": self.identity_cell_object,
@@ -1720,11 +1960,27 @@ class GuiTermiusSnippetRoute:
             "snippet_command": self.snippet_command,
             "snippet_state": self.snippet_state,
             "detail_line": self.detail_line,
+            "action_label": self.action_label,
+            "shortcut_sequence": self.shortcut_sequence,
             "workflow_key_property": self.workflow_key_property,
             "command_property": self.command_property,
             "identity_value_property": self.identity_value_property,
             "active_tab_property": self.active_tab_property,
             "status_property": self.status_property,
+            "captured_property": self.captured_property,
+            "captured_command_property": self.captured_command_property,
+            "captured_target_profile_property": self.captured_target_profile_property,
+            "captured_status_property": self.captured_status_property,
+            "signal": self.signal,
+            "secondary_signal": self.secondary_signal,
+            "handler": self.handler,
+            "signal_property": self.signal_property,
+            "secondary_signal_property": self.secondary_signal_property,
+            "handler_property": self.handler_property,
+            "live_triggered_property": self.live_triggered_property,
+            "live_command_property": self.live_command_property,
+            "live_target_profile_property": self.live_target_profile_property,
+            "live_status_property": self.live_status_property,
             "render_source": self.render_source,
         }
 
@@ -1781,6 +2037,20 @@ class GuiTermiusFilesBrowserRoute:
     row_kind_property: str
     row_selected_property: str
     queue_state_property: str
+    action_object: str
+    action_key: str
+    action_label: str
+    action_status: str
+    signal: str
+    handler: str
+    signal_property: str
+    handler_property: str
+    captured_property: str
+    captured_action_property: str
+    captured_status_property: str
+    live_triggered_property: str
+    live_action_property: str
+    live_status_property: str
     render_source: str
 
     def to_dict(self) -> dict[str, object]:
@@ -1815,6 +2085,20 @@ class GuiTermiusFilesBrowserRoute:
             "row_kind_property": self.row_kind_property,
             "row_selected_property": self.row_selected_property,
             "queue_state_property": self.queue_state_property,
+            "action_object": self.action_object,
+            "action_key": self.action_key,
+            "action_label": self.action_label,
+            "action_status": self.action_status,
+            "signal": self.signal,
+            "handler": self.handler,
+            "signal_property": self.signal_property,
+            "handler_property": self.handler_property,
+            "captured_property": self.captured_property,
+            "captured_action_property": self.captured_action_property,
+            "captured_status_property": self.captured_status_property,
+            "live_triggered_property": self.live_triggered_property,
+            "live_action_property": self.live_action_property,
+            "live_status_property": self.live_status_property,
             "render_source": self.render_source,
         }
 
@@ -1907,7 +2191,53 @@ class GuiMRemoteNgConnectionDocumentRoute:
     control_active_property: str
     tab_label_property: str
     property_value_property: str
+    signal: str
+    handler: str
+    reconnect_state: str
+    signal_property: str
+    handler_property: str
+    captured_property: str
+    captured_state_property: str
+    captured_profile_property: str
+    live_triggered_property: str
+    live_state_property: str
+    live_profile_property: str
     render_source: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key,
+            "route_role": self.route_role,
+            "selected_profile_name": self.selected_profile_name,
+            "selected_tree_label": self.selected_tree_label,
+            "selected_tree_object": self.selected_tree_object,
+            "document_controls_object": self.document_controls_object,
+            "document_control_key": self.document_control_key,
+            "document_control_object": self.document_control_object,
+            "property_grid_object": self.property_grid_object,
+            "property_row_key": self.property_row_key,
+            "property_cell_object": self.property_cell_object,
+            "active_tab_label": self.active_tab_label,
+            "protocol": self.protocol,
+            "workspace_state": self.workspace_state,
+            "property_value": self.property_value,
+            "selected_tree_property": self.selected_tree_property,
+            "control_active_property": self.control_active_property,
+            "tab_label_property": self.tab_label_property,
+            "property_value_property": self.property_value_property,
+            "signal": self.signal,
+            "handler": self.handler,
+            "reconnect_state": self.reconnect_state,
+            "signal_property": self.signal_property,
+            "handler_property": self.handler_property,
+            "captured_property": self.captured_property,
+            "captured_state_property": self.captured_state_property,
+            "captured_profile_property": self.captured_profile_property,
+            "live_triggered_property": self.live_triggered_property,
+            "live_state_property": self.live_state_property,
+            "live_profile_property": self.live_profile_property,
+            "render_source": self.render_source,
+        }
 
 
 @dataclass(frozen=True)
@@ -2399,6 +2729,27 @@ GUI_DESIGN_MOBA_SESSION_EDGE_ACTIONS: tuple[GuiMobaSessionEdgeAction, ...] = (
 )
 
 
+GUI_DESIGN_MOBA_SESSION_EDGE_ACTION_ROUTE = GuiMobaSessionEdgeActionRoute(
+    key="moba-session-edge-action-route",
+    route_role="session-edge-shortcuts-to-active-tab-workflows",
+    controls_object="mobaSessionEdgeControls",
+    action_object="mobaSessionEdgeAction",
+    placement="tab-strip-overlay",
+    action_keys=tuple(action.key for action in GUI_DESIGN_MOBA_SESSION_EDGE_ACTIONS),
+    action_labels=tuple(action.label for action in GUI_DESIGN_MOBA_SESSION_EDGE_ACTIONS),
+    action_icon_keys=tuple(action.icon_key for action in GUI_DESIGN_MOBA_SESSION_EDGE_ACTIONS),
+    action_handlers=("show_moba_session_attachment", "show_moba_session_settings"),
+    route_key_property="mobaSessionEdgeRouteKey",
+    action_key_property="mobaSessionEdgeRouteActionKey",
+    action_label_property="mobaSessionEdgeRouteActionLabel",
+    action_object_property="mobaSessionEdgeRouteActionObject",
+    icon_key_property="mobaSessionEdgeRouteIconKey",
+    handler_property="mobaSessionEdgeRouteHandler",
+    action_keys_property="mobaSessionEdgeRouteActionKeys",
+    render_source="gui-design-moba-session-edge-route",
+)
+
+
 GUI_DESIGN_MOBA_TITLEBAR_CHROME = GuiMobaTitlebarChrome(
     icon_key="moba-window",
     static_height=22,
@@ -2639,6 +2990,55 @@ def _build_moba_sftp_toolbar_action_geometry() -> tuple[GuiMobaSftpToolbarAction
 
 GUI_DESIGN_MOBA_SFTP_TOOLBAR_ACTION_GEOMETRY = _build_moba_sftp_toolbar_action_geometry()
 
+GUI_DESIGN_MOBA_SFTP_TOOLBAR_ACTION_ROUTE = GuiMobaSftpToolbarActionRoute(
+    key="moba-sftp-toolbar-action-route",
+    route_role="sftp-toolbar-actions-to-file-transfer-workflows",
+    toolbar_object="mobaSftpToolbar",
+    action_object="mobaSftpAction",
+    target_browser_object="mobaSftpBrowser",
+    target_path_object="mobaSftpPath",
+    target_table_object="mobaSftpFileTable",
+    queue_object="mobaSftpTransferQueue",
+    action_keys=tuple(action.key for action in GUI_DESIGN_MOBA_SFTP_DOCK_ACTIONS),
+    action_labels=tuple(action.label for action in GUI_DESIGN_MOBA_SFTP_DOCK_ACTIONS),
+    action_icon_keys=tuple(action.icon_key for action in GUI_DESIGN_MOBA_SFTP_DOCK_ACTIONS),
+    action_group_keys=tuple(action.group_key for action in GUI_DESIGN_MOBA_SFTP_DOCK_ACTIONS),
+    action_tooltips=tuple(action.tooltip for action in GUI_DESIGN_MOBA_SFTP_DOCK_ACTIONS),
+    action_handlers=tuple("show_moba_sftp_toolbar_action" for _action in GUI_DESIGN_MOBA_SFTP_DOCK_ACTIONS),
+    action_statuses=(
+        "navigated",
+        "queued",
+        "queued",
+        "reconnected",
+        "prepared",
+        "prepared",
+        "prepared",
+        "toggled",
+        "toggled",
+        "opened",
+        "opened",
+    ),
+    signal="clicked",
+    route_key_property="mobaSftpToolbarRouteKey",
+    action_key_property="mobaSftpToolbarRouteActionKey",
+    action_label_property="mobaSftpToolbarRouteActionLabel",
+    action_object_property="mobaSftpToolbarRouteActionObject",
+    icon_key_property="mobaSftpToolbarRouteIconKey",
+    group_key_property="mobaSftpToolbarRouteGroupKey",
+    tooltip_property="mobaSftpToolbarRouteTooltip",
+    signal_property="mobaSftpToolbarRouteSignal",
+    handler_property="mobaSftpToolbarRouteHandler",
+    action_keys_property="mobaSftpToolbarRouteActionKeys",
+    action_groups_property="mobaSftpToolbarRouteActionGroups",
+    captured_property="mobaSftpToolbarRouteCaptured",
+    captured_action_property="mobaSftpToolbarRouteCapturedAction",
+    captured_status_property="mobaSftpToolbarRouteCapturedStatus",
+    live_triggered_property="mobaSftpToolbarRouteLiveTriggered",
+    live_action_property="mobaSftpToolbarRouteLiveAction",
+    live_status_property="mobaSftpToolbarRouteLiveStatus",
+    render_source="gui-design-moba-sftp-toolbar-route",
+)
+
 GUI_DESIGN_MOBA_CONNECTED_DOCK_FRAME = GuiMobaConnectedDockFrame(
     side_width=390,
     rail_width=24,
@@ -2768,6 +3168,11 @@ GUI_DESIGN_MOBA_REMOTE_MONITORING_CONTROL_ROUTE = GuiMobaRemoteMonitoringControl
     captured_checked_property="mobaRemoteMonitoringControlCapturedChecked",
     captured_command_property="mobaRemoteMonitoringControlCapturedCommand",
     captured_refresh_seconds_property="mobaRemoteMonitoringControlCapturedRefreshSeconds",
+    signal="toggled",
+    handler="handle_moba_remote_monitoring_toggled",
+    signal_property="mobaRemoteMonitoringControlSignal",
+    handler_property="mobaRemoteMonitoringControlHandler",
+    live_checked_property="mobaRemoteMonitoringControlLiveChecked",
     render_source="state-model",
 )
 
@@ -2793,6 +3198,13 @@ GUI_DESIGN_MOBA_FOLLOW_TERMINAL_FOLDER_CONTROL_ROUTE = GuiMobaFollowTerminalFold
     captured_checked_property="mobaFollowTerminalFolderControlCapturedChecked",
     captured_path_property="mobaFollowTerminalFolderControlCapturedPath",
     captured_plan_property="mobaFollowTerminalFolderControlCapturedPlan",
+    signal="toggled",
+    handler="handle_moba_follow_terminal_folder_toggled",
+    signal_property="mobaFollowTerminalFolderControlSignal",
+    handler_property="mobaFollowTerminalFolderControlHandler",
+    live_checked_property="mobaFollowTerminalFolderControlLiveChecked",
+    live_path_property="mobaFollowTerminalFolderControlLivePath",
+    live_plan_property="mobaFollowTerminalFolderControlLivePlan",
     render_source="state-model",
 )
 
@@ -2920,6 +3332,20 @@ GUI_DESIGN_SECURECRT_COMMAND_WINDOW_SEND_ROUTE = GuiSecureCrtCommandWindowSendRo
     target_scope_property="secureCrtCommandRouteTargetScope",
     send_label_property="secureCrtCommandRouteSendLabel",
     status_property="secureCrtCommandRouteStatus",
+    captured_property="secureCrtCommandRouteCaptured",
+    captured_command_property="secureCrtCommandRouteCapturedCommand",
+    captured_target_scope_property="secureCrtCommandRouteCapturedTargetScope",
+    captured_status_property="secureCrtCommandRouteCapturedStatus",
+    signal="clicked",
+    secondary_signal="returnPressed",
+    handler="handle_securecrt_command_window_send",
+    signal_property="secureCrtCommandRouteSignal",
+    secondary_signal_property="secureCrtCommandRouteSecondarySignal",
+    handler_property="secureCrtCommandRouteHandler",
+    live_submitted_property="secureCrtCommandRouteLiveSubmitted",
+    live_command_property="secureCrtCommandRouteLiveCommand",
+    live_target_scope_property="secureCrtCommandRouteLiveTargetScope",
+    live_status_property="secureCrtCommandRouteLiveStatus",
     render_source="state-model",
 )
 
@@ -3219,6 +3645,20 @@ GUI_DESIGN_SECURECRT_SFTP_BROWSER_ROUTE = GuiSecureCrtSftpBrowserRoute(
     row_kind_property="secureCrtSftpBrowserRowKind",
     row_selected_property="secureCrtSftpBrowserRowSelected",
     queue_state_property="secureCrtSftpBrowserQueueState",
+    action_object="secureCrtSftpAction",
+    action_key="refresh",
+    action_label="Refresh",
+    action_status="refreshed",
+    signal="clicked",
+    handler="handle_securecrt_sftp_browser_action",
+    signal_property="secureCrtSftpBrowserRouteSignal",
+    handler_property="secureCrtSftpBrowserRouteHandler",
+    captured_property="secureCrtSftpBrowserRouteCaptured",
+    captured_action_property="secureCrtSftpBrowserRouteCapturedAction",
+    captured_status_property="secureCrtSftpBrowserRouteCapturedStatus",
+    live_triggered_property="secureCrtSftpBrowserRouteLiveTriggered",
+    live_action_property="secureCrtSftpBrowserRouteLiveAction",
+    live_status_property="secureCrtSftpBrowserRouteLiveStatus",
     render_source="sftp-browser-state",
 )
 
@@ -3517,6 +3957,16 @@ GUI_DESIGN_REMMINA_SCREENSHOT_ROUTE = GuiRemminaScreenshotRoute(
     tab_label_property="remminaScreenshotRouteActiveTab",
     capture_state_property="remminaScreenshotRouteState",
     capture_artifact_property="remminaScreenshotRouteArtifact",
+    signal="clicked",
+    handler="handle_remmina_screenshot_capture",
+    signal_property="remminaScreenshotRouteSignal",
+    handler_property="remminaScreenshotRouteHandler",
+    captured_property="remminaScreenshotRouteCaptured",
+    captured_state_property="remminaScreenshotRouteCapturedState",
+    captured_artifact_property="remminaScreenshotRouteCapturedArtifact",
+    live_triggered_property="remminaScreenshotRouteLiveTriggered",
+    live_capture_state_property="remminaScreenshotRouteLiveState",
+    live_capture_artifact_property="remminaScreenshotRouteLiveArtifact",
     render_source="viewer-control-state",
 )
 
@@ -3561,6 +4011,20 @@ GUI_DESIGN_REMMINA_SFTP_TRANSFER_ROUTE = GuiRemminaSftpTransferRoute(
     row_kind_property="remminaSftpTransferRouteRowKind",
     row_selected_property="remminaSftpTransferRouteRowSelected",
     queue_state_property="remminaSftpTransferRouteQueueState",
+    action_object="remminaSftpTransferAction",
+    action_key="queue",
+    action_label="Queue",
+    action_status="queued",
+    signal="clicked",
+    handler="handle_remmina_sftp_transfer_action",
+    signal_property="remminaSftpTransferRouteSignal",
+    handler_property="remminaSftpTransferRouteHandler",
+    captured_property="remminaSftpTransferRouteCaptured",
+    captured_action_property="remminaSftpTransferRouteCapturedAction",
+    captured_status_property="remminaSftpTransferRouteCapturedStatus",
+    live_triggered_property="remminaSftpTransferRouteLiveTriggered",
+    live_action_property="remminaSftpTransferRouteLiveAction",
+    live_status_property="remminaSftpTransferRouteLiveStatus",
     render_source="sftp-transfer-state",
 )
 
@@ -3776,6 +4240,8 @@ GUI_DESIGN_TERMIUS_SNIPPET_ROUTE = GuiTermiusSnippetRoute(
     workflow_title_object="productWorkflowTitle",
     workflow_primary_object="productWorkflowPrimary",
     workflow_secondary_object="productWorkflowSecondary",
+    action_object="termiusSnippetRunAction",
+    shortcut_object="termiusSnippetRunShortcut",
     host_identity_object=GUI_DESIGN_TERMIUS_HOST_SELECTION_ROUTE.host_identity_object,
     identity_field_key="snippet",
     identity_cell_object=GUI_DESIGN_TERMIUS_HOST_SELECTION_ROUTE.identity_cell_object,
@@ -3785,11 +4251,27 @@ GUI_DESIGN_TERMIUS_SNIPPET_ROUTE = GuiTermiusSnippetRoute(
     snippet_command="row vault status",
     snippet_state="one-click command",
     detail_line="Snippet  : row vault status",
+    action_label="Run",
+    shortcut_sequence="Return",
     workflow_key_property="termiusSnippetRouteWorkflowKey",
     command_property="termiusSnippetRouteCommand",
     identity_value_property="termiusSnippetRouteIdentityValue",
     active_tab_property="termiusSnippetRouteActiveTab",
     status_property="termiusSnippetRouteState",
+    captured_property="termiusSnippetRouteCaptured",
+    captured_command_property="termiusSnippetRouteCapturedCommand",
+    captured_target_profile_property="termiusSnippetRouteCapturedTargetProfile",
+    captured_status_property="termiusSnippetRouteCapturedStatus",
+    signal="clicked",
+    secondary_signal="activated",
+    handler="handle_termius_snippet_run",
+    signal_property="termiusSnippetRouteSignal",
+    secondary_signal_property="termiusSnippetRouteSecondarySignal",
+    handler_property="termiusSnippetRouteHandler",
+    live_triggered_property="termiusSnippetRouteLiveTriggered",
+    live_command_property="termiusSnippetRouteLiveCommand",
+    live_target_profile_property="termiusSnippetRouteLiveTargetProfile",
+    live_status_property="termiusSnippetRouteLiveStatus",
     render_source="state-model",
 )
 
@@ -3828,6 +4310,20 @@ GUI_DESIGN_TERMIUS_FILES_BROWSER_ROUTE = GuiTermiusFilesBrowserRoute(
     row_kind_property="termiusFilesRouteRowKind",
     row_selected_property="termiusFilesRouteRowSelected",
     queue_state_property="termiusFilesRouteQueueState",
+    action_object="termiusFilesAction",
+    action_key="sync",
+    action_label="Sync",
+    action_status="synced",
+    signal="clicked",
+    handler="handle_termius_files_sync",
+    signal_property="termiusFilesRouteSignal",
+    handler_property="termiusFilesRouteHandler",
+    captured_property="termiusFilesRouteCaptured",
+    captured_action_property="termiusFilesRouteCapturedAction",
+    captured_status_property="termiusFilesRouteCapturedStatus",
+    live_triggered_property="termiusFilesRouteLiveTriggered",
+    live_action_property="termiusFilesRouteLiveAction",
+    live_status_property="termiusFilesRouteLiveStatus",
     render_source="files-browser-state",
 )
 
@@ -3973,6 +4469,17 @@ GUI_DESIGN_MREMOTENG_CONNECTION_DOCUMENT_ROUTE = GuiMRemoteNgConnectionDocumentR
     control_active_property="mRemoteNgConnectionRouteActive",
     tab_label_property="mRemoteNgConnectionRouteActiveTab",
     property_value_property="mRemoteNgConnectionRoutePropertyValue",
+    signal="clicked",
+    handler="handle_mremoteng_document_reconnect",
+    reconnect_state="reconnected",
+    signal_property="mRemoteNgConnectionRouteSignal",
+    handler_property="mRemoteNgConnectionRouteHandler",
+    captured_property="mRemoteNgConnectionRouteCaptured",
+    captured_state_property="mRemoteNgConnectionRouteCapturedState",
+    captured_profile_property="mRemoteNgConnectionRouteCapturedProfile",
+    live_triggered_property="mRemoteNgConnectionRouteLiveTriggered",
+    live_state_property="mRemoteNgConnectionRouteLiveState",
+    live_profile_property="mRemoteNgConnectionRouteLiveProfile",
     render_source="connection-tree-state",
 )
 
@@ -7529,8 +8036,16 @@ def gui_design_moba_session_edge_actions() -> tuple[GuiMobaSessionEdgeAction, ..
     return GUI_DESIGN_MOBA_SESSION_EDGE_ACTIONS
 
 
+def gui_design_moba_session_edge_action_route() -> GuiMobaSessionEdgeActionRoute:
+    return GUI_DESIGN_MOBA_SESSION_EDGE_ACTION_ROUTE
+
+
 def gui_design_moba_sftp_dock_actions() -> tuple[GuiMobaSftpDockAction, ...]:
     return GUI_DESIGN_MOBA_SFTP_DOCK_ACTIONS
+
+
+def gui_design_moba_sftp_toolbar_action_route() -> GuiMobaSftpToolbarActionRoute:
+    return GUI_DESIGN_MOBA_SFTP_TOOLBAR_ACTION_ROUTE
 
 
 def gui_design_moba_sftp_toolbar_action_geometry() -> tuple[GuiMobaSftpToolbarActionGeometry, ...]:

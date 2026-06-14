@@ -195,6 +195,7 @@ def test_gui_parity_mobaxterm_connected_reference_is_explicit() -> None:
     assert "moba.sftp-dock-chrome" in requirement_ids
     assert "moba.sftp-toolbar-groups" in requirement_ids
     assert "moba.sftp-toolbar-geometry" in requirement_ids
+    assert "moba.sftp-toolbar-action-route" in requirement_ids
     assert "moba.sftp-dock-density" in requirement_ids
     assert "moba.sftp-browser-chrome" in requirement_ids
     assert "moba.sftp-browser-geometry" in requirement_ids
@@ -207,6 +208,7 @@ def test_gui_parity_mobaxterm_connected_reference_is_explicit() -> None:
     assert "moba.monitoring-control-geometry" in requirement_ids
     assert "moba.remote-monitoring-control-route" in requirement_ids
     assert "moba.follow-terminal-folder-control-route" in requirement_ids
+    assert "moba.monitoring-control-live-toggle-route" in requirement_ids
     assert "moba.bottom-telemetry" in requirement_ids
     assert "moba.bottom-telemetry-geometry" in requirement_ids
     assert "moba.bottom-status-chrome" in requirement_ids
@@ -220,6 +222,7 @@ def test_gui_parity_mobaxterm_connected_reference_is_explicit() -> None:
     assert "moba.connected-tab-chrome" in requirement_ids
     assert "moba.session-edge-controls" in requirement_ids
     assert "moba.session-edge-geometry" in requirement_ids
+    assert "moba.session-edge-action-route" in requirement_ids
     assert "moba.right-utility-rail" in requirement_ids
     assert "moba.right-utility-rail-chrome" in requirement_ids
     assert "moba.ssh-banner-chrome" in requirement_ids
@@ -336,6 +339,11 @@ def test_gui_parity_mobaxterm_connected_reference_is_explicit() -> None:
     assert "moba.sftp-toolbar-geometry" in moba["dimension_coverage"]["density"]
     assert "moba.sftp-toolbar-geometry" in moba["dimension_coverage"]["spacing"]
     assert "moba.sftp-toolbar-geometry" in moba["dimension_coverage"]["interaction_states"]
+    assert "moba.sftp-toolbar-action-route" in moba["dimension_coverage"]["navigation"]
+    assert "moba.sftp-toolbar-action-route" in moba["dimension_coverage"]["toolbars"]
+    assert "moba.sftp-toolbar-action-route" in moba["dimension_coverage"]["connected_session_behavior"]
+    assert "moba.sftp-toolbar-action-route" in moba["dimension_coverage"]["file_monitoring_panels"]
+    assert "moba.sftp-toolbar-action-route" in moba["dimension_coverage"]["interaction_states"]
     assert "moba.sftp-dock-density" in moba["dimension_coverage"]["file_monitoring_panels"]
     assert "moba.sftp-dock-density" in moba["dimension_coverage"]["density"]
     assert "moba.sftp-dock-density" in moba["dimension_coverage"]["spacing"]
@@ -391,6 +399,10 @@ def test_gui_parity_mobaxterm_connected_reference_is_explicit() -> None:
     assert "moba.follow-terminal-folder-control-route" in moba["dimension_coverage"]["file_monitoring_panels"]
     assert "moba.follow-terminal-folder-control-route" in moba["dimension_coverage"]["status_bars"]
     assert "moba.follow-terminal-folder-control-route" in moba["dimension_coverage"]["interaction_states"]
+    assert "moba.monitoring-control-live-toggle-route" in moba["dimension_coverage"]["connected_session_behavior"]
+    assert "moba.monitoring-control-live-toggle-route" in moba["dimension_coverage"]["file_monitoring_panels"]
+    assert "moba.monitoring-control-live-toggle-route" in moba["dimension_coverage"]["status_bars"]
+    assert "moba.monitoring-control-live-toggle-route" in moba["dimension_coverage"]["interaction_states"]
     assert "moba.bottom-telemetry-geometry" in moba["dimension_coverage"]["layout"]
     assert "moba.bottom-telemetry-geometry" in moba["dimension_coverage"]["connected_session_behavior"]
     assert "moba.bottom-telemetry-geometry" in moba["dimension_coverage"]["status_bars"]
@@ -754,6 +766,9 @@ def test_mobaxterm_sftp_dock_uses_shared_chrome_metadata() -> None:
     toolbar_geometry_requirement = next(
         item for item in moba["requirements"] if item["id"] == "moba.sftp-toolbar-geometry"
     )
+    toolbar_route_requirement = next(
+        item for item in moba["requirements"] if item["id"] == "moba.sftp-toolbar-action-route"
+    )
     browser_geometry_requirement = next(
         item for item in moba["requirements"] if item["id"] == "moba.sftp-browser-geometry"
     )
@@ -770,10 +785,13 @@ def test_mobaxterm_sftp_dock_uses_shared_chrome_metadata() -> None:
 
     assert "GuiMobaSftpDockAction" in design_source
     assert "GuiMobaSftpToolbarActionGeometry" in design_source
+    assert "GuiMobaSftpToolbarActionRoute" in design_source
     assert "GuiMobaConnectedDockFrame" in design_source
     assert "GUI_DESIGN_MOBA_CONNECTED_DOCK_FRAME" in design_source
     assert "GUI_DESIGN_MOBA_SFTP_DOCK_ACTIONS" in design_source
     assert "GUI_DESIGN_MOBA_SFTP_TOOLBAR_ACTION_GEOMETRY" in design_source
+    assert "GUI_DESIGN_MOBA_SFTP_TOOLBAR_ACTION_ROUTE" in design_source
+    assert "gui_design_moba_sftp_toolbar_action_route" in design_source
     assert "GuiMobaSftpBrowserChrome" in design_source
     assert "GUI_DESIGN_MOBA_SFTP_BROWSER_CHROME" in design_source
     assert "path_text_x" in design_source
@@ -804,6 +822,12 @@ def test_mobaxterm_sftp_dock_uses_shared_chrome_metadata() -> None:
     assert "gui_design_moba_sftp_dock_layout" in renderer_source
     assert "density.file_row_height" in renderer_source
     assert "gui_design_moba_sftp_toolbar_action_geometry" in renderer_source
+    assert "gui_design_moba_sftp_toolbar_action_route" in renderer_source
+    assert "moba_sftp_toolbar_action_route" in renderer_source
+    assert "show_moba_sftp_toolbar_action" in renderer_source
+    assert "moba_sftp_toolbar_action_route.action_statuses" in renderer_source
+    assert "moba_sftp_toolbar_action_route.signal_property" in renderer_source
+    assert "mobaSftpToolbarRouteLiveAction" in renderer_source
     assert "geometry.icon_x" in renderer_source
     assert "geometry.separator_x" in renderer_source
     assert "column.static_x" in renderer_source
@@ -829,6 +853,13 @@ def test_mobaxterm_sftp_dock_uses_shared_chrome_metadata() -> None:
     assert "mobaConnectedDockRailWidth" in gui_source
     assert "mobaConnectedDockWidth" in gui_source
     assert "mobaSftpActionGroupKey" in gui_source
+    assert "mobaSftpToolbarRouteKey" in gui_source
+    assert "mobaSftpToolbarRouteHandler" in gui_source
+    assert "mobaSftpToolbarRouteActionGroups" in gui_source
+    assert "mobaSftpToolbarRouteSignal" in gui_source
+    assert "mobaSftpToolbarRouteCapturedAction" in gui_source
+    assert "mobaSftpToolbarRouteLiveAction" in gui_source
+    assert "show_moba_sftp_toolbar_action" in gui_source
     assert "mobaSftpActionStaticX" in gui_source
     assert "mobaSftpActionIconX" in gui_source
     assert "mobaSftpActionSeparatorX" in gui_source
@@ -870,8 +901,14 @@ def test_mobaxterm_sftp_dock_uses_shared_chrome_metadata() -> None:
     assert "mobaSftpRowIconYOffset" in checker_source
     assert "EXPECTED_MOBA_SFTP_DOCK_LAYOUT" in checker_source
     assert "EXPECTED_MOBA_SFTP_SEPARATOR_AFTER_KEYS" in checker_source
+    assert "EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_ROUTE" in checker_source
     assert "EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_GEOMETRY" in checker_source
     assert "expected_moba_sftp_toolbar_groups" in checker_source
+    assert "sftp-toolbar-action-route" in checker_source
+    assert "expected_moba_sftp_toolbar_action_route" in checker_source
+    assert "check_live_moba_sftp_toolbar_action_route" in checker_source
+    assert "check_moba_sftp_toolbar_live_action" in checker_source
+    assert "mobaSftpToolbarRouteLiveAction" in checker_source
     assert "expected_moba_sftp_toolbar_action_geometry" in checker_source
     assert "expected_moba_sftp_dock_layout" in checker_source
     assert "EXPECTED_MOBA_MONITORING_METRIC_KEYS" in checker_source
@@ -888,6 +925,7 @@ def test_mobaxterm_sftp_dock_uses_shared_chrome_metadata() -> None:
     assert "expected_moba_sftp_routed_file_rows" in checker_source
     assert "MobaXterm-style connected dock frame" in docs_source
     assert "MobaXterm-style SFTP toolbar geometry" in docs_source
+    assert "MobaXterm-style SFTP toolbar action route" in docs_source
     assert "MobaXterm-style SFTP browser geometry" in docs_source
     assert "MobaXterm-style SFTP follow-folder route" in docs_source
     assert "MobaXterm-style SFTP terminal-folder route" in docs_source
@@ -899,6 +937,22 @@ def test_mobaxterm_sftp_dock_uses_shared_chrome_metadata() -> None:
     assert (
         "mobaSftpActionStaticX"
         in toolbar_geometry_requirement["source_tokens"]["src/remote_ops_workspace/gui.py"]
+    )
+    assert (
+        "GuiMobaSftpToolbarActionRoute"
+        in toolbar_route_requirement["source_tokens"]["src/remote_ops_workspace/gui_designs.py"]
+    )
+    assert (
+        "show_moba_sftp_toolbar_action"
+        in toolbar_route_requirement["source_tokens"]["src/remote_ops_workspace/gui.py"]
+    )
+    assert (
+        "mobaSftpToolbarRouteLiveAction"
+        in toolbar_route_requirement["source_tokens"]["src/remote_ops_workspace/gui.py"]
+    )
+    assert (
+        "check_live_moba_sftp_toolbar_action_route"
+        in toolbar_route_requirement["source_tokens"]["scripts/check_real_gui_render.py"]
     )
     assert (
         "mobaSftpPathTextX"
@@ -954,6 +1008,11 @@ def test_mobaxterm_compact_monitoring_dock_uses_shared_metadata() -> None:
         for item in criteria["presets"]["mobaxterm"]["requirements"]
         if item["id"] == "moba.follow-terminal-folder-control-route"
     )
+    live_toggle_route_requirement = next(
+        item
+        for item in criteria["presets"]["mobaxterm"]["requirements"]
+        if item["id"] == "moba.monitoring-control-live-toggle-route"
+    )
     assert "moba.follow-terminal-folder-control-route" in criteria["presets"]["mobaxterm"]["dimension_coverage"][
         "layout"
     ]
@@ -964,6 +1023,18 @@ def test_mobaxterm_compact_monitoring_dock_uses_shared_metadata() -> None:
         "file_monitoring_panels"
     ]
     assert "moba.follow-terminal-folder-control-route" in criteria["presets"]["mobaxterm"]["dimension_coverage"][
+        "interaction_states"
+    ]
+    assert "moba.monitoring-control-live-toggle-route" in criteria["presets"]["mobaxterm"]["dimension_coverage"][
+        "connected_session_behavior"
+    ]
+    assert "moba.monitoring-control-live-toggle-route" in criteria["presets"]["mobaxterm"]["dimension_coverage"][
+        "file_monitoring_panels"
+    ]
+    assert "moba.monitoring-control-live-toggle-route" in criteria["presets"]["mobaxterm"]["dimension_coverage"][
+        "status_bars"
+    ]
+    assert "moba.monitoring-control-live-toggle-route" in criteria["presets"]["mobaxterm"]["dimension_coverage"][
         "interaction_states"
     ]
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
@@ -1017,6 +1088,11 @@ def test_mobaxterm_compact_monitoring_dock_uses_shared_metadata() -> None:
     assert "apply_follow_terminal_folder_control_route_properties" in gui_source
     assert "mobaFollowTerminalFolderControlRouteKey" in gui_source
     assert "mobaFollowTerminalFolderControlCapturedPlan" in gui_source
+    assert "handle_moba_remote_monitoring_toggled" in gui_source
+    assert "handle_moba_follow_terminal_folder_toggled" in gui_source
+    assert "widget.toggled.connect" in gui_source
+    assert "route.live_checked_property" in gui_source
+    assert "control_route.live_plan_property" in gui_source
     assert "mobaMonitoringTelemetryRouteKey" in gui_source
     assert "mobaMonitoringTelemetryMetricCellKeys" in gui_source
     assert "mobaMonitoringTelemetryRouted" in gui_source
@@ -1034,6 +1110,10 @@ def test_mobaxterm_compact_monitoring_dock_uses_shared_metadata() -> None:
     assert "monitoring-telemetry-route" in checker_source
     assert "remote-monitoring-control-route" in checker_source
     assert "follow-terminal-folder-control-route" in checker_source
+    assert "handle_moba_remote_monitoring_toggled" in checker_source
+    assert "handle_moba_follow_terminal_folder_toggled" in checker_source
+    assert "toggled state did not update" in checker_source
+    assert "mobaFollowTerminalFolderControlLiveChecked" in checker_source
     assert "remote-monitoring-footer-geometry" in checker_source
     assert "moba-monitoring-control-geometry" in checker_source
     assert "mobaMonitoringControlCheckmarkPoints" in checker_source
@@ -1062,9 +1142,22 @@ def test_mobaxterm_compact_monitoring_dock_uses_shared_metadata() -> None:
     assert "expected_moba_follow_terminal_folder_control_route" in follow_control_route_requirement["source_tokens"][
         "scripts/check_real_gui_render.py"
     ]
+    assert "handle_moba_remote_monitoring_toggled" in live_toggle_route_requirement["source_tokens"][
+        "src/remote_ops_workspace/gui.py"
+    ]
+    assert "widget.toggled.connect" in live_toggle_route_requirement["source_tokens"][
+        "src/remote_ops_workspace/gui.py"
+    ]
+    assert "control_route.live_plan_property" in live_toggle_route_requirement["source_tokens"][
+        "src/remote_ops_workspace/gui.py"
+    ]
+    assert "toggled state did not update" in live_toggle_route_requirement["source_tokens"][
+        "scripts/check_real_gui_render.py"
+    ]
     assert "MobaXterm-style monitoring telemetry route" in docs_source
     assert "MobaXterm-style remote monitoring control route" in docs_source
     assert "MobaXterm-style follow terminal folder control route" in docs_source
+    assert "MobaXterm-style monitoring live toggle route" in docs_source
 
 
 def test_mobaxterm_static_renderer_uses_connected_tab_chrome_metadata() -> None:
@@ -1235,6 +1328,7 @@ def test_mobaxterm_static_renderer_uses_session_edge_shortcut_metadata() -> None
     criteria = _load_checker().load_json(_load_checker().CRITERIA_PATH)
     moba = criteria["presets"]["mobaxterm"]
     requirement = next(item for item in moba["requirements"] if item["id"] == "moba.session-edge-geometry")
+    route_requirement = next(item for item in moba["requirements"] if item["id"] == "moba.session-edge-action-route")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
@@ -1243,23 +1337,50 @@ def test_mobaxterm_static_renderer_uses_session_edge_shortcut_metadata() -> None
 
     assert "GuiMobaSessionEdgeAction" in design_source
     assert "GUI_DESIGN_MOBA_SESSION_EDGE_ACTIONS" in design_source
+    assert "GuiMobaSessionEdgeActionRoute" in design_source
+    assert "GUI_DESIGN_MOBA_SESSION_EDGE_ACTION_ROUTE" in design_source
+    assert "gui_design_moba_session_edge_action_route" in design_source
     assert "gui_design_moba_session_edge_actions" in renderer_source
+    assert "gui_design_moba_session_edge_action_route" in renderer_source
+    assert "moba_session_edge_action_route" in renderer_source
     assert "draw_moba_session_edge_controls" in renderer_source
     assert "action.relative_y" in renderer_source
     assert "action.static_size" in renderer_source
+    assert "show_moba_session_attachment" in renderer_source
     assert "mobaSessionEdgeControls" in gui_source
     assert "mobaSessionEdgeAction" in gui_source
     assert "mobaSessionEdgeIconKey" in gui_source
     assert "mobaSessionEdgeRelativeY" in gui_source
     assert "mobaSessionEdgeButtonSize" in gui_source
     assert "mobaSessionEdgeRenderSource" in gui_source
+    assert "mobaSessionEdgeRouteKey" in gui_source
+    assert "mobaSessionEdgeRouteHandler" in gui_source
+    assert "show_moba_session_attachment" in gui_source
+    assert "show_moba_session_settings" in gui_source
     assert "EXPECTED_MOBA_SESSION_EDGE_KEYS" in checker_source
     assert "EXPECTED_MOBA_SESSION_EDGE_BY_KEY" in checker_source
+    assert "EXPECTED_MOBA_SESSION_EDGE_ACTION_ROUTE" in checker_source
     assert "session-edge-geometry" in checker_source
+    assert "session-edge-action-route" in checker_source
     assert "mobaSessionEdgeButtonSize" in checker_source
     assert "expected_moba_session_edge_actions" in checker_source
+    assert "expected_moba_session_edge_action_route" in checker_source
     assert "MobaXterm-style session-edge shortcut geometry" in docs_source
+    assert "MobaXterm-style session-edge action route" in docs_source
     assert "mobaSessionEdgeRelativeY" in requirement["source_tokens"]["src/remote_ops_workspace/gui.py"]
+    assert (
+        "GuiMobaSessionEdgeActionRoute"
+        in route_requirement["source_tokens"]["src/remote_ops_workspace/gui_designs.py"]
+    )
+    assert "show_moba_session_attachment" in route_requirement["source_tokens"]["src/remote_ops_workspace/gui.py"]
+    assert "moba.session-edge-action-route" in moba["dimension_coverage"]["layout"]
+    assert "moba.session-edge-action-route" in moba["dimension_coverage"]["navigation"]
+    assert "moba.session-edge-action-route" in moba["dimension_coverage"]["tabs"]
+    assert "moba.session-edge-action-route" in moba["dimension_coverage"]["toolbars"]
+    assert "moba.session-edge-action-route" in moba["dimension_coverage"]["connected_session_behavior"]
+    assert "moba.session-edge-action-route" in moba["dimension_coverage"]["density"]
+    assert "moba.session-edge-action-route" in moba["dimension_coverage"]["spacing"]
+    assert "moba.session-edge-action-route" in moba["dimension_coverage"]["interaction_states"]
 
 
 def test_mobaxterm_ssh_banner_uses_shared_chrome_metadata() -> None:
@@ -1673,7 +1794,9 @@ def test_static_renderer_tracks_remmina_and_mremoteng_control_surfaces() -> None
     assert "remmina.profile-filter-route" in remmina_requirements
     assert "remmina.clipboard-route" in remmina_requirements
     assert "remmina.screenshot-route" in remmina_requirements
+    assert "remmina.screenshot-live-capture-route" in remmina_requirements
     assert "remmina.sftp-transfer-route" in remmina_requirements
+    assert "remmina.sftp-transfer-live-queue-route" in remmina_requirements
     assert "remmina.profile-viewer-route" in criteria["presets"]["remmina"]["dimension_coverage"]["tabs"]
     assert "remmina.profile-viewer-route" in criteria["presets"]["remmina"]["dimension_coverage"]["connected_session_behavior"]
     assert "remmina.profile-viewer-route" in criteria["presets"]["remmina"]["dimension_coverage"]["interaction_states"]
@@ -1696,6 +1819,38 @@ def test_static_renderer_tracks_remmina_and_mremoteng_control_surfaces() -> None
     assert "remmina.screenshot-route" in criteria["presets"]["remmina"]["dimension_coverage"]["file_monitoring_panels"]
     assert "remmina.screenshot-route" in criteria["presets"]["remmina"]["dimension_coverage"]["status_bars"]
     assert "remmina.screenshot-route" in criteria["presets"]["remmina"]["dimension_coverage"]["interaction_states"]
+    assert "remmina.screenshot-live-capture-route" in criteria["presets"]["remmina"]["dimension_coverage"]["navigation"]
+    assert "remmina.screenshot-live-capture-route" in criteria["presets"]["remmina"]["dimension_coverage"]["panes"]
+    assert "remmina.screenshot-live-capture-route" in criteria["presets"]["remmina"]["dimension_coverage"]["tabs"]
+    assert "remmina.screenshot-live-capture-route" in criteria["presets"]["remmina"]["dimension_coverage"]["toolbars"]
+    assert (
+        "remmina.screenshot-live-capture-route"
+        in criteria["presets"]["remmina"]["dimension_coverage"]["connected_session_behavior"]
+    )
+    assert (
+        "remmina.screenshot-live-capture-route"
+        in criteria["presets"]["remmina"]["dimension_coverage"]["file_monitoring_panels"]
+    )
+    assert "remmina.screenshot-live-capture-route" in criteria["presets"]["remmina"]["dimension_coverage"]["status_bars"]
+    assert (
+        "remmina.screenshot-live-capture-route"
+        in criteria["presets"]["remmina"]["dimension_coverage"]["interaction_states"]
+    )
+    for dimension_key in [
+        "layout",
+        "navigation",
+        "panes",
+        "tabs",
+        "toolbars",
+        "connected_session_behavior",
+        "file_monitoring_panels",
+        "status_bars",
+        "interaction_states",
+    ]:
+        assert (
+            "remmina.sftp-transfer-live-queue-route"
+            in criteria["presets"]["remmina"]["dimension_coverage"][dimension_key]
+        )
     for dimension_key in [
         "layout",
         "navigation",
@@ -1718,6 +1873,7 @@ def test_static_renderer_tracks_remmina_and_mremoteng_control_surfaces() -> None
     assert "mremoteng.document-control-chrome" in mremoteng_requirements
     assert "mremoteng.property-grid-chrome" in mremoteng_requirements
     assert "mremoteng.connection-document-route" in mremoteng_requirements
+    assert "mremoteng.connection-reconnect-live-route" in mremoteng_requirements
     assert "mremoteng.document-filter-route" in mremoteng_requirements
     assert "mremoteng.inheritance-route" in mremoteng_requirements
     assert "mremoteng.top-chrome" in criteria["presets"]["mremoteng"]["dimension_coverage"]["toolbars"]
@@ -1725,6 +1881,24 @@ def test_static_renderer_tracks_remmina_and_mremoteng_control_surfaces() -> None
     assert "mremoteng.connection-document-route" in criteria["presets"]["mremoteng"]["dimension_coverage"]["session_trees"]
     assert "mremoteng.connection-document-route" in criteria["presets"]["mremoteng"]["dimension_coverage"]["connected_session_behavior"]
     assert "mremoteng.connection-document-route" in criteria["presets"]["mremoteng"]["dimension_coverage"]["interaction_states"]
+    for dimension_key in [
+        "layout",
+        "navigation",
+        "panes",
+        "tabs",
+        "sidebars",
+        "toolbars",
+        "session_trees",
+        "connected_session_behavior",
+        "status_bars",
+        "density",
+        "spacing",
+        "interaction_states",
+    ]:
+        assert (
+            "mremoteng.connection-reconnect-live-route"
+            in criteria["presets"]["mremoteng"]["dimension_coverage"][dimension_key]
+        )
     assert "mremoteng.document-filter-route" in criteria["presets"]["mremoteng"]["dimension_coverage"]["tabs"]
     assert "mremoteng.document-filter-route" in criteria["presets"]["mremoteng"]["dimension_coverage"]["session_trees"]
     assert (
@@ -1760,6 +1934,9 @@ def test_static_renderer_tracks_remmina_and_mremoteng_control_surfaces() -> None
     assert "mRemoteNgDocumentRenderSource" in gui_source
     assert "mRemoteNgConnectionRouteKey" in gui_source
     assert "mRemoteNgConnectionRouteActive" in gui_source
+    assert "apply_mremoteng_reconnect_route_properties" in gui_source
+    assert "handle_mremoteng_document_reconnect" in gui_source
+    assert "route.live_triggered_property" in gui_source
     assert "mRemoteNgDocumentFilterRouteKey" in gui_source
     assert "mRemoteNgInheritanceRouteKey" in gui_source
     assert "mRemoteNgInheritanceRouteInheritedValue" in gui_source
@@ -1778,6 +1955,8 @@ def test_static_renderer_tracks_remmina_and_mremoteng_control_surfaces() -> None
     assert "GUI_DESIGN_REMMINA_SCREENSHOT_ROUTE" in design_source
     assert "GuiRemminaSftpTransferRoute" in design_source
     assert "GUI_DESIGN_REMMINA_SFTP_TRANSFER_ROUTE" in design_source
+    assert "handler=\"handle_remmina_sftp_transfer_action\"" in design_source
+    assert "live_triggered_property=\"remminaSftpTransferRouteLiveTriggered\"" in design_source
     assert "gui_design_remmina_profile_filter_route" in design_source
     assert "gui_design_remmina_clipboard_route" in design_source
     assert "gui_design_remmina_screenshot_route" in design_source
@@ -1803,9 +1982,15 @@ def test_static_renderer_tracks_remmina_and_mremoteng_control_surfaces() -> None
     assert "remminaScreenshotRouteKey" in gui_source
     assert "remminaScreenshotRouteActive" in gui_source
     assert "remminaScreenshotRouteArtifact" in gui_source
+    assert "apply_remmina_screenshot_capture_route_properties" in gui_source
+    assert "handle_remmina_screenshot_capture" in gui_source
+    assert "route.live_triggered_property" in gui_source
     assert "remminaSftpTransferRouteKey" in gui_source
     assert "remminaSftpTransferRoutePath" in gui_source
     assert "remminaSftpTransferRouteQueueState" in gui_source
+    assert "apply_remmina_sftp_transfer_action_route_properties" in gui_source
+    assert "handle_remmina_sftp_transfer_action" in gui_source
+    assert "route.live_triggered_property" in gui_source
     assert "remminaProfileStaticRowStartY" in gui_source
     assert "remminaProfileLiveRowMinHeight" in gui_source
     assert "remminaProfileFilter" in live_checker_source
@@ -1821,9 +2006,14 @@ def test_static_renderer_tracks_remmina_and_mremoteng_control_surfaces() -> None
     assert "gui_design_remmina_screenshot_route" in renderer_source
     assert "screenshot_route.viewer_control_key" in renderer_source
     assert "screenshot_route.capture_artifact" in renderer_source
+    assert "screenshot_route.handler" in renderer_source
+    assert "screenshot_route.live_triggered_property" in renderer_source
     assert "gui_design_remmina_sftp_transfer_route" in renderer_source
     assert "draw_remmina_sftp_transfer_panel" in renderer_source
     assert "sftp_transfer_route.active_row_name" in renderer_source
+    assert "route.action_key" in renderer_source
+    assert "handle_remmina_sftp_transfer_action" in renderer_source
+    assert "route.live_triggered_property" in renderer_source
     assert "control.static_width" in renderer_source
     assert "control.static_icon_size" in renderer_source
     assert "chrome.static_row_step" in renderer_source
@@ -1847,17 +2037,24 @@ def test_static_renderer_tracks_remmina_and_mremoteng_control_surfaces() -> None
     assert "expected_remmina_clipboard_route" in live_checker_source
     assert "EXPECTED_REMMINA_SCREENSHOT_ROUTE" in live_checker_source
     assert "check_live_remmina_screenshot_route" in live_checker_source
+    assert "check_remmina_screenshot_live_capture" in live_checker_source
     assert "remmina-screenshot-route" in live_checker_source
+    assert "remmina-screenshot-live-capture-route" in live_checker_source
     assert "expected_remmina_screenshot_route" in live_checker_source
+    assert "route.live_triggered_property" in live_checker_source
     assert "EXPECTED_REMMINA_SFTP_TRANSFER_ROUTE" in live_checker_source
     assert "check_live_remmina_sftp_transfer_route" in live_checker_source
+    assert "check_remmina_sftp_transfer_live_action" in live_checker_source
     assert "remmina-sftp-transfer-route" in live_checker_source
+    assert "remmina-sftp-transfer-live-queue-route" in live_checker_source
     assert "expected_remmina_sftp_transfer_route" in live_checker_source
     assert "Remmina-style profile-viewer route" in docs_source
     assert "Remmina-style profile filter route" in docs_source
     assert "Remmina-style clipboard route" in docs_source
     assert "Remmina-style screenshot route" in docs_source
+    assert "Remmina-style screenshot live capture route" in docs_source
     assert "Remmina-style SFTP transfer route" in docs_source
+    assert "Remmina-style SFTP transfer live queue route" in docs_source
     assert "remminaProfileLiveRowMinHeight" in live_checker_source
     assert "draw_mremoteng_title_bar" in renderer_source
     assert "draw_mremoteng_toolbar" in renderer_source
@@ -1869,6 +2066,8 @@ def test_static_renderer_tracks_remmina_and_mremoteng_control_surfaces() -> None
     assert "gui_design_mremoteng_property_grid_chrome" in renderer_source
     assert "route.document_control_key" in renderer_source
     assert "route.active_tab_label" in renderer_source
+    assert "route.handler" in renderer_source
+    assert "route.reconnect_state" in renderer_source
     assert "gui_design_mremoteng_document_filter_route" in renderer_source
     assert "mremoteng_document_filter_route.expected_query" in renderer_source
     assert "gui_design_mremoteng_inheritance_route" in renderer_source
@@ -1882,6 +2081,9 @@ def test_static_renderer_tracks_remmina_and_mremoteng_control_surfaces() -> None
     assert "check_live_mremoteng_property_grid" in live_checker_source
     assert "EXPECTED_MREMOTENG_CONNECTION_DOCUMENT_ROUTE" in live_checker_source
     assert "mremoteng-connection-document-route" in live_checker_source
+    assert "check_mremoteng_reconnect_live_route" in live_checker_source
+    assert "mremoteng-connection-reconnect-live-route" in live_checker_source
+    assert "route.live_triggered_property" in live_checker_source
     assert "expected_mremoteng_connection_document_route" in live_checker_source
     assert "EXPECTED_MREMOTENG_DOCUMENT_FILTER_ROUTE" in live_checker_source
     assert "check_live_mremoteng_document_filter_route" in live_checker_source
@@ -1892,6 +2094,7 @@ def test_static_renderer_tracks_remmina_and_mremoteng_control_surfaces() -> None
     assert "mremoteng-inheritance-route" in live_checker_source
     assert "expected_mremoteng_inheritance_route" in live_checker_source
     assert "mRemoteNG-style connection-document route" in docs_source
+    assert "mRemoteNG-style reconnect live route" in docs_source
     assert "mRemoteNG-style document filter route" in docs_source
     assert "mRemoteNG-style inheritance route" in docs_source
     assert "draw_mremoteng_config_grid" in renderer_source
@@ -1917,17 +2120,29 @@ def test_static_renderer_tracks_securecrt_and_termius_workflow_surfaces() -> Non
     assert "securecrt.command-window" in securecrt_requirements
     assert "securecrt.command-window-chrome" in securecrt_requirements
     assert "securecrt.command-window-send-route" in securecrt_requirements
+    assert "securecrt.command-window-live-send-route" in securecrt_requirements
     assert "securecrt.session-manager-chrome" in securecrt_requirements
     assert "securecrt.session-manager-route" in securecrt_requirements
     assert "securecrt.session-manager-filter-route" in securecrt_requirements
     assert "securecrt.sftp-tab-route" in securecrt_requirements
     assert "securecrt.sftp-browser-route" in securecrt_requirements
+    assert "securecrt.sftp-browser-live-action-route" in securecrt_requirements
     assert "securecrt.top-chrome" in securecrt_requirements
     assert "securecrt.session-status-geometry" in securecrt_requirements
     assert "securecrt.command-window-geometry" in securecrt_requirements
     assert "securecrt.command-window-send-route" in criteria["presets"]["securecrt"]["dimension_coverage"]["layout"]
     assert "securecrt.command-window-send-route" in criteria["presets"]["securecrt"]["dimension_coverage"]["connected_session_behavior"]
     assert "securecrt.command-window-send-route" in criteria["presets"]["securecrt"]["dimension_coverage"]["interaction_states"]
+    assert "securecrt.command-window-live-send-route" in criteria["presets"]["securecrt"]["dimension_coverage"]["layout"]
+    assert "securecrt.command-window-live-send-route" in criteria["presets"]["securecrt"]["dimension_coverage"][
+        "connected_session_behavior"
+    ]
+    assert "securecrt.command-window-live-send-route" in criteria["presets"]["securecrt"]["dimension_coverage"][
+        "status_bars"
+    ]
+    assert "securecrt.command-window-live-send-route" in criteria["presets"]["securecrt"]["dimension_coverage"][
+        "interaction_states"
+    ]
     assert "securecrt.session-manager-geometry" in securecrt_requirements
     assert "securecrt.session-manager-route" in criteria["presets"]["securecrt"]["dimension_coverage"]["tabs"]
     assert "securecrt.session-manager-route" in criteria["presets"]["securecrt"]["dimension_coverage"]["session_trees"]
@@ -1957,6 +2172,20 @@ def test_static_renderer_tracks_securecrt_and_termius_workflow_surfaces() -> Non
         assert "securecrt.sftp-browser-route" in criteria["presets"]["securecrt"]["dimension_coverage"][
             dimension_key
         ]
+    for dimension_key in [
+        "layout",
+        "navigation",
+        "panes",
+        "tabs",
+        "toolbars",
+        "connected_session_behavior",
+        "file_monitoring_panels",
+        "status_bars",
+        "interaction_states",
+    ]:
+        assert "securecrt.sftp-browser-live-action-route" in criteria["presets"]["securecrt"]["dimension_coverage"][
+            dimension_key
+        ]
     assert "securecrt.top-chrome" in criteria["presets"]["securecrt"]["dimension_coverage"]["toolbars"]
     termius_requirements = {item["id"] for item in criteria["presets"]["termius"]["requirements"]}
     assert "termius.workflow-cards" in termius_requirements
@@ -1967,7 +2196,9 @@ def test_static_renderer_tracks_securecrt_and_termius_workflow_surfaces() -> Non
     assert "termius.host-selection-route" in termius_requirements
     assert "termius.port-forward-route" in termius_requirements
     assert "termius.snippet-route" in termius_requirements
+    assert "termius.snippet-live-run-route" in termius_requirements
     assert "termius.files-browser-route" in termius_requirements
+    assert "termius.files-browser-live-sync-route" in termius_requirements
     assert "termius.host-selection-route" in criteria["presets"]["termius"]["dimension_coverage"]["tabs"]
     assert "termius.host-selection-route" in criteria["presets"]["termius"]["dimension_coverage"]["session_trees"]
     assert "termius.host-selection-route" in criteria["presets"]["termius"]["dimension_coverage"]["connected_session_behavior"]
@@ -1980,6 +2211,22 @@ def test_static_renderer_tracks_securecrt_and_termius_workflow_surfaces() -> Non
     assert "termius.snippet-route" in criteria["presets"]["termius"]["dimension_coverage"]["tabs"]
     assert "termius.snippet-route" in criteria["presets"]["termius"]["dimension_coverage"]["panes"]
     assert "termius.snippet-route" in criteria["presets"]["termius"]["dimension_coverage"]["connected_session_behavior"]
+    assert "termius.snippet-live-run-route" in criteria["presets"]["termius"]["dimension_coverage"]["layout"]
+    assert "termius.snippet-live-run-route" in criteria["presets"]["termius"]["dimension_coverage"]["navigation"]
+    assert "termius.snippet-live-run-route" in criteria["presets"]["termius"]["dimension_coverage"]["panes"]
+    assert "termius.snippet-live-run-route" in criteria["presets"]["termius"]["dimension_coverage"]["tabs"]
+    assert "termius.snippet-live-run-route" in criteria["presets"]["termius"]["dimension_coverage"]["toolbars"]
+    assert (
+        "termius.snippet-live-run-route"
+        in criteria["presets"]["termius"]["dimension_coverage"]["connected_session_behavior"]
+    )
+    assert "termius.snippet-live-run-route" in criteria["presets"]["termius"]["dimension_coverage"]["status_bars"]
+    assert "termius.snippet-live-run-route" in criteria["presets"]["termius"]["dimension_coverage"]["density"]
+    assert "termius.snippet-live-run-route" in criteria["presets"]["termius"]["dimension_coverage"]["spacing"]
+    assert (
+        "termius.snippet-live-run-route"
+        in criteria["presets"]["termius"]["dimension_coverage"]["interaction_states"]
+    )
     for dimension_key in [
         "layout",
         "navigation",
@@ -1996,6 +2243,20 @@ def test_static_renderer_tracks_securecrt_and_termius_workflow_surfaces() -> Non
         "interaction_states",
     ]:
         assert "termius.files-browser-route" in criteria["presets"]["termius"]["dimension_coverage"][
+            dimension_key
+        ]
+    for dimension_key in [
+        "layout",
+        "navigation",
+        "panes",
+        "tabs",
+        "toolbars",
+        "connected_session_behavior",
+        "file_monitoring_panels",
+        "status_bars",
+        "interaction_states",
+    ]:
+        assert "termius.files-browser-live-sync-route" in criteria["presets"]["termius"]["dimension_coverage"][
             dimension_key
         ]
     assert "GuiSecureCrtCommandWindowChrome" in design_source
@@ -2036,8 +2297,13 @@ def test_static_renderer_tracks_securecrt_and_termius_workflow_surfaces() -> Non
     assert "GUI_DESIGN_TERMIUS_PORT_FORWARD_ROUTE" in design_source
     assert "GuiTermiusSnippetRoute" in design_source
     assert "GUI_DESIGN_TERMIUS_SNIPPET_ROUTE" in design_source
+    assert "termiusSnippetRunAction" in design_source
+    assert "termiusSnippetRunShortcut" in design_source
     assert "GuiTermiusFilesBrowserRoute" in design_source
     assert "GUI_DESIGN_TERMIUS_FILES_BROWSER_ROUTE" in design_source
+    assert "handler=\"handle_termius_files_sync\"" in design_source
+    assert "action_key=\"sync\"" in design_source
+    assert "live_triggered_property=\"termiusFilesRouteLiveTriggered\"" in design_source
     assert "static_cell_start_x" in design_source
     assert "gui_design_termius_hosts_chrome" in design_source
     assert "gui_design_termius_header_chips" in design_source
@@ -2066,6 +2332,9 @@ def test_static_renderer_tracks_securecrt_and_termius_workflow_surfaces() -> Non
     assert "secureCrtSftpBrowserRouteKey" in gui_source
     assert "secureCrtSftpBrowserPath" in gui_source
     assert "secureCrtSftpBrowserQueueState" in gui_source
+    assert "apply_securecrt_sftp_browser_action_route_properties" in gui_source
+    assert "handle_securecrt_sftp_browser_action" in gui_source
+    assert "route.live_triggered_property" in gui_source
     assert "securecrt_session_manager_action_icon" in gui_source
     assert "secureCrtSessionStatusStaticCellStartX" in gui_source
     assert "secureCrtSessionStatusLiveCellHeight" in gui_source
@@ -2088,9 +2357,15 @@ def test_static_renderer_tracks_securecrt_and_termius_workflow_surfaces() -> Non
     assert "termiusSnippetRouteKey" in gui_source
     assert "termiusSnippetRouteCommand" in gui_source
     assert "termiusSnippetRouteIdentityValue" in gui_source
+    assert "handle_termius_snippet_run" in gui_source
+    assert "route.live_triggered_property" in gui_source
+    assert "route.action_object" in gui_source
     assert "termiusFilesRouteKey" in gui_source
     assert "termiusFilesRoutePath" in gui_source
     assert "termiusFilesRouteQueueState" in gui_source
+    assert "apply_termius_files_sync_route_properties" in gui_source
+    assert "handle_termius_files_sync" in gui_source
+    assert "route.live_triggered_property" in gui_source
     assert "TERMIUS_HOST_ROUTE_SELECTED_ROLE" in gui_source
     assert "secureCrtCommandWindowKey" in gui_source
     assert "secureCrtSessionManagerActionKey" in gui_source
@@ -2119,6 +2394,8 @@ def test_static_renderer_tracks_securecrt_and_termius_workflow_surfaces() -> Non
     assert "securecrt_sftp_tab_route.status_field_key" in renderer_source
     assert "securecrt_sftp_tab_route.transfer_state" in renderer_source
     assert "securecrt_sftp_browser_route.active_row_name" in renderer_source
+    assert "securecrt_sftp_browser_route.action_key" in renderer_source
+    assert "route.handler" in renderer_source
     assert "session-manager-filter-focus" in visual_metrics_source
     assert "session-manager-tree-root" in visual_metrics_source
     assert "session-manager-tree-selected-row" in visual_metrics_source
@@ -2150,8 +2427,13 @@ def test_static_renderer_tracks_securecrt_and_termius_workflow_surfaces() -> Non
     assert "port_forward_route.forward_value" in renderer_source
     assert "snippet_route.identity_field_key" in renderer_source
     assert "snippet_route.snippet_command" in renderer_source
+    assert "snippet_route.action_label" in renderer_source
+    assert "snippet_route.shortcut_sequence" in renderer_source
     assert "draw_termius_files_browser" in renderer_source
     assert "termius_files_browser_route.active_row_name" in renderer_source
+    assert "termius_files_browser_route.action_key" in renderer_source
+    assert "handle_termius_files_sync" in renderer_source
+    assert "termius_files_browser_route.live_triggered_property" in renderer_source
     assert "gui_design_termius_header_chips" in renderer_source
     assert "check_live_securecrt_command_window" in live_checker_source
     assert "check_live_securecrt_session_manager_chrome" in live_checker_source
@@ -2169,14 +2451,23 @@ def test_static_renderer_tracks_securecrt_and_termius_workflow_surfaces() -> Non
     assert "securecrt-sftp-tab-route" in live_checker_source
     assert "expected_securecrt_sftp_tab_route" in live_checker_source
     assert "check_live_securecrt_sftp_browser_route" in live_checker_source
+    assert "check_securecrt_sftp_browser_live_action" in live_checker_source
     assert "EXPECTED_SECURECRT_SFTP_BROWSER_ROUTE" in live_checker_source
     assert "securecrt-sftp-browser-route" in live_checker_source
+    assert "securecrt-sftp-browser-live-action-route" in live_checker_source
     assert "expected_securecrt_sftp_browser_route" in live_checker_source
+    assert "route.live_triggered_property" in live_checker_source
     assert "secureCrtSessionManagerRenderSource" in live_checker_source
     assert "secureCrtSessionStatusLiveCellHeight" in live_checker_source
     assert "securecrt-command-window-geometry" in live_checker_source
     assert "securecrt-command-window-send-route" in live_checker_source
+    assert "securecrt-command-window-live-send-route" in live_checker_source
     assert "EXPECTED_SECURECRT_COMMAND_WINDOW_SEND_ROUTE" in live_checker_source
+    assert "check_securecrt_command_window_live_submission" in live_checker_source
+    assert "handle_securecrt_command_window_send" in gui_source
+    assert "secureCrtCommandRouteLiveSubmitted" in gui_source
+    assert "secondary_signal" in renderer_source
+    assert "secureCrtCommandRouteSecondarySignal" in design_source
     assert "EXPECTED_SECURECRT_SESSION_MANAGER_ROUTE" in live_checker_source
     assert "EXPECTED_SECURECRT_SESSION_MANAGER_FILTER_ROUTE" in live_checker_source
     assert "expected_securecrt_session_manager_route" in live_checker_source
@@ -2185,6 +2476,7 @@ def test_static_renderer_tracks_securecrt_and_termius_workflow_surfaces() -> Non
     assert "check_live_securecrt_session_manager_filter_route" in live_checker_source
     assert "expected_securecrt_command_window_send_route" in live_checker_source
     assert "secureCrtCommandLiveSendMinWidth" in live_checker_source
+    assert "SecureCRT-style SFTP browser live action route" in docs_source
     assert "check_live_termius_hosts_chrome" in live_checker_source
     assert "termius-hosts-chrome" in live_checker_source
     assert "check_live_termius_header_chips" in live_checker_source
@@ -2201,12 +2493,17 @@ def test_static_renderer_tracks_securecrt_and_termius_workflow_surfaces() -> Non
     assert "termius-port-forward-route" in live_checker_source
     assert "expected_termius_port_forward_route" in live_checker_source
     assert "check_live_termius_snippet_route" in live_checker_source
+    assert "check_termius_snippet_live_run" in live_checker_source
     assert "EXPECTED_TERMIUS_SNIPPET_ROUTE" in live_checker_source
     assert "termius-snippet-route" in live_checker_source
+    assert "termius-snippet-live-run-route" in live_checker_source
+    assert "route.live_triggered_property" in live_checker_source
     assert "expected_termius_snippet_route" in live_checker_source
     assert "check_live_termius_files_browser_route" in live_checker_source
+    assert "check_termius_files_sync_live_action" in live_checker_source
     assert "EXPECTED_TERMIUS_FILES_BROWSER_ROUTE" in live_checker_source
     assert "termius-files-browser-route" in live_checker_source
+    assert "termius-files-browser-live-sync-route" in live_checker_source
     assert "expected_termius_files_browser_route" in live_checker_source
     assert "draw_termius_session_workflow" in renderer_source
     assert "SecureCRT-style Session Manager route" in docs_source
@@ -2215,7 +2512,9 @@ def test_static_renderer_tracks_securecrt_and_termius_workflow_surfaces() -> Non
     assert "SecureCRT-style SFTP browser route" in docs_source
     assert "Termius-style port-forward route" in docs_source
     assert "Termius-style snippet route" in docs_source
+    assert "Termius-style snippet live run route" in docs_source
     assert "Termius-style files browser route" in docs_source
+    assert "Termius-style files browser live sync route" in docs_source
     assert "Termius-style host-selection route" in docs_source
 
 

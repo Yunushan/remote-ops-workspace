@@ -59,6 +59,7 @@ def test_real_gui_render_metrics_accept_detailed_capture() -> None:
 
 def test_real_gui_render_manifest_contract_names_required_widgets() -> None:
     checker = _load_checker()
+    source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
 
     assert checker.MANIFEST_NAME == "real-gui-render-manifest.json"
     assert checker.REQUIRED_WIDGETS["designSelect"] == "view preset selector"
@@ -77,6 +78,8 @@ def test_real_gui_render_manifest_contract_names_required_widgets() -> None:
     assert checker.EXPECTED_MOBA_CONNECTED_DOCK_FRAME.rail_width == 24
     assert checker.EXPECTED_MOBA_RAIL_CHROME.rail_width == 24
     assert checker.EXPECTED_MOBA_RAIL_ITEM_GEOMETRY_BY_ROLE["sftp"].static_label_y == 354
+    assert "visible_matches" in source
+    assert "window.findChildren(QWidget, object_name)" in source
     assert checker.EXPECTED_MOBA_TOP_MENU_KEYS == [
         "terminal",
         "sessions",

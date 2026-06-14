@@ -11347,7 +11347,9 @@ def check_required_widgets(
     errors: list[str] = []
     widgets = required_widgets or REQUIRED_WIDGETS
     for object_name, label in widgets.items():
-        widget = window.findChild(QWidget, object_name)
+        matches = window.findChildren(QWidget, object_name)
+        visible_matches = [widget for widget in matches if widget.isVisible()]
+        widget = visible_matches[0] if visible_matches else (matches[0] if matches else None)
         if widget is None:
             errors.append(f"{context} missing {label}: {object_name}")
             continue

@@ -6315,7 +6315,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             home_label = gui_design_home_tab_label(self.current_design_id())
             if home_index >= 0:
                 was_current = self.tabs.currentIndex() == home_index
-                self.rebuild_welcome_tab(select=was_current)
+                home_widget = self.tabs.widget(home_index)
+                home_widget_preset = str(home_widget.property("designPreset") or "") if home_widget is not None else ""
+                if home_widget_preset != self.current_design_id():
+                    self.rebuild_welcome_tab(select=was_current)
             elif is_moba or self.tabs.count() == 0:
                 self.add_welcome_tab(select=self.tabs.count() == 0)
             home_index = self.find_tab_by_role("home")
@@ -6850,6 +6853,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             surface = gui_design_workspace_surface(self.current_design_id())
             box = QWidget()
             box.setObjectName("welcomeHome")
+            box.setProperty("designPreset", self.current_design_id())
             layout = QVBoxLayout(box)
             layout.setContentsMargins(48, 48, 48, 48)
             layout.addStretch(1)

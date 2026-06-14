@@ -580,9 +580,17 @@ def cmd_platforms(args: argparse.Namespace) -> int:
     print("\nLegacy Windows targets:")
     version_width = max(len(item["version"]) for item in legacy_targets)
     for item in legacy_targets:
+        remote_detail = str(item["remote_target_tier"])
+        if item.get("remote_target_coverage_percent") is not None:
+            architectures = "/".join(str(arch) for arch in item.get("architectures", []))
+            security = str(item.get("security_profile", ""))
+            remote_detail = (
+                f"{remote_detail} "
+                f"({float(item['remote_target_coverage_percent']):.1f}% {architectures} {security})"
+            )
         print(
             f"  {item['version']:<{version_width}} host {item['host_tier']}, "
-            f"remote target {item['remote_target_tier']}"
+            f"remote target {remote_detail}"
         )
     return 0
 
@@ -616,7 +624,9 @@ def cmd_features(args: argparse.Namespace) -> int:
         )
         print(
             f"Platform verified readiness   : {platform_overall['current_percent']:.1f}% "
-            f"({platform_overall['gap_percent']:.1f}% gap across {platform_overall['target_count']} targets)"
+            f"({platform_overall['gap_percent']:.1f}% gap across "
+            f"{platform_overall['target_count']} verified targets; "
+            f"{platform_overall.get('extended_target_count', 0)} extended rows)"
         )
         evidence = report["evidence_summary"]
         print(
@@ -641,9 +651,21 @@ def cmd_features(args: argparse.Namespace) -> int:
             print("\nPlatform readiness:")
             target_width = max(len(row["target"]) for row in platform["targets"])
             for row in platform["targets"]:
+                remote = ""
+                if row.get("remote_target_coverage_percent") is not None:
+                    architectures = "/".join(str(arch) for arch in row.get("legacy_architectures", []))
+                    security = str(row.get("security_profile", ""))
+                    remote = (
+                        f"; remote target {float(row['remote_target_coverage_percent']):.1f}% "
+                        f"{architectures} {security}"
+                    )
+                missing = ""
+                missing_targets = row.get("accepted_evidence_missing_targets", [])
+                if missing_targets:
+                    missing = f"; missing evidence {', '.join(str(target) for target in missing_targets)}"
                 print(
                     f"  {row['target']:<{target_width}} {row['current_percent']:>5.1f}% "
-                    f"{row['status']} ({row['channel']})"
+                    f"{row['status']} ({row['channel']}){remote}{missing}"
                 )
         return 0
     for row in feature_summary():

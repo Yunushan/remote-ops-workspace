@@ -50,11 +50,13 @@ def test_platform_support_truth_rejects_inflated_manual_readiness() -> None:
     rows["linux-armhf"]["current_percent"] = 100.0
     rows["linux-armhf"]["gap_percent"] = 0.0
     rows["linux-armhf"]["status"] = "verified-default-native"
+    rows["linux-armhf"]["verified_readiness_scope"] = True
 
     errors = checker.check_platform_readiness_report(targets, report)
 
     assert "linux-armhf readiness score must be 70.0%, got 100.0%" in errors
     assert "linux-armhf readiness status must be manual-script-supported, got verified-default-native" in errors
+    assert "linux-armhf verified_readiness_scope must be False, got True" in errors
 
 
 def test_platform_support_truth_rejects_native_legacy_windows_claim() -> None:
@@ -87,6 +89,9 @@ def test_platform_support_truth_tracks_required_targets() -> None:
     assert checker.EXPECTED_ARCHITECTURES["linux-i386"]["github_release_channel"] == "manual-script-native"
     assert checker.EXPECTED_ARCHITECTURES["linux-armhf"]["github_release_channel"] == "manual-script-native"
     assert checker.EXPECTED_ARCHITECTURES["android-armv7"]["github_release_channel"] == "default-termux-web"
+    assert checker.EXPECTED_ARCHITECTURES["android-armv7"]["status"] == "verified-termux-web-mobile"
+    assert checker.EXPECTED_ARCHITECTURES["ios-web"]["github_release_channel"] == "default-web-pwa"
+    assert checker.EXPECTED_ARCHITECTURES["ios-web"]["status"] == "verified-ios-web-pwa"
     assert checker.EXPECTED_LEGACY_WINDOWS["Windows XP"]["host_tier"] == "remote-target-only"
 
 

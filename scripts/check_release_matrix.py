@@ -135,12 +135,12 @@ def check_platform_target_alignment(matrix: dict[str, Any], platform_targets: di
         for item in require_list(matrix, "script_supported_native", errors)
         if isinstance(item, dict)
     }
-    termux_ids = set()
+    source_web_ids = set()
     legacy_versions = set()
     for raw_item in require_list(matrix, "source_or_remote_only", errors):
         if not isinstance(raw_item, dict):
             continue
-        termux_ids.update(str(item) for item in raw_item.get("platform_target_ids", []))
+        source_web_ids.update(str(item) for item in raw_item.get("platform_target_ids", []))
         legacy_versions.update(str(item) for item in raw_item.get("windows_legacy_target_versions", []))
 
     if default_ids & script_ids:
@@ -165,15 +165,22 @@ def check_platform_target_alignment(matrix: dict[str, Any], platform_targets: di
         if row.get("github_release_channel") != "manual-script-native":
             errors.append(f"{target_id} github_release_channel must be manual-script-native")
 
-    for target_id in sorted(termux_ids):
+    source_web_channels = {
+        "termux-web": "default-termux-web",
+        "web-pwa": "default-web-pwa",
+    }
+    for target_id in sorted(source_web_ids):
         row = rows.get(target_id)
         if not row:
             errors.append(f"source/Web release target {target_id} missing from configs/platform_targets.json")
             continue
-        if row.get("release_tier") != "termux-web":
-            errors.append(f"{target_id} release_tier must be termux-web")
-        if row.get("github_release_channel") != "default-termux-web":
-            errors.append(f"{target_id} github_release_channel must be default-termux-web")
+        release_tier = str(row.get("release_tier"))
+        expected_channel = source_web_channels.get(release_tier)
+        if expected_channel is None:
+            errors.append(f"{target_id} release_tier must be one of {sorted(source_web_channels)}")
+            continue
+        if row.get("github_release_channel") != expected_channel:
+            errors.append(f"{target_id} github_release_channel must be {expected_channel}")
 
     declared_legacy = {
         str(item.get("version"))

@@ -15,6 +15,7 @@ REQUIRED_ARCHITECTURES = {
     "macos-arm64": 64,
     "android-armv7": 32,
     "android-arm64": 64,
+    "ios-web": 64,
 }
 
 REQUIRED_LEGACY_WINDOWS = {
@@ -40,6 +41,8 @@ def test_platform_targets_cover_requested_architectures() -> None:
     assert rows["linux-i386"]["github_release_channel"] == "manual-script-native"
     assert rows["linux-armhf"]["release_tier"] == "script-supported-native"
     assert rows["linux-armhf"]["github_release_channel"] == "manual-script-native"
+    assert rows["ios-web"]["release_tier"] == "web-pwa"
+    assert rows["ios-web"]["github_release_channel"] == "default-web-pwa"
     for target_id in ("windows-x64", "linux-x86_64", "linux-arm64", "macos-arm64"):
         assert rows[target_id]["github_release_channel"] == "default-native"
 
@@ -52,6 +55,12 @@ def test_legacy_windows_targets_are_declared_as_remote_targets() -> None:
         row = rows[version]
         assert row["remote_target_tier"] == "supported"
         assert row["notes"]
+    assert rows["Windows XP"]["remote_target_coverage_percent"] == 100.0
+    assert rows["Windows XP"]["architectures"] == ["x86", "x64"]
+    assert rows["Windows XP"]["security_profile"] == "isolated-legacy-opt-in"
+    assert {"rdp", "vnc", "sshv1", "telnet", "serial"}.issubset(
+        rows["Windows XP"]["supported_remote_protocols"]
+    )
 
 
 def test_native_release_scripts_reference_expanded_architectures() -> None:
@@ -72,3 +81,16 @@ def test_platforms_cli_reports_architecture_targets(capsys) -> None:
     assert "x86" in output
     assert "arm64" in output
     assert "Windows XP" in output
+    assert "100.0% x86/x64 isolated-legacy-opt-in" in output
+
+
+def test_features_coverage_cli_reports_missing_platform_evidence(capsys) -> None:
+    assert main(["features", "--coverage"]) == 0
+    output = capsys.readouterr().out
+
+    assert "linux-i386" in output
+    assert "missing evidence linux-i386" in output
+    assert "linux-armhf" in output
+    assert "missing evidence linux-armhf" in output
+    assert "Windows XP" in output
+    assert "missing evidence windows-xp-native-x86, windows-xp-native-x64" in output

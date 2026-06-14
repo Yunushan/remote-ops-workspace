@@ -9,7 +9,7 @@
 ![license](https://img.shields.io/badge/license-MIT-blue)
 ![runtime](https://img.shields.io/badge/runtime-Python%203.10--3.14-orange)
 ![interfaces](https://img.shields.io/badge/interfaces-CLI%20%7C%20GUI%20%7C%20Web-purple)
-![targets](https://img.shields.io/badge/targets-Windows%20%7C%20Linux%20%7C%20macOS%20%7C%20BSD%20%7C%20Solaris%20%7C%20Android%20%7C%20Web-green)
+![targets](https://img.shields.io/badge/targets-Windows%20%7C%20Linux%20%7C%20macOS%20%7C%20BSD%20%7C%20Solaris%20%7C%20Android%20%7C%20iOS%20%7C%20Web-green)
 ![protocols](https://img.shields.io/badge/protocols-SSH%20%7C%20RDP%20%7C%20VNC%20%7C%20SFTP%20%7C%20Mosh%20%7C%20Telnet%20%7C%20SPICE%20%7C%20X2Go-yellow)
 
 [Visual Overview](#visual-overview) • [Quick Start](#quick-start) • [CLI](#cli) • [GUI](#gui) • [Web/PWA](#webpwa) • [Feature Coverage](#feature-coverage) • [Platforms](#platform-support) • [Architecture](#architecture) • [Security](#security) • [License](#license)
@@ -181,7 +181,7 @@ PyQt6 does not publish 32-bit Windows wheels.
 
 ## Web/PWA
 
-`apps/web` contains a static browser workspace that can run as a PWA. It is useful for Android/browser workflows, documentation demos and future API integration.
+`apps/web` contains a static browser workspace that can run as a PWA. It is useful for Android/iOS browser workflows, documentation demos and future API integration.
 
 ```bash
 row serve-web --host 127.0.0.1 --port 8765
@@ -197,7 +197,7 @@ Docker entrypoint. The compose file publishes the container on
 
 ## Feature Coverage
 
-Coverage target: **100% public feature-family mapping**, **100% adapter-ready coverage** and **100% release-backed product workflow parity** for the requested tools. Per-platform release readiness is tracked separately so manual architecture builds and legacy Windows remote-target tiers remain visible.
+Coverage target: **100% public feature-family mapping**, **100% adapter-ready coverage** and **100% release-backed product workflow parity** for the requested tools. Per-platform release readiness is tracked separately so verified release/mobile targets, manual architecture builds and legacy Windows remote-target tiers remain visible with their own scope.
 
 Coverage is generated from [`configs/feature_manifest.json`](configs/feature_manifest.json). Feature-family mapping answers whether each public feature family is represented by built-in code, external adapters, optional implementations, CLI/GUI workflows, platform scripts, or plugin extension points. Adapter-ready coverage counts implemented adapter, optional, CLI, GUI and combined workflows as ready when they are tied to executable evidence. The `production_parity_coverage` JSON key is kept for compatibility, but the public contract is release-backed product workflow parity: implemented workflows count only when tied to executable release evidence, and seam-only or docs-only rows remain partial if they appear. This is not a proprietary native clone claim. The verifier runs both `scripts/check_feature_reality.py` and `scripts/check_product_readiness.py` so coverage claims stay tied to real CLI command paths, launch-plan builders, implementation symbols, shipped files and visible platform gaps.
 
@@ -207,7 +207,7 @@ Coverage is generated from [`configs/feature_manifest.json`](configs/feature_man
 | Remmina | 100.0% | 100.0% | 100.0% | 0.0% | 11 |
 | mRemoteNG | 100.0% | 100.0% | 100.0% | 0.0% | 15 |
 | Terminator | 100.0% | 100.0% | 100.0% | 0.0% | 8 |
-| Termius | 100.0% | 100.0% | 100.0% | 0.0% | 21 |
+| Termius | 100.0% | 100.0% | 100.0% | 0.0% | 22 |
 | Devolutions Remote Desktop Manager | 100.0% | 100.0% | 100.0% | 0.0% | 26 |
 | Royal TS / Royal TSX | 100.0% | 100.0% | 100.0% | 0.0% | 26 |
 | Electerm | 100.0% | 100.0% | 100.0% | 0.0% | 19 |
@@ -231,9 +231,26 @@ Coverage is generated from [`configs/feature_manifest.json`](configs/feature_man
 | Hyper | 100.0% | 100.0% | 100.0% | 0.0% | 8 |
 | X410 + any terminal (e.g., Windows Terminal, Alacritty) | 100.0% | 100.0% | 100.0% | 0.0% | 7 |
 | Xming (or VcXsrv) + PuTTY / mRemoteNG | 100.0% | 100.0% | 100.0% | 0.0% | 10 |
-| **Overall** | **100.0%** | **100.0%** | **100.0%** | **0.0%** | **49** |
+| **Overall** | **100.0%** | **100.0%** | **100.0%** | **0.0%** | **50** |
 
-Adapter-ready coverage and release-backed product workflow parity use the manifest status weights directly and do not use blanket per-product overrides. Platform verified readiness is still separate and currently reports **75.6% overall** across default native, manual native, Termux/Web and legacy Windows targets.
+Adapter-ready coverage and release-backed product workflow parity use the manifest status weights directly and do not use blanket per-product overrides. Platform verified readiness is still separate and currently reports **100.0% overall** for verified default-native, Termux/Web and Web/PWA release targets; manual Linux i386/armhf and legacy Windows rows remain visible outside the verified-readiness denominator.
+Linux i386/armhf and Windows XP native-host promotion to 100% is gated by
+[`configs/platform_parity_promotion.json`](configs/platform_parity_promotion.json)
+and `python scripts/check_platform_parity_promotion.py`; real builder output is
+validated with `python scripts/check_platform_promotion_artifacts.py`. Manual
+self-hosted Linux evidence is collected by
+`.github/workflows/extended-platform-evidence.yml`, and accepted records live in
+[`configs/platform_verified_evidence.json`](configs/platform_verified_evidence.json)
+after `python scripts/check_platform_verified_evidence.py` passes. Generate a
+candidate accepted record with
+`python scripts/make_platform_verified_evidence_record.py`; Linux accepted
+records include builder identity JSON plus its matching SHA-256 and workflow
+dispatch input binding. Today Linux i386 and
+armhf remain script-supported at 70.0% until matching release builders, default
+release matrix entries, smoke evidence, checksum sidecars and native manifests
+exist. Windows XP native-host readiness remains 25.0% until a separate
+XP-capable legacy toolchain, x86/x64 XP VM smoke evidence, native artifact
+evidence, and a passing `python scripts/check_xp_native_evidence.py --evidence <evidence.json> --assets-dir <artifact-dir>` bundle exist; XP remote-target coverage stays 100.0% through isolated legacy-profile opt-ins.
 
 Run:
 
@@ -264,7 +281,7 @@ The JSON report includes `workflow_parity_contract` and `workflow_parity_evidenc
 | Keygen / SSH keys / agent | SSH keys | SSH keys | PuTTY keys | — | ✅ | OpenSSH keygen CLI |
 | Hardware/FIDO keys | SSH support | SSH support | depends | — | ✅ | OpenSSH security-key keygen adapter |
 | Portable mode | ✅ | packages | config portability | — | mobile/desktop | `ROW_HOME` portable data directory |
-| Web/mobile access | — | Kasm/container options | — | — | ✅ | Static Web/PWA shell + Android/PWA docs |
+| Web/mobile access | — | Kasm/container options | — | — | ✅ | Static Web/PWA shell + Android/iOS/PWA docs |
 | Plugin architecture | plugins | plugins | extensions | plugins | integrations | Python entry-point protocol launch plugins + `row plugins list`, `row plugins validate` and `row plugins scaffold` |
 
 See [`docs/FULL_FEATURE_COVERAGE.md`](docs/FULL_FEATURE_COVERAGE.md) and [`configs/feature_manifest.json`](configs/feature_manifest.json) for the full coverage manifest.
@@ -278,14 +295,15 @@ See [`docs/FULL_FEATURE_COVERAGE.md`](docs/FULL_FEATURE_COVERAGE.md) and [`confi
 | Windows 10/11 | CLI, GUI, Web/PWA | Native x86, x64 and ARM64 release targets; OpenSSH, MSTSC, PuTTY, VcXsrv, TigerVNC adapters |
 | Windows 8.1 | CLI/Web best effort, remote target | Source install depends on a compatible Python stack; remote management through RDP/VNC/SSH/Telnet/serial/raw sockets |
 | Windows 8/7 | Legacy source-only, remote target | Keep as managed endpoints; modern native runtime support requires a separate legacy dependency stack |
-| Windows Vista/XP | Remote target only | Connect through external clients when protocols can still be negotiated; no modern native Python/PyQt installer |
+| Windows Vista/XP | Remote target only | Windows XP remote-target coverage is 100.0% for x86 and x64 endpoints through isolated legacy profiles; no modern native Python/PyQt installer |
 | Windows Server 2012–2025 | CLI, GUI optional, Web/PWA | Works well as an operator jump host; x86/x64/ARM64 depends on runner and Python availability |
 | Linux | CLI, GUI, Web/PWA | Default GitHub release builds x86_64/amd64 and aarch64/arm64 native packages; i386/i686 and armhf mappings are script-supported on matching builders |
 | Unix | CLI, Web/PWA, GUI where Qt is available | POSIX shell and OpenSSH first |
 | FreeBSD/OpenBSD/NetBSD/DragonFlyBSD | CLI, Web/PWA, GUI where PyQt6 is packaged | External protocol tools vary by ports/pkg availability |
 | Solaris/illumos | CLI, Web/PWA, GUI if Python/Qt stack exists | Focus on OpenSSH, browser, serial/raw sockets |
 | macOS Intel/Apple Silicon | CLI, GUI, Web/PWA | OpenSSH, XQuartz, Microsoft Remote Desktop/FreeRDP, VNC viewers |
-| Android | Web/PWA, Termux CLI | ARMv7 and ARM64 through Termux/Web; APK remains future work |
+| Android | Web/PWA, Termux CLI | ARMv7 and ARM64 through Termux/Web; Android 12 through Android 16 (API 31-36) Web/PWA emulator CI; APK remains future work |
+| iOS/iPadOS | Web/PWA | iOS/iPadOS 15 through 26.x Web/PWA contract with current Xcode simulator smoke; native `.ipa` remains future work |
 | Web | PWA shell | Static PWA shell; API/backend can be layered on |
 
 ---
@@ -328,7 +346,12 @@ Core design principles:
 - Destructive SFTP actions, remote-overwrite-prone uploads and local-overwrite downloads are blocked before execution unless an operator passes `--force`; broad delete targets and remote globs are rejected for deletes/renames.
 - `row serve-web` binds to loopback by default, adds static-app security headers, disables directory listing and requires `--allow-public-bind` for non-loopback interfaces. The web Docker image runs as a non-root user and compose binds to localhost with dropped Linux capabilities.
 - Prefer SSH `proxy_jump`; `proxy_command` requires explicit `allow_unsafe_proxy_command=true`.
-- SSHv1 legacy profiles require both `--protocol ssh1`/`sshv1` and `--option allow_insecure_sshv1=true`; protocol v1 remains insecure and should only be used for isolated legacy systems.
+- SSHv1 legacy profiles require `--protocol ssh1`/`sshv1`,
+  `--option allow_insecure_sshv1=true`, `--option legacy_target=windows-xp-32`
+  or `windows-xp-64`, and `--option allow_legacy_crypto=true`; protocol v1
+  remains insecure and should only be used for isolated legacy systems.
+- Weak SSH algorithms and RDP `security=rdp` are blocked for modern profiles;
+  Windows XP x86/x64 remote endpoints use isolated per-profile legacy opt-ins.
 - Treat protocol plugins as trusted local Python code; use `row plugins validate` to catch load failures and invalid sample launch plans before using plugin-backed profiles.
 - See [`SECURITY.md`](SECURITY.md) and [`docs/SECURITY_MODEL.md`](docs/SECURITY_MODEL.md).
 
@@ -379,6 +402,7 @@ The GitHub release workflow runs on tags like `v1.0.2` and uploads these assets:
 | BSD | `remote-ops-workspace-v1.0.2-bsd.tar.gz` |
 | Solaris/illumos | `remote-ops-workspace-v1.0.2-solaris.tar.gz` |
 | Android/Termux | `remote-ops-workspace-v1.0.2-android-termux.tar.gz` |
+| iOS/iPadOS Web/PWA | `remote-ops-workspace-v1.0.2-web-pwa.zip` |
 | Web/PWA | `remote-ops-workspace-v1.0.2-web-pwa.zip` |
 | Windows native | `remote-ops-workspace-v1.0.2-windows-<x86\|x64\|arm64>-setup.exe` |
 | Windows native | `remote-ops-workspace-v1.0.2-windows-<x86\|x64\|arm64>.msi` |
@@ -401,11 +425,17 @@ Windows x64 and ARM64 native portable zips include a top-level
 In those frozen Windows packages, `row gui` delegates to the sibling
 `bin\row-gui.exe` launcher.
 Windows XP/Vista/7/8 are supported as legacy remote targets, not as first-class
-modern native operator hosts. The default GitHub workflow builds Windows
+modern native operator hosts. Windows XP x86/x64 remote endpoints use isolated
+per-profile legacy opt-ins so weak SSH/RDP compatibility does not lower modern
+Windows 10/11, Linux or macOS defaults. The default GitHub workflow builds Windows
 `x86`/`x64`/`arm64`, macOS `x64`/`arm64`, and Linux `x86_64`/`aarch64`
 native jobs. The native build scripts also map Linux `i386`/`i686` and
 `armhf` outputs for matching builders, but those are not uploaded by the
-default GitHub release workflow.
+default release. Android remains Termux/Web with no APK published, and
+iOS/iPadOS is Web/PWA only; no native `.ipa` or App Store package is published.
+Mobile CI covers Android 12 through Android 16 (API 31-36) Web/PWA emulator
+smoke and iOS/iPadOS 15 through 26.x Web/PWA compatibility, with simulator smoke
+on the current GitHub macOS/Xcode runtime.
 The machine-readable release decision lives in
 [`configs/release_matrix.json`](configs/release_matrix.json), while
 [`configs/platform_targets.json`](configs/platform_targets.json) remains the

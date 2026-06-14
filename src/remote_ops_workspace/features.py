@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -77,6 +79,91 @@ WORKFLOW_PARITY_SCOPE = (
     "platform shell, or combined workflow tied to manifest evidence. This is not a "
     "claim of proprietary native clone parity or embedded protocol-engine parity."
 )
+LINUX_ACCEPTED_EVIDENCE_CHECKS = {
+    "builder_preflight",
+    "native_build",
+    "native_smoke",
+    "artifact_validation",
+    "release_asset_attachment",
+}
+LINUX_ACCEPTED_EVIDENCE_MACHINES = {
+    "linux-i386": {"i386", "i486", "i586", "i686", "x86"},
+    "linux-armhf": {"armv6l", "armv7l", "armv7hl", "armhf"},
+}
+LINUX_ACCEPTED_EVIDENCE_LABELS = {
+    "linux-i386": {"self-hosted", "linux", "i386"},
+    "linux-armhf": {"self-hosted", "linux", "armhf"},
+}
+LINUX_ACCEPTED_EVIDENCE_ARTIFACTS = {
+    "linux-i386": "extended-linux-i386-native-evidence",
+    "linux-armhf": "extended-linux-armhf-native-evidence",
+}
+LINUX_ACCEPTED_EVIDENCE_TOOLS = {
+    "bash",
+    "curl",
+    "dpkg-deb",
+    "rpmbuild",
+    "sha256sum",
+    "sudo",
+    "tar",
+}
+ACCEPTED_EVIDENCE_ARTIFACT_TEMPLATES = {
+    "linux-i386": {
+        "remote-ops-workspace-v{version}-linux-i386.deb",
+        "remote-ops-workspace-v{version}-linux-i686.rpm",
+        "remote-ops-workspace-v{version}-linux-i686.AppImage",
+        "remote-ops-workspace-v{version}-linux-i686-native.tar.gz",
+        "remote-ops-workspace-v{version}-linux-i686-native-manifest.json",
+        "remote-ops-workspace-v{version}-linux-i686-native-SHA256SUMS.txt",
+    },
+    "linux-armhf": {
+        "remote-ops-workspace-v{version}-linux-armhf.deb",
+        "remote-ops-workspace-v{version}-linux-armv7hl.rpm",
+        "remote-ops-workspace-v{version}-linux-armhf.AppImage",
+        "remote-ops-workspace-v{version}-linux-armhf-native.tar.gz",
+        "remote-ops-workspace-v{version}-linux-armhf-native-manifest.json",
+        "remote-ops-workspace-v{version}-linux-armhf-native-SHA256SUMS.txt",
+    },
+    "windows-xp-native-x86": {
+        "remote-ops-workspace-v{version}-windows-xp-x86-native.zip",
+        "remote-ops-workspace-v{version}-windows-xp-x86-native-manifest.json",
+        "remote-ops-workspace-v{version}-windows-xp-x86-native-SHA256SUMS.txt",
+    },
+    "windows-xp-native-x64": {
+        "remote-ops-workspace-v{version}-windows-xp-x64-native.zip",
+        "remote-ops-workspace-v{version}-windows-xp-x64-native-manifest.json",
+        "remote-ops-workspace-v{version}-windows-xp-x64-native-SHA256SUMS.txt",
+    },
+}
+XP_ACCEPTED_EVIDENCE_CHECKS = {
+    "xp_native_evidence_validation",
+    "artifact_validation",
+    "vm_or_host_smoke",
+    "legacy_crypto_profile_scoped",
+    "modern_defaults_unchanged",
+    "release_asset_attachment",
+}
+XP_ACCEPTED_EVIDENCE_SMOKE_IDS = {
+    "cli_launch",
+    "gui_or_legacy_host_ui_launch",
+    "loopback_profile_dry_run",
+    "artifact_manifest_validation",
+    "legacy_crypto_profile_scoped",
+    "modern_defaults_unchanged",
+}
+XP_ACCEPTED_EVIDENCE_ARCHITECTURES = {
+    "windows-xp-native-x86": "x86",
+    "windows-xp-native-x64": "x64",
+}
+XP_ACCEPTED_EVIDENCE_TOOLCHAIN_FLAGS = {
+    "separate_legacy_toolchain": True,
+    "current_python_pyqt6_stack": False,
+}
+XP_ACCEPTED_EVIDENCE_SECURITY_FLAGS = {
+    "legacy_crypto_profile_scoped": True,
+    "modern_defaults_unchanged": True,
+    "weak_crypto_global_default": False,
+}
 
 
 def feature_manifest_path() -> Path:
@@ -608,71 +695,154 @@ def _evidence_summary(evidence: list[dict[str, Any]]) -> dict[str, int]:
     }
 
 
-def _platform_verified_readiness() -> dict[str, Any]:
+def _platform_verified_readiness(
+    *,
+    platform_data: dict[str, Any] | None = None,
+    evidence_registry: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     path = repo_root() / "configs" / "platform_targets.json"
-    if not path.exists():
+    evidence_data = (
+        evidence_registry
+        if evidence_registry is not None
+        else _platform_verified_evidence_registry()
+    )
+    if platform_data is None and not path.exists():
         return {
             "target_percent": 100.0,
             "overall": _platform_overall([]),
             "targets": [],
         }
-    data = json.loads(path.read_text(encoding="utf-8"))
+    data = platform_data or json.loads(path.read_text(encoding="utf-8"))
     rows: list[dict[str, Any]] = []
     for item in data.get("release_architectures", []):
-        score, status, rationale = _release_target_readiness(item)
-        rows.append(
-            _platform_row(
-                target=str(item.get("id", "")),
-                platform=str(item.get("platform", "")),
-                cpu_arch=str(item.get("cpu_arch", "")),
-                release_tier=str(item.get("release_tier", "")),
-                channel=str(item.get("github_release_channel", "")),
-                status=status,
-                rationale=rationale,
-                score=score,
-                kind="release_architecture",
-            )
+        score, status, rationale = _release_target_readiness(item, evidence_data)
+        target = str(item.get("id", ""))
+        row = _platform_row(
+            target=target,
+            platform=str(item.get("platform", "")),
+            cpu_arch=str(item.get("cpu_arch", "")),
+            release_tier=str(item.get("release_tier", "")),
+            channel=str(item.get("github_release_channel", "")),
+            status=status,
+            rationale=rationale,
+            score=score,
+            kind="release_architecture",
+            verified_readiness_scope=_release_target_verified_scope(item, evidence_data),
         )
+        if target in {"linux-i386", "linux-armhf"}:
+            row.update(_single_target_evidence_status(evidence_data, target))
+        rows.append(row)
     for item in data.get("windows_legacy_targets", []):
-        score, status, rationale = _legacy_windows_readiness(item)
-        rows.append(
-            _platform_row(
-                target=str(item.get("version", "")),
-                platform="Windows",
-                cpu_arch="legacy",
-                release_tier=str(item.get("host_tier", "")),
-                channel="legacy-windows",
-                status=status,
-                rationale=rationale,
-                score=score,
-                kind="legacy_windows",
-                remote_target_tier=str(item.get("remote_target_tier", "")),
-            )
+        score, status, rationale = _legacy_windows_readiness(item, evidence_data)
+        remote_target_coverage = item.get("remote_target_coverage_percent")
+        version = str(item.get("version", ""))
+        row = _platform_row(
+            target=version,
+            platform="Windows",
+            cpu_arch="legacy",
+            release_tier=str(item.get("host_tier", "")),
+            channel="legacy-windows",
+            status=status,
+            rationale=rationale,
+            score=score,
+            kind="legacy_windows",
+            remote_target_tier=str(item.get("remote_target_tier", "")),
+            remote_target_coverage_percent=(
+                float(remote_target_coverage) if remote_target_coverage is not None else None
+            ),
+            legacy_architectures=[str(arch) for arch in item.get("architectures", [])],
+            security_profile=str(item.get("security_profile", "")),
+            supported_remote_protocol_count=len(item.get("supported_remote_protocols", [])),
+            verified_readiness_scope=_legacy_windows_verified_scope(item, evidence_data),
         )
+        if version == "Windows XP":
+            row.update(_windows_xp_evidence_status(evidence_data))
+        rows.append(row)
     return {
         "target_percent": 100.0,
         "method": (
-            "Default native release targets score 100%. Manual script-native, "
-            "Termux/Web and legacy Windows rows keep separate partial readiness "
-            "until their native installers or host support are verified."
+            "Overall verified readiness averages only verified default-native "
+            "and verified mobile Web/PWA release targets. Manual script-native "
+            "and legacy Windows rows remain visible as extended compatibility "
+            "rows outside the verified-readiness denominator until matching "
+            "release or host verification exists in configs/platform_verified_evidence.json."
         ),
         "overall": _platform_overall(rows),
         "targets": rows,
     }
 
 
-def _release_target_readiness(item: dict[str, Any]) -> tuple[float, str, str]:
+def _release_target_readiness(
+    item: dict[str, Any],
+    evidence_registry: dict[str, Any] | None = None,
+) -> tuple[float, str, str]:
+    target = str(item.get("id", ""))
+    if target in {"linux-i386", "linux-armhf"} and _has_accepted_evidence(
+        evidence_registry,
+        target,
+    ):
+        return (
+            100.0,
+            "verified-accepted-native-evidence",
+            "Accepted platform evidence records validate native build, smoke, artifact and release evidence.",
+        )
     channel = str(item.get("github_release_channel", ""))
     if channel == "default-native":
         return 100.0, "verified-default-native", "Default GitHub release channel with native artifacts."
     if channel == "manual-script-native":
         return 70.0, "manual-script-supported", "Native artifacts are declared but require a matching manual builder."
     if channel == "default-termux-web":
-        return 85.0, "termux-web-default", "Termux and Web/PWA bundles ship by default; APK/native GUI is not present."
+        return (
+            100.0,
+            "verified-termux-web-mobile",
+            "Termux/Web/PWA mobile contract is covered by static PWA checks and Android emulator CI; APK/native GUI is not present.",
+        )
+    if channel == "default-web-pwa":
+        return (
+            100.0,
+            "verified-ios-web-pwa",
+            "iOS/iPadOS Web/PWA contract is covered by static PWA checks and iOS simulator CI; native mobile app is not present.",
+        )
     return 50.0, "declared-unclassified", "Release target is declared but lacks a recognized readiness channel."
 
 
-def _legacy_windows_readiness(item: dict[str, Any]) -> tuple[float, str, str]:
+def _release_target_verified_scope(
+    item: dict[str, Any],
+    evidence_registry: dict[str, Any] | None = None,
+) -> bool:
+    target = str(item.get("id", ""))
+    if target in {"linux-i386", "linux-armhf"} and _has_accepted_evidence(
+        evidence_registry,
+        target,
+    ):
+        return True
+    return str(item.get("github_release_channel", "")) in {
+        "default-native",
+        "default-termux-web",
+        "default-web-pwa",
+    }
+
+
+def _legacy_windows_readiness(
+    item: dict[str, Any],
+    evidence_registry: dict[str, Any] | None = None,
+) -> tuple[float, str, str]:
+    if str(item.get("version", "")) == "Windows XP" and _has_windows_xp_native_evidence(
+        evidence_registry,
+    ):
+        return (
+            100.0,
+            "verified-xp-native-host-evidence",
+            "Accepted XP x86 and x64 native-host evidence records validate the legacy host toolchain.",
+        )
+    if str(item.get("version", "")) == "Windows XP" and _has_partial_windows_xp_native_evidence(
+        evidence_registry,
+    ):
+        return (
+            25.0,
+            "partial-xp-native-host-evidence",
+            "Accepted XP native-host evidence is partial; both XP x86 and XP x64 records are required.",
+        )
     host_tier = str(item.get("host_tier", ""))
     if host_tier == "best-effort-source":
         return 60.0, "best-effort-source-host", "Source install may work with compatible Python and clients."
@@ -681,6 +851,347 @@ def _legacy_windows_readiness(item: dict[str, Any]) -> tuple[float, str, str]:
     if host_tier == "remote-target-only":
         return 25.0, "remote-target-only", "Managed as a remote target, not as a modern native host."
     return 30.0, "legacy-unclassified", "Legacy Windows target lacks a recognized host tier."
+
+
+def _legacy_windows_verified_scope(
+    item: dict[str, Any],
+    evidence_registry: dict[str, Any] | None = None,
+) -> bool:
+    return str(item.get("version", "")) == "Windows XP" and _has_windows_xp_native_evidence(
+        evidence_registry,
+    )
+
+
+def _platform_verified_evidence_registry() -> dict[str, Any]:
+    path = repo_root() / "configs" / "platform_verified_evidence.json"
+    if not path.exists():
+        return {"schema_version": 1, "accepted_evidence": []}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {"schema_version": 1, "accepted_evidence": []}
+    return data if isinstance(data, dict) else {"schema_version": 1, "accepted_evidence": []}
+
+
+def _promotion_config_sha256() -> str:
+    path = repo_root() / "configs" / "platform_parity_promotion.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return ""
+    if not isinstance(data, dict):
+        return ""
+    return _json_sha256(data)
+
+
+def _xp_native_evidence_contract_sha256() -> str:
+    path = repo_root() / "configs" / "xp_native_evidence_contract.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return ""
+    if not isinstance(data, dict):
+        return ""
+    return _json_sha256(data)
+
+
+def _json_sha256(data: dict[str, Any]) -> str:
+    payload = json.dumps(data, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _accepted_evidence_targets(evidence_registry: dict[str, Any] | None) -> set[str]:
+    return {str(item.get("target")) for item in _accepted_evidence_entries(evidence_registry)}
+
+
+def _accepted_evidence_entries(evidence_registry: dict[str, Any] | None) -> list[dict[str, Any]]:
+    if not isinstance(evidence_registry, dict):
+        return []
+    rows = evidence_registry.get("accepted_evidence", [])
+    if not isinstance(rows, list):
+        return []
+    return [item for item in rows if isinstance(item, dict) and _is_accepted_evidence_entry(item)]
+
+
+def _is_accepted_evidence_entry(item: dict[str, Any]) -> bool:
+    target = str(item.get("target", ""))
+    if item.get("status") != "accepted" or item.get("readiness_percent") != 100.0:
+        return False
+    if not re.fullmatch(r"v\d+\.\d+\.\d+", str(item.get("release_tag", ""))):
+        return False
+    if str(item.get("promotion_config_sha256", "")) != _promotion_config_sha256():
+        return False
+    if not _has_artifact_validation_command(item, target):
+        return False
+    if not _has_release_assets_and_hashes(item, target):
+        return False
+    if target in LINUX_ACCEPTED_EVIDENCE_MACHINES:
+        return _is_linux_accepted_evidence_entry(item, target)
+    if target in XP_ACCEPTED_EVIDENCE_ARCHITECTURES:
+        return _is_xp_accepted_evidence_entry(item, target)
+    return False
+
+
+def _has_artifact_validation_command(item: dict[str, Any], target: str) -> bool:
+    release_tag = str(item.get("release_tag", ""))
+    command = str(item.get("artifact_validation_command", ""))
+    expected_prefix = f"python scripts/check_platform_promotion_artifacts.py --target {target} "
+    if not command.startswith(expected_prefix):
+        return False
+    tags = re.findall(r"(?:^|\s)--tag\s+(\S+)(?=\s|$)", command)
+    return tags == [release_tag]
+
+
+def _has_release_assets_and_hashes(item: dict[str, Any], target: str) -> bool:
+    release_assets = item.get("release_asset_urls")
+    artifact_hashes = item.get("artifact_sha256")
+    release_tag = str(item.get("release_tag", ""))
+    expected_names = _expected_accepted_artifact_names(target, release_tag)
+    if not expected_names:
+        return False
+    if not isinstance(release_assets, list) or not release_assets:
+        return False
+    if not isinstance(artifact_hashes, dict) or not artifact_hashes:
+        return False
+    repositories: set[str] = set()
+    asset_names: list[str] = []
+    for url in release_assets:
+        match = re.fullmatch(
+            r"https://github\.com/([^/]+/[^/]+)/releases/download/(v\d+\.\d+\.\d+)/.+",
+            str(url),
+        )
+        if not match or match.group(2) != release_tag:
+            return False
+        repositories.add(match.group(1))
+        asset_names.append(Path(str(url)).name)
+    if len(repositories) != 1:
+        return False
+    if len(asset_names) != len(set(asset_names)):
+        return False
+    hashes = {str(name): str(value) for name, value in artifact_hashes.items()}
+    if set(asset_names) != expected_names or set(hashes) != expected_names:
+        return False
+    return all(re.fullmatch(r"[0-9a-f]{64}", digest) for digest in hashes.values())
+
+
+def _expected_accepted_artifact_names(target: str, release_tag: str) -> set[str]:
+    templates = ACCEPTED_EVIDENCE_ARTIFACT_TEMPLATES.get(target)
+    if templates is None:
+        return set()
+    version = release_tag.removeprefix("v")
+    return {template.format(version=version) for template in templates}
+
+
+def _is_linux_accepted_evidence_entry(item: dict[str, Any], target: str) -> bool:
+    if item.get("evidence_type") != "extended-linux-native":
+        return False
+    if item.get("workflow") != ".github/workflows/extended-platform-evidence.yml":
+        return False
+    if not _has_linux_workflow_inputs(item, target):
+        return False
+    workflow_repository = _github_actions_repository(item.get("workflow_run_url"))
+    if not workflow_repository:
+        return False
+    if _release_asset_repositories(item.get("release_asset_urls")) != {workflow_repository}:
+        return False
+    if item.get("artifact_name") != LINUX_ACCEPTED_EVIDENCE_ARTIFACTS[target]:
+        return False
+    labels = {str(label) for label in item.get("runner_labels", [])}
+    if not LINUX_ACCEPTED_EVIDENCE_LABELS[target].issubset(labels):
+        return False
+    checks = {str(check) for check in item.get("checks", [])}
+    if not LINUX_ACCEPTED_EVIDENCE_CHECKS.issubset(checks):
+        return False
+    return _has_linux_builder_identity_binding(item, target)
+
+
+def _has_linux_workflow_inputs(item: dict[str, Any], target: str) -> bool:
+    raw_inputs = item.get("workflow_inputs")
+    if not isinstance(raw_inputs, dict):
+        return False
+    release_tag = str(item.get("release_tag", ""))
+    base_url = str(raw_inputs.get("release_asset_base_url", "")).rstrip("/")
+    if raw_inputs.get("target") != target or raw_inputs.get("release_tag") != release_tag:
+        return False
+    if not base_url.startswith("https://github.com/") or not base_url.endswith(f"/releases/download/{release_tag}"):
+        return False
+    release_assets = item.get("release_asset_urls")
+    if not isinstance(release_assets, list):
+        return False
+    return all(str(url).startswith(f"{base_url}/") for url in release_assets)
+
+
+def _github_actions_repository(raw_url: Any) -> str:
+    match = re.fullmatch(r"https://github\.com/([^/]+/[^/]+)/actions/runs/\d+/?", str(raw_url))
+    return match.group(1) if match else ""
+
+
+def _release_asset_repositories(raw_assets: Any) -> set[str]:
+    if not isinstance(raw_assets, list):
+        return set()
+    repositories: set[str] = set()
+    for url in raw_assets:
+        match = re.fullmatch(
+            r"https://github\.com/([^/]+/[^/]+)/releases/download/v\d+\.\d+\.\d+/.+",
+            str(url),
+        )
+        if match:
+            repositories.add(match.group(1))
+    return repositories
+
+
+def _has_linux_builder_identity(raw_identity: Any, target: str) -> bool:
+    if not isinstance(raw_identity, dict):
+        return False
+    expected_machines = LINUX_ACCEPTED_EVIDENCE_MACHINES[target]
+    if raw_identity.get("schema_version") != 1 or raw_identity.get("target") != target:
+        return False
+    if not str(raw_identity.get("sys_platform", "")).startswith("linux"):
+        return False
+    if str(raw_identity.get("platform_machine", "")).lower() not in expected_machines:
+        return False
+    if str(raw_identity.get("uname_machine", "")).lower() not in expected_machines:
+        return False
+    if _python_version_tuple(str(raw_identity.get("python_version", ""))) < (3, 10):
+        return False
+    tools = raw_identity.get("required_tools")
+    if not isinstance(tools, dict):
+        return False
+    return all(str(tools.get(tool, "")).strip() for tool in LINUX_ACCEPTED_EVIDENCE_TOOLS)
+
+
+def _has_linux_builder_identity_binding(item: dict[str, Any], target: str) -> bool:
+    raw_identity = item.get("builder_identity")
+    digest = str(item.get("builder_identity_sha256", ""))
+    if not isinstance(raw_identity, dict) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+        return False
+    return digest == _json_sha256(raw_identity) and _has_linux_builder_identity(raw_identity, target)
+
+
+def _is_xp_accepted_evidence_entry(item: dict[str, Any], target: str) -> bool:
+    if item.get("evidence_type") != "windows-xp-native-host":
+        return False
+    if item.get("architecture") != XP_ACCEPTED_EVIDENCE_ARCHITECTURES[target]:
+        return False
+    if item.get("separate_legacy_toolchain") is not True:
+        return False
+    if item.get("current_python_pyqt6_stack") is not False:
+        return False
+    if item.get("native_evidence_validation_command") != (
+        "python scripts/check_xp_native_evidence.py --evidence <evidence.json> --assets-dir <artifact-dir>"
+    ):
+        return False
+    if not re.fullmatch(r"[0-9a-f]{64}", str(item.get("xp_evidence_sha256", ""))):
+        return False
+    if str(item.get("xp_evidence_contract_sha256", "")) != _xp_native_evidence_contract_sha256():
+        return False
+    if not _has_xp_evidence_summary(item, target):
+        return False
+    smoke_hashes = item.get("xp_smoke_evidence_sha256")
+    if not isinstance(smoke_hashes, dict):
+        return False
+    if set(str(key) for key in smoke_hashes) != XP_ACCEPTED_EVIDENCE_SMOKE_IDS:
+        return False
+    if not all(re.fullmatch(r"[0-9a-f]{64}", str(value)) for value in smoke_hashes.values()):
+        return False
+    checks = {str(check) for check in item.get("checks", [])}
+    return XP_ACCEPTED_EVIDENCE_CHECKS.issubset(checks)
+
+
+def _has_xp_evidence_summary(item: dict[str, Any], target: str) -> bool:
+    summary = item.get("xp_evidence_summary")
+    if not isinstance(summary, dict):
+        return False
+    if summary.get("target") != target or summary.get("release_tag") != item.get("release_tag"):
+        return False
+    os_data = summary.get("os")
+    if not isinstance(os_data, dict):
+        return False
+    if os_data.get("name") != "Windows XP":
+        return False
+    if os_data.get("architecture") != XP_ACCEPTED_EVIDENCE_ARCHITECTURES[target]:
+        return False
+    if not str(os_data.get("service_pack", "")).strip():
+        return False
+    toolchain = summary.get("toolchain")
+    if not isinstance(toolchain, dict):
+        return False
+    if any(toolchain.get(flag) is not expected for flag, expected in XP_ACCEPTED_EVIDENCE_TOOLCHAIN_FLAGS.items()):
+        return False
+    security = summary.get("security")
+    if not isinstance(security, dict):
+        return False
+    if any(security.get(flag) is not expected for flag, expected in XP_ACCEPTED_EVIDENCE_SECURITY_FLAGS.items()):
+        return False
+    smoke_ids = summary.get("smoke_ids")
+    return isinstance(smoke_ids, list) and {str(smoke_id) for smoke_id in smoke_ids} == XP_ACCEPTED_EVIDENCE_SMOKE_IDS
+
+
+def _python_version_tuple(version: str) -> tuple[int, int]:
+    match = re.fullmatch(r"(\d+)\.(\d+)(?:\.\d+)?", version)
+    if not match:
+        return (0, 0)
+    return int(match.group(1)), int(match.group(2))
+
+
+def _has_accepted_evidence(
+    evidence_registry: dict[str, Any] | None,
+    target: str,
+) -> bool:
+    return target in _accepted_evidence_targets(evidence_registry)
+
+
+def _has_windows_xp_native_evidence(evidence_registry: dict[str, Any] | None) -> bool:
+    required = {"windows-xp-native-x86", "windows-xp-native-x64"}
+    entries = {
+        str(item.get("target")): item
+        for item in _accepted_evidence_entries(evidence_registry)
+        if str(item.get("target")) in required
+    }
+    if not required.issubset(entries):
+        return False
+    release_tags = {str(entries[target].get("release_tag", "")) for target in required}
+    return len(release_tags) == 1 and "" not in release_tags
+
+
+def _has_partial_windows_xp_native_evidence(evidence_registry: dict[str, Any] | None) -> bool:
+    targets = _accepted_evidence_targets(evidence_registry)
+    required = {"windows-xp-native-x86", "windows-xp-native-x64"}
+    return bool(required & targets) and not _has_windows_xp_native_evidence(evidence_registry)
+
+
+def _single_target_evidence_status(
+    evidence_registry: dict[str, Any] | None,
+    target: str,
+) -> dict[str, Any]:
+    accepted = target in _accepted_evidence_targets(evidence_registry)
+    return {
+        "accepted_evidence_required_targets": [target],
+        "accepted_evidence_present_targets": [target] if accepted else [],
+        "accepted_evidence_missing_targets": [] if accepted else [target],
+    }
+
+
+def _windows_xp_evidence_status(evidence_registry: dict[str, Any] | None) -> dict[str, Any]:
+    required = ["windows-xp-native-x86", "windows-xp-native-x64"]
+    entries = {
+        str(item.get("target")): item
+        for item in _accepted_evidence_entries(evidence_registry)
+        if str(item.get("target")) in required
+    }
+    accepted_targets = set(entries)
+    present = [target for target in required if target in accepted_targets]
+    missing = [target for target in required if target not in accepted_targets]
+    return {
+        "accepted_evidence_required_targets": required,
+        "accepted_evidence_present_targets": present,
+        "accepted_evidence_missing_targets": missing,
+        "accepted_evidence_release_tags": {
+            target: str(entries[target].get("release_tag", ""))
+            for target in present
+            if entries[target].get("release_tag")
+        },
+    }
 
 
 def _platform_row(
@@ -694,7 +1205,12 @@ def _platform_row(
     rationale: str,
     score: float,
     kind: str,
+    verified_readiness_scope: bool,
     remote_target_tier: str | None = None,
+    remote_target_coverage_percent: float | None = None,
+    legacy_architectures: list[str] | None = None,
+    security_profile: str | None = None,
+    supported_remote_protocol_count: int | None = None,
 ) -> dict[str, Any]:
     row = {
         "target": target,
@@ -708,21 +1224,33 @@ def _platform_row(
         "target_percent": 100.0,
         "gap_percent": round(max(100.0 - score, 0.0), 1),
         "kind": kind,
+        "verified_readiness_scope": verified_readiness_scope,
     }
     if remote_target_tier is not None:
         row["remote_target_tier"] = remote_target_tier
+    if remote_target_coverage_percent is not None:
+        row["remote_target_coverage_percent"] = round(remote_target_coverage_percent, 1)
+    if legacy_architectures:
+        row["legacy_architectures"] = legacy_architectures
+    if security_profile:
+        row["security_profile"] = security_profile
+    if supported_remote_protocol_count is not None:
+        row["supported_remote_protocol_count"] = supported_remote_protocol_count
     return row
 
 
 def _platform_overall(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    scoped_rows = [row for row in rows if row.get("verified_readiness_scope") is True]
     current_percent = (
-        sum(float(row["current_percent"]) for row in rows) / len(rows)
-        if rows
+        sum(float(row["current_percent"]) for row in scoped_rows) / len(scoped_rows)
+        if scoped_rows
         else 0.0
     )
     return {
-        "product": "Overall",
-        "target_count": len(rows),
+        "product": "Verified targets",
+        "target_count": len(scoped_rows),
+        "tracked_target_count": len(rows),
+        "extended_target_count": len(rows) - len(scoped_rows),
         "current_percent": round(current_percent, 1),
         "target_percent": 100.0,
         "gap_percent": round(max(100.0 - current_percent, 0.0), 1),

@@ -18,6 +18,14 @@ def test_verify_steps_include_full_checks_and_cli_smoke(tmp_path: Path) -> None:
     assert "release identity and artifact truth" in names
     assert "release toolchain reproducibility" in names
     assert "platform support truth" in names
+    assert "platform parity promotion gate" in names
+    assert "platform promotion runbook" in names
+    assert "platform promotion artifact validator contract" in names
+    assert "extended platform evidence workflow" in names
+    assert "Windows XP native evidence contract" in names
+    assert "Windows XP native evidence template generator" in names
+    assert "platform verified evidence registry" in names
+    assert "platform verified evidence record generator" in names
     assert "release publish asset contract" in names
     assert "optional dependency smoke" in names
     assert "native release hardening" in names
@@ -49,6 +57,14 @@ def test_verify_quick_mode_skips_pytest_but_keeps_cli_smoke(tmp_path: Path) -> N
     assert "release identity and artifact truth" in names
     assert "release toolchain reproducibility" in names
     assert "platform support truth" in names
+    assert "platform parity promotion gate" in names
+    assert "platform promotion runbook" in names
+    assert "platform promotion artifact validator contract" in names
+    assert "extended platform evidence workflow" in names
+    assert "Windows XP native evidence contract" in names
+    assert "Windows XP native evidence template generator" in names
+    assert "platform verified evidence registry" in names
+    assert "platform verified evidence record generator" in names
     assert "release publish asset contract" in names
     assert "optional dependency smoke" in names
     assert "native release hardening" in names

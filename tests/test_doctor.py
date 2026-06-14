@@ -27,6 +27,8 @@ def test_doctor_marks_sshv1_as_legacy_opt_in(monkeypatch) -> None:
         assert status["launchable_by_default"] is False
         assert status["requires_profile_opt_in"] is True
         assert "allow_insecure_sshv1=true" in status["summary"]
+        assert "legacy_target=windows-xp-32" in status["summary"]
+        assert "allow_legacy_crypto=true" in status["summary"]
         assert any("protocol v1" in note for note in status["notes"])
 
 
@@ -57,8 +59,9 @@ def test_doctor_cli_prints_sshv1_legacy_status(monkeypatch, capsys) -> None:
                 "requires_profile_opt_in": True,
                 "available_clients": ["ssh"],
                 "summary": (
-                    "legacy-insecure-opt-in: ssh; requires allow_insecure_sshv1=true; "
-                    "protocol v1 support is not verified"
+                    "legacy-insecure-opt-in: ssh; requires allow_insecure_sshv1=true, "
+                    "legacy_target=windows-xp-32/windows-xp-64 and "
+                    "allow_legacy_crypto=true; protocol v1 support is not verified"
                 ),
                 "notes": [],
             },
@@ -69,8 +72,9 @@ def test_doctor_cli_prints_sshv1_legacy_status(monkeypatch, capsys) -> None:
                 "requires_profile_opt_in": True,
                 "available_clients": ["ssh"],
                 "summary": (
-                    "legacy-insecure-opt-in: ssh; requires allow_insecure_sshv1=true; "
-                    "protocol v1 support is not verified"
+                    "legacy-insecure-opt-in: ssh; requires allow_insecure_sshv1=true, "
+                    "legacy_target=windows-xp-32/windows-xp-64 and "
+                    "allow_legacy_crypto=true; protocol v1 support is not verified"
                 ),
                 "notes": [],
             },
@@ -85,4 +89,6 @@ def test_doctor_cli_prints_sshv1_legacy_status(monkeypatch, capsys) -> None:
     assert "ssh1     legacy-insecure-opt-in" in output
     assert "sshv1    legacy-insecure-opt-in" in output
     assert "allow_insecure_sshv1=true" in output
+    assert "legacy_target=windows-xp-32" in output
+    assert "allow_legacy_crypto=true" in output
     assert "ssh1     ssh\n" not in output

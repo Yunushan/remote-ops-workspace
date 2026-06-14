@@ -1,0 +1,5 @@
+{
+  "schema_version": 1,
+  "policy": "Only accepted evidence records in this file can promote Linux i386, Linux armhf, or Windows XP native-host readiness. Accepted records must include release asset URLs, per-artifact SHA-256 digests, Linux builder identity evidence and builder identity SHA-256 when applicable, Linux workflow dispatch inputs when applicable, XP evidence bundle SHA-256 digests, XP evidence contract SHA-256, and XP evidence summary binding when applicable, and the promotion config SHA-256; each accepted record must have a unique target, all release evidence for one record must use the same GitHub repository, and Windows XP x86/x64 pairs must use the same release_tag. Empty means no promotion.",
+  "accepted_evidence": []
+}

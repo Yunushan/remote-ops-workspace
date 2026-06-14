@@ -1,0 +1,124 @@
+name: extended-platform-evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Extended platform target to build and validate"
+        required: true
+        type: choice
+        options:
+          - linux-i386
+          - linux-armhf
+      release_tag:
+        description: "Release tag to validate, for example v1.0.2"
+        required: true
+        type: string
+      release_asset_base_url:
+        description: "GitHub release download base URL ending in /releases/download/vX.Y.Z"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  SOURCE_DATE_EPOCH: "1704067200"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PYTHONHASHSEED: "0"
+
+jobs:
+  linux-i386-native-evidence:
+    if: ${{ inputs.target == 'linux-i386' }}
+    runs-on: [self-hosted, linux, i386]
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Check Linux i386 builder identity
+        run: |
+          mkdir -p native-dist/linux
+          python3 scripts/check_extended_platform_builder.py --target linux-i386 --out native-dist/linux/builder-identity-linux-i386.json
+      - name: Create isolated release environment
+        run: |
+          python3 -m venv .venv-native
+          . .venv-native/bin/activate
+          python -m pip install --constraint requirements-release.txt pip setuptools wheel ".[security,package]"
+      - name: Build Linux i386 native artifacts
+        run: |
+          . .venv-native/bin/activate
+          TARGET_ARCH=i386 PYTHON_BIN=.venv-native/bin/python bash scripts/make_linux_native.sh
+      - name: Smoke Linux i386 native artifacts
+        run: bash scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux
+      - name: Validate Linux i386 promotion artifacts
+        run: |
+          . .venv-native/bin/activate
+          python scripts/check_platform_promotion_artifacts.py --target linux-i386 --assets-dir native-dist/linux --tag "${{ inputs.release_tag }}"
+      - name: Generate Linux i386 accepted-evidence candidate
+        run: |
+          . .venv-native/bin/activate
+          python scripts/make_platform_verified_evidence_record.py \
+            --target linux-i386 \
+            --release-tag "${{ inputs.release_tag }}" \
+            --assets-dir native-dist/linux \
+            --release-asset-base-url "${{ inputs.release_asset_base_url }}" \
+            --workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --builder-evidence native-dist/linux/builder-identity-linux-i386.json \
+            --runner-label self-hosted \
+            --runner-label linux \
+            --runner-label i386 \
+            --out native-dist/linux/platform-verified-evidence-linux-i386.json
+      - uses: actions/upload-artifact@v7
+        with:
+          name: extended-linux-i386-native-evidence
+          path: native-dist/linux/*
+          if-no-files-found: error
+
+  linux-armhf-native-evidence:
+    if: ${{ inputs.target == 'linux-armhf' }}
+    runs-on: [self-hosted, linux, armhf]
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Check Linux armhf builder identity
+        run: |
+          mkdir -p native-dist/linux
+          python3 scripts/check_extended_platform_builder.py --target linux-armhf --out native-dist/linux/builder-identity-linux-armhf.json
+      - name: Create isolated release environment
+        run: |
+          python3 -m venv .venv-native
+          . .venv-native/bin/activate
+          python -m pip install --constraint requirements-release.txt pip setuptools wheel ".[security,package]"
+      - name: Build Linux armhf native artifacts
+        run: |
+          . .venv-native/bin/activate
+          TARGET_ARCH=armhf PYTHON_BIN=.venv-native/bin/python bash scripts/make_linux_native.sh
+      - name: Smoke Linux armhf native artifacts
+        run: bash scripts/smoke_linux_native.sh --arch armhf --dist native-dist/linux
+      - name: Validate Linux armhf promotion artifacts
+        run: |
+          . .venv-native/bin/activate
+          python scripts/check_platform_promotion_artifacts.py --target linux-armhf --assets-dir native-dist/linux --tag "${{ inputs.release_tag }}"
+      - name: Generate Linux armhf accepted-evidence candidate
+        run: |
+          . .venv-native/bin/activate
+          python scripts/make_platform_verified_evidence_record.py \
+            --target linux-armhf \
+            --release-tag "${{ inputs.release_tag }}" \
+            --assets-dir native-dist/linux \
+            --release-asset-base-url "${{ inputs.release_asset_base_url }}" \
+            --workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --builder-evidence native-dist/linux/builder-identity-linux-armhf.json \
+            --runner-label self-hosted \
+            --runner-label linux \
+            --runner-label armhf \
+            --out native-dist/linux/platform-verified-evidence-linux-armhf.json
+      - uses: actions/upload-artifact@v7
+        with:
+          name: extended-linux-armhf-native-evidence
+          path: native-dist/linux/*
+          if-no-files-found: error

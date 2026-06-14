@@ -25,6 +25,7 @@ def main() -> int:
     errors: list[str] = []
     errors.extend(check_redaction_samples())
     errors.extend(check_support_bundle_redaction())
+    errors.extend(check_legacy_security_policy())
     errors.extend(check_docs_and_verifier())
     if errors:
         for error in errors:
@@ -92,9 +93,53 @@ def check_docs_and_verifier() -> list[str]:
         "URL-embedded passwords",
         "sensitive option key names",
         "python scripts/check_security_polish.py",
+        "TLS 1.3 preferred and TLS 1.2 minimum",
+        "legacy_target=windows-xp-32",
+        "allow_legacy_crypto=true",
+        "allow_legacy_rdp_security=true",
     ):
         if snippet not in docs:
             errors.append(f"security docs missing required snippet: {snippet}")
+    return errors
+
+
+def check_legacy_security_policy() -> list[str]:
+    errors: list[str] = []
+    baseline = json.loads(read("configs/security_baseline.json"))
+    modern = baseline.get("modern_defaults", {})
+    if modern.get("preferred_tls") != "TLS 1.3":
+        errors.append("security_baseline preferred_tls must stay TLS 1.3")
+    if modern.get("minimum_tls") != "TLS 1.2":
+        errors.append("security_baseline minimum_tls must stay TLS 1.2")
+    for protocol in ("SSL 2.0", "SSL 3.0", "TLS 1.0", "TLS 1.1"):
+        if protocol not in modern.get("deprecated_tls_protocols", []):
+            errors.append(f"security_baseline must deprecate {protocol}")
+    for key in (
+        "ssh_legacy_crypto_default",
+        "rdp_legacy_security_default",
+        "weak_crypto_global_default",
+    ):
+        if modern.get(key) != "blocked":
+            errors.append(f"security_baseline {key} must be blocked")
+
+    xp_policy = baseline.get("legacy_windows_xp_remote_targets", {})
+    if xp_policy.get("coverage_percent") != 100.0:
+        errors.append("Windows XP remote-target security policy must keep 100.0% coverage")
+    if xp_policy.get("architectures") != ["x86", "x64"]:
+        errors.append("Windows XP remote-target security policy must cover x86 and x64")
+    if xp_policy.get("native_operator_host") is not False:
+        errors.append("Windows XP security policy must not claim native operator-host support")
+
+    launcher = read("src/remote_ops_workspace/launcher.py")
+    for snippet in (
+        "WEAK_SSH_ALGORITHMS_BY_OPTION",
+        "allow_legacy_crypto",
+        "allow_legacy_rdp_security",
+        "legacy_target",
+        "security == \"rdp\"",
+    ):
+        if snippet not in launcher:
+            errors.append(f"launcher missing legacy security enforcement snippet: {snippet}")
     return errors
 
 

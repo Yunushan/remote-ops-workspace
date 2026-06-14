@@ -221,6 +221,9 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
     "android.termux": {
         "files": ["installers/install-termux.sh", "docs/ANDROID.md"],
     },
+    "ios.web-pwa": {
+        "files": ["apps/web/index.html", "apps/web/manifest.json", "apps/web/sw.js", "docs/IOS.md"],
+    },
     "portable.mode": {
         "cli": ["init", "welcome"],
         "module_attrs": ["remote_ops_workspace.paths:data_dir"],

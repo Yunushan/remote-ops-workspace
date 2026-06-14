@@ -1,3 +1,4 @@
+import json
 import socket
 from functools import partial
 from pathlib import Path
@@ -76,6 +77,25 @@ def test_service_worker_cache_is_same_origin_get_only() -> None:
     assert "url.origin !== self.location.origin" in service_worker
     assert "caches.delete" in service_worker
     assert "remote-ops-workspace-static-v2" in service_worker
+
+
+def test_web_pwa_declares_android_and_ios_browser_install_contract() -> None:
+    manifest = json.loads(Path("apps/web/manifest.json").read_text(encoding="utf-8"))
+    index = Path("apps/web/index.html").read_text(encoding="utf-8")
+    styles = Path("apps/web/styles.css").read_text(encoding="utf-8")
+    app = Path("apps/web/app.js").read_text(encoding="utf-8")
+    service_worker = Path("apps/web/sw.js").read_text(encoding="utf-8")
+
+    assert '<meta name="viewport" content="width=device-width, initial-scale=1">' in index
+    assert '<link rel="manifest" href="manifest.json">' in index
+    assert manifest["display"] == "standalone"
+    assert manifest["start_url"] == "./index.html"
+    assert manifest["scope"] == "./"
+    assert manifest["prefer_related_applications"] is False
+    assert "serviceWorker" in app
+    assert "manifest.json" in service_worker
+    assert "repeat(auto-fit, minmax(280px, 1fr))" in styles
+    assert "@media (max-width: 800px)" in styles
 
 
 def test_web_container_defaults_are_hardened() -> None:

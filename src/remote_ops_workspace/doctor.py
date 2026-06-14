@@ -11,7 +11,8 @@ from .paths import data_dir
 
 SSHV1_DOCTOR_NOTES = [
     "SSHv1 is insecure and disabled by default in Remote Ops Workspace.",
-    "Launching requires a profile option such as allow_insecure_sshv1=true.",
+    "Launching requires allow_insecure_sshv1=true, legacy_target=windows-xp-32 or "
+    "windows-xp-64, and allow_legacy_crypto=true.",
     "Modern OpenSSH builds commonly remove or disable SSH protocol v1 support.",
     "Doctor checks client presence only; it does not prove protocol v1 negotiation works.",
 ]
@@ -68,7 +69,8 @@ def _protocol_status(protocol: str, candidates: dict[str, bool]) -> dict[str, ob
             "requires_profile_opt_in": True,
             "available_clients": available_clients,
             "summary": (
-                f"{status}: {client_summary}; requires allow_insecure_sshv1=true; "
+                f"{status}: {client_summary}; requires allow_insecure_sshv1=true, "
+                "legacy_target=windows-xp-32/windows-xp-64 and allow_legacy_crypto=true; "
                 "protocol v1 support is not verified"
             ),
             "notes": SSHV1_DOCTOR_NOTES,

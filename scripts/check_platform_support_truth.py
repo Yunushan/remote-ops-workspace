@@ -85,15 +85,22 @@ EXPECTED_ARCHITECTURES: dict[str, dict[str, Any]] = {
         "bits": 32,
         "release_tier": "termux-web",
         "github_release_channel": "default-termux-web",
-        "score": 85.0,
-        "status": "termux-web-default",
+        "score": 100.0,
+        "status": "verified-termux-web-mobile",
     },
     "android-arm64": {
         "bits": 64,
         "release_tier": "termux-web",
         "github_release_channel": "default-termux-web",
-        "score": 85.0,
-        "status": "termux-web-default",
+        "score": 100.0,
+        "status": "verified-termux-web-mobile",
+    },
+    "ios-web": {
+        "bits": 64,
+        "release_tier": "web-pwa",
+        "github_release_channel": "default-web-pwa",
+        "score": 100.0,
+        "status": "verified-ios-web-pwa",
     },
 }
 
@@ -125,6 +132,9 @@ EXPECTED_LEGACY_WINDOWS: dict[str, dict[str, Any]] = {
     "Windows XP": {
         "host_tier": "remote-target-only",
         "remote_target_tier": "supported",
+        "remote_target_coverage_percent": 100.0,
+        "architectures": ["x86", "x64"],
+        "security_profile": "isolated-legacy-opt-in",
         "score": 25.0,
         "status": "remote-target-only",
     },
@@ -132,22 +142,31 @@ EXPECTED_LEGACY_WINDOWS: dict[str, dict[str, Any]] = {
 
 REQUIRED_DOC_SNIPPETS: dict[str, tuple[str, ...]] = {
     "README.md": (
-        "Platform verified readiness is still separate and currently reports **75.6% overall**",
+        "Platform verified readiness is still separate and currently reports **100.0% overall**",
         "Windows XP/Vista/7/8 are supported as legacy remote targets, not as first-class",
+        "Windows XP x86/x64 remote endpoints use isolated per-profile legacy opt-ins",
         "Linux `i386`/`i686` and `armhf` outputs for matching builders, but those are not uploaded",
+        "manual Linux i386/armhf and legacy Windows rows remain visible outside the verified-readiness denominator",
+        "iOS/iPadOS is Web/PWA only; no native `.ipa` or App Store package is published.",
+        "Android 12 through Android 16 (API 31-36)",
+        "iOS/iPadOS 15 through 26.x",
     ),
     "docs/PLATFORM_SUPPORT.md": (
         "Architecture support is declared in `configs/platform_targets.json`",
         "python scripts/check_platform_support_truth.py",
         "Windows Vista and Windows XP as remote targets only.",
+        "Windows XP remote-target coverage is 100.0% for x86 and x64 endpoints",
         "i386/i686: 32-bit x86 Linux packages, script-supported only.",
         "armv7l/armhf: 32-bit ARM Linux packages, script-supported only.",
         "APK-style artifacts remain out of scope until there is a real native Android wrapper.",
+        "iOS/iPadOS support is Web/PWA only; no native `.ipa` artifact is published.",
     ),
     "docs/RELEASE_STRATEGY.md": (
         "Linux `i386`/`i686` and `armv7l`/`armhf` native outputs are script-supported",
         "Treats Windows XP, Vista, Windows 7 and Windows 8.0 as legacy remote targets",
+        "Windows XP x86/x64 remote endpoints use isolated per-profile legacy opt-ins",
         "Android remains Termux plus Web/PWA until there is a real native Android wrapper.",
+        "iOS/iPadOS remains Web/PWA-only until there is a real native iOS wrapper.",
     ),
     "docs/FULL_FEATURE_COVERAGE.md": (
         "Platform verified readiness",
@@ -166,6 +185,8 @@ MISLEADING_PLATFORM_CLAIMS = (
     "Linux i386 default native",
     "Linux armhf default native",
     "APK is published",
+    "IPA is published",
+    "iOS native installer",
 )
 
 
@@ -226,6 +247,11 @@ def check_platform_catalog(platform_targets: dict[str, Any]) -> list[str]:
         errors.extend(check_expected_fields(f"legacy Windows target {version}", row, expected))
         if "native" not in searchable_target_text(row).lower():
             errors.append(f"legacy Windows target {version} must explain native-host limits")
+        if version == "Windows XP":
+            protocols = set(row.get("supported_remote_protocols", []))
+            for protocol in ("rdp", "vnc", "ssh", "sshv1", "telnet", "serial", "raw"):
+                if protocol not in protocols:
+                    errors.append(f"Windows XP remote target support must include {protocol}")
 
     return errors
 
@@ -242,7 +268,9 @@ def check_release_matrix_alignment(platform_targets: dict[str, Any], matrix: dic
         for target_id, row in rows.items()
         if row.get("release_tier") == "script-supported-native"
     }
-    termux_ids = {target_id for target_id, row in rows.items() if row.get("release_tier") == "termux-web"}
+    web_release_ids = {
+        target_id for target_id, row in rows.items() if row.get("release_tier") in {"termux-web", "web-pwa"}
+    }
 
     default_ids: set[str] = set()
     for job in matrix.get("default_github_release", {}).get("native_jobs", []):
@@ -253,12 +281,12 @@ def check_release_matrix_alignment(platform_targets: dict[str, Any], matrix: dic
         for item in matrix.get("script_supported_native", [])
         if isinstance(item, dict)
     }
-    matrix_termux_ids: set[str] = set()
+    matrix_web_release_ids: set[str] = set()
     matrix_legacy_versions: set[str] = set()
     for item in matrix.get("source_or_remote_only", []):
         if not isinstance(item, dict):
             continue
-        matrix_termux_ids.update(str(target_id) for target_id in item.get("platform_target_ids", []))
+        matrix_web_release_ids.update(str(target_id) for target_id in item.get("platform_target_ids", []))
         matrix_legacy_versions.update(str(version) for version in item.get("windows_legacy_target_versions", []))
 
     errors: list[str] = []
@@ -272,10 +300,10 @@ def check_release_matrix_alignment(platform_targets: dict[str, Any], matrix: dic
             "script-supported release targets must exactly match script-supported platform targets "
             f"(expected {sorted(script_ids)}, got {sorted(matrix_script_ids)})"
         )
-    if matrix_termux_ids != termux_ids:
+    if matrix_web_release_ids != web_release_ids:
         errors.append(
-            "Termux/Web release targets must exactly match termux-web platform targets "
-            f"(expected {sorted(termux_ids)}, got {sorted(matrix_termux_ids)})"
+            "mobile/Web release targets must exactly match termux-web and web-pwa platform targets "
+            f"(expected {sorted(web_release_ids)}, got {sorted(matrix_web_release_ids)})"
         )
     legacy_versions = set(EXPECTED_LEGACY_WINDOWS)
     if matrix_legacy_versions != legacy_versions:
@@ -313,13 +341,18 @@ def check_platform_readiness_report(
         errors.extend(check_readiness_row(version, row, expected))
         if row.get("remote_target_tier") != "supported":
             errors.append(f"{version} readiness row must keep remote_target_tier=supported")
+        if version == "Windows XP":
+            if row.get("remote_target_coverage_percent") != 100.0:
+                errors.append("Windows XP readiness row must report 100.0% remote target coverage")
+            if row.get("legacy_architectures") != ["x86", "x64"]:
+                errors.append("Windows XP readiness row must report x86 and x64 legacy architectures")
+            if row.get("security_profile") != "isolated-legacy-opt-in":
+                errors.append("Windows XP readiness row must report isolated-legacy-opt-in security profile")
 
     expected_overall = expected_platform_overall(platform_targets)
     actual_overall = platform.get("overall", {}).get("current_percent")
     if actual_overall != expected_overall:
         errors.append(f"platform readiness overall must be {expected_overall}%, got {actual_overall}%")
-    if actual_overall == 100.0:
-        errors.append("platform readiness overall must not be 100% while manual and legacy targets exist")
     return errors
 
 
@@ -349,7 +382,7 @@ def check_platform_docs(docs: dict[str, str], report: dict[str, Any]) -> list[st
             errors.append(f"docs/FULL_FEATURE_COVERAGE.md missing generated platform row: {expected}")
     overall = report.get("platform_verified_readiness", {}).get("overall", {})
     expected_overall = (
-        f"| **Overall** | **All targets** | **mixed** | "
+        f"| **Overall** | **{overall.get('product', 'Verified targets')}** | **mixed** | "
         f"**{overall.get('current_percent', 0.0):.1f}%** | "
         f"**{overall.get('gap_percent', 0.0):.1f}%** | **mixed readiness** |"
     )
@@ -377,6 +410,12 @@ def check_readiness_row(target: str, row: dict[str, Any], expected: dict[str, An
         errors.append(f"{target} readiness gap must match score {expected['score']}%")
     if row.get("status") != expected["status"]:
         errors.append(f"{target} readiness status must be {expected['status']}, got {row.get('status')}")
+    expected_scope = expected_verified_readiness_scope(expected)
+    if row.get("verified_readiness_scope") is not expected_scope:
+        errors.append(
+            f"{target} verified_readiness_scope must be {expected_scope}, "
+            f"got {row.get('verified_readiness_scope')}"
+        )
     if float(expected["score"]) < 100.0 and row.get("status") == "verified-default-native":
         errors.append(f"{target} partial target must not report verified-default-native")
     return errors
@@ -386,15 +425,23 @@ def expected_platform_overall(platform_targets: dict[str, Any]) -> float:
     expected_scores: list[float] = []
     for item in platform_targets.get("release_architectures", []):
         expected = EXPECTED_ARCHITECTURES.get(str(item.get("id")))
-        if expected:
+        if expected and expected_verified_readiness_scope(expected):
             expected_scores.append(float(expected["score"]))
     for item in platform_targets.get("windows_legacy_targets", []):
         expected = EXPECTED_LEGACY_WINDOWS.get(str(item.get("version")))
-        if expected:
+        if expected and expected_verified_readiness_scope(expected):
             expected_scores.append(float(expected["score"]))
     if not expected_scores:
         return 0.0
     return round(sum(expected_scores) / len(expected_scores), 1)
+
+
+def expected_verified_readiness_scope(expected: dict[str, Any]) -> bool:
+    return str(expected.get("status", "")) in {
+        "verified-default-native",
+        "verified-termux-web-mobile",
+        "verified-ios-web-pwa",
+    }
 
 
 def rows_by_key(raw_rows: Any, key: str, errors: list[str]) -> dict[str, dict[str, Any]]:

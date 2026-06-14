@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "purpose": "Validate imported Windows XP native host readiness evidence before any XP x86/x64 target can be promoted above remote-target-only.",
+  "targets": {
+    "windows-xp-native-x86": {
+      "os_name": "Windows XP",
+      "architecture": "x86",
+      "minimum_service_pack": "SP3",
+      "required_artifact_target": "windows-xp-x86"
+    },
+    "windows-xp-native-x64": {
+      "os_name": "Windows XP",
+      "architecture": "x64",
+      "minimum_service_pack": "x64",
+      "required_artifact_target": "windows-xp-x64"
+    }
+  },
+  "required_smoke_ids": [
+    "cli_launch",
+    "gui_or_legacy_host_ui_launch",
+    "loopback_profile_dry_run",
+    "artifact_manifest_validation",
+    "legacy_crypto_profile_scoped",
+    "modern_defaults_unchanged"
+  ],
+  "required_smoke_evidence_file": true,
+  "smoke_evidence_root": "Evidence files are resolved relative to the evidence JSON directory unless --evidence-dir is provided.",
+  "required_artifact_list_exact": true,
+  "artifact_validation_tag_must_match_release_tag": true,
+  "required_security_flags": {
+    "legacy_crypto_profile_scoped": true,
+    "modern_defaults_unchanged": true,
+    "weak_crypto_global_default": false
+  },
+  "required_toolchain_flags": {
+    "separate_legacy_toolchain": true,
+    "current_python_pyqt6_stack": false
+  },
+  "forbidden_evidence_patterns": [
+    "BEGIN PRIVATE KEY",
+    "BEGIN OPENSSH PRIVATE KEY",
+    "password=",
+    "passwd=",
+    "secret=",
+    "token="
+  ]
+}

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import re
 import sys
@@ -10,17 +11,39 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 MATRIX_PATH = ROOT / "configs" / "release_matrix.json"
+EVIDENCE_PATH = ROOT / "configs" / "platform_verified_evidence.json"
 WORKFLOW_PATH = ROOT / ".github" / "workflows" / "release.yml"
 EXPECTED_CHECKSUM_SUFFIX = "SHA256SUMS.txt"
+XP_NATIVE_EVIDENCE_TARGETS = {"windows-xp-native-x86", "windows-xp-native-x64"}
+GATED_NATIVE_PATTERNS = {
+    "linux-i386": (
+        r"remote-ops-workspace-v\d+\.\d+\.\d+-linux-i386\.deb$",
+        r"remote-ops-workspace-v\d+\.\d+\.\d+-linux-i686\.",
+        r"remote-ops-workspace-v\d+\.\d+\.\d+-linux-i686-native-",
+    ),
+    "linux-armhf": (
+        r"remote-ops-workspace-v\d+\.\d+\.\d+-linux-armhf\.deb$",
+        r"remote-ops-workspace-v\d+\.\d+\.\d+-linux-armv7hl\.",
+        r"remote-ops-workspace-v\d+\.\d+\.\d+-linux-armhf\.",
+        r"remote-ops-workspace-v\d+\.\d+\.\d+-linux-armhf-native-",
+    ),
+    "windows-xp-native-x86": (
+        r"remote-ops-workspace-v\d+\.\d+\.\d+-windows-xp-x86-native",
+    ),
+    "windows-xp-native-x64": (
+        r"remote-ops-workspace-v\d+\.\d+\.\d+-windows-xp-x64-native",
+    ),
+}
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     matrix = json.loads(MATRIX_PATH.read_text(encoding="utf-8"))
+    evidence_registry = read_evidence_registry()
     workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
-    errors = check_publish_contract(matrix, workflow)
+    errors = check_publish_contract(matrix, workflow, evidence_registry=evidence_registry)
     if args.assets_dir is not None:
-        errors.extend(check_release_assets(args.assets_dir, matrix, tag=args.tag))
+        errors.extend(check_release_assets(args.assets_dir, matrix, tag=args.tag, evidence_registry=evidence_registry))
     if errors:
         for error in errors:
             print(f"release publish assets: {error}", file=sys.stderr)
@@ -43,9 +66,21 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def check_publish_contract(matrix: dict[str, Any], workflow: str) -> list[str]:
+def check_publish_contract(
+    matrix: dict[str, Any],
+    workflow: str,
+    *,
+    evidence_registry: dict[str, Any] | None = None,
+) -> list[str]:
     errors: list[str] = []
     expected = expected_release_assets(matrix)
+    errors.extend(
+        check_gated_native_assets_have_evidence(
+            expected,
+            evidence_registry=evidence_registry,
+            label="default release matrix",
+        )
+    )
     if len(expected) < 20:
         errors.append(f"release matrix expected asset set is unexpectedly small: {len(expected)}")
     checksum_assets = [asset for asset in expected if asset.endswith(EXPECTED_CHECKSUM_SUFFIX)]
@@ -71,13 +106,26 @@ def check_publish_contract(matrix: dict[str, Any], workflow: str) -> list[str]:
     return errors
 
 
-def check_release_assets(assets_dir: Path, matrix: dict[str, Any], *, tag: str | None) -> list[str]:
+def check_release_assets(
+    assets_dir: Path,
+    matrix: dict[str, Any],
+    *,
+    tag: str | None,
+    evidence_registry: dict[str, Any] | None = None,
+) -> list[str]:
     errors: list[str] = []
     root = assets_dir.resolve()
     if not root.is_dir():
         return [f"release asset directory missing: {assets_dir}"]
     expected = expected_release_assets(matrix, tag=tag)
     actual = {path.name for path in root.iterdir() if path.is_file()}
+    errors.extend(
+        check_gated_native_assets_have_evidence(
+            actual,
+            evidence_registry=evidence_registry,
+            label="release asset directory",
+        )
+    )
     missing = sorted(expected - actual)
     extra = sorted(actual - expected)
     if missing:
@@ -87,6 +135,77 @@ def check_release_assets(assets_dir: Path, matrix: dict[str, Any], *, tag: str |
     errors.extend(check_checksum_sidecars(root, expected))
     errors.extend(check_release_manifest(root, matrix, tag=tag))
     return errors
+
+
+def check_gated_native_assets_have_evidence(
+    assets: set[str],
+    *,
+    evidence_registry: dict[str, Any] | None = None,
+    label: str,
+) -> list[str]:
+    accepted = accepted_evidence_targets(evidence_registry or read_evidence_registry())
+    errors: list[str] = []
+    for asset in sorted(assets):
+        gated_targets = gated_native_targets_for_asset(asset)
+        for target in sorted(gated_targets):
+            if target in XP_NATIVE_EVIDENCE_TARGETS:
+                missing_xp = sorted(XP_NATIVE_EVIDENCE_TARGETS - accepted)
+                if missing_xp:
+                    errors.append(
+                        f"{label} includes gated Windows XP native asset {asset} but XP native "
+                        f"promotion requires accepted evidence for both targets; missing {missing_xp}"
+                    )
+                continue
+            if target not in accepted:
+                errors.append(
+                    f"{label} includes gated native asset {asset} for {target} "
+                    "without accepted platform evidence"
+                )
+    return errors
+
+
+def gated_native_targets_for_asset(filename: str) -> set[str]:
+    targets: set[str] = set()
+    for target, patterns in GATED_NATIVE_PATTERNS.items():
+        if any(re.search(pattern, filename) for pattern in patterns):
+            targets.add(target)
+    return targets
+
+
+def accepted_evidence_targets(evidence_registry: dict[str, Any]) -> set[str]:
+    if validate_accepted_evidence_registry(evidence_registry):
+        return set()
+    rows = evidence_registry.get("accepted_evidence", [])
+    if not isinstance(rows, list):
+        return set()
+    return {
+        str(item.get("target", ""))
+        for item in rows
+        if isinstance(item, dict)
+        and item.get("status") == "accepted"
+        and item.get("readiness_percent") == 100.0
+    }
+
+
+def validate_accepted_evidence_registry(evidence_registry: dict[str, Any]) -> list[str]:
+    checker_path = ROOT / "scripts" / "check_platform_verified_evidence.py"
+    spec = importlib.util.spec_from_file_location("check_platform_verified_evidence", checker_path)
+    if spec is None or spec.loader is None:
+        return ["cannot load platform verified evidence checker"]
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module.check_platform_verified_evidence(registry=evidence_registry)
+
+
+def read_evidence_registry() -> dict[str, Any]:
+    if not EVIDENCE_PATH.exists():
+        return {"schema_version": 1, "accepted_evidence": []}
+    try:
+        data = json.loads(EVIDENCE_PATH.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {"schema_version": 1, "accepted_evidence": []}
+    return data if isinstance(data, dict) else {"schema_version": 1, "accepted_evidence": []}
 
 
 def expected_release_assets(matrix: dict[str, Any], *, tag: str | None = None) -> set[str]:

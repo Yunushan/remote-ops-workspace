@@ -204,6 +204,22 @@
         "No APK is published yet.",
         "Use the Termux installer or Web/PWA bundle."
       ]
+    },
+    {
+      "id": "ios-web",
+      "platform": "iOS/iPadOS",
+      "cpu_arch": "arm64",
+      "bits": 64,
+      "release_tier": "web-pwa",
+      "github_release_channel": "default-web-pwa",
+      "host_support": "Mobile Safari/browser PWA on iPhone and iPad; CLI, native GUI and local Python host installs are not supported.",
+      "assets": [
+        "remote-ops-workspace-v1.0.2-web-pwa.zip"
+      ],
+      "notes": [
+        "No IPA or App Store package is published yet.",
+        "Use the Web/PWA bundle from Safari or another trusted browser-accessible host."
+      ]
     }
   ],
   "windows_legacy_targets": [
@@ -248,8 +264,27 @@
       "version": "Windows XP",
       "host_tier": "remote-target-only",
       "remote_target_tier": "supported",
+      "remote_target_coverage_percent": 100.0,
+      "architectures": [
+        "x86",
+        "x64"
+      ],
+      "security_profile": "isolated-legacy-opt-in",
+      "supported_remote_protocols": [
+        "rdp",
+        "vnc",
+        "ssh",
+        "sshv1",
+        "sftp",
+        "scp",
+        "telnet",
+        "serial",
+        "raw"
+      ],
       "notes": [
         "Can be managed as a remote target when an external client can still negotiate the protocol.",
+        "Covers both 32-bit x86 and 64-bit x64 XP endpoints as managed hosts.",
+        "Legacy SSH/RDP crypto is blocked globally and requires per-profile legacy_target plus explicit opt-in flags.",
         "Modern native Python/PyQt release artifacts do not target XP."
       ]
     }

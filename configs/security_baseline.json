@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "modern_defaults": {
+    "preferred_tls": "TLS 1.3",
+    "minimum_tls": "TLS 1.2",
+    "deprecated_tls_protocols": [
+      "SSL 2.0",
+      "SSL 3.0",
+      "TLS 1.0",
+      "TLS 1.1"
+    ],
+    "ssh_legacy_crypto_default": "blocked",
+    "rdp_legacy_security_default": "blocked",
+    "weak_crypto_global_default": "blocked"
+  },
+  "legacy_windows_xp_remote_targets": {
+    "coverage_percent": 100.0,
+    "architectures": [
+      "x86",
+      "x64"
+    ],
+    "native_operator_host": false,
+    "profile_scope": "per-target",
+    "required_profile_options": [
+      "legacy_target=windows-xp-32|windows-xp-64",
+      "allow_legacy_crypto=true for weak SSH algorithms or SSHv1",
+      "allow_legacy_rdp_security=true for RDP native security"
+    ],
+    "allowed_only_when_isolated": [
+      "SSHv1",
+      "ssh-rsa",
+      "ssh-dss",
+      "diffie-hellman-group1-sha1",
+      "diffie-hellman-group14-sha1",
+      "diffie-hellman-group-exchange-sha1",
+      "CBC/3DES/RC4 SSH ciphers",
+      "RDP security=rdp"
+    ]
+  },
+  "release_dependency_policy": {
+    "cryptography": "pin to the current maintained PyPI release in requirements-release.txt and configs/release_toolchain.json",
+    "openssl_tls": "use the interpreter/platform OpenSSL defaults for TLS; do not lower TLS globally for XP compatibility"
+  }
+}

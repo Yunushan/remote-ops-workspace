@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "contract": "Verified mobile support covers Android Termux/Web/PWA and iOS/iPadOS Web/PWA only. It does not claim native APK, IPA, Play Store or App Store packaging.",
+  "android": {
+    "score": 100.0,
+    "status": "verified-termux-web-mobile",
+    "platform_target_ids": [
+      "android-armv7",
+      "android-arm64"
+    ],
+    "architectures": [
+      {
+        "platform_target_id": "android-armv7",
+        "termux_arch": "armeabi-v7a",
+        "bits": 32
+      },
+      {
+        "platform_target_id": "android-arm64",
+        "termux_arch": "arm64-v8a",
+        "bits": 64
+      }
+    ],
+    "supported_api_levels": [
+      {
+        "version": "Android 12",
+        "api_level": 31
+      },
+      {
+        "version": "Android 12L",
+        "api_level": 32
+      },
+      {
+        "version": "Android 13",
+        "api_level": 33
+      },
+      {
+        "version": "Android 14",
+        "api_level": 34
+      },
+      {
+        "version": "Android 15",
+        "api_level": 35
+      },
+      {
+        "version": "Android 16",
+        "api_level": 36
+      }
+    ],
+    "ci_jobs": [
+      "mobile-web",
+      "android-emulator-web"
+    ],
+    "native_apk": false
+  },
+  "ios_ipados": {
+    "score": 100.0,
+    "status": "verified-ios-web-pwa",
+    "platform_target_id": "ios-web",
+    "architecture": "arm64",
+    "supported_versions": [
+      "iOS/iPadOS 15",
+      "iOS/iPadOS 16",
+      "iOS/iPadOS 17",
+      "iOS/iPadOS 18",
+      "iOS/iPadOS 26"
+    ],
+    "ci_jobs": [
+      "mobile-web",
+      "ios-simulator-web"
+    ],
+    "native_ipa": false
+  }
+}

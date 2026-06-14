@@ -88,6 +88,8 @@ def test_mremoteng_importer_preserves_ssh1_protocol(tmp_path: Path) -> None:
     assert profile.protocol == "ssh1"
     assert profile.host == "192.0.2.15"
     assert any("allow_insecure_sshv1=true" in warning for warning in result.warnings)
+    assert any("legacy_target=windows-xp-32" in warning for warning in result.warnings)
+    assert any("allow_legacy_crypto=true" in warning for warning in result.warnings)
 
 
 def test_termius_importer_maps_host_json(tmp_path: Path) -> None:

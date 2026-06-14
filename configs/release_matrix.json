@@ -124,6 +124,16 @@
       "native_status": "No APK is published until a tested native Android wrapper exists."
     },
     {
+      "id": "ios-web-pwa",
+      "platform_target_ids": [
+        "ios-web"
+      ],
+      "default_assets": [
+        "remote-ops-workspace-v1.0.2-web-pwa.zip"
+      ],
+      "native_status": "No IPA/App Store package is published until a tested native iOS wrapper exists."
+    },
+    {
       "id": "bsd",
       "default_assets": [
         "remote-ops-workspace-v1.0.2-bsd.tar.gz"
@@ -146,7 +156,7 @@
         "Windows 8",
         "Windows 8.1"
       ],
-      "native_status": "Legacy Windows versions can be managed as remote targets; modern native releases target Windows 10/11 and supported Server hosts."
+      "native_status": "Legacy Windows versions can be managed as remote targets; Windows XP x86/x64 remote endpoints use isolated per-profile legacy opt-ins, while modern native releases target Windows 10/11 and supported Server hosts."
     }
   ]
 }

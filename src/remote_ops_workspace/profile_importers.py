@@ -529,7 +529,9 @@ def _warn_legacy_sshv1(result: ProfileImportResult) -> None:
         opt_in = profile.options.get("allow_insecure_sshv1", "").lower()
         if profile.protocol in {"ssh1", "sshv1"} and opt_in not in {"1", "true", "yes"}:
             result.warnings.append(
-                f"{profile.name}: SSHv1 is disabled by default; set allow_insecure_sshv1=true only for isolated legacy systems"
+                f"{profile.name}: SSHv1 is disabled by default; set allow_insecure_sshv1=true, "
+                "legacy_target=windows-xp-32 or windows-xp-64, and allow_legacy_crypto=true "
+                "only for isolated legacy systems"
             )
 
 

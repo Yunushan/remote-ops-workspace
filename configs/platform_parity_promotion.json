@@ -1,0 +1,156 @@
+{
+  "schema_version": 1,
+  "goal": "100% real parity for Windows XP native host readiness, Linux i386, and Linux armhf requires real builder, artifact, smoke-test, and release evidence before readiness scores can be promoted.",
+  "protected_targets": [
+    {
+      "id": "linux-i386",
+      "kind": "linux-native-extended-architecture",
+      "platform_target_id": "linux-i386",
+      "current_readiness_percent": 70.0,
+      "current_status": "manual-script-supported",
+      "current_release_tier": "script-supported-native",
+      "current_github_release_channel": "manual-script-native",
+      "target_readiness_percent": 100.0,
+      "promotion_to_100_requires": {
+        "platform_targets_release_tier": "native",
+        "platform_targets_github_release_channel": "default-native",
+        "release_matrix_default_native_job": "linux-native",
+        "release_matrix_platform_target_id": "linux-i386",
+        "release_matrix_arch": "i386",
+        "workflow_job": "linux-native",
+        "workflow_arch": "i386",
+        "workflow_runner_evidence": "matching self-hosted i386/i686 Linux runner or equivalent real i386 builder",
+        "build_script": "scripts/make_linux_native.sh",
+        "smoke_script": "scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux",
+        "artifact_validation_command": "python scripts/check_platform_promotion_artifacts.py --target linux-i386 --assets-dir <artifact-dir> --tag v<project.version>",
+        "required_artifacts": [
+          "remote-ops-workspace-v<project.version>-linux-i386.deb",
+          "remote-ops-workspace-v<project.version>-linux-i686.rpm",
+          "remote-ops-workspace-v<project.version>-linux-i686.AppImage",
+          "remote-ops-workspace-v<project.version>-linux-i686-native.tar.gz",
+          "remote-ops-workspace-v<project.version>-linux-i686-native-manifest.json",
+          "remote-ops-workspace-v<project.version>-linux-i686-native-SHA256SUMS.txt"
+        ]
+      },
+      "current_blockers": [
+        "No default release workflow job runs on a real i386/i686 Linux builder.",
+        "The default GitHub release matrix does not upload linux-i386 native artifacts.",
+        "No release publish contract currently requires linux-i386 checksum and manifest assets."
+      ]
+    },
+    {
+      "id": "linux-armhf",
+      "kind": "linux-native-extended-architecture",
+      "platform_target_id": "linux-armhf",
+      "current_readiness_percent": 70.0,
+      "current_status": "manual-script-supported",
+      "current_release_tier": "script-supported-native",
+      "current_github_release_channel": "manual-script-native",
+      "target_readiness_percent": 100.0,
+      "promotion_to_100_requires": {
+        "platform_targets_release_tier": "native",
+        "platform_targets_github_release_channel": "default-native",
+        "release_matrix_default_native_job": "linux-native",
+        "release_matrix_platform_target_id": "linux-armhf",
+        "release_matrix_arch": "armhf",
+        "workflow_job": "linux-native",
+        "workflow_arch": "armhf",
+        "workflow_runner_evidence": "matching self-hosted armv7l/armhf Linux runner or equivalent real armhf builder",
+        "build_script": "scripts/make_linux_native.sh",
+        "smoke_script": "scripts/smoke_linux_native.sh --arch armhf --dist native-dist/linux",
+        "artifact_validation_command": "python scripts/check_platform_promotion_artifacts.py --target linux-armhf --assets-dir <artifact-dir> --tag v<project.version>",
+        "required_artifacts": [
+          "remote-ops-workspace-v<project.version>-linux-armhf.deb",
+          "remote-ops-workspace-v<project.version>-linux-armv7hl.rpm",
+          "remote-ops-workspace-v<project.version>-linux-armhf.AppImage",
+          "remote-ops-workspace-v<project.version>-linux-armhf-native.tar.gz",
+          "remote-ops-workspace-v<project.version>-linux-armhf-native-manifest.json",
+          "remote-ops-workspace-v<project.version>-linux-armhf-native-SHA256SUMS.txt"
+        ]
+      },
+      "current_blockers": [
+        "No default release workflow job runs on a real armv7l/armhf Linux builder.",
+        "The default GitHub release matrix does not upload linux-armhf native artifacts.",
+        "No release publish contract currently requires linux-armhf checksum and manifest assets."
+      ]
+    },
+    {
+      "id": "windows-xp-native-x86",
+      "kind": "legacy-windows-native-host",
+      "legacy_windows_version": "Windows XP",
+      "architecture": "x86",
+      "current_readiness_percent": 25.0,
+      "current_status": "remote-target-only",
+      "current_host_tier": "remote-target-only",
+      "remote_target_coverage_percent": 100.0,
+      "current_stack_supported": false,
+      "requires_separate_legacy_toolchain": true,
+      "target_readiness_percent": 100.0,
+      "promotion_to_100_requires": {
+        "separate_legacy_toolchain": true,
+        "xp_vm_or_self_hosted_runner": "Windows XP SP3 32-bit VM or physical/self-hosted runner",
+        "native_artifacts": [
+          "remote-ops-workspace-v<project.version>-windows-xp-x86-native.zip",
+          "remote-ops-workspace-v<project.version>-windows-xp-x86-native-manifest.json",
+          "remote-ops-workspace-v<project.version>-windows-xp-x86-native-SHA256SUMS.txt"
+        ],
+        "artifact_validation_command": "python scripts/check_platform_promotion_artifacts.py --target windows-xp-native-x86 --assets-dir <artifact-dir> --tag v<project.version>",
+        "native_evidence_validation_command": "python scripts/check_xp_native_evidence.py --evidence <evidence.json> --assets-dir <artifact-dir>",
+        "smoke_evidence": [
+          "launch CLI without unsupported Windows APIs",
+          "open the selected GUI or legacy host UI without the current PyQt6 stack",
+          "connect to loopback/local profile dry-run",
+          "verify isolated legacy crypto never changes modern defaults"
+        ],
+        "security_requirements": [
+          "legacy TLS, SSH, and RDP compatibility must remain profile-scoped opt-in",
+          "modern Windows 10/11, Linux, and macOS defaults must keep hardened crypto"
+        ]
+      },
+      "current_blockers": [
+        "The current native stack is Python 3.10+ and PyQt6, which is not treated as an XP native host stack in this project.",
+        "No Windows XP SP3 x86 builder or VM smoke job exists in the release workflow.",
+        "No XP x86 native artifact is declared in the default release matrix."
+      ]
+    },
+    {
+      "id": "windows-xp-native-x64",
+      "kind": "legacy-windows-native-host",
+      "legacy_windows_version": "Windows XP",
+      "architecture": "x64",
+      "current_readiness_percent": 25.0,
+      "current_status": "remote-target-only",
+      "current_host_tier": "remote-target-only",
+      "remote_target_coverage_percent": 100.0,
+      "current_stack_supported": false,
+      "requires_separate_legacy_toolchain": true,
+      "target_readiness_percent": 100.0,
+      "promotion_to_100_requires": {
+        "separate_legacy_toolchain": true,
+        "xp_vm_or_self_hosted_runner": "Windows XP Professional x64 VM or physical/self-hosted runner",
+        "native_artifacts": [
+          "remote-ops-workspace-v<project.version>-windows-xp-x64-native.zip",
+          "remote-ops-workspace-v<project.version>-windows-xp-x64-native-manifest.json",
+          "remote-ops-workspace-v<project.version>-windows-xp-x64-native-SHA256SUMS.txt"
+        ],
+        "artifact_validation_command": "python scripts/check_platform_promotion_artifacts.py --target windows-xp-native-x64 --assets-dir <artifact-dir> --tag v<project.version>",
+        "native_evidence_validation_command": "python scripts/check_xp_native_evidence.py --evidence <evidence.json> --assets-dir <artifact-dir>",
+        "smoke_evidence": [
+          "launch CLI without unsupported Windows APIs",
+          "open the selected GUI or legacy host UI without the current PyQt6 stack",
+          "connect to loopback/local profile dry-run",
+          "verify isolated legacy crypto never changes modern defaults"
+        ],
+        "security_requirements": [
+          "legacy TLS, SSH, and RDP compatibility must remain profile-scoped opt-in",
+          "modern Windows 10/11, Linux, and macOS defaults must keep hardened crypto"
+        ]
+      },
+      "current_blockers": [
+        "The current native stack is Python 3.10+ and PyQt6, which is not treated as an XP native host stack in this project.",
+        "No Windows XP x64 builder or VM smoke job exists in the release workflow.",
+        "No XP x64 native artifact is declared in the default release matrix."
+      ]
+    }
+  ]
+}

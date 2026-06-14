@@ -73,6 +73,51 @@ def build_steps(
             env=_source_env(),
         ),
         VerifyStep(
+            "platform parity promotion gate",
+            [python, "scripts/check_platform_parity_promotion.py"],
+            env=_source_env(),
+        ),
+        VerifyStep(
+            "platform promotion runbook",
+            [python, "scripts/check_platform_promotion_runbook.py"],
+            env=_source_env(),
+        ),
+        VerifyStep(
+            "platform promotion artifact validator contract",
+            [python, "scripts/check_platform_promotion_artifacts.py", "--contract"],
+            env=_source_env(),
+        ),
+        VerifyStep(
+            "extended platform evidence workflow",
+            [python, "scripts/check_extended_platform_evidence.py"],
+            env=_source_env(),
+        ),
+        VerifyStep(
+            "Windows XP native evidence contract",
+            [python, "scripts/check_xp_native_evidence.py", "--contract"],
+            env=_source_env(),
+        ),
+        VerifyStep(
+            "Windows XP native evidence template generator",
+            [python, "scripts/make_xp_native_evidence_template.py", "--help"],
+            env=_source_env(),
+        ),
+        VerifyStep(
+            "platform verified evidence registry",
+            [python, "scripts/check_platform_verified_evidence.py"],
+            env=_source_env(),
+        ),
+        VerifyStep(
+            "platform verified evidence record generator",
+            [python, "scripts/make_platform_verified_evidence_record.py", "--help"],
+            env=_source_env(),
+        ),
+        VerifyStep(
+            "mobile support contract",
+            [python, "scripts/check_mobile_support.py"],
+            env=_source_env(),
+        ),
+        VerifyStep(
             "release publish asset contract",
             [python, "scripts/check_release_publish_assets.py"],
             env=_source_env(),

@@ -58,8 +58,74 @@ Linux `i386`/`i686` and `armv7l`/`armhf` native outputs are
 script-supported by `scripts/make_linux_native.sh`, but they are not uploaded by
 the default GitHub release workflow. A maintainer can promote them only after
 running and verifying a matching builder. BSD, Solaris/illumos, Android
-Termux/Web/PWA and legacy Windows endpoints remain source/Web/remote-target
-entries unless a real native packaging path is added.
+Termux/Web/PWA, iOS/iPadOS Web/PWA and legacy Windows endpoints remain
+source/Web/remote-target entries unless a real native packaging path is added.
+Windows XP x86/x64 remote endpoints use isolated per-profile legacy opt-ins
+instead of lowering modern TLS, SSH or RDP defaults globally.
+
+`configs/platform_parity_promotion.json` and
+`python scripts/check_platform_parity_promotion.py` define the required evidence
+before extended targets can be promoted. Linux i386 and Linux armhf can move
+from script-supported to default-native only when the release matrix, release
+workflow, publish asset contract, native build outputs, smoke tests, checksum
+sidecars and native manifests all include those architectures. The produced
+artifact directory must pass
+`python scripts/check_platform_promotion_artifacts.py --target linux-i386 --assets-dir <artifact-dir> --tag v<project.version>`
+or
+`python scripts/check_platform_promotion_artifacts.py --target linux-armhf --assets-dir <artifact-dir> --tag v<project.version>`.
+`.github/workflows/extended-platform-evidence.yml` is the dispatch-only
+self-hosted collection path for that evidence; it uses `[self-hosted, linux,
+i386]` and `[self-hosted, linux, armhf]` runners and uploads evidence artifacts
+without publishing a GitHub release. Each run also writes
+`platform-verified-evidence-linux-i386.json` or
+`platform-verified-evidence-linux-armhf.json` into the uploaded evidence
+artifact. Accepted release evidence records must be added to
+`configs/platform_verified_evidence.json` and pass
+`python scripts/check_platform_verified_evidence.py` before generated readiness
+can promote either Linux extended architecture. Generate those records with
+`python scripts/make_platform_verified_evidence_record.py` so artifact URLs,
+per-artifact SHA-256 digests, the Linux builder identity SHA-256 and the
+workflow dispatch inputs, and the promotion config SHA-256 are derived from the same promotion contract.
+Linux records must also include the builder identity JSON emitted by
+`python3 scripts/check_extended_platform_builder.py --out ...`; its
+`builder_identity_sha256` must match that JSON. The recorded
+`workflow_inputs.release_asset_base_url` must prefix every release asset URL in
+the accepted record. Use
+`--append-registry` only when the referenced run and release assets are the real
+promotion evidence. The publish-time asset checker revalidates the full
+accepted-evidence registry before trusting it, then rejects Linux i386/armhf
+native assets in the default release asset set unless the matching accepted
+evidence target is present.
+Windows XP native-host readiness can move from remote-target-only only through a
+separate XP-capable legacy toolchain with x86/x64 XP VM or self-hosted runner
+evidence and proof that legacy crypto compatibility stays isolated from modern
+defaults. XP artifact directories must pass
+`python scripts/check_platform_promotion_artifacts.py --target windows-xp-native-x86 --assets-dir <artifact-dir> --tag v<project.version>`
+or
+`python scripts/check_platform_promotion_artifacts.py --target windows-xp-native-x64 --assets-dir <artifact-dir> --tag v<project.version>`.
+The XP VM/toolchain evidence JSON must also pass
+`python scripts/check_xp_native_evidence.py --evidence <evidence.json> --assets-dir <artifact-dir>`.
+The XP evidence JSON must be bundled with per-smoke evidence files for
+`cli_launch`, `gui_or_legacy_host_ui_launch`, `loopback_profile_dry_run`,
+`artifact_manifest_validation`, `legacy_crypto_profile_scoped` and
+`modern_defaults_unchanged`; the validator resolves each relative
+`evidence_file` path and checks the recorded SHA-256.
+Accepted XP records generated from that bundle must include `xp_evidence_sha256`
+for the evidence JSON, `xp_evidence_summary` for the XP target/release/toolchain/security/smoke
+binding and `xp_smoke_evidence_sha256` for every required smoke evidence file,
+plus `xp_evidence_contract_sha256` for the current
+`configs/xp_native_evidence_contract.json`.
+Both XP x86 and XP x64 accepted records must be present in
+`configs/platform_verified_evidence.json` before the Windows XP native-host row
+can promote to 100%. Generate each accepted-record candidate with
+`python scripts/make_platform_verified_evidence_record.py` after
+`python scripts/check_xp_native_evidence.py` passes, then append it with
+`--append-registry` only after reviewing the XP VM/toolchain evidence bundle and
+the per-artifact SHA-256 digests recorded for the XP native artifacts.
+The same publish-time guard rejects Windows XP native assets unless the registry
+passes full accepted-evidence validation and both XP x86 and XP x64 accepted
+evidence records are present, because one architecture alone does not prove the
+Windows XP native-host row.
 
 ## Native installer smoke tests
 
@@ -157,7 +223,8 @@ Implementation:
 - Publishes unsigned CI artifacts. Authenticode signing can be layered in when
   release signing credentials are available.
 - Treats Windows XP, Vista, Windows 7 and Windows 8.0 as legacy remote targets,
-  not as first-class modern native runtime targets.
+  not as first-class modern native runtime targets. Windows XP x86/x64 remote
+  endpoints use isolated per-profile legacy opt-ins.
 
 ## Phase 3: macOS native distribution
 
@@ -216,6 +283,19 @@ Implementation:
 Android remains Termux plus Web/PWA until there is a real native Android wrapper.
 Do not publish an APK just to wrap the current Python project unless the Android
 app has its own tested install and update path.
+
+The CI contract for Android Web/PWA runs `android-emulator-web` across Android
+12 through Android 16 (API 31-36), opens the Web/PWA in each emulator, and
+uploads screenshot artifacts. Termux ARMv7/ARM64 coverage remains a package and
+metadata contract, not a native APK claim.
+
+iOS/iPadOS remains Web/PWA-only until there is a real native iOS wrapper. Do not
+publish an `.ipa` or App Store package unless the iOS app has its own tested
+install, update and signing path.
+
+The CI contract for iOS/iPadOS Web/PWA runs `ios-simulator-web` on the current
+GitHub macOS/Xcode runner. The supported compatibility contract is iOS/iPadOS 15
+through 26.x; the live simulator smoke uses the available current iOS runtime.
 
 The Web/PWA release remains a static `.zip` bundle because that is the right
 artifact for static hosts, internal portals, and mobile browsers.

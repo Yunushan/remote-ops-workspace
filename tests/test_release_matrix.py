@@ -49,6 +49,20 @@ def test_release_matrix_separates_script_supported_linux_targets() -> None:
         assert rows[target_id]["github_release_channel"] == "manual-script-native"
 
 
+def test_release_matrix_keeps_mobile_web_targets_in_source_web_group() -> None:
+    matrix = load_release_matrix()
+    source_web_targets: set[str] = set()
+    for item in matrix["source_or_remote_only"]:  # type: ignore[index]
+        source_web_targets.update(item.get("platform_target_ids", []))
+
+    assert {"android-armv7", "android-arm64", "ios-web"}.issubset(source_web_targets)
+
+    rows = {item["id"]: item for item in load_platform_targets()["release_architectures"]}
+    assert rows["android-armv7"]["github_release_channel"] == "default-termux-web"
+    assert rows["android-arm64"]["github_release_channel"] == "default-termux-web"
+    assert rows["ios-web"]["github_release_channel"] == "default-web-pwa"
+
+
 def test_release_matrix_checker_passes() -> None:
     checker = load_release_matrix_checker()
     assert checker.main() == 0

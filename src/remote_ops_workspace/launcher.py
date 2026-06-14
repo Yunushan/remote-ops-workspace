@@ -55,6 +55,56 @@ DEFAULT_PORTS: dict[str, int] = {
 
 SSH_V1_PROTOCOLS = {"ssh1", "sshv1"}
 SSH_V1_OPT_IN_OPTIONS = ("allow_insecure_sshv1", "allow_unsafe_sshv1")
+WINDOWS_XP_LEGACY_TARGETS = frozenset(
+    {
+        "windows-xp",
+        "windows-xp-32",
+        "windows-xp-64",
+        "windows-xp-x86",
+        "windows-xp-x64",
+        "winxp",
+        "xp",
+    }
+)
+LEGACY_TARGET_OPTIONS = ("legacy_target", "legacy_platform")
+LEGACY_CRYPTO_OPT_IN_OPTIONS = ("allow_legacy_crypto", "allow_insecure_legacy_crypto")
+LEGACY_RDP_SECURITY_OPT_IN_OPTIONS = ("allow_legacy_rdp_security", "allow_insecure_rdp_security")
+WEAK_SSH_ALGORITHMS_BY_OPTION = {
+    "ciphers": frozenset(
+        {
+            "3des-cbc",
+            "aes128-cbc",
+            "aes192-cbc",
+            "aes256-cbc",
+            "arcfour",
+            "arcfour128",
+            "arcfour256",
+            "blowfish-cbc",
+            "cast128-cbc",
+            "none",
+            "rijndael-cbc@lysator.liu.se",
+        }
+    ),
+    "host_key_algorithms": frozenset({"ssh-dss", "ssh-rsa"}),
+    "kex_algorithms": frozenset(
+        {
+            "diffie-hellman-group-exchange-sha1",
+            "diffie-hellman-group1-sha1",
+            "diffie-hellman-group14-sha1",
+        }
+    ),
+    "macs": frozenset(
+        {
+            "hmac-md5",
+            "hmac-md5-96",
+            "hmac-ripemd160",
+            "hmac-ripemd160@openssh.com",
+            "hmac-sha1",
+            "hmac-sha1-96",
+            "umac-64@openssh.com",
+        }
+    ),
+}
 
 
 def build_launch_plan(profile: Profile) -> LaunchPlan:
@@ -247,6 +297,7 @@ def _ssh_connection_option_args(options: Mapping[str, str]) -> list[str]:
     ):
         value = _option(options, option_name)
         if value:
+            _validate_ssh_algorithm_override(options, option_name, value)
             args.extend(["-o", f"{open_ssh_name}={_option_token(value, option_name)}"])
 
     return args
@@ -323,10 +374,12 @@ def _build_mosh(profile: Profile) -> LaunchPlan:
 
 
 def _require_sshv1_opt_in(profile: Profile) -> None:
-    if _option_bool(profile.options, *SSH_V1_OPT_IN_OPTIONS):
+    if _option_bool(profile.options, *SSH_V1_OPT_IN_OPTIONS) and _legacy_crypto_enabled(profile.options):
         return
     raise LauncherError(
-        "SSHv1 is disabled by default; set allow_insecure_sshv1=true only for isolated legacy systems"
+        "SSHv1 is disabled by default; set allow_insecure_sshv1=true, "
+        "legacy_target=windows-xp-32 or windows-xp-64, and allow_legacy_crypto=true "
+        "only for isolated legacy systems"
     )
 
 
@@ -372,6 +425,8 @@ def _build_rdp(profile: Profile) -> LaunchPlan:
         cmd.append(f"/cert:{certificate_mode}")
     security = _option_enum(profile.options, "security", "rdp_security", allowed={"ext", "nla", "rdp", "tls"})
     if security:
+        if security == "rdp":
+            _require_legacy_rdp_security_opt_in(profile.options)
         cmd.append(f"/sec:{security}")
     clipboard = _option(profile.options, "clipboard")
     if clipboard is not None:
@@ -634,6 +689,51 @@ def _option_enum(options: Mapping[str, str], *names: str, allowed: set[str]) -> 
     if normalized not in allowed:
         raise LauncherError(f"{names[0]} must be one of: {', '.join(sorted(allowed))}")
     return normalized
+
+
+def _validate_ssh_algorithm_override(options: Mapping[str, str], option_name: str, value: str) -> None:
+    weak_algorithms = WEAK_SSH_ALGORITHMS_BY_OPTION.get(option_name, frozenset())
+    requested_weak = sorted(
+        token for token in _ssh_algorithm_tokens(value) if token.lower() in weak_algorithms
+    )
+    if requested_weak and not _legacy_crypto_enabled(options):
+        algorithms = ", ".join(requested_weak)
+        raise LauncherError(
+            f"{option_name} contains legacy SSH algorithm(s): {algorithms}. "
+            "Use modern SSH algorithms by default, or set legacy_target=windows-xp-32 "
+            "or windows-xp-64 plus allow_legacy_crypto=true for an isolated legacy profile."
+        )
+
+
+def _ssh_algorithm_tokens(value: str) -> list[str]:
+    text = safe.option_value(value, "ssh algorithm list")
+    tokens: list[str] = []
+    for item in text.split(","):
+        token = item.strip().lstrip("+-^")
+        if token:
+            tokens.append(token)
+    return tokens
+
+
+def _legacy_crypto_enabled(options: Mapping[str, str]) -> bool:
+    return _is_windows_xp_legacy_target(options) and _option_bool(options, *LEGACY_CRYPTO_OPT_IN_OPTIONS)
+
+
+def _require_legacy_rdp_security_opt_in(options: Mapping[str, str]) -> None:
+    if _is_windows_xp_legacy_target(options) and _option_bool(options, *LEGACY_RDP_SECURITY_OPT_IN_OPTIONS):
+        return
+    raise LauncherError(
+        "RDP security=rdp is disabled by default. Use security=nla or security=tls, "
+        "or set legacy_target=windows-xp-32/windows-xp-64 and "
+        "allow_legacy_rdp_security=true for an isolated XP remote target."
+    )
+
+
+def _is_windows_xp_legacy_target(options: Mapping[str, str]) -> bool:
+    target = _option(options, *LEGACY_TARGET_OPTIONS)
+    if target is None:
+        return False
+    return safe.clean_text(target, "legacy_target").strip().lower() in WINDOWS_XP_LEGACY_TARGETS
 
 
 def _option_token(value: str, label: str) -> str:

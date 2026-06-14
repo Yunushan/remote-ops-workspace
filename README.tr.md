@@ -144,9 +144,9 @@ row serve-web --host 127.0.0.1 --port 8765
 
 ## Ozellik Kapsami
 
-Hedef, istenen araclar icin **%100 genel ozellik ailesi haritalamasi**, **%100 adapter-ready coverage** ve **%100 release-backed product workflow parity** saglamaktir. Platform release hazirligi ayri, daha dusuk skorlar olarak izlenir.
+Hedef, istenen araclar icin **%100 genel ozellik ailesi haritalamasi**, **%100 adapter-ready coverage** ve **%100 release-backed product workflow parity** saglamaktir. Platform verified readiness verified default native ve mobile Web/PWA hedefleri icin ayri 100% scope kullanir; manual native ve legacy Windows hedefleri denominator disinda compatibility satirlari olarak izlenir.
 
-Kapsam [`configs/feature_manifest.json`](configs/feature_manifest.json) dosyasindan uretilir. Haritalama, bir ozellik ailesinin built-in kod, harici adapter, istege bagli bagimlilik, CLI/GUI akisi, platform betigi veya eklenti noktasi ile temsil edilip edilmedigini gosterir. Adapter-ready skor, executable evidence ile dogrulanan implemented adapter, optional, CLI, GUI ve combined workflow satirlarini hazir sayar. `production_parity_coverage` JSON anahtari geriye uyumluluk icin kalir, ama acik sozlesme release-backed product workflow parity'dir: implemented workflow satirlari yalnizca executable release evidence ile sayilir, seam-only veya docs-only satirlar kismi kalir. Bu proprietary native clone iddiasi degildir. Platform verified readiness da default native, manual native, Termux/Web ve legacy Windows hedeflerini ayri gosterir. `scripts/check_feature_reality.py` ve `scripts/check_product_readiness.py` bu iddialari dogrular.
+Kapsam [`configs/feature_manifest.json`](configs/feature_manifest.json) dosyasindan uretilir. Haritalama, bir ozellik ailesinin built-in kod, harici adapter, istege bagli bagimlilik, CLI/GUI akisi, platform betigi veya eklenti noktasi ile temsil edilip edilmedigini gosterir. Adapter-ready skor, executable evidence ile dogrulanan implemented adapter, optional, CLI, GUI ve combined workflow satirlarini hazir sayar. `production_parity_coverage` JSON anahtari geriye uyumluluk icin kalir, ama acik sozlesme release-backed product workflow parity'dir: implemented workflow satirlari yalnizca executable release evidence ile sayilir, seam-only veya docs-only satirlar kismi kalir. Bu proprietary native clone iddiasi degildir. Platform verified readiness verified default native ve mobile Web/PWA hedefleri icin 100% scope kullanir; manual native ve legacy Windows hedefleri denominator disinda ayri compatibility satirlari olarak kalir. `scripts/check_feature_reality.py` ve `scripts/check_product_readiness.py` bu iddialari dogrular.
 
 ```bash
 row features --coverage
@@ -164,7 +164,7 @@ Tam manifest ve skor aciklamalari icin [`docs/FULL_FEATURE_COVERAGE.md`](docs/FU
 | Windows 10/11 | CLI, GUI, Web/PWA | x86, x64 ve ARM64 yayin hedefleri; OpenSSH, MSTSC, PuTTY, VcXsrv, TigerVNC adapterleri |
 | Windows 8.1 | CLI/Web best effort, uzak hedef | Kaynak kurulum uyumlu Python stack ister; RDP/VNC/SSH/Telnet/seri/raw ile uzak yonetim |
 | Windows 8/7 | Legacy kaynak, uzak hedef | Modern native runtime icin ayri legacy bagimlilik stack gerekir |
-| Windows Vista/XP | Yalnizca uzak hedef | Harici istemcilerle baglanilir; modern Python/PyQt installer hedefi degildir |
+| Windows Vista/XP | Yalnizca uzak hedef | Windows XP x86/x64 uzak hedef kapsami 100.0%'dir; modern Python/PyQt installer hedefi degildir |
 | Windows Server 2012-2025 | CLI, GUI optional, Web/PWA | Operator jump host olarak uygundur |
 | Linux | CLI, GUI, Web/PWA | Varsayilan GitHub release is akisi x86_64/amd64 ve aarch64/arm64 native paketleri uretir; i386/i686 ve armhf haritalari eslesen builder ile betik desteklidir |
 | Unix/BSD/Solaris | CLI, Web/PWA, Qt varsa GUI | POSIX shell ve OpenSSH onceliklidir |
@@ -188,7 +188,13 @@ Ayrintilar icin [`docs/PLATFORM_SUPPORT.md`](docs/PLATFORM_SUPPORT.md) dosyasina
 - `row keygen --passphrase-env`, yazilim key passphrase'ini `ssh-keygen` argv'sine koymadan in-process uretim yapar.
 - Yikici SFTP islemleri ve overwrite riski olan transferler `--force` olmadan calistirilmaz.
 - `row serve-web` varsayilan olarak loopback'e bind eder; loopback disi bind icin `--allow-public-bind` gerekir.
-- SSHv1 profilleri yalnizca `ssh1`/`sshv1` protokolu ve `allow_insecure_sshv1=true` secenegi birlikte verildiginde baslatilabilir; protokol v1 yine de guvensizdir.
+- SSHv1 profilleri yalnizca `ssh1`/`sshv1`, `allow_insecure_sshv1=true`,
+  `legacy_target=windows-xp-32` veya `windows-xp-64` ve
+  `allow_legacy_crypto=true` birlikte verildiginde baslatilabilir; protokol v1
+  yine de guvensizdir.
+- Zayif SSH algoritmalari ve RDP `security=rdp` modern profillerde kapali
+  kalir; Windows XP x86/x64 uzak hedefleri icin sadece profil bazli legacy
+  opt-in kullanilir.
 - Protokol eklentilerini guvenilir yerel Python kodu gibi ele alin; eklenti destekli profilleri kullanmadan once `row plugins validate` ile yukleme hatalarini ve gecersiz ornek launch planlarini yakalayin.
 - Ayrintilar icin [`SECURITY.md`](SECURITY.md) ve [`docs/SECURITY_MODEL.md`](docs/SECURITY_MODEL.md) dosyalarina bakin.
 

@@ -327,6 +327,49 @@ def test_rdp_option_depth_builds_freerdp_args() -> None:
     assert "/multimon" in plan.command
 
 
+def test_rdp_native_security_requires_isolated_legacy_opt_in() -> None:
+    original_windows = launcher_module._is_windows
+    launcher_module._is_windows = lambda: False
+    try:
+        profile = Profile(
+            name="xp",
+            protocol="rdp",
+            host="192.0.2.20",
+            options={"security": "rdp"},
+        )
+        try:
+            build_launch_plan(profile)
+        except LauncherError as exc:
+            assert "allow_legacy_rdp_security=true" in str(exc)
+        else:
+            raise AssertionError("RDP native security should require explicit XP legacy opt-in")
+    finally:
+        launcher_module._is_windows = original_windows
+
+
+def test_rdp_native_security_allows_explicit_xp_remote_target_profile() -> None:
+    original_windows = launcher_module._is_windows
+    original_first_available = launcher_module._first_available
+    launcher_module._is_windows = lambda: False
+    launcher_module._first_available = lambda candidates: "xfreerdp"
+    try:
+        profile = Profile(
+            name="xp",
+            protocol="rdp",
+            host="192.0.2.20",
+            options={
+                "security": "rdp",
+                "legacy_target": "windows-xp-32",
+                "allow_legacy_rdp_security": "true",
+            },
+        )
+        plan = build_launch_plan(profile)
+    finally:
+        launcher_module._is_windows = original_windows
+        launcher_module._first_available = original_first_available
+    assert "/sec:rdp" in plan.command
+
+
 def test_windows_rdp_option_depth_builds_mstsc_args() -> None:
     original_windows = launcher_module._is_windows
     launcher_module._is_windows = lambda: True

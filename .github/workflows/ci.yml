@@ -21,6 +21,31 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-2025-vs2026, macos-15-intel]
         python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        include:
+          - os: macos-26-intel
+            python-version: "3.12"
+          - os: macos-26-intel
+            python-version: "3.13"
+          - os: macos-26-intel
+            python-version: "3.14"
+          - os: macos-14
+            python-version: "3.12"
+          - os: macos-14
+            python-version: "3.13"
+          - os: macos-14
+            python-version: "3.14"
+          - os: macos-15
+            python-version: "3.12"
+          - os: macos-15
+            python-version: "3.13"
+          - os: macos-15
+            python-version: "3.14"
+          - os: macos-26
+            python-version: "3.12"
+          - os: macos-26
+            python-version: "3.13"
+          - os: macos-26
+            python-version: "3.14"
     steps:
       - uses: actions/checkout@v6
         with:
@@ -39,9 +64,100 @@ jobs:
       - name: Verify
         run: python scripts/verify.py --lint
 
+  mobile-web:
+    name: Mobile Web/PWA contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install mobile web verification dependencies
+        run: python -m pip install -e ".[dev]"
+      - name: Android and iOS Web/PWA smoke
+        run: python -m pytest tests/test_web_hardening.py tests/test_platform_targets.py tests/test_platform_support_truth.py tests/test_mobile_support.py
+
+  android-emulator-web:
+    name: Android Web/PWA emulator API ${{ matrix.api-level }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        api-level: [31, 32, 33, 34, 35, 36]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install mobile verification dependencies
+        run: python -m pip install -e ".[dev]"
+      - name: Static mobile contract checks
+        run: python -m pytest tests/test_web_hardening.py tests/test_mobile_support.py
+      - name: Enable KVM access
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Install Android emulator image
+        run: |
+          yes | sdkmanager --licenses
+          sdkmanager "platform-tools" "emulator" "platforms;android-${{ matrix.api-level }}" "system-images;android-${{ matrix.api-level }};google_apis;x86_64"
+      - name: Create Android virtual device
+        run: echo no | avdmanager create avd -n row-api-${{ matrix.api-level }} -k "system-images;android-${{ matrix.api-level }};google_apis;x86_64" --device "pixel_6"
+      - name: Start Web/PWA server
+        run: |
+          python -m http.server 8765 --directory apps/web &
+          echo $! > web-server.pid
+      - name: Boot Android emulator
+        run: |
+          nohup emulator -avd row-api-${{ matrix.api-level }} -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none > emulator.log 2>&1 &
+          adb wait-for-device
+          timeout 180 bash -c 'until [[ "$(adb shell getprop sys.boot_completed | tr -d "\r")" == "1" ]]; do sleep 5; done'
+      - name: Android Web/PWA emulator smoke
+        run: python scripts/check_mobile_emulator_smoke.py --platform android --android-api ${{ matrix.api-level }} --url http://10.0.2.2:8765/index.html --out-dir artifacts/mobile
+      - uses: actions/upload-artifact@v7
+        with:
+          name: android-web-pwa-api-${{ matrix.api-level }}
+          path: artifacts/mobile
+          if-no-files-found: error
+
+  ios-simulator-web:
+    name: iOS Web/PWA simulator
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install mobile verification dependencies
+        run: python -m pip install -e ".[dev]"
+      - name: Static mobile contract checks
+        run: python -m pytest tests/test_web_hardening.py tests/test_mobile_support.py
+      - name: Start Web/PWA server
+        run: |
+          python -m http.server 8765 --directory apps/web &
+          echo $! > web-server.pid
+      - name: iOS Web/PWA simulator smoke
+        run: python scripts/check_mobile_emulator_smoke.py --platform ios --url http://127.0.0.1:8765/index.html --out-dir artifacts/mobile
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ios-web-pwa-simulator
+          path: artifacts/mobile
+          if-no-files-found: error
+
   gui-render:
     name: Real PyQt6 GUI render
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
       PIP_NO_CACHE_DIR: "1"
@@ -70,6 +186,7 @@ jobs:
       - name: Install desktop verification dependencies
         run: python -m pip install -e ".[desktop,security,dev]"
       - name: Real GUI render smoke
+        timeout-minutes: 8
         run: python scripts/check_real_gui_render.py --require-pyqt6 --out-dir artifacts/gui-real
       - uses: actions/upload-artifact@v7
         with:

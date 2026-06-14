@@ -2,7 +2,7 @@
 
 Remote Ops Workspace targets **100% public feature-family mapping**, **100% adapter-ready coverage** and **100% release-backed product workflow parity** for the requested product feature families.
 
-The project publishes separate generated scores from `configs/feature_manifest.json`. Feature-family mapping answers whether each public feature family is represented by built-in code, external-client adapters, optional implementations, CLI/GUI workflows, platform scripts, or plugin extension points. Adapter-ready coverage counts implemented adapter, optional, CLI, GUI and combined workflows as ready when they are tied to executable evidence. The `production_parity_coverage` JSON key remains for compatibility, but the public contract is release-backed product workflow parity: implemented workflows count only when tied to executable release evidence, and seam-only or docs-only rows remain partial if they appear. This is not a proprietary native clone claim. Platform verified readiness is separate from feature coverage so native release targets, Termux/Web bundles and legacy Windows support do not get blended into one misleading product score.
+The project publishes separate generated scores from `configs/feature_manifest.json`. Feature-family mapping answers whether each public feature family is represented by built-in code, external-client adapters, optional implementations, CLI/GUI workflows, platform scripts, or plugin extension points. Adapter-ready coverage counts implemented adapter, optional, CLI, GUI and combined workflows as ready when they are tied to executable evidence. The `production_parity_coverage` JSON key remains for compatibility, but the public contract is release-backed product workflow parity: implemented workflows count only when tied to executable release evidence, and seam-only or docs-only rows remain partial if they appear. This is not a proprietary native clone claim. Platform verified readiness is separate from feature coverage so verified native release targets, verified mobile Web/PWA contracts and extended compatibility rows do not get blended into one misleading product score.
 
 ## Current coverage score
 
@@ -12,7 +12,7 @@ The project publishes separate generated scores from `configs/feature_manifest.j
 | Remmina | 100.0% | 100.0% | 100.0% | 0.0% | 11 |
 | mRemoteNG | 100.0% | 100.0% | 100.0% | 0.0% | 15 |
 | Terminator | 100.0% | 100.0% | 100.0% | 0.0% | 8 |
-| Termius | 100.0% | 100.0% | 100.0% | 0.0% | 21 |
+| Termius | 100.0% | 100.0% | 100.0% | 0.0% | 22 |
 | Devolutions Remote Desktop Manager | 100.0% | 100.0% | 100.0% | 0.0% | 26 |
 | Royal TS / Royal TSX | 100.0% | 100.0% | 100.0% | 0.0% | 26 |
 | Electerm | 100.0% | 100.0% | 100.0% | 0.0% | 19 |
@@ -36,7 +36,7 @@ The project publishes separate generated scores from `configs/feature_manifest.j
 | Hyper | 100.0% | 100.0% | 100.0% | 0.0% | 8 |
 | X410 + any terminal (e.g., Windows Terminal, Alacritty) | 100.0% | 100.0% | 100.0% | 0.0% | 7 |
 | Xming (or VcXsrv) + PuTTY / mRemoteNG | 100.0% | 100.0% | 100.0% | 0.0% | 10 |
-| **Overall** | **100.0%** | **100.0%** | **100.0%** | **0.0%** | **49** |
+| **Overall** | **100.0%** | **100.0%** | **100.0%** | **0.0%** | **50** |
 
 ## Platform verified readiness
 
@@ -51,14 +51,51 @@ The project publishes separate generated scores from `configs/feature_manifest.j
 | linux-arm64 | Linux arm64 | default-native | 100.0% | 0.0% | verified-default-native |
 | macos-x64 | macOS x64 | default-native | 100.0% | 0.0% | verified-default-native |
 | macos-arm64 | macOS arm64 | default-native | 100.0% | 0.0% | verified-default-native |
-| android-armv7 | Android/Termux armv7 | default-termux-web | 85.0% | 15.0% | termux-web-default |
-| android-arm64 | Android/Termux arm64 | default-termux-web | 85.0% | 15.0% | termux-web-default |
+| android-armv7 | Android/Termux armv7 | default-termux-web | 100.0% | 0.0% | verified-termux-web-mobile |
+| android-arm64 | Android/Termux arm64 | default-termux-web | 100.0% | 0.0% | verified-termux-web-mobile |
+| ios-web | iOS/iPadOS arm64 | default-web-pwa | 100.0% | 0.0% | verified-ios-web-pwa |
 | Windows 8.1 | Windows legacy | legacy-windows | 60.0% | 40.0% | best-effort-source-host |
 | Windows 8 | Windows legacy | legacy-windows | 45.0% | 55.0% | legacy-source-only |
 | Windows 7 | Windows legacy | legacy-windows | 45.0% | 55.0% | legacy-source-only |
 | Windows Vista | Windows legacy | legacy-windows | 25.0% | 75.0% | remote-target-only |
 | Windows XP | Windows legacy | legacy-windows | 25.0% | 75.0% | remote-target-only |
-| **Overall** | **All targets** | **mixed** | **75.6%** | **24.4%** | **mixed readiness** |
+| **Overall** | **Verified targets** | **mixed** | **100.0%** | **0.0%** | **mixed readiness** |
+
+Windows XP stays at 25.0% as a native-host readiness row because no modern
+Python/PyQt native installer targets XP. Its separate remote-target contract is
+100.0% for x86 and x64 endpoints through RDP, VNC, SSH/SSHv1, SFTP/SCP,
+Telnet, serial and raw-socket profiles, with weak crypto enabled only by
+isolated per-profile legacy opt-ins.
+
+Linux i386/armhf and Windows XP native-host promotion to 100% is gated by
+`configs/platform_parity_promotion.json` and
+`python scripts/check_platform_parity_promotion.py`, and real artifact sets are
+validated by `python scripts/check_platform_promotion_artifacts.py`. Linux i386
+and armhf must gain real default release builders, smoke evidence, native
+manifests and checksum sidecars through
+`.github/workflows/extended-platform-evidence.yml` before they leave the 70.0%
+script-supported row. Windows XP native-host readiness must gain a separate
+XP-capable legacy toolchain plus x86/x64 XP VM evidence that passes
+`python scripts/check_xp_native_evidence.py` before it leaves the 25.0%
+remote-target-only row. Accepted evidence records live in
+`configs/platform_verified_evidence.json` and are checked by
+`python scripts/check_platform_verified_evidence.py`; an empty registry means no
+readiness promotion. Use `python scripts/make_platform_verified_evidence_record.py`
+to generate a candidate accepted record from validated artifact and XP evidence
+inputs. Every accepted record must include the current promotion config
+SHA-256. Linux records must include builder identity evidence plus its matching
+SHA-256 and workflow dispatch input binding, and XP records must include the
+validated XP evidence JSON SHA-256, the current XP evidence contract SHA-256,
+XP evidence summary binding and every required smoke evidence SHA-256. Release asset URLs and artifact hash maps must exactly match
+the required artifact names for the target; incomplete, duplicate or extra artifact sets do
+not promote readiness. The generated platform readiness rows expose required, present and
+missing accepted evidence targets so partial XP x86/x64 evidence remains visible
+without promoting the Windows XP native-host percentage. Duplicate accepted
+evidence targets are rejected, and XP x86/x64 evidence must use the same
+`release_tag` before it can promote the Windows XP native-host row.
+The checked operator path is documented in
+`docs/PLATFORM_PROMOTION_RUNBOOK.md` and verified by
+`python scripts/check_platform_promotion_runbook.py`.
 
 Generate the same numbers locally:
 
@@ -66,6 +103,10 @@ Generate the same numbers locally:
 row features --coverage
 row features --coverage --json
 ```
+
+The human `row features --coverage` output includes missing accepted evidence
+targets next to Linux i386, Linux armhf and Windows XP rows; the JSON output
+keeps the same data under `accepted_evidence_missing_targets`.
 
 ## Scoring method
 
@@ -220,7 +261,7 @@ they are tied to executable release evidence.
 - Local export/import and mounted/shared-directory sync provider.
 - Termius-style JSON host import for local migration.
 - SFTP queued transfer and preview workflow for SSH hosts.
-- Desktop, Web/PWA and Android/Termux workflows.
+- Desktop, Web/PWA, Android/Termux and iOS/iPadOS Web/PWA workflows.
 
 ## Current implementation status
 
@@ -232,5 +273,5 @@ adapter-first readiness contract. Release-backed product workflow parity is also
 100% for the tracked workflows because every mapped row is tied to implemented
 code, tested launch-plan builders, shipped platform scripts, GUI/CLI workflows
 or explicit plugin boundaries. Platform verified readiness remains separate
-because manual native builders, Termux/Web channels and legacy Windows
-remote-target tiers are not the same as product feature parity.
+because manual native builders and legacy Windows remote-target tiers are
+extended compatibility rows, not verified release targets.

@@ -3,7 +3,7 @@
 | Protocol | Default adapter | External client examples |
 |---|---|---|
 | SSH | OpenSSH | `ssh` |
-| SSHv1 legacy | OpenSSH-compatible legacy mode | `ssh -1` only when the profile also sets `allow_insecure_sshv1=true` and the installed client still supports protocol v1 |
+| SSHv1 legacy | OpenSSH-compatible legacy mode | `ssh -1` only when the profile also sets `allow_insecure_sshv1=true`, `legacy_target=windows-xp-32` or `windows-xp-64`, and `allow_legacy_crypto=true`; the installed client must still support protocol v1 |
 | SFTP | OpenSSH + file browser commands | `sftp`, `row files` |
 | SCP | OpenSSH | `scp` |
 | Mosh | Mosh | `mosh` |
@@ -27,7 +27,9 @@ row connect PROFILE --dry-run
 ```
 
 Imported SSHv1 profiles are preserved as `ssh1`, but they are not launchable
-until an operator edits the profile and adds `allow_insecure_sshv1=true`.
+until an operator edits the profile and adds `allow_insecure_sshv1=true`,
+`legacy_target=windows-xp-32` or `windows-xp-64`, and
+`allow_legacy_crypto=true`.
 
 `row doctor` reports `ssh1` and `sshv1` as `legacy-insecure-opt-in` rather
 than normally available. A present `ssh` executable only means the external
@@ -41,10 +43,10 @@ intentionally not emitted on the command line.
 
 | Protocol | Supported options |
 |---|---|
-| SSH/SFTP/SCP | `compression=true`, `connect_timeout=10`, `keepalive_interval=30`, `keepalive_count=3`, `strict_host_key_checking=accept-new`, `user_known_hosts_file=/path/known_hosts`, `log_level=ERROR`, `ciphers=...`, `host_key_algorithms=...`, `kex_algorithms=...`, `macs=...`, `proxy_jump=bastion`, `proxy_command=...` with `allow_unsafe_proxy_command=true`, `agent_forward=true` or `forward_agent=true` for SSH |
-| SSHv1 legacy | Requires both `--protocol ssh1` or `--protocol sshv1` and `--option allow_insecure_sshv1=true` before the launcher will add `-1`. This is insecure, obsolete, and only works with clients that still include SSH protocol v1 support. |
+| SSH/SFTP/SCP | `compression=true`, `connect_timeout=10`, `keepalive_interval=30`, `keepalive_count=3`, `strict_host_key_checking=accept-new`, `user_known_hosts_file=/path/known_hosts`, `log_level=ERROR`, `ciphers=...`, `host_key_algorithms=...`, `kex_algorithms=...`, `macs=...`, `proxy_jump=bastion`, `proxy_command=...` with `allow_unsafe_proxy_command=true`, `agent_forward=true` or `forward_agent=true` for SSH. Known legacy algorithms such as `ssh-rsa`, `ssh-dss`, `diffie-hellman-group1-sha1`, CBC/3DES/RC4 ciphers and SHA-1 MACs require `legacy_target=windows-xp-32` or `windows-xp-64` plus `allow_legacy_crypto=true`. |
+| SSHv1 legacy | Requires `--protocol ssh1` or `--protocol sshv1`, `--option allow_insecure_sshv1=true`, `--option legacy_target=windows-xp-32` or `windows-xp-64`, and `--option allow_legacy_crypto=true` before the launcher will add `-1`. This is insecure, obsolete, and only works with clients that still include SSH protocol v1 support. |
 | Mosh | SSH handoff options above, plus `mosh_port=60000:61000`, `mosh_server=mosh-server`, `predict=adaptive|always|never|experimental`, `bind_server=ssh|any|IP` |
-| RDP | `geometry=1600x900` or `width=1600` and `height=900`, `fullscreen=true`, `admin=true`, `multimon=true`, `span=true`, `prompt=true`, `domain=LAB`, `dynamic_resolution=false`, `cert_ignore=true`, `cert=ignore|deny|tofu|name`, `security=rdp|tls|nla|ext`, `clipboard=false`, `drive=name,path`, `scale=140`, `audio=true`, `microphone=true`, `fonts=true`, `themes=true`, `gfx=true` |
+| RDP | `geometry=1600x900` or `width=1600` and `height=900`, `fullscreen=true`, `admin=true`, `multimon=true`, `span=true`, `prompt=true`, `domain=LAB`, `dynamic_resolution=false`, `cert_ignore=true`, `cert=ignore|deny|tofu|name`, `security=tls|nla|ext`, `security=rdp` only with `legacy_target=windows-xp-32` or `windows-xp-64` plus `allow_legacy_rdp_security=true`, `clipboard=false`, `drive=name,path`, `scale=140`, `audio=true`, `microphone=true`, `fonts=true`, `themes=true`, `gfx=true` |
 | VNC | `fullscreen=true`, `view_only=true`, `shared=true`, `geometry=1280x720`, `password_file=/path/passwd`, `encoding=tight`, `quality=0..9`, `compression=0..9` |
 | SPICE | `fullscreen=true`, `title=Lab VM`, `zoom=125`, `audio=false` |
 | X2Go | `session=name`, `session_type=XFCE`, `command=XFCE`, `geometry=1440x900`, `fullscreen=true`, `link=modem|isdn|adsl|wan|lan`, `pack=16m-jpeg` |
@@ -58,7 +60,8 @@ row profile add --name edge --protocol ssh --host ssh.example.invalid --username
   --option strict_host_key_checking=accept-new --option proxy_jump=bastion
 
 row profile add --name legacy-router --protocol ssh1 --host legacy-router.example.invalid --username admin \
-  --option allow_insecure_sshv1=true
+  --option allow_insecure_sshv1=true --option legacy_target=windows-xp-32 \
+  --option allow_legacy_crypto=true
 
 row profile add --name desktop --protocol rdp --host rdp.example.invalid \
   --option geometry=1600x900 --option cert_ignore=true --option clipboard=false

@@ -28,7 +28,16 @@ Profile and command launch hardening:
 - ports must be explicit valid TCP/UDP-style port numbers when a protocol has no safe default, such as raw sockets;
 - HTTP/HTTPS profiles only open `http://` or `https://` URLs, reject embedded URL passwords, and use direct browser-launch helpers instead of Windows `cmd /c start`;
 - SSH `proxy_jump` is the preferred jump-host path; `proxy_command` is rejected unless the profile explicitly sets `allow_unsafe_proxy_command=true`;
-- SSHv1 requires both an explicit `ssh1`/`sshv1` profile protocol and `allow_insecure_sshv1=true`; when enabled it adds `-1` to the generated SSH argv and remains insecure even when an external client supports it;
+- SSHv1 requires an explicit `ssh1`/`sshv1` profile protocol,
+  `allow_insecure_sshv1=true`, `legacy_target=windows-xp-32` or
+  `windows-xp-64`, and `allow_legacy_crypto=true`; when enabled it adds `-1`
+  to the generated SSH argv and remains insecure even when an external client
+  supports it;
+- known weak SSH algorithms, including SHA-1 host-key/KEX overrides and
+  CBC/3DES/RC4 cipher overrides, are blocked unless the profile is marked as an
+  isolated Windows XP remote target and explicitly sets `allow_legacy_crypto=true`;
+- FreeRDP `security=rdp` is blocked unless the profile is marked as an isolated
+  Windows XP remote target and explicitly sets `allow_legacy_rdp_security=true`;
 - SFTP upload, delete, rename and local-overwrite download plans are marked destructive and are refused before execution unless the operator passes `--force`; broad delete/rename targets such as `/`, `.`, `~`, parent traversal and remote globs are rejected even with force;
 - GUI process-backed panes track their `QProcess` state, ask before closing tabs or quitting with live sessions, and apply terminate-then-kill cleanup with bounded waits;
 - `row serve-web` validates the bind host, refuses non-loopback interfaces unless `--allow-public-bind` is set, disables directory listing and adds static-app browser hardening headers;
@@ -58,6 +67,14 @@ reject symlinked release inputs, and stamp source/install archives with
 deterministic metadata. Release manifests include `size_bytes` and `sha256` for
 each artifact, and the source/Python release job emits a SHA-256 checksum file
 for generated artifacts and the release manifest.
+
+Release crypto dependency pins live in `requirements-release.txt` and
+`configs/release_toolchain.json`. The security baseline keeps modern TLS policy
+at TLS 1.3 preferred and TLS 1.2 minimum. TLS 1.3 preferred and TLS 1.2 minimum
+are the release defaults, with SSL 2.0, SSL 3.0, TLS 1.0 and
+TLS 1.1 treated as deprecated. XP compatibility is implemented as per-profile
+remote-target compatibility and must not lower interpreter, OpenSSL, browser or
+platform TLS defaults globally.
 
 GitHub release build jobs run with read-only contents permission and do not
 persist checkout credentials. Only the final publish job receives contents write

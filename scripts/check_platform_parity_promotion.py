@@ -1,0 +1,498 @@
+from __future__ import annotations
+
+import json
+import re
+import sys
+from pathlib import Path
+from typing import Any
+
+ROOT = Path(__file__).resolve().parents[1]
+SRC = ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
+
+from remote_ops_workspace.features import coverage_report  # noqa: E402
+
+PROMOTION_PATH = ROOT / "configs" / "platform_parity_promotion.json"
+PLATFORM_TARGETS_PATH = ROOT / "configs" / "platform_targets.json"
+RELEASE_MATRIX_PATH = ROOT / "configs" / "release_matrix.json"
+RELEASE_WORKFLOW_PATH = ROOT / ".github" / "workflows" / "release.yml"
+
+EXPECTED_PROMOTION_IDS = {
+    "linux-i386",
+    "linux-armhf",
+    "windows-xp-native-x86",
+    "windows-xp-native-x64",
+}
+LINUX_PROMOTION_IDS = {"linux-i386", "linux-armhf"}
+XP_PROMOTION_IDS = {"windows-xp-native-x86", "windows-xp-native-x64"}
+
+LINUX_REQUIRED_PROMOTION_KEYS = {
+    "platform_targets_release_tier",
+    "platform_targets_github_release_channel",
+    "release_matrix_default_native_job",
+    "release_matrix_platform_target_id",
+    "release_matrix_arch",
+    "workflow_job",
+    "workflow_arch",
+    "workflow_runner_evidence",
+    "build_script",
+    "smoke_script",
+    "artifact_validation_command",
+    "required_artifacts",
+}
+XP_REQUIRED_PROMOTION_KEYS = {
+    "separate_legacy_toolchain",
+    "xp_vm_or_self_hosted_runner",
+    "native_artifacts",
+    "artifact_validation_command",
+    "native_evidence_validation_command",
+    "smoke_evidence",
+    "security_requirements",
+}
+
+REQUIRED_DOC_SNIPPETS: dict[str, tuple[str, ...]] = {
+    "README.md": (
+        "Linux i386/armhf and Windows XP native-host promotion to 100% is gated",
+        "configs/platform_parity_promotion.json",
+        "python scripts/check_platform_parity_promotion.py",
+        "python scripts/check_platform_promotion_artifacts.py",
+        ".github/workflows/extended-platform-evidence.yml",
+        "python scripts/check_xp_native_evidence.py",
+        "configs/platform_verified_evidence.json",
+        "python scripts/check_platform_verified_evidence.py",
+        "python scripts/make_platform_verified_evidence_record.py",
+    ),
+    "docs/PLATFORM_SUPPORT.md": (
+        "## Promotion to 100% for extended targets",
+        "Linux i386/armhf and Windows XP native-host promotion to 100% is gated",
+        "configs/platform_parity_promotion.json",
+        "python scripts/check_platform_parity_promotion.py",
+        "python scripts/check_platform_promotion_artifacts.py",
+        ".github/workflows/extended-platform-evidence.yml",
+        "python scripts/check_xp_native_evidence.py",
+        "configs/platform_verified_evidence.json",
+        "python scripts/check_platform_verified_evidence.py",
+        "python scripts/make_platform_verified_evidence_record.py",
+    ),
+    "docs/RELEASE_STRATEGY.md": (
+        "configs/platform_parity_promotion.json",
+        "python scripts/check_platform_parity_promotion.py",
+        "python scripts/check_platform_promotion_artifacts.py",
+        ".github/workflows/extended-platform-evidence.yml",
+        "python scripts/check_xp_native_evidence.py",
+        "configs/platform_verified_evidence.json",
+        "python scripts/check_platform_verified_evidence.py",
+        "python scripts/make_platform_verified_evidence_record.py",
+        "Linux i386 and Linux armhf can move from script-supported to default-native",
+    ),
+    "docs/FULL_FEATURE_COVERAGE.md": (
+        "Linux i386/armhf and Windows XP native-host promotion to 100% is gated",
+        "configs/platform_parity_promotion.json",
+        "python scripts/check_platform_parity_promotion.py",
+        "python scripts/check_platform_promotion_artifacts.py",
+        ".github/workflows/extended-platform-evidence.yml",
+        "python scripts/check_xp_native_evidence.py",
+        "configs/platform_verified_evidence.json",
+        "python scripts/check_platform_verified_evidence.py",
+        "python scripts/make_platform_verified_evidence_record.py",
+    ),
+    "docs/VERIFYING.md": (
+        "python scripts/check_platform_parity_promotion.py",
+        "python scripts/check_platform_promotion_artifacts.py",
+        "python scripts/check_extended_platform_evidence.py",
+        "python scripts/check_xp_native_evidence.py",
+        "python scripts/check_platform_verified_evidence.py",
+        "python scripts/make_platform_verified_evidence_record.py",
+        "Linux i386/armhf and Windows XP native-host promotion",
+    ),
+}
+
+
+def main() -> int:
+    errors = check_platform_parity_promotion()
+    if errors:
+        for error in errors:
+            print(f"platform parity promotion: {error}", file=sys.stderr)
+        return 1
+    print("platform parity promotion checks passed")
+    return 0
+
+
+def check_platform_parity_promotion(
+    *,
+    promotion: dict[str, Any] | None = None,
+    platform_targets: dict[str, Any] | None = None,
+    release_matrix: dict[str, Any] | None = None,
+    workflow: str | None = None,
+    report: dict[str, Any] | None = None,
+    docs: dict[str, str] | None = None,
+) -> list[str]:
+    promotion_data = promotion or read_json(PROMOTION_PATH)
+    platform_data = platform_targets or read_json(PLATFORM_TARGETS_PATH)
+    matrix = release_matrix or read_json(RELEASE_MATRIX_PATH)
+    workflow_text = workflow if workflow is not None else RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8")
+    coverage = report or coverage_report()
+    doc_text = docs or read_docs(REQUIRED_DOC_SNIPPETS)
+
+    errors: list[str] = []
+    errors.extend(check_schema(promotion_data))
+    if errors:
+        return errors
+
+    entries = rows_by_key(promotion_data.get("protected_targets", []), "id", errors)
+    release_rows = rows_by_key(platform_data.get("release_architectures", []), "id", errors)
+    legacy_rows = rows_by_key(platform_data.get("windows_legacy_targets", []), "version", errors)
+    readiness_rows = rows_by_key(
+        coverage.get("platform_verified_readiness", {}).get("targets", []),
+        "target",
+        errors,
+    )
+
+    for target_id in sorted(LINUX_PROMOTION_IDS):
+        entry = entries.get(target_id)
+        if entry is not None:
+            errors.extend(
+                check_linux_promotion_entry(
+                    entry,
+                    release_rows,
+                    readiness_rows,
+                    matrix,
+                    workflow_text,
+                )
+            )
+    for target_id in sorted(XP_PROMOTION_IDS):
+        entry = entries.get(target_id)
+        if entry is not None:
+            errors.extend(check_xp_promotion_entry(entry, legacy_rows, readiness_rows))
+
+    errors.extend(check_docs(doc_text))
+    return errors
+
+
+def check_schema(promotion: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    if promotion.get("schema_version") != 1:
+        errors.append("configs/platform_parity_promotion.json schema_version must be 1")
+    if "100% real parity" not in str(promotion.get("goal", "")):
+        errors.append("platform parity promotion goal must explicitly describe 100% real parity")
+
+    raw_entries = promotion.get("protected_targets")
+    if not isinstance(raw_entries, list):
+        return [*errors, "platform parity promotion protected_targets must be a list"]
+    entries = rows_by_key(raw_entries, "id", errors)
+    actual_ids = set(entries)
+    if actual_ids != EXPECTED_PROMOTION_IDS:
+        errors.append(
+            "platform parity promotion protected targets must exactly match "
+            f"{sorted(EXPECTED_PROMOTION_IDS)}, got {sorted(actual_ids)}"
+        )
+    for target_id, entry in entries.items():
+        if entry.get("target_readiness_percent") != 100.0:
+            errors.append(f"{target_id} target_readiness_percent must be 100.0")
+        blockers = entry.get("current_blockers")
+        if not isinstance(blockers, list) or not blockers:
+            errors.append(f"{target_id} must list current_blockers before promotion")
+        requirements = entry.get("promotion_to_100_requires")
+        if not isinstance(requirements, dict):
+            errors.append(f"{target_id} promotion_to_100_requires must be an object")
+            continue
+        required_keys = LINUX_REQUIRED_PROMOTION_KEYS if target_id in LINUX_PROMOTION_IDS else XP_REQUIRED_PROMOTION_KEYS
+        missing_keys = sorted(required_keys - set(requirements))
+        if missing_keys:
+            errors.append(f"{target_id} promotion_to_100_requires missing keys: {missing_keys}")
+    return errors
+
+
+def check_linux_promotion_entry(
+    entry: dict[str, Any],
+    release_rows: dict[str, dict[str, Any]],
+    readiness_rows: dict[str, dict[str, Any]],
+    matrix: dict[str, Any],
+    workflow: str,
+) -> list[str]:
+    target_id = str(entry.get("platform_target_id", ""))
+    row = release_rows.get(target_id)
+    readiness = readiness_rows.get(target_id)
+    label = str(entry.get("id", target_id))
+    errors: list[str] = []
+    if row is None:
+        return [f"{label} references missing platform target {target_id}"]
+    if readiness is None:
+        return [f"{label} references missing platform readiness row {target_id}"]
+
+    errors.extend(
+        check_current_field(label, entry, "current_release_tier", row.get("release_tier"))
+    )
+    errors.extend(
+        check_current_field(
+            label,
+            entry,
+            "current_github_release_channel",
+            row.get("github_release_channel"),
+        )
+    )
+    errors.extend(
+        check_current_field(
+            label,
+            entry,
+            "current_readiness_percent",
+            readiness.get("current_percent"),
+        )
+    )
+    errors.extend(check_current_field(label, entry, "current_status", readiness.get("status")))
+
+    default_ids = default_native_target_ids(matrix)
+    script_ids = script_supported_target_ids(matrix)
+    requirements = entry.get("promotion_to_100_requires", {})
+    if not isinstance(requirements, dict):
+        return errors
+
+    if float(entry.get("current_readiness_percent", 0.0)) < 100.0:
+        if target_id in default_ids:
+            errors.append(f"{label} is below 100% but is already in default native release targets")
+        if target_id not in script_ids:
+            errors.append(f"{label} must remain in script_supported_native until promotion evidence exists")
+    else:
+        errors.extend(
+            check_linux_100_evidence(
+                label,
+                target_id,
+                row,
+                matrix,
+                workflow,
+                requirements,
+            )
+        )
+
+    errors.extend(check_script_requirement(label, requirements, "build_script"))
+    errors.extend(check_script_requirement(label, requirements, "smoke_script"))
+    errors.extend(check_artifact_validation_command(label, requirements))
+    artifacts = requirements.get("required_artifacts")
+    if not isinstance(artifacts, list) or len(artifacts) < 5:
+        errors.append(f"{label} must list required 100% release artifacts")
+    else:
+        for artifact in artifacts:
+            if "<project.version>" not in str(artifact):
+                errors.append(f"{label} artifact must use <project.version> placeholder: {artifact}")
+    return errors
+
+
+def check_linux_100_evidence(
+    label: str,
+    target_id: str,
+    row: dict[str, Any],
+    matrix: dict[str, Any],
+    workflow: str,
+    requirements: dict[str, Any],
+) -> list[str]:
+    errors: list[str] = []
+    expected_release_tier = requirements.get("platform_targets_release_tier")
+    expected_channel = requirements.get("platform_targets_github_release_channel")
+    if row.get("release_tier") != expected_release_tier:
+        errors.append(f"{label} 100% promotion requires release_tier={expected_release_tier}")
+    if row.get("github_release_channel") != expected_channel:
+        errors.append(f"{label} 100% promotion requires github_release_channel={expected_channel}")
+
+    default_ids = default_native_target_ids(matrix)
+    if target_id not in default_ids:
+        errors.append(f"{label} 100% promotion requires default native release matrix membership")
+
+    job_name = str(requirements.get("release_matrix_default_native_job", ""))
+    matrix_arch = str(requirements.get("release_matrix_arch", ""))
+    workflow_arch = str(requirements.get("workflow_arch", ""))
+    job_arches = default_native_job_arches(matrix, job_name)
+    if matrix_arch not in job_arches:
+        errors.append(f"{label} 100% promotion requires {job_name} matrix arch {matrix_arch}")
+    job_block = workflow_job_block(workflow, str(requirements.get("workflow_job", "")))
+    if not job_block:
+        errors.append(f"{label} 100% promotion requires workflow job {job_name}")
+    elif not re.search(rf"(?m)^\s+- arch:\s*{re.escape(workflow_arch)}\s*$", job_block):
+        errors.append(f"{label} 100% promotion requires workflow arch {workflow_arch}")
+    return errors
+
+
+def check_xp_promotion_entry(
+    entry: dict[str, Any],
+    legacy_rows: dict[str, dict[str, Any]],
+    readiness_rows: dict[str, dict[str, Any]],
+) -> list[str]:
+    version = str(entry.get("legacy_windows_version", ""))
+    row = legacy_rows.get(version)
+    readiness = readiness_rows.get(version)
+    label = str(entry.get("id", version))
+    errors: list[str] = []
+    if row is None:
+        return [f"{label} references missing legacy Windows target {version}"]
+    if readiness is None:
+        return [f"{label} references missing platform readiness row {version}"]
+
+    errors.extend(check_current_field(label, entry, "current_host_tier", row.get("host_tier")))
+    errors.extend(
+        check_current_field(
+            label,
+            entry,
+            "remote_target_coverage_percent",
+            row.get("remote_target_coverage_percent"),
+        )
+    )
+    errors.extend(
+        check_current_field(
+            label,
+            entry,
+            "current_readiness_percent",
+            readiness.get("current_percent"),
+        )
+    )
+    errors.extend(check_current_field(label, entry, "current_status", readiness.get("status")))
+
+    if entry.get("current_stack_supported") is not False:
+        errors.append(f"{label} current_stack_supported must remain false until XP-native evidence exists")
+    if entry.get("requires_separate_legacy_toolchain") is not True:
+        errors.append(f"{label} must require a separate legacy toolchain for XP native host readiness")
+    if float(entry.get("current_readiness_percent", 0.0)) >= 100.0:
+        errors.append(f"{label} cannot claim 100% until XP VM and native artifact evidence is added")
+
+    requirements = entry.get("promotion_to_100_requires", {})
+    if not isinstance(requirements, dict):
+        return errors
+    if requirements.get("separate_legacy_toolchain") is not True:
+        errors.append(f"{label} promotion requires separate_legacy_toolchain=true")
+    expected_arch = str(entry.get("architecture", ""))
+    artifacts = requirements.get("native_artifacts")
+    if not isinstance(artifacts, list) or len(artifacts) < 3:
+        errors.append(f"{label} must list XP native artifact requirements")
+    else:
+        for artifact in artifacts:
+            artifact_text = str(artifact)
+            if expected_arch not in artifact_text:
+                errors.append(f"{label} artifact must include architecture {expected_arch}: {artifact}")
+            if "<project.version>" not in artifact_text:
+                errors.append(f"{label} artifact must use <project.version> placeholder: {artifact}")
+    for key in ("smoke_evidence", "security_requirements"):
+        value = requirements.get(key)
+        if not isinstance(value, list) or not value:
+            errors.append(f"{label} promotion requires non-empty {key}")
+    errors.extend(check_artifact_validation_command(label, requirements))
+    errors.extend(check_xp_native_evidence_validation_command(label, requirements))
+    return errors
+
+
+def check_docs(docs: dict[str, str]) -> list[str]:
+    errors: list[str] = []
+    for path, snippets in REQUIRED_DOC_SNIPPETS.items():
+        text = normalize_text(docs.get(path, ""))
+        if not text:
+            errors.append(f"missing platform parity promotion doc text: {path}")
+            continue
+        for snippet in snippets:
+            if normalize_text(snippet) not in text:
+                errors.append(f"{path} missing platform parity promotion snippet: {snippet}")
+    return errors
+
+
+def check_current_field(label: str, entry: dict[str, Any], key: str, actual: Any) -> list[str]:
+    if entry.get(key) != actual:
+        return [f"{label} {key} must match current evidence {actual!r}, got {entry.get(key)!r}"]
+    return []
+
+
+def check_script_requirement(label: str, requirements: dict[str, Any], key: str) -> list[str]:
+    value = requirements.get(key)
+    if not isinstance(value, str) or not value:
+        return [f"{label} promotion requires {key}"]
+    script_path = value.split()[0]
+    if not (ROOT / script_path).is_file():
+        return [f"{label} promotion {key} points to missing file: {script_path}"]
+    return []
+
+
+def check_artifact_validation_command(label: str, requirements: dict[str, Any]) -> list[str]:
+    command = requirements.get("artifact_validation_command")
+    if not isinstance(command, str) or not command:
+        return [f"{label} promotion requires artifact_validation_command"]
+    expected = (
+        "python scripts/check_platform_promotion_artifacts.py "
+        f"--target {label} --assets-dir <artifact-dir> --tag v<project.version>"
+    )
+    if command != expected:
+        return [f"{label} artifact_validation_command must be {expected!r}"]
+    if not (ROOT / "scripts" / "check_platform_promotion_artifacts.py").is_file():
+        return [f"{label} artifact validation script is missing"]
+    return []
+
+
+def check_xp_native_evidence_validation_command(label: str, requirements: dict[str, Any]) -> list[str]:
+    command = requirements.get("native_evidence_validation_command")
+    if not isinstance(command, str) or not command:
+        return [f"{label} promotion requires native_evidence_validation_command"]
+    expected = "python scripts/check_xp_native_evidence.py --evidence <evidence.json> --assets-dir <artifact-dir>"
+    if command != expected:
+        return [f"{label} native_evidence_validation_command must be {expected!r}"]
+    if not (ROOT / "scripts" / "check_xp_native_evidence.py").is_file():
+        return [f"{label} XP native evidence validation script is missing"]
+    return []
+
+
+def default_native_target_ids(matrix: dict[str, Any]) -> set[str]:
+    target_ids: set[str] = set()
+    for job in matrix.get("default_github_release", {}).get("native_jobs", []):
+        if isinstance(job, dict):
+            target_ids.update(str(item) for item in job.get("platform_target_ids", []))
+    return target_ids
+
+
+def default_native_job_arches(matrix: dict[str, Any], job_name: str) -> set[str]:
+    for job in matrix.get("default_github_release", {}).get("native_jobs", []):
+        if isinstance(job, dict) and job.get("job") == job_name:
+            return {str(arch) for arch in job.get("arches", [])}
+    return set()
+
+
+def script_supported_target_ids(matrix: dict[str, Any]) -> set[str]:
+    return {
+        str(item.get("platform_target_id"))
+        for item in matrix.get("script_supported_native", [])
+        if isinstance(item, dict)
+    }
+
+
+def rows_by_key(raw_rows: Any, key: str, errors: list[str]) -> dict[str, dict[str, Any]]:
+    if not isinstance(raw_rows, list):
+        errors.append(f"platform parity promotion rows for {key} must be a list")
+        return {}
+    rows: dict[str, dict[str, Any]] = {}
+    for item in raw_rows:
+        if not isinstance(item, dict):
+            errors.append(f"platform parity promotion row for {key} must be an object")
+            continue
+        row_key = str(item.get(key, ""))
+        if not row_key:
+            errors.append(f"platform parity promotion row missing key: {key}")
+            continue
+        if row_key in rows:
+            errors.append(f"duplicate platform parity promotion row: {row_key}")
+            continue
+        rows[row_key] = item
+    return rows
+
+
+def workflow_job_block(workflow: str, job: str) -> str:
+    match = re.search(rf"(?ms)^  {re.escape(job)}:\n(.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)", workflow)
+    return match.group(1) if match else ""
+
+
+def read_docs(required: dict[str, tuple[str, ...]]) -> dict[str, str]:
+    return {path: (ROOT / path).read_text(encoding="utf-8") for path in required}
+
+
+def read_json(path: Path) -> dict[str, Any]:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def normalize_text(text: str) -> str:
+    return re.sub(r"\s+", " ", text.replace("\\|", "|")).strip()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -112,10 +112,14 @@ def check_product_readiness() -> list[str]:
     platform_rows = platform.get("targets", [])
     if not platform_rows:
         errors.append("platform verified readiness must include release and legacy targets")
-    if not any(row["current_percent"] < 100.0 for row in platform_rows):
+    partial_rows = [row for row in platform_rows if row["current_percent"] < 100.0]
+    if not partial_rows:
         errors.append("platform verified readiness must expose partial non-default targets")
-    if platform.get("overall", {}).get("current_percent", 100.0) >= 100.0:
-        errors.append("platform verified readiness overall must not be 100 while partial targets exist")
+    for row in partial_rows:
+        if row.get("verified_readiness_scope") is not False:
+            errors.append(f"{row['target']} partial compatibility row must stay outside verified readiness scope")
+    if platform.get("overall", {}).get("current_percent") != 100.0:
+        errors.append("platform verified readiness overall must be 100 for verified-scope targets")
     return errors
 
 

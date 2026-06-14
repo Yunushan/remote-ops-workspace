@@ -48,7 +48,7 @@
     },
     {
       "name": "cryptography",
-      "version": "46.0.3",
+      "version": "49.0.0",
       "purpose": "Pinned optional vault encryption dependency with CPython 3.12 Windows ARM64 wheels."
     }
   ],

@@ -30,7 +30,13 @@ Please include:
 - Vault encryption uses the optional `cryptography` package; without it, vault commands fail closed.
 - `row connect --dry-run` prints launch arguments so operators can validate commands before connecting.
 - Audit redaction covers secret-like payload keys, assignment-style secret arguments such as `--password=value`, split secret flags such as `--token VALUE`, URL-embedded passwords, bearer tokens and common Windows-style password switches.
-- SSHv1 profiles are disabled unless the profile protocol is `ssh1`/`sshv1` and `allow_insecure_sshv1=true` is set; protocol v1 remains unsafe even then.
+- SSHv1 profiles are disabled unless the profile protocol is `ssh1`/`sshv1`,
+  `allow_insecure_sshv1=true`, `legacy_target=windows-xp-32` or
+  `windows-xp-64`, and `allow_legacy_crypto=true` are set; protocol v1 remains
+  unsafe even then.
+- Known weak SSH algorithms and RDP native security mode are blocked for modern
+  profiles. They require isolated Windows XP x86/x64 profile flags and do not
+  change global defaults for Windows 10/11, Linux or macOS releases.
 
 ## Boundaries
 

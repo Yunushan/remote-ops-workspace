@@ -10,6 +10,39 @@ panels, status bars, density, spacing and interaction states. They remain
 independent implementations: no proprietary artwork, copied binaries or
 user-specific sample data are used.
 
+`configs/gui_parity_criteria.json` now requires explicit sanitized
+`reference_views` for every product preset. Each reference view names the
+approved state it represents, the static preview artifact used for visual
+comparison, the live PyQt contract that exercises the state, and the objective
+dimensions it covers. `python scripts/check_gui_parity.py` fails if the union of
+those reference views does not cover every required dimension for MobaXterm,
+SecureCRT, Termius, Remmina and mRemoteNG style presets.
+Each reference view also has a `reference_policy` block. The gate requires it
+to mark the view as sanitized, synthetic-sample based, free of credentials and
+user-specific data, and independently implemented without proprietary assets.
+The parity report includes this as measured reference-policy coverage.
+Each reference view also includes a `visual_evidence` block tied to
+`configs/gui_visual_metrics.json`: measured preview regions, color anchors,
+line anchors and topology contracts must exist for the referenced preset or
+state-preview image before the parity report can show 100% measured reference
+coverage. The `static_preview` path must also match the preview-manifest image
+for that metrics collection and id, so measured visual evidence cannot be
+borrowed from a different rendered state.
+The same gate also binds every reference view to static and live workflow
+contracts: `static_contract` must resolve to a non-empty route object in
+`artifacts/gui-design-previews/preview-manifest.json`, while `live_contract`
+and `contract_check` must be exercised by `scripts/check_real_gui_render.py`.
+This prevents a preview image from counting toward 100% parity unless the real
+PyQt window has a matching checked interaction route.
+Each view also carries `live_evidence`, which names the required live route
+dictionary keys and widget object names for that state. The parity checker loads
+the real render manifest summaries from `scripts/check_real_gui_render.py` and
+fails the score if those keys or widgets disappear.
+Finally, `dimension_evidence` maps every claimed objective dimension to the
+specific measured visual IDs or live route/widget objects that support it. A
+reference view cannot count toward 100% dimension coverage by merely listing a
+dimension name; the named evidence must be part of that same reference view.
+
 Preset definitions live in `src/remote_ops_workspace/gui_designs.py`. The PyQt6
 window applies the selected preset to toolbar icon sizing, product-specific
 toolbar action names, profile-list spacing, document tab behavior,

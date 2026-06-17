@@ -24,6 +24,14 @@ def test_gui_parity_checker_json_mode_outputs_report(capsys) -> None:
     assert report["overall"]["gap_percent"] == 0.0
     assert report["overall"]["dimension_percent"] == 100.0
     assert report["overall"]["dimension_gap_percent"] == 0.0
+    assert report["overall"]["reference_dimension_percent"] == 100.0
+    assert report["overall"]["reference_dimension_gap_percent"] == 0.0
+    assert report["overall"]["reference_visual_percent"] == 100.0
+    assert report["overall"]["reference_visual_gap_percent"] == 0.0
+    assert report["overall"]["reference_contract_percent"] == 100.0
+    assert report["overall"]["reference_contract_gap_percent"] == 0.0
+    assert report["overall"]["reference_policy_percent"] == 100.0
+    assert report["overall"]["reference_policy_gap_percent"] == 0.0
 
 
 def test_gui_parity_tracks_all_product_style_presets() -> None:
@@ -33,6 +41,29 @@ def test_gui_parity_tracks_all_product_style_presets() -> None:
     assert set(criteria["presets"]) == checker.PRODUCT_STYLE_PRESETS
     assert criteria["target_percent"] == 100
     assert checker.count_requirements(criteria) >= 78
+    for preset_data in criteria["presets"].values():
+        assert len(preset_data["reference_views"]) >= 2
+        for view in preset_data["reference_views"]:
+            assert view["reference_policy"]["approval_scope"] == "user-approved-product-style-reference"
+            assert view["reference_policy"]["sanitized"] is True
+            assert view["reference_policy"]["synthetic_sample_data"] is True
+            assert view["reference_policy"]["no_user_specific_data"] is True
+            assert view["reference_policy"]["no_credentials"] is True
+            assert view["reference_policy"]["independent_implementation"] is True
+            assert view["reference_policy"]["no_proprietary_assets"] is True
+            assert view["static_contract"]
+            assert view["live_contract"]
+            assert view["contract_check"]
+            assert set(view["dimension_evidence"]) == set(view["dimensions"])
+            for evidence in view["dimension_evidence"].values():
+                assert any(evidence.values())
+            assert view["live_evidence"]["summary_route"] == view["live_contract"]
+            assert view["live_evidence"]["required_route_keys"]
+            assert view["live_evidence"]["required_widget_objects"]
+            assert view["visual_evidence"]["region_ids"]
+            assert view["visual_evidence"]["color_anchor_ids"]
+            assert view["visual_evidence"]["line_anchor_ids"]
+            assert view["visual_evidence"]["topology_ids"]
 
 
 def test_gui_parity_requires_multi_file_requirement_evidence() -> None:
@@ -76,6 +107,23 @@ def test_gui_parity_rejects_user_specific_tokens_in_gui_evidence_files(monkeypat
     errors = checker.check_no_user_specific_samples(criteria)
 
     assert errors == [f"{bad_file.as_posix()} must not include user-specific sample token: yunus"]
+
+
+def test_gui_parity_rejects_unsanitized_reference_view_policy() -> None:
+    checker = _load_checker()
+    criteria = checker.load_json(checker.CRITERIA_PATH)
+    broken = checker.json.loads(checker.json.dumps(criteria))
+    broken["presets"]["termius"]["reference_views"][0]["reference_policy"]["no_user_specific_data"] = False
+
+    errors = checker.check_reference_view_coverage(broken)
+    report = checker.gui_parity_report(broken)
+    termius = next(row for row in report["presets"] if row["preset_id"] == "termius")
+
+    assert errors == [
+        "termius.hosts-vault-reference reference_policy no_user_specific_data must be true"
+    ]
+    assert termius["reference_policy_percent"] < 100.0
+    assert checker.check_parity_target(broken)
 
 
 def test_gui_parity_rejects_single_file_requirement_evidence() -> None:
@@ -127,12 +175,210 @@ def test_gui_parity_tracks_required_objective_dimensions() -> None:
     assert report["required_dimensions"] == required_dimensions
     assert report["overall"]["dimensions_met"] == report["overall"]["dimension_count"]
     assert report["overall"]["dimension_count"] == len(required_dimensions) * len(checker.PRODUCT_STYLE_PRESETS)
+    assert report["overall"]["reference_dimensions_met"] == report["overall"]["reference_dimension_count"]
+    assert report["overall"]["reference_dimension_count"] == len(required_dimensions) * len(checker.PRODUCT_STYLE_PRESETS)
+    assert report["overall"]["reference_visual_met"] == report["overall"]["reference_visual_count"]
+    assert report["overall"]["reference_visual_count"] == 2 * len(checker.PRODUCT_STYLE_PRESETS)
+    assert report["overall"]["reference_contract_met"] == report["overall"]["reference_contract_count"]
+    assert report["overall"]["reference_contract_count"] == 2 * len(checker.PRODUCT_STYLE_PRESETS)
+    assert report["overall"]["reference_policy_met"] == report["overall"]["reference_policy_count"]
+    assert report["overall"]["reference_policy_count"] == 2 * len(checker.PRODUCT_STYLE_PRESETS)
     for preset_data in criteria["presets"].values():
         assert set(preset_data["dimension_coverage"]) == set(required_dimensions)
+        covered = {
+            dimension
+            for view in preset_data["reference_views"]
+            for dimension in view["dimensions"]
+        }
+        assert covered == set(required_dimensions)
+        for view in preset_data["reference_views"]:
+            assert set(view["dimension_evidence"]) == set(view["dimensions"])
     for row in report["presets"]:
         assert row["dimension_percent"] == row["target_percent"]
         assert row["dimension_gap_percent"] == 0.0
         assert row["dimensions_met"] == row["dimension_count"] == len(required_dimensions)
+        assert row["reference_dimension_percent"] == row["target_percent"]
+        assert row["reference_dimension_gap_percent"] == 0.0
+        assert row["reference_dimensions_met"] == row["reference_dimension_count"] == len(required_dimensions)
+        assert row["reference_visual_percent"] == row["target_percent"]
+        assert row["reference_visual_gap_percent"] == 0.0
+        assert row["reference_visual_met"] == row["reference_visual_count"] == 2
+        assert row["reference_contract_percent"] == row["target_percent"]
+        assert row["reference_contract_gap_percent"] == 0.0
+        assert row["reference_contract_met"] == row["reference_contract_count"] == 2
+        assert row["reference_policy_percent"] == row["target_percent"]
+        assert row["reference_policy_gap_percent"] == 0.0
+        assert row["reference_policy_met"] == row["reference_policy_count"] == 2
+
+
+def test_gui_parity_rejects_incomplete_reference_view_dimension_coverage() -> None:
+    checker = _load_checker()
+    criteria = checker.load_json(checker.CRITERIA_PATH)
+    broken = checker.json.loads(checker.json.dumps(criteria))
+    broken["presets"]["termius"]["reference_views"][0]["dimensions"] = ["layout"]
+
+    errors = checker.check_reference_view_coverage(broken)
+    report = checker.gui_parity_report(broken)
+    termius = next(row for row in report["presets"] if row["preset_id"] == "termius")
+
+    assert any("termius reference_views missing dimensions" in error for error in errors)
+    assert termius["reference_dimension_percent"] < 100.0
+    assert checker.check_parity_target(broken)
+
+
+def test_gui_parity_rejects_unbound_reference_view_dimension_evidence() -> None:
+    checker = _load_checker()
+    criteria = checker.load_json(checker.CRITERIA_PATH)
+    broken = checker.json.loads(checker.json.dumps(criteria))
+    broken["presets"]["mremoteng"]["reference_views"][0]["dimension_evidence"]["session_trees"][
+        "region_ids"
+    ].append("missing-region")
+
+    errors = checker.check_reference_view_coverage(broken)
+    report = checker.gui_parity_report(broken)
+    mremoteng = next(row for row in report["presets"] if row["preset_id"] == "mremoteng")
+
+    assert any(
+        "mremoteng.connection-tree-reference dimension_evidence "
+        "session_trees.region_ids references unclaimed evidence" in error
+        for error in errors
+    )
+    assert mremoteng["reference_dimension_percent"] < 100.0
+    assert checker.check_parity_target(broken)
+
+
+def test_gui_parity_rejects_unmeasured_reference_view_visual_evidence() -> None:
+    checker = _load_checker()
+    criteria = checker.load_json(checker.CRITERIA_PATH)
+    broken = checker.json.loads(checker.json.dumps(criteria))
+    broken["presets"]["remmina"]["reference_views"][0]["visual_evidence"]["region_ids"].append(
+        "missing-region"
+    )
+
+    errors = checker.check_reference_view_coverage(broken)
+    report = checker.gui_parity_report(broken)
+    remmina = next(row for row in report["presets"] if row["preset_id"] == "remmina")
+
+    assert any("remmina.profile-list-reference visual_evidence region_ids" in error for error in errors)
+    assert remmina["reference_visual_percent"] < 100.0
+    assert checker.check_parity_target(broken)
+
+
+def test_gui_parity_rejects_mismatched_reference_view_static_metric_image() -> None:
+    checker = _load_checker()
+    criteria = checker.load_json(checker.CRITERIA_PATH)
+    broken = checker.json.loads(checker.json.dumps(criteria))
+    broken["presets"]["mremoteng"]["reference_views"][0]["static_preview"] = (
+        "artifacts/gui-design-previews/securecrt.png"
+    )
+
+    errors = checker.check_reference_view_coverage(broken)
+    report = checker.gui_parity_report(broken)
+    mremoteng = next(row for row in report["presets"] if row["preset_id"] == "mremoteng")
+
+    assert any(
+        "mremoteng.connection-tree-reference visual_evidence static_preview securecrt.png "
+        "must match metrics image mremoteng.png" in error
+        for error in errors
+    )
+    assert mremoteng["reference_visual_percent"] < 100.0
+    assert checker.check_parity_target(broken)
+
+
+def test_gui_parity_rejects_unbound_reference_view_contract_evidence() -> None:
+    checker = _load_checker()
+    criteria = checker.load_json(checker.CRITERIA_PATH)
+    broken = checker.json.loads(checker.json.dumps(criteria))
+    broken["presets"]["securecrt"]["reference_views"][0]["static_contract"] = "missing_route"
+
+    errors = checker.check_reference_view_coverage(broken)
+    report = checker.gui_parity_report(broken)
+    securecrt = next(row for row in report["presets"] if row["preset_id"] == "securecrt")
+
+    assert any("securecrt.session-manager-reference static_contract missing" in error for error in errors)
+    assert securecrt["reference_contract_percent"] < 100.0
+    assert checker.check_parity_target(broken)
+
+
+def test_gui_parity_rejects_unbound_reference_view_live_widget_evidence() -> None:
+    checker = _load_checker()
+    criteria = checker.load_json(checker.CRITERIA_PATH)
+    broken = checker.json.loads(checker.json.dumps(criteria))
+    broken["presets"]["mobaxterm"]["reference_views"][1]["live_evidence"]["required_widget_objects"].append(
+        "missingWidget"
+    )
+
+    errors = checker.check_reference_view_coverage(broken)
+    report = checker.gui_parity_report(broken)
+    moba = next(row for row in report["presets"] if row["preset_id"] == "mobaxterm")
+
+    assert any(
+        "mobaxterm.connected-session-reference live_evidence required_widget_objects" in error
+        for error in errors
+    )
+    assert moba["reference_contract_percent"] < 100.0
+    assert checker.check_parity_target(broken)
+
+
+def test_gui_parity_reference_views_point_to_static_preview_artifacts() -> None:
+    checker = _load_checker()
+    criteria = checker.load_json(checker.CRITERIA_PATH)
+
+    manifest = checker.load_json(checker.PREVIEW_MANIFEST_PATH)
+    live_contract_source = (checker.ROOT / "scripts" / "check_real_gui_render.py").read_text(encoding="utf-8")
+    live_summaries = checker.load_live_contract_summaries()
+    for preset_id, preset_data in criteria["presets"].items():
+        preset_entry = checker.preview_manifest_entry(manifest, preset_id)
+        assert preset_entry is not None
+        live_summary = live_summaries[preset_id]
+        for view in preset_data["reference_views"]:
+            assert view["id"].startswith(f"{preset_id}.")
+            assert (checker.ROOT / view["static_preview"]).is_file()
+            visual_evidence = view["visual_evidence"]
+            manifest_image = checker.reference_view_manifest_image(
+                manifest,
+                visual_evidence["metrics_collection"],
+                visual_evidence["metrics_id"],
+            )
+            assert manifest_image is not None
+            assert Path(view["static_preview"]).name == manifest_image["path"]
+            assert isinstance(preset_entry[view["static_contract"]], dict)
+            assert preset_entry[view["static_contract"]]
+            assert view["live_contract"]
+            assert view["live_contract"] in live_contract_source
+            assert view["contract_check"] in live_contract_source
+            assert view["contract_check"] in live_summary["contract_checks"]
+            live_route = live_summary[view["live_contract"]]
+            assert live_route
+            assert view["live_evidence"]["summary_route"] == view["live_contract"]
+            for route_key in view["live_evidence"]["required_route_keys"]:
+                assert live_route[route_key]
+            live_objects = {
+                value
+                for key, value in live_route.items()
+                if isinstance(key, str) and key.endswith("_object") and isinstance(value, str)
+            }
+            live_objects.update(live_summary["required_widgets"])
+            live_objects.update(live_summary["present_widgets"])
+            for widget_object in view["live_evidence"]["required_widget_objects"]:
+                assert widget_object in live_objects
+            visual_sets = {
+                "region_ids": set(view["visual_evidence"]["region_ids"]),
+                "color_anchor_ids": set(view["visual_evidence"]["color_anchor_ids"]),
+                "line_anchor_ids": set(view["visual_evidence"]["line_anchor_ids"]),
+                "topology_ids": set(view["visual_evidence"]["topology_ids"]),
+            }
+            live_sets = {
+                "live_route_keys": set(view["live_evidence"]["required_route_keys"]),
+                "live_widget_objects": set(view["live_evidence"]["required_widget_objects"]),
+            }
+            for dimension, dimension_evidence in view["dimension_evidence"].items():
+                assert dimension in view["dimensions"]
+                assert any(dimension_evidence.values())
+                for key, values in dimension_evidence.items():
+                    assert set(values) <= {**visual_sets, **live_sets}[key]
+            assert view["visual_evidence"]["metrics_collection"] in {"presets", "state_previews"}
+            assert view["visual_evidence"]["metrics_id"]
 
 
 def test_gui_parity_report_scores_each_product_style_preset() -> None:
@@ -145,6 +391,10 @@ def test_gui_parity_report_scores_each_product_style_preset() -> None:
     assert report["overall"]["gap_percent"] == 0.0
     assert report["overall"]["dimension_percent"] == 100.0
     assert report["overall"]["dimension_gap_percent"] == 0.0
+    assert report["overall"]["reference_contract_percent"] == 100.0
+    assert report["overall"]["reference_contract_gap_percent"] == 0.0
+    assert report["overall"]["reference_policy_percent"] == 100.0
+    assert report["overall"]["reference_policy_gap_percent"] == 0.0
     assert {row["preset_id"] for row in report["presets"]} == checker.PRODUCT_STYLE_PRESETS
     for row in report["presets"]:
         assert row["current_percent"] == row["target_percent"]
@@ -153,6 +403,18 @@ def test_gui_parity_report_scores_each_product_style_preset() -> None:
         assert row["dimension_percent"] == row["target_percent"]
         assert row["dimension_gap_percent"] == 0.0
         assert row["dimensions_met"] == row["dimension_count"]
+        assert row["reference_dimension_percent"] == row["target_percent"]
+        assert row["reference_dimension_gap_percent"] == 0.0
+        assert row["reference_dimensions_met"] == row["reference_dimension_count"]
+        assert row["reference_visual_percent"] == row["target_percent"]
+        assert row["reference_visual_gap_percent"] == 0.0
+        assert row["reference_visual_met"] == row["reference_visual_count"]
+        assert row["reference_contract_percent"] == row["target_percent"]
+        assert row["reference_contract_gap_percent"] == 0.0
+        assert row["reference_contract_met"] == row["reference_contract_count"]
+        assert row["reference_policy_percent"] == row["target_percent"]
+        assert row["reference_policy_gap_percent"] == 0.0
+        assert row["reference_policy_met"] == row["reference_policy_count"]
 
 
 def test_gui_parity_report_fails_when_requirement_evidence_is_missing() -> None:

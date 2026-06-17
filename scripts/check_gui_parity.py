@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import sys
 from pathlib import Path
@@ -14,10 +15,13 @@ if str(SRC) not in sys.path:
 from remote_ops_workspace.gui_designs import GUI_DESIGN_PRESETS  # noqa: E402
 
 CRITERIA_PATH = ROOT / "configs" / "gui_parity_criteria.json"
+METRICS_PATH = ROOT / "configs" / "gui_visual_metrics.json"
 PREVIEW_MANIFEST_PATH = ROOT / "artifacts" / "gui-design-previews" / "preview-manifest.json"
 PRODUCT_STYLE_PRESETS = {"mobaxterm", "securecrt", "termius", "remmina", "mremoteng"}
 PROHIBITED_SAMPLE_TOKENS = {"yunus", "yunushan", "yunus-pc", "yunus-home"}
 MIN_EVIDENCE_FILES_PER_REQUIREMENT = 2
+MIN_REFERENCE_VIEW_REGIONS = 3
+MIN_REFERENCE_VIEW_ANCHORS = 1
 PACKAGE_SOURCE_PREFIX = "src/remote_ops_workspace/"
 GUI_PRIVACY_EVIDENCE_PATHS = (
     "configs/gui_visual_metrics.json",
@@ -57,13 +61,18 @@ def check_gui_parity() -> list[str]:
         preview_manifest = load_json(PREVIEW_MANIFEST_PATH)
     except (OSError, json.JSONDecodeError) as exc:
         return [f"cannot read {display(PREVIEW_MANIFEST_PATH)}: {exc}"]
+    try:
+        visual_metrics = load_json(METRICS_PATH)
+    except (OSError, json.JSONDecodeError) as exc:
+        return [f"cannot read {display(METRICS_PATH)}: {exc}"]
 
     errors.extend(check_criteria_shape(criteria))
     errors.extend(check_preview_manifest_coverage(criteria, preview_manifest))
     errors.extend(check_requirement_evidence(criteria))
     errors.extend(check_dimension_coverage(criteria))
+    errors.extend(check_reference_view_coverage(criteria, visual_metrics, preview_manifest))
     errors.extend(check_no_user_specific_samples(criteria))
-    errors.extend(check_parity_target(criteria))
+    errors.extend(check_parity_target(criteria, visual_metrics, preview_manifest))
     return errors
 
 
@@ -99,6 +108,9 @@ def check_criteria_shape(criteria: dict[str, Any]) -> list[str]:
         basis = preset_data.get("reference_basis")
         if not isinstance(basis, list) or not basis or not all(isinstance(item, str) and item for item in basis):
             errors.append(f"{preset_id} must have non-empty reference_basis list")
+        reference_views = preset_data.get("reference_views")
+        if not isinstance(reference_views, list) or not reference_views:
+            errors.append(f"{preset_id} must have non-empty reference_views list")
         requirements = preset_data.get("requirements")
         if not isinstance(requirements, list) or not requirements:
             errors.append(f"{preset_id} must have non-empty requirements list")
@@ -171,6 +183,345 @@ def check_requirement_evidence(criteria: dict[str, Any]) -> list[str]:
                         errors.append(f"{requirement_id} has invalid token in {rel_path}")
                     elif token not in text:
                         errors.append(f"{requirement_id} missing token in {rel_path}: {token}")
+    return errors
+
+
+def check_reference_view_coverage(
+    criteria: dict[str, Any],
+    visual_metrics: dict[str, Any] | None = None,
+    preview_manifest: dict[str, Any] | None = None,
+) -> list[str]:
+    errors: list[str] = []
+    dimensions = set(required_dimensions(criteria))
+    presets = criteria.get("presets", {})
+    if not dimensions or not isinstance(presets, dict):
+        return errors
+    metrics = visual_metrics if isinstance(visual_metrics, dict) else load_json(METRICS_PATH)
+    manifest = preview_manifest if isinstance(preview_manifest, dict) else load_json(PREVIEW_MANIFEST_PATH)
+    live_contract_source = (ROOT / "scripts" / "check_real_gui_render.py").read_text(encoding="utf-8")
+    live_contract_summaries = load_live_contract_summaries()
+    for preset_id, preset_data in presets.items():
+        if not isinstance(preset_data, dict):
+            continue
+        reference_views = preset_data.get("reference_views", [])
+        if not isinstance(reference_views, list):
+            continue
+        seen_ids: set[str] = set()
+        covered_dimensions: set[str] = set()
+        for view in reference_views:
+            if not isinstance(view, dict):
+                errors.append(f"{preset_id} reference view must be an object")
+                continue
+            view_id = str(view.get("id", ""))
+            if not view_id:
+                errors.append(f"{preset_id} reference view missing id")
+            elif view_id in seen_ids:
+                errors.append(f"{preset_id} duplicate reference view id: {view_id}")
+            elif not view_id.startswith(f"{preset_id}."):
+                errors.append(f"{preset_id} reference view id must start with {preset_id}.: {view_id}")
+            seen_ids.add(view_id)
+            for field in ("label", "state", "basis", "static_contract", "live_contract", "contract_check"):
+                if not str(view.get(field, "")):
+                    errors.append(f"{view_id or preset_id} reference view missing {field}")
+            static_preview = str(view.get("static_preview", ""))
+            if not static_preview:
+                errors.append(f"{view_id or preset_id} reference view missing static_preview")
+            elif not (ROOT / static_preview).is_file():
+                errors.append(f"{view_id or preset_id} reference view static_preview missing: {static_preview}")
+            view_dimensions = view.get("dimensions")
+            if not isinstance(view_dimensions, list) or not view_dimensions:
+                errors.append(f"{view_id or preset_id} reference view dimensions must be a non-empty list")
+                continue
+            actual_dimensions = {str(dimension) for dimension in view_dimensions if isinstance(dimension, str)}
+            unknown_dimensions = sorted(actual_dimensions - dimensions)
+            if unknown_dimensions:
+                errors.append(f"{view_id or preset_id} reference view dimensions are unknown: {unknown_dimensions}")
+            covered_dimensions.update(actual_dimensions & dimensions)
+            errors.extend(check_reference_view_policy(view_id or preset_id, view))
+            errors.extend(check_reference_view_dimension_evidence(view_id or preset_id, view, actual_dimensions))
+            errors.extend(
+                check_reference_view_contract_evidence(
+                    preset_id,
+                    view,
+                    manifest,
+                    live_contract_source,
+                    live_contract_summaries,
+                )
+            )
+            errors.extend(check_reference_view_visual_evidence(preset_id, view, metrics, manifest))
+        missing_dimensions = sorted(dimensions - covered_dimensions)
+        if missing_dimensions:
+            errors.append(f"{preset_id} reference_views missing dimensions: {missing_dimensions}")
+    return errors
+
+
+def check_reference_view_policy(view_id: str, view: dict[str, Any]) -> list[str]:
+    policy = view.get("reference_policy")
+    if not isinstance(policy, dict):
+        return [f"{view_id} reference view must include reference_policy object"]
+    errors: list[str] = []
+    if policy.get("approval_scope") != "user-approved-product-style-reference":
+        errors.append(
+            f"{view_id} reference_policy approval_scope must be user-approved-product-style-reference"
+        )
+    required_true_fields = (
+        "sanitized",
+        "synthetic_sample_data",
+        "no_user_specific_data",
+        "no_credentials",
+        "independent_implementation",
+        "no_proprietary_assets",
+    )
+    for field in required_true_fields:
+        if policy.get(field) is not True:
+            errors.append(f"{view_id} reference_policy {field} must be true")
+    note = str(policy.get("note", ""))
+    if not note:
+        errors.append(f"{view_id} reference_policy note must be non-empty")
+    return errors
+
+
+def check_reference_view_dimension_evidence(
+    view_id: str,
+    view: dict[str, Any],
+    view_dimensions: set[str],
+) -> list[str]:
+    evidence = view.get("dimension_evidence")
+    if not isinstance(evidence, dict):
+        return [f"{view_id} reference view must include dimension_evidence object"]
+    errors: list[str] = []
+    evidence_dimensions = {str(key) for key in evidence}
+    missing_dimensions = sorted(view_dimensions - evidence_dimensions)
+    unknown_dimensions = sorted(evidence_dimensions - view_dimensions)
+    if missing_dimensions:
+        errors.append(f"{view_id} dimension_evidence missing dimensions: {missing_dimensions}")
+    if unknown_dimensions:
+        errors.append(f"{view_id} dimension_evidence has unknown dimensions: {unknown_dimensions}")
+
+    visual_evidence = view.get("visual_evidence", {})
+    live_evidence = view.get("live_evidence", {})
+    visual_sets = {
+        "region_ids": set(str(value) for value in visual_evidence.get("region_ids", []) if isinstance(value, str))
+        if isinstance(visual_evidence, dict)
+        else set(),
+        "color_anchor_ids": set(
+            str(value) for value in visual_evidence.get("color_anchor_ids", []) if isinstance(value, str)
+        )
+        if isinstance(visual_evidence, dict)
+        else set(),
+        "line_anchor_ids": set(
+            str(value) for value in visual_evidence.get("line_anchor_ids", []) if isinstance(value, str)
+        )
+        if isinstance(visual_evidence, dict)
+        else set(),
+        "topology_ids": set(str(value) for value in visual_evidence.get("topology_ids", []) if isinstance(value, str))
+        if isinstance(visual_evidence, dict)
+        else set(),
+    }
+    live_sets = {
+        "live_route_keys": set(
+            str(value) for value in live_evidence.get("required_route_keys", []) if isinstance(value, str)
+        )
+        if isinstance(live_evidence, dict)
+        else set(),
+        "live_widget_objects": set(
+            str(value) for value in live_evidence.get("required_widget_objects", []) if isinstance(value, str)
+        )
+        if isinstance(live_evidence, dict)
+        else set(),
+    }
+    allowed_keys = {*visual_sets, *live_sets}
+    for dimension in sorted(view_dimensions & evidence_dimensions):
+        entry = evidence.get(dimension)
+        if not isinstance(entry, dict):
+            errors.append(f"{view_id} dimension_evidence {dimension} must be an object")
+            continue
+        unknown_keys = sorted(str(key) for key in entry if str(key) not in allowed_keys)
+        if unknown_keys:
+            errors.append(f"{view_id} dimension_evidence {dimension} has unknown evidence keys: {unknown_keys}")
+        evidence_count = 0
+        for key, allowed_values in {**visual_sets, **live_sets}.items():
+            values = entry.get(key, [])
+            if values in (None, []):
+                continue
+            if not isinstance(values, list):
+                errors.append(f"{view_id} dimension_evidence {dimension}.{key} must be a list")
+                continue
+            actual_values = {str(value) for value in values if isinstance(value, str) and value}
+            evidence_count += len(actual_values)
+            unknown_values = sorted(actual_values - allowed_values)
+            if unknown_values:
+                errors.append(
+                    f"{view_id} dimension_evidence {dimension}.{key} references unclaimed evidence: "
+                    f"{unknown_values}"
+                )
+        if evidence_count == 0:
+            errors.append(f"{view_id} dimension_evidence {dimension} must reference measured or live evidence")
+    return errors
+
+
+def check_reference_view_contract_evidence(
+    preset_id: str,
+    view: dict[str, Any],
+    preview_manifest: dict[str, Any],
+    live_contract_source: str,
+    live_contract_summaries: dict[str, Any],
+) -> list[str]:
+    view_id = str(view.get("id", preset_id))
+    static_contract = str(view.get("static_contract", ""))
+    live_contract = str(view.get("live_contract", ""))
+    contract_check = str(view.get("contract_check", ""))
+    errors: list[str] = []
+    preset_entry = preview_manifest_entry(preview_manifest, preset_id)
+    if preset_entry is None:
+        errors.append(f"{view_id} static_contract preset missing from preview manifest: {preset_id}")
+    elif not isinstance(preset_entry.get(static_contract), dict) or not preset_entry.get(static_contract):
+        errors.append(f"{view_id} static_contract missing from preview manifest preset {preset_id}: {static_contract}")
+    if live_contract not in live_contract_source:
+        errors.append(f"{view_id} live_contract missing from real GUI render checker: {live_contract}")
+    if contract_check not in live_contract_source:
+        errors.append(f"{view_id} contract_check missing from real GUI render checker: {contract_check}")
+    summary = live_contract_summaries.get(preset_id)
+    route: dict[str, Any] = {}
+    if not isinstance(summary, dict):
+        errors.append(f"{view_id} live_contract preset missing from real GUI render manifest summary: {preset_id}")
+    else:
+        route_candidate = summary.get(live_contract)
+        if not isinstance(route_candidate, dict) or not route_candidate:
+            errors.append(f"{view_id} live_contract missing from real GUI render manifest summary: {live_contract}")
+        else:
+            route = route_candidate
+        checks = summary.get("contract_checks", [])
+        if not isinstance(checks, list) or contract_check not in checks:
+            errors.append(f"{view_id} contract_check missing from live manifest contract_checks: {contract_check}")
+    errors.extend(check_reference_view_live_evidence(view_id, view, summary, route))
+    return errors
+
+
+def check_reference_view_live_evidence(
+    view_id: str,
+    view: dict[str, Any],
+    live_contract_summary: Any,
+    route: dict[str, Any],
+) -> list[str]:
+    evidence = view.get("live_evidence")
+    if not isinstance(evidence, dict):
+        return [f"{view_id} reference view must include live_evidence object"]
+    errors: list[str] = []
+    live_contract = str(view.get("live_contract", ""))
+    summary_route = str(evidence.get("summary_route", ""))
+    if summary_route != live_contract:
+        errors.append(f"{view_id} live_evidence summary_route must equal live_contract: {live_contract}")
+    required_route_keys = evidence.get("required_route_keys")
+    if not isinstance(required_route_keys, list) or not required_route_keys:
+        errors.append(f"{view_id} live_evidence required_route_keys must be a non-empty list")
+    else:
+        missing_route_keys = [
+            str(key)
+            for key in required_route_keys
+            if not isinstance(key, str) or not key or route.get(key) in (None, "", [], {})
+        ]
+        if missing_route_keys:
+            errors.append(f"{view_id} live_evidence required_route_keys missing from live route: {missing_route_keys}")
+    required_widget_objects = evidence.get("required_widget_objects")
+    if not isinstance(required_widget_objects, list) or not required_widget_objects:
+        errors.append(f"{view_id} live_evidence required_widget_objects must be a non-empty list")
+    elif isinstance(live_contract_summary, dict):
+        known_objects = set()
+        for key in ("required_widgets", "present_widgets"):
+            widgets = live_contract_summary.get(key, {})
+            if isinstance(widgets, dict):
+                known_objects.update(str(widget) for widget in widgets)
+        known_objects.update(
+            str(value)
+            for key, value in route.items()
+            if isinstance(key, str) and key.endswith("_object") and isinstance(value, str) and value
+        )
+        missing_widgets = [
+            str(widget)
+            for widget in required_widget_objects
+            if not isinstance(widget, str) or not widget or widget not in known_objects
+        ]
+        if missing_widgets:
+            errors.append(
+                f"{view_id} live_evidence required_widget_objects missing from live manifest: {missing_widgets}"
+            )
+    return errors
+
+
+def check_reference_view_visual_evidence(
+    preset_id: str,
+    view: dict[str, Any],
+    visual_metrics: dict[str, Any],
+    preview_manifest: dict[str, Any],
+) -> list[str]:
+    view_id = str(view.get("id", preset_id))
+    raw_evidence = view.get("visual_evidence")
+    if not isinstance(raw_evidence, dict):
+        return [f"{view_id} reference view must include visual_evidence object"]
+
+    collection = str(raw_evidence.get("metrics_collection", ""))
+    if collection not in {"presets", "state_previews"}:
+        return [f"{view_id} visual_evidence metrics_collection is unsupported: {collection!r}"]
+    metrics_id = str(raw_evidence.get("metrics_id", ""))
+    metrics_collection = visual_metrics.get(collection, {})
+    if not isinstance(metrics_collection, dict) or metrics_id not in metrics_collection:
+        return [f"{view_id} visual_evidence metrics_id missing from {collection}: {metrics_id}"]
+    if collection == "presets" and metrics_id != preset_id:
+        return [f"{view_id} visual_evidence preset metrics_id must be {preset_id}"]
+    if collection == "state_previews" and not metrics_id.startswith(f"{preset_id}-"):
+        return [f"{view_id} visual_evidence state metrics_id must start with {preset_id}-"]
+
+    manifest_image = reference_view_manifest_image(preview_manifest, collection, metrics_id)
+    if not isinstance(manifest_image, dict):
+        return [f"{view_id} visual_evidence metrics image missing from preview manifest: {collection}.{metrics_id}"]
+    manifest_image_path = str(manifest_image.get("path", ""))
+    static_preview_name = Path(str(view.get("static_preview", ""))).name
+    if not manifest_image_path:
+        return [f"{view_id} visual_evidence preview manifest image path is empty"]
+    if static_preview_name != manifest_image_path:
+        return [
+            f"{view_id} visual_evidence static_preview {static_preview_name} "
+            f"must match metrics image {manifest_image_path}"
+        ]
+
+    metric_data = metrics_collection[metrics_id]
+    if not isinstance(metric_data, dict):
+        return [f"{view_id} visual_evidence metrics data must be an object"]
+    errors: list[str] = []
+    metric_ids = {
+        "region_ids": {str(item.get("id", "")) for item in metric_data.get("regions", []) if isinstance(item, dict)},
+        "color_anchor_ids": {
+            str(item.get("id", ""))
+            for item in metric_data.get("color_anchors", [])
+            if isinstance(item, dict)
+        },
+        "line_anchor_ids": {
+            str(item.get("id", ""))
+            for item in metric_data.get("line_anchors", [])
+            if isinstance(item, dict)
+        },
+        "topology_ids": {
+            str(item.get("id", ""))
+            for item in metric_data.get("topology", [])
+            if isinstance(item, dict)
+        },
+    }
+    minimums = {
+        "region_ids": MIN_REFERENCE_VIEW_REGIONS,
+        "color_anchor_ids": MIN_REFERENCE_VIEW_ANCHORS,
+        "line_anchor_ids": MIN_REFERENCE_VIEW_ANCHORS,
+        "topology_ids": MIN_REFERENCE_VIEW_ANCHORS,
+    }
+    for key, minimum in minimums.items():
+        values = raw_evidence.get(key)
+        if not isinstance(values, list) or len(values) < minimum:
+            errors.append(f"{view_id} visual_evidence {key} must include at least {minimum} measured ids")
+            continue
+        actual_ids = {str(value) for value in values if isinstance(value, str) and value}
+        unknown = sorted(actual_ids - metric_ids[key])
+        if unknown:
+            errors.append(f"{view_id} visual_evidence {key} references unknown measured ids: {unknown}")
     return errors
 
 
@@ -254,8 +605,12 @@ def check_text_for_prohibited_sample_tokens(label: str, text: str) -> list[str]:
     ]
 
 
-def check_parity_target(criteria: dict[str, Any]) -> list[str]:
-    report = gui_parity_report(criteria)
+def check_parity_target(
+    criteria: dict[str, Any],
+    visual_metrics: dict[str, Any] | None = None,
+    preview_manifest: dict[str, Any] | None = None,
+) -> list[str]:
+    report = gui_parity_report(criteria, visual_metrics, preview_manifest)
     errors: list[str] = []
     target = float(report["target_percent"])
     for row in [report["overall"], *report["presets"]]:
@@ -270,18 +625,59 @@ def check_parity_target(criteria: dict[str, Any]) -> list[str]:
                 f"{label} GUI parity dimensions are {row['dimension_percent']}%, "
                 f"expected {row['target_percent']}%"
             )
+        if int(row.get("reference_dimension_count", 0)) and float(row["reference_dimension_percent"]) < target:
+            label = row.get("preset_id", "overall")
+            errors.append(
+                f"{label} GUI reference-view dimensions are {row['reference_dimension_percent']}%, "
+                f"expected {row['target_percent']}%"
+            )
+        if int(row.get("reference_visual_count", 0)) and float(row["reference_visual_percent"]) < target:
+            label = row.get("preset_id", "overall")
+            errors.append(
+                f"{label} GUI reference-view measured visual evidence is {row['reference_visual_percent']}%, "
+                f"expected {row['target_percent']}%"
+            )
+        if int(row.get("reference_contract_count", 0)) and float(row["reference_contract_percent"]) < target:
+            label = row.get("preset_id", "overall")
+            errors.append(
+                f"{label} GUI reference-view static/live contract evidence is "
+                f"{row['reference_contract_percent']}%, expected {row['target_percent']}%"
+            )
+        if int(row.get("reference_policy_count", 0)) and float(row["reference_policy_percent"]) < target:
+            label = row.get("preset_id", "overall")
+            errors.append(
+                f"{label} GUI reference-view sanitized policy evidence is "
+                f"{row['reference_policy_percent']}%, expected {row['target_percent']}%"
+            )
     return errors
 
 
-def gui_parity_report(criteria: dict[str, Any]) -> dict[str, Any]:
+def gui_parity_report(
+    criteria: dict[str, Any],
+    visual_metrics: dict[str, Any] | None = None,
+    preview_manifest: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     target = float(criteria.get("target_percent", 100))
     dimensions = required_dimensions(criteria)
     presets = criteria.get("presets", {})
+    metrics = visual_metrics if isinstance(visual_metrics, dict) else load_json(METRICS_PATH)
+    manifest = preview_manifest if isinstance(preview_manifest, dict) else load_json(PREVIEW_MANIFEST_PATH)
+    live_contract_source = (ROOT / "scripts" / "check_real_gui_render.py").read_text(encoding="utf-8")
+    live_contract_summaries = load_live_contract_summaries()
     rows: list[dict[str, Any]] = []
     total_count = 0
     total_met = 0
     total_dimension_count = 0
     total_dimensions_met = 0
+    total_reference_view_count = 0
+    total_reference_dimension_count = 0
+    total_reference_dimensions_met = 0
+    total_reference_visual_count = 0
+    total_reference_visual_met = 0
+    total_reference_contract_count = 0
+    total_reference_contract_met = 0
+    total_reference_policy_count = 0
+    total_reference_policy_met = 0
     if isinstance(presets, dict):
         for preset_id in sorted(presets):
             preset_data = presets[preset_id]
@@ -289,11 +685,56 @@ def gui_parity_report(criteria: dict[str, Any]) -> dict[str, Any]:
             count = len(requirements) if isinstance(requirements, list) else 0
             met = sum(1 for requirement in requirements if requirement_satisfied(requirement)) if isinstance(requirements, list) else 0
             dimension_count, dimensions_met = dimension_counts(preset_data, dimensions)
-            rows.append(parity_row(preset_id, count, met, target, dimension_count, dimensions_met))
+            reference_view_count, reference_dimension_count, reference_dimensions_met = reference_view_counts(
+                preset_data,
+                dimensions,
+            )
+            reference_visual_count, reference_visual_met = reference_visual_counts(
+                preset_id,
+                preset_data,
+                metrics,
+                manifest,
+            )
+            reference_contract_count, reference_contract_met = reference_contract_counts(
+                preset_id,
+                preset_data,
+                manifest,
+                live_contract_source,
+                live_contract_summaries,
+            )
+            reference_policy_count, reference_policy_met = reference_policy_counts(preset_data)
+            rows.append(
+                parity_row(
+                    preset_id,
+                    count,
+                    met,
+                    target,
+                    dimension_count,
+                    dimensions_met,
+                    reference_view_count,
+                    reference_dimension_count,
+                    reference_dimensions_met,
+                    reference_visual_count,
+                    reference_visual_met,
+                    reference_contract_count,
+                    reference_contract_met,
+                    reference_policy_count,
+                    reference_policy_met,
+                )
+            )
             total_count += count
             total_met += met
             total_dimension_count += dimension_count
             total_dimensions_met += dimensions_met
+            total_reference_view_count += reference_view_count
+            total_reference_dimension_count += reference_dimension_count
+            total_reference_dimensions_met += reference_dimensions_met
+            total_reference_visual_count += reference_visual_count
+            total_reference_visual_met += reference_visual_met
+            total_reference_contract_count += reference_contract_count
+            total_reference_contract_met += reference_contract_met
+            total_reference_policy_count += reference_policy_count
+            total_reference_policy_met += reference_policy_met
     return {
         "schema_version": 1,
         "target_percent": round(target, 1),
@@ -305,6 +746,15 @@ def gui_parity_report(criteria: dict[str, Any]) -> dict[str, Any]:
             target,
             total_dimension_count,
             total_dimensions_met,
+            total_reference_view_count,
+            total_reference_dimension_count,
+            total_reference_dimensions_met,
+            total_reference_visual_count,
+            total_reference_visual_met,
+            total_reference_contract_count,
+            total_reference_contract_met,
+            total_reference_policy_count,
+            total_reference_policy_met,
         ),
         "presets": rows,
     }
@@ -317,11 +767,60 @@ def parity_row(
     target_percent: float,
     dimension_count: int = 0,
     dimensions_met: int = 0,
+    reference_view_count: int = 0,
+    reference_dimension_count: int = 0,
+    reference_dimensions_met: int = 0,
+    reference_visual_count: int = 0,
+    reference_visual_met: int = 0,
+    reference_contract_count: int = 0,
+    reference_contract_met: int = 0,
+    reference_policy_count: int = 0,
+    reference_policy_met: int = 0,
 ) -> dict[str, Any]:
     current = (requirements_met / requirement_count * 100.0) if requirement_count else 0.0
     gap = max(target_percent - current, 0.0)
     dimension_current = (dimensions_met / dimension_count * 100.0) if dimension_count else 0.0
     dimension_gap = max(target_percent - dimension_current, 0.0) if dimension_count else 0.0
+    reference_dimension_current = (
+        reference_dimensions_met / reference_dimension_count * 100.0
+        if reference_dimension_count
+        else 0.0
+    )
+    reference_dimension_gap = (
+        max(target_percent - reference_dimension_current, 0.0)
+        if reference_dimension_count
+        else 0.0
+    )
+    reference_visual_current = (
+        reference_visual_met / reference_visual_count * 100.0
+        if reference_visual_count
+        else 0.0
+    )
+    reference_visual_gap = (
+        max(target_percent - reference_visual_current, 0.0)
+        if reference_visual_count
+        else 0.0
+    )
+    reference_contract_current = (
+        reference_contract_met / reference_contract_count * 100.0
+        if reference_contract_count
+        else 0.0
+    )
+    reference_contract_gap = (
+        max(target_percent - reference_contract_current, 0.0)
+        if reference_contract_count
+        else 0.0
+    )
+    reference_policy_current = (
+        reference_policy_met / reference_policy_count * 100.0
+        if reference_policy_count
+        else 0.0
+    )
+    reference_policy_gap = (
+        max(target_percent - reference_policy_current, 0.0)
+        if reference_policy_count
+        else 0.0
+    )
     return {
         "preset_id": preset_id,
         "requirements_met": requirements_met,
@@ -333,6 +832,23 @@ def parity_row(
         "dimension_count": dimension_count,
         "dimension_percent": round(dimension_current, 1),
         "dimension_gap_percent": round(dimension_gap, 1),
+        "reference_view_count": reference_view_count,
+        "reference_dimensions_met": reference_dimensions_met,
+        "reference_dimension_count": reference_dimension_count,
+        "reference_dimension_percent": round(reference_dimension_current, 1),
+        "reference_dimension_gap_percent": round(reference_dimension_gap, 1),
+        "reference_visual_met": reference_visual_met,
+        "reference_visual_count": reference_visual_count,
+        "reference_visual_percent": round(reference_visual_current, 1),
+        "reference_visual_gap_percent": round(reference_visual_gap, 1),
+        "reference_contract_met": reference_contract_met,
+        "reference_contract_count": reference_contract_count,
+        "reference_contract_percent": round(reference_contract_current, 1),
+        "reference_contract_gap_percent": round(reference_contract_gap, 1),
+        "reference_policy_met": reference_policy_met,
+        "reference_policy_count": reference_policy_count,
+        "reference_policy_percent": round(reference_policy_current, 1),
+        "reference_policy_gap_percent": round(reference_policy_gap, 1),
     }
 
 
@@ -365,6 +881,103 @@ def dimension_counts(preset_data: Any, dimensions: list[str]) -> tuple[int, int]
         if dimension_met:
             dimensions_met += 1
     return len(dimensions), dimensions_met
+
+
+def reference_view_counts(preset_data: Any, dimensions: list[str]) -> tuple[int, int, int]:
+    if not isinstance(preset_data, dict):
+        return 0, len(dimensions), 0
+    reference_views = preset_data.get("reference_views", [])
+    if not isinstance(reference_views, list):
+        return 0, len(dimensions), 0
+    expected_dimensions = set(dimensions)
+    covered: set[str] = set()
+    view_count = 0
+    for view in reference_views:
+        if not isinstance(view, dict):
+            continue
+        view_count += 1
+        view_dimensions = view.get("dimensions", [])
+        if isinstance(view_dimensions, list):
+            actual_dimensions = {
+                str(dimension)
+                for dimension in view_dimensions
+                if isinstance(dimension, str) and dimension in expected_dimensions
+            }
+            if not check_reference_view_dimension_evidence(
+                str(view.get("id", "reference-view")),
+                view,
+                actual_dimensions,
+            ):
+                covered.update(actual_dimensions)
+    return view_count, len(dimensions), len(covered & expected_dimensions)
+
+
+def reference_visual_counts(
+    preset_id: str,
+    preset_data: Any,
+    visual_metrics: dict[str, Any],
+    preview_manifest: dict[str, Any],
+) -> tuple[int, int]:
+    if not isinstance(preset_data, dict):
+        return 0, 0
+    reference_views = preset_data.get("reference_views", [])
+    if not isinstance(reference_views, list):
+        return 0, 0
+    view_count = 0
+    valid_count = 0
+    for view in reference_views:
+        if not isinstance(view, dict):
+            continue
+        view_count += 1
+        if not check_reference_view_visual_evidence(preset_id, view, visual_metrics, preview_manifest):
+            valid_count += 1
+    return view_count, valid_count
+
+
+def reference_contract_counts(
+    preset_id: str,
+    preset_data: Any,
+    preview_manifest: dict[str, Any],
+    live_contract_source: str,
+    live_contract_summaries: dict[str, Any],
+) -> tuple[int, int]:
+    if not isinstance(preset_data, dict):
+        return 0, 0
+    reference_views = preset_data.get("reference_views", [])
+    if not isinstance(reference_views, list):
+        return 0, 0
+    view_count = 0
+    valid_count = 0
+    for view in reference_views:
+        if not isinstance(view, dict):
+            continue
+        view_count += 1
+        if not check_reference_view_contract_evidence(
+            preset_id,
+            view,
+            preview_manifest,
+            live_contract_source,
+            live_contract_summaries,
+        ):
+            valid_count += 1
+    return view_count, valid_count
+
+
+def reference_policy_counts(preset_data: Any) -> tuple[int, int]:
+    if not isinstance(preset_data, dict):
+        return 0, 0
+    reference_views = preset_data.get("reference_views", [])
+    if not isinstance(reference_views, list):
+        return 0, 0
+    view_count = 0
+    valid_count = 0
+    for view in reference_views:
+        if not isinstance(view, dict):
+            continue
+        view_count += 1
+        if not check_reference_view_policy(str(view.get("id", "reference-view")), view):
+            valid_count += 1
+    return view_count, valid_count
 
 
 def requirement_satisfied(requirement: Any) -> bool:
@@ -411,13 +1024,41 @@ def format_parity_report(report: dict[str, Any]) -> str:
             f"{overall['dimension_percent']:.1f}% target {overall['target_percent']:.1f}% "
             f"({overall['dimension_gap_percent']:.1f}% gap)"
         ),
+        (
+            "GUI reference-view dimensions: "
+            f"{overall['reference_dimension_percent']:.1f}% target {overall['target_percent']:.1f}% "
+            f"({overall['reference_dimension_gap_percent']:.1f}% gap)"
+        ),
+        (
+            "GUI reference-view measured visuals: "
+            f"{overall['reference_visual_percent']:.1f}% target {overall['target_percent']:.1f}% "
+            f"({overall['reference_visual_gap_percent']:.1f}% gap)"
+        ),
+        (
+            "GUI reference-view static/live contracts: "
+            f"{overall['reference_contract_percent']:.1f}% target {overall['target_percent']:.1f}% "
+            f"({overall['reference_contract_gap_percent']:.1f}% gap)"
+        ),
+        (
+            "GUI reference-view sanitized policy: "
+            f"{overall['reference_policy_percent']:.1f}% target {overall['target_percent']:.1f}% "
+            f"({overall['reference_policy_gap_percent']:.1f}% gap)"
+        ),
     ]
     for row in report["presets"]:
         lines.append(
             f"  {row['preset_id']:<10} {row['current_percent']:.1f}% "
             f"({row['requirements_met']}/{row['requirement_count']} requirements), "
             f"{row['dimension_percent']:.1f}% dimensions "
-            f"({row['dimensions_met']}/{row['dimension_count']})"
+            f"({row['dimensions_met']}/{row['dimension_count']}), "
+            f"{row['reference_dimension_percent']:.1f}% reference dims "
+            f"({row['reference_dimensions_met']}/{row['reference_dimension_count']}), "
+            f"{row['reference_visual_percent']:.1f}% measured refs "
+            f"({row['reference_visual_met']}/{row['reference_visual_count']}), "
+            f"{row['reference_contract_percent']:.1f}% contracts "
+            f"({row['reference_contract_met']}/{row['reference_contract_count']}), "
+            f"{row['reference_policy_percent']:.1f}% policy "
+            f"({row['reference_policy_met']}/{row['reference_policy_count']})"
         )
     return "\n".join(lines)
 
@@ -434,6 +1075,45 @@ def count_requirements(criteria: dict[str, Any]) -> int:
     if not isinstance(presets, dict):
         return 0
     return sum(len(preset.get("requirements", [])) for preset in presets.values() if isinstance(preset, dict))
+
+
+def preview_manifest_entry(manifest: dict[str, Any], preset_id: str) -> dict[str, Any] | None:
+    presets = manifest.get("presets", [])
+    if not isinstance(presets, list):
+        return None
+    for item in presets:
+        if isinstance(item, dict) and str(item.get("id", "")) == preset_id:
+            return item
+    return None
+
+
+def reference_view_manifest_image(
+    manifest: dict[str, Any],
+    collection: str,
+    metrics_id: str,
+) -> dict[str, Any] | None:
+    collection_key = "presets" if collection == "presets" else "state_previews"
+    items = manifest.get(collection_key, [])
+    if not isinstance(items, list):
+        return None
+    for item in items:
+        if not isinstance(item, dict) or str(item.get("id", "")) != metrics_id:
+            continue
+        image = item.get("image")
+        return image if isinstance(image, dict) else None
+    return None
+
+
+def load_live_contract_summaries() -> dict[str, Any]:
+    module_path = ROOT / "scripts" / "check_real_gui_render.py"
+    spec = importlib.util.spec_from_file_location("remote_ops_check_real_gui_render", module_path)
+    if spec is None or spec.loader is None:
+        return {}
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    summaries = module.live_contract_summaries_for_presets(sorted(PRODUCT_STYLE_PRESETS))
+    return summaries if isinstance(summaries, dict) else {}
 
 
 def load_json(path: Path) -> dict[str, Any]:

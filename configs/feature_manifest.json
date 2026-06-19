@@ -533,6 +533,156 @@
       "status": "implemented-gui"
     },
     {
+      "category": "file-transfer",
+      "extension_point": "moba_connected.build_same_parameters_sftp_plan / connected-session action route / file_transfer.build_sftp_interactive_plan",
+      "id": "moba.open-sftp-same-parameters",
+      "inspired_by": [
+        "MobaXterm"
+      ],
+      "name": "Open SFTP browser with same SSH session parameters",
+      "status": "implemented-cli-gui"
+    },
+    {
+      "category": "security",
+      "extension_point": "launcher._ssh_connection_option_args / moba_connected.build_ssh_connection_banner",
+      "id": "moba.ssh-smartcard-auth",
+      "inspired_by": [
+        "MobaXterm"
+      ],
+      "name": "SSH smart-card, certificate and agent handoff authentication",
+      "status": "implemented-adapter"
+    },
+    {
+      "category": "security",
+      "extension_point": "moba_smartcards.build_smartcard_inventory_plan / moba_smartcards.build_smartcard_management_gui_surface / gui.show_moba_smartcards_status / moba_smartcards.review_smartcard_certificate_selection / moba_smartcards.build_mobagent_smartcard_plan / moba_smartcards.build_smartcard_ssh_browser_plan / moba_smartcards.build_smartcard_release_evidence_bundle_plan / moba_smartcards.write_smartcard_release_evidence_bundle / moba_smartcards.validate_smartcard_release_evidence / row smartcard inventory-plan|select-review|mobagent-plan|ssh-browser-plan|evidence-bundle|evidence-verify",
+      "id": "moba.smartcard-management-26-4",
+      "inspired_by": [
+        "MobaXterm"
+      ],
+      "name": "MobaXterm 26.4 smart-card management, SSH certificate selection, MobAgent handoff and SSH-browser multiplex evidence",
+      "status": "implemented-cli-gui"
+    },
+    {
+      "category": "automation",
+      "extension_point": "moba_multiexec.build_moba_multiexec_plan / broadcast.run_broadcast / gui show_moba_multiexec_status",
+      "id": "moba.multi-execution",
+      "inspired_by": [
+        "MobaXterm"
+      ],
+      "name": "Multi-execution broadcast commands across SSH sessions",
+      "status": "implemented-cli-gui"
+    },
+    {
+      "category": "deployment",
+      "extension_point": "moba_customizer.build_moba_professional_customizer_plan / row customizer build / enterprise bundle manifests",
+      "id": "moba.professional-customizer",
+      "inspired_by": [
+        "MobaXterm"
+      ],
+      "name": "Professional Customizer-style branding, policy and deployment bundle",
+      "status": "implemented-cli"
+    },
+    {
+      "category": "deployment",
+      "extension_point": "moba_customizer.build_professional_deployment_plan / moba_customizer.build_professional_deployment_evidence_bundle_plan / moba_customizer.write_professional_deployment_evidence_bundle / enterprise_policy.load_enterprise_policy / enterprise_policy.review_profile_write / enterprise_policy.review_profile_launch / moba_customizer.validate_professional_update_manifest / moba_customizer.validate_professional_deployment_evidence / row customizer deployment-plan|evidence-bundle|update-verify|evidence-verify",
+      "id": "moba.professional-deployment-depth",
+      "inspired_by": [
+        "MobaXterm"
+      ],
+      "name": "Professional deployment installer rebranding, runtime hard policy locks and signed update-channel evidence",
+      "status": "implemented-cli"
+    },
+    {
+      "category": "terminal",
+      "extension_point": "moba_mobapt.build_mobapt_environment_status / moba_mobapt.build_mobapt_package_plan / row mobapt",
+      "id": "moba.mobapt-unix-packages",
+      "inspired_by": [
+        "MobaXterm"
+      ],
+      "name": "MobApt-style Unix tool inventory and package-manager workflow",
+      "status": "implemented-cli"
+    },
+    {
+      "category": "terminal",
+      "extension_point": "moba_mobapt.build_mobapt_runtime_status / moba_mobapt.build_mobapt_runtime_bundle_plan / moba_mobapt.write_mobapt_runtime_bundle / moba_mobapt.validate_mobapt_cache_evidence / row mobapt runtime-status|bundle-runtime|cache-verify",
+      "id": "moba.mobapt-offline-runtime-cache",
+      "inspired_by": [
+        "MobaXterm"
+      ],
+      "name": "MobApt-style ROW-owned Unix runtime/cache discovery and offline package evidence verification",
+      "status": "implemented-cli"
+    },
+    {
+      "category": "network",
+      "extension_point": "moba_servers.build_moba_server_suite_status / moba_servers.build_moba_server_plan / moba_servers.build_moba_server_gui_config_surface / gui.show_moba_servers_status / row servers",
+      "id": "moba.embedded-server-suite",
+      "inspired_by": [
+        "MobaXterm"
+      ],
+      "name": "Embedded server suite inventory, start plans and lifecycle state",
+      "status": "implemented-cli-gui"
+    },
+    {
+      "category": "network",
+      "extension_point": "moba_servers.build_moba_server_runtime_status / moba_servers.build_moba_server_runtime_bundle_plan / moba_servers.write_moba_server_runtime_bundle / moba_servers.build_moba_server_config_plan / moba_servers.build_moba_server_gui_config_surface / gui.show_moba_servers_status / moba_servers.validate_moba_server_release_evidence / row servers runtime-status|bundle-runtime|config-plan|evidence-verify",
+      "id": "moba.embedded-server-packaged-daemon-evidence",
+      "inspired_by": [
+        "MobaXterm"
+      ],
+      "name": "Embedded server packaged daemon discovery, hardening plans and release evidence verification",
+      "status": "implemented-cli-gui"
+    },
+    {
+      "category": "file-transfer",
+      "extension_point": "moba_text.preview_text_document / moba_text.write_text_document / moba_text.diff_text_documents / row text",
+      "id": "moba.text-editor-diff",
+      "inspired_by": [
+        "MobaXterm"
+      ],
+      "name": "MobaTextEditor and MobaDiff-style local and remote-staged text workflow",
+      "status": "implemented-cli"
+    },
+    {
+      "category": "file-transfer",
+      "extension_point": "moba_text.build_moba_text_editor_tab_plan / moba_connected.build_moba_connected_text_editor_state / PyQt mobaTextEditor / moba_text.review_moba_remote_text_save / moba_text.build_moba_text_release_evidence_bundle_plan / moba_text.write_moba_text_release_evidence_bundle / moba_text.validate_moba_text_release_evidence / row text open-remote|save-review|evidence-bundle|evidence-verify",
+      "id": "moba.text-editor-remote-gui-evidence",
+      "inspired_by": [
+        "MobaXterm"
+      ],
+      "name": "MobaTextEditor-style SFTP browser remote editor tab, conflict review and release evidence verification",
+      "status": "implemented-cli-gui"
+    },
+    {
+      "category": "file-transfer",
+      "extension_point": "moba_ssh_browser.build_moba_ssh_browser_open_plan / moba_ssh_browser preferences / row ssh-browser",
+      "id": "moba.ssh-browser-26-4-state",
+      "inspired_by": [
+        "MobaXterm"
+      ],
+      "name": "MobaXterm 26.4 SSH-browser location, column persistence and overwrite confirmation",
+      "status": "implemented-cli"
+    },
+    {
+      "category": "automation",
+      "extension_point": "moba_macros.MobaMacroStore / moba_macros.build_macro_replay_plans / row macro",
+      "id": "moba.typed-macro-recorder",
+      "inspired_by": [
+        "MobaXterm"
+      ],
+      "name": "Typed terminal macro recording and replay across SSH sessions",
+      "status": "implemented-cli"
+    },
+    {
+      "category": "automation",
+      "extension_point": "moba_macros.build_macro_gui_capture_plan / moba_macros.start_terminal_macro_capture / moba_macros.build_terminal_macro_replay_injection / gui.TerminalPane macro controls / moba_macros.build_macro_live_replay_plans / moba_macros.review_macro_live_replay / moba_macros.build_macro_live_evidence_bundle_plan / moba_macros.write_macro_live_evidence_bundle / moba_macros.validate_macro_live_replay_evidence / row macro capture-plan|live-plan|evidence-bundle|evidence-verify",
+      "id": "moba.macro-live-gui-evidence",
+      "inspired_by": [
+        "MobaXterm"
+      ],
+      "name": "MobaXterm-style live GUI macro capture, per-keystroke replay review and release evidence verification",
+      "status": "implemented-cli-gui"
+    },
+    {
       "category": "protocol",
       "extension_point": "launcher.build_launch_plan / OpenSSH option builders",
       "id": "protocol.scp",
@@ -778,6 +928,16 @@
       "status": "implemented-gui"
     },
     {
+      "category": "terminal",
+      "extension_point": "terminal_highlighting.highlight_terminal_text / gui TerminalPane terminalSyntaxHighlightingEnabled",
+      "id": "terminal.syntax-highlighting",
+      "inspired_by": [
+        "MobaXterm"
+      ],
+      "name": "Terminal syntax highlighting with custom keyword rules",
+      "status": "implemented-gui"
+    },
+    {
       "category": "automation",
       "extension_point": "snippets.SnippetStore / row snippet",
       "id": "terminal.macros",
@@ -931,6 +1091,46 @@
       ],
       "name": "External X server helper",
       "status": "implemented-adapter"
+    },
+    {
+      "category": "display",
+      "extension_point": "x11.build_moba_x_server_plan / x11.build_moba_x_server_status / row x11 status",
+      "id": "moba.managed-x-server-runtime",
+      "inspired_by": [
+        "MobaXterm"
+      ],
+      "name": "Managed X server runtime discovery, extension inventory and display collision checks",
+      "status": "implemented-cli"
+    },
+    {
+      "category": "display",
+      "extension_point": "x11.start_moba_x_server / x11.stop_moba_x_server / x11.load_moba_x_server_record / row x11 start|stop|status",
+      "id": "moba.xserver-lifecycle-supervision",
+      "inspired_by": [
+        "MobaXterm"
+      ],
+      "name": "Managed X server lifecycle supervision and PID state evidence",
+      "status": "implemented-cli"
+    },
+    {
+      "category": "display",
+      "extension_point": "x11.run_moba_x_server_smoke / x11.write_moba_x_server_smoke_evidence / row x11 smoke",
+      "id": "moba.xserver-smoke-evidence",
+      "inspired_by": [
+        "MobaXterm"
+      ],
+      "name": "X11 display smoke probe and evidence capture",
+      "status": "implemented-cli"
+    },
+    {
+      "category": "display",
+      "extension_point": "x11.discover_packaged_x_server_runtimes / x11.build_moba_x_server_runtime_bundle_plan / x11.write_moba_x_server_runtime_bundle / x11.validate_moba_x_server_release_evidence / row x11 package-status|bundle-runtime|evidence-verify",
+      "id": "moba.xserver-packaged-runtime-evidence",
+      "inspired_by": [
+        "MobaXterm"
+      ],
+      "name": "Packaged X server runtime discovery and forwarded-GUI release evidence verification",
+      "status": "implemented-cli"
     },
     {
       "category": "sync",

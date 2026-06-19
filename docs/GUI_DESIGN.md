@@ -535,6 +535,10 @@ The static and live MobaXterm-style ribbons share action metadata and use drawn
 pictograms for the main actions instead of placeholder letters or copied product
 artwork. The live render checker verifies the `mobaIconKey` widget properties
 and non-null generated icons in the dedicated PyQt6 CI job.
+The MultiExec ribbon action is routed through
+`moba_multiexec.build_moba_multiexec_plan`, which previews safe per-profile SSH
+broadcast argv plans before an operator runs the matching `row broadcast`
+workflow.
 MobaXterm-style ribbon geometry is tracked separately too:
 `GuiMobaRibbonActionGeometry` pins each main and right-edge action width, icon
 offset, label offset, separator span and active-outline bounds. Static previews
@@ -788,6 +792,11 @@ ready shell prompt from the generic reference profile; the static preview
 renders `state.terminal_transcript`, while the live terminal output exposes
 `mobaTerminalTranscriptKeys` and `mobaTerminalTranscriptTones` for the render
 checker.
+Generic `TerminalPane` output also applies
+`terminal_highlighting.terminal_highlight_fragments`, exposing
+`terminalSyntaxHighlightingEnabled` and stable rule keys so prompts, notes,
+errors, warnings, IP addresses, paths and custom keyword rules can be styled
+without depending on remote ANSI color output.
 MobaXterm-style terminal transcript geometry is also explicit:
 `GuiMobaTerminalTranscriptRowGeometry` fixes the transcript left offset,
 per-line y positions, row cadence and mono font size. The static preview reads

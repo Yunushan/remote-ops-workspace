@@ -113,6 +113,16 @@ def build_steps(
             env=_source_env(),
         ),
         VerifyStep(
+            "MobaXterm parity evidence registry",
+            [python, "scripts/check_mobaxterm_parity_evidence.py"],
+            env=_source_env(),
+        ),
+        VerifyStep(
+            "MobaXterm parity evidence record generator",
+            [python, "scripts/make_mobaxterm_parity_evidence_record.py", "--help"],
+            env=_source_env(),
+        ),
+        VerifyStep(
             "mobile support contract",
             [python, "scripts/check_mobile_support.py"],
             env=_source_env(),

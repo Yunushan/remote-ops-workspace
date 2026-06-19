@@ -1031,7 +1031,7 @@ def test_mobaxterm_ssh_banner_chrome_is_shared_metadata() -> None:
     assert chrome.static_left_offset == 42
     assert chrome.static_top_offset == 12
     assert chrome.static_width == 570
-    assert chrome.static_height == 166
+    assert chrome.static_height == 182
     assert chrome.body_top_offset < chrome.static_height
     assert chrome.terminal_gap > 0
 
@@ -1045,6 +1045,7 @@ def test_mobaxterm_ssh_banner_row_geometry_is_shared_metadata() -> None:
         "target",
         "direct-ssh",
         "ssh-compression",
+        "smartcard-auth",
         "ssh-browser",
         "x11-forwarding",
         "footer",
@@ -1057,14 +1058,15 @@ def test_mobaxterm_ssh_banner_row_geometry_is_shared_metadata() -> None:
         "mobaSshBannerCapability",
         "mobaSshBannerCapability",
         "mobaSshBannerCapability",
+        "mobaSshBannerCapability",
         "mobaSshBannerFooter",
     ]
-    assert [item.static_x for item in geometry] == [0, 0, 14, 14, 14, 14, 14, 14]
-    assert [item.static_y for item in geometry] == [10, 27, 54, 70, 86, 102, 118, 138]
-    assert [item.static_width for item in geometry] == [570, 570, 542, 542, 542, 542, 542, 542]
+    assert [item.static_x for item in geometry] == [0, 0, 14, 14, 14, 14, 14, 14, 14]
+    assert [item.static_y for item in geometry] == [10, 27, 54, 70, 86, 102, 118, 134, 154]
+    assert [item.static_width for item in geometry] == [570, 570, 542, 542, 542, 542, 542, 542, 542]
     assert {item.static_height for item in geometry} == {16}
     assert [item.key for item in geometry if item.centered] == ["title", "subtitle"]
-    assert gui_design_moba_ssh_banner_row_geometry_for("footer").static_y == 138
+    assert gui_design_moba_ssh_banner_row_geometry_for("footer").static_y == 154
 
 
 def test_mobaxterm_terminal_transcript_row_geometry_is_shared_metadata() -> None:

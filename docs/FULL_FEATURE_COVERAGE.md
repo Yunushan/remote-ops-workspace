@@ -4,11 +4,20 @@ Remote Ops Workspace targets **100% public feature-family mapping**, **100% adap
 
 The project publishes separate generated scores from `configs/feature_manifest.json`. Feature-family mapping answers whether each public feature family is represented by built-in code, external-client adapters, optional implementations, CLI/GUI workflows, platform scripts, or plugin extension points. Adapter-ready coverage counts implemented adapter, optional, CLI, GUI and combined workflows as ready when they are tied to executable evidence. The `production_parity_coverage` JSON key remains for compatibility, but the public contract is release-backed product workflow parity: implemented workflows count only when tied to executable release evidence, and seam-only or docs-only rows remain partial if they appear. This is not a proprietary native clone claim. Platform verified readiness is separate from feature coverage so verified native release targets, verified mobile Web/PWA contracts and extended compatibility rows do not get blended into one misleading product score.
 
+MobaXterm Home/Professional parity is tracked more strictly in
+[`MOBAXTERM_PARITY.md`](MOBAXTERM_PARITY.md). That ledger lists remaining
+product-depth articles that are outside the generated feature-family score.
+Accepted release evidence for those articles is tracked separately in
+`configs/mobaxterm_parity_evidence.json` and validated by
+`python scripts/check_mobaxterm_parity_evidence.py`; use
+`--require-complete` before making a true full MobaXterm product-depth parity
+claim.
+
 ## Current coverage score
 
 | Product target | Feature-family mapping | Adapter-ready coverage | Release-backed workflow parity | Workflow gap to 100% | Feature families tracked |
 |---|---:|---:|---:|---:|---:|
-| MobaXterm | 100.0% | 100.0% | 100.0% | 0.0% | 30 |
+| MobaXterm | 100.0% | 100.0% | 100.0% | 0.0% | 50 |
 | Remmina | 100.0% | 100.0% | 100.0% | 0.0% | 11 |
 | mRemoteNG | 100.0% | 100.0% | 100.0% | 0.0% | 15 |
 | Terminator | 100.0% | 100.0% | 100.0% | 0.0% | 8 |
@@ -36,7 +45,7 @@ The project publishes separate generated scores from `configs/feature_manifest.j
 | Hyper | 100.0% | 100.0% | 100.0% | 0.0% | 8 |
 | X410 + any terminal (e.g., Windows Terminal, Alacritty) | 100.0% | 100.0% | 100.0% | 0.0% | 7 |
 | Xming (or VcXsrv) + PuTTY / mRemoteNG | 100.0% | 100.0% | 100.0% | 0.0% | 10 |
-| **Overall** | **100.0%** | **100.0%** | **100.0%** | **0.0%** | **50** |
+| **Overall** | **100.0%** | **100.0%** | **100.0%** | **0.0%** | **70** |
 
 ## Platform verified readiness
 
@@ -205,14 +214,24 @@ they are tied to executable release evidence.
 - Tabbed SSH terminal workflow.
 - SFTP/SCP/FTP file transfer profiles, `row files` SFTP browser actions, transfer queues and local/remote previews.
 - MobaXterm-style connected-session SSH/SFTP browser panel with remote path toolbar and file table.
+- Connected-session action to open SFTP with the same SSH parameters, including port, user, certificate, PKCS#11 provider and agent handoff options.
+- MobaXterm 26.4 SSH-browser behavior through `row ssh-browser`, including persisted side-by-side startup location, saved table column widths, upload/download overwrite confirmation reviews and connected PyQt dock consumption of the persisted visibility/location/column-width state.
+- MobaXterm 26.4 smart-card management through `row smartcard` and the PyQt Smart cards dialog, including Microsoft CryptoAPI/PKCS#11 inventory plans, certificate add/remove controls, OpenSSH public-key retrieval, SSH expert certificate selection review, MobAgent add/remove/list plans, same-parameter SSH-browser multiplex plans, connected PyQt session state for selected certificate/provider/MobAgent metadata, smart-card release evidence bundle assembly and SHA-bound evidence verification.
+- MobaTextEditor/MobaDiff-style `row text` workflow for local text preview, guarded writes, hash evidence, backups, unified diffs, SFTP remote edit staging plans, connected editor-tab open plans, PyQt SFTP-dock `QPlainTextEdit` editor hosting with syntax highlighting, double-click file-row open routing, save/diff action capture, save conflict reviews, remote-edit evidence bundle assembly and SHA-bound connected-session release evidence verification.
+- Multi-execution broadcast preview that generates safe per-profile SSH broadcast plans from the Moba-style ribbon.
+- Typed terminal macro recording and replay through `row macro record/list/show/remove/replay/capture-plan/live-plan/evidence-bundle/evidence-verify`, with persisted typed-event metadata, SSH stdin replay plans, PyQt terminal Record/Stop/Cancel/Replay controls, operator input capture, connected-pane per-event timing injection, confirmation/cancel review, live replay evidence bundle assembly and SHA-bound release evidence verification.
+- Terminal syntax highlighting for prompts, notes, warnings, errors, success markers, IP addresses, paths and custom keyword rules.
+- Professional Customizer-style enterprise bundle generator for branding, welcome text, seed profiles, policy locks, install scripts, manifest and SHA-256 evidence, plus `row customizer deployment-plan/evidence-bundle/update-verify/evidence-verify` contracts for branded Windows EXE/MSI artifacts, signed organization update manifests, SHA-bound deployment evidence assembly and runtime hard-lock enforcement from `ROW_HOME/policy.json` across CLI profile storage, GUI profile editor, quick connect, launcher and Web/PWA surfaces.
+- MobApt-style Unix tool inventory plus explicit host package-manager plans for `search`, `install` and `update`, with external execution gated by `--execute`, plus ROW-owned runtime/cache root scanning through `ROW_MOBAPT_RUNTIME_DIR`, `row mobapt bundle-runtime` release-owned runtime/cache bundle assembly and `row mobapt cache-verify` offline package/terminal-use evidence validation.
+- Embedded server suite workflow with `row servers status/start/stop`, loopback-safe Python HTTP serving, service lifecycle state and host daemon adapters for SSH/SFTP, FTP, TFTP, Telnet, VNC and NFS, plus `row servers bundle-runtime` packaged daemon assembly, packaged daemon runtime discovery through `ROW_SERVER_RUNTIME_DIR`, auth/hardening configuration plans, a PyQt Servers dialog backed by the same GUI configuration-surface contract and `row servers evidence-verify` client-proof release evidence validation.
 - Follow terminal folder workflow that rebuilds the SFTP list plan from the active terminal path.
 - Remote monitoring plan and panel backed by agentless SSH `/proc`, `df`, `who` and process-count telemetry.
 - Bottom connected-session telemetry strip for CPU, RAM, disk, network, connection and process status.
-- SSH connection banner/status block for direct SSH, compression, SSH-browser and X11 state.
+- SSH connection banner/status block for direct SSH, compression, smart-card auth, SSH-browser and X11 state.
 - RDP, VNC, Telnet, rlogin, rsh, Mosh, XDMCP and raw network tool launchers.
 - Per-protocol launch options for OpenSSH, Mosh, RDP, VNC and serial console adapters.
 - X11 forwarding workflow through OpenSSH `-X`/`-Y`.
-- External X server helper path for VcXsrv, XQuartz and Xorg.
+- External X server helper path plus MobaXterm-style managed runtime discovery for VcXsrv, XLaunch, Xming, XQuartz, Xorg, Xvfb, Xephyr and Xnest, with `row x11 bundle-runtime` packaged runtime assembly, packaged runtime preference through `ROW_XSERVER_RUNTIME_DIR`, extension inventory, `DISPLAY` binding, display collision checks, PID state recording, stop/status lifecycle supervision, `row x11 smoke` evidence capture and `row x11 evidence-verify` forwarded-GUI release evidence validation.
 - Macros/snippets CLI.
 - Portable mode through `ROW_HOME`.
 - Network toolbox CLI.
@@ -265,7 +284,7 @@ they are tied to executable release evidence.
 
 ## Current implementation status
 
-The current v1.0.2 repo is an adapter-first foundation, not a proprietary clone. It has working profile storage, command generation, dry-run inspection, external process launch, doctor checks, optional encrypted vault, audit log, snippets/macros, saved layouts that can be launched from CLI or opened and edited in the GUI, broadcast/fanout commands with per-target results, protocol-specific launch option builders, profile importers for common external exports, SSH keygen/FIDO adapters, SFTP batch file operations, transfer queues and previews, GUI SFTP panes, network toolbox commands, mounted-directory sync, Web/PWA shell and PyQt6 GUI shell with process-backed terminal panes.
+The current v1.0.2 repo is an adapter-first foundation, not a proprietary clone. It has working profile storage, command generation, dry-run inspection, external process launch, doctor checks, optional encrypted vault, audit log, snippets/macros, typed macro recording/replay plans plus live GUI capture/replay evidence-bundle contracts and PyQt terminal macro controls, saved layouts that can be launched from CLI or opened and edited in the GUI, broadcast/fanout commands with per-target results, protocol-specific launch option builders, profile importers for common external exports, SSH keygen/FIDO adapters, smart-card certificate management and MobAgent evidence-bundle contracts, SFTP batch file operations, transfer queues and previews, MobaXterm 26.4 SSH-browser state/overwrite evidence with connected PyQt dock consumption of saved visibility, location, column-width and smart-card selection metadata, MobaTextEditor/MobaDiff-style text preview/write/diff/staging plus connected editor-tab/save-review/evidence-bundle/release-evidence contracts and a PyQt SFTP-dock syntax-aware editor widget with double-click open plus save/diff route capture, GUI SFTP panes, MobApt-style Unix tool/package-manager adapters, release-owned runtime/cache bundle assembly and offline runtime/cache evidence verification, MobaXterm-style local server suite status/lifecycle adapters, a PyQt Servers configuration dialog plus packaged daemon assembly and client-proof release evidence verification, Professional Customizer deployment-depth contracts and evidence-bundle assembly for branded Windows EXE/MSI artifacts, runtime hard policy locks and signed update-manifest verification, packaged X server runtime assembly/discovery and forwarded-GUI release evidence verification, network toolbox commands, mounted-directory sync, Web/PWA shell and PyQt6 GUI shell with process-backed terminal panes.
 
 For each requested product target, the repository maps every tracked public
 feature family and the implemented rows now score as adapter-ready under the

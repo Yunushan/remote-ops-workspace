@@ -4,6 +4,12 @@ Remote Ops Workspace uses OpenSSH `sftp` for file browsing, one-shot file
 operations and queued transfer batches. Commands are built as argv lists, and
 batch operations are sent to `sftp -b -` through stdin.
 
+Opening the MobaXterm-style SFTP browser from an SSH profile reuses the same
+profile parameters by switching only the protocol to `sftp`. User, host, port,
+identity file, proxy jump, certificate file, PKCS#11 provider, smart-card
+provider metadata and SSH agent handoff options are preserved in the generated
+SFTP launch plan.
+
 ## One-Shot Actions
 
 ```bash

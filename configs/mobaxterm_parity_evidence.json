@@ -1,0 +1,5 @@
+{
+  "schema_version": 1,
+  "policy": "Only accepted evidence records in this file can close strict MobaXterm 26.4 Home/Professional parity articles. Accepted records must include one unique article_id, status accepted, a vX.Y.Z release_tag, a release_target, the exact validation command for that article, SHA-256 digests for the validated evidence JSON and evidence assets, release asset URLs under the same GitHub release tag, per-artifact SHA-256 digests, required article checks, and a validation summary proving the article evidence passed. Empty means the generated feature-family score remains separate from true product-depth parity.",
+  "accepted_evidence": []
+}

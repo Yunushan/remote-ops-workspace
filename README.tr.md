@@ -87,17 +87,51 @@ row vault delete old/router-password --force
 row plugins list
 row plugins validate
 row plugins scaffold --out ./row-demo-plugin --name row-demo-plugin --module row_demo_plugin --protocol demo --client demo-client
+row customizer build --out ./dist/corp-row --brand-name "Corp Ops" --profiles configs/profiles.example.json --lock-setting theme=dark
+row customizer deployment-plan --brand-name "Corp Ops" --lock-setting theme=dark --update-url https://updates.example.com/row/stable.json --update-public-key hmac-sha256:corp-secret --json
+row customizer update-verify --manifest artifacts/stable-update.json --public-key hmac-sha256:corp-secret --channel stable --organization "Corp Ops" --assets-dir artifacts --json
+row customizer evidence-verify --evidence artifacts/moba-professional-deployment.json --assets-dir artifacts --json
+row mobapt status --json
+row mobapt runtime-status --json
+row mobapt install htop --json
+row mobapt cache-verify --evidence artifacts/mobapt-cache-evidence.json --assets-dir artifacts --json
+row servers status --json
+row servers runtime-status --json
+row servers config-plan ftp --root . --json
+row servers evidence-verify --evidence artifacts/servers-release-evidence.json --assets-dir artifacts --json
+row servers start http --root . --dry-run --json
 row features --coverage
 row files ls lab-ssh /var/log --dry-run
 row files get lab-ssh /etc/hosts --local ./hosts.copy --dry-run
 row files queue lab-ssh --op "get /etc/hosts ./hosts.copy" --op "put ./build.tar.gz /tmp/build.tar.gz" --dry-run
 row files preview-local ./README.md --json
+row ssh-browser status --json
+row ssh-browser overwrite upload ./build.tar.gz /tmp/build.tar.gz --destination-exists --json
+row smartcard inventory-plan --provider microsoft-capi --json
+row smartcard select-review lab-ssh --certificate-id cert-1 --certificate "cert-1|Operator Card|microsoft-capi" --add-to-mobagent --json
+row smartcard ssh-browser-plan lab-ssh --certificate-id cert-1 --add-to-mobagent --json
+row smartcard evidence-verify --evidence artifacts/moba-smartcard.json --assets-dir artifacts --json
+row text preview README.md --json
+row text diff README.md README.tr.md --json
+row text open-remote lab-ssh /etc/app.conf --local app.conf.edit --remote-sha256 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --json
+row text save-review lab-ssh /etc/app.conf --local app.conf.edit --original-remote-sha256 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --current-remote-sha256 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --json
+row text evidence-verify --evidence artifacts/moba-text-remote-edit.json --assets-dir artifacts --json
 row snippet add --name uptime --command "uptime" --tag ops
+row macro record --name triage --text "hostname" --replace --json
+row macro replay triage --profile lab-ssh --dry-run --json
+row macro capture-plan triage --json
+row macro live-plan triage --profile lab-ssh --connected-profile lab-ssh --pane-id lab-ssh=lab-pane --json
+row macro evidence-verify --evidence artifacts/moba-macro-live.json --assets-dir artifacts --json
 row layout save triage --pane profile:lab-ssh --pane command:top --orientation horizontal
 row layout run triage --dry-run
 row broadcast --group prod --command "hostname" --timeout 10 --json
 row keygen --out ~/.ssh/id_ed25519_row --comment row
 row nettool ping example.com --dry-run
+row x11 status --display :0 --json
+row x11 package-status --json
+row x11 smoke --display :0 --out artifacts/x11-smoke.json --json
+row x11 evidence-verify --evidence artifacts/moba-xserver-release.json --assets-dir artifacts --json
+row x11 stop --json
 row sync push --to ~/RemoteOpsSync
 row export --out backups/remote-ops-export.json
 row import --in backups/remote-ops-export.json
@@ -147,6 +181,8 @@ row serve-web --host 127.0.0.1 --port 8765
 Hedef, istenen araclar icin **%100 genel ozellik ailesi haritalamasi**, **%100 adapter-ready coverage** ve **%100 release-backed product workflow parity** saglamaktir. Platform verified readiness verified default native ve mobile Web/PWA hedefleri icin ayri 100% scope kullanir; manual native ve legacy Windows hedefleri denominator disinda compatibility satirlari olarak izlenir.
 
 Kapsam [`configs/feature_manifest.json`](configs/feature_manifest.json) dosyasindan uretilir. Haritalama, bir ozellik ailesinin built-in kod, harici adapter, istege bagli bagimlilik, CLI/GUI akisi, platform betigi veya eklenti noktasi ile temsil edilip edilmedigini gosterir. Adapter-ready skor, executable evidence ile dogrulanan implemented adapter, optional, CLI, GUI ve combined workflow satirlarini hazir sayar. `production_parity_coverage` JSON anahtari geriye uyumluluk icin kalir, ama acik sozlesme release-backed product workflow parity'dir: implemented workflow satirlari yalnizca executable release evidence ile sayilir, seam-only veya docs-only satirlar kismi kalir. Bu proprietary native clone iddiasi degildir. Platform verified readiness verified default native ve mobile Web/PWA hedefleri icin 100% scope kullanir; manual native ve legacy Windows hedefleri denominator disinda ayri compatibility satirlari olarak kalir. `scripts/check_feature_reality.py` ve `scripts/check_product_readiness.py` bu iddialari dogrular.
+
+Daha siki MobaXterm Home/Professional parity backlog'u icin [`docs/MOBAXTERM_PARITY.md`](docs/MOBAXTERM_PARITY.md) dosyasina bakin. Bu belge generated feature-family skorunun otesindeki kalan urun-derinligi maddelerini izler.
 
 ```bash
 row features --coverage

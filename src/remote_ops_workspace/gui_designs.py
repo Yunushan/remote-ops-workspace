@@ -2367,7 +2367,7 @@ GUI_DESIGN_MOBA_RIBBON_TOOLTIPS: dict[str, str] = {
     "sessions": "Connect selected profile",
     "view": "Cycle to the next visual preset",
     "split": "Open a horizontal split",
-    "multiexec": "Show selected launch command",
+    "multiexec": "Preview broadcast command plans for SSH profiles",
     "tunneling": "Show tunneling workflow status",
     "packages": "Show package and file-transfer workflows",
     "settings": "Edit selected profile",
@@ -2549,7 +2549,7 @@ GUI_DESIGN_MOBA_SSH_BANNER_CHROME = GuiMobaSshBannerChrome(
     static_left_offset=42,
     static_top_offset=12,
     static_width=570,
-    static_height=166,
+    static_height=182,
     body_top_offset=54,
     terminal_gap=18,
 )
@@ -2557,6 +2557,7 @@ GUI_DESIGN_MOBA_SSH_BANNER_CHROME = GuiMobaSshBannerChrome(
 GUI_DESIGN_MOBA_SSH_BANNER_CAPABILITY_KEYS = (
     "direct-ssh",
     "ssh-compression",
+    "smartcard-auth",
     "ssh-browser",
     "x11-forwarding",
 )

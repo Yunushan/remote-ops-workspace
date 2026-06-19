@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import re
 import sys
+import time
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
 from .doctor import run_doctor
+from .enterprise_policy import assert_profile_launch_allowed
 from .file_transfer import build_sftp_queue_plan, parse_transfer_item_spec, preview_local_path
 from .gui_designs import (
     GUI_DESIGN_PRESETS,
@@ -144,12 +146,29 @@ from .moba_connected import (
     moba_connected_tab_chrome_geometry_items,
     moba_connected_tab_chrome_items,
     moba_connected_tab_label,
+    moba_connected_text_editor_route,
     moba_connected_window_title,
     moba_sftp_terminal_folder_route,
     moba_telemetry_cell_geometry,
     moba_telemetry_cell_geometry_for,
     moba_telemetry_cells,
 )
+from .moba_macros import (
+    MOBA_MACRO_TERMINAL_CAPTURE_SCHEMA,
+    MOBA_MACRO_TERMINAL_REPLAY_SCHEMA,
+    MobaMacroRecording,
+    MobaMacroTerminalCaptureState,
+    MobaMacroTerminalReplayInjection,
+    build_terminal_macro_replay_injection,
+    cancel_terminal_macro_capture,
+    capture_terminal_macro_input,
+    finish_terminal_macro_capture,
+    start_terminal_macro_capture,
+)
+from .moba_ssh_browser import load_moba_ssh_browser_preferences
+from .moba_multiexec import DEFAULT_MOBA_MULTIEXEC_COMMAND, build_moba_multiexec_plan
+from .moba_servers import build_moba_server_gui_config_surface
+from .moba_smartcards import MobaSmartCardCertificate, build_smartcard_management_gui_surface
 from .models import Profile
 from .storage import ProfileStore
 from .terminal import (
@@ -158,6 +177,11 @@ from .terminal import (
     split_shell_plans,
     terminal_plan_for_profile,
     terminal_plan_for_sftp_browser,
+)
+from .terminal_highlighting import (
+    default_terminal_syntax_rules,
+    terminal_highlight_fragments,
+    terminal_syntax_rule_keys,
 )
 
 
@@ -381,7 +405,7 @@ def quick_connect_profile_name(protocol: str, target: str) -> str:
 
 def create_main_window(argv: list[str] | None = None, *, show: bool = False):
     try:
-        from PyQt6.QtCore import QPoint, QProcess, QSize, Qt
+        from PyQt6.QtCore import QPoint, QProcess, QSize, Qt, QTimer
         from PyQt6.QtGui import (
             QBrush,
             QColor,
@@ -392,6 +416,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             QPen,
             QPixmap,
             QShortcut,
+            QSyntaxHighlighter,
+            QTextCharFormat,
             QTextCursor,
         )
         from PyQt6.QtWidgets import (
@@ -514,14 +540,28 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.output.setObjectName("terminalOutput")
             self.output.setReadOnly(True)
             self.output.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
+            self.syntax_rules = default_terminal_syntax_rules()
+            self.output.setProperty("terminalSyntaxHighlightingEnabled", True)
+            self.output.setProperty("terminalSyntaxHighlightRuleKeys", list(terminal_syntax_rule_keys(self.syntax_rules)))
             self.input = QLineEdit()
             self.input.setObjectName("terminalInput")
             self.input.setPlaceholderText("stdin, shell command or interactive input")
+            self.macro_capture_state: MobaMacroTerminalCaptureState | None = None
+            self.macro_last_recording: MobaMacroRecording | None = None
+            self.macro_last_injection: MobaMacroTerminalReplayInjection | None = None
+            self.macro_last_event_at: float | None = None
+            self.macro_replay_active = False
+            self.macro_replay_cancelled = False
+            self.macro_replay_sequence = 0
             self.start_button = self.terminal_button("Start", "SP_MediaPlay", "Start process")
             self.restart_button = self.terminal_button("Restart", "SP_BrowserReload", "Restart process")
             self.stop_button = self.terminal_button("Stop", "SP_MediaStop", "Stop process")
             self.copy_button = self.terminal_button("Copy", "SP_DialogSaveButton", "Copy launch command")
             self.clear_button = self.terminal_button("Clear", "SP_DialogResetButton", "Clear terminal output")
+            self.macro_record_button = self.terminal_button("Macro Rec", "SP_DialogYesButton", "Record terminal macro")
+            self.macro_stop_button = self.terminal_button("Macro Stop", "SP_DialogApplyButton", "Stop terminal macro")
+            self.macro_cancel_button = self.terminal_button("Macro Cancel", "SP_DialogCancelButton", "Cancel macro")
+            self.macro_replay_button = self.terminal_button("Macro Replay", "SP_MediaSeekForward", "Replay terminal macro")
 
             self.header = QFrame()
             self.header.setObjectName("terminalHeader")
@@ -538,6 +578,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 self.stop_button,
                 self.copy_button,
                 self.clear_button,
+                self.macro_record_button,
+                self.macro_stop_button,
+                self.macro_cancel_button,
+                self.macro_replay_button,
             ]:
                 header_layout.addWidget(button)
 
@@ -560,6 +604,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.stop_button.clicked.connect(self.stop)
             self.copy_button.clicked.connect(self.copy_command)
             self.clear_button.clicked.connect(self.clear_output)
+            self.macro_record_button.clicked.connect(self.start_macro_capture)
+            self.macro_stop_button.clicked.connect(self.stop_macro_capture)
+            self.macro_cancel_button.clicked.connect(self.cancel_macro_capture)
+            self.macro_replay_button.clicked.connect(self.replay_macro_capture)
             self.input.returnPressed.connect(self.send_input)
             self.process.readyReadStandardOutput.connect(self.read_stdout)
             self.process.readyReadStandardError.connect(self.read_stderr)
@@ -567,6 +615,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.process.errorOccurred.connect(self.on_error)
             self.process.finished.connect(self.on_finished)
             self.set_status("ready", "ready")
+            self.apply_moba_macro_runtime_properties()
             self.update_process_actions()
             self.start()
 
@@ -649,7 +698,152 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             if not self.is_running():
                 self.append_text("[stdin ignored: process is not running]\n")
                 return
+            self.capture_macro_input(line)
             self.process.write((line + "\n").encode("utf-8"))
+
+        def macro_capture_name(self) -> str:
+            slug = re.sub(r"[^A-Za-z0-9_.-]+", "-", self.plan.title).strip("-").lower()
+            return f"{slug or 'terminal'}-live"
+
+        def macro_pane_id(self) -> str:
+            raw = str(self.property("mobaConnectedRouteActiveTabLabel") or self.plan.title or "terminal-pane")
+            slug = re.sub(r"[^A-Za-z0-9_.:-]+", "-", raw).strip("-") or "terminal-pane"
+            return f"{slug}-{id(self):x}"
+
+        def start_macro_capture(self) -> None:
+            if self.macro_capture_state is not None and self.macro_capture_state.active:
+                return
+            self.macro_capture_state = start_terminal_macro_capture(
+                self.macro_capture_name(),
+                pane_id=self.macro_pane_id(),
+            )
+            self.macro_last_event_at = time.monotonic()
+            self.append_text("\n[macro recording started]\n")
+            self.apply_moba_macro_runtime_properties()
+            self.update_process_actions()
+
+        def macro_event_delay_ms(self) -> int:
+            now = time.monotonic()
+            previous = self.macro_last_event_at or now
+            self.macro_last_event_at = now
+            return max(0, int((now - previous) * 1000))
+
+        def capture_macro_input(self, line: str) -> None:
+            state = self.macro_capture_state
+            if state is None or not state.active:
+                return
+            capture_terminal_macro_input(state, line, delay_ms=self.macro_event_delay_ms())
+            self.apply_moba_macro_runtime_properties()
+
+        def stop_macro_capture(self) -> None:
+            state = self.macro_capture_state
+            if state is None or not state.active:
+                return
+            try:
+                self.macro_last_recording = finish_terminal_macro_capture(
+                    state,
+                    description="Captured from the PyQt terminal pane.",
+                    tags=["gui", "live"],
+                )
+            except ValueError as exc:
+                self.append_text(f"\n[macro recording ignored: {exc}]\n")
+            else:
+                self.append_text(f"\n[macro recording saved: {self.macro_last_recording.name}]\n")
+            self.macro_capture_state = None
+            self.macro_last_event_at = None
+            self.apply_moba_macro_runtime_properties()
+            self.update_process_actions()
+
+        def cancel_macro_capture(self) -> None:
+            state = self.macro_capture_state
+            if state is not None and state.active:
+                cancel_terminal_macro_capture(state)
+                self.append_text("\n[macro recording cancelled]\n")
+                self.macro_capture_state = None
+                self.macro_last_event_at = None
+            elif self.macro_replay_active:
+                self.macro_replay_cancelled = True
+                self.macro_replay_sequence += 1
+                self.macro_replay_active = False
+                self.append_text("\n[macro replay cancelled]\n")
+            self.apply_moba_macro_runtime_properties()
+            self.update_process_actions()
+
+        def replay_macro_capture(self) -> None:
+            if self.macro_last_recording is None:
+                self.append_text("\n[macro replay unavailable: no recorded macro]\n")
+                return
+            if not self.is_running():
+                self.append_text("\n[macro replay unavailable: process is not running]\n")
+                return
+            injection = build_terminal_macro_replay_injection(self.macro_last_recording, pane_id=self.macro_pane_id())
+            self.macro_last_injection = injection
+            self.macro_replay_sequence += 1
+            self.macro_replay_cancelled = False
+            self.macro_replay_active = True
+            sequence = self.macro_replay_sequence
+            for step, payload in zip(injection.steps, injection.injected_payloads):
+                delay = max(0, int(step.scheduled_after_ms))
+                QTimer.singleShot(delay, lambda payload=payload, sequence=sequence: self.write_macro_replay_payload(payload, sequence))
+            QTimer.singleShot(
+                max(0, int(injection.total_delay_ms)) + 1,
+                lambda sequence=sequence: self.finish_macro_replay_queue(sequence),
+            )
+            self.append_text(f"\n[macro replay queued: {injection.event_count} event(s)]\n")
+            self.apply_moba_macro_runtime_properties()
+            self.update_process_actions()
+
+        def write_macro_replay_payload(self, payload: str, sequence: int) -> None:
+            if sequence != self.macro_replay_sequence or self.macro_replay_cancelled:
+                return
+            if not self.is_running():
+                self.append_text("\n[macro replay stopped: process is not running]\n")
+                self.finish_macro_replay_queue(sequence)
+                return
+            self.process.write(payload.encode("utf-8"))
+            self.setProperty("mobaMacroReplayInjectedPayload", payload)
+            self.input.setProperty("mobaMacroReplayInjectedPayload", payload)
+            self.output.setProperty("mobaMacroReplayInjectedPayload", payload)
+
+        def finish_macro_replay_queue(self, sequence: int) -> None:
+            if sequence != self.macro_replay_sequence:
+                return
+            self.macro_replay_active = False
+            self.apply_moba_macro_runtime_properties()
+            self.update_process_actions()
+
+        def apply_moba_macro_runtime_properties(self) -> None:
+            state = self.macro_capture_state
+            recording = self.macro_last_recording
+            injection = self.macro_last_injection
+            active = bool(state is not None and state.active)
+            event_count = len(state.events) if state is not None else 0
+            widgets = [
+                self,
+                self.input,
+                self.output,
+                self.macro_record_button,
+                self.macro_stop_button,
+                self.macro_cancel_button,
+                self.macro_replay_button,
+            ]
+            for widget in widgets:
+                widget.setProperty("mobaMacroTerminalCaptureSchema", MOBA_MACRO_TERMINAL_CAPTURE_SCHEMA)
+                widget.setProperty("mobaMacroTerminalReplaySchema", MOBA_MACRO_TERMINAL_REPLAY_SCHEMA)
+                widget.setProperty("mobaMacroPaneId", state.pane_id if state is not None else self.macro_pane_id())
+                widget.setProperty("mobaMacroCaptureActive", active)
+                widget.setProperty("mobaMacroCaptureCancelled", bool(state is not None and state.cancelled))
+                widget.setProperty("mobaMacroCaptureEventCount", event_count)
+                widget.setProperty("mobaMacroCaptureControls", ["record", "stop", "cancel"])
+                widget.setProperty("mobaMacroCaptureSource", "pyqt-terminal-pane")
+                widget.setProperty("mobaMacroLastRecordingName", recording.name if recording is not None else "")
+                widget.setProperty("mobaMacroLastRecordingInputSha256", recording.to_dict()["input_sha256"] if recording is not None else "")
+                widget.setProperty("mobaMacroReplayInjectionSchema", injection.schema if injection is not None else "")
+                widget.setProperty("mobaMacroReplayInjectedEventCount", injection.event_count if injection is not None else 0)
+                widget.setProperty("mobaMacroReplayPerKeystrokeTiming", bool(injection is not None and injection.steps))
+                widget.setProperty("mobaMacroReplayCancelSupported", True)
+                widget.setProperty("mobaMacroReplayActive", self.macro_replay_active)
+                widget.setProperty("mobaMacroReplayCancelled", self.macro_replay_cancelled)
 
         def read_stdout(self) -> None:
             self.append_text(bytes(self.process.readAllStandardOutput()).decode(errors="replace"))
@@ -661,7 +855,12 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             if not text:
                 return
             self.output.moveCursor(QTextCursor.MoveOperation.End)
-            self.output.insertPlainText(text)
+            cursor = self.output.textCursor()
+            for fragment in terminal_highlight_fragments(text, self.syntax_rules):
+                text_format = QTextCharFormat()
+                if fragment.color:
+                    text_format.setForeground(QColor(fragment.color))
+                cursor.insertText(fragment.text, text_format)
             self.output.moveCursor(QTextCursor.MoveOperation.End)
 
         def on_started(self) -> None:
@@ -688,10 +887,48 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
         def update_process_actions(self) -> None:
             running = self.is_running()
+            capture_active = bool(self.macro_capture_state is not None and self.macro_capture_state.active)
             self.start_button.setEnabled(not running)
             self.restart_button.setEnabled(bool(self.plan.command))
             self.stop_button.setEnabled(running)
             self.input.setEnabled(running)
+            self.macro_record_button.setEnabled(running and not capture_active and not self.macro_replay_active)
+            self.macro_stop_button.setEnabled(capture_active)
+            self.macro_cancel_button.setEnabled(capture_active or self.macro_replay_active)
+            self.macro_replay_button.setEnabled(running and self.macro_last_recording is not None and not capture_active)
+            self.apply_moba_macro_runtime_properties()
+
+    class MobaTextEditorHighlighter(QSyntaxHighlighter):
+        def __init__(self, document, syntax: str) -> None:
+            super().__init__(document)
+            self.syntax = syntax
+            self.patterns = self.patterns_for_syntax(syntax)
+
+        @staticmethod
+        def patterns_for_syntax(syntax: str) -> list[tuple[str, str]]:
+            common = [
+                (r"(?m)#.*$", "#6a9955"),
+                (r"(?m)//.*$", "#6a9955"),
+                (r"\"(?:[^\"\\]|\\.)*\"", "#ce9178"),
+                (r"\b\d+(?:\.\d+)?\b", "#b5cea8"),
+            ]
+            if syntax in {"json", "javascript", "typescript"}:
+                return [*common, (r"\b(?:true|false|null)\b", "#569cd6")]
+            if syntax in {"shell", "powershell"}:
+                return [*common, (r"\b(?:if|then|else|fi|for|do|done|set|function)\b", "#569cd6")]
+            if syntax in {"ssh-config", "ini", "systemd", "nginx"}:
+                return [*common, (r"(?m)^[A-Za-z0-9_.-]+(?=\s|=)", "#9cdcfe")]
+            if syntax == "log":
+                return [*common, (r"\b(?:error|failed|denied|warning|ok|success)\b", "#dcdcaa")]
+            return common
+
+        def highlightBlock(self, text: str) -> None:
+            for pattern, color in self.patterns:
+                text_format = QTextCharFormat()
+                text_format.setForeground(QColor(color))
+                for match in re.finditer(pattern, text, re.IGNORECASE):
+                    start, end = match.span()
+                    self.setFormat(start, end - start, text_format)
 
     class MobaSftpDock(QFrame):
         @staticmethod
@@ -867,6 +1104,72 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             for key, value in properties.items():
                 widget.setProperty(key, value)
 
+        def apply_connected_ssh_browser_state_properties(self, widget) -> None:
+            browser_state = self.state.ssh_browser_state
+            properties = {
+                "mobaSshBrowserLocation": browser_state.location,
+                "mobaSshBrowserTerminalVisible": browser_state.terminal_visible,
+                "mobaSshBrowserVisible": browser_state.browser_visible,
+                "mobaSshBrowserOverwriteConfirmation": browser_state.overwrite_confirmation,
+                "mobaSshBrowserColumnWidthMap": dict(browser_state.column_widths),
+                "mobaSshBrowserPreferenceRenderSource": browser_state.render_source,
+            }
+            for key, value in properties.items():
+                widget.setProperty(key, value)
+
+        def apply_connected_smartcard_selection_properties(self, widget) -> None:
+            selection = self.state.smartcard_selection
+            properties = {
+                "mobaSmartcardSelectionEnabled": selection.enabled,
+                "mobaSmartcardProvider": selection.provider_label,
+                "mobaSmartcardProviderKey": selection.provider_key,
+                "mobaSmartcardCertificateId": selection.certificate_id,
+                "mobaSmartcardCertificateLabel": selection.certificate_label,
+                "mobaSmartcardPublicKey": selection.public_key,
+                "mobaSmartcardAddToMobAgent": selection.add_to_mobagent,
+                "mobaSmartcardAgentSocket": selection.agent_socket,
+                "mobaSmartcardPkcs11Provider": selection.pkcs11_provider,
+                "mobaSmartcardProfileOptionKeys": list(selection.profile_option_keys),
+                "mobaSmartcardSelectionRenderSource": selection.render_source,
+            }
+            for key, value in properties.items():
+                widget.setProperty(key, value)
+
+        def apply_connected_text_editor_route_properties(self, widget, *, triggered: bool = False, status: str = "ready") -> None:
+            route = moba_connected_text_editor_route(self.state)
+            properties = {
+                "mobaTextEditorSchema": route.schema,
+                "mobaTextEditorProfile": route.profile_name,
+                "mobaTextEditorRemotePath": route.remote_path,
+                "mobaTextEditorLocalPath": route.local_path,
+                "mobaTextEditorSyntax": route.syntax,
+                "mobaTextEditorEncoding": route.encoding,
+                "mobaTextEditorRemoteSha256": route.remote_sha256,
+                "mobaTextEditorOpenedFromSftpBrowser": route.opened_from_sftp_browser,
+                "mobaTextEditorSourceBrowserObject": route.source_browser_object,
+                "mobaTextEditorSourceTableObject": route.source_table_object,
+                "mobaTextEditorSourceRowName": route.source_row_name,
+                "mobaTextEditorSourceRowIndex": route.source_row_index,
+                "mobaTextEditorTabObject": route.editor_tab_object,
+                "mobaTextEditorObject": route.editor_object,
+                "mobaTextEditorSaveActionObject": route.save_action_object,
+                "mobaTextEditorDiffActionObject": route.diff_action_object,
+                "mobaTextEditorOpenSignal": route.open_signal,
+                "mobaTextEditorSaveSignal": route.save_signal,
+                "mobaTextEditorDiffSignal": route.diff_signal,
+                "mobaTextEditorOpenCommand": list(route.open_command),
+                "mobaTextEditorOpenBatchCommands": list(route.open_batch_commands),
+                "mobaTextEditorSaveCommand": list(route.save_command),
+                "mobaTextEditorSaveBatchCommands": list(route.save_batch_commands),
+                "mobaTextEditorConflictPolicy": route.conflict_policy,
+                "mobaTextEditorCapturedOpen": triggered,
+                "mobaTextEditorStatus": status,
+                "mobaTextEditorDirty": False,
+                "mobaTextEditorRenderSource": route.render_source,
+            }
+            for key, value in properties.items():
+                widget.setProperty(key, value)
+
         def __init__(self, state: MobaConnectedSessionState) -> None:
             super().__init__()
             self.setObjectName("mobaConnectedLeftDock")
@@ -878,6 +1181,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             routed_rows = gui_design_moba_sftp_routed_file_rows()
             self.apply_connected_dock_frame_properties(self)
             self.apply_connected_session_route_properties(self)
+            self.apply_connected_ssh_browser_state_properties(self)
+            self.apply_connected_smartcard_selection_properties(self)
+            self.apply_connected_text_editor_route_properties(self)
             self.setMinimumWidth(frame.dock_width)
             self.setMinimumHeight(frame.dock_height)
 
@@ -891,9 +1197,13 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.browser = browser
             self.apply_connected_dock_frame_properties(browser)
             self.apply_connected_session_route_properties(browser)
+            self.apply_connected_ssh_browser_state_properties(browser)
+            self.apply_connected_smartcard_selection_properties(browser)
+            self.apply_connected_text_editor_route_properties(browser)
             self.apply_sftp_dock_density_properties(browser, density)
             self.apply_sftp_follow_folder_route_properties(browser, follow_route)
             self.apply_sftp_terminal_folder_route_properties(browser)
+            browser.setVisible(self.state.ssh_browser_state.browser_visible)
             outer_layout.addWidget(browser)
 
             layout = QVBoxLayout(browser)
@@ -934,6 +1244,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             layout.addWidget(toolbar)
 
             chrome = gui_design_moba_sftp_browser_chrome()
+            column_widths = [
+                self.state.ssh_browser_state.column_widths.get(column.key, column.static_width)
+                for column in chrome.columns
+            ]
             path = QLineEdit()
             path.setObjectName("mobaSftpPath")
             path.setText(self.state.remote_path)
@@ -950,6 +1264,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.apply_sftp_terminal_folder_route_properties(path)
             self.apply_sftp_toolbar_action_route_properties(path, toolbar_route)
             self.apply_connected_session_route_properties(path)
+            self.apply_connected_ssh_browser_state_properties(path)
+            self.apply_connected_smartcard_selection_properties(path)
+            self.apply_connected_text_editor_route_properties(path)
             path.setFixedHeight(density.path_height)
             path.setToolTip(self.state.follow_folder_plan.printable_batch())
             self.path = path
@@ -962,7 +1279,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.file_table.setHeaderLabels([column.label for column in chrome.columns])
             self.file_table.setProperty("mobaSftpColumnKeys", [column.key for column in chrome.columns])
             self.file_table.setProperty("mobaSftpColumnLabels", [column.label for column in chrome.columns])
-            self.file_table.setProperty("mobaSftpColumnWidths", [column.static_width for column in chrome.columns])
+            self.file_table.setProperty("mobaSftpColumnWidths", column_widths)
+            self.file_table.setProperty("mobaSftpColumnWidthSource", self.state.ssh_browser_state.render_source)
             self.file_table.setProperty("mobaSftpParentRowLabel", chrome.parent_row_label)
             self.file_table.setProperty("mobaSftpParentRowKind", chrome.parent_row_kind)
             self.file_table.setProperty("mobaSftpSelectedRowKind", chrome.selected_row_kind)
@@ -992,6 +1310,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.apply_sftp_terminal_folder_route_properties(self.file_table)
             self.apply_sftp_toolbar_action_route_properties(self.file_table, toolbar_route)
             self.apply_connected_session_route_properties(self.file_table)
+            self.apply_connected_ssh_browser_state_properties(self.file_table)
+            self.apply_connected_smartcard_selection_properties(self.file_table)
+            self.apply_connected_text_editor_route_properties(self.file_table)
             self.file_table.setIconSize(QSize(density.toolbar_icon_size, density.toolbar_icon_size))
             self.file_table.setRootIsDecorated(False)
             self.file_table.setUniformRowHeights(True)
@@ -999,8 +1320,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.file_table.header().setFixedHeight(density.table_header_height)
             self.file_table.header().setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
             self.file_table.header().setStretchLastSection(False)
-            for column_index, column in enumerate(chrome.columns):
-                self.file_table.setColumnWidth(column_index, column.static_width)
+            for column_index, width in enumerate(column_widths):
+                self.file_table.setColumnWidth(column_index, width)
             parent_item = QTreeWidgetItem([chrome.parent_row_label, "", ""])
             self.apply_sftp_file_row_icon(parent_item, chrome.parent_row_kind)
             self.apply_sftp_routed_file_row_metadata(
@@ -1028,8 +1349,12 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 self.file_table.addTopLevelItem(item)
             parent_item.setSelected(True)
             self.file_table.setCurrentItem(parent_item)
+            self.file_table.itemDoubleClicked.connect(self.handle_moba_text_editor_open_from_item)
             layout.addSpacing(density.table_header_gap)
             layout.addWidget(self.file_table, 1)
+
+            layout.addWidget(self.build_text_editor_toolbar())
+            layout.addWidget(self.build_text_editor())
 
             queue = QLabel("Queue: SFTP toolbar idle")
             queue.setObjectName(toolbar_route.queue_object)
@@ -1039,6 +1364,153 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             layout.addWidget(queue)
 
             layout.addWidget(self.build_remote_monitoring(density))
+
+        def build_text_editor_toolbar(self) -> QFrame:
+            toolbar = QFrame()
+            toolbar.setObjectName("mobaTextEditorToolbar")
+            self.apply_connected_text_editor_route_properties(toolbar)
+            layout = QHBoxLayout(toolbar)
+            layout.setContentsMargins(0, 4, 0, 2)
+            layout.setSpacing(4)
+            self.text_editor_save_button = self.text_editor_action_button(
+                "save",
+                "SP_DialogSaveButton",
+                "mobaTextEditorSaveAction",
+                self.handle_moba_text_editor_save,
+            )
+            self.text_editor_diff_button = self.text_editor_action_button(
+                "diff",
+                "SP_FileDialogDetailedView",
+                "mobaTextEditorDiffAction",
+                self.handle_moba_text_editor_diff,
+            )
+            layout.addWidget(self.text_editor_save_button)
+            layout.addWidget(self.text_editor_diff_button)
+            layout.addStretch(1)
+            return toolbar
+
+        def build_text_editor(self) -> QPlainTextEdit:
+            route = moba_connected_text_editor_route(self.state)
+            editor = QPlainTextEdit()
+            editor.setObjectName(route.editor_object)
+            self.apply_connected_text_editor_route_properties(editor)
+            editor.setPlainText(route.preview_text)
+            editor.setPlaceholderText(route.remote_path)
+            editor.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+            editor.setFixedHeight(116)
+            editor.textChanged.connect(self.handle_moba_text_editor_changed)
+            self.text_editor_highlighter = MobaTextEditorHighlighter(editor.document(), route.syntax)
+            self.text_editor = editor
+            return editor
+
+        def text_editor_action_button(self, action_key: str, icon_name: str, object_name: str, handler) -> QToolButton:
+            route = moba_connected_text_editor_route(self.state)
+            button = QToolButton()
+            button.setObjectName(object_name)
+            button.setProperty("mobaTextEditorActionKey", action_key)
+            button.setProperty("mobaTextEditorActionObject", object_name)
+            button.setProperty("mobaTextEditorRemotePath", route.remote_path)
+            button.setProperty("mobaTextEditorRenderSource", route.render_source)
+            button.setIcon(self.style().standardIcon(self.standard_icon(icon_name)))
+            button.setIconSize(QSize(16, 16))
+            button.setFixedSize(QSize(24, 22))
+            button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+            button.clicked.connect(handler)
+            return button
+
+        def handle_moba_text_editor_open_from_item(self, item: QTreeWidgetItem, _column: int) -> None:
+            remote_path = self.text_editor_remote_path_for_item(item)
+            if not remote_path:
+                return
+            editor = getattr(self, "text_editor", None)
+            if editor is None:
+                return
+            previous = editor.blockSignals(True)
+            try:
+                editor.setPlainText(self.text_editor_preview_for_remote_path(remote_path))
+            finally:
+                editor.blockSignals(previous)
+            widgets = [
+                self,
+                getattr(self, "browser", None),
+                getattr(self, "file_table", None),
+                editor,
+                getattr(self, "text_editor_save_button", None),
+                getattr(self, "text_editor_diff_button", None),
+            ]
+            for widget in widgets:
+                if widget is None:
+                    continue
+                self.apply_connected_text_editor_route_properties(widget, triggered=True, status="opened")
+                widget.setProperty("mobaTextEditorRemotePath", remote_path)
+                widget.setProperty("mobaTextEditorCapturedRowName", item.text(0))
+                widget.setProperty("mobaTextEditorCapturedOpenSignal", "itemDoubleClicked")
+                widget.setProperty("mobaTextEditorDirty", False)
+            editor.setPlaceholderText(remote_path)
+
+        def handle_moba_text_editor_changed(self) -> None:
+            editor = getattr(self, "text_editor", None)
+            if editor is None:
+                return
+            editor.setProperty("mobaTextEditorDirty", True)
+            editor.setProperty("mobaTextEditorStatus", "modified")
+            for button in (getattr(self, "text_editor_save_button", None), getattr(self, "text_editor_diff_button", None)):
+                if button is not None:
+                    button.setProperty("mobaTextEditorDirty", True)
+
+        def handle_moba_text_editor_save(self) -> None:
+            self.capture_moba_text_editor_action("save", status="save-review-ready")
+
+        def handle_moba_text_editor_diff(self) -> None:
+            self.capture_moba_text_editor_action("diff", status="diff-ready")
+
+        def capture_moba_text_editor_action(self, action: str, *, status: str) -> None:
+            editor = getattr(self, "text_editor", None)
+            route = moba_connected_text_editor_route(self.state)
+            line_count = len(editor.toPlainText().splitlines()) if editor is not None else 0
+            widgets = [
+                self,
+                getattr(self, "browser", None),
+                getattr(self, "file_table", None),
+                editor,
+                getattr(self, "text_editor_save_button", None),
+                getattr(self, "text_editor_diff_button", None),
+            ]
+            for widget in widgets:
+                if widget is None:
+                    continue
+                self.apply_connected_text_editor_route_properties(widget, triggered=True, status=status)
+                widget.setProperty("mobaTextEditorCapturedAction", action)
+                widget.setProperty("mobaTextEditorCapturedLineCount", line_count)
+                widget.setProperty("mobaTextEditorCapturedSaveBatchCommands", list(route.save_batch_commands))
+                widget.setProperty("mobaTextEditorCapturedConflictPolicy", route.conflict_policy)
+                if action == "save":
+                    widget.setProperty("mobaTextEditorCapturedSave", True)
+                    widget.setProperty("mobaTextEditorDirty", False)
+                elif action == "diff":
+                    widget.setProperty("mobaTextEditorCapturedDiff", True)
+
+        def text_editor_remote_path_for_item(self, item: QTreeWidgetItem) -> str:
+            kind = str(item.data(0, SFTP_ROW_KIND_ROLE) or "")
+            name = item.text(0).strip()
+            if kind != "file" or not name:
+                return ""
+            base = self.state.remote_path.rstrip("/")
+            if not base:
+                base = "/"
+            return f"/{name}" if base == "/" else f"{base}/{name}"
+
+        def text_editor_preview_for_remote_path(self, remote_path: str) -> str:
+            name = remote_path.rsplit("/", 1)[-1]
+            if name.endswith(".json"):
+                return '{\n  "status": "ok"\n}\n'
+            if name.endswith((".sh", ".bash", ".ps1")):
+                return "#!/usr/bin/env sh\nset -eu\n"
+            if name.endswith((".conf", ".ini")) or name in {"ssh_config", "sshd_config"}:
+                return "[remote]\nenabled=true\n"
+            if name.endswith(".log"):
+                return "2026-06-06T12:00:00Z service=remote status=ok\n"
+            return f"{name}\n"
 
         def apply_sftp_file_row_icon(self, item: QTreeWidgetItem, kind: str) -> None:
             row_icon = gui_design_moba_sftp_file_row_icon(kind)
@@ -3263,13 +3735,13 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
         def build_moba_ribbon_buttons(self) -> list[QToolButton]:
             slots = {
                 "session": self.create_profile,
-                "servers": self.refresh_profiles,
+                "servers": self.show_moba_servers_status,
                 "tools": self.edit_selected_profile,
                 "games": self.show_moba_tools_status,
                 "sessions": lambda _checked=False: self.connect_selected(False),
                 "view": self.cycle_design_preset,
                 "split": lambda _checked=False: self.add_split("horizontal"),
-                "multiexec": lambda _checked=False: self.connect_selected(True),
+                "multiexec": self.show_moba_multiexec_status,
                 "tunneling": self.show_moba_tunneling_status,
                 "packages": self.show_moba_packages_dialog,
                 "settings": self.edit_selected_profile,
@@ -6098,6 +6570,121 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 ),
             )
 
+        def show_moba_servers_status(self, *_args) -> None:
+            self.set_moba_rail_active("tools")
+            surface = build_moba_server_gui_config_surface(selected_service="http")
+            self.setProperty("mobaEmbeddedServerGuiConfigSchema", surface.schema)
+            self.setProperty("mobaEmbeddedServerGuiConfigServices", [row.service for row in surface.rows])
+            self.setProperty("mobaEmbeddedServerGuiConfigControls", list(surface.gui_controls))
+            self.setProperty("mobaEmbeddedServerRuntimeRoots", list(surface.runtime_roots))
+            self.setProperty("mobaEmbeddedServerPackagedServiceCount", surface.packaged_service_count)
+            rows = [
+                (
+                    row.label,
+                    row.status,
+                    f"port {row.default_port} runtime={row.selected_runtime} auth={'yes' if row.auth_required else 'no'}",
+                )
+                for row in surface.rows
+            ]
+            selected = surface.selected_config
+            detail = "\n".join(
+                [
+                    "Embedded server suite configuration",
+                    f"Schema: {surface.schema}",
+                    f"Selected: {selected.service} {selected.host}:{selected.port}",
+                    f"Hardening: {selected.hardening_profile}",
+                    f"Auth required: {'yes' if selected.auth_required else 'no'}",
+                    f"TLS required: {'yes' if selected.tls_required else 'no'}",
+                    f"Packaged daemon services: {surface.packaged_service_count}/{len(surface.rows)}",
+                    "GUI controls: " + ", ".join(surface.gui_controls),
+                    "",
+                    "Selected service commands:",
+                    next(row.config_action for row in surface.rows if row.service == surface.selected_service),
+                    next(row.start_action for row in surface.rows if row.service == surface.selected_service),
+                    next(row.stop_action for row in surface.rows if row.service == surface.selected_service),
+                ]
+            )
+            self.show_workflow_dialog(
+                "Servers",
+                "MobaXterm-style local server suite status, hardening configuration and lifecycle actions.",
+                rows,
+                detail,
+                actions=[("Run doctor", self.show_doctor), ("Tools", self.show_moba_tools_status)],
+            )
+
+        def show_moba_smartcards_status(self, *_args) -> None:
+            self.set_moba_rail_active("tools")
+            profile = self.selected_profile_for_workflow()
+            certificates: list[MobaSmartCardCertificate] = []
+            selected_id = ""
+            provider = "microsoft-capi"
+            add_to_mobagent = False
+            if profile is not None:
+                selected_id = str(profile.options.get("smartcard_certificate_id") or "")
+                provider = str(profile.options.get("smartcard_provider") or profile.options.get("pkcs11_provider") or provider)
+                add_to_mobagent = str(profile.options.get("add_smartcard_to_mobagent") or "").lower() == "true"
+                if selected_id:
+                    certificates.append(
+                        MobaSmartCardCertificate(
+                            certificate_id=selected_id,
+                            label=str(profile.options.get("smartcard_certificate_label") or selected_id),
+                            provider=provider,
+                            public_key=str(profile.options.get("smartcard_public_key") or ""),
+                            fingerprint_sha256=str(profile.options.get("smartcard_fingerprint_sha256") or ""),
+                            source="profile-options",
+                        )
+                    )
+            surface = build_smartcard_management_gui_surface(
+                provider=provider,
+                certificates=certificates,
+                selected_certificate_id=selected_id,
+                profile=profile if profile is not None and selected_id else None,
+                add_to_mobagent=add_to_mobagent,
+                force=True,
+            )
+            self.setProperty("mobaSmartcardGuiManagementSchema", surface.schema)
+            self.setProperty("mobaSmartcardGuiProvider", surface.provider)
+            self.setProperty("mobaSmartcardGuiCertificateCount", len(surface.certificate_rows))
+            self.setProperty("mobaSmartcardGuiSelectedCertificateId", surface.selected_certificate_id)
+            self.setProperty("mobaSmartcardGuiControls", list(surface.gui_controls))
+            if surface.certificate_rows:
+                rows = [
+                    (
+                        row.label,
+                        row.provider,
+                        f"id={row.certificate_id} public-key={'yes' if row.public_key_available else 'no'}",
+                    )
+                    for row in surface.certificate_rows
+                ]
+            else:
+                rows = [
+                    (
+                        "Certificate inventory",
+                        surface.provider,
+                        "Refresh inventory to list Microsoft CryptoAPI or PKCS#11 smart-card certificates.",
+                    )
+                ]
+            detail = "\n".join(
+                [
+                    "Smart-card management",
+                    f"Schema: {surface.schema}",
+                    f"Provider: {surface.provider}",
+                    f"Selected profile: {surface.selected_profile or 'none'}",
+                    f"Selected certificate: {surface.selected_certificate_id}",
+                    "GUI controls: " + ", ".join(surface.gui_controls),
+                    "",
+                    "Command contracts:",
+                    *surface.commands,
+                ]
+            )
+            self.show_workflow_dialog(
+                "Smart cards",
+                "MobaXterm 26.4-style certificate inventory, OpenSSH public-key export, SSH selection and MobAgent handoff.",
+                rows,
+                detail,
+                actions=[("Edit profile", self.edit_selected_profile), ("Run doctor", self.show_doctor)],
+            )
+
         def show_moba_tools_status(self, *_args) -> None:
             self.set_moba_rail_active("tools")
             profiles = self.store.load()
@@ -6107,6 +6694,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 [
                     ("Profile editor", f"{len(profiles)} saved", "Create, edit or remove connection profiles."),
                     ("Transfer queue", "available", "Preview SFTP get, put, mkdir and delete operations."),
+                    ("Embedded servers", "configurable", "Inspect local daemons, hardening and start/stop commands."),
+                    ("Smart cards", "manageable", "Inventory certificates, export public keys and configure MobAgent handoff."),
                     ("Layouts", f"{len(self.layout_store.load())} saved", "Open grid, horizontal or vertical multi-pane layouts."),
                     ("Doctor", "available", "Inspect local protocol clients and launch readiness."),
                 ],
@@ -6121,8 +6710,49 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 actions=[
                     ("New profile", self.create_profile),
                     ("New layout", self.create_layout),
+                    ("Servers", self.show_moba_servers_status),
+                    ("Smart cards", self.show_moba_smartcards_status),
                     ("Run doctor", self.show_doctor),
                 ],
+            )
+
+        def show_moba_multiexec_status(self, *_args) -> None:
+            self.set_moba_rail_active("macros")
+            ssh_profiles = [profile for profile in self.store.load() if profile.protocol.lower() == "ssh"]
+            if not ssh_profiles:
+                self.show_workflow_dialog(
+                    "MultiExec",
+                    "Broadcast one command to multiple SSH sessions.",
+                    [
+                        ("Target profiles", "none", "Create or import SSH profiles before using MultiExec."),
+                        ("Command", DEFAULT_MOBA_MULTIEXEC_COMMAND, "Default preview command for broadcast planning."),
+                    ],
+                    "No SSH profiles are available.\nMultiExec uses the same safe argv broadcast engine as row broadcast.",
+                    actions=[("New profile", self.create_profile), ("Run doctor", self.show_doctor)],
+                )
+                return
+
+            plan = build_moba_multiexec_plan(ssh_profiles, DEFAULT_MOBA_MULTIEXEC_COMMAND)
+            preview_lines = list(plan.printable_commands()[:4])
+            if plan.profile_count > len(preview_lines):
+                preview_lines.append(f"... {plan.profile_count - len(preview_lines)} more broadcast target(s)")
+            self.show_workflow_dialog(
+                "MultiExec",
+                "Broadcast one command to all SSH profiles using safe argv launch plans.",
+                [
+                    ("Target profiles", str(plan.profile_count), ", ".join(plan.profiles[:3])),
+                    ("Command", plan.command, "Validated as a single-line remote command."),
+                    ("Route", plan.route.key, plan.route.route_role),
+                    ("Execution", "dry-run preview", "Use row broadcast when you are ready to execute."),
+                ],
+                "\n".join(
+                    [
+                        "MultiExec broadcast preview",
+                        f"Command: {plan.command}",
+                        *preview_lines,
+                    ]
+                ),
+                actions=[("Run doctor", self.show_doctor), ("Macros", self.show_moba_macros_status)],
             )
 
         def show_moba_tunneling_status(self, *_args) -> None:
@@ -6277,7 +6907,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 "Reusable snippets and scripted workflows for repeated operator actions.",
                 [
                     ("Snippets", "CLI-backed", "Store and run reusable command snippets."),
-                    ("MultiExec", "ribbon", "Preview launch commands and broadcast workflows."),
+                    ("MultiExec", "ribbon", "Preview broadcast command plans for SSH profiles."),
                     ("Recover", "Ctrl+Shift+T", "Restore recent terminal plans."),
                     ("Future dialogs", "tracked", "GUI macro editor can build on snippet storage."),
                 ],
@@ -6652,7 +7282,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 return
             try:
                 profile = dialog.profile()
-                self.store.add(profile)
+                self.store.add(profile, surface="profile-editor")
                 self.refresh_profiles()
                 self.select_profile(profile.name)
                 self.log.append(f"PROFILE SAVED: {profile.name}")
@@ -6690,7 +7320,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             if answer != QMessageBox.StandardButton.Yes:
                 return
             try:
-                self.store.remove(name)
+                self.store.remove(name, surface="profile-editor")
                 self.refresh_profiles()
                 self.log.append(f"PROFILE REMOVED: {name}")
             except KeyError as exc:
@@ -6702,7 +7332,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 raise ValueError(f"profile already exists: {profile.name}")
             profiles = [item for item in profiles if item.name != original_name]
             profiles.append(profile)
-            self.store.save(sorted(profiles, key=lambda item: (item.group, item.name)))
+            self.store.save(sorted(profiles, key=lambda item: (item.group, item.name)), surface="profile-editor")
 
         def select_profile(self, name: str) -> None:
             for item in self.iter_profile_tree_items():
@@ -6779,6 +7409,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 QMessageBox.warning(self, "Launch failed", str(exc))
 
         def launch_profile(self, profile: Profile, *, dry_run: bool, prefix: str) -> None:
+            assert_profile_launch_allowed(
+                profile,
+                surface="quick-connect" if profile.group == "quick-connect" else "launcher",
+            )
             plan = build_launch_plan(profile)
             if dry_run:
                 self.log.append(f"{prefix}: {plan.printable()}")
@@ -10116,7 +10750,15 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             tab_title: str | None = None,
             tab_status: str | None = None,
         ) -> None:
-            state = build_moba_connected_session_state(profile, remote_path=remote_path)
+            try:
+                ssh_browser_preferences = load_moba_ssh_browser_preferences()
+            except (OSError, ValueError):
+                ssh_browser_preferences = None
+            state = build_moba_connected_session_state(
+                profile,
+                remote_path=remote_path,
+                ssh_browser_preferences=ssh_browser_preferences,
+            )
             panel = MobaConnectedSessionPanel(state, self.new_terminal_pane(plan))
             panel.moba_connected_state = state
             self.remember_terminal_plan(plan)

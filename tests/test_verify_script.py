@@ -26,6 +26,8 @@ def test_verify_steps_include_full_checks_and_cli_smoke(tmp_path: Path) -> None:
     assert "Windows XP native evidence template generator" in names
     assert "platform verified evidence registry" in names
     assert "platform verified evidence record generator" in names
+    assert "MobaXterm parity evidence registry" in names
+    assert "MobaXterm parity evidence record generator" in names
     assert "release publish asset contract" in names
     assert "optional dependency smoke" in names
     assert "native release hardening" in names
@@ -65,6 +67,8 @@ def test_verify_quick_mode_skips_pytest_but_keeps_cli_smoke(tmp_path: Path) -> N
     assert "Windows XP native evidence template generator" in names
     assert "platform verified evidence registry" in names
     assert "platform verified evidence record generator" in names
+    assert "MobaXterm parity evidence registry" in names
+    assert "MobaXterm parity evidence record generator" in names
     assert "release publish asset contract" in names
     assert "optional dependency smoke" in names
     assert "native release hardening" in names

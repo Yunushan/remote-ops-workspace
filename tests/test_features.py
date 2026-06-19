@@ -212,7 +212,7 @@ def test_readme_coverage_tables_match_generated_readiness_scores() -> None:
         text = path.read_text(encoding="utf-8")
         for line in expected_lines:
             assert line in text
-        assert "| MobaXterm | 100.0% | 100.0% | 100.0% | 0.0% | 30 |" in text
+        assert "| MobaXterm | 100.0% | 100.0% | 100.0% | 0.0% | 50 |" in text
         assert "release-backed product workflow parity" in text
         assert "not a proprietary native clone" in text
 

@@ -1095,7 +1095,7 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
             assert moba_connected_session_action_route["tabs_object"] == "sessionTabs"
             assert moba_connected_session_action_route["tab_bar_object"] == "sessionTabBar"
             assert moba_connected_session_action_route["menu_object"] == "mobaConnectedSessionTabContextMenu"
-            assert moba_connected_session_action_route["expected_action_count"] == 7
+            assert moba_connected_session_action_route["expected_action_count"] == 8
             assert moba_connected_session_action_route["conditional_enabled_action_keys"] == ["close-other-tabs"]
             assert (
                 moba_connected_session_action_route["captured_enabled_keys_property"]
@@ -2111,6 +2111,7 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
             "split-horizontal",
             "split-vertical",
             "duplicate-tab",
+            "open-sftp-same-parameters",
             "close-tab",
             "close-other-tabs",
             "recover-previous-sessions",
@@ -2120,16 +2121,18 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
             "Split horizontal",
             "Split vertical",
             "Duplicate tab",
+            "Open SFTP with same parameters",
             "Close tab",
             "Close other tabs",
             "Recover previous sessions",
         ],
-        "expected_action_count": 7,
+        "expected_action_count": 8,
         "always_enabled_action_keys": [
             "new-local-terminal",
             "split-horizontal",
             "split-vertical",
             "duplicate-tab",
+            "open-sftp-same-parameters",
             "close-tab",
             "recover-previous-sessions",
         ],
@@ -2644,7 +2647,7 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "static_left_offset": 42,
         "static_top_offset": 12,
         "static_width": 570,
-        "static_height": 166,
+        "static_height": 182,
         "body_top_offset": 54,
         "terminal_gap": 18,
     }
@@ -2695,7 +2698,7 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
             "centered": False,
         },
         {
-            "key": "ssh-browser",
+            "key": "smartcard-auth",
             "object_name": "mobaSshBannerCapability",
             "static_x": 14,
             "static_y": 102,
@@ -2704,7 +2707,7 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
             "centered": False,
         },
         {
-            "key": "x11-forwarding",
+            "key": "ssh-browser",
             "object_name": "mobaSshBannerCapability",
             "static_x": 14,
             "static_y": 118,
@@ -2713,10 +2716,19 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
             "centered": False,
         },
         {
+            "key": "x11-forwarding",
+            "object_name": "mobaSshBannerCapability",
+            "static_x": 14,
+            "static_y": 134,
+            "static_width": 542,
+            "static_height": 16,
+            "centered": False,
+        },
+        {
             "key": "footer",
             "object_name": "mobaSshBannerFooter",
             "static_x": 14,
-            "static_y": 138,
+            "static_y": 154,
             "static_width": 542,
             "static_height": 16,
             "centered": False,
@@ -2726,6 +2738,7 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
     assert [row["key"] for row in moba["expected_moba_ssh_banner_capability_card"]["capabilities"]] == [
         "direct-ssh",
         "ssh-compression",
+        "smartcard-auth",
         "ssh-browser",
         "x11-forwarding",
     ]

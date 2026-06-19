@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import shlex
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from dataclasses import replace as replace_dataclass
 from pathlib import PurePosixPath
 
 from . import command_safety as safe
-from .file_transfer import SftpBatchPlan, build_sftp_list_plan
-from .launcher import build_launch_plan
+from .file_transfer import SftpBatchPlan, build_sftp_interactive_plan, build_sftp_list_plan
+from .launcher import LaunchPlan, build_launch_plan
+from .moba_text import MobaTextEditorTabPlan, build_moba_text_editor_tab_plan
 from .models import Profile
 
 REMOTE_MONITORING_SCRIPT = (
@@ -54,6 +56,47 @@ MOBA_TELEMETRY_ICON_Y = 5
 MOBA_TELEMETRY_LABEL_X = 22
 MOBA_TELEMETRY_LABEL_Y = 6
 MOBA_TELEMETRY_LABEL_FONT_SIZE = 9
+MOBA_SMARTCARD_PROVIDER_ALIASES = {
+    "capi": "Microsoft CryptoAPI/CAPI",
+    "cryptoapi": "Microsoft CryptoAPI/CAPI",
+    "microsoft-capi": "Microsoft CryptoAPI/CAPI",
+    "microsoft-cryptoapi": "Microsoft CryptoAPI/CAPI",
+    "windows-capi": "Microsoft CryptoAPI/CAPI",
+    "windows-cryptoapi": "Microsoft CryptoAPI/CAPI",
+}
+MOBA_SMARTCARD_BOOLEAN_KEYS = {
+    "smartcard_auth",
+    "smart_card_auth",
+    "mobagent_smartcard",
+    "add_smartcard_to_mobagent",
+}
+MOBA_SMARTCARD_MARKER_KEYS = {
+    "smartcard_provider",
+    "smart_card_provider",
+    "pkcs11_provider",
+    "smartcard_pkcs11_provider",
+    "smart_card_pkcs11_provider",
+    "certificate_file",
+    "ssh_certificate_file",
+    "smartcard_certificate_file",
+    "smart_card_certificate_file",
+    "smartcard_cert_file",
+    "identity_agent",
+    "ssh_identity_agent",
+    "mobagent_socket",
+    "security_key_provider",
+    "ssh_security_key_provider",
+    "sk_provider",
+}
+MOBA_CONNECTED_SSH_BROWSER_LOCATIONS = {"side-by-side", "below-terminal", "hidden"}
+MOBA_CONNECTED_SSH_BROWSER_DEFAULT_LOCATION = "side-by-side"
+MOBA_CONNECTED_SSH_BROWSER_DEFAULT_COLUMNS = {
+    "name": 182,
+    "size": 78,
+    "modified": 94,
+}
+MOBA_CONNECTED_SSH_BROWSER_MIN_COLUMN_WIDTH = 48
+MOBA_CONNECTED_SSH_BROWSER_MAX_COLUMN_WIDTH = 640
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,8 +142,10 @@ class SshConnectionBanner:
     title: str
     direct_ssh: bool
     ssh_compression: bool
+    smartcard_auth: bool
     ssh_browser: bool
     x11_forwarding: str
+    smartcard_provider: str = ""
 
     def target_line(self) -> str:
         return f"SSH session to {self.title}"
@@ -114,6 +159,13 @@ class SshConnectionBanner:
                 "SSH compression",
                 checkmark(self.ssh_compression),
                 bool_status(self.ssh_compression),
+            ),
+            SshConnectionCapability(
+                "smartcard-auth",
+                "Smart card auth",
+                checkmark(self.smartcard_auth),
+                bool_status(self.smartcard_auth),
+                self.smartcard_provider,
             ),
             SshConnectionCapability(
                 "ssh-browser",
@@ -144,6 +196,8 @@ class SshConnectionBanner:
             "title": self.title,
             "direct_ssh": self.direct_ssh,
             "ssh_compression": self.ssh_compression,
+            "smartcard_auth": self.smartcard_auth,
+            "smartcard_provider": self.smartcard_provider,
             "ssh_browser": self.ssh_browser,
             "x11_forwarding": self.x11_forwarding,
             "lines": self.lines(),
@@ -356,6 +410,116 @@ class MobaTerminalTranscriptLine:
 
 
 @dataclass(frozen=True, slots=True)
+class MobaConnectedSshBrowserState:
+    location: str
+    column_widths: dict[str, int]
+    overwrite_confirmation: bool
+    terminal_visible: bool
+    browser_visible: bool
+    render_source: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "location": self.location,
+            "column_widths": dict(self.column_widths),
+            "overwrite_confirmation": self.overwrite_confirmation,
+            "terminal_visible": self.terminal_visible,
+            "browser_visible": self.browser_visible,
+            "render_source": self.render_source,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class MobaSmartCardSelectionState:
+    enabled: bool
+    provider_label: str
+    provider_key: str
+    certificate_id: str
+    certificate_label: str
+    public_key: str
+    add_to_mobagent: bool
+    agent_socket: str
+    pkcs11_provider: str
+    profile_option_keys: tuple[str, ...]
+    render_source: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "enabled": self.enabled,
+            "provider_label": self.provider_label,
+            "provider_key": self.provider_key,
+            "certificate_id": self.certificate_id,
+            "certificate_label": self.certificate_label,
+            "public_key": self.public_key,
+            "add_to_mobagent": self.add_to_mobagent,
+            "agent_socket": self.agent_socket,
+            "pkcs11_provider": self.pkcs11_provider,
+            "profile_option_keys": list(self.profile_option_keys),
+            "render_source": self.render_source,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class MobaConnectedTextEditorState:
+    schema: str
+    profile_name: str
+    remote_path: str
+    local_path: str
+    syntax: str
+    encoding: str
+    remote_sha256: str
+    opened_from_sftp_browser: bool
+    source_browser_object: str
+    source_table_object: str
+    source_row_name: str
+    source_row_index: int
+    editor_tab_object: str
+    editor_object: str
+    save_action_object: str
+    diff_action_object: str
+    open_signal: str
+    save_signal: str
+    diff_signal: str
+    open_command: tuple[str, ...]
+    open_batch_commands: tuple[str, ...]
+    save_command: tuple[str, ...]
+    save_batch_commands: tuple[str, ...]
+    conflict_policy: str
+    preview_text: str
+    render_source: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema": self.schema,
+            "profile": self.profile_name,
+            "remote_path": self.remote_path,
+            "local_path": self.local_path,
+            "syntax": self.syntax,
+            "encoding": self.encoding,
+            "remote_sha256": self.remote_sha256,
+            "opened_from_sftp_browser": self.opened_from_sftp_browser,
+            "source_browser_object": self.source_browser_object,
+            "source_table_object": self.source_table_object,
+            "source_row_name": self.source_row_name,
+            "source_row_index": self.source_row_index,
+            "editor_tab_object": self.editor_tab_object,
+            "editor_object": self.editor_object,
+            "save_action_object": self.save_action_object,
+            "diff_action_object": self.diff_action_object,
+            "open_signal": self.open_signal,
+            "save_signal": self.save_signal,
+            "diff_signal": self.diff_signal,
+            "open_command": list(self.open_command),
+            "open_batch_commands": list(self.open_batch_commands),
+            "save_command": list(self.save_command),
+            "save_batch_commands": list(self.save_batch_commands),
+            "conflict_policy": self.conflict_policy,
+            "preview_text": self.preview_text,
+            "render_source": self.render_source,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class MobaConnectedSessionState:
     profile_name: str
     target: str
@@ -368,6 +532,9 @@ class MobaConnectedSessionState:
     monitoring_plan: RemoteMonitoringPlan
     monitoring: RemoteMonitoringSnapshot
     banner: SshConnectionBanner
+    ssh_browser_state: MobaConnectedSshBrowserState
+    smartcard_selection: MobaSmartCardSelectionState
+    text_editor: MobaConnectedTextEditorState
     terminal_transcript: tuple[MobaTerminalTranscriptLine, ...]
 
     def to_dict(self) -> dict[str, object]:
@@ -388,6 +555,9 @@ class MobaConnectedSessionState:
             },
             "monitoring_plan": self.monitoring_plan.to_dict(),
             "monitoring": self.monitoring.to_dict(),
+            "ssh_browser_state": self.ssh_browser_state.to_dict(),
+            "smartcard_selection": self.smartcard_selection.to_dict(),
+            "text_editor": self.text_editor.to_dict(),
             "telemetry_cells": [cell.to_dict() for cell in moba_telemetry_cells(self)],
             "connected_route": moba_connected_session_route(self).to_dict(),
             "identity_route": moba_connected_session_identity_route(self).to_dict(),
@@ -606,6 +776,7 @@ def build_moba_connected_session_state(
     follow_terminal_folder: bool = True,
     sftp_listing: str = "",
     monitoring_output: str = "",
+    ssh_browser_preferences: object | Mapping[str, object] | None = None,
 ) -> MobaConnectedSessionState:
     _require_ssh_browser_profile(profile)
     selected_path = normalise_remote_path(terminal_cwd if follow_terminal_folder and terminal_cwd else remote_path)
@@ -622,6 +793,9 @@ def build_moba_connected_session_state(
         monitoring_plan=build_remote_monitoring_plan(profile),
         monitoring=parse_remote_monitoring_output(monitoring_output) or default_remote_monitoring_snapshot(profile),
         banner=build_ssh_connection_banner(profile),
+        ssh_browser_state=build_connected_ssh_browser_state(ssh_browser_preferences),
+        smartcard_selection=build_moba_smartcard_selection_state(profile.options),
+        text_editor=build_moba_connected_text_editor_state(profile, selected_path, entries),
         terminal_transcript=build_moba_terminal_transcript(profile, selected_path),
     )
 
@@ -706,6 +880,7 @@ MOBA_CONNECTED_SESSION_ACTION_KEYS = (
     "split-horizontal",
     "split-vertical",
     "duplicate-tab",
+    "open-sftp-same-parameters",
     "close-tab",
     "close-other-tabs",
     "recover-previous-sessions",
@@ -715,6 +890,7 @@ MOBA_CONNECTED_SESSION_ACTION_LABELS = (
     "Split horizontal",
     "Split vertical",
     "Duplicate tab",
+    "Open SFTP with same parameters",
     "Close tab",
     "Close other tabs",
     "Recover previous sessions",
@@ -724,6 +900,7 @@ MOBA_CONNECTED_SESSION_ALWAYS_ENABLED_ACTION_KEYS = (
     "split-horizontal",
     "split-vertical",
     "duplicate-tab",
+    "open-sftp-same-parameters",
     "close-tab",
     "recover-previous-sessions",
 )
@@ -784,6 +961,10 @@ def moba_sftp_terminal_folder_route(state: MobaConnectedSessionState) -> MobaSft
         row_route_property="mobaSftpTerminalFolderRouteKey",
         render_source="connected-session-state",
     )
+
+
+def moba_connected_text_editor_route(state: MobaConnectedSessionState) -> MobaConnectedTextEditorState:
+    return state.text_editor
 
 
 def build_moba_terminal_transcript(profile: Profile, remote_path: str) -> tuple[MobaTerminalTranscriptLine, ...]:
@@ -1009,6 +1190,11 @@ def build_follow_terminal_folder_plan(profile: Profile, terminal_cwd: str) -> Sf
     return build_sftp_list_plan(profile, normalise_remote_path(terminal_cwd))
 
 
+def build_same_parameters_sftp_plan(profile: Profile) -> LaunchPlan:
+    _require_ssh_browser_profile(profile)
+    return build_sftp_interactive_plan(profile)
+
+
 def build_remote_monitoring_plan(profile: Profile) -> RemoteMonitoringPlan:
     _require_ssh_browser_profile(profile)
     ssh_profile = replace_dataclass(profile, protocol="ssh")
@@ -1030,6 +1216,7 @@ def build_ssh_connection_banner(profile: Profile) -> SshConnectionBanner:
     direct_ssh = not any(key in options for key in ("proxy_jump", "proxy_command", "jump_host"))
     compression = options.get("compression", "true") not in {"0", "false", "no", "off"}
     browser = options.get("ssh_browser", "true") not in {"0", "false", "no", "off"}
+    smartcard_auth = _moba_smartcard_auth_enabled(profile.options)
     x11_value = options.get("x11", "false")
     if x11_value in {"1", "true", "yes", "on"}:
         x11 = "enabled"
@@ -1041,9 +1228,285 @@ def build_ssh_connection_banner(profile: Profile) -> SshConnectionBanner:
         title=moba_connected_profile_target(profile),
         direct_ssh=direct_ssh,
         ssh_compression=compression,
+        smartcard_auth=smartcard_auth,
         ssh_browser=browser,
         x11_forwarding=x11,
+        smartcard_provider=_moba_smartcard_provider_label(profile.options) if smartcard_auth else "",
     )
+
+
+def build_connected_ssh_browser_state(
+    preferences: object | Mapping[str, object] | None = None,
+) -> MobaConnectedSshBrowserState:
+    location = _connected_ssh_browser_location(
+        _preference_value(preferences, "location", MOBA_CONNECTED_SSH_BROWSER_DEFAULT_LOCATION)
+    )
+    raw_columns = _preference_value(preferences, "column_widths", MOBA_CONNECTED_SSH_BROWSER_DEFAULT_COLUMNS)
+    column_widths = _connected_ssh_browser_columns(raw_columns)
+    overwrite_confirmation = bool(_preference_value(preferences, "overwrite_confirmation", True))
+    return MobaConnectedSshBrowserState(
+        location=location,
+        column_widths=column_widths,
+        overwrite_confirmation=overwrite_confirmation,
+        terminal_visible=True,
+        browser_visible=location != "hidden",
+        render_source="ssh-browser-preferences" if preferences is not None else "connected-session-default",
+    )
+
+
+def build_moba_smartcard_selection_state(options: Mapping[str, str]) -> MobaSmartCardSelectionState:
+    normalized = {str(key).lower(): str(value).strip() for key, value in options.items()}
+    enabled = _moba_smartcard_auth_enabled(options)
+    provider_key = _first_option(
+        normalized,
+        "smartcard_provider",
+        "smart_card_provider",
+        "pkcs11_provider",
+        "smartcard_pkcs11_provider",
+        "smart_card_pkcs11_provider",
+    )
+    certificate_id = _first_option(
+        normalized,
+        "smartcard_certificate_id",
+        "smart_card_certificate_id",
+        "smartcard_cert_id",
+    )
+    certificate_label = _first_option(normalized, "smartcard_certificate_label", "smart_card_certificate_label")
+    public_key = _first_option(normalized, "smartcard_public_key", "smart_card_public_key")
+    agent_socket = _first_option(normalized, "identity_agent", "ssh_identity_agent", "mobagent_socket")
+    pkcs11_provider = _first_option(normalized, "pkcs11_provider", "smartcard_pkcs11_provider", "smart_card_pkcs11_provider")
+    interesting = MOBA_SMARTCARD_BOOLEAN_KEYS | MOBA_SMARTCARD_MARKER_KEYS | {
+        "smartcard_certificate_id",
+        "smart_card_certificate_id",
+        "smartcard_cert_id",
+        "smartcard_certificate_label",
+        "smart_card_certificate_label",
+        "smartcard_public_key",
+        "smart_card_public_key",
+    }
+    return MobaSmartCardSelectionState(
+        enabled=enabled,
+        provider_label=_moba_smartcard_provider_label(options) if enabled else "",
+        provider_key=provider_key,
+        certificate_id=certificate_id,
+        certificate_label=certificate_label or certificate_id,
+        public_key=public_key,
+        add_to_mobagent=_option_enabled(normalized, "add_smartcard_to_mobagent", "mobagent_smartcard"),
+        agent_socket=agent_socket,
+        pkcs11_provider=pkcs11_provider,
+        profile_option_keys=tuple(sorted(key for key in normalized if key in interesting or key.startswith("smartcard_"))),
+        render_source="profile-options",
+    )
+
+
+def build_moba_connected_text_editor_state(
+    profile: Profile,
+    remote_path: str,
+    file_entries: tuple[RemoteFileEntry, ...],
+) -> MobaConnectedTextEditorState:
+    selected_entry, row_index = _default_text_editor_entry(file_entries)
+    selected_name = selected_entry.name if selected_entry is not None else "README.txt"
+    remote_file = _join_remote_file_path(remote_path, selected_name)
+    plan = build_moba_text_editor_tab_plan(profile, remote_file)
+    return _connected_text_editor_state_from_plan(
+        plan,
+        source_row_name=selected_name,
+        source_row_index=row_index,
+    )
+
+
+def _connected_text_editor_state_from_plan(
+    plan: MobaTextEditorTabPlan,
+    *,
+    source_row_name: str,
+    source_row_index: int,
+) -> MobaConnectedTextEditorState:
+    return MobaConnectedTextEditorState(
+        schema=plan.schema,
+        profile_name=plan.profile_name,
+        remote_path=plan.remote_path,
+        local_path=plan.local_path,
+        syntax=plan.syntax,
+        encoding=plan.encoding,
+        remote_sha256=plan.remote_sha256,
+        opened_from_sftp_browser=plan.opened_from_sftp_browser,
+        source_browser_object="mobaSftpBrowser",
+        source_table_object="mobaSftpFileTable",
+        source_row_name=source_row_name,
+        source_row_index=source_row_index,
+        editor_tab_object="mobaTextEditorTab",
+        editor_object="mobaTextEditor",
+        save_action_object="mobaTextEditorSaveAction",
+        diff_action_object="mobaTextEditorDiffAction",
+        open_signal="itemDoubleClicked",
+        save_signal="clicked",
+        diff_signal="clicked",
+        open_command=tuple(plan.download_plan.command),
+        open_batch_commands=tuple(plan.download_plan.batch_commands),
+        save_command=tuple(plan.save_plan.command),
+        save_batch_commands=tuple(plan.save_plan.batch_commands),
+        conflict_policy=plan.conflict_policy,
+        preview_text=_connected_text_editor_preview(plan.syntax, plan.remote_path),
+        render_source="connected-sftp-browser-text-editor",
+    )
+
+
+def _moba_smartcard_auth_enabled(options: Mapping[str, str]) -> bool:
+    normalized = {str(key).lower(): str(value).strip().lower() for key, value in options.items()}
+    for key in MOBA_SMARTCARD_BOOLEAN_KEYS:
+        value = normalized.get(key)
+        if value is not None:
+            return value not in {"0", "disabled", "false", "no", "off"}
+    return any(normalized.get(key) for key in MOBA_SMARTCARD_MARKER_KEYS)
+
+
+def _moba_smartcard_provider_label(options: Mapping[str, str]) -> str:
+    normalized = {str(key).lower(): str(value).strip() for key, value in options.items()}
+    for key in (
+        "smartcard_provider",
+        "smart_card_provider",
+        "pkcs11_provider",
+        "smartcard_pkcs11_provider",
+        "smart_card_pkcs11_provider",
+    ):
+        value = normalized.get(key)
+        if not value:
+            continue
+        lowered = value.lower()
+        if lowered in MOBA_SMARTCARD_PROVIDER_ALIASES:
+            return MOBA_SMARTCARD_PROVIDER_ALIASES[lowered]
+        if lowered.startswith("pkcs11:") or "pkcs11" in lowered:
+            return "PKCS#11 provider"
+        return "provider"
+    if any(normalized.get(key) for key in ("identity_agent", "ssh_identity_agent", "mobagent_socket")):
+        return "agent handoff"
+    if any(
+        normalized.get(key)
+        for key in (
+            "certificate_file",
+            "ssh_certificate_file",
+            "smartcard_certificate_file",
+            "smart_card_certificate_file",
+            "smartcard_cert_file",
+        )
+    ):
+        return "certificate file"
+    if any(normalized.get(key) for key in ("security_key_provider", "ssh_security_key_provider", "sk_provider")):
+        return "security-key provider"
+    return "requested"
+
+
+def _preference_value(source: object | Mapping[str, object] | None, key: str, default: object) -> object:
+    if source is None:
+        return default
+    if isinstance(source, Mapping):
+        return source.get(key, default)
+    return getattr(source, key, default)
+
+
+def _connected_ssh_browser_location(value: object) -> str:
+    location = safe.option_value(str(value), "connected SSH-browser location").lower()
+    if location not in MOBA_CONNECTED_SSH_BROWSER_LOCATIONS:
+        allowed = ", ".join(sorted(MOBA_CONNECTED_SSH_BROWSER_LOCATIONS))
+        raise ValueError(f"connected SSH-browser location must be one of: {allowed}")
+    return location
+
+
+def _connected_ssh_browser_columns(value: object) -> dict[str, int]:
+    if not isinstance(value, Mapping):
+        raise ValueError("connected SSH-browser column_widths must be an object")
+    columns = dict(MOBA_CONNECTED_SSH_BROWSER_DEFAULT_COLUMNS)
+    for raw_key, raw_width in value.items():
+        key = safe.option_value(str(raw_key), "connected SSH-browser column key").lower()
+        if key not in MOBA_CONNECTED_SSH_BROWSER_DEFAULT_COLUMNS:
+            allowed = ", ".join(MOBA_CONNECTED_SSH_BROWSER_DEFAULT_COLUMNS)
+            raise ValueError(f"connected SSH-browser column key must be one of: {allowed}")
+        width = int(raw_width)
+        if not MOBA_CONNECTED_SSH_BROWSER_MIN_COLUMN_WIDTH <= width <= MOBA_CONNECTED_SSH_BROWSER_MAX_COLUMN_WIDTH:
+            raise ValueError(
+                "connected SSH-browser column width must be between "
+                f"{MOBA_CONNECTED_SSH_BROWSER_MIN_COLUMN_WIDTH} and {MOBA_CONNECTED_SSH_BROWSER_MAX_COLUMN_WIDTH}"
+            )
+        columns[key] = width
+    return columns
+
+
+def _first_option(options: Mapping[str, str], *keys: str) -> str:
+    for key in keys:
+        value = options.get(key)
+        if value:
+            return safe.clean_text(value, key, allow_empty=True)
+    return ""
+
+
+def _option_enabled(options: Mapping[str, str], *keys: str) -> bool:
+    value = _first_option(options, *keys).strip().lower()
+    return bool(value and value not in {"0", "disabled", "false", "no", "off"})
+
+
+def _default_text_editor_entry(entries: tuple[RemoteFileEntry, ...]) -> tuple[RemoteFileEntry | None, int]:
+    fallback: tuple[RemoteFileEntry | None, int] = (None, -1)
+    for index, entry in enumerate(entries, start=1):
+        if entry.kind != "file" or entry.name == "..":
+            continue
+        if fallback[0] is None:
+            fallback = (entry, index)
+        if _looks_like_text_entry(entry.name):
+            return entry, index
+    return fallback
+
+
+def _looks_like_text_entry(name: str) -> bool:
+    path = PurePosixPath(name)
+    lowered = path.name.lower()
+    if lowered in {".bash_history", ".profile", "authorized_keys", "known_hosts", "ssh_config", "sshd_config"}:
+        return True
+    return path.suffix.lower() in {
+        ".bash",
+        ".conf",
+        ".csv",
+        ".css",
+        ".html",
+        ".ini",
+        ".js",
+        ".json",
+        ".log",
+        ".md",
+        ".php",
+        ".ps1",
+        ".py",
+        ".rb",
+        ".rs",
+        ".sh",
+        ".sql",
+        ".toml",
+        ".txt",
+        ".xml",
+        ".yaml",
+        ".yml",
+    }
+
+
+def _join_remote_file_path(remote_path: str, name: str) -> str:
+    clean_name = safe.path_arg(name, "remote text editor file name")
+    if clean_name in {"", ".."}:
+        clean_name = "README.txt"
+    base = PurePosixPath(normalise_remote_path(remote_path))
+    return (base / clean_name).as_posix()
+
+
+def _connected_text_editor_preview(syntax: str, remote_path: str) -> str:
+    if syntax == "json":
+        return '{\n  "status": "ok"\n}\n'
+    if syntax in {"shell", "powershell"}:
+        return "#!/usr/bin/env sh\nset -eu\n"
+    if syntax in {"ini", "ssh-config", "systemd"}:
+        return "[remote]\nenabled=true\n"
+    if syntax == "log":
+        return "2026-06-06T12:00:00Z service=remote status=ok\n"
+    if syntax in {"markdown", "plain-text"}:
+        return f"{PurePosixPath(remote_path).name}\n"
+    return ""
 
 
 def parse_sftp_ls_output(text: str) -> list[RemoteFileEntry]:

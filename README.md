@@ -118,17 +118,58 @@ row vault delete old/router-password --force
 row plugins list
 row plugins validate
 row plugins scaffold --out ./row-demo-plugin --name row-demo-plugin --module row_demo_plugin --protocol demo --client demo-client
+row customizer build --out ./dist/corp-row --brand-name "Corp Ops" --profiles configs/profiles.example.json --lock-setting theme=dark
+row customizer deployment-plan --brand-name "Corp Ops" --lock-setting theme=dark --update-url https://updates.example.com/row/stable.json --update-public-key hmac-sha256:corp-secret --json
+row customizer evidence-bundle --brand-name "Corp Ops" --organization "Corp Ops" --lock-setting theme=dark --update-url https://updates.example.com/row/stable.json --update-public-key hmac-sha256:corp-secret --out-dir artifacts/deployment --bundle-manifest-evidence artifacts/bundle-manifest.txt --installer-evidence artifacts/installer-branding.txt --policy-evidence artifacts/policy-locks.txt --update-evidence artifacts/update-channel.txt --update-manifest artifacts/stable-update.json --bundle-manifest-sha256 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --sha256s-present --windows-exe-rebranded --windows-msi-rebranded --product-name-matches-brand --logo-applied --all-policy-surfaces-passed --https-update-url --signature-verified --organization-channel --json
+row customizer update-verify --manifest artifacts/stable-update.json --public-key hmac-sha256:corp-secret --channel stable --organization "Corp Ops" --assets-dir artifacts --json
+row customizer evidence-verify --evidence artifacts/deployment/moba-professional-deployment.json --assets-dir artifacts/deployment --json
+row mobapt status --json
+row mobapt runtime-status --json
+row mobapt bundle-runtime --out dist/mobapt --tool bash --tool-source bash=vendor/mobapt/bin/bash --package htop=3.3 --package-source htop=3.3=vendor/mobapt/packages/htop-3.3.rowpkg --json
+row mobapt install htop --json
+row mobapt cache-verify --evidence artifacts/mobapt-cache-evidence.json --assets-dir artifacts --json
+row servers status --json
+row servers runtime-status --json
+row servers bundle-runtime ssh --out dist/servers --runtime sshd --source vendor/servers/linux/ssh/sshd --system linux --json
+row servers config-plan ftp --root . --json
+row servers evidence-verify --evidence artifacts/servers-release-evidence.json --assets-dir artifacts --json
+row servers start http --root . --dry-run --json
 row features --coverage
 row files ls lab-ssh /var/log --dry-run
 row files get lab-ssh /etc/hosts --local ./hosts.copy --dry-run
 row files queue lab-ssh --op "get /etc/hosts ./hosts.copy" --op "put ./build.tar.gz /tmp/build.tar.gz" --dry-run
 row files preview-local ./README.md --json
+row ssh-browser status --json
+row ssh-browser overwrite upload ./build.tar.gz /tmp/build.tar.gz --destination-exists --json
+row smartcard inventory-plan --provider microsoft-capi --json
+row smartcard select-review lab-ssh --certificate-id cert-1 --certificate "cert-1|Operator Card|microsoft-capi" --add-to-mobagent --json
+row smartcard ssh-browser-plan lab-ssh --certificate-id cert-1 --add-to-mobagent --json
+row smartcard evidence-bundle lab-ssh --certificate-id cert-1 --certificate "cert-1|Operator Card|microsoft-capi|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|ssh-rsa AAAA operator-card" --out-dir artifacts/smartcard --management-evidence artifacts/smartcard-management.txt --selection-evidence artifacts/smartcard-selection.txt --mobagent-evidence artifacts/smartcard-mobagent.txt --browser-evidence artifacts/smartcard-browser.txt --add-to-mobagent --gui-visible --add-remove-controls --openssh-public-key-visible --expert-setting-visible --certificate-selected --profile-saved --global-add-setting --agent-loaded-certificate --same-parameters-sftp --multiplex-mode --real-connected-session --sftp-browser-open --json
+row smartcard evidence-verify --evidence artifacts/moba-smartcard.json --assets-dir artifacts --json
+row text preview README.md --json
+row text diff README.md README.tr.md --json
+row text open-remote lab-ssh /etc/app.conf --local app.conf.edit --remote-sha256 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --json
+row text save-review lab-ssh /etc/app.conf --local app.conf.edit --original-remote-sha256 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --current-remote-sha256 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --json
+row text evidence-bundle lab-ssh /etc/app.conf --out-dir artifacts/text-edit --local app.conf.edit --remote-sha256 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --open-evidence artifacts/text-open.txt --save-review-evidence artifacts/text-save-review.txt --save-evidence artifacts/text-save.txt --connected-evidence artifacts/text-connected.txt --real-connected-session --sftp-browser-open --editor-tab-visible --json
+row text evidence-verify --evidence artifacts/moba-text-remote-edit.json --assets-dir artifacts --json
 row snippet add --name uptime --command "uptime" --tag ops
+row macro record --name triage --text "hostname" --replace --json
+row macro replay triage --profile lab-ssh --dry-run --json
+row macro capture-plan triage --json
+row macro live-plan triage --profile lab-ssh --connected-profile lab-ssh --pane-id lab-ssh=lab-pane --json
+row macro evidence-bundle triage --profile lab-ssh --out-dir artifacts/macro-live --capture-evidence artifacts/macro-capture.txt --review-evidence artifacts/macro-review.txt --replay-evidence lab-ssh=artifacts/macro-replay-lab-ssh.txt --connected-profile lab-ssh --pane-id lab-ssh=lab-pane --gui-record-button --gui-stop-button --gui-cancel-button --per-event-timing-captured --confirmation-prompt --cancel-prompt-verified --conflict-checked --real-connected-session --live-terminal-pane --per-keystroke-timing-replay --json
+row macro evidence-verify --evidence artifacts/moba-macro-live.json --assets-dir artifacts --json
 row layout save triage --pane profile:lab-ssh --pane command:top --orientation horizontal
 row layout run triage --dry-run
 row broadcast --group prod --command "hostname" --timeout 10 --json
 row keygen --out ~/.ssh/id_ed25519_row --comment row
 row nettool ping example.com --dry-run
+row x11 status --display :0 --json
+row x11 package-status --json
+row x11 bundle-runtime --out dist/xserver --runtime xvfb --source vendor/xserver/linux/bin/Xvfb --system linux --json
+row x11 smoke --display :0 --out artifacts/x11-smoke.json --json
+row x11 evidence-verify --evidence artifacts/moba-xserver-release.json --assets-dir artifacts --json
+row x11 stop --json
 row sync push --to ~/RemoteOpsSync
 row export --out backups/remote-ops-export.json
 row import --in backups/remote-ops-export.json
@@ -201,9 +242,11 @@ Coverage target: **100% public feature-family mapping**, **100% adapter-ready co
 
 Coverage is generated from [`configs/feature_manifest.json`](configs/feature_manifest.json). Feature-family mapping answers whether each public feature family is represented by built-in code, external adapters, optional implementations, CLI/GUI workflows, platform scripts, or plugin extension points. Adapter-ready coverage counts implemented adapter, optional, CLI, GUI and combined workflows as ready when they are tied to executable evidence. The `production_parity_coverage` JSON key is kept for compatibility, but the public contract is release-backed product workflow parity: implemented workflows count only when tied to executable release evidence, and seam-only or docs-only rows remain partial if they appear. This is not a proprietary native clone claim. The verifier runs both `scripts/check_feature_reality.py` and `scripts/check_product_readiness.py` so coverage claims stay tied to real CLI command paths, launch-plan builders, implementation symbols, shipped files and visible platform gaps.
 
+For the stricter MobaXterm Home/Professional parity backlog, see [`docs/MOBAXTERM_PARITY.md`](docs/MOBAXTERM_PARITY.md). That ledger tracks remaining product-depth articles beyond the generated feature-family score, with accepted release evidence recorded in [`configs/mobaxterm_parity_evidence.json`](configs/mobaxterm_parity_evidence.json) and checked by `python scripts/check_mobaxterm_parity_evidence.py`.
+
 | Product target | Feature-family mapping | Adapter-ready coverage | Release-backed workflow parity | Workflow gap to 100% | Feature families tracked |
 |---|---:|---:|---:|---:|---:|
-| MobaXterm | 100.0% | 100.0% | 100.0% | 0.0% | 30 |
+| MobaXterm | 100.0% | 100.0% | 100.0% | 0.0% | 50 |
 | Remmina | 100.0% | 100.0% | 100.0% | 0.0% | 11 |
 | mRemoteNG | 100.0% | 100.0% | 100.0% | 0.0% | 15 |
 | Terminator | 100.0% | 100.0% | 100.0% | 0.0% | 8 |
@@ -231,7 +274,7 @@ Coverage is generated from [`configs/feature_manifest.json`](configs/feature_man
 | Hyper | 100.0% | 100.0% | 100.0% | 0.0% | 8 |
 | X410 + any terminal (e.g., Windows Terminal, Alacritty) | 100.0% | 100.0% | 100.0% | 0.0% | 7 |
 | Xming (or VcXsrv) + PuTTY / mRemoteNG | 100.0% | 100.0% | 100.0% | 0.0% | 10 |
-| **Overall** | **100.0%** | **100.0%** | **100.0%** | **0.0%** | **50** |
+| **Overall** | **100.0%** | **100.0%** | **100.0%** | **0.0%** | **70** |
 
 Adapter-ready coverage and release-backed product workflow parity use the manifest status weights directly and do not use blanket per-product overrides. Platform verified readiness is still separate and currently reports **100.0% overall** for verified default-native, Termux/Web and Web/PWA release targets; manual Linux i386/armhf and legacy Windows rows remain visible outside the verified-readiness denominator.
 Linux i386/armhf and Windows XP native-host promotion to 100% is gated by
@@ -267,20 +310,27 @@ The JSON report includes `workflow_parity_contract` and `workflow_parity_evidenc
 | RDP | ✅ | ✅ | ✅ | — | — | MSTSC/FreeRDP adapter |
 | VNC | ✅ | ✅ | ✅ | — | — | TigerVNC/RealVNC adapter |
 | SFTP/SCP/FTP file transfer | ✅ | profile/file features | — | — | ✅ | OpenSSH SFTP/SCP adapter + `row files` batch operations, transfer queues, previews, GUI SFTP pane |
+| SSH-browser 26.4 behavior | ✅ | — | — | — | — | `row ssh-browser` persists side-by-side startup location, column widths and upload/download overwrite confirmation reviews; the connected PyQt Moba SFTP dock consumes the saved visibility, location and table-width state |
+| Smart-card SSH / MobAgent | 26.4 CryptoAPI | — | — | — | OpenSSH | `row smartcard inventory-plan/select-review/mobagent-plan/ssh-browser-plan/evidence-bundle/evidence-verify` plus the PyQt Smart cards dialog cover certificate inventory, OpenSSH public-key retrieval, add/remove controls, SSH expert selection, MobAgent handoff, connected-session certificate/provider state and SHA-bound smart-card SSH-browser multiplex evidence |
+| Text editor / diff | MobaTextEditor, MobaDiff | — | — | — | — | `row text preview/write/diff/remote-plan/open-remote/save-review/evidence-bundle/evidence-verify` with guarded saves, hash evidence, backups, SFTP get/put staging, direct connected editor-tab plans, PyQt SFTP-dock text editor widget, double-click open routing, save/diff capture, conflict reviews and SHA-bound remote-edit release evidence |
 | Telnet/rlogin/rsh/raw sockets | ✅ | limited/plugins | ✅ | — | Telnet | External command adapters |
 | Mosh | ✅ | plugins | — | — | ✅ | Mosh adapter |
-| X11 forwarding / X server workflow | ✅ | X/SSH workflows | — | — | SSH forwarding | SSH `-X/-Y` + VcXsrv/XQuartz/Xorg helper notes |
+| X11 forwarding / X server workflow | ✅ | X/SSH workflows | — | — | SSH forwarding | SSH `-X/-Y` + managed VcXsrv/XQuartz/Xorg/Xvfb runtime discovery, `row x11 bundle-runtime` packaged runtime assembly, packaged runtime preference, extension inventory, display collision checks, PID lifecycle state, X11 smoke evidence capture and forwarded-GUI release evidence verification |
 | SPICE/X2Go/XDMCP | XDMCP | ✅ | — | — | — | virt-viewer/x2goclient/XDMCP adapters |
 | ICA/Citrix | — | plugins | ✅ | — | — | `wfica` adapter |
 | Session manager / groups / tags | ✅ | ✅ | ✅ | profiles | ✅ | JSON profile store, groups, tags, GUI profile editor |
 | Tabs and split panes | ✅ | ✅ | ✅ | ✅ | multi-session | GUI shell + executable saved layouts and editor |
-| Broadcast input / command fanout | macros/tools | — | — | ✅ | snippets | Broadcast/fanout CLI with per-target result reporting |
-| Macros / snippets | ✅ | — | — | shortcuts | ✅ | Snippet model and manifest entries |
+| Terminal syntax highlighting | ✅ | — | — | — | — | GUI terminal highlighter for prompts, notes, errors, warnings, IP addresses, paths and custom keyword rules |
+| MobApt / Unix tools | ✅ | — | — | local shell | — | `row mobapt status` inventories Unix tools/package managers, `row mobapt runtime-status` scans ROW-owned Unix runtime/cache roots, `row mobapt bundle-runtime` assembles SHA-bound runtime/cache bundles, `row mobapt search/install/update` builds explicit host package-manager plans and `row mobapt cache-verify` validates offline package and terminal-use evidence |
+| Embedded servers | ✅ | — | — | — | — | `row servers status/start/stop` covers loopback-safe HTTP serving plus SSH/SFTP, FTP, TFTP, Telnet, VNC and NFS daemon adapter lifecycle state; `row servers runtime-status/bundle-runtime/config-plan/evidence-verify` adds packaged daemon assembly/discovery, auth/hardening configuration plans, PyQt Servers dialog routing and client-proof release evidence validation |
+| Broadcast input / command fanout | MultiExec | — | — | ✅ | snippets | Broadcast/fanout CLI with Moba-style MultiExec preview and per-target result reporting |
+| Macros / snippets | ✅ | — | — | shortcuts | ✅ | Snippet model plus `row macro record/list/show/remove/replay/capture-plan/live-plan/evidence-bundle/evidence-verify` typed-event recording, SSH replay plans, PyQt terminal Record/Stop/Cancel/Replay controls, operator input capture, connected-pane timing plans, cancel prompts and SHA-bound live replay release evidence |
 | Encrypted vault | passwords | password store | credential store | — | ✅ | Optional cryptography-based local vault |
 | Cloud/team sync | shared sessions | — | shared config options | — | ✅ | Export/import + mounted/shared-directory provider |
 | Keygen / SSH keys / agent | SSH keys | SSH keys | PuTTY keys | — | ✅ | OpenSSH keygen CLI |
 | Hardware/FIDO keys | SSH support | SSH support | depends | — | ✅ | OpenSSH security-key keygen adapter |
 | Portable mode | ✅ | packages | config portability | — | mobile/desktop | `ROW_HOME` portable data directory |
+| Professional customization/deployment | Pro Customizer | — | — | — | teams | `row customizer build/deployment-plan/evidence-bundle/update-verify/evidence-verify` enterprise bundle, installer branding plan, `ROW_HOME/policy.json` hard-lock enforcement across profile storage, GUI editor, quick connect, launcher and Web/PWA, signed update-manifest verification, SHA-bound deployment evidence, manifest and SHA256SUMS |
 | Web/mobile access | — | Kasm/container options | — | — | ✅ | Static Web/PWA shell + Android/iOS/PWA docs |
 | Plugin architecture | plugins | plugins | extensions | plugins | integrations | Python entry-point protocol launch plugins + `row plugins list`, `row plugins validate` and `row plugins scaffold` |
 
@@ -449,7 +499,10 @@ publish jobs all depend on that gate.
 Before upload, the publish job runs
 `python scripts/check_release_publish_assets.py --assets-dir release-assets --tag`
 to verify the downloaded asset set, checksum sidecars and release manifest
-against `configs/release_matrix.json`.
+against `configs/release_matrix.json`; the same check validates
+`configs/mobaxterm_parity_evidence.json`, and
+`--require-mobaxterm-parity-complete` is the hard gate for releases that claim
+complete strict MobaXterm Home/Professional product-depth parity.
 Python release tooling is constrained by `requirements-release.txt` and recorded
 in each release manifest through `configs/release_toolchain.json`. Native
 Windows, macOS and Linux jobs also emit per-platform `native-SHA256SUMS.txt`

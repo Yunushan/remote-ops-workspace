@@ -1,4 +1,5 @@
 import json
+import os
 import socket
 from functools import partial
 from pathlib import Path
@@ -47,6 +48,52 @@ def test_web_handler_emits_security_headers(tmp_path: Path) -> None:
             thread.join(timeout=5)
 
 
+def test_web_handler_serves_enterprise_policy_endpoint(tmp_path: Path) -> None:
+    (tmp_path / "index.html").write_text("<!doctype html><title>ok</title>", encoding="utf-8")
+    (tmp_path / "policy.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "allow_user_profiles": False,
+                "allow_custom_commands": False,
+                "locked_settings": [{"key": "protocol", "value": "ssh"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    old_home = os.environ.get("ROW_HOME")
+    os.environ["ROW_HOME"] = str(tmp_path)
+    handler = partial(QuietHandler, directory=str(tmp_path))
+    with ReusableTCPServer(("127.0.0.1", 0), handler) as server:
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            host, port = server.server_address
+            with socket.create_connection((host, port), timeout=5) as client:
+                client.sendall(
+                    b"GET /enterprise-policy.json HTTP/1.1\r\n"
+                    b"Host: 127.0.0.1\r\nConnection: close\r\n\r\n"
+                )
+                response = b""
+                while True:
+                    chunk = client.recv(4096)
+                    if not chunk:
+                        break
+                    response += chunk
+            body = response.decode("iso-8859-1").split("\r\n\r\n", 1)[1]
+            payload = json.loads(body)
+            assert payload["active"] is True
+            assert payload["allow_user_profiles"] is False
+            assert payload["locked_settings"] == [{"key": "protocol", "value": "ssh"}]
+        finally:
+            server.shutdown()
+            thread.join(timeout=5)
+            if old_home is None:
+                os.environ.pop("ROW_HOME", None)
+            else:
+                os.environ["ROW_HOME"] = old_home
+
+
 def test_web_bind_rejects_public_hosts_without_explicit_opt_in() -> None:
     for host in ["0.0.0.0", "::", "192.0.2.10"]:
         try:
@@ -69,6 +116,9 @@ def test_web_assets_avoid_persistent_profile_storage() -> None:
     assert "sessionStorage" in app_js
     assert "localStorage" not in app_js
     assert "cleanDemoField" in app_js
+    assert "loadEnterprisePolicy" in app_js
+    assert "reviewEnterpriseWebProfile" in app_js
+    assert "enterprise-policy.json" in app_js
 
 
 def test_service_worker_cache_is_same_origin_get_only() -> None:

@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import http.server
 import ipaddress
+import json
 import socketserver
 from functools import partial
 from pathlib import Path
+from urllib.parse import urlparse
 
 from . import command_safety as safe
+from .enterprise_policy import load_enterprise_policy
 from .paths import repo_root
 
 SECURITY_HEADERS = {
@@ -33,6 +36,12 @@ SECURITY_HEADERS = {
 
 
 class QuietHandler(http.server.SimpleHTTPRequestHandler):
+    def do_GET(self) -> None:  # noqa: N802 - http.server API
+        if urlparse(self.path).path == "/enterprise-policy.json":
+            self._send_enterprise_policy()
+            return
+        super().do_GET()
+
     def log_message(self, format: str, *args: object) -> None:  # noqa: A002
         print(f"web: {format % args}")
 
@@ -44,6 +53,14 @@ class QuietHandler(http.server.SimpleHTTPRequestHandler):
     def list_directory(self, path: str):  # type: ignore[override]
         self.send_error(404, "Directory listing is disabled")
         return None
+
+    def _send_enterprise_policy(self) -> None:
+        payload = json.dumps(load_enterprise_policy().to_public_dict(), sort_keys=True).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
 
 
 class ReusableTCPServer(socketserver.TCPServer):

@@ -27,7 +27,7 @@
         {"id": "connected-left-dock", "box": [24, 132, 390, 738], "mean_luminance": [15, 45], "min_unique_colors": 140},
         {"id": "connected-tab-strip", "box": [390, 108, 966, 136], "mean_luminance": [20, 70], "min_unique_colors": 55},
         {"id": "session-edge-controls", "box": [1258, 108, 1279, 136], "mean_luminance": [35, 60], "min_unique_colors": 4},
-        {"id": "ssh-banner-panel", "box": [432, 148, 1002, 314], "mean_luminance": [15, 55], "min_unique_colors": 35},
+        {"id": "ssh-banner-panel", "box": [432, 148, 1002, 330], "mean_luminance": [15, 55], "min_unique_colors": 35},
         {"id": "sftp-path-table-chrome", "box": [30, 170, 386, 228], "mean_luminance": [20, 65], "min_unique_colors": 35},
         {"id": "sftp-toolbar-action-strip", "box": [30, 140, 314, 164], "mean_luminance": [70, 100], "min_unique_colors": 45},
         {"id": "sftp-density-stack", "box": [30, 138, 386, 356], "mean_luminance": [15, 65], "min_unique_colors": 95},

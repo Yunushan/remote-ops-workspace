@@ -12,6 +12,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 MATRIX_PATH = ROOT / "configs" / "release_matrix.json"
 EVIDENCE_PATH = ROOT / "configs" / "platform_verified_evidence.json"
+MOBAXTERM_EVIDENCE_PATH = ROOT / "configs" / "mobaxterm_parity_evidence.json"
 WORKFLOW_PATH = ROOT / ".github" / "workflows" / "release.yml"
 EXPECTED_CHECKSUM_SUFFIX = "SHA256SUMS.txt"
 XP_NATIVE_EVIDENCE_TARGETS = {"windows-xp-native-x86", "windows-xp-native-x64"}
@@ -40,10 +41,26 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     matrix = json.loads(MATRIX_PATH.read_text(encoding="utf-8"))
     evidence_registry = read_evidence_registry()
+    mobaxterm_registry = read_mobaxterm_evidence_registry()
     workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
-    errors = check_publish_contract(matrix, workflow, evidence_registry=evidence_registry)
+    errors = check_publish_contract(
+        matrix,
+        workflow,
+        evidence_registry=evidence_registry,
+        mobaxterm_parity_registry=mobaxterm_registry,
+        require_mobaxterm_parity_complete=args.require_mobaxterm_parity_complete,
+    )
     if args.assets_dir is not None:
-        errors.extend(check_release_assets(args.assets_dir, matrix, tag=args.tag, evidence_registry=evidence_registry))
+        errors.extend(
+            check_release_assets(
+                args.assets_dir,
+                matrix,
+                tag=args.tag,
+                evidence_registry=evidence_registry,
+                mobaxterm_parity_registry=mobaxterm_registry,
+                require_mobaxterm_parity_complete=args.require_mobaxterm_parity_complete,
+            )
+        )
     if errors:
         for error in errors:
             print(f"release publish assets: {error}", file=sys.stderr)
@@ -63,6 +80,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--tag",
         help="Expected release tag, for example v1.0.2. Defaults to the matrix release tag.",
     )
+    parser.add_argument(
+        "--require-mobaxterm-parity-complete",
+        action="store_true",
+        help="fail unless every strict MobaXterm parity article has accepted release evidence",
+    )
     return parser.parse_args(argv)
 
 
@@ -71,9 +93,17 @@ def check_publish_contract(
     workflow: str,
     *,
     evidence_registry: dict[str, Any] | None = None,
+    mobaxterm_parity_registry: dict[str, Any] | None = None,
+    require_mobaxterm_parity_complete: bool = False,
 ) -> list[str]:
     errors: list[str] = []
     expected = expected_release_assets(matrix)
+    errors.extend(
+        validate_mobaxterm_parity_registry(
+            mobaxterm_parity_registry or read_mobaxterm_evidence_registry(),
+            require_complete=require_mobaxterm_parity_complete,
+        )
+    )
     errors.extend(
         check_gated_native_assets_have_evidence(
             expected,
@@ -112,11 +142,19 @@ def check_release_assets(
     *,
     tag: str | None,
     evidence_registry: dict[str, Any] | None = None,
+    mobaxterm_parity_registry: dict[str, Any] | None = None,
+    require_mobaxterm_parity_complete: bool = False,
 ) -> list[str]:
     errors: list[str] = []
     root = assets_dir.resolve()
     if not root.is_dir():
         return [f"release asset directory missing: {assets_dir}"]
+    errors.extend(
+        validate_mobaxterm_parity_registry(
+            mobaxterm_parity_registry or read_mobaxterm_evidence_registry(),
+            require_complete=require_mobaxterm_parity_complete,
+        )
+    )
     expected = expected_release_assets(matrix, tag=tag)
     actual = {path.name for path in root.iterdir() if path.is_file()}
     errors.extend(
@@ -198,6 +236,21 @@ def validate_accepted_evidence_registry(evidence_registry: dict[str, Any]) -> li
     return module.check_platform_verified_evidence(registry=evidence_registry)
 
 
+def validate_mobaxterm_parity_registry(
+    registry: dict[str, Any],
+    *,
+    require_complete: bool,
+) -> list[str]:
+    checker_path = ROOT / "scripts" / "check_mobaxterm_parity_evidence.py"
+    spec = importlib.util.spec_from_file_location("check_mobaxterm_parity_evidence", checker_path)
+    if spec is None or spec.loader is None:
+        return ["cannot load MobaXterm parity evidence checker"]
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module.check_mobaxterm_parity_evidence(registry=registry, require_complete=require_complete)
+
+
 def read_evidence_registry() -> dict[str, Any]:
     if not EVIDENCE_PATH.exists():
         return {"schema_version": 1, "accepted_evidence": []}
@@ -206,6 +259,16 @@ def read_evidence_registry() -> dict[str, Any]:
     except json.JSONDecodeError:
         return {"schema_version": 1, "accepted_evidence": []}
     return data if isinstance(data, dict) else {"schema_version": 1, "accepted_evidence": []}
+
+
+def read_mobaxterm_evidence_registry() -> dict[str, Any]:
+    if not MOBAXTERM_EVIDENCE_PATH.exists():
+        return {"schema_version": 1, "policy": "", "accepted_evidence": []}
+    try:
+        data = json.loads(MOBAXTERM_EVIDENCE_PATH.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {"schema_version": 1, "policy": "", "accepted_evidence": []}
+    return data if isinstance(data, dict) else {"schema_version": 1, "policy": "", "accepted_evidence": []}
 
 
 def expected_release_assets(matrix: dict[str, Any], *, tag: str | None = None) -> set[str]:

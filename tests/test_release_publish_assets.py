@@ -17,6 +17,14 @@ POLICY = (
     "use the same GitHub repository, and Windows XP x86/x64 pairs must use the same release_tag. "
     "Empty means no promotion."
 )
+MOBA_PARITY_POLICY = (
+    "Only accepted evidence records in this file can close strict MobaXterm 26.4 Home/Professional parity "
+    "articles. Accepted records must include one unique article_id, status accepted, a vX.Y.Z release_tag, "
+    "a release_target, the exact validation command for that article, SHA-256 digests for the validated "
+    "evidence JSON and evidence assets, release asset URLs under the same GitHub release tag, per-artifact "
+    "SHA-256 digests, required article checks, and a validation summary proving the article evidence passed. "
+    "Empty means the generated feature-family score remains separate from true product-depth parity."
+)
 
 
 def test_release_publish_asset_checker_passes_current_tree() -> None:
@@ -123,6 +131,51 @@ def test_publish_contract_requires_validation_before_upload() -> None:
     assert any("publish asset validation" in error for error in errors)
 
 
+def test_publish_contract_rejects_malformed_mobaxterm_parity_registry() -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+
+    errors = checker.check_publish_contract(
+        matrix,
+        workflow,
+        mobaxterm_parity_registry={"schema_version": 1, "policy": "", "accepted_evidence": []},
+    )
+
+    assert any("mobaxterm parity evidence policy missing" in error for error in errors)
+
+
+def test_publish_contract_can_require_complete_mobaxterm_parity_registry() -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+
+    errors = checker.check_publish_contract(
+        matrix,
+        workflow,
+        mobaxterm_parity_registry=_empty_mobaxterm_parity_registry(),
+        require_mobaxterm_parity_complete=True,
+    )
+
+    assert any("missing required MobaXterm parity articles" in error for error in errors)
+
+
+def test_publish_contract_allows_complete_synthetic_mobaxterm_parity_registry() -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+
+    errors = checker.check_publish_contract(
+        matrix,
+        workflow,
+        mobaxterm_parity_registry=_complete_mobaxterm_parity_registry(),
+        require_mobaxterm_parity_complete=True,
+    )
+
+    assert not any("mobaxterm parity evidence" in error for error in errors)
+    assert not any("MobaXterm parity" in error for error in errors)
+
+
 def test_release_assets_report_missing_expected_files(tmp_path: Path) -> None:
     checker = _load_checker()
     matrix = _load_matrix()
@@ -207,6 +260,50 @@ def _load_matrix() -> dict[str, object]:
 
 def _empty_evidence_registry() -> dict[str, object]:
     return {"schema_version": 1, "accepted_evidence": []}
+
+
+def _empty_mobaxterm_parity_registry() -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "policy": MOBA_PARITY_POLICY,
+        "accepted_evidence": [],
+    }
+
+
+def _complete_mobaxterm_parity_registry() -> dict[str, object]:
+    checker = _load_mobaxterm_checker()
+    return {
+        "schema_version": 1,
+        "policy": MOBA_PARITY_POLICY,
+        "accepted_evidence": [
+            _mobaxterm_parity_record(article_id, spec)
+            for article_id, spec in sorted(checker.ARTICLE_SPECS.items())
+        ],
+    }
+
+
+def _mobaxterm_parity_record(article_id: str, spec) -> dict[str, object]:
+    artifact_name = f"{article_id}-evidence.zip"
+    return {
+        "article_id": article_id,
+        "status": "accepted",
+        "evidence_type": spec.evidence_type,
+        "release_tag": "v1.0.2",
+        "release_target": "windows-x64",
+        "validation_command": spec.validation_command,
+        "evidence_file_sha256": "a" * 64,
+        "evidence_assets_sha256": {f"{article_id}.json": "b" * 64},
+        "release_asset_urls": [
+            f"https://github.com/example/remote-ops-workspace/releases/download/v1.0.2/{artifact_name}"
+        ],
+        "artifact_sha256": {artifact_name: "c" * 64},
+        "checks": sorted(spec.required_checks),
+        "validation_summary": {
+            "passed": True,
+            "errors": [],
+            "summary": {"article_id": article_id},
+        },
+    }
 
 
 def _accepted_evidence_registry(*targets: str) -> dict[str, object]:
@@ -390,6 +487,16 @@ def _builder_identity(target: str) -> dict[str, object]:
 def _load_checker():
     path = Path("scripts/check_release_publish_assets.py")
     spec = importlib.util.spec_from_file_location("check_release_publish_assets_script", path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_mobaxterm_checker():
+    path = Path("scripts/check_mobaxterm_parity_evidence.py")
+    spec = importlib.util.spec_from_file_location("check_mobaxterm_parity_evidence_script", path)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     sys.modules[spec.name] = module

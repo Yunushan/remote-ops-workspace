@@ -6,6 +6,7 @@ from remote_ops_workspace.moba_connected import (
     build_moba_connected_session_state,
     build_moba_terminal_transcript,
     build_remote_monitoring_plan,
+    build_same_parameters_sftp_plan,
     build_ssh_connection_banner,
     moba_connected_profile_label,
     moba_connected_session_action_route,
@@ -15,6 +16,7 @@ from remote_ops_workspace.moba_connected import (
     moba_connected_tab_chrome_geometry_items,
     moba_connected_tab_chrome_items,
     moba_connected_tab_label,
+    moba_connected_text_editor_route,
     moba_connected_window_title,
     moba_sftp_terminal_folder_route,
     moba_telemetry_cell_geometry,
@@ -78,6 +80,71 @@ def test_connected_session_state_tracks_browser_follow_monitoring_and_banner() -
     assert state.to_dict()["identity_route"]["key"] == "moba-connected-session-identity-route"
     assert state.to_dict()["session_action_route"]["key"] == "moba-connected-session-actions-route"
     assert state.to_dict()["sftp_terminal_folder_route"]["key"] == "moba-sftp-terminal-folder-route"
+
+
+def test_connected_session_state_consumes_ssh_browser_preferences_and_smartcard_selection() -> None:
+    profile = ssh_profile(
+        options={
+            "compression": "true",
+            "ssh_browser": "true",
+            "smartcard_provider": "microsoft-capi",
+            "smartcard_certificate_id": "cert-1",
+            "smartcard_certificate_label": "Operator Card",
+            "smartcard_public_key": "ssh-rsa AAAA operator-card",
+            "add_smartcard_to_mobagent": "true",
+        }
+    )
+
+    state = build_moba_connected_session_state(
+        profile,
+        ssh_browser_preferences={
+            "location": "below-terminal",
+            "column_widths": {"name": 244, "size": 96},
+            "overwrite_confirmation": False,
+        },
+    )
+
+    assert state.ssh_browser_state.location == "below-terminal"
+    assert state.ssh_browser_state.column_widths["name"] == 244
+    assert state.ssh_browser_state.column_widths["size"] == 96
+    assert state.ssh_browser_state.column_widths["modified"] == 94
+    assert state.ssh_browser_state.overwrite_confirmation is False
+    assert state.ssh_browser_state.browser_visible is True
+    assert state.smartcard_selection.enabled is True
+    assert state.smartcard_selection.provider_label == "Microsoft CryptoAPI/CAPI"
+    assert state.smartcard_selection.certificate_id == "cert-1"
+    assert state.smartcard_selection.certificate_label == "Operator Card"
+    assert state.smartcard_selection.add_to_mobagent is True
+    payload = state.to_dict()
+    assert payload["ssh_browser_state"]["column_widths"]["name"] == 244
+    assert payload["smartcard_selection"]["certificate_id"] == "cert-1"
+
+
+def test_connected_session_state_exposes_sftp_text_editor_route() -> None:
+    state = build_moba_connected_session_state(
+        ssh_profile(),
+        remote_path="/etc",
+        sftp_listing="-rw-r--r-- 1 root root 2048 Jun 06 12:00 sshd_config\n"
+        "-rw-r--r-- 1 root root 4096 Jun 06 12:01 app.log",
+    )
+    route = moba_connected_text_editor_route(state)
+
+    assert route.schema == "row.moba-text.editor-tab.v1"
+    assert route.source_browser_object == "mobaSftpBrowser"
+    assert route.source_table_object == "mobaSftpFileTable"
+    assert route.editor_tab_object == "mobaTextEditorTab"
+    assert route.editor_object == "mobaTextEditor"
+    assert route.save_action_object == "mobaTextEditorSaveAction"
+    assert route.diff_action_object == "mobaTextEditorDiffAction"
+    assert route.open_signal == "itemDoubleClicked"
+    assert route.remote_path == "/etc/sshd_config"
+    assert route.local_path.endswith("example-ssh-sshd_config.edit")
+    assert route.syntax == "ssh-config"
+    assert route.open_command[0] == "sftp"
+    assert route.open_batch_commands == ("get /etc/sshd_config example-ssh-sshd_config.edit",)
+    assert route.save_batch_commands == ("put example-ssh-sshd_config.edit /etc/sshd_config",)
+    assert route.conflict_policy == "sha256-match-or-force"
+    assert state.to_dict()["text_editor"]["remote_path"] == "/etc/sshd_config"
 
 
 def test_connected_session_chrome_uses_target_identity_and_telemetry_segments() -> None:
@@ -165,6 +232,7 @@ def test_connected_session_action_route_ties_context_menu_to_active_tab() -> Non
         "split-horizontal",
         "split-vertical",
         "duplicate-tab",
+        "open-sftp-same-parameters",
         "close-tab",
         "close-other-tabs",
         "recover-previous-sessions",
@@ -174,16 +242,18 @@ def test_connected_session_action_route_ties_context_menu_to_active_tab() -> Non
         "Split horizontal",
         "Split vertical",
         "Duplicate tab",
+        "Open SFTP with same parameters",
         "Close tab",
         "Close other tabs",
         "Recover previous sessions",
     )
-    assert route.expected_action_count == 7
+    assert route.expected_action_count == 8
     assert route.always_enabled_action_keys == (
         "new-local-terminal",
         "split-horizontal",
         "split-vertical",
         "duplicate-tab",
+        "open-sftp-same-parameters",
         "close-tab",
         "recover-previous-sessions",
     )
@@ -386,6 +456,29 @@ def test_follow_terminal_folder_plan_normalises_remote_paths() -> None:
     assert normalise_remote_path("var/www") == "/var/www"
 
 
+def test_same_parameters_sftp_plan_preserves_ssh_options() -> None:
+    plan = build_same_parameters_sftp_plan(
+        ssh_profile(
+            port=2222,
+            options={
+                "compression": "true",
+                "ssh_browser": "true",
+                "pkcs11_provider": "/usr/lib/opensc-pkcs11.so",
+                "certificate_file": "/home/operator/.ssh/id_ed25519-cert.pub",
+                "identity_agent": "/tmp/agent.sock",
+            },
+        )
+    )
+
+    assert plan.command[:3] == ["sftp", "-P", "2222"]
+    assert "-C" in plan.command
+    assert "-I" in plan.command
+    assert "/usr/lib/opensc-pkcs11.so" in plan.command
+    assert "CertificateFile=/home/operator/.ssh/id_ed25519-cert.pub" in plan.command
+    assert "IdentityAgent=/tmp/agent.sock" in plan.command
+    assert plan.command[-1] == "operator@example.internal"
+
+
 def test_sftp_listing_parser_extracts_file_table_rows() -> None:
     rows = parse_sftp_ls_output(
         "total 4\n"
@@ -418,14 +511,47 @@ def test_ssh_connection_banner_reports_disabled_options() -> None:
 
     assert banner.direct_ssh is True
     assert banner.ssh_compression is False
+    assert banner.smartcard_auth is False
     assert banner.ssh_browser is False
     assert banner.x11_forwarding == "enabled"
-    assert [row.key for row in rows] == ["direct-ssh", "ssh-compression", "ssh-browser", "x11-forwarding"]
-    assert [row.label for row in rows] == ["Direct SSH", "SSH compression", "SSH-browser", "X11-forwarding"]
-    assert [row.value for row in rows] == ["yes", "no", "no", "enabled"]
-    assert [row.status for row in rows] == ["ok", "disabled", "disabled", "ok"]
+    assert [row.key for row in rows] == [
+        "direct-ssh",
+        "ssh-compression",
+        "smartcard-auth",
+        "ssh-browser",
+        "x11-forwarding",
+    ]
+    assert [row.label for row in rows] == [
+        "Direct SSH",
+        "SSH compression",
+        "Smart card auth",
+        "SSH-browser",
+        "X11-forwarding",
+    ]
+    assert [row.value for row in rows] == ["yes", "no", "no", "no", "enabled"]
+    assert [row.status for row in rows] == ["ok", "disabled", "disabled", "disabled", "ok"]
     assert banner.footer_links() == ("help", "website")
     assert banner.to_dict()["capabilities"][0]["key"] == "direct-ssh"
+
+
+def test_ssh_connection_banner_reports_smartcard_provider() -> None:
+    banner = build_ssh_connection_banner(
+        ssh_profile(
+            options={
+                "compression": "true",
+                "ssh_browser": "true",
+                "smartcard_auth": "true",
+                "smartcard_provider": "microsoft-capi",
+            }
+        )
+    )
+    rows = {row.key: row for row in banner.capability_rows()}
+
+    assert banner.smartcard_auth is True
+    assert banner.smartcard_provider == "Microsoft CryptoAPI/CAPI"
+    assert rows["smartcard-auth"].value == "yes"
+    assert rows["smartcard-auth"].status == "ok"
+    assert rows["smartcard-auth"].note == "Microsoft CryptoAPI/CAPI"
 
 
 def test_connected_session_rejects_non_ssh_profiles() -> None:

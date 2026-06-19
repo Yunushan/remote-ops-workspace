@@ -33,7 +33,10 @@ Release integrity rules:
   `python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag>`
   after downloading workflow artifacts and before uploading the GitHub release.
   It verifies the expected asset set from `configs/release_matrix.json`,
-  checksum sidecars and source release-manifest records.
+  checksum sidecars, source release-manifest records, accepted platform
+  evidence and the MobaXterm parity accepted-evidence registry. Use
+  `--require-mobaxterm-parity-complete` only for releases that explicitly claim
+  complete strict MobaXterm Home/Professional product-depth parity.
 - CI build jobs run with read-only repository contents permission and checkout
   credentials are not persisted. Only the publish job receives release write
   permission.
@@ -126,6 +129,19 @@ The same publish-time guard rejects Windows XP native assets unless the registry
 passes full accepted-evidence validation and both XP x86 and XP x64 accepted
 evidence records are present, because one architecture alone does not prove the
 Windows XP native-host row.
+
+## MobaXterm parity evidence
+
+The generated feature table is not the gate for true MobaXterm 26.4
+Home/Professional product-depth parity. The strict article evidence lives in
+`configs/mobaxterm_parity_evidence.json` and is checked by
+`python scripts/check_mobaxterm_parity_evidence.py`. The default publish-time
+asset checker validates that registry so malformed accepted records cannot ship
+quietly. A maintainer can add `--require-mobaxterm-parity-complete` to
+`python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag>`
+when a release intends to claim complete strict MobaXterm parity; that mode
+fails until all seven article IDs have accepted, SHA-bound release evidence
+records generated from real passing article verifiers.
 
 ## Native installer smoke tests
 

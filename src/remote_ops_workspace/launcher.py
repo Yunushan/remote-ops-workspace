@@ -10,6 +10,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
 from . import command_safety as safe
+from .enterprise_policy import assert_profile_launch_allowed
 from .models import Profile, Tunnel
 from .plugins import LoadedPlugin, load_plugin_registry
 from .profile_validation import prepare_profile
@@ -69,6 +70,16 @@ WINDOWS_XP_LEGACY_TARGETS = frozenset(
 LEGACY_TARGET_OPTIONS = ("legacy_target", "legacy_platform")
 LEGACY_CRYPTO_OPT_IN_OPTIONS = ("allow_legacy_crypto", "allow_insecure_legacy_crypto")
 LEGACY_RDP_SECURITY_OPT_IN_OPTIONS = ("allow_legacy_rdp_security", "allow_insecure_rdp_security")
+CAPI_SMARTCARD_PROVIDER_ALIASES = frozenset(
+    {
+        "capi",
+        "cryptoapi",
+        "microsoft-capi",
+        "microsoft-cryptoapi",
+        "windows-capi",
+        "windows-cryptoapi",
+    }
+)
 WEAK_SSH_ALGORITHMS_BY_OPTION = {
     "ciphers": frozenset(
         {
@@ -159,6 +170,7 @@ def build_launch_plan(profile: Profile) -> LaunchPlan:
 
 
 def launch(profile: Profile, dry_run: bool = False) -> LaunchPlan:
+    assert_profile_launch_allowed(profile, surface="launcher")
     plan = build_launch_plan(profile)
     safe.argv_list(plan.command, "launch command")
     if dry_run:
@@ -221,6 +233,7 @@ def _build_ssh_family(profile: Profile, protocol: str) -> LaunchPlan:
         cmd.extend(["-p", str(port)])
         cmd.extend(_ssh_identity_args(profile))
         cmd.extend(_ssh_connection_option_args(profile.options))
+        notes.extend(_ssh_smartcard_notes(profile.options))
         cmd.extend(_ssh_proxy_args(profile, notes))
         cmd.extend(_ssh_tunnel_args(profile.tunnels))
         if profile.options.get("x11", "").lower() in {"1", "true", "yes", "trusted"}:
@@ -235,6 +248,7 @@ def _build_ssh_family(profile: Profile, protocol: str) -> LaunchPlan:
         cmd = ["sftp", "-P", str(port)]
         cmd.extend(_ssh_identity_args(profile))
         cmd.extend(_ssh_connection_option_args(profile.options))
+        notes.extend(_ssh_smartcard_notes(profile.options))
         cmd.extend(_ssh_proxy_args(profile, notes))
         cmd.append(target)
         return LaunchPlan(protocol, cmd, notes)
@@ -242,9 +256,11 @@ def _build_ssh_family(profile: Profile, protocol: str) -> LaunchPlan:
     cmd = ["scp", "-P", str(port)]
     cmd.extend(_ssh_identity_args(profile))
     cmd.extend(_ssh_connection_option_args(profile.options))
+    notes.extend(_ssh_smartcard_notes(profile.options))
     cmd.extend(_ssh_proxy_args(profile, notes))
     cmd.append(target)
-    return LaunchPlan(protocol, cmd, ["SCP profile needs source/destination arguments for real transfer."])
+    notes.append("SCP profile needs source/destination arguments for real transfer.")
+    return LaunchPlan(protocol, cmd, notes)
 
 
 def _ssh_identity_args(profile: Profile) -> list[str]:
@@ -281,6 +297,41 @@ def _ssh_connection_option_args(options: Mapping[str, str]) -> list[str]:
     if user_known_hosts_file:
         args.extend(["-o", f"UserKnownHostsFile={safe.path_arg(user_known_hosts_file, 'user_known_hosts_file')}"])
 
+    identity_agent = _option(options, "identity_agent", "ssh_identity_agent", "mobagent_socket")
+    if identity_agent:
+        args.extend(["-o", f"IdentityAgent={safe.path_arg(identity_agent, 'identity_agent')}"])
+
+    certificate_file = _option(
+        options,
+        "certificate_file",
+        "ssh_certificate_file",
+        "cert_file",
+        "smartcard_certificate_file",
+        "smart_card_certificate_file",
+        "smartcard_cert_file",
+    )
+    if certificate_file:
+        args.extend(["-o", f"CertificateFile={safe.path_arg(certificate_file, 'certificate_file')}"])
+
+    security_key_provider = _option(options, "security_key_provider", "ssh_security_key_provider", "sk_provider")
+    if security_key_provider:
+        args.extend(
+            [
+                "-o",
+                f"SecurityKeyProvider={safe.path_arg(security_key_provider, 'security_key_provider')}",
+            ]
+        )
+
+    pkcs11_provider = _option(options, "pkcs11_provider", "smartcard_pkcs11_provider", "smart_card_pkcs11_provider")
+    smartcard_provider = _option(options, "smartcard_provider", "smart_card_provider")
+    provider_path = _smartcard_provider_path(pkcs11_provider, "pkcs11_provider")
+    smartcard_provider_path = _smartcard_provider_path(smartcard_provider, "smartcard_provider")
+    if provider_path and smartcard_provider_path and provider_path != smartcard_provider_path:
+        raise LauncherError("pkcs11_provider and smartcard_provider must reference the same provider when both are set")
+    provider_path = provider_path or smartcard_provider_path
+    if provider_path:
+        args.extend(["-I", provider_path])
+
     log_level = _option_enum(
         options,
         "log_level",
@@ -301,6 +352,63 @@ def _ssh_connection_option_args(options: Mapping[str, str]) -> list[str]:
             args.extend(["-o", f"{open_ssh_name}={_option_token(value, option_name)}"])
 
     return args
+
+
+def _smartcard_provider_path(value: str | None, label: str) -> str | None:
+    if value is None:
+        return None
+    text = safe.clean_text(value, label).strip()
+    if not text:
+        return None
+    if text.lower() in CAPI_SMARTCARD_PROVIDER_ALIASES:
+        return None
+    if text.lower().startswith("pkcs11:"):
+        text = text.split(":", 1)[1].strip()
+        if not text:
+            raise LauncherError(f"{label} pkcs11: value requires a provider path")
+    return safe.option_value(text, label)
+
+
+def _ssh_smartcard_notes(options: Mapping[str, str]) -> list[str]:
+    smartcard_requested = any(
+        _option(options, name)
+        for name in (
+            "smartcard_auth",
+            "smart_card_auth",
+            "smartcard_provider",
+            "smart_card_provider",
+            "pkcs11_provider",
+            "smartcard_pkcs11_provider",
+            "smart_card_pkcs11_provider",
+            "certificate_file",
+            "ssh_certificate_file",
+            "cert_file",
+            "smartcard_certificate_file",
+            "smart_card_certificate_file",
+            "smartcard_cert_file",
+            "identity_agent",
+            "ssh_identity_agent",
+            "mobagent_socket",
+            "security_key_provider",
+            "ssh_security_key_provider",
+            "sk_provider",
+            "mobagent_smartcard",
+            "add_smartcard_to_mobagent",
+        )
+    )
+    if not smartcard_requested:
+        return []
+    notes = [
+        "Smart-card/certificate SSH auth requested; OpenSSH options are emitted for configured certificate, PKCS#11 provider, security-key provider or agent handoff."
+    ]
+    provider = _option(options, "smartcard_provider", "smart_card_provider")
+    if provider and safe.clean_text(provider, "smartcard_provider").strip().lower() in CAPI_SMARTCARD_PROVIDER_ALIASES:
+        notes.append(
+            "Microsoft CryptoAPI/CAPI smart-card provider requested; use a Windows OpenSSH/CAPI provider or MobAgent-compatible agent bridge."
+        )
+    if _option_bool(options, "mobagent_smartcard", "add_smartcard_to_mobagent"):
+        notes.append("MobAgent smart-card handoff requested through the configured SSH agent/IdentityAgent.")
+    return notes
 
 
 def _ssh_proxy_args(profile: Profile, notes: list[str]) -> list[str]:

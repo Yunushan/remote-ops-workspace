@@ -261,6 +261,34 @@ def test_ssh_option_depth_builds_open_ssh_options() -> None:
     assert "Ciphers=aes256-gcm@openssh.com,chacha20-poly1305@openssh.com" in plan.command
 
 
+def test_ssh_smartcard_certificate_options_build_open_ssh_args() -> None:
+    profile = Profile(
+        name="smartcard-edge",
+        protocol="ssh",
+        host="192.0.2.10",
+        username="admin",
+        options={
+            "smartcard_auth": "true",
+            "smartcard_provider": "microsoft-capi",
+            "pkcs11_provider": "/usr/lib/opensc-pkcs11.so",
+            "certificate_file": "/home/admin/.ssh/id_ed25519-cert.pub",
+            "identity_agent": "/tmp/ssh-agent.sock",
+            "security_key_provider": "internal",
+        },
+    )
+    plan = build_launch_plan(profile)
+
+    assert plan.command[:3] == ["ssh", "-p", "22"]
+    assert "-I" in plan.command
+    assert "/usr/lib/opensc-pkcs11.so" in plan.command
+    assert "CertificateFile=/home/admin/.ssh/id_ed25519-cert.pub" in plan.command
+    assert "IdentityAgent=/tmp/ssh-agent.sock" in plan.command
+    assert "SecurityKeyProvider=internal" in plan.command
+    assert plan.command[-1] == "admin@192.0.2.10"
+    assert any("Smart-card/certificate SSH auth requested" in note for note in plan.notes)
+    assert any("Microsoft CryptoAPI/CAPI smart-card provider requested" in note for note in plan.notes)
+
+
 def test_mosh_option_depth_builds_flags_and_ssh_handoff() -> None:
     profile = Profile(
         name="mobile",

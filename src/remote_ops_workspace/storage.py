@@ -206,6 +206,26 @@ def example_profiles() -> list[Profile]:
             description="Example RDP profile using a non-routable example hostname.",
         ),
         Profile(
+            name="example.jump-ssh",
+            protocol="ssh",
+            host="jump-ssh.example.invalid",
+            port=22,
+            username="operator",
+            group="default",
+            tags=["ssh", "jump", "demo"],
+            description="Generic imported jump SSH profile for MobaXterm-style session tree references.",
+        ),
+        Profile(
+            name="example.rdp",
+            protocol="rdp",
+            host="desktop.example.invalid",
+            port=3389,
+            username="operator",
+            group="default",
+            tags=["rdp", "demo"],
+            description="Generic imported RDP profile for MobaXterm-style session tree references.",
+        ),
+        Profile(
             name="example-web",
             protocol="https",
             url="https://example.com",
@@ -221,6 +241,13 @@ def example_profiles() -> list[Profile]:
             username="operator",
             group="prod",
             tags=["ssh", "demo", "favorite"],
+            options={
+                "moba_remote_path": "/var/log",
+                "moba_monitoring_output": (
+                    "cpu=7 mem_mb=410/7680 disk_mb=2867/49152 users=1 processes=158 "
+                    "net_up_mbps=0.01 net_down_mbps=0.01"
+                ),
+            },
             description="Generic SSH demo profile for product-style GUI references.",
         ),
         Profile(
@@ -262,6 +289,16 @@ def example_profiles() -> list[Profile]:
             group="files",
             tags=["sftp", "demo"],
             description="Generic SFTP operations profile for MobaXterm-style file-browser references.",
+        ),
+        Profile(
+            name="sync-stage",
+            protocol="ssh",
+            host="sync-stage.example.invalid",
+            port=22,
+            username="operator",
+            group="files",
+            tags=["ssh", "sync", "demo"],
+            description="Generic sync staging profile for MobaXterm-style session tree references.",
         ),
         Profile(
             name="jump-host",

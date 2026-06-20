@@ -34,6 +34,12 @@ contracts: `static_contract` must resolve to a non-empty route object in
 and `contract_check` must be exercised by `scripts/check_real_gui_render.py`.
 This prevents a preview image from counting toward 100% parity unless the real
 PyQt window has a matching checked interaction route.
+The parity report also includes strict live-render proof coverage: the
+all-preset CI `gui-render` job must run
+`scripts/check_real_gui_render.py --require-pyqt6 --timeout-seconds 240`
+without a `--preset` filter,
+upload `artifacts/gui-real` screenshots, and keep the documented local
+`scripts/verify.py --require-real-gui` proof path available.
 Each view also carries `live_evidence`, which names the required live route
 dictionary keys and widget object names for that state. The parity checker loads
 the real render manifest summaries from `scripts/check_real_gui_render.py` and
@@ -952,7 +958,9 @@ python scripts/check_gui_visual_metrics.py
 python scripts/check_gui_parity.py
 python scripts/check_gui_parity.py --json
 python scripts/check_real_gui_render.py
-python scripts/check_real_gui_render.py --out-dir artifacts/gui-real
+python scripts/check_real_gui_render.py --require-pyqt6 --timeout-seconds 240 --out-dir artifacts/gui-real
+python scripts/check_real_gui_render.py --timeout-seconds 240 --out-dir artifacts/gui-real
+python scripts/check_real_gui_render_artifact.py --artifact-dir artifacts/gui-real
 ```
 
 `--check` re-renders in memory and reports stale generated outputs. The
@@ -997,12 +1005,23 @@ measurement set. These captures are diagnostic outputs and are not the same as
 the tracked static preview gallery. Without PyQt6, the checker does not fake
 screenshots: it verifies that the GUI factory raises the expected dependency
 error unless `--require-pyqt6` is used.
+After a live capture or after downloading the CI `gui-real-render` artifact,
+`python scripts/check_real_gui_render_artifact.py --artifact-dir
+artifacts/gui-real` validates the manifest, all six PNG files, per-capture
+PNG dimensions, sizes, SHA-256 hashes, all-preset capture completeness and full
+product-style measured contract evidence.
 
 CI enforces both paths. The normal matrix runs `python scripts/verify.py --lint`,
 which includes the fail-closed render smoke in dependency-light jobs. A
 dedicated `gui-render` job installs the desktop extra and runs
-`python scripts/check_real_gui_render.py --require-pyqt6 --out-dir
+`python scripts/check_real_gui_render.py --require-pyqt6 --timeout-seconds
+240 --out-dir artifacts/gui-real`, validates the resulting directory with
+`python scripts/check_real_gui_render_artifact.py --artifact-dir
 artifacts/gui-real`, then uploads the captured PNG manifest as a workflow
 artifact. Because no `--preset` filter is passed, that job captures Native,
 MobaXterm-style, SecureCRT-style, Termius-style, Remmina-style and
 mRemoteNG-style in one all-preset gate.
+
+For the same strict local proof path on a desktop-extra install, run
+`python scripts/verify.py --require-real-gui`; it fails if PyQt6 or the live
+screenshot capture path is unavailable.

@@ -96,8 +96,15 @@ def check_gui_render_job(workflow: str) -> list[str]:
         "libxcb-cursor0": "Qt xcb cursor runtime library",
         '".[desktop,security,dev]"': "desktop extra installation",
         "timeout-minutes: 8": "bounded live GUI render smoke step timeout",
-        "python scripts/check_real_gui_render.py --require-pyqt6": "required live GUI render smoke",
+        "python scripts/check_real_gui_render.py --require-pyqt6 --timeout-seconds 240": (
+            "required bounded live GUI render smoke"
+        ),
         "--out-dir artifacts/gui-real": "live GUI screenshot artifact output",
+        "Validate real GUI render artifact": "live GUI artifact validation step",
+        "timeout-minutes: 2": "bounded live GUI artifact validation timeout",
+        "python scripts/check_real_gui_render_artifact.py --artifact-dir artifacts/gui-real": (
+            "live GUI artifact validator"
+        ),
         "actions/upload-artifact@v7": "live GUI screenshot artifact upload",
         "if-no-files-found: error": "artifact upload failure on missing live screenshots",
     }

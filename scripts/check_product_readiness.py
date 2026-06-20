@@ -4,9 +4,14 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+SCRIPTS = ROOT / "scripts"
 SRC = ROOT / "src"
+if str(SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS))
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
+
+import check_platform_verified_evidence as platform_evidence_checker  # noqa: E402
 
 from remote_ops_workspace.features import coverage_report, load_feature_manifest  # noqa: E402
 
@@ -33,6 +38,12 @@ def main() -> int:
 
 def check_product_readiness() -> list[str]:
     errors: list[str] = []
+    errors.extend(
+        f"platform verified evidence registry: {error}"
+        for error in platform_evidence_checker.check_platform_verified_evidence(
+            require_review_bundles=True
+        )
+    )
     manifest = load_feature_manifest()
     report = coverage_report()
     scoring = manifest.get("coverage_scoring", {})
@@ -120,6 +131,33 @@ def check_product_readiness() -> list[str]:
             errors.append(f"{row['target']} partial compatibility row must stay outside verified readiness scope")
     if platform.get("overall", {}).get("current_percent") != 100.0:
         errors.append("platform verified readiness overall must be 100 for verified-scope targets")
+    goal = platform.get("protected_goal_parity", {})
+    if not isinstance(goal, dict):
+        errors.append("platform verified readiness must expose protected_goal_parity")
+    else:
+        required = goal.get("required_targets", [])
+        present = goal.get("accepted_targets", [])
+        missing = goal.get("missing_targets", [])
+        accepted_count = goal.get("accepted_target_count")
+        if required != [
+            "linux-i386",
+            "linux-armhf",
+            "windows-xp-native-x86",
+            "windows-xp-native-x64",
+        ]:
+            errors.append("protected platform goal parity must list the four protected targets")
+        if not isinstance(present, list) or not isinstance(missing, list):
+            errors.append("protected platform goal parity must expose accepted and missing target lists")
+        elif sorted(present + missing) != sorted(required):
+            errors.append("protected platform goal parity accepted/missing targets must partition required targets")
+        if accepted_count != len(present):
+            errors.append("protected platform goal parity accepted_target_count must match accepted_targets")
+        expected_percent = round((len(present) / len(required) * 100.0), 1) if required else 0.0
+        if goal.get("current_percent") != expected_percent:
+            errors.append("protected platform goal parity current_percent must match accepted target count")
+        complete = len(present) == len(required) and bool(required)
+        if goal.get("complete") is not complete:
+            errors.append("protected platform goal parity complete flag must match accepted target count")
     return errors
 
 

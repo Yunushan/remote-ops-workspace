@@ -23,6 +23,14 @@
         "build_script": "scripts/make_linux_native.sh",
         "smoke_script": "scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux",
         "artifact_validation_command": "python scripts/check_platform_promotion_artifacts.py --target linux-i386 --assets-dir <artifact-dir> --tag v<project.version>",
+        "accepted_evidence_candidate_command": "python scripts/make_platform_verified_evidence_record.py --target linux-i386 --release-tag v<project.version> --assets-dir <artifact-dir> --release-asset-base-url <github-release-download-url> --workflow-run-url <github-actions-run-url> --builder-evidence <builder-identity.json> --linux-smoke-evidence <native-smoke-log> --runner-label self-hosted --runner-label linux --runner-label i386 --out <platform-verified-evidence-linux-i386.json>",
+        "review_bundle_command": "python scripts/make_extended_linux_evidence_bundle.py --target linux-i386 --release-tag v<project.version> --assets-dir <artifact-dir> --builder-evidence <builder-identity.json> --smoke-evidence <native-smoke-log> --candidate-record <platform-verified-evidence-linux-i386.json> --out-dir <bundle-dir>",
+        "finalized_evidence_record_command": "python scripts/finalize_platform_verified_evidence_record.py --candidate-record <platform-verified-evidence-linux-i386.json> --bundle-manifest <bundle-dir>/extended-linux-evidence-bundle-linux-i386-v<project.version>.json --bundle-archive <bundle-dir>/extended-linux-evidence-bundle-linux-i386-v<project.version>.zip --bundle-sha256s <bundle-dir>/extended-linux-evidence-bundle-linux-i386-v<project.version>-SHA256SUMS.txt --out <final-record.json> --append-registry",
+        "review_bundle_files": [
+          "extended-linux-evidence-bundle-linux-i386-v<project.version>.json",
+          "extended-linux-evidence-bundle-linux-i386-v<project.version>.zip",
+          "extended-linux-evidence-bundle-linux-i386-v<project.version>-SHA256SUMS.txt"
+        ],
         "required_artifacts": [
           "remote-ops-workspace-v<project.version>-linux-i386.deb",
           "remote-ops-workspace-v<project.version>-linux-i686.rpm",
@@ -35,7 +43,7 @@
       "current_blockers": [
         "No default release workflow job runs on a real i386/i686 Linux builder.",
         "The default GitHub release matrix does not upload linux-i386 native artifacts.",
-        "No release publish contract currently requires linux-i386 checksum and manifest assets."
+        "No accepted evidence record is present yet to activate publish-time requirements for linux-i386 checksum, manifest and review-bundle assets."
       ]
     },
     {
@@ -59,6 +67,14 @@
         "build_script": "scripts/make_linux_native.sh",
         "smoke_script": "scripts/smoke_linux_native.sh --arch armhf --dist native-dist/linux",
         "artifact_validation_command": "python scripts/check_platform_promotion_artifacts.py --target linux-armhf --assets-dir <artifact-dir> --tag v<project.version>",
+        "accepted_evidence_candidate_command": "python scripts/make_platform_verified_evidence_record.py --target linux-armhf --release-tag v<project.version> --assets-dir <artifact-dir> --release-asset-base-url <github-release-download-url> --workflow-run-url <github-actions-run-url> --builder-evidence <builder-identity.json> --linux-smoke-evidence <native-smoke-log> --runner-label self-hosted --runner-label linux --runner-label armhf --out <platform-verified-evidence-linux-armhf.json>",
+        "review_bundle_command": "python scripts/make_extended_linux_evidence_bundle.py --target linux-armhf --release-tag v<project.version> --assets-dir <artifact-dir> --builder-evidence <builder-identity.json> --smoke-evidence <native-smoke-log> --candidate-record <platform-verified-evidence-linux-armhf.json> --out-dir <bundle-dir>",
+        "finalized_evidence_record_command": "python scripts/finalize_platform_verified_evidence_record.py --candidate-record <platform-verified-evidence-linux-armhf.json> --bundle-manifest <bundle-dir>/extended-linux-evidence-bundle-linux-armhf-v<project.version>.json --bundle-archive <bundle-dir>/extended-linux-evidence-bundle-linux-armhf-v<project.version>.zip --bundle-sha256s <bundle-dir>/extended-linux-evidence-bundle-linux-armhf-v<project.version>-SHA256SUMS.txt --out <final-record.json> --append-registry",
+        "review_bundle_files": [
+          "extended-linux-evidence-bundle-linux-armhf-v<project.version>.json",
+          "extended-linux-evidence-bundle-linux-armhf-v<project.version>.zip",
+          "extended-linux-evidence-bundle-linux-armhf-v<project.version>-SHA256SUMS.txt"
+        ],
         "required_artifacts": [
           "remote-ops-workspace-v<project.version>-linux-armhf.deb",
           "remote-ops-workspace-v<project.version>-linux-armv7hl.rpm",
@@ -71,7 +87,7 @@
       "current_blockers": [
         "No default release workflow job runs on a real armv7l/armhf Linux builder.",
         "The default GitHub release matrix does not upload linux-armhf native artifacts.",
-        "No release publish contract currently requires linux-armhf checksum and manifest assets."
+        "No accepted evidence record is present yet to activate publish-time requirements for linux-armhf checksum, manifest and review-bundle assets."
       ]
     },
     {
@@ -96,6 +112,14 @@
         ],
         "artifact_validation_command": "python scripts/check_platform_promotion_artifacts.py --target windows-xp-native-x86 --assets-dir <artifact-dir> --tag v<project.version>",
         "native_evidence_validation_command": "python scripts/check_xp_native_evidence.py --evidence <evidence.json> --assets-dir <artifact-dir>",
+        "accepted_evidence_candidate_command": "python scripts/make_platform_verified_evidence_record.py --target windows-xp-native-x86 --release-tag v<project.version> --assets-dir <artifact-dir> --release-asset-base-url <github-release-download-url> --release-source-workflow-run-url <github-actions-run-url> --release-source-artifact-name <github-actions-artifact-name> --xp-evidence <evidence.json> --xp-evidence-dir <evidence-dir> --out <platform-verified-evidence-windows-xp-native-x86.json>",
+        "review_bundle_command": "python scripts/make_xp_native_evidence_bundle.py --target windows-xp-native-x86 --evidence <evidence.json> --candidate-record <platform-verified-evidence-windows-xp-native-x86.json> --assets-dir <artifact-dir> --evidence-dir <evidence-dir> --out-dir <bundle-dir>",
+        "finalized_evidence_record_command": "python scripts/finalize_platform_verified_evidence_record.py --candidate-record <platform-verified-evidence-windows-xp-native-x86.json> --bundle-manifest <bundle-dir>/xp-native-evidence-bundle-windows-xp-native-x86-v<project.version>.json --bundle-archive <bundle-dir>/xp-native-evidence-bundle-windows-xp-native-x86-v<project.version>.zip --bundle-sha256s <bundle-dir>/xp-native-evidence-bundle-windows-xp-native-x86-v<project.version>-SHA256SUMS.txt --out <final-record.json> --append-registry",
+        "review_bundle_files": [
+          "xp-native-evidence-bundle-windows-xp-native-x86-v<project.version>.json",
+          "xp-native-evidence-bundle-windows-xp-native-x86-v<project.version>.zip",
+          "xp-native-evidence-bundle-windows-xp-native-x86-v<project.version>-SHA256SUMS.txt"
+        ],
         "smoke_evidence": [
           "launch CLI without unsupported Windows APIs",
           "open the selected GUI or legacy host UI without the current PyQt6 stack",
@@ -127,7 +151,7 @@
       "target_readiness_percent": 100.0,
       "promotion_to_100_requires": {
         "separate_legacy_toolchain": true,
-        "xp_vm_or_self_hosted_runner": "Windows XP Professional x64 VM or physical/self-hosted runner",
+        "xp_vm_or_self_hosted_runner": "Windows XP Professional x64 Edition SP2 VM or physical/self-hosted runner",
         "native_artifacts": [
           "remote-ops-workspace-v<project.version>-windows-xp-x64-native.zip",
           "remote-ops-workspace-v<project.version>-windows-xp-x64-native-manifest.json",
@@ -135,6 +159,14 @@
         ],
         "artifact_validation_command": "python scripts/check_platform_promotion_artifacts.py --target windows-xp-native-x64 --assets-dir <artifact-dir> --tag v<project.version>",
         "native_evidence_validation_command": "python scripts/check_xp_native_evidence.py --evidence <evidence.json> --assets-dir <artifact-dir>",
+        "accepted_evidence_candidate_command": "python scripts/make_platform_verified_evidence_record.py --target windows-xp-native-x64 --release-tag v<project.version> --assets-dir <artifact-dir> --release-asset-base-url <github-release-download-url> --release-source-workflow-run-url <github-actions-run-url> --release-source-artifact-name <github-actions-artifact-name> --xp-evidence <evidence.json> --xp-evidence-dir <evidence-dir> --out <platform-verified-evidence-windows-xp-native-x64.json>",
+        "review_bundle_command": "python scripts/make_xp_native_evidence_bundle.py --target windows-xp-native-x64 --evidence <evidence.json> --candidate-record <platform-verified-evidence-windows-xp-native-x64.json> --assets-dir <artifact-dir> --evidence-dir <evidence-dir> --out-dir <bundle-dir>",
+        "finalized_evidence_record_command": "python scripts/finalize_platform_verified_evidence_record.py --candidate-record <platform-verified-evidence-windows-xp-native-x64.json> --bundle-manifest <bundle-dir>/xp-native-evidence-bundle-windows-xp-native-x64-v<project.version>.json --bundle-archive <bundle-dir>/xp-native-evidence-bundle-windows-xp-native-x64-v<project.version>.zip --bundle-sha256s <bundle-dir>/xp-native-evidence-bundle-windows-xp-native-x64-v<project.version>-SHA256SUMS.txt --out <final-record.json> --append-registry",
+        "review_bundle_files": [
+          "xp-native-evidence-bundle-windows-xp-native-x64-v<project.version>.json",
+          "xp-native-evidence-bundle-windows-xp-native-x64-v<project.version>.zip",
+          "xp-native-evidence-bundle-windows-xp-native-x64-v<project.version>-SHA256SUMS.txt"
+        ],
         "smoke_evidence": [
           "launch CLI without unsupported Windows APIs",
           "open the selected GUI or legacy host UI without the current PyQt6 stack",
@@ -148,7 +180,7 @@
       },
       "current_blockers": [
         "The current native stack is Python 3.10+ and PyQt6, which is not treated as an XP native host stack in this project.",
-        "No Windows XP x64 builder or VM smoke job exists in the release workflow.",
+        "No Windows XP Professional x64 Edition SP2 builder or VM smoke job exists in the release workflow.",
         "No XP x64 native artifact is declared in the default release matrix."
       ]
     }

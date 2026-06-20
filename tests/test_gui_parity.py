@@ -32,6 +32,8 @@ def test_gui_parity_checker_json_mode_outputs_report(capsys) -> None:
     assert report["overall"]["reference_contract_gap_percent"] == 0.0
     assert report["overall"]["reference_policy_percent"] == 100.0
     assert report["overall"]["reference_policy_gap_percent"] == 0.0
+    assert report["overall"]["live_render_proof_percent"] == 100.0
+    assert report["overall"]["live_render_proof_gap_percent"] == 0.0
 
 
 def test_gui_parity_tracks_all_product_style_presets() -> None:
@@ -92,9 +94,72 @@ def test_gui_parity_scans_gui_evidence_files_for_user_specific_samples() -> None
     scanned = set(checker.GUI_PRIVACY_EVIDENCE_PATHS)
     assert "configs/gui_visual_metrics.json" in scanned
     assert "docs/GUI_DESIGN.md" in scanned
+    assert "docs/VERIFYING.md" in scanned
     assert "scripts/render_gui_design_previews.py" in scanned
     assert "scripts/check_real_gui_render.py" in scanned
+    assert "scripts/check_real_gui_render_artifact.py" in scanned
     assert "scripts/check_gui_visual_metrics.py" in scanned
+    assert "scripts/verify.py" in scanned
+
+
+def test_gui_parity_requires_strict_live_render_proof_contract() -> None:
+    checker = _load_checker()
+    criteria = checker.load_json(checker.CRITERIA_PATH)
+    workflow = checker.CI_WORKFLOW_PATH.read_text(encoding="utf-8")
+
+    assert checker.check_live_render_proof_contract(criteria) == []
+
+    broken_workflow = workflow.replace(
+        "python scripts/check_real_gui_render.py --require-pyqt6 --timeout-seconds 240 --out-dir artifacts/gui-real",
+        "python scripts/check_real_gui_render.py --timeout-seconds 240 --out-dir artifacts/gui-real",
+    )
+
+    assert any(
+        "GUI parity live render proof missing strict bounded PyQt6 live render command" in error
+        for error in checker.check_live_render_proof_contract(criteria, workflow_text=broken_workflow)
+    )
+    broken_report = checker.gui_parity_report(criteria, workflow_text=broken_workflow)
+    assert broken_report["overall"]["live_render_proof_percent"] == 0.0
+    assert checker.check_parity_target(criteria, workflow_text=broken_workflow)
+
+
+def test_gui_parity_rejects_filtered_live_render_proof_contract() -> None:
+    checker = _load_checker()
+    criteria = checker.load_json(checker.CRITERIA_PATH)
+    workflow = checker.CI_WORKFLOW_PATH.read_text(encoding="utf-8")
+    broken_workflow = workflow.replace(
+        "python scripts/check_real_gui_render.py --require-pyqt6 --timeout-seconds 240 --out-dir artifacts/gui-real",
+        "python scripts/check_real_gui_render.py --require-pyqt6 --timeout-seconds 240 --preset mobaxterm --out-dir artifacts/gui-real",
+    )
+
+    errors = checker.check_live_render_proof_contract(criteria, workflow_text=broken_workflow)
+
+    assert any("must capture all product-style presets without --preset" in error for error in errors)
+
+
+def test_gui_parity_requires_documented_strict_local_live_render_proof() -> None:
+    checker = _load_checker()
+    criteria = checker.load_json(checker.CRITERIA_PATH)
+    verifier_source = (checker.ROOT / "scripts" / "verify.py").read_text(encoding="utf-8")
+    docs = {
+        "README.md": (checker.ROOT / "README.md").read_text(encoding="utf-8"),
+        "docs/VERIFYING.md": (checker.ROOT / "docs" / "VERIFYING.md").read_text(encoding="utf-8"),
+        "docs/GUI_DESIGN.md": (checker.ROOT / "docs" / "GUI_DESIGN.md").read_text(encoding="utf-8"),
+    }
+
+    broken_verifier = verifier_source.replace("--require-real-gui", "--missing-real-gui")
+    verifier_errors = checker.check_live_render_proof_contract(
+        criteria,
+        verifier_source=broken_verifier,
+    )
+    assert any("strict local verifier option" in error for error in verifier_errors)
+
+    docs["docs/VERIFYING.md"] = docs["docs/VERIFYING.md"].replace(
+        "python scripts/verify.py --require-real-gui",
+        "python scripts/verify.py",
+    )
+    doc_errors = checker.check_live_render_proof_contract(criteria, docs=docs)
+    assert any("docs missing docs/VERIFYING.md" in error for error in doc_errors)
 
 
 def test_gui_parity_rejects_user_specific_tokens_in_gui_evidence_files(monkeypatch, tmp_path: Path) -> None:
@@ -183,6 +248,8 @@ def test_gui_parity_tracks_required_objective_dimensions() -> None:
     assert report["overall"]["reference_contract_count"] == 2 * len(checker.PRODUCT_STYLE_PRESETS)
     assert report["overall"]["reference_policy_met"] == report["overall"]["reference_policy_count"]
     assert report["overall"]["reference_policy_count"] == 2 * len(checker.PRODUCT_STYLE_PRESETS)
+    assert report["overall"]["live_render_proof_met"] == report["overall"]["live_render_proof_count"]
+    assert report["overall"]["live_render_proof_count"] == len(checker.PRODUCT_STYLE_PRESETS)
     for preset_data in criteria["presets"].values():
         assert set(preset_data["dimension_coverage"]) == set(required_dimensions)
         covered = {
@@ -209,6 +276,9 @@ def test_gui_parity_tracks_required_objective_dimensions() -> None:
         assert row["reference_policy_percent"] == row["target_percent"]
         assert row["reference_policy_gap_percent"] == 0.0
         assert row["reference_policy_met"] == row["reference_policy_count"] == 2
+        assert row["live_render_proof_percent"] == row["target_percent"]
+        assert row["live_render_proof_gap_percent"] == 0.0
+        assert row["live_render_proof_met"] == row["live_render_proof_count"] == 1
 
 
 def test_gui_parity_rejects_incomplete_reference_view_dimension_coverage() -> None:
@@ -395,6 +465,8 @@ def test_gui_parity_report_scores_each_product_style_preset() -> None:
     assert report["overall"]["reference_contract_gap_percent"] == 0.0
     assert report["overall"]["reference_policy_percent"] == 100.0
     assert report["overall"]["reference_policy_gap_percent"] == 0.0
+    assert report["overall"]["live_render_proof_percent"] == 100.0
+    assert report["overall"]["live_render_proof_gap_percent"] == 0.0
     assert {row["preset_id"] for row in report["presets"]} == checker.PRODUCT_STYLE_PRESETS
     for row in report["presets"]:
         assert row["current_percent"] == row["target_percent"]
@@ -415,6 +487,9 @@ def test_gui_parity_report_scores_each_product_style_preset() -> None:
         assert row["reference_policy_percent"] == row["target_percent"]
         assert row["reference_policy_gap_percent"] == 0.0
         assert row["reference_policy_met"] == row["reference_policy_count"]
+        assert row["live_render_proof_percent"] == row["target_percent"]
+        assert row["live_render_proof_gap_percent"] == 0.0
+        assert row["live_render_proof_met"] == row["live_render_proof_count"]
 
 
 def test_gui_parity_report_fails_when_requirement_evidence_is_missing() -> None:

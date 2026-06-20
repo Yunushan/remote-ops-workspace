@@ -12,8 +12,16 @@ RUNBOOK_PATH = ROOT / "docs" / "PLATFORM_PROMOTION_RUNBOOK.md"
 COMMON_SNIPPETS = (
     "python scripts/check_platform_parity_promotion.py",
     "python scripts/check_platform_verified_evidence.py",
+    "python scripts/check_protected_platform_goal.py",
+    "python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-complete",
+    "python scripts/check_platform_verified_evidence.py --require-goal-targets --release-tag v<project.version>",
     "python scripts/check_release_publish_assets.py",
+    "python scripts/check_release_publish_assets.py --require-platform-goal-targets",
+    "python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir>",
+    "python scripts/make_extended_linux_evidence_bundle.py",
+    "python scripts/make_xp_native_evidence_bundle.py",
     "python scripts/make_platform_verified_evidence_record.py",
+    "python scripts/finalize_platform_verified_evidence_record.py",
     "--append-registry",
     "configs/platform_verified_evidence.json",
 )
@@ -21,7 +29,15 @@ LINUX_SNIPPETS = (
     ".github/workflows/extended-platform-evidence.yml",
     "release_asset_base_url",
     "--builder-evidence",
+    "--linux-smoke-evidence",
+    "--smoke-evidence",
+    "linux_smoke_evidence_sha256.native_smoke",
     "builder-identity",
+    "python3 scripts/check_extended_platform_builder.py --target",
+    "--release-tag v<project.version> --workflow-run-url <github-actions-run-url> --out",
+    "native_build_command",
+    "native_smoke_command",
+    "native installer smoke workflow run",
     "scripts/make_linux_native.sh",
 )
 XP_SNIPPETS = (
@@ -33,6 +49,12 @@ XP_SNIPPETS = (
     "artifact_manifest_validation",
     "legacy_crypto_profile_scoped",
     "modern_defaults_unchanged",
+)
+XP_X64_SNIPPETS = (
+    "SP2",
+    "Professional x64 Edition",
+    "os.service_pack",
+    "os.edition",
 )
 
 
@@ -146,6 +168,10 @@ def check_xp_runbook(text: str, target_id: str, requirements: dict[str, Any]) ->
     runner = str(requirements.get("xp_vm_or_self_hosted_runner", ""))
     if runner and runner not in text:
         errors.append(f"{target_id} runbook missing XP runner requirement: {runner}")
+    if target_id.endswith("x64"):
+        for snippet in XP_X64_SNIPPETS:
+            if snippet not in text:
+                errors.append(f"{target_id} runbook missing XP x64 snippet: {snippet}")
     if requirements.get("separate_legacy_toolchain") is True and "separate XP-capable legacy toolchain" not in text:
         errors.append(f"{target_id} runbook missing separate XP-capable legacy toolchain wording")
     for item in requirements.get("security_requirements", []):

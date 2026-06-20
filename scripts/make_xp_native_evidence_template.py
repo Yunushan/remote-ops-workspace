@@ -103,11 +103,32 @@ def evidence_template(
             "name": target_contract["os_name"],
             "architecture": target_contract["architecture"],
             "service_pack": f"{target_contract['minimum_service_pack']} TODO replace with real winver evidence",
+            **xp_edition_template(target_contract),
         },
         "toolchain": {
             "separate_legacy_toolchain": True,
             "current_python_pyqt6_stack": False,
             "description": "TODO describe the separate XP-capable native host toolchain used for this run",
+        },
+        "host_identity": {
+            "schema_version": 1,
+            "target": target,
+            "release_tag": release_tag,
+            "host_label": "TODO-use-sanitized-lab-label-not-real-hostname",
+            "evidence_run_id": "TODO-use-sanitized-run-id",
+            "observed_at_utc": "TODO-use-YYYY-MM-DDTHH:MM:SSZ",
+            "operator_private_data_redacted": False,
+            "os": {
+                "name": target_contract["os_name"],
+                "architecture": target_contract["architecture"],
+                "service_pack": f"{target_contract['minimum_service_pack']} TODO replace with real winver evidence",
+                **xp_edition_template(target_contract),
+            },
+            "toolchain": {
+                "separate_legacy_toolchain": True,
+                "current_python_pyqt6_stack": False,
+                "description": "TODO describe the separate XP-capable native host toolchain used for this run",
+            },
         },
         "artifact_validation": {
             "passed": False,
@@ -121,6 +142,11 @@ def evidence_template(
             {
                 "id": smoke_id,
                 "passed": False,
+                "command": (
+                    f"scripts/xp_smoke_runner.cmd --target {target} --release-tag {release_tag} "
+                    f"--smoke-id {smoke_id} --evidence-file xp-smoke-evidence/{smoke_id}.txt "
+                    f"--proof-file xp-smoke-proof/{smoke_id}.txt"
+                ),
                 "evidence_file": f"xp-smoke-evidence/{smoke_id}.txt",
                 "evidence_sha256": "<replace-with-real-sha256>",
             }
@@ -130,16 +156,52 @@ def evidence_template(
             "legacy_crypto_profile_scoped": False,
             "modern_defaults_unchanged": False,
             "weak_crypto_global_default": True,
+            "patch_evidence": {
+                "tls_minimum_modern_profiles": "TODO verify TLS 1.2 minimum is unchanged",
+                "tls_preferred_modern_profiles": "TODO verify TLS 1.3 preferred is unchanged",
+                "legacy_compatibility_profile": "TODO verify isolated opt-in legacy profile only",
+                "cve_patch_reviewed": False,
+            },
         },
     }
 
 
 def template_smoke_text(target: str, release_tag: str, smoke_id: str) -> str:
     return (
+        f"xp smoke target: {target}\n"
+        f"xp smoke release: {release_tag}\n"
+        f"xp smoke id: {smoke_id}\n"
+        f"{template_security_smoke_lines(smoke_id)}"
         f"Template evidence for {target} {release_tag} smoke id {smoke_id}.\n"
         "Replace this file with real Windows XP host output before validation.\n"
         "Do not include confidential access material or other sensitive values.\n"
     )
+
+
+def template_security_smoke_lines(smoke_id: str) -> str:
+    if smoke_id == "legacy_crypto_profile_scoped":
+        return (
+            "Required real proof lines:\n"
+            "legacy compatibility profile: isolated-opt-in\n"
+            "legacy crypto scope: profile-only\n"
+            "weak crypto global default: false\n"
+        )
+    if smoke_id == "modern_defaults_unchanged":
+        return (
+            "Required real proof lines:\n"
+            "modern TLS minimum: TLS 1.2\n"
+            "modern TLS preferred: TLS 1.3\n"
+            "modern defaults unchanged: true\n"
+            "weak crypto global default: false\n"
+        )
+    return ""
+
+
+def xp_edition_template(target_contract: dict[str, Any]) -> dict[str, str]:
+    edition = str(target_contract.get("required_edition", ""))
+    if not edition:
+        return {}
+    return {"edition": f"{edition} TODO replace with real winver evidence"}
 
 
 def required_artifacts(target: str, release_tag: str) -> list[str]:

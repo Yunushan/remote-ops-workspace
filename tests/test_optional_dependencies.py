@@ -5,8 +5,13 @@ import sys
 from pathlib import Path
 
 
-def test_optional_dependency_checker_passes_current_environment() -> None:
+def test_optional_dependency_checker_passes_current_environment(monkeypatch) -> None:
     checker = _load_optional_checker()
+    monkeypatch.setattr(
+        checker,
+        "check_desktop_gui",
+        lambda tmp_path: ([], ["desktop/PyQt6 bounded live render smoke passed for native preset"]),
+    )
 
     assert checker.main([]) == 0
 
@@ -20,13 +25,47 @@ def test_optional_dependency_declarations_match_expected_extras() -> None:
     assert checker.OPTIONAL_MODULES["package"] == ("build", "PyInstaller")
 
 
-def test_optional_desktop_smoke_exercises_real_or_fail_closed_path(tmp_path: Path) -> None:
+def test_optional_desktop_smoke_uses_bounded_render_subprocess(monkeypatch, tmp_path: Path) -> None:
     checker = _load_optional_checker()
+    calls: dict[str, object] = {}
 
-    errors, messages = checker.check_desktop_gui(tmp_path)
+    class FakeCompletedProcess:
+        returncode = 0
+        stdout = "real GUI render check passed\n"
+        stderr = ""
+
+    def fake_run(command, **kwargs):
+        calls["command"] = command
+        calls["timeout"] = kwargs["timeout"]
+        calls["env"] = kwargs["env"]
+        return FakeCompletedProcess()
+
+    monkeypatch.setattr(checker, "module_available", lambda module: module == "PyQt6")
+    monkeypatch.setattr(checker.subprocess, "run", fake_run)
+
+    errors, messages = checker.check_desktop_gui(tmp_path, render_timeout_seconds=7)
 
     assert errors == []
-    assert any("desktop/PyQt6" in message for message in messages)
+    assert messages == ["desktop/PyQt6 bounded live render smoke passed for native preset"]
+    assert calls["timeout"] == 22
+    assert "--timeout-seconds" in calls["command"]
+    assert "7" in calls["command"]
+    assert calls["env"]["QT_QPA_PLATFORM"] == "offscreen"
+
+
+def test_optional_desktop_smoke_reports_subprocess_timeout(monkeypatch, tmp_path: Path) -> None:
+    checker = _load_optional_checker()
+
+    def fake_run(_command, **_kwargs):
+        raise checker.subprocess.TimeoutExpired(cmd="check_real_gui_render.py", timeout=22)
+
+    monkeypatch.setattr(checker, "module_available", lambda module: module == "PyQt6")
+    monkeypatch.setattr(checker.subprocess, "run", fake_run)
+
+    errors, messages = checker.check_desktop_gui(tmp_path, render_timeout_seconds=7)
+
+    assert errors == ["desktop/PyQt6 live render smoke exceeded 22 seconds"]
+    assert messages == []
 
 
 def test_optional_security_smoke_exercises_real_or_fail_closed_path(tmp_path: Path) -> None:

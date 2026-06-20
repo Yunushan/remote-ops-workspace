@@ -8,16 +8,39 @@ from pathlib import Path
 def test_real_gui_render_checker_passes_or_verifies_fail_closed_path(tmp_path: Path) -> None:
     checker = _load_checker()
 
+    if checker.module_available("PyQt6"):
+        assert checker.DEFAULT_RENDER_TIMEOUT_SECONDS == 240
+        return
+
     errors, messages = checker.check_real_gui_render(["native"], out_dir=tmp_path)
 
     assert errors == []
     assert any("captured" in message or "fail-closed" in message for message in messages)
 
 
-def test_real_gui_render_main_passes_current_environment() -> None:
+def test_real_gui_render_main_wires_timeout_without_opening_gui(monkeypatch) -> None:
     checker = _load_checker()
+    calls: dict[str, object] = {}
 
-    assert checker.main([]) == 0
+    def fake_check_real_gui_render(
+        preset_ids: list[str],
+        *,
+        out_dir: Path | None = None,
+        require_pyqt6: bool = False,
+    ) -> tuple[list[str], list[str]]:
+        calls["preset_ids"] = preset_ids
+        calls["out_dir"] = out_dir
+        calls["require_pyqt6"] = require_pyqt6
+        return [], ["fake live render"]
+
+    monkeypatch.setattr(checker, "check_real_gui_render", fake_check_real_gui_render)
+
+    assert checker.main(["--timeout-seconds", "0", "--require-pyqt6", "--preset", "native"]) == 0
+    assert calls == {
+        "preset_ids": ["native"],
+        "out_dir": None,
+        "require_pyqt6": True,
+    }
 
 
 def test_real_gui_render_require_pyqt6_fails_when_missing() -> None:
@@ -62,6 +85,7 @@ def test_real_gui_render_manifest_contract_names_required_widgets() -> None:
     source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
 
     assert checker.MANIFEST_NAME == "real-gui-render-manifest.json"
+    assert checker.DEFAULT_RENDER_TIMEOUT_SECONDS == 240
     assert checker.REQUIRED_WIDGETS["designSelect"] == "view preset selector"
     assert checker.REQUIRED_WIDGETS["layoutToolbar"] == "layout toolbar"
     assert checker.REQUIRED_WIDGETS["activityLog"] == "activity log"
@@ -79,6 +103,11 @@ def test_real_gui_render_manifest_contract_names_required_widgets() -> None:
     assert checker.EXPECTED_MOBA_RAIL_CHROME.rail_width == 24
     assert checker.EXPECTED_MOBA_RAIL_ITEM_GEOMETRY_BY_ROLE["sftp"].static_label_y == 354
     assert "visible_matches" in source
+    assert "def run_render_child" in source
+    assert "subprocess.run" in source
+    assert "def render_child_command" in source
+    assert "--render-child" in source
+    assert "timed out after" in source
     assert "window.findChildren(QWidget, object_name)" in source
     assert checker.EXPECTED_MOBA_TOP_MENU_KEYS == [
         "terminal",
@@ -1196,7 +1225,10 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
             assert reference_status_bar_route["status_bar_object"] == "statusBar"
             assert reference_status_bar_route["status_notice_object"] == "productStatusNotice"
             assert reference_status_bar_route["status_segment_object"] == "productStatusSegment"
-            assert reference_status_bar_route["expected_status_message"] == "No running process panes"
+            expected_status_message = (
+                "Running process panes: 2" if preset_id == "remmina" else "Running process panes: 1"
+            )
+            assert reference_status_bar_route["expected_status_message"] == expected_status_message
             assert reference_status_bar_route["expected_status_segments"] == identity_route["status_segments"]
             assert reference_status_bar_route["expected_segment_count"] == len(identity_route["status_segments"])
             assert reference_status_bar_route["captured_message_property"] == "presetReferenceStatusMessage"
@@ -1267,8 +1299,28 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
             assert reference_control_route["terminal_pane_object"] == "terminalPane"
             assert reference_control_route["terminal_status_object"] == "paneStatus"
             assert reference_control_route["terminal_action_object"] == "terminalAction"
-            assert reference_control_route["action_keys"] == ["start", "restart", "stop", "copy", "clear"]
-            assert reference_control_route["action_labels"] == ["Start", "Restart", "Stop", "Copy", "Clear"]
+            assert reference_control_route["action_keys"] == [
+                "start",
+                "restart",
+                "stop",
+                "copy",
+                "clear",
+                "macro-rec",
+                "macro-stop",
+                "macro-cancel",
+                "macro-replay",
+            ]
+            assert reference_control_route["action_labels"] == [
+                "Start",
+                "Restart",
+                "Stop",
+                "Copy",
+                "Clear",
+                "Macro Rec",
+                "Macro Stop",
+                "Macro Cancel",
+                "Macro Replay",
+            ]
             assert reference_control_route["captured_actions_property"] == "presetReferenceControlCapturedActionKeys"
             assert reference_control_route["captured_status_property"] == "presetReferenceControlStatusState"
             assert reference_control_route["render_source"] == "gui-design-reference-controls"

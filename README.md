@@ -36,7 +36,7 @@ It is intentionally built as an **adapter-first foundation**: the repo includes 
 
 ## Visual Overview
 
-Generated README media lives in [`artifacts/readme`](artifacts/readme) and is built from the same tracked static GUI preview assets used by [`docs/GUI_DESIGN.md`](docs/GUI_DESIGN.md). They show the shipped workspace surfaces and feature flows in a deterministic gallery, while `python scripts/check_real_gui_render.py --out-dir artifacts/gui-real` captures the real PyQt6 window when the desktop extra is installed.
+Generated README media lives in [`artifacts/readme`](artifacts/readme) and is built from the same tracked static GUI preview assets used by [`docs/GUI_DESIGN.md`](docs/GUI_DESIGN.md). They show the shipped workspace surfaces and feature flows in a deterministic gallery, while `python scripts/check_real_gui_render.py --timeout-seconds 240 --out-dir artifacts/gui-real` captures the real PyQt6 window when the desktop extra is installed.
 
 <p align="center">
   <img src="artifacts/readme/gui-preset-tour.gif" alt="Animated tour of Remote Ops Workspace GUI presets including Native, MobaXterm-style, SecureCRT-style, Termius-style, Remmina-style and mRemoteNG-style" width="100%">
@@ -286,9 +286,23 @@ self-hosted Linux evidence is collected by
 [`configs/platform_verified_evidence.json`](configs/platform_verified_evidence.json)
 after `python scripts/check_platform_verified_evidence.py` passes. Generate a
 candidate accepted record with
-`python scripts/make_platform_verified_evidence_record.py`; Linux accepted
-records include builder identity JSON plus its matching SHA-256 and workflow
-dispatch input binding. Today Linux i386 and
+`python scripts/make_platform_verified_evidence_record.py`, then finalize it
+with `python scripts/finalize_platform_verified_evidence_record.py` so the
+record binds the review-bundle manifest, archive and SHA-256 sidecar. Linux
+accepted records include builder identity JSON plus its matching SHA-256,
+sanitized target-scoped host identity and workflow dispatch input binding.
+`python scripts/check_platform_verified_evidence.py`
+validates the registry in finalized-only mode by default; the
+`--allow-unfinalized-candidates` flag is only for local candidate checks before
+append. The goal-specific gate is
+`python scripts/check_platform_verified_evidence.py --require-goal-targets --release-tag v<project.version>`;
+it must fail until linux-i386, linux-armhf, windows-xp-native-x86 and
+windows-xp-native-x64 all have finalized accepted records for the same release tag.
+Mixed-release accepted records remain visible as aggregate evidence, but the protected goal
+parity block stays incomplete until one release has all four targets. The release/verifier promotion
+gate is `python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir>`,
+which also runs `python scripts/check_release_publish_assets.py --require-platform-goal-targets`
+and must fail until the same four records are finalized and accepted. Today Linux i386 and
 armhf remain script-supported at 70.0% until matching release builders, default
 release matrix entries, smoke evidence, checksum sidecars and native manifests
 exist. Windows XP native-host readiness remains 25.0% until a separate
@@ -418,9 +432,18 @@ python scripts/verify.py
 
 Pull-request and push CI runs `python scripts/verify.py --lint` across the
 Python/OS matrix, and a dedicated Linux job installs the desktop extra and runs
-`python scripts/check_real_gui_render.py --require-pyqt6` against a live
+`python scripts/check_real_gui_render.py --require-pyqt6 --timeout-seconds 240` against a live
 offscreen PyQt6 window. `python scripts/check_ci_workflow.py` keeps those gates
 from drifting.
+
+Use `python scripts/verify.py --require-real-gui` on a desktop-extra install
+when local verification must fail unless the real PyQt6 GUI screenshot gate
+runs instead of the dependency-missing fail-closed path.
+
+After downloading the CI `gui-real-render` artifact, run
+`python scripts/check_real_gui_render_artifact.py --artifact-dir <artifact-dir>`
+to validate the live PNG captures, manifest, PNG dimensions, sizes, SHA-256
+hashes and measured product-style layout/topology evidence.
 
 Use `python scripts/verify.py --quick` only for dependency-constrained review
 environments where `pytest` is unavailable. See
@@ -493,9 +516,10 @@ broader platform support catalog exposed by `row platforms --json`.
 Release manifests include `size_bytes` and `sha256` for each artifact, and CI
 build jobs run with read-only checkout credentials until the final publish step.
 The release workflow also starts with a `release-preflight` job that runs
-`python scripts/verify.py --quick --no-cli-smoke` and
-`python scripts/check_repository_cleanup.py --require-clean`; source, native and
-publish jobs all depend on that gate.
+`python scripts/verify.py --quick --no-cli-smoke`,
+`python scripts/check_platform_verified_evidence.py --require-goal-targets --release-tag`
+and `python scripts/check_repository_cleanup.py --require-clean`; source, native
+and publish jobs all depend on that gate.
 Before upload, the publish job runs
 `python scripts/check_release_publish_assets.py --assets-dir release-assets --tag`
 to verify the downloaded asset set, checksum sidecars and release manifest

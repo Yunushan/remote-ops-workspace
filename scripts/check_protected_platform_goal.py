@@ -1,0 +1,170 @@
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+from pathlib import Path
+from typing import Any
+
+ROOT = Path(__file__).resolve().parents[1]
+SRC = ROOT / "src"
+SCRIPTS = ROOT / "scripts"
+for path in (SRC, SCRIPTS):
+    if str(path) not in sys.path:
+        sys.path.insert(0, str(path))
+
+from check_platform_verified_evidence import (  # noqa: E402
+    EVIDENCE_PATH,
+    PROTECTED_GOAL_TARGETS,
+    check_platform_verified_evidence,
+    read_json,
+)
+
+from remote_ops_workspace.features import _platform_verified_readiness  # noqa: E402
+
+REQUIRE_COMPLETE_RELEASE_TAG_ERROR = "--require-complete requires --release-tag vX.Y.Z"
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
+    arg_errors = strict_completion_arg_errors(args)
+    if arg_errors:
+        for error in arg_errors:
+            print(f"protected platform goal: {error}", file=sys.stderr)
+        return 2
+    registry = read_json(args.registry)
+    errors, goal = check_protected_platform_goal(
+        registry=registry,
+        release_tag=args.release_tag,
+        require_complete=args.require_complete,
+    )
+    if args.json:
+        print(json.dumps(goal, indent=2, sort_keys=True))
+    else:
+        print(format_goal_summary(goal))
+        if goal["missing_targets"]:
+            print(f"missing targets: {', '.join(goal['missing_targets'])}")
+    if errors:
+        for error in errors:
+            print(f"protected platform goal: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Report or gate the protected platform goal for Linux i386, Linux armhf, "
+            "Windows XP native x86, and Windows XP native x64."
+        )
+    )
+    parser.add_argument(
+        "--registry",
+        type=Path,
+        default=EVIDENCE_PATH,
+        help="accepted platform evidence registry JSON",
+    )
+    parser.add_argument(
+        "--release-tag",
+        help="Report or require accepted evidence for this exact release tag.",
+    )
+    parser.add_argument(
+        "--require-complete",
+        action="store_true",
+        help=(
+            "Fail unless all protected goal targets have accepted evidence for "
+            "--release-tag; requires --release-tag."
+        ),
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Print the protected goal parity block as JSON.",
+    )
+    return parser.parse_args(argv)
+
+
+def strict_completion_arg_errors(args: argparse.Namespace) -> list[str]:
+    if args.require_complete and not args.release_tag:
+        return [REQUIRE_COMPLETE_RELEASE_TAG_ERROR]
+    return []
+
+
+def check_protected_platform_goal(
+    *,
+    registry: dict[str, Any],
+    release_tag: str | None = None,
+    require_complete: bool = False,
+) -> tuple[list[str], dict[str, Any]]:
+    errors: list[str] = []
+    if release_tag is not None and not re.fullmatch(r"v\d+\.\d+\.\d+", release_tag):
+        errors.append(f"release_tag must look like vX.Y.Z: {release_tag}")
+    if require_complete and release_tag is None:
+        errors.append(REQUIRE_COMPLETE_RELEASE_TAG_ERROR)
+    else:
+        errors.extend(
+            check_platform_verified_evidence(
+                registry=registry,
+                required_targets=PROTECTED_GOAL_TARGETS if require_complete else None,
+                required_release_tag=release_tag,
+                require_review_bundles=require_complete,
+            )
+        )
+    goal_registry = strict_goal_registry(registry, release_tag, require_complete=require_complete)
+    goal = _platform_verified_readiness(evidence_registry=goal_registry)["protected_goal_parity"]
+    if release_tag is not None:
+        goal = dict(goal)
+        goal["release_tag"] = release_tag
+    elif require_complete:
+        goal = dict(goal)
+        goal["complete"] = False
+        goal["status"] = "release-tag-required"
+        goal["scope_error"] = REQUIRE_COMPLETE_RELEASE_TAG_ERROR
+    if require_complete and not goal.get("complete"):
+        missing = ", ".join(str(target) for target in goal.get("missing_targets", []))
+        errors.append(f"protected platform goal is incomplete: missing {missing}")
+    return errors, goal
+
+
+def strict_goal_registry(
+    registry: dict[str, Any],
+    release_tag: str | None,
+    *,
+    require_complete: bool,
+) -> dict[str, Any]:
+    if require_complete and release_tag is None:
+        filtered = dict(registry)
+        filtered["accepted_evidence"] = []
+        return filtered
+    return filter_registry_for_release_tag(registry, release_tag)
+
+
+def filter_registry_for_release_tag(
+    registry: dict[str, Any],
+    release_tag: str | None,
+) -> dict[str, Any]:
+    if release_tag is None:
+        return registry
+    filtered = dict(registry)
+    records = registry.get("accepted_evidence", [])
+    if isinstance(records, list):
+        filtered["accepted_evidence"] = [
+            record
+            for record in records
+            if isinstance(record, dict) and record.get("release_tag") == release_tag
+        ]
+    return filtered
+
+
+def format_goal_summary(goal: dict[str, Any]) -> str:
+    release = f" release_tag={goal['release_tag']}" if goal.get("release_tag") else ""
+    return (
+        "protected platform goal parity"
+        f"{release}: {goal['accepted_target_count']}/{goal['target_count']} accepted "
+        f"({goal['current_percent']:.1f}%); status={goal['status']}"
+    )
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

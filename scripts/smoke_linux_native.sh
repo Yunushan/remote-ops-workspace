@@ -6,6 +6,8 @@ cd "$ROOT"
 DIST="native-dist/linux"
 ARCH="${TARGET_ARCH:-$(uname -m)}"
 VERSION=""
+TARGET=""
+WORKFLOW_RUN_URL=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -21,12 +23,36 @@ while [[ $# -gt 0 ]]; do
       VERSION="$2"
       shift 2
       ;;
+    --target)
+      TARGET="$2"
+      shift 2
+      ;;
+    --workflow-run-url)
+      WORKFLOW_RUN_URL="$2"
+      shift 2
+      ;;
     *)
       echo "unknown argument: $1" >&2
       exit 2
       ;;
   esac
 done
+
+if [[ -n "$TARGET" && -z "$WORKFLOW_RUN_URL" ]] || [[ -z "$TARGET" && -n "$WORKFLOW_RUN_URL" ]]; then
+  echo "--target and --workflow-run-url must be provided together" >&2
+  exit 2
+fi
+
+if [[ -n "$TARGET" ]]; then
+  case "$TARGET:$ARCH" in
+    linux-i386:i386|linux-armhf:armhf)
+      ;;
+    *)
+      echo "target $TARGET does not match smoke arch $ARCH" >&2
+      exit 2
+      ;;
+  esac
+fi
 
 if [[ -z "$VERSION" ]]; then
   VERSION="$(python3 - <<'PY'
@@ -89,6 +115,23 @@ for artifact in "$DEB" "$RPM" "$APPIMAGE"; do
   fi
 done
 
+SMOKE_COMMAND="bash scripts/smoke_linux_native.sh --arch $ARCH --dist $DIST"
+if [[ -n "$TARGET" ]]; then
+  SMOKE_COMMAND="$SMOKE_COMMAND --target $TARGET --workflow-run-url $WORKFLOW_RUN_URL"
+fi
+
+echo "native installer smoke command: $SMOKE_COMMAND"
+echo "native installer smoke release: v$VERSION"
+echo "native installer smoke target arch: $ARCH"
+if [[ -n "$TARGET" ]]; then
+  echo "native installer smoke target: $TARGET"
+  echo "native installer smoke workflow run: $WORKFLOW_RUN_URL"
+fi
+for artifact in "$DEB" "$RPM" "$APPIMAGE"; do
+  digest="$(sha256sum "$artifact" | awk '{print $1}')"
+  echo "native installer smoke artifact sha256: $(basename "$artifact") $digest"
+done
+
 verify_row() {
   local row_bin="$1"
   if [[ ! -x "$row_bin" ]]; then
@@ -102,28 +145,28 @@ rm -rf "$SMOKE_ROOT"
 mkdir -p "$SMOKE_ROOT/appimage"
 
 echo "native installer smoke: DEB install"
-sudo dpkg -i "$DEB"
+sudo -n dpkg -i "$DEB"
 echo "native installer smoke: DEB verify"
 verify_row /usr/bin/row
 echo "native installer smoke: DEB upgrade"
-sudo dpkg -i "$DEB"
+sudo -n dpkg -i "$DEB"
 verify_row /usr/bin/row
 echo "native installer smoke: DEB uninstall"
-sudo dpkg -r remote-ops-workspace
+sudo -n dpkg -r remote-ops-workspace
 if [[ -e /usr/bin/row ]]; then
   echo "DEB uninstall left /usr/bin/row behind" >&2
   exit 1
 fi
 
 echo "native installer smoke: RPM install"
-sudo rpm -Uvh --nodeps --replacepkgs "$RPM"
+sudo -n rpm -Uvh --nodeps --replacepkgs "$RPM"
 echo "native installer smoke: RPM verify"
 verify_row /usr/bin/row
 echo "native installer smoke: RPM upgrade"
-sudo rpm -Uvh --nodeps --replacepkgs "$RPM"
+sudo -n rpm -Uvh --nodeps --replacepkgs "$RPM"
 verify_row /usr/bin/row
 echo "native installer smoke: RPM uninstall"
-sudo rpm -e --nodeps remote-ops-workspace
+sudo -n rpm -e --nodeps remote-ops-workspace
 if [[ -e /usr/bin/row ]]; then
   echo "RPM uninstall left /usr/bin/row behind" >&2
   exit 1

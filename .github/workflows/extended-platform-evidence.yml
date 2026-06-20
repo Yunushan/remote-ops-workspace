@@ -37,10 +37,21 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+      - name: Validate Linux i386 evidence dispatch inputs
+        run: |
+          python3 scripts/check_extended_platform_dispatch_inputs.py \
+            --target linux-i386 \
+            --release-tag "${{ inputs.release_tag }}" \
+            --release-asset-base-url "${{ inputs.release_asset_base_url }}" \
+            --workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
       - name: Check Linux i386 builder identity
         run: |
           mkdir -p native-dist/linux
-          python3 scripts/check_extended_platform_builder.py --target linux-i386 --out native-dist/linux/builder-identity-linux-i386.json
+          python3 scripts/check_extended_platform_builder.py \
+            --target linux-i386 \
+            --release-tag "${{ inputs.release_tag }}" \
+            --workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --out native-dist/linux/builder-identity-linux-i386.json
       - name: Create isolated release environment
         run: |
           python3 -m venv .venv-native
@@ -51,7 +62,9 @@ jobs:
           . .venv-native/bin/activate
           TARGET_ARCH=i386 PYTHON_BIN=.venv-native/bin/python bash scripts/make_linux_native.sh
       - name: Smoke Linux i386 native artifacts
-        run: bash scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux
+        run: |
+          set -o pipefail
+          bash scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux --target linux-i386 --workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" 2>&1 | tee native-dist/linux/native-smoke-linux-i386.log
       - name: Validate Linux i386 promotion artifacts
         run: |
           . .venv-native/bin/activate
@@ -66,10 +79,31 @@ jobs:
             --release-asset-base-url "${{ inputs.release_asset_base_url }}" \
             --workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
             --builder-evidence native-dist/linux/builder-identity-linux-i386.json \
+            --linux-smoke-evidence native-dist/linux/native-smoke-linux-i386.log \
             --runner-label self-hosted \
             --runner-label linux \
             --runner-label i386 \
             --out native-dist/linux/platform-verified-evidence-linux-i386.json
+      - name: Package Linux i386 review evidence bundle
+        run: |
+          . .venv-native/bin/activate
+          python scripts/make_extended_linux_evidence_bundle.py \
+            --target linux-i386 \
+            --release-tag "${{ inputs.release_tag }}" \
+            --assets-dir native-dist/linux \
+            --builder-evidence native-dist/linux/builder-identity-linux-i386.json \
+            --smoke-evidence native-dist/linux/native-smoke-linux-i386.log \
+            --candidate-record native-dist/linux/platform-verified-evidence-linux-i386.json \
+            --out-dir native-dist/linux
+      - name: Finalize Linux i386 accepted-evidence candidate
+        run: |
+          . .venv-native/bin/activate
+          python scripts/finalize_platform_verified_evidence_record.py \
+            --candidate-record native-dist/linux/platform-verified-evidence-linux-i386.json \
+            --bundle-manifest native-dist/linux/extended-linux-evidence-bundle-linux-i386-${{ inputs.release_tag }}.json \
+            --bundle-archive native-dist/linux/extended-linux-evidence-bundle-linux-i386-${{ inputs.release_tag }}.zip \
+            --bundle-sha256s native-dist/linux/extended-linux-evidence-bundle-linux-i386-${{ inputs.release_tag }}-SHA256SUMS.txt \
+            --out native-dist/linux/platform-verified-evidence-linux-i386-final.json
       - uses: actions/upload-artifact@v7
         with:
           name: extended-linux-i386-native-evidence
@@ -84,10 +118,21 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+      - name: Validate Linux armhf evidence dispatch inputs
+        run: |
+          python3 scripts/check_extended_platform_dispatch_inputs.py \
+            --target linux-armhf \
+            --release-tag "${{ inputs.release_tag }}" \
+            --release-asset-base-url "${{ inputs.release_asset_base_url }}" \
+            --workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
       - name: Check Linux armhf builder identity
         run: |
           mkdir -p native-dist/linux
-          python3 scripts/check_extended_platform_builder.py --target linux-armhf --out native-dist/linux/builder-identity-linux-armhf.json
+          python3 scripts/check_extended_platform_builder.py \
+            --target linux-armhf \
+            --release-tag "${{ inputs.release_tag }}" \
+            --workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --out native-dist/linux/builder-identity-linux-armhf.json
       - name: Create isolated release environment
         run: |
           python3 -m venv .venv-native
@@ -98,7 +143,9 @@ jobs:
           . .venv-native/bin/activate
           TARGET_ARCH=armhf PYTHON_BIN=.venv-native/bin/python bash scripts/make_linux_native.sh
       - name: Smoke Linux armhf native artifacts
-        run: bash scripts/smoke_linux_native.sh --arch armhf --dist native-dist/linux
+        run: |
+          set -o pipefail
+          bash scripts/smoke_linux_native.sh --arch armhf --dist native-dist/linux --target linux-armhf --workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" 2>&1 | tee native-dist/linux/native-smoke-linux-armhf.log
       - name: Validate Linux armhf promotion artifacts
         run: |
           . .venv-native/bin/activate
@@ -113,10 +160,31 @@ jobs:
             --release-asset-base-url "${{ inputs.release_asset_base_url }}" \
             --workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
             --builder-evidence native-dist/linux/builder-identity-linux-armhf.json \
+            --linux-smoke-evidence native-dist/linux/native-smoke-linux-armhf.log \
             --runner-label self-hosted \
             --runner-label linux \
             --runner-label armhf \
             --out native-dist/linux/platform-verified-evidence-linux-armhf.json
+      - name: Package Linux armhf review evidence bundle
+        run: |
+          . .venv-native/bin/activate
+          python scripts/make_extended_linux_evidence_bundle.py \
+            --target linux-armhf \
+            --release-tag "${{ inputs.release_tag }}" \
+            --assets-dir native-dist/linux \
+            --builder-evidence native-dist/linux/builder-identity-linux-armhf.json \
+            --smoke-evidence native-dist/linux/native-smoke-linux-armhf.log \
+            --candidate-record native-dist/linux/platform-verified-evidence-linux-armhf.json \
+            --out-dir native-dist/linux
+      - name: Finalize Linux armhf accepted-evidence candidate
+        run: |
+          . .venv-native/bin/activate
+          python scripts/finalize_platform_verified_evidence_record.py \
+            --candidate-record native-dist/linux/platform-verified-evidence-linux-armhf.json \
+            --bundle-manifest native-dist/linux/extended-linux-evidence-bundle-linux-armhf-${{ inputs.release_tag }}.json \
+            --bundle-archive native-dist/linux/extended-linux-evidence-bundle-linux-armhf-${{ inputs.release_tag }}.zip \
+            --bundle-sha256s native-dist/linux/extended-linux-evidence-bundle-linux-armhf-${{ inputs.release_tag }}-SHA256SUMS.txt \
+            --out native-dist/linux/platform-verified-evidence-linux-armhf-final.json
       - uses: actions/upload-artifact@v7
         with:
           name: extended-linux-armhf-native-evidence

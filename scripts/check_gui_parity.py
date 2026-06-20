@@ -17,6 +17,7 @@ from remote_ops_workspace.gui_designs import GUI_DESIGN_PRESETS  # noqa: E402
 CRITERIA_PATH = ROOT / "configs" / "gui_parity_criteria.json"
 METRICS_PATH = ROOT / "configs" / "gui_visual_metrics.json"
 PREVIEW_MANIFEST_PATH = ROOT / "artifacts" / "gui-design-previews" / "preview-manifest.json"
+CI_WORKFLOW_PATH = ROOT / ".github" / "workflows" / "ci.yml"
 PRODUCT_STYLE_PRESETS = {"mobaxterm", "securecrt", "termius", "remmina", "mremoteng"}
 PROHIBITED_SAMPLE_TOKENS = {"yunus", "yunushan", "yunus-pc", "yunus-home"}
 MIN_EVIDENCE_FILES_PER_REQUIREMENT = 2
@@ -26,9 +27,12 @@ PACKAGE_SOURCE_PREFIX = "src/remote_ops_workspace/"
 GUI_PRIVACY_EVIDENCE_PATHS = (
     "configs/gui_visual_metrics.json",
     "docs/GUI_DESIGN.md",
+    "docs/VERIFYING.md",
     "scripts/render_gui_design_previews.py",
     "scripts/check_gui_visual_metrics.py",
     "scripts/check_real_gui_render.py",
+    "scripts/check_real_gui_render_artifact.py",
+    "scripts/verify.py",
 )
 
 
@@ -71,6 +75,7 @@ def check_gui_parity() -> list[str]:
     errors.extend(check_requirement_evidence(criteria))
     errors.extend(check_dimension_coverage(criteria))
     errors.extend(check_reference_view_coverage(criteria, visual_metrics, preview_manifest))
+    errors.extend(check_live_render_proof_contract(criteria))
     errors.extend(check_no_user_specific_samples(criteria))
     errors.extend(check_parity_target(criteria, visual_metrics, preview_manifest))
     return errors
@@ -572,6 +577,104 @@ def check_dimension_coverage(criteria: dict[str, Any]) -> list[str]:
     return errors
 
 
+def check_live_render_proof_contract(
+    criteria: dict[str, Any],
+    *,
+    workflow_text: str | None = None,
+    verifier_source: str | None = None,
+    docs: dict[str, str] | None = None,
+) -> list[str]:
+    errors: list[str] = []
+    presets = criteria.get("presets", {})
+    if not isinstance(presets, dict) or not PRODUCT_STYLE_PRESETS <= set(presets):
+        return errors
+
+    workflow = workflow_text if workflow_text is not None else CI_WORKFLOW_PATH.read_text(encoding="utf-8")
+    gui_render_block = workflow_job_block(workflow, "gui-render")
+    if not gui_render_block:
+        errors.append("GUI parity live render proof missing ci gui-render job")
+    else:
+        required_workflow_snippets = {
+            'QT_QPA_PLATFORM: "offscreen"': "offscreen Qt platform",
+            '".[desktop,security,dev]"': "desktop extra installation",
+            "timeout-minutes: 15": "bounded live GUI render job timeout",
+            "timeout-minutes: 8": "bounded live GUI render smoke step timeout",
+            "python scripts/check_real_gui_render.py --require-pyqt6 --timeout-seconds 240": (
+                "strict bounded PyQt6 live render command"
+            ),
+            "--out-dir artifacts/gui-real": "live GUI screenshot artifact directory",
+            "Validate real GUI render artifact": "live GUI artifact validation step",
+            "python scripts/check_real_gui_render_artifact.py --artifact-dir artifacts/gui-real": (
+                "live GUI artifact validator command"
+            ),
+            "actions/upload-artifact@v7": "live GUI screenshot artifact upload",
+            "name: gui-real-render": "stable live GUI artifact name",
+            "if-no-files-found: error": "artifact failure on missing screenshots",
+        }
+        for snippet, label in required_workflow_snippets.items():
+            if snippet not in gui_render_block:
+                errors.append(f"GUI parity live render proof missing {label}: {snippet}")
+        if "--preset " in gui_render_block:
+            errors.append("GUI parity live render proof must capture all product-style presets without --preset")
+
+    verifier = verifier_source if verifier_source is not None else (ROOT / "scripts" / "verify.py").read_text(
+        encoding="utf-8"
+    )
+    required_verifier_snippets = {
+        "--require-real-gui": "strict local verifier option",
+        "require_real_gui": "strict local verifier wiring",
+        '"--require-pyqt6"': "strict local PyQt6 render forwarding",
+        "scripts/check_real_gui_render_artifact.py": "live render artifact validator",
+        "real GUI render artifact validator contract": "live render artifact validator contract step",
+    }
+    for snippet, label in required_verifier_snippets.items():
+        if snippet not in verifier:
+            errors.append(f"GUI parity live render proof missing {label}: {snippet}")
+
+    doc_sources = docs if docs is not None else {
+        "README.md": (ROOT / "README.md").read_text(encoding="utf-8"),
+        "docs/VERIFYING.md": (ROOT / "docs" / "VERIFYING.md").read_text(encoding="utf-8"),
+        "docs/GUI_DESIGN.md": (ROOT / "docs" / "GUI_DESIGN.md").read_text(encoding="utf-8"),
+    }
+    required_doc_snippets = {
+        "README.md": ("python scripts/verify.py --require-real-gui",),
+        "docs/VERIFYING.md": (
+            "python scripts/verify.py --require-real-gui",
+            "python scripts/check_real_gui_render_artifact.py --artifact-dir",
+            "--require-pyqt6",
+            "--timeout-seconds",
+            "real GUI render smoke",
+        ),
+        "docs/GUI_DESIGN.md": (
+            "python scripts/verify.py --require-real-gui",
+            "python scripts/check_real_gui_render.py --require-pyqt6 --timeout-seconds 240",
+            "python scripts/check_real_gui_render_artifact.py --artifact-dir",
+            "artifacts/gui-real",
+            "all-preset gate",
+        ),
+    }
+    for doc_path, snippets in required_doc_snippets.items():
+        text = doc_sources.get(doc_path, "")
+        for snippet in snippets:
+            if snippet not in text:
+                errors.append(f"GUI parity live render proof docs missing {doc_path}: {snippet}")
+    return errors
+
+
+def workflow_job_block(workflow: str, job_name: str) -> str:
+    marker = f"  {job_name}:\n"
+    start = workflow.find(marker)
+    if start < 0:
+        return ""
+    tail = workflow[start + len(marker):]
+    next_job = len(tail)
+    for index in range(1, len(tail)):
+        if tail[index - 1] == "\n" and tail.startswith("  ", index) and not tail.startswith("    ", index):
+            next_job = index - 1
+            break
+    return tail[:next_job]
+
+
 def check_no_user_specific_samples(criteria: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     errors.extend(
@@ -609,8 +712,18 @@ def check_parity_target(
     criteria: dict[str, Any],
     visual_metrics: dict[str, Any] | None = None,
     preview_manifest: dict[str, Any] | None = None,
+    workflow_text: str | None = None,
+    verifier_source: str | None = None,
+    docs: dict[str, str] | None = None,
 ) -> list[str]:
-    report = gui_parity_report(criteria, visual_metrics, preview_manifest)
+    report = gui_parity_report(
+        criteria,
+        visual_metrics,
+        preview_manifest,
+        workflow_text=workflow_text,
+        verifier_source=verifier_source,
+        docs=docs,
+    )
     errors: list[str] = []
     target = float(report["target_percent"])
     for row in [report["overall"], *report["presets"]]:
@@ -649,6 +762,12 @@ def check_parity_target(
                 f"{label} GUI reference-view sanitized policy evidence is "
                 f"{row['reference_policy_percent']}%, expected {row['target_percent']}%"
             )
+        if int(row.get("live_render_proof_count", 0)) and float(row["live_render_proof_percent"]) < target:
+            label = row.get("preset_id", "overall")
+            errors.append(
+                f"{label} GUI strict live-render proof is "
+                f"{row['live_render_proof_percent']}%, expected {row['target_percent']}%"
+            )
     return errors
 
 
@@ -656,6 +775,9 @@ def gui_parity_report(
     criteria: dict[str, Any],
     visual_metrics: dict[str, Any] | None = None,
     preview_manifest: dict[str, Any] | None = None,
+    workflow_text: str | None = None,
+    verifier_source: str | None = None,
+    docs: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     target = float(criteria.get("target_percent", 100))
     dimensions = required_dimensions(criteria)
@@ -678,6 +800,14 @@ def gui_parity_report(
     total_reference_contract_met = 0
     total_reference_policy_count = 0
     total_reference_policy_met = 0
+    live_render_proof_ok = not check_live_render_proof_contract(
+        criteria,
+        workflow_text=workflow_text,
+        verifier_source=verifier_source,
+        docs=docs,
+    )
+    total_live_render_proof_count = 0
+    total_live_render_proof_met = 0
     if isinstance(presets, dict):
         for preset_id in sorted(presets):
             preset_data = presets[preset_id]
@@ -703,6 +833,10 @@ def gui_parity_report(
                 live_contract_summaries,
             )
             reference_policy_count, reference_policy_met = reference_policy_counts(preset_data)
+            live_render_proof_count, live_render_proof_met = live_render_proof_counts(
+                preset_id,
+                live_render_proof_ok,
+            )
             rows.append(
                 parity_row(
                     preset_id,
@@ -720,6 +854,8 @@ def gui_parity_report(
                     reference_contract_met,
                     reference_policy_count,
                     reference_policy_met,
+                    live_render_proof_count,
+                    live_render_proof_met,
                 )
             )
             total_count += count
@@ -735,6 +871,8 @@ def gui_parity_report(
             total_reference_contract_met += reference_contract_met
             total_reference_policy_count += reference_policy_count
             total_reference_policy_met += reference_policy_met
+            total_live_render_proof_count += live_render_proof_count
+            total_live_render_proof_met += live_render_proof_met
     return {
         "schema_version": 1,
         "target_percent": round(target, 1),
@@ -755,6 +893,8 @@ def gui_parity_report(
             total_reference_contract_met,
             total_reference_policy_count,
             total_reference_policy_met,
+            total_live_render_proof_count,
+            total_live_render_proof_met,
         ),
         "presets": rows,
     }
@@ -776,6 +916,8 @@ def parity_row(
     reference_contract_met: int = 0,
     reference_policy_count: int = 0,
     reference_policy_met: int = 0,
+    live_render_proof_count: int = 0,
+    live_render_proof_met: int = 0,
 ) -> dict[str, Any]:
     current = (requirements_met / requirement_count * 100.0) if requirement_count else 0.0
     gap = max(target_percent - current, 0.0)
@@ -821,6 +963,16 @@ def parity_row(
         if reference_policy_count
         else 0.0
     )
+    live_render_proof_current = (
+        live_render_proof_met / live_render_proof_count * 100.0
+        if live_render_proof_count
+        else 0.0
+    )
+    live_render_proof_gap = (
+        max(target_percent - live_render_proof_current, 0.0)
+        if live_render_proof_count
+        else 0.0
+    )
     return {
         "preset_id": preset_id,
         "requirements_met": requirements_met,
@@ -849,6 +1001,10 @@ def parity_row(
         "reference_policy_count": reference_policy_count,
         "reference_policy_percent": round(reference_policy_current, 1),
         "reference_policy_gap_percent": round(reference_policy_gap, 1),
+        "live_render_proof_met": live_render_proof_met,
+        "live_render_proof_count": live_render_proof_count,
+        "live_render_proof_percent": round(live_render_proof_current, 1),
+        "live_render_proof_gap_percent": round(live_render_proof_gap, 1),
     }
 
 
@@ -980,6 +1136,12 @@ def reference_policy_counts(preset_data: Any) -> tuple[int, int]:
     return view_count, valid_count
 
 
+def live_render_proof_counts(preset_id: str, live_render_proof_ok: bool) -> tuple[int, int]:
+    if preset_id not in PRODUCT_STYLE_PRESETS:
+        return 0, 0
+    return 1, 1 if live_render_proof_ok else 0
+
+
 def requirement_satisfied(requirement: Any) -> bool:
     if not isinstance(requirement, dict):
         return False
@@ -1044,6 +1206,11 @@ def format_parity_report(report: dict[str, Any]) -> str:
             f"{overall['reference_policy_percent']:.1f}% target {overall['target_percent']:.1f}% "
             f"({overall['reference_policy_gap_percent']:.1f}% gap)"
         ),
+        (
+            "GUI strict live-render proof: "
+            f"{overall['live_render_proof_percent']:.1f}% target {overall['target_percent']:.1f}% "
+            f"({overall['live_render_proof_gap_percent']:.1f}% gap)"
+        ),
     ]
     for row in report["presets"]:
         lines.append(
@@ -1058,7 +1225,9 @@ def format_parity_report(report: dict[str, Any]) -> str:
             f"{row['reference_contract_percent']:.1f}% contracts "
             f"({row['reference_contract_met']}/{row['reference_contract_count']}), "
             f"{row['reference_policy_percent']:.1f}% policy "
-            f"({row['reference_policy_met']}/{row['reference_policy_count']})"
+            f"({row['reference_policy_met']}/{row['reference_policy_count']}), "
+            f"{row['live_render_proof_percent']:.1f}% live proof "
+            f"({row['live_render_proof_met']}/{row['live_render_proof_count']})"
         )
     return "\n".join(lines)
 

@@ -11,7 +11,8 @@
     "windows-xp-native-x64": {
       "os_name": "Windows XP",
       "architecture": "x64",
-      "minimum_service_pack": "x64",
+      "minimum_service_pack": "SP2",
+      "required_edition": "Professional x64 Edition",
       "required_artifact_target": "windows-xp-x64"
     }
   },
@@ -24,7 +25,52 @@
     "modern_defaults_unchanged"
   ],
   "required_smoke_evidence_file": true,
+  "required_smoke_result_fields": [
+    "id",
+    "passed",
+    "command",
+    "evidence_file",
+    "evidence_sha256"
+  ],
+  "required_smoke_command_bindings": [
+    "scripts/xp_smoke_runner.cmd",
+    "--target <target>",
+    "--release-tag <release_tag>",
+    "--smoke-id <smoke_id>",
+    "--evidence-file <evidence_file>"
+  ],
+  "required_smoke_command_prefix": "scripts/xp_smoke_runner.cmd",
   "smoke_evidence_root": "Evidence files are resolved relative to the evidence JSON directory unless --evidence-dir is provided.",
+  "required_smoke_evidence_binding_lines": [
+    "xp smoke target: <target>",
+    "xp smoke release: <release_tag>",
+    "xp smoke id: <smoke_id>"
+  ],
+  "required_security_smoke_evidence_lines": {
+    "legacy_crypto_profile_scoped": [
+      "legacy compatibility profile: isolated-opt-in",
+      "legacy crypto scope: profile-only",
+      "weak crypto global default: false"
+    ],
+    "modern_defaults_unchanged": [
+      "modern TLS minimum: TLS 1.2",
+      "modern TLS preferred: TLS 1.3",
+      "modern defaults unchanged: true",
+      "weak crypto global default: false"
+    ]
+  },
+  "required_host_identity_fields": [
+    "schema_version",
+    "target",
+    "release_tag",
+    "host_label",
+    "evidence_run_id",
+    "observed_at_utc",
+    "operator_private_data_redacted",
+    "os",
+    "toolchain"
+  ],
+  "host_identity_policy": "Use a sanitized lab host label and evidence run id. Do not record real usernames, passwords, hostnames containing personal names, private keys, tokens, or endpoint credentials.",
   "required_artifact_list_exact": true,
   "artifact_validation_tag_must_match_release_tag": true,
   "required_security_flags": {
@@ -32,11 +78,25 @@
     "modern_defaults_unchanged": true,
     "weak_crypto_global_default": false
   },
+  "required_security_patch_evidence": {
+    "tls_minimum_modern_profiles": "TLS 1.2",
+    "tls_preferred_modern_profiles": "TLS 1.3",
+    "legacy_compatibility_profile": "isolated-opt-in",
+    "cve_patch_reviewed": true
+  },
   "required_toolchain_flags": {
     "separate_legacy_toolchain": true,
     "current_python_pyqt6_stack": false
   },
   "forbidden_evidence_patterns": [
+    "TODO",
+    "placeholder",
+    "replace with real",
+    "template evidence",
+    "<artifact-dir>",
+    "<evidence-dir>",
+    "<evidence.json>",
+    "<replace-with-real-sha256>",
     "BEGIN PRIVATE KEY",
     "BEGIN OPENSSH PRIVATE KEY",
     "password=",

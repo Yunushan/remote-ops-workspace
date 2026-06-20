@@ -51,6 +51,13 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
         return [f"extended platform evidence workflow missing job: {job}"]
     record_name = f"platform-verified-evidence-{target}.json"
     builder_identity_name = f"builder-identity-{target}.json"
+    smoke_name = f"native-smoke-{target}.log"
+    smoke_command_snippet = (
+        f"bash scripts/smoke_linux_native.sh --arch {runner} --dist native-dist/linux "
+        f"--target {target} --workflow-run-url "
+        '"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" '
+        f"2>&1 | tee native-dist/linux/{smoke_name}"
+    )
     errors: list[str] = []
     required_snippets = {
         f"if: ${{{{ inputs.target == '{target}' }}}}": "target guard",
@@ -58,26 +65,55 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
         "timeout-minutes: 90": "bounded native evidence job timeout",
         "uses: actions/checkout@v6": "repository checkout",
         "persist-credentials: false": "checkout credential isolation",
-        f"python3 scripts/check_extended_platform_builder.py --target {target} --out native-dist/linux/{builder_identity_name}": "builder identity preflight evidence",
+        f"python3 scripts/check_extended_platform_dispatch_inputs.py \\\n            --target {target}": "dispatch input preflight",
+        f"python3 scripts/check_extended_platform_builder.py \\\n            --target {target}": "builder identity preflight evidence",
+        f"--out native-dist/linux/{builder_identity_name}": "builder identity output",
         "python3 -m venv .venv-native": "isolated release virtual environment",
         'python -m pip install --constraint requirements-release.txt pip setuptools wheel ".[security,package]"': "pinned release dependency installation",
         "bash scripts/make_linux_native.sh": "native Linux artifact build",
-        "bash scripts/smoke_linux_native.sh": "native installer smoke",
+        smoke_command_snippet: "native installer smoke evidence capture",
         f"python scripts/check_platform_promotion_artifacts.py --target {target}": "promotion artifact validation",
         f"python scripts/make_platform_verified_evidence_record.py \\\n            --target {target}": "accepted-evidence record generation",
         '--release-asset-base-url "${{ inputs.release_asset_base_url }}"': "release asset URL evidence input",
         '--workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"': "workflow run URL evidence",
         f"--builder-evidence native-dist/linux/{builder_identity_name}": "builder identity evidence input",
+        f"--linux-smoke-evidence native-dist/linux/{smoke_name}": "native smoke evidence input",
         "--runner-label self-hosted": "self-hosted runner-label evidence",
         "--runner-label linux": "linux runner-label evidence",
         f"--runner-label {runner}": "architecture runner-label evidence",
         f"--out native-dist/linux/{record_name}": "candidate evidence record output",
+        f"python scripts/make_extended_linux_evidence_bundle.py \\\n            --target {target}": "review evidence bundle generation",
+        f"--smoke-evidence native-dist/linux/{smoke_name}": "review bundle smoke evidence input",
+        f"--candidate-record native-dist/linux/{record_name}": "candidate record bundle input",
+        f"python scripts/finalize_platform_verified_evidence_record.py \\\n            --candidate-record native-dist/linux/{record_name}": "finalized evidence record generation",
+        f"--bundle-manifest native-dist/linux/extended-linux-evidence-bundle-{target}-${{{{ inputs.release_tag }}}}.json": "finalized evidence manifest binding",
+        f"--bundle-archive native-dist/linux/extended-linux-evidence-bundle-{target}-${{{{ inputs.release_tag }}}}.zip": "finalized evidence archive binding",
+        f"--bundle-sha256s native-dist/linux/extended-linux-evidence-bundle-{target}-${{{{ inputs.release_tag }}}}-SHA256SUMS.txt": "finalized evidence checksum sidecar binding",
+        f"--out native-dist/linux/platform-verified-evidence-{target}-final.json": "finalized evidence record output",
         "actions/upload-artifact@v7": "evidence artifact upload",
         "if-no-files-found: error": "missing evidence artifact failure",
     }
     for snippet, label in required_snippets.items():
         if snippet not in block:
             errors.append(f"{job} missing {label}: {snippet}")
+    dispatch_command = (
+        "python3 scripts/check_extended_platform_dispatch_inputs.py \\\n"
+        f"            --target {target} \\\n"
+        '            --release-tag "${{ inputs.release_tag }}" \\\n'
+        '            --release-asset-base-url "${{ inputs.release_asset_base_url }}" \\\n'
+        '            --workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"'
+    )
+    if dispatch_command not in block:
+        errors.append(f"{job} dispatch input preflight must bind target, release_tag, release URL and workflow_run_url")
+    builder_command = (
+        "python3 scripts/check_extended_platform_builder.py \\\n"
+        f"            --target {target} \\\n"
+        '            --release-tag "${{ inputs.release_tag }}" \\\n'
+        '            --workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \\\n'
+        f"            --out native-dist/linux/{builder_identity_name}"
+    )
+    if builder_command not in block:
+        errors.append(f"{job} builder identity preflight must bind release_tag and workflow_run_url")
     if "softprops/action-gh-release" in block:
         errors.append(f"{job} must not publish GitHub releases")
     if "contents: write" in block:

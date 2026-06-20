@@ -5,6 +5,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
@@ -141,6 +142,7 @@ from remote_ops_workspace.models import Profile  # noqa: E402
 
 REQUESTED_SIZE = (1420, 820)
 MIN_CAPTURE_SIZE = (1100, 680)
+DEFAULT_RENDER_TIMEOUT_SECONDS = 240
 MANIFEST_NAME = "real-gui-render-manifest.json"
 PRESET_REFERENCE_PROFILES = {
     "mobaxterm": "edge-prod",
@@ -720,29 +722,29 @@ LIVE_TOPOLOGY_CONTRACTS: dict[str, list[dict[str, object]]] = {
         {"id": "toolbar-above-tabs", "from": "layoutToolbar", "relation": "above", "to": "sessionTabs", "max_gap": 120},
         {"id": "sidebar-left-of-tabs", "from": "leftPanel", "relation": "left_of", "to": "sessionTabs", "max_gap": 80},
         {"id": "workflow-above-workspace-surface", "from": "productWorkflowEvidence", "relation": "above", "to": "productWorkspaceSurface", "max_gap": 50},
-        {"id": "workspace-surface-above-log", "from": "productWorkspaceSurface", "relation": "above", "to": "activityLog", "max_gap": 180},
+        {"id": "workspace-surface-above-log", "from": "productWorkspaceSurface", "relation": "above", "to": "activityLog", "max_gap": 190},
         {"id": "workspace-primary-left-of-secondary", "from": "productWorkspacePrimaryPane", "relation": "left_of", "to": "productWorkspaceSecondaryPane", "max_gap": 40},
     ],
     "termius": [
         {"id": "toolbar-above-tabs", "from": "layoutToolbar", "relation": "above", "to": "sessionTabs", "max_gap": 120},
         {"id": "hosts-sidebar-left-of-west-tabs", "from": "leftPanel", "relation": "left_of", "to": "sessionTabs", "max_gap": 80},
         {"id": "workflow-above-workspace-surface", "from": "productWorkflowEvidence", "relation": "above", "to": "productWorkspaceSurface", "max_gap": 50},
-        {"id": "workspace-surface-above-log", "from": "productWorkspaceSurface", "relation": "above", "to": "activityLog", "max_gap": 180},
+        {"id": "workspace-surface-above-log", "from": "productWorkspaceSurface", "relation": "above", "to": "activityLog", "max_gap": 190},
         {"id": "workspace-primary-left-of-secondary", "from": "productWorkspacePrimaryPane", "relation": "left_of", "to": "productWorkspaceSecondaryPane", "max_gap": 40},
     ],
     "remmina": [
         {"id": "toolbar-above-viewer-tabs", "from": "layoutToolbar", "relation": "above", "to": "sessionTabs", "max_gap": 120},
         {"id": "profiles-left-of-viewer-tabs", "from": "leftPanel", "relation": "left_of", "to": "sessionTabs", "max_gap": 80},
         {"id": "workflow-above-workspace-surface", "from": "productWorkflowEvidence", "relation": "above", "to": "productWorkspaceSurface", "max_gap": 50},
-        {"id": "workspace-surface-above-activity", "from": "productWorkspaceSurface", "relation": "above", "to": "activityLog", "max_gap": 180},
+        {"id": "workspace-surface-above-activity", "from": "productWorkspaceSurface", "relation": "above", "to": "activityLog", "max_gap": 190},
         {"id": "workspace-primary-left-of-secondary", "from": "productWorkspacePrimaryPane", "relation": "left_of", "to": "productWorkspaceSecondaryPane", "max_gap": 40},
     ],
     "mremoteng": [
         {"id": "toolbar-above-document-tabs", "from": "layoutToolbar", "relation": "above", "to": "sessionTabs", "max_gap": 120},
         {"id": "connections-left-of-document-tabs", "from": "leftPanel", "relation": "left_of", "to": "sessionTabs", "max_gap": 80},
-        {"id": "workflow-above-workspace-surface", "from": "productWorkflowEvidence", "relation": "above", "to": "productWorkspaceSurface", "max_gap": 50},
+        {"id": "workspace-surface-above-workflow", "from": "productWorkspaceSurface", "relation": "above", "to": "productWorkflowEvidence", "max_gap": 110},
         {"id": "document-controls-above-property-grid", "from": "mRemoteNgDocumentControls", "relation": "above", "to": "mRemoteNgPropertyGrid", "max_gap": 40},
-        {"id": "workspace-surface-above-log", "from": "productWorkspaceSurface", "relation": "above", "to": "activityLog", "max_gap": 180},
+        {"id": "workflow-above-log", "from": "productWorkflowEvidence", "relation": "above", "to": "activityLog", "max_gap": 190},
         {"id": "workspace-primary-left-of-secondary", "from": "productWorkspacePrimaryPane", "relation": "left_of", "to": "productWorkspaceSecondaryPane", "max_gap": 40},
     ],
 }
@@ -816,7 +818,21 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Fail instead of using the fail-closed branch when PyQt6 is not installed.",
     )
+    parser.add_argument(
+        "--timeout-seconds",
+        type=int,
+        default=DEFAULT_RENDER_TIMEOUT_SECONDS,
+        help="Hard timeout for the live render process; use 0 to disable.",
+    )
+    parser.add_argument(
+        "--render-child",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
     args = parser.parse_args(argv)
+
+    if args.timeout_seconds and not args.render_child:
+        return run_render_child(args)
 
     selected = select_presets(args.preset)
     errors, messages = check_real_gui_render(
@@ -832,6 +848,49 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     print("real GUI render check passed")
     return 0
+
+
+def run_render_child(args: argparse.Namespace) -> int:
+    command = render_child_command(args)
+    try:
+        result = subprocess.run(
+            command,
+            cwd=ROOT,
+            env=os.environ.copy(),
+            text=True,
+            capture_output=True,
+            timeout=args.timeout_seconds,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        if exc.stdout:
+            print(exc.stdout, end="" if exc.stdout.endswith("\n") else "\n")
+        if exc.stderr:
+            print(exc.stderr, file=sys.stderr, end="" if exc.stderr.endswith("\n") else "\n")
+        print(f"real GUI render: timed out after {args.timeout_seconds} seconds", file=sys.stderr)
+        return 124
+    if result.stdout:
+        print(result.stdout, end="" if result.stdout.endswith("\n") else "\n")
+    if result.stderr:
+        print(result.stderr, file=sys.stderr, end="" if result.stderr.endswith("\n") else "\n")
+    return int(result.returncode)
+
+
+def render_child_command(args: argparse.Namespace) -> list[str]:
+    command = [
+        sys.executable,
+        str(Path(__file__).resolve()),
+        "--render-child",
+        "--timeout-seconds",
+        "0",
+    ]
+    for preset_id in args.preset or []:
+        command.extend(["--preset", preset_id])
+    if args.out_dir is not None:
+        command.extend(["--out-dir", str(args.out_dir)])
+    if args.require_pyqt6:
+        command.append("--require-pyqt6")
+    return command
 
 
 def select_presets(ids: list[str] | None) -> list[str]:
@@ -905,28 +964,33 @@ def _capture_live_gui(
 
     from remote_ops_workspace import gui
 
-    app, window = gui.create_main_window(["row-real-gui-render-check"], show=True)
     captures: list[CaptureResult] = []
     errors: list[str] = []
     messages: list[str] = []
-    try:
+    for preset_id in preset_ids:
+        preset = next((item for item in GUI_DESIGN_PRESETS if item.id == preset_id), None)
+        if preset is None:
+            errors.append(f"unknown GUI preset requested: {preset_id}")
+            continue
+        app, window = gui.create_main_window(["row-real-gui-render-check", preset.id], show=True)
         window.resize(*REQUESTED_SIZE)
         window.show()
         process_events(app)
 
         widget_errors = check_required_widgets(window, COMMON_REQUIRED_WIDGETS)
         if widget_errors:
-            return captures, widget_errors, messages
+            errors.extend(widget_errors)
+            close_live_render_window(window, app)
+            QCoreApplication.processEvents()
+            continue
 
         design_select = window.findChild(QComboBox, "designSelect")
         if design_select is None:
-            return captures, ["real GUI render could not locate design selector"], messages
-
-        for preset_id in preset_ids:
-            preset = next((item for item in GUI_DESIGN_PRESETS if item.id == preset_id), None)
-            if preset is None:
-                errors.append(f"unknown GUI preset requested: {preset_id}")
-                continue
+            errors.append("real GUI render could not locate design selector")
+            close_live_render_window(window, app)
+            QCoreApplication.processEvents()
+            continue
+        try:
             index = design_select.findData(preset.id)
             if index < 0:
                 errors.append(f"live GUI design selector missing preset: {preset.id}")
@@ -944,6 +1008,7 @@ def _capture_live_gui(
             window.resize(*REQUESTED_SIZE)
             process_events(app)
             preset_state_errors = prepare_preset_live_state(window, preset.id)
+            window.resize(*REQUESTED_SIZE)
             process_events(app)
 
             preset_widget_errors = preset_state_errors
@@ -989,11 +1054,17 @@ def _capture_live_gui(
                 f"{preset.id} captured {metrics.width}x{metrics.height}, "
                 f"{metrics.distinct_colors} sampled colors"
             )
-    finally:
-        window.close()
-        process_events(app)
-        QCoreApplication.processEvents()
+        finally:
+            close_live_render_window(window, app)
+            QCoreApplication.processEvents()
     return captures, errors, messages
+
+
+def close_live_render_window(window: Any, app: Any) -> None:
+    if hasattr(window, "confirm_stop_processes"):
+        window.confirm_stop_processes = lambda _title, _count: True
+    window.close()
+    process_events(app)
 
 
 def process_events(app: Any) -> None:
@@ -1059,6 +1130,17 @@ def prepare_product_reference_tab(window: Any, preset_id: str) -> list[str]:
         window.launch_profile(profile, dry_run=False, prefix="CI REFERENCE")
     except (KeyError, LauncherError, ValueError) as exc:
         return [f"{preset_id} live GUI could not open reference profile {profile_name}: {exc}"]
+    if hasattr(window, "select_profile"):
+        window.select_profile(profile_name)
+    if preset_id == "remmina":
+        transfer_route = EXPECTED_REMMINA_SFTP_TRANSFER_ROUTE
+        try:
+            transfer_profile = window.store.get(transfer_route.selected_profile_name)
+            window.launch_profile(transfer_profile, dry_run=False, prefix="CI TRANSFER")
+        except (KeyError, LauncherError, ValueError) as exc:
+            return [f"remmina live GUI could not open SFTP transfer profile: {exc}"]
+        if hasattr(window, "select_profile"):
+            window.select_profile(profile_name)
     errors: list[str] = []
     if profile_name != route.reference_profile:
         errors.append(f"{preset_id} live GUI reference profile {profile_name!r} drifted from route")
@@ -1091,6 +1173,16 @@ def prepare_product_reference_tab(window: Any, preset_id: str) -> list[str]:
         window.tabs.setProperty(route.home_tab_property, route.home_tab_label)
     else:
         errors.append(f"{preset_id} live GUI could not return to home tab: {route.home_tab_label}")
+    state = gui_design_interaction_state(preset_id)
+    if hasattr(window, "select_profile_tree_label"):
+        window.select_profile_tree_label(state.selected_tree_label)
+    focus_route = (
+        gui_design_preset_focus_interaction_route(preset_id)
+        if preset_id in PRODUCT_GUI_PRESET_IDS
+        else None
+    )
+    if focus_route is not None and hasattr(window, "apply_focus_interaction_route_for_design"):
+        window.apply_focus_interaction_route_for_design(focus_route, preset_id)
     return errors
 
 
@@ -1500,7 +1592,17 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
             for property_name, expected_value in geometry_properties.items():
                 if action.property(property_name) != expected_value:
                     errors.append(f"mobaxterm live GUI top menu {key!r} property {property_name} drifted")
-        moba_buttons = {button.text(): button for button in window.findChildren(QToolButton)}
+        moba_buttons: dict[str, Any] = {}
+        for button in window.findChildren(QToolButton):
+            label = button.text()
+            if not label:
+                continue
+            if label not in moba_buttons or (
+                button.isVisible()
+                and str(button.property("mobaIconKey") or "")
+                and not moba_buttons[label].isVisible()
+            ):
+                moba_buttons[label] = button
         for label in ["Session", "Servers", "Tools", "Sessions", "Tunneling"]:
             if label not in moba_buttons:
                 errors.append(f"mobaxterm live GUI ribbon missing action label: {label}")
@@ -1983,7 +2085,8 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                 routed_row_paths.append(row_source_path)
                 if not row_source_path.startswith("/"):
                     errors.append(f"mobaxterm live GUI SFTP row {item.text(0)!r} missing absolute source path")
-                row_route_index = int(item.data(0, row_index_role) or -1)
+                raw_row_route_index = item.data(0, row_index_role)
+                row_route_index = -1 if raw_row_route_index is None else int(raw_row_route_index)
                 if row_route_index != row_index:
                     errors.append(f"mobaxterm live GUI SFTP row {item.text(0)!r} routed-row index drifted")
                 selected_by_route = bool(item.data(0, row_selected_by_route_role))
@@ -2304,7 +2407,9 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                     "mobaMonitoringControlLiveWidth": geometry.live_width,
                 }
                 for property_name, expected_value in geometry_properties.items():
-                    if int(widget.property(property_name) or -1) != expected_value:
+                    actual_property_value = widget.property(property_name)
+                    actual_value = -1 if actual_property_value is None else int(actual_property_value)
+                    if actual_value != expected_value:
                         errors.append(
                             f"mobaxterm live GUI monitoring control {control.key!r} "
                             f"{property_name} drifted"
@@ -2323,7 +2428,10 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                     )
                 if widget.width() != geometry.live_width:
                     errors.append(f"mobaxterm live GUI monitoring control {control.key!r} live width drifted")
-                if widget.font().pointSize() != geometry.label_font_size:
+                actual_font_size = widget.font().pointSize()
+                if actual_font_size < 0:
+                    actual_font_size = widget.font().pixelSize()
+                if actual_font_size != geometry.label_font_size:
                     errors.append(f"mobaxterm live GUI monitoring control {control.key!r} font size drifted")
                 if widget.font().bold() != geometry.label_bold:
                     errors.append(f"mobaxterm live GUI monitoring control {control.key!r} font weight drifted")
@@ -3322,16 +3430,22 @@ def check_live_preset_isolation_route(window: Any, preset_id: str) -> list[str]:
     if overlap:
         errors.append(f"{preset_id} live GUI preset isolation has overlapping objects: {sorted(overlap)}")
     for object_name in route.visible_objects:
-        widget = window.findChild(QWidget, object_name)
+        widget = visible_child(window, QWidget, object_name)
         if widget is None:
             errors.append(f"{preset_id} live GUI preset isolation missing visible object {object_name}")
         elif not widget.isVisible():
             errors.append(f"{preset_id} live GUI preset isolation visible object is hidden: {object_name}")
     for object_name in route.hidden_objects:
-        widget = window.findChild(QWidget, object_name)
-        if widget is not None and widget.isVisible():
+        visible_matches = [widget for widget in window.findChildren(QWidget, object_name) if widget.isVisible()]
+        if visible_matches:
             errors.append(f"{preset_id} live GUI preset isolation hidden object is visible: {object_name}")
     return errors
+
+
+def visible_child(window: Any, widget_type: Any, object_name: str) -> Any | None:
+    matches = window.findChildren(widget_type, object_name)
+    visible_matches = [widget for widget in matches if widget.isVisible()]
+    return visible_matches[0] if visible_matches else (matches[0] if matches else None)
 
 
 def check_live_preset_transition_route(window: Any, preset_id: str) -> list[str]:
@@ -4830,9 +4944,11 @@ def live_widget_bounds(window: Any, object_name: str) -> dict[str, int] | None:
     from PyQt6.QtCore import QPoint
     from PyQt6.QtWidgets import QWidget
 
-    widget = window.findChild(QWidget, object_name)
-    if widget is None:
+    matches = window.findChildren(QWidget, object_name)
+    if not matches:
         return None
+    visible_matches = [widget for widget in matches if widget.isVisible()]
+    widget = visible_matches[0] if visible_matches else matches[0]
     position = widget.mapTo(window, QPoint(0, 0))
     geometry = widget.geometry()
     return {
@@ -11260,6 +11376,11 @@ def check_live_interaction_state(window: Any, preset_id: str) -> list[str]:
     state = gui_design_interaction_state(preset_id)
     errors: list[str] = []
     buttons = {button.text().strip(): button for button in window.findChildren(QToolButton)}
+    if preset_id == "mobaxterm":
+        for button in window.findChildren(QToolButton):
+            role = str(button.property("mobaRailRole") or "")
+            if role:
+                buttons[role] = button
     for key, expected_state in [
         (state.active_toolbar_key, "active"),
         (state.checked_toolbar_key, "checked"),

@@ -25,7 +25,9 @@ jobs:
         with:
           python-version: "3.12"
       - name: Run release preflight verifier
-        run: python scripts/verify.py --quick --no-cli-smoke
+        run: python scripts/verify.py --quick --no-cli-smoke --release-tag "${{ github.ref_name }}"
+      - name: Require protected platform evidence before release builds
+        run: python scripts/check_platform_verified_evidence.py --require-goal-targets --release-tag "${{ github.ref_name }}"
       - name: Require clean release checkout
         run: python scripts/check_repository_cleanup.py --require-clean
 
@@ -167,6 +169,29 @@ jobs:
           path: native-dist/linux/*
           if-no-files-found: error
 
+  accepted-platform-evidence-assets:
+    needs: release-preflight
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Import accepted protected platform evidence artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/import_platform_evidence_artifacts.py --release-tag "${{ github.ref_name }}" --require-goal-targets --out-dir release-assets
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-platform-evidence-assets
+          path: release-assets/*
+          if-no-files-found: error
+
   publish:
     runs-on: ubuntu-latest
     permissions:
@@ -177,6 +202,7 @@ jobs:
       - windows-native
       - macos-native
       - linux-native
+      - accepted-platform-evidence-assets
     steps:
       - uses: actions/checkout@v6
         with:
@@ -189,7 +215,7 @@ jobs:
           path: release-assets
           merge-multiple: true
       - name: Validate release publish assets
-        run: python scripts/check_release_publish_assets.py --assets-dir release-assets --tag "${{ github.ref_name }}"
+        run: python scripts/check_release_publish_assets.py --assets-dir release-assets --tag "${{ github.ref_name }}" --require-platform-goal-targets
       - name: Upload release assets
         uses: softprops/action-gh-release@v3
         with:

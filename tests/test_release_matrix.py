@@ -49,6 +49,20 @@ def test_release_matrix_separates_script_supported_linux_targets() -> None:
         assert rows[target_id]["github_release_channel"] == "manual-script-native"
 
 
+def test_release_matrix_requires_real_32_bit_linux_builder_identity() -> None:
+    checker = load_release_matrix_checker()
+    matrix = load_release_matrix()
+    platform_targets = load_platform_targets()
+    matrix["script_supported_native"][0]["builder_requirement"] = "Run on any Linux host."
+
+    errors = checker.check_platform_target_alignment(matrix, platform_targets)
+
+    assert "linux-i386 builder_requirement must mention dpkg --print-architecture=i386" in errors
+    assert "linux-i386 builder_requirement must mention getconf LONG_BIT=32" in errors
+    assert "linux-i386 builder_requirement must mention rpm" in errors
+    assert "linux-i386 builder_requirement must mention sudo -n true" in errors
+
+
 def test_release_matrix_keeps_mobile_web_targets_in_source_web_group() -> None:
     matrix = load_release_matrix()
     source_web_targets: set[str] = set()

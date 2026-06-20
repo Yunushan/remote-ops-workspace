@@ -86,6 +86,43 @@ def test_release_truth_checker_requires_preflight_cleanup_command() -> None:
     assert any("clean checkout requirement" in error for error in errors)
 
 
+def test_release_truth_checker_requires_tag_scoped_preflight_verifier() -> None:
+    checker = _load_release_truth_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        ' --release-tag "${{ github.ref_name }}"',
+        "",
+    )
+
+    errors = checker.check_release_preflight(workflow)
+
+    assert any("tag-scoped protected platform parity report" in error for error in errors)
+
+
+def test_release_truth_checker_requires_early_platform_goal_evidence_gate() -> None:
+    checker = _load_release_truth_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        '      - name: Require protected platform evidence before release builds\n'
+        '        run: python scripts/check_platform_verified_evidence.py --require-goal-targets --release-tag "${{ github.ref_name }}"\n',
+        "",
+    )
+
+    errors = checker.check_release_preflight(workflow)
+
+    assert any("early protected platform evidence gate" in error for error in errors)
+
+
+def test_release_truth_checker_requires_publish_time_platform_goal_gate() -> None:
+    checker = _load_release_truth_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        " --require-platform-goal-targets",
+        "",
+    )
+
+    errors = checker.check_release_preflight(workflow)
+
+    assert any("publish-time protected platform goal gate" in error for error in errors)
+
+
 def _load_release_truth_checker():
     path = Path("scripts/check_release_truth.py")
     spec = importlib.util.spec_from_file_location("check_release_truth_script", path)

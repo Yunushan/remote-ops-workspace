@@ -59,6 +59,49 @@ def test_platform_parity_promotion_rejects_linux_default_without_workflow_eviden
     assert "linux-armhf 100% promotion requires workflow arch armhf" in errors
 
 
+def test_platform_parity_promotion_requires_finalized_evidence_contract() -> None:
+    checker = _load_platform_parity_promotion_checker()
+    promotion = _load_json("configs/platform_parity_promotion.json")
+    entry = _promotion_entry(promotion, "linux-i386")
+    requirements = entry["promotion_to_100_requires"]
+    requirements["accepted_evidence_candidate_command"] += " --append-registry"
+
+    errors = checker.check_platform_parity_promotion(promotion=promotion)
+
+    assert "linux-i386 accepted_evidence_candidate_command must not append unfinalized candidates" in errors
+
+
+def test_linux_blockers_describe_evidence_activated_publish_contracts() -> None:
+    promotion = _load_json("configs/platform_parity_promotion.json")
+
+    for target_id in ("linux-i386", "linux-armhf"):
+        entry = _promotion_entry(promotion, target_id)
+        blockers = "\n".join(entry["current_blockers"])
+        assert "No release publish contract currently requires" not in blockers
+        assert (
+            "No accepted evidence record is present yet to activate publish-time requirements "
+            f"for {target_id} checksum, manifest and review-bundle assets."
+        ) in blockers
+
+
+def test_platform_parity_promotion_requires_review_bundle_candidate_record() -> None:
+    checker = _load_platform_parity_promotion_checker()
+    promotion = _load_json("configs/platform_parity_promotion.json")
+    entry = _promotion_entry(promotion, "windows-xp-native-x86")
+    requirements = entry["promotion_to_100_requires"]
+    requirements["review_bundle_command"] = requirements["review_bundle_command"].replace(
+        " --candidate-record <platform-verified-evidence-windows-xp-native-x86.json>",
+        "",
+    )
+
+    errors = checker.check_platform_parity_promotion(promotion=promotion)
+
+    assert (
+        "windows-xp-native-x86 review_bundle_command must bind the candidate record with --candidate-record"
+        in errors
+    )
+
+
 def test_platform_parity_promotion_rejects_fake_xp_native_stack_support() -> None:
     checker = _load_platform_parity_promotion_checker()
     promotion = _load_json("configs/platform_parity_promotion.json")

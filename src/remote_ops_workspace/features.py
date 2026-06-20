@@ -98,14 +98,29 @@ LINUX_ACCEPTED_EVIDENCE_ARTIFACTS = {
     "linux-i386": "extended-linux-i386-native-evidence",
     "linux-armhf": "extended-linux-armhf-native-evidence",
 }
+LINUX_ACCEPTED_EVIDENCE_BUILD_COMMANDS = {
+    "linux-i386": "TARGET_ARCH=i386 PYTHON_BIN=.venv-native/bin/python bash scripts/make_linux_native.sh",
+    "linux-armhf": "TARGET_ARCH=armhf PYTHON_BIN=.venv-native/bin/python bash scripts/make_linux_native.sh",
+}
+LINUX_ACCEPTED_EVIDENCE_SMOKE_COMMANDS = {
+    "linux-i386": "bash scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux --target linux-i386",
+    "linux-armhf": "bash scripts/smoke_linux_native.sh --arch armhf --dist native-dist/linux --target linux-armhf",
+}
 LINUX_ACCEPTED_EVIDENCE_TOOLS = {
     "bash",
     "curl",
+    "dpkg",
     "dpkg-deb",
+    "getconf",
+    "openssl",
+    "rpm",
     "rpmbuild",
     "sha256sum",
     "sudo",
     "tar",
+}
+LINUX_ACCEPTED_EVIDENCE_SMOKE_IDS = {
+    "native_smoke",
 }
 ACCEPTED_EVIDENCE_ARTIFACT_TEMPLATES = {
     "linux-i386": {
@@ -155,6 +170,13 @@ XP_ACCEPTED_EVIDENCE_ARCHITECTURES = {
     "windows-xp-native-x86": "x86",
     "windows-xp-native-x64": "x64",
 }
+XP_ACCEPTED_EVIDENCE_SERVICE_PACKS = {
+    "windows-xp-native-x86": "SP3",
+    "windows-xp-native-x64": "SP2",
+}
+XP_ACCEPTED_EVIDENCE_EDITIONS = {
+    "windows-xp-native-x64": "Professional x64 Edition",
+}
 XP_ACCEPTED_EVIDENCE_TOOLCHAIN_FLAGS = {
     "separate_legacy_toolchain": True,
     "current_python_pyqt6_stack": False,
@@ -164,6 +186,24 @@ XP_ACCEPTED_EVIDENCE_SECURITY_FLAGS = {
     "modern_defaults_unchanged": True,
     "weak_crypto_global_default": False,
 }
+ACCEPTED_EVIDENCE_SECURITY_PATCH_EVIDENCE = {
+    "tls_minimum_modern_profiles": "TLS 1.2",
+    "tls_preferred_modern_profiles": "TLS 1.3",
+    "legacy_compatibility_profile": "isolated-opt-in",
+    "cve_patch_reviewed": True,
+}
+ACCEPTED_EVIDENCE_REVIEW_BUNDLE_TYPES = {
+    "linux-i386": "extended-linux-native-evidence",
+    "linux-armhf": "extended-linux-native-evidence",
+    "windows-xp-native-x86": "windows-xp-native-host-evidence",
+    "windows-xp-native-x64": "windows-xp-native-host-evidence",
+}
+PROTECTED_PLATFORM_GOAL_TARGETS = (
+    "linux-i386",
+    "linux-armhf",
+    "windows-xp-native-x86",
+    "windows-xp-native-x64",
+)
 
 
 def feature_manifest_path() -> Path:
@@ -768,6 +808,7 @@ def _platform_verified_readiness(
             "release or host verification exists in configs/platform_verified_evidence.json."
         ),
         "overall": _platform_overall(rows),
+        "protected_goal_parity": _protected_platform_goal_parity(evidence_data),
         "targets": rows,
     }
 
@@ -904,6 +945,106 @@ def _accepted_evidence_targets(evidence_registry: dict[str, Any] | None) -> set[
     return {str(item.get("target")) for item in _accepted_evidence_entries(evidence_registry)}
 
 
+def _protected_platform_goal_parity(evidence_registry: dict[str, Any] | None) -> dict[str, Any]:
+    entries = {
+        str(item.get("target")): item
+        for item in _accepted_evidence_entries(evidence_registry)
+        if str(item.get("target")) in PROTECTED_PLATFORM_GOAL_TARGETS
+    }
+    release_tag, release_repository, release_targets = _best_protected_platform_release_group(entries)
+    present = [target for target in PROTECTED_PLATFORM_GOAL_TARGETS if target in release_targets]
+    missing = [target for target in PROTECTED_PLATFORM_GOAL_TARGETS if target not in release_targets]
+    aggregate_present = [target for target in PROTECTED_PLATFORM_GOAL_TARGETS if target in entries]
+    aggregate_missing = [target for target in PROTECTED_PLATFORM_GOAL_TARGETS if target not in entries]
+    release_tags = sorted(
+        {
+            str(entry.get("release_tag", ""))
+            for entry in entries.values()
+            if entry.get("release_tag")
+        },
+        key=_release_tag_version_tuple,
+    )
+    release_repositories = sorted(
+        {
+            repository
+            for entry in entries.values()
+            for repository in _release_asset_repositories(entry.get("release_asset_urls"))
+        }
+    )
+    target_count = len(PROTECTED_PLATFORM_GOAL_TARGETS)
+    accepted_count = len(present)
+    current_percent = (accepted_count / target_count * 100.0) if target_count else 0.0
+    complete = accepted_count == target_count
+    release_consistent = len(release_tags) <= 1
+    release_repository_consistent = len(release_repositories) <= 1
+    if complete:
+        status = "complete"
+    elif release_repositories and not release_repository_consistent:
+        status = "mixed-release-repository-evidence"
+    elif release_tags and not release_consistent:
+        status = "mixed-release-evidence"
+    else:
+        status = "missing-accepted-evidence"
+    return {
+        "metric": "protected_platform_goal_parity",
+        "target_percent": 100.0,
+        "current_percent": round(current_percent, 1),
+        "gap_percent": round(max(100.0 - current_percent, 0.0), 1),
+        "target_count": target_count,
+        "accepted_target_count": accepted_count,
+        "aggregate_accepted_target_count": len(aggregate_present),
+        "required_targets": list(PROTECTED_PLATFORM_GOAL_TARGETS),
+        "accepted_targets": present,
+        "missing_targets": missing,
+        "aggregate_accepted_targets": aggregate_present,
+        "aggregate_missing_targets": aggregate_missing,
+        "accepted_evidence_release_tags": {
+            target: str(entries[target].get("release_tag", ""))
+            for target in aggregate_present
+            if entries[target].get("release_tag")
+        },
+        "release_tag": release_tag,
+        "release_tags": release_tags,
+        "release_repository": release_repository,
+        "release_repositories": release_repositories,
+        "release_consistent": release_consistent,
+        "release_repository_consistent": release_repository_consistent,
+        "complete": complete,
+        "status": status,
+        "scope": (
+            "Counts only Linux i386, Linux armhf, Windows XP native x86 and "
+            "Windows XP native x64 accepted evidence records for one release_tag "
+            "and one GitHub release repository. "
+            "The broader platform_verified_readiness overall score does not promote "
+            "this goal unless this block reaches 100% for a single release."
+        ),
+    }
+
+
+def _best_protected_platform_release_group(entries: dict[str, dict[str, Any]]) -> tuple[str, str, set[str]]:
+    groups: dict[tuple[str, str], set[str]] = {}
+    for target, entry in entries.items():
+        release_tag = str(entry.get("release_tag", ""))
+        repositories = _release_asset_repositories(entry.get("release_asset_urls"))
+        if release_tag and len(repositories) == 1:
+            repository = next(iter(repositories))
+            groups.setdefault((release_tag, repository), set()).add(target)
+    if not groups:
+        return "", "", set()
+    (release_tag, repository), targets = max(
+        groups.items(),
+        key=lambda item: (len(item[1]), _release_tag_version_tuple(item[0][0]), item[0][1]),
+    )
+    return release_tag, repository, targets
+
+
+def _release_tag_version_tuple(release_tag: str) -> tuple[int, int, int]:
+    match = re.fullmatch(r"v(\d+)\.(\d+)\.(\d+)", release_tag)
+    if not match:
+        return (0, 0, 0)
+    return int(match.group(1)), int(match.group(2)), int(match.group(3))
+
+
 def _accepted_evidence_entries(evidence_registry: dict[str, Any] | None) -> list[dict[str, Any]]:
     if not isinstance(evidence_registry, dict):
         return []
@@ -921,6 +1062,8 @@ def _is_accepted_evidence_entry(item: dict[str, Any]) -> bool:
         return False
     if str(item.get("promotion_config_sha256", "")) != _promotion_config_sha256():
         return False
+    if not _has_review_bundle_binding(item, target):
+        return False
     if not _has_artifact_validation_command(item, target):
         return False
     if not _has_release_assets_and_hashes(item, target):
@@ -937,6 +1080,9 @@ def _has_artifact_validation_command(item: dict[str, Any], target: str) -> bool:
     command = str(item.get("artifact_validation_command", ""))
     expected_prefix = f"python scripts/check_platform_promotion_artifacts.py --target {target} "
     if not command.startswith(expected_prefix):
+        return False
+    asset_dirs = re.findall(r"(?:^|\s)--assets-dir\s+(\S+)(?=\s|$)", command)
+    if len(asset_dirs) != 1 or "<" in asset_dirs[0] or ">" in asset_dirs[0]:
         return False
     tags = re.findall(r"(?:^|\s)--tag\s+(\S+)(?=\s|$)", command)
     return tags == [release_tag]
@@ -974,6 +1120,80 @@ def _has_release_assets_and_hashes(item: dict[str, Any], target: str) -> bool:
     return all(re.fullmatch(r"[0-9a-f]{64}", digest) for digest in hashes.values())
 
 
+def _has_review_bundle_binding(item: dict[str, Any], target: str) -> bool:
+    release_tag = str(item.get("release_tag", ""))
+    raw_bundle = item.get("review_bundle")
+    if not isinstance(raw_bundle, dict):
+        return False
+    if raw_bundle.get("bundle_type") != ACCEPTED_EVIDENCE_REVIEW_BUNDLE_TYPES.get(target):
+        return False
+    stem = _review_bundle_stem(target, release_tag)
+    if not stem:
+        return False
+    expected_files = {
+        "manifest": f"{stem}.json",
+        "archive": f"{stem}.zip",
+        "sha256s": f"{stem}-SHA256SUMS.txt",
+    }
+    for key, expected_file in expected_files.items():
+        raw_record = raw_bundle.get(key)
+        if not isinstance(raw_record, dict):
+            return False
+        if raw_record.get("file") != expected_file:
+            return False
+        if not re.fullmatch(r"[0-9a-f]{64}", str(raw_record.get("sha256", ""))):
+            return False
+        size = raw_record.get("size_bytes")
+        if not isinstance(size, int) or size <= 0:
+            return False
+    return _has_review_bundle_release_asset_urls(
+        raw_bundle.get("release_asset_urls"),
+        release_tag=release_tag,
+        expected_files=set(expected_files.values()),
+        native_release_assets=item.get("release_asset_urls"),
+    )
+
+
+def _has_review_bundle_release_asset_urls(
+    raw_urls: Any,
+    *,
+    release_tag: str,
+    expected_files: set[str],
+    native_release_assets: Any,
+) -> bool:
+    if not isinstance(raw_urls, list) or not raw_urls:
+        return False
+    native_repositories = _release_asset_repositories(native_release_assets)
+    if not native_repositories:
+        return False
+    bundle_repositories: set[str] = set()
+    filenames: list[str] = []
+    for url in raw_urls:
+        match = re.fullmatch(
+            r"https://github\.com/([^/]+/[^/]+)/releases/download/(v\d+\.\d+\.\d+)/.+",
+            str(url),
+        )
+        if not match:
+            return False
+        if match.group(2) != release_tag:
+            return False
+        bundle_repositories.add(match.group(1))
+        filenames.append(Path(str(url)).name)
+    if bundle_repositories != native_repositories:
+        return False
+    if len(filenames) != len(set(filenames)):
+        return False
+    return set(filenames) == expected_files
+
+
+def _review_bundle_stem(target: str, release_tag: str) -> str:
+    if target in LINUX_ACCEPTED_EVIDENCE_MACHINES:
+        return f"extended-linux-evidence-bundle-{target}-{release_tag}"
+    if target in XP_ACCEPTED_EVIDENCE_ARCHITECTURES:
+        return f"xp-native-evidence-bundle-{target}-{release_tag}"
+    return ""
+
+
 def _expected_accepted_artifact_names(target: str, release_tag: str) -> set[str]:
     templates = ACCEPTED_EVIDENCE_ARTIFACT_TEMPLATES.get(target)
     if templates is None:
@@ -996,13 +1216,21 @@ def _is_linux_accepted_evidence_entry(item: dict[str, Any], target: str) -> bool
         return False
     if item.get("artifact_name") != LINUX_ACCEPTED_EVIDENCE_ARTIFACTS[target]:
         return False
+    if item.get("native_build_command") != LINUX_ACCEPTED_EVIDENCE_BUILD_COMMANDS[target]:
+        return False
+    expected_smoke = (
+        f"{LINUX_ACCEPTED_EVIDENCE_SMOKE_COMMANDS[target]} "
+        f"--workflow-run-url {item.get('workflow_run_url')}"
+    )
+    if item.get("native_smoke_command") != expected_smoke:
+        return False
     labels = {str(label) for label in item.get("runner_labels", [])}
     if not LINUX_ACCEPTED_EVIDENCE_LABELS[target].issubset(labels):
         return False
     checks = {str(check) for check in item.get("checks", [])}
     if not LINUX_ACCEPTED_EVIDENCE_CHECKS.issubset(checks):
         return False
-    return _has_linux_builder_identity_binding(item, target)
+    return _has_linux_builder_identity_binding(item, target) and _has_linux_smoke_evidence_hashes(item)
 
 
 def _has_linux_workflow_inputs(item: dict[str, Any], target: str) -> bool:
@@ -1054,10 +1282,21 @@ def _has_linux_builder_identity(raw_identity: Any, target: str) -> bool:
         return False
     if _python_version_tuple(str(raw_identity.get("python_version", ""))) < (3, 10):
         return False
-    tools = raw_identity.get("required_tools")
-    if not isinstance(tools, dict):
+    if raw_identity.get("sudo_non_interactive") is not True:
         return False
-    return all(str(tools.get(tool, "")).strip() for tool in LINUX_ACCEPTED_EVIDENCE_TOOLS)
+    if not _has_linux_required_tool_paths(raw_identity.get("required_tools")):
+        return False
+    return _has_linux_security_patch_evidence(raw_identity.get("security_patch_evidence"))
+
+
+def _has_linux_required_tool_paths(raw_tools: Any) -> bool:
+    if not isinstance(raw_tools, dict):
+        return False
+    for tool in LINUX_ACCEPTED_EVIDENCE_TOOLS:
+        value = str(raw_tools.get(tool, "")).strip()
+        if not value or "<" in value or ">" in value or not value.startswith("/"):
+            return False
+    return True
 
 
 def _has_linux_builder_identity_binding(item: dict[str, Any], target: str) -> bool:
@@ -1065,7 +1304,20 @@ def _has_linux_builder_identity_binding(item: dict[str, Any], target: str) -> bo
     digest = str(item.get("builder_identity_sha256", ""))
     if not isinstance(raw_identity, dict) or not re.fullmatch(r"[0-9a-f]{64}", digest):
         return False
+    if raw_identity.get("release_tag") != item.get("release_tag"):
+        return False
+    if raw_identity.get("workflow_run_url") != item.get("workflow_run_url"):
+        return False
     return digest == _json_sha256(raw_identity) and _has_linux_builder_identity(raw_identity, target)
+
+
+def _has_linux_smoke_evidence_hashes(item: dict[str, Any]) -> bool:
+    smoke_hashes = item.get("linux_smoke_evidence_sha256")
+    if not isinstance(smoke_hashes, dict):
+        return False
+    if set(str(key) for key in smoke_hashes) != LINUX_ACCEPTED_EVIDENCE_SMOKE_IDS:
+        return False
+    return all(re.fullmatch(r"[0-9a-f]{64}", str(value)) for value in smoke_hashes.values())
 
 
 def _is_xp_accepted_evidence_entry(item: dict[str, Any], target: str) -> bool:
@@ -1077,15 +1329,15 @@ def _is_xp_accepted_evidence_entry(item: dict[str, Any], target: str) -> bool:
         return False
     if item.get("current_python_pyqt6_stack") is not False:
         return False
-    if item.get("native_evidence_validation_command") != (
-        "python scripts/check_xp_native_evidence.py --evidence <evidence.json> --assets-dir <artifact-dir>"
-    ):
+    if not _has_xp_native_evidence_validation_command(item):
         return False
     if not re.fullmatch(r"[0-9a-f]{64}", str(item.get("xp_evidence_sha256", ""))):
         return False
     if str(item.get("xp_evidence_contract_sha256", "")) != _xp_native_evidence_contract_sha256():
         return False
     if not _has_xp_evidence_summary(item, target):
+        return False
+    if not _has_xp_host_identity_digest(item, target):
         return False
     smoke_hashes = item.get("xp_smoke_evidence_sha256")
     if not isinstance(smoke_hashes, dict):
@@ -1098,11 +1350,27 @@ def _is_xp_accepted_evidence_entry(item: dict[str, Any], target: str) -> bool:
     return XP_ACCEPTED_EVIDENCE_CHECKS.issubset(checks)
 
 
+def _has_xp_native_evidence_validation_command(item: dict[str, Any]) -> bool:
+    command = str(item.get("native_evidence_validation_command", ""))
+    if not command.startswith("python scripts/check_xp_native_evidence.py "):
+        return False
+    evidence_paths = re.findall(r"(?:^|\s)--evidence\s+(\S+)(?=\s|$)", command)
+    if len(evidence_paths) != 1 or "<" in evidence_paths[0] or ">" in evidence_paths[0]:
+        return False
+    asset_dirs = re.findall(r"(?:^|\s)--assets-dir\s+(\S+)(?=\s|$)", command)
+    if len(asset_dirs) != 1 or "<" in asset_dirs[0] or ">" in asset_dirs[0]:
+        return False
+    evidence_dirs = re.findall(r"(?:^|\s)--evidence-dir\s+(\S+)(?=\s|$)", command)
+    return len(evidence_dirs) <= 1 and all("<" not in item and ">" not in item for item in evidence_dirs)
+
+
 def _has_xp_evidence_summary(item: dict[str, Any], target: str) -> bool:
     summary = item.get("xp_evidence_summary")
     if not isinstance(summary, dict):
         return False
     if summary.get("target") != target or summary.get("release_tag") != item.get("release_tag"):
+        return False
+    if not _has_xp_host_identity(summary.get("host_identity"), target, str(item.get("release_tag", ""))):
         return False
     os_data = summary.get("os")
     if not isinstance(os_data, dict):
@@ -1111,7 +1379,11 @@ def _has_xp_evidence_summary(item: dict[str, Any], target: str) -> bool:
         return False
     if os_data.get("architecture") != XP_ACCEPTED_EVIDENCE_ARCHITECTURES[target]:
         return False
-    if not str(os_data.get("service_pack", "")).strip():
+    expected_service_pack = XP_ACCEPTED_EVIDENCE_SERVICE_PACKS[target]
+    if expected_service_pack not in str(os_data.get("service_pack", "")):
+        return False
+    expected_edition = XP_ACCEPTED_EVIDENCE_EDITIONS.get(target)
+    if expected_edition and os_data.get("edition") != expected_edition:
         return False
     toolchain = summary.get("toolchain")
     if not isinstance(toolchain, dict):
@@ -1123,8 +1395,145 @@ def _has_xp_evidence_summary(item: dict[str, Any], target: str) -> bool:
         return False
     if any(security.get(flag) is not expected for flag, expected in XP_ACCEPTED_EVIDENCE_SECURITY_FLAGS.items()):
         return False
+    if not _has_security_patch_evidence(security.get("patch_evidence")):
+        return False
     smoke_ids = summary.get("smoke_ids")
-    return isinstance(smoke_ids, list) and {str(smoke_id) for smoke_id in smoke_ids} == XP_ACCEPTED_EVIDENCE_SMOKE_IDS
+    if not isinstance(smoke_ids, list) or {str(smoke_id) for smoke_id in smoke_ids} != XP_ACCEPTED_EVIDENCE_SMOKE_IDS:
+        return False
+    smoke_evidence_files = summary.get("smoke_evidence_files")
+    if not _has_xp_smoke_evidence_files(smoke_evidence_files):
+        return False
+    return _has_xp_smoke_commands(
+        summary.get("smoke_commands"),
+        smoke_evidence_files,
+        target,
+        str(summary.get("release_tag", "")),
+    )
+
+
+def _has_xp_host_identity_digest(item: dict[str, Any], target: str) -> bool:
+    summary = item.get("xp_evidence_summary")
+    if not isinstance(summary, dict):
+        return False
+    identity = summary.get("host_identity")
+    if not isinstance(identity, dict):
+        return False
+    digest = str(item.get("xp_host_identity_sha256", ""))
+    return (
+        re.fullmatch(r"[0-9a-f]{64}", digest) is not None
+        and digest == _json_sha256(identity)
+        and _has_xp_host_identity(identity, target, str(item.get("release_tag", "")))
+    )
+
+
+def _has_xp_host_identity(raw_identity: Any, target: str, release_tag: str) -> bool:
+    if not isinstance(raw_identity, dict):
+        return False
+    if raw_identity.get("schema_version") != 1:
+        return False
+    if raw_identity.get("target") != target or raw_identity.get("release_tag") != release_tag:
+        return False
+    host_label = str(raw_identity.get("host_label", "")).strip()
+    if re.fullmatch(r"^[a-z0-9][a-z0-9._-]{2,63}$", host_label) is None:
+        return False
+    evidence_run_id = str(raw_identity.get("evidence_run_id", "")).strip()
+    if re.fullmatch(r"^[a-z0-9][a-z0-9._:-]{7,127}$", evidence_run_id) is None:
+        return False
+    observed_at = str(raw_identity.get("observed_at_utc", "")).strip()
+    if re.fullmatch(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$", observed_at) is None:
+        return False
+    if raw_identity.get("operator_private_data_redacted") is not True:
+        return False
+    os_data = raw_identity.get("os")
+    if not isinstance(os_data, dict):
+        return False
+    if os_data.get("name") != "Windows XP":
+        return False
+    if os_data.get("architecture") != XP_ACCEPTED_EVIDENCE_ARCHITECTURES[target]:
+        return False
+    if XP_ACCEPTED_EVIDENCE_SERVICE_PACKS[target] not in str(os_data.get("service_pack", "")):
+        return False
+    expected_edition = XP_ACCEPTED_EVIDENCE_EDITIONS.get(target)
+    if expected_edition and os_data.get("edition") != expected_edition:
+        return False
+    toolchain = raw_identity.get("toolchain")
+    if not isinstance(toolchain, dict):
+        return False
+    if any(toolchain.get(flag) is not expected for flag, expected in XP_ACCEPTED_EVIDENCE_TOOLCHAIN_FLAGS.items()):
+        return False
+    return len(str(toolchain.get("description", "")).strip()) >= 12
+
+
+def _has_xp_smoke_evidence_files(raw_files: Any) -> bool:
+    if not isinstance(raw_files, dict):
+        return False
+    files = {str(name): str(value).strip() for name, value in raw_files.items()}
+    if set(files) != XP_ACCEPTED_EVIDENCE_SMOKE_IDS:
+        return False
+    if len(set(files.values())) != len(files):
+        return False
+    for filename in files.values():
+        path = Path(filename)
+        if not filename or "<" in filename or ">" in filename:
+            return False
+        if path.is_absolute() or ".." in path.parts:
+            return False
+    return True
+
+
+def _has_xp_smoke_commands(raw_commands: Any, raw_files: Any, target: str, release_tag: str) -> bool:
+    if not isinstance(raw_commands, dict):
+        return False
+    if not isinstance(raw_files, dict):
+        return False
+    commands = {str(name): str(value).strip() for name, value in raw_commands.items()}
+    evidence_files = {str(name): str(value).strip() for name, value in raw_files.items()}
+    if set(commands) != XP_ACCEPTED_EVIDENCE_SMOKE_IDS:
+        return False
+    return all(
+        command
+        and "<" not in command
+        and ">" not in command
+        and _xp_smoke_command_bound(command, target, release_tag, smoke_id, evidence_files.get(smoke_id, ""))
+        for smoke_id, command in commands.items()
+    )
+
+
+def _xp_smoke_command_bound(
+    command: str,
+    target: str,
+    release_tag: str,
+    smoke_id: str,
+    evidence_file: str,
+) -> bool:
+    expected_values = {
+        "--target": target,
+        "--release-tag": release_tag,
+        "--smoke-id": smoke_id,
+        "--evidence-file": evidence_file,
+    }
+    return all(
+        re.findall(rf"(?:^|\s){re.escape(flag)}\s+(\S+)(?=\s|$)", command) == [expected]
+        for flag, expected in expected_values.items()
+    )
+
+
+def _has_security_patch_evidence(raw_evidence: Any) -> bool:
+    if not isinstance(raw_evidence, dict):
+        return False
+    return all(
+        raw_evidence.get(key) == expected
+        for key, expected in ACCEPTED_EVIDENCE_SECURITY_PATCH_EVIDENCE.items()
+    )
+
+
+def _has_linux_security_patch_evidence(raw_evidence: Any) -> bool:
+    if not _has_security_patch_evidence(raw_evidence):
+        return False
+    return all(
+        str(raw_evidence.get(key, "")).strip()
+        for key in ("python_ssl_openssl", "openssl_cli_version")
+    )
 
 
 def _python_version_tuple(version: str) -> tuple[int, int]:
@@ -1151,7 +1560,19 @@ def _has_windows_xp_native_evidence(evidence_registry: dict[str, Any] | None) ->
     if not required.issubset(entries):
         return False
     release_tags = {str(entries[target].get("release_tag", "")) for target in required}
-    return len(release_tags) == 1 and "" not in release_tags
+    if len(release_tags) != 1 or "" in release_tags:
+        return False
+    repository_sets = [
+        _release_asset_repositories(entries[target].get("release_asset_urls"))
+        for target in required
+    ]
+    if not all(len(repositories) == 1 for repositories in repository_sets):
+        return False
+    repositories = {
+        next(iter(release_repositories))
+        for release_repositories in repository_sets
+    }
+    return len(repositories) == 1
 
 
 def _has_partial_windows_xp_native_evidence(evidence_registry: dict[str, Any] | None) -> bool:
@@ -1190,6 +1611,10 @@ def _windows_xp_evidence_status(evidence_registry: dict[str, Any] | None) -> dic
             target: str(entries[target].get("release_tag", ""))
             for target in present
             if entries[target].get("release_tag")
+        },
+        "accepted_evidence_release_repositories": {
+            target: sorted(_release_asset_repositories(entries[target].get("release_asset_urls")))
+            for target in present
         },
     }
 

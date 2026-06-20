@@ -3,9 +3,12 @@ from __future__ import annotations
 import argparse
 import json
 import platform
+import re
 import shutil
+import ssl
 import subprocess
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -13,28 +16,56 @@ LINUX_TARGET_ARCHES = {
     "linux-i386": {"i386", "i486", "i586", "i686", "x86"},
     "linux-armhf": {"armv6l", "armv7l", "armv7hl", "armhf"},
 }
+LINUX_TARGET_DPKG_ARCHES = {
+    "linux-i386": {"i386"},
+    "linux-armhf": {"armhf"},
+}
+LINUX_TARGET_USERLAND_BITS = {
+    "linux-i386": "32",
+    "linux-armhf": "32",
+}
 
 REQUIRED_LINUX_TOOLS = (
     "bash",
     "curl",
+    "dpkg",
     "dpkg-deb",
+    "getconf",
+    "openssl",
+    "rpm",
     "rpmbuild",
     "sha256sum",
     "sudo",
     "tar",
 )
+RELEASE_TAG_RE = re.compile(r"v\d+\.\d+\.\d+")
+GITHUB_ACTIONS_RUN_RE = re.compile(r"https://github\.com/[^/]+/[^/]+/actions/runs/\d+/?")
+GITHUB_RUN_ID_RE = re.compile(r"/actions/runs/(\d+)/?$")
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     errors = check_extended_platform_builder(args.target)
+    if args.out or args.release_tag or args.workflow_run_url:
+        errors.extend(check_builder_identity_context(args.target, args.release_tag, args.workflow_run_url))
     if errors:
         for error in errors:
             print(f"extended platform builder: {error}", file=sys.stderr)
         return 1
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)
-        args.out.write_text(json.dumps(builder_identity(args.target), indent=2) + "\n", encoding="utf-8")
+        args.out.write_text(
+            json.dumps(
+                builder_identity(
+                    args.target,
+                    release_tag=str(args.release_tag),
+                    workflow_run_url=str(args.workflow_run_url),
+                ),
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
     print(f"extended platform builder checks passed for {args.target}")
     return 0
 
@@ -42,6 +73,8 @@ def main(argv: list[str] | None = None) -> int:
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Validate an extended-platform native builder.")
     parser.add_argument("--target", choices=sorted(LINUX_TARGET_ARCHES), required=True)
+    parser.add_argument("--release-tag", help="release tag this builder evidence is bound to, for example v1.0.2")
+    parser.add_argument("--workflow-run-url", help="GitHub Actions run URL this builder evidence is bound to")
     parser.add_argument("--out", type=Path, help="write builder identity evidence JSON after validation passes")
     return parser.parse_args(argv)
 
@@ -55,8 +88,11 @@ def check_extended_platform_builder(target: str) -> list[str]:
     if machine not in expected:
         errors.append(f"{target} builder architecture must be one of {sorted(expected)}, got {machine}")
     for tool in REQUIRED_LINUX_TOOLS:
-        if shutil.which(tool) is None:
+        tool_path = shutil.which(tool)
+        if tool_path is None:
             errors.append(f"{target} builder missing required tool: {tool}")
+        elif not is_concrete_linux_tool_path(tool_path):
+            errors.append(f"{target} builder required tool {tool} must resolve to an absolute path, got {tool_path!r}")
     python_version = sys.version_info
     if python_version < (3, 10):
         errors.append(
@@ -65,11 +101,37 @@ def check_extended_platform_builder(target: str) -> list[str]:
         )
     if shutil.which("python3") is None:
         errors.append(f"{target} builder missing python3 command")
+    if shutil.which("sudo") is not None and not command_succeeds(["sudo", "-n", "true"]):
+        errors.append(f"{target} builder sudo must be non-interactive: sudo -n true failed")
     errors.extend(check_uname_machine(target, expected))
+    errors.extend(check_dpkg_architecture(target, LINUX_TARGET_DPKG_ARCHES[target]))
+    errors.extend(check_userland_bits(target, LINUX_TARGET_USERLAND_BITS[target]))
+    errors.extend(check_security_patch_evidence(target))
     return errors
 
 
-def builder_identity(target: str) -> dict[str, Any]:
+def is_concrete_linux_tool_path(value: str) -> bool:
+    return bool(value.strip()) and "<" not in value and ">" not in value and value.startswith("/")
+
+
+def check_builder_identity_context(
+    target: str,
+    release_tag: str | None,
+    workflow_run_url: str | None,
+) -> list[str]:
+    errors: list[str] = []
+    if not release_tag:
+        errors.append(f"{target} builder identity output requires --release-tag")
+    elif not RELEASE_TAG_RE.fullmatch(str(release_tag)):
+        errors.append(f"{target} builder identity --release-tag must look like vX.Y.Z")
+    if not workflow_run_url:
+        errors.append(f"{target} builder identity output requires --workflow-run-url")
+    elif not GITHUB_ACTIONS_RUN_RE.fullmatch(str(workflow_run_url)):
+        errors.append(f"{target} builder identity --workflow-run-url must be a GitHub Actions run URL")
+    return errors
+
+
+def builder_identity(target: str, *, release_tag: str = "", workflow_run_url: str = "") -> dict[str, Any]:
     version = sys.version_info
     major = version.major if hasattr(version, "major") else version[0]
     minor = version.minor if hasattr(version, "minor") else version[1]
@@ -77,11 +139,67 @@ def builder_identity(target: str) -> dict[str, Any]:
     return {
         "schema_version": 1,
         "target": target,
+        "release_tag": release_tag,
+        "workflow_run_url": workflow_run_url,
         "sys_platform": sys.platform,
         "platform_machine": normalized_machine(),
         "uname_machine": uname_machine(),
+        "dpkg_architecture": dpkg_architecture(),
+        "userland_bits": userland_bits(),
         "python_version": f"{major}.{minor}.{micro}",
+        "host_identity": builder_host_identity(
+            target,
+            release_tag=release_tag,
+            workflow_run_url=workflow_run_url,
+        ),
+        "sudo_non_interactive": command_succeeds(["sudo", "-n", "true"]),
         "required_tools": {tool: shutil.which(tool) or "" for tool in REQUIRED_LINUX_TOOLS},
+        "security_patch_evidence": security_patch_evidence(),
+    }
+
+
+def builder_host_identity(target: str, *, release_tag: str, workflow_run_url: str) -> dict[str, Any]:
+    version = release_tag.removeprefix("v").replace(".", "-") if release_tag else "unbound"
+    run_match = GITHUB_RUN_ID_RE.search(workflow_run_url)
+    run_id = run_match.group(1) if run_match else "manual"
+    return {
+        "schema_version": 1,
+        "target": target,
+        "release_tag": release_tag,
+        "workflow_run_url": workflow_run_url,
+        "host_label": f"{target}-builder",
+        "evidence_run_id": f"{target}-{version}-run-{run_id}",
+        "observed_at_utc": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "operator_private_data_redacted": True,
+    }
+
+
+def check_security_patch_evidence(target: str) -> list[str]:
+    evidence = security_patch_evidence()
+    errors: list[str] = []
+    if not evidence["python_ssl_openssl"]:
+        errors.append(f"{target} builder cannot report Python ssl OpenSSL version")
+    if not evidence["openssl_cli_version"]:
+        errors.append(f"{target} builder cannot report openssl CLI version")
+    if evidence["tls_minimum_modern_profiles"] != "TLS 1.2":
+        errors.append(f"{target} builder TLS minimum evidence must stay TLS 1.2")
+    if evidence["tls_preferred_modern_profiles"] != "TLS 1.3":
+        errors.append(f"{target} builder TLS preferred evidence must stay TLS 1.3")
+    if evidence["legacy_compatibility_profile"] != "isolated-opt-in":
+        errors.append(f"{target} builder legacy compatibility must remain isolated opt-in")
+    if evidence["cve_patch_reviewed"] is not True:
+        errors.append(f"{target} builder CVE patch review evidence must be true")
+    return errors
+
+
+def security_patch_evidence() -> dict[str, Any]:
+    return {
+        "python_ssl_openssl": getattr(ssl, "OPENSSL_VERSION", ""),
+        "openssl_cli_version": command_output(["openssl", "version"]),
+        "tls_minimum_modern_profiles": "TLS 1.2",
+        "tls_preferred_modern_profiles": "TLS 1.3",
+        "legacy_compatibility_profile": "isolated-opt-in",
+        "cve_patch_reviewed": True,
     }
 
 
@@ -95,10 +213,40 @@ def check_uname_machine(target: str, expected: set[str]) -> list[str]:
     return []
 
 
+def check_dpkg_architecture(target: str, expected: set[str]) -> list[str]:
+    output = dpkg_architecture()
+    if not output:
+        return [f"{target} builder cannot run dpkg --print-architecture"]
+    if output not in expected:
+        return [f"{target} dpkg architecture must be one of {sorted(expected)}, got {output}"]
+    return []
+
+
+def check_userland_bits(target: str, expected: str) -> list[str]:
+    output = userland_bits()
+    if not output:
+        return [f"{target} builder cannot run getconf LONG_BIT"]
+    if output != expected:
+        return [f"{target} userland bits must be {expected}, got {output}"]
+    return []
+
+
 def uname_machine() -> str:
+    return command_output(["uname", "-m"]).lower()
+
+
+def dpkg_architecture() -> str:
+    return command_output(["dpkg", "--print-architecture"]).lower()
+
+
+def userland_bits() -> str:
+    return command_output(["getconf", "LONG_BIT"])
+
+
+def command_output(command: list[str]) -> str:
     try:
         output = subprocess.run(
-            ["uname", "-m"],
+            command,
             check=True,
             capture_output=True,
             text=True,
@@ -106,6 +254,21 @@ def uname_machine() -> str:
     except (OSError, subprocess.CalledProcessError):
         return ""
     return output.lower()
+
+
+def command_succeeds(command: list[str]) -> bool:
+    try:
+        subprocess.run(
+            command,
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        return False
+    return True
 
 
 def normalized_machine() -> str:

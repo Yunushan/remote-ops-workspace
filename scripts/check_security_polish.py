@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
@@ -103,9 +105,20 @@ def check_docs_and_verifier() -> list[str]:
     return errors
 
 
-def check_legacy_security_policy() -> list[str]:
+def check_legacy_security_policy(
+    *,
+    baseline: dict[str, Any] | None = None,
+    xp_contract: dict[str, Any] | None = None,
+    platform_required_flags: dict[str, bool] | None = None,
+    platform_required_patch_evidence: dict[str, Any] | None = None,
+) -> list[str]:
     errors: list[str] = []
-    baseline = json.loads(read("configs/security_baseline.json"))
+    baseline = baseline or json.loads(read("configs/security_baseline.json"))
+    xp_contract = xp_contract or json.loads(read("configs/xp_native_evidence_contract.json"))
+    platform_required_flags = platform_required_flags or load_platform_required_xp_security_flags()
+    platform_required_patch_evidence = (
+        platform_required_patch_evidence or load_platform_required_security_patch_evidence()
+    )
     modern = baseline.get("modern_defaults", {})
     if modern.get("preferred_tls") != "TLS 1.3":
         errors.append("security_baseline preferred_tls must stay TLS 1.3")
@@ -129,6 +142,54 @@ def check_legacy_security_policy() -> list[str]:
         errors.append("Windows XP remote-target security policy must cover x86 and x64")
     if xp_policy.get("native_operator_host") is not False:
         errors.append("Windows XP security policy must not claim native operator-host support")
+    if xp_policy.get("profile_scope") != "per-target":
+        errors.append("Windows XP legacy crypto policy must stay per-target scoped")
+
+    expected_flags = {
+        "legacy_crypto_profile_scoped": True,
+        "modern_defaults_unchanged": True,
+        "weak_crypto_global_default": False,
+    }
+    contract_flags = xp_contract.get("required_security_flags", {})
+    if contract_flags != expected_flags:
+        errors.append(
+            "XP native evidence contract required_security_flags must match "
+            f"{expected_flags}, got {contract_flags}"
+        )
+    if platform_required_flags != expected_flags:
+        errors.append(
+            "platform verified evidence REQUIRED_XP_SECURITY_FLAGS must match "
+            f"{expected_flags}, got {platform_required_flags}"
+        )
+    expected_patch_evidence = {
+        "tls_minimum_modern_profiles": "TLS 1.2",
+        "tls_preferred_modern_profiles": "TLS 1.3",
+        "legacy_compatibility_profile": "isolated-opt-in",
+        "cve_patch_reviewed": True,
+    }
+    contract_patch_evidence = xp_contract.get("required_security_patch_evidence", {})
+    if contract_patch_evidence != expected_patch_evidence:
+        errors.append(
+            "XP native evidence contract required_security_patch_evidence must match "
+            f"{expected_patch_evidence}, got {contract_patch_evidence}"
+        )
+    if platform_required_patch_evidence != expected_patch_evidence:
+        errors.append(
+            "platform verified evidence REQUIRED_SECURITY_PATCH_EVIDENCE must match "
+            f"{expected_patch_evidence}, got {platform_required_patch_evidence}"
+        )
+    smoke_ids = set(str(item) for item in xp_contract.get("required_smoke_ids", []))
+    for smoke_id in ("legacy_crypto_profile_scoped", "modern_defaults_unchanged"):
+        if smoke_id not in smoke_ids:
+            errors.append(f"XP native evidence contract must require smoke id: {smoke_id}")
+    required_profile_options = "\n".join(str(item) for item in xp_policy.get("required_profile_options", []))
+    for snippet in (
+        "legacy_target=windows-xp-32|windows-xp-64",
+        "allow_legacy_crypto=true",
+        "allow_legacy_rdp_security=true",
+    ):
+        if snippet not in required_profile_options:
+            errors.append(f"Windows XP security baseline missing required profile option: {snippet}")
 
     launcher = read("src/remote_ops_workspace/launcher.py")
     for snippet in (
@@ -141,6 +202,32 @@ def check_legacy_security_policy() -> list[str]:
         if snippet not in launcher:
             errors.append(f"launcher missing legacy security enforcement snippet: {snippet}")
     return errors
+
+
+def load_platform_required_xp_security_flags() -> dict[str, bool]:
+    path = ROOT / "scripts" / "check_platform_verified_evidence.py"
+    spec = importlib.util.spec_from_file_location("check_platform_verified_evidence_security", path)
+    if spec is None or spec.loader is None:
+        return {}
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    flags = getattr(module, "REQUIRED_XP_SECURITY_FLAGS", {})
+    if not isinstance(flags, dict):
+        return {}
+    return {str(key): value for key, value in flags.items() if isinstance(value, bool)}
+
+
+def load_platform_required_security_patch_evidence() -> dict[str, Any]:
+    path = ROOT / "scripts" / "check_platform_verified_evidence.py"
+    spec = importlib.util.spec_from_file_location("check_platform_verified_evidence_security_patch", path)
+    if spec is None or spec.loader is None:
+        return {}
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    evidence = getattr(module, "REQUIRED_SECURITY_PATCH_EVIDENCE", {})
+    return evidence if isinstance(evidence, dict) else {}
 
 
 def read(relative: str) -> str:

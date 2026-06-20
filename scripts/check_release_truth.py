@@ -31,6 +31,7 @@ REQUIRED_DOC_SNIPPETS = (
     "remote-ops-workspace-v1.0.2-macos-<x64|arm64>.dmg",
     "remote-ops-workspace-v1.0.2-macos-<x64|arm64>.pkg",
     "not uploaded by the default GitHub",
+    "check_release_publish_assets.py --assets-dir release-assets --tag <tag> --require-platform-goal-targets",
 )
 
 STALE_DEFAULT_ARTIFACT_SNIPPETS = (
@@ -104,6 +105,8 @@ def check_release_preflight(workflow: str | None = None) -> list[str]:
         errors.append("release workflow must opt JavaScript actions into Node.js 24")
     if "ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION" in workflow_text:
         errors.append("release workflow must not opt JavaScript actions into an insecure Node.js runtime")
+    if "--require-platform-goal-targets" not in workflow_text:
+        errors.append("release workflow missing publish-time protected platform goal gate: --require-platform-goal-targets")
     block = workflow_job_block(workflow_text, RELEASE_PREFLIGHT_JOB)
     if not block:
         return [*errors, "release workflow missing release-preflight job"]
@@ -111,6 +114,10 @@ def check_release_preflight(workflow: str | None = None) -> list[str]:
         "persist-credentials: false": "checkout credential persistence disabled",
         'python-version: "3.12"': "stable preflight Python version",
         "python scripts/verify.py --quick --no-cli-smoke": "quick verifier before release builds",
+        '--release-tag "${{ github.ref_name }}"': "tag-scoped protected platform parity report",
+        'python scripts/check_platform_verified_evidence.py --require-goal-targets --release-tag "${{ github.ref_name }}"': (
+            "early protected platform evidence gate"
+        ),
         "python scripts/check_repository_cleanup.py --require-clean": "clean checkout requirement before tagging",
     }
     for snippet, label in required_snippets.items():

@@ -29,6 +29,10 @@ def build_steps(
     quick: bool = False,
     lint: bool = False,
     no_cli_smoke: bool = False,
+    require_real_gui: bool = False,
+    require_platform_goal_targets: bool = False,
+    release_tag: str | None = None,
+    platform_review_bundle_dir: Path | None = None,
     row_home: Path | None = None,
 ) -> list[VerifyStep]:
     steps = [
@@ -93,6 +97,16 @@ def build_steps(
             env=_source_env(),
         ),
         VerifyStep(
+            "extended platform dispatch input validator",
+            [python, "scripts/check_extended_platform_dispatch_inputs.py", "--help"],
+            env=_source_env(),
+        ),
+        VerifyStep(
+            "extended Linux evidence bundle packer",
+            [python, "scripts/make_extended_linux_evidence_bundle.py", "--help"],
+            env=_source_env(),
+        ),
+        VerifyStep(
             "Windows XP native evidence contract",
             [python, "scripts/check_xp_native_evidence.py", "--contract"],
             env=_source_env(),
@@ -103,14 +117,93 @@ def build_steps(
             env=_source_env(),
         ),
         VerifyStep(
+            "Windows XP native evidence bundle packer",
+            [python, "scripts/make_xp_native_evidence_bundle.py", "--help"],
+            env=_source_env(),
+        ),
+        VerifyStep(
             "platform verified evidence registry",
             [python, "scripts/check_platform_verified_evidence.py"],
             env=_source_env(),
         ),
         VerifyStep(
+            "protected platform goal parity report",
+            [
+                python,
+                "scripts/check_protected_platform_goal.py",
+                *(["--release-tag", release_tag] if release_tag else []),
+            ],
+            env=_source_env(),
+        ),
+        *(
+            [
+                VerifyStep(
+                    "protected platform goal parity gate",
+                    [
+                        python,
+                        "scripts/check_protected_platform_goal.py",
+                        "--require-complete",
+                        *(["--release-tag", release_tag] if release_tag else []),
+                    ],
+                    env=_source_env(),
+                )
+            ]
+            if require_platform_goal_targets
+            else []
+        ),
+        *(
+            [
+                VerifyStep(
+                    "platform verified evidence goal gate",
+                    [
+                        python,
+                        "scripts/check_platform_verified_evidence.py",
+                        "--require-goal-targets",
+                        *(["--release-tag", release_tag] if release_tag else []),
+                    ],
+                    env=_source_env(),
+                )
+            ]
+            if require_platform_goal_targets
+            else []
+        ),
+        VerifyStep(
             "platform verified evidence record generator",
             [python, "scripts/make_platform_verified_evidence_record.py", "--help"],
             env=_source_env(),
+        ),
+        VerifyStep(
+            "platform verified evidence record finalizer",
+            [python, "scripts/finalize_platform_verified_evidence_record.py", "--help"],
+            env=_source_env(),
+        ),
+        VerifyStep(
+            "platform review bundle artifact validator",
+            [python, "scripts/check_platform_review_bundle_artifacts.py", "--help"],
+            env=_source_env(),
+        ),
+        VerifyStep(
+            "platform evidence artifact importer",
+            [python, "scripts/import_platform_evidence_artifacts.py", "--help"],
+            env=_source_env(),
+        ),
+        *(
+            [
+                VerifyStep(
+                    "platform review bundle artifact validation",
+                    [
+                        python,
+                        "scripts/check_platform_review_bundle_artifacts.py",
+                        "--bundle-dir",
+                        str(platform_review_bundle_dir),
+                        *(["--require-goal-targets"] if require_platform_goal_targets else []),
+                        *(["--release-tag", release_tag] if release_tag else []),
+                    ],
+                    env=_source_env(),
+                )
+            ]
+            if platform_review_bundle_dir is not None
+            else []
         ),
         VerifyStep(
             "MobaXterm parity evidence registry",
@@ -129,7 +222,12 @@ def build_steps(
         ),
         VerifyStep(
             "release publish asset contract",
-            [python, "scripts/check_release_publish_assets.py"],
+            [
+                python,
+                "scripts/check_release_publish_assets.py",
+                *(["--tag", release_tag] if release_tag else []),
+                *(["--require-platform-goal-targets"] if require_platform_goal_targets else []),
+            ],
             env=_source_env(),
         ),
         VerifyStep(
@@ -174,7 +272,18 @@ def build_steps(
         ),
         VerifyStep(
             "real GUI render smoke",
-            [python, "scripts/check_real_gui_render.py"],
+            [
+                python,
+                "scripts/check_real_gui_render.py",
+                "--timeout-seconds",
+                "240",
+                *(["--require-pyqt6"] if require_real_gui else []),
+            ],
+            env=_source_env(),
+        ),
+        VerifyStep(
+            "real GUI render artifact validator contract",
+            [python, "scripts/check_real_gui_render_artifact.py", "--contract"],
             env=_source_env(),
         ),
         VerifyStep(
@@ -258,11 +367,42 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="skip CLI smoke commands",
     )
+    parser.add_argument(
+        "--require-real-gui",
+        action="store_true",
+        help="require PyQt6 and fail unless the live GUI render smoke captures real screenshots",
+    )
+    parser.add_argument(
+        "--require-platform-goal-targets",
+        action="store_true",
+        help=(
+            "fail unless Linux i386, Linux armhf, Windows XP native x86, "
+            "and Windows XP native x64 all have accepted platform evidence; "
+            "requires --release-tag and --platform-review-bundle-dir"
+        ),
+    )
+    parser.add_argument(
+        "--release-tag",
+        help="When running release-sensitive gates, validate accepted evidence against this tag.",
+    )
+    parser.add_argument(
+        "--platform-review-bundle-dir",
+        type=Path,
+        help=(
+            "Downloaded platform review-bundle artifact directory to validate as part of "
+            "strict platform-goal promotion."
+        ),
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    strict_errors = strict_platform_goal_arg_errors(args)
+    if strict_errors:
+        for error in strict_errors:
+            print(f"verify: {error}", file=sys.stderr)
+        return 2
     with tempfile.TemporaryDirectory(prefix="row-verify-") as raw_tmp:
         row_home = Path(raw_tmp) / "row-home"
         steps = build_steps(
@@ -270,9 +410,24 @@ def main(argv: list[str] | None = None) -> int:
             quick=args.quick,
             lint=args.lint,
             no_cli_smoke=args.no_cli_smoke,
+            require_real_gui=args.require_real_gui,
+            require_platform_goal_targets=args.require_platform_goal_targets,
+            release_tag=args.release_tag,
+            platform_review_bundle_dir=args.platform_review_bundle_dir,
             row_home=row_home,
         )
         return run_steps(steps)
+
+
+def strict_platform_goal_arg_errors(args: argparse.Namespace) -> list[str]:
+    if not args.require_platform_goal_targets:
+        return []
+    errors: list[str] = []
+    if not args.release_tag:
+        errors.append("--require-platform-goal-targets requires --release-tag vX.Y.Z")
+    if args.platform_review_bundle_dir is None:
+        errors.append("--require-platform-goal-targets requires --platform-review-bundle-dir")
+    return errors
 
 
 def _cli_smoke_steps(python: str, row_home: Path) -> list[VerifyStep]:

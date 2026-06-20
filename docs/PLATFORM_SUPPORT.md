@@ -97,10 +97,26 @@ imported with `python scripts/check_xp_native_evidence.py`. Accepted promotion
 records are stored in `configs/platform_verified_evidence.json` and checked by
 `python scripts/check_platform_verified_evidence.py`; until that registry has
 accepted records, the generated readiness report must keep the current partial
-rows. Generate candidate accepted records with
+rows. The strict promotion path is
+`python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-complete`,
+`python scripts/check_platform_verified_evidence.py --require-goal-targets --release-tag v<project.version>`
+and `python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir>`;
+those commands must fail until linux-i386, linux-armhf,
+windows-xp-native-x86 and windows-xp-native-x64 all have accepted records for
+the same release tag. Mixed-release accepted records remain aggregate evidence
+only and cannot complete the protected goal parity block.
+Generate candidate accepted records with
 `python scripts/make_platform_verified_evidence_record.py` after artifact and
-XP evidence validators pass; use `--append-registry` only after the generated
-record has been reviewed for the real release/run evidence it references.
+XP evidence validators pass; package the review bundle, then use
+`python scripts/finalize_platform_verified_evidence_record.py --append-registry`
+only after the finalized record binds the real release/run evidence, review
+bundle manifest, review bundle archive and review bundle SHA-256 sidecar.
+`python scripts/check_platform_verified_evidence.py` checks the persisted
+registry in finalized-only mode by default; `--allow-unfinalized-candidates`
+is only for local candidate validation before append.
+Review bundle archives must include every native artifact recorded in their
+bundle manifests, so reviewers can verify the artifact bytes as well as the
+metadata, smoke logs and candidate record.
 Accepted records must include release asset URLs, per-artifact SHA-256 digests
 for every required promotion artifact, and the promotion config SHA-256 for the
 current `configs/platform_parity_promotion.json` contract. Every release asset
@@ -109,55 +125,93 @@ URL must use the same `/releases/download/<tag>/` segment as the record
 The URL and hash filename sets must exactly match the target's required
 artifact names; missing, duplicate or extra files keep the row partial.
 The accepted record's artifact validation command must also use the same target
-id and exactly one `--tag` value matching the record.
+id, exactly one concrete `--assets-dir` value and exactly one `--tag` value
+matching the record. Placeholder paths such as `<artifact-dir>` are valid in
+documentation examples only, not in accepted evidence records.
 All release asset URLs in one accepted record must use the same GitHub
 repository, and Linux i386/armhf workflow run URLs must point to that repository
 too.
 Linux i386/armhf records must
 also include the builder identity JSON emitted by
-`python3 scripts/check_extended_platform_builder.py --out ...`, including
-matching `platform.machine()`, `uname -m`, Python version and required tool
-paths, plus a `builder_identity_sha256` that matches that JSON and
+`python3 scripts/check_extended_platform_builder.py --release-tag v<project.version> --workflow-run-url <github-actions-run-url> --out ...`, including
+the same `release_tag` and `workflow_run_url` as the accepted record, a
+sanitized target-scoped `host_identity` block with
+`operator_private_data_redacted=true`, matching `platform.machine()`,
+`uname -m`, `dpkg --print-architecture`
+(`i386` for linux-i386 or `armhf` for linux-armhf), `getconf LONG_BIT=32`,
+concrete `rpm`/`rpmbuild` tool paths and `sudo_non_interactive=true`, plus a `builder_identity_sha256` that
+matches that JSON and security patch evidence proving TLS 1.3 preferred,
+TLS 1.2 minimum, isolated legacy compatibility and CVE patch review, a
+`native_build_command` and `native_smoke_command` matching the promotion
+contract, where the Linux smoke command includes the target id and workflow run
+URL, a `linux_smoke_evidence_sha256.native_smoke` digest for the captured native
+smoke log, whose content must include the canonical smoke command, target id,
+workflow run URL, release tag, target architecture, every DEB/RPM/AppImage
+install/verify/upgrade/uninstall line and the final pass line, plus
 `workflow_inputs` that bind the dispatch target, release tag and release asset
-base URL to the record. Windows XP records must include `xp_evidence_sha256` for the validated
-evidence JSON, `xp_evidence_summary` for the XP target/release/toolchain/security/smoke binding,
+base URL to the record. Windows
+XP records must include `xp_evidence_sha256` for the validated evidence JSON,
+`xp_evidence_summary` for the XP target/release/toolchain/security/smoke
+binding, `xp_host_identity_sha256` for the sanitized XP host identity in
+`xp_evidence_summary.host_identity`, required XP security patch evidence,
+security smoke proof lines for `legacy_crypto_profile_scoped` and
+`modern_defaults_unchanged`,
+tracked `scripts/xp_smoke_runner.cmd` per-smoke command provenance in
+`xp_evidence_summary.smoke_commands`,
+`xp_evidence_summary.smoke_evidence_files` bindings that match each
+`--evidence-file` command argument,
 `xp_smoke_evidence_sha256` for each required smoke evidence file, and
-`xp_evidence_contract_sha256` for the current XP evidence contract.
+`xp_evidence_contract_sha256` for the
+current XP evidence contract. Each smoke evidence file must include proof lines
+for `xp smoke target`, `xp smoke release` and `xp smoke id`, so copied evidence
+from another target, smoke or release tag cannot promote. The current XP
+evidence contract requires XP x86
+SP3 evidence and Windows XP Professional x64 Edition SP2 evidence before either
+native-host row can promote.
 The accepted evidence registry also rejects duplicate target records, and
 Windows XP x86/x64 native evidence must use the same `release_tag` before the
 Windows XP native-host row can promote.
 The generated `platform_verified_readiness` rows expose
 `accepted_evidence_required_targets`, `accepted_evidence_present_targets` and
 `accepted_evidence_missing_targets` so partial Linux or XP promotion evidence is
-visible without changing the current readiness percentage.
+visible without changing the current readiness percentage. The same JSON block
+also exposes `protected_goal_parity`, which is the authoritative four-target
+parity score for linux-i386, linux-armhf, windows-xp-native-x86 and
+windows-xp-native-x64. The broader `overall` score only covers verified-scope
+default/mobile targets and does not mean the protected goal is complete.
 
 Current readiness:
 
 - Linux i386: 70.0%, script-supported native. Promotion requires a real
   i386/i686 release builder, default `linux-native` release matrix membership,
   upload/publish asset coverage, `scripts/make_linux_native.sh` output,
-  `scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux`, native
+  `scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux --target linux-i386 --workflow-run-url <github-actions-run-url>`, native
   manifest evidence, checksum sidecars and
   `python scripts/check_platform_promotion_artifacts.py --target linux-i386 --assets-dir <artifact-dir> --tag v<project.version>`.
   The dispatch-only evidence workflow uses a `[self-hosted, linux, i386]`
   runner and uploads `extended-linux-i386-native-evidence`, including
   `builder-identity-linux-i386.json` and
   `platform-verified-evidence-linux-i386.json` as the reviewed registry-record
-  candidate.
+  candidate. That builder identity must prove `dpkg --print-architecture=i386`,
+  `getconf LONG_BIT=32`, concrete `rpm`/`rpmbuild` tool paths and `sudo_non_interactive=true`, plus a review bundle from
+  `python scripts/make_extended_linux_evidence_bundle.py --target linux-i386 --release-tag v<project.version> --assets-dir <artifact-dir> --builder-evidence <builder-identity.json> --smoke-evidence <native-smoke-log> --candidate-record <platform-verified-evidence-linux-i386.json> --out-dir <bundle-dir>`.
 - Linux armhf: 70.0%, script-supported native. Promotion requires a real
   armv7l/armhf release builder, default `linux-native` release matrix
   membership, upload/publish asset coverage, `scripts/make_linux_native.sh`
-  output, `scripts/smoke_linux_native.sh --arch armhf --dist native-dist/linux`,
+  output, `scripts/smoke_linux_native.sh --arch armhf --dist native-dist/linux --target linux-armhf --workflow-run-url <github-actions-run-url>`,
   native manifest evidence, checksum sidecars and
   `python scripts/check_platform_promotion_artifacts.py --target linux-armhf --assets-dir <artifact-dir> --tag v<project.version>`.
   The dispatch-only evidence workflow uses a `[self-hosted, linux, armhf]`
   runner and uploads `extended-linux-armhf-native-evidence`, including
   `builder-identity-linux-armhf.json` and
   `platform-verified-evidence-linux-armhf.json` as the reviewed registry-record
-  candidate.
+  candidate. That builder identity must prove `dpkg --print-architecture=armhf`,
+  `getconf LONG_BIT=32`, concrete `rpm`/`rpmbuild` tool paths and `sudo_non_interactive=true`, plus a review bundle from
+  `python scripts/make_extended_linux_evidence_bundle.py --target linux-armhf --release-tag v<project.version> --assets-dir <artifact-dir> --builder-evidence <builder-identity.json> --smoke-evidence <native-smoke-log> --candidate-record <platform-verified-evidence-linux-armhf.json> --out-dir <bundle-dir>`.
 - Windows XP native host: 25.0%, remote-target-only as a local operator host
-  row. Promotion requires a separate XP-capable legacy toolchain, XP x86 and
-  XP x64 VM or self-hosted runner smoke evidence, native artifact evidence, and
+  row. Promotion requires a separate XP-capable legacy toolchain, XP x86 SP3
+  and Windows XP Professional x64 Edition SP2 VM or self-hosted runner smoke
+  evidence, native artifact evidence, and
   security proof that weak TLS/SSH/RDP compatibility remains profile-scoped and
   never lowers modern OS defaults. Validate XP artifact sets with
   `python scripts/check_platform_promotion_artifacts.py --target windows-xp-native-x86 --assets-dir <artifact-dir> --tag v<project.version>`
@@ -168,14 +222,28 @@ Current readiness:
   or
   `python scripts/make_xp_native_evidence_template.py --target windows-xp-native-x64 --release-tag v<project.version> --out-dir <evidence-dir>`;
   the generated template is intentionally incomplete and must fail validation
-  until real XP evidence replaces the placeholders.
+  until real XP evidence replaces the placeholders. The XP evidence validator
+  rejects leftover `TODO`, `placeholder`, `replace with real` and
+  `template evidence` markers in both the JSON file and referenced smoke
+  evidence files, and requires a sanitized `host_identity` block instead of
+  real usernames, personal hostnames, credentials or tokens.
+  The `legacy_crypto_profile_scoped` smoke file must include
+  `legacy compatibility profile: isolated-opt-in`,
+  `legacy crypto scope: profile-only` and `weak crypto global default: false`.
+  The `modern_defaults_unchanged` smoke file must include
+  `modern TLS minimum: TLS 1.2`, `modern TLS preferred: TLS 1.3`,
+  `modern defaults unchanged: true` and `weak crypto global default: false`.
   Import the VM/toolchain smoke bundle with
   `python scripts/check_xp_native_evidence.py --evidence <evidence.json> --assets-dir <artifact-dir>`.
-  The accepted record must carry the evidence JSON SHA-256 and all required
-  smoke evidence SHA-256 values from that validated bundle.
+  Package validated XP evidence for review with
+  `python scripts/make_xp_native_evidence_bundle.py --target <windows-xp-native-target> --evidence <evidence.json> --candidate-record <platform-verified-evidence-windows-xp-native-target.json> --assets-dir <artifact-dir> --out-dir <bundle-dir>`.
+  The accepted record must carry the evidence JSON SHA-256, the sanitized XP
+  host identity SHA-256 and all required smoke evidence SHA-256 values from
+  that validated bundle.
   Each required XP smoke result must reference a bundled evidence file, resolved
   relative to the evidence JSON directory unless `--evidence-dir` is supplied,
-  and the recorded SHA-256 must match that file.
+  must record the concrete command/action that produced that evidence, and the
+  recorded SHA-256 must match that file.
 
 The broad support catalog is exposed with:
 

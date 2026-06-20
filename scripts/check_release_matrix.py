@@ -19,6 +19,26 @@ STALE_DEFAULT_ARTIFACT_SNIPPETS = (
     "remote-ops-workspace-v1.0.2-linux-<i686|x86_64|armhf|aarch64>.AppImage",
     "remote-ops-workspace-v1.0.2-linux-<i686|x86_64|armhf|aarch64>-native.tar.gz",
 )
+SCRIPT_TARGET_BUILDER_REQUIREMENT_SNIPPETS = {
+    "linux-i386": (
+        "32-bit",
+        "dpkg --print-architecture=i386",
+        "getconf LONG_BIT=32",
+        "rpm",
+        "sudo -n true",
+        "dpkg",
+        "getconf",
+    ),
+    "linux-armhf": (
+        "32-bit",
+        "dpkg --print-architecture=armhf",
+        "getconf LONG_BIT=32",
+        "rpm",
+        "sudo -n true",
+        "dpkg",
+        "getconf",
+    ),
+}
 
 
 def main() -> int:
@@ -135,6 +155,14 @@ def check_platform_target_alignment(matrix: dict[str, Any], platform_targets: di
         for item in require_list(matrix, "script_supported_native", errors)
         if isinstance(item, dict)
     }
+    for raw_item in require_list(matrix, "script_supported_native", errors):
+        if not isinstance(raw_item, dict):
+            continue
+        target_id = str(raw_item.get("platform_target_id"))
+        builder_requirement = str(raw_item.get("builder_requirement", ""))
+        for snippet in SCRIPT_TARGET_BUILDER_REQUIREMENT_SNIPPETS.get(target_id, ()):
+            if snippet not in builder_requirement:
+                errors.append(f"{target_id} builder_requirement must mention {snippet}")
     source_web_ids = set()
     legacy_versions = set()
     for raw_item in require_list(matrix, "source_or_remote_only", errors):

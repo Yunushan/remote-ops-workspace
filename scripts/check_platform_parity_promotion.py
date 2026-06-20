@@ -39,6 +39,10 @@ LINUX_REQUIRED_PROMOTION_KEYS = {
     "build_script",
     "smoke_script",
     "artifact_validation_command",
+    "accepted_evidence_candidate_command",
+    "review_bundle_command",
+    "finalized_evidence_record_command",
+    "review_bundle_files",
     "required_artifacts",
 }
 XP_REQUIRED_PROMOTION_KEYS = {
@@ -47,6 +51,10 @@ XP_REQUIRED_PROMOTION_KEYS = {
     "native_artifacts",
     "artifact_validation_command",
     "native_evidence_validation_command",
+    "accepted_evidence_candidate_command",
+    "review_bundle_command",
+    "finalized_evidence_record_command",
+    "review_bundle_files",
     "smoke_evidence",
     "security_requirements",
 }
@@ -62,6 +70,7 @@ REQUIRED_DOC_SNIPPETS: dict[str, tuple[str, ...]] = {
         "configs/platform_verified_evidence.json",
         "python scripts/check_platform_verified_evidence.py",
         "python scripts/make_platform_verified_evidence_record.py",
+        "python scripts/finalize_platform_verified_evidence_record.py",
     ),
     "docs/PLATFORM_SUPPORT.md": (
         "## Promotion to 100% for extended targets",
@@ -74,6 +83,7 @@ REQUIRED_DOC_SNIPPETS: dict[str, tuple[str, ...]] = {
         "configs/platform_verified_evidence.json",
         "python scripts/check_platform_verified_evidence.py",
         "python scripts/make_platform_verified_evidence_record.py",
+        "python scripts/finalize_platform_verified_evidence_record.py",
     ),
     "docs/RELEASE_STRATEGY.md": (
         "configs/platform_parity_promotion.json",
@@ -84,6 +94,7 @@ REQUIRED_DOC_SNIPPETS: dict[str, tuple[str, ...]] = {
         "configs/platform_verified_evidence.json",
         "python scripts/check_platform_verified_evidence.py",
         "python scripts/make_platform_verified_evidence_record.py",
+        "python scripts/finalize_platform_verified_evidence_record.py",
         "Linux i386 and Linux armhf can move from script-supported to default-native",
     ),
     "docs/FULL_FEATURE_COVERAGE.md": (
@@ -96,6 +107,7 @@ REQUIRED_DOC_SNIPPETS: dict[str, tuple[str, ...]] = {
         "configs/platform_verified_evidence.json",
         "python scripts/check_platform_verified_evidence.py",
         "python scripts/make_platform_verified_evidence_record.py",
+        "python scripts/finalize_platform_verified_evidence_record.py",
     ),
     "docs/VERIFYING.md": (
         "python scripts/check_platform_parity_promotion.py",
@@ -104,6 +116,7 @@ REQUIRED_DOC_SNIPPETS: dict[str, tuple[str, ...]] = {
         "python scripts/check_xp_native_evidence.py",
         "python scripts/check_platform_verified_evidence.py",
         "python scripts/make_platform_verified_evidence_record.py",
+        "python scripts/finalize_platform_verified_evidence_record.py",
         "Linux i386/armhf and Windows XP native-host promotion",
     ),
 }
@@ -268,6 +281,7 @@ def check_linux_promotion_entry(
     errors.extend(check_script_requirement(label, requirements, "build_script"))
     errors.extend(check_script_requirement(label, requirements, "smoke_script"))
     errors.extend(check_artifact_validation_command(label, requirements))
+    errors.extend(check_finalized_evidence_requirements(label, requirements, kind="linux"))
     artifacts = requirements.get("required_artifacts")
     if not isinstance(artifacts, list) or len(artifacts) < 5:
         errors.append(f"{label} must list required 100% release artifacts")
@@ -375,6 +389,7 @@ def check_xp_promotion_entry(
             errors.append(f"{label} promotion requires non-empty {key}")
     errors.extend(check_artifact_validation_command(label, requirements))
     errors.extend(check_xp_native_evidence_validation_command(label, requirements))
+    errors.extend(check_finalized_evidence_requirements(label, requirements, kind="xp"))
     return errors
 
 
@@ -432,6 +447,85 @@ def check_xp_native_evidence_validation_command(label: str, requirements: dict[s
     if not (ROOT / "scripts" / "check_xp_native_evidence.py").is_file():
         return [f"{label} XP native evidence validation script is missing"]
     return []
+
+
+def check_finalized_evidence_requirements(
+    label: str,
+    requirements: dict[str, Any],
+    *,
+    kind: str,
+) -> list[str]:
+    errors: list[str] = []
+    candidate = str(requirements.get("accepted_evidence_candidate_command", ""))
+    if not candidate.startswith(f"python scripts/make_platform_verified_evidence_record.py --target {label} "):
+        errors.append(f"{label} accepted_evidence_candidate_command must generate a candidate for {label}")
+    if "--append-registry" in candidate:
+        errors.append(f"{label} accepted_evidence_candidate_command must not append unfinalized candidates")
+    if "--out " not in candidate:
+        errors.append(f"{label} accepted_evidence_candidate_command must write a candidate with --out")
+    if kind == "linux" and "--linux-smoke-evidence <native-smoke-log>" not in candidate:
+        errors.append(f"{label} accepted_evidence_candidate_command must bind Linux smoke evidence")
+    if kind == "xp":
+        if "--release-source-workflow-run-url <github-actions-run-url>" not in candidate:
+            errors.append(f"{label} accepted_evidence_candidate_command must bind release source workflow run")
+        if "--release-source-artifact-name <github-actions-artifact-name>" not in candidate:
+            errors.append(f"{label} accepted_evidence_candidate_command must bind release source artifact name")
+    if not (ROOT / "scripts" / "make_platform_verified_evidence_record.py").is_file():
+        errors.append(f"{label} accepted evidence record generator is missing")
+
+    review = str(requirements.get("review_bundle_command", ""))
+    expected_review_script = (
+        "make_extended_linux_evidence_bundle.py"
+        if kind == "linux"
+        else "make_xp_native_evidence_bundle.py"
+    )
+    if not review.startswith(f"python scripts/{expected_review_script} --target {label} "):
+        errors.append(f"{label} review_bundle_command must package a review bundle for {label}")
+    if "--candidate-record" not in review:
+        errors.append(f"{label} review_bundle_command must bind the candidate record with --candidate-record")
+    if kind == "linux" and "--smoke-evidence <native-smoke-log>" not in review:
+        errors.append(f"{label} review_bundle_command must bind Linux smoke evidence")
+    if "--out-dir <bundle-dir>" not in review:
+        errors.append(f"{label} review_bundle_command must write to <bundle-dir>")
+    if not (ROOT / "scripts" / expected_review_script).is_file():
+        errors.append(f"{label} review bundle script is missing")
+
+    final = str(requirements.get("finalized_evidence_record_command", ""))
+    if not final.startswith("python scripts/finalize_platform_verified_evidence_record.py "):
+        errors.append(f"{label} finalized_evidence_record_command must use the platform evidence finalizer")
+    for required_arg in (
+        "--candidate-record",
+        "--bundle-manifest",
+        "--bundle-archive",
+        "--bundle-sha256s",
+        "--append-registry",
+    ):
+        if required_arg not in final:
+            errors.append(f"{label} finalized_evidence_record_command must include {required_arg}")
+    if not (ROOT / "scripts" / "finalize_platform_verified_evidence_record.py").is_file():
+        errors.append(f"{label} platform evidence finalizer is missing")
+
+    bundle_files = requirements.get("review_bundle_files")
+    if not isinstance(bundle_files, list) or len(bundle_files) != 3:
+        errors.append(f"{label} review_bundle_files must list manifest, archive and SHA-256 sidecar")
+        return errors
+    stem = (
+        f"extended-linux-evidence-bundle-{label}-v<project.version>"
+        if kind == "linux"
+        else f"xp-native-evidence-bundle-{label}-v<project.version>"
+    )
+    expected_files = {
+        f"{stem}.json",
+        f"{stem}.zip",
+        f"{stem}-SHA256SUMS.txt",
+    }
+    actual_files = {str(item) for item in bundle_files}
+    if actual_files != expected_files:
+        errors.append(f"{label} review_bundle_files must be {sorted(expected_files)}")
+    for filename in expected_files:
+        if filename not in final:
+            errors.append(f"{label} finalized_evidence_record_command must bind review bundle file {filename}")
+    return errors
 
 
 def default_native_target_ids(matrix: dict[str, Any]) -> set[str]:

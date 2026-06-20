@@ -4925,7 +4925,7 @@ GUI_DESIGN_INTERACTION_STATES: dict[str, GuiInteractionState] = {
         disabled_toolbar_key="remove",
         focused_control="host-search",
         active_tab_status="vault unlocked",
-        selected_tree_label="prod-cluster",
+        selected_tree_label="edge-prod  ssh host",
         status_note="host search focus, vault checked, remove guarded",
     ),
     "remmina": GuiInteractionState(
@@ -7028,7 +7028,7 @@ QToolButton#mobaMonitoringControl {{
   background: transparent;
   border: 1px solid transparent;
   color: {colors.control_text};
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   padding: 2px 4px;
 }}
@@ -7816,7 +7816,6 @@ PRESET_ISOLATION_VISIBLE_OBJECTS: dict[str, tuple[str, ...]] = {
     ),
     "mobaxterm": (
         "mainToolbar",
-        "profileTree",
         "sessionTabs",
         "mobaQuickConnectChrome",
         "quickConnect",
@@ -8476,6 +8475,7 @@ def gui_design_preset_reference_status_bar_route(preset_id: str) -> GuiPresetRef
     tab_route = gui_design_preset_reference_tab_route(preset_id)
     identity_route = gui_design_product_identity_route(preset_id)
     expected_status_segments = identity_route.status_segments
+    expected_status_message = "Running process panes: 2" if preset_id == "remmina" else "Running process panes: 1"
     return GuiPresetReferenceStatusBarRoute(
         key=f"{preset_id}-reference-status-bar-evidence-route",
         route_role="active-reference-status-bar-evidence",
@@ -8485,7 +8485,7 @@ def gui_design_preset_reference_status_bar_route(preset_id: str) -> GuiPresetRef
         status_bar_object="statusBar",
         status_notice_object="productStatusNotice",
         status_segment_object=identity_route.status_segment_object,
-        expected_status_message="No running process panes",
+        expected_status_message=expected_status_message,
         expected_status_segments=expected_status_segments,
         expected_segment_count=len(expected_status_segments),
         captured_property="presetReferenceStatusCaptured",
@@ -8595,14 +8595,38 @@ def gui_design_preset_reference_control_route(preset_id: str) -> GuiPresetRefere
         terminal_pane_object=surface_route.terminal_pane_object,
         terminal_status_object="paneStatus",
         terminal_action_object="terminalAction",
-        action_keys=("start", "restart", "stop", "copy", "clear"),
-        action_labels=("Start", "Restart", "Stop", "Copy", "Clear"),
+        action_keys=(
+            "start",
+            "restart",
+            "stop",
+            "copy",
+            "clear",
+            "macro-rec",
+            "macro-stop",
+            "macro-cancel",
+            "macro-replay",
+        ),
+        action_labels=(
+            "Start",
+            "Restart",
+            "Stop",
+            "Copy",
+            "Clear",
+            "Macro Rec",
+            "Macro Stop",
+            "Macro Cancel",
+            "Macro Replay",
+        ),
         action_tooltips=(
             "Start process",
             "Restart process",
             "Stop process",
             "Copy launch command",
             "Clear terminal output",
+            "Record terminal macro",
+            "Stop terminal macro",
+            "Cancel macro",
+            "Replay terminal macro",
         ),
         allowed_status_states=("ready", "starting", "running", "stopping", "error"),
         action_key_property="terminalActionKey",

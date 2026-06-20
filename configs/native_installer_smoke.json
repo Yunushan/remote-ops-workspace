@@ -74,20 +74,20 @@
           "format": "deb",
           "artifact_glob": "remote-ops-workspace-v*-linux-*.deb",
           "lifecycle": {
-            "install": "sudo dpkg -i <artifact>",
+            "install": "sudo -n dpkg -i <artifact>",
             "verify": "/usr/bin/row --version",
-            "upgrade": "sudo dpkg -i <artifact> over the installed package",
-            "uninstall": "sudo dpkg -r remote-ops-workspace and verify /usr/bin/row is removed"
+            "upgrade": "sudo -n dpkg -i <artifact> over the installed package",
+            "uninstall": "sudo -n dpkg -r remote-ops-workspace and verify /usr/bin/row is removed"
           }
         },
         {
           "format": "rpm",
           "artifact_glob": "remote-ops-workspace-v*-linux-*.rpm",
           "lifecycle": {
-            "install": "sudo rpm -Uvh --nodeps --replacepkgs <artifact> on Ubuntu CI runners",
+            "install": "sudo -n rpm -Uvh --nodeps --replacepkgs <artifact> on Ubuntu CI runners",
             "verify": "/usr/bin/row --version",
-            "upgrade": "sudo rpm -Uvh --nodeps --replacepkgs <artifact> over the installed package on Ubuntu CI runners",
-            "uninstall": "sudo rpm -e --nodeps remote-ops-workspace and verify /usr/bin/row is removed"
+            "upgrade": "sudo -n rpm -Uvh --nodeps --replacepkgs <artifact> over the installed package on Ubuntu CI runners",
+            "uninstall": "sudo -n rpm -e --nodeps remote-ops-workspace and verify /usr/bin/row is removed"
           }
         },
         {

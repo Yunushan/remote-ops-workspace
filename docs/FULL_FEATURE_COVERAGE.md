@@ -89,13 +89,27 @@ XP-capable legacy toolchain plus x86/x64 XP VM evidence that passes
 remote-target-only row. Accepted evidence records live in
 `configs/platform_verified_evidence.json` and are checked by
 `python scripts/check_platform_verified_evidence.py`; an empty registry means no
-readiness promotion. Use `python scripts/make_platform_verified_evidence_record.py`
+readiness promotion, and the default registry check rejects unfinalized
+candidate records without review-bundle digests. The goal-specific gate is
+`python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-complete`
+plus `python scripts/check_platform_verified_evidence.py --require-goal-targets --release-tag v<project.version>`;
+it must fail until linux-i386, linux-armhf, windows-xp-native-x86 and
+windows-xp-native-x64 all have finalized accepted records for the same release tag.
+Mixed-release accepted records remain aggregate evidence only and cannot complete the
+protected goal parity block. The release/verifier promotion
+gate is `python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir>`,
+which also runs `python scripts/check_release_publish_assets.py --require-platform-goal-targets`
+and must fail until the same four records are finalized and accepted. Use
+`python scripts/make_platform_verified_evidence_record.py`
 to generate a candidate accepted record from validated artifact and XP evidence
-inputs. Every accepted record must include the current promotion config
-SHA-256. Linux records must include builder identity evidence plus its matching
-SHA-256 and workflow dispatch input binding, and XP records must include the
-validated XP evidence JSON SHA-256, the current XP evidence contract SHA-256,
-XP evidence summary binding and every required smoke evidence SHA-256. Release asset URLs and artifact hash maps must exactly match
+inputs, then bind the packaged review-bundle manifest, archive and SHA-256
+sidecar with `python scripts/finalize_platform_verified_evidence_record.py`.
+Every accepted record must include the current promotion config SHA-256. Linux
+records must include builder identity evidence plus its matching SHA-256,
+sanitized target-scoped builder `host_identity` binding and workflow dispatch
+input binding, and XP records must include the validated XP
+evidence JSON SHA-256, the current XP evidence contract SHA-256, XP evidence
+summary binding and every required smoke evidence SHA-256. Release asset URLs and artifact hash maps must exactly match
 the required artifact names for the target; incomplete, duplicate or extra artifact sets do
 not promote readiness. The generated platform readiness rows expose required, present and
 missing accepted evidence targets so partial XP x86/x64 evidence remains visible
@@ -115,7 +129,8 @@ row features --coverage --json
 
 The human `row features --coverage` output includes missing accepted evidence
 targets next to Linux i386, Linux armhf and Windows XP rows; the JSON output
-keeps the same data under `accepted_evidence_missing_targets`.
+keeps the same data under `accepted_evidence_missing_targets` and exposes the
+four-target goal status under `platform_verified_readiness.protected_goal_parity`.
 
 ## Scoring method
 

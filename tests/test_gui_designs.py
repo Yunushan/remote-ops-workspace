@@ -2561,7 +2561,8 @@ def test_gui_design_preset_reference_status_bar_routes_are_shared_metadata() -> 
         assert route.status_bar_object == "statusBar"
         assert route.status_notice_object == "productStatusNotice"
         assert route.status_segment_object == "productStatusSegment"
-        assert route.expected_status_message == "No running process panes"
+        expected_message = "Running process panes: 2" if preset_id == "remmina" else "Running process panes: 1"
+        assert route.expected_status_message == expected_message
         assert route.expected_status_segments == identity_route.status_segments
         assert route.expected_segment_count == len(identity_route.status_segments)
         assert route.captured_property == "presetReferenceStatusCaptured"
@@ -2678,14 +2679,38 @@ def test_gui_design_preset_reference_control_routes_are_shared_metadata() -> Non
         assert route.terminal_pane_object == "terminalPane"
         assert route.terminal_status_object == "paneStatus"
         assert route.terminal_action_object == "terminalAction"
-        assert route.action_keys == ("start", "restart", "stop", "copy", "clear")
-        assert route.action_labels == ("Start", "Restart", "Stop", "Copy", "Clear")
+        assert route.action_keys == (
+            "start",
+            "restart",
+            "stop",
+            "copy",
+            "clear",
+            "macro-rec",
+            "macro-stop",
+            "macro-cancel",
+            "macro-replay",
+        )
+        assert route.action_labels == (
+            "Start",
+            "Restart",
+            "Stop",
+            "Copy",
+            "Clear",
+            "Macro Rec",
+            "Macro Stop",
+            "Macro Cancel",
+            "Macro Replay",
+        )
         assert route.action_tooltips == (
             "Start process",
             "Restart process",
             "Stop process",
             "Copy launch command",
             "Clear terminal output",
+            "Record terminal macro",
+            "Stop terminal macro",
+            "Cancel macro",
+            "Replay terminal macro",
         )
         assert route.allowed_status_states == ("ready", "starting", "running", "stopping", "error")
         assert route.action_key_property == "terminalActionKey"

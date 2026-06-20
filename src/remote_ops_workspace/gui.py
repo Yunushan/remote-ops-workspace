@@ -165,10 +165,10 @@ from .moba_macros import (
     finish_terminal_macro_capture,
     start_terminal_macro_capture,
 )
-from .moba_ssh_browser import load_moba_ssh_browser_preferences
 from .moba_multiexec import DEFAULT_MOBA_MULTIEXEC_COMMAND, build_moba_multiexec_plan
 from .moba_servers import build_moba_server_gui_config_surface
 from .moba_smartcards import MobaSmartCardCertificate, build_smartcard_management_gui_surface
+from .moba_ssh_browser import load_moba_ssh_browser_preferences
 from .models import Profile
 from .storage import ProfileStore
 from .terminal import (
@@ -782,7 +782,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.macro_replay_cancelled = False
             self.macro_replay_active = True
             sequence = self.macro_replay_sequence
-            for step, payload in zip(injection.steps, injection.injected_payloads):
+            for step, payload in zip(injection.steps, injection.injected_payloads, strict=False):
                 delay = max(0, int(step.scheduled_after_ms))
                 QTimer.singleShot(delay, lambda payload=payload, sequence=sequence: self.write_macro_replay_payload(payload, sequence))
             QTimer.singleShot(
@@ -2365,6 +2365,25 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 )
                 button.clicked.connect(getattr(self, route_handlers[action.key]))
             return controls
+
+        def show_moba_session_attachment(self, *_args) -> None:
+            self.record_moba_panel_action("session-edge", "attachment")
+
+        def show_moba_session_settings(self, *_args) -> None:
+            self.record_moba_panel_action("session-edge", "settings")
+
+        def show_moba_clipboard_hints(self, *_args) -> None:
+            self.record_moba_panel_action("right-utility", "clipboard")
+
+        def show_moba_terminal_settings(self, *_args) -> None:
+            self.record_moba_panel_action("right-utility", "settings")
+
+        def show_moba_tools_status(self, *_args) -> None:
+            self.record_moba_panel_action("right-utility", "tools")
+
+        def record_moba_panel_action(self, route_role: str, action_key: str) -> None:
+            self.setProperty("mobaConnectedLastActionRouteRole", route_role)
+            self.setProperty("mobaConnectedLastActionKey", action_key)
 
         def moba_utility_icon(self, icon_key: str, fill: str) -> QIcon:
             pixmap = QPixmap(20, 20)
@@ -4033,6 +4052,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             for button in getattr(self, "moba_ribbon_buttons", []):
                 key = button.text().strip().lower().replace(" ", "-")
                 self.set_interaction_state(button, self.toolbar_interaction_state(key, state))
+            for button in getattr(self, "moba_rail_buttons", []):
+                key = str(button.property("mobaRailRole") or "")
+                self.set_interaction_state(button, self.toolbar_interaction_state(key, state))
             for button in [self.moba_x_server_button, self.moba_exit_button]:
                 self.set_interaction_state(button, "normal")
 
@@ -4044,7 +4066,12 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 "profile-filter": self.remmina_profile_filter,
                 "tree-filter": getattr(self, "mremoteng_document_filter", self.search_input),
             }
+            focus_widget_ids: set[int] = set()
             for key, widget in focus_widgets.items():
+                widget_id = id(widget)
+                if widget_id in focus_widget_ids:
+                    continue
+                focus_widget_ids.add(widget_id)
                 self.set_interaction_state(widget, "focused" if key == state.focused_control else "normal")
                 if key == state.focused_control:
                     widget.setToolTip(f"{preset.label}: {state.status_note}")
@@ -4053,6 +4080,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 "focused" if preset.id == "mobaxterm" and state.focused_control == "quick-connect" else "normal",
             )
             self.select_profile_tree_label(state.selected_tree_label)
+            self.apply_interaction_state_tab_status(preset, state)
             self.statusBar().showMessage(f"{preset.label}: {state.status_note}")
             focus_interaction_route = (
                 gui_design_preset_focus_interaction_route(preset.id)
@@ -4060,6 +4088,17 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 else None
             )
             self.apply_focus_interaction_route_for_design(focus_interaction_route, preset.id)
+
+        def apply_interaction_state_tab_status(self, preset: GuiDesignPreset, state) -> None:
+            if not state.active_tab_status or self.tabs.count() == 0:
+                return
+            index = max(0, self.tabs.currentIndex())
+            label = self.tabs.tabText(index)
+            tooltip = self.tabs.tabToolTip(index) or label
+            if state.active_tab_status not in tooltip:
+                self.tabs.setTabToolTip(index, f"{tooltip}: {state.active_tab_status}")
+            self.tabs.setProperty("interactionStatePresetId", preset.id)
+            self.tabs.setProperty("interactionStateActiveTabStatus", state.active_tab_status)
 
         def focus_interaction_widgets(self) -> dict[str, object]:
             return {
@@ -4160,6 +4199,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 return
             if self.moba_connected_dock is not None:
                 self.moba_left_stack.removeWidget(self.moba_connected_dock)
+                self.clear_deleted_tab_object_names(self.moba_connected_dock)
                 self.moba_connected_dock.deleteLater()
             self.moba_connected_dock = MobaSftpDock(state)
             self.moba_left_stack.addWidget(self.moba_connected_dock)
@@ -4870,6 +4910,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 protocol = "SSH2" if protocol == "SSH" else protocol
                 return f"{profile.name} ({protocol})"
             if design_id == "remmina":
+                if protocol in {"SFTP", "SCP"}:
+                    return profile.name
                 return f"{protocol} - {profile.name}"
             if design_id == "mremoteng":
                 return f"{profile.name} [{protocol}]"
@@ -5198,6 +5240,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.tabs.setTabPosition(self.tab_position_for_design(preset.tab_position))
             self.tabs.setDocumentMode(preset.document_mode)
             self.configure_workspace_tabs_for_design(is_moba)
+            self.apply_interaction_state_tab_status(preset, gui_design_interaction_state(preset.id))
             self.apply_home_search_route_for_design(home_search_route)
             self.refresh_moba_left_dock_for_current_tab()
             self.log.setPlaceholderText(
@@ -5561,6 +5604,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 else ""
             )
             captured_status_message = self.statusBar().currentMessage()
+            if route.status_note not in captured_status_message:
+                captured_status_message = f"{route.preset_id}: {route.status_note}"
             captured_selected_tree_label = self.selected_profile_tree_label()
             for widget in route_widgets:
                 self.apply_preset_focus_interaction_route_properties(widget, route)
@@ -6900,6 +6945,17 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.statusBar().showMessage("SFTP rail: open an SSH session to attach the browser dock")
             self.show_moba_packages_dialog()
 
+        def open_moba_sftp_same_parameters(self, index: int | None = None) -> None:
+            tab_index = self.tabs.currentIndex() if index is None else index
+            widget = self.tabs.widget(tab_index) if tab_index >= 0 else None
+            state = getattr(widget, "moba_connected_state", None)
+            if state is None:
+                self.show_moba_sftp_rail()
+                return
+            self.show_moba_connected_dock(state)
+            self.show_moba_sftp_rail()
+            self.statusBar().showMessage(f"SFTP attached to {state.target} at {state.remote_path}")
+
         def show_moba_macros_status(self, *_args) -> None:
             self.set_moba_rail_active("macros")
             self.show_workflow_dialog(
@@ -6977,8 +7033,15 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             widget = self.tabs.widget(home_index)
             self.tabs.removeTab(home_index)
             if widget is not None:
+                self.clear_deleted_tab_object_names(widget)
                 widget.deleteLater()
             self.add_welcome_tab(select=select)
+
+        @staticmethod
+        def clear_deleted_tab_object_names(widget: QWidget) -> None:
+            widget.setObjectName("")
+            for child in widget.findChildren(QWidget):
+                child.setObjectName("")
 
         def current_design_is_moba(self) -> bool:
             return (self.design_select.currentData() or "native") == "mobaxterm"
@@ -7036,6 +7099,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             widget = self.tabs.widget(index)
             self.tabs.removeTab(index)
             if widget is not None:
+                self.clear_deleted_tab_object_names(widget)
                 widget.deleteLater()
 
         def refresh_special_tab_buttons(self) -> None:
@@ -7125,7 +7189,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
         def tab_context_session_action_specs(self, index: int) -> list[dict[str, object]]:
             role = self.tab_role(index)
             is_closeable_session = role not in {"home", "new-session"}
-            return [
+            specs = [
                 {"key": "new-local-terminal", "label": "New local terminal", "enabled": True},
                 {"key": "split-horizontal", "label": "Split horizontal", "enabled": True},
                 {"key": "split-vertical", "label": "Split vertical", "enabled": True},
@@ -7138,6 +7202,16 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 },
                 {"key": "recover-previous-sessions", "label": "Recover previous sessions", "enabled": True},
             ]
+            if self.moba_connected_session_action_route_for_tab(index) is not None:
+                specs.insert(
+                    4,
+                    {
+                        "key": "open-sftp-same-parameters",
+                        "label": "Open SFTP with same parameters",
+                        "enabled": True,
+                    },
+                )
+            return specs
 
         def reference_session_action_route_for_tab(self, index: int):
             preset_id = self.current_design_id()
@@ -7244,6 +7318,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             add_context_action("split-vertical", lambda: self.add_split("vertical"))
             menu.addSeparator()
             add_context_action("duplicate-tab", self.duplicate_current_tab)
+            if "open-sftp-same-parameters" in specs:
+                add_context_action("open-sftp-same-parameters", lambda: self.open_moba_sftp_same_parameters(index))
             add_context_action("close-tab", self.close_current_tab)
             add_context_action("close-other-tabs", lambda: self.close_other_tabs(index))
             menu.addSeparator()
@@ -7423,7 +7499,13 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             tab_title = self.profile_tab_label(profile)
             tab_status = self.profile_tab_status()
             if self.moba_connected_profile_supported(profile):
-                self.open_moba_connected_session_tab(profile, pane_plan, tab_title=tab_title, tab_status=tab_status)
+                self.open_moba_connected_session_tab(
+                    profile,
+                    pane_plan,
+                    remote_path=self.moba_connected_remote_path_for_profile(profile),
+                    tab_title=tab_title,
+                    tab_status=tab_status,
+                )
             else:
                 self.open_terminal_tab(pane_plan, tab_title=tab_title, tab_status=tab_status)
             self.log.append(f"{prefix}: {pane_plan.printable()}")
@@ -7440,7 +7522,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     self.open_moba_connected_session_tab(
                         profile,
                         pane_plan,
-                        remote_path=profile.path or "/",
+                        remote_path=self.moba_connected_remote_path_for_profile(profile),
                         tab_title=self.profile_tab_label(profile),
                         tab_status=self.profile_tab_status(),
                     )
@@ -7558,6 +7640,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             action_row.addWidget(start_button)
             action_row.addWidget(recover_button)
             action_row.addStretch(1)
+            early_workspace_evidence = None
+            if self.current_design_id() == "mremoteng":
+                early_workspace_evidence = self.build_product_workspace_surface_evidence(surface)
+                panel_layout.addWidget(early_workspace_evidence)
             panel_layout.addLayout(action_row)
 
             search = QLineEdit()
@@ -7571,8 +7657,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             workflow = self.build_product_workflow_evidence()
             panel_layout.addWidget(workflow)
 
-            workspace_evidence = self.build_product_workspace_surface_evidence(surface)
-            panel_layout.addWidget(workspace_evidence)
+            if early_workspace_evidence is None:
+                workspace_evidence = self.build_product_workspace_surface_evidence(surface)
+                panel_layout.addWidget(workspace_evidence)
 
             recent_title = QLabel(f"Recent {gui_design_home_tab_label(self.current_design_id()).lower()}")
             recent_title.setObjectName("recentSessionsTitle")
@@ -7902,6 +7989,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 panel.setProperty("mRemoteNgInheritanceRouteSelectedProfile", inheritance_route.selected_profile_name)
                 panel.setProperty("mRemoteNgInheritanceRouteSelectedTreeLabel", inheritance_route.selected_tree_label)
                 panel.setProperty("mRemoteNgInheritanceRouteTitle", inheritance_route.workflow_title)
+                panel.setProperty(
+                    "mRemoteNgInheritanceRouteInheritedPropertyLabel",
+                    inheritance_route.inherited_property_label,
+                )
                 panel.setProperty("mRemoteNgInheritanceRouteInheritedValue", inheritance_route.inherited_value)
                 panel.setProperty("mRemoteNgInheritanceRouteInheritedSource", inheritance_route.inherited_source)
                 panel.setProperty("mRemoteNgInheritanceRouteState", inheritance_route.inheritance_state)
@@ -8139,6 +8230,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             if self.current_design_id() == "mremoteng":
                 layout.addWidget(self.build_mremoteng_document_controls_evidence())
                 layout.addWidget(self.build_mremoteng_property_grid_evidence())
+                self.apply_focus_interaction_route_for_design(
+                    gui_design_preset_focus_interaction_route("mremoteng"),
+                    "mremoteng",
+                )
             if self.current_design_id() == "securecrt":
                 layout.addWidget(self.build_securecrt_session_status_strip_evidence())
                 layout.addWidget(self.build_securecrt_sftp_browser_evidence())
@@ -10496,7 +10591,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             lead_label.setObjectName("productWorkspaceLead")
             lead_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
             pane_layout.addWidget(lead_label)
-            for line in lines[:4]:
+            for line in lines:
                 line_label = QLabel(line)
                 line_label.setObjectName("productWorkspaceLine")
                 line_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
@@ -10741,6 +10836,19 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
         def moba_connected_profile_supported(self, profile: Profile) -> bool:
             return self.current_design_is_moba() and profile.protocol.lower() in {"ssh", "sftp"}
 
+        @staticmethod
+        def moba_connected_remote_path_for_profile(profile: Profile) -> str:
+            for key in ("moba_remote_path", "remote_path"):
+                value = profile.options.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value
+            return profile.path or "/"
+
+        @staticmethod
+        def moba_connected_monitoring_output_for_profile(profile: Profile) -> str:
+            value = profile.options.get("moba_monitoring_output")
+            return value if isinstance(value, str) else ""
+
         def open_moba_connected_session_tab(
             self,
             profile: Profile,
@@ -10757,6 +10865,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             state = build_moba_connected_session_state(
                 profile,
                 remote_path=remote_path,
+                monitoring_output=self.moba_connected_monitoring_output_for_profile(profile),
                 ssh_browser_preferences=ssh_browser_preferences,
             )
             panel = MobaConnectedSessionPanel(state, self.new_terminal_pane(plan))

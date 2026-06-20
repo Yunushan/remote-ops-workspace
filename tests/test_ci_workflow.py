@@ -109,8 +109,8 @@ def test_ci_workflow_requires_ios_simulator_web_job() -> None:
 def test_ci_workflow_requires_all_preset_live_render_capture() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
-        "--require-pyqt6 --out-dir",
-        "--require-pyqt6 --preset native --preset mobaxterm --out-dir",
+        "--require-pyqt6 --timeout-seconds 240 --out-dir",
+        "--require-pyqt6 --timeout-seconds 240 --preset native --preset mobaxterm --out-dir",
     )
 
     errors = checker.check_ci_workflow(workflow)
@@ -162,6 +162,20 @@ def test_ci_workflow_requires_bounded_live_gui_render_timeouts() -> None:
 
     assert "ci gui-render job missing bounded live GUI render job timeout: timeout-minutes: 15" in job_errors
     assert "ci gui-render job missing bounded live GUI render smoke step timeout: timeout-minutes: 8" in step_errors
+
+
+def test_ci_workflow_requires_live_gui_artifact_validation_before_upload() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
+        "      - name: Validate real GUI render artifact\n"
+        "        timeout-minutes: 2\n"
+        "        run: python scripts/check_real_gui_render_artifact.py --artifact-dir artifacts/gui-real\n",
+        "",
+    )
+
+    errors = checker.check_ci_workflow(workflow)
+
+    assert any("ci gui-render job missing live GUI artifact validator" in error for error in errors)
 
 
 def test_ci_workflow_requires_checkout_credentials_disabled() -> None:

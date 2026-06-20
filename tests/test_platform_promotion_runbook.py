@@ -33,6 +33,45 @@ def test_platform_promotion_runbook_rejects_missing_blocker() -> None:
     assert f"linux-i386 runbook missing blocker: {blocker}" in errors
 
 
+def test_platform_promotion_runbook_requires_protected_goal_gate() -> None:
+    checker = _load_checker()
+    text = Path("docs/PLATFORM_PROMOTION_RUNBOOK.md").read_text(encoding="utf-8").replace(
+        "python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-complete\n",
+        "",
+    )
+
+    errors = checker.check_platform_promotion_runbook(runbook_text=text)
+
+    assert any("check_protected_platform_goal.py" in error for error in errors)
+
+
+def test_platform_promotion_runbook_requires_bundle_backed_strict_verify() -> None:
+    checker = _load_checker()
+    text = Path("docs/PLATFORM_PROMOTION_RUNBOOK.md").read_text(encoding="utf-8").replace(
+        (
+            "python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets "
+            "--release-tag v<project.version> --platform-review-bundle-dir <bundle-dir>"
+        ),
+        "python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets",
+    )
+
+    errors = checker.check_platform_promotion_runbook(runbook_text=text)
+
+    assert any("--platform-review-bundle-dir <bundle-dir>" in error for error in errors)
+
+
+def test_platform_promotion_runbook_requires_xp_x64_edition_evidence() -> None:
+    checker = _load_checker()
+    text = Path("docs/PLATFORM_PROMOTION_RUNBOOK.md").read_text(encoding="utf-8").replace(
+        "Professional x64 Edition",
+        "x64",
+    )
+
+    errors = checker.check_platform_promotion_runbook(runbook_text=text)
+
+    assert "windows-xp-native-x64 runbook missing XP x64 snippet: Professional x64 Edition" in errors
+
+
 def _load_checker():
     path = Path("scripts/check_platform_promotion_runbook.py")
     spec = importlib.util.spec_from_file_location("check_platform_promotion_runbook", path)

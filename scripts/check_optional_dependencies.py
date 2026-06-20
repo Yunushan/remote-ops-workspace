@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import os
+import subprocess
 import sys
 import tempfile
 from collections.abc import Iterable
@@ -92,7 +93,7 @@ def check_optional_modules(required_extras: Iterable[str]) -> tuple[list[str], l
     return errors, messages
 
 
-def check_desktop_gui(tmp_path: Path) -> tuple[list[str], list[str]]:
+def check_desktop_gui(tmp_path: Path, *, render_timeout_seconds: int = 60) -> tuple[list[str], list[str]]:
     from remote_ops_workspace import gui
 
     if not module_available("PyQt6"):
@@ -102,46 +103,34 @@ def check_desktop_gui(tmp_path: Path) -> tuple[list[str], list[str]]:
             return [], ["desktop/PyQt6 unavailable; GUI factory fail-closed path verified"]
         return ["GUI factory must raise GuiDependencyError when PyQt6 is unavailable"], []
 
-    old_qpa = os.environ.get("QT_QPA_PLATFORM")
-    old_home = os.environ.get("ROW_HOME")
-    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    os.environ["ROW_HOME"] = str(tmp_path / "row-home")
+    env = os.environ.copy()
+    env.setdefault("QT_QPA_PLATFORM", "offscreen")
+    env["ROW_HOME"] = str(tmp_path / "row-home")
+    command = [
+        sys.executable,
+        str(ROOT / "scripts" / "check_real_gui_render.py"),
+        "--timeout-seconds",
+        str(render_timeout_seconds),
+        "--preset",
+        "native",
+    ]
     try:
-        from PyQt6.QtWidgets import QComboBox, QTabWidget, QToolBar, QTreeWidget
-
-        from remote_ops_workspace.gui_designs import GUI_DESIGN_PRESETS
-
-        app, window = gui.create_main_window(["row-gui-optional-check"], show=False)
-        try:
-            design_select = window.findChild(QComboBox, "designSelect")
-            profile_tree = window.findChild(QTreeWidget, "profileTree")
-            session_tabs = window.findChild(QTabWidget, "sessionTabs")
-            toolbar = window.findChild(QToolBar, "mainToolbar")
-            if not all((design_select, profile_tree, session_tabs, toolbar)):
-                return ["GUI smoke could not locate required main-window widgets"], []
-            if design_select.count() != len(GUI_DESIGN_PRESETS):
-                return ["GUI design selector count does not match GUI_DESIGN_PRESETS"], []
-            for preset in GUI_DESIGN_PRESETS:
-                index = design_select.findData(preset.id)
-                if index < 0:
-                    return [f"GUI design selector missing preset: {preset.id}"], []
-                design_select.setCurrentIndex(index)
-                app.processEvents()
-                if profile_tree.property("listSpacing") != preset.list_spacing:
-                    return [f"{preset.id} profile-tree density marker was not applied"], []
-                if profile_tree.topLevelItemCount() == 0:
-                    return [f"{preset.id} profile tree was not populated"], []
-                if toolbar.iconSize().width() != preset.toolbar_icon_size:
-                    return [f"{preset.id} toolbar icon size was not applied"], []
-                if session_tabs.documentMode() != preset.document_mode:
-                    return [f"{preset.id} tab document mode was not applied"], []
-            return [], [f"desktop/PyQt6 real main-window smoke passed for {len(GUI_DESIGN_PRESETS)} presets"]
-        finally:
-            window.close()
-            app.processEvents()
-    finally:
-        restore_env("QT_QPA_PLATFORM", old_qpa)
-        restore_env("ROW_HOME", old_home)
+        result = subprocess.run(
+            command,
+            cwd=ROOT,
+            env=env,
+            text=True,
+            capture_output=True,
+            timeout=render_timeout_seconds + 15,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return [f"desktop/PyQt6 live render smoke exceeded {render_timeout_seconds + 15} seconds"], []
+    output = "\n".join(part for part in (result.stdout.strip(), result.stderr.strip()) if part)
+    if result.returncode != 0:
+        detail = output.splitlines()[-1] if output else f"exit code {result.returncode}"
+        return [f"desktop/PyQt6 live render smoke failed: {detail}"], []
+    return [], ["desktop/PyQt6 bounded live render smoke passed for native preset"]
 
 
 def check_security_vault(tmp_path: Path) -> tuple[list[str], list[str]]:

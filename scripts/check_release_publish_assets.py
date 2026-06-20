@@ -16,6 +16,12 @@ MOBAXTERM_EVIDENCE_PATH = ROOT / "configs" / "mobaxterm_parity_evidence.json"
 WORKFLOW_PATH = ROOT / ".github" / "workflows" / "release.yml"
 EXPECTED_CHECKSUM_SUFFIX = "SHA256SUMS.txt"
 XP_NATIVE_EVIDENCE_TARGETS = {"windows-xp-native-x86", "windows-xp-native-x64"}
+PLATFORM_GOAL_TARGETS = (
+    "linux-i386",
+    "linux-armhf",
+    "windows-xp-native-x86",
+    "windows-xp-native-x64",
+)
 GATED_NATIVE_PATTERNS = {
     "linux-i386": (
         r"remote-ops-workspace-v\d+\.\d+\.\d+-linux-i386\.deb$",
@@ -46,8 +52,10 @@ def main(argv: list[str] | None = None) -> int:
     errors = check_publish_contract(
         matrix,
         workflow,
+        tag=args.tag,
         evidence_registry=evidence_registry,
         mobaxterm_parity_registry=mobaxterm_registry,
+        require_platform_goal_targets=args.require_platform_goal_targets,
         require_mobaxterm_parity_complete=args.require_mobaxterm_parity_complete,
     )
     if args.assets_dir is not None:
@@ -58,6 +66,7 @@ def main(argv: list[str] | None = None) -> int:
                 tag=args.tag,
                 evidence_registry=evidence_registry,
                 mobaxterm_parity_registry=mobaxterm_registry,
+                require_platform_goal_targets=args.require_platform_goal_targets,
                 require_mobaxterm_parity_complete=args.require_mobaxterm_parity_complete,
             )
         )
@@ -81,6 +90,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Expected release tag, for example v1.0.2. Defaults to the matrix release tag.",
     )
     parser.add_argument(
+        "--require-platform-goal-targets",
+        action="store_true",
+        help=(
+            "fail unless Linux i386, Linux armhf, Windows XP native x86, "
+            "and Windows XP native x64 all have accepted platform evidence"
+        ),
+    )
+    parser.add_argument(
         "--require-mobaxterm-parity-complete",
         action="store_true",
         help="fail unless every strict MobaXterm parity article has accepted release evidence",
@@ -92,22 +109,33 @@ def check_publish_contract(
     matrix: dict[str, Any],
     workflow: str,
     *,
+    tag: str | None = None,
     evidence_registry: dict[str, Any] | None = None,
     mobaxterm_parity_registry: dict[str, Any] | None = None,
+    require_platform_goal_targets: bool = False,
     require_mobaxterm_parity_complete: bool = False,
 ) -> list[str]:
     errors: list[str] = []
-    expected = expected_release_assets(matrix)
+    release_tag = tag or matrix_tag(matrix)
+    expected = expected_release_assets(matrix, tag=release_tag)
     errors.extend(
         validate_mobaxterm_parity_registry(
             mobaxterm_parity_registry or read_mobaxterm_evidence_registry(),
             require_complete=require_mobaxterm_parity_complete,
         )
     )
+    if require_platform_goal_targets:
+        errors.extend(
+            validate_platform_goal_evidence_registry(
+                evidence_registry or read_evidence_registry(),
+                release_tag=tag or matrix_tag(matrix),
+            )
+        )
     errors.extend(
         check_gated_native_assets_have_evidence(
             expected,
             evidence_registry=evidence_registry,
+            tag=release_tag,
             label="default release matrix",
         )
     )
@@ -116,6 +144,7 @@ def check_publish_contract(
     checksum_assets = [asset for asset in expected if asset.endswith(EXPECTED_CHECKSUM_SUFFIX)]
     if len(checksum_assets) < 6:
         errors.append("release matrix must include source and per-native checksum sidecars")
+    errors.extend(check_platform_evidence_import_job(workflow))
     publish_block = workflow_job_block(workflow, "publish")
     if not publish_block:
         return [*errors, "release workflow missing publish job"]
@@ -123,6 +152,7 @@ def check_publish_contract(
         "actions/download-artifact@v8": "artifact download",
         "merge-multiple: true": "merged downloaded artifact directory",
         "python scripts/check_release_publish_assets.py --assets-dir release-assets --tag": "publish asset validation",
+        "--require-platform-goal-targets": "protected platform goal publish gate",
         "softprops/action-gh-release@v3": "GitHub release upload",
         "fail_on_unmatched_files: true": "strict GitHub release upload",
     }
@@ -133,6 +163,37 @@ def check_publish_contract(
     upload_index = publish_block.find("softprops/action-gh-release")
     if validate_index < 0 or upload_index < 0 or validate_index > upload_index:
         errors.append("publish asset validation must run before GitHub release upload")
+    if "- accepted-platform-evidence-assets" not in publish_block:
+        errors.append("publish job must depend on accepted-platform-evidence-assets")
+    return errors
+
+
+def check_platform_evidence_import_job(workflow: str) -> list[str]:
+    block = workflow_job_block(workflow, "accepted-platform-evidence-assets")
+    if not block:
+        return ["release workflow missing accepted-platform-evidence-assets job"]
+    errors: list[str] = []
+    required_snippets = {
+        "needs: release-preflight": "release preflight dependency",
+        "actions: read": "Actions artifact read permission",
+        "contents: read": "read-only repository permission",
+        "uses: actions/checkout@v6": "repository checkout",
+        "persist-credentials: false": "checkout credential isolation",
+        "uses: actions/setup-python@v6": "Python setup",
+        "GH_TOKEN: ${{ github.token }}": "GitHub token for gh artifact download",
+        "python scripts/import_platform_evidence_artifacts.py --release-tag": "platform evidence artifact importer",
+        "--require-goal-targets": "strict protected target import",
+        "--out-dir release-assets": "release asset import directory",
+        "actions/upload-artifact@v7": "imported artifact upload",
+        "name: release-platform-evidence-assets": "platform evidence release artifact name",
+        "path: release-assets/*": "platform evidence release artifact path",
+        "if-no-files-found: error": "missing imported asset failure",
+    }
+    for snippet, label in required_snippets.items():
+        if snippet not in block:
+            errors.append(f"accepted-platform-evidence-assets job missing {label}: {snippet}")
+    if "contents: write" in block:
+        errors.append("accepted-platform-evidence-assets job must not request contents: write")
     return errors
 
 
@@ -143,6 +204,7 @@ def check_release_assets(
     tag: str | None,
     evidence_registry: dict[str, Any] | None = None,
     mobaxterm_parity_registry: dict[str, Any] | None = None,
+    require_platform_goal_targets: bool = False,
     require_mobaxterm_parity_complete: bool = False,
 ) -> list[str]:
     errors: list[str] = []
@@ -155,13 +217,41 @@ def check_release_assets(
             require_complete=require_mobaxterm_parity_complete,
         )
     )
-    expected = expected_release_assets(matrix, tag=tag)
+    if require_platform_goal_targets:
+        errors.extend(
+            validate_platform_goal_evidence_registry(
+                evidence_registry or read_evidence_registry(),
+                release_tag=tag or matrix_tag(matrix),
+            )
+        )
+    release_tag = tag or matrix_tag(matrix)
+    registry = evidence_registry or read_evidence_registry()
+    expected = expected_release_assets(matrix, tag=release_tag) | accepted_platform_release_assets(
+        registry,
+        tag=release_tag,
+    )
     actual = {path.name for path in root.iterdir() if path.is_file()}
     errors.extend(
         check_gated_native_assets_have_evidence(
             actual,
-            evidence_registry=evidence_registry,
+            evidence_registry=registry,
+            tag=release_tag,
             label="release asset directory",
+        )
+    )
+    errors.extend(
+        check_platform_evidence_asset_hashes(
+            root,
+            actual,
+            tag=release_tag,
+            evidence_registry=registry,
+        )
+    )
+    errors.extend(
+        check_platform_review_bundle_artifacts(
+            root,
+            tag=release_tag,
+            evidence_registry=registry,
         )
     )
     missing = sorted(expected - actual)
@@ -175,13 +265,44 @@ def check_release_assets(
     return errors
 
 
+def check_platform_review_bundle_artifacts(
+    root: Path,
+    *,
+    tag: str,
+    evidence_registry: dict[str, Any],
+) -> list[str]:
+    rows = evidence_registry.get("accepted_evidence", [])
+    if not isinstance(rows, list):
+        return ["platform verified evidence accepted_evidence must be a list"]
+    accepted_rows = [
+        row
+        for row in rows
+        if isinstance(row, dict)
+        and row.get("status") == "accepted"
+        and row.get("readiness_percent") == 100.0
+        and row.get("release_tag") == tag
+    ]
+    if not accepted_rows:
+        return []
+    checker = load_platform_review_bundle_artifact_checker()
+    scoped_registry = {**evidence_registry, "accepted_evidence": accepted_rows}
+    return checker.check_platform_review_bundle_artifacts(
+        registry=scoped_registry,
+        bundle_dir=root,
+    )
+
+
 def check_gated_native_assets_have_evidence(
     assets: set[str],
     *,
     evidence_registry: dict[str, Any] | None = None,
+    tag: str,
     label: str,
 ) -> list[str]:
-    accepted = accepted_evidence_targets(evidence_registry or read_evidence_registry())
+    accepted = accepted_evidence_targets(
+        evidence_registry or read_evidence_registry(),
+        release_tag=tag,
+    )
     errors: list[str] = []
     for asset in sorted(assets):
         gated_targets = gated_native_targets_for_asset(asset)
@@ -191,13 +312,14 @@ def check_gated_native_assets_have_evidence(
                 if missing_xp:
                     errors.append(
                         f"{label} includes gated Windows XP native asset {asset} but XP native "
-                        f"promotion requires accepted evidence for both targets; missing {missing_xp}"
+                        f"promotion requires accepted evidence for both targets for release_tag {tag}; "
+                        f"missing {missing_xp}"
                     )
                 continue
             if target not in accepted:
                 errors.append(
                     f"{label} includes gated native asset {asset} for {target} "
-                    "without accepted platform evidence"
+                    f"without accepted platform evidence for release_tag {tag}"
                 )
     return errors
 
@@ -210,7 +332,11 @@ def gated_native_targets_for_asset(filename: str) -> set[str]:
     return targets
 
 
-def accepted_evidence_targets(evidence_registry: dict[str, Any]) -> set[str]:
+def accepted_evidence_targets(
+    evidence_registry: dict[str, Any],
+    *,
+    release_tag: str | None = None,
+) -> set[str]:
     if validate_accepted_evidence_registry(evidence_registry):
         return set()
     rows = evidence_registry.get("accepted_evidence", [])
@@ -222,18 +348,194 @@ def accepted_evidence_targets(evidence_registry: dict[str, Any]) -> set[str]:
         if isinstance(item, dict)
         and item.get("status") == "accepted"
         and item.get("readiness_percent") == 100.0
+        and (release_tag is None or item.get("release_tag") == release_tag)
     }
 
 
+def check_platform_evidence_asset_hashes(
+    root: Path,
+    assets: set[str],
+    *,
+    tag: str,
+    evidence_registry: dict[str, Any],
+) -> list[str]:
+    registry_errors = validate_accepted_evidence_registry(evidence_registry)
+    if registry_errors:
+        return registry_errors
+    rows = evidence_registry.get("accepted_evidence", [])
+    if not isinstance(rows, list):
+        return ["platform verified evidence accepted_evidence must be a list"]
+    accepted = {
+        str(item.get("target", "")): item
+        for item in rows
+        if isinstance(item, dict)
+        and item.get("status") == "accepted"
+        and item.get("readiness_percent") == 100.0
+        and item.get("release_tag") == tag
+    }
+    errors: list[str] = []
+    for target, record in sorted(accepted.items()):
+        if record.get("release_tag") != tag:
+            continue
+        hashes = record.get("artifact_sha256")
+        if not isinstance(hashes, dict):
+            errors.append(f"{target} accepted evidence artifact_sha256 must be an object")
+            continue
+        release_urls = record.get("release_asset_urls")
+        if not isinstance(release_urls, list):
+            errors.append(f"{target} accepted evidence release_asset_urls must be a list")
+            continue
+        url_assets = {
+            Path(str(url)).name
+            for url in release_urls
+            if isinstance(url, str) and Path(url).name
+        }
+        expected_assets = {str(asset) for asset in hashes}
+        if url_assets != expected_assets:
+            errors.append(
+                f"{target} accepted evidence release_asset_urls must match artifact_sha256 files"
+            )
+        for asset, expected_sha in sorted(hashes.items()):
+            asset_name = str(asset)
+            if asset_name not in assets:
+                errors.append(
+                    f"{target} accepted evidence release asset missing from release directory: "
+                    f"{asset_name}"
+                )
+                continue
+            actual_sha = sha256_file(root / asset_name)
+            if actual_sha != str(expected_sha):
+                errors.append(
+                    f"release asset {asset_name} SHA-256 does not match accepted evidence for {target}"
+                )
+        review_bundle = record.get("review_bundle")
+        if not isinstance(review_bundle, dict):
+            errors.append(f"{target} accepted evidence review_bundle must be an object")
+            continue
+        for bundle_key in ("manifest", "archive", "sha256s"):
+            bundle_record = review_bundle.get(bundle_key)
+            if not isinstance(bundle_record, dict):
+                errors.append(f"{target} accepted evidence review_bundle {bundle_key} must be an object")
+                continue
+            bundle_name = Path(str(bundle_record.get("file", ""))).name
+            if not bundle_name:
+                errors.append(f"{target} accepted evidence review_bundle {bundle_key}.file must be set")
+                continue
+            if bundle_name not in assets:
+                errors.append(
+                    f"{target} accepted evidence review bundle asset missing from release directory: "
+                    f"{bundle_name}"
+                )
+                continue
+            bundle_path = root / bundle_name
+            expected_size = bundle_record.get("size_bytes")
+            if bundle_path.is_file() and expected_size != bundle_path.stat().st_size:
+                errors.append(
+                    f"release review bundle asset {bundle_name} size does not match accepted evidence for {target}"
+                )
+            expected_sha = str(bundle_record.get("sha256", ""))
+            if bundle_path.is_file() and sha256_file(bundle_path) != expected_sha:
+                errors.append(
+                    f"release review bundle asset {bundle_name} SHA-256 does not match accepted evidence for {target}"
+                )
+    for asset in sorted(assets):
+        for target in sorted(gated_native_targets_for_asset(asset)):
+            record = accepted.get(target)
+            if record is None:
+                continue
+            hashes = record.get("artifact_sha256")
+            if not isinstance(hashes, dict):
+                errors.append(f"{target} accepted evidence artifact_sha256 must be an object")
+                continue
+            expected_sha = str(hashes.get(asset, ""))
+            if not expected_sha:
+                errors.append(
+                    f"release asset {asset} is gated for {target} but accepted evidence "
+                    "artifact_sha256 has no entry"
+                )
+                continue
+            actual_sha = sha256_file(root / asset)
+            if actual_sha != expected_sha:
+                errors.append(
+                    f"release asset {asset} SHA-256 does not match accepted evidence for {target}"
+                )
+    return errors
+
+
+def accepted_platform_release_assets(evidence_registry: dict[str, Any], *, tag: str) -> set[str]:
+    if validate_accepted_evidence_registry(evidence_registry):
+        return set()
+    rows = evidence_registry.get("accepted_evidence", [])
+    if not isinstance(rows, list):
+        return set()
+    assets: set[str] = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        if row.get("status") != "accepted" or row.get("readiness_percent") != 100.0:
+            continue
+        if row.get("release_tag") != tag:
+            continue
+        for url in row.get("release_asset_urls", []):
+            filename = Path(str(url)).name
+            if filename:
+                assets.add(filename)
+        hashes = row.get("artifact_sha256")
+        if isinstance(hashes, dict):
+            assets.update(str(name) for name in hashes)
+        review_bundle = row.get("review_bundle")
+        if isinstance(review_bundle, dict):
+            for bundle_key in ("manifest", "archive", "sha256s"):
+                bundle_record = review_bundle.get(bundle_key)
+                if isinstance(bundle_record, dict):
+                    filename = Path(str(bundle_record.get("file", ""))).name
+                    if filename:
+                        assets.add(filename)
+    return assets
+
+
 def validate_accepted_evidence_registry(evidence_registry: dict[str, Any]) -> list[str]:
+    module = load_platform_verified_evidence_checker()
+    return module.check_platform_verified_evidence(
+        registry=evidence_registry,
+        require_review_bundles=True,
+    )
+
+
+def validate_platform_goal_evidence_registry(
+    evidence_registry: dict[str, Any],
+    *,
+    release_tag: str,
+) -> list[str]:
+    module = load_platform_verified_evidence_checker()
+    return module.check_platform_verified_evidence(
+        registry=evidence_registry,
+        required_targets=PLATFORM_GOAL_TARGETS,
+        required_release_tag=release_tag,
+        require_review_bundles=True,
+    )
+
+
+def load_platform_verified_evidence_checker() -> Any:
     checker_path = ROOT / "scripts" / "check_platform_verified_evidence.py"
     spec = importlib.util.spec_from_file_location("check_platform_verified_evidence", checker_path)
     if spec is None or spec.loader is None:
-        return ["cannot load platform verified evidence checker"]
+        raise RuntimeError("cannot load platform verified evidence checker")
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
-    return module.check_platform_verified_evidence(registry=evidence_registry)
+    return module
+
+
+def load_platform_review_bundle_artifact_checker() -> Any:
+    checker_path = ROOT / "scripts" / "check_platform_review_bundle_artifacts.py"
+    spec = importlib.util.spec_from_file_location("check_platform_review_bundle_artifacts", checker_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("cannot load platform review bundle artifact checker")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 def validate_mobaxterm_parity_registry(
@@ -288,6 +590,8 @@ def expected_release_assets(matrix: dict[str, Any], *, tag: str | None = None) -
 def check_checksum_sidecars(root: Path, expected: set[str]) -> list[str]:
     errors: list[str] = []
     checksum_files = sorted(asset for asset in expected if asset.endswith(EXPECTED_CHECKSUM_SUFFIX))
+    expected_references = set(expected - set(checksum_files))
+    referenced_assets: set[str] = set()
     for checksum_name in checksum_files:
         path = root / checksum_name
         if not path.is_file():
@@ -315,6 +619,11 @@ def check_checksum_sidecars(root: Path, expected: set[str]) -> list[str]:
                 continue
             if sha256_file(referenced_path) != match.group(1):
                 errors.append(f"{checksum_name} checksum mismatch for {referenced}")
+                continue
+            referenced_assets.add(referenced)
+    missing_references = sorted(expected_references - referenced_assets)
+    if missing_references:
+        errors.append(f"checksum sidecars missing references for expected files: {missing_references}")
     return errors
 
 

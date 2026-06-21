@@ -18,6 +18,7 @@ from check_platform_verified_evidence import (  # noqa: E402
     GITHUB_RELEASE_ASSET_RE,
     KNOWN_TARGETS,
     REVIEW_BUNDLE_TYPES,
+    accepted_record_source_file,
     check_linux_smoke_log_text,
     check_platform_verified_evidence,
     read_json,
@@ -97,8 +98,7 @@ def finalize_platform_verified_evidence_record(
         ("review bundle archive", bundle_archive),
         ("review bundle SHA-256 sidecar", bundle_sha256s),
     ):
-        if not path.is_file():
-            errors.append(f"{label} file missing: {path}")
+        check_input_file(path, label, errors)
     if candidate is None or manifest is None or errors:
         return errors, {}
 
@@ -166,6 +166,9 @@ def finalized_release_asset_source(
     if isinstance(artifact_files, dict):
         expected_files.update(str(name) for name in artifact_files)
     expected_files.update(str(name) for name in review_bundle_files.values())
+    target = str(record.get("target", ""))
+    if target in KNOWN_TARGETS:
+        expected_files.add(accepted_record_source_file(target))
     source_data["contains_files"] = sorted(expected_files)
     return source_data
 
@@ -239,11 +242,13 @@ def check_candidate_manifest_binding(
     errors.extend(check_manifest_validated_commands(candidate, manifest))
     errors.extend(check_manifest_artifacts_match_candidate(candidate, manifest))
     if bundle_type == "extended-linux-native-evidence":
+        target = str(candidate.get("target", ""))
+        errors.extend(check_linux_manifest_evidence_file_names(target, manifest))
         errors.extend(
             check_manifest_file_record(
                 "candidate_record",
                 manifest.get("candidate_record"),
-                expected_file=candidate_record.name,
+                expected_file=f"platform-verified-evidence-{target}.json",
                 expected_sha256=sha256_file(candidate_record),
                 expected_size=candidate_record.stat().st_size,
             )
@@ -273,6 +278,9 @@ def check_candidate_manifest_binding(
                 expected_size=candidate_record.stat().st_size,
             )
         )
+        for key in ("workflow", "workflow_inputs", "release_asset_source", "xp_evidence_sources"):
+            if manifest.get(key) != candidate.get(key):
+                errors.append(f"review bundle manifest {key} must match candidate record")
         evidence_record = manifest.get("evidence")
         if isinstance(evidence_record, dict):
             if evidence_record.get("file") != "xp-evidence.json":
@@ -336,6 +344,26 @@ def check_manifest_validated_commands(candidate: dict[str, Any], manifest: dict[
         ]
         if commands != expected:
             errors.append("review bundle manifest validated_commands must match XP bundle validation commands")
+    return errors
+
+
+def check_linux_manifest_evidence_file_names(target: str, manifest: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    builder_record = manifest.get("builder_evidence")
+    expected_builder = f"builder-identity-{target}.json"
+    if isinstance(builder_record, dict) and builder_record.get("file") != expected_builder:
+        errors.append(f"review bundle manifest builder_evidence.file must be {expected_builder}")
+
+    smoke_records = manifest.get("smoke_evidence")
+    expected_smoke = f"native-smoke-{target}.log"
+    if isinstance(smoke_records, list):
+        native_records = [
+            item
+            for item in smoke_records
+            if isinstance(item, dict) and str(item.get("id", "")) == "native_smoke"
+        ]
+        if len(native_records) == 1 and native_records[0].get("file") != expected_smoke:
+            errors.append(f"review bundle manifest native_smoke file must be {expected_smoke}")
     return errors
 
 
@@ -761,8 +789,7 @@ def platform_evidence_policy() -> str:
 
 
 def load_json(path: Path, label: str, errors: list[str]) -> dict[str, Any] | None:
-    if not path.is_file():
-        errors.append(f"{label} file missing: {path}")
+    if not check_input_file(path, label, errors):
         return None
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -773,6 +800,16 @@ def load_json(path: Path, label: str, errors: list[str]) -> dict[str, Any] | Non
         errors.append(f"{label} file must contain a JSON object")
         return None
     return data
+
+
+def check_input_file(path: Path, label: str, errors: list[str]) -> bool:
+    if path.is_symlink():
+        errors.append(f"{label} file must not be a symlink: {path}")
+        return False
+    if not path.is_file():
+        errors.append(f"{label} file missing: {path}")
+        return False
+    return True
 
 
 if __name__ == "__main__":

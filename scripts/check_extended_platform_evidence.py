@@ -36,6 +36,8 @@ def check_top_level_policy(workflow: str) -> list[str]:
             errors.append(f"extended platform evidence workflow must not run on {disallowed.rstrip(':')}")
     if "permissions:\n  contents: read" not in workflow:
         errors.append("extended platform evidence workflow must use read-only contents permission")
+    if re.search(r"(?m)^\s+[A-Za-z0-9_-]+:\s+write\s*$", workflow):
+        errors.append("extended platform evidence workflow must not request write permissions")
     if 'FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"' not in workflow:
         errors.append("extended platform evidence workflow must opt JavaScript actions into Node.js 24")
     if "linux-i386" not in workflow or "linux-armhf" not in workflow:
@@ -52,6 +54,15 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
     record_name = f"platform-verified-evidence-{target}.json"
     builder_identity_name = f"builder-identity-{target}.json"
     smoke_name = f"native-smoke-{target}.log"
+    source_artifact_name = f"extended-linux-evidence-{target}-${{{{ inputs.release_tag }}}}"
+    stage_upload_snippet = (
+        "python scripts/stage_extended_linux_evidence_upload.py \\\n"
+        f"            --target {target} \\\n"
+        '            --release-tag "${{ inputs.release_tag }}" \\\n'
+        "            --source-dir native-dist/linux \\\n"
+        "            --out-dir linux-evidence-upload \\\n"
+        "            --force"
+    )
     smoke_command_snippet = (
         f"bash scripts/smoke_linux_native.sh --arch {runner} --dist native-dist/linux "
         f"--target {target} --workflow-run-url "
@@ -68,6 +79,7 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
         f"python3 scripts/check_extended_platform_dispatch_inputs.py \\\n            --target {target}": "dispatch input preflight",
         f"python3 scripts/check_extended_platform_builder.py \\\n            --target {target}": "builder identity preflight evidence",
         f"--out native-dist/linux/{builder_identity_name}": "builder identity output",
+        '--source-head-sha "${{ github.sha }}"': "builder source head SHA evidence",
         "python3 -m venv .venv-native": "isolated release virtual environment",
         'python -m pip install --constraint requirements-release.txt pip setuptools wheel ".[security,package]"': "pinned release dependency installation",
         "bash scripts/make_linux_native.sh": "native Linux artifact build",
@@ -76,6 +88,8 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
         f"python scripts/make_platform_verified_evidence_record.py \\\n            --target {target}": "accepted-evidence record generation",
         '--release-asset-base-url "${{ inputs.release_asset_base_url }}"': "release asset URL evidence input",
         '--workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"': "workflow run URL evidence",
+        f"--release-source-artifact-name {source_artifact_name}": "release source artifact name binding",
+        '--release-source-head-sha "${{ github.sha }}"': "release source head SHA evidence",
         f"--builder-evidence native-dist/linux/{builder_identity_name}": "builder identity evidence input",
         f"--linux-smoke-evidence native-dist/linux/{smoke_name}": "native smoke evidence input",
         "--runner-label self-hosted": "self-hosted runner-label evidence",
@@ -90,7 +104,10 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
         f"--bundle-archive native-dist/linux/extended-linux-evidence-bundle-{target}-${{{{ inputs.release_tag }}}}.zip": "finalized evidence archive binding",
         f"--bundle-sha256s native-dist/linux/extended-linux-evidence-bundle-{target}-${{{{ inputs.release_tag }}}}-SHA256SUMS.txt": "finalized evidence checksum sidecar binding",
         f"--out native-dist/linux/platform-verified-evidence-{target}-final.json": "finalized evidence record output",
+        stage_upload_snippet: "scoped Linux evidence upload staging",
         "actions/upload-artifact@v7": "evidence artifact upload",
+        f"name: {source_artifact_name}": "target/release-scoped evidence artifact name",
+        "path: linux-evidence-upload/*": "scoped staged upload path",
         "if-no-files-found: error": "missing evidence artifact failure",
     }
     for snippet, label in required_snippets.items():
@@ -110,13 +127,16 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
         f"            --target {target} \\\n"
         '            --release-tag "${{ inputs.release_tag }}" \\\n'
         '            --workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \\\n'
+        '            --source-head-sha "${{ github.sha }}" \\\n'
         f"            --out native-dist/linux/{builder_identity_name}"
     )
     if builder_command not in block:
-        errors.append(f"{job} builder identity preflight must bind release_tag and workflow_run_url")
+        errors.append(f"{job} builder identity preflight must bind release_tag, workflow_run_url and source_head_sha")
+    if "path: native-dist/linux/*" in block:
+        errors.append(f"{job} must upload scoped staged files, not raw native-dist/linux wildcard")
     if "softprops/action-gh-release" in block:
         errors.append(f"{job} must not publish GitHub releases")
-    if "contents: write" in block:
+    if re.search(r"(?m)^\s+[A-Za-z0-9_-]+:\s+write\s*$", block):
         errors.append(f"{job} must not request write permissions")
     return errors
 

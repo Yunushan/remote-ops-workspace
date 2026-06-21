@@ -26,7 +26,9 @@ def test_finalize_platform_verified_evidence_record_binds_review_bundle(tmp_path
     builder_path.write_text(json.dumps(candidate["builder_identity"], indent=2) + "\n", encoding="utf-8")
     smoke_path = tmp_path / "native-smoke-linux-i386.log"
     _write_linux_smoke_evidence(smoke_path, target, candidate["artifact_sha256"])
-    candidate["linux_smoke_evidence_sha256"] = {"native_smoke": _sha256(smoke_path)}
+    smoke_sha = _sha256(smoke_path)
+    candidate["linux_smoke_evidence_sha256"] = {"native_smoke": smoke_sha}
+    _sync_linux_source_record(candidate, "native_smoke", smoke_sha, smoke_path.stat().st_size)
     candidate_path.write_text(json.dumps(candidate, indent=2) + "\n", encoding="utf-8")
     manifest, archive, sidecar = _write_bundle_files(
         tmp_path,
@@ -77,6 +79,42 @@ def test_finalize_platform_verified_evidence_record_binds_review_bundle(tmp_path
     assert manifest.name in record["release_asset_source"]["contains_files"]
     assert archive.name in record["release_asset_source"]["contains_files"]
     assert sidecar.name in record["release_asset_source"]["contains_files"]
+    assert (
+        f"platform-verified-evidence-{target}-final.json"
+        in record["release_asset_source"]["contains_files"]
+    )
+
+
+def test_finalize_platform_verified_evidence_record_rejects_symlinked_candidate_record(
+    tmp_path: Path, monkeypatch
+) -> None:
+    finalizer = _load_finalizer()
+    helpers = _load_platform_verified_evidence_tests()
+    target = "windows-xp-native-x86"
+    release_tag = "v1.0.2"
+    candidate = helpers._xp_record(target)
+    candidate.pop("review_bundle")
+    candidate_path, manifest, archive, sidecar = _write_xp_candidate_and_bundle(
+        tmp_path,
+        candidate,
+        target=target,
+        release_tag=release_tag,
+    )
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self.name == candidate_path.name
+
+    monkeypatch.setattr(type(tmp_path), "is_symlink", fake_is_symlink)
+
+    errors, record = finalizer.finalize_platform_verified_evidence_record(
+        candidate_record=candidate_path,
+        bundle_manifest=manifest,
+        bundle_archive=archive,
+        bundle_sha256s=sidecar,
+    )
+
+    assert record == {}
+    assert f"candidate evidence record file must not be a symlink: {candidate_path}" in errors
 
 
 def test_finalize_platform_verified_evidence_record_rejects_archive_missing_candidate(tmp_path: Path) -> None:
@@ -93,7 +131,9 @@ def test_finalize_platform_verified_evidence_record_rejects_archive_missing_cand
     builder_path.write_text(json.dumps(candidate["builder_identity"], indent=2) + "\n", encoding="utf-8")
     smoke_path = tmp_path / "native-smoke-linux-i386.log"
     _write_linux_smoke_evidence(smoke_path, target, candidate["artifact_sha256"])
-    candidate["linux_smoke_evidence_sha256"] = {"native_smoke": _sha256(smoke_path)}
+    smoke_sha = _sha256(smoke_path)
+    candidate["linux_smoke_evidence_sha256"] = {"native_smoke": smoke_sha}
+    _sync_linux_source_record(candidate, "native_smoke", smoke_sha, smoke_path.stat().st_size)
     candidate_path.write_text(json.dumps(candidate, indent=2) + "\n", encoding="utf-8")
     manifest, archive, sidecar = _write_bundle_files(
         tmp_path,
@@ -146,7 +186,9 @@ def test_finalize_platform_verified_evidence_record_rejects_weak_linux_smoke_log
     smoke_path = tmp_path / "native-smoke-linux-i386.log"
     builder_path.write_text(json.dumps(candidate["builder_identity"], indent=2) + "\n", encoding="utf-8")
     smoke_path.write_text("linux-i386 native smoke passed\n", encoding="utf-8")
-    candidate["linux_smoke_evidence_sha256"] = {"native_smoke": _sha256(smoke_path)}
+    smoke_sha = _sha256(smoke_path)
+    candidate["linux_smoke_evidence_sha256"] = {"native_smoke": smoke_sha}
+    _sync_linux_source_record(candidate, "native_smoke", smoke_sha, smoke_path.stat().st_size)
     candidate_path.write_text(json.dumps(candidate, indent=2) + "\n", encoding="utf-8")
     manifest, archive, sidecar = _write_bundle_files(
         tmp_path,
@@ -225,6 +267,39 @@ def test_finalize_platform_verified_evidence_record_binds_xp_review_bundle(tmp_p
     assert manifest.name in record["release_asset_source"]["contains_files"]
     assert archive.name in record["release_asset_source"]["contains_files"]
     assert sidecar.name in record["release_asset_source"]["contains_files"]
+    assert (
+        f"platform-verified-evidence-{target}-final.json"
+        in record["release_asset_source"]["contains_files"]
+    )
+
+
+def test_finalize_platform_verified_evidence_record_rejects_xp_workflow_input_drift(tmp_path: Path) -> None:
+    finalizer = _load_finalizer()
+    helpers = _load_platform_verified_evidence_tests()
+    target = "windows-xp-native-x86"
+    release_tag = "v1.0.2"
+    candidate = helpers._xp_record(target)
+    candidate.pop("review_bundle")
+    candidate_path, manifest, archive, sidecar = _write_xp_candidate_and_bundle(
+        tmp_path,
+        candidate,
+        target=target,
+        release_tag=release_tag,
+    )
+    manifest_data = json.loads(manifest.read_text(encoding="utf-8"))
+    manifest_data["workflow_inputs"]["assets_dir"] = "native-dist/windows-xp/windows-xp-native-x86/v1.0.3"
+    manifest.write_text(json.dumps(manifest_data, indent=2) + "\n", encoding="utf-8")
+    _rewrite_sidecar(sidecar, manifest=manifest, archive=archive)
+
+    errors, record = finalizer.finalize_platform_verified_evidence_record(
+        candidate_record=candidate_path,
+        bundle_manifest=manifest,
+        bundle_archive=archive,
+        bundle_sha256s=sidecar,
+    )
+
+    assert record == {}
+    assert "review bundle manifest workflow_inputs must match candidate record" in errors
 
 
 def test_finalize_platform_verified_evidence_record_rejects_xp_summary_mismatch(tmp_path: Path) -> None:
@@ -443,7 +518,9 @@ def test_finalize_platform_verified_evidence_record_rejects_candidate_bundle_mis
     builder_path.write_text(json.dumps(candidate["builder_identity"], indent=2) + "\n", encoding="utf-8")
     smoke_path = tmp_path / "native-smoke-linux-i386.log"
     _write_linux_smoke_evidence(smoke_path, target, candidate["artifact_sha256"])
-    candidate["linux_smoke_evidence_sha256"] = {"native_smoke": _sha256(smoke_path)}
+    smoke_sha = _sha256(smoke_path)
+    candidate["linux_smoke_evidence_sha256"] = {"native_smoke": smoke_sha}
+    _sync_linux_source_record(candidate, "native_smoke", smoke_sha, smoke_path.stat().st_size)
     manifest_candidate = dict(candidate)
     manifest_candidate["workflow_run_url"] = "https://github.com/example/remote-ops-workspace/actions/runs/99999"
     bundled_candidate_path = tmp_path / "bundled-platform-verified-evidence-linux-i386.json"
@@ -713,6 +790,49 @@ def test_finalize_platform_verified_evidence_record_rejects_duplicate_manifest_s
     assert "review bundle manifest smoke_evidence entries contain duplicate ids: ['native_smoke']" in errors
 
 
+def test_finalize_platform_verified_evidence_record_rejects_linux_manifest_evidence_name_drift(
+    tmp_path: Path,
+) -> None:
+    finalizer = _load_finalizer()
+    helpers = _load_platform_verified_evidence_tests()
+    target = "linux-i386"
+    candidate = helpers._linux_record(target)
+    candidate.pop("review_bundle")
+    candidate_path = tmp_path / "platform-verified-evidence-linux-i386.json"
+    candidate_path.write_text(json.dumps(candidate, indent=2) + "\n", encoding="utf-8")
+    manifest = {
+        "bundle_type": "extended-linux-native-evidence",
+        "promotion_config_sha256": candidate["promotion_config_sha256"],
+        "release_asset_urls": candidate["release_asset_urls"],
+        "validated_commands": _linux_validated_commands(candidate),
+        "workflow": candidate["workflow"],
+        "workflow_inputs": candidate["workflow_inputs"],
+        "workflow_run_url": candidate["workflow_run_url"],
+        "runner_labels": candidate["runner_labels"],
+        "security_patch_evidence": candidate["builder_identity"]["security_patch_evidence"],
+        "builder_evidence": {
+            "file": "builder.json",
+            "sha256": candidate["builder_identity_sha256"],
+            "size_bytes": 100,
+        },
+        "smoke_evidence": [
+            {
+                "id": "native_smoke",
+                "file": "native-smoke.log",
+                "sha256": candidate["linux_smoke_evidence_sha256"]["native_smoke"],
+                "size_bytes": 100,
+            }
+        ],
+        "candidate_record": _file_record(candidate_path),
+        "artifacts": _artifact_records(candidate),
+    }
+
+    errors = finalizer.check_candidate_manifest_binding(candidate_path, candidate, manifest)
+
+    assert "review bundle manifest builder_evidence.file must be builder-identity-linux-i386.json" in errors
+    assert "review bundle manifest native_smoke file must be native-smoke-linux-i386.log" in errors
+
+
 def _write_bundle_files(
     root: Path,
     *,
@@ -747,6 +867,13 @@ def _write_bundle_files(
     return manifest, archive, sidecar
 
 
+def _rewrite_sidecar(sidecar: Path, *, manifest: Path, archive: Path) -> None:
+    sidecar.write_text(
+        f"{_sha256(manifest)}  {manifest.name}\n{_sha256(archive)}  {archive.name}\n",
+        encoding="utf-8",
+    )
+
+
 def _write_xp_candidate_and_bundle(
     root: Path,
     candidate: dict[str, object],
@@ -774,6 +901,12 @@ def _write_xp_candidate_and_bundle(
             smoke_text = smoke_text_mutator(str(smoke_id), smoke_text)
         smoke_file.write_text(smoke_text, encoding="utf-8")
         smoke_hashes[smoke_id] = _sha256(smoke_file)
+        sources = candidate.get("xp_evidence_sources")
+        if isinstance(sources, dict) and isinstance(sources.get("smoke_evidence"), dict):
+            smoke_sources = sources["smoke_evidence"]
+            if isinstance(smoke_sources.get(smoke_id), dict):
+                smoke_sources[smoke_id]["size_bytes"] = smoke_file.stat().st_size
+                smoke_sources[smoke_id]["sha256"] = smoke_hashes[smoke_id]
         archive_name = f"xp-smoke-evidence/{smoke_id}.txt"
         smoke_records.append(_smoke_file_record(smoke_file, smoke_id=str(smoke_id), name=archive_name))
         archive_files[archive_name] = smoke_file.read_bytes()
@@ -784,6 +917,10 @@ def _write_xp_candidate_and_bundle(
         evidence_mutator(evidence_data)
     xp_evidence.write_text(json.dumps(evidence_data, indent=2) + "\n", encoding="utf-8")
     candidate["xp_evidence_sha256"] = _sha256(xp_evidence)
+    sources = candidate.get("xp_evidence_sources")
+    if isinstance(sources, dict) and isinstance(sources.get("evidence"), dict):
+        sources["evidence"]["size_bytes"] = xp_evidence.stat().st_size
+        sources["evidence"]["sha256"] = candidate["xp_evidence_sha256"]
     archive_files["xp-evidence.json"] = xp_evidence.read_bytes()
     archive_files.update(_attach_artifact_files(candidate))
 
@@ -799,6 +936,10 @@ def _write_xp_candidate_and_bundle(
             "promotion_config_sha256": candidate["promotion_config_sha256"],
             "release_asset_urls": candidate["release_asset_urls"],
             "validated_commands": _xp_validated_commands(candidate),
+            "workflow": candidate["workflow"],
+            "workflow_inputs": candidate["workflow_inputs"],
+            "release_asset_source": candidate["release_asset_source"],
+            "xp_evidence_sources": candidate["xp_evidence_sources"],
             "xp_evidence_contract_sha256": candidate["xp_evidence_contract_sha256"],
             "host_identity": candidate["xp_evidence_summary"]["host_identity"],
             "candidate_record": _file_record(candidate_path),
@@ -885,6 +1026,19 @@ def _smoke_file_record(path: Path, *, smoke_id: str, name: str) -> dict[str, obj
     record = _file_record(path, name=name)
     record["id"] = smoke_id
     return record
+
+
+def _sync_linux_source_record(
+    record: dict[str, object],
+    key: str,
+    sha256: str,
+    size_bytes: int,
+) -> None:
+    sources = record.get("linux_evidence_sources")
+    if isinstance(sources, dict) and isinstance(sources.get(key), dict):
+        source = sources[key]
+        source["sha256"] = sha256
+        source["size_bytes"] = size_bytes
 
 
 def _write_linux_smoke_evidence(

@@ -20,6 +20,7 @@ RELEASE_PREFLIGHT_DEPENDENTS = (
     "windows-native",
     "macos-native",
     "linux-native",
+    "accepted-platform-evidence-assets",
     "publish",
 )
 
@@ -32,6 +33,7 @@ REQUIRED_DOC_SNIPPETS = (
     "remote-ops-workspace-v1.0.2-macos-<x64|arm64>.pkg",
     "not uploaded by the default GitHub",
     "check_release_publish_assets.py --assets-dir release-assets --tag <tag> --require-platform-goal-targets",
+    "import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets",
 )
 
 STALE_DEFAULT_ARTIFACT_SNIPPETS = (
@@ -130,7 +132,43 @@ def check_release_preflight(workflow: str | None = None) -> list[str]:
             continue
         if "needs: release-preflight" not in dependent_block and "- release-preflight" not in dependent_block:
             errors.append(f"{job} must depend on release-preflight")
+    errors.extend(check_accepted_platform_evidence_assets_job(workflow_text))
+    errors.extend(check_publish_platform_evidence_dependency(workflow_text))
     return errors
+
+
+def check_accepted_platform_evidence_assets_job(workflow: str) -> list[str]:
+    block = workflow_job_block(workflow, "accepted-platform-evidence-assets")
+    if not block:
+        return ["release workflow missing accepted-platform-evidence-assets job"]
+    errors: list[str] = []
+    required_snippets = {
+        "actions: read": "Actions read permission for artifact import",
+        "contents: read": "contents read permission for checkout",
+        "GH_TOKEN: ${{ github.token }}": "GitHub token for gh run download",
+        (
+            'python scripts/import_platform_evidence_artifacts.py --release-tag "${{ github.ref_name }}" '
+            "--require-goal-targets --out-dir release-assets"
+        ): "accepted platform evidence artifact importer",
+        "name: release-platform-evidence-assets": "platform evidence release asset artifact name",
+        "path: release-assets/*": "platform evidence release asset upload path",
+        "if-no-files-found: error": "platform evidence upload must fail when empty",
+    }
+    for snippet, label in required_snippets.items():
+        if snippet not in block:
+            errors.append(f"accepted-platform-evidence-assets missing {label}: {snippet}")
+    if re.search(r"(?m)^\s+(actions|contents):\s+write\s*$", block):
+        errors.append("accepted-platform-evidence-assets must not request write permissions")
+    return errors
+
+
+def check_publish_platform_evidence_dependency(workflow: str) -> list[str]:
+    block = workflow_job_block(workflow, "publish")
+    if not block:
+        return ["release workflow missing publish job"]
+    if "- accepted-platform-evidence-assets" not in block:
+        return ["publish job must depend on accepted-platform-evidence-assets"]
+    return []
 
 
 def check_release_docs() -> list[str]:

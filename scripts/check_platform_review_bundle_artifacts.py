@@ -147,11 +147,11 @@ def check_record_review_bundle_artifacts(record: dict[str, Any], bundle_root: Pa
     candidate = parse_json_bytes(candidate_bytes, f"{target} archived candidate_record", errors)
     if candidate is None:
         return errors
-    expected_candidate = dict(record)
-    expected_candidate.pop("review_bundle", None)
+    expected_candidate = prefinalized_candidate_record(record)
     if candidate != expected_candidate:
-        errors.append(f"{target} archived candidate_record must match accepted evidence record without review_bundle")
-        return errors
+        errors.append(
+            f"{target} archived candidate_record must match accepted evidence record before finalization"
+        )
 
     with tempfile.TemporaryDirectory(prefix=f"{target}-bundle-") as raw_tmp:
         candidate_path = Path(raw_tmp) / candidate_name
@@ -168,8 +168,22 @@ def check_record_review_bundle_artifacts(record: dict[str, Any], bundle_root: Pa
     return errors
 
 
+def prefinalized_candidate_record(record: dict[str, Any]) -> dict[str, Any]:
+    candidate = dict(record)
+    candidate.pop("review_bundle", None)
+    source = candidate.get("release_asset_source")
+    artifact_hashes = candidate.get("artifact_sha256")
+    if isinstance(source, dict) and isinstance(artifact_hashes, dict):
+        source_data = dict(source)
+        source_data["contains_files"] = sorted(str(name) for name in artifact_hashes)
+        candidate["release_asset_source"] = source_data
+    return candidate
+
+
 def check_file_record(target: str, key: str, path: Path, raw_record: dict[str, Any]) -> list[str]:
     errors: list[str] = []
+    if path.is_symlink():
+        return [f"{target} review_bundle {key} file must not be a symlink: {path.name}"]
     if not path.is_file():
         return [f"{target} review_bundle {key} file missing: {path.name}"]
     expected_size = raw_record.get("size_bytes")

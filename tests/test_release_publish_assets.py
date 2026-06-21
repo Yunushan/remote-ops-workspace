@@ -14,17 +14,26 @@ POLICY = (
     "or Windows XP native-host readiness. Accepted records must include release asset URLs, "
     "review-bundle manifest release asset URL binding, review bundle release asset URLs, "
     "release-importable artifact source binding, "
+    "release source head SHA binding, "
+    "release source workflow file binding, "
+    "finalized accepted-record source file binding, "
+    "Linux release source artifact names must be target/release-scoped, "
+    "XP release source artifact names must be target/release-scoped, "
     "and per-artifact SHA-256 digests, Linux builder identity evidence, builder identity "
     "SHA-256, builder identity release/run binding, "
+    "Linux builder/smoke source file binding, "
+    "Linux builder source head SHA binding, "
     "Linux builder host identity binding when applicable, "
     "Linux builder rpm and non-interactive sudo evidence, Linux security patch evidence, "
     "Linux native build and smoke command provenance, "
     "Linux smoke evidence SHA-256 and Linux smoke release/run binding, "
-    "Linux workflow dispatch inputs when applicable, XP evidence bundle SHA-256 digests, "
+    "Linux workflow dispatch inputs when applicable, XP workflow dispatch inputs when applicable, "
+    "XP evidence source file binding, XP evidence bundle SHA-256 digests, "
     "XP evidence validation command binding, XP evidence contract SHA-256, "
     "XP evidence summary binding, XP host identity SHA-256 binding, XP security patch evidence, "
     "tracked scripts/xp_smoke_runner.cmd XP smoke command provenance, "
-    "XP smoke evidence-file summary binding and "
+    "canonical XP smoke proof-file command binding, "
+    "canonical XP smoke evidence-file summary binding and "
     "XP security smoke proof-line binding when applicable, and review "
     "bundle manifest, review bundle archive, and review bundle SHA-256 sidecar digests "
     "before strict promotion, and release uploads must include those review bundle files with matching "
@@ -226,6 +235,49 @@ def test_publish_contract_requires_platform_evidence_import_job() -> None:
     errors = checker.check_publish_contract(matrix, workflow)
 
     assert "release workflow missing accepted-platform-evidence-assets job" in errors
+
+
+def test_publish_contract_rejects_platform_evidence_import_write_permissions() -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        "      actions: read\n",
+        "      actions: write\n",
+    )
+
+    errors = checker.check_publish_contract(matrix, workflow)
+
+    assert "accepted-platform-evidence-assets job must not request write permissions" in errors
+
+
+def test_publish_contract_requires_platform_evidence_import_before_upload() -> None:
+    checker = _load_checker()
+    workflow = """
+jobs:
+  accepted-platform-evidence-assets:
+    needs: release-preflight
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-platform-evidence-assets
+          path: release-assets/*
+          if-no-files-found: error
+      - name: Import accepted protected platform evidence artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/import_platform_evidence_artifacts.py --release-tag "${{ github.ref_name }}" --require-goal-targets --out-dir release-assets
+"""
+
+    errors = checker.check_platform_evidence_import_job(workflow)
+
+    assert "platform evidence import must run before imported artifact upload" in errors
 
 
 def test_publish_contract_rejects_malformed_mobaxterm_parity_registry() -> None:
@@ -645,8 +697,7 @@ def _write_accepted_review_bundle_assets(record: dict[str, object], root: Path) 
     finalizer = _load_script("finalize_platform_verified_evidence_record")
     bundle_helpers = _load_finalize_tests()
     release_tag = str(record["release_tag"])
-    candidate = copy.deepcopy(record)
-    candidate.pop("review_bundle")
+    candidate = _prefinalized_candidate(record)
     hashes = candidate["artifact_sha256"]
     assert isinstance(hashes, dict)
     artifact_archive_files = {
@@ -660,8 +711,11 @@ def _write_accepted_review_bundle_assets(record: dict[str, object], root: Path) 
         smoke_path = work_root / f"native-smoke-{target}.log"
         builder_path.write_text(json.dumps(candidate["builder_identity"], indent=2) + "\n", encoding="utf-8")
         bundle_helpers._write_linux_smoke_evidence(smoke_path, target, hashes)
-        candidate["linux_smoke_evidence_sha256"] = {"native_smoke": _sha256(smoke_path)}
+        smoke_sha = _sha256(smoke_path)
+        candidate["linux_smoke_evidence_sha256"] = {"native_smoke": smoke_sha}
+        _sync_linux_source_record(candidate, "native_smoke", smoke_sha, smoke_path.stat().st_size)
         record["linux_smoke_evidence_sha256"] = candidate["linux_smoke_evidence_sha256"]
+        _sync_linux_source_record(record, "native_smoke", smoke_sha, smoke_path.stat().st_size)
         candidate_path.write_text(json.dumps(candidate, indent=2) + "\n", encoding="utf-8")
         manifest, archive, sidecar = bundle_helpers._write_bundle_files(
             work_root,
@@ -710,6 +764,31 @@ def _write_accepted_review_bundle_assets(record: dict[str, object], root: Path) 
     assert errors == []
     record.clear()
     record.update(finalized)
+
+
+def _prefinalized_candidate(record: dict[str, object]) -> dict[str, object]:
+    candidate = copy.deepcopy(record)
+    candidate.pop("review_bundle", None)
+    source = candidate.get("release_asset_source")
+    artifact_hashes = candidate.get("artifact_sha256")
+    if isinstance(source, dict) and isinstance(artifact_hashes, dict):
+        source_data = dict(source)
+        source_data["contains_files"] = sorted(str(name) for name in artifact_hashes)
+        candidate["release_asset_source"] = source_data
+    return candidate
+
+
+def _sync_linux_source_record(
+    record: dict[str, object],
+    key: str,
+    sha256: str,
+    size_bytes: int,
+) -> None:
+    sources = record.get("linux_evidence_sources")
+    if isinstance(sources, dict) and isinstance(sources.get(key), dict):
+        source = sources[key]
+        source["sha256"] = sha256
+        source["size_bytes"] = size_bytes
 
 
 def _sha256(path: Path) -> str:
@@ -786,7 +865,8 @@ def _linux_accepted_evidence(target: str) -> dict[str, object]:
     arch = "i386" if target == "linux-i386" else "armhf"
     rpm_arch = "i686" if target == "linux-i386" else "armv7hl"
     artifact_arch = "i686" if target == "linux-i386" else "armhf"
-    artifact = "extended-linux-i386-native-evidence" if target == "linux-i386" else "extended-linux-armhf-native-evidence"
+    release_tag = "v1.0.2"
+    artifact = f"extended-linux-evidence-{target}-{release_tag}"
     base_url = "https://github.com/example/remote-ops-workspace/releases/download/v1.0.2"
     release_asset_urls = [
         f"{base_url}/remote-ops-workspace-v1.0.2-linux-{arch}.deb",
@@ -797,6 +877,8 @@ def _linux_accepted_evidence(target: str) -> dict[str, object]:
         f"{base_url}/remote-ops-workspace-v1.0.2-linux-{artifact_arch}-native-SHA256SUMS.txt",
     ]
     builder_identity = _builder_identity(target)
+    builder_identity_sha = _json_sha256(builder_identity)
+    linux_smoke_hashes = _linux_smoke_hashes()
     return {
         "target": target,
         "evidence_type": "extended-linux-native",
@@ -814,7 +896,12 @@ def _linux_accepted_evidence(target: str) -> dict[str, object]:
         "artifact_name": artifact,
         "runner_labels": ["self-hosted", "linux", arch],
         "builder_identity": builder_identity,
-        "builder_identity_sha256": _json_sha256(builder_identity),
+        "builder_identity_sha256": builder_identity_sha,
+        "linux_evidence_sources": _linux_evidence_sources(
+            target,
+            builder_identity_sha,
+            linux_smoke_hashes["native_smoke"],
+        ),
         "native_build_command": (
             f"TARGET_ARCH={arch} PYTHON_BIN=.venv-native/bin/python bash scripts/make_linux_native.sh"
         ),
@@ -822,7 +909,7 @@ def _linux_accepted_evidence(target: str) -> dict[str, object]:
             f"bash scripts/smoke_linux_native.sh --arch {arch} --dist native-dist/linux "
             f"--target {target} --workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345"
         ),
-        "linux_smoke_evidence_sha256": _linux_smoke_hashes(),
+        "linux_smoke_evidence_sha256": linux_smoke_hashes,
         "artifact_validation_command": (
             f"python scripts/check_platform_promotion_artifacts.py --target {target} "
             "--assets-dir native-dist/linux --tag v1.0.2"
@@ -848,6 +935,10 @@ def _linux_accepted_evidence(target: str) -> dict[str, object]:
 
 def _xp_accepted_evidence(target: str) -> dict[str, object]:
     arch = "x86" if target.endswith("x86") else "x64"
+    base_url = "https://github.com/example/remote-ops-workspace/releases/download/v1.0.2"
+    evidence_file = f"evidence/{target}/v1.0.2/xp-evidence.json"
+    assets_dir = f"native-dist/windows-xp/{target}/v1.0.2"
+    evidence_dir = f"evidence/{target}/v1.0.2"
     smoke_ids = sorted(
         [
             "cli_launch",
@@ -865,10 +956,47 @@ def _xp_accepted_evidence(target: str) -> dict[str, object]:
     }
     if arch == "x64":
         os_summary["edition"] = "Professional x64 Edition"
+    evidence_summary: dict[str, object] = {
+        "target": target,
+        "release_tag": "v1.0.2",
+        "host_identity": _xp_host_identity(target),
+        "os": os_summary,
+        "toolchain": {
+            "separate_legacy_toolchain": True,
+            "current_python_pyqt6_stack": False,
+        },
+        "security": {
+            "legacy_crypto_profile_scoped": True,
+            "modern_defaults_unchanged": True,
+            "weak_crypto_global_default": False,
+            "patch_evidence": _security_patch_evidence(),
+        },
+        "smoke_ids": sorted(smoke_ids),
+        "smoke_evidence_files": {
+            smoke_id: f"xp-smoke-evidence/{smoke_id}.txt"
+            for smoke_id in smoke_ids
+        },
+        "smoke_commands": {
+            smoke_id: (
+                f"scripts/xp_smoke_runner.cmd --target {target} --release-tag v1.0.2 "
+                f"--smoke-id {smoke_id} --evidence-file xp-smoke-evidence/{smoke_id}.txt "
+                f"--proof-file xp-smoke-proof/{smoke_id}.txt"
+            )
+            for smoke_id in smoke_ids
+        },
+    }
+    smoke_hashes = {
+        "cli_launch": "c" * 64,
+        "gui_or_legacy_host_ui_launch": "d" * 64,
+        "loopback_profile_dry_run": "e" * 64,
+        "artifact_manifest_validation": "f" * 64,
+        "legacy_crypto_profile_scoped": "1" * 64,
+        "modern_defaults_unchanged": "2" * 64,
+    }
     release_asset_urls = [
-        f"https://github.com/example/remote-ops-workspace/releases/download/v1.0.2/remote-ops-workspace-v1.0.2-windows-xp-{arch}-native.zip",
-        f"https://github.com/example/remote-ops-workspace/releases/download/v1.0.2/remote-ops-workspace-v1.0.2-windows-xp-{arch}-native-manifest.json",
-        f"https://github.com/example/remote-ops-workspace/releases/download/v1.0.2/remote-ops-workspace-v1.0.2-windows-xp-{arch}-native-SHA256SUMS.txt",
+        f"{base_url}/remote-ops-workspace-v1.0.2-windows-xp-{arch}-native.zip",
+        f"{base_url}/remote-ops-workspace-v1.0.2-windows-xp-{arch}-native-manifest.json",
+        f"{base_url}/remote-ops-workspace-v1.0.2-windows-xp-{arch}-native-SHA256SUMS.txt",
     ]
     return {
         "target": target,
@@ -877,64 +1005,38 @@ def _xp_accepted_evidence(target: str) -> dict[str, object]:
         "readiness_percent": 100.0,
         "release_tag": "v1.0.2",
         "promotion_config_sha256": _promotion_config_sha256(),
+        "workflow": ".github/workflows/xp-native-evidence.yml",
+        "workflow_inputs": {
+            "target": target,
+            "release_tag": "v1.0.2",
+            "release_asset_base_url": base_url,
+            "assets_dir": assets_dir,
+            "evidence_file": evidence_file,
+            "evidence_dir": evidence_dir,
+        },
         "architecture": arch,
         "separate_legacy_toolchain": True,
         "current_python_pyqt6_stack": False,
         "xp_evidence_sha256": "b" * 64,
         "xp_evidence_contract_sha256": _xp_native_evidence_contract_sha256(),
         "xp_host_identity_sha256": _json_sha256(_xp_host_identity(target)),
-        "xp_evidence_summary": {
-            "target": target,
-            "release_tag": "v1.0.2",
-            "host_identity": _xp_host_identity(target),
-            "os": os_summary,
-            "toolchain": {
-                "separate_legacy_toolchain": True,
-                "current_python_pyqt6_stack": False,
-            },
-            "security": {
-                "legacy_crypto_profile_scoped": True,
-                "modern_defaults_unchanged": True,
-                "weak_crypto_global_default": False,
-                "patch_evidence": _security_patch_evidence(),
-            },
-            "smoke_ids": sorted(
-                [
-                    "cli_launch",
-                    "gui_or_legacy_host_ui_launch",
-                    "loopback_profile_dry_run",
-                    "artifact_manifest_validation",
-                    "legacy_crypto_profile_scoped",
-                    "modern_defaults_unchanged",
-                ]
-            ),
-            "smoke_evidence_files": {
-                smoke_id: f"xp-smoke-evidence/{smoke_id}.txt"
-                for smoke_id in smoke_ids
-            },
-            "smoke_commands": {
-                smoke_id: (
-                    f"scripts/xp_smoke_runner.cmd --target {target} --release-tag v1.0.2 "
-                    f"--smoke-id {smoke_id} --evidence-file xp-smoke-evidence/{smoke_id}.txt"
-                )
-                for smoke_id in smoke_ids
-            },
-        },
-        "xp_smoke_evidence_sha256": {
-            "cli_launch": "c" * 64,
-            "gui_or_legacy_host_ui_launch": "d" * 64,
-            "loopback_profile_dry_run": "e" * 64,
-            "artifact_manifest_validation": "f" * 64,
-            "legacy_crypto_profile_scoped": "1" * 64,
-            "modern_defaults_unchanged": "2" * 64,
-        },
+        "xp_evidence_summary": evidence_summary,
+        "xp_smoke_evidence_sha256": smoke_hashes,
+        "xp_evidence_sources": _xp_evidence_sources(
+            evidence_file,
+            "b" * 64,
+            evidence_summary,
+            smoke_hashes,
+        ),
         "native_evidence_validation_command": (
             "python scripts/check_xp_native_evidence.py "
-            f"--evidence evidence/{target}/xp-evidence.json --assets-dir native-dist/windows-xp"
+            f"--evidence {evidence_file} "
+            f"--assets-dir {assets_dir} "
+            f"--evidence-dir {evidence_dir}"
         ),
         "artifact_validation_command": (
             f"python scripts/check_platform_promotion_artifacts.py --target {target} "
-            "--assets-dir native-dist/windows-xp --tag v1.0.2"
+            f"--assets-dir {assets_dir} --tag v1.0.2"
         ),
         "checks": [
             "xp_native_evidence_validation",
@@ -960,6 +1062,32 @@ def _artifact_hashes_from_urls(urls: list[str]) -> dict[str, str]:
     return {Path(url).name: "a" * 64 for url in urls}
 
 
+def _xp_evidence_sources(
+    evidence_file: str,
+    evidence_sha: str,
+    evidence_summary: dict[str, object],
+    smoke_hashes: dict[str, str],
+) -> dict[str, object]:
+    smoke_files = evidence_summary["smoke_evidence_files"]
+    assert isinstance(smoke_files, dict)
+    return {
+        "evidence": {
+            "file": "xp-evidence.json",
+            "path": evidence_file,
+            "size_bytes": 4096,
+            "sha256": evidence_sha,
+        },
+        "smoke_evidence": {
+            str(smoke_id): {
+                "file": str(smoke_file),
+                "size_bytes": 256 + index,
+                "sha256": smoke_hashes[str(smoke_id)],
+            }
+            for index, (smoke_id, smoke_file) in enumerate(sorted(smoke_files.items()))
+        },
+    }
+
+
 def _release_asset_source(
     target: str,
     artifact_name: str,
@@ -979,16 +1107,44 @@ def _release_asset_source(
             )
             if isinstance(record, dict)
         )
+        contains_files.add(f"platform-verified-evidence-{target}-final.json")
     return {
         "type": "github-actions-artifact",
+        "workflow": _release_source_workflow(target),
         "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
         "artifact_name": artifact_name,
+        "head_sha": "a" * 40,
         "contains_files": sorted(contains_files),
     }
 
 
+def _release_source_workflow(target: str) -> str:
+    if target.startswith("linux-"):
+        return ".github/workflows/extended-platform-evidence.yml"
+    return ".github/workflows/xp-native-evidence.yml"
+
+
 def _linux_smoke_hashes() -> dict[str, str]:
     return {"native_smoke": "6" * 64}
+
+
+def _linux_evidence_sources(
+    target: str,
+    builder_identity_sha: str,
+    native_smoke_sha: str,
+) -> dict[str, object]:
+    return {
+        "builder_identity": {
+            "file": f"builder-identity-{target}.json",
+            "sha256": builder_identity_sha,
+            "size_bytes": 123,
+        },
+        "native_smoke": {
+            "file": f"native-smoke-{target}.log",
+            "sha256": native_smoke_sha,
+            "size_bytes": 456,
+        },
+    }
 
 
 def _review_bundle(target: str, *, release_tag: str = "v1.0.2") -> dict[str, object]:
@@ -1061,6 +1217,7 @@ def _builder_identity(target: str) -> dict[str, object]:
         "target": target,
         "release_tag": "v1.0.2",
         "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        "source_head_sha": "a" * 40,
         "host_identity": _linux_host_identity(target),
         "sudo_non_interactive": True,
         "sys_platform": "linux",

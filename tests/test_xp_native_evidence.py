@@ -16,6 +16,23 @@ def test_xp_native_evidence_contract_passes_current_tree() -> None:
     assert checker.main(["--contract"]) == 0
 
 
+def test_xp_native_evidence_contract_requires_proof_file_binding() -> None:
+    checker = _load_xp_native_evidence_checker()
+    contract = checker.read_json(Path("configs/xp_native_evidence_contract.json"))
+    contract["required_smoke_command_bindings"] = [
+        item
+        for item in contract["required_smoke_command_bindings"]
+        if item != "--proof-file xp-smoke-proof/<smoke_id>.txt"
+    ]
+
+    errors = checker.check_contract(contract)
+
+    assert (
+        "XP native evidence contract must require tracked runner, target, release-tag, "
+        "smoke-id, evidence-file, and proof-file bindings"
+    ) in errors
+
+
 def test_xp_native_evidence_accepts_x86_bundle(tmp_path: Path) -> None:
     checker = _load_xp_native_evidence_checker()
     artifact_checker = _load_platform_promotion_artifacts_checker()
@@ -192,13 +209,40 @@ def test_xp_native_evidence_rejects_missing_smoke_evidence_file(tmp_path: Path) 
     checker = _load_xp_native_evidence_checker()
     evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
     _attach_smoke_evidence_files(tmp_path, evidence)
-    evidence["smoke_results"][0]["evidence_file"] = "missing-cli-launch.txt"
+    (tmp_path / evidence["smoke_results"][0]["evidence_file"]).unlink()
     path = tmp_path / "xp-evidence.json"
     path.write_text(json.dumps(evidence), encoding="utf-8")
 
     errors = checker.check_xp_native_evidence(path)
 
     assert any("smoke result cli_launch evidence_file missing" in error for error in errors)
+
+
+def test_xp_native_evidence_rejects_unscoped_smoke_evidence_file(tmp_path: Path) -> None:
+    checker = _load_xp_native_evidence_checker()
+    evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    smoke = evidence["smoke_results"][0]
+    smoke["evidence_file"] = "cli_launch.txt"
+    smoke["command"] = (
+        "scripts/xp_smoke_runner.cmd --target windows-xp-native-x86 --release-tag v1.0.2 "
+        "--smoke-id cli_launch --evidence-file cli_launch.txt"
+    )
+    smoke_path = tmp_path / smoke["evidence_file"]
+    smoke_path.write_text(
+        "xp smoke target: windows-xp-native-x86\n"
+        "xp smoke release: v1.0.2\n"
+        "xp smoke id: cli_launch\n"
+        "cli_launch passed on Windows XP evidence host\n",
+        encoding="utf-8",
+    )
+    smoke["evidence_sha256"] = _sha256(smoke_path)
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path)
+
+    assert "windows-xp-native-x86 smoke result cli_launch evidence_file must be xp-smoke-evidence/cli_launch.txt" in errors
 
 
 def test_xp_native_evidence_rejects_smoke_evidence_missing_target_binding(tmp_path: Path) -> None:
@@ -386,6 +430,26 @@ def test_xp_native_evidence_rejects_untracked_smoke_runner_command(tmp_path: Pat
     assert any("command must start with 'scripts/xp_smoke_runner.cmd'" in error for error in errors)
 
 
+def test_xp_native_evidence_rejects_smoke_command_proof_file_mismatch(tmp_path: Path) -> None:
+    checker = _load_xp_native_evidence_checker()
+    evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    evidence["smoke_results"][0]["command"] = (
+        "scripts/xp_smoke_runner.cmd --target windows-xp-native-x86 --release-tag v1.0.2 "
+        "--smoke-id cli_launch --evidence-file xp-smoke-evidence/cli_launch.txt "
+        "--proof-file xp-smoke-proof/other.txt"
+    )
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path)
+
+    assert (
+        "windows-xp-native-x86 smoke result cli_launch command must include exactly one "
+        "--proof-file xp-smoke-proof/cli_launch.txt, got ['xp-smoke-proof/other.txt']"
+    ) in errors
+
+
 def test_xp_native_evidence_rejects_missing_security_patch_evidence(tmp_path: Path) -> None:
     checker = _load_xp_native_evidence_checker()
     evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
@@ -510,6 +574,29 @@ def test_xp_native_evidence_rejects_placeholder_artifact_validation_assets_dir(t
     ) in errors
 
 
+def test_xp_native_evidence_rejects_unscoped_artifact_validation_assets_dir(tmp_path: Path) -> None:
+    checker = _load_xp_native_evidence_checker()
+    evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
+    evidence["artifact_validation"]["command"] = (
+        "python scripts/check_platform_promotion_artifacts.py --target windows-xp-native-x86 "
+        "--assets-dir native-dist/windows-xp --tag v1.0.2"
+    )
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path)
+
+    assert (
+        "windows-xp-native-x86 evidence artifact_validation.command --assets-dir "
+        "must include target path segment 'windows-xp-native-x86', got 'native-dist/windows-xp'"
+    ) in errors
+    assert (
+        "windows-xp-native-x86 evidence artifact_validation.command --assets-dir "
+        "must include release_tag path segment 'v1.0.2', got 'native-dist/windows-xp'"
+    ) in errors
+
+
 def test_xp_native_evidence_rejects_inexact_artifact_list(tmp_path: Path) -> None:
     checker = _load_xp_native_evidence_checker()
     artifact_checker = _load_platform_promotion_artifacts_checker()
@@ -575,7 +662,10 @@ def _valid_evidence(
         },
         "artifact_validation": {
             "passed": True,
-            "command": f"python scripts/check_platform_promotion_artifacts.py --target {target} --assets-dir native-dist/windows-xp --tag {release_tag}",
+            "command": (
+                f"python scripts/check_platform_promotion_artifacts.py --target {target} "
+                f"--assets-dir native-dist/windows-xp/{target}/{release_tag} --tag {release_tag}"
+            ),
         },
         "artifacts": artifacts or [f"remote-ops-workspace-{target}-placeholder"],
         "smoke_results": [

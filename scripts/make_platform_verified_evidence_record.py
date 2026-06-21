@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -26,8 +27,11 @@ from check_platform_verified_evidence import (  # noqa: E402
     check_linux_smoke_log_text,
     check_platform_verified_evidence,
     json_sha256,
+    linux_release_source_artifact_name,
     promotion_config_sha256,
+    release_source_workflow,
     xp_native_evidence_contract_sha256,
+    xp_release_source_artifact_name,
 )
 from check_xp_native_evidence import check_xp_native_evidence  # noqa: E402
 
@@ -38,18 +42,27 @@ DEFAULT_EVIDENCE_POLICY = (
     "or Windows XP native-host readiness. Accepted records must include release asset URLs, "
     "review-bundle manifest release asset URL binding, review bundle release asset URLs, "
     "release-importable artifact source binding, "
+    "release source head SHA binding, "
+    "release source workflow file binding, "
+    "finalized accepted-record source file binding, "
+    "Linux release source artifact names must be target/release-scoped, "
+    "XP release source artifact names must be target/release-scoped, "
     "per-artifact SHA-256 digests, "
     "Linux builder identity evidence, builder identity SHA-256, "
-    "builder identity release/run binding, Linux builder host identity binding when applicable, "
+    "Linux builder/smoke source file binding, "
+    "builder identity release/run binding, Linux builder source head SHA binding, "
+    "Linux builder host identity binding when applicable, "
     "Linux builder rpm and non-interactive sudo evidence, "
     "Linux security patch evidence, "
     "Linux native build and smoke command provenance, "
     "Linux smoke evidence SHA-256 and Linux smoke release/run binding, "
-    "Linux workflow dispatch inputs when applicable, and XP evidence bundle SHA-256 digests, "
+    "Linux workflow dispatch inputs when applicable, XP workflow dispatch inputs when applicable, "
+    "XP evidence source file binding, and XP evidence bundle SHA-256 digests, "
     "XP evidence validation command binding, XP evidence contract SHA-256, "
     "XP evidence summary binding, XP host identity SHA-256 binding, XP security patch evidence, "
     "tracked scripts/xp_smoke_runner.cmd XP smoke command provenance, "
-    "XP smoke evidence-file summary binding and "
+    "canonical XP smoke proof-file command binding, "
+    "canonical XP smoke evidence-file summary binding and "
     "XP security smoke proof-line binding when applicable, and review bundle manifest, "
     "review bundle archive, and review bundle SHA-256 "
     "sidecar digests before strict promotion, and release uploads must include those review bundle "
@@ -73,6 +86,7 @@ XP_CHECKS = [
     "modern_defaults_unchanged",
     "release_asset_attachment",
 ]
+GITHUB_HEAD_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -124,8 +138,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--release-source-artifact-name",
         help=(
             "GitHub Actions artifact name containing the accepted release files. Defaults to the "
-            "extended Linux evidence artifact for Linux evidence; required for XP evidence."
+            "target/release-scoped extended Linux evidence artifact for Linux evidence; required for XP evidence."
         ),
+    )
+    parser.add_argument(
+        "--release-source-head-sha",
+        help="40-character Git commit SHA for the source workflow run that produced the release files.",
     )
     parser.add_argument("--runner-label", action="append", default=[], help="Runner label for Linux evidence")
     parser.add_argument("--builder-evidence", type=Path, help="Linux builder identity JSON emitted by builder preflight")
@@ -195,6 +213,9 @@ def build_evidence_record(args: argparse.Namespace) -> tuple[list[str], dict[str
                 evidence_dir=args.xp_evidence_dir,
             )
         )
+        errors.extend(check_xp_evidence_record_binding(args))
+    if target in LINUX_TARGETS:
+        errors.extend(check_linux_builder_source_head_sha(args))
     if errors:
         return errors, {}
 
@@ -222,22 +243,31 @@ def validate_common_args(args: argparse.Namespace) -> list[str]:
             "--release-asset-base-url must be a GitHub release download URL ending in "
             f"{expected_suffix}"
         )
+    if not args.release_source_head_sha:
+        errors.append("--release-source-head-sha is required")
+    elif not GITHUB_HEAD_SHA_RE.fullmatch(str(args.release_source_head_sha)):
+        errors.append("--release-source-head-sha must be a 40-character lowercase Git SHA")
     return errors
 
 
 def validate_linux_args(args: argparse.Namespace) -> list[str]:
     errors: list[str] = []
+    target = str(args.target)
     if not args.workflow_run_url:
         errors.append("--workflow-run-url is required for Linux evidence")
     if args.builder_evidence is None:
         errors.append("--builder-evidence is required for Linux evidence")
     elif not args.builder_evidence.is_file():
         errors.append(f"Linux builder evidence file missing: {args.builder_evidence}")
+    elif args.builder_evidence.name != f"builder-identity-{target}.json":
+        errors.append(f"--builder-evidence file name must be builder-identity-{target}.json")
     if args.linux_smoke_evidence is None:
         errors.append("--linux-smoke-evidence is required for Linux evidence")
     elif not args.linux_smoke_evidence.is_file():
         errors.append(f"Linux smoke evidence file missing: {args.linux_smoke_evidence}")
-    required_labels = LINUX_TARGETS[str(args.target)]["runner_labels"]
+    elif args.linux_smoke_evidence.name != f"native-smoke-{target}.log":
+        errors.append(f"--linux-smoke-evidence file name must be native-smoke-{target}.log")
+    required_labels = LINUX_TARGETS[target]["runner_labels"]
     labels = set(str(label) for label in args.runner_label)
     if not required_labels.issubset(labels):
         errors.append(f"--runner-label must include {sorted(required_labels)}")
@@ -248,6 +278,12 @@ def validate_linux_args(args: argparse.Namespace) -> list[str]:
     release_source_workflow_run_url = getattr(args, "release_source_workflow_run_url", None)
     if release_source_workflow_run_url and release_source_workflow_run_url != args.workflow_run_url:
         errors.append("--release-source-workflow-run-url must match --workflow-run-url for Linux evidence")
+    release_source_artifact_name = getattr(args, "release_source_artifact_name", None)
+    expected_artifact_name = linux_release_source_artifact_name(target, str(args.release_tag))
+    if release_source_artifact_name and release_source_artifact_name != expected_artifact_name:
+        errors.append(
+            f"--release-source-artifact-name must be {expected_artifact_name} for {target} Linux evidence"
+        )
     return errors
 
 
@@ -261,7 +297,9 @@ def validate_xp_args(args: argparse.Namespace) -> list[str]:
         errors.append("--xp-evidence is required for Windows XP evidence")
     elif not args.xp_evidence.is_file():
         errors.append(f"XP evidence file missing: {args.xp_evidence}")
-    if args.xp_evidence_dir is not None and not args.xp_evidence_dir.is_dir():
+    if args.xp_evidence_dir is None:
+        errors.append("--xp-evidence-dir is required for Windows XP evidence")
+    elif not args.xp_evidence_dir.is_dir():
         errors.append(f"XP evidence directory missing: {args.xp_evidence_dir}")
     if args.workflow_run_url:
         errors.append("--workflow-run-url is only valid for Linux evidence")
@@ -269,8 +307,15 @@ def validate_xp_args(args: argparse.Namespace) -> list[str]:
         errors.append("--runner-label is only valid for Linux evidence")
     if not getattr(args, "release_source_workflow_run_url", None):
         errors.append("--release-source-workflow-run-url is required for Windows XP evidence")
-    if not getattr(args, "release_source_artifact_name", None):
+    release_source_artifact_name = getattr(args, "release_source_artifact_name", None)
+    if not release_source_artifact_name:
         errors.append("--release-source-artifact-name is required for Windows XP evidence")
+    else:
+        expected_artifact_name = xp_release_source_artifact_name(str(args.target), str(args.release_tag))
+        if release_source_artifact_name != expected_artifact_name:
+            errors.append(
+                f"--release-source-artifact-name must be {expected_artifact_name} for {args.target} XP evidence"
+            )
     return errors
 
 
@@ -297,6 +342,44 @@ def check_linux_smoke_evidence_file(
     )
 
 
+def check_linux_builder_source_head_sha(args: argparse.Namespace) -> list[str]:
+    if args.builder_evidence is None or not args.builder_evidence.is_file():
+        return []
+    builder_identity = read_json(args.builder_evidence)
+    target = str(args.target)
+    expected = str(args.release_source_head_sha or "").strip()
+    actual = str(builder_identity.get("source_head_sha", "")).strip()
+    if actual != expected:
+        return [
+            f"{target} builder evidence source_head_sha must match --release-source-head-sha "
+            f"{expected}, got {actual!r}"
+        ]
+    return []
+
+
+def check_xp_evidence_record_binding(args: argparse.Namespace) -> list[str]:
+    if args.xp_evidence is None or not args.xp_evidence.is_file():
+        return []
+    evidence = read_json(args.xp_evidence)
+    if "error" in evidence:
+        return []
+    target = str(args.target)
+    release_tag = str(args.release_tag)
+    actual_target = str(evidence.get("target", "")).strip()
+    actual_release_tag = str(evidence.get("release_tag", "")).strip()
+    errors: list[str] = []
+    if actual_target != target:
+        errors.append(
+            f"{target} XP evidence target must match --target {target}, got {actual_target!r}"
+        )
+    if actual_release_tag != release_tag:
+        errors.append(
+            f"{target} XP evidence release_tag must match --release-tag {release_tag}, "
+            f"got {actual_release_tag!r}"
+        )
+    return errors
+
+
 def linux_record(args: argparse.Namespace, promotion: dict[str, Any]) -> dict[str, Any]:
     target = str(args.target)
     expected = LINUX_TARGETS[target]
@@ -315,11 +398,12 @@ def linux_record(args: argparse.Namespace, promotion: dict[str, Any]) -> dict[st
             "release_asset_base_url": str(args.release_asset_base_url).rstrip("/"),
         },
         "workflow_run_url": str(args.workflow_run_url),
-        "artifact_name": expected["artifact"],
+        "artifact_name": linux_release_source_artifact_name(target, str(args.release_tag)),
         "release_asset_source": release_asset_source(args, target, promotion),
         "runner_labels": sorted(set(str(label) for label in args.runner_label)),
         "builder_identity": builder_identity,
         "builder_identity_sha256": json_sha256(builder_identity),
+        "linux_evidence_sources": linux_evidence_sources(args, builder_identity),
         "native_build_command": linux_native_build_command(target, promotion),
         "native_smoke_command": linux_native_smoke_command(target, promotion, str(args.workflow_run_url)),
         "linux_smoke_evidence_sha256": linux_smoke_evidence_sha256_map(args.linux_smoke_evidence),
@@ -340,6 +424,27 @@ def linux_native_build_command(target: str, promotion: dict[str, Any]) -> str:
     return f"TARGET_ARCH={arch} PYTHON_BIN=.venv-native/bin/python bash {script}"
 
 
+def linux_evidence_sources(
+    args: argparse.Namespace,
+    builder_identity: dict[str, Any],
+) -> dict[str, dict[str, object]]:
+    return {
+        "builder_identity": file_source_record(
+            args.builder_evidence,
+            sha256=json_sha256(builder_identity),
+        ),
+        "native_smoke": file_source_record(args.linux_smoke_evidence),
+    }
+
+
+def file_source_record(path: Path, *, sha256: str | None = None) -> dict[str, object]:
+    return {
+        "file": path.name,
+        "size_bytes": path.stat().st_size,
+        "sha256": sha256 or sha256_file(path),
+    }
+
+
 def linux_native_smoke_command(target: str, promotion: dict[str, Any], workflow_run_url: str) -> str:
     requirements = promotion_requirements(target, promotion)
     return f"bash {requirements.get('smoke_script', '')} --target {target} --workflow-run-url {workflow_run_url}"
@@ -348,14 +453,19 @@ def linux_native_smoke_command(target: str, promotion: dict[str, Any], workflow_
 def release_asset_source(args: argparse.Namespace, target: str, promotion: dict[str, Any]) -> dict[str, Any]:
     if target in LINUX_TARGETS:
         workflow_run_url = str(getattr(args, "release_source_workflow_run_url", None) or args.workflow_run_url)
-        artifact_name = str(getattr(args, "release_source_artifact_name", None) or LINUX_TARGETS[target]["artifact"])
+        artifact_name = str(
+            getattr(args, "release_source_artifact_name", None)
+            or linux_release_source_artifact_name(target, str(args.release_tag))
+        )
     else:
         workflow_run_url = str(getattr(args, "release_source_workflow_run_url", ""))
         artifact_name = str(getattr(args, "release_source_artifact_name", ""))
     return {
         "type": "github-actions-artifact",
+        "workflow": release_source_workflow(target),
         "workflow_run_url": workflow_run_url.rstrip("/"),
         "artifact_name": artifact_name,
+        "head_sha": str(args.release_source_head_sha),
         "contains_files": expected_artifact_names(target, str(args.release_tag), promotion),
     }
 
@@ -375,6 +485,9 @@ def xp_record(args: argparse.Namespace, promotion: dict[str, Any]) -> dict[str, 
     arch = XP_TARGETS[target]["architecture"]
     evidence = read_json(args.xp_evidence)
     host_identity = xp_host_identity_summary(evidence)
+    evidence_summary = xp_evidence_summary(target, str(args.release_tag), evidence)
+    smoke_hashes = xp_smoke_evidence_sha256_map(evidence)
+    requirements = promotion_requirements(target, promotion)
     return {
         "target": target,
         "evidence_type": "windows-xp-native-host",
@@ -382,14 +495,17 @@ def xp_record(args: argparse.Namespace, promotion: dict[str, Any]) -> dict[str, 
         "readiness_percent": 100.0,
         "release_tag": str(args.release_tag),
         "promotion_config_sha256": promotion_config_sha256(promotion),
+        "workflow": str(requirements.get("release_source_workflow", "")),
+        "workflow_inputs": xp_workflow_inputs(args),
         "architecture": arch,
         "separate_legacy_toolchain": True,
         "current_python_pyqt6_stack": False,
         "xp_evidence_sha256": sha256_file(args.xp_evidence),
         "xp_evidence_contract_sha256": xp_native_evidence_contract_sha256(),
         "xp_host_identity_sha256": json_sha256(host_identity),
-        "xp_evidence_summary": xp_evidence_summary(target, str(args.release_tag), evidence),
-        "xp_smoke_evidence_sha256": xp_smoke_evidence_sha256_map(evidence),
+        "xp_evidence_summary": evidence_summary,
+        "xp_smoke_evidence_sha256": smoke_hashes,
+        "xp_evidence_sources": xp_evidence_sources(args, evidence_summary, smoke_hashes),
         "release_asset_source": release_asset_source(args, target, promotion),
         "native_evidence_validation_command": xp_native_evidence_validation_command(args),
         "artifact_validation_command": (
@@ -410,6 +526,46 @@ def xp_native_evidence_validation_command(args: argparse.Namespace) -> str:
     if args.xp_evidence_dir is not None:
         command = f"{command} --evidence-dir {args.xp_evidence_dir.as_posix()}"
     return command
+
+
+def xp_workflow_inputs(args: argparse.Namespace) -> dict[str, str]:
+    return {
+        "target": str(args.target),
+        "release_tag": str(args.release_tag),
+        "release_asset_base_url": str(args.release_asset_base_url).rstrip("/"),
+        "assets_dir": args.assets_dir.as_posix(),
+        "evidence_file": args.xp_evidence.as_posix(),
+        "evidence_dir": args.xp_evidence_dir.as_posix(),
+    }
+
+
+def xp_evidence_sources(
+    args: argparse.Namespace,
+    evidence_summary: dict[str, Any],
+    smoke_hashes: dict[str, str],
+) -> dict[str, Any]:
+    evidence_source = file_source_record(
+        args.xp_evidence,
+        sha256=sha256_file(args.xp_evidence),
+    )
+    evidence_source["path"] = args.xp_evidence.as_posix()
+
+    smoke_sources: dict[str, dict[str, object]] = {}
+    evidence_dir = args.xp_evidence_dir
+    raw_files = evidence_summary.get("smoke_evidence_files", {})
+    if isinstance(raw_files, dict):
+        for smoke_id, raw_file in sorted(raw_files.items()):
+            smoke_path = evidence_dir / str(raw_file)
+            smoke_sources[str(smoke_id)] = {
+                "file": str(raw_file).replace("\\", "/"),
+                "size_bytes": smoke_path.stat().st_size,
+                "sha256": str(smoke_hashes.get(str(smoke_id), "")),
+            }
+
+    return {
+        "evidence": evidence_source,
+        "smoke_evidence": smoke_sources,
+    }
 
 
 def release_asset_urls(

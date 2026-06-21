@@ -4,8 +4,10 @@ import hashlib
 import importlib.util
 import io
 import json
+import os
 import sys
 import zipfile
+from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -16,25 +18,28 @@ def test_xp_native_evidence_bundle_packages_valid_x86_evidence(tmp_path: Path) -
     artifact_checker = _load_platform_promotion_artifacts_checker()
     tag = f"v{artifact_checker.read_project_version()}"
     target = "windows-xp-native-x86"
-    assets = tmp_path / "assets"
-    assets.mkdir()
+    assets = tmp_path / "native-dist" / "windows-xp" / target / tag
+    assets.mkdir(parents=True)
     names = _required_artifact_names(artifact_checker, target, tag)
     _write_artifact_set(assets, names)
     evidence_data = _valid_evidence(target, "x86", "SP3", tag, names)
-    _attach_smoke_evidence_files(tmp_path, evidence_data)
-    evidence = tmp_path / "xp-evidence.json"
+    evidence_root = tmp_path / "evidence" / target / tag
+    _attach_smoke_evidence_files(evidence_root, evidence_data)
+    evidence = evidence_root / "xp-evidence.json"
     evidence.write_text(json.dumps(evidence_data, indent=2) + "\n", encoding="utf-8")
     candidate = tmp_path / f"platform-verified-evidence-{target}.json"
-    _write_candidate_record(candidate, target, tag, evidence, evidence_data, assets)
+    _write_candidate_record(candidate, target, tag, evidence, evidence_data, assets, work_root=tmp_path)
     out_dir = tmp_path / "bundle"
 
-    errors = bundler.make_xp_native_evidence_bundle(
-        target=target,
-        evidence=evidence,
-        candidate_record=candidate,
-        assets_dir=assets,
-        out_dir=out_dir,
-    )
+    with _pushd(tmp_path):
+        errors = bundler.make_xp_native_evidence_bundle(
+            target=target,
+            evidence=evidence.relative_to(tmp_path),
+            candidate_record=candidate.relative_to(tmp_path),
+            assets_dir=assets.relative_to(tmp_path),
+            evidence_dir=evidence_root.relative_to(tmp_path),
+            out_dir=Path("bundle"),
+        )
 
     assert errors == []
     manifest = out_dir / f"xp-native-evidence-bundle-{target}-{tag}.json"
@@ -48,14 +53,20 @@ def test_xp_native_evidence_bundle_packages_valid_x86_evidence(tmp_path: Path) -
     assert data["candidate_record"]["file"] == candidate.name
     candidate_data = json.loads(candidate.read_text(encoding="utf-8"))
     assert data["release_asset_urls"] == candidate_data["release_asset_urls"]
+    assert data["workflow"] == candidate_data["workflow"]
+    assert data["workflow_inputs"] == candidate_data["workflow_inputs"]
+    assert data["release_asset_source"] == candidate_data["release_asset_source"]
+    assert data["xp_evidence_sources"] == candidate_data["xp_evidence_sources"]
     assert data["validated_commands"] == [
         (
             "python scripts/check_xp_native_evidence.py "
-            f"--evidence {evidence.as_posix()} --assets-dir {assets.as_posix()}"
+            f"--evidence {evidence.relative_to(tmp_path).as_posix()} "
+            f"--assets-dir {assets.relative_to(tmp_path).as_posix()} "
+            f"--evidence-dir {evidence_root.relative_to(tmp_path).as_posix()}"
         ),
         (
             "python scripts/check_platform_promotion_artifacts.py "
-            f"--target {target} --assets-dir {assets.as_posix()} --tag {tag} --strict"
+            f"--target {target} --assets-dir {assets.relative_to(tmp_path).as_posix()} --tag {tag} --strict"
         ),
         "python scripts/check_platform_verified_evidence.py",
     ]
@@ -108,7 +119,7 @@ def test_xp_native_evidence_bundle_rejects_target_mismatch(tmp_path: Path) -> No
         encoding="utf-8",
     )
     assets = tmp_path / "assets"
-    assets.mkdir()
+    assets.mkdir(parents=True)
 
     errors = bundler.make_xp_native_evidence_bundle(
         target="windows-xp-native-x64",
@@ -126,29 +137,65 @@ def test_xp_native_evidence_bundle_rejects_candidate_mismatch(tmp_path: Path) ->
     artifact_checker = _load_platform_promotion_artifacts_checker()
     tag = f"v{artifact_checker.read_project_version()}"
     target = "windows-xp-native-x86"
-    assets = tmp_path / "assets"
-    assets.mkdir()
+    assets = tmp_path / "native-dist" / "windows-xp" / target / tag
+    assets.mkdir(parents=True)
     names = _required_artifact_names(artifact_checker, target, tag)
     _write_artifact_set(assets, names)
     evidence_data = _valid_evidence(target, "x86", "SP3", tag, names)
-    _attach_smoke_evidence_files(tmp_path, evidence_data)
-    evidence = tmp_path / "xp-evidence.json"
+    evidence_root = tmp_path / "evidence" / target / tag
+    _attach_smoke_evidence_files(evidence_root, evidence_data)
+    evidence = evidence_root / "xp-evidence.json"
     evidence.write_text(json.dumps(evidence_data, indent=2) + "\n", encoding="utf-8")
     candidate = tmp_path / f"platform-verified-evidence-{target}.json"
-    _write_candidate_record(candidate, target, tag, evidence, evidence_data, assets)
+    _write_candidate_record(candidate, target, tag, evidence, evidence_data, assets, work_root=tmp_path)
     candidate_data = json.loads(candidate.read_text(encoding="utf-8"))
     candidate_data["xp_evidence_sha256"] = "0" * 64
     candidate.write_text(json.dumps(candidate_data, indent=2) + "\n", encoding="utf-8")
 
-    errors = bundler.make_xp_native_evidence_bundle(
-        target=target,
-        evidence=evidence,
-        candidate_record=candidate,
-        assets_dir=assets,
-        out_dir=tmp_path / "bundle",
-    )
+    with _pushd(tmp_path):
+        errors = bundler.make_xp_native_evidence_bundle(
+            target=target,
+            evidence=evidence.relative_to(tmp_path),
+            candidate_record=candidate.relative_to(tmp_path),
+            assets_dir=assets.relative_to(tmp_path),
+            evidence_dir=evidence_root.relative_to(tmp_path),
+            out_dir=Path("bundle"),
+        )
 
     assert "candidate record xp_evidence_sha256 must match XP evidence file" in errors
+
+
+def test_xp_native_evidence_bundle_rejects_candidate_source_map_mismatch(tmp_path: Path) -> None:
+    bundler = _load_bundle_script()
+    artifact_checker = _load_platform_promotion_artifacts_checker()
+    tag = f"v{artifact_checker.read_project_version()}"
+    target = "windows-xp-native-x64"
+    assets = tmp_path / "native-dist" / "windows-xp" / target / tag
+    assets.mkdir(parents=True)
+    names = _required_artifact_names(artifact_checker, target, tag)
+    _write_artifact_set(assets, names)
+    evidence_data = _valid_evidence(target, "x64", "SP2", tag, names)
+    evidence_root = tmp_path / "evidence" / target / tag
+    _attach_smoke_evidence_files(evidence_root, evidence_data)
+    evidence = evidence_root / "xp-evidence.json"
+    evidence.write_text(json.dumps(evidence_data, indent=2) + "\n", encoding="utf-8")
+    candidate = tmp_path / f"platform-verified-evidence-{target}.json"
+    _write_candidate_record(candidate, target, tag, evidence, evidence_data, assets, work_root=tmp_path)
+    candidate_data = json.loads(candidate.read_text(encoding="utf-8"))
+    candidate_data["xp_evidence_sources"]["evidence"]["size_bytes"] = 1
+    candidate.write_text(json.dumps(candidate_data, indent=2) + "\n", encoding="utf-8")
+
+    with _pushd(tmp_path):
+        errors = bundler.make_xp_native_evidence_bundle(
+            target=target,
+            evidence=evidence.relative_to(tmp_path),
+            candidate_record=candidate.relative_to(tmp_path),
+            assets_dir=assets.relative_to(tmp_path),
+            evidence_dir=evidence_root.relative_to(tmp_path),
+            out_dir=Path("bundle"),
+        )
+
+    assert "candidate record xp_evidence_sources must match bundled XP evidence files" in errors
 
 
 def test_xp_native_evidence_bundle_rejects_host_identity_mismatch(tmp_path: Path) -> None:
@@ -156,27 +203,30 @@ def test_xp_native_evidence_bundle_rejects_host_identity_mismatch(tmp_path: Path
     artifact_checker = _load_platform_promotion_artifacts_checker()
     tag = f"v{artifact_checker.read_project_version()}"
     target = "windows-xp-native-x86"
-    assets = tmp_path / "assets"
-    assets.mkdir()
+    assets = tmp_path / "native-dist" / "windows-xp" / target / tag
+    assets.mkdir(parents=True)
     names = _required_artifact_names(artifact_checker, target, tag)
     _write_artifact_set(assets, names)
     evidence_data = _valid_evidence(target, "x86", "SP3", tag, names)
-    _attach_smoke_evidence_files(tmp_path, evidence_data)
-    evidence = tmp_path / "xp-evidence.json"
+    evidence_root = tmp_path / "evidence" / target / tag
+    _attach_smoke_evidence_files(evidence_root, evidence_data)
+    evidence = evidence_root / "xp-evidence.json"
     evidence.write_text(json.dumps(evidence_data, indent=2) + "\n", encoding="utf-8")
     candidate = tmp_path / f"platform-verified-evidence-{target}.json"
-    _write_candidate_record(candidate, target, tag, evidence, evidence_data, assets)
+    _write_candidate_record(candidate, target, tag, evidence, evidence_data, assets, work_root=tmp_path)
     candidate_data = json.loads(candidate.read_text(encoding="utf-8"))
     candidate_data["xp_host_identity_sha256"] = "0" * 64
     candidate.write_text(json.dumps(candidate_data, indent=2) + "\n", encoding="utf-8")
 
-    errors = bundler.make_xp_native_evidence_bundle(
-        target=target,
-        evidence=evidence,
-        candidate_record=candidate,
-        assets_dir=assets,
-        out_dir=tmp_path / "bundle",
-    )
+    with _pushd(tmp_path):
+        errors = bundler.make_xp_native_evidence_bundle(
+            target=target,
+            evidence=evidence.relative_to(tmp_path),
+            candidate_record=candidate.relative_to(tmp_path),
+            assets_dir=assets.relative_to(tmp_path),
+            evidence_dir=evidence_root.relative_to(tmp_path),
+            out_dir=Path("bundle"),
+        )
 
     assert "candidate record xp_host_identity_sha256 must match XP host identity" in errors
 
@@ -232,7 +282,8 @@ def _valid_evidence(
             "passed": True,
             "command": (
                 "python scripts/check_platform_promotion_artifacts.py "
-                f"--target {target} --assets-dir native-dist/windows-xp --tag {release_tag}"
+                f"--target {target} --assets-dir native-dist/windows-xp/{target}/{release_tag} "
+                f"--tag {release_tag}"
             ),
         },
         "artifacts": artifacts,
@@ -337,29 +388,43 @@ def _write_candidate_record(
     evidence: Path,
     evidence_data: dict[str, Any],
     assets_dir: Path,
+    *,
+    work_root: Path,
 ) -> None:
     generator = _load_platform_verified_evidence_record_generator()
-    errors, record = generator.build_evidence_record(
-        SimpleNamespace(
-            target=target,
-            release_tag=release_tag,
-            assets_dir=assets_dir,
-            release_asset_base_url=(
-                f"https://github.com/example/remote-ops-workspace/releases/download/{release_tag}"
-            ),
-            release_source_workflow_run_url="https://github.com/example/remote-ops-workspace/actions/runs/54321",
-            release_source_artifact_name=f"xp-native-evidence-{target}-{release_tag}",
-            workflow_run_url="",
-            runner_label=[],
-            builder_evidence=None,
-            linux_smoke_evidence=None,
-            xp_evidence=evidence,
-            xp_evidence_dir=None,
+    with _pushd(work_root):
+        errors, record = generator.build_evidence_record(
+            SimpleNamespace(
+                target=target,
+                release_tag=release_tag,
+                assets_dir=assets_dir.relative_to(work_root),
+                release_asset_base_url=(
+                    f"https://github.com/example/remote-ops-workspace/releases/download/{release_tag}"
+                ),
+                release_source_workflow_run_url="https://github.com/example/remote-ops-workspace/actions/runs/54321",
+                release_source_artifact_name=f"xp-native-evidence-{target}-{release_tag}",
+                release_source_head_sha="a" * 40,
+                workflow_run_url="",
+                runner_label=[],
+                builder_evidence=None,
+                linux_smoke_evidence=None,
+                xp_evidence=evidence.relative_to(work_root),
+                xp_evidence_dir=evidence.parent.relative_to(work_root),
+            )
         )
-    )
     assert errors == []
     assert record["xp_host_identity_sha256"] == _json_sha256(evidence_data["host_identity"])
     path.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+
+
+@contextmanager
+def _pushd(path: Path):
+    previous = Path.cwd()
+    os.chdir(path)
+    try:
+        yield
+    finally:
+        os.chdir(previous)
 
 
 def _payload_bytes(name: str) -> bytes:

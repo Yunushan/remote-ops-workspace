@@ -74,6 +74,18 @@ def test_release_truth_checker_requires_build_jobs_to_need_preflight() -> None:
     assert "source-and-python must depend on release-preflight" in errors
 
 
+def test_release_truth_checker_requires_platform_import_job_to_need_preflight() -> None:
+    checker = _load_release_truth_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        "  accepted-platform-evidence-assets:\n    needs: release-preflight\n",
+        "  accepted-platform-evidence-assets:\n",
+    )
+
+    errors = checker.check_release_preflight(workflow)
+
+    assert "accepted-platform-evidence-assets must depend on release-preflight" in errors
+
+
 def test_release_truth_checker_requires_preflight_cleanup_command() -> None:
     checker = _load_release_truth_checker()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
@@ -121,6 +133,55 @@ def test_release_truth_checker_requires_publish_time_platform_goal_gate() -> Non
     errors = checker.check_release_preflight(workflow)
 
     assert any("publish-time protected platform goal gate" in error for error in errors)
+
+
+def test_release_truth_checker_requires_platform_evidence_import_command() -> None:
+    checker = _load_release_truth_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        'python scripts/import_platform_evidence_artifacts.py --release-tag "${{ github.ref_name }}" '
+        "--require-goal-targets --out-dir release-assets",
+        "python scripts/import_platform_evidence_artifacts.py --help",
+    )
+
+    errors = checker.check_release_preflight(workflow)
+
+    assert any("accepted platform evidence artifact importer" in error for error in errors)
+
+
+def test_release_truth_checker_requires_platform_import_gh_token() -> None:
+    checker = _load_release_truth_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        "          GH_TOKEN: ${{ github.token }}\n",
+        "",
+    )
+
+    errors = checker.check_release_preflight(workflow)
+
+    assert any("GitHub token for gh run download" in error for error in errors)
+
+
+def test_release_truth_checker_rejects_platform_import_write_permissions() -> None:
+    checker = _load_release_truth_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        "      actions: read\n",
+        "      actions: write\n",
+    )
+
+    errors = checker.check_release_preflight(workflow)
+
+    assert "accepted-platform-evidence-assets must not request write permissions" in errors
+
+
+def test_release_truth_checker_requires_publish_to_need_platform_evidence_assets() -> None:
+    checker = _load_release_truth_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        "      - accepted-platform-evidence-assets\n",
+        "",
+    )
+
+    errors = checker.check_release_preflight(workflow)
+
+    assert "publish job must depend on accepted-platform-evidence-assets" in errors
 
 
 def _load_release_truth_checker():

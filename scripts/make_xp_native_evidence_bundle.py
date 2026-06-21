@@ -93,7 +93,7 @@ def make_xp_native_evidence_bundle(
     if evidence_data.get("target") != target:
         errors.append(f"bundle target {target} must match evidence target {evidence_data.get('target')!r}")
     release_tag = str(evidence_data.get("release_tag", ""))
-    evidence_root = (evidence_dir or evidence.parent).resolve()
+    evidence_root = evidence_dir or evidence.parent
     errors.extend(
         validate_candidate_record(
             target,
@@ -218,6 +218,12 @@ def validate_candidate_record(
         errors.append("candidate record xp_host_identity_sha256 must match XP host identity")
     if candidate_data.get("xp_smoke_evidence_sha256") != xp_smoke_evidence_sha256_map(evidence_data):
         errors.append("candidate record xp_smoke_evidence_sha256 must match XP evidence smoke hashes")
+    if candidate_data.get("xp_evidence_sources") != xp_evidence_sources(
+        evidence=evidence,
+        evidence_data=evidence_data,
+        evidence_root=evidence_root,
+    ):
+        errors.append("candidate record xp_evidence_sources must match bundled XP evidence files")
     candidate_artifacts = candidate_data.get("artifact_sha256")
     if not isinstance(candidate_artifacts, dict):
         errors.append("candidate record artifact_sha256 must be an object")
@@ -256,6 +262,10 @@ def bundle_manifest(
             xp_strict_artifact_validation_command(candidate_data),
             "python scripts/check_platform_verified_evidence.py",
         ],
+        "workflow": candidate_data.get("workflow", ""),
+        "workflow_inputs": candidate_data.get("workflow_inputs", {}),
+        "release_asset_source": candidate_data.get("release_asset_source", {}),
+        "xp_evidence_sources": candidate_data.get("xp_evidence_sources", {}),
         "release_asset_urls": candidate_data.get("release_asset_urls", []),
         "xp_evidence_contract_sha256": xp_native_evidence_contract_sha256(),
         "promotion_config_sha256": promotion_config_sha256(promotion),
@@ -274,14 +284,11 @@ def bundle_manifest(
 
 
 def xp_evidence_validation_command(*, evidence: Path, assets_dir: Path, evidence_root: Path) -> str:
-    command = (
+    return (
         "python scripts/check_xp_native_evidence.py "
         f"--evidence {evidence.as_posix()} --assets-dir {assets_dir.as_posix()}"
+        f" --evidence-dir {evidence_root.as_posix()}"
     )
-    default_evidence_root = evidence.parent.resolve()
-    if evidence_root.resolve() != default_evidence_root:
-        command = f"{command} --evidence-dir {evidence_root.as_posix()}"
-    return command
 
 
 def xp_strict_artifact_validation_command(candidate_data: dict[str, Any]) -> str:
@@ -309,6 +316,28 @@ def smoke_records(evidence_data: dict[str, Any], evidence_root: Path) -> list[di
             }
         )
     return records
+
+
+def xp_evidence_sources(
+    *,
+    evidence: Path,
+    evidence_data: dict[str, Any],
+    evidence_root: Path,
+) -> dict[str, Any]:
+    evidence_record = file_record("xp-evidence.json", evidence)
+    evidence_record["path"] = evidence.as_posix()
+    return {
+        "evidence": evidence_record,
+        "smoke_evidence": {
+            str(record["id"]): {
+                "file": str(record["file"]),
+                "size_bytes": record["size_bytes"],
+                "sha256": str(record["sha256"]),
+            }
+            for record in smoke_records(evidence_data, evidence_root)
+            if record.get("id")
+        },
+    }
 
 
 def artifact_records(assets_dir: Path) -> list[dict[str, Any]]:

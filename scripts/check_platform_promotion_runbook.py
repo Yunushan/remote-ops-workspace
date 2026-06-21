@@ -22,6 +22,7 @@ COMMON_SNIPPETS = (
     "python scripts/make_xp_native_evidence_bundle.py",
     "python scripts/make_platform_verified_evidence_record.py",
     "python scripts/finalize_platform_verified_evidence_record.py",
+    "staged native artifacts and review-bundle files must match the finalized accepted record hashes before upload",
     "--append-registry",
     "configs/platform_verified_evidence.json",
 )
@@ -32,16 +33,21 @@ LINUX_SNIPPETS = (
     "--linux-smoke-evidence",
     "--smoke-evidence",
     "linux_smoke_evidence_sha256.native_smoke",
+    "builder-identity-<target>.json`, `native-smoke-<target>.log`, `platform-verified-evidence-<target>.json",
     "builder-identity",
     "python3 scripts/check_extended_platform_builder.py --target",
-    "--release-tag v<project.version> --workflow-run-url <github-actions-run-url> --out",
+    "--release-tag v<project.version> --workflow-run-url <github-actions-run-url> --source-head-sha <github-actions-head-sha> --out",
+    "source_head_sha",
     "native_build_command",
     "native_smoke_command",
     "native installer smoke workflow run",
     "scripts/make_linux_native.sh",
+    "python scripts/stage_extended_linux_evidence_upload.py",
+    "linux-evidence-upload",
+    "raw Linux builder output directories are not uploaded by wildcard",
 )
 XP_SNIPPETS = (
-    "python scripts/check_xp_native_evidence.py --evidence <evidence.json> --assets-dir <artifact-dir>",
+    "python scripts/check_xp_native_evidence.py --evidence <target-release-evidence.json> --assets-dir <target-release-artifact-dir> --evidence-dir <target-release-evidence-dir>",
     "--xp-evidence-dir",
     "cli_launch",
     "gui_or_legacy_host_ui_launch",
@@ -49,6 +55,10 @@ XP_SNIPPETS = (
     "artifact_manifest_validation",
     "legacy_crypto_profile_scoped",
     "modern_defaults_unchanged",
+    "python scripts/stage_xp_native_evidence_upload.py",
+    "xp-evidence-upload",
+    "raw operator-supplied XP artifact or evidence directories are not uploaded by wildcard",
+    "assets_dir, evidence_file and evidence_dir dispatch inputs must be workspace-relative staged paths that include the target id and release tag as path segments",
 )
 XP_X64_SNIPPETS = (
     "SP2",
@@ -134,12 +144,16 @@ def check_required_artifacts(text: str, target_id: str, requirements: dict[str, 
 
 def check_required_commands(text: str, target_id: str, requirements: dict[str, Any]) -> list[str]:
     errors: list[str] = []
-    artifact_command = str(requirements.get("artifact_validation_command", ""))
-    if artifact_command and artifact_command not in text:
-        errors.append(f"{target_id} runbook missing artifact validation command: {artifact_command}")
-    evidence_command = str(requirements.get("native_evidence_validation_command", ""))
-    if evidence_command and evidence_command not in text:
-        errors.append(f"{target_id} runbook missing native evidence validation command: {evidence_command}")
+    for key, label in (
+        ("artifact_validation_command", "artifact validation command"),
+        ("native_evidence_validation_command", "native evidence validation command"),
+        ("accepted_evidence_candidate_command", "accepted evidence candidate command"),
+        ("review_bundle_command", "review bundle command"),
+        ("finalized_evidence_record_command", "finalized evidence record command"),
+    ):
+        command = str(requirements.get(key, ""))
+        if command and command not in text:
+            errors.append(f"{target_id} runbook missing {label}: {command}")
     smoke_script = str(requirements.get("smoke_script", ""))
     if smoke_script and smoke_script not in text:
         errors.append(f"{target_id} runbook missing smoke script: {smoke_script}")
@@ -168,6 +182,9 @@ def check_xp_runbook(text: str, target_id: str, requirements: dict[str, Any]) ->
     runner = str(requirements.get("xp_vm_or_self_hosted_runner", ""))
     if runner and runner not in text:
         errors.append(f"{target_id} runbook missing XP runner requirement: {runner}")
+    source_workflow = str(requirements.get("release_source_workflow", ""))
+    if source_workflow and source_workflow not in text:
+        errors.append(f"{target_id} runbook missing XP release source workflow: {source_workflow}")
     if target_id.endswith("x64"):
         for snippet in XP_X64_SNIPPETS:
             if snippet not in text:

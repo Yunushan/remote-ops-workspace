@@ -380,22 +380,18 @@ def test_platform_verified_readiness_goal_parity_requires_one_release_repository
     assert rows["Windows XP"]["verified_readiness_scope"] is False
     assert rows["Windows XP"]["accepted_evidence_present_targets"] == [
         "windows-xp-native-x86",
-        "windows-xp-native-x64",
     ]
+    assert rows["Windows XP"]["accepted_evidence_missing_targets"] == ["windows-xp-native-x64"]
     assert rows["Windows XP"]["accepted_evidence_release_repositories"] == {
         "windows-xp-native-x86": ["example/remote-ops-workspace"],
-        "windows-xp-native-x64": ["other/remote-ops-workspace"],
     }
     assert goal["current_percent"] == 75.0
     assert goal["gap_percent"] == 25.0
     assert goal["accepted_target_count"] == 3
     assert goal["release_tag"] == "v1.0.2"
     assert goal["release_repository"] == "example/remote-ops-workspace"
-    assert goal["release_repositories"] == [
-        "example/remote-ops-workspace",
-        "other/remote-ops-workspace",
-    ]
-    assert goal["release_repository_consistent"] is False
+    assert goal["release_repositories"] == ["example/remote-ops-workspace"]
+    assert goal["release_repository_consistent"] is True
     assert goal["accepted_targets"] == [
         "linux-i386",
         "linux-armhf",
@@ -403,7 +399,7 @@ def test_platform_verified_readiness_goal_parity_requires_one_release_repository
     ]
     assert goal["missing_targets"] == ["windows-xp-native-x64"]
     assert goal["complete"] is False
-    assert goal["status"] == "mixed-release-repository-evidence"
+    assert goal["status"] == "missing-accepted-evidence"
 
 
 def test_platform_verified_readiness_goal_parity_requires_one_release_tag() -> None:
@@ -578,6 +574,67 @@ def test_platform_verified_readiness_ignores_missing_review_bundle_release_asset
     assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
 
 
+def test_platform_verified_readiness_ignores_missing_release_asset_source() -> None:
+    record = _linux_accepted_evidence("linux-i386")
+    del record["release_asset_source"]
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["linux-i386"]["current_percent"] == 70.0
+    assert rows["linux-i386"]["status"] == "manual-script-supported"
+    assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
+
+
+def test_platform_verified_readiness_ignores_release_asset_source_file_drift() -> None:
+    record = _xp_accepted_evidence("windows-xp-native-x86")
+    record["release_asset_source"]["contains_files"].append("unexpected.zip")
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["Windows XP"]["current_percent"] == 25.0
+    assert rows["Windows XP"]["status"] == "remote-target-only"
+    assert rows["Windows XP"]["accepted_evidence_present_targets"] == []
+
+
+def test_platform_verified_readiness_ignores_release_asset_source_workflow_drift() -> None:
+    record = _linux_accepted_evidence("linux-i386")
+    record["release_asset_source"]["workflow"] = ".github/workflows/xp-native-evidence.yml"
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["linux-i386"]["current_percent"] == 70.0
+    assert rows["linux-i386"]["status"] == "manual-script-supported"
+    assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
+
+
+def test_platform_verified_readiness_ignores_builder_identity_source_head_sha_mismatch() -> None:
+    record = _linux_accepted_evidence("linux-i386")
+    record["builder_identity"]["source_head_sha"] = "b" * 40
+    record["builder_identity_sha256"] = _json_sha256(record["builder_identity"])
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["linux-i386"]["current_percent"] == 70.0
+    assert rows["linux-i386"]["status"] == "manual-script-supported"
+    assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
+
+
 def test_platform_verified_readiness_ignores_review_bundle_repository_mismatch() -> None:
     record = _linux_accepted_evidence("linux-armhf")
     record["review_bundle"]["release_asset_urls"] = [
@@ -650,9 +707,27 @@ def test_platform_verified_readiness_ignores_placeholder_artifact_validation_ass
     assert rows["Windows XP"]["accepted_evidence_present_targets"] == []
 
 
+def test_platform_verified_readiness_ignores_unscoped_xp_artifact_validation_assets_dir() -> None:
+    record = _xp_accepted_evidence("windows-xp-native-x86")
+    record["artifact_validation_command"] = (
+        "python scripts/check_platform_promotion_artifacts.py --target windows-xp-native-x86 "
+        "--assets-dir native-dist/windows-xp --tag v1.0.2"
+    )
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["Windows XP"]["current_percent"] == 25.0
+    assert rows["Windows XP"]["status"] == "remote-target-only"
+    assert rows["Windows XP"]["accepted_evidence_present_targets"] == []
+
+
 def test_platform_verified_readiness_ignores_wrong_linux_artifact_name() -> None:
     record = _linux_accepted_evidence("linux-armhf")
-    record["artifact_name"] = "extended-linux-i386-native-evidence"
+    record["artifact_name"] = "extended-linux-evidence-linux-i386-v1.0.2"
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
@@ -761,9 +836,139 @@ def test_platform_verified_readiness_ignores_missing_linux_smoke_evidence() -> N
     assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
 
 
+def test_platform_verified_readiness_ignores_missing_linux_evidence_sources() -> None:
+    record = _linux_accepted_evidence("linux-i386")
+    del record["linux_evidence_sources"]
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["linux-i386"]["current_percent"] == 70.0
+    assert rows["linux-i386"]["status"] == "manual-script-supported"
+    assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
+
+
 def test_platform_verified_readiness_ignores_wrong_xp_native_validation_command() -> None:
     record = _xp_accepted_evidence("windows-xp-native-x86")
     record["native_evidence_validation_command"] = "python scripts/check_xp_native_evidence.py --help"
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["Windows XP"]["current_percent"] == 25.0
+    assert rows["Windows XP"]["status"] == "remote-target-only"
+    assert rows["Windows XP"]["accepted_evidence_present_targets"] == []
+
+
+def test_platform_verified_readiness_ignores_unsafe_xp_native_validation_command_path() -> None:
+    record = _xp_accepted_evidence("windows-xp-native-x86")
+    record["native_evidence_validation_command"] = (
+        "python scripts/check_xp_native_evidence.py "
+        "--evidence evidence/windows-xp-native-x86/v1.0.2/xp-evidence.json "
+        "--assets-dir native-dist/windows-xp/windows-xp-native-x86/v1.0.2 "
+        "--evidence-dir staged/windows-xp-native-x86/v1.0.2/.private-smoke"
+    )
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["Windows XP"]["current_percent"] == 25.0
+    assert rows["Windows XP"]["status"] == "remote-target-only"
+    assert rows["Windows XP"]["accepted_evidence_present_targets"] == []
+
+
+def test_platform_verified_readiness_ignores_unscoped_xp_native_validation_command_path() -> None:
+    record = _xp_accepted_evidence("windows-xp-native-x86")
+    record["native_evidence_validation_command"] = (
+        "python scripts/check_xp_native_evidence.py "
+        "--evidence evidence/windows-xp-native-x86/xp-evidence.json "
+        "--assets-dir native-dist/windows-xp "
+        "--evidence-dir evidence/windows-xp-native-x86/smoke"
+    )
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["Windows XP"]["current_percent"] == 25.0
+    assert rows["Windows XP"]["status"] == "remote-target-only"
+    assert rows["Windows XP"]["accepted_evidence_present_targets"] == []
+
+
+def test_platform_verified_readiness_ignores_wrong_xp_workflow() -> None:
+    record = _xp_accepted_evidence("windows-xp-native-x86")
+    record["workflow"] = ".github/workflows/ci.yml"
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["Windows XP"]["current_percent"] == 25.0
+    assert rows["Windows XP"]["status"] == "remote-target-only"
+    assert rows["Windows XP"]["accepted_evidence_present_targets"] == []
+
+
+def test_platform_verified_readiness_ignores_missing_xp_workflow_inputs() -> None:
+    record = _xp_accepted_evidence("windows-xp-native-x86")
+    del record["workflow_inputs"]
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["Windows XP"]["current_percent"] == 25.0
+    assert rows["Windows XP"]["status"] == "remote-target-only"
+    assert rows["Windows XP"]["accepted_evidence_present_targets"] == []
+
+
+def test_platform_verified_readiness_ignores_xp_workflow_input_path_drift() -> None:
+    record = _xp_accepted_evidence("windows-xp-native-x86")
+    record["workflow_inputs"]["assets_dir"] = "native-dist/windows-xp/windows-xp-native-x86/v1.0.3"
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["Windows XP"]["current_percent"] == 25.0
+    assert rows["Windows XP"]["status"] == "remote-target-only"
+    assert rows["Windows XP"]["accepted_evidence_present_targets"] == []
+
+
+def test_platform_verified_readiness_ignores_missing_xp_evidence_sources() -> None:
+    record = _xp_accepted_evidence("windows-xp-native-x86")
+    del record["xp_evidence_sources"]
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["Windows XP"]["current_percent"] == 25.0
+    assert rows["Windows XP"]["status"] == "remote-target-only"
+    assert rows["Windows XP"]["accepted_evidence_present_targets"] == []
+
+
+def test_platform_verified_readiness_ignores_xp_evidence_source_hash_drift() -> None:
+    record = _xp_accepted_evidence("windows-xp-native-x86")
+    record["xp_evidence_sources"]["smoke_evidence"]["cli_launch"]["sha256"] = "9" * 64
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
@@ -855,7 +1060,8 @@ def test_platform_verified_readiness_ignores_xp_smoke_command_target_mismatch() 
     record = _xp_accepted_evidence("windows-xp-native-x86")
     record["xp_evidence_summary"]["smoke_commands"]["cli_launch"] = (
         "scripts/xp_smoke_runner.cmd --target windows-xp-native-x64 --release-tag v1.0.2 "
-        "--smoke-id cli_launch"
+        "--smoke-id cli_launch --evidence-file xp-smoke-evidence/cli_launch.txt "
+        "--proof-file xp-smoke-proof/cli_launch.txt"
     )
 
     report = _platform_verified_readiness(
@@ -873,7 +1079,47 @@ def test_platform_verified_readiness_ignores_xp_smoke_command_evidence_file_mism
     record = _xp_accepted_evidence("windows-xp-native-x86")
     record["xp_evidence_summary"]["smoke_commands"]["cli_launch"] = (
         "scripts/xp_smoke_runner.cmd --target windows-xp-native-x86 --release-tag v1.0.2 "
-        "--smoke-id cli_launch --evidence-file xp-smoke-evidence/other.txt"
+        "--smoke-id cli_launch --evidence-file xp-smoke-evidence/other.txt "
+        "--proof-file xp-smoke-proof/cli_launch.txt"
+    )
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["Windows XP"]["current_percent"] == 25.0
+    assert rows["Windows XP"]["status"] == "remote-target-only"
+    assert rows["Windows XP"]["accepted_evidence_present_targets"] == []
+
+
+def test_platform_verified_readiness_ignores_xp_smoke_evidence_file_path_mismatch() -> None:
+    record = _xp_accepted_evidence("windows-xp-native-x86")
+    record["xp_evidence_summary"]["smoke_evidence_files"]["cli_launch"] = "logs/cli_launch.txt"
+    record["xp_evidence_summary"]["smoke_commands"]["cli_launch"] = (
+        "scripts/xp_smoke_runner.cmd --target windows-xp-native-x86 --release-tag v1.0.2 "
+        "--smoke-id cli_launch --evidence-file logs/cli_launch.txt "
+        "--proof-file xp-smoke-proof/cli_launch.txt"
+    )
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["Windows XP"]["current_percent"] == 25.0
+    assert rows["Windows XP"]["status"] == "remote-target-only"
+    assert rows["Windows XP"]["accepted_evidence_present_targets"] == []
+
+
+def test_platform_verified_readiness_ignores_xp_smoke_command_proof_file_mismatch() -> None:
+    record = _xp_accepted_evidence("windows-xp-native-x86")
+    record["xp_evidence_summary"]["smoke_commands"]["cli_launch"] = (
+        "scripts/xp_smoke_runner.cmd --target windows-xp-native-x86 --release-tag v1.0.2 "
+        "--smoke-id cli_launch --evidence-file xp-smoke-evidence/cli_launch.txt "
+        "--proof-file xp-smoke-proof/other.txt"
     )
 
     report = _platform_verified_readiness(
@@ -1068,11 +1314,7 @@ def _linux_accepted_evidence(target: str) -> dict[str, object]:
     arch = "i386" if target == "linux-i386" else "armhf"
     rpm_arch = "i686" if target == "linux-i386" else "armv7hl"
     artifact_arch = "i686" if target == "linux-i386" else "armhf"
-    artifact = (
-        "extended-linux-i386-native-evidence"
-        if target == "linux-i386"
-        else "extended-linux-armhf-native-evidence"
-    )
+    artifact = f"extended-linux-evidence-{target}-v1.0.2"
     base_url = "https://github.com/example/remote-ops-workspace/releases/download/v1.0.2"
     release_asset_urls = [
         f"{base_url}/remote-ops-workspace-v1.0.2-linux-{arch}.deb",
@@ -1083,6 +1325,8 @@ def _linux_accepted_evidence(target: str) -> dict[str, object]:
         f"{base_url}/remote-ops-workspace-v1.0.2-linux-{artifact_arch}-native-SHA256SUMS.txt",
     ]
     builder_identity = _builder_identity(target)
+    builder_identity_sha = _json_sha256(builder_identity)
+    linux_smoke_hashes = _linux_smoke_hashes()
     return {
         "target": target,
         "evidence_type": "extended-linux-native",
@@ -1100,7 +1344,12 @@ def _linux_accepted_evidence(target: str) -> dict[str, object]:
         "artifact_name": artifact,
         "runner_labels": ["self-hosted", "linux", arch],
         "builder_identity": builder_identity,
-        "builder_identity_sha256": _json_sha256(builder_identity),
+        "builder_identity_sha256": builder_identity_sha,
+        "linux_evidence_sources": _linux_evidence_sources(
+            target,
+            builder_identity_sha,
+            linux_smoke_hashes["native_smoke"],
+        ),
         "native_build_command": (
             f"TARGET_ARCH={arch} PYTHON_BIN=.venv-native/bin/python bash scripts/make_linux_native.sh"
         ),
@@ -1108,7 +1357,7 @@ def _linux_accepted_evidence(target: str) -> dict[str, object]:
             f"bash scripts/smoke_linux_native.sh --arch {arch} --dist native-dist/linux "
             f"--target {target} --workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345"
         ),
-        "linux_smoke_evidence_sha256": _linux_smoke_hashes(),
+        "linux_smoke_evidence_sha256": linux_smoke_hashes,
         "artifact_validation_command": (
             f"python scripts/check_platform_promotion_artifacts.py --target {target} "
             "--assets-dir native-dist/linux --tag v1.0.2"
@@ -1122,6 +1371,7 @@ def _linux_accepted_evidence(target: str) -> dict[str, object]:
         ],
         "release_asset_urls": release_asset_urls,
         "artifact_sha256": _artifact_hashes_from_urls(release_asset_urls),
+        "release_asset_source": _release_asset_source(target, artifact, release_asset_urls),
         "review_bundle": _review_bundle(target),
     }
 
@@ -1129,6 +1379,11 @@ def _linux_accepted_evidence(target: str) -> dict[str, object]:
 def _xp_accepted_evidence(target: str) -> dict[str, object]:
     arch = "x86" if target.endswith("x86") else "x64"
     base_url = "https://github.com/example/remote-ops-workspace/releases/download/v1.0.2"
+    evidence_file = f"evidence/{target}/v1.0.2/xp-evidence.json"
+    assets_dir = f"native-dist/windows-xp/{target}/v1.0.2"
+    evidence_dir = f"evidence/{target}/v1.0.2"
+    evidence_summary = _xp_evidence_summary(target)
+    smoke_hashes = _xp_smoke_hashes()
     release_asset_urls = [
         f"{base_url}/remote-ops-workspace-v1.0.2-windows-xp-{arch}-native.zip",
         f"{base_url}/remote-ops-workspace-v1.0.2-windows-xp-{arch}-native-manifest.json",
@@ -1141,21 +1396,38 @@ def _xp_accepted_evidence(target: str) -> dict[str, object]:
         "readiness_percent": 100.0,
         "release_tag": "v1.0.2",
         "promotion_config_sha256": _promotion_config_sha256(),
+        "workflow": ".github/workflows/xp-native-evidence.yml",
+        "workflow_inputs": {
+            "target": target,
+            "release_tag": "v1.0.2",
+            "release_asset_base_url": base_url,
+            "assets_dir": assets_dir,
+            "evidence_file": evidence_file,
+            "evidence_dir": evidence_dir,
+        },
         "architecture": arch,
         "separate_legacy_toolchain": True,
         "current_python_pyqt6_stack": False,
         "xp_evidence_sha256": "b" * 64,
         "xp_evidence_contract_sha256": _xp_native_evidence_contract_sha256(),
         "xp_host_identity_sha256": _json_sha256(_xp_host_identity(target)),
-        "xp_evidence_summary": _xp_evidence_summary(target),
-        "xp_smoke_evidence_sha256": _xp_smoke_hashes(),
+        "xp_evidence_summary": evidence_summary,
+        "xp_smoke_evidence_sha256": smoke_hashes,
+        "xp_evidence_sources": _xp_evidence_sources(
+            evidence_file,
+            "b" * 64,
+            evidence_summary,
+            smoke_hashes,
+        ),
         "native_evidence_validation_command": (
             "python scripts/check_xp_native_evidence.py "
-            f"--evidence evidence/{target}/xp-evidence.json --assets-dir native-dist/windows-xp"
+            f"--evidence {evidence_file} "
+            f"--assets-dir {assets_dir} "
+            f"--evidence-dir {evidence_dir}"
         ),
         "artifact_validation_command": (
             f"python scripts/check_platform_promotion_artifacts.py --target {target} "
-            "--assets-dir native-dist/windows-xp --tag v1.0.2"
+            f"--assets-dir {assets_dir} --tag v1.0.2"
         ),
         "checks": [
             "xp_native_evidence_validation",
@@ -1167,6 +1439,11 @@ def _xp_accepted_evidence(target: str) -> dict[str, object]:
         ],
         "release_asset_urls": release_asset_urls,
         "artifact_sha256": _artifact_hashes_from_urls(release_asset_urls),
+        "release_asset_source": _release_asset_source(
+            target,
+            f"xp-native-evidence-{target}-v1.0.2",
+            release_asset_urls,
+        ),
         "review_bundle": _review_bundle(target),
     }
 
@@ -1179,6 +1456,7 @@ def _builder_identity(target: str) -> dict[str, object]:
         "target": target,
         "release_tag": "v1.0.2",
         "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        "source_head_sha": "a" * 40,
         "host_identity": _linux_host_identity(target),
         "sudo_non_interactive": True,
         "sys_platform": "linux",
@@ -1221,8 +1499,61 @@ def _artifact_hashes_from_urls(urls: list[str]) -> dict[str, str]:
     return {Path(url).name: "a" * 64 for url in urls}
 
 
+def _release_asset_source(
+    target: str,
+    artifact_name: str,
+    release_asset_urls: list[str],
+    release_tag: str = "v1.0.2",
+) -> dict[str, object]:
+    contains_files = {Path(url).name for url in release_asset_urls}
+    review_bundle = _review_bundle(target, release_tag=release_tag)
+    contains_files.update(
+        str(record.get("file", ""))
+        for record in (
+            review_bundle["manifest"],
+            review_bundle["archive"],
+            review_bundle["sha256s"],
+        )
+        if isinstance(record, dict)
+    )
+    contains_files.add(f"platform-verified-evidence-{target}-final.json")
+    return {
+        "type": "github-actions-artifact",
+        "workflow": _release_source_workflow(target),
+        "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        "artifact_name": artifact_name,
+        "head_sha": "a" * 40,
+        "contains_files": sorted(contains_files),
+    }
+
+
+def _release_source_workflow(target: str) -> str:
+    if target.startswith("linux-"):
+        return ".github/workflows/extended-platform-evidence.yml"
+    return ".github/workflows/xp-native-evidence.yml"
+
+
 def _linux_smoke_hashes() -> dict[str, str]:
     return {"native_smoke": "6" * 64}
+
+
+def _linux_evidence_sources(
+    target: str,
+    builder_identity_sha: str,
+    native_smoke_sha: str,
+) -> dict[str, object]:
+    return {
+        "builder_identity": {
+            "file": f"builder-identity-{target}.json",
+            "sha256": builder_identity_sha,
+            "size_bytes": 123,
+        },
+        "native_smoke": {
+            "file": f"native-smoke-{target}.log",
+            "sha256": native_smoke_sha,
+            "size_bytes": 456,
+        },
+    }
 
 
 def _review_bundle(target: str, release_tag: str = "v1.0.2") -> dict[str, object]:
@@ -1320,11 +1651,38 @@ def _xp_smoke_evidence_files() -> dict[str, str]:
     }
 
 
+def _xp_evidence_sources(
+    evidence_file: str,
+    evidence_sha: str,
+    evidence_summary: dict[str, object],
+    smoke_hashes: dict[str, str],
+) -> dict[str, object]:
+    smoke_files = evidence_summary["smoke_evidence_files"]
+    assert isinstance(smoke_files, dict)
+    return {
+        "evidence": {
+            "file": "xp-evidence.json",
+            "path": evidence_file,
+            "size_bytes": 4096,
+            "sha256": evidence_sha,
+        },
+        "smoke_evidence": {
+            str(smoke_id): {
+                "file": str(smoke_file),
+                "size_bytes": 256 + index,
+                "sha256": smoke_hashes[str(smoke_id)],
+            }
+            for index, (smoke_id, smoke_file) in enumerate(sorted(smoke_files.items()))
+        },
+    }
+
+
 def _xp_smoke_commands(target: str) -> dict[str, str]:
     return {
         smoke_id: (
             f"scripts/xp_smoke_runner.cmd --target {target} --release-tag v1.0.2 "
-            f"--smoke-id {smoke_id} --evidence-file xp-smoke-evidence/{smoke_id}.txt"
+            f"--smoke-id {smoke_id} --evidence-file xp-smoke-evidence/{smoke_id}.txt "
+            f"--proof-file xp-smoke-proof/{smoke_id}.txt"
         )
         for smoke_id in sorted(_xp_smoke_hashes())
     }
@@ -1336,6 +1694,9 @@ def _retag_accepted_evidence(record: dict[str, object], release_tag: str) -> dic
     builder_identity = updated.get("builder_identity")
     if isinstance(builder_identity, dict):
         updated["builder_identity_sha256"] = _json_sha256(builder_identity)
+        linux_sources = updated.get("linux_evidence_sources")
+        if isinstance(linux_sources, dict) and isinstance(linux_sources.get("builder_identity"), dict):
+            linux_sources["builder_identity"]["sha256"] = updated["builder_identity_sha256"]
     xp_summary = updated.get("xp_evidence_summary")
     if isinstance(xp_summary, dict) and isinstance(xp_summary.get("host_identity"), dict):
         updated["xp_host_identity_sha256"] = _json_sha256(xp_summary["host_identity"])

@@ -36,6 +36,7 @@ def test_extended_linux_evidence_bundle_packages_valid_i386_evidence(tmp_path: P
                 f"https://github.com/example/remote-ops-workspace/releases/download/{tag}"
             ),
             workflow_run_url="https://github.com/example/remote-ops-workspace/actions/runs/12345",
+            release_source_head_sha="a" * 40,
             runner_label=["self-hosted", "linux", "i386"],
             builder_evidence=builder,
             linux_smoke_evidence=smoke,
@@ -120,6 +121,7 @@ def test_extended_linux_evidence_bundle_rejects_artifact_hash_mismatch(tmp_path:
                 f"https://github.com/example/remote-ops-workspace/releases/download/{tag}"
             ),
             workflow_run_url="https://github.com/example/remote-ops-workspace/actions/runs/12345",
+            release_source_head_sha="a" * 40,
             runner_label=["self-hosted", "linux", "i386"],
             builder_evidence=builder,
             linux_smoke_evidence=smoke,
@@ -145,6 +147,65 @@ def test_extended_linux_evidence_bundle_rejects_artifact_hash_mismatch(tmp_path:
     assert "candidate artifact_sha256 must match current artifact files" in errors
 
 
+def test_extended_linux_evidence_bundle_rejects_unscoped_evidence_file_names(tmp_path: Path) -> None:
+    bundler = _load_script("make_extended_linux_evidence_bundle")
+    generator = _load_script("make_platform_verified_evidence_record")
+    artifact_checker = _load_script("check_platform_promotion_artifacts")
+    target = "linux-i386"
+    tag = f"v{artifact_checker.read_project_version()}"
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    names = _required_artifact_names(artifact_checker, target, tag)
+    _write_artifact_set(assets, names)
+    builder = tmp_path / "builder-identity-linux-i386.json"
+    builder.write_text(json.dumps(_builder_identity(target), indent=2) + "\n", encoding="utf-8")
+    smoke = tmp_path / "native-smoke-linux-i386.log"
+    _write_linux_smoke_evidence(smoke, target, _smoke_artifact_hashes(assets, names))
+    errors, record = generator.build_evidence_record(
+        SimpleNamespace(
+            target=target,
+            release_tag=tag,
+            assets_dir=assets,
+            release_asset_base_url=(
+                f"https://github.com/example/remote-ops-workspace/releases/download/{tag}"
+            ),
+            workflow_run_url="https://github.com/example/remote-ops-workspace/actions/runs/12345",
+            release_source_head_sha="a" * 40,
+            runner_label=["self-hosted", "linux", "i386"],
+            builder_evidence=builder,
+            linux_smoke_evidence=smoke,
+            xp_evidence=None,
+            xp_evidence_dir=None,
+        )
+    )
+    assert errors == []
+    candidate = tmp_path / "platform-verified-evidence-linux-i386.json"
+    candidate.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    wrong_builder = tmp_path / "builder.json"
+    wrong_builder.write_bytes(builder.read_bytes())
+    wrong_smoke = tmp_path / "native-smoke.log"
+    wrong_smoke.write_bytes(smoke.read_bytes())
+    wrong_candidate = tmp_path / "candidate.json"
+    wrong_candidate.write_bytes(candidate.read_bytes())
+
+    errors = bundler.make_extended_linux_evidence_bundle(
+        target=target,
+        release_tag=tag,
+        assets_dir=assets,
+        builder_evidence=wrong_builder,
+        smoke_evidence=wrong_smoke,
+        candidate_record=wrong_candidate,
+        out_dir=tmp_path / "bundle",
+    )
+
+    assert "builder evidence file name must be builder-identity-linux-i386.json, got 'builder.json'" in errors
+    assert "smoke evidence file name must be native-smoke-linux-i386.log, got 'native-smoke.log'" in errors
+    assert (
+        "candidate evidence record file name must be platform-verified-evidence-linux-i386.json, "
+        "got 'candidate.json'"
+    ) in errors
+
+
 def test_extended_linux_evidence_bundle_rejects_weak_smoke_log(tmp_path: Path) -> None:
     bundler = _load_script("make_extended_linux_evidence_bundle")
     generator = _load_script("make_platform_verified_evidence_record")
@@ -157,7 +218,7 @@ def test_extended_linux_evidence_bundle_rejects_weak_smoke_log(tmp_path: Path) -
     _write_artifact_set(assets, names)
     builder = tmp_path / "builder-identity-linux-i386.json"
     builder.write_text(json.dumps(_builder_identity(target), indent=2) + "\n", encoding="utf-8")
-    valid_smoke = tmp_path / "valid-native-smoke-linux-i386.log"
+    valid_smoke = tmp_path / "native-smoke-linux-i386.log"
     _write_linux_smoke_evidence(valid_smoke, target, _smoke_artifact_hashes(assets, names))
     errors, record = generator.build_evidence_record(
         SimpleNamespace(
@@ -168,6 +229,7 @@ def test_extended_linux_evidence_bundle_rejects_weak_smoke_log(tmp_path: Path) -
                 f"https://github.com/example/remote-ops-workspace/releases/download/{tag}"
             ),
             workflow_run_url="https://github.com/example/remote-ops-workspace/actions/runs/12345",
+            release_source_head_sha="a" * 40,
             runner_label=["self-hosted", "linux", "i386"],
             builder_evidence=builder,
             linux_smoke_evidence=valid_smoke,
@@ -176,9 +238,11 @@ def test_extended_linux_evidence_bundle_rejects_weak_smoke_log(tmp_path: Path) -
         )
     )
     assert errors == []
-    weak_smoke = tmp_path / "native-smoke-linux-i386.log"
+    weak_smoke = valid_smoke
     weak_smoke.write_text("linux-i386 native smoke passed\n", encoding="utf-8")
-    record["linux_smoke_evidence_sha256"] = {"native_smoke": _sha256(weak_smoke)}
+    smoke_sha = _sha256(weak_smoke)
+    record["linux_smoke_evidence_sha256"] = {"native_smoke": smoke_sha}
+    _sync_linux_source_record(record, "native_smoke", smoke_sha, weak_smoke.stat().st_size)
     candidate = tmp_path / "platform-verified-evidence-linux-i386.json"
     candidate.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
 
@@ -209,6 +273,7 @@ def _builder_identity(target: str) -> dict[str, object]:
         "target": target,
         "release_tag": "v1.0.2",
         "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        "source_head_sha": "a" * 40,
         "host_identity": _linux_host_identity(target),
         "sudo_non_interactive": True,
         "sys_platform": "linux",
@@ -357,6 +422,19 @@ def _tar_gz_bytes(name: str) -> bytes:
             info.size = len(payload)
             archive.addfile(info, io.BytesIO(payload))
         return raw.getvalue()
+
+
+def _sync_linux_source_record(
+    record: dict[str, object],
+    key: str,
+    sha256: str,
+    size_bytes: int,
+) -> None:
+    sources = record.get("linux_evidence_sources")
+    if isinstance(sources, dict) and isinstance(sources.get(key), dict):
+        source = sources[key]
+        source["sha256"] = sha256
+        source["size_bytes"] = size_bytes
 
 
 def _sha256(path: Path) -> str:

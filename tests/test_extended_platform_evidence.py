@@ -23,6 +23,18 @@ def test_extended_platform_evidence_rejects_publish_trigger() -> None:
     assert "extended platform evidence workflow must not run on push" in errors
 
 
+def test_extended_platform_evidence_rejects_write_permissions() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
+        "permissions:\n  contents: read",
+        "permissions:\n  contents: read\n  actions: write",
+    )
+
+    errors = checker.check_extended_platform_evidence(workflow)
+
+    assert "extended platform evidence workflow must not request write permissions" in errors
+
+
 def test_extended_platform_evidence_requires_candidate_record_generation() -> None:
     checker = _load_script("check_extended_platform_evidence")
     workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8")
@@ -57,7 +69,49 @@ def test_extended_platform_evidence_requires_builder_release_context() -> None:
 
     errors = checker.check_extended_platform_evidence(workflow)
 
-    assert any("builder identity preflight must bind release_tag and workflow_run_url" in error for error in errors)
+    assert any(
+        "builder identity preflight must bind release_tag, workflow_run_url and source_head_sha" in error
+        for error in errors
+    )
+
+
+def test_extended_platform_evidence_requires_release_source_artifact_name() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
+        "            --release-source-artifact-name extended-linux-evidence-linux-i386-${{ inputs.release_tag }} \\\n",
+        "",
+        1,
+    )
+
+    errors = checker.check_extended_platform_evidence(workflow)
+
+    assert any("release source artifact name binding" in error for error in errors)
+
+
+def test_extended_platform_evidence_requires_scoped_upload_staging() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
+        "python scripts/stage_extended_linux_evidence_upload.py",
+        "python scripts/removed.py",
+        1,
+    )
+
+    errors = checker.check_extended_platform_evidence(workflow)
+
+    assert any("scoped Linux evidence upload staging" in error for error in errors)
+
+
+def test_extended_platform_evidence_rejects_raw_upload_wildcard() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
+        "path: linux-evidence-upload/*",
+        "path: native-dist/linux/*",
+        1,
+    )
+
+    errors = checker.check_extended_platform_evidence(workflow)
+
+    assert "linux-i386-native-evidence must upload scoped staged files, not raw native-dist/linux wildcard" in errors
 
 
 def test_extended_platform_evidence_requires_dispatch_input_preflight() -> None:
@@ -171,6 +225,8 @@ def test_extended_platform_builder_writes_identity_evidence(tmp_path: Path, monk
                 "v1.0.2",
                 "--workflow-run-url",
                 "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+                "--source-head-sha",
+                "a" * 40,
                 "--out",
                 str(output),
             ]
@@ -182,6 +238,7 @@ def test_extended_platform_builder_writes_identity_evidence(tmp_path: Path, monk
     assert data["target"] == "linux-i386"
     assert data["release_tag"] == "v1.0.2"
     assert data["workflow_run_url"] == "https://github.com/example/remote-ops-workspace/actions/runs/12345"
+    assert data["source_head_sha"] == "a" * 40
     assert data["host_identity"] == {
         "schema_version": 1,
         "target": "linux-i386",

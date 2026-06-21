@@ -41,13 +41,21 @@ REQUIRED_LINUX_TOOLS = (
 RELEASE_TAG_RE = re.compile(r"v\d+\.\d+\.\d+")
 GITHUB_ACTIONS_RUN_RE = re.compile(r"https://github\.com/[^/]+/[^/]+/actions/runs/\d+/?")
 GITHUB_RUN_ID_RE = re.compile(r"/actions/runs/(\d+)/?$")
+GITHUB_HEAD_SHA_RE = re.compile(r"[0-9a-f]{40}")
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     errors = check_extended_platform_builder(args.target)
-    if args.out or args.release_tag or args.workflow_run_url:
-        errors.extend(check_builder_identity_context(args.target, args.release_tag, args.workflow_run_url))
+    if args.out or args.release_tag or args.workflow_run_url or args.source_head_sha:
+        errors.extend(
+            check_builder_identity_context(
+                args.target,
+                args.release_tag,
+                args.workflow_run_url,
+                args.source_head_sha,
+            )
+        )
     if errors:
         for error in errors:
             print(f"extended platform builder: {error}", file=sys.stderr)
@@ -60,6 +68,7 @@ def main(argv: list[str] | None = None) -> int:
                     args.target,
                     release_tag=str(args.release_tag),
                     workflow_run_url=str(args.workflow_run_url),
+                    source_head_sha=str(args.source_head_sha),
                 ),
                 indent=2,
             )
@@ -75,6 +84,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--target", choices=sorted(LINUX_TARGET_ARCHES), required=True)
     parser.add_argument("--release-tag", help="release tag this builder evidence is bound to, for example v1.0.2")
     parser.add_argument("--workflow-run-url", help="GitHub Actions run URL this builder evidence is bound to")
+    parser.add_argument("--source-head-sha", help="40-character Git commit SHA checked out by this builder run")
     parser.add_argument("--out", type=Path, help="write builder identity evidence JSON after validation passes")
     return parser.parse_args(argv)
 
@@ -118,6 +128,7 @@ def check_builder_identity_context(
     target: str,
     release_tag: str | None,
     workflow_run_url: str | None,
+    source_head_sha: str | None,
 ) -> list[str]:
     errors: list[str] = []
     if not release_tag:
@@ -128,10 +139,20 @@ def check_builder_identity_context(
         errors.append(f"{target} builder identity output requires --workflow-run-url")
     elif not GITHUB_ACTIONS_RUN_RE.fullmatch(str(workflow_run_url)):
         errors.append(f"{target} builder identity --workflow-run-url must be a GitHub Actions run URL")
+    if not source_head_sha:
+        errors.append(f"{target} builder identity output requires --source-head-sha")
+    elif not GITHUB_HEAD_SHA_RE.fullmatch(str(source_head_sha)):
+        errors.append(f"{target} builder identity --source-head-sha must be a 40-character lowercase Git SHA")
     return errors
 
 
-def builder_identity(target: str, *, release_tag: str = "", workflow_run_url: str = "") -> dict[str, Any]:
+def builder_identity(
+    target: str,
+    *,
+    release_tag: str = "",
+    workflow_run_url: str = "",
+    source_head_sha: str = "",
+) -> dict[str, Any]:
     version = sys.version_info
     major = version.major if hasattr(version, "major") else version[0]
     minor = version.minor if hasattr(version, "minor") else version[1]
@@ -141,6 +162,7 @@ def builder_identity(target: str, *, release_tag: str = "", workflow_run_url: st
         "target": target,
         "release_tag": release_tag,
         "workflow_run_url": workflow_run_url,
+        "source_head_sha": source_head_sha,
         "sys_platform": sys.platform,
         "platform_machine": normalized_machine(),
         "uname_machine": uname_machine(),

@@ -26,6 +26,10 @@ EXPECTED_PROMOTION_IDS = {
 }
 LINUX_PROMOTION_IDS = {"linux-i386", "linux-armhf"}
 XP_PROMOTION_IDS = {"windows-xp-native-x86", "windows-xp-native-x64"}
+LINUX_RELEASE_SOURCE_ARTIFACTS = {
+    "linux-i386": "extended-linux-evidence-linux-i386-v<project.version>",
+    "linux-armhf": "extended-linux-evidence-linux-armhf-v<project.version>",
+}
 
 LINUX_REQUIRED_PROMOTION_KEYS = {
     "platform_targets_release_tier",
@@ -48,6 +52,7 @@ LINUX_REQUIRED_PROMOTION_KEYS = {
 XP_REQUIRED_PROMOTION_KEYS = {
     "separate_legacy_toolchain",
     "xp_vm_or_self_hosted_runner",
+    "release_source_workflow",
     "native_artifacts",
     "artifact_validation_command",
     "native_evidence_validation_command",
@@ -372,6 +377,11 @@ def check_xp_promotion_entry(
         return errors
     if requirements.get("separate_legacy_toolchain") is not True:
         errors.append(f"{label} promotion requires separate_legacy_toolchain=true")
+    source_workflow = str(requirements.get("release_source_workflow", ""))
+    if source_workflow != ".github/workflows/xp-native-evidence.yml":
+        errors.append(f"{label} release_source_workflow must be .github/workflows/xp-native-evidence.yml")
+    elif not (ROOT / source_workflow).is_file():
+        errors.append(f"{label} release_source_workflow file is missing: {source_workflow}")
     expected_arch = str(entry.get("architecture", ""))
     artifacts = requirements.get("native_artifacts")
     if not isinstance(artifacts, list) or len(artifacts) < 3:
@@ -426,9 +436,14 @@ def check_artifact_validation_command(label: str, requirements: dict[str, Any]) 
     command = requirements.get("artifact_validation_command")
     if not isinstance(command, str) or not command:
         return [f"{label} promotion requires artifact_validation_command"]
+    artifact_dir = (
+        "<target-release-artifact-dir>"
+        if label.startswith("windows-xp-native-")
+        else "<artifact-dir>"
+    )
     expected = (
         "python scripts/check_platform_promotion_artifacts.py "
-        f"--target {label} --assets-dir <artifact-dir> --tag v<project.version>"
+        f"--target {label} --assets-dir {artifact_dir} --tag v<project.version>"
     )
     if command != expected:
         return [f"{label} artifact_validation_command must be {expected!r}"]
@@ -441,7 +456,12 @@ def check_xp_native_evidence_validation_command(label: str, requirements: dict[s
     command = requirements.get("native_evidence_validation_command")
     if not isinstance(command, str) or not command:
         return [f"{label} promotion requires native_evidence_validation_command"]
-    expected = "python scripts/check_xp_native_evidence.py --evidence <evidence.json> --assets-dir <artifact-dir>"
+    expected = (
+        "python scripts/check_xp_native_evidence.py "
+        "--evidence <target-release-evidence.json> "
+        "--assets-dir <target-release-artifact-dir> "
+        "--evidence-dir <target-release-evidence-dir>"
+    )
     if command != expected:
         return [f"{label} native_evidence_validation_command must be {expected!r}"]
     if not (ROOT / "scripts" / "check_xp_native_evidence.py").is_file():
@@ -463,13 +483,29 @@ def check_finalized_evidence_requirements(
         errors.append(f"{label} accepted_evidence_candidate_command must not append unfinalized candidates")
     if "--out " not in candidate:
         errors.append(f"{label} accepted_evidence_candidate_command must write a candidate with --out")
-    if kind == "linux" and "--linux-smoke-evidence <native-smoke-log>" not in candidate:
-        errors.append(f"{label} accepted_evidence_candidate_command must bind Linux smoke evidence")
+    if "--release-source-head-sha <github-actions-head-sha>" not in candidate:
+        errors.append(f"{label} accepted_evidence_candidate_command must bind release source head SHA")
+    if kind == "linux":
+        if "--linux-smoke-evidence <native-smoke-log>" not in candidate:
+            errors.append(f"{label} accepted_evidence_candidate_command must bind Linux smoke evidence")
+        expected_source_artifact = LINUX_RELEASE_SOURCE_ARTIFACTS.get(label, "")
+        expected_source_artifact_arg = f"--release-source-artifact-name {expected_source_artifact}"
+        if expected_source_artifact and expected_source_artifact_arg not in candidate:
+            errors.append(
+                f"{label} accepted_evidence_candidate_command must bind release source artifact name "
+                f"{expected_source_artifact_arg!r}"
+            )
     if kind == "xp":
         if "--release-source-workflow-run-url <github-actions-run-url>" not in candidate:
             errors.append(f"{label} accepted_evidence_candidate_command must bind release source workflow run")
-        if "--release-source-artifact-name <github-actions-artifact-name>" not in candidate:
-            errors.append(f"{label} accepted_evidence_candidate_command must bind release source artifact name")
+        expected_source_artifact_arg = (
+            f"--release-source-artifact-name xp-native-evidence-{label}-v<project.version>"
+        )
+        if expected_source_artifact_arg not in candidate:
+            errors.append(
+                f"{label} accepted_evidence_candidate_command must bind release source artifact name "
+                f"{expected_source_artifact_arg!r}"
+            )
     if not (ROOT / "scripts" / "make_platform_verified_evidence_record.py").is_file():
         errors.append(f"{label} accepted evidence record generator is missing")
 

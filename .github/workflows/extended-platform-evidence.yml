@@ -51,6 +51,7 @@ jobs:
             --target linux-i386 \
             --release-tag "${{ inputs.release_tag }}" \
             --workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --source-head-sha "${{ github.sha }}" \
             --out native-dist/linux/builder-identity-linux-i386.json
       - name: Create isolated release environment
         run: |
@@ -78,6 +79,8 @@ jobs:
             --assets-dir native-dist/linux \
             --release-asset-base-url "${{ inputs.release_asset_base_url }}" \
             --workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --release-source-artifact-name extended-linux-evidence-linux-i386-${{ inputs.release_tag }} \
+            --release-source-head-sha "${{ github.sha }}" \
             --builder-evidence native-dist/linux/builder-identity-linux-i386.json \
             --linux-smoke-evidence native-dist/linux/native-smoke-linux-i386.log \
             --runner-label self-hosted \
@@ -104,10 +107,19 @@ jobs:
             --bundle-archive native-dist/linux/extended-linux-evidence-bundle-linux-i386-${{ inputs.release_tag }}.zip \
             --bundle-sha256s native-dist/linux/extended-linux-evidence-bundle-linux-i386-${{ inputs.release_tag }}-SHA256SUMS.txt \
             --out native-dist/linux/platform-verified-evidence-linux-i386-final.json
+      - name: Stage scoped Linux i386 evidence upload
+        run: |
+          . .venv-native/bin/activate
+          python scripts/stage_extended_linux_evidence_upload.py \
+            --target linux-i386 \
+            --release-tag "${{ inputs.release_tag }}" \
+            --source-dir native-dist/linux \
+            --out-dir linux-evidence-upload \
+            --force
       - uses: actions/upload-artifact@v7
         with:
-          name: extended-linux-i386-native-evidence
-          path: native-dist/linux/*
+          name: extended-linux-evidence-linux-i386-${{ inputs.release_tag }}
+          path: linux-evidence-upload/*
           if-no-files-found: error
 
   linux-armhf-native-evidence:
@@ -132,6 +144,7 @@ jobs:
             --target linux-armhf \
             --release-tag "${{ inputs.release_tag }}" \
             --workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --source-head-sha "${{ github.sha }}" \
             --out native-dist/linux/builder-identity-linux-armhf.json
       - name: Create isolated release environment
         run: |
@@ -159,6 +172,8 @@ jobs:
             --assets-dir native-dist/linux \
             --release-asset-base-url "${{ inputs.release_asset_base_url }}" \
             --workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --release-source-artifact-name extended-linux-evidence-linux-armhf-${{ inputs.release_tag }} \
+            --release-source-head-sha "${{ github.sha }}" \
             --builder-evidence native-dist/linux/builder-identity-linux-armhf.json \
             --linux-smoke-evidence native-dist/linux/native-smoke-linux-armhf.log \
             --runner-label self-hosted \
@@ -185,8 +200,17 @@ jobs:
             --bundle-archive native-dist/linux/extended-linux-evidence-bundle-linux-armhf-${{ inputs.release_tag }}.zip \
             --bundle-sha256s native-dist/linux/extended-linux-evidence-bundle-linux-armhf-${{ inputs.release_tag }}-SHA256SUMS.txt \
             --out native-dist/linux/platform-verified-evidence-linux-armhf-final.json
+      - name: Stage scoped Linux armhf evidence upload
+        run: |
+          . .venv-native/bin/activate
+          python scripts/stage_extended_linux_evidence_upload.py \
+            --target linux-armhf \
+            --release-tag "${{ inputs.release_tag }}" \
+            --source-dir native-dist/linux \
+            --out-dir linux-evidence-upload \
+            --force
       - uses: actions/upload-artifact@v7
         with:
-          name: extended-linux-armhf-native-evidence
-          path: native-dist/linux/*
+          name: extended-linux-evidence-linux-armhf-${{ inputs.release_tag }}
+          path: linux-evidence-upload/*
           if-no-files-found: error

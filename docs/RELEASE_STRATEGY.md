@@ -36,6 +36,10 @@ Release integrity rules:
 - The publish job runs
   `python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --require-platform-goal-targets`
   after downloading workflow artifacts and before uploading the GitHub release.
+  The protected-platform asset job first runs
+  `python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets`
+  to import only same-tag accepted Linux i386, Linux armhf and Windows XP
+  native-host artifacts from their verified evidence workflow runs.
   It verifies the expected asset set from `configs/release_matrix.json`,
   checksum sidecars, source release-manifest records, accepted platform
   evidence and the MobaXterm parity accepted-evidence registry. The protected
@@ -74,6 +78,12 @@ Termux/Web/PWA, iOS/iPadOS Web/PWA and legacy Windows endpoints remain
 source/Web/remote-target entries unless a real native packaging path is added.
 Windows XP x86/x64 remote endpoints use isolated per-profile legacy opt-ins
 instead of lowering modern TLS, SSH or RDP defaults globally.
+If those endpoints are promoted to native-host evidence, the release-importable
+source artifact must come from `.github/workflows/xp-native-evidence.yml`,
+which validates staged XP artifacts and sanitized smoke evidence on a
+self-hosted `xp-evidence` runner, stages only the expected release/evidence
+files into `xp-evidence-upload`, and uploads
+`xp-native-evidence-<target>-<release_tag>`.
 
 `configs/platform_parity_promotion.json` and
 `python scripts/check_platform_parity_promotion.py` define the required evidence
@@ -88,7 +98,10 @@ or
 `.github/workflows/extended-platform-evidence.yml` is the dispatch-only
 self-hosted collection path for that evidence; it uses `[self-hosted, linux,
 i386]` and `[self-hosted, linux, armhf]` runners and uploads evidence artifacts
-without publishing a GitHub release. Each run also writes
+without publishing a GitHub release. Before artifact upload it runs
+`python scripts/stage_extended_linux_evidence_upload.py`, stages the exact
+release-importable file set in `linux-evidence-upload`, and avoids uploading
+raw Linux builder output directories by wildcard. Each run also writes
 `platform-verified-evidence-linux-i386.json` or
 `platform-verified-evidence-linux-armhf.json` into the uploaded evidence
 artifact and packages the review bundle with
@@ -99,11 +112,12 @@ evidence records must be added to
 can promote either Linux extended architecture. Generate those records with
 `python scripts/make_platform_verified_evidence_record.py` so artifact URLs,
 per-artifact SHA-256 digests, the Linux builder identity SHA-256 and the
-workflow dispatch inputs, and the promotion config SHA-256 are derived from the same promotion contract.
+workflow dispatch inputs, `release_asset_source.workflow=.github/workflows/extended-platform-evidence.yml`,
+and the promotion config SHA-256 are derived from the same promotion contract.
 Linux records must also include the builder identity JSON emitted by
-`python3 scripts/check_extended_platform_builder.py --release-tag v<project.version> --workflow-run-url <github-actions-run-url> --out ...`; its
+`python3 scripts/check_extended_platform_builder.py --release-tag v<project.version> --workflow-run-url <github-actions-run-url> --source-head-sha <github-actions-head-sha> --out ...`; its
 `builder_identity_sha256` must match that JSON, and the JSON must bind the
-same `release_tag` and `workflow_run_url` as the accepted record while also
+same `release_tag` and `workflow_run_url` as the accepted record while `source_head_sha` matches `release_asset_source.head_sha`, and also
 including a sanitized target-scoped `host_identity` block with
 `operator_private_data_redacted=true`, matching `platform.machine()` and
 `uname -m`, `dpkg --print-architecture`
@@ -145,7 +159,7 @@ directories must pass
 or
 `python scripts/check_platform_promotion_artifacts.py --target windows-xp-native-x64 --assets-dir <artifact-dir> --tag v<project.version>`.
 The XP VM/toolchain evidence JSON must also pass
-`python scripts/check_xp_native_evidence.py --evidence <evidence.json> --assets-dir <artifact-dir>`.
+`python scripts/check_xp_native_evidence.py --evidence <target-release-evidence.json> --assets-dir <target-release-artifact-dir> --evidence-dir <target-release-evidence-dir>`.
 That validator requires the x86 evidence service-pack field to include `SP3`
 and the x64 evidence to include `os.service_pack=SP2` plus
 `os.edition=Professional x64 Edition`. It also requires a sanitized
@@ -154,7 +168,7 @@ and the x64 evidence to include `os.service_pack=SP2` plus
 `operator_private_data_redacted=true`; do not record real usernames, personal
 hostnames, credentials or tokens in XP evidence.
 Package the validated XP evidence review artifact with
-`python scripts/make_xp_native_evidence_bundle.py --target <windows-xp-native-target> --evidence <evidence.json> --candidate-record <platform-verified-evidence-windows-xp-native-target.json> --assets-dir <artifact-dir> --out-dir <bundle-dir>`; the packer validates the full candidate record and requires the candidate XP validation command to match the bundled evidence inputs.
+`python scripts/make_xp_native_evidence_bundle.py --target <windows-xp-native-target> --evidence <evidence.json> --candidate-record <platform-verified-evidence-windows-xp-native-target.json> --assets-dir <artifact-dir> --out-dir <bundle-dir>`; the packer validates the full candidate record and requires the candidate XP validation command to match the bundled evidence inputs. XP accepted records must bind `release_asset_source.workflow=.github/workflows/xp-native-evidence.yml`.
 Evidence generated by `python scripts/make_xp_native_evidence_template.py` is
 scaffolding only; any remaining `TODO`, `placeholder`, `replace with real` or
 `template evidence` marker in the JSON or referenced smoke files fails XP
@@ -165,17 +179,25 @@ The XP evidence JSON must be bundled with per-smoke evidence files for
 `modern_defaults_unchanged`; the validator resolves each relative
 `evidence_file` path, requires a concrete `scripts/xp_smoke_runner.cmd`
 command on each smoke result that binds the target, release tag, smoke id and
-evidence file, requires each smoke evidence file to include `xp smoke target`,
+evidence file plus canonical `--proof-file xp-smoke-proof/<smoke_id>.txt`,
+requires each smoke evidence file to include `xp smoke target`,
 `xp smoke release` and `xp smoke id` proof lines, and checks the recorded
 SHA-256.
 Accepted XP records generated from that bundle must include `xp_evidence_sha256`
 for the evidence JSON, `xp_evidence_summary` for the XP target/release/toolchain/security/smoke
-binding, XP security patch evidence proving TLS 1.3 preferred, TLS 1.2 minimum,
+binding, `workflow=.github/workflows/xp-native-evidence.yml` and
+`workflow_inputs` for `target`, `release_tag`, `release_asset_base_url`,
+`assets_dir`, `evidence_file` and `evidence_dir`, where the path inputs match
+the same `native_evidence_validation_command` reviewed in the XP evidence bundle,
+`xp_evidence_sources` binding the evidence JSON and every required XP smoke
+evidence file by path, size and SHA-256,
+XP security patch evidence proving TLS 1.3 preferred, TLS 1.2 minimum,
 isolated legacy compatibility and CVE patch review, security smoke proof lines
 for `legacy_crypto_profile_scoped` and `modern_defaults_unchanged`, tracked
 `scripts/xp_smoke_runner.cmd` per-smoke command provenance in
 `xp_evidence_summary.smoke_commands`, `xp_evidence_summary.smoke_evidence_files`
 bindings that match each `--evidence-file` command argument, and
+canonical `--proof-file xp-smoke-proof/<smoke_id>.txt` command bindings,
 `xp_host_identity_sha256` for the sanitized host identity in
 `xp_evidence_summary.host_identity`, `xp_smoke_evidence_sha256` for every
 required smoke evidence file, plus `xp_evidence_contract_sha256` for the current

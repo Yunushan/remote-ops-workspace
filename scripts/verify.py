@@ -107,8 +107,23 @@ def build_steps(
             env=_source_env(),
         ),
         VerifyStep(
+            "extended Linux staged upload packer",
+            [python, "scripts/stage_extended_linux_evidence_upload.py", "--help"],
+            env=_source_env(),
+        ),
+        VerifyStep(
             "Windows XP native evidence contract",
             [python, "scripts/check_xp_native_evidence.py", "--contract"],
+            env=_source_env(),
+        ),
+        VerifyStep(
+            "Windows XP native evidence source workflow",
+            [python, "scripts/check_xp_native_evidence_workflow.py"],
+            env=_source_env(),
+        ),
+        VerifyStep(
+            "Windows XP native evidence dispatch input validator",
+            [python, "scripts/check_xp_native_evidence_dispatch_inputs.py", "--help"],
             env=_source_env(),
         ),
         VerifyStep(
@@ -119,6 +134,11 @@ def build_steps(
         VerifyStep(
             "Windows XP native evidence bundle packer",
             [python, "scripts/make_xp_native_evidence_bundle.py", "--help"],
+            env=_source_env(),
+        ),
+        VerifyStep(
+            "Windows XP native staged upload packer",
+            [python, "scripts/stage_xp_native_evidence_upload.py", "--help"],
             env=_source_env(),
         ),
         VerifyStep(

@@ -5,7 +5,7 @@ import hashlib
 import json
 import re
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -134,13 +134,14 @@ def check_contract(contract: dict[str, Any]) -> list[str]:
         "--release-tag <release_tag>",
         "--smoke-id <smoke_id>",
         "--evidence-file <evidence_file>",
+        "--proof-file xp-smoke-proof/<smoke_id>.txt",
     }
     if not isinstance(command_bindings, list) or not required_command_bindings.issubset(
         {str(item) for item in command_bindings}
     ):
         errors.append(
             "XP native evidence contract must require tracked runner, target, release-tag, "
-            "smoke-id, and evidence-file bindings"
+            "smoke-id, evidence-file, and proof-file bindings"
         )
     command_prefix = str(contract.get("required_smoke_command_prefix", ""))
     if command_prefix != "scripts/xp_smoke_runner.cmd":
@@ -161,6 +162,11 @@ def check_contract(contract: dict[str, Any]) -> list[str]:
     smoke_root = str(contract.get("smoke_evidence_root", ""))
     if "evidence JSON directory" not in smoke_root:
         errors.append("XP native evidence contract must document smoke evidence file resolution")
+    if contract.get("required_smoke_evidence_file_pattern") != "xp-smoke-evidence/<smoke_id>.txt":
+        errors.append(
+            "XP native evidence contract must require smoke evidence files under "
+            "xp-smoke-evidence/<smoke_id>.txt"
+        )
     binding_lines = contract.get("required_smoke_evidence_binding_lines")
     required_binding_lines = {
         "xp smoke target: <target>",
@@ -513,6 +519,7 @@ def check_smoke_command_binding(
         "--target": target,
         "--release-tag": release_tag,
         "--smoke-id": smoke_id,
+        "--proof-file": f"xp-smoke-proof/{smoke_id}.txt",
     }
     if evidence_file is not None:
         expected_values["--evidence-file"] = evidence_file
@@ -537,6 +544,9 @@ def check_smoke_evidence_file(
     raw_file = str(item.get("evidence_file", ""))
     if not raw_file:
         return [f"{target} smoke result {smoke_id} missing evidence_file"]
+    expected_file = f"xp-smoke-evidence/{smoke_id}.txt"
+    if raw_file != expected_file:
+        return [f"{target} smoke result {smoke_id} evidence_file must be {expected_file}"]
     evidence_file = Path(raw_file)
     if evidence_file.is_absolute():
         return [f"{target} smoke result {smoke_id} evidence_file must be relative"]
@@ -652,6 +662,50 @@ def check_artifact_validation_record(target: str, raw_record: Any, release_tag: 
         )
     elif "<" in asset_dirs[0] or ">" in asset_dirs[0]:
         errors.append(f"{target} evidence artifact_validation.command --assets-dir must be concrete, got {asset_dirs[0]!r}")
+    else:
+        errors.extend(check_artifact_validation_assets_dir(target, release_tag, asset_dirs[0]))
+    return errors
+
+
+def check_artifact_validation_assets_dir(target: str, release_tag: str, raw_path: str) -> list[str]:
+    path = raw_path.strip()
+    errors: list[str] = []
+    if any(char in path for char in "*?"):
+        errors.append(
+            f"{target} evidence artifact_validation.command --assets-dir "
+            f"must not contain wildcards, got {raw_path!r}"
+        )
+    if "\\" in path:
+        parsed_path = PureWindowsPath(path)
+        parts = parsed_path.parts
+        is_absolute = parsed_path.is_absolute() or bool(parsed_path.drive)
+    else:
+        parsed_path = PurePosixPath(path)
+        parts = parsed_path.parts
+        is_absolute = parsed_path.is_absolute()
+    if is_absolute:
+        errors.append(
+            f"{target} evidence artifact_validation.command --assets-dir "
+            f"must be workspace-relative, got {raw_path!r}"
+        )
+    if any(part == ".." for part in parts):
+        errors.append(f"{target} evidence artifact_validation.command --assets-dir must not traverse directories")
+    normalized_parts = tuple(part for part in parts if part not in ("", "."))
+    if target not in normalized_parts:
+        errors.append(
+            f"{target} evidence artifact_validation.command --assets-dir "
+            f"must include target path segment {target!r}, got {raw_path!r}"
+        )
+    if release_tag not in normalized_parts:
+        errors.append(
+            f"{target} evidence artifact_validation.command --assets-dir "
+            f"must include release_tag path segment {release_tag!r}, got {raw_path!r}"
+        )
+    if path.endswith(".json"):
+        errors.append(
+            f"{target} evidence artifact_validation.command --assets-dir "
+            f"must be a directory path, got {raw_path!r}"
+        )
     return errors
 
 

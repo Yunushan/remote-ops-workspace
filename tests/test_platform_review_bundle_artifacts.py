@@ -97,6 +97,30 @@ def test_platform_review_bundle_artifacts_rejects_review_bundle_hash_mismatch(tm
     ) in errors
 
 
+def test_platform_review_bundle_artifacts_rejects_symlinked_bundle_file(
+    tmp_path: Path, monkeypatch
+) -> None:
+    validator = _load_script("check_platform_review_bundle_artifacts")
+    record = _finalized_xp_record(tmp_path)
+    archive_name = str(record["review_bundle"]["archive"]["file"])
+    registry = _registry_with(record)
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self.name == archive_name
+
+    monkeypatch.setattr(type(tmp_path), "is_symlink", fake_is_symlink)
+
+    errors = validator.check_platform_review_bundle_artifacts(
+        registry=registry,
+        bundle_dir=tmp_path,
+    )
+
+    assert (
+        f"windows-xp-native-x86 review_bundle archive file must not be a symlink: {archive_name}"
+        in errors
+    )
+
+
 def test_platform_review_bundle_artifacts_rejects_registry_candidate_drift(tmp_path: Path) -> None:
     validator = _load_script("check_platform_review_bundle_artifacts")
     record = _finalized_xp_record(tmp_path)
@@ -109,8 +133,22 @@ def test_platform_review_bundle_artifacts_rejects_registry_candidate_drift(tmp_p
     )
 
     assert (
-        "windows-xp-native-x86 archived candidate_record must match accepted evidence record without review_bundle"
+        "windows-xp-native-x86 archived candidate_record must match accepted evidence record before finalization"
         in errors
+    )
+
+
+def test_prefinalized_candidate_record_removes_finalization_only_source_files(tmp_path: Path) -> None:
+    validator = _load_script("check_platform_review_bundle_artifacts")
+    record = _finalized_linux_record(tmp_path)
+
+    candidate = validator.prefinalized_candidate_record(record)
+
+    assert set(candidate["release_asset_source"]["contains_files"]) == set(record["artifact_sha256"])
+    assert "platform-verified-evidence-linux-i386-final.json" not in candidate["release_asset_source"]["contains_files"]
+    assert all(
+        not str(name).startswith("extended-linux-evidence-bundle-")
+        for name in candidate["release_asset_source"]["contains_files"]
     )
 
 
@@ -120,8 +158,7 @@ def _finalized_xp_record(tmp_path: Path) -> dict[str, Any]:
     bundle_helpers = _load_finalize_tests()
     target = "windows-xp-native-x86"
     release_tag = "v1.0.2"
-    candidate = helpers._xp_record(target)
-    candidate.pop("review_bundle")
+    candidate = _prefinalized_candidate(helpers._xp_record(target))
     candidate_path, manifest, archive, sidecar = bundle_helpers._write_xp_candidate_and_bundle(
         tmp_path,
         candidate,
@@ -146,8 +183,7 @@ def _finalized_linux_record(tmp_path: Path) -> dict[str, Any]:
     bundle_helpers = _load_finalize_tests()
     target = "linux-i386"
     release_tag = "v1.0.2"
-    candidate = helpers._linux_record(target)
-    candidate.pop("review_bundle")
+    candidate = _prefinalized_candidate(helpers._linux_record(target))
     artifact_archive_files = bundle_helpers._attach_artifact_files(candidate)
 
     candidate_path = tmp_path / "platform-verified-evidence-linux-i386.json"
@@ -155,7 +191,9 @@ def _finalized_linux_record(tmp_path: Path) -> dict[str, Any]:
     smoke_path = tmp_path / "native-smoke-linux-i386.log"
     builder_path.write_text(json.dumps(candidate["builder_identity"], indent=2) + "\n", encoding="utf-8")
     bundle_helpers._write_linux_smoke_evidence(smoke_path, target, candidate["artifact_sha256"])
-    candidate["linux_smoke_evidence_sha256"] = {"native_smoke": bundle_helpers._sha256(smoke_path)}
+    smoke_sha = bundle_helpers._sha256(smoke_path)
+    candidate["linux_smoke_evidence_sha256"] = {"native_smoke": smoke_sha}
+    _sync_linux_source_record(candidate, "native_smoke", smoke_sha, smoke_path.stat().st_size)
     candidate_path.write_text(json.dumps(candidate, indent=2) + "\n", encoding="utf-8")
 
     manifest, archive, sidecar = bundle_helpers._write_bundle_files(
@@ -202,6 +240,31 @@ def _finalized_linux_record(tmp_path: Path) -> dict[str, Any]:
 def _registry_with(record: dict[str, Any]) -> dict[str, Any]:
     registry = json.loads(Path("configs/platform_verified_evidence.json").read_text(encoding="utf-8"))
     return {**registry, "accepted_evidence": [record]}
+
+
+def _prefinalized_candidate(record: dict[str, Any]) -> dict[str, Any]:
+    candidate = dict(record)
+    candidate.pop("review_bundle", None)
+    source = candidate.get("release_asset_source")
+    artifact_hashes = candidate.get("artifact_sha256")
+    if isinstance(source, dict) and isinstance(artifact_hashes, dict):
+        source_data = dict(source)
+        source_data["contains_files"] = sorted(str(name) for name in artifact_hashes)
+        candidate["release_asset_source"] = source_data
+    return candidate
+
+
+def _sync_linux_source_record(
+    record: dict[str, Any],
+    key: str,
+    sha256: str,
+    size_bytes: int,
+) -> None:
+    sources = record.get("linux_evidence_sources")
+    if isinstance(sources, dict) and isinstance(sources.get(key), dict):
+        source = sources[key]
+        source["sha256"] = sha256
+        source["size_bytes"] = size_bytes
 
 
 def _load_script(name: str) -> Any:

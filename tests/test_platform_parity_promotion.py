@@ -71,6 +71,62 @@ def test_platform_parity_promotion_requires_finalized_evidence_contract() -> Non
     assert "linux-i386 accepted_evidence_candidate_command must not append unfinalized candidates" in errors
 
 
+def test_platform_parity_promotion_rejects_generic_xp_release_source_artifact_name() -> None:
+    checker = _load_platform_parity_promotion_checker()
+    promotion = _load_json("configs/platform_parity_promotion.json")
+    entry = _promotion_entry(promotion, "windows-xp-native-x86")
+    requirements = entry["promotion_to_100_requires"]
+    requirements["accepted_evidence_candidate_command"] = requirements[
+        "accepted_evidence_candidate_command"
+    ].replace(
+        "xp-native-evidence-windows-xp-native-x86-v<project.version>",
+        "<github-actions-artifact-name>",
+    )
+
+    errors = checker.check_platform_parity_promotion(promotion=promotion)
+
+    assert (
+        "windows-xp-native-x86 accepted_evidence_candidate_command must bind release source "
+        "artifact name '--release-source-artifact-name "
+        "xp-native-evidence-windows-xp-native-x86-v<project.version>'"
+    ) in errors
+
+
+def test_platform_parity_promotion_rejects_missing_linux_release_source_artifact_name() -> None:
+    checker = _load_platform_parity_promotion_checker()
+    promotion = _load_json("configs/platform_parity_promotion.json")
+    entry = _promotion_entry(promotion, "linux-armhf")
+    requirements = entry["promotion_to_100_requires"]
+    requirements["accepted_evidence_candidate_command"] = requirements[
+        "accepted_evidence_candidate_command"
+    ].replace(
+        " --release-source-artifact-name extended-linux-evidence-linux-armhf-v<project.version>",
+        "",
+    )
+
+    errors = checker.check_platform_parity_promotion(promotion=promotion)
+
+    assert (
+        "linux-armhf accepted_evidence_candidate_command must bind release source "
+        "artifact name '--release-source-artifact-name "
+        "extended-linux-evidence-linux-armhf-v<project.version>'"
+    ) in errors
+
+
+def test_platform_parity_promotion_rejects_missing_release_source_head_sha() -> None:
+    checker = _load_platform_parity_promotion_checker()
+    promotion = _load_json("configs/platform_parity_promotion.json")
+    entry = _promotion_entry(promotion, "linux-i386")
+    requirements = entry["promotion_to_100_requires"]
+    requirements["accepted_evidence_candidate_command"] = requirements[
+        "accepted_evidence_candidate_command"
+    ].replace(" --release-source-head-sha <github-actions-head-sha>", "")
+
+    errors = checker.check_platform_parity_promotion(promotion=promotion)
+
+    assert "linux-i386 accepted_evidence_candidate_command must bind release source head SHA" in errors
+
+
 def test_linux_blockers_describe_evidence_activated_publish_contracts() -> None:
     promotion = _load_json("configs/platform_parity_promotion.json")
 
@@ -113,6 +169,20 @@ def test_platform_parity_promotion_rejects_fake_xp_native_stack_support() -> Non
     assert (
         "windows-xp-native-x86 current_stack_supported must remain false until "
         "XP-native evidence exists"
+    ) in errors
+
+
+def test_platform_parity_promotion_requires_xp_source_workflow() -> None:
+    checker = _load_platform_parity_promotion_checker()
+    promotion = _load_json("configs/platform_parity_promotion.json")
+    entry = _promotion_entry(promotion, "windows-xp-native-x64")
+    entry["promotion_to_100_requires"]["release_source_workflow"] = ".github/workflows/ci.yml"
+
+    errors = checker.check_platform_parity_promotion(promotion=promotion)
+
+    assert (
+        "windows-xp-native-x64 release_source_workflow must be "
+        ".github/workflows/xp-native-evidence.yml"
     ) in errors
 
 

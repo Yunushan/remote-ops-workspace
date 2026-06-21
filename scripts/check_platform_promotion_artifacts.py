@@ -84,9 +84,14 @@ def check_contract(promotion: dict[str, Any]) -> list[str]:
     entries = promotion_entries(promotion, errors)
     for target_id, entry in entries.items():
         command = artifact_validation_command(entry)
+        artifact_dir = (
+            "<target-release-artifact-dir>"
+            if str(target_id).startswith("windows-xp-native-")
+            else "<artifact-dir>"
+        )
         expected = (
             "python scripts/check_platform_promotion_artifacts.py "
-            f"--target {target_id} --assets-dir <artifact-dir> --tag v<project.version>"
+            f"--target {target_id} --assets-dir {artifact_dir} --tag v<project.version>"
         )
         if command != expected:
             errors.append(f"{target_id} artifact_validation_command must be: {expected}")

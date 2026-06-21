@@ -37,10 +37,12 @@
     "--target <target>",
     "--release-tag <release_tag>",
     "--smoke-id <smoke_id>",
-    "--evidence-file <evidence_file>"
+    "--evidence-file <evidence_file>",
+    "--proof-file xp-smoke-proof/<smoke_id>.txt"
   ],
   "required_smoke_command_prefix": "scripts/xp_smoke_runner.cmd",
   "smoke_evidence_root": "Evidence files are resolved relative to the evidence JSON directory unless --evidence-dir is provided.",
+  "required_smoke_evidence_file_pattern": "xp-smoke-evidence/<smoke_id>.txt",
   "required_smoke_evidence_binding_lines": [
     "xp smoke target: <target>",
     "xp smoke release: <release_tag>",

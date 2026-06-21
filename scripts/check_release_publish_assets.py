@@ -192,8 +192,12 @@ def check_platform_evidence_import_job(workflow: str) -> list[str]:
     for snippet, label in required_snippets.items():
         if snippet not in block:
             errors.append(f"accepted-platform-evidence-assets job missing {label}: {snippet}")
-    if "contents: write" in block:
-        errors.append("accepted-platform-evidence-assets job must not request contents: write")
+    import_index = block.find("scripts/import_platform_evidence_artifacts.py")
+    upload_index = block.find("actions/upload-artifact@v7")
+    if import_index < 0 or upload_index < 0 or import_index > upload_index:
+        errors.append("platform evidence import must run before imported artifact upload")
+    if re.search(r"(?m)^\s+(actions|contents):\s+write\s*$", block):
+        errors.append("accepted-platform-evidence-assets job must not request write permissions")
     return errors
 
 

@@ -24,9 +24,13 @@ def test_verify_steps_include_full_checks_and_cli_smoke(tmp_path: Path) -> None:
     assert "extended platform evidence workflow" in names
     assert "extended platform dispatch input validator" in names
     assert "extended Linux evidence bundle packer" in names
+    assert "extended Linux staged upload packer" in names
     assert "Windows XP native evidence contract" in names
+    assert "Windows XP native evidence source workflow" in names
+    assert "Windows XP native evidence dispatch input validator" in names
     assert "Windows XP native evidence template generator" in names
     assert "Windows XP native evidence bundle packer" in names
+    assert "Windows XP native staged upload packer" in names
     assert "platform verified evidence registry" in names
     assert "protected platform goal parity report" in names
     assert "platform verified evidence record generator" in names
@@ -73,9 +77,13 @@ def test_verify_quick_mode_skips_pytest_but_keeps_cli_smoke(tmp_path: Path) -> N
     assert "extended platform evidence workflow" in names
     assert "extended platform dispatch input validator" in names
     assert "extended Linux evidence bundle packer" in names
+    assert "extended Linux staged upload packer" in names
     assert "Windows XP native evidence contract" in names
+    assert "Windows XP native evidence source workflow" in names
+    assert "Windows XP native evidence dispatch input validator" in names
     assert "Windows XP native evidence template generator" in names
     assert "Windows XP native evidence bundle packer" in names
+    assert "Windows XP native staged upload packer" in names
     assert "platform verified evidence registry" in names
     assert "protected platform goal parity report" in names
     assert "platform verified evidence record generator" in names

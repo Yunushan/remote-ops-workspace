@@ -85,6 +85,7 @@ def make_extended_linux_evidence_bundle(
     candidate = load_json(candidate_record, "candidate evidence record", errors)
     if builder_identity is None or candidate is None:
         return errors
+    errors.extend(check_linux_evidence_file_names(target, builder_evidence, smoke_evidence, candidate_record))
     if not smoke_evidence.is_file():
         errors.append(f"smoke evidence file missing: {smoke_evidence}")
     if candidate.get("target") != target:
@@ -114,6 +115,16 @@ def make_extended_linux_evidence_bundle(
         errors.append("candidate builder_identity_sha256 must match builder evidence JSON")
     if candidate.get("linux_smoke_evidence_sha256") != linux_smoke_evidence_sha256_map(smoke_evidence):
         errors.append("candidate linux_smoke_evidence_sha256 must match smoke evidence file")
+    expected_sources = {
+        "builder_identity": source_file_record(
+            builder_evidence.name,
+            builder_evidence,
+            sha256=str(candidate.get("builder_identity_sha256", "")),
+        ),
+        "native_smoke": file_record(smoke_evidence.name, smoke_evidence),
+    }
+    if candidate.get("linux_evidence_sources") != expected_sources:
+        errors.append("candidate linux_evidence_sources must match builder and smoke evidence files")
     if smoke_evidence.is_file():
         errors.extend(
             check_linux_smoke_evidence_file(
@@ -183,6 +194,29 @@ def load_json(path: Path, label: str, errors: list[str]) -> dict[str, Any] | Non
         errors.append(f"{label} file must contain a JSON object")
         return None
     return data
+
+
+def check_linux_evidence_file_names(
+    target: str,
+    builder_evidence: Path,
+    smoke_evidence: Path,
+    candidate_record: Path,
+) -> list[str]:
+    expected = {
+        "builder evidence": f"builder-identity-{target}.json",
+        "smoke evidence": f"native-smoke-{target}.log",
+        "candidate evidence record": f"platform-verified-evidence-{target}.json",
+    }
+    actual = {
+        "builder evidence": builder_evidence.name,
+        "smoke evidence": smoke_evidence.name,
+        "candidate evidence record": candidate_record.name,
+    }
+    return [
+        f"{label} file name must be {expected_name}, got {actual[label]!r}"
+        for label, expected_name in expected.items()
+        if actual[label] != expected_name
+    ]
 
 
 def check_linux_smoke_evidence_file(
@@ -259,10 +293,14 @@ def artifact_records(
 
 
 def file_record(name: str, path: Path) -> dict[str, Any]:
+    return source_file_record(name, path, sha256=sha256_file(path))
+
+
+def source_file_record(name: str, path: Path, *, sha256: str) -> dict[str, Any]:
     return {
         "file": name,
         "size_bytes": path.stat().st_size,
-        "sha256": sha256_file(path),
+        "sha256": sha256,
     }
 
 

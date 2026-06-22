@@ -201,6 +201,61 @@ def check_legacy_security_policy(
     ):
         if snippet not in launcher:
             errors.append(f"launcher missing legacy security enforcement snippet: {snippet}")
+    errors.extend(check_legacy_launcher_behavior())
+    return errors
+
+
+def check_legacy_launcher_behavior(
+    *,
+    build_plan: Any | None = None,
+    profile_type: Any | None = None,
+    launcher_error_type: type[Exception] | None = None,
+) -> list[str]:
+    if build_plan is None or profile_type is None or launcher_error_type is None:
+        from remote_ops_workspace.launcher import LauncherError, build_launch_plan
+        from remote_ops_workspace.models import Profile
+
+        build_plan = build_launch_plan
+        profile_type = Profile
+        launcher_error_type = LauncherError
+
+    scenarios = (
+        (
+            "SSHv1 launch must require an isolated XP legacy_target",
+            profile_type(
+                name="sshv1-missing-target",
+                protocol="ssh1",
+                host="192.0.2.10",
+                options={"allow_insecure_sshv1": "true", "allow_legacy_crypto": "true"},
+            ),
+        ),
+        (
+            "weak SSH algorithms must require an isolated XP legacy_target",
+            profile_type(
+                name="weak-ssh-missing-target",
+                protocol="ssh",
+                host="192.0.2.10",
+                options={"kex_algorithms": "+diffie-hellman-group1-sha1", "allow_legacy_crypto": "true"},
+            ),
+        ),
+        (
+            "RDP native security must require an isolated XP legacy_target",
+            profile_type(
+                name="rdp-missing-target",
+                protocol="rdp",
+                host="192.0.2.10",
+                options={"security": "rdp", "allow_legacy_rdp_security": "true"},
+            ),
+        ),
+    )
+
+    errors: list[str] = []
+    for message, profile in scenarios:
+        try:
+            build_plan(profile)
+        except launcher_error_type:
+            continue
+        errors.append(message)
     return errors
 
 

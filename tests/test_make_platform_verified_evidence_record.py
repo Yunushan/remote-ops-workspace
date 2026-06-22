@@ -11,18 +11,24 @@ from pathlib import Path
 from typing import Any
 
 
-def test_make_platform_verified_evidence_record_generates_linux_record(tmp_path: Path) -> None:
+def test_make_platform_verified_evidence_record_generates_linux_record(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
     maker = _load_maker()
     artifact_checker = _load_platform_promotion_artifacts_checker()
     target = "linux-i386"
     tag = f"v{artifact_checker.read_project_version()}"
-    assets = tmp_path / "linux"
-    assets.mkdir()
     names = _required_names(artifact_checker, target, tag)
+    promotion_hash = _promotion_config_sha256()
+    monkeypatch.chdir(tmp_path)
+    assets = Path("native-dist") / "linux"
+    assets.mkdir(parents=True)
     _write_artifact_set(assets, names)
-    builder_evidence = tmp_path / "builder-identity-linux-i386.json"
+    builder_evidence = Path("evidence") / target / tag / "builder-identity-linux-i386.json"
+    builder_evidence.parent.mkdir(parents=True)
     _write_builder_evidence(builder_evidence, target)
-    smoke_evidence = tmp_path / "native-smoke-linux-i386.log"
+    smoke_evidence = Path("evidence") / target / tag / "native-smoke-linux-i386.log"
     _write_linux_smoke_evidence(
         smoke_evidence,
         target,
@@ -61,7 +67,7 @@ def test_make_platform_verified_evidence_record_generates_linux_record(tmp_path:
     assert errors == []
     assert record["target"] == target
     assert record["status"] == "accepted"
-    assert record["promotion_config_sha256"] == _promotion_config_sha256()
+    assert record["promotion_config_sha256"] == promotion_hash
     assert record["artifact_name"] == f"extended-linux-evidence-linux-i386-{tag}"
     assert record["release_asset_source"] == {
         "type": "github-actions-artifact",
@@ -103,9 +109,21 @@ def test_make_platform_verified_evidence_record_generates_linux_record(tmp_path:
     assert record["native_smoke_command"] == (
         "bash scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux "
         "--target linux-i386 --workflow-run-url "
-        "https://github.com/example/remote-ops-workspace/actions/runs/12345"
+        f"https://github.com/example/remote-ops-workspace/actions/runs/12345 --source-head-sha {'a' * 40}"
     )
     assert record["linux_smoke_evidence_sha256"] == {"native_smoke": _sha256(smoke_evidence)}
+    assert record["local_evidence_preflight_command"] == (
+        "python scripts/check_platform_goal_local_evidence.py --root . "
+        f"--release-tag {tag} --target {target} --assets-dir {assets.as_posix()} "
+        f"--linux-builder-evidence {builder_evidence.as_posix()} "
+        f"--linux-smoke-evidence {smoke_evidence.as_posix()} "
+        "--linux-workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
+        f"--linux-source-head-sha {'a' * 40}"
+    )
+    assert record["artifact_validation_command"] == (
+        f"python scripts/check_platform_promotion_artifacts.py --target {target} "
+        f"--assets-dir {assets.as_posix()} --tag {tag} --strict"
+    )
     assert len(record["release_asset_urls"]) == len(names)
     assert set(record["artifact_sha256"]) == set(names)
     assert all(len(digest) == 64 for digest in record["artifact_sha256"].values())
@@ -188,6 +206,15 @@ def test_make_platform_verified_evidence_record_generates_xp_record(tmp_path: Pa
         f"python scripts/check_xp_native_evidence.py --evidence {evidence.as_posix()} "
         f"--assets-dir {assets.as_posix()} --evidence-dir {evidence.parent.as_posix()}"
     )
+    assert record["local_evidence_preflight_command"] == (
+        "python scripts/check_platform_goal_local_evidence.py --root . "
+        f"--release-tag {tag} --target {target} --assets-dir {assets.as_posix()} "
+        f"--xp-evidence {evidence.as_posix()} --xp-evidence-dir {evidence.parent.as_posix()}"
+    )
+    assert record["artifact_validation_command"] == (
+        f"python scripts/check_platform_promotion_artifacts.py --target {target} "
+        f"--assets-dir {assets.as_posix()} --tag {tag} --strict"
+    )
     assert record["xp_evidence_sources"]["evidence"] == {
         "file": "xp-evidence.json",
         "path": evidence.as_posix(),
@@ -256,6 +283,317 @@ def test_make_platform_verified_evidence_record_generates_xp_record(tmp_path: Pa
     }
 
 
+def test_make_platform_verified_evidence_record_rejects_symlinked_linux_evidence_inputs(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    maker = _load_maker()
+    artifact_checker = _load_platform_promotion_artifacts_checker()
+    target = "linux-i386"
+    tag = f"v{artifact_checker.read_project_version()}"
+    assets = tmp_path / "linux"
+    assets.mkdir()
+    builder_evidence = tmp_path / "builder-identity-linux-i386.json"
+    builder_evidence.write_text("{}\n", encoding="utf-8")
+    smoke_evidence = tmp_path / "native-smoke-linux-i386.log"
+    smoke_evidence.write_text("linux smoke placeholder\n", encoding="utf-8")
+    symlink_names = {builder_evidence.name, smoke_evidence.name}
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self.name in symlink_names
+
+    monkeypatch.setattr(type(tmp_path), "is_symlink", fake_is_symlink)
+
+    errors, record = maker.build_evidence_record(
+        maker.parse_args(
+            [
+                "--target",
+                target,
+                "--release-tag",
+                tag,
+                "--assets-dir",
+                str(assets),
+                "--release-asset-base-url",
+                f"https://github.com/example/remote-ops-workspace/releases/download/{tag}",
+                "--workflow-run-url",
+                "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+                "--release-source-head-sha",
+                "a" * 40,
+                "--builder-evidence",
+                str(builder_evidence),
+                "--linux-smoke-evidence",
+                str(smoke_evidence),
+                "--runner-label",
+                "self-hosted",
+                "--runner-label",
+                "linux",
+                "--runner-label",
+                "i386",
+            ]
+        )
+    )
+
+    assert f"Linux builder evidence file must not be a symlink: {builder_evidence}" in errors
+    assert f"Linux smoke evidence file must not be a symlink: {smoke_evidence}" in errors
+    assert record == {}
+
+
+def test_make_platform_verified_evidence_record_rejects_symlinked_linux_evidence_parent(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    maker = _load_maker()
+    artifact_checker = _load_platform_promotion_artifacts_checker()
+    target = "linux-i386"
+    tag = f"v{artifact_checker.read_project_version()}"
+    assets = tmp_path / "linux"
+    assets.mkdir()
+    evidence_parent = tmp_path / "linux-evidence"
+    evidence_parent.mkdir()
+    builder_evidence = evidence_parent / "builder-identity-linux-i386.json"
+    builder_evidence.write_text("{}\n", encoding="utf-8")
+    smoke_evidence = evidence_parent / "native-smoke-linux-i386.log"
+    smoke_evidence.write_text("linux smoke placeholder\n", encoding="utf-8")
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self == evidence_parent
+
+    monkeypatch.setattr(type(tmp_path), "is_symlink", fake_is_symlink)
+
+    errors, record = maker.build_evidence_record(
+        maker.parse_args(
+            [
+                "--target",
+                target,
+                "--release-tag",
+                tag,
+                "--assets-dir",
+                str(assets),
+                "--release-asset-base-url",
+                f"https://github.com/example/remote-ops-workspace/releases/download/{tag}",
+                "--workflow-run-url",
+                "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+                "--release-source-head-sha",
+                "a" * 40,
+                "--builder-evidence",
+                str(builder_evidence),
+                "--linux-smoke-evidence",
+                str(smoke_evidence),
+                "--runner-label",
+                "self-hosted",
+                "--runner-label",
+                "linux",
+                "--runner-label",
+                "i386",
+            ]
+        )
+    )
+
+    assert f"Linux builder evidence file path must not contain symlinked directories: {evidence_parent}" in errors
+    assert f"Linux smoke evidence file path must not contain symlinked directories: {evidence_parent}" in errors
+    assert record == {}
+
+
+def test_make_platform_verified_evidence_record_rejects_symlinked_xp_evidence_inputs(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    maker = _load_maker()
+    artifact_checker = _load_platform_promotion_artifacts_checker()
+    target = "windows-xp-native-x86"
+    tag = f"v{artifact_checker.read_project_version()}"
+    assets = tmp_path / "windows-xp-native-x86" / tag / "artifacts"
+    assets.mkdir(parents=True)
+    evidence_dir = tmp_path / "windows-xp-native-x86" / tag / "evidence"
+    evidence_dir.mkdir(parents=True)
+    evidence = evidence_dir / "xp-evidence.json"
+    evidence.write_text("{}\n", encoding="utf-8")
+    symlink_names = {evidence.name, evidence_dir.name}
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self.name in symlink_names
+
+    monkeypatch.setattr(type(tmp_path), "is_symlink", fake_is_symlink)
+
+    errors, record = maker.build_evidence_record(
+        maker.parse_args(
+            [
+                "--target",
+                target,
+                "--release-tag",
+                tag,
+                "--assets-dir",
+                str(assets),
+                "--release-asset-base-url",
+                f"https://github.com/example/remote-ops-workspace/releases/download/{tag}",
+                "--release-source-workflow-run-url",
+                "https://github.com/example/remote-ops-workspace/actions/runs/54321",
+                "--release-source-artifact-name",
+                f"xp-native-evidence-{target}-{tag}",
+                "--release-source-head-sha",
+                "a" * 40,
+                "--xp-evidence",
+                str(evidence),
+                "--xp-evidence-dir",
+                str(evidence_dir),
+            ]
+        )
+    )
+
+    assert f"XP evidence file must not be a symlink: {evidence}" in errors
+    assert f"XP evidence directory must not be a symlink: {evidence_dir}" in errors
+    assert record == {}
+
+
+def test_make_platform_verified_evidence_record_rejects_symlinked_xp_evidence_parent(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    maker = _load_maker()
+    artifact_checker = _load_platform_promotion_artifacts_checker()
+    target = "windows-xp-native-x86"
+    tag = f"v{artifact_checker.read_project_version()}"
+    assets = tmp_path / "windows-xp-native-x86" / tag / "artifacts"
+    assets.mkdir(parents=True)
+    evidence_parent = tmp_path / "windows-xp-native-x86" / tag / "evidence-parent"
+    evidence_dir = evidence_parent / "evidence"
+    evidence_dir.mkdir(parents=True)
+    evidence = evidence_dir / "xp-evidence.json"
+    evidence.write_text("{}\n", encoding="utf-8")
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self == evidence_parent
+
+    monkeypatch.setattr(type(tmp_path), "is_symlink", fake_is_symlink)
+
+    errors, record = maker.build_evidence_record(
+        maker.parse_args(
+            [
+                "--target",
+                target,
+                "--release-tag",
+                tag,
+                "--assets-dir",
+                str(assets),
+                "--release-asset-base-url",
+                f"https://github.com/example/remote-ops-workspace/releases/download/{tag}",
+                "--release-source-workflow-run-url",
+                "https://github.com/example/remote-ops-workspace/actions/runs/54321",
+                "--release-source-artifact-name",
+                f"xp-native-evidence-{target}-{tag}",
+                "--release-source-head-sha",
+                "a" * 40,
+                "--xp-evidence",
+                str(evidence),
+                "--xp-evidence-dir",
+                str(evidence_dir),
+            ]
+        )
+    )
+
+    assert f"XP evidence file path must not contain symlinked directories: {evidence_parent}" in errors
+    assert f"XP evidence directory path must not contain symlinked directories: {evidence_parent}" in errors
+    assert record == {}
+
+
+def test_make_platform_verified_evidence_record_rejects_symlinked_artifact_parent(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    maker = _load_maker()
+    artifact_checker = _load_platform_promotion_artifacts_checker()
+    target = "linux-i386"
+    tag = f"v{artifact_checker.read_project_version()}"
+    artifact_parent = tmp_path / "artifact-parent"
+    assets = artifact_parent / "linux"
+    assets.mkdir(parents=True)
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self == artifact_parent
+
+    monkeypatch.setattr(type(tmp_path), "is_symlink", fake_is_symlink)
+
+    errors = maker.validate_common_args(
+        maker.parse_args(
+            [
+                "--target",
+                target,
+                "--release-tag",
+                tag,
+                "--assets-dir",
+                str(assets),
+                "--release-asset-base-url",
+                f"https://github.com/example/remote-ops-workspace/releases/download/{tag}",
+                "--release-source-head-sha",
+                "a" * 40,
+            ]
+        )
+    )
+
+    assert f"artifact directory path must not contain symlinked directories: {artifact_parent}" in errors
+
+
+def test_make_platform_verified_evidence_record_rejects_path_qualified_release_base_url(
+    tmp_path: Path,
+) -> None:
+    maker = _load_maker()
+    artifact_checker = _load_platform_promotion_artifacts_checker()
+    tag = f"v{artifact_checker.read_project_version()}"
+    assets = tmp_path / "linux"
+    assets.mkdir()
+
+    errors = maker.validate_common_args(
+        maker.parse_args(
+            [
+                "--target",
+                "linux-i386",
+                "--release-tag",
+                tag,
+                "--assets-dir",
+                str(assets),
+                "--release-asset-base-url",
+                f"https://github.com/example/remote-ops-workspace/nested/releases/download/{tag}",
+                "--release-source-head-sha",
+                "a" * 40,
+            ]
+        )
+    )
+
+    assert (
+        "--release-asset-base-url must be exactly "
+        f"https://github.com/<owner>/<repo>/releases/download/{tag}"
+    ) in errors
+
+
+def test_make_platform_verified_evidence_record_rejects_release_base_url_tag_mismatch(
+    tmp_path: Path,
+) -> None:
+    maker = _load_maker()
+    artifact_checker = _load_platform_promotion_artifacts_checker()
+    tag = f"v{artifact_checker.read_project_version()}"
+    assets = tmp_path / "linux"
+    assets.mkdir()
+
+    errors = maker.validate_common_args(
+        maker.parse_args(
+            [
+                "--target",
+                "linux-i386",
+                "--release-tag",
+                tag,
+                "--assets-dir",
+                str(assets),
+                "--release-asset-base-url",
+                "https://github.com/example/remote-ops-workspace/releases/download/v9.9.9",
+                "--release-source-head-sha",
+                "a" * 40,
+            ]
+        )
+    )
+
+    assert f"--release-asset-base-url release tag must match --release-tag {tag}" in errors
+
+
 def test_make_platform_verified_evidence_record_rejects_wrong_linux_release_source_artifact_name(
     tmp_path: Path,
 ) -> None:
@@ -297,6 +635,110 @@ def test_make_platform_verified_evidence_record_rejects_wrong_linux_release_sour
     assert (
         f"--release-source-artifact-name must be extended-linux-evidence-linux-i386-{tag} "
         "for linux-i386 Linux evidence"
+    ) in errors
+
+
+def test_make_platform_verified_evidence_record_rejects_extra_xp_artifact_file(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    maker = _load_maker()
+    artifact_checker = _load_platform_promotion_artifacts_checker()
+    target = "windows-xp-native-x86"
+    tag = f"v{artifact_checker.read_project_version()}"
+    names = _required_names(artifact_checker, target, tag)
+    monkeypatch.chdir(tmp_path)
+    assets = Path("native-dist") / "windows-xp" / target / tag
+    assets.mkdir(parents=True)
+    _write_artifact_set(assets, names)
+    (assets / "unexpected.txt").write_text("extra\n", encoding="utf-8")
+    evidence = Path("evidence") / target / tag / "xp-evidence.json"
+    evidence.parent.mkdir(parents=True)
+    data = _valid_xp_evidence(target, "x86", "SP3", tag, names)
+    _attach_smoke_evidence_files(evidence.parent, data)
+    evidence.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+    errors, record = maker.build_evidence_record(
+        maker.parse_args(
+            [
+                "--target",
+                target,
+                "--release-tag",
+                tag,
+                "--assets-dir",
+                str(assets),
+                "--release-asset-base-url",
+                f"https://github.com/example/remote-ops-workspace/releases/download/{tag}",
+                "--release-source-workflow-run-url",
+                "https://github.com/example/remote-ops-workspace/actions/runs/54321",
+                "--release-source-artifact-name",
+                f"xp-native-evidence-{target}-{tag}",
+                "--release-source-head-sha",
+                "a" * 40,
+                "--xp-evidence",
+                str(evidence),
+                "--xp-evidence-dir",
+                str(evidence.parent),
+            ]
+        )
+    )
+
+    assert record == {}
+    assert f"{target} artifacts include unexpected files: ['unexpected.txt']" in errors
+
+
+def test_make_platform_verified_evidence_record_rejects_xp_artifact_validation_assets_dir_mismatch(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    maker = _load_maker()
+    artifact_checker = _load_platform_promotion_artifacts_checker()
+    target = "windows-xp-native-x86"
+    tag = f"v{artifact_checker.read_project_version()}"
+    names = _required_names(artifact_checker, target, tag)
+    monkeypatch.chdir(tmp_path)
+    assets = Path("native-dist") / "windows-xp" / target / tag
+    assets.mkdir(parents=True)
+    _write_artifact_set(assets, names)
+    evidence = Path("evidence") / target / tag / "xp-evidence.json"
+    evidence.parent.mkdir(parents=True)
+    data = _valid_xp_evidence(target, "x86", "SP3", tag, names)
+    data["artifact_validation"]["command"] = data["artifact_validation"]["command"].replace(
+        f"native-dist/windows-xp/{target}/{tag}",
+        f"staged/{target}/{tag}/artifacts",
+    )
+    _attach_smoke_evidence_files(evidence.parent, data)
+    evidence.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+    errors, record = maker.build_evidence_record(
+        maker.parse_args(
+            [
+                "--target",
+                target,
+                "--release-tag",
+                tag,
+                "--assets-dir",
+                str(assets),
+                "--release-asset-base-url",
+                f"https://github.com/example/remote-ops-workspace/releases/download/{tag}",
+                "--release-source-workflow-run-url",
+                "https://github.com/example/remote-ops-workspace/actions/runs/54321",
+                "--release-source-artifact-name",
+                f"xp-native-evidence-{target}-{tag}",
+                "--release-source-head-sha",
+                "a" * 40,
+                "--xp-evidence",
+                str(evidence),
+                "--xp-evidence-dir",
+                str(evidence.parent),
+            ]
+        )
+    )
+
+    assert record == {}
+    assert (
+        f"{target} XP evidence artifact_validation.command --assets-dir must match "
+        f"--assets-dir {assets.as_posix()}, got ['staged/{target}/{tag}/artifacts']"
     ) in errors
 
 
@@ -543,7 +985,8 @@ def test_make_platform_verified_evidence_record_rejects_weak_linux_smoke_log(tmp
     assert any(
         "linux-i386 linux_smoke_evidence missing required line: "
         "native installer smoke command: bash scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux "
-        "--target linux-i386 --workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345"
+        "--target linux-i386 --workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
+        f"--source-head-sha {'a' * 40}"
         in error
         for error in errors
     )
@@ -605,29 +1048,34 @@ def test_make_platform_verified_evidence_record_rejects_builder_source_head_sha_
     ) in errors
 
 
-def test_append_platform_verified_evidence_record_updates_registry(tmp_path: Path) -> None:
+def test_append_platform_verified_evidence_record_updates_registry(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
     maker = _load_maker()
     artifact_checker = _load_platform_promotion_artifacts_checker()
     target = "linux-armhf"
     tag = f"v{artifact_checker.read_project_version()}"
-    assets = tmp_path / "linux"
-    assets.mkdir()
     names = _required_names(artifact_checker, target, tag)
+    monkeypatch.chdir(tmp_path)
+    assets = Path("native-dist") / "linux"
+    assets.mkdir(parents=True)
     _write_artifact_set(assets, names)
-    builder_evidence = tmp_path / "builder-identity-linux-armhf.json"
+    builder_evidence = Path("evidence") / target / tag / "builder-identity-linux-armhf.json"
+    builder_evidence.parent.mkdir(parents=True)
     _write_builder_evidence(
         builder_evidence,
         target,
         workflow_run_url="https://github.com/example/remote-ops-workspace/actions/runs/67890",
     )
-    smoke_evidence = tmp_path / "native-smoke-linux-armhf.log"
+    smoke_evidence = Path("evidence") / target / tag / "native-smoke-linux-armhf.log"
     _write_linux_smoke_evidence(
         smoke_evidence,
         target,
         _smoke_artifact_hashes(assets, names),
         workflow_run_url="https://github.com/example/remote-ops-workspace/actions/runs/67890",
     )
-    registry = tmp_path / "platform_verified_evidence.json"
+    registry = Path("platform_verified_evidence.json")
     registry.write_text(json.dumps(_empty_registry(), indent=2) + "\n", encoding="utf-8")
 
     errors, record = maker.build_evidence_record(
@@ -669,6 +1117,10 @@ def test_append_platform_verified_evidence_record_updates_registry(tmp_path: Pat
             f"platform-verified-evidence-{target}-final.json",
         }
     )
+    record["finalized_record_release_asset_url"] = (
+        f"https://github.com/example/remote-ops-workspace/releases/download/{tag}/"
+        f"platform-verified-evidence-{target}-final.json"
+    )
 
     append_errors = maker.append_record_to_registry(record, registry_path=registry)
 
@@ -677,29 +1129,34 @@ def test_append_platform_verified_evidence_record_updates_registry(tmp_path: Pat
     assert [entry["target"] for entry in updated["accepted_evidence"]] == [target]
 
 
-def test_append_platform_verified_evidence_record_rejects_unfinalized_candidate(tmp_path: Path) -> None:
+def test_append_platform_verified_evidence_record_rejects_unfinalized_candidate(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
     maker = _load_maker()
     artifact_checker = _load_platform_promotion_artifacts_checker()
     target = "linux-armhf"
     tag = f"v{artifact_checker.read_project_version()}"
-    assets = tmp_path / "linux"
-    assets.mkdir()
     names = _required_names(artifact_checker, target, tag)
+    monkeypatch.chdir(tmp_path)
+    assets = Path("native-dist") / "linux"
+    assets.mkdir(parents=True)
     _write_artifact_set(assets, names)
-    builder_evidence = tmp_path / "builder-identity-linux-armhf.json"
+    builder_evidence = Path("evidence") / target / tag / "builder-identity-linux-armhf.json"
+    builder_evidence.parent.mkdir(parents=True)
     _write_builder_evidence(
         builder_evidence,
         target,
         workflow_run_url="https://github.com/example/remote-ops-workspace/actions/runs/67890",
     )
-    smoke_evidence = tmp_path / "native-smoke-linux-armhf.log"
+    smoke_evidence = Path("evidence") / target / tag / "native-smoke-linux-armhf.log"
     _write_linux_smoke_evidence(
         smoke_evidence,
         target,
         _smoke_artifact_hashes(assets, names),
         workflow_run_url="https://github.com/example/remote-ops-workspace/actions/runs/67890",
     )
-    registry = tmp_path / "platform_verified_evidence.json"
+    registry = Path("platform_verified_evidence.json")
     registry.write_text(json.dumps(_empty_registry(), indent=2) + "\n", encoding="utf-8")
 
     errors, record = maker.build_evidence_record(
@@ -753,6 +1210,86 @@ def test_append_platform_verified_evidence_record_rejects_duplicate_target(tmp_p
 
     assert errors == [
         "linux-i386 already has accepted evidence; remove or replace the existing record deliberately before appending"
+    ]
+
+
+def test_make_platform_verified_evidence_record_rejects_unsafe_output_path(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    maker = _load_maker()
+    output = tmp_path / "platform-verified-evidence-linux-i386.json"
+    output.write_text("{}\n", encoding="utf-8")
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self == output
+
+    monkeypatch.setattr(type(tmp_path), "is_symlink", fake_is_symlink)
+
+    errors = maker.check_text_output_path(output, "platform verified evidence record output file")
+
+    assert errors == [
+        f"platform verified evidence record output file must not be a symlink: {output}"
+    ]
+
+
+def test_make_platform_verified_evidence_record_rejects_symlinked_output_parent(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    maker = _load_maker()
+    output_parent = tmp_path / "linked-output" / "records"
+    output = output_parent / "platform-verified-evidence-linux-i386.json"
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self == tmp_path / "linked-output"
+
+    monkeypatch.setattr(type(tmp_path), "is_symlink", fake_is_symlink)
+
+    errors = maker.check_text_output_path(output, "platform verified evidence record output file")
+
+    assert errors == [
+        "platform verified evidence record output file directory path must not contain symlinked directories: "
+        f"{tmp_path / 'linked-output'}"
+    ]
+
+
+def test_append_platform_verified_evidence_record_rejects_symlinked_registry(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    maker = _load_maker()
+    registry = tmp_path / "platform_verified_evidence.json"
+    registry.write_text(json.dumps(_empty_registry(), indent=2) + "\n", encoding="utf-8")
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self == registry
+
+    monkeypatch.setattr(type(tmp_path), "is_symlink", fake_is_symlink)
+
+    errors = maker.append_record_to_registry({"target": "linux-i386"}, registry_path=registry)
+
+    assert errors == [f"platform verified evidence registry must not be a symlink: {registry}"]
+
+
+def test_append_platform_verified_evidence_record_rejects_symlinked_registry_parent(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    maker = _load_maker()
+    linked_parent = tmp_path / "linked-config"
+    registry_parent = linked_parent / "configs"
+    registry = registry_parent / "platform_verified_evidence.json"
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self == linked_parent
+
+    monkeypatch.setattr(type(tmp_path), "is_symlink", fake_is_symlink)
+
+    errors = maker.append_record_to_registry({"target": "linux-i386"}, registry_path=registry)
+
+    assert errors == [
+        f"platform verified evidence registry directory path must not contain symlinked directories: {linked_parent}"
     ]
 
 
@@ -883,6 +1420,7 @@ def _write_linux_smoke_evidence(
     artifact_hashes: dict[str, str],
     *,
     workflow_run_url: str = "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+    source_head_sha: str = "a" * 40,
 ) -> None:
     arch = "i386" if target == "linux-i386" else "armhf"
     artifact_lines = [
@@ -893,11 +1431,13 @@ def _write_linux_smoke_evidence(
         "\n".join(
             [
                 f"native installer smoke command: bash scripts/smoke_linux_native.sh --arch {arch} "
-                f"--dist native-dist/linux --target {target} --workflow-run-url {workflow_run_url}",
+                f"--dist native-dist/linux --target {target} --workflow-run-url {workflow_run_url} "
+                f"--source-head-sha {source_head_sha}",
                 "native installer smoke release: v1.0.2",
                 f"native installer smoke target arch: {arch}",
                 f"native installer smoke target: {target}",
                 f"native installer smoke workflow run: {workflow_run_url}",
+                f"native installer smoke source head sha: {source_head_sha}",
                 *artifact_lines,
                 "native installer smoke: DEB install",
                 "native installer smoke: DEB verify",
@@ -1009,7 +1549,7 @@ def _valid_xp_evidence(
             "passed": True,
             "command": (
                 f"python scripts/check_platform_promotion_artifacts.py --target {target} "
-                f"--assets-dir native-dist/windows-xp/{target}/{release_tag} --tag {release_tag}"
+                f"--assets-dir native-dist/windows-xp/{target}/{release_tag} --tag {release_tag} --strict"
             ),
         },
         "artifacts": artifacts,
@@ -1079,17 +1619,22 @@ def _empty_registry() -> dict[str, Any]:
             "release-importable artifact source binding, "
             "release source head SHA binding, "
             "release source workflow file binding, "
+            "local protected-goal evidence preflight command binding, "
             "finalized accepted-record source file binding, "
+            "finalized accepted-record release asset URL binding, "
             "Linux release source artifact names must be target/release-scoped, "
             "XP release source artifact names must be target/release-scoped, "
-            "and per-artifact SHA-256 digests, Linux builder identity evidence, builder identity "
+            "and per-artifact SHA-256 digests, safe relative non-link native archive entries, "
+            "exact safe checksum and native manifest file references, "
+            "exact safe release asset URL filenames, "
+            "Linux builder identity evidence, builder identity "
             "SHA-256, builder identity release/run binding, "
             "Linux builder/smoke source file binding, "
             "Linux builder source head SHA binding, "
             "Linux builder host identity binding when applicable, "
             "Linux builder rpm and non-interactive sudo evidence, Linux security patch evidence, "
             "Linux native build and smoke command provenance, "
-            "Linux smoke evidence SHA-256 and Linux smoke release/run binding, "
+            "Linux smoke evidence SHA-256 and Linux smoke release/run/source head SHA binding, "
             "Linux workflow dispatch inputs when applicable, XP workflow dispatch inputs when applicable, "
             "XP evidence source file binding, XP evidence bundle SHA-256 digests, "
             "XP evidence validation command binding, XP evidence contract SHA-256, "
@@ -1098,10 +1643,12 @@ def _empty_registry() -> dict[str, Any]:
             "canonical XP smoke proof-file command binding, "
             "canonical XP smoke evidence-file summary binding and "
             "XP security smoke proof-line binding when applicable, and review "
-            "bundle manifest, review bundle archive, and review bundle SHA-256 sidecar digests "
+            "bundle manifest, review bundle archive, safe relative non-symlink review bundle archive entries, "
+            "and review bundle SHA-256 sidecar digests "
             "before strict promotion, and release uploads must include those review bundle files with matching "
             "size, SHA-256 and checksum-sidecar coverage; each accepted record must include "
-            "the promotion config SHA-256, have a unique target, all release evidence for one record must "
+            "the promotion config SHA-256, have a unique target, include no unrecognized top-level fields, "
+            "all release evidence for one record must "
             "use the same GitHub repository, and Windows XP x86/x64 pairs must use the same release_tag "
             "and GitHub repository. "
             "Empty means no promotion."

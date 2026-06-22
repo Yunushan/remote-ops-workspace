@@ -58,7 +58,9 @@ jobs:
       - name: Validate XP native evidence
         run: python scripts/check_xp_native_evidence.py --evidence "${{ inputs.evidence_file }}" --assets-dir "${{ inputs.assets_dir }}" --evidence-dir "${{ inputs.evidence_dir }}"
       - name: Validate XP promotion artifacts
-        run: python scripts/check_platform_promotion_artifacts.py --target "${{ inputs.target }}" --assets-dir "${{ inputs.assets_dir }}" --tag "${{ inputs.release_tag }}"
+        run: python scripts/check_platform_promotion_artifacts.py --target "${{ inputs.target }}" --assets-dir "${{ inputs.assets_dir }}" --tag "${{ inputs.release_tag }}" --strict
+      - name: Preflight XP local platform goal evidence
+        run: python scripts/check_platform_goal_local_evidence.py --root . --release-tag "${{ inputs.release_tag }}" --target "${{ inputs.target }}" --assets-dir "${{ inputs.assets_dir }}" --xp-evidence "${{ inputs.evidence_file }}" --xp-evidence-dir "${{ inputs.evidence_dir }}"
       - name: Generate XP accepted-evidence candidate
         run: python scripts/make_platform_verified_evidence_record.py --target "${{ inputs.target }}" --release-tag "${{ inputs.release_tag }}" --assets-dir "${{ inputs.assets_dir }}" --release-asset-base-url "${{ inputs.release_asset_base_url }}" --release-source-workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" --release-source-artifact-name "xp-native-evidence-${{ inputs.target }}-${{ inputs.release_tag }}" --release-source-head-sha "${{ github.sha }}" --xp-evidence "${{ inputs.evidence_file }}" --xp-evidence-dir "${{ inputs.evidence_dir }}" --out "xp-evidence-output/platform-verified-evidence-${{ inputs.target }}.json"
       - name: Package XP review evidence bundle

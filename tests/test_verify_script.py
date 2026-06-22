@@ -21,6 +21,7 @@ def test_verify_steps_include_full_checks_and_cli_smoke(tmp_path: Path) -> None:
     assert "platform parity promotion gate" in names
     assert "platform promotion runbook" in names
     assert "platform promotion artifact validator contract" in names
+    assert "protected platform local evidence preflight" in names
     assert "extended platform evidence workflow" in names
     assert "extended platform dispatch input validator" in names
     assert "extended Linux evidence bundle packer" in names
@@ -74,6 +75,7 @@ def test_verify_quick_mode_skips_pytest_but_keeps_cli_smoke(tmp_path: Path) -> N
     assert "platform parity promotion gate" in names
     assert "platform promotion runbook" in names
     assert "platform promotion artifact validator contract" in names
+    assert "protected platform local evidence preflight" in names
     assert "extended platform evidence workflow" in names
     assert "extended platform dispatch input validator" in names
     assert "extended Linux evidence bundle packer" in names
@@ -132,6 +134,7 @@ def test_verify_can_require_real_gui_render(tmp_path: Path) -> None:
 def test_verify_can_require_platform_goal_targets(tmp_path: Path) -> None:
     verify = _load_verify_module()
     bundle_dir = tmp_path / "platform-bundles"
+    release_assets_dir = tmp_path / "release-assets"
 
     default_steps = verify.build_steps("python", quick=True, row_home=tmp_path)
     strict_steps = verify.build_steps(
@@ -140,6 +143,7 @@ def test_verify_can_require_platform_goal_targets(tmp_path: Path) -> None:
         require_platform_goal_targets=True,
         release_tag="v1.0.3",
         platform_review_bundle_dir=bundle_dir,
+        release_assets_dir=release_assets_dir,
         row_home=tmp_path,
     )
 
@@ -179,10 +183,11 @@ def test_verify_can_require_platform_goal_targets(tmp_path: Path) -> None:
     assert ["--release-tag", "v1.0.3"] == strict_protected_report.command[-2:]
     assert "--require-complete" in strict_protected_gate.command
     assert ["--release-tag", "v1.0.3"] == strict_protected_gate.command[-2:]
-    assert ["--tag", "v1.0.3"] == strict_publish.command[2:4]
     assert ["--bundle-dir", str(bundle_dir)] == strict_bundle.command[2:4]
     assert "--require-goal-targets" in strict_bundle.command
     assert ["--release-tag", "v1.0.3"] == strict_bundle.command[-2:]
+    assert ["--assets-dir", str(release_assets_dir)] == strict_publish.command[2:4]
+    assert ["--tag", "v1.0.3"] == strict_publish.command[4:6]
 
 
 def test_verify_rejects_strict_platform_goal_without_release_tag(tmp_path: Path) -> None:
@@ -195,13 +200,15 @@ def test_verify_rejects_strict_platform_goal_without_release_tag(tmp_path: Path)
             "--require-platform-goal-targets",
             "--platform-review-bundle-dir",
             str(tmp_path),
+            "--release-assets-dir",
+            str(tmp_path / "release-assets"),
         ]
     )
 
     assert result == 2
 
 
-def test_verify_rejects_strict_platform_goal_without_review_bundle_dir() -> None:
+def test_verify_rejects_strict_platform_goal_without_review_bundle_dir(tmp_path: Path) -> None:
     verify = _load_verify_module()
 
     result = verify.main(
@@ -211,6 +218,26 @@ def test_verify_rejects_strict_platform_goal_without_review_bundle_dir() -> None
             "--require-platform-goal-targets",
             "--release-tag",
             "v1.0.3",
+            "--release-assets-dir",
+            str(tmp_path / "release-assets"),
+        ]
+    )
+
+    assert result == 2
+
+
+def test_verify_rejects_strict_platform_goal_without_release_assets_dir(tmp_path: Path) -> None:
+    verify = _load_verify_module()
+
+    result = verify.main(
+        [
+            "--quick",
+            "--no-cli-smoke",
+            "--require-platform-goal-targets",
+            "--release-tag",
+            "v1.0.3",
+            "--platform-review-bundle-dir",
+            str(tmp_path / "platform-bundles"),
         ]
     )
 

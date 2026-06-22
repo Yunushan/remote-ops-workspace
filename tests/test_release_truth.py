@@ -27,6 +27,71 @@ def test_release_truth_checker_rejects_stale_default_linux_patterns() -> None:
     assert "remote-ops-workspace-v1.0.2-linux-<amd64|arm64>.deb" in checker.REQUIRED_DOC_SNIPPETS
 
 
+def test_release_truth_checker_requires_turkish_platform_evidence_gate() -> None:
+    checker = _load_release_truth_checker()
+    original_read = checker.read
+
+    def fake_read(relative: str) -> str:
+        text = original_read(relative)
+        if relative == "README.tr.md":
+            return text.replace(
+                "python scripts/check_platform_verified_evidence.py --require-goal-targets --release-tag <tag>",
+                "python scripts/check_platform_verified_evidence.py",
+            )
+        return text
+
+    checker.read = fake_read
+    try:
+        errors = checker.check_release_docs()
+    finally:
+        checker.read = original_read
+
+    assert any("README.tr.md missing protected platform evidence truth snippet" in error for error in errors)
+
+
+def test_release_truth_checker_requires_readme_release_section_strict_platform_publish_gate() -> None:
+    checker = _load_release_truth_checker()
+    original_read = checker.read
+
+    def fake_read(relative: str) -> str:
+        text = original_read(relative)
+        if relative == "README.md":
+            return text.replace(
+                "`python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --require-platform-goal-targets`\n"
+                "to verify",
+                "`python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag>`\n"
+                "to verify",
+            )
+        return text
+
+    checker.read = fake_read
+    try:
+        errors = checker.check_release_docs()
+    finally:
+        checker.read = original_read
+
+    assert any("README.md release section missing protected platform evidence truth snippet" in error for error in errors)
+
+
+def test_release_truth_checker_rejects_stale_turkish_release_version() -> None:
+    checker = _load_release_truth_checker()
+    original_read = checker.read
+
+    def fake_read(relative: str) -> str:
+        text = original_read(relative)
+        if relative == "README.tr.md":
+            return text.replace("release-v1.0.2", "release-v1.0.1")
+        return text
+
+    checker.read = fake_read
+    try:
+        errors = checker.check_release_docs()
+    finally:
+        checker.read = original_read
+
+    assert "README.tr.md still contains stale release truth snippet: release-v1.0.1" in errors
+
+
 def test_release_truth_checker_requires_release_preflight_job() -> None:
     checker = _load_release_truth_checker()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(

@@ -54,6 +54,25 @@ def test_xp_native_evidence_accepts_x86_bundle(tmp_path: Path) -> None:
     assert errors == []
 
 
+def test_xp_native_evidence_rejects_extra_asset_file(tmp_path: Path) -> None:
+    checker = _load_xp_native_evidence_checker()
+    artifact_checker = _load_platform_promotion_artifacts_checker()
+    tag = f"v{artifact_checker.read_project_version()}"
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    names = _required_artifact_names(artifact_checker, "windows-xp-native-x86", tag)
+    _write_artifact_set(assets, names)
+    (assets / "unexpected.txt").write_text("extra\n", encoding="utf-8")
+    evidence = tmp_path / "xp-evidence.json"
+    data = _valid_evidence("windows-xp-native-x86", "x86", "SP3", tag, names)
+    _attach_smoke_evidence_files(tmp_path, data)
+    evidence.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(evidence, assets_dir=assets)
+
+    assert "windows-xp-native-x86 artifacts include unexpected files: ['unexpected.txt']" in errors
+
+
 def test_xp_native_evidence_rejects_current_stack_claim(tmp_path: Path) -> None:
     checker = _load_xp_native_evidence_checker()
     evidence = _valid_evidence("windows-xp-native-x64", "x64", "SP2", "v1.0.2", [])
@@ -216,6 +235,153 @@ def test_xp_native_evidence_rejects_missing_smoke_evidence_file(tmp_path: Path) 
     errors = checker.check_xp_native_evidence(path)
 
     assert any("smoke result cli_launch evidence_file missing" in error for error in errors)
+
+
+def test_xp_native_evidence_rejects_symlinked_evidence_file(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    checker = _load_xp_native_evidence_checker()
+    evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self == path
+
+    monkeypatch.setattr(type(tmp_path), "is_symlink", fake_is_symlink)
+
+    errors = checker.check_xp_native_evidence(path)
+
+    assert f"evidence file must not be a symlink: {path}" in errors
+
+
+def test_xp_native_evidence_rejects_symlinked_evidence_directory(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    checker = _load_xp_native_evidence_checker()
+    evidence = _valid_evidence("windows-xp-native-x64", "x64", "SP2", "v1.0.2", [])
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self == tmp_path
+
+    monkeypatch.setattr(type(tmp_path), "is_symlink", fake_is_symlink)
+
+    errors = checker.check_xp_native_evidence(path, evidence_dir=tmp_path)
+
+    assert f"evidence directory must not be a symlink: {tmp_path}" in errors
+
+
+def test_xp_native_evidence_rejects_symlinked_evidence_directory_parent(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    checker = _load_xp_native_evidence_checker()
+    linked_parent = tmp_path / "linked-evidence"
+    evidence_root = linked_parent / "xp-evidence-root"
+    path = evidence_root / "xp-evidence.json"
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self == linked_parent
+
+    monkeypatch.setattr(type(tmp_path), "is_symlink", fake_is_symlink)
+
+    errors = checker.check_xp_native_evidence(path, evidence_dir=evidence_root)
+
+    assert errors == [
+        f"evidence directory path must not contain symlinked directories: {linked_parent}"
+    ]
+
+
+def test_xp_native_evidence_rejects_evidence_file_outside_evidence_directory(
+    tmp_path: Path,
+) -> None:
+    checker = _load_xp_native_evidence_checker()
+    evidence_root = tmp_path / "evidence-root"
+    evidence_root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
+    _attach_smoke_evidence_files(evidence_root, evidence)
+    path = outside / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path, evidence_dir=evidence_root)
+
+    assert f"evidence file must stay inside evidence directory: {path}" in errors
+
+
+def test_xp_native_evidence_rejects_symlinked_evidence_file_parent(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    checker = _load_xp_native_evidence_checker()
+    evidence_root = tmp_path / "evidence-root"
+    evidence_parent = evidence_root / "linked-parent"
+    evidence_parent.mkdir(parents=True)
+    path = evidence_parent / "xp-evidence.json"
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self == evidence_parent
+
+    monkeypatch.setattr(type(tmp_path), "is_symlink", fake_is_symlink)
+
+    errors = checker.check_xp_native_evidence(path, evidence_dir=evidence_root)
+
+    assert "evidence file path must not contain symlinks: linked-parent" in errors
+
+
+def test_xp_native_evidence_rejects_symlinked_smoke_evidence_file(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    checker = _load_xp_native_evidence_checker()
+    evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    symlink_name = "cli_launch.txt"
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self.name == symlink_name
+
+    monkeypatch.setattr(type(tmp_path), "is_symlink", fake_is_symlink)
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path)
+
+    assert (
+        "windows-xp-native-x86 smoke result cli_launch evidence_file path must not contain symlinks: "
+        "xp-smoke-evidence/cli_launch.txt"
+    ) in errors
+
+
+def test_xp_native_evidence_rejects_symlinked_smoke_evidence_parent(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    checker = _load_xp_native_evidence_checker()
+    evidence = _valid_evidence("windows-xp-native-x64", "x64", "SP2", "v1.0.2", [])
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    symlink_name = "xp-smoke-evidence"
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self.name == symlink_name
+
+    monkeypatch.setattr(type(tmp_path), "is_symlink", fake_is_symlink)
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path)
+
+    assert (
+        "windows-xp-native-x64 smoke result cli_launch evidence_file path must not contain symlinks: "
+        "xp-smoke-evidence"
+    ) in errors
 
 
 def test_xp_native_evidence_rejects_unscoped_smoke_evidence_file(tmp_path: Path) -> None:
@@ -536,11 +702,33 @@ def test_xp_native_evidence_rejects_duplicate_artifact_validation_tag(tmp_path: 
     ) in errors
 
 
+def test_xp_native_evidence_rejects_missing_artifact_validation_strict(tmp_path: Path) -> None:
+    checker = _load_xp_native_evidence_checker()
+    artifact_checker = _load_platform_promotion_artifacts_checker()
+    tag = f"v{artifact_checker.read_project_version()}"
+    names = _required_artifact_names(artifact_checker, "windows-xp-native-x86", tag)
+    evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", tag, names)
+    evidence["artifact_validation"]["command"] = evidence["artifact_validation"]["command"].replace(
+        " --strict",
+        "",
+    )
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path)
+
+    assert (
+        "windows-xp-native-x86 evidence artifact_validation.command must include exactly one --strict, got 0"
+        in errors
+    )
+
+
 def test_xp_native_evidence_rejects_missing_artifact_validation_assets_dir(tmp_path: Path) -> None:
     checker = _load_xp_native_evidence_checker()
     evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
     evidence["artifact_validation"]["command"] = (
-        "python scripts/check_platform_promotion_artifacts.py --target windows-xp-native-x86 --tag v1.0.2"
+        "python scripts/check_platform_promotion_artifacts.py --target windows-xp-native-x86 --tag v1.0.2 --strict"
     )
     _attach_smoke_evidence_files(tmp_path, evidence)
     path = tmp_path / "xp-evidence.json"
@@ -559,7 +747,7 @@ def test_xp_native_evidence_rejects_placeholder_artifact_validation_assets_dir(t
     evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
     evidence["artifact_validation"]["command"] = (
         "python scripts/check_platform_promotion_artifacts.py --target windows-xp-native-x86 "
-        "--assets-dir <artifact-dir> --tag v1.0.2"
+        "--assets-dir <artifact-dir> --tag v1.0.2 --strict"
     )
     _attach_smoke_evidence_files(tmp_path, evidence)
     path = tmp_path / "xp-evidence.json"
@@ -579,7 +767,7 @@ def test_xp_native_evidence_rejects_unscoped_artifact_validation_assets_dir(tmp_
     evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
     evidence["artifact_validation"]["command"] = (
         "python scripts/check_platform_promotion_artifacts.py --target windows-xp-native-x86 "
-        "--assets-dir native-dist/windows-xp --tag v1.0.2"
+        "--assets-dir native-dist/windows-xp --tag v1.0.2 --strict"
     )
     _attach_smoke_evidence_files(tmp_path, evidence)
     path = tmp_path / "xp-evidence.json"
@@ -594,6 +782,82 @@ def test_xp_native_evidence_rejects_unscoped_artifact_validation_assets_dir(tmp_
     assert (
         "windows-xp-native-x86 evidence artifact_validation.command --assets-dir "
         "must include release_tag path segment 'v1.0.2', got 'native-dist/windows-xp'"
+    ) in errors
+
+
+def test_xp_native_evidence_rejects_windows_drive_artifact_validation_assets_dir(
+    tmp_path: Path,
+) -> None:
+    checker = _load_xp_native_evidence_checker()
+    evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
+    evidence["artifact_validation"]["command"] = (
+        "python scripts/check_platform_promotion_artifacts.py --target windows-xp-native-x86 "
+        "--assets-dir C:/staged/windows-xp-native-x86/v1.0.2/artifacts --tag v1.0.2 --strict"
+    )
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path)
+
+    assert (
+        "windows-xp-native-x86 evidence artifact_validation.command --assets-dir "
+        "must be workspace-relative, got 'C:/staged/windows-xp-native-x86/v1.0.2/artifacts'"
+    ) in errors
+
+
+def test_xp_native_evidence_rejects_reserved_and_hidden_artifact_validation_assets_dir(
+    tmp_path: Path,
+) -> None:
+    checker = _load_xp_native_evidence_checker()
+    target = "windows-xp-native-x86"
+    evidence = _valid_evidence(target, "x86", "SP3", "v1.0.2", [])
+    evidence["artifact_validation"]["command"] = (
+        f"python scripts/check_platform_promotion_artifacts.py --target {target} "
+        f"--assets-dir .github/{target}/v1.0.2/artifacts --tag v1.0.2 --strict"
+    )
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path)
+
+    assert (
+        f"{target} evidence artifact_validation.command --assets-dir "
+        "must not point inside reserved workspace directory '.github'"
+    ) in errors
+
+    evidence["artifact_validation"]["command"] = (
+        f"python scripts/check_platform_promotion_artifacts.py --target {target} "
+        f"--assets-dir staged/.private/{target}/v1.0.2/artifacts --tag v1.0.2 --strict"
+    )
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path)
+
+    assert (
+        f"{target} evidence artifact_validation.command --assets-dir "
+        "must not contain hidden path segments: ['.private']"
+    ) in errors
+
+
+def test_xp_native_evidence_rejects_path_qualified_artifact_name(tmp_path: Path) -> None:
+    checker = _load_xp_native_evidence_checker()
+    artifact_checker = _load_platform_promotion_artifacts_checker()
+    tag = f"v{artifact_checker.read_project_version()}"
+    names = _required_artifact_names(artifact_checker, "windows-xp-native-x86", tag)
+    artifact_name = names[0]
+    evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", tag, list(names))
+    evidence["artifacts"][0] = f"nested/{artifact_name}"
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path)
+
+    assert (
+        "windows-xp-native-x86 evidence artifact name must be a file name, "
+        f"got 'nested/{artifact_name}'"
     ) in errors
 
 
@@ -664,7 +928,7 @@ def _valid_evidence(
             "passed": True,
             "command": (
                 f"python scripts/check_platform_promotion_artifacts.py --target {target} "
-                f"--assets-dir native-dist/windows-xp/{target}/{release_tag} --tag {release_tag}"
+                f"--assets-dir native-dist/windows-xp/{target}/{release_tag} --tag {release_tag} --strict"
             ),
         },
         "artifacts": artifacts or [f"remote-ops-workspace-{target}-placeholder"],

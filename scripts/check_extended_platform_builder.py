@@ -56,24 +56,21 @@ def main(argv: list[str] | None = None) -> int:
                 args.source_head_sha,
             )
         )
+    if args.out:
+        errors.extend(check_builder_identity_output_path(args.target, args.out))
     if errors:
         for error in errors:
             print(f"extended platform builder: {error}", file=sys.stderr)
         return 1
     if args.out:
-        args.out.parent.mkdir(parents=True, exist_ok=True)
-        args.out.write_text(
-            json.dumps(
-                builder_identity(
-                    args.target,
-                    release_tag=str(args.release_tag),
-                    workflow_run_url=str(args.workflow_run_url),
-                    source_head_sha=str(args.source_head_sha),
-                ),
-                indent=2,
-            )
-            + "\n",
-            encoding="utf-8",
+        write_builder_identity_output(
+            args.out,
+            builder_identity(
+                args.target,
+                release_tag=str(args.release_tag),
+                workflow_run_url=str(args.workflow_run_url),
+                source_head_sha=str(args.source_head_sha),
+            ),
         )
     print(f"extended platform builder checks passed for {args.target}")
     return 0
@@ -144,6 +141,45 @@ def check_builder_identity_context(
     elif not GITHUB_HEAD_SHA_RE.fullmatch(str(source_head_sha)):
         errors.append(f"{target} builder identity --source-head-sha must be a 40-character lowercase Git SHA")
     return errors
+
+
+def check_builder_identity_output_path(target: str, path: Path) -> list[str]:
+    errors: list[str] = []
+    expected_name = f"builder-identity-{target}.json"
+    if path.name != expected_name:
+        errors.append(
+            f"{target} builder identity output file name must be {expected_name}, got {path.name!r}"
+        )
+    parent = path.parent
+    if parent.is_symlink():
+        errors.append(f"builder identity output directory must not be a symlink: {parent}")
+        return errors
+    parent_errors = check_path_parent_symlinks(parent, "builder identity output directory")
+    if parent_errors:
+        errors.extend(parent_errors)
+        return errors
+    if parent.exists() and not parent.is_dir():
+        errors.append(f"builder identity output directory must be a directory: {parent}")
+    if path.is_symlink():
+        errors.append(f"builder identity output file must not be a symlink: {path}")
+    if path.exists() and not path.is_file():
+        errors.append(f"builder identity output file must be a regular file: {path}")
+    return errors
+
+
+def write_builder_identity_output(path: Path, data: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+
+def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
+    check_path = path if path.is_absolute() else Path.cwd() / path
+    for parent in reversed(check_path.parents):
+        if parent == Path("."):
+            continue
+        if parent.is_symlink():
+            return [f"{label} path must not contain symlinked directories: {parent}"]
+    return []
 
 
 def builder_identity(

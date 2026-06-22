@@ -102,7 +102,7 @@ accepted records, the generated readiness report must keep the current partial
 rows. The strict promotion path is
 `python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-complete`,
 `python scripts/check_platform_verified_evidence.py --require-goal-targets --release-tag v<project.version>`
-and `python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir>`;
+and `python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> --release-assets-dir <release-assets-dir>`;
 those commands must fail until linux-i386, linux-armhf,
 windows-xp-native-x86 and windows-xp-native-x64 all have accepted records for
 the same release tag. Mixed-release accepted records remain aggregate evidence
@@ -117,8 +117,9 @@ bundle manifest, review bundle archive and review bundle SHA-256 sidecar.
 registry in finalized-only mode by default; `--allow-unfinalized-candidates`
 is only for local candidate validation before append.
 Review bundle archives must include every native artifact recorded in their
-bundle manifests, so reviewers can verify the artifact bytes as well as the
-metadata, smoke logs and candidate record.
+bundle manifests as safe relative non-symlink ZIP entries, so reviewers can
+verify the artifact bytes as well as the metadata, smoke logs and candidate
+record.
 Accepted records must include release asset URLs, per-artifact SHA-256 digests
 for every required promotion artifact, and the promotion config SHA-256 for the
 current `configs/platform_parity_promotion.json` contract. Every release asset
@@ -126,8 +127,9 @@ URL must use the same `/releases/download/<tag>/` segment as the record
 `release_tag`.
 The URL and hash filename sets must exactly match the target's required
 artifact names; missing, duplicate or extra files keep the row partial. Staged
-Linux and XP promotion uploads must also verify native artifact and review-bundle
-file hashes against the finalized accepted record before upload.
+Linux and XP promotion artifact directories and contained files must be plain
+non-symlink paths, and promotion uploads must also verify native artifact and
+review-bundle file hashes against the finalized accepted record before upload.
 The accepted record's artifact validation command must also use the same target
 id, exactly one concrete `--assets-dir` value and exactly one `--tag` value
 matching the record. Placeholder paths such as `<artifact-dir>` are valid in
@@ -177,7 +179,8 @@ tracked `scripts/xp_smoke_runner.cmd` per-smoke command provenance in
 `xp_evidence_contract_sha256` for the
 current XP evidence contract. Each smoke evidence file must include proof lines
 for `xp smoke target`, `xp smoke release` and `xp smoke id`, so copied evidence
-from another target, smoke or release tag cannot promote. The current XP
+from another target, smoke or release tag cannot promote; smoke evidence paths
+must also be plain non-symlink files under `xp-smoke-evidence/`. The current XP
 evidence contract requires XP x86
 SP3 evidence and Windows XP Professional x64 Edition SP2 evidence before either
 native-host row can promote.
@@ -198,9 +201,9 @@ Current readiness:
 - Linux i386: 70.0%, script-supported native. Promotion requires a real
   i386/i686 release builder, default `linux-native` release matrix membership,
   upload/publish asset coverage, `scripts/make_linux_native.sh` output,
-  `scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux --target linux-i386 --workflow-run-url <github-actions-run-url>`, native
+  `scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux --target linux-i386 --workflow-run-url <github-actions-run-url> --source-head-sha <github-actions-head-sha>`, native
   manifest evidence, checksum sidecars and
-  `python scripts/check_platform_promotion_artifacts.py --target linux-i386 --assets-dir <artifact-dir> --tag v<project.version>`.
+  `python scripts/check_platform_promotion_artifacts.py --target linux-i386 --assets-dir <artifact-dir> --tag v<project.version> --strict`.
   The dispatch-only evidence workflow uses a `[self-hosted, linux, i386]`
   runner and uploads `extended-linux-evidence-linux-i386-v<project.version>`, including
   `builder-identity-linux-i386.json` and
@@ -213,9 +216,9 @@ Current readiness:
 - Linux armhf: 70.0%, script-supported native. Promotion requires a real
   armv7l/armhf release builder, default `linux-native` release matrix
   membership, upload/publish asset coverage, `scripts/make_linux_native.sh`
-  output, `scripts/smoke_linux_native.sh --arch armhf --dist native-dist/linux --target linux-armhf --workflow-run-url <github-actions-run-url>`,
+  output, `scripts/smoke_linux_native.sh --arch armhf --dist native-dist/linux --target linux-armhf --workflow-run-url <github-actions-run-url> --source-head-sha <github-actions-head-sha>`,
   native manifest evidence, checksum sidecars and
-  `python scripts/check_platform_promotion_artifacts.py --target linux-armhf --assets-dir <artifact-dir> --tag v<project.version>`.
+  `python scripts/check_platform_promotion_artifacts.py --target linux-armhf --assets-dir <artifact-dir> --tag v<project.version> --strict`.
   The dispatch-only evidence workflow uses a `[self-hosted, linux, armhf]`
   runner and uploads `extended-linux-evidence-linux-armhf-v<project.version>`, including
   `builder-identity-linux-armhf.json` and
@@ -231,9 +234,9 @@ Current readiness:
   evidence, native artifact evidence, and
   security proof that weak TLS/SSH/RDP compatibility remains profile-scoped and
   never lowers modern OS defaults. Validate XP artifact sets with
-  `python scripts/check_platform_promotion_artifacts.py --target windows-xp-native-x86 --assets-dir <artifact-dir> --tag v<project.version>`
+  `python scripts/check_platform_promotion_artifacts.py --target windows-xp-native-x86 --assets-dir <artifact-dir> --tag v<project.version> --strict`
   and
-  `python scripts/check_platform_promotion_artifacts.py --target windows-xp-native-x64 --assets-dir <artifact-dir> --tag v<project.version>`.
+  `python scripts/check_platform_promotion_artifacts.py --target windows-xp-native-x64 --assets-dir <artifact-dir> --tag v<project.version> --strict`.
   Start collection with
   `python scripts/make_xp_native_evidence_template.py --target windows-xp-native-x86 --release-tag v<project.version> --out-dir <evidence-dir>`
   or

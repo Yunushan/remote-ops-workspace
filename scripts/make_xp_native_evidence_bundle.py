@@ -26,6 +26,7 @@ from check_platform_verified_evidence import (  # noqa: E402
 from check_xp_native_evidence import check_xp_native_evidence  # noqa: E402
 from make_platform_verified_evidence_record import (  # noqa: E402
     sha256_file,
+    xp_evidence_summary,
     xp_host_identity_summary,
     xp_smoke_evidence_sha256_map,
 )
@@ -84,6 +85,9 @@ def make_xp_native_evidence_bundle(
     force: bool = False,
 ) -> list[str]:
     errors: list[str] = []
+    errors.extend(check_input_symlinks(evidence, candidate_record, evidence_dir=evidence_dir))
+    if errors:
+        return errors
     evidence_data = load_evidence(evidence, errors)
     candidate_data = load_json_file(candidate_record, "candidate evidence record", errors)
     if evidence_data is None:
@@ -125,16 +129,14 @@ def make_xp_native_evidence_bundle(
     if errors:
         return errors
 
-    out_dir.mkdir(parents=True, exist_ok=True)
     stem = f"xp-native-evidence-bundle-{target}-{release_tag}"
     manifest_path = out_dir / f"{stem}.json"
     archive_path = out_dir / f"{stem}.zip"
     sha_path = out_dir / f"{stem}-SHA256SUMS.txt"
     outputs = (manifest_path, archive_path, sha_path)
-    if not force:
-        existing = [str(path) for path in outputs if path.exists()]
-        if existing:
-            return [f"refusing to overwrite existing XP evidence bundle outputs: {existing}"]
+    errors.extend(prepare_output_paths(out_dir=out_dir, outputs=outputs, force=force))
+    if errors:
+        return errors
 
     manifest = bundle_manifest(
         target=target,
@@ -161,6 +163,59 @@ def make_xp_native_evidence_bundle(
         f"{sha256_file(archive_path)}  {archive_path.name}\n",
         encoding="utf-8",
     )
+    return []
+
+
+def check_input_symlinks(
+    evidence: Path,
+    candidate_record: Path,
+    *,
+    evidence_dir: Path | None,
+) -> list[str]:
+    inputs = {
+        "evidence": evidence,
+        "candidate evidence record": candidate_record,
+    }
+    if evidence_dir is not None:
+        inputs["evidence directory"] = evidence_dir
+    return [
+        f"{label} must not be a symlink: {path}"
+        for label, path in inputs.items()
+        if path.is_symlink()
+    ]
+
+
+def prepare_output_paths(*, out_dir: Path, outputs: tuple[Path, ...], force: bool) -> list[str]:
+    if out_dir.is_symlink():
+        return [f"XP native evidence bundle output directory must not be a symlink: {out_dir}"]
+    parent_errors = check_path_parent_symlinks(out_dir, "XP native evidence bundle output directory")
+    if parent_errors:
+        return parent_errors
+    if out_dir.exists() and not out_dir.is_dir():
+        return [f"XP native evidence bundle output path must be a directory: {out_dir}"]
+    errors: list[str] = []
+    for path in outputs:
+        if path.is_symlink():
+            errors.append(f"XP native evidence bundle output file must not be a symlink: {path.name}")
+        elif path.exists() and not path.is_file():
+            errors.append(f"XP native evidence bundle output must be a regular file: {path.name}")
+    if errors:
+        return errors
+    if not force:
+        existing = [str(path) for path in outputs if path.exists()]
+        if existing:
+            return [f"refusing to overwrite existing XP evidence bundle outputs: {existing}"]
+    out_dir.mkdir(parents=True, exist_ok=True)
+    return []
+
+
+def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
+    check_path = path if path.is_absolute() else Path.cwd() / path
+    for parent in reversed(check_path.parents):
+        if parent == Path("."):
+            continue
+        if parent.is_symlink():
+            return [f"{label} path must not contain symlinked directories: {parent}"]
     return []
 
 
@@ -216,6 +271,8 @@ def validate_candidate_record(
         errors.append("candidate record xp_evidence_sha256 must match XP evidence file")
     if candidate_data.get("xp_host_identity_sha256") != json_sha256(xp_host_identity_summary(evidence_data)):
         errors.append("candidate record xp_host_identity_sha256 must match XP host identity")
+    if candidate_data.get("xp_evidence_summary") != xp_evidence_summary(target, release_tag, evidence_data):
+        errors.append("candidate record xp_evidence_summary must match XP evidence file")
     if candidate_data.get("xp_smoke_evidence_sha256") != xp_smoke_evidence_sha256_map(evidence_data):
         errors.append("candidate record xp_smoke_evidence_sha256 must match XP evidence smoke hashes")
     if candidate_data.get("xp_evidence_sources") != xp_evidence_sources(
@@ -235,8 +292,11 @@ def validate_candidate_record(
         }
         if {str(name): str(digest) for name, digest in candidate_artifacts.items()} != artifact_hashes:
             errors.append("candidate record artifact_sha256 must exactly match XP artifact files")
-    if not candidate_record.name.startswith(f"platform-verified-evidence-{target}"):
-        errors.append(f"candidate record filename should start with platform-verified-evidence-{target}")
+    expected_candidate_name = f"platform-verified-evidence-{target}.json"
+    if candidate_record.name != expected_candidate_name:
+        errors.append(
+            f"candidate record file name must be {expected_candidate_name}, got {candidate_record.name!r}"
+        )
     return errors
 
 
@@ -259,6 +319,7 @@ def bundle_manifest(
         "release_tag": release_tag,
         "validated_commands": [
             xp_evidence_validation_command(evidence=evidence, assets_dir=assets_dir, evidence_root=evidence_root),
+            str(candidate_data.get("local_evidence_preflight_command", "")),
             xp_strict_artifact_validation_command(candidate_data),
             "python scripts/check_platform_verified_evidence.py",
         ],

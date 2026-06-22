@@ -300,8 +300,8 @@ it must fail until linux-i386, linux-armhf, windows-xp-native-x86 and
 windows-xp-native-x64 all have finalized accepted records for the same release tag.
 Mixed-release accepted records remain visible as aggregate evidence, but the protected goal
 parity block stays incomplete until one release has all four targets. The release/verifier promotion
-gate is `python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir>`,
-which also runs `python scripts/check_release_publish_assets.py --require-platform-goal-targets`
+gate is `python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> --release-assets-dir <release-assets-dir>`,
+which also runs `python scripts/check_release_publish_assets.py --assets-dir <release-assets-dir> --require-platform-goal-targets`
 and must fail until the same four records are finalized and accepted. Today Linux i386 and
 armhf remain script-supported at 70.0% until matching release builders, default
 release matrix entries, smoke evidence, checksum sidecars and native manifests
@@ -516,14 +516,21 @@ broader platform support catalog exposed by `row platforms --json`.
 Release manifests include `size_bytes` and `sha256` for each artifact, and CI
 build jobs run with read-only checkout credentials until the final publish step.
 The release workflow also starts with a `release-preflight` job that runs
-`python scripts/verify.py --quick --no-cli-smoke`,
-`python scripts/check_platform_verified_evidence.py --require-goal-targets --release-tag`
+`python scripts/verify.py --quick --no-cli-smoke --release-tag <tag>`,
+`python scripts/check_platform_verified_evidence.py --require-goal-targets --release-tag <tag>`
 and `python scripts/check_repository_cleanup.py --require-clean`; source, native
-and publish jobs all depend on that gate.
+`accepted-platform-evidence-assets` and publish jobs all depend on that gate.
+The `accepted-platform-evidence-assets` job runs
+`python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets`
+to copy only same-tag, SHA-bound accepted evidence artifacts into the release
+asset directory. Linux i386, Linux armhf, windows-xp-native-x86 and
+windows-xp-native-x64 require finalized accepted evidence records for the same
+release tag before any 100% platform-readiness or native-host parity claim.
 Before upload, the publish job runs
-`python scripts/check_release_publish_assets.py --assets-dir release-assets --tag`
+`python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --require-platform-goal-targets`
 to verify the downloaded asset set, checksum sidecars and release manifest
-against `configs/release_matrix.json`; the same check validates
+against `configs/release_matrix.json`, `configs/platform_verified_evidence.json`
+and the accepted review-bundle hashes; the same check validates
 `configs/mobaxterm_parity_evidence.json`, and
 `--require-mobaxterm-parity-complete` is the hard gate for releases that claim
 complete strict MobaXterm Home/Professional product-depth parity.

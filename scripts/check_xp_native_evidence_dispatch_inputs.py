@@ -43,7 +43,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--release-asset-base-url",
         required=True,
-        help="GitHub release download base URL ending in /releases/download/vX.Y.Z",
+        help="Exact GitHub release download base URL: https://github.com/<owner>/<repo>/releases/download/vX.Y.Z",
     )
     parser.add_argument("--workflow-run-url", required=True, help="GitHub Actions run URL for this evidence run")
     parser.add_argument(
@@ -80,12 +80,12 @@ def check_xp_native_evidence_dispatch_inputs(
     if not RELEASE_TAG_RE.fullmatch(release_tag):
         errors.append(f"release_tag must look like vX.Y.Z, got {release_tag!r}")
 
-    release_match = GITHUB_RELEASE_RE.fullmatch(release_asset_base_url.rstrip("/"))
+    release_match = GITHUB_RELEASE_RE.fullmatch(release_asset_base_url)
     run_match = GITHUB_RUN_RE.fullmatch(workflow_run_url.rstrip("/"))
     if not release_match:
         errors.append(
-            "--release-asset-base-url must be a GitHub release download URL ending in "
-            f"/releases/download/{release_tag}"
+            "--release-asset-base-url must be exactly "
+            f"https://github.com/<owner>/<repo>/releases/download/{release_tag}"
         )
     elif release_match.group(2) != release_tag:
         errors.append(f"release_asset_base_url tag must match release_tag {release_tag}, got {release_match.group(2)}")
@@ -173,11 +173,13 @@ def check_target_release_scoped_path(
 
 
 def workspace_path_parts(path: str) -> tuple[tuple[str, ...], bool]:
-    if "\\" in path:
-        win_path = PureWindowsPath(path)
-        return win_path.parts, win_path.is_absolute() or bool(win_path.drive)
+    win_path = PureWindowsPath(path)
     posix_path = PurePosixPath(path)
-    return posix_path.parts, posix_path.is_absolute()
+    win_absolute = win_path.is_absolute() or bool(win_path.drive)
+    posix_absolute = posix_path.is_absolute()
+    if "\\" in path or win_absolute:
+        return win_path.parts, win_absolute or posix_absolute
+    return posix_path.parts, win_absolute or posix_absolute
 
 
 if __name__ == "__main__":

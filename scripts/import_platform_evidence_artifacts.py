@@ -24,6 +24,7 @@ from check_platform_verified_evidence import (  # noqa: E402
     RELEASE_SOURCE_HEAD_SHA_RE,
     accepted_record_source_file,
     check_platform_verified_evidence,
+    exact_safe_file_name,
     read_json,
     release_source_workflow,
 )
@@ -136,6 +137,9 @@ def import_platform_evidence_artifacts(
     release_head_sha: str | None = None,
 ) -> list[str]:
     errors: list[str] = []
+    errors.extend(ensure_output_directory(out_dir))
+    if errors:
+        return errors
     out_dir.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="platform-evidence-import-") as tmp:
         download_root = Path(tmp)
@@ -150,6 +154,17 @@ def import_platform_evidence_artifacts(
                 )
             )
     return errors
+
+
+def ensure_output_directory(out_dir: Path) -> list[str]:
+    if out_dir.is_symlink():
+        return [f"release asset import output directory must not be a symlink: {out_dir}"]
+    parent_errors = check_path_parent_symlinks(out_dir, "release asset import output directory")
+    if parent_errors:
+        return parent_errors
+    if out_dir.exists() and not out_dir.is_dir():
+        return [f"release asset import output path must be a directory: {out_dir}"]
+    return []
 
 
 def import_record(
@@ -299,6 +314,13 @@ def copy_expected_files(record: dict[str, Any], *, source_root: Path, out_dir: P
     target = str(record.get("target", ""))
     errors: list[str] = []
     expected_files = expected_release_files(record)
+    unsafe_files = sorted(filename for filename in expected_files if not exact_safe_file_name(filename))
+    if unsafe_files:
+        return [f"{target} release asset import expected files must be exact safe file names: {unsafe_files}"]
+    if source_root.is_symlink():
+        errors.append(f"{target} downloaded artifact directory must not be a symlink: {source_root}")
+    else:
+        errors.extend(check_path_parent_symlinks(source_root, f"{target} downloaded artifact directory"))
     if not source_root.is_dir():
         errors.append(f"{target} downloaded artifact directory missing: {source_root}")
     for filename in sorted(expected_files):
@@ -307,12 +329,19 @@ def copy_expected_files(record: dict[str, Any], *, source_root: Path, out_dir: P
             errors.append(f"{target} release asset import source must not be a symlink: {filename}")
         elif not source.is_file():
             errors.append(f"{target} downloaded artifact missing expected release file: {filename}")
+    errors.extend(ensure_output_directory(out_dir))
     if errors:
         return errors
     out_dir.mkdir(parents=True, exist_ok=True)
     for filename in sorted(expected_files):
         source = source_root / filename
         destination = out_dir / filename
+        if destination.is_symlink():
+            errors.append(f"{target} release asset import destination must not be a symlink: {filename}")
+            continue
+        if destination.exists() and not destination.is_file():
+            errors.append(f"{target} release asset import destination must be a regular file: {filename}")
+            continue
         if destination.exists() and sha256_file(destination) != sha256_file(source):
             errors.append(f"{target} release asset import would overwrite different file: {filename}")
             continue
@@ -338,6 +367,11 @@ def validate_downloaded_source_file_set(
     source_root: Path,
     expected_files: set[str],
 ) -> list[str]:
+    if source_root.is_symlink():
+        return [f"{target} downloaded artifact directory must not be a symlink: {source_root}"]
+    parent_errors = check_path_parent_symlinks(source_root, f"{target} downloaded artifact directory")
+    if parent_errors:
+        return parent_errors
     if not source_root.is_dir():
         return [f"{target} downloaded artifact directory missing: {source_root}"]
     errors: list[str] = []
@@ -372,7 +406,10 @@ def check_imported_hashes(record: dict[str, Any], *, out_dir: Path) -> list[str]
     if isinstance(artifact_hashes, dict):
         for filename, digest in sorted(artifact_hashes.items()):
             path = out_dir / str(filename)
-            if path.is_file() and sha256_file(path) != str(digest):
+            if not path.is_file():
+                errors.append(f"{target} imported native artifact missing: {filename}")
+                continue
+            if sha256_file(path) != str(digest):
                 errors.append(f"{target} imported native artifact SHA-256 mismatch: {filename}")
     review_bundle = record.get("review_bundle")
     if isinstance(review_bundle, dict):
@@ -382,7 +419,12 @@ def check_imported_hashes(record: dict[str, Any], *, out_dir: Path) -> list[str]
                 continue
             filename = str(bundle_record.get("file", ""))
             path = out_dir / filename
-            if path.is_file() and sha256_file(path) != str(bundle_record.get("sha256", "")):
+            if not path.is_file():
+                errors.append(f"{target} imported review bundle {key} missing: {filename}")
+                continue
+            if bundle_record.get("size_bytes") != path.stat().st_size:
+                errors.append(f"{target} imported review bundle {key} size_bytes mismatch: {filename}")
+            if sha256_file(path) != str(bundle_record.get("sha256", "")):
                 errors.append(f"{target} imported review bundle {key} SHA-256 mismatch: {filename}")
     return errors
 
@@ -398,6 +440,7 @@ def check_imported_review_bundle(record: dict[str, Any], *, out_dir: Path) -> li
 
 def expected_release_files(record: dict[str, Any]) -> set[str]:
     files: set[str] = set()
+    target = str(record.get("target", ""))
     artifact_hashes = record.get("artifact_sha256")
     if isinstance(artifact_hashes, dict):
         files.update(str(name) for name in artifact_hashes)
@@ -409,6 +452,8 @@ def expected_release_files(record: dict[str, Any]) -> set[str]:
                 filename = str(bundle_record.get("file", ""))
                 if filename:
                     files.add(filename)
+    if target in PROTECTED_GOAL_TARGETS:
+        files.add(accepted_record_source_file(target))
     return files
 
 
@@ -419,7 +464,7 @@ def expected_source_files(record: dict[str, Any]) -> set[str]:
     raw_files = source.get("contains_files")
     if not isinstance(raw_files, list):
         return expected_release_files(record)
-    return {Path(str(name)).name for name in raw_files if str(name).strip()}
+    return {str(name) for name in raw_files if exact_safe_file_name(str(name))}
 
 
 def validate_downloaded_final_record(record: dict[str, Any], *, source_root: Path) -> list[str]:
@@ -443,6 +488,16 @@ def validate_downloaded_final_record(record: dict[str, Any], *, source_root: Pat
 
 def public_record(record: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in record.items() if not str(key).startswith("_")}
+
+
+def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
+    check_path = path if path.is_absolute() else Path.cwd() / path
+    for parent in reversed(check_path.parents):
+        if parent == Path("."):
+            continue
+        if parent.is_symlink():
+            return [f"{label} path must not contain symlinked directories: {parent}"]
+    return []
 
 
 if __name__ == "__main__":

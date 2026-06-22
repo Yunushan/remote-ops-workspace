@@ -36,6 +36,34 @@ REQUIRED_DOC_SNIPPETS = (
     "import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets",
 )
 
+REQUIRED_TURKISH_DOC_SNIPPETS = (
+    "![release](https://img.shields.io/badge/release-v1.0.2-blue)",
+    "configs/platform_verified_evidence.json",
+    "python scripts/check_platform_verified_evidence.py --require-goal-targets --release-tag <tag>",
+    "python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets",
+    "python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --require-platform-goal-targets",
+    "Linux i386, Linux armhf, windows-xp-native-x86 ve windows-xp-native-x64",
+    "Windows XP native-host readiness 25.0%",
+)
+
+REQUIRED_README_RELEASE_SECTION_SNIPPETS = (
+    "python scripts/verify.py --quick --no-cli-smoke --release-tag <tag>",
+    "python scripts/check_platform_verified_evidence.py --require-goal-targets --release-tag <tag>",
+    "accepted-platform-evidence-assets",
+    "python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets",
+    "Linux i386, Linux armhf, windows-xp-native-x86",
+    "windows-xp-native-x64 require finalized accepted evidence records",
+    "python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --require-platform-goal-targets",
+    "configs/platform_verified_evidence.json",
+    "accepted review-bundle hashes",
+)
+
+STALE_TURKISH_RELEASE_SNIPPETS = (
+    "release-v1.0.1",
+    "v1.0.1",
+    "remote-ops-workspace-v1.0.1-SHA256SUMS.txt",
+)
+
 STALE_DEFAULT_ARTIFACT_SNIPPETS = (
     "remote-ops-workspace-v1.0.2-linux-<i386|amd64|armhf|arm64>.deb",
     "remote-ops-workspace-v1.0.2-linux-<i686|x86_64|armv7hl|aarch64>.rpm",
@@ -173,17 +201,32 @@ def check_publish_platform_evidence_dependency(workflow: str) -> list[str]:
 
 def check_release_docs() -> list[str]:
     errors: list[str] = []
+    readme = normalize_markdown_pipes(read("README.md"))
     docs = "\n".join(
         normalize_markdown_pipes(read(path))
         for path in (
-            "README.md",
             "docs/PLATFORM_SUPPORT.md",
             "docs/RELEASE_STRATEGY.md",
         )
     )
+    docs = "\n".join((readme, docs))
+    turkish_readme = normalize_markdown_pipes(read("README.tr.md"))
+    readme_release_section = bounded_section(readme, "The release workflow also starts", "Release phases:")
     for snippet in REQUIRED_DOC_SNIPPETS:
         if snippet not in docs:
             errors.append(f"release docs missing workflow artifact truth snippet: {snippet}")
+    if not readme_release_section:
+        errors.append("README.md missing release workflow truth section")
+    else:
+        for snippet in REQUIRED_README_RELEASE_SECTION_SNIPPETS:
+            if snippet not in readme_release_section:
+                errors.append(f"README.md release section missing protected platform evidence truth snippet: {snippet}")
+    for snippet in REQUIRED_TURKISH_DOC_SNIPPETS:
+        if snippet not in turkish_readme:
+            errors.append(f"README.tr.md missing protected platform evidence truth snippet: {snippet}")
+    for snippet in STALE_TURKISH_RELEASE_SNIPPETS:
+        if snippet in turkish_readme:
+            errors.append(f"README.tr.md still contains stale release truth snippet: {snippet}")
     for snippet in STALE_DEFAULT_ARTIFACT_SNIPPETS:
         if snippet in docs:
             errors.append(f"release docs still advertise stale default artifact pattern: {snippet}")
@@ -197,6 +240,16 @@ def workflow_job_block(workflow: str, job: str) -> str:
 
 def normalize_markdown_pipes(text: str) -> str:
     return text.replace("\\|", "|")
+
+
+def bounded_section(text: str, start: str, end: str) -> str:
+    start_index = text.find(start)
+    if start_index == -1:
+        return ""
+    end_index = text.find(end, start_index)
+    if end_index == -1:
+        return text[start_index:]
+    return text[start_index:end_index]
 
 
 def read(relative: str) -> str:

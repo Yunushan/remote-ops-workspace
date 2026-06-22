@@ -36,6 +36,29 @@ def test_protected_platform_goal_strict_gate_fails_empty_registry() -> None:
 
     assert goal["release_tag"] == "v1.0.2"
     assert goal["current_percent"] == 0.0
+    requirements = {
+        item["target"]: item for item in goal["target_evidence_requirements"]
+    }
+    assert requirements["linux-i386"]["required_release_tag"] == "v1.0.2"
+    assert requirements["linux-i386"]["accepted_evidence_record"]["release_tag"] == "v1.0.2"
+    assert "artifact_validation_command" in requirements["linux-i386"]["required_commands"]
+    assert "local_evidence_preflight_command" in requirements["linux-i386"]["required_commands"]
+    assert "finalized_evidence_record_command" in requirements["linux-i386"]["required_commands"]
+    assert requirements["windows-xp-native-x64"]["builder_or_host_evidence"].startswith(
+        "Windows XP Professional x64 Edition SP2"
+    )
+    assert requirements["windows-xp-native-x64"]["security_requirements"] == [
+        "legacy TLS, SSH, and RDP compatibility must remain profile-scoped opt-in",
+        "modern Windows 10/11, Linux, and macOS defaults must keep hardened crypto",
+    ]
+    human_requirements = checker.format_goal_requirements(goal)
+    assert "required proof for missing targets:" in human_requirements
+    assert "linux-i386: missing" in human_requirements
+    assert "release_tag=v1.0.2 status=accepted readiness=100.0" in human_requirements
+    assert "release proof: 6 artifacts, 3 review-bundle files" in human_requirements
+    assert "commands: accepted_evidence_candidate_command, artifact_validation_command" in human_requirements
+    assert "builder/host: Windows XP Professional x64 Edition SP2 VM" in human_requirements
+    assert "modern Windows 10/11, Linux, and macOS defaults must keep hardened crypto" in human_requirements
     assert any(
         "missing required accepted evidence targets for release_tag v1.0.2" in error
         for error in errors

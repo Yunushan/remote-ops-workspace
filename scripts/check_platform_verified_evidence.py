@@ -7,6 +7,7 @@ import re
 import sys
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
+from urllib.parse import unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE_PATH = ROOT / "configs" / "platform_verified_evidence.json"
@@ -107,6 +108,49 @@ REQUIRED_XP_CHECKS = {
     "modern_defaults_unchanged",
     "release_asset_attachment",
 }
+COMMON_EVIDENCE_KEYS = {
+    "artifact_sha256",
+    "artifact_validation_command",
+    "checks",
+    "evidence_type",
+    "local_evidence_preflight_command",
+    "promotion_config_sha256",
+    "readiness_percent",
+    "release_asset_source",
+    "release_asset_urls",
+    "release_tag",
+    "status",
+    "target",
+    "workflow",
+    "workflow_inputs",
+}
+FINALIZED_EVIDENCE_KEYS = {
+    "finalized_record_release_asset_url",
+    "review_bundle",
+}
+LINUX_EVIDENCE_KEYS = COMMON_EVIDENCE_KEYS | {
+    "artifact_name",
+    "builder_identity",
+    "builder_identity_sha256",
+    "linux_evidence_sources",
+    "linux_smoke_evidence_sha256",
+    "native_build_command",
+    "native_smoke_command",
+    "runner_labels",
+    "workflow_run_url",
+}
+XP_EVIDENCE_KEYS = COMMON_EVIDENCE_KEYS | {
+    "architecture",
+    "current_python_pyqt6_stack",
+    "native_evidence_validation_command",
+    "separate_legacy_toolchain",
+    "xp_evidence_contract_sha256",
+    "xp_evidence_sha256",
+    "xp_evidence_sources",
+    "xp_evidence_summary",
+    "xp_host_identity_sha256",
+    "xp_smoke_evidence_sha256",
+}
 REQUIRED_XP_SMOKE_IDS = {
     "cli_launch",
     "gui_or_legacy_host_ui_launch",
@@ -158,6 +202,9 @@ REQUIRED_LINUX_USERLAND_BITS = {
     "linux-armhf": "32",
 }
 GITHUB_ACTIONS_RUN_RE = re.compile(r"^https://github\.com/([^/]+/[^/]+)/actions/runs/\d+/?$")
+GITHUB_RELEASE_BASE_RE = re.compile(
+    r"^https://github\.com/([^/]+/[^/]+)/releases/download/(v\d+\.\d+\.\d+)$"
+)
 GITHUB_RELEASE_ASSET_RE = re.compile(
     r"^https://github\.com/([^/]+/[^/]+)/releases/download/(v\d+\.\d+\.\d+)/.+"
 )
@@ -371,6 +418,18 @@ def check_schema(registry: dict[str, Any]) -> list[str]:
         errors.append("platform verified evidence policy must explain accepted evidence records")
     if "SHA-256" not in policy:
         errors.append("platform verified evidence policy must require per-artifact SHA-256 digests")
+    if "safe relative non-link native archive entries" not in policy:
+        errors.append(
+            "platform verified evidence policy must require safe relative non-link native archive entries"
+        )
+    if "exact safe checksum and native manifest file references" not in policy:
+        errors.append(
+            "platform verified evidence policy must require exact safe checksum and native manifest file references"
+        )
+    if "exact safe release asset URL filenames" not in policy:
+        errors.append(
+            "platform verified evidence policy must require exact safe release asset URL filenames"
+        )
     if "builder identity" not in policy:
         errors.append("platform verified evidence policy must require Linux builder identity evidence")
     if "builder identity SHA-256" not in policy:
@@ -391,8 +450,8 @@ def check_schema(registry: dict[str, Any]) -> list[str]:
         errors.append("platform verified evidence policy must require Linux native build and smoke command provenance")
     if "Linux smoke evidence SHA-256" not in policy:
         errors.append("platform verified evidence policy must require Linux smoke evidence SHA-256 binding")
-    if "Linux smoke release/run binding" not in policy:
-        errors.append("platform verified evidence policy must require Linux smoke release/run binding")
+    if "Linux smoke release/run/source head SHA binding" not in policy:
+        errors.append("platform verified evidence policy must require Linux smoke release/run/source head SHA binding")
     if "Linux workflow dispatch inputs" not in policy:
         errors.append("platform verified evidence policy must require Linux workflow dispatch input binding")
     if "XP workflow dispatch inputs" not in policy:
@@ -417,8 +476,16 @@ def check_schema(registry: dict[str, Any]) -> list[str]:
         errors.append("platform verified evidence policy must require release source head SHA binding")
     if "release source workflow file binding" not in policy:
         errors.append("platform verified evidence policy must require release source workflow file binding")
+    if "local protected-goal evidence preflight command binding" not in policy:
+        errors.append(
+            "platform verified evidence policy must require local protected-goal evidence preflight command binding"
+        )
     if "finalized accepted-record source file" not in policy:
         errors.append("platform verified evidence policy must require finalized accepted-record source file binding")
+    if "finalized accepted-record release asset URL binding" not in policy:
+        errors.append(
+            "platform verified evidence policy must require finalized accepted-record release asset URL binding"
+        )
     if "Linux release source artifact names must be target/release-scoped" not in policy:
         errors.append(
             "platform verified evidence policy must require target/release-scoped Linux release source artifacts"
@@ -427,6 +494,10 @@ def check_schema(registry: dict[str, Any]) -> list[str]:
         errors.append("platform verified evidence policy must require target/release-scoped XP release source artifacts")
     if "review bundle archive" not in policy:
         errors.append("platform verified evidence policy must require review bundle archive binding")
+    if "safe relative non-symlink review bundle archive entries" not in policy:
+        errors.append(
+            "platform verified evidence policy must require safe relative non-symlink review bundle archive entries"
+        )
     if "review bundle SHA-256 sidecar" not in policy:
         errors.append("platform verified evidence policy must require review bundle SHA-256 sidecar binding")
     if (
@@ -457,6 +528,8 @@ def check_schema(registry: dict[str, Any]) -> list[str]:
         errors.append("platform verified evidence policy must require promotion config SHA-256 binding")
     if "unique target" not in policy:
         errors.append("platform verified evidence policy must require unique target records")
+    if "no unrecognized top-level fields" not in policy:
+        errors.append("platform verified evidence policy must reject unrecognized top-level fields")
     if "Windows XP x86/x64 pairs must use the same release_tag and GitHub repository" not in policy:
         errors.append("platform verified evidence policy must require same release_tag and GitHub repository for XP pairs")
     if "same GitHub repository" not in policy:
@@ -545,7 +618,12 @@ def check_linux_command_provenance(
     smoke_script = str(requirements.get("smoke_script", ""))
     expected_build = f"TARGET_ARCH={arch} PYTHON_BIN=.venv-native/bin/python bash {build_script}"
     workflow_run_url = str(entry.get("workflow_run_url", ""))
-    expected_smoke = f"bash {smoke_script} --target {target} --workflow-run-url {workflow_run_url}"
+    source = entry.get("release_asset_source")
+    source_head_sha = str(source.get("head_sha", "")).strip() if isinstance(source, dict) else ""
+    expected_smoke = (
+        f"bash {smoke_script} --target {target} --workflow-run-url {workflow_run_url} "
+        f"--source-head-sha {source_head_sha}"
+    )
     errors: list[str] = []
     if entry.get("native_build_command") != expected_build:
         errors.append(f"{target} native_build_command must be {expected_build!r}")
@@ -564,12 +642,12 @@ def check_linux_workflow_inputs(target: str, entry: dict[str, Any]) -> list[str]
         errors.append(f"{target} workflow_inputs target must be {target}")
     if raw_inputs.get("release_tag") != release_tag:
         errors.append(f"{target} workflow_inputs release_tag must match record release_tag {release_tag}")
-    base_url = str(raw_inputs.get("release_asset_base_url", "")).rstrip("/")
-    expected_suffix = f"/releases/download/{release_tag}"
-    if not base_url.startswith("https://github.com/") or not base_url.endswith(expected_suffix):
+    base_url = str(raw_inputs.get("release_asset_base_url", ""))
+    release_match = GITHUB_RELEASE_BASE_RE.fullmatch(base_url)
+    if not release_match or release_match.group(2) != release_tag:
         errors.append(
-            f"{target} workflow_inputs release_asset_base_url must be a GitHub release download URL "
-            f"ending in {expected_suffix}"
+            f"{target} workflow_inputs release_asset_base_url must be exactly "
+            f"https://github.com/<owner>/<repo>/releases/download/{release_tag}"
         )
     release_assets = entry.get("release_asset_urls")
     if isinstance(release_assets, list) and base_url:
@@ -919,16 +997,12 @@ def check_xp_workflow_inputs(
     if raw_inputs.get("release_tag") != release_tag:
         errors.append(f"{target} workflow_inputs release_tag must match record release_tag {release_tag}")
 
-    base_url = str(raw_inputs.get("release_asset_base_url", "")).rstrip("/")
-    expected_suffix = f"/releases/download/{release_tag}"
-    release_match = re.fullmatch(
-        r"https://github\.com/([^/]+/[^/]+)/releases/download/(v\d+\.\d+\.\d+)",
-        base_url,
-    )
+    base_url = str(raw_inputs.get("release_asset_base_url", ""))
+    release_match = GITHUB_RELEASE_BASE_RE.fullmatch(base_url)
     if not release_match or release_match.group(2) != release_tag:
         errors.append(
-            f"{target} workflow_inputs release_asset_base_url must be a GitHub release download URL "
-            f"ending in {expected_suffix}"
+            f"{target} workflow_inputs release_asset_base_url must be exactly "
+            f"https://github.com/<owner>/<repo>/releases/download/{release_tag}"
         )
     release_assets = entry.get("release_asset_urls")
     if isinstance(release_assets, list) and base_url:
@@ -1081,14 +1155,15 @@ def check_xp_validation_command_path(
     errors: list[str] = []
     if any(char in path for char in "*?"):
         errors.append(f"{target} {command_label} {flag} must not contain wildcards, got {raw_path!r}")
-    if "\\" in path:
-        parsed_path = PureWindowsPath(path)
-        parts = parsed_path.parts
-        is_absolute = parsed_path.is_absolute() or bool(parsed_path.drive)
+    windows_path = PureWindowsPath(path)
+    posix_path = PurePosixPath(path)
+    windows_absolute = windows_path.is_absolute() or bool(windows_path.drive)
+    posix_absolute = posix_path.is_absolute()
+    if "\\" in path or windows_absolute:
+        parts = windows_path.parts
     else:
-        parsed_path = PurePosixPath(path)
-        parts = parsed_path.parts
-        is_absolute = parsed_path.is_absolute()
+        parts = posix_path.parts
+    is_absolute = windows_absolute or posix_absolute
     if is_absolute:
         errors.append(f"{target} {command_label} {flag} must be workspace-relative, got {raw_path!r}")
     if any(part == ".." for part in parts):
@@ -1487,13 +1562,15 @@ def check_linux_smoke_log_text(
     workflow_run_url: str,
     text: str,
     *,
+    source_head_sha: str,
     label: str = "linux_smoke_evidence",
     artifact_sha256: Any | None = None,
 ) -> list[str]:
     arch = REQUIRED_LINUX_SMOKE_ARCHES.get(target, "")
+    source_head_sha = source_head_sha.strip()
     expected_command = (
         f"bash scripts/smoke_linux_native.sh --arch {arch} --dist native-dist/linux "
-        f"--target {target} --workflow-run-url {workflow_run_url}"
+        f"--target {target} --workflow-run-url {workflow_run_url} --source-head-sha {source_head_sha}"
     )
     required_lines = [
         f"native installer smoke command: {expected_command}",
@@ -1501,10 +1578,13 @@ def check_linux_smoke_log_text(
         f"native installer smoke target arch: {arch}",
         f"native installer smoke target: {target}",
         f"native installer smoke workflow run: {workflow_run_url}",
+        f"native installer smoke source head sha: {source_head_sha}",
         *[f"native installer smoke: {step}" for step in REQUIRED_LINUX_SMOKE_STEPS],
         f"native installer smoke passed for Linux {arch}",
     ]
     errors: list[str] = []
+    if not RELEASE_SOURCE_HEAD_SHA_RE.fullmatch(source_head_sha):
+        errors.append(f"{target} {label} source head SHA must be a 40-character lowercase Git SHA")
     if native_smoke_command != expected_command:
         errors.append(f"{target} {label} command provenance must be {expected_command!r}")
     if not text.strip():
@@ -1575,6 +1655,7 @@ def check_common_evidence(
     require_review_bundle: bool = False,
 ) -> list[str]:
     errors: list[str] = []
+    errors.extend(check_evidence_record_keys(target, entry, require_review_bundle=require_review_bundle))
     if entry.get("status") != "accepted":
         errors.append(f"{target} evidence status must be accepted")
     if entry.get("readiness_percent") != 100.0:
@@ -1588,6 +1669,7 @@ def check_common_evidence(
         errors.append(f"{target} evidence missing required checks: {missing_checks}")
     command = str(entry.get("artifact_validation_command", ""))
     errors.extend(check_artifact_validation_command(target, release_tag, command))
+    errors.extend(check_local_evidence_preflight_command(target, release_tag, entry))
     promotion_config_sha = str(entry.get("promotion_config_sha256", ""))
     if not re.fullmatch(r"[0-9a-f]{64}", promotion_config_sha):
         errors.append(f"{target} promotion_config_sha256 must be a SHA-256 hex digest")
@@ -1615,7 +1697,12 @@ def check_common_evidence(
                     f"{target} release asset URL tag must match release_tag {release_tag}: {url_text}"
                 )
                 continue
-            filename = Path(url_text).name
+            filename = release_asset_url_filename(url_text)
+            if not filename:
+                errors.append(
+                    f"{target} release asset URL file name must be an exact safe file name: {url_text}"
+                )
+                continue
             actual_names.add(filename)
             asset_name_counts[filename] = asset_name_counts.get(filename, 0) + 1
         if len(release_repositories) > 1:
@@ -1634,9 +1721,11 @@ def check_common_evidence(
     review_bundle_files = set(review_bundle_expected_files(target, release_tag).values())
     expected_source_files = set(expected_artifact_names)
     has_review_bundle = isinstance(entry.get("review_bundle"), dict)
-    if require_review_bundle or has_review_bundle:
+    has_finalized_record_url = "finalized_record_release_asset_url" in entry
+    if require_review_bundle or has_review_bundle or has_finalized_record_url:
         expected_source_files.update(review_bundle_files)
         expected_source_files.add(accepted_record_source_file(target))
+        errors.extend(check_finalized_record_release_asset_url(target, release_tag, entry))
         errors.extend(
             check_review_bundle(
                 target,
@@ -1655,6 +1744,64 @@ def check_common_evidence(
             native_release_assets=entry.get("release_asset_urls"),
         )
     )
+    return errors
+
+
+def check_evidence_record_keys(
+    target: str,
+    entry: dict[str, Any],
+    *,
+    require_review_bundle: bool,
+) -> list[str]:
+    if target in LINUX_TARGETS:
+        allowed = set(LINUX_EVIDENCE_KEYS)
+    elif target in XP_TARGETS:
+        allowed = set(XP_EVIDENCE_KEYS)
+    else:
+        return []
+    if require_review_bundle or FINALIZED_EVIDENCE_KEYS & set(entry):
+        allowed.update(FINALIZED_EVIDENCE_KEYS)
+    keys = {str(key) for key in entry}
+    unexpected = sorted(keys - allowed)
+    if unexpected:
+        return [f"{target} accepted evidence has unexpected top-level fields: {unexpected}"]
+    return []
+
+
+def check_finalized_record_release_asset_url(
+    target: str,
+    release_tag: str,
+    entry: dict[str, Any],
+) -> list[str]:
+    raw_url = str(entry.get("finalized_record_release_asset_url", "")).strip()
+    if not raw_url:
+        return [f"{target} finalized_record_release_asset_url must be set"]
+    match = GITHUB_RELEASE_ASSET_RE.fullmatch(raw_url)
+    if not match:
+        return [f"{target} finalized_record_release_asset_url must be a GitHub release asset URL"]
+    errors: list[str] = []
+    repository = match.group(1)
+    url_release_tag = match.group(2)
+    if url_release_tag != release_tag:
+        errors.append(
+            f"{target} finalized_record_release_asset_url tag must match release_tag {release_tag}"
+        )
+    filename = release_asset_url_filename(raw_url)
+    if not filename:
+        errors.append(f"{target} finalized_record_release_asset_url file name must be an exact safe file name")
+        return errors
+    expected_file = accepted_record_source_file(target)
+    if filename != expected_file:
+        errors.append(f"{target} finalized_record_release_asset_url file must be {expected_file}")
+    release_repositories = release_asset_repositories(entry.get("release_asset_urls"))
+    review_bundle = entry.get("review_bundle")
+    if isinstance(review_bundle, dict):
+        release_repositories.update(release_asset_repositories(review_bundle.get("release_asset_urls")))
+    if release_repositories and release_repositories != {repository}:
+        errors.append(
+            f"{target} finalized_record_release_asset_url repository must match release asset repository "
+            f"{sorted(release_repositories)}, got {repository}"
+        )
     return errors
 
 
@@ -1726,7 +1873,7 @@ def check_release_asset_source(
     for filename in files:
         file_counts[filename] = file_counts.get(filename, 0) + 1
         actual_files.add(filename)
-        if not filename or "<" in filename or ">" in filename or Path(filename).name != filename:
+        if "<" in filename or ">" in filename or not exact_safe_file_name(filename):
             errors.append(
                 f"{target} release_asset_source.contains_files entries must be concrete file names, "
                 f"got {filename!r}"
@@ -1809,7 +1956,12 @@ def check_review_bundle_release_asset_urls(
                 f"{target} review_bundle release asset URL tag must match release_tag {release_tag}: {url_text}"
             )
             continue
-        filename = Path(url_text).name
+        filename = release_asset_url_filename(url_text)
+        if not filename:
+            errors.append(
+                f"{target} review_bundle release asset URL file name must be an exact safe file name: {url_text}"
+            )
+            continue
         actual_files.add(filename)
         file_counts[filename] = file_counts.get(filename, 0) + 1
 
@@ -1857,6 +2009,32 @@ def release_asset_repositories(raw_assets: Any) -> set[str]:
     return repositories
 
 
+def release_asset_url_filename(url: str) -> str:
+    parts = urlsplit(url)
+    if parts.query or parts.fragment:
+        return ""
+    path_segments = parts.path.split("/")
+    if (
+        len(path_segments) != 7
+        or path_segments[0] != ""
+        or path_segments[3:5] != ["releases", "download"]
+        or not path_segments[-1]
+    ):
+        return ""
+    filename = unquote(path_segments[-1])
+    return filename if exact_safe_file_name(filename) else ""
+
+
+def exact_safe_file_name(filename: str) -> bool:
+    if not filename or filename.strip() != filename or "/" in filename or "\\" in filename:
+        return False
+    if filename in (".", ".."):
+        return False
+    windows_path = PureWindowsPath(filename)
+    posix_path = PurePosixPath(filename)
+    return not windows_path.drive and not windows_path.is_absolute() and not posix_path.is_absolute()
+
+
 def check_artifact_validation_command(target: str, release_tag: str, command: str) -> list[str]:
     expected_prefix = f"python scripts/check_platform_promotion_artifacts.py --target {target} "
     errors: list[str] = []
@@ -1885,7 +2063,177 @@ def check_artifact_validation_command(target: str, release_tag: str, command: st
         errors.append(
             f"{target} artifact_validation_command must include exactly one --tag {release_tag}, got {tags}"
         )
+    strict_count = command_flag_count(command, "--strict")
+    if strict_count != 1:
+        errors.append(f"{target} artifact_validation_command must include exactly one --strict, got {strict_count}")
     return errors
+
+
+def check_local_evidence_preflight_command(
+    target: str,
+    release_tag: str,
+    entry: dict[str, Any],
+) -> list[str]:
+    command = str(entry.get("local_evidence_preflight_command", ""))
+    expected_prefix = "python scripts/check_platform_goal_local_evidence.py "
+    errors: list[str] = []
+    if not command.startswith(expected_prefix):
+        errors.append(
+            f"{target} local_evidence_preflight_command must start with {expected_prefix!r}"
+        )
+    roots = command_argument_values(command, "--root")
+    if roots != ["."]:
+        errors.append(f"{target} local_evidence_preflight_command must include exactly one --root ., got {roots}")
+    release_tags = command_argument_values(command, "--release-tag")
+    if release_tags != [release_tag]:
+        errors.append(
+            f"{target} local_evidence_preflight_command must include exactly one --release-tag {release_tag}, "
+            f"got {release_tags}"
+        )
+    targets = command_argument_values(command, "--target")
+    if targets != [target]:
+        errors.append(
+            f"{target} local_evidence_preflight_command must include exactly one --target {target}, got {targets}"
+        )
+    asset_dirs = command_argument_values(command, "--assets-dir")
+    if len(asset_dirs) != 1:
+        errors.append(
+            f"{target} local_evidence_preflight_command must include exactly one --assets-dir, got {asset_dirs}"
+        )
+    elif "<" in asset_dirs[0] or ">" in asset_dirs[0]:
+        errors.append(
+            f"{target} local_evidence_preflight_command --assets-dir must be concrete, got {asset_dirs[0]!r}"
+        )
+    artifact_asset_dirs = command_argument_values(str(entry.get("artifact_validation_command", "")), "--assets-dir")
+    if len(asset_dirs) == 1 and len(artifact_asset_dirs) == 1 and asset_dirs != artifact_asset_dirs:
+        errors.append(
+            f"{target} local_evidence_preflight_command --assets-dir must match artifact_validation_command "
+            "--assets-dir"
+        )
+    if target in LINUX_TARGETS:
+        errors.extend(check_linux_local_evidence_preflight_command(target, entry, command))
+    elif target in XP_TARGETS:
+        errors.extend(check_xp_local_evidence_preflight_command(target, release_tag, entry, command))
+    return errors
+
+
+def check_linux_local_evidence_preflight_command(
+    target: str,
+    entry: dict[str, Any],
+    command: str,
+) -> list[str]:
+    errors: list[str] = []
+    for forbidden in ("--xp-evidence", "--xp-evidence-dir"):
+        values = command_argument_values(command, forbidden)
+        if values:
+            errors.append(f"{target} local_evidence_preflight_command must not include {forbidden}, got {values}")
+    builder_paths = command_argument_values(command, "--linux-builder-evidence")
+    if len(builder_paths) != 1:
+        errors.append(
+            f"{target} local_evidence_preflight_command must include exactly one --linux-builder-evidence, "
+            f"got {builder_paths}"
+        )
+    elif not concrete_path_value(builder_paths[0]) or Path(builder_paths[0]).name != f"builder-identity-{target}.json":
+        errors.append(
+            f"{target} local_evidence_preflight_command --linux-builder-evidence must be "
+            f"builder-identity-{target}.json"
+        )
+    smoke_paths = command_argument_values(command, "--linux-smoke-evidence")
+    if len(smoke_paths) != 1:
+        errors.append(
+            f"{target} local_evidence_preflight_command must include exactly one --linux-smoke-evidence, "
+            f"got {smoke_paths}"
+        )
+    elif not concrete_path_value(smoke_paths[0]) or Path(smoke_paths[0]).name != f"native-smoke-{target}.log":
+        errors.append(
+            f"{target} local_evidence_preflight_command --linux-smoke-evidence must be native-smoke-{target}.log"
+        )
+    workflow_urls = command_argument_values(command, "--linux-workflow-run-url")
+    expected_workflow_url = str(entry.get("workflow_run_url", "")).rstrip("/")
+    if workflow_urls != [expected_workflow_url]:
+        errors.append(
+            f"{target} local_evidence_preflight_command --linux-workflow-run-url must match workflow_run_url"
+        )
+    source = entry.get("release_asset_source")
+    expected_head_sha = str(source.get("head_sha", "")).strip() if isinstance(source, dict) else ""
+    source_head_shas = command_argument_values(command, "--linux-source-head-sha")
+    if source_head_shas != [expected_head_sha]:
+        errors.append(
+            f"{target} local_evidence_preflight_command --linux-source-head-sha must match "
+            "release_asset_source.head_sha"
+        )
+    allow_extra_count = command_flag_count(command, "--allow-extra-artifacts")
+    if allow_extra_count:
+        errors.append(f"{target} local_evidence_preflight_command must not include --allow-extra-artifacts")
+    return errors
+
+
+def check_xp_local_evidence_preflight_command(
+    target: str,
+    release_tag: str,
+    entry: dict[str, Any],
+    command: str,
+) -> list[str]:
+    errors: list[str] = []
+    for forbidden in (
+        "--linux-builder-evidence",
+        "--linux-smoke-evidence",
+        "--linux-workflow-run-url",
+        "--linux-source-head-sha",
+    ):
+        values = command_argument_values(command, forbidden)
+        if values:
+            errors.append(f"{target} local_evidence_preflight_command must not include {forbidden}, got {values}")
+    allow_extra_count = command_flag_count(command, "--allow-extra-artifacts")
+    if allow_extra_count:
+        errors.append(f"{target} local_evidence_preflight_command must not include --allow-extra-artifacts")
+
+    native_paths = xp_native_evidence_validation_command_paths(
+        str(entry.get("native_evidence_validation_command", ""))
+    )
+    path_bindings = {
+        "--xp-evidence": ("--evidence", native_paths["evidence_file"], True, False),
+        "--assets-dir": ("--assets-dir", native_paths["assets_dir"], False, True),
+        "--xp-evidence-dir": ("--evidence-dir", native_paths["evidence_dir"], False, True),
+    }
+    for preflight_flag, (native_flag, native_values, require_json, require_directory) in path_bindings.items():
+        values = command_argument_values(command, preflight_flag)
+        if len(values) != 1:
+            errors.append(
+                f"{target} local_evidence_preflight_command must include exactly one {preflight_flag}, "
+                f"got {values}"
+            )
+            continue
+        if native_values and values != native_values:
+            errors.append(
+                f"{target} local_evidence_preflight_command {preflight_flag} must match "
+                f"native_evidence_validation_command {native_flag}"
+            )
+        errors.extend(
+            check_xp_validation_command_path(
+                target,
+                preflight_flag,
+                values[0],
+                command_label="local_evidence_preflight_command",
+                require_json_hint=require_json,
+                require_directory_hint=require_directory,
+                require_target_release_scope=True,
+                release_tag=release_tag,
+            )
+        )
+    return errors
+
+
+def command_argument_values(command: str, flag: str) -> list[str]:
+    return re.findall(rf"(?:^|\s){re.escape(flag)}\s+(\S+)(?=\s|$)", command)
+
+
+def command_flag_count(command: str, flag: str) -> int:
+    return len(re.findall(rf"(?:^|\s){re.escape(flag)}(?=\s|$)", command))
+
+
+def concrete_path_value(value: str) -> bool:
+    return bool(value) and "<" not in value and ">" not in value
 
 
 def check_artifact_sha256(target: str, raw_hashes: Any, expected_artifact_names: set[str]) -> list[str]:

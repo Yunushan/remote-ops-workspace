@@ -39,6 +39,15 @@ def test_linux_rpm_smoke_uses_nodeps_on_ubuntu_runner() -> None:
     assert "rpm -e --nodeps remote-ops-workspace" in script
 
 
+def test_linux_smoke_requires_source_head_sha_for_target_bound_evidence() -> None:
+    script = Path("scripts/smoke_linux_native.sh").read_text(encoding="utf-8")
+
+    assert "--source-head-sha is required with --target" in script
+    assert "--source-head-sha requires --target" in script
+    assert "--source-head-sha must be a 40-character lowercase Git SHA" in script
+    assert "native installer smoke source head sha: $SOURCE_HEAD_SHA" in script
+
+
 def _load_checker():
     path = Path("scripts/check_native_installer_smoke.py")
     spec = importlib.util.spec_from_file_location("native_installer_smoke_checker", path)

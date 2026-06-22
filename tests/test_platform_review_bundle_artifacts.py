@@ -121,6 +121,119 @@ def test_platform_review_bundle_artifacts_rejects_symlinked_bundle_file(
     )
 
 
+def test_platform_review_bundle_artifacts_rejects_symlinked_bundle_directory(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    validator = _load_script("check_platform_review_bundle_artifacts")
+    record = _finalized_xp_record(tmp_path)
+    registry = _registry_with(record)
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self == tmp_path
+
+    monkeypatch.setattr(type(tmp_path), "is_symlink", fake_is_symlink)
+
+    errors = validator.check_platform_review_bundle_artifacts(
+        registry=registry,
+        bundle_dir=tmp_path,
+    )
+
+    assert f"review bundle directory must not be a symlink: {tmp_path}" in errors
+
+
+def test_platform_review_bundle_artifacts_rejects_symlinked_bundle_directory_parent(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    validator = _load_script("check_platform_review_bundle_artifacts")
+    record = _finalized_xp_record(tmp_path)
+    registry = _registry_with(record)
+    bundle_parent = tmp_path / "linked-parent"
+    bundle_dir = bundle_parent / "review-bundles"
+    bundle_dir.mkdir(parents=True)
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self == bundle_parent
+
+    monkeypatch.setattr(type(tmp_path), "is_symlink", fake_is_symlink)
+
+    errors = validator.check_platform_review_bundle_artifacts(
+        registry=registry,
+        bundle_dir=bundle_dir,
+    )
+
+    assert errors == [
+        f"review bundle directory path must not contain symlinked directories: {bundle_parent}"
+    ]
+
+
+def test_check_record_review_bundle_artifacts_rejects_unsafe_bundle_file_name(
+    tmp_path: Path,
+) -> None:
+    validator = _load_script("check_platform_review_bundle_artifacts")
+    record = _finalized_xp_record(tmp_path)
+    record["review_bundle"]["archive"]["file"] = "../xp-native-evidence-bundle.zip"
+
+    errors = validator.check_record_review_bundle_artifacts(record, tmp_path)
+
+    assert (
+        "windows-xp-native-x86 review_bundle archive.file must be an exact safe file name: "
+        "'../xp-native-evidence-bundle.zip'"
+    ) in errors
+
+
+def test_platform_review_bundle_artifacts_rejects_unsafe_manifest_candidate_file(
+    tmp_path: Path,
+) -> None:
+    validator = _load_script("check_platform_review_bundle_artifacts")
+    bundle_helpers = _load_finalize_tests()
+    record = _finalized_xp_record(tmp_path)
+    review_bundle = record["review_bundle"]
+    manifest = tmp_path / str(review_bundle["manifest"]["file"])
+    archive = tmp_path / str(review_bundle["archive"]["file"])
+    sidecar = tmp_path / str(review_bundle["sha256s"]["file"])
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    data["candidate_record"]["file"] = "nested/platform-verified-evidence-windows-xp-native-x86.json"
+    manifest.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    _refresh_review_bundle_record_hashes(record, bundle_helpers, manifest, archive, sidecar)
+    registry = _registry_with(record)
+
+    errors = validator.check_platform_review_bundle_artifacts(
+        registry=registry,
+        bundle_dir=tmp_path,
+    )
+
+    assert (
+        "windows-xp-native-x86 review bundle manifest candidate_record.file must be "
+        "an exact safe file name: 'nested/platform-verified-evidence-windows-xp-native-x86.json'"
+    ) in errors
+
+
+def test_platform_review_bundle_artifacts_rejects_symlinked_archive_entry(tmp_path: Path) -> None:
+    validator = _load_script("check_platform_review_bundle_artifacts")
+    bundle_helpers = _load_finalize_tests()
+    record = _finalized_xp_record(tmp_path)
+    review_bundle = record["review_bundle"]
+    manifest = tmp_path / str(review_bundle["manifest"]["file"])
+    archive = tmp_path / str(review_bundle["archive"]["file"])
+    sidecar = tmp_path / str(review_bundle["sha256s"]["file"])
+    bundle_helpers._rewrite_archive_entry_as_symlink(archive, "xp-evidence.json")
+    bundle_helpers._rewrite_sidecar(sidecar, manifest=manifest, archive=archive)
+    _refresh_review_bundle_record_hashes(record, bundle_helpers, manifest, archive, sidecar)
+    registry = _registry_with(record)
+
+    errors = validator.check_platform_review_bundle_artifacts(
+        registry=registry,
+        bundle_dir=tmp_path,
+    )
+
+    assert (
+        "windows-xp-native-x86 review bundle archive entries must not be symlinks: "
+        "['xp-evidence.json']"
+    ) in errors
+
+
 def test_platform_review_bundle_artifacts_rejects_registry_candidate_drift(tmp_path: Path) -> None:
     validator = _load_script("check_platform_review_bundle_artifacts")
     record = _finalized_xp_record(tmp_path)
@@ -144,6 +257,7 @@ def test_prefinalized_candidate_record_removes_finalization_only_source_files(tm
 
     candidate = validator.prefinalized_candidate_record(record)
 
+    assert "finalized_record_release_asset_url" not in candidate
     assert set(candidate["release_asset_source"]["contains_files"]) == set(record["artifact_sha256"])
     assert "platform-verified-evidence-linux-i386-final.json" not in candidate["release_asset_source"]["contains_files"]
     assert all(
@@ -245,6 +359,7 @@ def _registry_with(record: dict[str, Any]) -> dict[str, Any]:
 def _prefinalized_candidate(record: dict[str, Any]) -> dict[str, Any]:
     candidate = dict(record)
     candidate.pop("review_bundle", None)
+    candidate.pop("finalized_record_release_asset_url", None)
     source = candidate.get("release_asset_source")
     artifact_hashes = candidate.get("artifact_sha256")
     if isinstance(source, dict) and isinstance(artifact_hashes, dict):
@@ -265,6 +380,19 @@ def _sync_linux_source_record(
         source = sources[key]
         source["sha256"] = sha256
         source["size_bytes"] = size_bytes
+
+
+def _refresh_review_bundle_record_hashes(
+    record: dict[str, Any],
+    bundle_helpers: Any,
+    manifest: Path,
+    archive: Path,
+    sidecar: Path,
+) -> None:
+    review_bundle = record["review_bundle"]
+    for key, path in (("manifest", manifest), ("archive", archive), ("sha256s", sidecar)):
+        review_bundle[key]["size_bytes"] = path.stat().st_size
+        review_bundle[key]["sha256"] = bundle_helpers._sha256(path)
 
 
 def _load_script(name: str) -> Any:

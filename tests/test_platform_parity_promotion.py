@@ -71,6 +71,32 @@ def test_platform_parity_promotion_requires_finalized_evidence_contract() -> Non
     assert "linux-i386 accepted_evidence_candidate_command must not append unfinalized candidates" in errors
 
 
+def test_platform_parity_promotion_requires_local_evidence_preflight() -> None:
+    checker = _load_platform_parity_promotion_checker()
+    promotion = _load_json("configs/platform_parity_promotion.json")
+    entry = _promotion_entry(promotion, "linux-i386")
+    del entry["promotion_to_100_requires"]["local_evidence_preflight_command"]
+
+    errors = checker.check_platform_parity_promotion(promotion=promotion)
+
+    assert "linux-i386 promotion_to_100_requires missing keys: ['local_evidence_preflight_command']" in errors
+
+
+def test_platform_parity_promotion_rejects_xp_local_preflight_without_xp_evidence_dir() -> None:
+    checker = _load_platform_parity_promotion_checker()
+    promotion = _load_json("configs/platform_parity_promotion.json")
+    entry = _promotion_entry(promotion, "windows-xp-native-x64")
+    command = entry["promotion_to_100_requires"]["local_evidence_preflight_command"]
+    entry["promotion_to_100_requires"]["local_evidence_preflight_command"] = command.replace(
+        " --xp-evidence-dir <target-release-evidence-dir>",
+        "",
+    )
+
+    errors = checker.check_platform_parity_promotion(promotion=promotion)
+
+    assert any("windows-xp-native-x64 local_evidence_preflight_command must be" in error for error in errors)
+
+
 def test_platform_parity_promotion_rejects_generic_xp_release_source_artifact_name() -> None:
     checker = _load_platform_parity_promotion_checker()
     promotion = _load_json("configs/platform_parity_promotion.json")

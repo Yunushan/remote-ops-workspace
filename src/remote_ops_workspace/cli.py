@@ -1281,6 +1281,20 @@ def cmd_features(args: argparse.Namespace) -> int:
             f"{platform_overall['target_count']} verified targets; "
             f"{platform_overall.get('extended_target_count', 0)} extended rows)"
         )
+        protected_goal = platform.get("protected_goal_parity", {})
+        if protected_goal:
+            missing_targets = [
+                str(target) for target in protected_goal.get("missing_targets", [])
+            ]
+            print(
+                f"Protected platform goal       : {float(protected_goal.get('current_percent', 0.0)):.1f}% "
+                f"({float(protected_goal.get('gap_percent', 0.0)):.1f}% gap; "
+                f"{int(protected_goal.get('accepted_target_count', 0))}/"
+                f"{int(protected_goal.get('target_count', 0))} accepted; "
+                f"{protected_goal.get('status', 'unknown')})"
+            )
+            if missing_targets:
+                print(f"  Missing protected evidence  : {', '.join(missing_targets)}")
         evidence = report["evidence_summary"]
         print(
             f"Evidence records              : {evidence['features_with_evidence']}/"

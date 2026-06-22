@@ -40,6 +40,11 @@ Release integrity rules:
   `python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets`
   to import only same-tag accepted Linux i386, Linux armhf and Windows XP
   native-host artifacts from their verified evidence workflow runs.
+  The importer rejects symlinked downloaded-artifact/output roots, symlinked
+  parent directories and symlinked destinations before copying into
+  `release-assets`.
+  The publish checker then rejects a symlinked `release-assets` directory,
+  symlinked parent directories and symlinked release asset files before upload.
   It verifies the expected asset set from `configs/release_matrix.json`,
   checksum sidecars, source release-manifest records, accepted platform
   evidence and the MobaXterm parity accepted-evidence registry. The protected
@@ -82,8 +87,9 @@ If those endpoints are promoted to native-host evidence, the release-importable
 source artifact must come from `.github/workflows/xp-native-evidence.yml`,
 which validates staged XP artifacts and sanitized smoke evidence on a
 self-hosted `xp-evidence` runner, stages only the expected release/evidence
-files into `xp-evidence-upload`, and uploads
-`xp-native-evidence-<target>-<release_tag>`.
+files into a plain non-symlink `xp-evidence-upload` tree, and uploads
+`xp-native-evidence-<target>-<release_tag>`; staged source and upload paths
+must not traverse symlinked parent directories.
 
 `configs/platform_parity_promotion.json` and
 `python scripts/check_platform_parity_promotion.py` define the required evidence
@@ -92,20 +98,27 @@ from script-supported to default-native only when the release matrix, release
 workflow, publish asset contract, native build outputs, smoke tests, checksum
 sidecars and native manifests all include those architectures. The produced
 artifact directory must pass
-`python scripts/check_platform_promotion_artifacts.py --target linux-i386 --assets-dir <artifact-dir> --tag v<project.version>`
+`python scripts/check_platform_promotion_artifacts.py --target linux-i386 --assets-dir <artifact-dir> --tag v<project.version> --strict`
 or
-`python scripts/check_platform_promotion_artifacts.py --target linux-armhf --assets-dir <artifact-dir> --tag v<project.version>`.
+`python scripts/check_platform_promotion_artifacts.py --target linux-armhf --assets-dir <artifact-dir> --tag v<project.version> --strict`.
+That strict artifact check rejects symlinked artifact paths, artifact
+directories that traverse symlinked parent directories, unsafe ZIP/tar
+member names, link/device entries inside native archives and path-qualified
+checksum/native-manifest references.
 `.github/workflows/extended-platform-evidence.yml` is the dispatch-only
 self-hosted collection path for that evidence; it uses `[self-hosted, linux,
 i386]` and `[self-hosted, linux, armhf]` runners and uploads evidence artifacts
 without publishing a GitHub release. Before artifact upload it runs
 `python scripts/stage_extended_linux_evidence_upload.py`, stages the exact
-release-importable file set in `linux-evidence-upload`, and avoids uploading
-raw Linux builder output directories by wildcard. Each run also writes
+release-importable file set in a plain non-symlink `linux-evidence-upload` tree,
+rejects staged source or upload paths that traverse symlinked parent
+directories, and avoids uploading raw Linux builder output directories by wildcard. Each run also writes
 `platform-verified-evidence-linux-i386.json` or
 `platform-verified-evidence-linux-armhf.json` into the uploaded evidence
 artifact and packages the review bundle with
-`python scripts/make_extended_linux_evidence_bundle.py`. Accepted release
+`python scripts/make_extended_linux_evidence_bundle.py`, whose output directory
+must be plain non-symlink without symlinked parent directories, and whose
+generated bundle files must be plain non-symlink paths. Accepted release
 evidence records must be added to
 `configs/platform_verified_evidence.json` and pass
 `python scripts/check_platform_verified_evidence.py` before generated readiness
@@ -116,7 +129,10 @@ workflow dispatch inputs, `release_asset_source.workflow=.github/workflows/exten
 and the promotion config SHA-256 are derived from the same promotion contract.
 Linux records must also include the builder identity JSON emitted by
 `python3 scripts/check_extended_platform_builder.py --release-tag v<project.version> --workflow-run-url <github-actions-run-url> --source-head-sha <github-actions-head-sha> --out ...`; its
-`builder_identity_sha256` must match that JSON, and the JSON must bind the
+`--out` path must be a plain non-symlink file without symlinked parent
+directories, `builder_identity_sha256` must
+match that JSON, generator input paths for the artifact directory, builder
+evidence and native smoke log must not traverse symlinked directories, and the JSON must bind the
 same `release_tag` and `workflow_run_url` as the accepted record while `source_head_sha` matches `release_asset_source.head_sha`, and also
 including a sanitized target-scoped `host_identity` block with
 `operator_private_data_redacted=true`, matching `platform.machine()` and
@@ -132,12 +148,18 @@ contract, where the smoke command binds the target id and workflow run URL, plus
 must contain the canonical command, target id, workflow run URL, release tag,
 target architecture, all DEB/RPM/AppImage install/verify/upgrade/uninstall lines
 and the final pass line for the target architecture. The recorded
-`workflow_inputs.release_asset_base_url` must prefix every release asset URL in
-the accepted record. Finalize the candidate with
+`workflow_inputs.release_asset_base_url` must be the exact GitHub release base
+URL `https://github.com/<owner>/<repo>/releases/download/vX.Y.Z` and must prefix
+every release asset URL in the accepted record. Finalize the candidate with
 `python scripts/finalize_platform_verified_evidence_record.py` and append only
 that finalized record when the referenced run, release assets, review-bundle
 manifest release asset URL binding, review-bundle release asset URLs and
-review-bundle hashes are the real promotion evidence. The default
+review-bundle hashes are the real promotion evidence. Finalized-record output
+and registry append paths must be plain non-symlink files without symlinked
+parent directories, and finalization input files must not be symlinks or
+traverse symlinked directories. Accepted release
+URLs must end in exact safe file names without query strings, fragments or
+path-qualified names. The default
 `python scripts/check_platform_verified_evidence.py` registry check is
 finalized-only; `--allow-unfinalized-candidates` is reserved for local
 candidate validation before append. The publish-time asset checker
@@ -146,8 +168,10 @@ release file SHA-256 values against the accepted `artifact_sha256` map, requires
 the finalized review-bundle manifest/archive/SHA-256 sidecar files to be present
 with the recorded size, SHA-256 and same-repository release URLs, requires
 checksum sidecars to collectively cover every expected non-sidecar file, re-reads
-the same-tag review-bundle ZIP contents from the release asset directory and
-reruns finalization against the accepted registry entries, then rejects Linux
+the same-tag review-bundle ZIP contents from a plain non-symlink directory
+without symlinked parent directories,
+rejects unsafe or symlink-mode archive entries, and reruns finalization against
+the accepted registry entries, then rejects Linux
 i386/armhf native assets in the default release asset set unless the matching
 finalized accepted evidence target is present.
 Windows XP native-host readiness can move from remote-target-only only through a
@@ -155,11 +179,19 @@ separate XP-capable legacy toolchain with XP x86 SP3 and Windows XP
 Professional x64 Edition SP2 VM or self-hosted runner evidence and proof that
 legacy crypto compatibility stays isolated from modern defaults. XP artifact
 directories must pass
-`python scripts/check_platform_promotion_artifacts.py --target windows-xp-native-x86 --assets-dir <artifact-dir> --tag v<project.version>`
+`python scripts/check_platform_promotion_artifacts.py --target windows-xp-native-x86 --assets-dir <artifact-dir> --tag v<project.version> --strict`
 or
-`python scripts/check_platform_promotion_artifacts.py --target windows-xp-native-x64 --assets-dir <artifact-dir> --tag v<project.version>`.
+`python scripts/check_platform_promotion_artifacts.py --target windows-xp-native-x64 --assets-dir <artifact-dir> --tag v<project.version> --strict`.
+That strict artifact check rejects symlinked artifact paths, artifact
+directories that traverse symlinked parent directories, unsafe ZIP/tar
+member names, link/device entries inside native archives and path-qualified
+checksum/native-manifest references.
 The XP VM/toolchain evidence JSON must also pass
 `python scripts/check_xp_native_evidence.py --evidence <target-release-evidence.json> --assets-dir <target-release-artifact-dir> --evidence-dir <target-release-evidence-dir>`.
+The evidence JSON path must stay inside a plain non-symlink evidence directory
+without symlinked parent directories and must not traverse symlinked path
+components. Candidate generation also rejects artifact, XP evidence JSON and XP
+evidence directory paths that traverse symlinked directories.
 That validator requires the x86 evidence service-pack field to include `SP3`
 and the x64 evidence to include `os.service_pack=SP2` plus
 `os.edition=Professional x64 Edition`. It also requires a sanitized
@@ -169,10 +201,14 @@ and the x64 evidence to include `os.service_pack=SP2` plus
 hostnames, credentials or tokens in XP evidence.
 Package the validated XP evidence review artifact with
 `python scripts/make_xp_native_evidence_bundle.py --target <windows-xp-native-target> --evidence <evidence.json> --candidate-record <platform-verified-evidence-windows-xp-native-target.json> --assets-dir <artifact-dir> --out-dir <bundle-dir>`; the packer validates the full candidate record and requires the candidate XP validation command to match the bundled evidence inputs. XP accepted records must bind `release_asset_source.workflow=.github/workflows/xp-native-evidence.yml`.
+The XP bundle output directory must be plain non-symlink without symlinked
+parent directories, and generated bundle files must be plain non-symlink paths.
 Evidence generated by `python scripts/make_xp_native_evidence_template.py` is
 scaffolding only; any remaining `TODO`, `placeholder`, `replace with real` or
 `template evidence` marker in the JSON or referenced smoke files fails XP
-evidence validation.
+evidence validation. Its output directory must be plain non-symlink without
+symlinked parent directories; `xp-evidence.json`, `xp-smoke-evidence/` and
+generated smoke files must be plain non-symlink paths.
 The XP evidence JSON must be bundled with per-smoke evidence files for
 `cli_launch`, `gui_or_legacy_host_ui_launch`, `loopback_profile_dry_run`,
 `artifact_manifest_validation`, `legacy_crypto_profile_scoped` and

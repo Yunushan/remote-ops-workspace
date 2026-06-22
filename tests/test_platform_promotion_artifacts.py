@@ -83,6 +83,30 @@ def test_platform_promotion_artifacts_reject_missing_manifest_record(tmp_path: P
     assert any("windows-xp-native-x86 native manifest missing payload records" in error for error in errors)
 
 
+def test_platform_promotion_artifacts_reject_manifest_path_reference(tmp_path: Path) -> None:
+    checker = _load_platform_promotion_artifacts_checker()
+    tag = f"v{checker.read_project_version()}"
+    names = _required_names(checker, "windows-xp-native-x86", tag)
+    _write_artifact_set(tmp_path, names)
+    manifest = next(tmp_path.glob("*manifest.json"))
+    records = json.loads(manifest.read_text(encoding="utf-8"))
+    first_name = str(records[0]["file"])
+    records[0]["file"] = f"dist/{first_name}"
+    manifest.write_text(json.dumps(records, indent=2) + "\n", encoding="utf-8")
+    _rewrite_sidecar_only(tmp_path, names)
+
+    errors = checker.check_platform_promotion_artifacts(
+        target="windows-xp-native-x86",
+        assets_dir=tmp_path,
+        tag=tag,
+    )
+
+    assert (
+        f"windows-xp-native-x86 native manifest record file/path/name must be an exact safe file name: "
+        f"'dist/{first_name}'"
+    ) in errors
+
+
 def test_platform_promotion_artifacts_reject_duplicate_checksum_reference(tmp_path: Path) -> None:
     checker = _load_platform_promotion_artifacts_checker()
     tag = f"v{checker.read_project_version()}"
@@ -98,6 +122,103 @@ def test_platform_promotion_artifacts_reject_duplicate_checksum_reference(tmp_pa
     )
 
     assert any("linux-i386 checksum sidecar has duplicate references" in error for error in errors)
+
+
+def test_platform_promotion_artifacts_reject_checksum_path_reference(tmp_path: Path) -> None:
+    checker = _load_platform_promotion_artifacts_checker()
+    tag = f"v{checker.read_project_version()}"
+    names = _required_names(checker, "linux-i386", tag)
+    sidecar = _write_artifact_set(tmp_path, names)
+    payload_name = next(
+        name
+        for name in names
+        if not name.endswith("SHA256SUMS.txt") and not name.endswith("manifest.json")
+    )
+    sidecar.write_text(
+        sidecar.read_text(encoding="utf-8").replace(f"  {payload_name}", f"  ../{payload_name}", 1),
+        encoding="utf-8",
+    )
+
+    errors = checker.check_platform_promotion_artifacts(
+        target="linux-i386",
+        assets_dir=tmp_path,
+        tag=tag,
+    )
+
+    assert (
+        f"linux-i386 checksum sidecar reference must be an exact safe file name: '../{payload_name}'"
+        in errors
+    )
+
+
+def test_platform_promotion_artifacts_reject_symlinked_artifact(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    checker = _load_platform_promotion_artifacts_checker()
+    tag = f"v{checker.read_project_version()}"
+    names = _required_names(checker, "linux-i386", tag)
+    _write_artifact_set(tmp_path, names)
+    symlink_name = next(name for name in names if name.endswith(".deb"))
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self.name == symlink_name
+
+    monkeypatch.setattr(type(tmp_path), "is_symlink", fake_is_symlink)
+
+    errors = checker.check_platform_promotion_artifacts(
+        target="linux-i386",
+        assets_dir=tmp_path,
+        tag=tag,
+    )
+
+    assert f"linux-i386 artifacts must not contain symlinks: ['{symlink_name}']" in errors
+
+
+def test_platform_promotion_artifacts_reject_symlinked_artifact_directory(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    checker = _load_platform_promotion_artifacts_checker()
+    tag = f"v{checker.read_project_version()}"
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self == tmp_path
+
+    monkeypatch.setattr(type(tmp_path), "is_symlink", fake_is_symlink)
+
+    errors = checker.check_platform_promotion_artifacts(
+        target="windows-xp-native-x86",
+        assets_dir=tmp_path,
+        tag=tag,
+    )
+
+    assert f"windows-xp-native-x86 artifact directory must not be a symlink: {tmp_path}" in errors
+
+
+def test_platform_promotion_artifacts_reject_symlinked_artifact_directory_parent(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    checker = _load_platform_promotion_artifacts_checker()
+    tag = f"v{checker.read_project_version()}"
+    linked_parent = tmp_path / "linked-artifacts"
+    assets_dir = linked_parent / "linux-i386"
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self == linked_parent
+
+    monkeypatch.setattr(type(tmp_path), "is_symlink", fake_is_symlink)
+
+    errors = checker.check_platform_promotion_artifacts(
+        target="linux-i386",
+        assets_dir=assets_dir,
+        tag=tag,
+    )
+
+    assert errors == [
+        f"linux-i386 artifact directory path must not contain symlinked directories: {linked_parent}"
+    ]
 
 
 def test_platform_promotion_artifacts_reject_unexpected_manifest_record(tmp_path: Path) -> None:
@@ -192,6 +313,69 @@ def test_platform_promotion_artifacts_reject_unreadable_zip(tmp_path: Path) -> N
     assert any("windows-xp-native-x86 ZIP artifact is not a readable archive" in error for error in errors)
 
 
+def test_platform_promotion_artifacts_reject_unsafe_zip_entry(tmp_path: Path) -> None:
+    checker = _load_platform_promotion_artifacts_checker()
+    tag = f"v{checker.read_project_version()}"
+    names = _required_names(checker, "windows-xp-native-x86", tag)
+    _write_artifact_set(tmp_path, names)
+    zip_path = next(tmp_path.glob("*.zip"))
+    _write_zip_with_entries(zip_path, {"payload/readme.txt": b"ok\n", "../escape.txt": b"escape\n"})
+    _rewrite_manifest_and_sidecar(tmp_path, names)
+
+    errors = checker.check_platform_promotion_artifacts(
+        target="windows-xp-native-x86",
+        assets_dir=tmp_path,
+        tag=tag,
+    )
+
+    assert (
+        f"windows-xp-native-x86 ZIP artifact {zip_path.name} entries must use safe relative paths: "
+        "['../escape.txt']"
+    ) in errors
+
+
+def test_platform_promotion_artifacts_reject_zip_symlink_entry(tmp_path: Path) -> None:
+    checker = _load_platform_promotion_artifacts_checker()
+    tag = f"v{checker.read_project_version()}"
+    names = _required_names(checker, "windows-xp-native-x64", tag)
+    _write_artifact_set(tmp_path, names)
+    zip_path = next(tmp_path.glob("*.zip"))
+    _write_zip_with_symlink_entry(zip_path, "payload/link.txt")
+    _rewrite_manifest_and_sidecar(tmp_path, names)
+
+    errors = checker.check_platform_promotion_artifacts(
+        target="windows-xp-native-x64",
+        assets_dir=tmp_path,
+        tag=tag,
+    )
+
+    assert (
+        f"windows-xp-native-x64 ZIP artifact {zip_path.name} entries must not be symlinks: "
+        "['payload/link.txt']"
+    ) in errors
+
+
+def test_platform_promotion_artifacts_reject_tar_symlink_entry(tmp_path: Path) -> None:
+    checker = _load_platform_promotion_artifacts_checker()
+    tag = f"v{checker.read_project_version()}"
+    names = _required_names(checker, "linux-armhf", tag)
+    _write_artifact_set(tmp_path, names)
+    tarball = next(tmp_path.glob("*.tar.gz"))
+    _write_tar_with_symlink_entry(tarball, "payload/link.txt")
+    _rewrite_manifest_and_sidecar(tmp_path, names)
+
+    errors = checker.check_platform_promotion_artifacts(
+        target="linux-armhf",
+        assets_dir=tmp_path,
+        tag=tag,
+    )
+
+    assert (
+        f"linux-armhf tar.gz artifact {tarball.name} entries must be regular files or directories: "
+        "['payload/link.txt']"
+    ) in errors
+
+
 def _required_names(checker: Any, target: str, tag: str) -> list[str]:
     promotion = checker.read_json(Path("configs/platform_parity_promotion.json"))
     entries = checker.promotion_entries(promotion, [])
@@ -242,6 +426,21 @@ def _rewrite_manifest_and_sidecar(root: Path, names: list[str], *, manifest_as_o
     return sidecar
 
 
+def _rewrite_sidecar_only(root: Path, names: list[str]) -> Path:
+    sidecar_name = next(name for name in names if name.endswith("SHA256SUMS.txt"))
+    sidecar_names = [
+        name
+        for name in names
+        if not name.endswith("SHA256SUMS.txt")
+    ]
+    sidecar = root / sidecar_name
+    sidecar.write_text(
+        "".join(f"{_sha256(root / name)}  {name}\n" for name in sidecar_names),
+        encoding="utf-8",
+    )
+    return sidecar
+
+
 def _payload_bytes(name: str) -> bytes:
     payload = f"{name}\n".encode()
     if name.endswith(".deb"):
@@ -271,6 +470,32 @@ def _zip_bytes(name: str, payload: bytes) -> bytes:
     with zipfile.ZipFile(buffer, "w") as archive:
         archive.writestr(f"{name}.txt", payload)
     return buffer.getvalue()
+
+
+def _write_zip_with_entries(path: Path, entries: dict[str, bytes]) -> None:
+    with zipfile.ZipFile(path, "w") as archive:
+        for name, payload in entries.items():
+            archive.writestr(name, payload)
+
+
+def _write_zip_with_symlink_entry(path: Path, entry_name: str) -> None:
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("payload/readme.txt", b"ok\n")
+        info = zipfile.ZipInfo(entry_name)
+        info.external_attr = 0o120777 << 16
+        archive.writestr(info, b"target.txt")
+
+
+def _write_tar_with_symlink_entry(path: Path, entry_name: str) -> None:
+    payload = b"ok\n"
+    with tarfile.open(path, mode="w:gz") as archive:
+        info = tarfile.TarInfo(name="payload/readme.txt")
+        info.size = len(payload)
+        archive.addfile(info, io.BytesIO(payload))
+        link = tarfile.TarInfo(name=entry_name)
+        link.type = tarfile.SYMTYPE
+        link.linkname = "../target.txt"
+        archive.addfile(link)
 
 
 def _sha256(path: Path) -> str:

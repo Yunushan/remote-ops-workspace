@@ -81,6 +81,9 @@ def make_extended_linux_evidence_bundle(
     force: bool = False,
 ) -> list[str]:
     errors: list[str] = []
+    errors.extend(check_input_symlinks(builder_evidence, smoke_evidence, candidate_record))
+    if errors:
+        return errors
     builder_identity = load_json(builder_evidence, "builder evidence", errors)
     candidate = load_json(candidate_record, "candidate evidence record", errors)
     if builder_identity is None or candidate is None:
@@ -101,6 +104,7 @@ def make_extended_linux_evidence_bundle(
             target=target,
             assets_dir=assets_dir,
             tag=release_tag,
+            strict=True,
         )
     )
     registry = {
@@ -125,6 +129,8 @@ def make_extended_linux_evidence_bundle(
     }
     if candidate.get("linux_evidence_sources") != expected_sources:
         errors.append("candidate linux_evidence_sources must match builder and smoke evidence files")
+    source = candidate.get("release_asset_source")
+    source_head_sha = str(source.get("head_sha", "")).strip() if isinstance(source, dict) else ""
     if smoke_evidence.is_file():
         errors.extend(
             check_linux_smoke_evidence_file(
@@ -133,6 +139,7 @@ def make_extended_linux_evidence_bundle(
                 str(candidate.get("native_smoke_command", "")),
                 str(candidate.get("workflow_run_url", "")),
                 smoke_evidence,
+                source_head_sha=source_head_sha,
                 artifact_sha256=candidate.get("artifact_sha256"),
             )
         )
@@ -142,16 +149,14 @@ def make_extended_linux_evidence_bundle(
     if errors:
         return errors
 
-    out_dir.mkdir(parents=True, exist_ok=True)
     stem = f"extended-linux-evidence-bundle-{target}-{release_tag}"
     manifest_path = out_dir / f"{stem}.json"
     archive_path = out_dir / f"{stem}.zip"
     sha_path = out_dir / f"{stem}-SHA256SUMS.txt"
     outputs = (manifest_path, archive_path, sha_path)
-    if not force:
-        existing = [str(path) for path in outputs if path.exists()]
-        if existing:
-            return [f"refusing to overwrite existing extended Linux evidence bundle outputs: {existing}"]
+    errors.extend(prepare_output_paths(out_dir=out_dir, outputs=outputs, force=force))
+    if errors:
+        return errors
 
     manifest = bundle_manifest(
         target=target,
@@ -178,6 +183,57 @@ def make_extended_linux_evidence_bundle(
         f"{sha256_file(archive_path)}  {archive_path.name}\n",
         encoding="utf-8",
     )
+    return []
+
+
+def check_input_symlinks(
+    builder_evidence: Path,
+    smoke_evidence: Path,
+    candidate_record: Path,
+) -> list[str]:
+    inputs = {
+        "builder evidence": builder_evidence,
+        "smoke evidence": smoke_evidence,
+        "candidate evidence record": candidate_record,
+    }
+    return [
+        f"{label} file must not be a symlink: {path}"
+        for label, path in inputs.items()
+        if path.is_symlink()
+    ]
+
+
+def prepare_output_paths(*, out_dir: Path, outputs: tuple[Path, ...], force: bool) -> list[str]:
+    if out_dir.is_symlink():
+        return [f"extended Linux evidence bundle output directory must not be a symlink: {out_dir}"]
+    parent_errors = check_path_parent_symlinks(out_dir, "extended Linux evidence bundle output directory")
+    if parent_errors:
+        return parent_errors
+    if out_dir.exists() and not out_dir.is_dir():
+        return [f"extended Linux evidence bundle output path must be a directory: {out_dir}"]
+    errors: list[str] = []
+    for path in outputs:
+        if path.is_symlink():
+            errors.append(f"extended Linux evidence bundle output file must not be a symlink: {path.name}")
+        elif path.exists() and not path.is_file():
+            errors.append(f"extended Linux evidence bundle output must be a regular file: {path.name}")
+    if errors:
+        return errors
+    if not force:
+        existing = [str(path) for path in outputs if path.exists()]
+        if existing:
+            return [f"refusing to overwrite existing extended Linux evidence bundle outputs: {existing}"]
+    out_dir.mkdir(parents=True, exist_ok=True)
+    return []
+
+
+def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
+    check_path = path if path.is_absolute() else Path.cwd() / path
+    for parent in reversed(check_path.parents):
+        if parent == Path("."):
+            continue
+        if parent.is_symlink():
+            return [f"{label} path must not contain symlinked directories: {parent}"]
     return []
 
 
@@ -226,6 +282,7 @@ def check_linux_smoke_evidence_file(
     workflow_run_url: str,
     smoke_evidence: Path,
     *,
+    source_head_sha: str,
     artifact_sha256: Any | None = None,
 ) -> list[str]:
     try:
@@ -238,6 +295,7 @@ def check_linux_smoke_evidence_file(
         native_smoke_command,
         workflow_run_url,
         text,
+        source_head_sha=source_head_sha,
         artifact_sha256=artifact_sha256,
     )
 
@@ -261,6 +319,7 @@ def bundle_manifest(
         "validated_commands": [
             str(candidate.get("native_build_command", "")),
             str(candidate.get("native_smoke_command", "")),
+            str(candidate.get("local_evidence_preflight_command", "")),
             str(candidate.get("artifact_validation_command", "")),
             "python scripts/check_platform_verified_evidence.py",
         ],

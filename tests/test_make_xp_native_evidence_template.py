@@ -20,6 +20,7 @@ def test_make_xp_native_evidence_template_writes_incomplete_bundle(tmp_path: Pat
     assert evidence["target"] == "windows-xp-native-x86"
     assert evidence["release_tag"] == "v1.0.2"
     assert evidence["artifact_validation"]["passed"] is False
+    assert evidence["artifact_validation"]["command"].endswith("--tag v1.0.2 --strict")
     assert evidence["host_identity"]["target"] == "windows-xp-native-x86"
     assert evidence["host_identity"]["operator_private_data_redacted"] is False
     assert "sanitized-lab-label" in evidence["host_identity"]["host_label"]
@@ -105,6 +106,95 @@ def test_make_xp_native_evidence_template_rejects_overwrite_without_force(tmp_pa
     )
 
     assert any("refusing to overwrite existing evidence template" in error for error in errors)
+
+
+def test_make_xp_native_evidence_template_rejects_symlinked_output_root(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    maker = _load_template_maker()
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self == tmp_path
+
+    monkeypatch.setattr(type(tmp_path), "is_symlink", fake_is_symlink)
+
+    errors = maker.make_xp_native_evidence_template(
+        target="windows-xp-native-x86",
+        release_tag="v1.0.2",
+        out_dir=tmp_path,
+        force=True,
+    )
+
+    assert errors == [f"XP native evidence template output directory must not be a symlink: {tmp_path}"]
+
+
+def test_make_xp_native_evidence_template_rejects_symlinked_output_parent(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    maker = _load_template_maker()
+    out_parent = tmp_path / "linked-output"
+    out_dir = out_parent / "xp-template"
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self == out_parent
+
+    monkeypatch.setattr(type(tmp_path), "is_symlink", fake_is_symlink)
+
+    errors = maker.make_xp_native_evidence_template(
+        target="windows-xp-native-x86",
+        release_tag="v1.0.2",
+        out_dir=out_dir,
+        force=True,
+    )
+
+    assert errors == [
+        f"XP native evidence template output directory path must not contain symlinked directories: {out_parent}"
+    ]
+
+
+def test_make_xp_native_evidence_template_rejects_unsafe_existing_outputs(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    maker = _load_template_maker()
+    evidence = tmp_path / "xp-evidence.json"
+    evidence.write_text("{}\n", encoding="utf-8")
+    smoke_dir = tmp_path / "xp-smoke-evidence"
+    smoke_dir.mkdir()
+    smoke_file = smoke_dir / "cli_launch.txt"
+    smoke_file.write_text("old smoke\n", encoding="utf-8")
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self in {evidence, smoke_file}
+
+    monkeypatch.setattr(type(tmp_path), "is_symlink", fake_is_symlink)
+
+    errors = maker.make_xp_native_evidence_template(
+        target="windows-xp-native-x86",
+        release_tag="v1.0.2",
+        out_dir=tmp_path,
+        force=True,
+    )
+
+    assert f"XP native evidence template file must not be a symlink: {evidence}" in errors
+    assert f"XP native evidence template smoke file must not be a symlink: {smoke_file}" in errors
+
+
+def test_make_xp_native_evidence_template_rejects_non_directory_smoke_path(tmp_path: Path) -> None:
+    maker = _load_template_maker()
+    smoke_dir = tmp_path / "xp-smoke-evidence"
+    smoke_dir.write_text("not a directory\n", encoding="utf-8")
+
+    errors = maker.make_xp_native_evidence_template(
+        target="windows-xp-native-x86",
+        release_tag="v1.0.2",
+        out_dir=tmp_path,
+        force=True,
+    )
+
+    assert errors == [f"XP native evidence template smoke path must be a directory: {smoke_dir}"]
 
 
 def _load_template_maker():

@@ -7,7 +7,7 @@ import re
 import sys
 import tarfile
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -91,7 +91,7 @@ def check_contract(promotion: dict[str, Any]) -> list[str]:
         )
         expected = (
             "python scripts/check_platform_promotion_artifacts.py "
-            f"--target {target_id} --assets-dir {artifact_dir} --tag v<project.version>"
+            f"--target {target_id} --assets-dir {artifact_dir} --tag v<project.version> --strict"
         )
         if command != expected:
             errors.append(f"{target_id} artifact_validation_command must be: {expected}")
@@ -123,9 +123,17 @@ def check_platform_promotion_artifacts(
     version = version_from_tag(tag or f"v{read_project_version()}", errors)
     if errors:
         return errors
+    if assets_dir.is_symlink():
+        return [f"{target} artifact directory must not be a symlink: {assets_dir}"]
+    parent_errors = check_path_parent_symlinks(assets_dir, f"{target} artifact directory")
+    if parent_errors:
+        return parent_errors
     root = assets_dir.resolve()
     if not root.is_dir():
         return [f"artifact directory missing: {assets_dir}"]
+    symlinks = sorted(path.name for path in root.iterdir() if path.is_symlink())
+    if symlinks:
+        errors.append(f"{target} artifacts must not contain symlinks: {symlinks}")
 
     expected = {expand_version(str(item), version) for item in required_artifacts(entry)}
     actual = {path.name for path in root.iterdir() if path.is_file()}
@@ -175,29 +183,87 @@ def check_archive_structure(target: str, path: Path) -> list[str]:
 def check_zip_structure(target: str, path: Path) -> list[str]:
     try:
         with zipfile.ZipFile(path) as archive:
-            entries = [item for item in archive.infolist() if not item.is_dir()]
+            infos = archive.infolist()
+            entries = [item for item in infos if not item.is_dir()]
     except (OSError, zipfile.BadZipFile) as exc:
         return [f"{target} ZIP artifact is not a readable archive: {path.name}: {exc}"]
+    errors = check_zip_entry_safety(target, path.name, infos)
     if not entries:
-        return [f"{target} ZIP artifact must contain at least one file: {path.name}"]
+        errors.append(f"{target} ZIP artifact must contain at least one file: {path.name}")
     empty_entries = sorted(item.filename for item in entries if item.file_size <= 0)
     if empty_entries:
-        return [f"{target} ZIP artifact contains empty files: {empty_entries}"]
-    return []
+        errors.append(f"{target} ZIP artifact contains empty files: {empty_entries}")
+    return errors
 
 
 def check_tar_gz_structure(target: str, path: Path) -> list[str]:
     try:
         with tarfile.open(path, mode="r:gz") as archive:
-            entries = [item for item in archive.getmembers() if item.isfile()]
+            members = archive.getmembers()
+            entries = [item for item in members if item.isfile()]
     except (OSError, tarfile.TarError) as exc:
         return [f"{target} tar.gz artifact is not a readable archive: {path.name}: {exc}"]
+    errors = check_tar_entry_safety(target, path.name, members)
     if not entries:
-        return [f"{target} tar.gz artifact must contain at least one file: {path.name}"]
+        errors.append(f"{target} tar.gz artifact must contain at least one file: {path.name}")
     empty_entries = sorted(item.name for item in entries if item.size <= 0)
     if empty_entries:
-        return [f"{target} tar.gz artifact contains empty files: {empty_entries}"]
+        errors.append(f"{target} tar.gz artifact contains empty files: {empty_entries}")
+    return errors
+
+
+def check_zip_entry_safety(target: str, archive_name: str, infos: list[zipfile.ZipInfo]) -> list[str]:
+    symlink_entries = sorted(info.filename for info in infos if zip_entry_is_symlink(info))
+    unsafe_entries = sorted(
+        info.filename
+        for info in infos
+        if not archive_entry_name_is_safe(info.filename.rstrip("/") if info.is_dir() else info.filename)
+    )
+    errors: list[str] = []
+    if symlink_entries:
+        errors.append(f"{target} ZIP artifact {archive_name} entries must not be symlinks: {symlink_entries}")
+    if unsafe_entries:
+        errors.append(f"{target} ZIP artifact {archive_name} entries must use safe relative paths: {unsafe_entries}")
+    return errors
+
+
+def zip_entry_is_symlink(info: zipfile.ZipInfo) -> bool:
+    file_type = (info.external_attr >> 16) & 0o170000
+    return file_type == 0o120000
+
+
+def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
+    check_path = path if path.is_absolute() else Path.cwd() / path
+    for parent in reversed(check_path.parents):
+        if parent == Path("."):
+            continue
+        if parent.is_symlink():
+            return [f"{label} path must not contain symlinked directories: {parent}"]
     return []
+
+
+def check_tar_entry_safety(target: str, archive_name: str, members: list[tarfile.TarInfo]) -> list[str]:
+    unsafe_entries = sorted(member.name for member in members if not archive_entry_name_is_safe(member.name))
+    unsafe_types = sorted(member.name for member in members if not member.isfile() and not member.isdir())
+    errors: list[str] = []
+    if unsafe_entries:
+        errors.append(f"{target} tar.gz artifact {archive_name} entries must use safe relative paths: {unsafe_entries}")
+    if unsafe_types:
+        errors.append(
+            f"{target} tar.gz artifact {archive_name} entries must be regular files or directories: {unsafe_types}"
+        )
+    return errors
+
+
+def archive_entry_name_is_safe(name: str) -> bool:
+    if not name or "\\" in name:
+        return False
+    parts = name.split("/")
+    if any(part in ("", ".", "..") for part in parts):
+        return False
+    posix_path = PurePosixPath(name)
+    windows_path = PureWindowsPath(name)
+    return not posix_path.is_absolute() and not windows_path.is_absolute() and not windows_path.drive
 
 
 def signatures_for(filename: str) -> tuple[bytes, ...]:
@@ -231,7 +297,12 @@ def check_checksum_sidecar(target: str, root: Path, expected: set[str]) -> list[
             errors.append(f"{target} checksum sidecar has invalid line: {line}")
             continue
         checksum, raw_name = match.groups()
-        filename = Path(raw_name).name
+        if not artifact_reference_name_is_safe(raw_name):
+            errors.append(
+                f"{target} checksum sidecar reference must be an exact safe file name: {raw_name!r}"
+            )
+            continue
+        filename = raw_name
         referenced.add(filename)
         reference_counts[filename] = reference_counts.get(filename, 0) + 1
         if filename not in expected_references:
@@ -277,12 +348,18 @@ def check_native_manifest(target: str, root: Path, expected: set[str]) -> list[s
     by_name: dict[str, dict[str, Any]] = {}
     record_counts: dict[str, int] = {}
     for record in records:
-        filename = manifest_record_filename(record)
-        if filename:
-            by_name[filename] = record
-            record_counts[filename] = record_counts.get(filename, 0) + 1
-        else:
+        raw_filename = manifest_record_filename(record)
+        if not raw_filename:
             errors.append(f"{target} native manifest contains record without file/path/name")
+            continue
+        if not artifact_reference_name_is_safe(raw_filename):
+            errors.append(
+                f"{target} native manifest record file/path/name must be an exact safe file name: {raw_filename!r}"
+            )
+            continue
+        filename = raw_filename
+        by_name[filename] = record
+        record_counts[filename] = record_counts.get(filename, 0) + 1
     missing_records = sorted(payload_expected - set(by_name))
     if missing_records:
         errors.append(f"{target} native manifest missing payload records: {missing_records}")
@@ -327,8 +404,18 @@ def manifest_record_filename(record: dict[str, Any]) -> str:
     for key in ("file", "path", "name"):
         value = record.get(key)
         if isinstance(value, str) and value:
-            return Path(value).name
+            return value
     return ""
+
+
+def artifact_reference_name_is_safe(name: str) -> bool:
+    if not name or name.strip() != name or "/" in name or "\\" in name:
+        return False
+    if name in (".", ".."):
+        return False
+    windows_path = PureWindowsPath(name)
+    posix_path = PurePosixPath(name)
+    return not windows_path.drive and not windows_path.is_absolute() and not posix_path.is_absolute()
 
 
 def promotion_entries(promotion: dict[str, Any], errors: list[str]) -> dict[str, dict[str, Any]]:

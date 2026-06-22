@@ -45,6 +45,16 @@ def test_extended_platform_evidence_requires_candidate_record_generation() -> No
     assert any("accepted-evidence record generation" in error for error in errors)
 
 
+def test_extended_platform_evidence_requires_local_goal_preflight() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8")
+    workflow = workflow.replace("python scripts/check_platform_goal_local_evidence.py", "python scripts/removed.py", 1)
+
+    errors = checker.check_extended_platform_evidence(workflow)
+
+    assert any("local protected goal evidence preflight" in error for error in errors)
+
+
 def test_extended_platform_evidence_requires_review_bundle_generation() -> None:
     checker = _load_script("check_extended_platform_evidence")
     workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8")
@@ -148,6 +158,22 @@ def test_extended_platform_dispatch_input_validator_rejects_release_tag_mismatch
     )
 
     assert "release_asset_base_url tag must match release_tag v1.0.2, got v1.0.3" in errors
+
+
+def test_extended_platform_dispatch_input_validator_rejects_trailing_slash_release_base() -> None:
+    checker = _load_script("check_extended_platform_dispatch_inputs")
+
+    errors = checker.check_extended_platform_dispatch_inputs(
+        target="linux-i386",
+        release_tag="v1.0.2",
+        release_asset_base_url="https://github.com/example/remote-ops-workspace/releases/download/v1.0.2/",
+        workflow_run_url="https://github.com/example/remote-ops-workspace/actions/runs/12345",
+    )
+
+    assert (
+        "release_asset_base_url must be exactly "
+        "https://github.com/<owner>/<repo>/releases/download/v1.0.2"
+    ) in errors
 
 
 def test_extended_platform_dispatch_input_validator_rejects_cross_repo_inputs() -> None:
@@ -258,6 +284,55 @@ def test_extended_platform_builder_writes_identity_evidence(tmp_path: Path, monk
     assert data["required_tools"]["dpkg-deb"] == "/usr/bin/dpkg-deb"
     assert data["required_tools"]["rpm"] == "/usr/bin/rpm"
     assert data["sudo_non_interactive"] is True
+
+
+def test_extended_platform_builder_rejects_symlinked_identity_output(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    checker = _load_script("check_extended_platform_builder")
+    output = tmp_path / "builder-identity-linux-i386.json"
+    output.write_text("{}\n", encoding="utf-8")
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self == output
+
+    monkeypatch.setattr(type(tmp_path), "is_symlink", fake_is_symlink)
+
+    errors = checker.check_builder_identity_output_path("linux-i386", output)
+
+    assert errors == [f"builder identity output file must not be a symlink: {output}"]
+
+
+def test_extended_platform_builder_rejects_symlinked_identity_output_parent(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    checker = _load_script("check_extended_platform_builder")
+    output_parent = tmp_path / "linked-output" / "linux-evidence"
+    output = output_parent / "builder-identity-linux-i386.json"
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self == tmp_path / "linked-output"
+
+    monkeypatch.setattr(type(tmp_path), "is_symlink", fake_is_symlink)
+
+    errors = checker.check_builder_identity_output_path("linux-i386", output)
+
+    assert errors == [
+        "builder identity output directory path must not contain symlinked directories: "
+        f"{tmp_path / 'linked-output'}"
+    ]
+
+
+def test_extended_platform_builder_rejects_non_file_identity_output(tmp_path: Path) -> None:
+    checker = _load_script("check_extended_platform_builder")
+    output = tmp_path / "builder-identity-linux-i386.json"
+    output.mkdir()
+
+    errors = checker.check_builder_identity_output_path("linux-i386", output)
+
+    assert errors == [f"builder identity output file must be a regular file: {output}"]
 
 
 def test_extended_platform_builder_requires_release_context_for_identity_output(tmp_path: Path, monkeypatch) -> None:

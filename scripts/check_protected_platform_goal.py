@@ -45,6 +45,10 @@ def main(argv: list[str] | None = None) -> int:
         print(format_goal_summary(goal))
         if goal["missing_targets"]:
             print(f"missing targets: {', '.join(goal['missing_targets'])}")
+        if args.require_complete or args.show_requirements:
+            requirements = format_goal_requirements(goal)
+            if requirements:
+                print(requirements)
     if errors:
         for error in errors:
             print(f"protected platform goal: {error}", file=sys.stderr)
@@ -82,6 +86,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Print the protected goal parity block as JSON.",
     )
+    parser.add_argument(
+        "--show-requirements",
+        action="store_true",
+        help=(
+            "Print a concise per-target proof checklist from "
+            "platform_verified_readiness.protected_goal_parity."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -115,7 +127,7 @@ def check_protected_platform_goal(
     goal = _platform_verified_readiness(evidence_registry=goal_registry)["protected_goal_parity"]
     if release_tag is not None:
         goal = dict(goal)
-        goal["release_tag"] = release_tag
+        apply_required_release_tag(goal, release_tag)
     elif require_complete:
         goal = dict(goal)
         goal["complete"] = False
@@ -157,6 +169,17 @@ def filter_registry_for_release_tag(
     return filtered
 
 
+def apply_required_release_tag(goal: dict[str, Any], release_tag: str) -> None:
+    goal["release_tag"] = release_tag
+    for requirement in goal.get("target_evidence_requirements", []):
+        if not isinstance(requirement, dict):
+            continue
+        requirement["required_release_tag"] = release_tag
+        accepted_record = requirement.get("accepted_evidence_record")
+        if isinstance(accepted_record, dict):
+            accepted_record["release_tag"] = release_tag
+
+
 def format_goal_summary(goal: dict[str, Any]) -> str:
     release = f" release_tag={goal['release_tag']}" if goal.get("release_tag") else ""
     return (
@@ -164,6 +187,54 @@ def format_goal_summary(goal: dict[str, Any]) -> str:
         f"{release}: {goal['accepted_target_count']}/{goal['target_count']} accepted "
         f"({goal['current_percent']:.1f}%); status={goal['status']}"
     )
+
+
+def format_goal_requirements(goal: dict[str, Any]) -> str:
+    requirements = goal.get("target_evidence_requirements", [])
+    if not isinstance(requirements, list):
+        return ""
+    missing = set(str(target) for target in goal.get("missing_targets", []))
+    rows = [item for item in requirements if isinstance(item, dict)]
+    if missing:
+        rows = [item for item in rows if str(item.get("target", "")) in missing]
+    if not rows:
+        return ""
+    lines = ["required proof for missing targets:" if missing else "required proof for protected targets:"]
+    for item in rows:
+        target = str(item.get("target", ""))
+        accepted = "accepted" if item.get("accepted") else "missing"
+        lines.append(f"  {target}: {accepted}")
+        boundary = str(item.get("support_boundary", ""))
+        if boundary:
+            lines.append(f"    boundary: {boundary}")
+        accepted_record = item.get("accepted_evidence_record", {})
+        if isinstance(accepted_record, dict):
+            lines.append(
+                "    accepted record: "
+                f"{accepted_record.get('registry', 'configs/platform_verified_evidence.json')} "
+                f"target={accepted_record.get('target', target)} "
+                f"release_tag={accepted_record.get('release_tag', goal.get('release_tag', 'v<project.version>'))} "
+                f"status={accepted_record.get('status', 'accepted')} "
+                f"readiness={accepted_record.get('readiness_percent', 100.0)}"
+            )
+        artifacts = item.get("required_artifacts", [])
+        review_bundles = item.get("required_review_bundle_files", [])
+        if isinstance(artifacts, list) or isinstance(review_bundles, list):
+            lines.append(
+                "    release proof: "
+                f"{len(artifacts) if isinstance(artifacts, list) else 0} artifacts, "
+                f"{len(review_bundles) if isinstance(review_bundles, list) else 0} review-bundle files"
+            )
+        commands = item.get("required_commands", {})
+        if isinstance(commands, dict) and commands:
+            lines.append(f"    commands: {', '.join(sorted(str(key) for key in commands))}")
+        builder_or_host = str(item.get("builder_or_host_evidence", ""))
+        if builder_or_host:
+            lines.append(f"    builder/host: {builder_or_host}")
+        security = item.get("security_requirements", [])
+        if isinstance(security, list) and security:
+            lines.append(f"    security: {'; '.join(str(value) for value in security)}")
+    return "\n".join(lines)
 
 
 if __name__ == "__main__":

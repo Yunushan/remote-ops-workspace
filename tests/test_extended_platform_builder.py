@@ -44,6 +44,18 @@ def test_builder_identity_records_source_head_sha() -> None:
     assert identity["source_head_sha"] == "a" * 40
 
 
+def test_builder_identity_output_path_requires_target_scoped_name(tmp_path: Path) -> None:
+    builder = _load_builder()
+    output = tmp_path / "builder.json"
+
+    errors = builder.check_builder_identity_output_path("linux-i386", output)
+
+    assert (
+        "linux-i386 builder identity output file name must be "
+        "builder-identity-linux-i386.json, got 'builder.json'"
+    ) in errors
+
+
 def _load_builder():
     path = Path("scripts/check_extended_platform_builder.py")
     spec = importlib.util.spec_from_file_location("check_extended_platform_builder", path)

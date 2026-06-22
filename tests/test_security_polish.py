@@ -3,6 +3,7 @@ import json
 import sys
 from pathlib import Path
 
+from remote_ops_workspace.models import Profile
 from remote_ops_workspace.redaction import REDACTED, redact_value
 
 
@@ -126,6 +127,23 @@ def test_security_polish_rejects_missing_xp_security_smoke_id() -> None:
     )
 
     assert "XP native evidence contract must require smoke id: modern_defaults_unchanged" in errors
+
+
+def test_security_polish_rejects_permissive_legacy_launcher_behavior() -> None:
+    checker = load_security_checker()
+
+    def permissive_build_plan(profile: Profile) -> object:
+        return {"protocol": profile.protocol}
+
+    errors = checker.check_legacy_launcher_behavior(
+        build_plan=permissive_build_plan,
+        profile_type=Profile,
+        launcher_error_type=RuntimeError,
+    )
+
+    assert "SSHv1 launch must require an isolated XP legacy_target" in errors
+    assert "weak SSH algorithms must require an isolated XP legacy_target" in errors
+    assert "RDP native security must require an isolated XP legacy_target" in errors
 
 
 def _security_baseline() -> dict[str, object]:

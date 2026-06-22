@@ -33,6 +33,7 @@ def build_steps(
     require_platform_goal_targets: bool = False,
     release_tag: str | None = None,
     platform_review_bundle_dir: Path | None = None,
+    release_assets_dir: Path | None = None,
     row_home: Path | None = None,
 ) -> list[VerifyStep]:
     steps = [
@@ -89,6 +90,11 @@ def build_steps(
         VerifyStep(
             "platform promotion artifact validator contract",
             [python, "scripts/check_platform_promotion_artifacts.py", "--contract"],
+            env=_source_env(),
+        ),
+        VerifyStep(
+            "protected platform local evidence preflight",
+            [python, "scripts/check_platform_goal_local_evidence.py", "--help"],
             env=_source_env(),
         ),
         VerifyStep(
@@ -245,6 +251,7 @@ def build_steps(
             [
                 python,
                 "scripts/check_release_publish_assets.py",
+                *(["--assets-dir", str(release_assets_dir)] if release_assets_dir is not None else []),
                 *(["--tag", release_tag] if release_tag else []),
                 *(["--require-platform-goal-targets"] if require_platform_goal_targets else []),
             ],
@@ -398,7 +405,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help=(
             "fail unless Linux i386, Linux armhf, Windows XP native x86, "
             "and Windows XP native x64 all have accepted platform evidence; "
-            "requires --release-tag and --platform-review-bundle-dir"
+            "requires --release-tag, --platform-review-bundle-dir, and --release-assets-dir"
         ),
     )
     parser.add_argument(
@@ -410,6 +417,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=Path,
         help=(
             "Downloaded platform review-bundle artifact directory to validate as part of "
+            "strict platform-goal promotion."
+        ),
+    )
+    parser.add_argument(
+        "--release-assets-dir",
+        type=Path,
+        help=(
+            "Downloaded/publish-ready release asset directory to validate as part of "
             "strict platform-goal promotion."
         ),
     )
@@ -434,6 +449,7 @@ def main(argv: list[str] | None = None) -> int:
             require_platform_goal_targets=args.require_platform_goal_targets,
             release_tag=args.release_tag,
             platform_review_bundle_dir=args.platform_review_bundle_dir,
+            release_assets_dir=args.release_assets_dir,
             row_home=row_home,
         )
         return run_steps(steps)
@@ -447,6 +463,8 @@ def strict_platform_goal_arg_errors(args: argparse.Namespace) -> list[str]:
         errors.append("--require-platform-goal-targets requires --release-tag vX.Y.Z")
     if args.platform_review_bundle_dir is None:
         errors.append("--require-platform-goal-targets requires --platform-review-bundle-dir")
+    if args.release_assets_dir is None:
+        errors.append("--require-platform-goal-targets requires --release-assets-dir")
     return errors
 
 

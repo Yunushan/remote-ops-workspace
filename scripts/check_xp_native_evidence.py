@@ -27,6 +27,7 @@ from check_platform_promotion_artifacts import (  # noqa: E402
 CONTRACT_PATH = ROOT / "configs" / "xp_native_evidence_contract.json"
 PROMOTION_PATH = ROOT / "configs" / "platform_parity_promotion.json"
 PROMOTION_TARGETS = {"windows-xp-native-x86", "windows-xp-native-x64"}
+RESERVED_WORKSPACE_ROOTS = {".agents", ".codex", ".git", ".github"}
 REQUIRED_FORBIDDEN_EVIDENCE_PATTERNS = {
     "TODO",
     "placeholder",
@@ -116,8 +117,14 @@ def check_contract(contract: dict[str, Any]) -> list[str]:
     smoke_ids = contract.get("required_smoke_ids")
     if not isinstance(smoke_ids, list) or len(smoke_ids) < 6:
         errors.append("XP native evidence contract must list required_smoke_ids")
+    if contract.get("evidence_plain_file_required") is not True:
+        errors.append("XP native evidence contract must require a plain non-symlink evidence JSON file")
+    if contract.get("evidence_directory_plain_path_required") is not True:
+        errors.append("XP native evidence contract must require a plain non-symlink evidence directory")
     if contract.get("required_smoke_evidence_file") is not True:
         errors.append("XP native evidence contract must require smoke evidence files")
+    if contract.get("smoke_evidence_plain_file_required") is not True:
+        errors.append("XP native evidence contract must require plain non-symlink smoke evidence files")
     smoke_fields = contract.get("required_smoke_result_fields")
     required_smoke_fields = {"id", "passed", "command", "evidence_file", "evidence_sha256"}
     if not isinstance(smoke_fields, list) or not required_smoke_fields.issubset(
@@ -246,6 +253,17 @@ def check_xp_native_evidence(
 ) -> list[str]:
     contract_data = contract or read_json(CONTRACT_PATH)
     errors: list[str] = []
+    evidence_root_input = evidence_dir or evidence_path.parent
+    if evidence_path.is_symlink():
+        errors.append(f"evidence file must not be a symlink: {evidence_path}")
+    if evidence_root_input.is_symlink():
+        errors.append(f"evidence directory must not be a symlink: {evidence_root_input}")
+    if not errors:
+        errors.extend(check_path_parent_symlinks(evidence_root_input, "evidence directory"))
+    if not errors:
+        errors.extend(check_evidence_file_location(evidence_path, evidence_root_input))
+    if errors:
+        return errors
     if not evidence_path.is_file():
         return [f"evidence file missing: {evidence_path}"]
     try:
@@ -283,7 +301,7 @@ def check_xp_native_evidence(
         )
     )
     errors.extend(check_security(target, evidence.get("security"), contract_data))
-    evidence_root = (evidence_dir or evidence_path.parent).resolve()
+    evidence_root = evidence_root_input.resolve()
     errors.extend(check_smoke_results(target, release_tag, evidence.get("smoke_results"), contract_data, evidence_root))
     errors.extend(check_artifact_validation_record(target, evidence.get("artifact_validation"), release_tag))
     errors.extend(check_artifact_names(target, evidence.get("artifacts"), target_contract, release_tag))
@@ -293,8 +311,38 @@ def check_xp_native_evidence(
                 target=target,
                 assets_dir=assets_dir,
                 tag=release_tag,
+                strict=True,
             )
         )
+    return errors
+
+
+def check_evidence_file_location(evidence_path: Path, evidence_root_input: Path) -> list[str]:
+    if evidence_root_input.exists() and not evidence_root_input.is_dir():
+        return [f"evidence directory must be a directory: {evidence_root_input}"]
+    evidence_root = evidence_root_input.resolve(strict=False)
+    evidence_resolved = evidence_path.resolve(strict=False)
+    errors: list[str] = []
+    try:
+        evidence_resolved.relative_to(evidence_root)
+    except ValueError:
+        errors.append(f"evidence file must stay inside evidence directory: {evidence_path}")
+
+    relative_path: Path | None = None
+    try:
+        relative_path = evidence_path.relative_to(evidence_root_input)
+    except ValueError:
+        try:
+            relative_path = evidence_resolved.relative_to(evidence_root)
+        except ValueError:
+            relative_path = None
+    if relative_path is not None:
+        symlink = first_symlink_in_relative_path(evidence_root_input, relative_path)
+        if symlink is not None:
+            errors.append(
+                "evidence file path must not contain symlinks: "
+                f"{display_relative_path(evidence_root_input, symlink)}"
+            )
     return errors
 
 
@@ -550,6 +598,12 @@ def check_smoke_evidence_file(
     evidence_file = Path(raw_file)
     if evidence_file.is_absolute():
         return [f"{target} smoke result {smoke_id} evidence_file must be relative"]
+    symlink = first_symlink_in_relative_path(evidence_root, evidence_file)
+    if symlink is not None:
+        return [
+            f"{target} smoke result {smoke_id} evidence_file path must not contain symlinks: "
+            f"{display_relative_path(evidence_root, symlink)}"
+        ]
     resolved = (evidence_root / evidence_file).resolve()
     try:
         resolved.relative_to(evidence_root)
@@ -569,6 +623,32 @@ def check_smoke_evidence_file(
     errors.extend(check_smoke_evidence_binding(target, release_tag, smoke_id, data))
     errors.extend(check_security_smoke_evidence_lines(target, smoke_id, data, contract))
     return errors
+
+
+def first_symlink_in_relative_path(root: Path, relative_path: Path) -> Path | None:
+    current = root
+    for part in relative_path.parts:
+        current = current / part
+        if current.is_symlink():
+            return current
+    return None
+
+
+def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
+    check_path = path if path.is_absolute() else Path.cwd() / path
+    for parent in reversed(check_path.parents):
+        if parent == Path("."):
+            continue
+        if parent.is_symlink():
+            return [f"{label} path must not contain symlinked directories: {parent}"]
+    return []
+
+
+def display_relative_path(root: Path, path: Path) -> str:
+    try:
+        return path.relative_to(root).as_posix()
+    except ValueError:
+        return path.as_posix()
 
 
 def check_smoke_evidence_binding(target: str, release_tag: str, smoke_id: str, data: bytes) -> list[str]:
@@ -655,6 +735,11 @@ def check_artifact_validation_record(target: str, raw_record: Any, release_tag: 
         errors.append(
             f"{target} evidence artifact_validation.command must include exactly one --tag {release_tag}, got {tags}"
         )
+    strict_count = command_flag_count(command, "--strict")
+    if strict_count != 1:
+        errors.append(
+            f"{target} evidence artifact_validation.command must include exactly one --strict, got {strict_count}"
+        )
     asset_dirs = re.findall(r"(?:^|\s)--assets-dir\s+(\S+)(?=\s|$)", command)
     if len(asset_dirs) != 1:
         errors.append(
@@ -675,14 +760,15 @@ def check_artifact_validation_assets_dir(target: str, release_tag: str, raw_path
             f"{target} evidence artifact_validation.command --assets-dir "
             f"must not contain wildcards, got {raw_path!r}"
         )
-    if "\\" in path:
-        parsed_path = PureWindowsPath(path)
-        parts = parsed_path.parts
-        is_absolute = parsed_path.is_absolute() or bool(parsed_path.drive)
+    windows_path = PureWindowsPath(path)
+    posix_path = PurePosixPath(path)
+    windows_absolute = windows_path.is_absolute() or bool(windows_path.drive)
+    posix_absolute = posix_path.is_absolute()
+    if "\\" in path or windows_absolute:
+        parts = windows_path.parts
     else:
-        parsed_path = PurePosixPath(path)
-        parts = parsed_path.parts
-        is_absolute = parsed_path.is_absolute()
+        parts = posix_path.parts
+    is_absolute = windows_absolute or posix_absolute
     if is_absolute:
         errors.append(
             f"{target} evidence artifact_validation.command --assets-dir "
@@ -691,6 +777,27 @@ def check_artifact_validation_assets_dir(target: str, release_tag: str, raw_path
     if any(part == ".." for part in parts):
         errors.append(f"{target} evidence artifact_validation.command --assets-dir must not traverse directories")
     normalized_parts = tuple(part for part in parts if part not in ("", "."))
+    if not normalized_parts:
+        errors.append(f"{target} evidence artifact_validation.command --assets-dir must not point at the workspace root")
+    else:
+        reserved_root = normalized_parts[0]
+        if reserved_root in RESERVED_WORKSPACE_ROOTS:
+            errors.append(
+                f"{target} evidence artifact_validation.command --assets-dir "
+                f"must not point inside reserved workspace directory {reserved_root!r}"
+            )
+        hidden_segments = sorted(
+            {
+                part
+                for part in normalized_parts
+                if part.startswith(".") and part not in RESERVED_WORKSPACE_ROOTS
+            }
+        )
+        if hidden_segments:
+            errors.append(
+                f"{target} evidence artifact_validation.command --assets-dir "
+                f"must not contain hidden path segments: {hidden_segments}"
+            )
     if target not in normalized_parts:
         errors.append(
             f"{target} evidence artifact_validation.command --assets-dir "
@@ -709,6 +816,18 @@ def check_artifact_validation_assets_dir(target: str, release_tag: str, raw_path
     return errors
 
 
+def command_flag_count(command: str, flag: str) -> int:
+    return len(re.findall(rf"(?:^|\s){re.escape(flag)}(?=\s|$)", command))
+
+
+def artifact_validation_asset_dirs(evidence: dict[str, Any]) -> list[str]:
+    raw_record = evidence.get("artifact_validation")
+    if not isinstance(raw_record, dict):
+        return []
+    command = str(raw_record.get("command", ""))
+    return re.findall(r"(?:^|\s)--assets-dir\s+(\S+)(?=\s|$)", command)
+
+
 def check_artifact_names(
     target: str,
     raw_artifacts: Any,
@@ -719,9 +838,11 @@ def check_artifact_names(
         return [f"{target} evidence artifacts must be a non-empty list"]
     required_target = str(target_contract.get("required_artifact_target", ""))
     errors: list[str] = []
-    artifact_names = [Path(str(artifact)).name for artifact in raw_artifacts]
+    artifact_names: list[str] = []
     for artifact in raw_artifacts:
         artifact_name = str(artifact)
+        artifact_names.append(artifact_name.strip())
+        errors.extend(check_artifact_name_shape(target, artifact_name))
         if required_target not in artifact_name:
             errors.append(f"{target} evidence artifact name must include {required_target}: {artifact_name}")
     expected_artifacts = expected_artifact_names(target, release_tag, errors)
@@ -736,6 +857,28 @@ def check_artifact_names(
         unexpected = sorted(artifact_set - expected_artifacts)
         if unexpected:
             errors.append(f"{target} evidence artifacts contain unexpected names: {unexpected}")
+    return errors
+
+
+def check_artifact_name_shape(target: str, artifact_name: str) -> list[str]:
+    path = artifact_name.strip()
+    errors: list[str] = []
+    if not path:
+        return [f"{target} evidence artifact name must be set"]
+    if any(char in path for char in "*?"):
+        errors.append(f"{target} evidence artifact name must not contain wildcards: {artifact_name!r}")
+    windows_path = PureWindowsPath(path)
+    posix_path = PurePosixPath(path)
+    windows_absolute = windows_path.is_absolute() or bool(windows_path.drive)
+    posix_absolute = posix_path.is_absolute()
+    if windows_absolute or posix_absolute:
+        errors.append(f"{target} evidence artifact name must be a file name, got {artifact_name!r}")
+    parts = windows_path.parts if ("\\" in path or windows_absolute) else posix_path.parts
+    normalized_parts = tuple(part for part in parts if part not in ("", "."))
+    if any(part == ".." for part in normalized_parts):
+        errors.append(f"{target} evidence artifact name must not traverse directories: {artifact_name!r}")
+    if normalized_parts != (path,):
+        errors.append(f"{target} evidence artifact name must be a file name, got {artifact_name!r}")
     return errors
 
 

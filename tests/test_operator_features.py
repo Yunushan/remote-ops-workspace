@@ -375,6 +375,26 @@ def test_rdp_native_security_requires_isolated_legacy_opt_in() -> None:
         launcher_module._is_windows = original_windows
 
 
+def test_windows_rdp_native_security_requires_isolated_legacy_opt_in() -> None:
+    original_windows = launcher_module._is_windows
+    launcher_module._is_windows = lambda: True
+    try:
+        profile = Profile(
+            name="xp",
+            protocol="rdp",
+            host="192.0.2.20",
+            options={"security": "rdp", "allow_legacy_rdp_security": "true"},
+        )
+        try:
+            build_launch_plan(profile)
+        except LauncherError as exc:
+            assert "legacy_target=windows-xp-32/windows-xp-64" in str(exc)
+        else:
+            raise AssertionError("Windows RDP native security should require an XP legacy target")
+    finally:
+        launcher_module._is_windows = original_windows
+
+
 def test_rdp_native_security_allows_explicit_xp_remote_target_profile() -> None:
     original_windows = launcher_module._is_windows
     original_first_available = launcher_module._first_available

@@ -19,9 +19,11 @@ from check_platform_verified_evidence import (  # noqa: E402
     KNOWN_TARGETS,
     PROTECTED_GOAL_TARGETS,
     check_platform_verified_evidence,
+    exact_safe_file_name,
     read_json,
 )
 from finalize_platform_verified_evidence_record import (  # noqa: E402
+    check_archive_entry_safety,
     finalize_platform_verified_evidence_record,
 )
 
@@ -106,6 +108,11 @@ def check_platform_review_bundle_artifacts(
     rows = registry.get("accepted_evidence", [])
     if not isinstance(rows, list):
         return ["accepted_evidence must be a list"]
+    if bundle_dir.is_symlink():
+        return [f"review bundle directory must not be a symlink: {bundle_dir}"]
+    parent_errors = check_path_parent_symlinks(bundle_dir, "review bundle directory")
+    if parent_errors:
+        return parent_errors
     bundle_root = bundle_dir.resolve()
     if not bundle_root.is_dir():
         return [f"review bundle directory missing: {bundle_dir}"]
@@ -128,7 +135,12 @@ def check_record_review_bundle_artifacts(record: dict[str, Any], bundle_root: Pa
         if not isinstance(raw_record, dict):
             errors.append(f"{target} review_bundle {key} must be an object")
             continue
-        filename = Path(str(raw_record.get("file", ""))).name
+        filename = str(raw_record.get("file", ""))
+        if not exact_safe_file_name(filename):
+            errors.append(
+                f"{target} review_bundle {key}.file must be an exact safe file name: {filename!r}"
+            )
+            continue
         path = bundle_root / filename
         paths[key] = path
         errors.extend(check_file_record(target, key, path, raw_record))
@@ -171,6 +183,7 @@ def check_record_review_bundle_artifacts(record: dict[str, Any], bundle_root: Pa
 def prefinalized_candidate_record(record: dict[str, Any]) -> dict[str, Any]:
     candidate = dict(record)
     candidate.pop("review_bundle", None)
+    candidate.pop("finalized_record_release_asset_url", None)
     source = candidate.get("release_asset_source")
     artifact_hashes = candidate.get("artifact_sha256")
     if isinstance(source, dict) and isinstance(artifact_hashes, dict):
@@ -200,9 +213,12 @@ def candidate_record_name(target: str, manifest: dict[str, Any], errors: list[st
     if not isinstance(raw_record, dict):
         errors.append(f"{target} review bundle manifest candidate_record must be an object")
         return ""
-    filename = Path(str(raw_record.get("file", ""))).name
-    if not filename:
-        errors.append(f"{target} review bundle manifest candidate_record.file must be set")
+    filename = str(raw_record.get("file", ""))
+    if not exact_safe_file_name(filename):
+        errors.append(
+            f"{target} review bundle manifest candidate_record.file must be an exact safe file name: {filename!r}"
+        )
+        return ""
     return filename
 
 
@@ -214,6 +230,10 @@ def read_archive_file(
 ) -> bytes | None:
     try:
         with zipfile.ZipFile(archive_path) as archive:
+            archive_safety_errors = check_archive_entry_safety(archive.infolist())
+            if archive_safety_errors:
+                errors.extend(f"{target} {error}" for error in archive_safety_errors)
+                return None
             try:
                 return archive.read(filename)
             except KeyError:
@@ -254,6 +274,16 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
+    check_path = path if path.is_absolute() else Path.cwd() / path
+    for parent in reversed(check_path.parents):
+        if parent == Path("."):
+            continue
+        if parent.is_symlink():
+            return [f"{label} path must not contain symlinked directories: {parent}"]
+    return []
 
 
 if __name__ == "__main__":

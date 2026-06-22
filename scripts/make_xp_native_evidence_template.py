@@ -62,13 +62,16 @@ def make_xp_native_evidence_template(
         return errors
 
     evidence_path = out_dir / "xp-evidence.json"
+    smoke_ids = [str(item) for item in contract.get("required_smoke_ids", [])]
+    errors.extend(check_template_output_paths(out_dir=out_dir, evidence_path=evidence_path, smoke_ids=smoke_ids))
+    if errors:
+        return errors
     if evidence_path.exists() and not force:
         return [f"refusing to overwrite existing evidence template: {evidence_path}"]
     smoke_dir = out_dir / "xp-smoke-evidence"
-    smoke_dir.mkdir(parents=True, exist_ok=True)
     out_dir.mkdir(parents=True, exist_ok=True)
+    smoke_dir.mkdir(parents=True, exist_ok=True)
 
-    smoke_ids = [str(item) for item in contract.get("required_smoke_ids", [])]
     for smoke_id in smoke_ids:
         smoke_path = smoke_dir / f"{smoke_id}.txt"
         if not smoke_path.exists() or force:
@@ -81,6 +84,43 @@ def make_xp_native_evidence_template(
         smoke_ids=smoke_ids,
     )
     evidence_path.write_text(json.dumps(evidence, indent=2) + "\n", encoding="utf-8")
+    return []
+
+
+def check_template_output_paths(*, out_dir: Path, evidence_path: Path, smoke_ids: list[str]) -> list[str]:
+    if out_dir.is_symlink():
+        return [f"XP native evidence template output directory must not be a symlink: {out_dir}"]
+    parent_errors = check_path_parent_symlinks(out_dir, "XP native evidence template output directory")
+    if parent_errors:
+        return parent_errors
+    if out_dir.exists() and not out_dir.is_dir():
+        return [f"XP native evidence template output path must be a directory: {out_dir}"]
+    smoke_dir = out_dir / "xp-smoke-evidence"
+    errors: list[str] = []
+    if evidence_path.is_symlink():
+        errors.append(f"XP native evidence template file must not be a symlink: {evidence_path}")
+    elif evidence_path.exists() and not evidence_path.is_file():
+        errors.append(f"XP native evidence template file must be a regular file: {evidence_path}")
+    if smoke_dir.is_symlink():
+        errors.append(f"XP native evidence template smoke directory must not be a symlink: {smoke_dir}")
+    elif smoke_dir.exists() and not smoke_dir.is_dir():
+        errors.append(f"XP native evidence template smoke path must be a directory: {smoke_dir}")
+    for smoke_id in smoke_ids:
+        smoke_path = smoke_dir / f"{smoke_id}.txt"
+        if smoke_path.is_symlink():
+            errors.append(f"XP native evidence template smoke file must not be a symlink: {smoke_path}")
+        elif smoke_path.exists() and not smoke_path.is_file():
+            errors.append(f"XP native evidence template smoke file must be a regular file: {smoke_path}")
+    return errors
+
+
+def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
+    check_path = path if path.is_absolute() else Path.cwd() / path
+    for parent in reversed(check_path.parents):
+        if parent == Path("."):
+            continue
+        if parent.is_symlink():
+            return [f"{label} path must not contain symlinked directories: {parent}"]
     return []
 
 
@@ -134,7 +174,7 @@ def evidence_template(
             "passed": False,
             "command": (
                 f"python scripts/check_platform_promotion_artifacts.py --target {target} "
-                f"--assets-dir <artifact-dir> --tag {release_tag}"
+                f"--assets-dir <artifact-dir> --tag {release_tag} --strict"
             ),
         },
         "artifacts": required_artifacts(target, release_tag),

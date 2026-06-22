@@ -97,8 +97,8 @@ it must fail until linux-i386, linux-armhf, windows-xp-native-x86 and
 windows-xp-native-x64 all have finalized accepted records for the same release tag.
 Mixed-release accepted records remain aggregate evidence only and cannot complete the
 protected goal parity block. The release/verifier promotion
-gate is `python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir>`,
-which also runs `python scripts/check_release_publish_assets.py --require-platform-goal-targets`
+gate is `python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> --release-assets-dir <release-assets-dir>`,
+which also runs `python scripts/check_release_publish_assets.py --assets-dir <release-assets-dir> --require-platform-goal-targets`
 and must fail until the same four records are finalized and accepted. Use
 `python scripts/make_platform_verified_evidence_record.py`
 to generate a candidate accepted record from validated artifact and XP evidence
@@ -127,10 +127,15 @@ row features --coverage
 row features --coverage --json
 ```
 
-The human `row features --coverage` output includes missing accepted evidence
-targets next to Linux i386, Linux armhf and Windows XP rows; the JSON output
-keeps the same data under `accepted_evidence_missing_targets` and exposes the
-four-target goal status under `platform_verified_readiness.protected_goal_parity`.
+The human `row features --coverage` output prints a `Protected platform goal`
+line with the four-target accepted-evidence percentage and missing targets, then
+also includes missing accepted evidence next to Linux i386, Linux armhf and
+Windows XP rows. The JSON output keeps the same row data under
+`accepted_evidence_missing_targets` and exposes the four-target goal status under
+`platform_verified_readiness.protected_goal_parity`, including
+`target_evidence_requirements` entries that list the required accepted registry
+record, release artifacts, review-bundle files, validation/finalization commands
+and XP security/smoke requirements for each protected target.
 
 ## Scoring method
 

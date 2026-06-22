@@ -24,7 +24,10 @@
     "legacy_crypto_profile_scoped",
     "modern_defaults_unchanged"
   ],
+  "evidence_plain_file_required": true,
+  "evidence_directory_plain_path_required": true,
   "required_smoke_evidence_file": true,
+  "smoke_evidence_plain_file_required": true,
   "required_smoke_result_fields": [
     "id",
     "passed",

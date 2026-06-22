@@ -59,6 +59,25 @@ def test_xp_dispatch_inputs_reject_release_tag_mismatch() -> None:
     assert "release_asset_base_url tag must match release_tag v1.0.2, got v1.0.3" in errors
 
 
+def test_xp_dispatch_inputs_reject_trailing_slash_release_base() -> None:
+    checker = _load_checker()
+
+    errors = checker.check_xp_native_evidence_dispatch_inputs(
+        target="windows-xp-native-x86",
+        release_tag="v1.0.2",
+        release_asset_base_url="https://github.com/example/remote-ops-workspace/releases/download/v1.0.2/",
+        workflow_run_url="https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        assets_dir="staged/windows-xp-native-x86/v1.0.2/artifacts",
+        evidence_file="staged/windows-xp-native-x86/v1.0.2/xp-evidence.json",
+        evidence_dir="staged/windows-xp-native-x86/v1.0.2/smoke",
+    )
+
+    assert (
+        "--release-asset-base-url must be exactly "
+        "https://github.com/<owner>/<repo>/releases/download/v1.0.2"
+    ) in errors
+
+
 def test_xp_dispatch_inputs_reject_cross_repo_inputs() -> None:
     checker = _load_checker()
 
@@ -94,6 +113,33 @@ def test_xp_dispatch_inputs_reject_unsafe_paths() -> None:
     assert "assets_dir must be workspace-relative, got '/tmp/xp-artifacts'" in errors
     assert "evidence_file must not traverse outside the workspace, got '..\\\\secrets\\\\xp-evidence.json'" in errors
     assert "evidence_dir must be concrete, got '<evidence-dir>'" in errors
+
+
+def test_xp_dispatch_inputs_reject_windows_drive_paths_with_forward_slashes() -> None:
+    checker = _load_checker()
+
+    errors = checker.check_xp_native_evidence_dispatch_inputs(
+        target="windows-xp-native-x86",
+        release_tag="v1.0.2",
+        release_asset_base_url="https://github.com/example/remote-ops-workspace/releases/download/v1.0.2",
+        workflow_run_url="https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        assets_dir="C:/staged/windows-xp-native-x86/v1.0.2/artifacts",
+        evidence_file="C:/staged/windows-xp-native-x86/v1.0.2/xp-evidence.json",
+        evidence_dir="C:/staged/windows-xp-native-x86/v1.0.2/smoke",
+    )
+
+    assert (
+        "assets_dir must be workspace-relative, "
+        "got 'C:/staged/windows-xp-native-x86/v1.0.2/artifacts'"
+    ) in errors
+    assert (
+        "evidence_file must be workspace-relative, "
+        "got 'C:/staged/windows-xp-native-x86/v1.0.2/xp-evidence.json'"
+    ) in errors
+    assert (
+        "evidence_dir must be workspace-relative, "
+        "got 'C:/staged/windows-xp-native-x86/v1.0.2/smoke'"
+    ) in errors
 
 
 def test_xp_dispatch_inputs_reject_workspace_root_and_reserved_paths() -> None:

@@ -216,6 +216,9 @@ PROTECTED_PLATFORM_GOAL_TARGETS = (
 )
 RESERVED_WORKSPACE_ROOTS = {".agents", ".codex", ".git", ".github"}
 RELEASE_ASSET_SOURCE_TYPES = {"github-actions-artifact"}
+GITHUB_RELEASE_BASE_RE = re.compile(
+    r"^https://github\.com/([^/]+/[^/]+)/releases/download/(v\d+\.\d+\.\d+)$"
+)
 
 
 def feature_manifest_path() -> Path:
@@ -1015,6 +1018,10 @@ def _protected_platform_goal_parity(evidence_registry: dict[str, Any] | None) ->
             for target in aggregate_present
             if entries[target].get("release_tag")
         },
+        "target_evidence_requirements": _protected_platform_goal_target_requirements(
+            present_targets=set(present),
+            release_tag=release_tag,
+        ),
         "release_tag": release_tag,
         "release_tags": release_tags,
         "release_repository": release_repository,
@@ -1030,6 +1037,108 @@ def _protected_platform_goal_parity(evidence_registry: dict[str, Any] | None) ->
             "The broader platform_verified_readiness overall score does not promote "
             "this goal unless this block reaches 100% for a single release."
         ),
+    }
+
+
+def _protected_platform_goal_target_requirements(
+    *,
+    present_targets: set[str],
+    release_tag: str,
+) -> list[dict[str, Any]]:
+    promotion = _platform_parity_promotion_config()
+    entries = {
+        str(item.get("id", "")): item
+        for item in promotion.get("protected_targets", [])
+        if isinstance(item, dict)
+    }
+    rows: list[dict[str, Any]] = []
+    for target in PROTECTED_PLATFORM_GOAL_TARGETS:
+        entry = entries.get(target, {})
+        requirements = entry.get("promotion_to_100_requires", {})
+        if not isinstance(requirements, dict):
+            requirements = {}
+        accepted = target in present_targets
+        row: dict[str, Any] = {
+            "target": target,
+            "accepted": accepted,
+            "status": "accepted" if accepted else "missing-accepted-evidence",
+            "current_status": str(entry.get("current_status", "")),
+            "current_readiness_percent": entry.get("current_readiness_percent"),
+            "target_readiness_percent": entry.get("target_readiness_percent", 100.0),
+            "support_boundary": _protected_platform_support_boundary(target, entry),
+            "accepted_evidence_record": {
+                "registry": "configs/platform_verified_evidence.json",
+                "target": target,
+                "status": "accepted",
+                "readiness_percent": 100.0,
+                "release_tag": release_tag or "v<project.version>",
+                "review_bundle_required": True,
+            },
+            "required_artifacts": _requirement_list(
+                requirements.get("required_artifacts", requirements.get("native_artifacts", []))
+            ),
+            "required_review_bundle_files": _requirement_list(
+                requirements.get("review_bundle_files", [])
+            ),
+            "required_commands": _protected_platform_required_commands(requirements),
+        }
+        builder_or_host = requirements.get("workflow_runner_evidence") or requirements.get(
+            "xp_vm_or_self_hosted_runner"
+        )
+        if builder_or_host:
+            row["builder_or_host_evidence"] = str(builder_or_host)
+        security_requirements = _requirement_list(requirements.get("security_requirements", []))
+        if security_requirements:
+            row["security_requirements"] = security_requirements
+        smoke_evidence = _requirement_list(requirements.get("smoke_evidence", []))
+        if smoke_evidence:
+            row["smoke_evidence"] = smoke_evidence
+        rows.append(row)
+    return rows
+
+
+def _platform_parity_promotion_config() -> dict[str, Any]:
+    path = repo_root() / "configs" / "platform_parity_promotion.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"protected_targets": []}
+    return data if isinstance(data, dict) else {"protected_targets": []}
+
+
+def _protected_platform_support_boundary(target: str, entry: dict[str, Any]) -> str:
+    current = str(entry.get("current_status", ""))
+    if target.startswith("linux-"):
+        channel = str(entry.get("current_github_release_channel", ""))
+        return (
+            f"{target} remains {current} on {channel} until accepted builder, "
+            "artifact, smoke and release evidence exists."
+        )
+    return (
+        f"{target} remains Windows XP native-host {current}; XP remote-target "
+        "coverage does not imply native-host readiness."
+    )
+
+
+def _requirement_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value]
+
+
+def _protected_platform_required_commands(requirements: dict[str, Any]) -> dict[str, str]:
+    command_keys = (
+        "artifact_validation_command",
+        "native_evidence_validation_command",
+        "local_evidence_preflight_command",
+        "accepted_evidence_candidate_command",
+        "review_bundle_command",
+        "finalized_evidence_record_command",
+    )
+    return {
+        key: str(requirements[key])
+        for key in command_keys
+        if requirements.get(key)
     }
 
 
@@ -1076,7 +1185,11 @@ def _is_accepted_evidence_entry(item: dict[str, Any]) -> bool:
         return False
     if not _has_review_bundle_binding(item, target):
         return False
+    if not _has_finalized_record_release_asset_url(item, target):
+        return False
     if not _has_artifact_validation_command(item, target):
+        return False
+    if not _has_local_evidence_preflight_command(item, target):
         return False
     if not _has_release_assets_and_hashes(item, target):
         return False
@@ -1107,7 +1220,104 @@ def _has_artifact_validation_command(item: dict[str, Any], target: str) -> bool:
     ):
         return False
     tags = re.findall(r"(?:^|\s)--tag\s+(\S+)(?=\s|$)", command)
-    return tags == [release_tag]
+    return tags == [release_tag] and _command_flag_count(command, "--strict") == 1
+
+
+def _has_local_evidence_preflight_command(item: dict[str, Any], target: str) -> bool:
+    release_tag = str(item.get("release_tag", ""))
+    command = str(item.get("local_evidence_preflight_command", ""))
+    if not command.startswith("python scripts/check_platform_goal_local_evidence.py "):
+        return False
+    if _command_values(command, "--root") != ["."]:
+        return False
+    if _command_values(command, "--release-tag") != [release_tag]:
+        return False
+    if _command_values(command, "--target") != [target]:
+        return False
+    asset_dirs = _command_values(command, "--assets-dir")
+    artifact_asset_dirs = _command_values(str(item.get("artifact_validation_command", "")), "--assets-dir")
+    if len(asset_dirs) != 1 or "<" in asset_dirs[0] or ">" in asset_dirs[0]:
+        return False
+    if asset_dirs != artifact_asset_dirs:
+        return False
+    if target in LINUX_ACCEPTED_EVIDENCE_MACHINES:
+        return _has_linux_local_evidence_preflight_command(item, target, command)
+    if target in XP_ACCEPTED_EVIDENCE_ARCHITECTURES:
+        return _has_xp_local_evidence_preflight_command(item, target, command)
+    return False
+
+
+def _has_linux_local_evidence_preflight_command(
+    item: dict[str, Any],
+    target: str,
+    command: str,
+) -> bool:
+    if _command_values(command, "--xp-evidence") or _command_values(command, "--xp-evidence-dir"):
+        return False
+    builder_paths = _command_values(command, "--linux-builder-evidence")
+    if len(builder_paths) != 1 or Path(builder_paths[0]).name != f"builder-identity-{target}.json":
+        return False
+    smoke_paths = _command_values(command, "--linux-smoke-evidence")
+    if len(smoke_paths) != 1 or Path(smoke_paths[0]).name != f"native-smoke-{target}.log":
+        return False
+    if "<" in builder_paths[0] or ">" in builder_paths[0] or "<" in smoke_paths[0] or ">" in smoke_paths[0]:
+        return False
+    workflow_url = str(item.get("workflow_run_url", "")).rstrip("/")
+    if _command_values(command, "--linux-workflow-run-url") != [workflow_url]:
+        return False
+    source = item.get("release_asset_source")
+    if not isinstance(source, dict):
+        return False
+    source_head_sha = str(source.get("head_sha", "")).strip()
+    if _command_values(command, "--linux-source-head-sha") != [source_head_sha]:
+        return False
+    return _command_flag_count(command, "--allow-extra-artifacts") == 0
+
+
+def _has_xp_local_evidence_preflight_command(
+    item: dict[str, Any],
+    target: str,
+    command: str,
+) -> bool:
+    forbidden_flags = (
+        "--linux-builder-evidence",
+        "--linux-smoke-evidence",
+        "--linux-workflow-run-url",
+        "--linux-source-head-sha",
+    )
+    if any(_command_values(command, flag) for flag in forbidden_flags):
+        return False
+    if _command_flag_count(command, "--allow-extra-artifacts") != 0:
+        return False
+    release_tag = str(item.get("release_tag", ""))
+    native_command = str(item.get("native_evidence_validation_command", ""))
+    path_bindings = {
+        "--xp-evidence": ("--evidence", {"require_json_hint": True}),
+        "--assets-dir": ("--assets-dir", {"require_directory_hint": True}),
+        "--xp-evidence-dir": ("--evidence-dir", {"require_directory_hint": True}),
+    }
+    for preflight_flag, (native_flag, path_requirements) in path_bindings.items():
+        values = _command_values(command, preflight_flag)
+        native_values = _command_values(native_command, native_flag)
+        if len(values) != 1 or values != native_values:
+            return False
+        if not _is_safe_xp_validation_path(
+            values[0],
+            target=target,
+            release_tag=release_tag,
+            require_target_release_scope=True,
+            **path_requirements,
+        ):
+            return False
+    return True
+
+
+def _command_values(command: str, flag: str) -> list[str]:
+    return re.findall(rf"(?:^|\s){re.escape(flag)}\s+(\S+)(?=\s|$)", command)
+
+
+def _command_flag_count(command: str, flag: str) -> int:
+    return len(re.findall(rf"(?:^|\s){re.escape(flag)}(?=\s|$)", command))
 
 
 def _has_release_assets_and_hashes(item: dict[str, Any], target: str) -> bool:
@@ -1277,6 +1487,24 @@ def _has_review_bundle_release_asset_urls(
     return set(filenames) == expected_files
 
 
+def _has_finalized_record_release_asset_url(item: dict[str, Any], target: str) -> bool:
+    release_tag = str(item.get("release_tag", ""))
+    raw_url = str(item.get("finalized_record_release_asset_url", "")).strip()
+    match = re.fullmatch(
+        r"https://github\.com/([^/]+/[^/]+)/releases/download/(v\d+\.\d+\.\d+)/(.+)",
+        raw_url,
+    )
+    if not match or match.group(2) != release_tag:
+        return False
+    if Path(match.group(3)).name != f"platform-verified-evidence-{target}-final.json":
+        return False
+    repositories = _release_asset_repositories(item.get("release_asset_urls"))
+    raw_bundle = item.get("review_bundle")
+    if isinstance(raw_bundle, dict):
+        repositories.update(_release_asset_repositories(raw_bundle.get("release_asset_urls")))
+    return bool(repositories) and repositories == {match.group(1)}
+
+
 def _review_bundle_stem(target: str, release_tag: str) -> str:
     if target in LINUX_ACCEPTED_EVIDENCE_MACHINES:
         return f"extended-linux-evidence-bundle-{target}-{release_tag}"
@@ -1339,10 +1567,11 @@ def _has_linux_workflow_inputs(item: dict[str, Any], target: str) -> bool:
     if not isinstance(raw_inputs, dict):
         return False
     release_tag = str(item.get("release_tag", ""))
-    base_url = str(raw_inputs.get("release_asset_base_url", "")).rstrip("/")
+    base_url = str(raw_inputs.get("release_asset_base_url", ""))
+    release_match = GITHUB_RELEASE_BASE_RE.fullmatch(base_url)
     if raw_inputs.get("target") != target or raw_inputs.get("release_tag") != release_tag:
         return False
-    if not base_url.startswith("https://github.com/") or not base_url.endswith(f"/releases/download/{release_tag}"):
+    if not release_match or release_match.group(2) != release_tag:
         return False
     release_assets = item.get("release_asset_urls")
     if not isinstance(release_assets, list):
@@ -1537,11 +1766,8 @@ def _has_xp_workflow_inputs(item: dict[str, Any], target: str) -> bool:
     if {str(key) for key in raw_inputs} != XP_ACCEPTED_EVIDENCE_WORKFLOW_INPUT_KEYS:
         return False
     release_tag = str(item.get("release_tag", ""))
-    base_url = str(raw_inputs.get("release_asset_base_url", "")).rstrip("/")
-    release_match = re.fullmatch(
-        r"https://github\.com/([^/]+/[^/]+)/releases/download/(v\d+\.\d+\.\d+)",
-        base_url,
-    )
+    base_url = str(raw_inputs.get("release_asset_base_url", ""))
+    release_match = GITHUB_RELEASE_BASE_RE.fullmatch(base_url)
     if raw_inputs.get("target") != target or raw_inputs.get("release_tag") != release_tag:
         return False
     if not release_match or release_match.group(2) != release_tag:

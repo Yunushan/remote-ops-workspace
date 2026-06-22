@@ -24,6 +24,9 @@ from check_platform_verified_evidence import (  # noqa: E402
     read_json,
     review_bundle_expected_files,
 )
+from check_platform_review_bundle_artifacts import (  # noqa: E402
+    check_platform_review_bundle_artifacts,
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -82,9 +85,13 @@ def stage_xp_native_evidence_upload(
         errors.append(f"{target} has no expected XP native assets for {release_tag}")
     if not expected_evidence:
         errors.append(f"{target} has no expected XP evidence bundle outputs for {release_tag}")
-    if not assets_dir.is_dir():
+    if assets_dir.is_symlink():
+        errors.append(f"XP native asset directory must not be a symlink: {assets_dir}")
+    elif not assets_dir.is_dir():
         errors.append(f"XP native asset directory missing: {assets_dir}")
-    if not evidence_output_dir.is_dir():
+    if evidence_output_dir.is_symlink():
+        errors.append(f"XP evidence output directory must not be a symlink: {evidence_output_dir}")
+    elif not evidence_output_dir.is_dir():
         errors.append(f"XP evidence output directory missing: {evidence_output_dir}")
     if errors:
         return errors
@@ -124,22 +131,24 @@ def stage_xp_native_evidence_upload(
     if final_record:
         errors.extend(check_release_source_file_set(target, final_record, source_files))
         errors.extend(check_source_hashes(target, final_record, source_files))
+        errors.extend(
+            check_review_bundle_artifacts(
+                target,
+                release_tag,
+                final_record,
+                bundle_dir=evidence_output_dir,
+            )
+        )
     if errors:
         return errors
-    if out_dir.exists():
-        if not force:
-            return [f"refusing to overwrite existing XP staged upload directory: {out_dir}"]
-        if not out_dir.is_dir():
-            return [f"XP staged upload output exists and is not a directory: {out_dir}"]
-        for child in out_dir.iterdir():
-            if child.is_dir():
-                return [
-                    f"refusing to clear staged upload directory containing subdirectory: {child}"
-                ]
-            child.unlink()
-    out_dir.mkdir(parents=True, exist_ok=True)
+    errors.extend(prepare_output_directory(target, out_dir=out_dir, force=force))
+    if errors:
+        return errors
     for name, source in sorted(source_files.items()):
         destination = out_dir / name
+        errors.extend(check_destination_path(target, destination, name))
+        if errors:
+            return errors
         if destination.exists() and not force:
             return [f"refusing to overwrite staged XP upload file: {destination}"]
         shutil.copy2(source, destination)
@@ -188,6 +197,25 @@ def check_source_hashes(target: str, record: dict[str, Any], sources: dict[str, 
     return errors
 
 
+def check_review_bundle_artifacts(
+    target: str,
+    release_tag: str,
+    record: dict[str, Any],
+    *,
+    bundle_dir: Path,
+) -> list[str]:
+    errors = check_platform_review_bundle_artifacts(
+        registry=finalized_record_registry(record),
+        bundle_dir=bundle_dir,
+        required_targets=(target,),
+        required_release_tag=release_tag,
+    )
+    return [
+        f"{target} staged upload review bundle failed re-finalization: {error}"
+        for error in errors
+    ]
+
+
 def check_release_source_file_set(
     target: str,
     record: dict[str, Any],
@@ -216,7 +244,57 @@ def check_source_paths(target: str, sources: dict[str, Path]) -> list[str]:
     for filename, path in sorted(sources.items()):
         if path.is_symlink():
             errors.append(f"{target} staged upload source must not be a symlink: {filename}")
+        else:
+            errors.extend(
+                check_path_parent_symlinks(
+                    path,
+                    f"{target} staged upload source {filename}",
+                )
+            )
     return errors
+
+
+def prepare_output_directory(target: str, *, out_dir: Path, force: bool) -> list[str]:
+    if out_dir.is_symlink():
+        return [f"{target} staged upload output directory must not be a symlink: {out_dir}"]
+    parent_errors = check_path_parent_symlinks(out_dir, f"{target} staged upload output directory")
+    if parent_errors:
+        return parent_errors
+    if out_dir.exists():
+        if not force:
+            return [f"refusing to overwrite existing XP staged upload directory: {out_dir}"]
+        if not out_dir.is_dir():
+            return [f"XP staged upload output exists and is not a directory: {out_dir}"]
+        for child in out_dir.iterdir():
+            if child.is_symlink():
+                return [f"{target} staged upload output must not contain symlinks: {child.name}"]
+            if child.is_dir():
+                return [
+                    f"refusing to clear staged upload directory containing subdirectory: {child}"
+                ]
+            if not child.is_file():
+                return [f"{target} staged upload output must contain regular files only: {child.name}"]
+            child.unlink()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    return []
+
+
+def check_destination_path(target: str, destination: Path, filename: str) -> list[str]:
+    if destination.is_symlink():
+        return [f"{target} staged upload destination must not be a symlink: {filename}"]
+    if destination.exists() and not destination.is_file():
+        return [f"{target} staged upload destination must be a regular file: {filename}"]
+    return []
+
+
+def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
+    check_path = path if path.is_absolute() else Path.cwd() / path
+    for parent in reversed(check_path.parents):
+        if parent == Path("."):
+            continue
+        if parent.is_symlink():
+            return [f"{label} path must not contain symlinked directories: {parent}"]
+    return []
 
 
 def sha256_file(path: Path) -> str:

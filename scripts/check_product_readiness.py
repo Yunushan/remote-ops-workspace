@@ -158,6 +158,36 @@ def check_product_readiness() -> list[str]:
         complete = len(present) == len(required) and bool(required)
         if goal.get("complete") is not complete:
             errors.append("protected platform goal parity complete flag must match accepted target count")
+        requirements = goal.get("target_evidence_requirements")
+        if not isinstance(requirements, list):
+            errors.append("protected platform goal parity must expose target_evidence_requirements")
+        else:
+            requirement_targets = [
+                item.get("target") for item in requirements if isinstance(item, dict)
+            ]
+            if sorted(requirement_targets) != sorted(required):
+                errors.append("protected platform goal parity requirements must cover every protected target")
+            for item in requirements:
+                if not isinstance(item, dict):
+                    errors.append("protected platform goal parity requirement entries must be objects")
+                    continue
+                target = item.get("target")
+                accepted_record = item.get("accepted_evidence_record")
+                if not isinstance(accepted_record, dict):
+                    errors.append(f"{target} protected platform requirement missing accepted_evidence_record")
+                elif accepted_record.get("registry") != "configs/platform_verified_evidence.json":
+                    errors.append(f"{target} protected platform requirement must point at accepted evidence registry")
+                commands = item.get("required_commands")
+                if not isinstance(commands, dict) or "artifact_validation_command" not in commands:
+                    errors.append(f"{target} protected platform requirement missing artifact validation command")
+                if not isinstance(commands, dict) or "local_evidence_preflight_command" not in commands:
+                    errors.append(f"{target} protected platform requirement missing local evidence preflight command")
+                if not item.get("required_review_bundle_files"):
+                    errors.append(f"{target} protected platform requirement missing review bundle files")
+                if target in {"windows-xp-native-x86", "windows-xp-native-x64"}:
+                    security = item.get("security_requirements")
+                    if not isinstance(security, list) or "modern Windows 10/11, Linux, and macOS defaults must keep hardened crypto" not in security:
+                        errors.append(f"{target} protected platform requirement missing modern-default security proof")
     return errors
 
 

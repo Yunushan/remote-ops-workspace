@@ -7,7 +7,7 @@ import sys
 LINUX_TARGETS = {"linux-i386", "linux-armhf"}
 RELEASE_TAG_RE = re.compile(r"v\d+\.\d+\.\d+")
 GITHUB_RELEASE_DOWNLOAD_BASE_RE = re.compile(
-    r"https://github\.com/([^/]+/[^/]+)/releases/download/(v\d+\.\d+\.\d+)/?"
+    r"https://github\.com/([^/]+/[^/]+)/releases/download/(v\d+\.\d+\.\d+)"
 )
 GITHUB_ACTIONS_RUN_RE = re.compile(
     r"https://github\.com/([^/]+/[^/]+)/actions/runs/\d+/?"
@@ -42,7 +42,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--release-asset-base-url",
         required=True,
-        help="GitHub release download base URL ending in /releases/download/vX.Y.Z",
+        help="Exact GitHub release download base URL: https://github.com/<owner>/<repo>/releases/download/vX.Y.Z",
     )
     parser.add_argument(
         "--workflow-run-url",
@@ -65,12 +65,11 @@ def check_extended_platform_dispatch_inputs(
     if not RELEASE_TAG_RE.fullmatch(release_tag):
         errors.append(f"release_tag must look like vX.Y.Z: {release_tag}")
 
-    base_url = release_asset_base_url.rstrip("/")
-    release_match = GITHUB_RELEASE_DOWNLOAD_BASE_RE.fullmatch(base_url)
+    release_match = GITHUB_RELEASE_DOWNLOAD_BASE_RE.fullmatch(release_asset_base_url)
     if not release_match:
         errors.append(
-            "release_asset_base_url must be a GitHub release download base URL "
-            f"ending in /releases/download/{release_tag}"
+            "release_asset_base_url must be exactly "
+            f"https://github.com/<owner>/<repo>/releases/download/{release_tag}"
         )
     elif release_match.group(2) != release_tag:
         errors.append(

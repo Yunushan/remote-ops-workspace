@@ -33,7 +33,10 @@ from check_platform_verified_evidence import (  # noqa: E402
     xp_native_evidence_contract_sha256,
     xp_release_source_artifact_name,
 )
-from check_xp_native_evidence import check_xp_native_evidence  # noqa: E402
+from check_xp_native_evidence import (  # noqa: E402
+    artifact_validation_asset_dirs,
+    check_xp_native_evidence,
+)
 
 PROMOTION_PATH = ROOT / "configs" / "platform_parity_promotion.json"
 EVIDENCE_PATH = ROOT / "configs" / "platform_verified_evidence.json"
@@ -44,10 +47,13 @@ DEFAULT_EVIDENCE_POLICY = (
     "release-importable artifact source binding, "
     "release source head SHA binding, "
     "release source workflow file binding, "
+    "local protected-goal evidence preflight command binding, "
     "finalized accepted-record source file binding, "
+    "finalized accepted-record release asset URL binding, "
     "Linux release source artifact names must be target/release-scoped, "
     "XP release source artifact names must be target/release-scoped, "
-    "per-artifact SHA-256 digests, "
+    "per-artifact SHA-256 digests, safe relative non-link native archive entries, "
+    "exact safe checksum and native manifest file references, exact safe release asset URL filenames, "
     "Linux builder identity evidence, builder identity SHA-256, "
     "Linux builder/smoke source file binding, "
     "builder identity release/run binding, Linux builder source head SHA binding, "
@@ -55,7 +61,7 @@ DEFAULT_EVIDENCE_POLICY = (
     "Linux builder rpm and non-interactive sudo evidence, "
     "Linux security patch evidence, "
     "Linux native build and smoke command provenance, "
-    "Linux smoke evidence SHA-256 and Linux smoke release/run binding, "
+    "Linux smoke evidence SHA-256 and Linux smoke release/run/source head SHA binding, "
     "Linux workflow dispatch inputs when applicable, XP workflow dispatch inputs when applicable, "
     "XP evidence source file binding, and XP evidence bundle SHA-256 digests, "
     "XP evidence validation command binding, XP evidence contract SHA-256, "
@@ -64,7 +70,7 @@ DEFAULT_EVIDENCE_POLICY = (
     "canonical XP smoke proof-file command binding, "
     "canonical XP smoke evidence-file summary binding and "
     "XP security smoke proof-line binding when applicable, and review bundle manifest, "
-    "review bundle archive, and review bundle SHA-256 "
+    "review bundle archive, safe relative non-symlink review bundle archive entries, and review bundle SHA-256 "
     "sidecar digests before strict promotion, and release uploads must include those review bundle "
     "files with matching size, SHA-256 and checksum-sidecar coverage; each accepted record must include the promotion "
     "config SHA-256, have a unique "
@@ -87,6 +93,9 @@ XP_CHECKS = [
     "release_asset_attachment",
 ]
 GITHUB_HEAD_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+GITHUB_RELEASE_BASE_RE = re.compile(
+    r"^https://github\.com/([^/]+/[^/]+)/releases/download/(v\d+\.\d+\.\d+)$"
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -97,6 +106,12 @@ def main(argv: list[str] | None = None) -> int:
             print(f"platform verified evidence record: {error}", file=sys.stderr)
         return 1
     output = json.dumps(record, indent=2) + "\n"
+    if args.out:
+        output_errors = check_text_output_path(args.out, "platform verified evidence record output file")
+        if output_errors:
+            for error in output_errors:
+                print(f"platform verified evidence record: {error}", file=sys.stderr)
+            return 1
     if args.append_registry:
         registry_errors = append_record_to_registry(record, registry_path=args.registry)
         if registry_errors:
@@ -104,11 +119,11 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"platform verified evidence record: {error}", file=sys.stderr)
             return 1
         if args.out:
-            args.out.write_text(output, encoding="utf-8")
+            write_text_output(args.out, output)
         print(f"platform verified evidence record appended to {args.registry}")
         return 0
     if args.out:
-        args.out.write_text(output, encoding="utf-8")
+        write_text_output(args.out, output)
     else:
         print(output, end="")
     return 0
@@ -124,7 +139,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--release-asset-base-url",
         required=True,
-        help="GitHub release download base URL ending in /releases/download/vX.Y.Z",
+        help="Exact GitHub release download base URL: https://github.com/<owner>/<repo>/releases/download/vX.Y.Z",
     )
     parser.add_argument("--workflow-run-url", help="GitHub Actions run URL for Linux evidence")
     parser.add_argument(
@@ -187,6 +202,7 @@ def build_evidence_record(args: argparse.Namespace) -> tuple[list[str], dict[str
         target=target,
         assets_dir=args.assets_dir,
         tag=args.release_tag,
+        strict=True,
     )
     errors.extend(artifact_errors)
     artifact_hashes = (
@@ -199,9 +215,15 @@ def build_evidence_record(args: argparse.Namespace) -> tuple[list[str], dict[str
             check_linux_smoke_evidence_file(
                 target,
                 str(args.release_tag),
-                linux_native_smoke_command(target, promotion, str(args.workflow_run_url)),
+                linux_native_smoke_command(
+                    target,
+                    promotion,
+                    str(args.workflow_run_url),
+                    str(args.release_source_head_sha),
+                ),
                 str(args.workflow_run_url),
                 args.linux_smoke_evidence,
+                source_head_sha=str(args.release_source_head_sha),
                 artifact_sha256=artifact_hashes,
             )
         )
@@ -236,12 +258,18 @@ def validate_common_args(args: argparse.Namespace) -> list[str]:
     errors.extend(version_errors)
     if not args.assets_dir.is_dir():
         errors.append(f"artifact directory missing: {args.assets_dir}")
+    errors.extend(check_path_parent_symlinks(args.assets_dir, "artifact directory"))
     base_url = str(args.release_asset_base_url)
-    expected_suffix = f"/releases/download/{args.release_tag}"
-    if not base_url.startswith("https://github.com/") or not base_url.endswith(expected_suffix):
+    match = GITHUB_RELEASE_BASE_RE.fullmatch(base_url)
+    if not match:
         errors.append(
-            "--release-asset-base-url must be a GitHub release download URL ending in "
-            f"{expected_suffix}"
+            "--release-asset-base-url must be exactly "
+            f"https://github.com/<owner>/<repo>/releases/download/{args.release_tag}"
+        )
+    elif match.group(2) != str(args.release_tag):
+        errors.append(
+            "--release-asset-base-url release tag must match --release-tag "
+            f"{args.release_tag}"
         )
     if not args.release_source_head_sha:
         errors.append("--release-source-head-sha is required")
@@ -259,13 +287,21 @@ def validate_linux_args(args: argparse.Namespace) -> list[str]:
         errors.append("--builder-evidence is required for Linux evidence")
     elif not args.builder_evidence.is_file():
         errors.append(f"Linux builder evidence file missing: {args.builder_evidence}")
-    elif args.builder_evidence.name != f"builder-identity-{target}.json":
+    elif args.builder_evidence.is_symlink():
+        errors.append(f"Linux builder evidence file must not be a symlink: {args.builder_evidence}")
+    else:
+        errors.extend(check_path_parent_symlinks(args.builder_evidence, "Linux builder evidence file"))
+    if args.builder_evidence is not None and args.builder_evidence.name != f"builder-identity-{target}.json":
         errors.append(f"--builder-evidence file name must be builder-identity-{target}.json")
     if args.linux_smoke_evidence is None:
         errors.append("--linux-smoke-evidence is required for Linux evidence")
     elif not args.linux_smoke_evidence.is_file():
         errors.append(f"Linux smoke evidence file missing: {args.linux_smoke_evidence}")
-    elif args.linux_smoke_evidence.name != f"native-smoke-{target}.log":
+    elif args.linux_smoke_evidence.is_symlink():
+        errors.append(f"Linux smoke evidence file must not be a symlink: {args.linux_smoke_evidence}")
+    else:
+        errors.extend(check_path_parent_symlinks(args.linux_smoke_evidence, "Linux smoke evidence file"))
+    if args.linux_smoke_evidence is not None and args.linux_smoke_evidence.name != f"native-smoke-{target}.log":
         errors.append(f"--linux-smoke-evidence file name must be native-smoke-{target}.log")
     required_labels = LINUX_TARGETS[target]["runner_labels"]
     labels = set(str(label) for label in args.runner_label)
@@ -297,10 +333,18 @@ def validate_xp_args(args: argparse.Namespace) -> list[str]:
         errors.append("--xp-evidence is required for Windows XP evidence")
     elif not args.xp_evidence.is_file():
         errors.append(f"XP evidence file missing: {args.xp_evidence}")
+    elif args.xp_evidence.is_symlink():
+        errors.append(f"XP evidence file must not be a symlink: {args.xp_evidence}")
+    else:
+        errors.extend(check_path_parent_symlinks(args.xp_evidence, "XP evidence file"))
     if args.xp_evidence_dir is None:
         errors.append("--xp-evidence-dir is required for Windows XP evidence")
     elif not args.xp_evidence_dir.is_dir():
         errors.append(f"XP evidence directory missing: {args.xp_evidence_dir}")
+    elif args.xp_evidence_dir.is_symlink():
+        errors.append(f"XP evidence directory must not be a symlink: {args.xp_evidence_dir}")
+    else:
+        errors.extend(check_path_parent_symlinks(args.xp_evidence_dir, "XP evidence directory"))
     if args.workflow_run_url:
         errors.append("--workflow-run-url is only valid for Linux evidence")
     if args.runner_label:
@@ -319,6 +363,16 @@ def validate_xp_args(args: argparse.Namespace) -> list[str]:
     return errors
 
 
+def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
+    check_path = path if path.is_absolute() else Path.cwd() / path
+    for parent in reversed(check_path.parents):
+        if parent == Path("."):
+            continue
+        if parent.is_symlink():
+            return [f"{label} path must not contain symlinked directories: {parent}"]
+    return []
+
+
 def check_linux_smoke_evidence_file(
     target: str,
     release_tag: str,
@@ -326,6 +380,7 @@ def check_linux_smoke_evidence_file(
     workflow_run_url: str,
     smoke_evidence: Path,
     *,
+    source_head_sha: str,
     artifact_sha256: Any | None = None,
 ) -> list[str]:
     try:
@@ -338,6 +393,7 @@ def check_linux_smoke_evidence_file(
         native_smoke_command,
         workflow_run_url,
         text,
+        source_head_sha=source_head_sha,
         artifact_sha256=artifact_sha256,
     )
 
@@ -377,6 +433,13 @@ def check_xp_evidence_record_binding(args: argparse.Namespace) -> list[str]:
             f"{target} XP evidence release_tag must match --release-tag {release_tag}, "
             f"got {actual_release_tag!r}"
         )
+    asset_dirs = artifact_validation_asset_dirs(evidence)
+    expected_assets_dir = args.assets_dir.as_posix()
+    if asset_dirs != [expected_assets_dir]:
+        errors.append(
+            f"{target} XP evidence artifact_validation.command --assets-dir must match "
+            f"--assets-dir {expected_assets_dir}, got {asset_dirs}"
+        )
     return errors
 
 
@@ -405,11 +468,17 @@ def linux_record(args: argparse.Namespace, promotion: dict[str, Any]) -> dict[st
         "builder_identity_sha256": json_sha256(builder_identity),
         "linux_evidence_sources": linux_evidence_sources(args, builder_identity),
         "native_build_command": linux_native_build_command(target, promotion),
-        "native_smoke_command": linux_native_smoke_command(target, promotion, str(args.workflow_run_url)),
+        "native_smoke_command": linux_native_smoke_command(
+            target,
+            promotion,
+            str(args.workflow_run_url),
+            str(args.release_source_head_sha),
+        ),
         "linux_smoke_evidence_sha256": linux_smoke_evidence_sha256_map(args.linux_smoke_evidence),
+        "local_evidence_preflight_command": local_evidence_preflight_command(args),
         "artifact_validation_command": (
             f"python scripts/check_platform_promotion_artifacts.py --target {target} "
-            f"--assets-dir {args.assets_dir.as_posix()} --tag {args.release_tag}"
+            f"--assets-dir {args.assets_dir.as_posix()} --tag {args.release_tag} --strict"
         ),
         "checks": LINUX_CHECKS,
         "release_asset_urls": release_asset_urls(target, str(args.release_tag), str(args.release_asset_base_url), promotion),
@@ -445,9 +514,17 @@ def file_source_record(path: Path, *, sha256: str | None = None) -> dict[str, ob
     }
 
 
-def linux_native_smoke_command(target: str, promotion: dict[str, Any], workflow_run_url: str) -> str:
+def linux_native_smoke_command(
+    target: str,
+    promotion: dict[str, Any],
+    workflow_run_url: str,
+    source_head_sha: str,
+) -> str:
     requirements = promotion_requirements(target, promotion)
-    return f"bash {requirements.get('smoke_script', '')} --target {target} --workflow-run-url {workflow_run_url}"
+    return (
+        f"bash {requirements.get('smoke_script', '')} --target {target} "
+        f"--workflow-run-url {workflow_run_url} --source-head-sha {source_head_sha}"
+    )
 
 
 def release_asset_source(args: argparse.Namespace, target: str, promotion: dict[str, Any]) -> dict[str, Any]:
@@ -508,9 +585,10 @@ def xp_record(args: argparse.Namespace, promotion: dict[str, Any]) -> dict[str, 
         "xp_evidence_sources": xp_evidence_sources(args, evidence_summary, smoke_hashes),
         "release_asset_source": release_asset_source(args, target, promotion),
         "native_evidence_validation_command": xp_native_evidence_validation_command(args),
+        "local_evidence_preflight_command": local_evidence_preflight_command(args),
         "artifact_validation_command": (
             f"python scripts/check_platform_promotion_artifacts.py --target {target} "
-            f"--assets-dir {args.assets_dir.as_posix()} --tag {args.release_tag}"
+            f"--assets-dir {args.assets_dir.as_posix()} --tag {args.release_tag} --strict"
         ),
         "checks": XP_CHECKS,
         "release_asset_urls": release_asset_urls(target, str(args.release_tag), str(args.release_asset_base_url), promotion),
@@ -526,6 +604,26 @@ def xp_native_evidence_validation_command(args: argparse.Namespace) -> str:
     if args.xp_evidence_dir is not None:
         command = f"{command} --evidence-dir {args.xp_evidence_dir.as_posix()}"
     return command
+
+
+def local_evidence_preflight_command(args: argparse.Namespace) -> str:
+    target = str(args.target)
+    command = (
+        "python scripts/check_platform_goal_local_evidence.py "
+        f"--root . --release-tag {args.release_tag} --target {target} "
+        f"--assets-dir {args.assets_dir.as_posix()}"
+    )
+    if target in LINUX_TARGETS:
+        return (
+            f"{command} --linux-builder-evidence {args.builder_evidence.as_posix()} "
+            f"--linux-smoke-evidence {args.linux_smoke_evidence.as_posix()} "
+            f"--linux-workflow-run-url {args.workflow_run_url} "
+            f"--linux-source-head-sha {args.release_source_head_sha}"
+        )
+    return (
+        f"{command} --xp-evidence {args.xp_evidence.as_posix()} "
+        f"--xp-evidence-dir {args.xp_evidence_dir.as_posix()}"
+    )
 
 
 def xp_workflow_inputs(args: argparse.Namespace) -> dict[str, str]:
@@ -732,6 +830,9 @@ def linux_smoke_evidence_sha256_map(smoke_evidence: Path) -> dict[str, str]:
 
 
 def append_record_to_registry(record: dict[str, Any], *, registry_path: Path = EVIDENCE_PATH) -> list[str]:
+    errors = check_text_output_path(registry_path, "platform verified evidence registry")
+    if errors:
+        return errors
     registry = read_evidence_registry(registry_path)
     accepted = registry.get("accepted_evidence")
     if not isinstance(accepted, list):
@@ -758,9 +859,29 @@ def append_record_to_registry(record: dict[str, Any], *, registry_path: Path = E
     if errors:
         return errors
 
-    registry_path.parent.mkdir(parents=True, exist_ok=True)
-    registry_path.write_text(json.dumps(updated, indent=2) + "\n", encoding="utf-8")
+    write_text_output(registry_path, json.dumps(updated, indent=2) + "\n")
     return []
+
+
+def check_text_output_path(path: Path, label: str) -> list[str]:
+    parent = path.parent
+    if parent.is_symlink():
+        return [f"{label} directory must not be a symlink: {parent}"]
+    parent_errors = check_path_parent_symlinks(parent, f"{label} directory")
+    if parent_errors:
+        return parent_errors
+    if parent.exists() and not parent.is_dir():
+        return [f"{label} directory must be a directory: {parent}"]
+    if path.is_symlink():
+        return [f"{label} must not be a symlink: {path}"]
+    if path.exists() and not path.is_file():
+        return [f"{label} must be a regular file: {path}"]
+    return []
+
+
+def write_text_output(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
 
 
 def read_evidence_registry(path: Path) -> dict[str, Any]:

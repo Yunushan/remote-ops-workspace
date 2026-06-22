@@ -8,6 +8,7 @@ ARCH="${TARGET_ARCH:-$(uname -m)}"
 VERSION=""
 TARGET=""
 WORKFLOW_RUN_URL=""
+SOURCE_HEAD_SHA=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -31,6 +32,10 @@ while [[ $# -gt 0 ]]; do
       WORKFLOW_RUN_URL="$2"
       shift 2
       ;;
+    --source-head-sha)
+      SOURCE_HEAD_SHA="$2"
+      shift 2
+      ;;
     *)
       echo "unknown argument: $1" >&2
       exit 2
@@ -40,6 +45,21 @@ done
 
 if [[ -n "$TARGET" && -z "$WORKFLOW_RUN_URL" ]] || [[ -z "$TARGET" && -n "$WORKFLOW_RUN_URL" ]]; then
   echo "--target and --workflow-run-url must be provided together" >&2
+  exit 2
+fi
+
+if [[ -n "$TARGET" && -z "$SOURCE_HEAD_SHA" ]]; then
+  echo "--source-head-sha is required with --target" >&2
+  exit 2
+fi
+
+if [[ -z "$TARGET" && -n "$SOURCE_HEAD_SHA" ]]; then
+  echo "--source-head-sha requires --target" >&2
+  exit 2
+fi
+
+if [[ -n "$SOURCE_HEAD_SHA" && ! "$SOURCE_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "--source-head-sha must be a 40-character lowercase Git SHA" >&2
   exit 2
 fi
 
@@ -117,7 +137,7 @@ done
 
 SMOKE_COMMAND="bash scripts/smoke_linux_native.sh --arch $ARCH --dist $DIST"
 if [[ -n "$TARGET" ]]; then
-  SMOKE_COMMAND="$SMOKE_COMMAND --target $TARGET --workflow-run-url $WORKFLOW_RUN_URL"
+  SMOKE_COMMAND="$SMOKE_COMMAND --target $TARGET --workflow-run-url $WORKFLOW_RUN_URL --source-head-sha $SOURCE_HEAD_SHA"
 fi
 
 echo "native installer smoke command: $SMOKE_COMMAND"
@@ -126,6 +146,7 @@ echo "native installer smoke target arch: $ARCH"
 if [[ -n "$TARGET" ]]; then
   echo "native installer smoke target: $TARGET"
   echo "native installer smoke workflow run: $WORKFLOW_RUN_URL"
+  echo "native installer smoke source head sha: $SOURCE_HEAD_SHA"
 fi
 for artifact in "$DEB" "$RPM" "$APPIMAGE"; do
   digest="$(sha256sum "$artifact" | awk '{print $1}')"

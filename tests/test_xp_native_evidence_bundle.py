@@ -64,6 +64,7 @@ def test_xp_native_evidence_bundle_packages_valid_x86_evidence(tmp_path: Path) -
             f"--assets-dir {assets.relative_to(tmp_path).as_posix()} "
             f"--evidence-dir {evidence_root.relative_to(tmp_path).as_posix()}"
         ),
+        candidate_data["local_evidence_preflight_command"],
         (
             "python scripts/check_platform_promotion_artifacts.py "
             f"--target {target} --assets-dir {assets.relative_to(tmp_path).as_posix()} --tag {tag} --strict"
@@ -132,6 +133,110 @@ def test_xp_native_evidence_bundle_rejects_target_mismatch(tmp_path: Path) -> No
     assert "bundle target windows-xp-native-x64 must match evidence target 'windows-xp-native-x86'" in errors
 
 
+def test_xp_native_evidence_bundle_rejects_symlinked_inputs(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bundler = _load_bundle_script()
+    evidence_root = tmp_path / "evidence"
+    evidence_root.mkdir()
+    evidence = evidence_root / "xp-evidence.json"
+    evidence.write_text("{}\n", encoding="utf-8")
+    candidate = tmp_path / "platform-verified-evidence-windows-xp-native-x86.json"
+    candidate.write_text("{}\n", encoding="utf-8")
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    symlink_names = {evidence.name, candidate.name, evidence_root.name}
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self.name in symlink_names
+
+    monkeypatch.setattr(type(tmp_path), "is_symlink", fake_is_symlink)
+
+    errors = bundler.make_xp_native_evidence_bundle(
+        target="windows-xp-native-x86",
+        evidence=evidence,
+        candidate_record=candidate,
+        assets_dir=assets,
+        evidence_dir=evidence_root,
+        out_dir=tmp_path / "bundle",
+    )
+
+    assert f"evidence must not be a symlink: {evidence}" in errors
+    assert f"candidate evidence record must not be a symlink: {candidate}" in errors
+    assert f"evidence directory must not be a symlink: {evidence_root}" in errors
+
+
+def test_xp_native_evidence_bundle_rejects_symlinked_output_directory(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bundler = _load_bundle_script()
+    out_dir = tmp_path / "bundle"
+    out_dir.mkdir()
+    outputs = (out_dir / "bundle.json", out_dir / "bundle.zip", out_dir / "bundle-SHA256SUMS.txt")
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self == out_dir
+
+    monkeypatch.setattr(type(tmp_path), "is_symlink", fake_is_symlink)
+
+    errors = bundler.prepare_output_paths(out_dir=out_dir, outputs=outputs, force=True)
+
+    assert errors == [
+        f"XP native evidence bundle output directory must not be a symlink: {out_dir}"
+    ]
+
+
+def test_xp_native_evidence_bundle_rejects_symlinked_output_parent(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bundler = _load_bundle_script()
+    out_parent = tmp_path / "linked-bundle-root"
+    out_dir = out_parent / "bundle"
+    outputs = (out_dir / "bundle.json", out_dir / "bundle.zip", out_dir / "bundle-SHA256SUMS.txt")
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self == out_parent
+
+    monkeypatch.setattr(type(tmp_path), "is_symlink", fake_is_symlink)
+
+    errors = bundler.prepare_output_paths(out_dir=out_dir, outputs=outputs, force=True)
+
+    assert errors == [
+        f"XP native evidence bundle output directory path must not contain symlinked directories: {out_parent}"
+    ]
+
+
+def test_xp_native_evidence_bundle_rejects_unsafe_output_files(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bundler = _load_bundle_script()
+    out_dir = tmp_path / "bundle"
+    out_dir.mkdir()
+    symlink_output = out_dir / "bundle.json"
+    symlink_output.write_text("old manifest\n", encoding="utf-8")
+    directory_output = out_dir / "bundle.zip"
+    directory_output.mkdir()
+    sidecar_output = out_dir / "bundle-SHA256SUMS.txt"
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self == symlink_output
+
+    monkeypatch.setattr(type(tmp_path), "is_symlink", fake_is_symlink)
+
+    errors = bundler.prepare_output_paths(
+        out_dir=out_dir,
+        outputs=(symlink_output, directory_output, sidecar_output),
+        force=True,
+    )
+
+    assert "XP native evidence bundle output file must not be a symlink: bundle.json" in errors
+    assert "XP native evidence bundle output must be a regular file: bundle.zip" in errors
+
+
 def test_xp_native_evidence_bundle_rejects_candidate_mismatch(tmp_path: Path) -> None:
     bundler = _load_bundle_script()
     artifact_checker = _load_platform_promotion_artifacts_checker()
@@ -165,6 +270,39 @@ def test_xp_native_evidence_bundle_rejects_candidate_mismatch(tmp_path: Path) ->
     assert "candidate record xp_evidence_sha256 must match XP evidence file" in errors
 
 
+def test_xp_native_evidence_bundle_rejects_suffixed_candidate_filename(tmp_path: Path) -> None:
+    bundler = _load_bundle_script()
+    artifact_checker = _load_platform_promotion_artifacts_checker()
+    tag = f"v{artifact_checker.read_project_version()}"
+    target = "windows-xp-native-x86"
+    assets = tmp_path / "native-dist" / "windows-xp" / target / tag
+    assets.mkdir(parents=True)
+    names = _required_artifact_names(artifact_checker, target, tag)
+    _write_artifact_set(assets, names)
+    evidence_data = _valid_evidence(target, "x86", "SP3", tag, names)
+    evidence_root = tmp_path / "evidence" / target / tag
+    _attach_smoke_evidence_files(evidence_root, evidence_data)
+    evidence = evidence_root / "xp-evidence.json"
+    evidence.write_text(json.dumps(evidence_data, indent=2) + "\n", encoding="utf-8")
+    candidate = tmp_path / f"platform-verified-evidence-{target}-copy.json"
+    _write_candidate_record(candidate, target, tag, evidence, evidence_data, assets, work_root=tmp_path)
+
+    with _pushd(tmp_path):
+        errors = bundler.make_xp_native_evidence_bundle(
+            target=target,
+            evidence=evidence.relative_to(tmp_path),
+            candidate_record=candidate.relative_to(tmp_path),
+            assets_dir=assets.relative_to(tmp_path),
+            evidence_dir=evidence_root.relative_to(tmp_path),
+            out_dir=Path("bundle"),
+        )
+
+    assert (
+        f"candidate record file name must be platform-verified-evidence-{target}.json, "
+        f"got 'platform-verified-evidence-{target}-copy.json'"
+    ) in errors
+
+
 def test_xp_native_evidence_bundle_rejects_candidate_source_map_mismatch(tmp_path: Path) -> None:
     bundler = _load_bundle_script()
     artifact_checker = _load_platform_promotion_artifacts_checker()
@@ -196,6 +334,39 @@ def test_xp_native_evidence_bundle_rejects_candidate_source_map_mismatch(tmp_pat
         )
 
     assert "candidate record xp_evidence_sources must match bundled XP evidence files" in errors
+
+
+def test_xp_native_evidence_bundle_rejects_candidate_summary_mismatch(tmp_path: Path) -> None:
+    bundler = _load_bundle_script()
+    artifact_checker = _load_platform_promotion_artifacts_checker()
+    tag = f"v{artifact_checker.read_project_version()}"
+    target = "windows-xp-native-x64"
+    assets = tmp_path / "native-dist" / "windows-xp" / target / tag
+    assets.mkdir(parents=True)
+    names = _required_artifact_names(artifact_checker, target, tag)
+    _write_artifact_set(assets, names)
+    evidence_data = _valid_evidence(target, "x64", "SP2", tag, names)
+    evidence_root = tmp_path / "evidence" / target / tag
+    _attach_smoke_evidence_files(evidence_root, evidence_data)
+    evidence = evidence_root / "xp-evidence.json"
+    evidence.write_text(json.dumps(evidence_data, indent=2) + "\n", encoding="utf-8")
+    candidate = tmp_path / f"platform-verified-evidence-{target}.json"
+    _write_candidate_record(candidate, target, tag, evidence, evidence_data, assets, work_root=tmp_path)
+    candidate_data = json.loads(candidate.read_text(encoding="utf-8"))
+    candidate_data["xp_evidence_summary"]["security"]["modern_defaults_unchanged"] = False
+    candidate.write_text(json.dumps(candidate_data, indent=2) + "\n", encoding="utf-8")
+
+    with _pushd(tmp_path):
+        errors = bundler.make_xp_native_evidence_bundle(
+            target=target,
+            evidence=evidence.relative_to(tmp_path),
+            candidate_record=candidate.relative_to(tmp_path),
+            assets_dir=assets.relative_to(tmp_path),
+            evidence_dir=evidence_root.relative_to(tmp_path),
+            out_dir=Path("bundle"),
+        )
+
+    assert "candidate record xp_evidence_summary must match XP evidence file" in errors
 
 
 def test_xp_native_evidence_bundle_rejects_host_identity_mismatch(tmp_path: Path) -> None:
@@ -283,7 +454,7 @@ def _valid_evidence(
             "command": (
                 "python scripts/check_platform_promotion_artifacts.py "
                 f"--target {target} --assets-dir native-dist/windows-xp/{target}/{release_tag} "
-                f"--tag {release_tag}"
+                f"--tag {release_tag} --strict"
             ),
         },
         "artifacts": artifacts,

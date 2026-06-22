@@ -6,8 +6,9 @@ import importlib.util
 import json
 import re
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
+from urllib.parse import unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 MATRIX_PATH = ROOT / "configs" / "release_matrix.json"
@@ -21,6 +22,9 @@ PLATFORM_GOAL_TARGETS = (
     "linux-armhf",
     "windows-xp-native-x86",
     "windows-xp-native-x64",
+)
+FINAL_ACCEPTED_RECORD_RE = re.compile(
+    r"^platform-verified-evidence-(linux-i386|linux-armhf|windows-xp-native-x86|windows-xp-native-x64)-final\.json$"
 )
 GATED_NATIVE_PATTERNS = {
     "linux-i386": (
@@ -212,6 +216,9 @@ def check_release_assets(
     require_mobaxterm_parity_complete: bool = False,
 ) -> list[str]:
     errors: list[str] = []
+    errors.extend(check_release_asset_directory(assets_dir))
+    if errors:
+        return errors
     root = assets_dir.resolve()
     if not root.is_dir():
         return [f"release asset directory missing: {assets_dir}"]
@@ -234,6 +241,7 @@ def check_release_assets(
         registry,
         tag=release_tag,
     )
+    errors.extend(check_release_asset_symlinks(root))
     actual = {path.name for path in root.iterdir() if path.is_file()}
     errors.extend(
         check_gated_native_assets_have_evidence(
@@ -267,6 +275,19 @@ def check_release_assets(
     errors.extend(check_checksum_sidecars(root, expected))
     errors.extend(check_release_manifest(root, matrix, tag=tag))
     return errors
+
+
+def check_release_asset_directory(assets_dir: Path) -> list[str]:
+    if assets_dir.is_symlink():
+        return [f"release asset directory must not be a symlink: {assets_dir}"]
+    return check_path_parent_symlinks(assets_dir, "release asset directory")
+
+
+def check_release_asset_symlinks(root: Path) -> list[str]:
+    symlinks = sorted(path.name for path in root.iterdir() if path.is_symlink())
+    if symlinks:
+        return [f"release assets must not contain symlinks: {symlinks}"]
+    return []
 
 
 def check_platform_review_bundle_artifacts(
@@ -389,11 +410,17 @@ def check_platform_evidence_asset_hashes(
         if not isinstance(release_urls, list):
             errors.append(f"{target} accepted evidence release_asset_urls must be a list")
             continue
-        url_assets = {
-            Path(str(url)).name
-            for url in release_urls
-            if isinstance(url, str) and Path(url).name
-        }
+        url_assets: set[str] = set()
+        for url in release_urls:
+            if not isinstance(url, str):
+                continue
+            filename = release_asset_url_filename(url)
+            if not filename:
+                errors.append(
+                    f"{target} accepted evidence release_asset_urls file name must be an exact safe file name: {url}"
+                )
+                continue
+            url_assets.add(filename)
         expected_assets = {str(asset) for asset in hashes}
         if url_assets != expected_assets:
             errors.append(
@@ -421,9 +448,12 @@ def check_platform_evidence_asset_hashes(
             if not isinstance(bundle_record, dict):
                 errors.append(f"{target} accepted evidence review_bundle {bundle_key} must be an object")
                 continue
-            bundle_name = Path(str(bundle_record.get("file", ""))).name
-            if not bundle_name:
-                errors.append(f"{target} accepted evidence review_bundle {bundle_key}.file must be set")
+            bundle_name = str(bundle_record.get("file", ""))
+            if not checksum_reference_name_is_safe(bundle_name):
+                errors.append(
+                    f"{target} accepted evidence review_bundle {bundle_key}.file "
+                    f"must be an exact safe file name: {bundle_name!r}"
+                )
                 continue
             if bundle_name not in assets:
                 errors.append(
@@ -442,6 +472,20 @@ def check_platform_evidence_asset_hashes(
                 errors.append(
                     f"release review bundle asset {bundle_name} SHA-256 does not match accepted evidence for {target}"
                 )
+        final_record_name = accepted_record_source_file(target)
+        if final_record_name not in assets:
+            errors.append(
+                f"{target} accepted evidence finalized record asset missing from release directory: "
+                f"{final_record_name}"
+            )
+        else:
+            errors.extend(
+                check_final_accepted_record_asset(
+                    root / final_record_name,
+                    target=target,
+                    record=record,
+                )
+            )
     for asset in sorted(assets):
         for target in sorted(gated_native_targets_for_asset(asset)):
             record = accepted.get(target)
@@ -481,7 +525,7 @@ def accepted_platform_release_assets(evidence_registry: dict[str, Any], *, tag: 
         if row.get("release_tag") != tag:
             continue
         for url in row.get("release_asset_urls", []):
-            filename = Path(str(url)).name
+            filename = release_asset_url_filename(str(url))
             if filename:
                 assets.add(filename)
         hashes = row.get("artifact_sha256")
@@ -492,10 +536,42 @@ def accepted_platform_release_assets(evidence_registry: dict[str, Any], *, tag: 
             for bundle_key in ("manifest", "archive", "sha256s"):
                 bundle_record = review_bundle.get(bundle_key)
                 if isinstance(bundle_record, dict):
-                    filename = Path(str(bundle_record.get("file", ""))).name
-                    if filename:
+                    filename = str(bundle_record.get("file", ""))
+                    if checksum_reference_name_is_safe(filename):
                         assets.add(filename)
+        target = str(row.get("target", ""))
+        if target in PLATFORM_GOAL_TARGETS:
+            assets.add(accepted_record_source_file(target))
     return assets
+
+
+def accepted_record_source_file(target: str) -> str:
+    return f"platform-verified-evidence-{target}-final.json"
+
+
+def check_final_accepted_record_asset(
+    path: Path,
+    *,
+    target: str,
+    record: dict[str, Any],
+) -> list[str]:
+    if path.is_symlink():
+        return [f"{target} accepted evidence finalized record asset must not be a symlink: {path.name}"]
+    if not path.is_file():
+        return [f"{target} accepted evidence finalized record asset missing from release directory: {path.name}"]
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return [f"{target} accepted evidence finalized record asset is not readable JSON: {path.name}: {exc}"]
+    if not isinstance(data, dict):
+        return [f"{target} accepted evidence finalized record asset must contain a JSON object: {path.name}"]
+    if data != public_record(record):
+        return [f"{target} accepted evidence finalized record asset must match accepted registry record: {path.name}"]
+    return []
+
+
+def public_record(record: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in record.items() if not str(key).startswith("_")}
 
 
 def validate_accepted_evidence_registry(evidence_registry: dict[str, Any]) -> list[str]:
@@ -594,7 +670,8 @@ def expected_release_assets(matrix: dict[str, Any], *, tag: str | None = None) -
 def check_checksum_sidecars(root: Path, expected: set[str]) -> list[str]:
     errors: list[str] = []
     checksum_files = sorted(asset for asset in expected if asset.endswith(EXPECTED_CHECKSUM_SUFFIX))
-    expected_references = set(expected - set(checksum_files))
+    final_record_assets = {asset for asset in expected if FINAL_ACCEPTED_RECORD_RE.fullmatch(asset)}
+    expected_references = set(expected - set(checksum_files) - final_record_assets)
     referenced_assets: set[str] = set()
     for checksum_name in checksum_files:
         path = root / checksum_name
@@ -613,7 +690,13 @@ def check_checksum_sidecars(root: Path, expected: set[str]) -> list[str]:
             if not match:
                 errors.append(f"{checksum_name} has invalid checksum line: {line}")
                 continue
-            referenced = Path(match.group(2)).name
+            raw_reference = match.group(2)
+            if not checksum_reference_name_is_safe(raw_reference):
+                errors.append(
+                    f"{checksum_name} reference must be an exact safe file name: {raw_reference!r}"
+                )
+                continue
+            referenced = raw_reference
             if referenced not in expected:
                 errors.append(f"{checksum_name} references unexpected file: {referenced}")
                 continue
@@ -629,6 +712,32 @@ def check_checksum_sidecars(root: Path, expected: set[str]) -> list[str]:
     if missing_references:
         errors.append(f"checksum sidecars missing references for expected files: {missing_references}")
     return errors
+
+
+def checksum_reference_name_is_safe(name: str) -> bool:
+    if not name or name.strip() != name or "/" in name or "\\" in name:
+        return False
+    if name in (".", ".."):
+        return False
+    windows_path = PureWindowsPath(name)
+    posix_path = PurePosixPath(name)
+    return not windows_path.drive and not windows_path.is_absolute() and not posix_path.is_absolute()
+
+
+def release_asset_url_filename(url: str) -> str:
+    parts = urlsplit(url)
+    if parts.query or parts.fragment:
+        return ""
+    path_segments = parts.path.split("/")
+    if (
+        len(path_segments) != 7
+        or path_segments[0] != ""
+        or path_segments[3:5] != ["releases", "download"]
+        or not path_segments[-1]
+    ):
+        return ""
+    filename = unquote(path_segments[-1])
+    return filename if checksum_reference_name_is_safe(filename) else ""
 
 
 def check_release_manifest(root: Path, matrix: dict[str, Any], *, tag: str | None) -> list[str]:
@@ -657,6 +766,16 @@ def check_release_manifest(root: Path, matrix: dict[str, Any], *, tag: str | Non
         if not re.fullmatch(r"[0-9a-f]{64}", str(item.get("sha256", ""))):
             errors.append(f"{manifests[0].name} artifact {filename} missing sha256")
     return errors
+
+
+def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
+    check_path = path if path.is_absolute() else Path.cwd() / path
+    for parent in reversed(check_path.parents):
+        if parent == Path("."):
+            continue
+        if parent.is_symlink():
+            return [f"{label} path must not contain symlinked directories: {parent}"]
+    return []
 
 
 def expected_source_manifest_artifacts(matrix: dict[str, Any], *, tag: str | None = None) -> set[str]:

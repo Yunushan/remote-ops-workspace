@@ -495,6 +495,9 @@ def _build_rdp(profile: Profile) -> LaunchPlan:
     host = _host(profile)
     port = _port(profile, "rdp")
     notes: list[str] = []
+    security = _option_enum(profile.options, "security", "rdp_security", allowed={"ext", "nla", "rdp", "tls"})
+    if security == "rdp":
+        _require_legacy_rdp_security_opt_in(profile.options)
     if _is_windows():
         cmd = ["mstsc", f"/v:{host}:{port}"]
         if _option_bool(profile.options, "fullscreen"):
@@ -531,10 +534,7 @@ def _build_rdp(profile: Profile) -> LaunchPlan:
         certificate_mode = "ignore"
     if certificate_mode:
         cmd.append(f"/cert:{certificate_mode}")
-    security = _option_enum(profile.options, "security", "rdp_security", allowed={"ext", "nla", "rdp", "tls"})
     if security:
-        if security == "rdp":
-            _require_legacy_rdp_security_opt_in(profile.options)
         cmd.append(f"/sec:{security}")
     clipboard = _option(profile.options, "clipboard")
     if clipboard is not None:

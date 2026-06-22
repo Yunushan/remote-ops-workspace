@@ -16,17 +16,22 @@ POLICY = (
     "release-importable artifact source binding, "
     "release source head SHA binding, "
     "release source workflow file binding, "
+    "local protected-goal evidence preflight command binding, "
     "finalized accepted-record source file binding, "
+    "finalized accepted-record release asset URL binding, "
     "Linux release source artifact names must be target/release-scoped, "
     "XP release source artifact names must be target/release-scoped, "
-    "and per-artifact SHA-256 digests, Linux builder identity evidence, builder identity "
+    "and per-artifact SHA-256 digests, safe relative non-link native archive entries, "
+    "exact safe checksum and native manifest file references, "
+    "exact safe release asset URL filenames, "
+    "Linux builder identity evidence, builder identity "
     "SHA-256, builder identity release/run binding, "
     "Linux builder/smoke source file binding, "
     "Linux builder source head SHA binding, "
     "Linux builder host identity binding when applicable, "
     "Linux builder rpm and non-interactive sudo evidence, Linux security patch evidence, "
     "Linux native build and smoke command provenance, "
-    "Linux smoke evidence SHA-256 and Linux smoke release/run binding, "
+    "Linux smoke evidence SHA-256 and Linux smoke release/run/source head SHA binding, "
     "Linux workflow dispatch inputs when applicable, XP workflow dispatch inputs when applicable, "
     "XP evidence source file binding, XP evidence bundle SHA-256 digests, "
     "XP evidence validation command binding, XP evidence contract SHA-256, "
@@ -35,10 +40,12 @@ POLICY = (
     "canonical XP smoke proof-file command binding, "
     "canonical XP smoke evidence-file summary binding and "
     "XP security smoke proof-line binding when applicable, and review "
-    "bundle manifest, review bundle archive, and review bundle SHA-256 sidecar digests "
+    "bundle manifest, review bundle archive, safe relative non-symlink review bundle archive entries, "
+    "and review bundle SHA-256 sidecar digests "
     "before strict promotion, and release uploads must include those review bundle files with matching "
     "size, SHA-256 and checksum-sidecar coverage; each accepted record must include "
-    "the promotion config SHA-256, have a unique target, all release evidence for one record must "
+    "the promotion config SHA-256, have a unique target, include no unrecognized top-level fields, "
+    "all release evidence for one record must "
     "use the same GitHub repository, and Windows XP x86/x64 pairs must use the same release_tag "
     "and GitHub repository. "
     "Empty means no promotion."
@@ -447,6 +454,54 @@ def test_release_assets_allow_accepted_evidence_hash_match(tmp_path: Path) -> No
     assert errors == []
 
 
+def test_release_assets_reject_missing_final_accepted_record_asset(tmp_path: Path) -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    registry = _accepted_evidence_registry("linux-i386")
+    record = registry["accepted_evidence"][0]
+    _write_synthetic_release_assets(checker, matrix, tmp_path)
+    _write_accepted_evidence_assets(record, tmp_path)
+    final_record = tmp_path / "platform-verified-evidence-linux-i386-final.json"
+    final_record.unlink()
+
+    errors = checker.check_release_assets(
+        tmp_path,
+        matrix,
+        tag="v1.0.2",
+        evidence_registry=registry,
+    )
+
+    assert (
+        "linux-i386 accepted evidence finalized record asset missing from release directory: "
+        "platform-verified-evidence-linux-i386-final.json"
+    ) in errors
+
+
+def test_release_assets_reject_final_accepted_record_asset_drift(tmp_path: Path) -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    registry = _accepted_evidence_registry("linux-i386")
+    record = registry["accepted_evidence"][0]
+    _write_synthetic_release_assets(checker, matrix, tmp_path)
+    _write_accepted_evidence_assets(record, tmp_path)
+    final_record = tmp_path / "platform-verified-evidence-linux-i386-final.json"
+    data = json.loads(final_record.read_text(encoding="utf-8"))
+    data["readiness_percent"] = 99.0
+    final_record.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+    errors = checker.check_release_assets(
+        tmp_path,
+        matrix,
+        tag="v1.0.2",
+        evidence_registry=registry,
+    )
+
+    assert (
+        "linux-i386 accepted evidence finalized record asset must match accepted registry record: "
+        "platform-verified-evidence-linux-i386-final.json"
+    ) in errors
+
+
 def test_release_assets_reject_accepted_evidence_missing_review_bundle(tmp_path: Path) -> None:
     checker = _load_checker()
     matrix = _load_matrix()
@@ -466,6 +521,36 @@ def test_release_assets_reject_accepted_evidence_missing_review_bundle(tmp_path:
     assert (
         "linux-i386 accepted evidence review bundle asset missing from release directory: "
         "extended-linux-evidence-bundle-linux-i386-v1.0.2.json"
+    ) in errors
+
+
+def test_release_asset_hashes_reject_unsafe_review_bundle_file_name(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    registry = _accepted_evidence_registry("linux-i386")
+    record = registry["accepted_evidence"][0]
+    _write_synthetic_release_assets(checker, matrix, tmp_path)
+    _write_accepted_evidence_assets(record, tmp_path)
+    _sync_evidence_artifact_hashes(record, tmp_path)
+    record["review_bundle"]["manifest"]["file"] = (
+        r"nested\extended-linux-evidence-bundle-linux-i386-v1.0.2.json"
+    )
+    monkeypatch.setattr(checker, "validate_accepted_evidence_registry", lambda _registry: [])
+    assets = {path.name for path in tmp_path.iterdir() if path.is_file()}
+
+    errors = checker.check_platform_evidence_asset_hashes(
+        tmp_path,
+        assets,
+        tag="v1.0.2",
+        evidence_registry=registry,
+    )
+
+    assert (
+        "linux-i386 accepted evidence review_bundle manifest.file must be an exact safe file name: "
+        r"'nested\\extended-linux-evidence-bundle-linux-i386-v1.0.2.json'"
     ) in errors
 
 
@@ -585,6 +670,55 @@ def test_release_assets_allow_evidence_backed_assets_outside_default_matrix(tmp_
     assert errors == []
 
 
+def test_release_assets_reject_accepted_evidence_release_url_query_string(tmp_path: Path) -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    registry = _accepted_evidence_registry("linux-i386")
+    record = registry["accepted_evidence"][0]
+    _write_synthetic_release_assets(checker, matrix, tmp_path)
+    _write_accepted_evidence_assets(record, tmp_path)
+    record["release_asset_urls"][0] = f"{record['release_asset_urls'][0]}?download=1"
+
+    errors = checker.check_release_assets(
+        tmp_path,
+        matrix,
+        tag="v1.0.2",
+        evidence_registry=registry,
+    )
+
+    assert any(
+        "linux-i386 release asset URL file name must be an exact safe file name" in error
+        or "linux-i386 accepted evidence release_asset_urls file name must be an exact safe file name" in error
+        for error in errors
+    )
+
+
+def test_release_assets_reject_accepted_evidence_release_url_path_segment(tmp_path: Path) -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    registry = _accepted_evidence_registry("linux-i386")
+    record = registry["accepted_evidence"][0]
+    _write_synthetic_release_assets(checker, matrix, tmp_path)
+    _write_accepted_evidence_assets(record, tmp_path)
+    record["release_asset_urls"][0] = record["release_asset_urls"][0].replace(
+        "/releases/download/v1.0.2/",
+        "/releases/download/v1.0.2/nested/",
+    )
+
+    errors = checker.check_release_assets(
+        tmp_path,
+        matrix,
+        tag="v1.0.2",
+        evidence_registry=registry,
+    )
+
+    assert any(
+        "linux-i386 release asset URL file name must be an exact safe file name" in error
+        or "linux-i386 accepted evidence release_asset_urls file name must be an exact safe file name" in error
+        for error in errors
+    )
+
+
 def test_release_assets_reject_accepted_evidence_missing_referenced_asset(tmp_path: Path) -> None:
     checker = _load_checker()
     matrix = _load_matrix()
@@ -613,6 +747,57 @@ def test_release_assets_accept_complete_synthetic_directory(tmp_path: Path) -> N
     assert errors == []
 
 
+def test_release_assets_reject_symlinked_asset_directory(tmp_path: Path, monkeypatch) -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self == tmp_path
+
+    monkeypatch.setattr(type(tmp_path), "is_symlink", fake_is_symlink)
+
+    errors = checker.check_release_assets(tmp_path, matrix, tag="v1.0.2")
+
+    assert errors == [f"release asset directory must not be a symlink: {tmp_path}"]
+
+
+def test_release_assets_reject_symlinked_asset_directory_parent(
+    tmp_path: Path, monkeypatch
+) -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    parent = tmp_path / "linked-parent"
+    assets_dir = parent / "release-assets"
+    assets_dir.mkdir(parents=True)
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self == parent
+
+    monkeypatch.setattr(type(tmp_path), "is_symlink", fake_is_symlink)
+
+    errors = checker.check_release_assets(assets_dir, matrix, tag="v1.0.2")
+
+    assert errors == [
+        f"release asset directory path must not contain symlinked directories: {parent}"
+    ]
+
+
+def test_release_assets_reject_symlinked_release_asset(tmp_path: Path, monkeypatch) -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    _write_synthetic_release_assets(checker, matrix, tmp_path)
+    symlink_name = "remote_ops_workspace-1.0.2-py3-none-any.whl"
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self.name == symlink_name
+
+    monkeypatch.setattr(type(tmp_path), "is_symlink", fake_is_symlink)
+
+    errors = checker.check_release_assets(tmp_path, matrix, tag="v1.0.2")
+
+    assert f"release assets must not contain symlinks: ['{symlink_name}']" in errors
+
+
 def test_release_assets_reject_checksum_mismatch(tmp_path: Path) -> None:
     checker = _load_checker()
     matrix = _load_matrix()
@@ -623,6 +808,25 @@ def test_release_assets_reject_checksum_mismatch(tmp_path: Path) -> None:
     errors = checker.check_release_assets(tmp_path, matrix, tag="v1.0.2")
 
     assert any("checksum mismatch" in error for error in errors)
+
+
+def test_release_assets_reject_checksum_path_reference(tmp_path: Path) -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    _write_synthetic_release_assets(checker, matrix, tmp_path)
+    checksum = tmp_path / "remote-ops-workspace-v1.0.2-SHA256SUMS.txt"
+    asset = "remote_ops_workspace-1.0.2-py3-none-any.whl"
+    checksum.write_text(
+        checksum.read_text(encoding="utf-8").replace(f"  {asset}", f"  ../{asset}", 1),
+        encoding="utf-8",
+    )
+
+    errors = checker.check_release_assets(tmp_path, matrix, tag="v1.0.2")
+
+    assert (
+        f"remote-ops-workspace-v1.0.2-SHA256SUMS.txt reference must be an exact safe file name: '../{asset}'"
+        in errors
+    )
 
 
 def _write_synthetic_release_assets(checker, matrix: dict[str, object], root: Path) -> None:
@@ -674,6 +878,7 @@ def _write_accepted_evidence_assets(record: dict[str, object], root: Path) -> No
     _write_accepted_native_assets(record, root)
     _sync_evidence_artifact_hashes(record, root)
     _write_accepted_review_bundle_assets(record, root)
+    _write_final_accepted_record_asset(record, root)
 
 
 def _write_accepted_native_assets(record: dict[str, object], root: Path) -> None:
@@ -764,11 +969,19 @@ def _write_accepted_review_bundle_assets(record: dict[str, object], root: Path) 
     assert errors == []
     record.clear()
     record.update(finalized)
+    _write_final_accepted_record_asset(record, root)
+
+
+def _write_final_accepted_record_asset(record: dict[str, object], root: Path) -> None:
+    target = str(record["target"])
+    path = root / f"platform-verified-evidence-{target}-final.json"
+    path.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
 
 
 def _prefinalized_candidate(record: dict[str, object]) -> dict[str, object]:
     candidate = copy.deepcopy(record)
     candidate.pop("review_bundle", None)
+    candidate.pop("finalized_record_release_asset_url", None)
     source = candidate.get("release_asset_source")
     artifact_hashes = candidate.get("artifact_sha256")
     if isinstance(source, dict) and isinstance(artifact_hashes, dict):
@@ -907,12 +1120,21 @@ def _linux_accepted_evidence(target: str) -> dict[str, object]:
         ),
         "native_smoke_command": (
             f"bash scripts/smoke_linux_native.sh --arch {arch} --dist native-dist/linux "
-            f"--target {target} --workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345"
+            f"--target {target} --workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
+            f"--source-head-sha {'a' * 40}"
         ),
         "linux_smoke_evidence_sha256": linux_smoke_hashes,
+        "local_evidence_preflight_command": (
+            "python scripts/check_platform_goal_local_evidence.py --root . "
+            f"--release-tag v1.0.2 --target {target} --assets-dir native-dist/linux "
+            f"--linux-builder-evidence evidence/{target}/v1.0.2/builder-identity-{target}.json "
+            f"--linux-smoke-evidence evidence/{target}/v1.0.2/native-smoke-{target}.log "
+            "--linux-workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
+            f"--linux-source-head-sha {'a' * 40}"
+        ),
         "artifact_validation_command": (
             f"python scripts/check_platform_promotion_artifacts.py --target {target} "
-            "--assets-dir native-dist/linux --tag v1.0.2"
+            "--assets-dir native-dist/linux --tag v1.0.2 --strict"
         ),
         "checks": [
             "builder_preflight",
@@ -923,6 +1145,10 @@ def _linux_accepted_evidence(target: str) -> dict[str, object]:
         ],
         "release_asset_urls": release_asset_urls,
         "artifact_sha256": _artifact_hashes_from_urls(release_asset_urls),
+        "finalized_record_release_asset_url": (
+            f"https://github.com/example/remote-ops-workspace/releases/download/v1.0.2/"
+            f"platform-verified-evidence-{target}-final.json"
+        ),
         "release_asset_source": _release_asset_source(
             target,
             artifact,
@@ -1034,9 +1260,14 @@ def _xp_accepted_evidence(target: str) -> dict[str, object]:
             f"--assets-dir {assets_dir} "
             f"--evidence-dir {evidence_dir}"
         ),
+        "local_evidence_preflight_command": (
+            "python scripts/check_platform_goal_local_evidence.py --root . "
+            f"--release-tag v1.0.2 --target {target} --assets-dir {assets_dir} "
+            f"--xp-evidence {evidence_file} --xp-evidence-dir {evidence_dir}"
+        ),
         "artifact_validation_command": (
             f"python scripts/check_platform_promotion_artifacts.py --target {target} "
-            f"--assets-dir {assets_dir} --tag v1.0.2"
+            f"--assets-dir {assets_dir} --tag v1.0.2 --strict"
         ),
         "checks": [
             "xp_native_evidence_validation",
@@ -1048,6 +1279,9 @@ def _xp_accepted_evidence(target: str) -> dict[str, object]:
         ],
         "release_asset_urls": release_asset_urls,
         "artifact_sha256": _artifact_hashes_from_urls(release_asset_urls),
+        "finalized_record_release_asset_url": (
+            f"{base_url}/platform-verified-evidence-{target}-final.json"
+        ),
         "release_asset_source": _release_asset_source(
             target,
             f"xp-native-evidence-{target}-v1.0.2",

@@ -76,6 +76,11 @@ def test_finalize_platform_verified_evidence_record_binds_review_bundle(tmp_path
         f"https://github.com/example/remote-ops-workspace/releases/download/{release_tag}/{archive.name}",
         f"https://github.com/example/remote-ops-workspace/releases/download/{release_tag}/{sidecar.name}",
     ]
+    assert (
+        record["finalized_record_release_asset_url"]
+        == f"https://github.com/example/remote-ops-workspace/releases/download/{release_tag}/"
+        f"platform-verified-evidence-{target}-final.json"
+    )
     assert manifest.name in record["release_asset_source"]["contains_files"]
     assert archive.name in record["release_asset_source"]["contains_files"]
     assert sidecar.name in record["release_asset_source"]["contains_files"]
@@ -115,6 +120,80 @@ def test_finalize_platform_verified_evidence_record_rejects_symlinked_candidate_
 
     assert record == {}
     assert f"candidate evidence record file must not be a symlink: {candidate_path}" in errors
+
+
+def test_finalize_platform_verified_evidence_record_rejects_symlinked_input_parent(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    finalizer = _load_finalizer()
+    linked_parent = tmp_path / "linked-bundle"
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self == linked_parent
+
+    monkeypatch.setattr(type(tmp_path), "is_symlink", fake_is_symlink)
+
+    for label, filename in (
+        ("candidate evidence record", "platform-verified-evidence-linux-i386.json"),
+        ("review bundle manifest", "extended-linux-evidence-bundle-linux-i386-v1.0.2.json"),
+        ("review bundle archive", "extended-linux-evidence-bundle-linux-i386-v1.0.2.zip"),
+        ("review bundle SHA-256 sidecar", "extended-linux-evidence-bundle-linux-i386-v1.0.2-SHA256SUMS.txt"),
+    ):
+        errors: list[str] = []
+        path = linked_parent / "bundle" / filename
+
+        assert not finalizer.check_input_file(path, label, errors)
+        assert errors == [
+            f"{label} file path must not contain symlinked directories: {linked_parent}"
+        ]
+
+
+def test_finalize_platform_verified_evidence_record_rejects_unsafe_output_path(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    finalizer = _load_finalizer()
+    output = tmp_path / "platform-verified-evidence-linux-i386-final.json"
+    output.write_text("{}\n", encoding="utf-8")
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self == output
+
+    monkeypatch.setattr(type(tmp_path), "is_symlink", fake_is_symlink)
+
+    errors = finalizer.check_text_output_path(
+        output,
+        "finalized platform evidence record output file",
+    )
+
+    assert errors == [
+        f"finalized platform evidence record output file must not be a symlink: {output}"
+    ]
+
+
+def test_finalize_platform_verified_evidence_record_rejects_symlinked_output_parent(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    finalizer = _load_finalizer()
+    output_parent = tmp_path / "linked-output" / "records"
+    output = output_parent / "platform-verified-evidence-linux-i386-final.json"
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self == tmp_path / "linked-output"
+
+    monkeypatch.setattr(type(tmp_path), "is_symlink", fake_is_symlink)
+
+    errors = finalizer.check_text_output_path(
+        output,
+        "finalized platform evidence record output file",
+    )
+
+    assert errors == [
+        "finalized platform evidence record output file directory path must not contain symlinked directories: "
+        f"{tmp_path / 'linked-output'}"
+    ]
 
 
 def test_finalize_platform_verified_evidence_record_rejects_archive_missing_candidate(tmp_path: Path) -> None:
@@ -173,6 +252,51 @@ def test_finalize_platform_verified_evidence_record_rejects_archive_missing_cand
     assert "review bundle archive missing expected entries: ['platform-verified-evidence-linux-i386.json']" in errors
 
 
+def test_finalize_platform_verified_evidence_record_rejects_symlinked_archive_entry(
+    tmp_path: Path,
+) -> None:
+    finalizer = _load_finalizer()
+    helpers = _load_platform_verified_evidence_tests()
+    target = "windows-xp-native-x86"
+    release_tag = "v1.0.2"
+    candidate = helpers._xp_record(target)
+    candidate.pop("review_bundle")
+    candidate_path, manifest, archive, sidecar = _write_xp_candidate_and_bundle(
+        tmp_path,
+        candidate,
+        target=target,
+        release_tag=release_tag,
+    )
+    _rewrite_archive_entry_as_symlink(archive, "xp-evidence.json")
+    _rewrite_sidecar(sidecar, manifest=manifest, archive=archive)
+
+    errors, record = finalizer.finalize_platform_verified_evidence_record(
+        candidate_record=candidate_path,
+        bundle_manifest=manifest,
+        bundle_archive=archive,
+        bundle_sha256s=sidecar,
+    )
+
+    assert record == {}
+    assert "review bundle archive entries must not be symlinks: ['xp-evidence.json']" in errors
+
+
+def test_finalize_platform_verified_evidence_record_rejects_unsafe_archive_entry_names() -> None:
+    finalizer = _load_finalizer()
+    absolute = zipfile.ZipInfo("/absolute.txt")
+    traversal = zipfile.ZipInfo("../escape.txt")
+    windows_drive = zipfile.ZipInfo("C:/escape.txt")
+    backslash = zipfile.ZipInfo("safe.txt")
+    backslash.filename = "nested\\escape.txt"
+
+    errors = finalizer.check_archive_entry_safety([absolute, traversal, windows_drive, backslash])
+
+    assert (
+        "review bundle archive entries must use safe relative paths: "
+        "['../escape.txt', '/absolute.txt', 'C:/escape.txt', 'nested\\\\escape.txt']"
+    ) in errors
+
+
 def test_finalize_platform_verified_evidence_record_rejects_weak_linux_smoke_log(tmp_path: Path) -> None:
     finalizer = _load_finalizer()
     helpers = _load_platform_verified_evidence_tests()
@@ -229,7 +353,8 @@ def test_finalize_platform_verified_evidence_record_rejects_weak_linux_smoke_log
     assert any(
         "linux-i386 archived native_smoke evidence missing required line: "
         "native installer smoke command: bash scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux "
-        "--target linux-i386 --workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345"
+        "--target linux-i386 --workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
+        f"--source-head-sha {'a' * 40}"
         in error
         for error in errors
     )
@@ -264,6 +389,11 @@ def test_finalize_platform_verified_evidence_record_binds_xp_review_bundle(tmp_p
         f"https://github.com/example/remote-ops-workspace/releases/download/{release_tag}/{archive.name}",
         f"https://github.com/example/remote-ops-workspace/releases/download/{release_tag}/{sidecar.name}",
     ]
+    assert (
+        record["finalized_record_release_asset_url"]
+        == f"https://github.com/example/remote-ops-workspace/releases/download/{release_tag}/"
+        f"platform-verified-evidence-{target}-final.json"
+    )
     assert manifest.name in record["release_asset_source"]["contains_files"]
     assert archive.name in record["release_asset_source"]["contains_files"]
     assert sidecar.name in record["release_asset_source"]["contains_files"]
@@ -504,6 +634,66 @@ def test_finalize_platform_verified_evidence_record_rejects_xp_manifest_host_ide
     assert "review bundle manifest host_identity must match candidate xp_evidence_summary" in errors
 
 
+def test_finalize_platform_verified_evidence_record_rejects_xp_manifest_toolchain_mismatch(
+    tmp_path: Path,
+) -> None:
+    finalizer = _load_finalizer()
+    helpers = _load_platform_verified_evidence_tests()
+    target = "windows-xp-native-x86"
+    release_tag = "v1.0.2"
+    candidate = helpers._xp_record(target)
+    candidate.pop("review_bundle")
+    candidate_path, manifest, archive, sidecar = _write_xp_candidate_and_bundle(
+        tmp_path,
+        candidate,
+        target=target,
+        release_tag=release_tag,
+    )
+    manifest_data = json.loads(manifest.read_text(encoding="utf-8"))
+    manifest_data["toolchain"]["current_python_pyqt6_stack"] = True
+    manifest.write_text(json.dumps(manifest_data, indent=2) + "\n", encoding="utf-8")
+
+    errors, record = finalizer.finalize_platform_verified_evidence_record(
+        candidate_record=candidate_path,
+        bundle_manifest=manifest,
+        bundle_archive=archive,
+        bundle_sha256s=sidecar,
+    )
+
+    assert record == {}
+    assert "review bundle manifest toolchain must match candidate xp_evidence_summary" in errors
+
+
+def test_finalize_platform_verified_evidence_record_rejects_xp_manifest_security_mismatch(
+    tmp_path: Path,
+) -> None:
+    finalizer = _load_finalizer()
+    helpers = _load_platform_verified_evidence_tests()
+    target = "windows-xp-native-x64"
+    release_tag = "v1.0.2"
+    candidate = helpers._xp_record(target)
+    candidate.pop("review_bundle")
+    candidate_path, manifest, archive, sidecar = _write_xp_candidate_and_bundle(
+        tmp_path,
+        candidate,
+        target=target,
+        release_tag=release_tag,
+    )
+    manifest_data = json.loads(manifest.read_text(encoding="utf-8"))
+    manifest_data["security"]["modern_defaults_unchanged"] = False
+    manifest.write_text(json.dumps(manifest_data, indent=2) + "\n", encoding="utf-8")
+
+    errors, record = finalizer.finalize_platform_verified_evidence_record(
+        candidate_record=candidate_path,
+        bundle_manifest=manifest,
+        bundle_archive=archive,
+        bundle_sha256s=sidecar,
+    )
+
+    assert record == {}
+    assert "review bundle manifest security must match candidate xp_evidence_summary" in errors
+
+
 def test_finalize_platform_verified_evidence_record_rejects_candidate_bundle_mismatch(tmp_path: Path) -> None:
     finalizer = _load_finalizer()
     helpers = _load_platform_verified_evidence_tests()
@@ -576,9 +766,10 @@ def test_finalize_platform_verified_evidence_record_rejects_placeholder_validate
         "validated_commands": [
             candidate["native_build_command"],
             candidate["native_smoke_command"],
+            candidate["local_evidence_preflight_command"],
             (
                 "python scripts/check_platform_promotion_artifacts.py --target linux-i386 "
-                "--assets-dir <artifact-dir> --tag v1.0.2"
+                "--assets-dir <artifact-dir> --tag v1.0.2 --strict"
             ),
             "python scripts/check_platform_verified_evidence.py",
         ],
@@ -587,6 +778,29 @@ def test_finalize_platform_verified_evidence_record_rejects_placeholder_validate
     errors = finalizer.check_manifest_validated_commands(candidate, manifest)
 
     assert any("validated_commands entry must be concrete" in error for error in errors)
+    assert "review bundle manifest validated_commands must match Linux candidate command provenance" in errors
+
+
+def test_finalize_platform_verified_evidence_record_rejects_missing_linux_local_preflight_command() -> None:
+    finalizer = _load_finalizer()
+    helpers = _load_platform_verified_evidence_tests()
+    candidate = helpers._linux_record("linux-i386")
+    candidate.pop("review_bundle")
+    manifest = {
+        "bundle_type": "extended-linux-native-evidence",
+        "validated_commands": [
+            candidate["native_build_command"],
+            candidate["native_smoke_command"],
+            candidate["artifact_validation_command"],
+            "python scripts/check_platform_verified_evidence.py",
+        ],
+    }
+
+    errors = finalizer.check_manifest_validated_commands(candidate, manifest)
+
+    assert (
+        "review bundle manifest validated_commands must include exactly one local evidence preflight command"
+    ) in errors
     assert "review bundle manifest validated_commands must match Linux candidate command provenance" in errors
 
 
@@ -612,6 +826,30 @@ def test_finalize_platform_verified_evidence_record_rejects_release_asset_url_dr
     assert "review bundle manifest release_asset_urls must match candidate record" in errors
 
 
+def test_finalize_platform_verified_evidence_record_rejects_path_qualified_candidate_release_url() -> None:
+    finalizer = _load_finalizer()
+    helpers = _load_platform_verified_evidence_tests()
+    candidate = helpers._linux_record("linux-i386")
+    candidate.pop("review_bundle")
+    candidate["release_asset_urls"][0] = candidate["release_asset_urls"][0].replace(
+        "/releases/download/v1.0.2/",
+        "/releases/download/v1.0.2/nested/",
+    )
+    expected_files = {
+        "manifest": "extended-linux-evidence-bundle-linux-i386-v1.0.2.json",
+        "archive": "extended-linux-evidence-bundle-linux-i386-v1.0.2.zip",
+        "sha256s": "extended-linux-evidence-bundle-linux-i386-v1.0.2-SHA256SUMS.txt",
+    }
+
+    bundle_errors, bundle_urls = finalizer.review_bundle_release_asset_urls(candidate, expected_files)
+    final_errors, final_url = finalizer.finalized_record_release_asset_url(candidate)
+
+    assert bundle_urls == []
+    assert final_url == ""
+    assert any("candidate release_asset_url file name must be an exact safe file name" in error for error in bundle_errors)
+    assert any("candidate release_asset_url file name must be an exact safe file name" in error for error in final_errors)
+
+
 def test_finalize_platform_verified_evidence_record_rejects_missing_xp_validation_command() -> None:
     finalizer = _load_finalizer()
     helpers = _load_platform_verified_evidence_tests()
@@ -620,7 +858,8 @@ def test_finalize_platform_verified_evidence_record_rejects_missing_xp_validatio
     manifest = {
         "bundle_type": "windows-xp-native-host-evidence",
         "validated_commands": [
-            f"{candidate['artifact_validation_command']} --strict",
+            candidate["local_evidence_preflight_command"],
+            candidate["artifact_validation_command"],
             "python scripts/check_platform_verified_evidence.py",
         ],
     }
@@ -628,6 +867,28 @@ def test_finalize_platform_verified_evidence_record_rejects_missing_xp_validatio
     errors = finalizer.check_manifest_validated_commands(candidate, manifest)
 
     assert "review bundle manifest validated_commands must include exactly one XP evidence validation command" in errors
+    assert "review bundle manifest validated_commands must match XP bundle validation commands" in errors
+
+
+def test_finalize_platform_verified_evidence_record_rejects_missing_xp_local_preflight_command() -> None:
+    finalizer = _load_finalizer()
+    helpers = _load_platform_verified_evidence_tests()
+    candidate = helpers._xp_record("windows-xp-native-x86")
+    candidate.pop("review_bundle")
+    manifest = {
+        "bundle_type": "windows-xp-native-host-evidence",
+        "validated_commands": [
+            candidate["native_evidence_validation_command"],
+            candidate["artifact_validation_command"],
+            "python scripts/check_platform_verified_evidence.py",
+        ],
+    }
+
+    errors = finalizer.check_manifest_validated_commands(candidate, manifest)
+
+    assert (
+        "review bundle manifest validated_commands must include exactly one local evidence preflight command"
+    ) in errors
     assert "review bundle manifest validated_commands must match XP bundle validation commands" in errors
 
 
@@ -640,7 +901,8 @@ def test_finalize_platform_verified_evidence_record_rejects_xp_validation_comman
         "bundle_type": "windows-xp-native-host-evidence",
         "validated_commands": [
             "python scripts/check_xp_native_evidence.py --evidence other-xp-evidence.json --assets-dir native-dist/windows-xp",
-            f"{candidate['artifact_validation_command']} --strict",
+            candidate["local_evidence_preflight_command"],
+            candidate["artifact_validation_command"],
             "python scripts/check_platform_verified_evidence.py",
         ],
     }
@@ -874,6 +1136,20 @@ def _rewrite_sidecar(sidecar: Path, *, manifest: Path, archive: Path) -> None:
     )
 
 
+def _rewrite_archive_entry_as_symlink(archive: Path, entry_name: str) -> None:
+    with zipfile.ZipFile(archive) as zipped:
+        entries = [(info, zipped.read(info.filename)) for info in zipped.infolist()]
+    with zipfile.ZipFile(archive, mode="w", compression=zipfile.ZIP_DEFLATED) as zipped:
+        for old_info, payload in entries:
+            info = zipfile.ZipInfo(old_info.filename)
+            info.date_time = old_info.date_time
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = old_info.external_attr
+            if old_info.filename == entry_name:
+                info.external_attr = 0o120777 << 16
+            zipped.writestr(info, payload)
+
+
 def _write_xp_candidate_and_bundle(
     root: Path,
     candidate: dict[str, object],
@@ -942,6 +1218,8 @@ def _write_xp_candidate_and_bundle(
             "xp_evidence_sources": candidate["xp_evidence_sources"],
             "xp_evidence_contract_sha256": candidate["xp_evidence_contract_sha256"],
             "host_identity": candidate["xp_evidence_summary"]["host_identity"],
+            "toolchain": candidate["xp_evidence_summary"]["toolchain"],
+            "security": candidate["xp_evidence_summary"]["security"],
             "candidate_record": _file_record(candidate_path),
             "evidence": _file_record(xp_evidence, name="xp-evidence.json"),
             "smoke_evidence": smoke_records,
@@ -973,6 +1251,7 @@ def _linux_validated_commands(candidate: dict[str, object]) -> list[str]:
     return [
         str(candidate["native_build_command"]),
         str(candidate["native_smoke_command"]),
+        str(candidate["local_evidence_preflight_command"]),
         str(candidate["artifact_validation_command"]),
         "python scripts/check_platform_verified_evidence.py",
     ]
@@ -981,7 +1260,8 @@ def _linux_validated_commands(candidate: dict[str, object]) -> list[str]:
 def _xp_validated_commands(candidate: dict[str, object]) -> list[str]:
     return [
         str(candidate["native_evidence_validation_command"]),
-        f"{candidate['artifact_validation_command']} --strict",
+        str(candidate["local_evidence_preflight_command"]),
+        str(candidate["artifact_validation_command"]),
         "python scripts/check_platform_verified_evidence.py",
     ]
 
@@ -1047,6 +1327,7 @@ def _write_linux_smoke_evidence(
     artifact_hashes: dict[str, str],
     *,
     workflow_run_url: str = "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+    source_head_sha: str = "a" * 40,
 ) -> None:
     arch = "i386" if target == "linux-i386" else "armhf"
     artifact_lines = [
@@ -1058,11 +1339,13 @@ def _write_linux_smoke_evidence(
         "\n".join(
             [
                 f"native installer smoke command: bash scripts/smoke_linux_native.sh --arch {arch} "
-                f"--dist native-dist/linux --target {target} --workflow-run-url {workflow_run_url}",
+                f"--dist native-dist/linux --target {target} --workflow-run-url {workflow_run_url} "
+                f"--source-head-sha {source_head_sha}",
                 "native installer smoke release: v1.0.2",
                 f"native installer smoke target arch: {arch}",
                 f"native installer smoke target: {target}",
                 f"native installer smoke workflow run: {workflow_run_url}",
+                f"native installer smoke source head sha: {source_head_sha}",
                 *artifact_lines,
                 "native installer smoke: DEB install",
                 "native installer smoke: DEB verify",

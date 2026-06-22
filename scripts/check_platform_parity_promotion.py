@@ -43,6 +43,7 @@ LINUX_REQUIRED_PROMOTION_KEYS = {
     "build_script",
     "smoke_script",
     "artifact_validation_command",
+    "local_evidence_preflight_command",
     "accepted_evidence_candidate_command",
     "review_bundle_command",
     "finalized_evidence_record_command",
@@ -56,6 +57,7 @@ XP_REQUIRED_PROMOTION_KEYS = {
     "native_artifacts",
     "artifact_validation_command",
     "native_evidence_validation_command",
+    "local_evidence_preflight_command",
     "accepted_evidence_candidate_command",
     "review_bundle_command",
     "finalized_evidence_record_command",
@@ -286,6 +288,7 @@ def check_linux_promotion_entry(
     errors.extend(check_script_requirement(label, requirements, "build_script"))
     errors.extend(check_script_requirement(label, requirements, "smoke_script"))
     errors.extend(check_artifact_validation_command(label, requirements))
+    errors.extend(check_local_evidence_preflight_command(label, requirements, kind="linux"))
     errors.extend(check_finalized_evidence_requirements(label, requirements, kind="linux"))
     artifacts = requirements.get("required_artifacts")
     if not isinstance(artifacts, list) or len(artifacts) < 5:
@@ -399,6 +402,7 @@ def check_xp_promotion_entry(
             errors.append(f"{label} promotion requires non-empty {key}")
     errors.extend(check_artifact_validation_command(label, requirements))
     errors.extend(check_xp_native_evidence_validation_command(label, requirements))
+    errors.extend(check_local_evidence_preflight_command(label, requirements, kind="xp"))
     errors.extend(check_finalized_evidence_requirements(label, requirements, kind="xp"))
     return errors
 
@@ -443,7 +447,7 @@ def check_artifact_validation_command(label: str, requirements: dict[str, Any]) 
     )
     expected = (
         "python scripts/check_platform_promotion_artifacts.py "
-        f"--target {label} --assets-dir {artifact_dir} --tag v<project.version>"
+        f"--target {label} --assets-dir {artifact_dir} --tag v<project.version> --strict"
     )
     if command != expected:
         return [f"{label} artifact_validation_command must be {expected!r}"]
@@ -466,6 +470,44 @@ def check_xp_native_evidence_validation_command(label: str, requirements: dict[s
         return [f"{label} native_evidence_validation_command must be {expected!r}"]
     if not (ROOT / "scripts" / "check_xp_native_evidence.py").is_file():
         return [f"{label} XP native evidence validation script is missing"]
+    return []
+
+
+def check_local_evidence_preflight_command(
+    label: str,
+    requirements: dict[str, Any],
+    *,
+    kind: str,
+) -> list[str]:
+    command = requirements.get("local_evidence_preflight_command")
+    if not isinstance(command, str) or not command:
+        return [f"{label} promotion requires local_evidence_preflight_command"]
+    if kind == "linux":
+        expected = (
+            "python scripts/check_platform_goal_local_evidence.py "
+            "--root . "
+            "--release-tag v<project.version> "
+            f"--target {label} "
+            "--assets-dir <artifact-dir> "
+            "--linux-builder-evidence <builder-identity.json> "
+            "--linux-smoke-evidence <native-smoke-log> "
+            "--linux-workflow-run-url <github-actions-run-url> "
+            "--linux-source-head-sha <github-actions-head-sha>"
+        )
+    else:
+        expected = (
+            "python scripts/check_platform_goal_local_evidence.py "
+            "--root . "
+            "--release-tag v<project.version> "
+            f"--target {label} "
+            "--assets-dir <target-release-artifact-dir> "
+            "--xp-evidence <target-release-evidence.json> "
+            "--xp-evidence-dir <target-release-evidence-dir>"
+        )
+    if command != expected:
+        return [f"{label} local_evidence_preflight_command must be {expected!r}"]
+    if not (ROOT / "scripts" / "check_platform_goal_local_evidence.py").is_file():
+        return [f"{label} local evidence preflight script is missing"]
     return []
 
 

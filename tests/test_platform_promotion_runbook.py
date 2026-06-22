@@ -50,7 +50,8 @@ def test_platform_promotion_runbook_requires_bundle_backed_strict_verify() -> No
     text = Path("docs/PLATFORM_PROMOTION_RUNBOOK.md").read_text(encoding="utf-8").replace(
         (
             "python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets "
-            "--release-tag v<project.version> --platform-review-bundle-dir <bundle-dir>"
+            "--release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> "
+            "--release-assets-dir <release-assets-dir>"
         ),
         "python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets",
     )
@@ -58,16 +59,39 @@ def test_platform_promotion_runbook_requires_bundle_backed_strict_verify() -> No
     errors = checker.check_platform_promotion_runbook(runbook_text=text)
 
     assert any("--platform-review-bundle-dir <bundle-dir>" in error for error in errors)
+    assert any("--release-assets-dir <release-assets-dir>" in error for error in errors)
 
 
 def test_platform_promotion_runbook_requires_staged_upload_hash_binding() -> None:
     checker = _load_checker()
-    snippet = "staged native artifacts and review-bundle files must match the finalized accepted record hashes before upload"
+    snippet = "staged native artifacts and review-bundle files must match the finalized accepted record hashes"
     text = Path("docs/PLATFORM_PROMOTION_RUNBOOK.md").read_text(encoding="utf-8").replace(snippet, "")
 
     errors = checker.check_platform_promotion_runbook(runbook_text=text)
 
-    assert any("finalized accepted record hashes before upload" in error for error in errors)
+    assert any("finalized accepted record hashes" in error for error in errors)
+
+
+def test_platform_promotion_runbook_requires_staged_review_bundle_refinalization() -> None:
+    checker = _load_checker()
+    snippet = "staged review bundle must re-finalize to the accepted record before upload"
+    text = Path("docs/PLATFORM_PROMOTION_RUNBOOK.md").read_text(encoding="utf-8").replace(snippet, "")
+
+    errors = checker.check_platform_promotion_runbook(runbook_text=text)
+
+    assert any("re-finalize to the accepted record before upload" in error for error in errors)
+
+
+def test_platform_promotion_runbook_requires_local_goal_preflight() -> None:
+    checker = _load_checker()
+    text = Path("docs/PLATFORM_PROMOTION_RUNBOOK.md").read_text(encoding="utf-8").replace(
+        "python scripts/check_platform_goal_local_evidence.py",
+        "python scripts/removed.py",
+    )
+
+    errors = checker.check_platform_promotion_runbook(runbook_text=text)
+
+    assert any("check_platform_goal_local_evidence.py" in error for error in errors)
 
 
 def test_platform_promotion_runbook_requires_xp_x64_edition_evidence() -> None:

@@ -52,6 +52,25 @@ def test_module_entrypoint_rejects_invalid_profile_before_persisting(tmp_path: P
     assert data["profiles"] == []
 
 
+def test_module_entrypoint_coverage_prints_protected_platform_goal(tmp_path: Path) -> None:
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(Path.cwd() / "src")
+    env["ROW_HOME"] = str(tmp_path)
+
+    result = _run_row(env, "features", "--coverage")
+
+    assert result.returncode == 0
+    assert "Platform verified readiness   : 100.0%" in result.stdout
+    assert (
+        "Protected platform goal       : 0.0% "
+        "(100.0% gap; 0/4 accepted; missing-accepted-evidence)"
+    ) in result.stdout
+    assert (
+        "Missing protected evidence  : linux-i386, linux-armhf, "
+        "windows-xp-native-x86, windows-xp-native-x64"
+    ) in result.stdout
+
+
 def _run_row(env: dict[str, str], *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, "-m", "remote_ops_workspace", *args],

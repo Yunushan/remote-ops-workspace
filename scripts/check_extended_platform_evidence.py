@@ -54,6 +54,7 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
     record_name = f"platform-verified-evidence-{target}.json"
     builder_identity_name = f"builder-identity-{target}.json"
     smoke_name = f"native-smoke-{target}.log"
+    evidence_dir = "native-dist/linux-evidence"
     source_artifact_name = f"extended-linux-evidence-{target}-${{{{ inputs.release_tag }}}}"
     stage_upload_snippet = (
         "python scripts/stage_extended_linux_evidence_upload.py \\\n"
@@ -67,7 +68,19 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
         f"bash scripts/smoke_linux_native.sh --arch {runner} --dist native-dist/linux "
         f"--target {target} --workflow-run-url "
         '"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" '
-        f"2>&1 | tee native-dist/linux/{smoke_name}"
+        '--source-head-sha "${{ github.sha }}" '
+        f"2>&1 | tee {evidence_dir}/{smoke_name}"
+    )
+    local_preflight_snippet = (
+        "python scripts/check_platform_goal_local_evidence.py \\\n"
+        "            --root . \\\n"
+        '            --release-tag "${{ inputs.release_tag }}" \\\n'
+        f"            --target {target} \\\n"
+        "            --assets-dir native-dist/linux \\\n"
+        f"            --linux-builder-evidence {evidence_dir}/{builder_identity_name} \\\n"
+        f"            --linux-smoke-evidence {evidence_dir}/{smoke_name} \\\n"
+        '            --linux-workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \\\n'
+        '            --linux-source-head-sha "${{ github.sha }}"'
     )
     errors: list[str] = []
     required_snippets = {
@@ -78,26 +91,30 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
         "persist-credentials: false": "checkout credential isolation",
         f"python3 scripts/check_extended_platform_dispatch_inputs.py \\\n            --target {target}": "dispatch input preflight",
         f"python3 scripts/check_extended_platform_builder.py \\\n            --target {target}": "builder identity preflight evidence",
-        f"--out native-dist/linux/{builder_identity_name}": "builder identity output",
+        f"--out {evidence_dir}/{builder_identity_name}": "builder identity output",
         '--source-head-sha "${{ github.sha }}"': "builder source head SHA evidence",
         "python3 -m venv .venv-native": "isolated release virtual environment",
         'python -m pip install --constraint requirements-release.txt pip setuptools wheel ".[security,package]"': "pinned release dependency installation",
         "bash scripts/make_linux_native.sh": "native Linux artifact build",
         smoke_command_snippet: "native installer smoke evidence capture",
-        f"python scripts/check_platform_promotion_artifacts.py --target {target}": "promotion artifact validation",
+        (
+            f'python scripts/check_platform_promotion_artifacts.py --target {target} '
+            '--assets-dir native-dist/linux --tag "${{ inputs.release_tag }}" --strict'
+        ): "strict promotion artifact validation",
+        local_preflight_snippet: "local protected goal evidence preflight",
         f"python scripts/make_platform_verified_evidence_record.py \\\n            --target {target}": "accepted-evidence record generation",
         '--release-asset-base-url "${{ inputs.release_asset_base_url }}"': "release asset URL evidence input",
         '--workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"': "workflow run URL evidence",
         f"--release-source-artifact-name {source_artifact_name}": "release source artifact name binding",
         '--release-source-head-sha "${{ github.sha }}"': "release source head SHA evidence",
-        f"--builder-evidence native-dist/linux/{builder_identity_name}": "builder identity evidence input",
-        f"--linux-smoke-evidence native-dist/linux/{smoke_name}": "native smoke evidence input",
+        f"--builder-evidence {evidence_dir}/{builder_identity_name}": "builder identity evidence input",
+        f"--linux-smoke-evidence {evidence_dir}/{smoke_name}": "native smoke evidence input",
         "--runner-label self-hosted": "self-hosted runner-label evidence",
         "--runner-label linux": "linux runner-label evidence",
         f"--runner-label {runner}": "architecture runner-label evidence",
         f"--out native-dist/linux/{record_name}": "candidate evidence record output",
         f"python scripts/make_extended_linux_evidence_bundle.py \\\n            --target {target}": "review evidence bundle generation",
-        f"--smoke-evidence native-dist/linux/{smoke_name}": "review bundle smoke evidence input",
+        f"--smoke-evidence {evidence_dir}/{smoke_name}": "review bundle smoke evidence input",
         f"--candidate-record native-dist/linux/{record_name}": "candidate record bundle input",
         f"python scripts/finalize_platform_verified_evidence_record.py \\\n            --candidate-record native-dist/linux/{record_name}": "finalized evidence record generation",
         f"--bundle-manifest native-dist/linux/extended-linux-evidence-bundle-{target}-${{{{ inputs.release_tag }}}}.json": "finalized evidence manifest binding",
@@ -128,10 +145,12 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
         '            --release-tag "${{ inputs.release_tag }}" \\\n'
         '            --workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \\\n'
         '            --source-head-sha "${{ github.sha }}" \\\n'
-        f"            --out native-dist/linux/{builder_identity_name}"
+        f"            --out {evidence_dir}/{builder_identity_name}"
     )
     if builder_command not in block:
         errors.append(f"{job} builder identity preflight must bind release_tag, workflow_run_url and source_head_sha")
+    if "--allow-extra-artifacts" in block:
+        errors.append(f"{job} must use strict Linux artifact preflight without --allow-extra-artifacts")
     if "path: native-dist/linux/*" in block:
         errors.append(f"{job} must upload scoped staged files, not raw native-dist/linux wildcard")
     if "softprops/action-gh-release" in block:

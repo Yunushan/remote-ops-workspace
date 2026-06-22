@@ -244,6 +244,34 @@ def test_validate_downloaded_source_file_set_rejects_symlinked_source(
     assert f"linux-i386 downloaded artifact must not contain symlinks: ['{symlink_name}']" in errors
 
 
+def test_validate_downloaded_source_file_set_rejects_symlinked_source_parent(
+    tmp_path: Path, monkeypatch
+) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+    source_parent = tmp_path / "linked-downloads"
+    source_root = source_parent / "download"
+    source_root.mkdir(parents=True)
+    for source in record["_source_files"]:
+        source_path = Path(str(source))
+        (source_root / source_path.name).write_bytes(source_path.read_bytes())
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self == source_parent
+
+    monkeypatch.setattr(type(source_root), "is_symlink", fake_is_symlink)
+
+    errors = importer.validate_downloaded_source_file_set(
+        "linux-i386",
+        source_root=source_root,
+        expected_files=importer.expected_source_files(record),
+    )
+
+    assert errors == [
+        f"linux-i386 downloaded artifact directory path must not contain symlinked directories: {source_parent}"
+    ]
+
+
 def test_copy_expected_files_rejects_symlinked_source(tmp_path: Path, monkeypatch) -> None:
     importer = _load_importer()
     record = _record(tmp_path)
@@ -266,6 +294,181 @@ def test_copy_expected_files_rejects_symlinked_source(tmp_path: Path, monkeypatc
 
     assert f"linux-i386 release asset import source must not be a symlink: {symlink_name}" in errors
     assert not (out_dir / symlink_name).exists()
+
+
+def test_copy_expected_files_rejects_symlinked_source_parent(tmp_path: Path, monkeypatch) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+    source_parent = tmp_path / "linked-downloads"
+    source_root = source_parent / "download"
+    out_dir = tmp_path / "release-assets"
+    source_root.mkdir(parents=True)
+    expected_files = importer.expected_release_files(record)
+    for source in record["_source_files"]:
+        source_path = Path(str(source))
+        if source_path.name in expected_files:
+            (source_root / source_path.name).write_bytes(source_path.read_bytes())
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self == source_parent
+
+    monkeypatch.setattr(type(source_root), "is_symlink", fake_is_symlink)
+
+    errors = importer.copy_expected_files(record, source_root=source_root, out_dir=out_dir)
+
+    assert (
+        f"linux-i386 downloaded artifact directory path must not contain symlinked directories: {source_parent}"
+    ) in errors
+    assert not out_dir.exists()
+
+
+def test_import_platform_evidence_artifacts_rejects_symlinked_output_directory(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    importer = _load_importer()
+    out_dir = tmp_path / "release-assets"
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self == out_dir
+
+    monkeypatch.setattr(type(out_dir), "is_symlink", fake_is_symlink)
+
+    errors = importer.import_platform_evidence_artifacts([], out_dir=out_dir, dry_run=True)
+
+    assert f"release asset import output directory must not be a symlink: {out_dir}" in errors
+    assert not out_dir.exists()
+
+
+def test_import_platform_evidence_artifacts_rejects_symlinked_output_parent(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    importer = _load_importer()
+    out_parent = tmp_path / "linked-release"
+    out_dir = out_parent / "release-assets"
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self == out_parent
+
+    monkeypatch.setattr(type(out_dir), "is_symlink", fake_is_symlink)
+
+    errors = importer.import_platform_evidence_artifacts([], out_dir=out_dir, dry_run=True)
+
+    assert errors == [
+        f"release asset import output directory path must not contain symlinked directories: {out_parent}"
+    ]
+    assert not out_dir.exists()
+
+
+def test_copy_expected_files_rejects_symlinked_output_directory(tmp_path: Path, monkeypatch) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+    source_root = tmp_path / "download"
+    out_dir = tmp_path / "release-assets"
+    source_root.mkdir()
+    expected_files = importer.expected_release_files(record)
+    for source in record["_source_files"]:
+        source_path = Path(str(source))
+        if source_path.name in expected_files:
+            (source_root / source_path.name).write_bytes(source_path.read_bytes())
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self == out_dir
+
+    monkeypatch.setattr(type(out_dir), "is_symlink", fake_is_symlink)
+
+    errors = importer.copy_expected_files(record, source_root=source_root, out_dir=out_dir)
+
+    assert f"release asset import output directory must not be a symlink: {out_dir}" in errors
+    assert not out_dir.exists()
+
+
+def test_copy_expected_files_rejects_symlinked_output_parent(tmp_path: Path, monkeypatch) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+    source_root = tmp_path / "download"
+    out_parent = tmp_path / "linked-release"
+    out_dir = out_parent / "release-assets"
+    source_root.mkdir()
+    expected_files = importer.expected_release_files(record)
+    for source in record["_source_files"]:
+        source_path = Path(str(source))
+        if source_path.name in expected_files:
+            (source_root / source_path.name).write_bytes(source_path.read_bytes())
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self == out_parent
+
+    monkeypatch.setattr(type(out_dir), "is_symlink", fake_is_symlink)
+
+    errors = importer.copy_expected_files(record, source_root=source_root, out_dir=out_dir)
+
+    assert errors == [
+        f"release asset import output directory path must not contain symlinked directories: {out_parent}"
+    ]
+    assert not out_dir.exists()
+
+
+def test_copy_expected_files_rejects_symlinked_destination(tmp_path: Path, monkeypatch) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+    source_root = tmp_path / "download"
+    out_dir = tmp_path / "release-assets"
+    source_root.mkdir()
+    out_dir.mkdir()
+    expected_files = importer.expected_release_files(record)
+    for source in record["_source_files"]:
+        source_path = Path(str(source))
+        if source_path.name in expected_files:
+            (source_root / source_path.name).write_bytes(source_path.read_bytes())
+    symlink_name = sorted(expected_files)[0]
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self.parent == out_dir and self.name == symlink_name
+
+    monkeypatch.setattr(type(out_dir), "is_symlink", fake_is_symlink)
+
+    errors = importer.copy_expected_files(record, source_root=source_root, out_dir=out_dir)
+
+    assert f"linux-i386 release asset import destination must not be a symlink: {symlink_name}" in errors
+
+
+def test_copy_expected_files_rejects_existing_destination_directory(tmp_path: Path) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+    source_root = tmp_path / "download"
+    out_dir = tmp_path / "release-assets"
+    source_root.mkdir()
+    out_dir.mkdir()
+    expected_files = importer.expected_release_files(record)
+    for source in record["_source_files"]:
+        source_path = Path(str(source))
+        if source_path.name in expected_files:
+            (source_root / source_path.name).write_bytes(source_path.read_bytes())
+    directory_name = sorted(expected_files)[0]
+    (out_dir / directory_name).mkdir()
+
+    errors = importer.copy_expected_files(record, source_root=source_root, out_dir=out_dir)
+
+    assert f"linux-i386 release asset import destination must be a regular file: {directory_name}" in errors
+
+
+def test_copy_expected_files_rejects_unsafe_expected_file_name(tmp_path: Path) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+    record["artifact_sha256"]["nested/file.bin"] = "a" * 64
+
+    errors = importer.copy_expected_files(
+        record,
+        source_root=tmp_path / "download",
+        out_dir=tmp_path / "release-assets",
+    )
+
+    assert (
+        "linux-i386 release asset import expected files must be exact safe file names: "
+        "['nested/file.bin']"
+    ) in errors
 
 
 def test_import_record_rejects_overwrite_with_different_file(tmp_path: Path, monkeypatch) -> None:
@@ -563,7 +766,7 @@ def test_import_record_dry_run_prints_gh_download_command(tmp_path: Path, capsys
     assert "--name extended-linux-evidence-linux-i386-v1.0.2" in captured.out
 
 
-def test_expected_release_files_includes_native_and_review_bundle_files(tmp_path: Path) -> None:
+def test_expected_release_files_includes_native_review_bundle_and_final_record_files(tmp_path: Path) -> None:
     importer = _load_importer()
     record = _record(tmp_path)
 
@@ -572,8 +775,37 @@ def test_expected_release_files_includes_native_and_review_bundle_files(tmp_path
         str(record["review_bundle"][key]["file"])
         for key in ("manifest", "archive", "sha256s")
     )
+    expected_files.add("platform-verified-evidence-linux-i386-final.json")
 
     assert importer.expected_release_files(record) == expected_files
+
+
+def test_check_imported_hashes_rejects_review_bundle_size_mismatch(tmp_path: Path) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+    manifest = record["review_bundle"]["manifest"]
+    manifest["size_bytes"] = int(manifest["size_bytes"]) + 1
+
+    errors = importer.check_imported_hashes(record, out_dir=tmp_path)
+
+    assert (
+        "linux-i386 imported review bundle manifest size_bytes mismatch: "
+        f"{manifest['file']}"
+    ) in errors
+
+
+def test_check_imported_hashes_rejects_missing_imported_files(tmp_path: Path) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+    first_artifact = next(iter(record["artifact_sha256"]))
+    missing_bundle = str(record["review_bundle"]["archive"]["file"])
+    (tmp_path / str(first_artifact)).unlink()
+    (tmp_path / missing_bundle).unlink()
+
+    errors = importer.check_imported_hashes(record, out_dir=tmp_path)
+
+    assert f"linux-i386 imported native artifact missing: {first_artifact}" in errors
+    assert f"linux-i386 imported review bundle archive missing: {missing_bundle}" in errors
 
 
 def test_import_record_rejects_tampered_review_bundle_content(tmp_path: Path, monkeypatch) -> None:

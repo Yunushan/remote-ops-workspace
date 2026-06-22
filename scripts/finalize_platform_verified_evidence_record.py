@@ -6,7 +6,7 @@ import json
 import re
 import sys
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,6 +22,7 @@ from check_platform_verified_evidence import (  # noqa: E402
     check_linux_smoke_log_text,
     check_platform_verified_evidence,
     read_json,
+    release_asset_url_filename,
     review_bundle_expected_files,
 )
 from check_xp_native_evidence import (  # noqa: E402
@@ -31,7 +32,10 @@ from check_xp_native_evidence import (  # noqa: E402
 from make_platform_verified_evidence_record import (  # noqa: E402
     EVIDENCE_PATH,
     append_record_to_registry,
+    check_path_parent_symlinks,
+    check_text_output_path,
     sha256_file,
+    write_text_output,
     xp_evidence_summary,
     xp_smoke_evidence_sha256_map,
 )
@@ -52,8 +56,12 @@ def main(argv: list[str] | None = None) -> int:
 
     output = json.dumps(record, indent=2, sort_keys=True) + "\n"
     if args.out:
-        args.out.parent.mkdir(parents=True, exist_ok=True)
-        args.out.write_text(output, encoding="utf-8")
+        output_errors = check_text_output_path(args.out, "finalized platform evidence record output file")
+        if output_errors:
+            for error in output_errors:
+                print(f"finalize platform evidence record: {error}", file=sys.stderr)
+            return 1
+        write_text_output(args.out, output)
     else:
         print(output, end="")
 
@@ -132,10 +140,13 @@ def finalize_platform_verified_evidence_record(
     errors.extend(check_bundle_archive(bundle_archive, bundle_manifest, manifest, candidate))
     bundle_url_errors, review_bundle_urls = review_bundle_release_asset_urls(candidate, expected_files)
     errors.extend(bundle_url_errors)
+    final_url_errors, finalized_record_url = finalized_record_release_asset_url(candidate)
+    errors.extend(final_url_errors)
     if errors:
         return errors, {}
 
     record = dict(candidate)
+    record["finalized_record_release_asset_url"] = finalized_record_url
     record["review_bundle"] = {
         "bundle_type": str(manifest.get("bundle_type", "")),
         "manifest": file_record(bundle_manifest),
@@ -183,6 +194,33 @@ def review_bundle_release_asset_urls(
     raw_urls = candidate.get("release_asset_urls")
     if not isinstance(raw_urls, list) or not raw_urls:
         return ["candidate release_asset_urls must be a non-empty list before deriving review bundle URLs"], []
+    errors, base_urls = candidate_release_asset_base_urls(raw_urls, release_tag)
+    if len(base_urls) != 1:
+        errors.append(f"candidate release_asset_urls must use one GitHub release asset base URL, got {sorted(base_urls)}")
+    if errors:
+        return errors, []
+    base_url = next(iter(base_urls))
+    return [], [f"{base_url}/{filename}" for filename in expected_files.values()]
+
+
+def finalized_record_release_asset_url(candidate: dict[str, Any]) -> tuple[list[str], str]:
+    target = str(candidate.get("target", ""))
+    release_tag = str(candidate.get("release_tag", ""))
+    raw_urls = candidate.get("release_asset_urls")
+    if not isinstance(raw_urls, list) or not raw_urls:
+        return ["candidate release_asset_urls must be a non-empty list before deriving final record URL"], ""
+    errors, base_urls = candidate_release_asset_base_urls(raw_urls, release_tag)
+    if len(base_urls) != 1:
+        errors.append(
+            f"candidate release_asset_urls must use one GitHub release asset base URL, got {sorted(base_urls)}"
+        )
+    if errors:
+        return errors, ""
+    base_url = next(iter(base_urls))
+    return [], f"{base_url}/{accepted_record_source_file(target)}"
+
+
+def candidate_release_asset_base_urls(raw_urls: list[Any], release_tag: str) -> tuple[list[str], set[str]]:
     errors: list[str] = []
     base_urls: set[str] = set()
     for raw_url in raw_urls:
@@ -194,13 +232,11 @@ def review_bundle_release_asset_urls(
         if match.group(2) != release_tag:
             errors.append(f"candidate release_asset_url tag must match release_tag {release_tag}: {url}")
             continue
+        if not release_asset_url_filename(url):
+            errors.append(f"candidate release_asset_url file name must be an exact safe file name: {url}")
+            continue
         base_urls.add(url.rsplit("/", 1)[0])
-    if len(base_urls) != 1:
-        errors.append(f"candidate release_asset_urls must use one GitHub release asset base URL, got {sorted(base_urls)}")
-    if errors:
-        return errors, []
-    base_url = next(iter(base_urls))
-    return [], [f"{base_url}/{filename}" for filename in expected_files.values()]
+    return errors, base_urls
 
 
 def check_bundle_manifest_records(manifest: dict[str, Any]) -> list[str]:
@@ -295,8 +331,22 @@ def check_candidate_manifest_binding(
             if isinstance(candidate_summary, dict)
             else None
         )
+        candidate_toolchain = (
+            candidate_summary.get("toolchain")
+            if isinstance(candidate_summary, dict)
+            else None
+        )
+        candidate_security = (
+            candidate_summary.get("security")
+            if isinstance(candidate_summary, dict)
+            else None
+        )
         if manifest.get("host_identity") != candidate_host_identity:
             errors.append("review bundle manifest host_identity must match candidate xp_evidence_summary")
+        if manifest.get("toolchain") != candidate_toolchain:
+            errors.append("review bundle manifest toolchain must match candidate xp_evidence_summary")
+        if manifest.get("security") != candidate_security:
+            errors.append("review bundle manifest security must match candidate xp_evidence_summary")
         errors.extend(check_manifest_smoke_hashes_match_candidate(candidate, manifest))
     return errors
 
@@ -318,9 +368,11 @@ def check_manifest_validated_commands(candidate: dict[str, Any], manifest: dict[
 
     bundle_type = str(manifest.get("bundle_type", ""))
     if bundle_type == "extended-linux-native-evidence":
+        errors.extend(check_manifest_local_evidence_preflight_command(candidate, commands))
         expected = [
             str(candidate.get("native_build_command", "")),
             str(candidate.get("native_smoke_command", "")),
+            str(candidate.get("local_evidence_preflight_command", "")),
             str(candidate.get("artifact_validation_command", "")),
             "python scripts/check_platform_verified_evidence.py",
         ]
@@ -328,6 +380,7 @@ def check_manifest_validated_commands(candidate: dict[str, Any], manifest: dict[
             errors.append("review bundle manifest validated_commands must match Linux candidate command provenance")
     elif bundle_type == "windows-xp-native-host-evidence":
         expected_xp_command = str(candidate.get("native_evidence_validation_command", ""))
+        errors.extend(check_manifest_local_evidence_preflight_command(candidate, commands))
         xp_commands = [
             command
             for command in commands
@@ -339,12 +392,34 @@ def check_manifest_validated_commands(candidate: dict[str, Any], manifest: dict[
             errors.extend(check_xp_manifest_evidence_validation_command(xp_commands[0]))
         expected = [
             expected_xp_command,
+            str(candidate.get("local_evidence_preflight_command", "")),
             strict_artifact_validation_command(str(candidate.get("artifact_validation_command", ""))),
             "python scripts/check_platform_verified_evidence.py",
         ]
         if commands != expected:
             errors.append("review bundle manifest validated_commands must match XP bundle validation commands")
     return errors
+
+
+def check_manifest_local_evidence_preflight_command(
+    candidate: dict[str, Any],
+    commands: list[str],
+) -> list[str]:
+    expected = str(candidate.get("local_evidence_preflight_command", ""))
+    matches = [
+        command
+        for command in commands
+        if command.startswith("python scripts/check_platform_goal_local_evidence.py ")
+    ]
+    if len(matches) != 1:
+        return [
+            "review bundle manifest validated_commands must include exactly one local evidence preflight command"
+        ]
+    if matches[0] != expected:
+        return [
+            "review bundle manifest validated_commands must match candidate local_evidence_preflight_command"
+        ]
+    return []
 
 
 def check_linux_manifest_evidence_file_names(target: str, manifest: dict[str, Any]) -> list[str]:
@@ -518,7 +593,11 @@ def check_bundle_archive(
         return []
     try:
         with zipfile.ZipFile(archive_path) as archive:
-            infos = [item for item in archive.infolist() if not item.is_dir()]
+            all_infos = archive.infolist()
+            archive_safety_errors = check_archive_entry_safety(all_infos)
+            if archive_safety_errors:
+                return archive_safety_errors
+            infos = [item for item in all_infos if not item.is_dir()]
             entry_counts: dict[str, int] = {}
             for item in infos:
                 entry_counts[item.filename] = entry_counts.get(item.filename, 0) + 1
@@ -535,6 +614,39 @@ def check_bundle_archive(
             return errors
     except (OSError, zipfile.BadZipFile) as exc:
         return [f"review bundle archive is not a readable ZIP: {archive_path.name}: {exc}"]
+
+
+def check_archive_entry_safety(infos: list[zipfile.ZipInfo]) -> list[str]:
+    symlink_entries: list[str] = []
+    unsafe_entries: list[str] = []
+    for info in infos:
+        name = info.filename
+        if archive_entry_is_symlink(info):
+            symlink_entries.append(name)
+        if not archive_entry_name_is_safe(name):
+            unsafe_entries.append(name)
+    errors: list[str] = []
+    if symlink_entries:
+        errors.append(f"review bundle archive entries must not be symlinks: {sorted(symlink_entries)}")
+    if unsafe_entries:
+        errors.append(f"review bundle archive entries must use safe relative paths: {sorted(unsafe_entries)}")
+    return errors
+
+
+def archive_entry_is_symlink(info: zipfile.ZipInfo) -> bool:
+    file_type = (info.external_attr >> 16) & 0o170000
+    return file_type == 0o120000
+
+
+def archive_entry_name_is_safe(name: str) -> bool:
+    if not name or "\\" in name:
+        return False
+    parts = name.split("/")
+    if any(part in ("", ".", "..") for part in parts):
+        return False
+    posix_path = PurePosixPath(name)
+    windows_path = PureWindowsPath(name)
+    return not posix_path.is_absolute() and not windows_path.is_absolute() and not windows_path.drive
 
 
 def check_archive_expected_entries(
@@ -644,12 +756,15 @@ def check_linux_archive_smoke_log(
         text = data.decode("utf-8")
     except UnicodeDecodeError as exc:
         return [f"review bundle archive native_smoke evidence is not UTF-8: {exc}"]
+    source = candidate.get("release_asset_source")
+    source_head_sha = str(source.get("head_sha", "")).strip() if isinstance(source, dict) else ""
     return check_linux_smoke_log_text(
         str(candidate.get("target", "")),
         str(candidate.get("release_tag", "")),
         str(candidate.get("native_smoke_command", "")),
         str(candidate.get("workflow_run_url", "")),
         text,
+        source_head_sha=source_head_sha,
         label="archived native_smoke evidence",
         artifact_sha256=candidate.get("artifact_sha256"),
     )
@@ -805,6 +920,10 @@ def load_json(path: Path, label: str, errors: list[str]) -> dict[str, Any] | Non
 def check_input_file(path: Path, label: str, errors: list[str]) -> bool:
     if path.is_symlink():
         errors.append(f"{label} file must not be a symlink: {path}")
+        return False
+    parent_errors = check_path_parent_symlinks(path, f"{label} file")
+    if parent_errors:
+        errors.extend(parent_errors)
         return False
     if not path.is_file():
         errors.append(f"{label} file missing: {path}")

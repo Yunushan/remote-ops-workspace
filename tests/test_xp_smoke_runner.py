@@ -36,6 +36,10 @@ def test_xp_smoke_runner_writes_bound_evidence_from_proof_file(tmp_path: Path) -
             str(output),
             "--proof-file",
             str(proof),
+            "--host-label",
+            "xp-x86-lab-01",
+            "--evidence-run-id",
+            "xp-x86-1-0-2-20260620t120000z",
         ],
         cwd=Path.cwd(),
         text=True,
@@ -48,6 +52,8 @@ def test_xp_smoke_runner_writes_bound_evidence_from_proof_file(tmp_path: Path) -
     assert "xp smoke target: windows-xp-native-x86" in text
     assert "xp smoke release: v1.0.2" in text
     assert "xp smoke id: modern_defaults_unchanged" in text
+    assert "xp smoke host label: xp-x86-lab-01" in text
+    assert "xp smoke evidence run id: xp-x86-1-0-2-20260620t120000z" in text
     assert "modern TLS preferred: TLS 1.3" in text
     assert "weak crypto global default: false" in text
 
@@ -71,6 +77,10 @@ def test_xp_smoke_runner_requires_existing_proof_file(tmp_path: Path) -> None:
             str(output),
             "--proof-file",
             str(tmp_path / "missing-proof.txt"),
+            "--host-label",
+            "xp-x86-lab-01",
+            "--evidence-run-id",
+            "xp-x86-1-0-2-20260620t120000z",
         ],
         cwd=Path.cwd(),
         text=True,

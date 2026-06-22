@@ -482,6 +482,38 @@ def test_xp_native_evidence_rejects_smoke_evidence_wrong_release_binding(tmp_pat
     ) in errors
 
 
+def test_xp_native_evidence_rejects_smoke_evidence_host_identity_binding_mismatch(
+    tmp_path: Path,
+) -> None:
+    checker = _load_xp_native_evidence_checker()
+    evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    smoke_file = tmp_path / evidence["smoke_results"][0]["evidence_file"]
+    smoke_file.write_text(
+        "xp smoke target: windows-xp-native-x86\n"
+        "xp smoke release: v1.0.2\n"
+        "xp smoke id: cli_launch\n"
+        "xp smoke host label: xp-x86-lab-02\n"
+        "xp smoke evidence run id: xp-x86-1-0-2-other\n"
+        "cli_launch passed on Windows XP evidence host\n",
+        encoding="utf-8",
+    )
+    evidence["smoke_results"][0]["evidence_sha256"] = _sha256(smoke_file)
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path)
+
+    assert (
+        "windows-xp-native-x86 smoke result cli_launch evidence_file host-label binding must be "
+        "['xp-x86-lab-01'], got ['xp-x86-lab-02']"
+    ) in errors
+    assert (
+        "windows-xp-native-x86 smoke result cli_launch evidence_file evidence-run-id binding must be "
+        "['xp-x86-1-0-2-20260620t120000z'], got ['xp-x86-1-0-2-other']"
+    ) in errors
+
+
 def test_xp_native_evidence_rejects_missing_legacy_crypto_security_proof_line(tmp_path: Path) -> None:
     checker = _load_xp_native_evidence_checker()
     evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
@@ -613,6 +645,36 @@ def test_xp_native_evidence_rejects_smoke_command_proof_file_mismatch(tmp_path: 
     assert (
         "windows-xp-native-x86 smoke result cli_launch command must include exactly one "
         "--proof-file xp-smoke-proof/cli_launch.txt, got ['xp-smoke-proof/other.txt']"
+    ) in errors
+
+
+def test_xp_native_evidence_rejects_smoke_command_host_identity_binding_mismatch(
+    tmp_path: Path,
+) -> None:
+    checker = _load_xp_native_evidence_checker()
+    evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    smoke = evidence["smoke_results"][0]
+    smoke["command"] = smoke["command"].replace(
+        "--host-label xp-x86-lab-01",
+        "--host-label xp-x86-lab-02",
+    )
+    smoke["command"] = smoke["command"].replace(
+        "--evidence-run-id xp-x86-1-0-2-20260620t120000z",
+        "--evidence-run-id xp-x86-1-0-2-other",
+    )
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path)
+
+    assert (
+        "windows-xp-native-x86 smoke result cli_launch command must include exactly one "
+        "--host-label xp-x86-lab-01, got ['xp-x86-lab-02']"
+    ) in errors
+    assert (
+        "windows-xp-native-x86 smoke result cli_launch command must include exactly one "
+        "--evidence-run-id xp-x86-1-0-2-20260620t120000z, got ['xp-x86-1-0-2-other']"
     ) in errors
 
 
@@ -899,6 +961,21 @@ def _valid_evidence(
     }
     if arch == "x64":
         os_record["edition"] = "Professional x64 Edition"
+    host_identity = {
+        "schema_version": 1,
+        "target": target,
+        "release_tag": release_tag,
+        "host_label": f"xp-{arch}-lab-01",
+        "evidence_run_id": f"xp-{arch}-{release_tag.removeprefix('v').replace('.', '-')}-20260620t120000z",
+        "observed_at_utc": "2026-06-20T12:00:00Z",
+        "operator_private_data_redacted": True,
+        "os": dict(os_record),
+        "toolchain": {
+            "separate_legacy_toolchain": True,
+            "current_python_pyqt6_stack": False,
+            "description": "Separate legacy XP-capable native host toolchain",
+        },
+    }
     return {
         "schema_version": 1,
         "target": target,
@@ -909,21 +986,7 @@ def _valid_evidence(
             "current_python_pyqt6_stack": False,
             "description": "Separate legacy XP-capable native host toolchain",
         },
-        "host_identity": {
-            "schema_version": 1,
-            "target": target,
-            "release_tag": release_tag,
-            "host_label": f"xp-{arch}-lab-01",
-            "evidence_run_id": f"xp-{arch}-{release_tag.removeprefix('v').replace('.', '-')}-20260620t120000z",
-            "observed_at_utc": "2026-06-20T12:00:00Z",
-            "operator_private_data_redacted": True,
-            "os": dict(os_record),
-            "toolchain": {
-                "separate_legacy_toolchain": True,
-                "current_python_pyqt6_stack": False,
-                "description": "Separate legacy XP-capable native host toolchain",
-            },
-        },
+        "host_identity": host_identity,
         "artifact_validation": {
             "passed": True,
             "command": (
@@ -939,7 +1002,9 @@ def _valid_evidence(
                 "command": (
                     f"scripts/xp_smoke_runner.cmd --target {target} --release-tag {release_tag} "
                     f"--smoke-id {smoke_id} --evidence-file xp-smoke-evidence/{smoke_id}.txt "
-                    f"--proof-file xp-smoke-proof/{smoke_id}.txt"
+                    f"--proof-file xp-smoke-proof/{smoke_id}.txt "
+                    f"--host-label {host_identity['host_label']} "
+                    f"--evidence-run-id {host_identity['evidence_run_id']}"
                 ),
                 "evidence_file": f"xp-smoke-evidence/{smoke_id}.txt",
                 "evidence_sha256": hashlib.sha256(smoke_id.encode()).hexdigest(),
@@ -961,6 +1026,7 @@ def _valid_evidence(
 
 
 def _attach_smoke_evidence_files(root: Path, evidence: dict[str, Any]) -> None:
+    host_identity = evidence["host_identity"]
     for result in evidence["smoke_results"]:
         path = root / result["evidence_file"]
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -969,6 +1035,8 @@ def _attach_smoke_evidence_files(root: Path, evidence: dict[str, Any]) -> None:
             f"xp smoke target: {evidence['target']}\n"
             f"xp smoke release: {evidence['release_tag']}\n"
             f"xp smoke id: {result['id']}\n"
+            f"xp smoke host label: {host_identity['host_label']}\n"
+            f"xp smoke evidence run id: {host_identity['evidence_run_id']}\n"
             f"{security_lines}"
             f"{result['id']} passed on Windows XP evidence host\n",
             encoding="utf-8",

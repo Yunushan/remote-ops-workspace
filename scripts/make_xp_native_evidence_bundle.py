@@ -94,10 +94,25 @@ def make_xp_native_evidence_bundle(
         return errors
     if candidate_data is None:
         return errors
+    errors.extend(check_candidate_is_unfinalized(candidate_data))
+    if errors:
+        return errors
     if evidence_data.get("target") != target:
         errors.append(f"bundle target {target} must match evidence target {evidence_data.get('target')!r}")
     release_tag = str(evidence_data.get("release_tag", ""))
     evidence_root = evidence_dir or evidence.parent
+    if release_tag:
+        artifact_errors = check_platform_promotion_artifacts(
+            target=target,
+            assets_dir=assets_dir,
+            tag=release_tag,
+            strict=True,
+        )
+    else:
+        artifact_errors = ["XP evidence release_tag must be set before bundle artifact validation"]
+    errors.extend(artifact_errors)
+    if artifact_errors:
+        return errors
     errors.extend(
         validate_candidate_record(
             target,
@@ -117,15 +132,6 @@ def make_xp_native_evidence_bundle(
             evidence_dir=evidence_dir,
         )
     )
-    if release_tag:
-        errors.extend(
-            check_platform_promotion_artifacts(
-                target=target,
-                assets_dir=assets_dir,
-                tag=release_tag,
-                strict=True,
-            )
-        )
     if errors:
         return errors
 
@@ -178,11 +184,26 @@ def check_input_symlinks(
     }
     if evidence_dir is not None:
         inputs["evidence directory"] = evidence_dir
-    return [
-        f"{label} must not be a symlink: {path}"
-        for label, path in inputs.items()
-        if path.is_symlink()
-    ]
+    errors: list[str] = []
+    for label, path in inputs.items():
+        if path.is_symlink():
+            errors.append(f"{label} must not be a symlink: {path}")
+        errors.extend(check_path_parent_symlinks(path, label))
+    return errors
+
+
+def check_candidate_is_unfinalized(candidate: dict[str, Any]) -> list[str]:
+    finalized_fields = sorted(
+        field
+        for field in ("finalized_record_release_asset_url", "review_bundle")
+        if field in candidate
+    )
+    if finalized_fields:
+        return [
+            "candidate evidence record must be unfinalized before bundling; "
+            f"remove fields: {finalized_fields}"
+        ]
+    return []
 
 
 def prepare_output_paths(*, out_dir: Path, outputs: tuple[Path, ...], force: bool) -> list[str]:

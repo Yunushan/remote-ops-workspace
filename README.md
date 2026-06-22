@@ -291,18 +291,21 @@ with `python scripts/finalize_platform_verified_evidence_record.py` so the
 record binds the review-bundle manifest, archive and SHA-256 sidecar. Linux
 accepted records include builder identity JSON plus its matching SHA-256,
 sanitized target-scoped host identity and workflow dispatch input binding.
+Windows XP accepted records include sanitized host identity SHA-256 and require
+each smoke command/file to bind the same host label and evidence run ID.
 `python scripts/check_platform_verified_evidence.py`
 validates the registry in finalized-only mode by default; the
 `--allow-unfinalized-candidates` flag is only for local candidate checks before
 append. The goal-specific gate is
 `python scripts/check_platform_verified_evidence.py --require-goal-targets --release-tag v<project.version>`;
 it must fail until linux-i386, linux-armhf, windows-xp-native-x86 and
-windows-xp-native-x64 all have finalized accepted records for the same release tag.
-Mixed-release accepted records remain visible as aggregate evidence, but the protected goal
-parity block stays incomplete until one release has all four targets. The release/verifier promotion
+windows-xp-native-x64 all have finalized accepted records for the same release tag,
+same GitHub release repository and same release source head SHA. Mixed-tag,
+mixed-repository or mixed-source-head accepted records remain visible as aggregate evidence,
+but the protected goal parity block stays incomplete until one release source has all four targets. The release/verifier promotion
 gate is `python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> --release-assets-dir <release-assets-dir>`,
 which also runs `python scripts/check_release_publish_assets.py --assets-dir <release-assets-dir> --require-platform-goal-targets`
-and must fail until the same four records are finalized and accepted. Today Linux i386 and
+and must fail until the same four records are finalized and accepted from that same release source. Today Linux i386 and
 armhf remain script-supported at 70.0% until matching release builders, default
 release matrix entries, smoke evidence, checksum sidecars and native manifests
 exist. Windows XP native-host readiness remains 25.0% until a separate
@@ -522,10 +525,13 @@ and `python scripts/check_repository_cleanup.py --require-clean`; source, native
 `accepted-platform-evidence-assets` and publish jobs all depend on that gate.
 The `accepted-platform-evidence-assets` job runs
 `python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets`
-to copy only same-tag, SHA-bound accepted evidence artifacts into the release
-asset directory. Linux i386, Linux armhf, windows-xp-native-x86 and
-windows-xp-native-x64 require finalized accepted evidence records for the same
-release tag before any 100% platform-readiness or native-host parity claim.
+to copy only same-tag, same-repository and source-head-bound accepted evidence
+artifacts into the release asset directory, then runs
+`python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag <tag>`
+against the imported review bundles before upload. Linux i386, Linux armhf,
+windows-xp-native-x86 and windows-xp-native-x64 require finalized accepted
+evidence records for the same release tag, GitHub release repository and release
+source head SHA before any 100% platform-readiness or native-host parity claim.
 Before upload, the publish job runs
 `python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --require-platform-goal-targets`
 to verify the downloaded asset set, checksum sidecars and release manifest

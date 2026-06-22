@@ -213,6 +213,19 @@ def test_release_truth_checker_requires_platform_evidence_import_command() -> No
     assert any("accepted platform evidence artifact importer" in error for error in errors)
 
 
+def test_release_truth_checker_requires_imported_review_bundle_validation() -> None:
+    checker = _load_release_truth_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        'python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets '
+        '--require-goal-targets --release-tag "${{ github.ref_name }}"',
+        "python scripts/check_platform_review_bundle_artifacts.py --help",
+    )
+
+    errors = checker.check_release_preflight(workflow)
+
+    assert any("imported platform review bundle validator" in error for error in errors)
+
+
 def test_release_truth_checker_requires_platform_import_gh_token() -> None:
     checker = _load_release_truth_checker()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(

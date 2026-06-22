@@ -54,6 +54,8 @@ DEFAULT_EVIDENCE_POLICY = (
     "XP release source artifact names must be target/release-scoped, "
     "per-artifact SHA-256 digests, safe relative non-link native archive entries, "
     "exact safe checksum and native manifest file references, exact safe release asset URL filenames, "
+    "exact required check lists, exact workflow dispatch input sets, exact evidence source record fields, "
+    "exact release source and review bundle fields, "
     "Linux builder identity evidence, builder identity SHA-256, "
     "Linux builder/smoke source file binding, "
     "builder identity release/run binding, Linux builder source head SHA binding, "
@@ -61,11 +63,13 @@ DEFAULT_EVIDENCE_POLICY = (
     "Linux builder rpm and non-interactive sudo evidence, "
     "Linux security patch evidence, "
     "Linux native build and smoke command provenance, "
-    "Linux smoke evidence SHA-256 and Linux smoke release/run/source head SHA binding, "
+    "Linux smoke evidence SHA-256, Linux smoke release/run/source head SHA binding, "
+    "Linux smoke runtime architecture and userland binding, "
     "Linux workflow dispatch inputs when applicable, XP workflow dispatch inputs when applicable, "
     "XP evidence source file binding, and XP evidence bundle SHA-256 digests, "
     "XP evidence validation command binding, XP evidence contract SHA-256, "
-    "XP evidence summary binding, XP host identity SHA-256 binding, XP security patch evidence, "
+    "XP evidence summary binding, XP host identity SHA-256 binding, XP smoke host identity binding, "
+    "XP security patch evidence, "
     "tracked scripts/xp_smoke_runner.cmd XP smoke command provenance, "
     "canonical XP smoke proof-file command binding, "
     "canonical XP smoke evidence-file summary binding and "
@@ -74,8 +78,11 @@ DEFAULT_EVIDENCE_POLICY = (
     "sidecar digests before strict promotion, and release uploads must include those review bundle "
     "files with matching size, SHA-256 and checksum-sidecar coverage; each accepted record must include the promotion "
     "config SHA-256, have a unique "
-    "target, all release evidence for one record must use the same GitHub repository, and Windows "
-    "XP x86/x64 pairs must use the same release_tag and GitHub repository. Empty means no promotion."
+    "target, include no unrecognized top-level fields, "
+    "all release evidence for one record must use the same GitHub repository, protected platform "
+    "goal records for one release must use one release source head SHA, partial protected platform "
+    "goal records must use one release_tag, GitHub repository and release source head SHA before promotion, and Windows XP x86/x64 pairs "
+    "must use the same release_tag, GitHub repository and release source head SHA. Empty means no promotion."
 )
 LINUX_CHECKS = [
     "builder_preflight",
@@ -93,8 +100,10 @@ XP_CHECKS = [
     "release_asset_attachment",
 ]
 GITHUB_HEAD_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+GITHUB_OWNER_RE = r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?"
+GITHUB_REPOSITORY_RE = rf"{GITHUB_OWNER_RE}/[A-Za-z0-9._-]+"
 GITHUB_RELEASE_BASE_RE = re.compile(
-    r"^https://github\.com/([^/]+/[^/]+)/releases/download/(v\d+\.\d+\.\d+)$"
+    rf"^https://github\.com/({GITHUB_REPOSITORY_RE})/releases/download/(v\d+\.\d+\.\d+)$"
 )
 
 

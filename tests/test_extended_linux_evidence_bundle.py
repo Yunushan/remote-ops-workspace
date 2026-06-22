@@ -72,6 +72,7 @@ def test_extended_linux_evidence_bundle_packages_valid_i386_evidence(
     assert data["bundle_type"] == "extended-linux-native-evidence"
     assert len(data["artifacts"]) == len(names)
     assert data["release_asset_urls"] == record["release_asset_urls"]
+    assert data["release_asset_source"] == record["release_asset_source"]
     assert data["workflow_inputs"]["target"] == target
     assert data["security_patch_evidence"]["tls_minimum_modern_profiles"] == "TLS 1.2"
     assert data["security_patch_evidence"]["cve_patch_reviewed"] is True
@@ -305,6 +306,113 @@ def test_extended_linux_evidence_bundle_rejects_symlinked_inputs(
     assert f"candidate evidence record file must not be a symlink: {candidate}" in errors
 
 
+def test_extended_linux_evidence_bundle_rejects_symlinked_input_parent(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bundler = _load_script("make_extended_linux_evidence_bundle")
+    linked_root = tmp_path / "linked-evidence-root"
+    builder = linked_root / "builder-identity-linux-armhf.json"
+    smoke = linked_root / "native-smoke-linux-armhf.log"
+    candidate = linked_root / "platform-verified-evidence-linux-armhf.json"
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self == linked_root
+
+    monkeypatch.setattr(type(tmp_path), "is_symlink", fake_is_symlink)
+
+    errors = bundler.make_extended_linux_evidence_bundle(
+        target="linux-armhf",
+        release_tag="v1.0.2",
+        assets_dir=tmp_path / "assets",
+        builder_evidence=builder,
+        smoke_evidence=smoke,
+        candidate_record=candidate,
+        out_dir=tmp_path / "bundle",
+    )
+
+    assert (
+        f"builder evidence file path must not contain symlinked directories: {linked_root}"
+    ) in errors
+    assert (
+        f"smoke evidence file path must not contain symlinked directories: {linked_root}"
+    ) in errors
+    assert (
+        f"candidate evidence record file path must not contain symlinked directories: {linked_root}"
+    ) in errors
+
+
+def test_extended_linux_evidence_bundle_rejects_finalized_candidate_record(
+    tmp_path: Path,
+) -> None:
+    bundler = _load_script("make_extended_linux_evidence_bundle")
+    target = "linux-i386"
+    builder = tmp_path / "builder-identity-linux-i386.json"
+    builder.write_text("{}\n", encoding="utf-8")
+    smoke = tmp_path / "native-smoke-linux-i386.log"
+    smoke.write_text("smoke\n", encoding="utf-8")
+    candidate = tmp_path / "platform-verified-evidence-linux-i386.json"
+    candidate.write_text(
+        json.dumps(
+            {
+                "target": target,
+                "release_tag": "v1.0.2",
+                "finalized_record_release_asset_url": (
+                    "https://github.com/example/remote-ops-workspace/releases/download/v1.0.2/"
+                    "platform-verified-evidence-linux-i386-final.json"
+                ),
+                "review_bundle": {},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    errors = bundler.make_extended_linux_evidence_bundle(
+        target=target,
+        release_tag="v1.0.2",
+        assets_dir=tmp_path / "assets",
+        builder_evidence=builder,
+        smoke_evidence=smoke,
+        candidate_record=candidate,
+        out_dir=tmp_path / "bundle",
+    )
+
+    assert errors == [
+        "candidate evidence record must be unfinalized before bundling; "
+        "remove fields: ['finalized_record_release_asset_url', 'review_bundle']"
+    ]
+
+
+def test_extended_linux_evidence_bundle_rejects_missing_artifact_directory_before_hashing(
+    tmp_path: Path,
+) -> None:
+    bundler = _load_script("make_extended_linux_evidence_bundle")
+    target = "linux-i386"
+    builder = tmp_path / "builder-identity-linux-i386.json"
+    builder.write_text(json.dumps({"target": target}, indent=2) + "\n", encoding="utf-8")
+    smoke = tmp_path / "native-smoke-linux-i386.log"
+    smoke.write_text("smoke\n", encoding="utf-8")
+    candidate = tmp_path / "platform-verified-evidence-linux-i386.json"
+    candidate.write_text(
+        json.dumps({"target": target, "release_tag": "v1.0.2"}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    missing_assets = tmp_path / "missing-assets"
+
+    errors = bundler.make_extended_linux_evidence_bundle(
+        target=target,
+        release_tag="v1.0.2",
+        assets_dir=missing_assets,
+        builder_evidence=builder,
+        smoke_evidence=smoke,
+        candidate_record=candidate,
+        out_dir=tmp_path / "bundle",
+    )
+
+    assert f"artifact directory missing: {missing_assets}" in errors
+
+
 def test_extended_linux_evidence_bundle_rejects_symlinked_output_directory(
     tmp_path: Path,
     monkeypatch,
@@ -535,6 +643,8 @@ def _write_linux_smoke_evidence(
     source_head_sha: str = "a" * 40,
 ) -> None:
     arch = "i386" if target == "linux-i386" else "armhf"
+    machine = "i686" if target == "linux-i386" else "armv7l"
+    dpkg_arch = "i386" if target == "linux-i386" else "armhf"
     artifact_lines = [
         f"native installer smoke artifact sha256: {name} {artifact_hashes[name]}"
         for name in sorted(artifact_hashes)
@@ -550,6 +660,9 @@ def _write_linux_smoke_evidence(
                 f"native installer smoke target: {target}",
                 f"native installer smoke workflow run: {workflow_run_url}",
                 f"native installer smoke source head sha: {source_head_sha}",
+                f"native installer smoke uname machine: {machine}",
+                f"native installer smoke dpkg architecture: {dpkg_arch}",
+                "native installer smoke userland bits: 32",
                 *artifact_lines,
                 "native installer smoke: DEB install",
                 "native installer smoke: DEB verify",

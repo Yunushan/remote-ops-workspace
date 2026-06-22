@@ -97,30 +97,39 @@ def check_platform_review_bundle_artifacts(
     required_targets: tuple[str, ...] | list[str] | set[str] | None = None,
     required_release_tag: str | None = None,
 ) -> list[str]:
-    errors = check_platform_verified_evidence(
+    validation_errors = check_platform_verified_evidence(
         registry=registry,
         required_targets=required_targets,
         required_release_tag=required_release_tag,
         require_review_bundles=True,
     )
-    if errors:
-        return errors
     rows = registry.get("accepted_evidence", [])
     if not isinstance(rows, list):
-        return ["accepted_evidence must be a list"]
+        return validation_errors or ["accepted_evidence must be a list"]
+    if validation_errors and not has_record_scoped_validation_errors(validation_errors, rows):
+        return validation_errors
     if bundle_dir.is_symlink():
-        return [f"review bundle directory must not be a symlink: {bundle_dir}"]
+        return [*validation_errors, f"review bundle directory must not be a symlink: {bundle_dir}"]
     parent_errors = check_path_parent_symlinks(bundle_dir, "review bundle directory")
     if parent_errors:
-        return parent_errors
+        return [*validation_errors, *parent_errors]
     bundle_root = bundle_dir.resolve()
     if not bundle_root.is_dir():
-        return [f"review bundle directory missing: {bundle_dir}"]
+        return [*validation_errors, f"review bundle directory missing: {bundle_dir}"]
     artifact_errors: list[str] = []
     for record in rows:
         if isinstance(record, dict):
             artifact_errors.extend(check_record_review_bundle_artifacts(record, bundle_root))
-    return artifact_errors
+    return [*validation_errors, *artifact_errors]
+
+
+def has_record_scoped_validation_errors(errors: list[str], rows: list[Any]) -> bool:
+    targets = {
+        str(record.get("target", ""))
+        for record in rows
+        if isinstance(record, dict) and str(record.get("target", ""))
+    }
+    return any(error.startswith(f"{target} ") for error in errors for target in targets)
 
 
 def check_record_review_bundle_artifacts(record: dict[str, Any], bundle_root: Path) -> list[str]:

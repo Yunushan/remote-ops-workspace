@@ -48,6 +48,20 @@ def test_linux_smoke_requires_source_head_sha_for_target_bound_evidence() -> Non
     assert "native installer smoke source head sha: $SOURCE_HEAD_SHA" in script
 
 
+def test_linux_smoke_binds_runtime_architecture_for_protected_targets() -> None:
+    script = Path("scripts/smoke_linux_native.sh").read_text(encoding="utf-8")
+
+    assert 'SMOKE_UNAME_MACHINE="$(uname -m)"' in script
+    assert 'SMOKE_DPKG_ARCH="$(dpkg --print-architecture)"' in script
+    assert 'SMOKE_USERLAND_BITS="$(getconf LONG_BIT)"' in script
+    assert "target $TARGET must smoke on dpkg architecture i386" in script
+    assert "target $TARGET must smoke on dpkg architecture armhf" in script
+    assert "target $TARGET must smoke on a 32-bit userland" in script
+    assert "native installer smoke uname machine: $SMOKE_UNAME_MACHINE" in script
+    assert "native installer smoke dpkg architecture: $SMOKE_DPKG_ARCH" in script
+    assert "native installer smoke userland bits: $SMOKE_USERLAND_BITS" in script
+
+
 def _load_checker():
     path = Path("scripts/check_native_installer_smoke.py")
     spec = importlib.util.spec_from_file_location("native_installer_smoke_checker", path)

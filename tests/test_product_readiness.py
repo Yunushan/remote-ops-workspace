@@ -1,6 +1,7 @@
 import importlib.util
 import json
 import sys
+from copy import deepcopy
 from pathlib import Path
 
 
@@ -40,3 +41,30 @@ def test_product_readiness_rejects_invalid_platform_evidence_registry(tmp_path: 
         "platform verified evidence registry: platform verified evidence policy must require "
         "review-bundle manifest release asset URL binding"
     ) in errors
+
+
+def test_product_readiness_rejects_missing_protected_goal_release_source_heads(monkeypatch) -> None:
+    checker = load_product_readiness_checker()
+    report = deepcopy(checker.coverage_report())
+    del report["platform_verified_readiness"]["protected_goal_parity"]["release_source_heads"]
+    monkeypatch.setattr(checker, "coverage_report", lambda: report)
+
+    errors = checker.check_product_readiness()
+
+    assert "protected platform goal parity must expose release_source_heads" in errors
+
+
+def test_product_readiness_rejects_inconsistent_protected_goal_release_source_flag(monkeypatch) -> None:
+    checker = load_product_readiness_checker()
+    report = deepcopy(checker.coverage_report())
+    goal = report["platform_verified_readiness"]["protected_goal_parity"]
+    goal["release_source_heads"] = ["a" * 40, "b" * 40]
+    goal["release_source_head_consistent"] = True
+    monkeypatch.setattr(checker, "coverage_report", lambda: report)
+
+    errors = checker.check_product_readiness()
+
+    assert (
+        "protected platform goal parity release_source_head_consistent must match release_source_heads"
+        in errors
+    )

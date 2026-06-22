@@ -43,6 +43,9 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(goal, indent=2, sort_keys=True))
     else:
         print(format_goal_summary(goal))
+        scope = format_goal_scope(goal)
+        if scope:
+            print(scope)
         if goal["missing_targets"]:
             print(f"missing targets: {', '.join(goal['missing_targets'])}")
         if args.require_complete or args.show_requirements:
@@ -189,6 +192,32 @@ def format_goal_summary(goal: dict[str, Any]) -> str:
     )
 
 
+def format_goal_scope(goal: dict[str, Any]) -> str:
+    target_count = int(goal.get("target_count", 0) or 0)
+    accepted_count = int(goal.get("accepted_target_count", 0) or 0)
+    aggregate_count = int(goal.get("aggregate_accepted_target_count", accepted_count) or 0)
+    lines = [
+        "release scope: requires one release_tag, one GitHub release repository and one release source head SHA"
+    ]
+    if aggregate_count != accepted_count:
+        lines.append(
+            f"accepted in selected release scope: {accepted_count}/{target_count}; "
+            f"aggregate accepted records: {aggregate_count}/{target_count}"
+        )
+    repositories = list_values(goal.get("release_repositories"))
+    source_heads = list_values(goal.get("release_source_heads"))
+    release_tags = list_values(goal.get("release_tags"))
+    if release_tags:
+        lines.append(f"accepted release tags: {', '.join(release_tags)}")
+    if repositories:
+        lines.append(f"accepted release repositories: {', '.join(repositories)}")
+    if source_heads:
+        lines.append(f"accepted release source heads: {', '.join(source_heads)}")
+    if not any((release_tags, repositories, source_heads)):
+        lines.append("accepted release scope evidence: none")
+    return "\n".join(lines)
+
+
 def format_goal_requirements(goal: dict[str, Any]) -> str:
     requirements = goal.get("target_evidence_requirements", [])
     if not isinstance(requirements, list):
@@ -235,6 +264,12 @@ def format_goal_requirements(goal: dict[str, Any]) -> str:
         if isinstance(security, list) and security:
             lines.append(f"    security: {'; '.join(str(value) for value in security)}")
     return "\n".join(lines)
+
+
+def list_values(raw: Any) -> list[str]:
+    if not isinstance(raw, list):
+        return []
+    return [str(value) for value in raw if str(value)]
 
 
 if __name__ == "__main__":

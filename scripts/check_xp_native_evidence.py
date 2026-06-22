@@ -142,6 +142,8 @@ def check_contract(contract: dict[str, Any]) -> list[str]:
         "--smoke-id <smoke_id>",
         "--evidence-file <evidence_file>",
         "--proof-file xp-smoke-proof/<smoke_id>.txt",
+        "--host-label <host_label>",
+        "--evidence-run-id <evidence_run_id>",
     }
     if not isinstance(command_bindings, list) or not required_command_bindings.issubset(
         {str(item) for item in command_bindings}
@@ -163,7 +165,15 @@ def check_contract(contract: dict[str, Any]) -> list[str]:
             except UnicodeDecodeError:
                 errors.append("XP native smoke runner script must be UTF-8 text")
             else:
-                for snippet in ("--target", "--release-tag", "--smoke-id", "--evidence-file", "--proof-file"):
+                for snippet in (
+                    "--target",
+                    "--release-tag",
+                    "--smoke-id",
+                    "--evidence-file",
+                    "--proof-file",
+                    "--host-label",
+                    "--evidence-run-id",
+                ):
                     if snippet not in runner_text:
                         errors.append(f"XP native smoke runner script must handle {snippet}")
     smoke_root = str(contract.get("smoke_evidence_root", ""))
@@ -179,12 +189,15 @@ def check_contract(contract: dict[str, Any]) -> list[str]:
         "xp smoke target: <target>",
         "xp smoke release: <release_tag>",
         "xp smoke id: <smoke_id>",
+        "xp smoke host label: <host_label>",
+        "xp smoke evidence run id: <evidence_run_id>",
     }
     if not isinstance(binding_lines, list) or not required_binding_lines.issubset(
         {str(item) for item in binding_lines}
     ):
         errors.append(
-            "XP native evidence contract must require smoke evidence target, release-tag and smoke-id binding lines"
+            "XP native evidence contract must require smoke evidence target, release-tag, smoke-id, "
+            "host-label and evidence-run-id binding lines"
         )
     security_lines = contract.get("required_security_smoke_evidence_lines")
     required_security_lines = {
@@ -302,7 +315,16 @@ def check_xp_native_evidence(
     )
     errors.extend(check_security(target, evidence.get("security"), contract_data))
     evidence_root = evidence_root_input.resolve()
-    errors.extend(check_smoke_results(target, release_tag, evidence.get("smoke_results"), contract_data, evidence_root))
+    errors.extend(
+        check_smoke_results(
+            target,
+            release_tag,
+            evidence.get("smoke_results"),
+            contract_data,
+            evidence_root,
+            host_identity=evidence.get("host_identity"),
+        )
+    )
     errors.extend(check_artifact_validation_record(target, evidence.get("artifact_validation"), release_tag))
     errors.extend(check_artifact_names(target, evidence.get("artifacts"), target_contract, release_tag))
     if assets_dir is not None and release_tag:
@@ -483,6 +505,8 @@ def check_smoke_results(
     raw_results: Any,
     contract: dict[str, Any],
     evidence_root: Path,
+    *,
+    host_identity: Any,
 ) -> list[str]:
     if not isinstance(raw_results, list):
         return [f"{target} evidence smoke_results must be a list"]
@@ -517,8 +541,27 @@ def check_smoke_results(
         evidence_sha = str(item.get("evidence_sha256", ""))
         if not re.fullmatch(r"[0-9a-f]{64}", evidence_sha):
             errors.append(f"{target} smoke result {smoke_id} missing evidence_sha256")
-        errors.extend(check_smoke_command(target, release_tag, smoke_id, item, contract))
-        errors.extend(check_smoke_evidence_file(target, release_tag, smoke_id, item, evidence_root, contract))
+        errors.extend(
+            check_smoke_command(
+                target,
+                release_tag,
+                smoke_id,
+                item,
+                contract,
+                host_identity=host_identity,
+            )
+        )
+        errors.extend(
+            check_smoke_evidence_file(
+                target,
+                release_tag,
+                smoke_id,
+                item,
+                evidence_root,
+                contract,
+                host_identity=host_identity,
+            )
+        )
     return errors
 
 
@@ -528,6 +571,8 @@ def check_smoke_command(
     smoke_id: str,
     item: dict[str, Any],
     contract: dict[str, Any],
+    *,
+    host_identity: Any,
 ) -> list[str]:
     command = str(item.get("command", "")).strip()
     if not command:
@@ -549,6 +594,7 @@ def check_smoke_command(
             command,
             evidence_file=evidence_file,
             label=f"{target} smoke result {smoke_id} command",
+            host_identity=host_identity,
         )
     )
     return errors
@@ -562,6 +608,7 @@ def check_smoke_command_binding(
     *,
     evidence_file: str | None = None,
     label: str,
+    host_identity: Any,
 ) -> list[str]:
     expected_values = {
         "--target": target,
@@ -571,6 +618,9 @@ def check_smoke_command_binding(
     }
     if evidence_file is not None:
         expected_values["--evidence-file"] = evidence_file
+    if isinstance(host_identity, dict):
+        expected_values["--host-label"] = str(host_identity.get("host_label", ""))
+        expected_values["--evidence-run-id"] = str(host_identity.get("evidence_run_id", ""))
     errors: list[str] = []
     for flag, expected in expected_values.items():
         values = re.findall(rf"(?:^|\s){re.escape(flag)}\s+(\S+)(?=\s|$)", command)
@@ -586,6 +636,8 @@ def check_smoke_evidence_file(
     item: dict[str, Any],
     evidence_root: Path,
     contract: dict[str, Any],
+    *,
+    host_identity: Any,
 ) -> list[str]:
     if contract.get("required_smoke_evidence_file") is not True:
         return []
@@ -620,7 +672,7 @@ def check_smoke_evidence_file(
     if re.fullmatch(r"[0-9a-f]{64}", expected_sha) and actual_sha != expected_sha:
         errors.append(f"{target} smoke result {smoke_id} evidence_file SHA-256 mismatch: {raw_file}")
     errors.extend(check_forbidden_patterns_bytes(data, contract, label=f"{smoke_id} evidence_file"))
-    errors.extend(check_smoke_evidence_binding(target, release_tag, smoke_id, data))
+    errors.extend(check_smoke_evidence_binding(target, release_tag, smoke_id, data, host_identity=host_identity))
     errors.extend(check_security_smoke_evidence_lines(target, smoke_id, data, contract))
     return errors
 
@@ -651,7 +703,14 @@ def display_relative_path(root: Path, path: Path) -> str:
         return path.as_posix()
 
 
-def check_smoke_evidence_binding(target: str, release_tag: str, smoke_id: str, data: bytes) -> list[str]:
+def check_smoke_evidence_binding(
+    target: str,
+    release_tag: str,
+    smoke_id: str,
+    data: bytes,
+    *,
+    host_identity: Any,
+) -> list[str]:
     try:
         text = data.decode("utf-8")
     except UnicodeDecodeError as exc:
@@ -677,6 +736,20 @@ def check_smoke_evidence_binding(target: str, release_tag: str, smoke_id: str, d
             if line.strip().startswith("xp smoke release:")
         }
     )
+    host_labels = sorted(
+        {
+            line.split(":", 1)[1].strip()
+            for line in text.splitlines()
+            if line.strip().startswith("xp smoke host label:")
+        }
+    )
+    evidence_run_ids = sorted(
+        {
+            line.split(":", 1)[1].strip()
+            for line in text.splitlines()
+            if line.strip().startswith("xp smoke evidence run id:")
+        }
+    )
     errors: list[str] = []
     if targets != [target]:
         errors.append(
@@ -689,6 +762,21 @@ def check_smoke_evidence_binding(target: str, release_tag: str, smoke_id: str, d
     if smoke_ids != [smoke_id]:
         errors.append(
             f"{target} smoke result {smoke_id} evidence_file smoke-id binding must be {[smoke_id]}, got {smoke_ids}"
+        )
+    expected_host_label = ""
+    expected_run_id = ""
+    if isinstance(host_identity, dict):
+        expected_host_label = str(host_identity.get("host_label", ""))
+        expected_run_id = str(host_identity.get("evidence_run_id", ""))
+    if host_labels != [expected_host_label]:
+        errors.append(
+            f"{target} smoke result {smoke_id} evidence_file host-label binding "
+            f"must be {[expected_host_label]}, got {host_labels}"
+        )
+    if evidence_run_ids != [expected_run_id]:
+        errors.append(
+            f"{target} smoke result {smoke_id} evidence_file evidence-run-id binding "
+            f"must be {[expected_run_id]}, got {evidence_run_ids}"
         )
     return errors
 

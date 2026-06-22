@@ -185,7 +185,9 @@ def evidence_template(
                 "command": (
                     f"scripts/xp_smoke_runner.cmd --target {target} --release-tag {release_tag} "
                     f"--smoke-id {smoke_id} --evidence-file xp-smoke-evidence/{smoke_id}.txt "
-                    f"--proof-file xp-smoke-proof/{smoke_id}.txt"
+                    f"--proof-file xp-smoke-proof/{smoke_id}.txt "
+                    "--host-label TODO-use-sanitized-lab-label-not-real-hostname "
+                    "--evidence-run-id TODO-use-sanitized-run-id"
                 ),
                 "evidence_file": f"xp-smoke-evidence/{smoke_id}.txt",
                 "evidence_sha256": "<replace-with-real-sha256>",
@@ -211,6 +213,8 @@ def template_smoke_text(target: str, release_tag: str, smoke_id: str) -> str:
         f"xp smoke target: {target}\n"
         f"xp smoke release: {release_tag}\n"
         f"xp smoke id: {smoke_id}\n"
+        "xp smoke host label: TODO-use-sanitized-lab-label-not-real-hostname\n"
+        "xp smoke evidence run id: TODO-use-sanitized-run-id\n"
         f"{template_security_smoke_lines(smoke_id)}"
         f"Template evidence for {target} {release_tag} smoke id {smoke_id}.\n"
         "Replace this file with real Windows XP host output before validation.\n"

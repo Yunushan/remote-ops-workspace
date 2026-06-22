@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import re
 import sys
 from pathlib import Path
@@ -87,11 +86,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--linux-workflow-run-url",
-        help="GitHub Actions run URL that Linux builder and smoke evidence must bind",
+        help=(
+            "GitHub Actions run URL that Linux builder and smoke evidence must bind; "
+            "omitted values are inferred from each target's builder identity JSON"
+        ),
     )
     parser.add_argument(
         "--linux-source-head-sha",
-        help="40-character source commit SHA that Linux builder evidence must bind",
+        help=(
+            "40-character source commit SHA that Linux builder evidence must bind; "
+            "omitted values are inferred from each target's builder identity JSON"
+        ),
     )
     parser.add_argument(
         "--allow-extra-artifacts",
@@ -226,6 +231,9 @@ def check_linux_local_evidence(
     errors.extend(check_path_inside_root(root, artifacts_dir, f"{target} artifact directory"))
     errors.extend(check_path_inside_root(root, builder_evidence, f"{target} builder identity evidence"))
     errors.extend(check_path_inside_root(root, smoke_evidence, f"{target} native smoke evidence"))
+    errors.extend(check_path_inside_target_root(target_root, artifacts_dir, f"{target} artifact directory"))
+    errors.extend(check_path_inside_target_root(target_root, builder_evidence, f"{target} builder identity evidence"))
+    errors.extend(check_path_inside_target_root(target_root, smoke_evidence, f"{target} native smoke evidence"))
     if errors:
         return errors
     errors.extend(
@@ -237,34 +245,66 @@ def check_linux_local_evidence(
             promotion=promotion,
         )
     )
-    if not workflow_run_url:
+    infer_linux_bindings = builder_evidence.is_file() and builder_evidence.name == f"builder-identity-{target}.json"
+    if not workflow_run_url and not infer_linux_bindings:
         errors.append(f"{target} --linux-workflow-run-url is required for local Linux evidence preflight")
-    elif not GITHUB_ACTIONS_RUN_RE.fullmatch(str(workflow_run_url).rstrip("/")):
+    elif workflow_run_url and not GITHUB_ACTIONS_RUN_RE.fullmatch(str(workflow_run_url).rstrip("/")):
         errors.append(f"{target} --linux-workflow-run-url must be a GitHub Actions run URL")
-    if not source_head_sha:
+    if not source_head_sha and not infer_linux_bindings:
         errors.append(f"{target} --linux-source-head-sha is required for local Linux evidence preflight")
-    elif not GITHUB_HEAD_SHA_RE.fullmatch(str(source_head_sha)):
+    elif source_head_sha and not GITHUB_HEAD_SHA_RE.fullmatch(str(source_head_sha)):
         errors.append(f"{target} --linux-source-head-sha must be a 40-character lowercase Git SHA")
     if builder_evidence.is_symlink():
         errors.append(f"{target} builder identity evidence must not be a symlink: {builder_evidence}")
     elif not builder_evidence.is_file():
         errors.append(f"{target} builder identity evidence missing: {builder_evidence}")
+    elif builder_evidence.name != f"builder-identity-{target}.json":
+        errors.append(
+            f"{target} builder identity evidence file name must be "
+            f"builder-identity-{target}.json: {builder_evidence}"
+        )
     if smoke_evidence.is_symlink():
         errors.append(f"{target} native smoke evidence must not be a symlink: {smoke_evidence}")
     elif not smoke_evidence.is_file():
         errors.append(f"{target} native smoke evidence missing: {smoke_evidence}")
+    elif smoke_evidence.name != f"native-smoke-{target}.log":
+        errors.append(
+            f"{target} native smoke evidence file name must be "
+            f"native-smoke-{target}.log: {smoke_evidence}"
+        )
     if errors:
         return errors
 
     builder_identity = read_json(builder_evidence)
+    resolved_workflow_run_url = str(
+        workflow_run_url or builder_identity.get("workflow_run_url", "")
+        if isinstance(builder_identity, dict)
+        else workflow_run_url or ""
+    ).strip()
+    resolved_source_head_sha = str(
+        source_head_sha or builder_identity.get("source_head_sha", "")
+        if isinstance(builder_identity, dict)
+        else source_head_sha or ""
+    ).strip()
+    errors.extend(
+        check_linux_resolved_run_bindings(
+            target,
+            workflow_run_url=resolved_workflow_run_url,
+            source_head_sha=resolved_source_head_sha,
+            inferred_workflow_run_url=not workflow_run_url,
+            inferred_source_head_sha=not source_head_sha,
+        )
+    )
+    if errors:
+        return errors
     errors.extend(
         check_linux_builder_identity(
             target,
             builder_identity,
             LINUX_TARGETS[target]["machine_names"],
             release_tag=release_tag,
-            workflow_run_url=str(workflow_run_url),
-            source_head_sha=str(source_head_sha),
+            workflow_run_url=resolved_workflow_run_url,
+            source_head_sha=resolved_source_head_sha,
         )
     )
     artifact_hashes = artifact_sha256_map(target, release_tag, artifacts_dir, promotion)
@@ -272,13 +312,43 @@ def check_linux_local_evidence(
         check_linux_smoke_evidence_file(
             target,
             release_tag,
-            linux_native_smoke_command(target, promotion, str(workflow_run_url), str(source_head_sha)),
-            str(workflow_run_url),
+            linux_native_smoke_command(target, promotion, resolved_workflow_run_url, resolved_source_head_sha),
+            resolved_workflow_run_url,
             smoke_evidence,
-            source_head_sha=str(source_head_sha),
+            source_head_sha=resolved_source_head_sha,
             artifact_sha256=artifact_hashes,
         )
     )
+    return errors
+
+
+def check_linux_resolved_run_bindings(
+    target: str,
+    *,
+    workflow_run_url: str,
+    source_head_sha: str,
+    inferred_workflow_run_url: bool,
+    inferred_source_head_sha: bool,
+) -> list[str]:
+    errors: list[str] = []
+    workflow_label = (
+        "builder_identity.workflow_run_url"
+        if inferred_workflow_run_url
+        else "--linux-workflow-run-url"
+    )
+    source_label = (
+        "builder_identity.source_head_sha"
+        if inferred_source_head_sha
+        else "--linux-source-head-sha"
+    )
+    if not workflow_run_url:
+        errors.append(f"{target} {workflow_label} is required for local Linux evidence preflight")
+    elif not GITHUB_ACTIONS_RUN_RE.fullmatch(workflow_run_url.rstrip("/")):
+        errors.append(f"{target} {workflow_label} must be a GitHub Actions run URL")
+    if not source_head_sha:
+        errors.append(f"{target} {source_label} is required for local Linux evidence preflight")
+    elif not GITHUB_HEAD_SHA_RE.fullmatch(source_head_sha):
+        errors.append(f"{target} {source_label} must be a 40-character lowercase Git SHA")
     return errors
 
 
@@ -312,6 +382,17 @@ def check_xp_local_evidence(
     errors.extend(check_path_inside_root(root, evidence_dir, f"{target} XP evidence directory"))
     if errors:
         return errors
+    if evidence_file.is_symlink():
+        errors.append(f"{target} XP evidence file must not be a symlink: {evidence_file}")
+    if evidence_dir.is_symlink():
+        errors.append(f"{target} XP evidence directory must not be a symlink: {evidence_dir}")
+    if errors:
+        return errors
+    errors.extend(check_path_inside_target_root(target_root, artifacts_dir, f"{target} artifact directory"))
+    errors.extend(check_path_inside_target_root(target_root, evidence_file, f"{target} XP evidence file"))
+    errors.extend(check_path_inside_target_root(target_root, evidence_dir, f"{target} XP evidence directory"))
+    if errors:
+        return errors
     errors.extend(
         check_platform_promotion_artifacts(
             target=target,
@@ -320,10 +401,6 @@ def check_xp_local_evidence(
             strict=strict_artifacts,
         )
     )
-    if evidence_file.is_symlink():
-        errors.append(f"{target} XP evidence file must not be a symlink: {evidence_file}")
-    if evidence_dir.is_symlink():
-        errors.append(f"{target} XP evidence directory must not be a symlink: {evidence_dir}")
     if not evidence_file.is_file():
         errors.append(f"{target} XP evidence file missing: {evidence_file}")
     if errors:
@@ -366,6 +443,16 @@ def check_path_inside_root(root: Path, path: Path, label: str) -> list[str]:
         path_resolved.relative_to(root_resolved)
     except ValueError:
         return [f"{label} must stay inside local evidence root: {path}"]
+    return []
+
+
+def check_path_inside_target_root(target_root: Path, path: Path, label: str) -> list[str]:
+    target_root_resolved = target_root.resolve(strict=False)
+    path_resolved = path.resolve(strict=False)
+    try:
+        path_resolved.relative_to(target_root_resolved)
+    except ValueError:
+        return [f"{label} must stay inside target evidence directory: {target_root}"]
     return []
 
 

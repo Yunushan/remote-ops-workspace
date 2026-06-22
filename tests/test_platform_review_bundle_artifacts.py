@@ -319,6 +319,7 @@ def _finalized_linux_record(tmp_path: Path) -> dict[str, Any]:
         manifest_records={
             "promotion_config_sha256": candidate["promotion_config_sha256"],
             "release_asset_urls": candidate["release_asset_urls"],
+            "release_asset_source": candidate["release_asset_source"],
             "validated_commands": bundle_helpers._linux_validated_commands(candidate),
             "workflow": candidate["workflow"],
             "workflow_inputs": candidate["workflow_inputs"],

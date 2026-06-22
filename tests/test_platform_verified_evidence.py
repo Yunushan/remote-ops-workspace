@@ -21,6 +21,8 @@ POLICY = (
     "and per-artifact SHA-256 digests, safe relative non-link native archive entries, "
     "exact safe checksum and native manifest file references, "
     "exact safe release asset URL filenames, "
+    "exact required check lists, exact workflow dispatch input sets, exact evidence source record fields, "
+    "exact release source and review bundle fields, "
     "Linux builder identity evidence, builder identity "
     "SHA-256, builder identity release/run binding, "
     "Linux builder/smoke source file binding, "
@@ -28,11 +30,13 @@ POLICY = (
     "Linux builder host identity binding when applicable, "
     "Linux builder rpm and non-interactive sudo evidence, Linux security patch evidence, "
     "Linux native build and smoke command provenance, "
-    "Linux smoke evidence SHA-256 and Linux smoke release/run/source head SHA binding, "
+    "Linux smoke evidence SHA-256, Linux smoke release/run/source head SHA binding, "
+    "Linux smoke runtime architecture and userland binding, "
     "Linux workflow dispatch inputs when applicable, XP workflow dispatch inputs when applicable, "
     "XP evidence source file binding, XP evidence bundle SHA-256 digests, "
     "XP evidence validation command binding, XP evidence contract SHA-256, "
-    "XP evidence summary binding, XP host identity SHA-256 binding, XP security patch evidence, "
+    "XP evidence summary binding, XP host identity SHA-256 binding, XP smoke host identity binding, "
+    "XP security patch evidence, "
     "tracked scripts/xp_smoke_runner.cmd XP smoke command provenance, "
     "canonical XP smoke proof-file command binding, "
     "canonical XP smoke evidence-file summary binding and "
@@ -43,8 +47,10 @@ POLICY = (
     "size, SHA-256 and checksum-sidecar coverage; each accepted record must include "
     "the promotion config SHA-256, have a unique target, include no unrecognized top-level fields, "
     "all release evidence for one record must "
-    "use the same GitHub repository, and Windows XP x86/x64 pairs must use the same release_tag "
-    "and GitHub repository. "
+    "use the same GitHub repository, protected platform goal records for one release must use "
+    "one release source head SHA, partial protected platform goal records must use one release_tag, "
+    "GitHub repository and release source head SHA before promotion, and Windows XP x86/x64 pairs must use the same release_tag, "
+    "GitHub repository and release source head SHA. "
     "Empty means no promotion."
 )
 
@@ -125,6 +131,23 @@ def test_platform_verified_evidence_rejects_missing_linux_workflow_input_policy(
     )
 
     assert "platform verified evidence policy must require Linux workflow dispatch input binding" in errors
+
+
+def test_platform_verified_evidence_rejects_missing_linux_smoke_runtime_policy() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY.replace("Linux smoke runtime architecture and userland binding, ", ""),
+            "accepted_evidence": [],
+        }
+    )
+
+    assert (
+        "platform verified evidence policy must require Linux smoke runtime architecture and userland binding"
+        in errors
+    )
 
 
 def test_platform_verified_evidence_rejects_missing_review_bundle_manifest_url_policy() -> None:
@@ -240,6 +263,62 @@ def test_platform_verified_evidence_rejects_missing_exact_release_url_filename_p
     ) in errors
 
 
+def test_platform_verified_evidence_rejects_missing_exact_check_list_policy() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY.replace("exact required check lists, ", ""),
+            "accepted_evidence": [],
+        }
+    )
+
+    assert "platform verified evidence policy must require exact accepted evidence check lists" in errors
+
+
+def test_platform_verified_evidence_rejects_missing_exact_workflow_input_policy() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY.replace("exact workflow dispatch input sets, ", ""),
+            "accepted_evidence": [],
+        }
+    )
+
+    assert "platform verified evidence policy must require exact workflow dispatch input sets" in errors
+
+
+def test_platform_verified_evidence_rejects_missing_exact_evidence_source_record_policy() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY.replace("exact evidence source record fields, ", ""),
+            "accepted_evidence": [],
+        }
+    )
+
+    assert "platform verified evidence policy must require exact evidence source record fields" in errors
+
+
+def test_platform_verified_evidence_rejects_missing_exact_release_source_review_bundle_policy() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY.replace("exact release source and review bundle fields, ", ""),
+            "accepted_evidence": [],
+        }
+    )
+
+    assert "platform verified evidence policy must require exact release source and review bundle fields" in errors
+
+
 def test_platform_verified_evidence_rejects_missing_release_asset_source_policy() -> None:
     checker = _load_platform_verified_evidence_checker()
 
@@ -289,6 +368,20 @@ def test_platform_verified_evidence_rejects_missing_xp_smoke_proof_file_policy()
     assert "platform verified evidence policy must require canonical XP smoke proof-file command binding" in errors
 
 
+def test_platform_verified_evidence_rejects_missing_xp_smoke_host_identity_policy() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY.replace("XP smoke host identity binding, ", ""),
+            "accepted_evidence": [],
+        }
+    )
+
+    assert "platform verified evidence policy must require XP smoke host identity binding" in errors
+
+
 def test_platform_verified_evidence_rejects_missing_linux_release_source_artifact_scope_policy() -> None:
     checker = _load_platform_verified_evidence_checker()
 
@@ -321,6 +414,46 @@ def test_platform_verified_evidence_rejects_missing_release_source_head_sha_poli
 
     assert (
         "platform verified evidence policy must require release source head SHA binding"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_missing_protected_goal_source_head_policy() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY.replace(
+                "protected platform goal records for one release must use "
+                "one release source head SHA, ",
+                "",
+            ),
+            "accepted_evidence": [],
+        }
+    )
+
+    assert (
+        "platform verified evidence policy must require protected platform goal source head SHA consistency"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_missing_xp_pair_source_head_policy() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY.replace(
+                "Windows XP x86/x64 pairs must use the same release_tag, "
+                "GitHub repository and release source head SHA. ",
+                "Windows XP x86/x64 pairs must use the same release_tag and GitHub repository. ",
+            ),
+            "accepted_evidence": [],
+        }
+    )
+
+    assert (
+        "platform verified evidence policy must require Windows XP pair source head SHA consistency"
     ) in errors
 
 
@@ -422,6 +555,7 @@ def test_platform_verified_evidence_cli_requires_finalized_review_bundle(tmp_pat
     checker = _load_platform_verified_evidence_checker()
     record = _linux_record("linux-i386")
     del record["review_bundle"]
+    del record["finalized_record_release_asset_url"]
     record["release_asset_source"]["contains_files"] = [
         filename
         for filename in record["release_asset_source"]["contains_files"]
@@ -579,6 +713,110 @@ def test_platform_verified_evidence_goal_required_targets_reject_mixed_release_r
     ) in errors
 
 
+def test_platform_verified_evidence_goal_required_targets_reject_mixed_release_source_heads() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    linux_i386 = _linux_record("linux-i386")
+    linux_armhf = _linux_record("linux-armhf")
+    _replace_release_source_head(linux_i386, "b" * 40)
+    _replace_release_source_head(linux_armhf, "b" * 40)
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [
+            linux_i386,
+            linux_armhf,
+            _xp_record("windows-xp-native-x86"),
+            _xp_record("windows-xp-native-x64"),
+        ],
+    }
+
+    errors = checker.check_platform_verified_evidence(
+        registry=registry,
+        required_targets=checker.PROTECTED_GOAL_TARGETS,
+        required_release_tag="v1.0.2",
+        require_review_bundles=True,
+    )
+
+    assert (
+        "protected platform goal evidence for release_tag v1.0.2 must use one release source head SHA, "
+        f"got {{'linux-armhf': '{'b' * 40}', "
+        f"'linux-i386': '{'b' * 40}', "
+        f"'windows-xp-native-x64': '{'a' * 40}', "
+        f"'windows-xp-native-x86': '{'a' * 40}'}}"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_partial_protected_goal_mixed_release_tags() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [
+            _linux_record("linux-i386"),
+            _xp_record("windows-xp-native-x86", release_tag="v1.0.3"),
+        ],
+    }
+
+    errors = checker.check_platform_verified_evidence(
+        registry=registry,
+        require_review_bundles=True,
+    )
+
+    assert (
+        "partial protected platform goal evidence must use one release_tag before promotion, "
+        "got {'linux-i386': 'v1.0.2', 'windows-xp-native-x86': 'v1.0.3'}"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_partial_protected_goal_mixed_repositories() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    xp_x86 = _xp_record("windows-xp-native-x86")
+    _replace_release_repository(xp_x86, "other/remote-ops-workspace")
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [
+            _linux_record("linux-i386"),
+            xp_x86,
+        ],
+    }
+
+    errors = checker.check_platform_verified_evidence(
+        registry=registry,
+        require_review_bundles=True,
+    )
+
+    assert (
+        "partial protected platform goal evidence must use one GitHub release repository before promotion, "
+        "got {'linux-i386': ['example/remote-ops-workspace'], "
+        "'windows-xp-native-x86': ['other/remote-ops-workspace']}"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_partial_protected_goal_mixed_source_heads() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    linux_i386 = _linux_record("linux-i386")
+    _replace_release_source_head(linux_i386, "b" * 40)
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [
+            linux_i386,
+            _xp_record("windows-xp-native-x86"),
+        ],
+    }
+
+    errors = checker.check_platform_verified_evidence(
+        registry=registry,
+        require_review_bundles=True,
+    )
+
+    assert (
+        "partial protected platform goal evidence must use one release source head SHA before promotion, "
+        f"got {{'linux-i386': '{'b' * 40}', 'windows-xp-native-x86': '{'a' * 40}'}}"
+    ) in errors
+
+
 def test_platform_verified_evidence_rejects_xp_pair_mixed_release_repositories() -> None:
     checker = _load_platform_verified_evidence_checker()
     xp_x64 = _xp_record("windows-xp-native-x64")
@@ -601,6 +839,31 @@ def test_platform_verified_evidence_rejects_xp_pair_mixed_release_repositories()
         "Windows XP native evidence pair must use one GitHub release repository, "
         "got {'windows-xp-native-x64': ['other/remote-ops-workspace'], "
         "'windows-xp-native-x86': ['example/remote-ops-workspace']}"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_xp_pair_mixed_release_source_heads() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    xp_x64 = _xp_record("windows-xp-native-x64")
+    _replace_release_source_head(xp_x64, "b" * 40)
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [
+            _xp_record("windows-xp-native-x86"),
+            xp_x64,
+        ],
+    }
+
+    errors = checker.check_platform_verified_evidence(
+        registry=registry,
+        require_review_bundles=True,
+    )
+
+    assert (
+        "Windows XP native evidence pair must use one release source head SHA, "
+        f"got {{'windows-xp-native-x64': '{'b' * 40}', "
+        f"'windows-xp-native-x86': '{'a' * 40}'}}"
     ) in errors
 
 
@@ -697,6 +960,25 @@ def test_platform_verified_evidence_rejects_review_bundle_name_mismatch() -> Non
         "windows-xp-native-x64 review_bundle manifest.file must be "
         "xp-native-evidence-bundle-windows-xp-native-x64-v1.0.2.json"
     ) in errors
+
+
+def test_platform_verified_evidence_rejects_review_bundle_unexpected_fields() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    record["review_bundle"]["notes"] = "manual approval"
+    record["review_bundle"]["manifest"]["path"] = (
+        "review/extended-linux-evidence-bundle-linux-i386-v1.0.2.json"
+    )
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry, require_review_bundles=True)
+
+    assert "linux-i386 review_bundle unexpected fields: ['notes']" in errors
+    assert "linux-i386 review_bundle manifest unexpected fields: ['path']" in errors
 
 
 def test_platform_verified_evidence_rejects_review_bundle_missing_release_asset_urls() -> None:
@@ -947,6 +1229,24 @@ def test_platform_verified_evidence_rejects_release_asset_url_query_string() -> 
     )
 
 
+def test_platform_verified_evidence_rejects_malformed_release_asset_repository_slug() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    record["release_asset_urls"][0] = record["release_asset_urls"][0].replace(
+        "github.com/example/remote-ops-workspace/releases/",
+        "github.com/example/remote-ops-workspace?download=1/releases/",
+    )
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert any("linux-i386 release asset URL is not a GitHub release asset URL" in error for error in errors)
+
+
 def test_platform_verified_evidence_rejects_release_asset_url_path_segment() -> None:
     checker = _load_platform_verified_evidence_checker()
     record = _linux_record("linux-i386")
@@ -1072,6 +1372,36 @@ def test_platform_verified_evidence_rejects_missing_linux_workflow_inputs() -> N
     assert "linux-i386 evidence must include workflow_inputs object" in errors
 
 
+def test_platform_verified_evidence_rejects_missing_linux_workflow_input_keys() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-armhf")
+    del record["workflow_inputs"]["release_asset_base_url"]
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "linux-armhf workflow_inputs missing keys: ['release_asset_base_url']" in errors
+
+
+def test_platform_verified_evidence_rejects_unexpected_linux_workflow_input_keys() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    record["workflow_inputs"]["allow_extra_artifacts"] = "true"
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "linux-i386 workflow_inputs unexpected keys: ['allow_extra_artifacts']" in errors
+
+
 def test_platform_verified_evidence_rejects_missing_release_asset_source() -> None:
     checker = _load_platform_verified_evidence_checker()
     record = _linux_record("linux-i386")
@@ -1085,6 +1415,23 @@ def test_platform_verified_evidence_rejects_missing_release_asset_source() -> No
     errors = checker.check_platform_verified_evidence(registry=registry)
 
     assert "linux-i386 release_asset_source must be an object" in errors
+
+
+def test_platform_verified_evidence_rejects_release_asset_source_unexpected_fields() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-armhf")
+    record["release_asset_source"]["download_url"] = (
+        "https://github.com/example/remote-ops-workspace/actions/runs/12345/artifacts/1"
+    )
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "linux-armhf release_asset_source unexpected fields: ['download_url']" in errors
 
 
 def test_platform_verified_evidence_rejects_missing_release_source_head_sha() -> None:
@@ -1226,6 +1573,26 @@ def test_platform_verified_evidence_rejects_unimportable_release_asset_source() 
     ) in errors
     assert "windows-xp-native-x64 release_asset_source.artifact_name must be a concrete artifact name" in errors
     assert any("windows-xp-native-x64 release_asset_source.contains_files missing files" in error for error in errors)
+
+
+def test_platform_verified_evidence_rejects_malformed_release_source_repository_slug() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _xp_record("windows-xp-native-x64")
+    record["release_asset_source"]["workflow_run_url"] = (
+        "https://github.com/example/remote-ops-workspace?run=1/actions/runs/12345"
+    )
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "windows-xp-native-x64 release_asset_source.workflow_run_url must be a GitHub Actions run URL"
+        in errors
+    )
 
 
 def test_platform_verified_evidence_rejects_os_specific_release_source_file_paths() -> None:
@@ -1846,6 +2213,29 @@ def test_platform_verified_evidence_rejects_xp_evidence_source_hash_drift() -> N
     ) in errors
 
 
+def test_platform_verified_evidence_rejects_xp_evidence_source_unexpected_fields() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _xp_record("windows-xp-native-x86")
+    record["xp_evidence_sources"]["evidence"]["operator_note"] = "manual review"
+    record["xp_evidence_sources"]["smoke_evidence"]["cli_launch"]["path"] = (
+        "xp-smoke-evidence/cli_launch.txt"
+    )
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "windows-xp-native-x86 xp_evidence_sources.evidence unexpected fields: ['operator_note']"
+    ) in errors
+    assert (
+        "windows-xp-native-x86 xp_evidence_sources.smoke_evidence.cli_launch unexpected fields: ['path']"
+    ) in errors
+
+
 def test_platform_verified_evidence_rejects_xp_evidence_source_file_drift() -> None:
     checker = _load_platform_verified_evidence_checker()
     record = _xp_record("windows-xp-native-x86")
@@ -2148,6 +2538,25 @@ def test_platform_verified_evidence_rejects_linux_evidence_source_hash_mismatch(
     ) in errors
 
 
+def test_platform_verified_evidence_rejects_linux_evidence_source_unexpected_fields() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    record["linux_evidence_sources"]["builder_identity"]["path"] = (
+        "evidence/linux-i386/v1.0.2/builder-identity-linux-i386.json"
+    )
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "linux-i386 linux_evidence_sources.builder_identity unexpected fields: ['path']"
+    ) in errors
+
+
 def test_platform_verified_evidence_rejects_duplicate_target_records() -> None:
     checker = _load_platform_verified_evidence_checker()
     registry = {
@@ -2190,6 +2599,51 @@ def test_platform_verified_evidence_rejects_partial_xp_pair() -> None:
     errors = checker.check_platform_verified_evidence(registry=registry)
 
     assert any("windows-xp-native-x86 evidence missing required checks" in error for error in errors)
+
+
+def test_platform_verified_evidence_rejects_non_list_checks() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    record["checks"] = "builder_preflight,native_build"
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "linux-i386 evidence checks must be a list" in errors
+
+
+def test_platform_verified_evidence_rejects_unexpected_checks() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-armhf")
+    record["checks"] = [*record["checks"], "manual-operator-approval"]
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "linux-armhf evidence has unexpected checks: ['manual-operator-approval']" in errors
+
+
+def test_platform_verified_evidence_rejects_duplicate_checks() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _xp_record("windows-xp-native-x64")
+    record["checks"] = [*record["checks"], "artifact_validation"]
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "windows-xp-native-x64 evidence has duplicate checks: ['artifact_validation']" in errors
 
 
 def test_platform_verified_evidence_rejects_missing_xp_evidence_digest() -> None:
@@ -2461,6 +2915,36 @@ def test_platform_verified_evidence_rejects_xp_smoke_command_proof_file_mismatch
     assert (
         "windows-xp-native-x86 xp_evidence_summary smoke_commands cli_launch must include exactly one "
         "--proof-file xp-smoke-proof/cli_launch.txt, got ['xp-smoke-proof/other.txt']"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_xp_smoke_command_host_identity_mismatch() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _xp_record("windows-xp-native-x86")
+    record["xp_evidence_summary"]["smoke_commands"]["cli_launch"] = record["xp_evidence_summary"][
+        "smoke_commands"
+    ]["cli_launch"].replace(
+        "--host-label xp-x86-lab-01",
+        "--host-label xp-x86-lab-02",
+    ).replace(
+        "--evidence-run-id xp-x86-1-0-2-20260620t120000z",
+        "--evidence-run-id xp-x86-1-0-2-other",
+    )
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "windows-xp-native-x86 xp_evidence_summary smoke_commands cli_launch must include exactly one "
+        "--host-label xp-x86-lab-01, got ['xp-x86-lab-02']"
+    ) in errors
+    assert (
+        "windows-xp-native-x86 xp_evidence_summary smoke_commands cli_launch must include exactly one "
+        "--evidence-run-id xp-x86-1-0-2-20260620t120000z, got ['xp-x86-1-0-2-other']"
     ) in errors
 
 
@@ -2822,6 +3306,27 @@ def _replace_release_repository(record: dict[str, object], repository: str) -> N
         ]
 
 
+def _replace_release_source_head(record: dict[str, object], head_sha: str) -> None:
+    source = record.get("release_asset_source")
+    old_head = ""
+    if isinstance(source, dict):
+        old_head = str(source.get("head_sha", ""))
+        source["head_sha"] = head_sha
+    if not str(record.get("target", "")).startswith("linux-"):
+        return
+    builder_identity = record.get("builder_identity")
+    if isinstance(builder_identity, dict):
+        builder_identity["source_head_sha"] = head_sha
+        builder_identity_sha = _json_sha256(builder_identity)
+        record["builder_identity_sha256"] = builder_identity_sha
+        linux_sources = record.get("linux_evidence_sources")
+        if isinstance(linux_sources, dict) and isinstance(linux_sources.get("builder_identity"), dict):
+            linux_sources["builder_identity"]["sha256"] = builder_identity_sha
+    for field in ("native_smoke_command", "local_evidence_preflight_command"):
+        if isinstance(record.get(field), str) and old_head:
+            record[field] = str(record[field]).replace(old_head, head_sha)
+
+
 def _xp_evidence_summary(target: str, release_tag: str = "v1.0.2") -> dict[str, object]:
     arch = "x86" if target.endswith("x86") else "x64"
     os_summary: dict[str, object] = {
@@ -2897,11 +3402,14 @@ def _xp_smoke_evidence_files() -> dict[str, str]:
 
 
 def _xp_smoke_commands(target: str, release_tag: str = "v1.0.2") -> dict[str, str]:
+    host_identity = _xp_host_identity(target, release_tag)
     return {
         smoke_id: (
             f"scripts/xp_smoke_runner.cmd --target {target} --release-tag {release_tag} "
             f"--smoke-id {smoke_id} --evidence-file xp-smoke-evidence/{smoke_id}.txt "
-            f"--proof-file xp-smoke-proof/{smoke_id}.txt"
+            f"--proof-file xp-smoke-proof/{smoke_id}.txt "
+            f"--host-label {host_identity['host_label']} "
+            f"--evidence-run-id {host_identity['evidence_run_id']}"
         )
         for smoke_id in sorted(_xp_smoke_hashes())
     }

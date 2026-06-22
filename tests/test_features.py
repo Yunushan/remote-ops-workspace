@@ -368,8 +368,11 @@ def test_platform_verified_readiness_goal_parity_completes_with_all_accepted_evi
     assert goal["release_tags"] == ["v1.0.2"]
     assert goal["release_repository"] == "example/remote-ops-workspace"
     assert goal["release_repositories"] == ["example/remote-ops-workspace"]
+    assert goal["release_source_head"] == "a" * 40
+    assert goal["release_source_heads"] == ["a" * 40]
     assert goal["release_consistent"] is True
     assert goal["release_repository_consistent"] is True
+    assert goal["release_source_head_consistent"] is True
     assert goal["accepted_targets"] == [
         "linux-i386",
         "linux-armhf",
@@ -468,6 +471,54 @@ def test_platform_verified_readiness_goal_parity_requires_one_release_tag() -> N
     assert goal["status"] == "mixed-release-evidence"
 
 
+def test_platform_verified_readiness_goal_parity_requires_one_release_source_head() -> None:
+    manifest = _extended_platform_manifest()
+    xp_x64 = _xp_accepted_evidence("windows-xp-native-x64")
+    _replace_release_source_head(xp_x64, "b" * 40)
+    evidence = {
+        "schema_version": 1,
+        "accepted_evidence": [
+            _linux_accepted_evidence("linux-i386"),
+            _linux_accepted_evidence("linux-armhf"),
+            _xp_accepted_evidence("windows-xp-native-x86"),
+            xp_x64,
+        ],
+    }
+
+    report = _platform_verified_readiness(platform_data=manifest, evidence_registry=evidence)
+    rows = {row["target"]: row for row in report["targets"]}
+    goal = report["protected_goal_parity"]
+
+    assert rows["Windows XP"]["current_percent"] == 25.0
+    assert rows["Windows XP"]["status"] == "partial-xp-native-host-evidence"
+    assert rows["Windows XP"]["verified_readiness_scope"] is False
+    assert rows["Windows XP"]["accepted_evidence_present_targets"] == [
+        "windows-xp-native-x86",
+        "windows-xp-native-x64",
+    ]
+    assert rows["Windows XP"]["accepted_evidence_release_source_heads"] == {
+        "windows-xp-native-x86": "a" * 40,
+        "windows-xp-native-x64": "b" * 40,
+    }
+    assert goal["current_percent"] == 75.0
+    assert goal["gap_percent"] == 25.0
+    assert goal["accepted_target_count"] == 3
+    assert goal["aggregate_accepted_target_count"] == 4
+    assert goal["release_tag"] == "v1.0.2"
+    assert goal["release_repository"] == "example/remote-ops-workspace"
+    assert goal["release_source_head"] == "a" * 40
+    assert goal["release_source_heads"] == ["a" * 40, "b" * 40]
+    assert goal["release_source_head_consistent"] is False
+    assert goal["accepted_targets"] == [
+        "linux-i386",
+        "linux-armhf",
+        "windows-xp-native-x86",
+    ]
+    assert goal["missing_targets"] == ["windows-xp-native-x64"]
+    assert goal["complete"] is False
+    assert goal["status"] == "mixed-release-source-evidence"
+
+
 def test_platform_verified_readiness_ignores_release_asset_url_tag_mismatch() -> None:
     manifest = _extended_platform_manifest()
     record = _linux_accepted_evidence("linux-i386")
@@ -475,6 +526,25 @@ def test_platform_verified_readiness_ignores_release_asset_url_tag_mismatch() ->
         "/releases/download/v1.0.2/",
         "/releases/download/v9.9.9/",
     )
+    report = _platform_verified_readiness(
+        platform_data=manifest,
+        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+    )
+    rows = {row["target"]: row for row in report["targets"]}
+
+    assert rows["linux-i386"]["current_percent"] == 70.0
+    assert rows["linux-i386"]["status"] == "manual-script-supported"
+    assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
+
+
+def test_platform_verified_readiness_ignores_malformed_release_asset_repository_slug() -> None:
+    manifest = _extended_platform_manifest()
+    record = _linux_accepted_evidence("linux-i386")
+    record["release_asset_urls"][0] = record["release_asset_urls"][0].replace(
+        "github.com/example/remote-ops-workspace/releases/",
+        "github.com/example/remote-ops-workspace?download=1/releases/",
+    )
+
     report = _platform_verified_readiness(
         platform_data=manifest,
         evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
@@ -1879,11 +1949,14 @@ def _xp_evidence_sources(
 
 
 def _xp_smoke_commands(target: str) -> dict[str, str]:
+    host_identity = _xp_host_identity(target)
     return {
         smoke_id: (
             f"scripts/xp_smoke_runner.cmd --target {target} --release-tag v1.0.2 "
             f"--smoke-id {smoke_id} --evidence-file xp-smoke-evidence/{smoke_id}.txt "
-            f"--proof-file xp-smoke-proof/{smoke_id}.txt"
+            f"--proof-file xp-smoke-proof/{smoke_id}.txt "
+            f"--host-label {host_identity['host_label']} "
+            f"--evidence-run-id {host_identity['evidence_run_id']}"
         )
         for smoke_id in sorted(_xp_smoke_hashes())
     }
@@ -1934,6 +2007,12 @@ def _replace_release_repository(record: dict[str, object], repository: str) -> N
             str(url).replace(old, new)
             for url in review_bundle.get("release_asset_urls", [])
         ]
+
+
+def _replace_release_source_head(record: dict[str, object], head_sha: str) -> None:
+    source = record.get("release_asset_source")
+    assert isinstance(source, dict)
+    source["head_sha"] = head_sha
 
 
 def _security_patch_evidence() -> dict[str, object]:

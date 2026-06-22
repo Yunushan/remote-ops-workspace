@@ -121,6 +121,7 @@ def finalize_platform_verified_evidence_record(
     expected_bundle_type = REVIEW_BUNDLE_TYPES.get(target)
     if expected_bundle_type and manifest.get("bundle_type") != expected_bundle_type:
         errors.append(f"review bundle manifest bundle_type must be {expected_bundle_type}")
+    errors.extend(check_candidate_is_unfinalized(candidate))
     errors.extend(check_bundle_manifest_records(manifest))
     errors.extend(check_candidate_manifest_binding(candidate_record, candidate, manifest))
 
@@ -135,6 +136,7 @@ def finalize_platform_verified_evidence_record(
         for key, expected_file in expected_files.items():
             if actual_files[key] != expected_file:
                 errors.append(f"review bundle {key} file must be {expected_file}, got {actual_files[key]}")
+        errors.extend(check_candidate_release_asset_source_files(candidate, expected_files))
 
     errors.extend(check_bundle_sidecar(bundle_sha256s, bundle_manifest, bundle_archive))
     errors.extend(check_bundle_archive(bundle_archive, bundle_manifest, manifest, candidate))
@@ -182,6 +184,61 @@ def finalized_release_asset_source(
         expected_files.add(accepted_record_source_file(target))
     source_data["contains_files"] = sorted(expected_files)
     return source_data
+
+
+def check_candidate_is_unfinalized(candidate: dict[str, Any]) -> list[str]:
+    finalized_fields = sorted(
+        field
+        for field in ("finalized_record_release_asset_url", "review_bundle")
+        if field in candidate
+    )
+    if finalized_fields:
+        return [
+            "candidate evidence record must be unfinalized before finalization; "
+            f"remove fields: {finalized_fields}"
+        ]
+    return []
+
+
+def check_candidate_release_asset_source_files(
+    candidate: dict[str, Any],
+    review_bundle_files: dict[str, str],
+) -> list[str]:
+    target = str(candidate.get("target", ""))
+    source = candidate.get("release_asset_source")
+    if not isinstance(source, dict):
+        return ["candidate release_asset_source must be an object before finalization"]
+    raw_files = source.get("contains_files")
+    if not isinstance(raw_files, list) or not raw_files:
+        return ["candidate release_asset_source.contains_files must be a non-empty list before finalization"]
+    files = [str(filename) for filename in raw_files]
+    duplicate_files = sorted({filename for filename in files if files.count(filename) > 1})
+    unsafe_files = sorted(filename for filename in files if not concrete_file_name(filename))
+    artifact_hashes = candidate.get("artifact_sha256")
+    artifact_files = set(str(filename) for filename in artifact_hashes) if isinstance(artifact_hashes, dict) else set()
+    allowed_files = artifact_files | set(review_bundle_files.values())
+    if target in KNOWN_TARGETS:
+        allowed_files.add(accepted_record_source_file(target))
+    actual_files = set(files)
+    missing_artifacts = sorted(artifact_files - actual_files)
+    unexpected_files = sorted(actual_files - allowed_files)
+    errors: list[str] = []
+    if duplicate_files:
+        errors.append(f"candidate release_asset_source.contains_files has duplicate files: {duplicate_files}")
+    if unsafe_files:
+        errors.append(f"candidate release_asset_source.contains_files has unsafe file names: {unsafe_files}")
+    if missing_artifacts:
+        errors.append(f"candidate release_asset_source.contains_files missing native artifacts: {missing_artifacts}")
+    if unexpected_files:
+        errors.append(
+            "candidate release_asset_source.contains_files has files outside finalizable release source: "
+            f"{unexpected_files}"
+        )
+    return errors
+
+
+def concrete_file_name(filename: str) -> bool:
+    return bool(filename) and "<" not in filename and ">" not in filename and Path(filename).name == filename
 
 
 def review_bundle_release_asset_urls(
@@ -289,7 +346,7 @@ def check_candidate_manifest_binding(
                 expected_size=candidate_record.stat().st_size,
             )
         )
-        for key in ("workflow", "workflow_inputs", "workflow_run_url", "runner_labels"):
+        for key in ("workflow", "workflow_inputs", "workflow_run_url", "release_asset_source", "runner_labels"):
             if manifest.get(key) != candidate.get(key):
                 errors.append(f"review bundle manifest {key} must match candidate record")
         candidate_security = candidate.get("builder_identity", {})
@@ -799,6 +856,7 @@ def check_xp_archive_smoke_files(
 ) -> list[str]:
     target = str(archived_evidence.get("target", ""))
     release_tag = str(archived_evidence.get("release_tag", ""))
+    host_identity = archived_evidence.get("host_identity")
     smoke_results = archived_evidence.get("smoke_results")
     if not isinstance(smoke_results, list):
         return ["review bundle archive XP evidence smoke_results must be a list"]
@@ -820,7 +878,15 @@ def check_xp_archive_smoke_files(
         expected_sha = str(result.get("evidence_sha256", ""))
         if expected_sha and sha256_bytes(data) != expected_sha:
             errors.append(f"review bundle archive XP smoke evidence SHA-256 mismatch: {filename}")
-        errors.extend(check_smoke_evidence_binding(target, release_tag, smoke_id, data))
+        errors.extend(
+            check_smoke_evidence_binding(
+                target,
+                release_tag,
+                smoke_id,
+                data,
+                host_identity=host_identity,
+            )
+        )
         errors.extend(
             check_security_smoke_evidence_lines(
                 target,

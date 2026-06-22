@@ -261,7 +261,47 @@ python scripts/check_repository_cleanup.py
 python scripts/check_repository_cleanup.py --require-clean
 ```
 
-Yayin akisi `v1.0.2` gibi tag'lerde wheel/sdist, kaynak zip, platform tar/zip paketleri, Windows `x86`/`x64`/`arm64`, macOS `x64`/`arm64` ve Linux `x86_64`/`aarch64` native paketleri, release manifestleri ve `remote-ops-workspace-v1.0.2-SHA256SUMS.txt` uretir. Linux `i386`/`i686` ve `armhf` ciktisi eslesen builder ile betik desteklidir, fakat varsayilan GitHub release is akisinda accepted evidence olmadan yuklenmez. Makine tarafindan okunabilen yayin karari `configs/release_matrix.json` icindedir; `configs/platform_targets.json` ise `row platforms --json` tarafindan gosterilen daha genis platform katalogudur. Native installer smoke kapsami `configs/native_installer_smoke.json` icindedir ve `python scripts/check_native_installer_smoke.py` ile denetlenir; release workflow Windows, macOS ve Linux native islerinden sonra install, verify, upgrade and uninstall yollarini calistirir. Release workflow once `release-preflight` isinde `python scripts/verify.py --quick --no-cli-smoke --release-tag <tag>`, `python scripts/check_platform_verified_evidence.py --require-goal-targets --release-tag <tag>` ve `python scripts/check_repository_cleanup.py --require-clean` calistirir; source, native, accepted-platform-evidence-assets ve publish isleri bu kapiya baglidir. Protected platform goal icin Linux i386, Linux armhf, windows-xp-native-x86 ve windows-xp-native-x64 kayitlarinin hepsi ayni release tag'de finalized accepted evidence olarak bulunmalidir. Protected evidence asset isi `python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets` ile sadece accepted kayitlarda SHA-bound olan artifact ve review-bundle dosyalarini release-assets icine alir. Publish isi upload oncesinde `python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --require-platform-goal-targets` calistirip indirilen asset setini, checksum yan dosyalarini, release manifestini, accepted platform evidence kayitlarini ve review-bundle hashlerini karsilastirir. Windows XP native-host readiness 25.0% olarak kalir; yalnizca XP x86 SP3 ve XP Professional x64 SP2 icin ayri legacy toolchain, VM/self-hosted smoke evidence, native artifact evidence, `python scripts/check_xp_native_evidence.py` dogrulamasi ve modern default'lari zayiflatmayan security proof ile 100% olabilir. Python yayin araclari `requirements-release.txt` ile sabitlenir ve release manifestine `configs/release_toolchain.json` uzerinden yazilir. Native Windows, macOS ve Linux isleri kendi `native-SHA256SUMS.txt` yan dosyalarini da uretir. CI checkout credential'lari final publish adimina kadar read-only kalir.
+Yayin akisi `v1.0.2` gibi tag'lerde wheel/sdist, kaynak zip, platform tar/zip
+paketleri, Windows `x86`/`x64`/`arm64`, macOS `x64`/`arm64` ve Linux
+`x86_64`/`aarch64` native paketleri, release manifestleri ve
+`remote-ops-workspace-v1.0.2-SHA256SUMS.txt` uretir. Linux `i386`/`i686` ve
+`armhf` ciktisi eslesen builder ile betik desteklidir, fakat varsayilan GitHub
+release is akisinda accepted evidence olmadan yuklenmez. Makine tarafindan
+okunabilen yayin karari `configs/release_matrix.json` icindedir;
+`configs/platform_targets.json` ise `row platforms --json` tarafindan gosterilen
+daha genis platform katalogudur. Native installer smoke kapsami
+`configs/native_installer_smoke.json` icindedir ve
+`python scripts/check_native_installer_smoke.py` ile denetlenir; release workflow
+Windows, macOS ve Linux native islerinden sonra install, verify, upgrade and
+uninstall yollarini calistirir. Release workflow once `release-preflight` isinde
+`python scripts/verify.py --quick --no-cli-smoke --release-tag <tag>`,
+`python scripts/check_platform_verified_evidence.py --require-goal-targets --release-tag <tag>`
+ve `python scripts/check_repository_cleanup.py --require-clean` calistirir;
+source, native, accepted-platform-evidence-assets ve publish isleri bu kapiya
+baglidir. Protected platform goal icin Linux i386, Linux armhf,
+windows-xp-native-x86 ve windows-xp-native-x64 kayitlarinin hepsi ayni release
+tag, ayni GitHub release repository ve ayni release source head SHA ile
+finalized accepted evidence olarak bulunmalidir. Protected evidence asset isi
+`python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets`
+ile sadece accepted kayitlarda ayni tag/repository/source-head bagli artifact ve
+review-bundle dosyalarini release-assets icine alir, sonra
+`python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag <tag>`
+ile import edilen review-bundle dosyalarini upload oncesi yeniden dogrular. Publish isi upload
+oncesinde
+`python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --require-platform-goal-targets`
+calistirip indirilen asset setini, checksum yan dosyalarini, release manifestini,
+accepted platform evidence kayitlarini ve review-bundle hashlerini karsilastirir.
+Windows XP accepted evidence kayitlari sanitized host identity SHA-256 degeri
+tasir ve her smoke komutu/dosyasi ayni host label ile evidence run ID degerine
+bagli olmak zorundadir.
+Windows XP native-host readiness 25.0% olarak kalir; yalnizca XP x86 SP3 ve XP
+Professional x64 SP2 icin ayri legacy toolchain, VM/self-hosted smoke evidence,
+native artifact evidence, `python scripts/check_xp_native_evidence.py`
+dogrulamasi ve modern default'lari zayiflatmayan security proof ile 100%
+olabilir. Python yayin araclari `requirements-release.txt` ile sabitlenir ve
+release manifestine `configs/release_toolchain.json` uzerinden yazilir. Native
+Windows, macOS ve Linux isleri kendi `native-SHA256SUMS.txt` yan dosyalarini da
+uretir. CI checkout credential'lari final publish adimina kadar read-only kalir.
 
 | Faz | Paketler | Durum |
 |---|---|---|

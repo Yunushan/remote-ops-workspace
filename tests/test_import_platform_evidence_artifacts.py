@@ -217,6 +217,36 @@ def test_import_record_rejects_nested_downloaded_artifact_directory(tmp_path: Pa
     assert "linux-i386 downloaded artifact must contain root files only, found directories: ['native-dist']" in errors
 
 
+def test_validate_source_artifact_rejects_missing_release_source_file_list(tmp_path: Path) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+    del record["release_asset_source"]["contains_files"]
+
+    errors = importer.validate_source_artifact(record, source_root=tmp_path / "downloaded")
+
+    assert "linux-i386 release_asset_source.contains_files must be a non-empty list" in errors
+
+
+def test_validate_source_artifact_rejects_unsafe_release_source_file_entries(tmp_path: Path) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+    first_file = str(record["release_asset_source"]["contains_files"][0])
+    record["release_asset_source"]["contains_files"] = [
+        first_file,
+        first_file,
+        "../operator-private.log",
+        "nested/raw-smoke.log",
+    ]
+
+    errors = importer.validate_source_artifact(record, source_root=tmp_path / "downloaded")
+
+    assert (
+        "linux-i386 release_asset_source.contains_files entries must be exact safe file names: "
+        "['../operator-private.log', 'nested/raw-smoke.log']"
+    ) in errors
+    assert f"linux-i386 release_asset_source.contains_files contains duplicates: ['{first_file}']" in errors
+
+
 def test_validate_downloaded_source_file_set_rejects_symlinked_source(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -357,6 +387,34 @@ def test_import_platform_evidence_artifacts_rejects_symlinked_output_parent(
 
     assert errors == [
         f"release asset import output directory path must not contain symlinked directories: {out_parent}"
+    ]
+    assert not out_dir.exists()
+
+
+def test_import_platform_evidence_artifacts_requires_gh_for_downloads(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+    out_dir = tmp_path / "release-assets"
+    monkeypatch.setattr(importer.shutil, "which", lambda name: None if name == "gh" else "tool")
+
+    def fail_run(*_args: Any, **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+        raise AssertionError("gh subprocess should not run when gh is unavailable")
+
+    monkeypatch.setattr(importer.subprocess, "run", fail_run)
+
+    errors = importer.import_platform_evidence_artifacts(
+        [record],
+        out_dir=out_dir,
+        dry_run=False,
+        release_head_sha=HEAD_SHA,
+    )
+
+    assert errors == [
+        "GitHub CLI `gh` is required to import accepted platform evidence artifacts; "
+        "install gh or run inside GitHub Actions with GH_TOKEN configured"
     ]
     assert not out_dir.exists()
 
@@ -748,6 +806,63 @@ def test_import_record_rejects_release_checkout_head_sha_mismatch(tmp_path: Path
     )
 
 
+def test_import_record_dry_run_rejects_release_checkout_head_sha_mismatch(
+    tmp_path: Path,
+) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+
+    errors = importer.import_record(
+        record,
+        out_dir=tmp_path / "release-assets",
+        download_root=tmp_path / "download",
+        dry_run=True,
+        release_head_sha="c" * 40,
+    )
+
+    assert errors == [
+        f"linux-i386 release_asset_source.head_sha must match release checkout {'c' * 40}, got {HEAD_SHA}"
+    ]
+
+
+def test_import_platform_evidence_artifacts_cli_dry_run_checks_release_checkout_head_sha(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    importer = _load_importer()
+    record = importer.public_record(_record(tmp_path))
+    registry = tmp_path / "platform_verified_evidence.json"
+    registry.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "policy": _platform_verified_evidence_policy(),
+                "accepted_evidence": [record],
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(importer, "current_checkout_head_sha", lambda: "c" * 40)
+
+    result = importer.main(
+        [
+            "--registry",
+            str(registry),
+            "--release-tag",
+            "v1.0.2",
+            "--require-target",
+            "linux-i386",
+            "--out-dir",
+            str(tmp_path / "release-assets"),
+            "--dry-run",
+        ]
+    )
+
+    assert result == 1
+
+
 def test_import_record_dry_run_prints_gh_download_command(tmp_path: Path, capsys) -> None:
     importer = _load_importer()
     record = _record(tmp_path)
@@ -757,6 +872,7 @@ def test_import_record_dry_run_prints_gh_download_command(tmp_path: Path, capsys
         out_dir=tmp_path / "release-assets",
         download_root=tmp_path / "download",
         dry_run=True,
+        release_head_sha=HEAD_SHA,
     )
 
     assert errors == []
@@ -916,3 +1032,13 @@ def _load_finalize_tests() -> Any:
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def _platform_verified_evidence_policy() -> str:
+    path = Path("tests/test_platform_verified_evidence.py")
+    spec = importlib.util.spec_from_file_location("platform_verified_evidence_import_helpers", path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return str(module.POLICY)

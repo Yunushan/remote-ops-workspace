@@ -97,6 +97,28 @@ def test_xp_dispatch_inputs_reject_cross_repo_inputs() -> None:
     ) in errors
 
 
+def test_xp_dispatch_inputs_reject_malformed_repo_slug() -> None:
+    checker = _load_checker()
+
+    errors = checker.check_xp_native_evidence_dispatch_inputs(
+        target="windows-xp-native-x64",
+        release_tag="v1.0.2",
+        release_asset_base_url=(
+            "https://github.com/example/remote-ops-workspace?download=1/releases/download/v1.0.2"
+        ),
+        workflow_run_url="https://github.com/example/remote-ops-workspace?run=1/actions/runs/12345",
+        assets_dir="staged/windows-xp-native-x64/v1.0.2/artifacts",
+        evidence_file="staged/windows-xp-native-x64/v1.0.2/xp-evidence.json",
+        evidence_dir="staged/windows-xp-native-x64/v1.0.2/smoke",
+    )
+
+    assert (
+        "--release-asset-base-url must be exactly "
+        "https://github.com/<owner>/<repo>/releases/download/v1.0.2"
+    ) in errors
+    assert "--workflow-run-url must be a GitHub Actions run URL" in errors
+
+
 def test_xp_dispatch_inputs_reject_unsafe_paths() -> None:
     checker = _load_checker()
 

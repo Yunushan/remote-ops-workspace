@@ -28,10 +28,6 @@ def test_stage_extended_linux_evidence_upload_copies_only_expected_files(tmp_pat
             continue
         (source / name).write_bytes(f"{name}\n".encode())
     _write_linux_final_record(source / f"platform-verified-evidence-{target}-final.json", target, source)
-    scratch = source / "builder-scratch"
-    scratch.mkdir()
-    (scratch / "package-cache.txt").write_text("must not be uploaded\n", encoding="utf-8")
-    (source / "native-smoke-linux-i386.log").write_text("raw smoke log stays bundled only\n", encoding="utf-8")
 
     errors = stager.stage_extended_linux_evidence_upload(
         target=target,
@@ -44,8 +40,44 @@ def test_stage_extended_linux_evidence_upload_copies_only_expected_files(tmp_pat
     assert sorted(path.name for path in staged.iterdir()) == sorted(
         {*expected_artifacts, *expected_evidence}
     )
-    assert not (staged / "builder-scratch").exists()
-    assert not (staged / "native-smoke-linux-i386.log").exists()
+
+
+def test_stage_extended_linux_evidence_upload_rejects_extra_source_entries(tmp_path: Path) -> None:
+    stager = _load_stager()
+    checker = _load_platform_promotion_artifacts_checker()
+    target = "linux-i386"
+    tag = f"v{checker.read_project_version()}"
+    source = tmp_path / "native-dist" / "linux"
+    source.mkdir(parents=True)
+    expected_artifacts = _required_artifact_names(checker, target, tag)
+    expected_evidence = [
+        f"extended-linux-evidence-bundle-{target}-{tag}.json",
+        f"extended-linux-evidence-bundle-{target}-{tag}.zip",
+        f"extended-linux-evidence-bundle-{target}-{tag}-SHA256SUMS.txt",
+        f"platform-verified-evidence-{target}-final.json",
+    ]
+    for name in [*expected_artifacts, *expected_evidence]:
+        if name == f"platform-verified-evidence-{target}-final.json":
+            continue
+        (source / name).write_bytes(f"{name}\n".encode())
+    _write_linux_final_record(source / f"platform-verified-evidence-{target}-final.json", target, source)
+    (source / "native-smoke-linux-i386-working-copy.log").write_text(
+        "raw smoke working copy is not bundled\n",
+        encoding="utf-8",
+    )
+    (source / "builder-scratch").mkdir()
+
+    errors = stager.stage_extended_linux_evidence_upload(
+        target=target,
+        release_tag=tag,
+        source_dir=source,
+        out_dir=tmp_path / "upload",
+    )
+
+    assert (
+        "linux-i386 extended Linux evidence source directory contains files outside staged upload set: "
+        "['builder-scratch', 'native-smoke-linux-i386-working-copy.log']"
+    ) in errors
 
 
 def test_stage_extended_linux_evidence_upload_rejects_hash_mismatch(tmp_path: Path) -> None:

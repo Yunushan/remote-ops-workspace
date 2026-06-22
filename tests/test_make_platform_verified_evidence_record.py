@@ -10,6 +10,8 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
+ROOT = Path(__file__).resolve().parents[1]
+
 
 def test_make_platform_verified_evidence_record_generates_linux_record(
     tmp_path: Path,
@@ -565,6 +567,38 @@ def test_make_platform_verified_evidence_record_rejects_path_qualified_release_b
     ) in errors
 
 
+def test_make_platform_verified_evidence_record_rejects_malformed_release_base_repository_slug(
+    tmp_path: Path,
+) -> None:
+    maker = _load_maker()
+    artifact_checker = _load_platform_promotion_artifacts_checker()
+    tag = f"v{artifact_checker.read_project_version()}"
+    assets = tmp_path / "linux"
+    assets.mkdir()
+
+    errors = maker.validate_common_args(
+        maker.parse_args(
+            [
+                "--target",
+                "linux-i386",
+                "--release-tag",
+                tag,
+                "--assets-dir",
+                str(assets),
+                "--release-asset-base-url",
+                f"https://github.com/example/remote-ops-workspace?download=1/releases/download/{tag}",
+                "--release-source-head-sha",
+                "a" * 40,
+            ]
+        )
+    )
+
+    assert (
+        "--release-asset-base-url must be exactly "
+        f"https://github.com/<owner>/<repo>/releases/download/{tag}"
+    ) in errors
+
+
 def test_make_platform_verified_evidence_record_rejects_release_base_url_tag_mismatch(
     tmp_path: Path,
 ) -> None:
@@ -990,6 +1024,69 @@ def test_make_platform_verified_evidence_record_rejects_weak_linux_smoke_log(tmp
         in error
         for error in errors
     )
+
+
+def test_make_platform_verified_evidence_record_rejects_wrong_linux_smoke_runtime(
+    tmp_path: Path,
+) -> None:
+    maker = _load_maker()
+    artifact_checker = _load_platform_promotion_artifacts_checker()
+    target = "linux-i386"
+    tag = f"v{artifact_checker.read_project_version()}"
+    assets = tmp_path / "linux"
+    assets.mkdir()
+    names = _required_names(artifact_checker, target, tag)
+    _write_artifact_set(assets, names)
+    builder_evidence = tmp_path / "builder-identity-linux-i386.json"
+    _write_builder_evidence(builder_evidence, target)
+    smoke_evidence = tmp_path / "native-smoke-linux-i386.log"
+    _write_linux_smoke_evidence(
+        smoke_evidence,
+        target,
+        _smoke_artifact_hashes(assets, names),
+    )
+    smoke_evidence.write_text(
+        smoke_evidence.read_text(encoding="utf-8").replace(
+            "native installer smoke uname machine: i686",
+            "native installer smoke uname machine: x86_64",
+        ),
+        encoding="utf-8",
+    )
+
+    errors, record = maker.build_evidence_record(
+        maker.parse_args(
+            [
+                "--target",
+                target,
+                "--release-tag",
+                tag,
+                "--assets-dir",
+                str(assets),
+                "--release-asset-base-url",
+                f"https://github.com/example/remote-ops-workspace/releases/download/{tag}",
+                "--workflow-run-url",
+                "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+                "--release-source-head-sha",
+                "a" * 40,
+                "--builder-evidence",
+                str(builder_evidence),
+                "--linux-smoke-evidence",
+                str(smoke_evidence),
+                "--runner-label",
+                "self-hosted",
+                "--runner-label",
+                "linux",
+                "--runner-label",
+                "i386",
+            ]
+        )
+    )
+
+    assert record == {}
+    assert (
+        "linux-i386 linux_smoke_evidence native installer smoke uname machine "
+        "must be one of ['i386', 'i486', 'i586', 'i686', 'x86'], got 'x86_64'"
+    ) in errors
 
 
 def test_make_platform_verified_evidence_record_rejects_builder_source_head_sha_mismatch(
@@ -1423,6 +1520,8 @@ def _write_linux_smoke_evidence(
     source_head_sha: str = "a" * 40,
 ) -> None:
     arch = "i386" if target == "linux-i386" else "armhf"
+    machine = "i686" if target == "linux-i386" else "armv7l"
+    dpkg_arch = "i386" if target == "linux-i386" else "armhf"
     artifact_lines = [
         f"native installer smoke artifact sha256: {name} {artifact_hashes[name]}"
         for name in sorted(artifact_hashes)
@@ -1438,6 +1537,9 @@ def _write_linux_smoke_evidence(
                 f"native installer smoke target: {target}",
                 f"native installer smoke workflow run: {workflow_run_url}",
                 f"native installer smoke source head sha: {source_head_sha}",
+                f"native installer smoke uname machine: {machine}",
+                f"native installer smoke dpkg architecture: {dpkg_arch}",
+                "native installer smoke userland bits: 32",
                 *artifact_lines,
                 "native installer smoke: DEB install",
                 "native installer smoke: DEB verify",
@@ -1520,6 +1622,21 @@ def _valid_xp_evidence(
     }
     if arch == "x64":
         os_record["edition"] = "Professional x64 Edition"
+    host_identity = {
+        "schema_version": 1,
+        "target": target,
+        "release_tag": release_tag,
+        "host_label": f"xp-{arch}-lab-01",
+        "evidence_run_id": f"xp-{arch}-{release_tag.removeprefix('v').replace('.', '-')}-20260620t120000z",
+        "observed_at_utc": "2026-06-20T12:00:00Z",
+        "operator_private_data_redacted": True,
+        "os": dict(os_record),
+        "toolchain": {
+            "separate_legacy_toolchain": True,
+            "current_python_pyqt6_stack": False,
+            "description": "Separate legacy XP-capable native host toolchain",
+        },
+    }
     return {
         "schema_version": 1,
         "target": target,
@@ -1530,21 +1647,7 @@ def _valid_xp_evidence(
             "current_python_pyqt6_stack": False,
             "description": "Separate legacy XP-capable native host toolchain",
         },
-        "host_identity": {
-            "schema_version": 1,
-            "target": target,
-            "release_tag": release_tag,
-            "host_label": f"xp-{arch}-lab-01",
-            "evidence_run_id": f"xp-{arch}-{release_tag.removeprefix('v').replace('.', '-')}-20260620t120000z",
-            "observed_at_utc": "2026-06-20T12:00:00Z",
-            "operator_private_data_redacted": True,
-            "os": dict(os_record),
-            "toolchain": {
-                "separate_legacy_toolchain": True,
-                "current_python_pyqt6_stack": False,
-                "description": "Separate legacy XP-capable native host toolchain",
-            },
-        },
+        "host_identity": host_identity,
         "artifact_validation": {
             "passed": True,
             "command": (
@@ -1560,7 +1663,9 @@ def _valid_xp_evidence(
                 "command": (
                     f"scripts/xp_smoke_runner.cmd --target {target} --release-tag {release_tag} "
                     f"--smoke-id {smoke_id} --evidence-file xp-smoke-evidence/{smoke_id}.txt "
-                    f"--proof-file xp-smoke-proof/{smoke_id}.txt"
+                    f"--proof-file xp-smoke-proof/{smoke_id}.txt "
+                    f"--host-label {host_identity['host_label']} "
+                    f"--evidence-run-id {host_identity['evidence_run_id']}"
                 ),
                 "evidence_file": f"xp-smoke-evidence/{smoke_id}.txt",
                 "evidence_sha256": hashlib.sha256(smoke_id.encode()).hexdigest(),
@@ -1577,6 +1682,7 @@ def _valid_xp_evidence(
 
 
 def _attach_smoke_evidence_files(root: Path, evidence: dict[str, Any]) -> None:
+    host_identity = evidence["host_identity"]
     for result in evidence["smoke_results"]:
         path = root / result["evidence_file"]
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -1585,6 +1691,8 @@ def _attach_smoke_evidence_files(root: Path, evidence: dict[str, Any]) -> None:
             f"xp smoke target: {evidence['target']}\n"
             f"xp smoke release: {evidence['release_tag']}\n"
             f"xp smoke id: {result['id']}\n"
+            f"xp smoke host label: {host_identity['host_label']}\n"
+            f"xp smoke evidence run id: {host_identity['evidence_run_id']}\n"
             f"{security_lines}"
             f"{result['id']} passed on Windows XP evidence host\n",
             encoding="utf-8",
@@ -1610,49 +1718,10 @@ def _xp_security_smoke_lines(smoke_id: str) -> str:
 
 
 def _empty_registry() -> dict[str, Any]:
+    registry = json.loads((ROOT / "configs" / "platform_verified_evidence.json").read_text(encoding="utf-8"))
     return {
         "schema_version": 1,
-        "policy": (
-            "Only accepted evidence records in this file can promote Linux i386, Linux armhf, "
-            "or Windows XP native-host readiness. Accepted records must include release asset URLs, "
-            "review-bundle manifest release asset URL binding, review bundle release asset URLs, "
-            "release-importable artifact source binding, "
-            "release source head SHA binding, "
-            "release source workflow file binding, "
-            "local protected-goal evidence preflight command binding, "
-            "finalized accepted-record source file binding, "
-            "finalized accepted-record release asset URL binding, "
-            "Linux release source artifact names must be target/release-scoped, "
-            "XP release source artifact names must be target/release-scoped, "
-            "and per-artifact SHA-256 digests, safe relative non-link native archive entries, "
-            "exact safe checksum and native manifest file references, "
-            "exact safe release asset URL filenames, "
-            "Linux builder identity evidence, builder identity "
-            "SHA-256, builder identity release/run binding, "
-            "Linux builder/smoke source file binding, "
-            "Linux builder source head SHA binding, "
-            "Linux builder host identity binding when applicable, "
-            "Linux builder rpm and non-interactive sudo evidence, Linux security patch evidence, "
-            "Linux native build and smoke command provenance, "
-            "Linux smoke evidence SHA-256 and Linux smoke release/run/source head SHA binding, "
-            "Linux workflow dispatch inputs when applicable, XP workflow dispatch inputs when applicable, "
-            "XP evidence source file binding, XP evidence bundle SHA-256 digests, "
-            "XP evidence validation command binding, XP evidence contract SHA-256, "
-            "XP evidence summary binding, XP host identity SHA-256 binding, XP security patch evidence, "
-            "tracked scripts/xp_smoke_runner.cmd XP smoke command provenance, "
-            "canonical XP smoke proof-file command binding, "
-            "canonical XP smoke evidence-file summary binding and "
-            "XP security smoke proof-line binding when applicable, and review "
-            "bundle manifest, review bundle archive, safe relative non-symlink review bundle archive entries, "
-            "and review bundle SHA-256 sidecar digests "
-            "before strict promotion, and release uploads must include those review bundle files with matching "
-            "size, SHA-256 and checksum-sidecar coverage; each accepted record must include "
-            "the promotion config SHA-256, have a unique target, include no unrecognized top-level fields, "
-            "all release evidence for one record must "
-            "use the same GitHub repository, and Windows XP x86/x64 pairs must use the same release_tag "
-            "and GitHub repository. "
-            "Empty means no promotion."
-        ),
+        "policy": registry["policy"],
         "accepted_evidence": [],
     }
 

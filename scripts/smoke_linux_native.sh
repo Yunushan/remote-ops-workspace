@@ -74,6 +74,47 @@ if [[ -n "$TARGET" ]]; then
   esac
 fi
 
+SMOKE_UNAME_MACHINE="$(uname -m)"
+SMOKE_DPKG_ARCH="$(dpkg --print-architecture)"
+SMOKE_USERLAND_BITS="$(getconf LONG_BIT)"
+
+if [[ -n "$TARGET" ]]; then
+  case "$TARGET" in
+    linux-i386)
+      case "$SMOKE_UNAME_MACHINE" in
+        i386|i486|i586|i686|x86)
+          ;;
+        *)
+          echo "target $TARGET must smoke on an i386/i686 userland, got uname -m $SMOKE_UNAME_MACHINE" >&2
+          exit 2
+          ;;
+      esac
+      if [[ "$SMOKE_DPKG_ARCH" != "i386" ]]; then
+        echo "target $TARGET must smoke on dpkg architecture i386, got $SMOKE_DPKG_ARCH" >&2
+        exit 2
+      fi
+      ;;
+    linux-armhf)
+      case "$SMOKE_UNAME_MACHINE" in
+        armv6l|armv7l|armv7hl|armhf)
+          ;;
+        *)
+          echo "target $TARGET must smoke on an armhf/armv7 userland, got uname -m $SMOKE_UNAME_MACHINE" >&2
+          exit 2
+          ;;
+      esac
+      if [[ "$SMOKE_DPKG_ARCH" != "armhf" ]]; then
+        echo "target $TARGET must smoke on dpkg architecture armhf, got $SMOKE_DPKG_ARCH" >&2
+        exit 2
+      fi
+      ;;
+  esac
+  if [[ "$SMOKE_USERLAND_BITS" != "32" ]]; then
+    echo "target $TARGET must smoke on a 32-bit userland, got $SMOKE_USERLAND_BITS" >&2
+    exit 2
+  fi
+fi
+
 if [[ -z "$VERSION" ]]; then
   VERSION="$(python3 - <<'PY'
 from pathlib import Path
@@ -148,6 +189,9 @@ if [[ -n "$TARGET" ]]; then
   echo "native installer smoke workflow run: $WORKFLOW_RUN_URL"
   echo "native installer smoke source head sha: $SOURCE_HEAD_SHA"
 fi
+echo "native installer smoke uname machine: $SMOKE_UNAME_MACHINE"
+echo "native installer smoke dpkg architecture: $SMOKE_DPKG_ARCH"
+echo "native installer smoke userland bits: $SMOKE_USERLAND_BITS"
 for artifact in "$DEB" "$RPM" "$APPIMAGE"; do
   digest="$(sha256sum "$artifact" | awk '{print $1}')"
   echo "native installer smoke artifact sha256: $(basename "$artifact") $digest"

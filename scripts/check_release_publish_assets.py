@@ -188,6 +188,9 @@ def check_platform_evidence_import_job(workflow: str) -> list[str]:
         "python scripts/import_platform_evidence_artifacts.py --release-tag": "platform evidence artifact importer",
         "--require-goal-targets": "strict protected target import",
         "--out-dir release-assets": "release asset import directory",
+        "python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets": (
+            "imported platform review bundle validator"
+        ),
         "actions/upload-artifact@v7": "imported artifact upload",
         "name: release-platform-evidence-assets": "platform evidence release artifact name",
         "path: release-assets/*": "platform evidence release artifact path",
@@ -197,9 +200,14 @@ def check_platform_evidence_import_job(workflow: str) -> list[str]:
         if snippet not in block:
             errors.append(f"accepted-platform-evidence-assets job missing {label}: {snippet}")
     import_index = block.find("scripts/import_platform_evidence_artifacts.py")
+    review_bundle_index = block.find("scripts/check_platform_review_bundle_artifacts.py")
     upload_index = block.find("actions/upload-artifact@v7")
     if import_index < 0 or upload_index < 0 or import_index > upload_index:
         errors.append("platform evidence import must run before imported artifact upload")
+    if review_bundle_index < 0 or upload_index < 0 or review_bundle_index > upload_index:
+        errors.append("platform review bundle validation must run before imported artifact upload")
+    if import_index >= 0 and review_bundle_index >= 0 and import_index > review_bundle_index:
+        errors.append("platform review bundle validation must run after platform evidence import")
     if re.search(r"(?m)^\s+(actions|contents):\s+write\s*$", block):
         errors.append("accepted-platform-evidence-assets job must not request write permissions")
     return errors
@@ -242,6 +250,7 @@ def check_release_assets(
         tag=release_tag,
     )
     errors.extend(check_release_asset_symlinks(root))
+    errors.extend(check_release_asset_root_entries(root))
     actual = {path.name for path in root.iterdir() if path.is_file()}
     errors.extend(
         check_gated_native_assets_have_evidence(
@@ -288,6 +297,21 @@ def check_release_asset_symlinks(root: Path) -> list[str]:
     if symlinks:
         return [f"release assets must not contain symlinks: {symlinks}"]
     return []
+
+
+def check_release_asset_root_entries(root: Path) -> list[str]:
+    directories = sorted(path.name for path in root.iterdir() if path.is_dir() and not path.is_symlink())
+    unsupported = sorted(
+        path.name
+        for path in root.iterdir()
+        if not path.is_file() and not path.is_dir() and not path.is_symlink()
+    )
+    errors: list[str] = []
+    if directories:
+        errors.append(f"release assets must contain root files only, found directories: {directories}")
+    if unsupported:
+        errors.append(f"release assets contain unsupported entries: {unsupported}")
+    return errors
 
 
 def check_platform_review_bundle_artifacts(

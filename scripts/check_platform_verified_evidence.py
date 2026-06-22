@@ -46,6 +46,11 @@ XP_WORKFLOW_INPUT_KEYS = {
     "evidence_file",
     "evidence_dir",
 }
+LINUX_WORKFLOW_INPUT_KEYS = {
+    "target",
+    "release_tag",
+    "release_asset_base_url",
+}
 RESERVED_WORKSPACE_ROOTS = {".agents", ".codex", ".git", ".github"}
 KNOWN_TARGETS = {*LINUX_TARGETS, *XP_TARGETS}
 PROTECTED_GOAL_TARGETS = (
@@ -151,6 +156,9 @@ XP_EVIDENCE_KEYS = COMMON_EVIDENCE_KEYS | {
     "xp_host_identity_sha256",
     "xp_smoke_evidence_sha256",
 }
+LINUX_EVIDENCE_SOURCE_RECORD_KEYS = {"file", "sha256", "size_bytes"}
+XP_EVIDENCE_SOURCE_RECORD_KEYS = {"file", "path", "sha256", "size_bytes"}
+XP_SMOKE_EVIDENCE_SOURCE_RECORD_KEYS = {"file", "sha256", "size_bytes"}
 REQUIRED_XP_SMOKE_IDS = {
     "cli_launch",
     "gui_or_legacy_host_ui_launch",
@@ -170,6 +178,22 @@ REQUIRED_XP_SECURITY_FLAGS = {
     "weak_crypto_global_default": False,
 }
 RELEASE_ASSET_SOURCE_TYPES = {"github-actions-artifact"}
+RELEASE_ASSET_SOURCE_KEYS = {
+    "artifact_name",
+    "contains_files",
+    "head_sha",
+    "type",
+    "workflow",
+    "workflow_run_url",
+}
+REVIEW_BUNDLE_KEYS = {
+    "archive",
+    "bundle_type",
+    "manifest",
+    "release_asset_urls",
+    "sha256s",
+}
+REVIEW_BUNDLE_RECORD_KEYS = {"file", "sha256", "size_bytes"}
 RELEASE_SOURCE_HEAD_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 HOST_IDENTITY_LABEL_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{2,63}$")
 HOST_IDENTITY_RUN_RE = re.compile(r"^[a-z0-9][a-z0-9._:-]{7,127}$")
@@ -201,12 +225,14 @@ REQUIRED_LINUX_USERLAND_BITS = {
     "linux-i386": "32",
     "linux-armhf": "32",
 }
-GITHUB_ACTIONS_RUN_RE = re.compile(r"^https://github\.com/([^/]+/[^/]+)/actions/runs/\d+/?$")
+GITHUB_OWNER_RE = r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?"
+GITHUB_REPOSITORY_RE = rf"{GITHUB_OWNER_RE}/[A-Za-z0-9._-]+"
+GITHUB_ACTIONS_RUN_RE = re.compile(rf"^https://github\.com/({GITHUB_REPOSITORY_RE})/actions/runs/\d+/?$")
 GITHUB_RELEASE_BASE_RE = re.compile(
-    r"^https://github\.com/([^/]+/[^/]+)/releases/download/(v\d+\.\d+\.\d+)$"
+    rf"^https://github\.com/({GITHUB_REPOSITORY_RE})/releases/download/(v\d+\.\d+\.\d+)$"
 )
 GITHUB_RELEASE_ASSET_RE = re.compile(
-    r"^https://github\.com/([^/]+/[^/]+)/releases/download/(v\d+\.\d+\.\d+)/.+"
+    rf"^https://github\.com/({GITHUB_REPOSITORY_RE})/releases/download/(v\d+\.\d+\.\d+)/.+"
 )
 
 
@@ -376,37 +402,44 @@ def check_required_targets(
                 and entry.get("status") == "accepted"
                 and entry.get("release_tag") == required_release_tag
             }
-            repository_errors = check_protected_goal_repositories(entries, required_release_tag)
-            if repository_errors:
-                return repository_errors
+            consistency_errors = check_protected_goal_release_consistency(entries, required_release_tag)
+            if consistency_errors:
+                return consistency_errors
         return []
     if missing:
         return [f"missing required accepted evidence targets: {missing}"]
     return []
 
 
-def check_protected_goal_repositories(
+def check_protected_goal_release_consistency(
     entries: dict[str, dict[str, Any]],
     release_tag: str,
 ) -> list[str]:
+    errors: list[str] = []
     repositories_by_target = {
         target: release_asset_repositories(entry.get("release_asset_urls"))
         for target, entry in entries.items()
         if target in PROTECTED_GOAL_TARGETS
     }
-    if not all(len(repositories) == 1 for repositories in repositories_by_target.values()):
-        return []
-    repositories = {
-        next(iter(repositories))
-        for repositories in repositories_by_target.values()
-    }
-    if len(repositories) == 1:
-        return []
-    return [
-        "protected platform goal evidence "
-        f"for release_tag {release_tag} must use one GitHub release repository, "
-        f"got {format_repositories_by_target(repositories_by_target)}"
-    ]
+    if all(len(repositories) == 1 for repositories in repositories_by_target.values()):
+        repositories = {
+            next(iter(repositories))
+            for repositories in repositories_by_target.values()
+        }
+        if len(repositories) != 1:
+            errors.append(
+                "protected platform goal evidence "
+                f"for release_tag {release_tag} must use one GitHub release repository, "
+                f"got {format_repositories_by_target(repositories_by_target)}"
+            )
+    heads_by_target = release_source_heads_by_target(entries)
+    if len(heads_by_target) == len(PROTECTED_GOAL_TARGETS) and len(set(heads_by_target.values())) != 1:
+        errors.append(
+            "protected platform goal evidence "
+            f"for release_tag {release_tag} must use one release source head SHA, "
+            f"got {format_values_by_target(heads_by_target)}"
+        )
+    return errors
 
 
 def check_schema(registry: dict[str, Any]) -> list[str]:
@@ -430,6 +463,14 @@ def check_schema(registry: dict[str, Any]) -> list[str]:
         errors.append(
             "platform verified evidence policy must require exact safe release asset URL filenames"
         )
+    if "exact required check lists" not in policy:
+        errors.append("platform verified evidence policy must require exact accepted evidence check lists")
+    if "exact workflow dispatch input sets" not in policy:
+        errors.append("platform verified evidence policy must require exact workflow dispatch input sets")
+    if "exact evidence source record fields" not in policy:
+        errors.append("platform verified evidence policy must require exact evidence source record fields")
+    if "exact release source and review bundle fields" not in policy:
+        errors.append("platform verified evidence policy must require exact release source and review bundle fields")
     if "builder identity" not in policy:
         errors.append("platform verified evidence policy must require Linux builder identity evidence")
     if "builder identity SHA-256" not in policy:
@@ -452,6 +493,8 @@ def check_schema(registry: dict[str, Any]) -> list[str]:
         errors.append("platform verified evidence policy must require Linux smoke evidence SHA-256 binding")
     if "Linux smoke release/run/source head SHA binding" not in policy:
         errors.append("platform verified evidence policy must require Linux smoke release/run/source head SHA binding")
+    if "Linux smoke runtime architecture and userland binding" not in policy:
+        errors.append("platform verified evidence policy must require Linux smoke runtime architecture and userland binding")
     if "Linux workflow dispatch inputs" not in policy:
         errors.append("platform verified evidence policy must require Linux workflow dispatch input binding")
     if "XP workflow dispatch inputs" not in policy:
@@ -474,6 +517,22 @@ def check_schema(registry: dict[str, Any]) -> list[str]:
         errors.append("platform verified evidence policy must require release-importable artifact source binding")
     if "release source head SHA binding" not in policy:
         errors.append("platform verified evidence policy must require release source head SHA binding")
+    if "protected platform goal records for one release must use one release source head SHA" not in policy:
+        errors.append(
+            "platform verified evidence policy must require protected platform goal source head SHA consistency"
+        )
+    if "partial protected platform goal records must use one release_tag" not in policy:
+        errors.append(
+            "platform verified evidence policy must require partial protected platform goal release scope consistency"
+        )
+    if (
+        "Windows XP x86/x64 pairs must use the same release_tag, GitHub repository "
+        "and release source head SHA"
+        not in policy
+    ):
+        errors.append(
+            "platform verified evidence policy must require Windows XP pair source head SHA consistency"
+        )
     if "release source workflow file binding" not in policy:
         errors.append("platform verified evidence policy must require release source workflow file binding")
     if "local protected-goal evidence preflight command binding" not in policy:
@@ -522,6 +581,8 @@ def check_schema(registry: dict[str, Any]) -> list[str]:
         errors.append("platform verified evidence policy must require canonical XP smoke proof-file command binding")
     if "XP smoke evidence-file summary binding" not in policy:
         errors.append("platform verified evidence policy must require XP smoke evidence-file summary binding")
+    if "XP smoke host identity binding" not in policy:
+        errors.append("platform verified evidence policy must require XP smoke host identity binding")
     if "XP security smoke proof-line binding" not in policy:
         errors.append("platform verified evidence policy must require XP security smoke proof-line binding")
     if "promotion config SHA-256" not in policy:
@@ -530,7 +591,7 @@ def check_schema(registry: dict[str, Any]) -> list[str]:
         errors.append("platform verified evidence policy must require unique target records")
     if "no unrecognized top-level fields" not in policy:
         errors.append("platform verified evidence policy must reject unrecognized top-level fields")
-    if "Windows XP x86/x64 pairs must use the same release_tag and GitHub repository" not in policy:
+    if "Windows XP x86/x64 pairs must use the same release_tag, GitHub repository" not in policy:
         errors.append("platform verified evidence policy must require same release_tag and GitHub repository for XP pairs")
     if "same GitHub repository" not in policy:
         errors.append("platform verified evidence policy must require same GitHub repository")
@@ -637,6 +698,13 @@ def check_linux_workflow_inputs(target: str, entry: dict[str, Any]) -> list[str]
     if not isinstance(raw_inputs, dict):
         return [f"{target} evidence must include workflow_inputs object"]
     errors: list[str] = []
+    input_keys = {str(key) for key in raw_inputs}
+    missing_keys = sorted(LINUX_WORKFLOW_INPUT_KEYS - input_keys)
+    unexpected_keys = sorted(input_keys - LINUX_WORKFLOW_INPUT_KEYS)
+    if missing_keys:
+        errors.append(f"{target} workflow_inputs missing keys: {missing_keys}")
+    if unexpected_keys:
+        errors.append(f"{target} workflow_inputs unexpected keys: {unexpected_keys}")
     release_tag = str(entry.get("release_tag", ""))
     if raw_inputs.get("target") != target:
         errors.append(f"{target} workflow_inputs target must be {target}")
@@ -703,6 +771,14 @@ def check_linux_evidence_sources(target: str, entry: dict[str, Any]) -> list[str
         if not isinstance(record, dict):
             errors.append(f"{target} linux_evidence_sources.{key} must be an object")
             continue
+        errors.extend(
+            check_exact_object_keys(
+                target,
+                f"linux_evidence_sources.{key}",
+                record,
+                LINUX_EVIDENCE_SOURCE_RECORD_KEYS,
+            )
+        )
         if record.get("file") != expected["file"]:
             errors.append(f"{target} linux_evidence_sources.{key}.file must be {expected['file']}")
         if record.get("sha256") != expected["sha256"]:
@@ -710,6 +786,23 @@ def check_linux_evidence_sources(target: str, entry: dict[str, Any]) -> list[str
         size = record.get("size_bytes")
         if not isinstance(size, int) or size <= 0:
             errors.append(f"{target} linux_evidence_sources.{key}.size_bytes must be a positive integer")
+    return errors
+
+
+def check_exact_object_keys(
+    target: str,
+    label: str,
+    raw_object: dict[str, Any],
+    allowed_keys: set[str],
+) -> list[str]:
+    keys = {str(key) for key in raw_object}
+    missing = sorted(allowed_keys - keys)
+    unexpected = sorted(keys - allowed_keys)
+    errors: list[str] = []
+    if missing:
+        errors.append(f"{target} {label} missing fields: {missing}")
+    if unexpected:
+        errors.append(f"{target} {label} unexpected fields: {unexpected}")
     return errors
 
 
@@ -913,6 +1006,14 @@ def check_xp_evidence_sources(target: str, entry: dict[str, Any]) -> list[str]:
     if not isinstance(evidence_record, dict):
         errors.append(f"{target} xp_evidence_sources.evidence must be an object")
     else:
+        errors.extend(
+            check_exact_object_keys(
+                target,
+                "xp_evidence_sources.evidence",
+                evidence_record,
+                XP_EVIDENCE_SOURCE_RECORD_KEYS,
+            )
+        )
         if evidence_record.get("file") != "xp-evidence.json":
             errors.append(f"{target} xp_evidence_sources.evidence.file must be xp-evidence.json")
         if evidence_record.get("path") != workflow_inputs.get("evidence_file"):
@@ -945,6 +1046,14 @@ def check_xp_evidence_sources(target: str, entry: dict[str, Any]) -> list[str]:
         if not isinstance(record, dict):
             errors.append(f"{target} xp_evidence_sources.smoke_evidence.{smoke_id} must be an object")
             continue
+        errors.extend(
+            check_exact_object_keys(
+                target,
+                f"xp_evidence_sources.smoke_evidence.{smoke_id}",
+                record,
+                XP_SMOKE_EVIDENCE_SOURCE_RECORD_KEYS,
+            )
+        )
         if record.get("file") != smoke_files.get(smoke_id):
             errors.append(
                 f"{target} xp_evidence_sources.smoke_evidence.{smoke_id}.file "
@@ -1285,6 +1394,7 @@ def check_xp_evidence_summary(target: str, release_tag: str, raw_summary: Any) -
             release_tag,
             raw_summary.get("smoke_commands"),
             raw_summary.get("smoke_evidence_files"),
+            raw_summary.get("host_identity"),
         )
     )
     return errors
@@ -1426,6 +1536,7 @@ def check_xp_smoke_commands(
     release_tag: str,
     raw_commands: Any,
     raw_files: Any,
+    raw_host_identity: Any,
 ) -> list[str]:
     if not isinstance(raw_commands, dict):
         return [f"{target} xp_evidence_summary smoke_commands must be an object"]
@@ -1464,6 +1575,7 @@ def check_xp_smoke_commands(
                     smoke_id,
                     command,
                     evidence_file=evidence_files.get(smoke_id),
+                    host_identity=raw_host_identity,
                 )
             )
     return errors
@@ -1476,6 +1588,7 @@ def check_xp_smoke_command_binding(
     command: str,
     *,
     evidence_file: str | None = None,
+    host_identity: Any,
 ) -> list[str]:
     expected_values = {
         "--target": target,
@@ -1485,6 +1598,9 @@ def check_xp_smoke_command_binding(
     }
     if evidence_file is not None:
         expected_values["--evidence-file"] = evidence_file
+    if isinstance(host_identity, dict):
+        expected_values["--host-label"] = str(host_identity.get("host_label", ""))
+        expected_values["--evidence-run-id"] = str(host_identity.get("evidence_run_id", ""))
     errors: list[str] = []
     for flag, expected in expected_values.items():
         values = re.findall(rf"(?:^|\s){re.escape(flag)}\s+(\S+)(?=\s|$)", command)
@@ -1568,6 +1684,9 @@ def check_linux_smoke_log_text(
 ) -> list[str]:
     arch = REQUIRED_LINUX_SMOKE_ARCHES.get(target, "")
     source_head_sha = source_head_sha.strip()
+    expected_dpkg_arches = REQUIRED_LINUX_DPKG_ARCHES.get(target, set())
+    expected_userland_bits = REQUIRED_LINUX_USERLAND_BITS.get(target, "")
+    expected_machines = LINUX_TARGETS.get(target, {}).get("machine_names", set())
     expected_command = (
         f"bash scripts/smoke_linux_native.sh --arch {arch} --dist native-dist/linux "
         f"--target {target} --workflow-run-url {workflow_run_url} --source-head-sha {source_head_sha}"
@@ -1579,6 +1698,7 @@ def check_linux_smoke_log_text(
         f"native installer smoke target: {target}",
         f"native installer smoke workflow run: {workflow_run_url}",
         f"native installer smoke source head sha: {source_head_sha}",
+        f"native installer smoke userland bits: {expected_userland_bits}",
         *[f"native installer smoke: {step}" for step in REQUIRED_LINUX_SMOKE_STEPS],
         f"native installer smoke passed for Linux {arch}",
     ]
@@ -1592,9 +1712,54 @@ def check_linux_smoke_log_text(
     for line in required_lines:
         if line not in text:
             errors.append(f"{target} {label} missing required line: {line}")
+    errors.extend(
+        check_linux_smoke_runtime_line(
+            target,
+            label,
+            text,
+            "native installer smoke uname machine",
+            expected_machines,
+        )
+    )
+    errors.extend(
+        check_linux_smoke_runtime_line(
+            target,
+            label,
+            text,
+            "native installer smoke dpkg architecture",
+            expected_dpkg_arches,
+        )
+    )
     if artifact_sha256 is not None:
         errors.extend(check_linux_smoke_artifact_sha256_lines(target, release_tag, text, artifact_sha256, label=label))
     return errors
+
+
+def check_linux_smoke_runtime_line(
+    target: str,
+    label: str,
+    text: str,
+    key: str,
+    expected_values: set[str],
+) -> list[str]:
+    prefix = f"{key}: "
+    values = sorted(
+        {
+            line.removeprefix(prefix).strip().lower()
+            for line in text.splitlines()
+            if line.startswith(prefix)
+        }
+    )
+    if values == []:
+        return [f"{target} {label} missing required line: {key}: <expected runtime value>"]
+    if len(values) != 1:
+        return [f"{target} {label} must include exactly one {key} value, got {values}"]
+    value = values[0]
+    if value not in expected_values:
+        return [
+            f"{target} {label} {key} must be one of {sorted(expected_values)}, got {value!r}"
+        ]
+    return []
 
 
 def check_linux_smoke_artifact_sha256_lines(
@@ -1663,10 +1828,7 @@ def check_common_evidence(
     release_tag = str(entry.get("release_tag", ""))
     if not re.fullmatch(r"v\d+\.\d+\.\d+", release_tag):
         errors.append(f"{target} release_tag must look like vX.Y.Z")
-    checks = set(str(check) for check in entry.get("checks", []))
-    missing_checks = sorted(required_checks - checks)
-    if missing_checks:
-        errors.append(f"{target} evidence missing required checks: {missing_checks}")
+    errors.extend(check_evidence_checks(target, entry.get("checks"), required_checks))
     command = str(entry.get("artifact_validation_command", ""))
     errors.extend(check_artifact_validation_command(target, release_tag, command))
     errors.extend(check_local_evidence_preflight_command(target, release_tag, entry))
@@ -1747,6 +1909,31 @@ def check_common_evidence(
     return errors
 
 
+def check_evidence_checks(
+    target: str,
+    raw_checks: Any,
+    required_checks: set[str],
+) -> list[str]:
+    if not isinstance(raw_checks, list):
+        return [f"{target} evidence checks must be a list"]
+    checks = [str(check) for check in raw_checks]
+    check_counts: dict[str, int] = {}
+    for check in checks:
+        check_counts[check] = check_counts.get(check, 0) + 1
+    actual = set(checks)
+    errors: list[str] = []
+    missing_checks = sorted(required_checks - actual)
+    if missing_checks:
+        errors.append(f"{target} evidence missing required checks: {missing_checks}")
+    unexpected_checks = sorted(actual - required_checks)
+    if unexpected_checks:
+        errors.append(f"{target} evidence has unexpected checks: {unexpected_checks}")
+    duplicate_checks = sorted(check for check, count in check_counts.items() if count > 1)
+    if duplicate_checks:
+        errors.append(f"{target} evidence has duplicate checks: {duplicate_checks}")
+    return errors
+
+
 def check_evidence_record_keys(
     target: str,
     entry: dict[str, Any],
@@ -1817,6 +2004,14 @@ def check_release_asset_source(
     if not isinstance(raw_source, dict):
         return [f"{target} release_asset_source must be an object"]
     errors: list[str] = []
+    errors.extend(
+        check_exact_object_keys(
+            target,
+            "release_asset_source",
+            raw_source,
+            RELEASE_ASSET_SOURCE_KEYS,
+        )
+    )
     source_type = str(raw_source.get("type", ""))
     if source_type not in RELEASE_ASSET_SOURCE_TYPES:
         errors.append(
@@ -1899,6 +2094,14 @@ def check_review_bundle(
     if not isinstance(raw_bundle, dict):
         return [f"{target} review_bundle must be an object"]
     errors: list[str] = []
+    errors.extend(
+        check_exact_object_keys(
+            target,
+            "review_bundle",
+            raw_bundle,
+            REVIEW_BUNDLE_KEYS,
+        )
+    )
     expected_bundle_type = REVIEW_BUNDLE_TYPES[target]
     if raw_bundle.get("bundle_type") != expected_bundle_type:
         errors.append(f"{target} review_bundle bundle_type must be {expected_bundle_type}")
@@ -1908,6 +2111,14 @@ def check_review_bundle(
         if not isinstance(raw_record, dict):
             errors.append(f"{target} review_bundle {key} must be an object")
             continue
+        errors.extend(
+            check_exact_object_keys(
+                target,
+                f"review_bundle {key}",
+                raw_record,
+                REVIEW_BUNDLE_RECORD_KEYS,
+            )
+        )
         actual_file = str(raw_record.get("file", ""))
         if actual_file != expected_file:
             errors.append(f"{target} review_bundle {key}.file must be {expected_file}")
@@ -2306,6 +2517,13 @@ def check_registry_consistency(registry: dict[str, Any]) -> list[str]:
         if len(entries) > 1:
             errors.append(f"accepted_evidence target must be unique: {target}")
 
+    protected_entries = {
+        target: entries[0]
+        for target, entries in by_target.items()
+        if target in PROTECTED_GOAL_TARGETS and len(entries) == 1
+    }
+    errors.extend(check_partial_protected_goal_release_scope(protected_entries))
+
     xp_entries = {
         target: entries[0]
         for target, entries in by_target.items()
@@ -2332,6 +2550,49 @@ def check_registry_consistency(registry: dict[str, Any]) -> list[str]:
                     "Windows XP native evidence pair must use one GitHub release repository, "
                     f"got {format_repositories_by_target(repositories_by_target)}"
                 )
+        heads_by_target = release_source_heads_by_target(xp_entries)
+        if len(heads_by_target) == len(XP_TARGETS) and len(set(heads_by_target.values())) != 1:
+            errors.append(
+                "Windows XP native evidence pair must use one release source head SHA, "
+                f"got {format_values_by_target(heads_by_target)}"
+            )
+    return errors
+
+
+def check_partial_protected_goal_release_scope(entries: dict[str, dict[str, Any]]) -> list[str]:
+    if len(entries) < 2:
+        return []
+    errors: list[str] = []
+    release_tags_by_target = {
+        target: str(entry.get("release_tag", ""))
+        for target, entry in entries.items()
+        if str(entry.get("release_tag", ""))
+    }
+    if len(release_tags_by_target) == len(entries) and len(set(release_tags_by_target.values())) != 1:
+        errors.append(
+            "partial protected platform goal evidence must use one release_tag before promotion, "
+            f"got {format_values_by_target(release_tags_by_target)}"
+        )
+    repositories_by_target = {
+        target: release_asset_repositories(entry.get("release_asset_urls"))
+        for target, entry in entries.items()
+    }
+    if all(len(repositories) == 1 for repositories in repositories_by_target.values()):
+        repositories = {
+            next(iter(repositories))
+            for repositories in repositories_by_target.values()
+        }
+        if len(repositories) != 1:
+            errors.append(
+                "partial protected platform goal evidence must use one GitHub release repository before promotion, "
+                f"got {format_repositories_by_target(repositories_by_target)}"
+            )
+    heads_by_target = release_source_heads_by_target(entries)
+    if len(heads_by_target) == len(entries) and len(set(heads_by_target.values())) != 1:
+        errors.append(
+            "partial protected platform goal evidence must use one release source head SHA before promotion, "
+            f"got {format_values_by_target(heads_by_target)}"
+        )
     return errors
 
 
@@ -2340,6 +2601,22 @@ def format_repositories_by_target(repositories_by_target: dict[str, set[str]]) -
         target: sorted(repositories)
         for target, repositories in sorted(repositories_by_target.items())
     }
+
+
+def release_source_heads_by_target(entries: dict[str, dict[str, Any]]) -> dict[str, str]:
+    heads: dict[str, str] = {}
+    for target, entry in sorted(entries.items()):
+        source = entry.get("release_asset_source")
+        if not isinstance(source, dict):
+            continue
+        head_sha = str(source.get("head_sha", "")).strip()
+        if RELEASE_SOURCE_HEAD_SHA_RE.fullmatch(head_sha):
+            heads[target] = head_sha
+    return heads
+
+
+def format_values_by_target(values_by_target: dict[str, str]) -> dict[str, str]:
+    return {target: values_by_target[target] for target in sorted(values_by_target)}
 
 
 def promotion_entries_by_id(

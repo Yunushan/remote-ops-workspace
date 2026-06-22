@@ -24,6 +24,8 @@ POLICY = (
     "and per-artifact SHA-256 digests, safe relative non-link native archive entries, "
     "exact safe checksum and native manifest file references, "
     "exact safe release asset URL filenames, "
+    "exact required check lists, exact workflow dispatch input sets, exact evidence source record fields, "
+    "exact release source and review bundle fields, "
     "Linux builder identity evidence, builder identity "
     "SHA-256, builder identity release/run binding, "
     "Linux builder/smoke source file binding, "
@@ -31,11 +33,13 @@ POLICY = (
     "Linux builder host identity binding when applicable, "
     "Linux builder rpm and non-interactive sudo evidence, Linux security patch evidence, "
     "Linux native build and smoke command provenance, "
-    "Linux smoke evidence SHA-256 and Linux smoke release/run/source head SHA binding, "
+    "Linux smoke evidence SHA-256, Linux smoke release/run/source head SHA binding, "
+    "Linux smoke runtime architecture and userland binding, "
     "Linux workflow dispatch inputs when applicable, XP workflow dispatch inputs when applicable, "
     "XP evidence source file binding, XP evidence bundle SHA-256 digests, "
     "XP evidence validation command binding, XP evidence contract SHA-256, "
-    "XP evidence summary binding, XP host identity SHA-256 binding, XP security patch evidence, "
+    "XP evidence summary binding, XP host identity SHA-256 binding, XP smoke host identity binding, "
+    "XP security patch evidence, "
     "tracked scripts/xp_smoke_runner.cmd XP smoke command provenance, "
     "canonical XP smoke proof-file command binding, "
     "canonical XP smoke evidence-file summary binding and "
@@ -46,8 +50,10 @@ POLICY = (
     "size, SHA-256 and checksum-sidecar coverage; each accepted record must include "
     "the promotion config SHA-256, have a unique target, include no unrecognized top-level fields, "
     "all release evidence for one record must "
-    "use the same GitHub repository, and Windows XP x86/x64 pairs must use the same release_tag "
-    "and GitHub repository. "
+    "use the same GitHub repository, protected platform goal records for one release must use "
+    "one release source head SHA, partial protected platform goal records must use one release_tag, "
+    "GitHub repository and release source head SHA before promotion, and Windows XP x86/x64 pairs must use the same release_tag, "
+    "GitHub repository and release source head SHA. "
     "Empty means no promotion."
 )
 MOBA_PARITY_POLICY = (
@@ -285,6 +291,50 @@ jobs:
     errors = checker.check_platform_evidence_import_job(workflow)
 
     assert "platform evidence import must run before imported artifact upload" in errors
+
+
+def test_publish_contract_requires_platform_review_bundle_validation() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        "python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets",
+        "python scripts/check_platform_review_bundle_artifacts.py --help",
+    )
+
+    errors = checker.check_platform_evidence_import_job(workflow)
+
+    assert any("imported platform review bundle validator" in error for error in errors)
+
+
+def test_publish_contract_requires_platform_review_bundle_validation_before_upload() -> None:
+    checker = _load_checker()
+    workflow = """
+jobs:
+  accepted-platform-evidence-assets:
+    needs: release-preflight
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+      - name: Import accepted protected platform evidence artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/import_platform_evidence_artifacts.py --release-tag "${{ github.ref_name }}" --require-goal-targets --out-dir release-assets
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-platform-evidence-assets
+          path: release-assets/*
+          if-no-files-found: error
+      - name: Validate imported protected platform review bundles
+        run: python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag "${{ github.ref_name }}"
+"""
+
+    errors = checker.check_platform_evidence_import_job(workflow)
+
+    assert "platform review bundle validation must run before imported artifact upload" in errors
 
 
 def test_publish_contract_rejects_malformed_mobaxterm_parity_registry() -> None:
@@ -798,6 +848,17 @@ def test_release_assets_reject_symlinked_release_asset(tmp_path: Path, monkeypat
     assert f"release assets must not contain symlinks: ['{symlink_name}']" in errors
 
 
+def test_release_assets_reject_nested_release_asset_directory(tmp_path: Path) -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    _write_synthetic_release_assets(checker, matrix, tmp_path)
+    (tmp_path / "nested-output").mkdir()
+
+    errors = checker.check_release_assets(tmp_path, matrix, tag="v1.0.2")
+
+    assert "release assets must contain root files only, found directories: ['nested-output']" in errors
+
+
 def test_release_assets_reject_checksum_mismatch(tmp_path: Path) -> None:
     checker = _load_checker()
     matrix = _load_matrix()
@@ -928,11 +989,12 @@ def _write_accepted_review_bundle_assets(record: dict[str, object], root: Path) 
             bundle_type="extended-linux-native-evidence",
             target=target,
             release_tag=release_tag,
-            manifest_records={
-                "promotion_config_sha256": candidate["promotion_config_sha256"],
-                "release_asset_urls": candidate["release_asset_urls"],
-                "validated_commands": bundle_helpers._linux_validated_commands(candidate),
-                "workflow": candidate["workflow"],
+                manifest_records={
+                    "promotion_config_sha256": candidate["promotion_config_sha256"],
+                    "release_asset_urls": candidate["release_asset_urls"],
+                    "release_asset_source": candidate["release_asset_source"],
+                    "validated_commands": bundle_helpers._linux_validated_commands(candidate),
+                    "workflow": candidate["workflow"],
                 "workflow_inputs": candidate["workflow_inputs"],
                 "workflow_run_url": candidate["workflow_run_url"],
                 "runner_labels": candidate["runner_labels"],
@@ -1182,10 +1244,11 @@ def _xp_accepted_evidence(target: str) -> dict[str, object]:
     }
     if arch == "x64":
         os_summary["edition"] = "Professional x64 Edition"
+    host_identity = _xp_host_identity(target)
     evidence_summary: dict[str, object] = {
         "target": target,
         "release_tag": "v1.0.2",
-        "host_identity": _xp_host_identity(target),
+        "host_identity": host_identity,
         "os": os_summary,
         "toolchain": {
             "separate_legacy_toolchain": True,
@@ -1206,7 +1269,9 @@ def _xp_accepted_evidence(target: str) -> dict[str, object]:
             smoke_id: (
                 f"scripts/xp_smoke_runner.cmd --target {target} --release-tag v1.0.2 "
                 f"--smoke-id {smoke_id} --evidence-file xp-smoke-evidence/{smoke_id}.txt "
-                f"--proof-file xp-smoke-proof/{smoke_id}.txt"
+                f"--proof-file xp-smoke-proof/{smoke_id}.txt "
+                f"--host-label {host_identity['host_label']} "
+                f"--evidence-run-id {host_identity['evidence_run_id']}"
             )
             for smoke_id in smoke_ids
         },

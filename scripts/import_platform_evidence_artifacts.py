@@ -54,7 +54,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     records = accepted_records(registry, release_tag=args.release_tag, targets=required_targets)
-    release_head_sha = None if args.dry_run else current_checkout_head_sha()
+    release_head_sha = current_checkout_head_sha()
     import_errors = import_platform_evidence_artifacts(
         records,
         out_dir=args.out_dir,
@@ -140,6 +140,10 @@ def import_platform_evidence_artifacts(
     errors.extend(ensure_output_directory(out_dir))
     if errors:
         return errors
+    if records and not dry_run:
+        errors.extend(check_github_cli_available())
+    if errors:
+        return errors
     out_dir.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="platform-evidence-import-") as tmp:
         download_root = Path(tmp)
@@ -164,6 +168,15 @@ def ensure_output_directory(out_dir: Path) -> list[str]:
         return parent_errors
     if out_dir.exists() and not out_dir.is_dir():
         return [f"release asset import output path must be a directory: {out_dir}"]
+    return []
+
+
+def check_github_cli_available() -> list[str]:
+    if shutil.which("gh") is None:
+        return [
+            "GitHub CLI `gh` is required to import accepted platform evidence artifacts; "
+            "install gh or run inside GitHub Actions with GH_TOKEN configured"
+        ]
     return []
 
 
@@ -193,6 +206,13 @@ def import_record(
         return [f"{target} release_asset_source.artifact_name must be set"]
     if not RELEASE_SOURCE_HEAD_SHA_RE.fullmatch(expected_head_sha):
         return [f"{target} release_asset_source.head_sha must be a 40-character lowercase Git SHA"]
+    checkout_errors = check_release_checkout_head_sha(
+        target,
+        expected_head_sha=expected_head_sha,
+        release_head_sha=release_head_sha,
+    )
+    if checkout_errors:
+        return checkout_errors
     repository = run_match.group(1)
     run_id = run_url.rstrip("/").rsplit("/", 1)[-1]
     destination = download_root / target
@@ -292,12 +312,28 @@ def verify_source_run(
             f"{target} release_asset_source workflow run headSha must match accepted record "
             f"{expected_head_sha}, got {data.get('headSha')!r}"
         )
+    errors.extend(
+        check_release_checkout_head_sha(
+            target,
+            expected_head_sha=expected_head_sha,
+            release_head_sha=release_head_sha,
+        )
+    )
+    return errors
+
+
+def check_release_checkout_head_sha(
+    target: str,
+    *,
+    expected_head_sha: str,
+    release_head_sha: str | None,
+) -> list[str]:
     if release_head_sha is not None and expected_head_sha != release_head_sha:
-        errors.append(
+        return [
             f"{target} release_asset_source.head_sha must match release checkout {release_head_sha}, "
             f"got {expected_head_sha}"
-        )
-    return errors
+        ]
+    return []
 
 
 def current_checkout_head_sha() -> str:
@@ -351,10 +387,13 @@ def copy_expected_files(record: dict[str, Any], *, source_root: Path, out_dir: P
 
 def validate_source_artifact(record: dict[str, Any], *, source_root: Path) -> list[str]:
     target = str(record.get("target", ""))
+    source_errors, expected_files = release_source_contains_files(record)
+    if source_errors:
+        return source_errors
     errors = validate_downloaded_source_file_set(
         target,
         source_root=source_root,
-        expected_files=expected_source_files(record),
+        expected_files=expected_files,
     )
     if errors:
         return errors
@@ -458,13 +497,29 @@ def expected_release_files(record: dict[str, Any]) -> set[str]:
 
 
 def expected_source_files(record: dict[str, Any]) -> set[str]:
+    errors, files = release_source_contains_files(record)
+    if errors:
+        return set()
+    return files
+
+
+def release_source_contains_files(record: dict[str, Any]) -> tuple[list[str], set[str]]:
+    target = str(record.get("target", ""))
     source = record.get("release_asset_source")
     if not isinstance(source, dict):
-        return expected_release_files(record)
+        return [f"{target} release_asset_source must be an object"], set()
     raw_files = source.get("contains_files")
-    if not isinstance(raw_files, list):
-        return expected_release_files(record)
-    return {str(name) for name in raw_files if exact_safe_file_name(str(name))}
+    if not isinstance(raw_files, list) or not raw_files:
+        return [f"{target} release_asset_source.contains_files must be a non-empty list"], set()
+    files = [str(name) for name in raw_files]
+    unsafe = sorted({name for name in files if not exact_safe_file_name(name)})
+    errors: list[str] = []
+    if unsafe:
+        errors.append(f"{target} release_asset_source.contains_files entries must be exact safe file names: {unsafe}")
+    duplicates = sorted({name for name in files if files.count(name) > 1})
+    if duplicates:
+        errors.append(f"{target} release_asset_source.contains_files contains duplicates: {duplicates}")
+    return errors, set(files)
 
 
 def validate_downloaded_final_record(record: dict[str, Any], *, source_root: Path) -> list[str]:

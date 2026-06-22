@@ -216,9 +216,18 @@ PROTECTED_PLATFORM_GOAL_TARGETS = (
 )
 RESERVED_WORKSPACE_ROOTS = {".agents", ".codex", ".git", ".github"}
 RELEASE_ASSET_SOURCE_TYPES = {"github-actions-artifact"}
+GITHUB_OWNER_RE = r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?"
+GITHUB_REPOSITORY_RE = rf"{GITHUB_OWNER_RE}/[A-Za-z0-9._-]+"
 GITHUB_RELEASE_BASE_RE = re.compile(
-    r"^https://github\.com/([^/]+/[^/]+)/releases/download/(v\d+\.\d+\.\d+)$"
+    rf"^https://github\.com/({GITHUB_REPOSITORY_RE})/releases/download/(v\d+\.\d+\.\d+)$"
 )
+GITHUB_RELEASE_ASSET_RE = re.compile(
+    rf"^https://github\.com/({GITHUB_REPOSITORY_RE})/releases/download/(v\d+\.\d+\.\d+)/.+$"
+)
+GITHUB_RELEASE_ASSET_FILE_RE = re.compile(
+    rf"^https://github\.com/({GITHUB_REPOSITORY_RE})/releases/download/(v\d+\.\d+\.\d+)/(.+)$"
+)
+GITHUB_ACTIONS_RUN_RE = re.compile(rf"^https://github\.com/({GITHUB_REPOSITORY_RE})/actions/runs/\d+/?$")
 
 
 def feature_manifest_path() -> Path:
@@ -966,7 +975,12 @@ def _protected_platform_goal_parity(evidence_registry: dict[str, Any] | None) ->
         for item in _accepted_evidence_entries(evidence_registry)
         if str(item.get("target")) in PROTECTED_PLATFORM_GOAL_TARGETS
     }
-    release_tag, release_repository, release_targets = _best_protected_platform_release_group(entries)
+    (
+        release_tag,
+        release_repository,
+        release_source_head,
+        release_targets,
+    ) = _best_protected_platform_release_group(entries)
     present = [target for target in PROTECTED_PLATFORM_GOAL_TARGETS if target in release_targets]
     missing = [target for target in PROTECTED_PLATFORM_GOAL_TARGETS if target not in release_targets]
     aggregate_present = [target for target in PROTECTED_PLATFORM_GOAL_TARGETS if target in entries]
@@ -986,18 +1000,28 @@ def _protected_platform_goal_parity(evidence_registry: dict[str, Any] | None) ->
             for repository in _release_asset_repositories(entry.get("release_asset_urls"))
         }
     )
+    release_source_heads = sorted(
+        {
+            source_head
+            for entry in entries.values()
+            if (source_head := _release_source_head(entry))
+        }
+    )
     target_count = len(PROTECTED_PLATFORM_GOAL_TARGETS)
     accepted_count = len(present)
     current_percent = (accepted_count / target_count * 100.0) if target_count else 0.0
     complete = accepted_count == target_count
     release_consistent = len(release_tags) <= 1
     release_repository_consistent = len(release_repositories) <= 1
+    release_source_head_consistent = len(release_source_heads) <= 1
     if complete:
         status = "complete"
     elif release_repositories and not release_repository_consistent:
         status = "mixed-release-repository-evidence"
     elif release_tags and not release_consistent:
         status = "mixed-release-evidence"
+    elif release_source_heads and not release_source_head_consistent:
+        status = "mixed-release-source-evidence"
     else:
         status = "missing-accepted-evidence"
     return {
@@ -1026,14 +1050,17 @@ def _protected_platform_goal_parity(evidence_registry: dict[str, Any] | None) ->
         "release_tags": release_tags,
         "release_repository": release_repository,
         "release_repositories": release_repositories,
+        "release_source_head": release_source_head,
+        "release_source_heads": release_source_heads,
         "release_consistent": release_consistent,
         "release_repository_consistent": release_repository_consistent,
+        "release_source_head_consistent": release_source_head_consistent,
         "complete": complete,
         "status": status,
         "scope": (
             "Counts only Linux i386, Linux armhf, Windows XP native x86 and "
-            "Windows XP native x64 accepted evidence records for one release_tag "
-            "and one GitHub release repository. "
+            "Windows XP native x64 accepted evidence records for one release_tag, "
+            "one GitHub release repository, and one release source head SHA. "
             "The broader platform_verified_readiness overall score does not promote "
             "this goal unless this block reaches 100% for a single release."
         ),
@@ -1142,21 +1169,24 @@ def _protected_platform_required_commands(requirements: dict[str, Any]) -> dict[
     }
 
 
-def _best_protected_platform_release_group(entries: dict[str, dict[str, Any]]) -> tuple[str, str, set[str]]:
-    groups: dict[tuple[str, str], set[str]] = {}
+def _best_protected_platform_release_group(
+    entries: dict[str, dict[str, Any]],
+) -> tuple[str, str, str, set[str]]:
+    groups: dict[tuple[str, str, str], set[str]] = {}
     for target, entry in entries.items():
         release_tag = str(entry.get("release_tag", ""))
         repositories = _release_asset_repositories(entry.get("release_asset_urls"))
-        if release_tag and len(repositories) == 1:
+        source_head = _release_source_head(entry)
+        if release_tag and len(repositories) == 1 and source_head:
             repository = next(iter(repositories))
-            groups.setdefault((release_tag, repository), set()).add(target)
+            groups.setdefault((release_tag, repository, source_head), set()).add(target)
     if not groups:
-        return "", "", set()
-    (release_tag, repository), targets = max(
+        return "", "", "", set()
+    (release_tag, repository, source_head), targets = max(
         groups.items(),
-        key=lambda item: (len(item[1]), _release_tag_version_tuple(item[0][0]), item[0][1]),
+        key=lambda item: (len(item[1]), _release_tag_version_tuple(item[0][0]), item[0][1], item[0][2]),
     )
-    return release_tag, repository, targets
+    return release_tag, repository, source_head, targets
 
 
 def _release_tag_version_tuple(release_tag: str) -> tuple[int, int, int]:
@@ -1334,10 +1364,7 @@ def _has_release_assets_and_hashes(item: dict[str, Any], target: str) -> bool:
     repositories: set[str] = set()
     asset_names: list[str] = []
     for url in release_assets:
-        match = re.fullmatch(
-            r"https://github\.com/([^/]+/[^/]+)/releases/download/(v\d+\.\d+\.\d+)/.+",
-            str(url),
-        )
+        match = GITHUB_RELEASE_ASSET_RE.fullmatch(str(url))
         if not match or match.group(2) != release_tag:
             return False
         repositories.add(match.group(1))
@@ -1470,10 +1497,7 @@ def _has_review_bundle_release_asset_urls(
     bundle_repositories: set[str] = set()
     filenames: list[str] = []
     for url in raw_urls:
-        match = re.fullmatch(
-            r"https://github\.com/([^/]+/[^/]+)/releases/download/(v\d+\.\d+\.\d+)/.+",
-            str(url),
-        )
+        match = GITHUB_RELEASE_ASSET_RE.fullmatch(str(url))
         if not match:
             return False
         if match.group(2) != release_tag:
@@ -1490,10 +1514,7 @@ def _has_review_bundle_release_asset_urls(
 def _has_finalized_record_release_asset_url(item: dict[str, Any], target: str) -> bool:
     release_tag = str(item.get("release_tag", ""))
     raw_url = str(item.get("finalized_record_release_asset_url", "")).strip()
-    match = re.fullmatch(
-        r"https://github\.com/([^/]+/[^/]+)/releases/download/(v\d+\.\d+\.\d+)/(.+)",
-        raw_url,
-    )
+    match = GITHUB_RELEASE_ASSET_FILE_RE.fullmatch(raw_url)
     if not match or match.group(2) != release_tag:
         return False
     if Path(match.group(3)).name != f"platform-verified-evidence-{target}-final.json":
@@ -1538,9 +1559,12 @@ def _is_linux_accepted_evidence_entry(item: dict[str, Any], target: str) -> bool
         return False
     if item.get("native_build_command") != LINUX_ACCEPTED_EVIDENCE_BUILD_COMMANDS[target]:
         return False
+    source = item.get("release_asset_source")
+    source_head_sha = str(source.get("head_sha", "")).strip() if isinstance(source, dict) else ""
     expected_smoke = (
         f"{LINUX_ACCEPTED_EVIDENCE_SMOKE_COMMANDS[target]} "
-        f"--workflow-run-url {item.get('workflow_run_url')}"
+        f"--workflow-run-url {item.get('workflow_run_url')} "
+        f"--source-head-sha {source_head_sha}"
     )
     if item.get("native_smoke_command") != expected_smoke:
         return False
@@ -1580,8 +1604,16 @@ def _has_linux_workflow_inputs(item: dict[str, Any], target: str) -> bool:
 
 
 def _github_actions_repository(raw_url: Any) -> str:
-    match = re.fullmatch(r"https://github\.com/([^/]+/[^/]+)/actions/runs/\d+/?", str(raw_url))
+    match = GITHUB_ACTIONS_RUN_RE.fullmatch(str(raw_url))
     return match.group(1) if match else ""
+
+
+def _release_source_head(item: dict[str, Any]) -> str:
+    source = item.get("release_asset_source")
+    if not isinstance(source, dict):
+        return ""
+    source_head = str(source.get("head_sha", "")).strip()
+    return source_head if re.fullmatch(r"[0-9a-f]{40}", source_head) else ""
 
 
 def _release_asset_repositories(raw_assets: Any) -> set[str]:
@@ -1589,10 +1621,7 @@ def _release_asset_repositories(raw_assets: Any) -> set[str]:
         return set()
     repositories: set[str] = set()
     for url in raw_assets:
-        match = re.fullmatch(
-            r"https://github\.com/([^/]+/[^/]+)/releases/download/v\d+\.\d+\.\d+/.+",
-            str(url),
-        )
+        match = GITHUB_RELEASE_ASSET_RE.fullmatch(str(url))
         if match:
             repositories.add(match.group(1))
     return repositories
@@ -2102,7 +2131,13 @@ def _has_windows_xp_native_evidence(evidence_registry: dict[str, Any] | None) ->
         next(iter(release_repositories))
         for release_repositories in repository_sets
     }
-    return len(repositories) == 1
+    if len(repositories) != 1:
+        return False
+    source_heads = {
+        _release_source_head(entries[target])
+        for target in required
+    }
+    return "" not in source_heads and len(source_heads) == 1
 
 
 def _has_partial_windows_xp_native_evidence(evidence_registry: dict[str, Any] | None) -> bool:
@@ -2145,6 +2180,11 @@ def _windows_xp_evidence_status(evidence_registry: dict[str, Any] | None) -> dic
         "accepted_evidence_release_repositories": {
             target: sorted(_release_asset_repositories(entries[target].get("release_asset_urls")))
             for target in present
+        },
+        "accepted_evidence_release_source_heads": {
+            target: _release_source_head(entries[target])
+            for target in present
+            if _release_source_head(entries[target])
         },
     }
 

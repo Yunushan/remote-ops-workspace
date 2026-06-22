@@ -139,6 +139,9 @@ def check_product_readiness() -> list[str]:
         present = goal.get("accepted_targets", [])
         missing = goal.get("missing_targets", [])
         accepted_count = goal.get("accepted_target_count")
+        aggregate_present = goal.get("aggregate_accepted_targets", [])
+        aggregate_missing = goal.get("aggregate_missing_targets", [])
+        aggregate_count = goal.get("aggregate_accepted_target_count")
         if required != [
             "linux-i386",
             "linux-armhf",
@@ -152,12 +155,19 @@ def check_product_readiness() -> list[str]:
             errors.append("protected platform goal parity accepted/missing targets must partition required targets")
         if accepted_count != len(present):
             errors.append("protected platform goal parity accepted_target_count must match accepted_targets")
+        if not isinstance(aggregate_present, list) or not isinstance(aggregate_missing, list):
+            errors.append("protected platform goal parity must expose aggregate accepted and missing target lists")
+        elif sorted(aggregate_present + aggregate_missing) != sorted(required):
+            errors.append("protected platform goal parity aggregate accepted/missing targets must partition required targets")
+        if aggregate_count != len(aggregate_present):
+            errors.append("protected platform goal parity aggregate_accepted_target_count must match aggregate_accepted_targets")
         expected_percent = round((len(present) / len(required) * 100.0), 1) if required else 0.0
         if goal.get("current_percent") != expected_percent:
             errors.append("protected platform goal parity current_percent must match accepted target count")
         complete = len(present) == len(required) and bool(required)
         if goal.get("complete") is not complete:
             errors.append("protected platform goal parity complete flag must match accepted target count")
+        errors.extend(check_protected_goal_release_scope(goal))
         requirements = goal.get("target_evidence_requirements")
         if not isinstance(requirements, list):
             errors.append("protected platform goal parity must expose target_evidence_requirements")
@@ -188,6 +198,47 @@ def check_product_readiness() -> list[str]:
                     security = item.get("security_requirements")
                     if not isinstance(security, list) or "modern Windows 10/11, Linux, and macOS defaults must keep hardened crypto" not in security:
                         errors.append(f"{target} protected platform requirement missing modern-default security proof")
+    return errors
+
+
+def check_protected_goal_release_scope(goal: dict[str, object]) -> list[str]:
+    errors: list[str] = []
+    release_tags = goal.get("release_tags")
+    release_repositories = goal.get("release_repositories")
+    release_source_heads = goal.get("release_source_heads")
+    if not isinstance(release_tags, list):
+        errors.append("protected platform goal parity must expose release_tags")
+        release_tags = []
+    if not isinstance(release_repositories, list):
+        errors.append("protected platform goal parity must expose release_repositories")
+        release_repositories = []
+    if not isinstance(release_source_heads, list):
+        errors.append("protected platform goal parity must expose release_source_heads")
+        release_source_heads = []
+    if not isinstance(goal.get("release_tag"), str):
+        errors.append("protected platform goal parity must expose release_tag")
+    if not isinstance(goal.get("release_repository"), str):
+        errors.append("protected platform goal parity must expose release_repository")
+    if not isinstance(goal.get("release_source_head"), str):
+        errors.append("protected platform goal parity must expose release_source_head")
+    if goal.get("release_consistent") is not (len(release_tags) <= 1):
+        errors.append("protected platform goal parity release_consistent must match release_tags")
+    if goal.get("release_repository_consistent") is not (len(release_repositories) <= 1):
+        errors.append(
+            "protected platform goal parity release_repository_consistent must match release_repositories"
+        )
+    if goal.get("release_source_head_consistent") is not (len(release_source_heads) <= 1):
+        errors.append(
+            "protected platform goal parity release_source_head_consistent must match release_source_heads"
+        )
+    scope = str(goal.get("scope", ""))
+    for snippet in ("one release_tag", "one GitHub release repository", "one release source head SHA"):
+        if snippet not in scope:
+            errors.append(f"protected platform goal parity scope must mention {snippet}")
+    if goal.get("complete") is True:
+        for key in ("release_tag", "release_repository", "release_source_head"):
+            if not str(goal.get(key, "")):
+                errors.append(f"protected platform goal parity complete state must expose {key}")
     return errors
 
 

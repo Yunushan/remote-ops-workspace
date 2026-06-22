@@ -6,11 +6,13 @@ import sys
 
 LINUX_TARGETS = {"linux-i386", "linux-armhf"}
 RELEASE_TAG_RE = re.compile(r"v\d+\.\d+\.\d+")
+GITHUB_OWNER_RE = r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?"
+GITHUB_REPOSITORY_RE = rf"{GITHUB_OWNER_RE}/[A-Za-z0-9._-]+"
 GITHUB_RELEASE_DOWNLOAD_BASE_RE = re.compile(
-    r"https://github\.com/([^/]+/[^/]+)/releases/download/(v\d+\.\d+\.\d+)"
+    rf"https://github\.com/({GITHUB_REPOSITORY_RE})/releases/download/(v\d+\.\d+\.\d+)"
 )
 GITHUB_ACTIONS_RUN_RE = re.compile(
-    r"https://github\.com/([^/]+/[^/]+)/actions/runs/\d+/?"
+    rf"https://github\.com/({GITHUB_REPOSITORY_RE})/actions/runs/\d+/?"
 )
 
 

@@ -51,6 +51,9 @@ def test_protected_platform_goal_strict_gate_fails_empty_registry() -> None:
         "legacy TLS, SSH, and RDP compatibility must remain profile-scoped opt-in",
         "modern Windows 10/11, Linux, and macOS defaults must keep hardened crypto",
     ]
+    human_scope = checker.format_goal_scope(goal)
+    assert "release scope: requires one release_tag, one GitHub release repository" in human_scope
+    assert "accepted release scope evidence: none" in human_scope
     human_requirements = checker.format_goal_requirements(goal)
     assert "required proof for missing targets:" in human_requirements
     assert "linux-i386: missing" in human_requirements
@@ -116,6 +119,35 @@ def test_protected_platform_goal_reports_release_scoped_completion() -> None:
     assert goal["missing_targets"] == []
     assert goal["complete"] is True
     assert goal["status"] == "complete"
+    human_scope = checker.format_goal_scope(goal)
+    assert "accepted release tags: v1.0.2" in human_scope
+    assert "accepted release repositories: example/remote-ops-workspace" in human_scope
+    assert f"accepted release source heads: {'a' * 40}" in human_scope
+
+
+def test_protected_platform_goal_human_scope_reports_mixed_release_source_heads() -> None:
+    checker = _load_protected_goal_checker()
+    fixtures = _load_platform_verified_evidence_fixtures()
+    registry = _complete_registry()
+    records = registry["accepted_evidence"]
+    assert isinstance(records, list)
+    linux_i386 = records[0]
+    assert isinstance(linux_i386, dict)
+    fixtures._replace_release_source_head(linux_i386, "b" * 40)
+
+    errors, goal = checker.check_protected_platform_goal(
+        registry=registry,
+        release_tag="v1.0.2",
+        require_complete=True,
+    )
+
+    assert goal["status"] == "mixed-release-source-evidence"
+    assert goal["accepted_target_count"] == 3
+    assert goal["aggregate_accepted_target_count"] == 4
+    human_scope = checker.format_goal_scope(goal)
+    assert "accepted in selected release scope: 3/4; aggregate accepted records: 4/4" in human_scope
+    assert f"accepted release source heads: {'a' * 40}, {'b' * 40}" in human_scope
+    assert any("must use one release source head SHA" in error for error in errors)
 
 
 def test_protected_platform_goal_filters_nonmatching_release_tag() -> None:

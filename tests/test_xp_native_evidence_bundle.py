@@ -167,6 +167,110 @@ def test_xp_native_evidence_bundle_rejects_symlinked_inputs(
     assert f"evidence directory must not be a symlink: {evidence_root}" in errors
 
 
+def test_xp_native_evidence_bundle_rejects_symlinked_input_parent(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bundler = _load_bundle_script()
+    linked_root = tmp_path / "linked-evidence-root"
+    evidence_root = linked_root / "evidence"
+    evidence = evidence_root / "xp-evidence.json"
+    candidate = linked_root / "platform-verified-evidence-windows-xp-native-x86.json"
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self == linked_root
+
+    monkeypatch.setattr(type(tmp_path), "is_symlink", fake_is_symlink)
+
+    errors = bundler.make_xp_native_evidence_bundle(
+        target="windows-xp-native-x86",
+        evidence=evidence,
+        candidate_record=candidate,
+        assets_dir=tmp_path / "assets",
+        evidence_dir=evidence_root,
+        out_dir=tmp_path / "bundle",
+    )
+
+    assert f"evidence path must not contain symlinked directories: {linked_root}" in errors
+    assert (
+        f"candidate evidence record path must not contain symlinked directories: {linked_root}"
+    ) in errors
+    assert (
+        f"evidence directory path must not contain symlinked directories: {linked_root}"
+    ) in errors
+
+
+def test_xp_native_evidence_bundle_rejects_finalized_candidate_record(
+    tmp_path: Path,
+) -> None:
+    bundler = _load_bundle_script()
+    evidence_root = tmp_path / "evidence"
+    evidence_root.mkdir()
+    evidence = evidence_root / "xp-evidence.json"
+    evidence.write_text("{}\n", encoding="utf-8")
+    candidate = tmp_path / "platform-verified-evidence-windows-xp-native-x86.json"
+    candidate.write_text(
+        json.dumps(
+            {
+                "target": "windows-xp-native-x86",
+                "release_tag": "v1.0.2",
+                "finalized_record_release_asset_url": (
+                    "https://github.com/example/remote-ops-workspace/releases/download/v1.0.2/"
+                    "platform-verified-evidence-windows-xp-native-x86-final.json"
+                ),
+                "review_bundle": {},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    errors = bundler.make_xp_native_evidence_bundle(
+        target="windows-xp-native-x86",
+        evidence=evidence,
+        candidate_record=candidate,
+        assets_dir=tmp_path / "assets",
+        evidence_dir=evidence_root,
+        out_dir=tmp_path / "bundle",
+    )
+
+    assert errors == [
+        "candidate evidence record must be unfinalized before bundling; "
+        "remove fields: ['finalized_record_release_asset_url', 'review_bundle']"
+    ]
+
+
+def test_xp_native_evidence_bundle_rejects_missing_artifact_directory_before_hashing(
+    tmp_path: Path,
+) -> None:
+    bundler = _load_bundle_script()
+    target = "windows-xp-native-x86"
+    evidence_root = tmp_path / "evidence"
+    evidence_root.mkdir()
+    evidence = evidence_root / "xp-evidence.json"
+    evidence.write_text(
+        json.dumps({"target": target, "release_tag": "v1.0.2"}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    candidate = tmp_path / "platform-verified-evidence-windows-xp-native-x86.json"
+    candidate.write_text(
+        json.dumps({"target": target, "release_tag": "v1.0.2"}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    missing_assets = tmp_path / "missing-assets"
+
+    errors = bundler.make_xp_native_evidence_bundle(
+        target=target,
+        evidence=evidence,
+        candidate_record=candidate,
+        assets_dir=missing_assets,
+        evidence_dir=evidence_root,
+        out_dir=tmp_path / "bundle",
+    )
+
+    assert f"artifact directory missing: {missing_assets}" in errors
+
+
 def test_xp_native_evidence_bundle_rejects_symlinked_output_directory(
     tmp_path: Path,
     monkeypatch,
@@ -424,6 +528,21 @@ def _valid_evidence(
     }
     if arch == "x64":
         os_record["edition"] = "Professional x64 Edition"
+    host_identity = {
+        "schema_version": 1,
+        "target": target,
+        "release_tag": release_tag,
+        "host_label": f"xp-{arch}-lab-01",
+        "evidence_run_id": f"xp-{arch}-{release_tag.removeprefix('v').replace('.', '-')}-20260620t120000z",
+        "observed_at_utc": "2026-06-20T12:00:00Z",
+        "operator_private_data_redacted": True,
+        "os": dict(os_record),
+        "toolchain": {
+            "separate_legacy_toolchain": True,
+            "current_python_pyqt6_stack": False,
+            "description": "Separate legacy XP-capable native host toolchain",
+        },
+    }
     return {
         "schema_version": 1,
         "target": target,
@@ -434,21 +553,7 @@ def _valid_evidence(
             "current_python_pyqt6_stack": False,
             "description": "Separate legacy XP-capable native host toolchain",
         },
-        "host_identity": {
-            "schema_version": 1,
-            "target": target,
-            "release_tag": release_tag,
-            "host_label": f"xp-{arch}-lab-01",
-            "evidence_run_id": f"xp-{arch}-{release_tag.removeprefix('v').replace('.', '-')}-20260620t120000z",
-            "observed_at_utc": "2026-06-20T12:00:00Z",
-            "operator_private_data_redacted": True,
-            "os": dict(os_record),
-            "toolchain": {
-                "separate_legacy_toolchain": True,
-                "current_python_pyqt6_stack": False,
-                "description": "Separate legacy XP-capable native host toolchain",
-            },
-        },
+        "host_identity": host_identity,
         "artifact_validation": {
             "passed": True,
             "command": (
@@ -465,7 +570,9 @@ def _valid_evidence(
                 "command": (
                     f"scripts/xp_smoke_runner.cmd --target {target} --release-tag {release_tag} "
                     f"--smoke-id {smoke_id} --evidence-file xp-smoke-evidence/{smoke_id}.txt "
-                    f"--proof-file xp-smoke-proof/{smoke_id}.txt"
+                    f"--proof-file xp-smoke-proof/{smoke_id}.txt "
+                    f"--host-label {host_identity['host_label']} "
+                    f"--evidence-run-id {host_identity['evidence_run_id']}"
                 ),
                 "evidence_file": f"xp-smoke-evidence/{smoke_id}.txt",
                 "evidence_sha256": hashlib.sha256(smoke_id.encode()).hexdigest(),
@@ -487,6 +594,7 @@ def _valid_evidence(
 
 
 def _attach_smoke_evidence_files(root: Path, evidence: dict[str, Any]) -> None:
+    host_identity = evidence["host_identity"]
     for result in evidence["smoke_results"]:
         path = root / result["evidence_file"]
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -495,6 +603,8 @@ def _attach_smoke_evidence_files(root: Path, evidence: dict[str, Any]) -> None:
             f"xp smoke target: {evidence['target']}\n"
             f"xp smoke release: {evidence['release_tag']}\n"
             f"xp smoke id: {result['id']}\n"
+            f"xp smoke host label: {host_identity['host_label']}\n"
+            f"xp smoke evidence run id: {host_identity['evidence_run_id']}\n"
             f"{security_lines}"
             f"{result['id']} passed on Windows XP evidence host\n",
             encoding="utf-8",

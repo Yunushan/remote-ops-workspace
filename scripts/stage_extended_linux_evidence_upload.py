@@ -5,7 +5,7 @@ import hashlib
 import json
 import shutil
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -13,6 +13,9 @@ SCRIPTS = ROOT / "scripts"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
+from check_platform_review_bundle_artifacts import (  # noqa: E402
+    check_platform_review_bundle_artifacts,
+)
 from check_platform_verified_evidence import (  # noqa: E402
     EVIDENCE_PATH,
     LINUX_TARGETS,
@@ -23,9 +26,6 @@ from check_platform_verified_evidence import (  # noqa: E402
     promotion_entries_by_id,
     read_json,
     review_bundle_expected_files,
-)
-from check_platform_review_bundle_artifacts import (  # noqa: E402
-    check_platform_review_bundle_artifacts,
 )
 
 
@@ -89,7 +89,6 @@ def stage_extended_linux_evidence_upload(
     errors.extend(check_staging_path_separation(target, source_dir=source_dir, out_dir=out_dir))
     if errors:
         return errors
-
     sources = source_map(source_dir, expected_files)
     missing = sorted(name for name, path in sources.items() if not path.is_file())
     if missing:
@@ -104,6 +103,15 @@ def stage_extended_linux_evidence_upload(
     )
     errors.extend(final_record_errors)
     if final_record:
+        allowed_workspace_files = review_bundle_workspace_files(final_record, bundle_dir=source_dir)
+        errors.extend(
+            check_source_directory_entries(
+                target,
+                source_dir,
+                expected_files | allowed_workspace_files,
+                label="extended Linux evidence source directory",
+            )
+        )
         errors.extend(check_release_source_file_set(target, final_record, sources))
         errors.extend(check_source_hashes(target, final_record, sources))
         errors.extend(
@@ -228,6 +236,94 @@ def check_source_paths(target: str, sources: dict[str, Path]) -> list[str]:
                 )
             )
     return errors
+
+
+def check_source_directory_entries(
+    target: str,
+    root: Path,
+    expected_files: set[str],
+    *,
+    label: str,
+) -> list[str]:
+    allowed_entries = {filename for filename in expected_files if safe_relative_path(filename)}
+    for filename in list(allowed_entries):
+        allowed_entries.update(parent_directories(filename))
+    actual: set[str] = set()
+    symlinked: list[str] = []
+    for path in root.rglob("*"):
+        name = path.relative_to(root).as_posix()
+        actual.add(name)
+        if path.is_symlink():
+            symlinked.append(name)
+    errors: list[str] = []
+    if symlinked:
+        errors.append(f"{target} {label} contains symlinked entries: {sorted(symlinked)}")
+    unexpected = sorted(actual - allowed_entries)
+    if unexpected:
+        errors.append(f"{target} {label} contains files outside staged upload set: {unexpected}")
+    return errors
+
+
+def review_bundle_workspace_files(record: dict[str, Any], *, bundle_dir: Path) -> set[str]:
+    manifest = read_review_bundle_manifest(record, bundle_dir=bundle_dir)
+    if not manifest:
+        return set()
+    files: set[str] = set()
+    for raw_record in review_bundle_manifest_file_records(manifest):
+        if not isinstance(raw_record, dict):
+            continue
+        filename = str(raw_record.get("file", ""))
+        if safe_relative_path(filename):
+            files.add(filename)
+    return files
+
+
+def read_review_bundle_manifest(record: dict[str, Any], *, bundle_dir: Path) -> dict[str, Any] | None:
+    review_bundle = record.get("review_bundle")
+    if not isinstance(review_bundle, dict):
+        return None
+    manifest_record = review_bundle.get("manifest")
+    if not isinstance(manifest_record, dict):
+        return None
+    filename = str(manifest_record.get("file", ""))
+    if not safe_relative_path(filename):
+        return None
+    manifest_path = bundle_dir / filename
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    return manifest if isinstance(manifest, dict) else None
+
+
+def review_bundle_manifest_file_records(manifest: dict[str, Any]) -> list[Any]:
+    records: list[Any] = []
+    bundle_type = str(manifest.get("bundle_type", ""))
+    if bundle_type == "extended-linux-native-evidence":
+        records.extend([manifest.get("builder_evidence"), manifest.get("candidate_record")])
+        records.extend(manifest.get("smoke_evidence", []))
+        records.extend(manifest.get("artifacts", []))
+    elif bundle_type == "windows-xp-native-host-evidence":
+        records.extend([manifest.get("candidate_record"), manifest.get("evidence")])
+        records.extend(manifest.get("smoke_evidence", []))
+        records.extend(manifest.get("artifacts", []))
+    return records
+
+
+def safe_relative_path(filename: str) -> bool:
+    if not filename or filename.strip() != filename or "\\" in filename:
+        return False
+    parts = filename.split("/")
+    if any(part in ("", ".", "..") for part in parts):
+        return False
+    posix_path = PurePosixPath(filename)
+    windows_path = PureWindowsPath(filename)
+    return not posix_path.is_absolute() and not windows_path.is_absolute() and not windows_path.drive
+
+
+def parent_directories(filename: str) -> set[str]:
+    parts = filename.split("/")[:-1]
+    return {"/".join(parts[:index]) for index in range(1, len(parts) + 1)}
 
 
 def prepare_output_directory(target: str, *, out_dir: Path, force: bool) -> list[str]:

@@ -192,6 +192,25 @@ def test_extended_platform_dispatch_input_validator_rejects_cross_repo_inputs() 
     ) in errors
 
 
+def test_extended_platform_dispatch_input_validator_rejects_malformed_repo_slug() -> None:
+    checker = _load_script("check_extended_platform_dispatch_inputs")
+
+    errors = checker.check_extended_platform_dispatch_inputs(
+        target="linux-i386",
+        release_tag="v1.0.2",
+        release_asset_base_url=(
+            "https://github.com/example/remote-ops-workspace?download=1/releases/download/v1.0.2"
+        ),
+        workflow_run_url="https://github.com/example/remote-ops-workspace?run=1/actions/runs/12345",
+    )
+
+    assert (
+        "release_asset_base_url must be exactly "
+        "https://github.com/<owner>/<repo>/releases/download/v1.0.2"
+    ) in errors
+    assert "workflow_run_url must be a GitHub Actions run URL" in errors
+
+
 def test_extended_platform_builder_accepts_matching_i386(monkeypatch) -> None:
     checker = _load_script("check_extended_platform_builder")
     monkeypatch.setattr(checker.sys, "platform", "linux")

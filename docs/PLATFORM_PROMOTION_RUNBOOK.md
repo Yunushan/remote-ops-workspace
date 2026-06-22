@@ -32,7 +32,9 @@ The strict `--require-goal-targets` and `--require-platform-goal-targets`
 commands must fail until linux-i386, linux-armhf, windows-xp-native-x86 and
 windows-xp-native-x64 all have finalized accepted evidence records.
 When a release tag is supplied, all four accepted records must match that exact
-tag; stale evidence from a previous release cannot promote a newer release.
+tag, one GitHub release repository and one release source head SHA; stale
+evidence from a previous release, different repository or different source
+commit cannot promote a newer release.
 Every accepted release asset URL must use the same `/releases/download/<tag>/`
 segment as the record's `release_tag`.
 All release asset URLs in one accepted record must come from the same GitHub
@@ -142,8 +144,8 @@ Each accepted record must include the SHA-256 of the current
 promote readiness after required artifacts or evidence fields change.
 Accepted registry targets are unique. Windows XP native-host promotion requires
 the `windows-xp-native-x86` and `windows-xp-native-x64` records to use the same
-`release_tag`; mismatched XP release evidence remains partial and cannot promote
-the row.
+`release_tag`, GitHub release repository and release source head SHA; mismatched
+XP release evidence remains partial and cannot promote the row.
 Artifact validation checks names, non-empty payloads, exact SHA-256 sidecars,
 exact safe checksum/native-manifest file references, exact native manifest
 payload records and package/container file signatures. ZIP and tar.gz artifacts
@@ -156,14 +158,17 @@ directories, and contained files must be plain non-symlink paths.
 Windows XP native-host accepted records must also include the SHA-256 of the
 validated XP evidence JSON, the SHA-256 of the sanitized XP host identity, and
 tracked `scripts/xp_smoke_runner.cmd` per-smoke command provenance that binds
-the target, release tag, smoke id, evidence file and canonical
-`--proof-file xp-smoke-proof/<smoke_id>.txt` path for every smoke result.
+the target, release tag, smoke id, evidence file, canonical
+`--proof-file xp-smoke-proof/<smoke_id>.txt` path, sanitized `--host-label`
+and concrete `--evidence-run-id` for every smoke result.
 The accepted XP summary must carry `xp_evidence_summary.smoke_evidence_files`
 and each `xp_evidence_summary.smoke_commands` entry must bind `--evidence-file`
 to the matching summary file path and `--proof-file` to the canonical proof
-file path.
+file path, with `--host-label` and `--evidence-run-id` matching
+`xp_evidence_summary.host_identity`.
 Each smoke evidence file must also include `xp smoke target`, `xp smoke
-release` and `xp smoke id` proof lines.
+release`, `xp smoke id`, `xp smoke host label` and `xp smoke evidence run id`
+proof lines.
 They must be plain non-symlink files under `xp-smoke-evidence/` and include the
 SHA-256 values for each required smoke evidence file, so the registry stays
 tied to the reviewed XP VM/toolchain bundle without exposing real usernames,

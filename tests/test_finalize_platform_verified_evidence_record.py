@@ -18,7 +18,7 @@ def test_finalize_platform_verified_evidence_record_binds_review_bundle(tmp_path
     target = "linux-i386"
     release_tag = "v1.0.2"
     candidate = helpers._linux_record(target)
-    candidate.pop("review_bundle")
+    _unfinalized_candidate(candidate)
     artifact_archive_files = _attach_artifact_files(candidate)
     candidate_path = tmp_path / "platform-verified-evidence-linux-i386.json"
     candidate_path.write_text(json.dumps(candidate, indent=2) + "\n", encoding="utf-8")
@@ -39,6 +39,7 @@ def test_finalize_platform_verified_evidence_record_binds_review_bundle(tmp_path
         manifest_records={
             "promotion_config_sha256": candidate["promotion_config_sha256"],
             "release_asset_urls": candidate["release_asset_urls"],
+            "release_asset_source": candidate["release_asset_source"],
             "validated_commands": _linux_validated_commands(candidate),
             "workflow": candidate["workflow"],
             "workflow_inputs": candidate["workflow_inputs"],
@@ -98,7 +99,7 @@ def test_finalize_platform_verified_evidence_record_rejects_symlinked_candidate_
     target = "windows-xp-native-x86"
     release_tag = "v1.0.2"
     candidate = helpers._xp_record(target)
-    candidate.pop("review_bundle")
+    _unfinalized_candidate(candidate)
     candidate_path, manifest, archive, sidecar = _write_xp_candidate_and_bundle(
         tmp_path,
         candidate,
@@ -120,6 +121,35 @@ def test_finalize_platform_verified_evidence_record_rejects_symlinked_candidate_
 
     assert record == {}
     assert f"candidate evidence record file must not be a symlink: {candidate_path}" in errors
+
+
+def test_finalize_platform_verified_evidence_record_rejects_already_finalized_candidate(
+    tmp_path: Path,
+) -> None:
+    finalizer = _load_finalizer()
+    helpers = _load_platform_verified_evidence_tests()
+    target = "windows-xp-native-x86"
+    release_tag = "v1.0.2"
+    candidate = helpers._xp_record(target)
+    candidate_path, manifest, archive, sidecar = _write_xp_candidate_and_bundle(
+        tmp_path,
+        candidate,
+        target=target,
+        release_tag=release_tag,
+    )
+
+    errors, record = finalizer.finalize_platform_verified_evidence_record(
+        candidate_record=candidate_path,
+        bundle_manifest=manifest,
+        bundle_archive=archive,
+        bundle_sha256s=sidecar,
+    )
+
+    assert record == {}
+    assert (
+        "candidate evidence record must be unfinalized before finalization; "
+        "remove fields: ['finalized_record_release_asset_url', 'review_bundle']"
+    ) in errors
 
 
 def test_finalize_platform_verified_evidence_record_rejects_symlinked_input_parent(
@@ -202,7 +232,7 @@ def test_finalize_platform_verified_evidence_record_rejects_archive_missing_cand
     target = "linux-i386"
     release_tag = "v1.0.2"
     candidate = helpers._linux_record(target)
-    candidate.pop("review_bundle")
+    _unfinalized_candidate(candidate)
     artifact_archive_files = _attach_artifact_files(candidate)
     candidate_path = tmp_path / "platform-verified-evidence-linux-i386.json"
     candidate_path.write_text(json.dumps(candidate, indent=2) + "\n", encoding="utf-8")
@@ -223,6 +253,7 @@ def test_finalize_platform_verified_evidence_record_rejects_archive_missing_cand
         manifest_records={
             "promotion_config_sha256": candidate["promotion_config_sha256"],
             "release_asset_urls": candidate["release_asset_urls"],
+            "release_asset_source": candidate["release_asset_source"],
             "validated_commands": _linux_validated_commands(candidate),
             "workflow": candidate["workflow"],
             "workflow_inputs": candidate["workflow_inputs"],
@@ -260,7 +291,7 @@ def test_finalize_platform_verified_evidence_record_rejects_symlinked_archive_en
     target = "windows-xp-native-x86"
     release_tag = "v1.0.2"
     candidate = helpers._xp_record(target)
-    candidate.pop("review_bundle")
+    _unfinalized_candidate(candidate)
     candidate_path, manifest, archive, sidecar = _write_xp_candidate_and_bundle(
         tmp_path,
         candidate,
@@ -303,7 +334,7 @@ def test_finalize_platform_verified_evidence_record_rejects_weak_linux_smoke_log
     target = "linux-i386"
     release_tag = "v1.0.2"
     candidate = helpers._linux_record(target)
-    candidate.pop("review_bundle")
+    _unfinalized_candidate(candidate)
     artifact_archive_files = _attach_artifact_files(candidate)
     candidate_path = tmp_path / "platform-verified-evidence-linux-i386.json"
     builder_path = tmp_path / "builder-identity-linux-i386.json"
@@ -323,6 +354,7 @@ def test_finalize_platform_verified_evidence_record_rejects_weak_linux_smoke_log
         manifest_records={
             "promotion_config_sha256": candidate["promotion_config_sha256"],
             "release_asset_urls": candidate["release_asset_urls"],
+            "release_asset_source": candidate["release_asset_source"],
             "validated_commands": _linux_validated_commands(candidate),
             "workflow": candidate["workflow"],
             "workflow_inputs": candidate["workflow_inputs"],
@@ -366,7 +398,7 @@ def test_finalize_platform_verified_evidence_record_binds_xp_review_bundle(tmp_p
     target = "windows-xp-native-x86"
     release_tag = "v1.0.2"
     candidate = helpers._xp_record(target)
-    candidate.pop("review_bundle")
+    _unfinalized_candidate(candidate)
     candidate_path, manifest, archive, sidecar = _write_xp_candidate_and_bundle(
         tmp_path,
         candidate,
@@ -409,7 +441,7 @@ def test_finalize_platform_verified_evidence_record_rejects_xp_workflow_input_dr
     target = "windows-xp-native-x86"
     release_tag = "v1.0.2"
     candidate = helpers._xp_record(target)
-    candidate.pop("review_bundle")
+    _unfinalized_candidate(candidate)
     candidate_path, manifest, archive, sidecar = _write_xp_candidate_and_bundle(
         tmp_path,
         candidate,
@@ -438,7 +470,7 @@ def test_finalize_platform_verified_evidence_record_rejects_xp_summary_mismatch(
     target = "windows-xp-native-x86"
     release_tag = "v1.0.2"
     candidate = helpers._xp_record(target)
-    candidate.pop("review_bundle")
+    _unfinalized_candidate(candidate)
     candidate_path, manifest, archive, sidecar = _write_xp_candidate_and_bundle(
         tmp_path,
         candidate,
@@ -464,7 +496,7 @@ def test_finalize_platform_verified_evidence_record_rejects_xp_smoke_hash_mismat
     target = "windows-xp-native-x86"
     release_tag = "v1.0.2"
     candidate = helpers._xp_record(target)
-    candidate.pop("review_bundle")
+    _unfinalized_candidate(candidate)
 
     def corrupt_smoke_hash(evidence: dict[str, Any]) -> None:
         smoke_results = evidence["smoke_results"]
@@ -501,7 +533,7 @@ def test_finalize_platform_verified_evidence_record_rejects_xp_archived_smoke_bi
     target = "windows-xp-native-x64"
     release_tag = "v1.0.2"
     candidate = helpers._xp_record(target)
-    candidate.pop("review_bundle")
+    _unfinalized_candidate(candidate)
 
     def corrupt_smoke_binding(smoke_id: str, text: str) -> str:
         if smoke_id == "cli_launch":
@@ -538,7 +570,7 @@ def test_finalize_platform_verified_evidence_record_rejects_xp_archived_smoke_re
     target = "windows-xp-native-x64"
     release_tag = "v1.0.2"
     candidate = helpers._xp_record(target)
-    candidate.pop("review_bundle")
+    _unfinalized_candidate(candidate)
 
     def corrupt_smoke_release(smoke_id: str, text: str) -> str:
         if smoke_id == "cli_launch":
@@ -575,7 +607,7 @@ def test_finalize_platform_verified_evidence_record_rejects_xp_archived_security
     target = "windows-xp-native-x64"
     release_tag = "v1.0.2"
     candidate = helpers._xp_record(target)
-    candidate.pop("review_bundle")
+    _unfinalized_candidate(candidate)
 
     def remove_security_line(smoke_id: str, text: str) -> str:
         if smoke_id == "modern_defaults_unchanged":
@@ -612,7 +644,7 @@ def test_finalize_platform_verified_evidence_record_rejects_xp_manifest_host_ide
     target = "windows-xp-native-x86"
     release_tag = "v1.0.2"
     candidate = helpers._xp_record(target)
-    candidate.pop("review_bundle")
+    _unfinalized_candidate(candidate)
     candidate_path, manifest, archive, sidecar = _write_xp_candidate_and_bundle(
         tmp_path,
         candidate,
@@ -642,7 +674,7 @@ def test_finalize_platform_verified_evidence_record_rejects_xp_manifest_toolchai
     target = "windows-xp-native-x86"
     release_tag = "v1.0.2"
     candidate = helpers._xp_record(target)
-    candidate.pop("review_bundle")
+    _unfinalized_candidate(candidate)
     candidate_path, manifest, archive, sidecar = _write_xp_candidate_and_bundle(
         tmp_path,
         candidate,
@@ -672,7 +704,7 @@ def test_finalize_platform_verified_evidence_record_rejects_xp_manifest_security
     target = "windows-xp-native-x64"
     release_tag = "v1.0.2"
     candidate = helpers._xp_record(target)
-    candidate.pop("review_bundle")
+    _unfinalized_candidate(candidate)
     candidate_path, manifest, archive, sidecar = _write_xp_candidate_and_bundle(
         tmp_path,
         candidate,
@@ -700,7 +732,7 @@ def test_finalize_platform_verified_evidence_record_rejects_candidate_bundle_mis
     target = "linux-i386"
     release_tag = "v1.0.2"
     candidate = helpers._linux_record(target)
-    candidate.pop("review_bundle")
+    _unfinalized_candidate(candidate)
     artifact_archive_files = _attach_artifact_files(candidate)
     candidate_path = tmp_path / "platform-verified-evidence-linux-i386.json"
     candidate_path.write_text(json.dumps(candidate, indent=2) + "\n", encoding="utf-8")
@@ -725,6 +757,7 @@ def test_finalize_platform_verified_evidence_record_rejects_candidate_bundle_mis
         manifest_records={
             "promotion_config_sha256": candidate["promotion_config_sha256"],
             "release_asset_urls": candidate["release_asset_urls"],
+            "release_asset_source": candidate["release_asset_source"],
             "validated_commands": _linux_validated_commands(candidate),
             "workflow": candidate["workflow"],
             "workflow_inputs": candidate["workflow_inputs"],
@@ -760,7 +793,7 @@ def test_finalize_platform_verified_evidence_record_rejects_placeholder_validate
     finalizer = _load_finalizer()
     helpers = _load_platform_verified_evidence_tests()
     candidate = helpers._linux_record("linux-i386")
-    candidate.pop("review_bundle")
+    _unfinalized_candidate(candidate)
     manifest = {
         "bundle_type": "extended-linux-native-evidence",
         "validated_commands": [
@@ -785,7 +818,7 @@ def test_finalize_platform_verified_evidence_record_rejects_missing_linux_local_
     finalizer = _load_finalizer()
     helpers = _load_platform_verified_evidence_tests()
     candidate = helpers._linux_record("linux-i386")
-    candidate.pop("review_bundle")
+    _unfinalized_candidate(candidate)
     manifest = {
         "bundle_type": "extended-linux-native-evidence",
         "validated_commands": [
@@ -810,7 +843,7 @@ def test_finalize_platform_verified_evidence_record_rejects_release_asset_url_dr
     finalizer = _load_finalizer()
     helpers = _load_platform_verified_evidence_tests()
     candidate = helpers._linux_record("linux-i386")
-    candidate.pop("review_bundle")
+    _unfinalized_candidate(candidate)
     candidate_path = tmp_path / "platform-verified-evidence-linux-i386.json"
     candidate_path.write_text(json.dumps(candidate, indent=2) + "\n", encoding="utf-8")
     manifest = {
@@ -826,11 +859,126 @@ def test_finalize_platform_verified_evidence_record_rejects_release_asset_url_dr
     assert "review bundle manifest release_asset_urls must match candidate record" in errors
 
 
+def test_finalize_platform_verified_evidence_record_rejects_linux_release_source_drift(
+    tmp_path: Path,
+) -> None:
+    finalizer = _load_finalizer()
+    helpers = _load_platform_verified_evidence_tests()
+    candidate = helpers._linux_record("linux-i386")
+    _unfinalized_candidate(candidate)
+    candidate_path = tmp_path / "platform-verified-evidence-linux-i386.json"
+    candidate_path.write_text(json.dumps(candidate, indent=2) + "\n", encoding="utf-8")
+    release_source = dict(candidate["release_asset_source"])
+    release_source["head_sha"] = "b" * 40
+    manifest = {
+        "bundle_type": "extended-linux-native-evidence",
+        "promotion_config_sha256": candidate["promotion_config_sha256"],
+        "release_asset_urls": candidate["release_asset_urls"],
+        "release_asset_source": release_source,
+        "validated_commands": _linux_validated_commands(candidate),
+        "workflow": candidate["workflow"],
+        "workflow_inputs": candidate["workflow_inputs"],
+        "workflow_run_url": candidate["workflow_run_url"],
+        "runner_labels": candidate["runner_labels"],
+        "security_patch_evidence": candidate["builder_identity"]["security_patch_evidence"],
+        "builder_evidence": {
+            "file": "builder-identity-linux-i386.json",
+            "sha256": candidate["builder_identity_sha256"],
+            "size_bytes": 100,
+        },
+        "smoke_evidence": [
+            {
+                "id": "native_smoke",
+                "file": "native-smoke-linux-i386.log",
+                "sha256": candidate["linux_smoke_evidence_sha256"]["native_smoke"],
+                "size_bytes": 100,
+            }
+        ],
+        "candidate_record": _file_record(candidate_path),
+        "artifacts": _artifact_records(candidate),
+    }
+
+    errors = finalizer.check_candidate_manifest_binding(candidate_path, candidate, manifest)
+
+    assert "review bundle manifest release_asset_source must match candidate record" in errors
+
+
+def test_finalize_platform_verified_evidence_record_rejects_candidate_release_source_extra_file(
+    tmp_path: Path,
+) -> None:
+    finalizer = _load_finalizer()
+    helpers = _load_platform_verified_evidence_tests()
+    target = "windows-xp-native-x86"
+    release_tag = "v1.0.2"
+    candidate = helpers._xp_record(target)
+    _unfinalized_candidate(candidate)
+    source = candidate["release_asset_source"]
+    assert isinstance(source, dict)
+    source["contains_files"] = [*source["contains_files"], "operator-notes.txt"]
+    candidate_path, manifest, archive, sidecar = _write_xp_candidate_and_bundle(
+        tmp_path,
+        candidate,
+        target=target,
+        release_tag=release_tag,
+    )
+
+    errors, record = finalizer.finalize_platform_verified_evidence_record(
+        candidate_record=candidate_path,
+        bundle_manifest=manifest,
+        bundle_archive=archive,
+        bundle_sha256s=sidecar,
+    )
+
+    assert record == {}
+    assert (
+        "candidate release_asset_source.contains_files has files outside finalizable release source: "
+        "['operator-notes.txt']"
+    ) in errors
+
+
+def test_finalize_platform_verified_evidence_record_rejects_candidate_release_source_missing_artifact(
+    tmp_path: Path,
+) -> None:
+    finalizer = _load_finalizer()
+    helpers = _load_platform_verified_evidence_tests()
+    target = "windows-xp-native-x86"
+    release_tag = "v1.0.2"
+    candidate = helpers._xp_record(target)
+    _unfinalized_candidate(candidate)
+    missing_artifact = sorted(candidate["artifact_sha256"])[0]
+    source = candidate["release_asset_source"]
+    assert isinstance(source, dict)
+    source["contains_files"] = [
+        filename
+        for filename in source["contains_files"]
+        if filename != missing_artifact
+    ]
+    candidate_path, manifest, archive, sidecar = _write_xp_candidate_and_bundle(
+        tmp_path,
+        candidate,
+        target=target,
+        release_tag=release_tag,
+    )
+
+    errors, record = finalizer.finalize_platform_verified_evidence_record(
+        candidate_record=candidate_path,
+        bundle_manifest=manifest,
+        bundle_archive=archive,
+        bundle_sha256s=sidecar,
+    )
+
+    assert record == {}
+    assert (
+        "candidate release_asset_source.contains_files missing native artifacts: "
+        f"['{missing_artifact}']"
+    ) in errors
+
+
 def test_finalize_platform_verified_evidence_record_rejects_path_qualified_candidate_release_url() -> None:
     finalizer = _load_finalizer()
     helpers = _load_platform_verified_evidence_tests()
     candidate = helpers._linux_record("linux-i386")
-    candidate.pop("review_bundle")
+    _unfinalized_candidate(candidate)
     candidate["release_asset_urls"][0] = candidate["release_asset_urls"][0].replace(
         "/releases/download/v1.0.2/",
         "/releases/download/v1.0.2/nested/",
@@ -854,7 +1002,7 @@ def test_finalize_platform_verified_evidence_record_rejects_missing_xp_validatio
     finalizer = _load_finalizer()
     helpers = _load_platform_verified_evidence_tests()
     candidate = helpers._xp_record("windows-xp-native-x86")
-    candidate.pop("review_bundle")
+    _unfinalized_candidate(candidate)
     manifest = {
         "bundle_type": "windows-xp-native-host-evidence",
         "validated_commands": [
@@ -874,7 +1022,7 @@ def test_finalize_platform_verified_evidence_record_rejects_missing_xp_local_pre
     finalizer = _load_finalizer()
     helpers = _load_platform_verified_evidence_tests()
     candidate = helpers._xp_record("windows-xp-native-x86")
-    candidate.pop("review_bundle")
+    _unfinalized_candidate(candidate)
     manifest = {
         "bundle_type": "windows-xp-native-host-evidence",
         "validated_commands": [
@@ -896,7 +1044,7 @@ def test_finalize_platform_verified_evidence_record_rejects_xp_validation_comman
     finalizer = _load_finalizer()
     helpers = _load_platform_verified_evidence_tests()
     candidate = helpers._xp_record("windows-xp-native-x86")
-    candidate.pop("review_bundle")
+    _unfinalized_candidate(candidate)
     manifest = {
         "bundle_type": "windows-xp-native-host-evidence",
         "validated_commands": [
@@ -918,7 +1066,7 @@ def test_finalize_platform_verified_evidence_record_rejects_sidecar_mismatch(tmp
     target = "windows-xp-native-x86"
     release_tag = "v1.0.2"
     candidate = helpers._xp_record(target)
-    candidate.pop("review_bundle")
+    _unfinalized_candidate(candidate)
     candidate_path = tmp_path / "platform-verified-evidence-windows-xp-native-x86.json"
     candidate_path.write_text(json.dumps(candidate, indent=2) + "\n", encoding="utf-8")
     manifest, archive, sidecar = _write_bundle_files(
@@ -1059,13 +1207,14 @@ def test_finalize_platform_verified_evidence_record_rejects_linux_manifest_evide
     helpers = _load_platform_verified_evidence_tests()
     target = "linux-i386"
     candidate = helpers._linux_record(target)
-    candidate.pop("review_bundle")
+    _unfinalized_candidate(candidate)
     candidate_path = tmp_path / "platform-verified-evidence-linux-i386.json"
     candidate_path.write_text(json.dumps(candidate, indent=2) + "\n", encoding="utf-8")
     manifest = {
         "bundle_type": "extended-linux-native-evidence",
         "promotion_config_sha256": candidate["promotion_config_sha256"],
         "release_asset_urls": candidate["release_asset_urls"],
+        "release_asset_source": candidate["release_asset_source"],
         "validated_commands": _linux_validated_commands(candidate),
         "workflow": candidate["workflow"],
         "workflow_inputs": candidate["workflow_inputs"],
@@ -1093,6 +1242,11 @@ def test_finalize_platform_verified_evidence_record_rejects_linux_manifest_evide
 
     assert "review bundle manifest builder_evidence.file must be builder-identity-linux-i386.json" in errors
     assert "review bundle manifest native_smoke file must be native-smoke-linux-i386.log" in errors
+
+
+def _unfinalized_candidate(candidate: dict[str, object]) -> None:
+    candidate.pop("review_bundle", None)
+    candidate.pop("finalized_record_release_asset_url", None)
 
 
 def _write_bundle_files(
@@ -1161,6 +1315,10 @@ def _write_xp_candidate_and_bundle(
 ) -> tuple[Path, Path, Path, Path]:
     smoke_hashes = candidate["xp_smoke_evidence_sha256"]
     assert isinstance(smoke_hashes, dict)
+    summary = candidate["xp_evidence_summary"]
+    assert isinstance(summary, dict)
+    host_identity = summary["host_identity"]
+    assert isinstance(host_identity, dict)
     smoke_records: list[dict[str, object]] = []
     archive_files: dict[str, bytes] = {}
     for smoke_id in sorted(smoke_hashes):
@@ -1170,6 +1328,8 @@ def _write_xp_candidate_and_bundle(
             f"xp smoke target: {target}\n"
             f"xp smoke release: {release_tag}\n"
             f"xp smoke id: {smoke_id}\n"
+            f"xp smoke host label: {host_identity['host_label']}\n"
+            f"xp smoke evidence run id: {host_identity['evidence_run_id']}\n"
             f"{_xp_security_smoke_lines(str(smoke_id))}"
             f"{smoke_id} smoke evidence\n"
         )
@@ -1330,6 +1490,8 @@ def _write_linux_smoke_evidence(
     source_head_sha: str = "a" * 40,
 ) -> None:
     arch = "i386" if target == "linux-i386" else "armhf"
+    machine = "i686" if target == "linux-i386" else "armv7l"
+    dpkg_arch = "i386" if target == "linux-i386" else "armhf"
     artifact_lines = [
         f"native installer smoke artifact sha256: {name} {artifact_hashes[name]}"
         for name in sorted(artifact_hashes)
@@ -1346,6 +1508,9 @@ def _write_linux_smoke_evidence(
                 f"native installer smoke target: {target}",
                 f"native installer smoke workflow run: {workflow_run_url}",
                 f"native installer smoke source head sha: {source_head_sha}",
+                f"native installer smoke uname machine: {machine}",
+                f"native installer smoke dpkg architecture: {dpkg_arch}",
+                "native installer smoke userland bits: 32",
                 *artifact_lines,
                 "native installer smoke: DEB install",
                 "native installer smoke: DEB verify",

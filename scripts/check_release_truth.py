@@ -43,6 +43,7 @@ REQUIRED_TURKISH_DOC_SNIPPETS = (
     "python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets",
     "python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --require-platform-goal-targets",
     "Linux i386, Linux armhf, windows-xp-native-x86 ve windows-xp-native-x64",
+    "ayni GitHub release repository ve ayni release source head SHA",
     "Windows XP native-host readiness 25.0%",
 )
 
@@ -53,6 +54,8 @@ REQUIRED_README_RELEASE_SECTION_SNIPPETS = (
     "python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets",
     "Linux i386, Linux armhf, windows-xp-native-x86",
     "windows-xp-native-x64 require finalized accepted evidence records",
+    "same release tag, GitHub release repository and release",
+    "source head SHA before any 100% platform-readiness",
     "python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --require-platform-goal-targets",
     "configs/platform_verified_evidence.json",
     "accepted review-bundle hashes",
@@ -178,6 +181,10 @@ def check_accepted_platform_evidence_assets_job(workflow: str) -> list[str]:
             'python scripts/import_platform_evidence_artifacts.py --release-tag "${{ github.ref_name }}" '
             "--require-goal-targets --out-dir release-assets"
         ): "accepted platform evidence artifact importer",
+        (
+            'python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets '
+            '--require-goal-targets --release-tag "${{ github.ref_name }}"'
+        ): "imported platform review bundle validator",
         "name: release-platform-evidence-assets": "platform evidence release asset artifact name",
         "path: release-assets/*": "platform evidence release asset upload path",
         "if-no-files-found: error": "platform evidence upload must fail when empty",
@@ -213,16 +220,16 @@ def check_release_docs() -> list[str]:
     turkish_readme = normalize_markdown_pipes(read("README.tr.md"))
     readme_release_section = bounded_section(readme, "The release workflow also starts", "Release phases:")
     for snippet in REQUIRED_DOC_SNIPPETS:
-        if snippet not in docs:
+        if not contains_snippet(docs, snippet):
             errors.append(f"release docs missing workflow artifact truth snippet: {snippet}")
     if not readme_release_section:
         errors.append("README.md missing release workflow truth section")
     else:
         for snippet in REQUIRED_README_RELEASE_SECTION_SNIPPETS:
-            if snippet not in readme_release_section:
+            if not contains_snippet(readme_release_section, snippet):
                 errors.append(f"README.md release section missing protected platform evidence truth snippet: {snippet}")
     for snippet in REQUIRED_TURKISH_DOC_SNIPPETS:
-        if snippet not in turkish_readme:
+        if not contains_snippet(turkish_readme, snippet):
             errors.append(f"README.tr.md missing protected platform evidence truth snippet: {snippet}")
     for snippet in STALE_TURKISH_RELEASE_SNIPPETS:
         if snippet in turkish_readme:
@@ -240,6 +247,14 @@ def workflow_job_block(workflow: str, job: str) -> str:
 
 def normalize_markdown_pipes(text: str) -> str:
     return text.replace("\\|", "|")
+
+
+def contains_snippet(text: str, snippet: str) -> bool:
+    return normalize_snippet_text(snippet) in normalize_snippet_text(text)
+
+
+def normalize_snippet_text(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def bounded_section(text: str, start: str, end: str) -> str:

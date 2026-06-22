@@ -105,8 +105,9 @@ rows. The strict promotion path is
 and `python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> --release-assets-dir <release-assets-dir>`;
 those commands must fail until linux-i386, linux-armhf,
 windows-xp-native-x86 and windows-xp-native-x64 all have accepted records for
-the same release tag. Mixed-release accepted records remain aggregate evidence
-only and cannot complete the protected goal parity block.
+the same release tag, same GitHub release repository and same release source head
+SHA. Mixed-tag, mixed-repository or mixed-source-head accepted records remain
+aggregate evidence only and cannot complete the protected goal parity block.
 Generate candidate accepted records with
 `python scripts/make_platform_verified_evidence_record.py` after artifact and
 XP evidence validators pass; package the review bundle, then use
@@ -174,12 +175,15 @@ tracked `scripts/xp_smoke_runner.cmd` per-smoke command provenance in
 `xp_evidence_summary.smoke_commands`,
 `xp_evidence_summary.smoke_evidence_files` bindings that match each
 `--evidence-file` command argument, canonical
-`--proof-file xp-smoke-proof/<smoke_id>.txt` command bindings,
+`--proof-file xp-smoke-proof/<smoke_id>.txt` command bindings, and
+`--host-label` plus `--evidence-run-id` command bindings that match
+`xp_evidence_summary.host_identity`,
 `xp_smoke_evidence_sha256` for each required smoke evidence file, and
 `xp_evidence_contract_sha256` for the
 current XP evidence contract. Each smoke evidence file must include proof lines
-for `xp smoke target`, `xp smoke release` and `xp smoke id`, so copied evidence
-from another target, smoke or release tag cannot promote; smoke evidence paths
+for `xp smoke target`, `xp smoke release`, `xp smoke id`, `xp smoke host label`
+and `xp smoke evidence run id`, so copied evidence from another target, smoke,
+release tag, lab host or evidence run cannot promote; smoke evidence paths
 must also be plain non-symlink files under `xp-smoke-evidence/`. The current XP
 evidence contract requires XP x86
 SP3 evidence and Windows XP Professional x64 Edition SP2 evidence before either
@@ -269,8 +273,9 @@ Current readiness:
   that validated bundle.
   Each required XP smoke result must reference a bundled evidence file, resolved
   relative to the evidence JSON directory unless `--evidence-dir` is supplied,
-  must record the concrete command/action that produced that evidence, and the
-  recorded SHA-256 must match that file.
+  must record the concrete command/action that produced that evidence, must bind
+  the sanitized host label and evidence run ID in both the command and smoke
+  file, and the recorded SHA-256 must match that file.
 
 The broad support catalog is exposed with:
 

@@ -88,6 +88,9 @@ def make_extended_linux_evidence_bundle(
     candidate = load_json(candidate_record, "candidate evidence record", errors)
     if builder_identity is None or candidate is None:
         return errors
+    errors.extend(check_candidate_is_unfinalized(candidate))
+    if errors:
+        return errors
     errors.extend(check_linux_evidence_file_names(target, builder_evidence, smoke_evidence, candidate_record))
     if not smoke_evidence.is_file():
         errors.append(f"smoke evidence file missing: {smoke_evidence}")
@@ -99,14 +102,15 @@ def make_extended_linux_evidence_bundle(
         errors.append(f"bundle release_tag {release_tag} must match candidate release_tag {candidate.get('release_tag')!r}")
 
     promotion = read_json(ROOT / "configs" / "platform_parity_promotion.json")
-    errors.extend(
-        check_platform_promotion_artifacts(
-            target=target,
-            assets_dir=assets_dir,
-            tag=release_tag,
-            strict=True,
-        )
+    artifact_errors = check_platform_promotion_artifacts(
+        target=target,
+        assets_dir=assets_dir,
+        tag=release_tag,
+        strict=True,
     )
+    errors.extend(artifact_errors)
+    if artifact_errors:
+        return errors
     registry = {
         "schema_version": 1,
         "policy": platform_evidence_policy(),
@@ -196,11 +200,26 @@ def check_input_symlinks(
         "smoke evidence": smoke_evidence,
         "candidate evidence record": candidate_record,
     }
-    return [
-        f"{label} file must not be a symlink: {path}"
-        for label, path in inputs.items()
-        if path.is_symlink()
-    ]
+    errors: list[str] = []
+    for label, path in inputs.items():
+        if path.is_symlink():
+            errors.append(f"{label} file must not be a symlink: {path}")
+        errors.extend(check_path_parent_symlinks(path, f"{label} file"))
+    return errors
+
+
+def check_candidate_is_unfinalized(candidate: dict[str, Any]) -> list[str]:
+    finalized_fields = sorted(
+        field
+        for field in ("finalized_record_release_asset_url", "review_bundle")
+        if field in candidate
+    )
+    if finalized_fields:
+        return [
+            "candidate evidence record must be unfinalized before bundling; "
+            f"remove fields: {finalized_fields}"
+        ]
+    return []
 
 
 def prepare_output_paths(*, out_dir: Path, outputs: tuple[Path, ...], force: bool) -> list[str]:
@@ -324,6 +343,7 @@ def bundle_manifest(
             "python scripts/check_platform_verified_evidence.py",
         ],
         "release_asset_urls": candidate.get("release_asset_urls", []),
+        "release_asset_source": candidate.get("release_asset_source", {}),
         "promotion_config_sha256": promotion_config_sha256(promotion),
         "workflow": candidate.get("workflow", ""),
         "workflow_inputs": candidate.get("workflow_inputs", {}),

@@ -38,8 +38,12 @@ Release integrity rules:
   after downloading workflow artifacts and before uploading the GitHub release.
   The protected-platform asset job first runs
   `python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets`
-  to import only same-tag accepted Linux i386, Linux armhf and Windows XP
-  native-host artifacts from their verified evidence workflow runs.
+  to import only same-tag, same-repository and source-head-bound accepted Linux
+  i386, Linux armhf and Windows XP native-host artifacts from their verified
+  evidence workflow runs, then runs
+  `python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag <tag>`
+  against the imported review bundles before uploading the platform evidence
+  asset set.
   The importer rejects symlinked downloaded-artifact/output roots, symlinked
   parent directories and symlinked destinations before copying into
   `release-assets`.
@@ -50,7 +54,8 @@ Release integrity rules:
   evidence and the MobaXterm parity accepted-evidence registry. The protected
   platform goal flag makes release upload fail until Linux i386, Linux armhf,
   Windows XP native x86 and Windows XP native x64 all have finalized accepted
-  evidence for the same release tag. Use
+  evidence for the same release tag, GitHub release repository and release
+  source head SHA. Use
   `--require-mobaxterm-parity-complete` only for releases that explicitly claim
   complete strict MobaXterm Home/Professional product-depth parity.
 - CI build jobs run with read-only repository contents permission and checkout
@@ -214,11 +219,12 @@ The XP evidence JSON must be bundled with per-smoke evidence files for
 `artifact_manifest_validation`, `legacy_crypto_profile_scoped` and
 `modern_defaults_unchanged`; the validator resolves each relative
 `evidence_file` path, requires a concrete `scripts/xp_smoke_runner.cmd`
-command on each smoke result that binds the target, release tag, smoke id and
-evidence file plus canonical `--proof-file xp-smoke-proof/<smoke_id>.txt`,
+command on each smoke result that binds the target, release tag, smoke id,
+evidence file, canonical `--proof-file xp-smoke-proof/<smoke_id>.txt`,
+sanitized `--host-label` and concrete `--evidence-run-id`,
 requires each smoke evidence file to include `xp smoke target`,
-`xp smoke release` and `xp smoke id` proof lines, and checks the recorded
-SHA-256.
+`xp smoke release`, `xp smoke id`, `xp smoke host label` and
+`xp smoke evidence run id` proof lines, and checks the recorded SHA-256.
 Accepted XP records generated from that bundle must include `xp_evidence_sha256`
 for the evidence JSON, `xp_evidence_summary` for the XP target/release/toolchain/security/smoke
 binding, `workflow=.github/workflows/xp-native-evidence.yml` and
@@ -235,7 +241,8 @@ for `legacy_crypto_profile_scoped` and `modern_defaults_unchanged`, tracked
 bindings that match each `--evidence-file` command argument, and
 canonical `--proof-file xp-smoke-proof/<smoke_id>.txt` command bindings,
 `xp_host_identity_sha256` for the sanitized host identity in
-`xp_evidence_summary.host_identity`, `xp_smoke_evidence_sha256` for every
+`xp_evidence_summary.host_identity`, `--host-label` and `--evidence-run-id`
+smoke command bindings that match that identity, `xp_smoke_evidence_sha256` for every
 required smoke evidence file, plus `xp_evidence_contract_sha256` for the current
 `configs/xp_native_evidence_contract.json`.
 Both XP x86 and XP x64 accepted records must be present in

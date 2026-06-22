@@ -37,9 +37,6 @@ def test_stage_xp_native_evidence_upload_copies_only_expected_files(tmp_path: Pa
         assets,
         evidence_output,
     )
-    private_dir = assets / "operator-private"
-    private_dir.mkdir()
-    (private_dir / "local-admin-notes.txt").write_text("must not be uploaded\n", encoding="utf-8")
 
     errors = stager.stage_xp_native_evidence_upload(
         target=target,
@@ -53,8 +50,55 @@ def test_stage_xp_native_evidence_upload_copies_only_expected_files(tmp_path: Pa
     assert sorted(path.name for path in staged.iterdir()) == sorted(
         {*expected_assets, *expected_evidence}
     )
-    assert not (staged / "operator-private").exists()
-    assert not (staged / "local-admin-notes.txt").exists()
+
+
+def test_stage_xp_native_evidence_upload_rejects_extra_source_entries(tmp_path: Path) -> None:
+    stager = _load_stager()
+    checker = _load_platform_promotion_artifacts_checker()
+    target = "windows-xp-native-x86"
+    tag = f"v{checker.read_project_version()}"
+    assets = tmp_path / "assets"
+    evidence_output = tmp_path / "xp-evidence-output"
+    assets.mkdir()
+    evidence_output.mkdir()
+    expected_assets = _required_artifact_names(checker, target, tag)
+    expected_evidence = [
+        f"xp-native-evidence-bundle-{target}-{tag}.json",
+        f"xp-native-evidence-bundle-{target}-{tag}.zip",
+        f"xp-native-evidence-bundle-{target}-{tag}-SHA256SUMS.txt",
+        f"platform-verified-evidence-{target}-final.json",
+    ]
+    for name in expected_assets:
+        (assets / name).write_bytes(f"{name}\n".encode())
+    for name in expected_evidence:
+        if name == f"platform-verified-evidence-{target}-final.json":
+            continue
+        (evidence_output / name).write_bytes(f"{name}\n".encode())
+    _write_xp_final_record(
+        evidence_output / f"platform-verified-evidence-{target}-final.json",
+        target,
+        assets,
+        evidence_output,
+    )
+    (assets / "operator-private").mkdir()
+    (evidence_output / "xp-smoke-working-copy.txt").write_text("raw smoke proof\n", encoding="utf-8")
+
+    errors = stager.stage_xp_native_evidence_upload(
+        target=target,
+        release_tag=tag,
+        assets_dir=assets,
+        evidence_output_dir=evidence_output,
+        out_dir=tmp_path / "upload",
+    )
+
+    assert (
+        "windows-xp-native-x86 XP native asset directory contains files outside staged upload set: "
+        "['operator-private']"
+    ) in errors
+    assert (
+        "windows-xp-native-x86 XP evidence output directory contains files outside staged upload set: "
+        "['xp-smoke-working-copy.txt']"
+    ) in errors
 
 
 def test_stage_xp_native_evidence_upload_rejects_hash_mismatch(tmp_path: Path) -> None:

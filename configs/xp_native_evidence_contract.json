@@ -41,7 +41,9 @@
     "--release-tag <release_tag>",
     "--smoke-id <smoke_id>",
     "--evidence-file <evidence_file>",
-    "--proof-file xp-smoke-proof/<smoke_id>.txt"
+    "--proof-file xp-smoke-proof/<smoke_id>.txt",
+    "--host-label <host_label>",
+    "--evidence-run-id <evidence_run_id>"
   ],
   "required_smoke_command_prefix": "scripts/xp_smoke_runner.cmd",
   "smoke_evidence_root": "Evidence files are resolved relative to the evidence JSON directory unless --evidence-dir is provided.",
@@ -49,7 +51,9 @@
   "required_smoke_evidence_binding_lines": [
     "xp smoke target: <target>",
     "xp smoke release: <release_tag>",
-    "xp smoke id: <smoke_id>"
+    "xp smoke id: <smoke_id>",
+    "xp smoke host label: <host_label>",
+    "xp smoke evidence run id: <evidence_run_id>"
   ],
   "required_security_smoke_evidence_lines": {
     "legacy_crypto_profile_scoped": [

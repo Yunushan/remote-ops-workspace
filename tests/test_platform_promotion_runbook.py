@@ -62,6 +62,34 @@ def test_platform_promotion_runbook_requires_bundle_backed_strict_verify() -> No
     assert any("--release-assets-dir <release-assets-dir>" in error for error in errors)
 
 
+def test_platform_promotion_runbook_requires_asset_backed_strict_publish() -> None:
+    checker = _load_checker()
+    text = Path("docs/PLATFORM_PROMOTION_RUNBOOK.md").read_text(encoding="utf-8").replace(
+        (
+            "python scripts/check_release_publish_assets.py --assets-dir <release-assets-dir> "
+            "--tag v<project.version> --require-platform-goal-targets"
+        ),
+        "python scripts/check_release_publish_assets.py --require-platform-goal-targets",
+    )
+
+    errors = checker.check_platform_promotion_runbook(runbook_text=text)
+
+    assert any("--assets-dir <release-assets-dir>" in error for error in errors)
+    assert any("--tag v<project.version>" in error for error in errors)
+
+
+def test_platform_promotion_runbook_requires_strict_verify_import_dry_run() -> None:
+    checker = _load_checker()
+    text = Path("docs/PLATFORM_PROMOTION_RUNBOOK.md").read_text(encoding="utf-8").replace(
+        "python scripts/import_platform_evidence_artifacts.py --dry-run",
+        "python scripts/import_platform_evidence_artifacts.py",
+    )
+
+    errors = checker.check_platform_promotion_runbook(runbook_text=text)
+
+    assert any("import_platform_evidence_artifacts.py --dry-run" in error for error in errors)
+
+
 def test_platform_promotion_runbook_requires_staged_upload_hash_binding() -> None:
     checker = _load_checker()
     snippet = "staged native artifacts and review-bundle files must match the finalized accepted record hashes"
@@ -164,6 +192,21 @@ def test_platform_promotion_runbook_requires_linux_builder_source_head_sha() -> 
     errors = checker.check_platform_promotion_runbook(runbook_text=text)
 
     assert any("--source-head-sha <github-actions-head-sha>" in error for error in errors)
+
+
+def test_platform_promotion_runbook_requires_linux_security_boundaries() -> None:
+    checker = _load_checker()
+    promotion = json.loads(Path("configs/platform_parity_promotion.json").read_text(encoding="utf-8"))
+    target = next(item for item in promotion["protected_targets"] if item["id"] == "linux-i386")
+    security_requirement = target["promotion_to_100_requires"]["security_requirements"][1]
+    text = Path("docs/PLATFORM_PROMOTION_RUNBOOK.md").read_text(encoding="utf-8").replace(
+        security_requirement,
+        "",
+    )
+
+    errors = checker.check_platform_promotion_runbook(runbook_text=text, promotion=promotion)
+
+    assert f"linux-i386 runbook missing security requirement: {security_requirement}" in errors
 
 
 def test_platform_promotion_runbook_requires_exact_candidate_command() -> None:

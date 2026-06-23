@@ -8,6 +8,12 @@ from remote_ops_workspace.features import (
     load_feature_manifest,
 )
 
+LINUX_SECURITY_REQUIREMENTS = [
+    "security patch evidence proving TLS 1.3 preferred, TLS 1.2 minimum, "
+    "isolated legacy compatibility and CVE patch review",
+    "modern Windows 10/11, Linux, and macOS defaults must keep hardened crypto",
+]
+
 REQUESTED_PRODUCTS = {
     "Apache Guacamole",
     "Bitvise SSH Client",
@@ -254,6 +260,8 @@ def test_platform_verified_readiness_tracks_partial_targets() -> None:
     assert "artifact_validation_command" in requirements["linux-i386"]["required_commands"]
     assert "local_evidence_preflight_command" in requirements["linux-i386"]["required_commands"]
     assert "check_platform_goal_local_evidence.py" in requirements["linux-i386"]["required_commands"]["local_evidence_preflight_command"]
+    assert requirements["linux-i386"]["security_requirements"] == LINUX_SECURITY_REQUIREMENTS
+    assert requirements["linux-armhf"]["security_requirements"] == LINUX_SECURITY_REQUIREMENTS
     assert requirements["windows-xp-native-x86"]["security_requirements"] == [
         "legacy TLS, SSH, and RDP compatibility must remain profile-scoped opt-in",
         "modern Windows 10/11, Linux, and macOS defaults must keep hardened crypto",
@@ -839,7 +847,7 @@ def test_platform_verified_readiness_ignores_duplicate_artifact_validation_tag()
     record = _linux_accepted_evidence("linux-i386")
     record["artifact_validation_command"] = (
         "python scripts/check_platform_promotion_artifacts.py --target linux-i386 "
-        "--assets-dir native-dist/linux --tag v1.0.2 --strict --tag v9.9.9"
+        "--assets-dir staged/linux-i386/v1.0.2/artifacts --tag v1.0.2 --strict --tag v9.9.9"
     )
 
     report = _platform_verified_readiness(
@@ -954,6 +962,106 @@ def test_platform_verified_readiness_ignores_linux_local_preflight_allow_extra_a
     assert rows["linux-i386"]["current_percent"] == 70.0
     assert rows["linux-i386"]["status"] == "manual-script-supported"
     assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
+
+
+def test_platform_verified_readiness_accepts_scoped_linux_local_preflight_root() -> None:
+    target = "linux-i386"
+    record = _linux_accepted_evidence(target)
+    assets_dir = f"platform-evidence-staging/{target}/v1.0.2/artifacts"
+    builder = f"platform-evidence-staging/{target}/v1.0.2/builder-identity-{target}.json"
+    smoke = f"platform-evidence-staging/{target}/v1.0.2/native-smoke-{target}.log"
+    record["artifact_validation_command"] = (
+        f"python scripts/check_platform_promotion_artifacts.py --target {target} "
+        f"--assets-dir {assets_dir} --tag v1.0.2 --strict"
+    )
+    record["local_evidence_preflight_command"] = (
+        "python scripts/check_platform_goal_local_evidence.py --root platform-evidence-staging "
+        f"--release-tag v1.0.2 --target {target} --assets-dir {assets_dir} "
+        f"--linux-builder-evidence {builder} "
+        f"--linux-smoke-evidence {smoke} "
+        "--linux-workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
+        f"--linux-source-head-sha {'a' * 40}"
+    )
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows[target]["current_percent"] == 100.0
+    assert rows[target]["status"] == "verified-accepted-native-evidence"
+    assert rows[target]["accepted_evidence_missing_targets"] == []
+
+
+def test_platform_verified_readiness_rejects_linux_preflight_paths_outside_root() -> None:
+    target = "linux-i386"
+    record = _linux_accepted_evidence(target)
+    record["local_evidence_preflight_command"] = str(
+        record["local_evidence_preflight_command"]
+    ).replace("--root .", "--root platform-evidence-staging")
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows[target]["current_percent"] == 70.0
+    assert rows[target]["status"] == "manual-script-supported"
+    assert rows[target]["accepted_evidence_missing_targets"] == [target]
+
+
+def test_platform_verified_readiness_rejects_file_shaped_local_preflight_root() -> None:
+    target = "linux-i386"
+    record = _linux_accepted_evidence(target)
+    assets_dir = f"platform-evidence.zip/{target}/v1.0.2/artifacts"
+    builder = f"platform-evidence.zip/{target}/v1.0.2/builder-identity-{target}.json"
+    smoke = f"platform-evidence.zip/{target}/v1.0.2/native-smoke-{target}.log"
+    record["artifact_validation_command"] = (
+        f"python scripts/check_platform_promotion_artifacts.py --target {target} "
+        f"--assets-dir {assets_dir} --tag v1.0.2 --strict"
+    )
+    record["local_evidence_preflight_command"] = (
+        "python scripts/check_platform_goal_local_evidence.py --root platform-evidence.zip "
+        f"--release-tag v1.0.2 --target {target} --assets-dir {assets_dir} "
+        f"--linux-builder-evidence {builder} "
+        f"--linux-smoke-evidence {smoke} "
+        "--linux-workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
+        f"--linux-source-head-sha {'a' * 40}"
+    )
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows[target]["current_percent"] == 70.0
+    assert rows[target]["status"] == "manual-script-supported"
+    assert rows[target]["accepted_evidence_missing_targets"] == [target]
+
+
+def test_platform_verified_readiness_rejects_unscoped_linux_artifact_validation_assets_dir() -> None:
+    target = "linux-i386"
+    record = _linux_accepted_evidence(target)
+    record["artifact_validation_command"] = (
+        f"python scripts/check_platform_promotion_artifacts.py --target {target} "
+        "--assets-dir native-dist/linux --tag v1.0.2 --strict"
+    )
+    record["local_evidence_preflight_command"] = str(
+        record["local_evidence_preflight_command"]
+    ).replace(f"--assets-dir staged/{target}/v1.0.2/artifacts", "--assets-dir native-dist/linux")
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows[target]["current_percent"] == 70.0
+    assert rows[target]["status"] == "manual-script-supported"
+    assert rows[target]["accepted_evidence_missing_targets"] == [target]
 
 
 def test_platform_verified_readiness_ignores_xp_local_preflight_path_drift() -> None:
@@ -1565,6 +1673,7 @@ def _linux_accepted_evidence(target: str) -> dict[str, object]:
     arch = "i386" if target == "linux-i386" else "armhf"
     rpm_arch = "i686" if target == "linux-i386" else "armv7hl"
     artifact_arch = "i686" if target == "linux-i386" else "armhf"
+    assets_dir = f"staged/{target}/v1.0.2/artifacts"
     artifact = f"extended-linux-evidence-{target}-v1.0.2"
     base_url = "https://github.com/example/remote-ops-workspace/releases/download/v1.0.2"
     release_asset_urls = [
@@ -1612,7 +1721,7 @@ def _linux_accepted_evidence(target: str) -> dict[str, object]:
         "linux_smoke_evidence_sha256": linux_smoke_hashes,
         "local_evidence_preflight_command": (
             "python scripts/check_platform_goal_local_evidence.py --root . "
-            f"--release-tag v1.0.2 --target {target} --assets-dir native-dist/linux "
+            f"--release-tag v1.0.2 --target {target} --assets-dir {assets_dir} "
             f"--linux-builder-evidence evidence/{target}/v1.0.2/builder-identity-{target}.json "
             f"--linux-smoke-evidence evidence/{target}/v1.0.2/native-smoke-{target}.log "
             "--linux-workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
@@ -1620,7 +1729,7 @@ def _linux_accepted_evidence(target: str) -> dict[str, object]:
         ),
         "artifact_validation_command": (
             f"python scripts/check_platform_promotion_artifacts.py --target {target} "
-            "--assets-dir native-dist/linux --tag v1.0.2 --strict"
+            f"--assets-dir {assets_dir} --tag v1.0.2 --strict"
         ),
         "checks": [
             "builder_preflight",

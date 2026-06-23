@@ -19,6 +19,7 @@ from check_platform_verified_evidence import (  # noqa: E402
     KNOWN_TARGETS,
     PROTECTED_GOAL_TARGETS,
     check_platform_verified_evidence,
+    directory_path_has_file_suffix,
     exact_safe_file_name,
     read_json,
 )
@@ -30,6 +31,11 @@ from finalize_platform_verified_evidence_record import (  # noqa: E402
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    strict_errors = strict_platform_goal_arg_errors(args)
+    if strict_errors:
+        for error in strict_errors:
+            print(f"platform review bundle artifacts: {error}", file=sys.stderr)
+        return 2
     required_targets = required_targets_from_args(args)
     registry = read_json(args.registry)
     errors = check_platform_review_bundle_artifacts(
@@ -81,6 +87,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def strict_platform_goal_arg_errors(args: argparse.Namespace) -> list[str]:
+    if args.require_goal_targets and not args.release_tag:
+        return ["--require-goal-targets requires --release-tag vX.Y.Z"]
+    return []
+
+
 def required_targets_from_args(args: argparse.Namespace) -> tuple[str, ...]:
     targets = set(str(target) for target in args.require_target)
     if args.require_goal_targets:
@@ -108,6 +120,9 @@ def check_platform_review_bundle_artifacts(
         return validation_errors or ["accepted_evidence must be a list"]
     if validation_errors and not has_record_scoped_validation_errors(validation_errors, rows):
         return validation_errors
+    hint_errors = check_directory_path_hint(bundle_dir, "review bundle directory")
+    if hint_errors:
+        return [*validation_errors, *hint_errors]
     if bundle_dir.is_symlink():
         return [*validation_errors, f"review bundle directory must not be a symlink: {bundle_dir}"]
     parent_errors = check_path_parent_symlinks(bundle_dir, "review bundle directory")
@@ -292,6 +307,13 @@ def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
             continue
         if parent.is_symlink():
             return [f"{label} path must not contain symlinked directories: {parent}"]
+    return []
+
+
+def check_directory_path_hint(path: Path, label: str) -> list[str]:
+    raw_path = path.as_posix()
+    if directory_path_has_file_suffix(raw_path):
+        return [f"{label} must be a directory path, got {raw_path!r}"]
     return []
 
 

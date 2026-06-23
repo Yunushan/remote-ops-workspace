@@ -11,6 +11,12 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
+SCRIPTS = ROOT / "scripts"
+if str(SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS))
+
+from check_platform_verified_evidence import directory_path_has_file_suffix  # noqa: E402
+
 PROMOTION_PATH = ROOT / "configs" / "platform_parity_promotion.json"
 PYPROJECT_PATH = ROOT / "pyproject.toml"
 CHECKSUM_SUFFIX = "SHA256SUMS.txt"
@@ -84,11 +90,7 @@ def check_contract(promotion: dict[str, Any]) -> list[str]:
     entries = promotion_entries(promotion, errors)
     for target_id, entry in entries.items():
         command = artifact_validation_command(entry)
-        artifact_dir = (
-            "<target-release-artifact-dir>"
-            if str(target_id).startswith("windows-xp-native-")
-            else "<artifact-dir>"
-        )
+        artifact_dir = "<target-release-artifact-dir>"
         expected = (
             "python scripts/check_platform_promotion_artifacts.py "
             f"--target {target_id} --assets-dir {artifact_dir} --tag v<project.version> --strict"
@@ -123,6 +125,9 @@ def check_platform_promotion_artifacts(
     version = version_from_tag(tag or f"v{read_project_version()}", errors)
     if errors:
         return errors
+    hint_errors = check_directory_path_hint(assets_dir, f"{target} artifact directory")
+    if hint_errors:
+        return hint_errors
     if assets_dir.is_symlink():
         return [f"{target} artifact directory must not be a symlink: {assets_dir}"]
     parent_errors = check_path_parent_symlinks(assets_dir, f"{target} artifact directory")
@@ -239,6 +244,13 @@ def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
             continue
         if parent.is_symlink():
             return [f"{label} path must not contain symlinked directories: {parent}"]
+    return []
+
+
+def check_directory_path_hint(path: Path, label: str) -> list[str]:
+    raw_path = path.as_posix()
+    if directory_path_has_file_suffix(raw_path):
+        return [f"{label} must be a directory path, got {raw_path!r}"]
     return []
 
 

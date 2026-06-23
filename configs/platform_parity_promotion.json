@@ -22,10 +22,10 @@
         "workflow_runner_evidence": "matching self-hosted i386/i686 Linux runner or equivalent real i386 builder",
         "build_script": "scripts/make_linux_native.sh",
         "smoke_script": "scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux",
-        "artifact_validation_command": "python scripts/check_platform_promotion_artifacts.py --target linux-i386 --assets-dir <artifact-dir> --tag v<project.version> --strict",
-        "local_evidence_preflight_command": "python scripts/check_platform_goal_local_evidence.py --root . --release-tag v<project.version> --target linux-i386 --assets-dir <artifact-dir> --linux-builder-evidence <builder-identity.json> --linux-smoke-evidence <native-smoke-log> --linux-workflow-run-url <github-actions-run-url> --linux-source-head-sha <github-actions-head-sha>",
-        "accepted_evidence_candidate_command": "python scripts/make_platform_verified_evidence_record.py --target linux-i386 --release-tag v<project.version> --assets-dir <artifact-dir> --release-asset-base-url <github-release-download-url> --workflow-run-url <github-actions-run-url> --release-source-artifact-name extended-linux-evidence-linux-i386-v<project.version> --release-source-head-sha <github-actions-head-sha> --builder-evidence <builder-identity.json> --linux-smoke-evidence <native-smoke-log> --runner-label self-hosted --runner-label linux --runner-label i386 --out <platform-verified-evidence-linux-i386.json>",
-        "review_bundle_command": "python scripts/make_extended_linux_evidence_bundle.py --target linux-i386 --release-tag v<project.version> --assets-dir <artifact-dir> --builder-evidence <builder-identity.json> --smoke-evidence <native-smoke-log> --candidate-record <platform-verified-evidence-linux-i386.json> --out-dir <bundle-dir>",
+        "artifact_validation_command": "python scripts/check_platform_promotion_artifacts.py --target linux-i386 --assets-dir <target-release-artifact-dir> --tag v<project.version> --strict",
+        "local_evidence_preflight_command": "python scripts/check_platform_goal_local_evidence.py --root . --release-tag v<project.version> --target linux-i386 --assets-dir <target-release-artifact-dir> --linux-builder-evidence <builder-identity.json> --linux-smoke-evidence <native-smoke-log> --linux-workflow-run-url <github-actions-run-url> --linux-source-head-sha <github-actions-head-sha>",
+        "accepted_evidence_candidate_command": "python scripts/make_platform_verified_evidence_record.py --target linux-i386 --release-tag v<project.version> --assets-dir <target-release-artifact-dir> --release-asset-base-url <github-release-download-url> --workflow-run-url <github-actions-run-url> --release-source-artifact-name extended-linux-evidence-linux-i386-v<project.version> --release-source-head-sha <github-actions-head-sha> --builder-evidence <builder-identity.json> --linux-smoke-evidence <native-smoke-log> --runner-label self-hosted --runner-label linux --runner-label i386 --out <platform-verified-evidence-linux-i386.json>",
+        "review_bundle_command": "python scripts/make_extended_linux_evidence_bundle.py --target linux-i386 --release-tag v<project.version> --assets-dir <target-release-artifact-dir> --builder-evidence <builder-identity.json> --smoke-evidence <native-smoke-log> --candidate-record <platform-verified-evidence-linux-i386.json> --out-dir <bundle-dir>",
         "finalized_evidence_record_command": "python scripts/finalize_platform_verified_evidence_record.py --candidate-record <platform-verified-evidence-linux-i386.json> --bundle-manifest <bundle-dir>/extended-linux-evidence-bundle-linux-i386-v<project.version>.json --bundle-archive <bundle-dir>/extended-linux-evidence-bundle-linux-i386-v<project.version>.zip --bundle-sha256s <bundle-dir>/extended-linux-evidence-bundle-linux-i386-v<project.version>-SHA256SUMS.txt --out <final-record.json> --append-registry",
         "review_bundle_files": [
           "extended-linux-evidence-bundle-linux-i386-v<project.version>.json",
@@ -39,6 +39,10 @@
           "remote-ops-workspace-v<project.version>-linux-i686-native.tar.gz",
           "remote-ops-workspace-v<project.version>-linux-i686-native-manifest.json",
           "remote-ops-workspace-v<project.version>-linux-i686-native-SHA256SUMS.txt"
+        ],
+        "security_requirements": [
+          "security patch evidence proving TLS 1.3 preferred, TLS 1.2 minimum, isolated legacy compatibility and CVE patch review",
+          "modern Windows 10/11, Linux, and macOS defaults must keep hardened crypto"
         ]
       },
       "current_blockers": [
@@ -67,10 +71,10 @@
         "workflow_runner_evidence": "matching self-hosted armv7l/armhf Linux runner or equivalent real armhf builder",
         "build_script": "scripts/make_linux_native.sh",
         "smoke_script": "scripts/smoke_linux_native.sh --arch armhf --dist native-dist/linux",
-        "artifact_validation_command": "python scripts/check_platform_promotion_artifacts.py --target linux-armhf --assets-dir <artifact-dir> --tag v<project.version> --strict",
-        "local_evidence_preflight_command": "python scripts/check_platform_goal_local_evidence.py --root . --release-tag v<project.version> --target linux-armhf --assets-dir <artifact-dir> --linux-builder-evidence <builder-identity.json> --linux-smoke-evidence <native-smoke-log> --linux-workflow-run-url <github-actions-run-url> --linux-source-head-sha <github-actions-head-sha>",
-        "accepted_evidence_candidate_command": "python scripts/make_platform_verified_evidence_record.py --target linux-armhf --release-tag v<project.version> --assets-dir <artifact-dir> --release-asset-base-url <github-release-download-url> --workflow-run-url <github-actions-run-url> --release-source-artifact-name extended-linux-evidence-linux-armhf-v<project.version> --release-source-head-sha <github-actions-head-sha> --builder-evidence <builder-identity.json> --linux-smoke-evidence <native-smoke-log> --runner-label self-hosted --runner-label linux --runner-label armhf --out <platform-verified-evidence-linux-armhf.json>",
-        "review_bundle_command": "python scripts/make_extended_linux_evidence_bundle.py --target linux-armhf --release-tag v<project.version> --assets-dir <artifact-dir> --builder-evidence <builder-identity.json> --smoke-evidence <native-smoke-log> --candidate-record <platform-verified-evidence-linux-armhf.json> --out-dir <bundle-dir>",
+        "artifact_validation_command": "python scripts/check_platform_promotion_artifacts.py --target linux-armhf --assets-dir <target-release-artifact-dir> --tag v<project.version> --strict",
+        "local_evidence_preflight_command": "python scripts/check_platform_goal_local_evidence.py --root . --release-tag v<project.version> --target linux-armhf --assets-dir <target-release-artifact-dir> --linux-builder-evidence <builder-identity.json> --linux-smoke-evidence <native-smoke-log> --linux-workflow-run-url <github-actions-run-url> --linux-source-head-sha <github-actions-head-sha>",
+        "accepted_evidence_candidate_command": "python scripts/make_platform_verified_evidence_record.py --target linux-armhf --release-tag v<project.version> --assets-dir <target-release-artifact-dir> --release-asset-base-url <github-release-download-url> --workflow-run-url <github-actions-run-url> --release-source-artifact-name extended-linux-evidence-linux-armhf-v<project.version> --release-source-head-sha <github-actions-head-sha> --builder-evidence <builder-identity.json> --linux-smoke-evidence <native-smoke-log> --runner-label self-hosted --runner-label linux --runner-label armhf --out <platform-verified-evidence-linux-armhf.json>",
+        "review_bundle_command": "python scripts/make_extended_linux_evidence_bundle.py --target linux-armhf --release-tag v<project.version> --assets-dir <target-release-artifact-dir> --builder-evidence <builder-identity.json> --smoke-evidence <native-smoke-log> --candidate-record <platform-verified-evidence-linux-armhf.json> --out-dir <bundle-dir>",
         "finalized_evidence_record_command": "python scripts/finalize_platform_verified_evidence_record.py --candidate-record <platform-verified-evidence-linux-armhf.json> --bundle-manifest <bundle-dir>/extended-linux-evidence-bundle-linux-armhf-v<project.version>.json --bundle-archive <bundle-dir>/extended-linux-evidence-bundle-linux-armhf-v<project.version>.zip --bundle-sha256s <bundle-dir>/extended-linux-evidence-bundle-linux-armhf-v<project.version>-SHA256SUMS.txt --out <final-record.json> --append-registry",
         "review_bundle_files": [
           "extended-linux-evidence-bundle-linux-armhf-v<project.version>.json",
@@ -84,6 +88,10 @@
           "remote-ops-workspace-v<project.version>-linux-armhf-native.tar.gz",
           "remote-ops-workspace-v<project.version>-linux-armhf-native-manifest.json",
           "remote-ops-workspace-v<project.version>-linux-armhf-native-SHA256SUMS.txt"
+        ],
+        "security_requirements": [
+          "security patch evidence proving TLS 1.3 preferred, TLS 1.2 minimum, isolated legacy compatibility and CVE patch review",
+          "modern Windows 10/11, Linux, and macOS defaults must keep hardened crypto"
         ]
       },
       "current_blockers": [

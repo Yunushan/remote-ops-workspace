@@ -10,6 +10,11 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT_PATH = ROOT / "configs" / "xp_native_evidence_contract.json"
 PROMOTION_PATH = ROOT / "configs" / "platform_parity_promotion.json"
+SCRIPTS = ROOT / "scripts"
+if str(SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS))
+
+from check_platform_verified_evidence import directory_path_has_file_suffix  # noqa: E402
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -88,6 +93,9 @@ def make_xp_native_evidence_template(
 
 
 def check_template_output_paths(*, out_dir: Path, evidence_path: Path, smoke_ids: list[str]) -> list[str]:
+    hint_errors = check_directory_path_hint(out_dir, "XP native evidence template output directory")
+    if hint_errors:
+        return hint_errors
     if out_dir.is_symlink():
         return [f"XP native evidence template output directory must not be a symlink: {out_dir}"]
     parent_errors = check_path_parent_symlinks(out_dir, "XP native evidence template output directory")
@@ -121,6 +129,13 @@ def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
             continue
         if parent.is_symlink():
             return [f"{label} path must not contain symlinked directories: {parent}"]
+    return []
+
+
+def check_directory_path_hint(path: Path, label: str) -> list[str]:
+    raw_path = path.as_posix()
+    if directory_path_has_file_suffix(raw_path):
+        return [f"{label} must be a directory path, got {raw_path!r}"]
     return []
 
 

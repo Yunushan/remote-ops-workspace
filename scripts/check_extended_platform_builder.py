@@ -12,6 +12,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+ROOT = Path(__file__).resolve().parents[1]
+SCRIPTS = ROOT / "scripts"
+if str(SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS))
+
+from check_platform_verified_evidence import directory_path_has_file_suffix  # noqa: E402
+
 LINUX_TARGET_ARCHES = {
     "linux-i386": {"i386", "i486", "i586", "i686", "x86"},
     "linux-armhf": {"armv6l", "armv7l", "armv7hl", "armhf"},
@@ -151,6 +158,9 @@ def check_builder_identity_output_path(target: str, path: Path) -> list[str]:
             f"{target} builder identity output file name must be {expected_name}, got {path.name!r}"
         )
     parent = path.parent
+    errors.extend(check_directory_path_hint(parent, "builder identity output directory"))
+    if errors:
+        return errors
     if parent.is_symlink():
         errors.append(f"builder identity output directory must not be a symlink: {parent}")
         return errors
@@ -179,6 +189,13 @@ def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
             continue
         if parent.is_symlink():
             return [f"{label} path must not contain symlinked directories: {parent}"]
+    return []
+
+
+def check_directory_path_hint(path: Path, label: str) -> list[str]:
+    raw_path = path.as_posix()
+    if directory_path_has_file_suffix(raw_path):
+        return [f"{label} must be a directory path, got {raw_path!r}"]
     return []
 
 

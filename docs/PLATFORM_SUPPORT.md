@@ -108,6 +108,12 @@ windows-xp-native-x86 and windows-xp-native-x64 all have accepted records for
 the same release tag, same GitHub release repository and same release source head
 SHA. Mixed-tag, mixed-repository or mixed-source-head accepted records remain
 aggregate evidence only and cannot complete the protected goal parity block.
+The strict verifier also runs
+`python scripts/import_platform_evidence_artifacts.py --dry-run --verify-source-run`
+and `python scripts/check_release_publish_assets.py --assets-dir <release-assets-dir> --tag v<project.version> --require-platform-goal-targets`,
+so accepted records must be release-importable, bound to the current checkout
+head, backed by completed successful dispatch runs and matched by the downloaded
+release asset directory before promotion is trusted.
 Generate candidate accepted records with
 `python scripts/make_platform_verified_evidence_record.py` after artifact and
 XP evidence validators pass; package the review bundle, then use
@@ -134,7 +140,10 @@ review-bundle file hashes against the finalized accepted record before upload.
 The accepted record's artifact validation command must also use the same target
 id, exactly one concrete `--assets-dir` value and exactly one `--tag` value
 matching the record. Placeholder paths such as `<artifact-dir>` are valid in
-documentation examples only, not in accepted evidence records.
+documentation examples only, not in accepted evidence records. Linux accepted
+evidence command paths must include the Linux target id as a path segment; XP
+accepted evidence command paths must include both the XP target id and release
+tag as path segments.
 All release asset URLs in one accepted record must use the same GitHub
 repository, and Linux i386/armhf workflow run URLs must point to that repository
 too.
@@ -148,7 +157,8 @@ sanitized target-scoped `host_identity` block with
 (`i386` for linux-i386 or `armhf` for linux-armhf), `getconf LONG_BIT=32`,
 concrete `rpm`/`rpmbuild` tool paths and `sudo_non_interactive=true`, plus a `builder_identity_sha256` that
 matches that JSON and security patch evidence proving TLS 1.3 preferred,
-TLS 1.2 minimum, isolated legacy compatibility and CVE patch review, a
+TLS 1.2 minimum, isolated legacy compatibility and CVE patch review while
+modern Windows 10/11, Linux and macOS defaults remain hardened, a
 `native_build_command` and `native_smoke_command` matching the promotion
 contract, where the Linux smoke command includes the target id and workflow run
 URL, a `linux_smoke_evidence_sha256.native_smoke` digest for the captured native
@@ -207,7 +217,7 @@ Current readiness:
   upload/publish asset coverage, `scripts/make_linux_native.sh` output,
   `scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux --target linux-i386 --workflow-run-url <github-actions-run-url> --source-head-sha <github-actions-head-sha>`, native
   manifest evidence, checksum sidecars and
-  `python scripts/check_platform_promotion_artifacts.py --target linux-i386 --assets-dir <artifact-dir> --tag v<project.version> --strict`.
+  `python scripts/check_platform_promotion_artifacts.py --target linux-i386 --assets-dir <target-release-artifact-dir> --tag v<project.version> --strict`.
   The dispatch-only evidence workflow uses a `[self-hosted, linux, i386]`
   runner and uploads `extended-linux-evidence-linux-i386-v<project.version>`, including
   `builder-identity-linux-i386.json` and
@@ -215,14 +225,14 @@ Current readiness:
   `platform-verified-evidence-linux-i386.json` as the reviewed registry-record
   candidate. The accepted record's `release_asset_source.workflow` must be `.github/workflows/extended-platform-evidence.yml`.
   That builder identity must prove `source_head_sha` matching the release source head SHA, `dpkg --print-architecture=i386`,
-  `getconf LONG_BIT=32`, concrete `rpm`/`rpmbuild` tool paths and `sudo_non_interactive=true`, plus a review bundle from
-  `python scripts/make_extended_linux_evidence_bundle.py --target linux-i386 --release-tag v<project.version> --assets-dir <artifact-dir> --builder-evidence <builder-identity.json> --smoke-evidence <native-smoke-log> --candidate-record <platform-verified-evidence-linux-i386.json> --out-dir <bundle-dir>`.
+  `getconf LONG_BIT=32`, concrete `rpm`/`rpmbuild` tool paths and `sudo_non_interactive=true`, plus a target/release-scoped review bundle from
+  `python scripts/make_extended_linux_evidence_bundle.py --target linux-i386 --release-tag v<project.version> --assets-dir <target-release-artifact-dir> --builder-evidence <builder-identity.json> --smoke-evidence <native-smoke-log> --candidate-record <platform-verified-evidence-linux-i386.json> --out-dir <bundle-dir>`.
 - Linux armhf: 70.0%, script-supported native. Promotion requires a real
   armv7l/armhf release builder, default `linux-native` release matrix
   membership, upload/publish asset coverage, `scripts/make_linux_native.sh`
   output, `scripts/smoke_linux_native.sh --arch armhf --dist native-dist/linux --target linux-armhf --workflow-run-url <github-actions-run-url> --source-head-sha <github-actions-head-sha>`,
   native manifest evidence, checksum sidecars and
-  `python scripts/check_platform_promotion_artifacts.py --target linux-armhf --assets-dir <artifact-dir> --tag v<project.version> --strict`.
+  `python scripts/check_platform_promotion_artifacts.py --target linux-armhf --assets-dir <target-release-artifact-dir> --tag v<project.version> --strict`.
   The dispatch-only evidence workflow uses a `[self-hosted, linux, armhf]`
   runner and uploads `extended-linux-evidence-linux-armhf-v<project.version>`, including
   `builder-identity-linux-armhf.json` and
@@ -230,8 +240,8 @@ Current readiness:
   `platform-verified-evidence-linux-armhf.json` as the reviewed registry-record
   candidate. The accepted record's `release_asset_source.workflow` must be `.github/workflows/extended-platform-evidence.yml`.
   That builder identity must prove `source_head_sha` matching the release source head SHA, `dpkg --print-architecture=armhf`,
-  `getconf LONG_BIT=32`, concrete `rpm`/`rpmbuild` tool paths and `sudo_non_interactive=true`, plus a review bundle from
-  `python scripts/make_extended_linux_evidence_bundle.py --target linux-armhf --release-tag v<project.version> --assets-dir <artifact-dir> --builder-evidence <builder-identity.json> --smoke-evidence <native-smoke-log> --candidate-record <platform-verified-evidence-linux-armhf.json> --out-dir <bundle-dir>`.
+  `getconf LONG_BIT=32`, concrete `rpm`/`rpmbuild` tool paths and `sudo_non_interactive=true`, plus a target/release-scoped review bundle from
+  `python scripts/make_extended_linux_evidence_bundle.py --target linux-armhf --release-tag v<project.version> --assets-dir <target-release-artifact-dir> --builder-evidence <builder-identity.json> --smoke-evidence <native-smoke-log> --candidate-record <platform-verified-evidence-linux-armhf.json> --out-dir <bundle-dir>`.
 - Windows XP native host: 25.0%, remote-target-only as a local operator host
   row. Promotion requires a separate XP-capable legacy toolchain, XP x86 SP3
   and Windows XP Professional x64 Edition SP2 VM or self-hosted runner smoke
@@ -255,9 +265,11 @@ Current readiness:
   `.github/workflows/xp-native-evidence.yml` on a self-hosted `xp-evidence`
   runner after staging the native artifacts, evidence JSON and smoke files; the
   workflow uploads `xp-native-evidence-<target>-<release_tag>` for the release
-  importer. Its assets_dir, evidence_file and evidence_dir dispatch paths must
-  be workspace-relative and include the XP target id plus release tag as path
-  segments, for example `staged/windows-xp-native-x86/v<project.version>/...`.
+  importer. Its generated candidate record, final record and review bundle must
+  stay under `xp-evidence-output/<target>/<release_tag>`. Its assets_dir,
+  evidence_file and evidence_dir dispatch paths must be workspace-relative and
+  include the XP target id plus release tag as path segments, for example
+  `staged/windows-xp-native-x86/v<project.version>/...`.
   The `legacy_crypto_profile_scoped` smoke file must include
   `legacy compatibility profile: isolated-opt-in`,
   `legacy crypto scope: profile-only` and `weak crypto global default: false`.

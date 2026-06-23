@@ -196,6 +196,25 @@ def test_platform_promotion_artifacts_reject_symlinked_artifact_directory(
     assert f"windows-xp-native-x86 artifact directory must not be a symlink: {tmp_path}" in errors
 
 
+def test_platform_promotion_artifacts_reject_file_shaped_artifact_directory(
+    tmp_path: Path,
+) -> None:
+    checker = _load_platform_promotion_artifacts_checker()
+    tag = f"v{checker.read_project_version()}"
+    assets_dir = tmp_path / "artifacts.zip"
+    assets_dir.mkdir()
+
+    errors = checker.check_platform_promotion_artifacts(
+        target="linux-i386",
+        assets_dir=assets_dir,
+        tag=tag,
+    )
+
+    assert errors == [
+        f"linux-i386 artifact directory must be a directory path, got {assets_dir.as_posix()!r}"
+    ]
+
+
 def test_platform_promotion_artifacts_reject_symlinked_artifact_directory_parent(
     tmp_path: Path,
     monkeypatch,

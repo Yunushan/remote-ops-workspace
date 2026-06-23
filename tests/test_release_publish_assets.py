@@ -20,6 +20,7 @@ POLICY = (
     "finalized accepted-record source file binding, "
     "finalized accepted-record release asset URL binding, "
     "Linux release source artifact names must be target/release-scoped, "
+    "Linux accepted evidence command paths must be target/release-scoped, "
     "XP release source artifact names must be target/release-scoped, "
     "and per-artifact SHA-256 digests, safe relative non-link native archive entries, "
     "exact safe checksum and native manifest file references, "
@@ -72,10 +73,16 @@ def test_release_publish_asset_checker_passes_current_tree() -> None:
     assert checker.main([]) == 0
 
 
-def test_release_publish_asset_checker_can_require_platform_goal_targets() -> None:
+def test_release_publish_asset_checker_requires_strict_platform_goal_assets_dir() -> None:
     checker = _load_checker()
 
-    assert checker.main(["--require-platform-goal-targets"]) == 1
+    assert checker.main(["--require-platform-goal-targets", "--tag", "v1.0.2"]) == 2
+
+
+def test_release_publish_asset_checker_requires_strict_platform_goal_tag(tmp_path: Path) -> None:
+    checker = _load_checker()
+
+    assert checker.main(["--require-platform-goal-targets", "--assets-dir", str(tmp_path)]) == 2
 
 
 def test_expected_release_assets_expand_default_matrix() -> None:
@@ -256,6 +263,19 @@ def test_publish_contract_rejects_platform_evidence_import_write_permissions() -
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
         "      actions: read\n",
         "      actions: write\n",
+    )
+
+    errors = checker.check_publish_contract(matrix, workflow)
+
+    assert "accepted-platform-evidence-assets job must not request write permissions" in errors
+
+
+def test_publish_contract_rejects_platform_evidence_import_nonstandard_write_permissions() -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        "      contents: read\n",
+        "      contents: read\n      id-token: write\n",
     )
 
     errors = checker.check_publish_contract(matrix, workflow)
@@ -811,6 +831,19 @@ def test_release_assets_reject_symlinked_asset_directory(tmp_path: Path, monkeyp
     assert errors == [f"release asset directory must not be a symlink: {tmp_path}"]
 
 
+def test_release_assets_reject_file_shaped_asset_directory(tmp_path: Path) -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    assets_dir = tmp_path / "release-assets.zip"
+
+    errors = checker.check_release_assets(assets_dir, matrix, tag="v1.0.2")
+
+    assert errors == [
+        f"release asset directory must be a directory path, got {assets_dir.as_posix()!r}"
+    ]
+    assert not assets_dir.exists()
+
+
 def test_release_assets_reject_symlinked_asset_directory_parent(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -1141,6 +1174,7 @@ def _linux_accepted_evidence(target: str) -> dict[str, object]:
     rpm_arch = "i686" if target == "linux-i386" else "armv7hl"
     artifact_arch = "i686" if target == "linux-i386" else "armhf"
     release_tag = "v1.0.2"
+    assets_dir = f"staged/{target}/{release_tag}/artifacts"
     artifact = f"extended-linux-evidence-{target}-{release_tag}"
     base_url = "https://github.com/example/remote-ops-workspace/releases/download/v1.0.2"
     release_asset_urls = [
@@ -1188,7 +1222,7 @@ def _linux_accepted_evidence(target: str) -> dict[str, object]:
         "linux_smoke_evidence_sha256": linux_smoke_hashes,
         "local_evidence_preflight_command": (
             "python scripts/check_platform_goal_local_evidence.py --root . "
-            f"--release-tag v1.0.2 --target {target} --assets-dir native-dist/linux "
+            f"--release-tag v1.0.2 --target {target} --assets-dir {assets_dir} "
             f"--linux-builder-evidence evidence/{target}/v1.0.2/builder-identity-{target}.json "
             f"--linux-smoke-evidence evidence/{target}/v1.0.2/native-smoke-{target}.log "
             "--linux-workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
@@ -1196,7 +1230,7 @@ def _linux_accepted_evidence(target: str) -> dict[str, object]:
         ),
         "artifact_validation_command": (
             f"python scripts/check_platform_promotion_artifacts.py --target {target} "
-            "--assets-dir native-dist/linux --tag v1.0.2 --strict"
+            f"--assets-dir {assets_dir} --tag v1.0.2 --strict"
         ),
         "checks": [
             "builder_preflight",

@@ -82,6 +82,27 @@ def test_platform_support_truth_requires_generated_platform_rows() -> None:
     assert any("missing generated platform row" in error and "linux-i386" in error for error in errors)
 
 
+def test_platform_support_truth_requires_tagged_strict_platform_publish_docs() -> None:
+    checker = _load_platform_support_truth_checker()
+    docs = _read_required_docs(checker)
+    docs["README.md"] = docs["README.md"].replace(
+        (
+            "check_release_publish_assets.py --assets-dir <release-assets-dir> "
+            "--tag v<project.version> --require-platform-goal-targets"
+        ),
+        "check_release_publish_assets.py --assets-dir <release-assets-dir> --require-platform-goal-targets",
+    )
+    docs["docs/PLATFORM_SUPPORT.md"] = docs["docs/PLATFORM_SUPPORT.md"].replace(
+        "python scripts/import_platform_evidence_artifacts.py --dry-run",
+        "python scripts/import_platform_evidence_artifacts.py",
+    )
+
+    errors = checker.check_platform_docs(docs, coverage_report())
+
+    assert any("README.md missing platform truth snippet" in error and "--tag v<project.version>" in error for error in errors)
+    assert any("docs/PLATFORM_SUPPORT.md missing platform truth snippet" in error and "--dry-run" in error for error in errors)
+
+
 def test_platform_support_truth_tracks_required_targets() -> None:
     checker = _load_platform_support_truth_checker()
 

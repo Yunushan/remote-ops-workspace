@@ -68,3 +68,24 @@ def test_product_readiness_rejects_inconsistent_protected_goal_release_source_fl
         "protected platform goal parity release_source_head_consistent must match release_source_heads"
         in errors
     )
+
+
+def test_product_readiness_rejects_missing_linux_modern_default_security_proof(monkeypatch) -> None:
+    checker = load_product_readiness_checker()
+    report = deepcopy(checker.coverage_report())
+    requirements = report["platform_verified_readiness"]["protected_goal_parity"][
+        "target_evidence_requirements"
+    ]
+    linux_i386 = next(item for item in requirements if item["target"] == "linux-i386")
+    linux_i386["security_requirements"] = [
+        "security patch evidence proving TLS 1.3 preferred, TLS 1.2 minimum, isolated legacy compatibility and CVE patch review",
+    ]
+    monkeypatch.setattr(checker, "coverage_report", lambda: report)
+
+    errors = checker.check_product_readiness()
+
+    assert any(
+        "linux-i386 Linux protected platform requirement missing security proof" in error
+        and "modern Windows 10/11, Linux, and macOS defaults must keep hardened crypto" in error
+        for error in errors
+    )

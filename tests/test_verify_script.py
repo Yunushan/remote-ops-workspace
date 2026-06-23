@@ -164,6 +164,9 @@ def test_verify_can_require_platform_goal_targets(tmp_path: Path) -> None:
     strict_protected_gate = next(
         step for step in strict_steps if step.name == "protected platform goal parity gate"
     )
+    strict_import = next(
+        step for step in strict_steps if step.name == "platform evidence artifact import dry-run"
+    )
     strict_bundle = next(
         step for step in strict_steps if step.name == "platform review bundle artifact validation"
     )
@@ -174,8 +177,16 @@ def test_verify_can_require_platform_goal_targets(tmp_path: Path) -> None:
     assert "protected platform goal parity gate" in strict_names
     assert "platform verified evidence goal gate" not in default_names
     assert "platform verified evidence goal gate" in strict_names
+    assert "platform evidence artifact import dry-run" not in default_names
+    assert "platform evidence artifact import dry-run" in strict_names
     assert "platform review bundle artifact validation" not in default_names
     assert "platform review bundle artifact validation" in strict_names
+    assert strict_names.index("platform evidence artifact import dry-run") < strict_names.index(
+        "platform review bundle artifact validation"
+    )
+    assert strict_names.index("platform evidence artifact import dry-run") < strict_names.index(
+        "release publish asset contract"
+    )
     assert "--require-platform-goal-targets" not in default_publish.command
     assert "--require-platform-goal-targets" in strict_publish.command
     assert "--require-goal-targets" in strict_goal.command
@@ -183,6 +194,16 @@ def test_verify_can_require_platform_goal_targets(tmp_path: Path) -> None:
     assert ["--release-tag", "v1.0.3"] == strict_protected_report.command[-2:]
     assert "--require-complete" in strict_protected_gate.command
     assert ["--release-tag", "v1.0.3"] == strict_protected_gate.command[-2:]
+    assert strict_import.command[1:] == [
+        "scripts/import_platform_evidence_artifacts.py",
+        "--release-tag",
+        "v1.0.3",
+        "--require-goal-targets",
+        "--out-dir",
+        str(release_assets_dir),
+        "--dry-run",
+        "--verify-source-run",
+    ]
     assert ["--bundle-dir", str(bundle_dir)] == strict_bundle.command[2:4]
     assert "--require-goal-targets" in strict_bundle.command
     assert ["--release-tag", "v1.0.3"] == strict_bundle.command[-2:]

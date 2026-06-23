@@ -16,8 +16,9 @@ COMMON_SNIPPETS = (
     "python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-complete",
     "python scripts/check_platform_verified_evidence.py --require-goal-targets --release-tag v<project.version>",
     "python scripts/check_release_publish_assets.py",
-    "python scripts/check_release_publish_assets.py --require-platform-goal-targets",
+    "python scripts/check_release_publish_assets.py --assets-dir <release-assets-dir> --tag v<project.version> --require-platform-goal-targets",
     "python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> --release-assets-dir <release-assets-dir>",
+    "python scripts/import_platform_evidence_artifacts.py --dry-run",
     "python scripts/make_extended_linux_evidence_bundle.py",
     "python scripts/make_xp_native_evidence_bundle.py",
     "python scripts/check_platform_goal_local_evidence.py",
@@ -50,6 +51,7 @@ LINUX_SNIPPETS = (
     "python scripts/stage_extended_linux_evidence_upload.py",
     "--linux-builder-evidence <builder-identity.json> --linux-smoke-evidence <native-smoke-log>",
     "--linux-source-head-sha <github-actions-head-sha>",
+    "--local-evidence-root <staged-root>",
     "must contain only the expected release artifacts for strict promotion",
     "linux-evidence-upload",
     "raw Linux builder output directories are not uploaded by wildcard",
@@ -184,6 +186,9 @@ def check_linux_runbook(text: str, target_id: str, requirements: dict[str, Any])
     candidate_name = f"platform-verified-evidence-{target_id}.json"
     if candidate_name not in text:
         errors.append(f"{target_id} runbook missing candidate evidence record: {candidate_name}")
+    for item in requirements.get("security_requirements", []):
+        if str(item) not in text:
+            errors.append(f"{target_id} runbook missing security requirement: {item}")
     return errors
 
 

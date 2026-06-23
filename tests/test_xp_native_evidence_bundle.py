@@ -271,6 +271,28 @@ def test_xp_native_evidence_bundle_rejects_missing_artifact_directory_before_has
     assert f"artifact directory missing: {missing_assets}" in errors
 
 
+def test_xp_native_evidence_bundle_rejects_file_shaped_directory_inputs(
+    tmp_path: Path,
+) -> None:
+    bundler = _load_bundle_script()
+    assets = tmp_path / "assets.zip"
+    evidence_root = tmp_path / "xp-evidence-output.zip"
+    assets.mkdir()
+    evidence_root.mkdir()
+
+    errors = bundler.make_xp_native_evidence_bundle(
+        target="windows-xp-native-x86",
+        evidence=evidence_root / "xp-evidence.json",
+        candidate_record=tmp_path / "platform-verified-evidence-windows-xp-native-x86.json",
+        assets_dir=assets,
+        evidence_dir=evidence_root,
+        out_dir=tmp_path / "bundle",
+    )
+
+    assert f"XP native artifact directory must be a directory path, got {assets.as_posix()!r}" in errors
+    assert f"XP evidence directory must be a directory path, got {evidence_root.as_posix()!r}" in errors
+
+
 def test_xp_native_evidence_bundle_rejects_symlinked_output_directory(
     tmp_path: Path,
     monkeypatch,
@@ -290,6 +312,22 @@ def test_xp_native_evidence_bundle_rejects_symlinked_output_directory(
     assert errors == [
         f"XP native evidence bundle output directory must not be a symlink: {out_dir}"
     ]
+
+
+def test_xp_native_evidence_bundle_rejects_file_shaped_output_directory(
+    tmp_path: Path,
+) -> None:
+    bundler = _load_bundle_script()
+    out_dir = tmp_path / "bundle.zip"
+    outputs = (out_dir / "bundle.json", out_dir / "bundle.zip", out_dir / "bundle-SHA256SUMS.txt")
+
+    errors = bundler.prepare_output_paths(out_dir=out_dir, outputs=outputs, force=True)
+
+    assert errors == [
+        "XP native evidence bundle output directory "
+        f"must be a directory path, got {out_dir.as_posix()!r}"
+    ]
+    assert not out_dir.exists()
 
 
 def test_xp_native_evidence_bundle_rejects_symlinked_output_parent(

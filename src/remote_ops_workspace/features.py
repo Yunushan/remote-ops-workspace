@@ -215,6 +215,22 @@ PROTECTED_PLATFORM_GOAL_TARGETS = (
     "windows-xp-native-x64",
 )
 RESERVED_WORKSPACE_ROOTS = {".agents", ".codex", ".git", ".github"}
+FILE_LIKE_DIRECTORY_SUFFIXES = (
+    ".appimage",
+    ".deb",
+    ".exe",
+    ".gz",
+    ".json",
+    ".log",
+    ".msi",
+    ".rpm",
+    ".sha256",
+    ".tar",
+    ".tgz",
+    ".txt",
+    ".xz",
+    ".zip",
+)
 RELEASE_ASSET_SOURCE_TYPES = {"github-actions-artifact"}
 GITHUB_OWNER_RE = r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?"
 GITHUB_REPOSITORY_RE = rf"{GITHUB_OWNER_RE}/[A-Za-z0-9._-]+"
@@ -1246,7 +1262,10 @@ def _has_artifact_validation_command(item: dict[str, Any], target: str) -> bool:
         target=target,
         release_tag=release_tag,
         require_directory_hint=True,
-        require_target_release_scope=target in XP_ACCEPTED_EVIDENCE_ARCHITECTURES,
+        require_target_release_scope=(
+            target in LINUX_ACCEPTED_EVIDENCE_MACHINES
+            or target in XP_ACCEPTED_EVIDENCE_ARCHITECTURES
+        ),
     ):
         return False
     tags = re.findall(r"(?:^|\s)--tag\s+(\S+)(?=\s|$)", command)
@@ -1258,7 +1277,8 @@ def _has_local_evidence_preflight_command(item: dict[str, Any], target: str) -> 
     command = str(item.get("local_evidence_preflight_command", ""))
     if not command.startswith("python scripts/check_platform_goal_local_evidence.py "):
         return False
-    if _command_values(command, "--root") != ["."]:
+    roots = _command_values(command, "--root")
+    if len(roots) != 1 or not _is_safe_local_evidence_root(roots[0]):
         return False
     if _command_values(command, "--release-tag") != [release_tag]:
         return False
@@ -1270,6 +1290,11 @@ def _has_local_evidence_preflight_command(item: dict[str, Any], target: str) -> 
         return False
     if asset_dirs != artifact_asset_dirs:
         return False
+    if not all(
+        _path_stays_under_root(roots[0], path)
+        for path in _local_evidence_preflight_paths(target, command)
+    ):
+        return False
     if target in LINUX_ACCEPTED_EVIDENCE_MACHINES:
         return _has_linux_local_evidence_preflight_command(item, target, command)
     if target in XP_ACCEPTED_EVIDENCE_ARCHITECTURES:
@@ -1277,11 +1302,47 @@ def _has_local_evidence_preflight_command(item: dict[str, Any], target: str) -> 
     return False
 
 
+def _is_safe_local_evidence_root(raw_root: str) -> bool:
+    return raw_root == "." or _is_safe_xp_validation_path(raw_root, require_directory_hint=True)
+
+
+def _local_evidence_preflight_paths(target: str, command: str) -> list[str]:
+    paths = [*_command_values(command, "--assets-dir")]
+    if target in LINUX_ACCEPTED_EVIDENCE_MACHINES:
+        paths.extend(_command_values(command, "--linux-builder-evidence"))
+        paths.extend(_command_values(command, "--linux-smoke-evidence"))
+    elif target in XP_ACCEPTED_EVIDENCE_ARCHITECTURES:
+        paths.extend(_command_values(command, "--xp-evidence"))
+        paths.extend(_command_values(command, "--xp-evidence-dir"))
+    return paths
+
+
+def _path_stays_under_root(raw_root: str, raw_path: str) -> bool:
+    root_parts = _relative_path_parts(raw_root)
+    path_parts = _relative_path_parts(raw_path)
+    return not root_parts or (
+        len(path_parts) >= len(root_parts)
+        and path_parts[: len(root_parts)] == root_parts
+    )
+
+
+def _relative_path_parts(raw_path: str) -> tuple[str, ...]:
+    path = raw_path.strip()
+    windows_path = PureWindowsPath(path)
+    posix_path = PurePosixPath(path)
+    if "\\" in path or windows_path.is_absolute() or bool(windows_path.drive):
+        parts = windows_path.parts
+    else:
+        parts = posix_path.parts
+    return tuple(part for part in parts if part not in ("", "."))
+
+
 def _has_linux_local_evidence_preflight_command(
     item: dict[str, Any],
     target: str,
     command: str,
 ) -> bool:
+    release_tag = str(item.get("release_tag", ""))
     if _command_values(command, "--xp-evidence") or _command_values(command, "--xp-evidence-dir"):
         return False
     builder_paths = _command_values(command, "--linux-builder-evidence")
@@ -1290,7 +1351,20 @@ def _has_linux_local_evidence_preflight_command(
     smoke_paths = _command_values(command, "--linux-smoke-evidence")
     if len(smoke_paths) != 1 or Path(smoke_paths[0]).name != f"native-smoke-{target}.log":
         return False
-    if "<" in builder_paths[0] or ">" in builder_paths[0] or "<" in smoke_paths[0] or ">" in smoke_paths[0]:
+    if not _is_safe_xp_validation_path(
+        builder_paths[0],
+        target=target,
+        release_tag=release_tag,
+        require_json_hint=True,
+        require_target_release_scope=True,
+    ):
+        return False
+    if not _is_safe_xp_validation_path(
+        smoke_paths[0],
+        target=target,
+        release_tag=release_tag,
+        require_target_release_scope=True,
+    ):
         return False
     workflow_url = str(item.get("workflow_run_url", "")).rstrip("/")
     if _command_values(command, "--linux-workflow-run-url") != [workflow_url]:
@@ -1909,7 +1983,7 @@ def _is_safe_xp_validation_path(
         return False
     if any(part.startswith(".") and part not in RESERVED_WORKSPACE_ROOTS for part in normalized_parts):
         return False
-    if require_directory_hint and path.endswith(".json"):
+    if require_directory_hint and _directory_path_has_file_suffix(path):
         return False
     if require_json_hint and not path.endswith(".json"):
         return False
@@ -1918,6 +1992,15 @@ def _is_safe_xp_validation_path(
     ):
         return False
     return True
+
+
+def _directory_path_has_file_suffix(raw_path: str) -> bool:
+    path = raw_path.strip()
+    if not path:
+        return False
+    leaf = PureWindowsPath(path).name if "\\" in path else PurePosixPath(path).name
+    leaf = leaf.lower()
+    return any(leaf.endswith(suffix) for suffix in FILE_LIKE_DIRECTORY_SUFFIXES)
 
 
 def _has_xp_evidence_summary(item: dict[str, Any], target: str) -> bool:

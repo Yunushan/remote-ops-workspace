@@ -23,6 +23,7 @@ from check_platform_verified_evidence import (  # noqa: E402
     accepted_artifact_names,
     accepted_record_source_file,
     check_platform_verified_evidence,
+    directory_path_has_file_suffix,
     promotion_entries_by_id,
     read_json,
     review_bundle_expected_files,
@@ -85,10 +86,12 @@ def stage_xp_native_evidence_upload(
         errors.append(f"{target} has no expected XP native assets for {release_tag}")
     if not expected_evidence:
         errors.append(f"{target} has no expected XP evidence bundle outputs for {release_tag}")
+    errors.extend(check_directory_path_hint(assets_dir, "XP native asset directory"))
     if assets_dir.is_symlink():
         errors.append(f"XP native asset directory must not be a symlink: {assets_dir}")
     elif not assets_dir.is_dir():
         errors.append(f"XP native asset directory missing: {assets_dir}")
+    errors.extend(check_directory_path_hint(evidence_output_dir, "XP evidence output directory"))
     if evidence_output_dir.is_symlink():
         errors.append(f"XP evidence output directory must not be a symlink: {evidence_output_dir}")
     elif not evidence_output_dir.is_dir():
@@ -363,6 +366,9 @@ def parent_directories(filename: str) -> set[str]:
 
 
 def prepare_output_directory(target: str, *, out_dir: Path, force: bool) -> list[str]:
+    hint_errors = check_directory_path_hint(out_dir, f"{target} staged upload output directory")
+    if hint_errors:
+        return hint_errors
     if out_dir.is_symlink():
         return [f"{target} staged upload output directory must not be a symlink: {out_dir}"]
     parent_errors = check_path_parent_symlinks(out_dir, f"{target} staged upload output directory")
@@ -402,6 +408,13 @@ def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
             continue
         if parent.is_symlink():
             return [f"{label} path must not contain symlinked directories: {parent}"]
+    return []
+
+
+def check_directory_path_hint(path: Path, label: str) -> list[str]:
+    raw_path = path.as_posix()
+    if directory_path_has_file_suffix(raw_path):
+        return [f"{label} must be a directory path, got {raw_path!r}"]
     return []
 
 

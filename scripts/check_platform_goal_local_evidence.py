@@ -20,6 +20,7 @@ from check_platform_verified_evidence import (  # noqa: E402
     PROTECTED_GOAL_TARGETS,
     XP_TARGETS,
     check_linux_builder_identity,
+    directory_path_has_file_suffix,
 )
 from check_xp_native_evidence import (  # noqa: E402
     artifact_validation_asset_dirs,
@@ -73,8 +74,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=Path,
         required=True,
         help=(
-            "staging root containing <target>/artifacts for Linux, or "
-            "<target>/<release-tag>/artifacts plus XP evidence files"
+            "staging root containing <target>/<release-tag>/artifacts plus "
+            "Linux builder/smoke evidence or XP evidence files"
         ),
     )
     parser.add_argument("--release-tag", required=True, help="release tag, for example v1.0.2")
@@ -148,6 +149,9 @@ def check_platform_goal_local_evidence(
     errors: list[str] = []
     if not RELEASE_TAG_RE.fullmatch(release_tag):
         errors.append(f"release_tag must look like vX.Y.Z: {release_tag}")
+    errors.extend(check_directory_path_hint(root, "local evidence root"))
+    if errors:
+        return errors
     if root.is_symlink():
         errors.append(f"local evidence root must not be a symlink: {root}")
         return errors
@@ -218,13 +222,19 @@ def check_linux_local_evidence(
     builder_evidence: Path | None = None,
     smoke_evidence: Path | None = None,
 ) -> list[str]:
-    target_root = root / target
+    target_dir = root / target
+    target_root = target_dir / release_tag
     artifacts_dir = assets_dir or target_root / "artifacts"
     builder_evidence = builder_evidence or target_root / f"builder-identity-{target}.json"
     smoke_evidence = smoke_evidence or target_root / f"native-smoke-{target}.log"
-    if target_root.is_symlink():
-        return [f"{target} local Linux evidence target directory must not be a symlink: {target_root}"]
     errors: list[str] = []
+    if target_dir.is_symlink():
+        errors.append(f"{target} local Linux evidence target directory must not be a symlink: {target_dir}")
+    if target_root.is_symlink():
+        errors.append(f"{target} local Linux evidence release directory must not be a symlink: {target_root}")
+    errors.extend(check_directory_path_hint(artifacts_dir, f"{target} artifact directory"))
+    if errors:
+        return errors
     errors.extend(check_path_parent_symlinks(artifacts_dir, f"{target} artifact directory"))
     errors.extend(check_path_parent_symlinks(builder_evidence, f"{target} builder identity evidence"))
     errors.extend(check_path_parent_symlinks(smoke_evidence, f"{target} native smoke evidence"))
@@ -372,6 +382,8 @@ def check_xp_local_evidence(
         errors.append(f"{target} XP evidence target directory must not be a symlink: {target_dir}")
     if target_root.is_symlink():
         errors.append(f"{target} XP evidence release directory must not be a symlink: {target_root}")
+    errors.extend(check_directory_path_hint(artifacts_dir, f"{target} artifact directory"))
+    errors.extend(check_directory_path_hint(evidence_dir, f"{target} XP evidence directory"))
     if errors:
         return errors
     errors.extend(check_path_parent_symlinks(artifacts_dir, f"{target} artifact directory"))
@@ -449,10 +461,26 @@ def check_path_inside_root(root: Path, path: Path, label: str) -> list[str]:
 def check_path_inside_target_root(target_root: Path, path: Path, label: str) -> list[str]:
     target_root_resolved = target_root.resolve(strict=False)
     path_resolved = path.resolve(strict=False)
+    target = target_root.name
+    release_tag = ""
+    root_resolved = target_root_resolved.parent
+    if target_root.parent != target_root:
+        target = target_root.parent.name
+        release_tag = target_root.name
+        root_resolved = target_root_resolved.parent.parent
     try:
-        path_resolved.relative_to(target_root_resolved)
+        relative = path_resolved.relative_to(root_resolved)
     except ValueError:
-        return [f"{label} must stay inside target evidence directory: {target_root}"]
+        return [f"{label} must stay inside local evidence root: {path}"]
+    parts = relative.parts
+    if target and release_tag:
+        for index, part in enumerate(parts[:-1]):
+            if part == target and parts[index + 1] == release_tag:
+                return []
+        return [
+            f"{label} must include target/release path segment "
+            f"{target}/{release_tag} under local evidence root: {path}"
+        ]
     return []
 
 
@@ -463,6 +491,13 @@ def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
             continue
         if parent.is_symlink():
             return [f"{label} path must not contain symlinked directories: {parent}"]
+    return []
+
+
+def check_directory_path_hint(path: Path, label: str) -> list[str]:
+    raw_path = path.as_posix()
+    if directory_path_has_file_suffix(raw_path):
+        return [f"{label} must be a directory path, got {raw_path!r}"]
     return []
 
 

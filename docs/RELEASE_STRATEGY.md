@@ -27,12 +27,20 @@ Release integrity rules:
   upload.
 - The `release-preflight` workflow job runs
   `python scripts/verify.py --quick --no-cli-smoke --release-tag <tag>` and
+  `python scripts/check_protected_platform_goal.py --release-tag <tag> --require-complete --show-requirements` plus
   `python scripts/check_platform_verified_evidence.py --require-goal-targets --release-tag <tag>`
   before any source, Python or native artifact build job can start, then
   `python scripts/check_repository_cleanup.py --require-clean`. The release tag
-  is passed into the protected platform parity report and the strict accepted
-  evidence gate, so Linux i386, Linux armhf and Windows XP native-host evidence
-  status is evaluated against the tag being built before build minutes are spent.
+  is passed into the protected platform parity report, the per-target proof
+  checklist, the hard completion gate and the strict accepted evidence gate, so
+  Linux i386, Linux armhf and Windows XP native-host evidence status is evaluated
+  against the tag being built before build minutes are spent.
+- The `accepted-platform-evidence-assets` job keeps read-only repository and
+  Actions artifact permissions; it must not request any write-scoped GitHub
+  permission while importing protected-platform evidence. Source and native
+  artifact build jobs wait for this import job, so stale, failed or
+  wrong-commit protected-platform evidence stops the release before new build
+  artifacts are produced.
 - The publish job runs
   `python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --require-platform-goal-targets`
   after downloading workflow artifacts and before uploading the GitHub release.
@@ -93,7 +101,9 @@ source artifact must come from `.github/workflows/xp-native-evidence.yml`,
 which validates staged XP artifacts and sanitized smoke evidence on a
 self-hosted `xp-evidence` runner, stages only the expected release/evidence
 files into a plain non-symlink `xp-evidence-upload` tree, and uploads
-`xp-native-evidence-<target>-<release_tag>`; staged source and upload paths
+`xp-native-evidence-<target>-<release_tag>`; workflow-generated candidate
+records, final records and review bundles must stay under
+`xp-evidence-output/<target>/<release_tag>`, and staged source and upload paths
 must not traverse symlinked parent directories.
 
 `configs/platform_parity_promotion.json` and
@@ -103,13 +113,14 @@ from script-supported to default-native only when the release matrix, release
 workflow, publish asset contract, native build outputs, smoke tests, checksum
 sidecars and native manifests all include those architectures. The produced
 artifact directory must pass
-`python scripts/check_platform_promotion_artifacts.py --target linux-i386 --assets-dir <artifact-dir> --tag v<project.version> --strict`
+`python scripts/check_platform_promotion_artifacts.py --target linux-i386 --assets-dir <target-release-artifact-dir> --tag v<project.version> --strict`
 or
-`python scripts/check_platform_promotion_artifacts.py --target linux-armhf --assets-dir <artifact-dir> --tag v<project.version> --strict`.
+`python scripts/check_platform_promotion_artifacts.py --target linux-armhf --assets-dir <target-release-artifact-dir> --tag v<project.version> --strict`.
 That strict artifact check rejects symlinked artifact paths, artifact
 directories that traverse symlinked parent directories, unsafe ZIP/tar
 member names, link/device entries inside native archives and path-qualified
-checksum/native-manifest references.
+checksum/native-manifest references. Accepted Linux evidence command paths must
+include the Linux target id and release tag as path segments.
 `.github/workflows/extended-platform-evidence.yml` is the dispatch-only
 self-hosted collection path for that evidence; it uses `[self-hosted, linux,
 i386]` and `[self-hosted, linux, armhf]` runners and uploads evidence artifacts
@@ -145,7 +156,8 @@ including a sanitized target-scoped `host_identity` block with
 (`i386` for linux-i386 or `armhf` for linux-armhf), `getconf LONG_BIT` as
 `32`, concrete `rpm` and `rpmbuild` tool paths, `sudo_non_interactive=true`,
 and security patch evidence proving TLS 1.3 preferred, TLS 1.2 minimum,
-isolated legacy compatibility and CVE patch review. Linux records must also
+isolated legacy compatibility and CVE patch review while modern Windows 10/11,
+Linux and macOS defaults remain hardened. Linux records must also
 include `native_build_command` and `native_smoke_command` matching the promotion
 contract, where the smoke command binds the target id and workflow run URL, plus
 `linux_smoke_evidence_sha256.native_smoke`, which is the SHA-256 of the captured
@@ -207,7 +219,8 @@ hostnames, credentials or tokens in XP evidence.
 Package the validated XP evidence review artifact with
 `python scripts/make_xp_native_evidence_bundle.py --target <windows-xp-native-target> --evidence <evidence.json> --candidate-record <platform-verified-evidence-windows-xp-native-target.json> --assets-dir <artifact-dir> --out-dir <bundle-dir>`; the packer validates the full candidate record and requires the candidate XP validation command to match the bundled evidence inputs. XP accepted records must bind `release_asset_source.workflow=.github/workflows/xp-native-evidence.yml`.
 The XP bundle output directory must be plain non-symlink without symlinked
-parent directories, and generated bundle files must be plain non-symlink paths.
+parent directories, generated workflow bundle output must be target/release
+scoped, and generated bundle files must be plain non-symlink paths.
 Evidence generated by `python scripts/make_xp_native_evidence_template.py` is
 scaffolding only; any remaining `TODO`, `placeholder`, `replace with real` or
 `template evidence` marker in the JSON or referenced smoke files fails XP
@@ -315,10 +328,13 @@ Use `--require-clean` only immediately before creating the tag. It adds a
 tree. During ordinary development, the default cleanup check can run while local
 work is still in progress.
 
-The tag workflow repeats this protection automatically. The `release-preflight`
-job is a dependency of `source-and-python`, `windows-native`, `macos-native`,
-`linux-native` and `publish`, so a stale manifest, broken verifier check or
-dirty checkout stops the release before artifacts are built or uploaded.
+The tag workflow repeats this protection automatically through actual GitHub
+Actions `needs` entries. The `release-preflight` job is a dependency of
+`source-and-python`, `windows-native`, `macos-native`, `linux-native`,
+`accepted-platform-evidence-assets` and `publish`; the source and native build
+jobs also wait for `accepted-platform-evidence-assets`. A stale manifest,
+broken verifier check, dirty checkout or unimportable protected-platform
+evidence stops the release before artifacts are built or uploaded.
 
 ## Phase 1: Python package artifacts
 

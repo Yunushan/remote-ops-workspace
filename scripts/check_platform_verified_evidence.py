@@ -52,6 +52,22 @@ LINUX_WORKFLOW_INPUT_KEYS = {
     "release_asset_base_url",
 }
 RESERVED_WORKSPACE_ROOTS = {".agents", ".codex", ".git", ".github"}
+FILE_LIKE_DIRECTORY_SUFFIXES = (
+    ".appimage",
+    ".deb",
+    ".exe",
+    ".gz",
+    ".json",
+    ".log",
+    ".msi",
+    ".rpm",
+    ".sha256",
+    ".tar",
+    ".tgz",
+    ".txt",
+    ".xz",
+    ".zip",
+)
 KNOWN_TARGETS = {*LINUX_TARGETS, *XP_TARGETS}
 PROTECTED_GOAL_TARGETS = (
     "linux-i386",
@@ -204,6 +220,30 @@ REQUIRED_SECURITY_PATCH_EVIDENCE = {
     "legacy_compatibility_profile": "isolated-opt-in",
     "cve_patch_reviewed": True,
 }
+REQUIRED_LINUX_SECURITY_SMOKE_VALUE_LINES = (
+    "native installer smoke python ssl openssl",
+    "native installer smoke openssl cli version",
+)
+REQUIRED_LINUX_SECURITY_SMOKE_LINES = (
+    "native installer smoke TLS minimum modern profiles: TLS 1.2",
+    "native installer smoke TLS preferred modern profiles: TLS 1.3",
+    "native installer smoke legacy compatibility profile: isolated-opt-in",
+    "native installer smoke legacy crypto scope: profile-only",
+    "native installer smoke weak crypto global default: false",
+    "native installer smoke modern defaults unchanged: true",
+)
+FORBIDDEN_LINUX_SECURITY_SMOKE_LINES = (
+    "native installer smoke TLS minimum modern profiles: TLS 1.0",
+    "native installer smoke TLS minimum modern profiles: TLS 1.1",
+    "native installer smoke TLS preferred modern profiles: TLS 1.0",
+    "native installer smoke TLS preferred modern profiles: TLS 1.1",
+    "native installer smoke legacy compatibility profile: global",
+    "native installer smoke legacy compatibility profile: global-default",
+    "native installer smoke legacy crypto scope: global",
+    "native installer smoke legacy crypto scope: global-default",
+    "native installer smoke weak crypto global default: true",
+    "native installer smoke modern defaults unchanged: false",
+)
 REQUIRED_LINUX_TOOLS = {
     "bash",
     "curl",
@@ -238,6 +278,11 @@ GITHUB_RELEASE_ASSET_RE = re.compile(
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args([] if argv is None else argv)
+    strict_errors = strict_platform_goal_arg_errors(args)
+    if strict_errors:
+        for error in strict_errors:
+            print(f"platform verified evidence: {error}", file=sys.stderr)
+        return 2
     required_targets = required_targets_from_args(args)
     errors = check_platform_verified_evidence(
         required_targets=required_targets,
@@ -301,6 +346,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def strict_platform_goal_arg_errors(args: argparse.Namespace) -> list[str]:
+    if args.require_goal_targets and not args.release_tag:
+        return ["--require-goal-targets requires --release-tag vX.Y.Z"]
+    return []
+
+
 def required_targets_from_args(args: argparse.Namespace) -> tuple[str, ...]:
     targets = set(str(target) for target in args.require_target)
     if args.require_goal_targets:
@@ -317,6 +368,7 @@ def check_platform_verified_evidence(
     required_targets: tuple[str, ...] | list[str] | set[str] | None = None,
     required_release_tag: str | None = None,
     require_review_bundles: bool = False,
+    check_consistency: bool = True,
 ) -> list[str]:
     registry_data = registry or read_json(EVIDENCE_PATH)
     promotion_data = promotion or read_json(PROMOTION_PATH)
@@ -351,7 +403,8 @@ def check_platform_verified_evidence(
             )
         else:
             errors.append(f"accepted_evidence target is not protected: {target}")
-    errors.extend(check_registry_consistency(registry_data))
+    if check_consistency:
+        errors.extend(check_registry_consistency(registry_data))
     if required_targets:
         errors.extend(
             check_required_targets(
@@ -487,6 +540,8 @@ def check_schema(registry: dict[str, Any]) -> list[str]:
         errors.append("platform verified evidence policy must require Linux rpm and non-interactive sudo evidence")
     if "Linux security patch evidence" not in policy:
         errors.append("platform verified evidence policy must require Linux security patch evidence")
+    if "Linux security smoke proof-line binding" not in policy:
+        errors.append("platform verified evidence policy must require Linux security smoke proof-line binding")
     if "Linux native build and smoke command provenance" not in policy:
         errors.append("platform verified evidence policy must require Linux native build and smoke command provenance")
     if "Linux smoke evidence SHA-256" not in policy:
@@ -548,6 +603,10 @@ def check_schema(registry: dict[str, Any]) -> list[str]:
     if "Linux release source artifact names must be target/release-scoped" not in policy:
         errors.append(
             "platform verified evidence policy must require target/release-scoped Linux release source artifacts"
+        )
+    if "Linux accepted evidence command paths must be target/release-scoped" not in policy:
+        errors.append(
+            "platform verified evidence policy must require target/release-scoped Linux accepted evidence paths"
         )
     if "XP release source artifact names must be target/release-scoped" not in policy:
         errors.append("platform verified evidence policy must require target/release-scoped XP release source artifacts")
@@ -1257,6 +1316,8 @@ def check_xp_validation_command_path(
     command_label: str,
     require_directory_hint: bool = False,
     require_json_hint: bool = False,
+    require_target_scope: bool = False,
+    require_release_scope: bool = False,
     require_target_release_scope: bool = False,
     release_tag: str = "",
 ) -> list[str]:
@@ -1299,22 +1360,34 @@ def check_xp_validation_command_path(
                 f"{target} {command_label} {flag} "
                 f"must not contain hidden path segments: {hidden_segments}"
             )
-    if require_directory_hint and path.endswith(".json"):
+    if require_directory_hint and directory_path_has_file_suffix(path):
         errors.append(f"{target} {command_label} {flag} must be a directory path, got {raw_path!r}")
     if require_json_hint and not path.endswith(".json"):
         errors.append(f"{target} {command_label} {flag} must point to an XP evidence JSON file")
-    if require_target_release_scope and normalized_parts:
+    check_target_scope = require_target_scope or require_target_release_scope
+    check_release_scope = require_release_scope or require_target_release_scope
+    if check_target_scope and normalized_parts:
         if target not in normalized_parts:
             errors.append(
                 f"{target} {command_label} {flag} "
                 f"must include target path segment {target!r}, got {raw_path!r}"
             )
+    if check_release_scope and normalized_parts:
         if release_tag not in normalized_parts:
             errors.append(
                 f"{target} {command_label} {flag} "
                 f"must include release_tag path segment {release_tag!r}, got {raw_path!r}"
             )
     return errors
+
+
+def directory_path_has_file_suffix(raw_path: str) -> bool:
+    path = raw_path.strip()
+    if not path:
+        return False
+    leaf = PureWindowsPath(path).name if "\\" in path else PurePosixPath(path).name
+    leaf = leaf.lower()
+    return any(leaf.endswith(suffix) for suffix in FILE_LIKE_DIRECTORY_SUFFIXES)
 
 
 def check_xp_evidence_summary(target: str, release_tag: str, raw_summary: Any) -> list[str]:
@@ -1699,6 +1772,7 @@ def check_linux_smoke_log_text(
         f"native installer smoke workflow run: {workflow_run_url}",
         f"native installer smoke source head sha: {source_head_sha}",
         f"native installer smoke userland bits: {expected_userland_bits}",
+        *REQUIRED_LINUX_SECURITY_SMOKE_LINES,
         *[f"native installer smoke: {step}" for step in REQUIRED_LINUX_SMOKE_STEPS],
         f"native installer smoke passed for Linux {arch}",
     ]
@@ -1730,8 +1804,39 @@ def check_linux_smoke_log_text(
             expected_dpkg_arches,
         )
     )
+    errors.extend(check_linux_smoke_security_value_lines(target, label, text))
+    errors.extend(check_forbidden_linux_smoke_security_lines(target, label, text))
     if artifact_sha256 is not None:
         errors.extend(check_linux_smoke_artifact_sha256_lines(target, release_tag, text, artifact_sha256, label=label))
+    return errors
+
+
+def check_linux_smoke_security_value_lines(target: str, label: str, text: str) -> list[str]:
+    errors: list[str] = []
+    for key in REQUIRED_LINUX_SECURITY_SMOKE_VALUE_LINES:
+        prefix = f"{key}: "
+        values = [
+            line.removeprefix(prefix).strip()
+            for line in text.splitlines()
+            if line.startswith(prefix)
+        ]
+        if not values:
+            errors.append(f"{target} {label} missing required line: {key}: <expected security value>")
+            continue
+        if len(values) != 1:
+            errors.append(f"{target} {label} must include exactly one {key} value, got {values}")
+            continue
+        value = values[0]
+        if not value or "<" in value or ">" in value:
+            errors.append(f"{target} {label} {key} must be concrete, got {value!r}")
+    return errors
+
+
+def check_forbidden_linux_smoke_security_lines(target: str, label: str, text: str) -> list[str]:
+    errors: list[str] = []
+    for line in FORBIDDEN_LINUX_SECURITY_SMOKE_LINES:
+        if line in text:
+            errors.append(f"{target} {label} contains forbidden security proof line: {line}")
     return errors
 
 
@@ -1902,7 +2007,7 @@ def check_common_evidence(
             release_tag,
             entry.get("release_asset_source"),
             expected_files=expected_source_files,
-            allowed_files=expected_source_files | review_bundle_files,
+            allowed_files=expected_source_files,
             native_release_assets=entry.get("release_asset_urls"),
         )
     )
@@ -2257,7 +2362,6 @@ def check_artifact_validation_command(target: str, release_tag: str, command: st
     elif "<" in asset_dirs[0] or ">" in asset_dirs[0]:
         errors.append(f"{target} artifact_validation_command --assets-dir must be concrete, got {asset_dirs[0]!r}")
     else:
-        require_target_release_scope = target in XP_TARGETS
         errors.extend(
             check_xp_validation_command_path(
                 target,
@@ -2265,7 +2369,7 @@ def check_artifact_validation_command(target: str, release_tag: str, command: st
                 asset_dirs[0],
                 command_label="artifact_validation_command",
                 require_directory_hint=True,
-                require_target_release_scope=require_target_release_scope,
+                require_target_release_scope=target in LINUX_TARGETS or target in XP_TARGETS,
                 release_tag=release_tag,
             )
         )
@@ -2293,8 +2397,13 @@ def check_local_evidence_preflight_command(
             f"{target} local_evidence_preflight_command must start with {expected_prefix!r}"
         )
     roots = command_argument_values(command, "--root")
-    if roots != ["."]:
-        errors.append(f"{target} local_evidence_preflight_command must include exactly one --root ., got {roots}")
+    root = roots[0] if len(roots) == 1 else ""
+    if len(roots) != 1:
+        errors.append(f"{target} local_evidence_preflight_command must include exactly one --root, got {roots}")
+    elif "<" in root or ">" in root:
+        errors.append(f"{target} local_evidence_preflight_command --root must be concrete, got {root!r}")
+    else:
+        errors.extend(check_local_evidence_root_path(target, root))
     release_tags = command_argument_values(command, "--release-tag")
     if release_tags != [release_tag]:
         errors.append(
@@ -2321,15 +2430,71 @@ def check_local_evidence_preflight_command(
             f"{target} local_evidence_preflight_command --assets-dir must match artifact_validation_command "
             "--assets-dir"
         )
+    if root:
+        for flag, values in local_evidence_path_bindings(target, command).items():
+            for value in values:
+                if "<" not in value and ">" not in value:
+                    errors.extend(check_path_under_local_evidence_root(target, root, flag, value))
     if target in LINUX_TARGETS:
-        errors.extend(check_linux_local_evidence_preflight_command(target, entry, command))
+        errors.extend(check_linux_local_evidence_preflight_command(target, release_tag, entry, command))
     elif target in XP_TARGETS:
         errors.extend(check_xp_local_evidence_preflight_command(target, release_tag, entry, command))
     return errors
 
 
+def local_evidence_path_bindings(target: str, command: str) -> dict[str, list[str]]:
+    bindings = {"--assets-dir": command_argument_values(command, "--assets-dir")}
+    if target in LINUX_TARGETS:
+        bindings["--linux-builder-evidence"] = command_argument_values(command, "--linux-builder-evidence")
+        bindings["--linux-smoke-evidence"] = command_argument_values(command, "--linux-smoke-evidence")
+    elif target in XP_TARGETS:
+        bindings["--xp-evidence"] = command_argument_values(command, "--xp-evidence")
+        bindings["--xp-evidence-dir"] = command_argument_values(command, "--xp-evidence-dir")
+    return bindings
+
+
+def check_local_evidence_root_path(target: str, raw_root: str) -> list[str]:
+    if raw_root == ".":
+        return []
+    return check_xp_validation_command_path(
+        target,
+        "--root",
+        raw_root,
+        command_label="local_evidence_preflight_command",
+        require_directory_hint=True,
+    )
+
+
+def check_path_under_local_evidence_root(
+    target: str,
+    raw_root: str,
+    flag: str,
+    raw_path: str,
+) -> list[str]:
+    root_parts = relative_path_parts(raw_root)
+    path_parts = relative_path_parts(raw_path)
+    if root_parts and (len(path_parts) < len(root_parts) or path_parts[: len(root_parts)] != root_parts):
+        return [
+            f"{target} local_evidence_preflight_command {flag} "
+            f"must stay under --root {raw_root}, got {raw_path!r}"
+        ]
+    return []
+
+
+def relative_path_parts(raw_path: str) -> tuple[str, ...]:
+    path = raw_path.strip()
+    windows_path = PureWindowsPath(path)
+    posix_path = PurePosixPath(path)
+    if "\\" in path or windows_path.is_absolute() or bool(windows_path.drive):
+        parts = windows_path.parts
+    else:
+        parts = posix_path.parts
+    return tuple(part for part in parts if part not in ("", "."))
+
+
 def check_linux_local_evidence_preflight_command(
     target: str,
+    release_tag: str,
     entry: dict[str, Any],
     command: str,
 ) -> list[str]:
@@ -2349,6 +2514,18 @@ def check_linux_local_evidence_preflight_command(
             f"{target} local_evidence_preflight_command --linux-builder-evidence must be "
             f"builder-identity-{target}.json"
         )
+    else:
+        errors.extend(
+            check_xp_validation_command_path(
+                target,
+                "--linux-builder-evidence",
+                builder_paths[0],
+                command_label="local_evidence_preflight_command",
+                require_json_hint=True,
+                require_target_release_scope=True,
+                release_tag=release_tag,
+            )
+        )
     smoke_paths = command_argument_values(command, "--linux-smoke-evidence")
     if len(smoke_paths) != 1:
         errors.append(
@@ -2358,6 +2535,17 @@ def check_linux_local_evidence_preflight_command(
     elif not concrete_path_value(smoke_paths[0]) or Path(smoke_paths[0]).name != f"native-smoke-{target}.log":
         errors.append(
             f"{target} local_evidence_preflight_command --linux-smoke-evidence must be native-smoke-{target}.log"
+        )
+    else:
+        errors.extend(
+            check_xp_validation_command_path(
+                target,
+                "--linux-smoke-evidence",
+                smoke_paths[0],
+                command_label="local_evidence_preflight_command",
+                require_target_release_scope=True,
+                release_tag=release_tag,
+            )
         )
     workflow_urls = command_argument_values(command, "--linux-workflow-run-url")
     expected_workflow_url = str(entry.get("workflow_run_url", "")).rstrip("/")

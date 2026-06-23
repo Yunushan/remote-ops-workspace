@@ -247,6 +247,36 @@ def test_validate_source_artifact_rejects_unsafe_release_source_file_entries(tmp
     assert f"linux-i386 release_asset_source.contains_files contains duplicates: ['{first_file}']" in errors
 
 
+def test_validate_source_artifact_rejects_missing_declared_expected_file(tmp_path: Path) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+    source = record["release_asset_source"]
+    final_record = "platform-verified-evidence-linux-i386-final.json"
+    source["contains_files"] = [
+        name for name in source["contains_files"] if name != final_record
+    ]
+
+    errors = importer.validate_source_artifact(record, source_root=tmp_path / "downloaded")
+
+    assert (
+        "linux-i386 release_asset_source.contains_files missing expected files: "
+        "['platform-verified-evidence-linux-i386-final.json']"
+    ) in errors
+
+
+def test_validate_source_artifact_rejects_extra_declared_file(tmp_path: Path) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+    record["release_asset_source"]["contains_files"].append("operator-private-builder.log")
+
+    errors = importer.validate_source_artifact(record, source_root=tmp_path / "downloaded")
+
+    assert (
+        "linux-i386 release_asset_source.contains_files has unexpected files: "
+        "['operator-private-builder.log']"
+    ) in errors
+
+
 def test_validate_downloaded_source_file_set_rejects_symlinked_source(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -367,6 +397,20 @@ def test_import_platform_evidence_artifacts_rejects_symlinked_output_directory(
     errors = importer.import_platform_evidence_artifacts([], out_dir=out_dir, dry_run=True)
 
     assert f"release asset import output directory must not be a symlink: {out_dir}" in errors
+    assert not out_dir.exists()
+
+
+def test_import_platform_evidence_artifacts_rejects_file_shaped_output_directory(
+    tmp_path: Path,
+) -> None:
+    importer = _load_importer()
+    out_dir = tmp_path / "release-assets.zip"
+
+    errors = importer.import_platform_evidence_artifacts([], out_dir=out_dir, dry_run=True)
+
+    assert errors == [
+        f"release asset import output directory must be a directory path, got {out_dir.as_posix()!r}"
+    ]
     assert not out_dir.exists()
 
 
@@ -880,6 +924,92 @@ def test_import_record_dry_run_prints_gh_download_command(tmp_path: Path, capsys
     assert "gh run view 12345 --repo example/remote-ops-workspace" in captured.out
     assert "gh run download 12345 --repo example/remote-ops-workspace" in captured.out
     assert "--name extended-linux-evidence-linux-i386-v1.0.2" in captured.out
+
+
+def test_import_record_dry_run_can_verify_source_run_without_download(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+    commands: list[list[str]] = []
+
+    def fake_run(command: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        commands.append(command)
+        assert check is True
+        assert command[:3] == ["gh", "run", "view"]
+        assert kwargs == {"capture_output": True, "text": True}
+        return _successful_view(command)
+
+    monkeypatch.setattr(importer.subprocess, "run", fake_run)
+
+    errors = importer.import_record(
+        record,
+        out_dir=tmp_path / "release-assets",
+        download_root=tmp_path / "download",
+        dry_run=True,
+        verify_source_run_metadata=True,
+        release_head_sha=HEAD_SHA,
+    )
+
+    assert errors == []
+    assert commands == [
+        [
+            "gh",
+            "run",
+            "view",
+            "12345",
+            "--repo",
+            "example/remote-ops-workspace",
+            "--json",
+            "conclusion,event,headSha,status,workflowName",
+        ]
+    ]
+    assert not (tmp_path / "download").exists()
+    captured = capsys.readouterr()
+    assert "gh run view 12345 --repo example/remote-ops-workspace" in captured.out
+    assert "gh run download 12345 --repo example/remote-ops-workspace" in captured.out
+
+
+def test_import_record_dry_run_reports_verified_source_run_mismatch(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+
+    def fake_run(command: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        assert command[:3] == ["gh", "run", "view"]
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout=json.dumps(
+                {
+                    "status": "completed",
+                    "conclusion": "failure",
+                    "event": "workflow_dispatch",
+                    "headSha": HEAD_SHA,
+                    "workflowName": "extended-platform-evidence",
+                }
+            ),
+        )
+
+    monkeypatch.setattr(importer.subprocess, "run", fake_run)
+
+    errors = importer.import_record(
+        record,
+        out_dir=tmp_path / "release-assets",
+        download_root=tmp_path / "download",
+        dry_run=True,
+        verify_source_run_metadata=True,
+        release_head_sha=HEAD_SHA,
+    )
+
+    assert (
+        "linux-i386 release_asset_source workflow run conclusion must be success, got 'failure'"
+        in errors
+    )
 
 
 def test_expected_release_files_includes_native_review_bundle_and_final_record_files(tmp_path: Path) -> None:

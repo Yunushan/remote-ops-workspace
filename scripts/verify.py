@@ -216,6 +216,27 @@ def build_steps(
         *(
             [
                 VerifyStep(
+                    "platform evidence artifact import dry-run",
+                    [
+                        python,
+                        "scripts/import_platform_evidence_artifacts.py",
+                        "--release-tag",
+                        release_tag,
+                        "--require-goal-targets",
+                        "--out-dir",
+                        str(release_assets_dir),
+                        "--dry-run",
+                        "--verify-source-run",
+                    ],
+                    env=_source_env(),
+                )
+            ]
+            if require_platform_goal_targets and release_tag and release_assets_dir is not None
+            else []
+        ),
+        *(
+            [
+                VerifyStep(
                     "platform review bundle artifact validation",
                     [
                         python,

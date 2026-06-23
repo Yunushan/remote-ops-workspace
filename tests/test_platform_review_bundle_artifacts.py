@@ -62,6 +62,12 @@ def test_platform_review_bundle_artifacts_goal_targets_require_release_tag(tmp_p
     assert errors == ["protected platform goal required targets require --release-tag vX.Y.Z"]
 
 
+def test_platform_review_bundle_artifacts_goal_cli_requires_release_tag(tmp_path: Path) -> None:
+    validator = _load_script("check_platform_review_bundle_artifacts")
+
+    assert validator.main(["--bundle-dir", str(tmp_path), "--require-goal-targets"]) == 2
+
+
 def test_platform_review_bundle_artifacts_rejects_required_release_tag_mismatch(tmp_path: Path) -> None:
     validator = _load_script("check_platform_review_bundle_artifacts")
     record = _finalized_xp_record(tmp_path)
@@ -140,6 +146,23 @@ def test_platform_review_bundle_artifacts_rejects_symlinked_bundle_directory(
     )
 
     assert f"review bundle directory must not be a symlink: {tmp_path}" in errors
+
+
+def test_platform_review_bundle_artifacts_rejects_file_shaped_bundle_directory(
+    tmp_path: Path,
+) -> None:
+    validator = _load_script("check_platform_review_bundle_artifacts")
+    record = _finalized_xp_record(tmp_path)
+    registry = _registry_with(record)
+    bundle_dir = tmp_path / "review-bundles.zip"
+
+    errors = validator.check_platform_review_bundle_artifacts(
+        registry=registry,
+        bundle_dir=bundle_dir,
+    )
+
+    assert f"review bundle directory must be a directory path, got {bundle_dir.as_posix()!r}" in errors
+    assert not bundle_dir.exists()
 
 
 def test_platform_review_bundle_artifacts_rejects_symlinked_bundle_directory_parent(

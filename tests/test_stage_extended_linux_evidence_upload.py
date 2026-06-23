@@ -207,6 +207,25 @@ def test_stage_extended_linux_evidence_upload_rejects_symlinked_source_directory
     assert f"extended Linux evidence source directory must not be a symlink: {source}" in errors
 
 
+def test_stage_extended_linux_evidence_upload_rejects_file_shaped_source_directory(
+    tmp_path: Path,
+) -> None:
+    stager = _load_stager()
+    source = tmp_path / "linux-evidence.zip"
+    source.mkdir()
+
+    errors = stager.stage_extended_linux_evidence_upload(
+        target="linux-i386",
+        release_tag="v1.0.2",
+        source_dir=source,
+        out_dir=tmp_path / "upload",
+    )
+
+    assert (
+        f"extended Linux evidence source directory must be a directory path, got {source.as_posix()!r}"
+    ) in errors
+
+
 def test_stage_extended_linux_evidence_upload_rejects_symlinked_source(monkeypatch) -> None:
     stager = _load_stager()
     sources = {
@@ -274,6 +293,20 @@ def test_stage_extended_linux_evidence_upload_rejects_symlinked_output_directory
     assert errors == [
         f"linux-i386 staged upload output directory must not be a symlink: {out_dir}"
     ]
+
+
+def test_stage_extended_linux_evidence_upload_rejects_file_shaped_output_directory(
+    tmp_path: Path,
+) -> None:
+    stager = _load_stager()
+    out_dir = tmp_path / "linux-evidence-upload.zip"
+
+    errors = stager.prepare_output_directory("linux-i386", out_dir=out_dir, force=False)
+
+    assert errors == [
+        f"linux-i386 staged upload output directory must be a directory path, got {out_dir.as_posix()!r}"
+    ]
+    assert not out_dir.exists()
 
 
 def test_stage_extended_linux_evidence_upload_rejects_symlinked_output_parent(

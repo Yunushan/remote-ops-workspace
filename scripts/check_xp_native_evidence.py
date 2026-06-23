@@ -28,6 +28,22 @@ CONTRACT_PATH = ROOT / "configs" / "xp_native_evidence_contract.json"
 PROMOTION_PATH = ROOT / "configs" / "platform_parity_promotion.json"
 PROMOTION_TARGETS = {"windows-xp-native-x86", "windows-xp-native-x64"}
 RESERVED_WORKSPACE_ROOTS = {".agents", ".codex", ".git", ".github"}
+FILE_LIKE_DIRECTORY_SUFFIXES = (
+    ".appimage",
+    ".deb",
+    ".exe",
+    ".gz",
+    ".json",
+    ".log",
+    ".msi",
+    ".rpm",
+    ".sha256",
+    ".tar",
+    ".tgz",
+    ".txt",
+    ".xz",
+    ".zip",
+)
 REQUIRED_FORBIDDEN_EVIDENCE_PATTERNS = {
     "TODO",
     "placeholder",
@@ -224,6 +240,35 @@ def check_contract(contract: dict[str, Any]) -> list[str]:
                 errors.append(
                     "XP native evidence contract required_security_smoke_evidence_lines "
                     f"missing {smoke_id} proof lines"
+                )
+    forbidden_security_lines = contract.get("forbidden_security_smoke_evidence_lines")
+    required_forbidden_security_lines = {
+        "legacy_crypto_profile_scoped": {
+            "legacy compatibility profile: global",
+            "legacy crypto scope: global",
+            "legacy crypto scope: global-default",
+            "weak crypto global default: true",
+        },
+        "modern_defaults_unchanged": {
+            "modern TLS minimum: TLS 1.0",
+            "modern TLS minimum: TLS 1.1",
+            "modern TLS preferred: TLS 1.0",
+            "modern TLS preferred: TLS 1.1",
+            "modern defaults unchanged: false",
+            "weak crypto global default: true",
+        },
+    }
+    if not isinstance(forbidden_security_lines, dict):
+        errors.append("XP native evidence contract must define forbidden_security_smoke_evidence_lines")
+    else:
+        for smoke_id, forbidden_lines in sorted(required_forbidden_security_lines.items()):
+            actual_lines = forbidden_security_lines.get(smoke_id)
+            if not isinstance(actual_lines, list) or not forbidden_lines.issubset(
+                {str(item) for item in actual_lines}
+            ):
+                errors.append(
+                    "XP native evidence contract forbidden_security_smoke_evidence_lines "
+                    f"missing {smoke_id} contradiction lines"
                 )
     host_identity_fields = contract.get("required_host_identity_fields")
     if not isinstance(host_identity_fields, list) or not REQUIRED_HOST_IDENTITY_FIELDS.issubset(
@@ -805,6 +850,17 @@ def check_security_smoke_evidence_lines(
             errors.append(
                 f"{target} smoke result {smoke_id} evidence_file missing security proof line: {expected}"
             )
+    forbidden = contract.get("forbidden_security_smoke_evidence_lines")
+    if isinstance(forbidden, dict):
+        raw_forbidden_lines = forbidden.get(smoke_id)
+        if isinstance(raw_forbidden_lines, list):
+            for line in raw_forbidden_lines:
+                forbidden_line = str(line).strip()
+                if forbidden_line.lower() in normalized_lines:
+                    errors.append(
+                        f"{target} smoke result {smoke_id} evidence_file "
+                        f"contains forbidden security proof line: {forbidden_line}"
+                    )
     return errors
 
 
@@ -896,12 +952,21 @@ def check_artifact_validation_assets_dir(target: str, release_tag: str, raw_path
             f"{target} evidence artifact_validation.command --assets-dir "
             f"must include release_tag path segment {release_tag!r}, got {raw_path!r}"
         )
-    if path.endswith(".json"):
+    if directory_path_has_file_suffix(path):
         errors.append(
             f"{target} evidence artifact_validation.command --assets-dir "
             f"must be a directory path, got {raw_path!r}"
         )
     return errors
+
+
+def directory_path_has_file_suffix(raw_path: str) -> bool:
+    path = raw_path.strip()
+    if not path:
+        return False
+    leaf = PureWindowsPath(path).name if "\\" in path else PurePosixPath(path).name
+    leaf = leaf.lower()
+    return any(leaf.endswith(suffix) for suffix in FILE_LIKE_DIRECTORY_SUFFIXES)
 
 
 def command_flag_count(command: str, flag: str) -> int:

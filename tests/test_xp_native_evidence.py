@@ -567,6 +567,56 @@ def test_xp_native_evidence_rejects_missing_modern_defaults_security_proof_line(
     ) in errors
 
 
+def test_xp_native_evidence_rejects_forbidden_legacy_crypto_security_proof_line(tmp_path: Path) -> None:
+    checker = _load_xp_native_evidence_checker()
+    evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    result = next(item for item in evidence["smoke_results"] if item["id"] == "legacy_crypto_profile_scoped")
+    smoke_file = tmp_path / result["evidence_file"]
+    smoke_file.write_text(
+        smoke_file.read_text(encoding="utf-8") + "weak crypto global default: true\n",
+        encoding="utf-8",
+    )
+    result["evidence_sha256"] = _sha256(smoke_file)
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path)
+
+    assert (
+        "windows-xp-native-x86 smoke result legacy_crypto_profile_scoped evidence_file "
+        "contains forbidden security proof line: weak crypto global default: true"
+    ) in errors
+
+
+def test_xp_native_evidence_rejects_forbidden_modern_defaults_security_proof_line(tmp_path: Path) -> None:
+    checker = _load_xp_native_evidence_checker()
+    evidence = _valid_evidence("windows-xp-native-x64", "x64", "SP2", "v1.0.2", [])
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    result = next(item for item in evidence["smoke_results"] if item["id"] == "modern_defaults_unchanged")
+    smoke_file = tmp_path / result["evidence_file"]
+    smoke_file.write_text(
+        smoke_file.read_text(encoding="utf-8")
+        + "modern TLS minimum: TLS 1.0\n"
+        + "modern defaults unchanged: false\n",
+        encoding="utf-8",
+    )
+    result["evidence_sha256"] = _sha256(smoke_file)
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path)
+
+    assert (
+        "windows-xp-native-x64 smoke result modern_defaults_unchanged evidence_file "
+        "contains forbidden security proof line: modern TLS minimum: TLS 1.0"
+    ) in errors
+    assert (
+        "windows-xp-native-x64 smoke result modern_defaults_unchanged evidence_file "
+        "contains forbidden security proof line: modern defaults unchanged: false"
+    ) in errors
+
+
 def test_xp_native_evidence_rejects_missing_smoke_command(tmp_path: Path) -> None:
     checker = _load_xp_native_evidence_checker()
     evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
@@ -844,6 +894,27 @@ def test_xp_native_evidence_rejects_unscoped_artifact_validation_assets_dir(tmp_
     assert (
         "windows-xp-native-x86 evidence artifact_validation.command --assets-dir "
         "must include release_tag path segment 'v1.0.2', got 'native-dist/windows-xp'"
+    ) in errors
+
+
+def test_xp_native_evidence_rejects_file_shaped_artifact_validation_assets_dir(tmp_path: Path) -> None:
+    checker = _load_xp_native_evidence_checker()
+    evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
+    evidence["artifact_validation"]["command"] = (
+        "python scripts/check_platform_promotion_artifacts.py --target windows-xp-native-x86 "
+        "--assets-dir native-dist/windows-xp/windows-xp-native-x86/v1.0.2/artifacts.zip "
+        "--tag v1.0.2 --strict"
+    )
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path)
+
+    assert (
+        "windows-xp-native-x86 evidence artifact_validation.command --assets-dir "
+        "must be a directory path, got "
+        "'native-dist/windows-xp/windows-xp-native-x86/v1.0.2/artifacts.zip'"
     ) in errors
 
 

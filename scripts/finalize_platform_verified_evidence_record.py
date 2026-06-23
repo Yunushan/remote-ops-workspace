@@ -216,12 +216,12 @@ def check_candidate_release_asset_source_files(
     unsafe_files = sorted(filename for filename in files if not concrete_file_name(filename))
     artifact_hashes = candidate.get("artifact_sha256")
     artifact_files = set(str(filename) for filename in artifact_hashes) if isinstance(artifact_hashes, dict) else set()
-    allowed_files = artifact_files | set(review_bundle_files.values())
-    if target in KNOWN_TARGETS:
-        allowed_files.add(accepted_record_source_file(target))
     actual_files = set(files)
     missing_artifacts = sorted(artifact_files - actual_files)
-    unexpected_files = sorted(actual_files - allowed_files)
+    finalization_only_files = set(review_bundle_files.values())
+    if target in KNOWN_TARGETS:
+        finalization_only_files.add(accepted_record_source_file(target))
+    unexpected_files = sorted(actual_files - artifact_files)
     errors: list[str] = []
     if duplicate_files:
         errors.append(f"candidate release_asset_source.contains_files has duplicate files: {duplicate_files}")
@@ -230,10 +230,18 @@ def check_candidate_release_asset_source_files(
     if missing_artifacts:
         errors.append(f"candidate release_asset_source.contains_files missing native artifacts: {missing_artifacts}")
     if unexpected_files:
-        errors.append(
-            "candidate release_asset_source.contains_files has files outside finalizable release source: "
-            f"{unexpected_files}"
-        )
+        finalization_only = sorted(set(unexpected_files) & finalization_only_files)
+        if finalization_only:
+            errors.append(
+                "candidate release_asset_source.contains_files must not include "
+                f"finalization-only files before finalization: {finalization_only}"
+            )
+        other_unexpected = sorted(set(unexpected_files) - finalization_only_files)
+        if other_unexpected:
+            errors.append(
+                "candidate release_asset_source.contains_files has files outside native artifacts: "
+                f"{other_unexpected}"
+            )
     return errors
 
 

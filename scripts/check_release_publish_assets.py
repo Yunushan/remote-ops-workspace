@@ -15,6 +15,12 @@ MATRIX_PATH = ROOT / "configs" / "release_matrix.json"
 EVIDENCE_PATH = ROOT / "configs" / "platform_verified_evidence.json"
 MOBAXTERM_EVIDENCE_PATH = ROOT / "configs" / "mobaxterm_parity_evidence.json"
 WORKFLOW_PATH = ROOT / ".github" / "workflows" / "release.yml"
+SCRIPTS = ROOT / "scripts"
+if str(SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS))
+
+from check_platform_verified_evidence import directory_path_has_file_suffix  # noqa: E402
+
 EXPECTED_CHECKSUM_SUFFIX = "SHA256SUMS.txt"
 XP_NATIVE_EVIDENCE_TARGETS = {"windows-xp-native-x86", "windows-xp-native-x64"}
 PLATFORM_GOAL_TARGETS = (
@@ -49,6 +55,11 @@ GATED_NATIVE_PATTERNS = {
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    strict_errors = strict_platform_goal_arg_errors(args)
+    if strict_errors:
+        for error in strict_errors:
+            print(f"release publish assets: {error}", file=sys.stderr)
+        return 2
     matrix = json.loads(MATRIX_PATH.read_text(encoding="utf-8"))
     evidence_registry = read_evidence_registry()
     mobaxterm_registry = read_mobaxterm_evidence_registry()
@@ -107,6 +118,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="fail unless every strict MobaXterm parity article has accepted release evidence",
     )
     return parser.parse_args(argv)
+
+
+def strict_platform_goal_arg_errors(args: argparse.Namespace) -> list[str]:
+    if not args.require_platform_goal_targets:
+        return []
+    errors: list[str] = []
+    if args.assets_dir is None:
+        errors.append("--require-platform-goal-targets requires --assets-dir")
+    if not args.tag:
+        errors.append("--require-platform-goal-targets requires --tag vX.Y.Z")
+    return errors
 
 
 def check_publish_contract(
@@ -208,7 +230,7 @@ def check_platform_evidence_import_job(workflow: str) -> list[str]:
         errors.append("platform review bundle validation must run before imported artifact upload")
     if import_index >= 0 and review_bundle_index >= 0 and import_index > review_bundle_index:
         errors.append("platform review bundle validation must run after platform evidence import")
-    if re.search(r"(?m)^\s+(actions|contents):\s+write\s*$", block):
+    if re.search(r"(?m)^\s+[A-Za-z0-9_-]+:\s+write\s*$", block):
         errors.append("accepted-platform-evidence-assets job must not request write permissions")
     return errors
 
@@ -287,9 +309,19 @@ def check_release_assets(
 
 
 def check_release_asset_directory(assets_dir: Path) -> list[str]:
+    hint_errors = check_directory_path_hint(assets_dir, "release asset directory")
+    if hint_errors:
+        return hint_errors
     if assets_dir.is_symlink():
         return [f"release asset directory must not be a symlink: {assets_dir}"]
     return check_path_parent_symlinks(assets_dir, "release asset directory")
+
+
+def check_directory_path_hint(path: Path, label: str) -> list[str]:
+    raw_path = path.as_posix()
+    if directory_path_has_file_suffix(raw_path):
+        return [f"{label} must be a directory path, got {raw_path!r}"]
+    return []
 
 
 def check_release_asset_symlinks(root: Path) -> list[str]:

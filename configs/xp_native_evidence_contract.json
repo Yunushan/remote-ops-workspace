@@ -68,6 +68,22 @@
       "weak crypto global default: false"
     ]
   },
+  "forbidden_security_smoke_evidence_lines": {
+    "legacy_crypto_profile_scoped": [
+      "legacy compatibility profile: global",
+      "legacy crypto scope: global",
+      "legacy crypto scope: global-default",
+      "weak crypto global default: true"
+    ],
+    "modern_defaults_unchanged": [
+      "modern TLS minimum: TLS 1.0",
+      "modern TLS minimum: TLS 1.1",
+      "modern TLS preferred: TLS 1.0",
+      "modern TLS preferred: TLS 1.1",
+      "modern defaults unchanged: false",
+      "weak crypto global default: true"
+    ]
+  },
   "required_host_identity_fields": [
     "schema_version",
     "target",

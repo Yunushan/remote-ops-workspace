@@ -6,6 +6,13 @@ import sys
 from pathlib import Path
 
 
+LINUX_SECURITY_REQUIREMENTS = [
+    "security patch evidence proving TLS 1.3 preferred, TLS 1.2 minimum, "
+    "isolated legacy compatibility and CVE patch review",
+    "modern Windows 10/11, Linux, and macOS defaults must keep hardened crypto",
+]
+
+
 def test_protected_platform_goal_reports_empty_registry_without_promotion() -> None:
     checker = _load_protected_goal_checker()
 
@@ -44,6 +51,8 @@ def test_protected_platform_goal_strict_gate_fails_empty_registry() -> None:
     assert "artifact_validation_command" in requirements["linux-i386"]["required_commands"]
     assert "local_evidence_preflight_command" in requirements["linux-i386"]["required_commands"]
     assert "finalized_evidence_record_command" in requirements["linux-i386"]["required_commands"]
+    assert requirements["linux-i386"]["security_requirements"] == LINUX_SECURITY_REQUIREMENTS
+    assert requirements["linux-armhf"]["security_requirements"] == LINUX_SECURITY_REQUIREMENTS
     assert requirements["windows-xp-native-x64"]["builder_or_host_evidence"].startswith(
         "Windows XP Professional x64 Edition SP2"
     )
@@ -60,6 +69,7 @@ def test_protected_platform_goal_strict_gate_fails_empty_registry() -> None:
     assert "release_tag=v1.0.2 status=accepted readiness=100.0" in human_requirements
     assert "release proof: 6 artifacts, 3 review-bundle files" in human_requirements
     assert "commands: accepted_evidence_candidate_command, artifact_validation_command" in human_requirements
+    assert LINUX_SECURITY_REQUIREMENTS[0] in human_requirements
     assert "builder/host: Windows XP Professional x64 Edition SP2 VM" in human_requirements
     assert "modern Windows 10/11, Linux, and macOS defaults must keep hardened crypto" in human_requirements
     assert any(
@@ -123,6 +133,31 @@ def test_protected_platform_goal_reports_release_scoped_completion() -> None:
     assert "accepted release tags: v1.0.2" in human_scope
     assert "accepted release repositories: example/remote-ops-workspace" in human_scope
     assert f"accepted release source heads: {'a' * 40}" in human_scope
+
+
+def test_protected_platform_goal_strict_gate_does_not_count_malformed_accepted_record() -> None:
+    checker = _load_protected_goal_checker()
+    registry = _complete_registry()
+    records = registry["accepted_evidence"]
+    assert isinstance(records, list)
+    first_record = records[0]
+    assert isinstance(first_record, dict)
+    del first_record["review_bundle"]
+
+    errors, goal = checker.check_protected_platform_goal(
+        registry=registry,
+        release_tag="v1.0.2",
+        require_complete=True,
+    )
+
+    assert any("linux-i386 review_bundle must be an object" in error for error in errors)
+    assert any("protected platform goal is incomplete" in error for error in errors)
+    assert goal["release_tag"] == "v1.0.2"
+    assert goal["current_percent"] == 0.0
+    assert goal["accepted_target_count"] == 0
+    assert goal["accepted_targets"] == []
+    assert goal["complete"] is False
+    assert goal["status"] == "missing-accepted-evidence"
 
 
 def test_protected_platform_goal_human_scope_reports_mixed_release_source_heads() -> None:

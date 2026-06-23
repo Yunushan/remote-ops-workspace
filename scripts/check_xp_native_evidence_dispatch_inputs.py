@@ -7,6 +7,22 @@ from pathlib import PurePosixPath, PureWindowsPath
 
 TARGETS = {"windows-xp-native-x86", "windows-xp-native-x64"}
 RESERVED_WORKSPACE_ROOTS = {".agents", ".codex", ".git", ".github"}
+FILE_LIKE_DIRECTORY_SUFFIXES = (
+    ".appimage",
+    ".deb",
+    ".exe",
+    ".gz",
+    ".json",
+    ".log",
+    ".msi",
+    ".rpm",
+    ".sha256",
+    ".tar",
+    ".tgz",
+    ".txt",
+    ".xz",
+    ".zip",
+)
 GITHUB_OWNER_RE = r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?"
 GITHUB_REPOSITORY_RE = rf"{GITHUB_OWNER_RE}/[A-Za-z0-9._-]+"
 GITHUB_RELEASE_RE = re.compile(
@@ -148,11 +164,20 @@ def check_workspace_relative_path(
         )
         if hidden_segments:
             errors.append(f"{label} must not contain hidden path segments: {hidden_segments}")
-    if require_directory_hint and path.endswith(".json"):
+    if require_directory_hint and directory_path_has_file_suffix(path):
         errors.append(f"{label} must be a directory path, got {raw_path!r}")
     if require_json_hint and not path.endswith(".json"):
         errors.append(f"{label} must point to an XP evidence JSON file, got {raw_path!r}")
     return errors
+
+
+def directory_path_has_file_suffix(raw_path: str) -> bool:
+    path = raw_path.strip()
+    if not path:
+        return False
+    leaf = PureWindowsPath(path).name if "\\" in path else PurePosixPath(path).name
+    leaf = leaf.lower()
+    return any(leaf.endswith(suffix) for suffix in FILE_LIKE_DIRECTORY_SUFFIXES)
 
 
 def check_target_release_scoped_path(

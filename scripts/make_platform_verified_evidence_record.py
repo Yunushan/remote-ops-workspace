@@ -26,6 +26,7 @@ from check_platform_verified_evidence import (  # noqa: E402
     XP_TARGETS,
     check_linux_smoke_log_text,
     check_platform_verified_evidence,
+    directory_path_has_file_suffix,
     json_sha256,
     linux_release_source_artifact_name,
     promotion_config_sha256,
@@ -51,6 +52,7 @@ DEFAULT_EVIDENCE_POLICY = (
     "finalized accepted-record source file binding, "
     "finalized accepted-record release asset URL binding, "
     "Linux release source artifact names must be target/release-scoped, "
+    "Linux accepted evidence command paths must be target/release-scoped, "
     "XP release source artifact names must be target/release-scoped, "
     "per-artifact SHA-256 digests, safe relative non-link native archive entries, "
     "exact safe checksum and native manifest file references, exact safe release asset URL filenames, "
@@ -61,7 +63,7 @@ DEFAULT_EVIDENCE_POLICY = (
     "builder identity release/run binding, Linux builder source head SHA binding, "
     "Linux builder host identity binding when applicable, "
     "Linux builder rpm and non-interactive sudo evidence, "
-    "Linux security patch evidence, "
+    "Linux security patch evidence, Linux security smoke proof-line binding, "
     "Linux native build and smoke command provenance, "
     "Linux smoke evidence SHA-256, Linux smoke release/run/source head SHA binding, "
     "Linux smoke runtime architecture and userland binding, "
@@ -172,6 +174,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--runner-label", action="append", default=[], help="Runner label for Linux evidence")
     parser.add_argument("--builder-evidence", type=Path, help="Linux builder identity JSON emitted by builder preflight")
     parser.add_argument("--linux-smoke-evidence", type=Path, help="Linux native smoke log captured from the builder")
+    parser.add_argument(
+        "--local-evidence-root",
+        type=Path,
+        default=Path("."),
+        help=(
+            "staging root used by the local protected-goal evidence preflight; "
+            "defaults to the workspace root"
+        ),
+    )
     parser.add_argument("--xp-evidence", type=Path, help="Windows XP native evidence JSON for XP targets")
     parser.add_argument(
         "--xp-evidence-dir",
@@ -265,6 +276,9 @@ def validate_common_args(args: argparse.Namespace) -> list[str]:
     version_errors: list[str] = []
     version_from_tag(str(args.release_tag), version_errors)
     errors.extend(version_errors)
+    errors.extend(check_directory_path_hint(args.assets_dir, "artifact directory"))
+    local_evidence_root = getattr(args, "local_evidence_root", Path("."))
+    errors.extend(check_directory_path_hint(local_evidence_root, "local evidence root"))
     if not args.assets_dir.is_dir():
         errors.append(f"artifact directory missing: {args.assets_dir}")
     errors.extend(check_path_parent_symlinks(args.assets_dir, "artifact directory"))
@@ -348,12 +362,14 @@ def validate_xp_args(args: argparse.Namespace) -> list[str]:
         errors.extend(check_path_parent_symlinks(args.xp_evidence, "XP evidence file"))
     if args.xp_evidence_dir is None:
         errors.append("--xp-evidence-dir is required for Windows XP evidence")
-    elif not args.xp_evidence_dir.is_dir():
-        errors.append(f"XP evidence directory missing: {args.xp_evidence_dir}")
-    elif args.xp_evidence_dir.is_symlink():
-        errors.append(f"XP evidence directory must not be a symlink: {args.xp_evidence_dir}")
     else:
-        errors.extend(check_path_parent_symlinks(args.xp_evidence_dir, "XP evidence directory"))
+        errors.extend(check_directory_path_hint(args.xp_evidence_dir, "XP evidence directory"))
+        if not args.xp_evidence_dir.is_dir():
+            errors.append(f"XP evidence directory missing: {args.xp_evidence_dir}")
+        elif args.xp_evidence_dir.is_symlink():
+            errors.append(f"XP evidence directory must not be a symlink: {args.xp_evidence_dir}")
+        else:
+            errors.extend(check_path_parent_symlinks(args.xp_evidence_dir, "XP evidence directory"))
     if args.workflow_run_url:
         errors.append("--workflow-run-url is only valid for Linux evidence")
     if args.runner_label:
@@ -379,6 +395,13 @@ def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
             continue
         if parent.is_symlink():
             return [f"{label} path must not contain symlinked directories: {parent}"]
+    return []
+
+
+def check_directory_path_hint(path: Path, label: str) -> list[str]:
+    raw_path = path.as_posix()
+    if directory_path_has_file_suffix(raw_path):
+        return [f"{label} must be a directory path, got {raw_path!r}"]
     return []
 
 
@@ -617,9 +640,15 @@ def xp_native_evidence_validation_command(args: argparse.Namespace) -> str:
 
 def local_evidence_preflight_command(args: argparse.Namespace) -> str:
     target = str(args.target)
+    local_evidence_root = getattr(args, "local_evidence_root", Path("."))
+    local_evidence_root_path = (
+        local_evidence_root
+        if isinstance(local_evidence_root, Path)
+        else Path(str(local_evidence_root))
+    )
     command = (
         "python scripts/check_platform_goal_local_evidence.py "
-        f"--root . --release-tag {args.release_tag} --target {target} "
+        f"--root {local_evidence_root_path.as_posix()} --release-tag {args.release_tag} --target {target} "
         f"--assets-dir {args.assets_dir.as_posix()}"
     )
     if target in LINUX_TARGETS:

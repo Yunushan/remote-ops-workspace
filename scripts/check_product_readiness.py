@@ -24,6 +24,15 @@ IMPLEMENTED_STATUSES = {
     "implemented-optional",
     "implemented-shell",
 }
+LINUX_PROTECTED_SECURITY_REQUIREMENTS = (
+    "security patch evidence proving TLS 1.3 preferred, TLS 1.2 minimum, "
+    "isolated legacy compatibility and CVE patch review",
+    "modern Windows 10/11, Linux, and macOS defaults must keep hardened crypto",
+)
+XP_PROTECTED_SECURITY_REQUIREMENTS = (
+    "legacy TLS, SSH, and RDP compatibility must remain profile-scoped opt-in",
+    "modern Windows 10/11, Linux, and macOS defaults must keep hardened crypto",
+)
 
 
 def main() -> int:
@@ -194,11 +203,41 @@ def check_product_readiness() -> list[str]:
                     errors.append(f"{target} protected platform requirement missing local evidence preflight command")
                 if not item.get("required_review_bundle_files"):
                     errors.append(f"{target} protected platform requirement missing review bundle files")
+                security = item.get("security_requirements")
+                if target in {"linux-i386", "linux-armhf"}:
+                    errors.extend(
+                        check_security_requirement_items(
+                            target,
+                            security,
+                            LINUX_PROTECTED_SECURITY_REQUIREMENTS,
+                            "Linux protected platform requirement",
+                        )
+                    )
                 if target in {"windows-xp-native-x86", "windows-xp-native-x64"}:
-                    security = item.get("security_requirements")
-                    if not isinstance(security, list) or "modern Windows 10/11, Linux, and macOS defaults must keep hardened crypto" not in security:
-                        errors.append(f"{target} protected platform requirement missing modern-default security proof")
+                    errors.extend(
+                        check_security_requirement_items(
+                            target,
+                            security,
+                            XP_PROTECTED_SECURITY_REQUIREMENTS,
+                            "XP protected platform requirement",
+                        )
+                    )
     return errors
+
+
+def check_security_requirement_items(
+    target: object,
+    raw_security: object,
+    required_items: tuple[str, ...],
+    label: str,
+) -> list[str]:
+    if not isinstance(raw_security, list):
+        return [f"{target} {label} missing security_requirements"]
+    actual = {str(item) for item in raw_security}
+    missing = [item for item in required_items if item not in actual]
+    if missing:
+        return [f"{target} {label} missing security proof: {missing}"]
+    return []
 
 
 def check_protected_goal_release_scope(goal: dict[str, object]) -> list[str]:

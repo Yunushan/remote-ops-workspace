@@ -24,6 +24,7 @@ from check_platform_verified_evidence import (  # noqa: E402
     RELEASE_SOURCE_HEAD_SHA_RE,
     accepted_record_source_file,
     check_platform_verified_evidence,
+    directory_path_has_file_suffix,
     exact_safe_file_name,
     read_json,
     release_source_workflow,
@@ -59,6 +60,7 @@ def main(argv: list[str] | None = None) -> int:
         records,
         out_dir=args.out_dir,
         dry_run=args.dry_run,
+        verify_source_run_metadata=args.verify_source_run,
         release_head_sha=release_head_sha,
     )
     if import_errors:
@@ -95,6 +97,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--dry-run",
         action="store_true",
         help="validate records and print gh commands without downloading artifacts",
+    )
+    parser.add_argument(
+        "--verify-source-run",
+        action="store_true",
+        help=(
+            "with --dry-run, inspect each recorded GitHub Actions source run "
+            "without downloading artifacts"
+        ),
     )
     return parser.parse_args(argv)
 
@@ -134,13 +144,14 @@ def import_platform_evidence_artifacts(
     *,
     out_dir: Path,
     dry_run: bool = False,
+    verify_source_run_metadata: bool = False,
     release_head_sha: str | None = None,
 ) -> list[str]:
     errors: list[str] = []
     errors.extend(ensure_output_directory(out_dir))
     if errors:
         return errors
-    if records and not dry_run:
+    if records and (not dry_run or verify_source_run_metadata):
         errors.extend(check_github_cli_available())
     if errors:
         return errors
@@ -154,6 +165,7 @@ def import_platform_evidence_artifacts(
                     out_dir=out_dir,
                     download_root=download_root,
                     dry_run=dry_run,
+                    verify_source_run_metadata=verify_source_run_metadata,
                     release_head_sha=release_head_sha,
                 )
             )
@@ -161,6 +173,9 @@ def import_platform_evidence_artifacts(
 
 
 def ensure_output_directory(out_dir: Path) -> list[str]:
+    hint_errors = check_directory_path_hint(out_dir, "release asset import output directory")
+    if hint_errors:
+        return hint_errors
     if out_dir.is_symlink():
         return [f"release asset import output directory must not be a symlink: {out_dir}"]
     parent_errors = check_path_parent_symlinks(out_dir, "release asset import output directory")
@@ -180,12 +195,20 @@ def check_github_cli_available() -> list[str]:
     return []
 
 
+def check_directory_path_hint(path: Path, label: str) -> list[str]:
+    raw_path = path.as_posix()
+    if directory_path_has_file_suffix(raw_path):
+        return [f"{label} must be a directory path, got {raw_path!r}"]
+    return []
+
+
 def import_record(
     record: dict[str, Any],
     *,
     out_dir: Path,
     download_root: Path,
     dry_run: bool,
+    verify_source_run_metadata: bool = False,
     release_head_sha: str | None = None,
 ) -> list[str]:
     target = str(record.get("target", ""))
@@ -232,6 +255,13 @@ def import_record(
     if dry_run:
         print(" ".join(view_command))
         print(" ".join(command))
+        if verify_source_run_metadata:
+            return verify_source_run(
+                target,
+                view_command,
+                expected_head_sha=expected_head_sha,
+                release_head_sha=release_head_sha,
+            )
     else:
         errors = verify_source_run(
             target,
@@ -390,6 +420,13 @@ def validate_source_artifact(record: dict[str, Any], *, source_root: Path) -> li
     source_errors, expected_files = release_source_contains_files(record)
     if source_errors:
         return source_errors
+    declared_errors = check_release_source_declared_files(
+        target,
+        declared_files=expected_files,
+        expected_files=expected_release_files(record),
+    )
+    if declared_errors:
+        return declared_errors
     errors = validate_downloaded_source_file_set(
         target,
         source_root=source_root,
@@ -398,6 +435,22 @@ def validate_source_artifact(record: dict[str, Any], *, source_root: Path) -> li
     if errors:
         return errors
     return validate_downloaded_final_record(record, source_root=source_root)
+
+
+def check_release_source_declared_files(
+    target: str,
+    *,
+    declared_files: set[str],
+    expected_files: set[str],
+) -> list[str]:
+    errors: list[str] = []
+    missing = sorted(expected_files - declared_files)
+    if missing:
+        errors.append(f"{target} release_asset_source.contains_files missing expected files: {missing}")
+    unexpected = sorted(declared_files - expected_files)
+    if unexpected:
+        errors.append(f"{target} release_asset_source.contains_files has unexpected files: {unexpected}")
+    return errors
 
 
 def validate_downloaded_source_file_set(

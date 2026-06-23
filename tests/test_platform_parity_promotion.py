@@ -82,6 +82,44 @@ def test_platform_parity_promotion_requires_local_evidence_preflight() -> None:
     assert "linux-i386 promotion_to_100_requires missing keys: ['local_evidence_preflight_command']" in errors
 
 
+def test_platform_parity_promotion_requires_target_release_scoped_linux_command_placeholders() -> None:
+    checker = _load_platform_parity_promotion_checker()
+    promotion = _load_json("configs/platform_parity_promotion.json")
+    entry = _promotion_entry(promotion, "linux-i386")
+    requirements = entry["promotion_to_100_requires"]
+    requirements["artifact_validation_command"] = requirements["artifact_validation_command"].replace(
+        "<target-release-artifact-dir>",
+        "<artifact-dir>",
+    )
+    requirements["local_evidence_preflight_command"] = requirements["local_evidence_preflight_command"].replace(
+        "<target-release-artifact-dir>",
+        "<artifact-dir>",
+    )
+
+    errors = checker.check_platform_parity_promotion(promotion=promotion)
+
+    assert any("linux-i386 artifact_validation_command must be" in error for error in errors)
+    assert any("linux-i386 local_evidence_preflight_command must be" in error for error in errors)
+
+
+def test_platform_parity_promotion_requires_linux_security_boundaries() -> None:
+    checker = _load_platform_parity_promotion_checker()
+    promotion = _load_json("configs/platform_parity_promotion.json")
+    entry = _promotion_entry(promotion, "linux-armhf")
+    requirements = entry["promotion_to_100_requires"]
+    requirements["security_requirements"] = [
+        "security patch evidence proving TLS 1.3 preferred, TLS 1.2 minimum, isolated legacy compatibility and CVE patch review",
+    ]
+
+    errors = checker.check_platform_parity_promotion(promotion=promotion)
+
+    assert any(
+        "linux-armhf security_requirements missing" in error
+        and "modern Windows 10/11, Linux, and macOS defaults must keep hardened crypto" in error
+        for error in errors
+    )
+
+
 def test_platform_parity_promotion_rejects_xp_local_preflight_without_xp_evidence_dir() -> None:
     checker = _load_platform_parity_promotion_checker()
     promotion = _load_json("configs/platform_parity_promotion.json")

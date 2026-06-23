@@ -129,6 +129,26 @@ def test_make_xp_native_evidence_template_rejects_symlinked_output_root(
     assert errors == [f"XP native evidence template output directory must not be a symlink: {tmp_path}"]
 
 
+def test_make_xp_native_evidence_template_rejects_file_shaped_output_root(
+    tmp_path: Path,
+) -> None:
+    maker = _load_template_maker()
+    out_dir = tmp_path / "xp-evidence.json"
+
+    errors = maker.make_xp_native_evidence_template(
+        target="windows-xp-native-x86",
+        release_tag="v1.0.2",
+        out_dir=out_dir,
+        force=True,
+    )
+
+    assert errors == [
+        "XP native evidence template output directory "
+        f"must be a directory path, got {out_dir.as_posix()!r}"
+    ]
+    assert not out_dir.exists()
+
+
 def test_make_xp_native_evidence_template_rejects_symlinked_output_parent(
     tmp_path: Path,
     monkeypatch,

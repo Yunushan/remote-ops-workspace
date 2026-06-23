@@ -23,6 +23,16 @@ RELEASE_PREFLIGHT_DEPENDENTS = (
     "accepted-platform-evidence-assets",
     "publish",
 )
+PLATFORM_EVIDENCE_IMPORT_DEPENDENTS = (
+    "source-and-python",
+    "windows-native",
+    "macos-native",
+    "linux-native",
+)
+PUBLISH_PLATFORM_GOAL_COMMAND = (
+    'python scripts/check_release_publish_assets.py --assets-dir release-assets '
+    '--tag "${{ github.ref_name }}" --require-platform-goal-targets'
+)
 
 REQUIRED_DOC_SNIPPETS = (
     "remote-ops-workspace-v1.0.2-linux-<amd64|arm64>.deb",
@@ -49,6 +59,7 @@ REQUIRED_TURKISH_DOC_SNIPPETS = (
 
 REQUIRED_README_RELEASE_SECTION_SNIPPETS = (
     "python scripts/verify.py --quick --no-cli-smoke --release-tag <tag>",
+    "python scripts/check_protected_platform_goal.py --release-tag <tag> --require-complete --show-requirements",
     "python scripts/check_platform_verified_evidence.py --require-goal-targets --release-tag <tag>",
     "accepted-platform-evidence-assets",
     "python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets",
@@ -59,6 +70,7 @@ REQUIRED_README_RELEASE_SECTION_SNIPPETS = (
     "python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --require-platform-goal-targets",
     "configs/platform_verified_evidence.json",
     "accepted review-bundle hashes",
+    "source and native release jobs wait for it before building",
 )
 
 STALE_TURKISH_RELEASE_SNIPPETS = (
@@ -138,8 +150,6 @@ def check_release_preflight(workflow: str | None = None) -> list[str]:
         errors.append("release workflow must opt JavaScript actions into Node.js 24")
     if "ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION" in workflow_text:
         errors.append("release workflow must not opt JavaScript actions into an insecure Node.js runtime")
-    if "--require-platform-goal-targets" not in workflow_text:
-        errors.append("release workflow missing publish-time protected platform goal gate: --require-platform-goal-targets")
     block = workflow_job_block(workflow_text, RELEASE_PREFLIGHT_JOB)
     if not block:
         return [*errors, "release workflow missing release-preflight job"]
@@ -148,8 +158,15 @@ def check_release_preflight(workflow: str | None = None) -> list[str]:
         'python-version: "3.12"': "stable preflight Python version",
         "python scripts/verify.py --quick --no-cli-smoke": "quick verifier before release builds",
         '--release-tag "${{ github.ref_name }}"': "tag-scoped protected platform parity report",
+        'python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" --show-requirements': (
+            "protected platform readiness requirements report"
+        ),
+        (
+            'python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" '
+            "--require-complete --show-requirements"
+        ): "hard protected platform goal completion gate",
         'python scripts/check_platform_verified_evidence.py --require-goal-targets --release-tag "${{ github.ref_name }}"': (
-            "early protected platform evidence gate"
+            "strict accepted evidence registry gate"
         ),
         "python scripts/check_repository_cleanup.py --require-clean": "clean checkout requirement before tagging",
     }
@@ -161,8 +178,14 @@ def check_release_preflight(workflow: str | None = None) -> list[str]:
         if not dependent_block:
             errors.append(f"release workflow missing preflight dependent job: {job}")
             continue
-        if "needs: release-preflight" not in dependent_block and "- release-preflight" not in dependent_block:
+        if not job_depends_on(dependent_block, "release-preflight"):
             errors.append(f"{job} must depend on release-preflight")
+    for job in PLATFORM_EVIDENCE_IMPORT_DEPENDENTS:
+        dependent_block = workflow_job_block(workflow_text, job)
+        if not dependent_block:
+            continue
+        if not job_depends_on(dependent_block, "accepted-platform-evidence-assets"):
+            errors.append(f"{job} must wait for accepted-platform-evidence-assets")
     errors.extend(check_accepted_platform_evidence_assets_job(workflow_text))
     errors.extend(check_publish_platform_evidence_dependency(workflow_text))
     return errors
@@ -192,7 +215,7 @@ def check_accepted_platform_evidence_assets_job(workflow: str) -> list[str]:
     for snippet, label in required_snippets.items():
         if snippet not in block:
             errors.append(f"accepted-platform-evidence-assets missing {label}: {snippet}")
-    if re.search(r"(?m)^\s+(actions|contents):\s+write\s*$", block):
+    if re.search(r"(?m)^\s+[A-Za-z0-9_-]+:\s+write\s*$", block):
         errors.append("accepted-platform-evidence-assets must not request write permissions")
     return errors
 
@@ -201,9 +224,16 @@ def check_publish_platform_evidence_dependency(workflow: str) -> list[str]:
     block = workflow_job_block(workflow, "publish")
     if not block:
         return ["release workflow missing publish job"]
-    if "- accepted-platform-evidence-assets" not in block:
-        return ["publish job must depend on accepted-platform-evidence-assets"]
-    return []
+    errors: list[str] = []
+    if not job_depends_on(block, "accepted-platform-evidence-assets"):
+        errors.append("publish job must depend on accepted-platform-evidence-assets")
+    gate_index = block.find(PUBLISH_PLATFORM_GOAL_COMMAND)
+    upload_index = block.find("softprops/action-gh-release")
+    if gate_index < 0:
+        errors.append(f"publish job missing publish-time protected platform goal gate: {PUBLISH_PLATFORM_GOAL_COMMAND}")
+    if gate_index >= 0 and upload_index >= 0 and gate_index > upload_index:
+        errors.append("publish-time protected platform goal gate must run before GitHub release upload")
+    return errors
 
 
 def check_release_docs() -> list[str]:
@@ -243,6 +273,41 @@ def check_release_docs() -> list[str]:
 def workflow_job_block(workflow: str, job: str) -> str:
     match = re.search(rf"(?ms)^  {re.escape(job)}:\n(.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)", workflow)
     return match.group(1) if match else ""
+
+
+def job_depends_on(block: str, job: str) -> bool:
+    return job in job_needs(block)
+
+
+def job_needs(block: str) -> set[str]:
+    lines = block.splitlines()
+    for index, line in enumerate(lines):
+        match = re.fullmatch(r"    needs:\s*(.*)", line)
+        if not match:
+            continue
+        inline = match.group(1).strip()
+        if inline:
+            return parse_inline_needs(inline)
+        needs: set[str] = set()
+        for item in lines[index + 1 :]:
+            if re.fullmatch(r"    [A-Za-z0-9_-]+:.*", item):
+                break
+            item_match = re.fullmatch(r"      -\s*([A-Za-z0-9_-]+)\s*", item)
+            if item_match:
+                needs.add(item_match.group(1))
+        return needs
+    return set()
+
+
+def parse_inline_needs(raw: str) -> set[str]:
+    value = raw.strip()
+    if value.startswith("[") and value.endswith("]"):
+        return {
+            item.strip().strip("'\"")
+            for item in value[1:-1].split(",")
+            if item.strip().strip("'\"")
+        }
+    return {value.strip("'\"")}
 
 
 def normalize_markdown_pipes(text: str) -> str:

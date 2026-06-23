@@ -113,12 +113,21 @@ def check_protected_platform_goal(
     require_complete: bool = False,
 ) -> tuple[list[str], dict[str, Any]]:
     errors: list[str] = []
+    validation_errors: list[str] = []
+    record_validation_errors: list[str] = []
     if release_tag is not None and not re.fullmatch(r"v\d+\.\d+\.\d+", release_tag):
         errors.append(f"release_tag must look like vX.Y.Z: {release_tag}")
     if require_complete and release_tag is None:
         errors.append(REQUIRE_COMPLETE_RELEASE_TAG_ERROR)
     else:
-        errors.extend(
+        record_validation_errors.extend(
+            check_platform_verified_evidence(
+                registry=registry,
+                require_review_bundles=require_complete,
+                check_consistency=False,
+            )
+        )
+        validation_errors.extend(
             check_platform_verified_evidence(
                 registry=registry,
                 required_targets=PROTECTED_GOAL_TARGETS if require_complete else None,
@@ -126,7 +135,9 @@ def check_protected_platform_goal(
                 require_review_bundles=require_complete,
             )
         )
-    goal_registry = strict_goal_registry(registry, release_tag, require_complete=require_complete)
+        errors.extend(validation_errors)
+    goal_source_registry = invalid_evidence_goal_registry(registry) if record_validation_errors else registry
+    goal_registry = strict_goal_registry(goal_source_registry, release_tag, require_complete=require_complete)
     goal = _platform_verified_readiness(evidence_registry=goal_registry)["protected_goal_parity"]
     if release_tag is not None:
         goal = dict(goal)
@@ -140,6 +151,12 @@ def check_protected_platform_goal(
         missing = ", ".join(str(target) for target in goal.get("missing_targets", []))
         errors.append(f"protected platform goal is incomplete: missing {missing}")
     return errors, goal
+
+
+def invalid_evidence_goal_registry(registry: dict[str, Any]) -> dict[str, Any]:
+    filtered = dict(registry)
+    filtered["accepted_evidence"] = []
+    return filtered
 
 
 def strict_goal_registry(

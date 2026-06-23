@@ -30,6 +30,15 @@ LINUX_RELEASE_SOURCE_ARTIFACTS = {
     "linux-i386": "extended-linux-evidence-linux-i386-v<project.version>",
     "linux-armhf": "extended-linux-evidence-linux-armhf-v<project.version>",
 }
+LINUX_SECURITY_REQUIREMENTS = (
+    "security patch evidence proving TLS 1.3 preferred, TLS 1.2 minimum, "
+    "isolated legacy compatibility and CVE patch review",
+    "modern Windows 10/11, Linux, and macOS defaults must keep hardened crypto",
+)
+XP_SECURITY_REQUIREMENTS = (
+    "legacy TLS, SSH, and RDP compatibility must remain profile-scoped opt-in",
+    "modern Windows 10/11, Linux, and macOS defaults must keep hardened crypto",
+)
 
 LINUX_REQUIRED_PROMOTION_KEYS = {
     "platform_targets_release_tier",
@@ -49,6 +58,7 @@ LINUX_REQUIRED_PROMOTION_KEYS = {
     "finalized_evidence_record_command",
     "review_bundle_files",
     "required_artifacts",
+    "security_requirements",
 }
 XP_REQUIRED_PROMOTION_KEYS = {
     "separate_legacy_toolchain",
@@ -297,6 +307,7 @@ def check_linux_promotion_entry(
         for artifact in artifacts:
             if "<project.version>" not in str(artifact):
                 errors.append(f"{label} artifact must use <project.version> placeholder: {artifact}")
+    errors.extend(check_security_requirements(label, requirements, LINUX_SECURITY_REQUIREMENTS))
     return errors
 
 
@@ -396,15 +407,30 @@ def check_xp_promotion_entry(
                 errors.append(f"{label} artifact must include architecture {expected_arch}: {artifact}")
             if "<project.version>" not in artifact_text:
                 errors.append(f"{label} artifact must use <project.version> placeholder: {artifact}")
-    for key in ("smoke_evidence", "security_requirements"):
-        value = requirements.get(key)
-        if not isinstance(value, list) or not value:
-            errors.append(f"{label} promotion requires non-empty {key}")
+    smoke_evidence = requirements.get("smoke_evidence")
+    if not isinstance(smoke_evidence, list) or not smoke_evidence:
+        errors.append(f"{label} promotion requires non-empty smoke_evidence")
+    errors.extend(check_security_requirements(label, requirements, XP_SECURITY_REQUIREMENTS))
     errors.extend(check_artifact_validation_command(label, requirements))
     errors.extend(check_xp_native_evidence_validation_command(label, requirements))
     errors.extend(check_local_evidence_preflight_command(label, requirements, kind="xp"))
     errors.extend(check_finalized_evidence_requirements(label, requirements, kind="xp"))
     return errors
+
+
+def check_security_requirements(
+    label: str,
+    requirements: dict[str, Any],
+    required_items: tuple[str, ...],
+) -> list[str]:
+    raw_requirements = requirements.get("security_requirements")
+    if not isinstance(raw_requirements, list) or not raw_requirements:
+        return [f"{label} promotion requires non-empty security_requirements"]
+    actual = {str(item) for item in raw_requirements}
+    missing = [item for item in required_items if item not in actual]
+    if missing:
+        return [f"{label} security_requirements missing: {missing}"]
+    return []
 
 
 def check_docs(docs: dict[str, str]) -> list[str]:
@@ -440,11 +466,7 @@ def check_artifact_validation_command(label: str, requirements: dict[str, Any]) 
     command = requirements.get("artifact_validation_command")
     if not isinstance(command, str) or not command:
         return [f"{label} promotion requires artifact_validation_command"]
-    artifact_dir = (
-        "<target-release-artifact-dir>"
-        if label.startswith("windows-xp-native-")
-        else "<artifact-dir>"
-    )
+    artifact_dir = "<target-release-artifact-dir>"
     expected = (
         "python scripts/check_platform_promotion_artifacts.py "
         f"--target {label} --assets-dir {artifact_dir} --tag v<project.version> --strict"
@@ -488,7 +510,7 @@ def check_local_evidence_preflight_command(
             "--root . "
             "--release-tag v<project.version> "
             f"--target {label} "
-            "--assets-dir <artifact-dir> "
+            "--assets-dir <target-release-artifact-dir> "
             "--linux-builder-evidence <builder-identity.json> "
             "--linux-smoke-evidence <native-smoke-log> "
             "--linux-workflow-run-url <github-actions-run-url> "

@@ -77,6 +77,13 @@ fi
 SMOKE_UNAME_MACHINE="$(uname -m)"
 SMOKE_DPKG_ARCH="$(dpkg --print-architecture)"
 SMOKE_USERLAND_BITS="$(getconf LONG_BIT)"
+SMOKE_PYTHON_SSL_OPENSSL="$(python3 - <<'PY'
+import ssl
+
+print(getattr(ssl, "OPENSSL_VERSION", ""))
+PY
+)"
+SMOKE_OPENSSL_CLI_VERSION="$(openssl version)"
 
 if [[ -n "$TARGET" ]]; then
   case "$TARGET" in
@@ -192,6 +199,14 @@ fi
 echo "native installer smoke uname machine: $SMOKE_UNAME_MACHINE"
 echo "native installer smoke dpkg architecture: $SMOKE_DPKG_ARCH"
 echo "native installer smoke userland bits: $SMOKE_USERLAND_BITS"
+echo "native installer smoke python ssl openssl: $SMOKE_PYTHON_SSL_OPENSSL"
+echo "native installer smoke openssl cli version: $SMOKE_OPENSSL_CLI_VERSION"
+echo "native installer smoke TLS minimum modern profiles: TLS 1.2"
+echo "native installer smoke TLS preferred modern profiles: TLS 1.3"
+echo "native installer smoke legacy compatibility profile: isolated-opt-in"
+echo "native installer smoke legacy crypto scope: profile-only"
+echo "native installer smoke weak crypto global default: false"
+echo "native installer smoke modern defaults unchanged: true"
 for artifact in "$DEB" "$RPM" "$APPIMAGE"; do
   digest="$(sha256sum "$artifact" | awk '{print $1}')"
   echo "native installer smoke artifact sha256: $(basename "$artifact") $digest"

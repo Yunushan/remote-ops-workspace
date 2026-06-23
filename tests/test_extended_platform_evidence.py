@@ -98,6 +98,19 @@ def test_extended_platform_evidence_requires_release_source_artifact_name() -> N
     assert any("release source artifact name binding" in error for error in errors)
 
 
+def test_extended_platform_evidence_requires_candidate_local_evidence_root_binding() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
+        "            --local-evidence-root platform-evidence-staging \\\n",
+        "",
+        1,
+    )
+
+    errors = checker.check_extended_platform_evidence(workflow)
+
+    assert any("local evidence preflight root binding" in error for error in errors)
+
+
 def test_extended_platform_evidence_requires_scoped_upload_staging() -> None:
     checker = _load_script("check_extended_platform_evidence")
     workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
@@ -109,6 +122,35 @@ def test_extended_platform_evidence_requires_scoped_upload_staging() -> None:
     errors = checker.check_extended_platform_evidence(workflow)
 
     assert any("scoped Linux evidence upload staging" in error for error in errors)
+
+
+def test_extended_platform_evidence_requires_target_scoped_artifact_copy() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
+        "cp native-dist/linux/remote-ops-workspace-${{ inputs.release_tag }}-linux-i386.deb platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/artifacts/",
+        "",
+        1,
+    )
+
+    errors = checker.check_extended_platform_evidence(workflow)
+
+    assert any("target-scoped artifact staging" in error for error in errors)
+
+
+def test_extended_platform_evidence_rejects_old_native_dist_promotion_staging() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
+        "platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/artifacts",
+        "native-dist/linux/linux-i386",
+        1,
+    )
+
+    errors = checker.check_extended_platform_evidence(workflow)
+
+    assert any(
+        "linux-i386-native-evidence must use target/release-scoped platform-evidence-staging paths" in error
+        for error in errors
+    )
 
 
 def test_extended_platform_evidence_rejects_raw_upload_wildcard() -> None:
@@ -341,6 +383,20 @@ def test_extended_platform_builder_rejects_symlinked_identity_output_parent(
     assert errors == [
         "builder identity output directory path must not contain symlinked directories: "
         f"{tmp_path / 'linked-output'}"
+    ]
+
+
+def test_extended_platform_builder_rejects_file_shaped_identity_output_parent(
+    tmp_path: Path,
+) -> None:
+    checker = _load_script("check_extended_platform_builder")
+    output_parent = tmp_path / "linux-builder-evidence.zip"
+    output = output_parent / "builder-identity-linux-i386.json"
+
+    errors = checker.check_builder_identity_output_path("linux-i386", output)
+
+    assert errors == [
+        f"builder identity output directory must be a directory path, got {output_parent.as_posix()!r}"
     ]
 
 

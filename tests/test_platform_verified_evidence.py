@@ -17,6 +17,7 @@ POLICY = (
     "finalized accepted-record source file binding, "
     "finalized accepted-record release asset URL binding, "
     "Linux release source artifact names must be target/release-scoped, "
+    "Linux accepted evidence command paths must be target/release-scoped, "
     "XP release source artifact names must be target/release-scoped, "
     "and per-artifact SHA-256 digests, safe relative non-link native archive entries, "
     "exact safe checksum and native manifest file references, "
@@ -29,6 +30,7 @@ POLICY = (
     "Linux builder source head SHA binding, "
     "Linux builder host identity binding when applicable, "
     "Linux builder rpm and non-interactive sudo evidence, Linux security patch evidence, "
+    "Linux security smoke proof-line binding, "
     "Linux native build and smoke command provenance, "
     "Linux smoke evidence SHA-256, Linux smoke release/run/source head SHA binding, "
     "Linux smoke runtime architecture and userland binding, "
@@ -148,6 +150,20 @@ def test_platform_verified_evidence_rejects_missing_linux_smoke_runtime_policy()
         "platform verified evidence policy must require Linux smoke runtime architecture and userland binding"
         in errors
     )
+
+
+def test_platform_verified_evidence_rejects_missing_linux_security_smoke_policy() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY.replace("Linux security smoke proof-line binding, ", ""),
+            "accepted_evidence": [],
+        }
+    )
+
+    assert "platform verified evidence policy must require Linux security smoke proof-line binding" in errors
 
 
 def test_platform_verified_evidence_rejects_missing_review_bundle_manifest_url_policy() -> None:
@@ -399,6 +415,23 @@ def test_platform_verified_evidence_rejects_missing_linux_release_source_artifac
     assert (
         "platform verified evidence policy must require target/release-scoped Linux release source artifacts"
     ) in errors
+
+
+def test_platform_verified_evidence_rejects_missing_linux_path_scope_policy() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY.replace(
+                "Linux accepted evidence command paths must be target/release-scoped, ",
+                "",
+            ),
+            "accepted_evidence": [],
+        }
+    )
+
+    assert "platform verified evidence policy must require target/release-scoped Linux accepted evidence paths" in errors
 
 
 def test_platform_verified_evidence_rejects_missing_release_source_head_sha_policy() -> None:
@@ -893,10 +926,10 @@ def test_platform_verified_evidence_goal_required_targets_reject_wrong_release_t
     ]
 
 
-def test_platform_verified_evidence_goal_cli_fails_until_required_targets_exist() -> None:
+def test_platform_verified_evidence_goal_cli_requires_release_tag() -> None:
     checker = _load_platform_verified_evidence_checker()
 
-    assert checker.main(["--require-goal-targets"]) == 1
+    assert checker.main(["--require-goal-targets"]) == 2
 
 
 def test_platform_verified_evidence_single_required_target_can_be_unscoped() -> None:
@@ -1504,6 +1537,185 @@ def test_platform_verified_evidence_rejects_linux_local_preflight_allow_extra_ar
     assert "linux-i386 local_evidence_preflight_command must not include --allow-extra-artifacts" in errors
 
 
+def test_platform_verified_evidence_rejects_unsafe_linux_local_preflight_paths() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    record["local_evidence_preflight_command"] = (
+        "python scripts/check_platform_goal_local_evidence.py --root . "
+        "--release-tag v1.0.2 --target linux-i386 "
+        "--assets-dir staged/linux-i386/v1.0.2/artifacts "
+        "--linux-builder-evidence .github/builder-identity-linux-i386.json "
+        "--linux-smoke-evidence evidence/.private/native-smoke-linux-i386.log "
+        "--linux-workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
+        f"--linux-source-head-sha {'a' * 40}"
+    )
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "linux-i386 local_evidence_preflight_command --linux-builder-evidence "
+        "must not point inside reserved workspace directory '.github'"
+    ) in errors
+    assert (
+        "linux-i386 local_evidence_preflight_command --linux-smoke-evidence "
+        "must not contain hidden path segments: ['.private']"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_linux_local_preflight_without_release_scope() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    record["local_evidence_preflight_command"] = (
+        "python scripts/check_platform_goal_local_evidence.py --root . "
+        "--release-tag v1.0.2 --target linux-i386 "
+        "--assets-dir staged/linux-i386/v1.0.2/artifacts "
+        "--linux-builder-evidence evidence/linux-i386/builder-identity-linux-i386.json "
+        "--linux-smoke-evidence evidence/linux-i386/native-smoke-linux-i386.log "
+        "--linux-workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
+        f"--linux-source-head-sha {'a' * 40}"
+    )
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "linux-i386 local_evidence_preflight_command --linux-builder-evidence "
+        "must include release_tag path segment 'v1.0.2', got "
+        "'evidence/linux-i386/builder-identity-linux-i386.json'"
+    ) in errors
+    assert (
+        "linux-i386 local_evidence_preflight_command --linux-smoke-evidence "
+        "must include release_tag path segment 'v1.0.2', got "
+        "'evidence/linux-i386/native-smoke-linux-i386.log'"
+    ) in errors
+
+
+def test_platform_verified_evidence_accepts_scoped_linux_local_preflight_root() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    target = "linux-i386"
+    record = _linux_record(target)
+    assets_dir = f"platform-evidence-staging/{target}/v1.0.2/artifacts"
+    builder = f"platform-evidence-staging/{target}/v1.0.2/builder-identity-{target}.json"
+    smoke = f"platform-evidence-staging/{target}/v1.0.2/native-smoke-{target}.log"
+    record["artifact_validation_command"] = (
+        f"python scripts/check_platform_promotion_artifacts.py --target {target} "
+        f"--assets-dir {assets_dir} --tag v1.0.2 --strict"
+    )
+    record["local_evidence_preflight_command"] = (
+        "python scripts/check_platform_goal_local_evidence.py --root platform-evidence-staging "
+        f"--release-tag v1.0.2 --target {target} --assets-dir {assets_dir} "
+        f"--linux-builder-evidence {builder} "
+        f"--linux-smoke-evidence {smoke} "
+        "--linux-workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
+        f"--linux-source-head-sha {'a' * 40}"
+    )
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert errors == []
+
+
+def test_platform_verified_evidence_rejects_local_preflight_paths_outside_root() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    target = "linux-i386"
+    record = _linux_record(target)
+    record["local_evidence_preflight_command"] = (
+        "python scripts/check_platform_goal_local_evidence.py --root platform-evidence-staging "
+        f"--release-tag v1.0.2 --target {target} "
+        f"--assets-dir staged/{target}/v1.0.2/artifacts "
+        f"--linux-builder-evidence evidence/{target}/v1.0.2/builder-identity-{target}.json "
+        f"--linux-smoke-evidence evidence/{target}/v1.0.2/native-smoke-{target}.log "
+        "--linux-workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
+        f"--linux-source-head-sha {'a' * 40}"
+    )
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "linux-i386 local_evidence_preflight_command --assets-dir "
+        "must stay under --root platform-evidence-staging, got "
+        "'staged/linux-i386/v1.0.2/artifacts'"
+    ) in errors
+    assert (
+        "linux-i386 local_evidence_preflight_command --linux-builder-evidence "
+        "must stay under --root platform-evidence-staging, got "
+        "'evidence/linux-i386/v1.0.2/builder-identity-linux-i386.json'"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_unsafe_local_preflight_root() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    target = "linux-i386"
+    record = _linux_record(target)
+    record["local_evidence_preflight_command"] = str(
+        record["local_evidence_preflight_command"]
+    ).replace("--root .", "--root .github")
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "linux-i386 local_evidence_preflight_command --root "
+        "must not point inside reserved workspace directory '.github'"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_file_shaped_local_preflight_root() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    target = "linux-i386"
+    record = _linux_record(target)
+    assets_dir = f"platform-evidence.zip/{target}/v1.0.2/artifacts"
+    builder = f"platform-evidence.zip/{target}/v1.0.2/builder-identity-{target}.json"
+    smoke = f"platform-evidence.zip/{target}/v1.0.2/native-smoke-{target}.log"
+    record["artifact_validation_command"] = (
+        f"python scripts/check_platform_promotion_artifacts.py --target {target} "
+        f"--assets-dir {assets_dir} --tag v1.0.2 --strict"
+    )
+    record["local_evidence_preflight_command"] = (
+        "python scripts/check_platform_goal_local_evidence.py --root platform-evidence.zip "
+        f"--release-tag v1.0.2 --target {target} --assets-dir {assets_dir} "
+        f"--linux-builder-evidence {builder} "
+        f"--linux-smoke-evidence {smoke} "
+        "--linux-workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
+        f"--linux-source-head-sha {'a' * 40}"
+    )
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "linux-i386 local_evidence_preflight_command --root "
+        "must be a directory path, got 'platform-evidence.zip'"
+    ) in errors
+
+
 def test_platform_verified_evidence_rejects_xp_local_preflight_evidence_dir_mismatch() -> None:
     checker = _load_platform_verified_evidence_checker()
     record = _xp_record("windows-xp-native-x86")
@@ -1618,6 +1830,31 @@ def test_platform_verified_evidence_rejects_os_specific_release_source_file_path
     assert (
         r"linux-i386 release_asset_source.contains_files entries must be concrete file names, "
         r"got 'C:\\release\\remote-ops-workspace-v1.0.2-linux-i686.rpm'"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_unfinalized_source_finalization_files() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    del record["review_bundle"]
+    del record["finalized_record_release_asset_url"]
+    record["release_asset_source"]["contains_files"] = [
+        *sorted(record["artifact_sha256"]),
+        "extended-linux-evidence-bundle-linux-i386-v1.0.2.json",
+        "platform-verified-evidence-linux-i386-final.json",
+    ]
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "linux-i386 release_asset_source.contains_files has unexpected files: "
+        "['extended-linux-evidence-bundle-linux-i386-v1.0.2.json', "
+        "'platform-verified-evidence-linux-i386-final.json']"
     ) in errors
 
 
@@ -1903,6 +2140,75 @@ def test_platform_verified_evidence_rejects_windows_drive_artifact_validation_as
     assert (
         "linux-i386 artifact_validation_command --assets-dir "
         "must be workspace-relative, got 'C:/staged/linux-i386/v1.0.2/artifacts'"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_unscoped_linux_artifact_validation_assets_dir() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    record["artifact_validation_command"] = (
+        "python scripts/check_platform_promotion_artifacts.py --target linux-i386 "
+        "--assets-dir native-dist/linux --tag v1.0.2 --strict"
+    )
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "linux-i386 artifact_validation_command --assets-dir "
+        "must include target path segment 'linux-i386', got 'native-dist/linux'"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_file_shaped_artifact_validation_assets_dir() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    record["artifact_validation_command"] = (
+        "python scripts/check_platform_promotion_artifacts.py --target linux-i386 "
+        "--assets-dir staged/linux-i386/v1.0.2/artifacts.zip --tag v1.0.2 --strict"
+    )
+    record["local_evidence_preflight_command"] = str(
+        record["local_evidence_preflight_command"]
+    ).replace(
+        "--assets-dir staged/linux-i386/v1.0.2/artifacts",
+        "--assets-dir staged/linux-i386/v1.0.2/artifacts.zip",
+    )
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "linux-i386 artifact_validation_command --assets-dir "
+        "must be a directory path, got 'staged/linux-i386/v1.0.2/artifacts.zip'"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_linux_artifact_validation_without_release_scope() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    record["artifact_validation_command"] = (
+        "python scripts/check_platform_promotion_artifacts.py --target linux-i386 "
+        "--assets-dir staged/linux-i386/artifacts --tag v1.0.2 --strict"
+    )
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "linux-i386 artifact_validation_command --assets-dir "
+        "must include release_tag path segment 'v1.0.2', got 'staged/linux-i386/artifacts'"
     ) in errors
 
 
@@ -3015,6 +3321,7 @@ def _linux_record(target: str) -> dict[str, object]:
     arch = "i386" if target == "linux-i386" else "armhf"
     rpm_arch = "i686" if target == "linux-i386" else "armv7hl"
     artifact = f"extended-linux-evidence-{target}-v1.0.2"
+    assets_dir = f"staged/{target}/v1.0.2/artifacts"
     release_asset_urls = [
         f"https://github.com/example/remote-ops-workspace/releases/download/v1.0.2/remote-ops-workspace-v1.0.2-linux-{arch}.deb",
         f"https://github.com/example/remote-ops-workspace/releases/download/v1.0.2/remote-ops-workspace-v1.0.2-linux-{rpm_arch}.rpm",
@@ -3067,7 +3374,7 @@ def _linux_record(target: str) -> dict[str, object]:
         "linux_smoke_evidence_sha256": linux_smoke_hashes,
         "local_evidence_preflight_command": (
             "python scripts/check_platform_goal_local_evidence.py --root . "
-            f"--release-tag v1.0.2 --target {target} --assets-dir native-dist/linux "
+            f"--release-tag v1.0.2 --target {target} --assets-dir {assets_dir} "
             f"--linux-builder-evidence evidence/{target}/v1.0.2/builder-identity-{target}.json "
             f"--linux-smoke-evidence evidence/{target}/v1.0.2/native-smoke-{target}.log "
             "--linux-workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
@@ -3075,7 +3382,7 @@ def _linux_record(target: str) -> dict[str, object]:
         ),
         "artifact_validation_command": (
             f"python scripts/check_platform_promotion_artifacts.py --target {target} "
-            "--assets-dir native-dist/linux --tag v1.0.2 --strict"
+            f"--assets-dir {assets_dir} --tag v1.0.2 --strict"
         ),
         "checks": [
             "builder_preflight",

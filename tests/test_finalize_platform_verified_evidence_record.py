@@ -931,8 +931,47 @@ def test_finalize_platform_verified_evidence_record_rejects_candidate_release_so
 
     assert record == {}
     assert (
-        "candidate release_asset_source.contains_files has files outside finalizable release source: "
+        "candidate release_asset_source.contains_files has files outside native artifacts: "
         "['operator-notes.txt']"
+    ) in errors
+
+
+def test_finalize_platform_verified_evidence_record_rejects_candidate_release_source_finalization_only_files(
+    tmp_path: Path,
+) -> None:
+    finalizer = _load_finalizer()
+    helpers = _load_platform_verified_evidence_tests()
+    target = "windows-xp-native-x86"
+    release_tag = "v1.0.2"
+    candidate = helpers._xp_record(target)
+    _unfinalized_candidate(candidate)
+    source = candidate["release_asset_source"]
+    assert isinstance(source, dict)
+    source["contains_files"] = [
+        *source["contains_files"],
+        f"xp-native-evidence-bundle-{target}-{release_tag}.json",
+        f"platform-verified-evidence-{target}-final.json",
+    ]
+    candidate_path, manifest, archive, sidecar = _write_xp_candidate_and_bundle(
+        tmp_path,
+        candidate,
+        target=target,
+        release_tag=release_tag,
+    )
+
+    errors, record = finalizer.finalize_platform_verified_evidence_record(
+        candidate_record=candidate_path,
+        bundle_manifest=manifest,
+        bundle_archive=archive,
+        bundle_sha256s=sidecar,
+    )
+
+    assert record == {}
+    assert (
+        "candidate release_asset_source.contains_files must not include "
+        "finalization-only files before finalization: "
+        f"['platform-verified-evidence-{target}-final.json', "
+        f"'xp-native-evidence-bundle-{target}-{release_tag}.json']"
     ) in errors
 
 
@@ -1247,6 +1286,10 @@ def test_finalize_platform_verified_evidence_record_rejects_linux_manifest_evide
 def _unfinalized_candidate(candidate: dict[str, object]) -> None:
     candidate.pop("review_bundle", None)
     candidate.pop("finalized_record_release_asset_url", None)
+    source = candidate.get("release_asset_source")
+    artifact_hashes = candidate.get("artifact_sha256")
+    if isinstance(source, dict) and isinstance(artifact_hashes, dict):
+        source["contains_files"] = sorted(str(name) for name in artifact_hashes)
 
 
 def _write_bundle_files(

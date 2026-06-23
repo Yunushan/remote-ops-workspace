@@ -99,7 +99,7 @@ same GitHub release repository and same release source head SHA. Mixed-tag,
 mixed-repository or mixed-source-head accepted records remain aggregate evidence only
 and cannot complete the protected goal parity block. The release/verifier promotion
 gate is `python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> --release-assets-dir <release-assets-dir>`,
-which also runs `python scripts/check_release_publish_assets.py --assets-dir <release-assets-dir> --require-platform-goal-targets`
+which also runs `python scripts/check_release_publish_assets.py --assets-dir <release-assets-dir> --tag v<project.version> --require-platform-goal-targets`
 and must fail until the same four records are finalized and accepted from that same release source. Use
 `python scripts/make_platform_verified_evidence_record.py`
 to generate a candidate accepted record from validated artifact and XP evidence

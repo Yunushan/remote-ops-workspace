@@ -23,14 +23,8 @@ def test_extended_linux_evidence_bundle_packages_valid_i386_evidence(
     tag = f"v{artifact_checker.read_project_version()}"
     names = _required_artifact_names(artifact_checker, target, tag)
     monkeypatch.chdir(tmp_path)
-    assets = Path("assets")
-    assets.mkdir()
-    _write_artifact_set(assets, names)
-    builder = Path("builder-identity-linux-i386.json")
-    builder.write_text(json.dumps(_builder_identity(target), indent=2) + "\n", encoding="utf-8")
-    smoke = Path("native-smoke-linux-i386.log")
-    _write_linux_smoke_evidence(smoke, target, _smoke_artifact_hashes(assets, names))
-    candidate = Path("platform-verified-evidence-linux-i386.json")
+    assets, builder, smoke = _stage_valid_linux_evidence_inputs(target, tag, names)
+    candidate = Path(target) / tag / "platform-verified-evidence-linux-i386.json"
     errors, record = generator.build_evidence_record(
         SimpleNamespace(
             target=target,
@@ -115,13 +109,7 @@ def test_extended_linux_evidence_bundle_rejects_artifact_hash_mismatch(
     tag = f"v{artifact_checker.read_project_version()}"
     names = _required_artifact_names(artifact_checker, target, tag)
     monkeypatch.chdir(tmp_path)
-    assets = Path("assets")
-    assets.mkdir()
-    _write_artifact_set(assets, names)
-    builder = Path("builder-identity-linux-i386.json")
-    builder.write_text(json.dumps(_builder_identity(target), indent=2) + "\n", encoding="utf-8")
-    smoke = Path("native-smoke-linux-i386.log")
-    _write_linux_smoke_evidence(smoke, target, _smoke_artifact_hashes(assets, names))
+    assets, builder, smoke = _stage_valid_linux_evidence_inputs(target, tag, names)
     errors, record = generator.build_evidence_record(
         SimpleNamespace(
             target=target,
@@ -141,7 +129,7 @@ def test_extended_linux_evidence_bundle_rejects_artifact_hash_mismatch(
     )
     assert errors == []
     record["artifact_sha256"][names[0]] = "0" * 64
-    candidate = Path("platform-verified-evidence-linux-i386.json")
+    candidate = Path(target) / tag / "platform-verified-evidence-linux-i386.json"
     candidate.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
 
     errors = bundler.make_extended_linux_evidence_bundle(
@@ -168,13 +156,7 @@ def test_extended_linux_evidence_bundle_rejects_extra_artifact_file(
     tag = f"v{artifact_checker.read_project_version()}"
     names = _required_artifact_names(artifact_checker, target, tag)
     monkeypatch.chdir(tmp_path)
-    assets = Path("assets")
-    assets.mkdir()
-    _write_artifact_set(assets, names)
-    builder = Path("builder-identity-linux-i386.json")
-    builder.write_text(json.dumps(_builder_identity(target), indent=2) + "\n", encoding="utf-8")
-    smoke = Path("native-smoke-linux-i386.log")
-    _write_linux_smoke_evidence(smoke, target, _smoke_artifact_hashes(assets, names))
+    assets, builder, smoke = _stage_valid_linux_evidence_inputs(target, tag, names)
     errors, record = generator.build_evidence_record(
         SimpleNamespace(
             target=target,
@@ -194,7 +176,7 @@ def test_extended_linux_evidence_bundle_rejects_extra_artifact_file(
     )
     assert errors == []
     (assets / "unexpected-extra.txt").write_text("extra\n", encoding="utf-8")
-    candidate = Path("platform-verified-evidence-linux-i386.json")
+    candidate = Path(target) / tag / "platform-verified-evidence-linux-i386.json"
     candidate.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
 
     errors = bundler.make_extended_linux_evidence_bundle(
@@ -221,13 +203,7 @@ def test_extended_linux_evidence_bundle_rejects_unscoped_evidence_file_names(
     tag = f"v{artifact_checker.read_project_version()}"
     names = _required_artifact_names(artifact_checker, target, tag)
     monkeypatch.chdir(tmp_path)
-    assets = Path("assets")
-    assets.mkdir()
-    _write_artifact_set(assets, names)
-    builder = Path("builder-identity-linux-i386.json")
-    builder.write_text(json.dumps(_builder_identity(target), indent=2) + "\n", encoding="utf-8")
-    smoke = Path("native-smoke-linux-i386.log")
-    _write_linux_smoke_evidence(smoke, target, _smoke_artifact_hashes(assets, names))
+    assets, builder, smoke = _stage_valid_linux_evidence_inputs(target, tag, names)
     errors, record = generator.build_evidence_record(
         SimpleNamespace(
             target=target,
@@ -246,7 +222,7 @@ def test_extended_linux_evidence_bundle_rejects_unscoped_evidence_file_names(
         )
     )
     assert errors == []
-    candidate = Path("platform-verified-evidence-linux-i386.json")
+    candidate = Path(target) / tag / "platform-verified-evidence-linux-i386.json"
     candidate.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
     wrong_builder = Path("builder.json")
     wrong_builder.write_bytes(builder.read_bytes())
@@ -413,6 +389,26 @@ def test_extended_linux_evidence_bundle_rejects_missing_artifact_directory_befor
     assert f"artifact directory missing: {missing_assets}" in errors
 
 
+def test_extended_linux_evidence_bundle_rejects_file_shaped_artifact_directory(
+    tmp_path: Path,
+) -> None:
+    bundler = _load_script("make_extended_linux_evidence_bundle")
+    assets = tmp_path / "artifacts.zip"
+    assets.mkdir()
+
+    errors = bundler.make_extended_linux_evidence_bundle(
+        target="linux-i386",
+        release_tag="v1.0.2",
+        assets_dir=assets,
+        builder_evidence=tmp_path / "builder-identity-linux-i386.json",
+        smoke_evidence=tmp_path / "native-smoke-linux-i386.log",
+        candidate_record=tmp_path / "platform-verified-evidence-linux-i386.json",
+        out_dir=tmp_path / "bundle",
+    )
+
+    assert f"artifact directory must be a directory path, got {assets.as_posix()!r}" in errors
+
+
 def test_extended_linux_evidence_bundle_rejects_symlinked_output_directory(
     tmp_path: Path,
     monkeypatch,
@@ -432,6 +428,22 @@ def test_extended_linux_evidence_bundle_rejects_symlinked_output_directory(
     assert errors == [
         f"extended Linux evidence bundle output directory must not be a symlink: {out_dir}"
     ]
+
+
+def test_extended_linux_evidence_bundle_rejects_file_shaped_output_directory(
+    tmp_path: Path,
+) -> None:
+    bundler = _load_script("make_extended_linux_evidence_bundle")
+    out_dir = tmp_path / "bundle.zip"
+    outputs = (out_dir / "bundle.json", out_dir / "bundle.zip", out_dir / "bundle-SHA256SUMS.txt")
+
+    errors = bundler.prepare_output_paths(out_dir=out_dir, outputs=outputs, force=True)
+
+    assert errors == [
+        "extended Linux evidence bundle output directory "
+        f"must be a directory path, got {out_dir.as_posix()!r}"
+    ]
+    assert not out_dir.exists()
 
 
 def test_extended_linux_evidence_bundle_rejects_symlinked_output_parent(
@@ -494,13 +506,7 @@ def test_extended_linux_evidence_bundle_rejects_weak_smoke_log(
     tag = f"v{artifact_checker.read_project_version()}"
     names = _required_artifact_names(artifact_checker, target, tag)
     monkeypatch.chdir(tmp_path)
-    assets = Path("assets")
-    assets.mkdir()
-    _write_artifact_set(assets, names)
-    builder = Path("builder-identity-linux-i386.json")
-    builder.write_text(json.dumps(_builder_identity(target), indent=2) + "\n", encoding="utf-8")
-    valid_smoke = Path("native-smoke-linux-i386.log")
-    _write_linux_smoke_evidence(valid_smoke, target, _smoke_artifact_hashes(assets, names))
+    assets, builder, valid_smoke = _stage_valid_linux_evidence_inputs(target, tag, names)
     errors, record = generator.build_evidence_record(
         SimpleNamespace(
             target=target,
@@ -524,7 +530,7 @@ def test_extended_linux_evidence_bundle_rejects_weak_smoke_log(
     smoke_sha = _sha256(weak_smoke)
     record["linux_smoke_evidence_sha256"] = {"native_smoke": smoke_sha}
     _sync_linux_source_record(record, "native_smoke", smoke_sha, weak_smoke.stat().st_size)
-    candidate = Path("platform-verified-evidence-linux-i386.json")
+    candidate = Path(target) / tag / "platform-verified-evidence-linux-i386.json"
     candidate.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
 
     errors = bundler.make_extended_linux_evidence_bundle(
@@ -586,6 +592,22 @@ def _builder_identity(target: str) -> dict[str, object]:
             "cve_patch_reviewed": True,
         },
     }
+
+
+def _stage_valid_linux_evidence_inputs(
+    target: str,
+    tag: str,
+    names: list[str],
+) -> tuple[Path, Path, Path]:
+    target_root = Path(target) / tag
+    assets = target_root / "artifacts"
+    assets.mkdir(parents=True)
+    _write_artifact_set(assets, names)
+    builder = target_root / f"builder-identity-{target}.json"
+    builder.write_text(json.dumps(_builder_identity(target), indent=2) + "\n", encoding="utf-8")
+    smoke = target_root / f"native-smoke-{target}.log"
+    _write_linux_smoke_evidence(smoke, target, _smoke_artifact_hashes(assets, names))
+    return assets, builder, smoke
 
 
 def _linux_host_identity(target: str, release_tag: str = "v1.0.2") -> dict[str, object]:
@@ -663,6 +685,14 @@ def _write_linux_smoke_evidence(
                 f"native installer smoke uname machine: {machine}",
                 f"native installer smoke dpkg architecture: {dpkg_arch}",
                 "native installer smoke userland bits: 32",
+                "native installer smoke python ssl openssl: OpenSSL 3.0.13",
+                "native installer smoke openssl cli version: OpenSSL 3.0.13",
+                "native installer smoke TLS minimum modern profiles: TLS 1.2",
+                "native installer smoke TLS preferred modern profiles: TLS 1.3",
+                "native installer smoke legacy compatibility profile: isolated-opt-in",
+                "native installer smoke legacy crypto scope: profile-only",
+                "native installer smoke weak crypto global default: false",
+                "native installer smoke modern defaults unchanged: true",
                 *artifact_lines,
                 "native installer smoke: DEB install",
                 "native installer smoke: DEB verify",

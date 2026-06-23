@@ -18,6 +18,7 @@ from check_platform_promotion_artifacts import (  # noqa: E402
 )
 from check_platform_verified_evidence import (  # noqa: E402
     check_platform_verified_evidence,
+    directory_path_has_file_suffix,
     json_sha256,
     promotion_config_sha256,
     read_json,
@@ -85,6 +86,11 @@ def make_xp_native_evidence_bundle(
     force: bool = False,
 ) -> list[str]:
     errors: list[str] = []
+    evidence_root = evidence_dir or evidence.parent
+    errors.extend(check_directory_path_hint(assets_dir, "XP native artifact directory"))
+    errors.extend(check_directory_path_hint(evidence_root, "XP evidence directory"))
+    if errors:
+        return errors
     errors.extend(check_input_symlinks(evidence, candidate_record, evidence_dir=evidence_dir))
     if errors:
         return errors
@@ -100,7 +106,6 @@ def make_xp_native_evidence_bundle(
     if evidence_data.get("target") != target:
         errors.append(f"bundle target {target} must match evidence target {evidence_data.get('target')!r}")
     release_tag = str(evidence_data.get("release_tag", ""))
-    evidence_root = evidence_dir or evidence.parent
     if release_tag:
         artifact_errors = check_platform_promotion_artifacts(
             target=target,
@@ -207,6 +212,9 @@ def check_candidate_is_unfinalized(candidate: dict[str, Any]) -> list[str]:
 
 
 def prepare_output_paths(*, out_dir: Path, outputs: tuple[Path, ...], force: bool) -> list[str]:
+    hint_errors = check_directory_path_hint(out_dir, "XP native evidence bundle output directory")
+    if hint_errors:
+        return hint_errors
     if out_dir.is_symlink():
         return [f"XP native evidence bundle output directory must not be a symlink: {out_dir}"]
     parent_errors = check_path_parent_symlinks(out_dir, "XP native evidence bundle output directory")
@@ -237,6 +245,13 @@ def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
             continue
         if parent.is_symlink():
             return [f"{label} path must not contain symlinked directories: {parent}"]
+    return []
+
+
+def check_directory_path_hint(path: Path, label: str) -> list[str]:
+    raw_path = path.as_posix()
+    if directory_path_has_file_suffix(raw_path):
+        return [f"{label} must be a directory path, got {raw_path!r}"]
     return []
 
 

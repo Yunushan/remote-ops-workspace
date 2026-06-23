@@ -19,6 +19,7 @@ from check_platform_verified_evidence import (  # noqa: E402
     LINUX_TARGETS,
     check_linux_smoke_log_text,
     check_platform_verified_evidence,
+    directory_path_has_file_suffix,
     json_sha256,
     promotion_config_sha256,
     read_json,
@@ -81,6 +82,9 @@ def make_extended_linux_evidence_bundle(
     force: bool = False,
 ) -> list[str]:
     errors: list[str] = []
+    errors.extend(check_directory_path_hint(assets_dir, "artifact directory"))
+    if errors:
+        return errors
     errors.extend(check_input_symlinks(builder_evidence, smoke_evidence, candidate_record))
     if errors:
         return errors
@@ -223,6 +227,9 @@ def check_candidate_is_unfinalized(candidate: dict[str, Any]) -> list[str]:
 
 
 def prepare_output_paths(*, out_dir: Path, outputs: tuple[Path, ...], force: bool) -> list[str]:
+    hint_errors = check_directory_path_hint(out_dir, "extended Linux evidence bundle output directory")
+    if hint_errors:
+        return hint_errors
     if out_dir.is_symlink():
         return [f"extended Linux evidence bundle output directory must not be a symlink: {out_dir}"]
     parent_errors = check_path_parent_symlinks(out_dir, "extended Linux evidence bundle output directory")
@@ -253,6 +260,13 @@ def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
             continue
         if parent.is_symlink():
             return [f"{label} path must not contain symlinked directories: {parent}"]
+    return []
+
+
+def check_directory_path_hint(path: Path, label: str) -> list[str]:
+    raw_path = path.as_posix()
+    if directory_path_has_file_suffix(raw_path):
+        return [f"{label} must be a directory path, got {raw_path!r}"]
     return []
 
 

@@ -26,13 +26,19 @@ jobs:
           python-version: "3.12"
       - name: Run release preflight verifier
         run: python scripts/verify.py --quick --no-cli-smoke --release-tag "${{ github.ref_name }}"
+      - name: Report protected platform readiness requirements
+        run: python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" --show-requirements
+      - name: Require protected platform goal completion before release builds
+        run: python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" --require-complete --show-requirements
       - name: Require protected platform evidence before release builds
         run: python scripts/check_platform_verified_evidence.py --require-goal-targets --release-tag "${{ github.ref_name }}"
       - name: Require clean release checkout
         run: python scripts/check_repository_cleanup.py --require-clean
 
   source-and-python:
-    needs: release-preflight
+    needs:
+      - release-preflight
+      - accepted-platform-evidence-assets
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -52,7 +58,9 @@ jobs:
           if-no-files-found: error
 
   windows-native:
-    needs: release-preflight
+    needs:
+      - release-preflight
+      - accepted-platform-evidence-assets
     strategy:
       fail-fast: false
       matrix:
@@ -106,7 +114,9 @@ jobs:
           if-no-files-found: error
 
   macos-native:
-    needs: release-preflight
+    needs:
+      - release-preflight
+      - accepted-platform-evidence-assets
     strategy:
       fail-fast: false
       matrix:
@@ -136,7 +146,9 @@ jobs:
           if-no-files-found: error
 
   linux-native:
-    needs: release-preflight
+    needs:
+      - release-preflight
+      - accepted-platform-evidence-assets
     strategy:
       fail-fast: false
       matrix:

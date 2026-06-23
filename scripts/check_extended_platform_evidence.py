@@ -6,6 +6,24 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW_PATH = ROOT / ".github" / "workflows" / "extended-platform-evidence.yml"
+LINUX_TARGET_ARTIFACTS = {
+    "linux-i386": (
+        "remote-ops-workspace-${{ inputs.release_tag }}-linux-i386.deb",
+        "remote-ops-workspace-${{ inputs.release_tag }}-linux-i686.rpm",
+        "remote-ops-workspace-${{ inputs.release_tag }}-linux-i686.AppImage",
+        "remote-ops-workspace-${{ inputs.release_tag }}-linux-i686-native.tar.gz",
+        "remote-ops-workspace-${{ inputs.release_tag }}-linux-i686-native-manifest.json",
+        "remote-ops-workspace-${{ inputs.release_tag }}-linux-i686-native-SHA256SUMS.txt",
+    ),
+    "linux-armhf": (
+        "remote-ops-workspace-${{ inputs.release_tag }}-linux-armhf.deb",
+        "remote-ops-workspace-${{ inputs.release_tag }}-linux-armv7hl.rpm",
+        "remote-ops-workspace-${{ inputs.release_tag }}-linux-armhf.AppImage",
+        "remote-ops-workspace-${{ inputs.release_tag }}-linux-armhf-native.tar.gz",
+        "remote-ops-workspace-${{ inputs.release_tag }}-linux-armhf-native-manifest.json",
+        "remote-ops-workspace-${{ inputs.release_tag }}-linux-armhf-native-SHA256SUMS.txt",
+    ),
+}
 
 
 def main() -> int:
@@ -54,13 +72,15 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
     record_name = f"platform-verified-evidence-{target}.json"
     builder_identity_name = f"builder-identity-{target}.json"
     smoke_name = f"native-smoke-{target}.log"
-    evidence_dir = "native-dist/linux-evidence"
+    release_dir = f"platform-evidence-staging/{target}/${{{{ inputs.release_tag }}}}"
+    assets_dir = f"{release_dir}/artifacts"
+    evidence_dir = release_dir
     source_artifact_name = f"extended-linux-evidence-{target}-${{{{ inputs.release_tag }}}}"
     stage_upload_snippet = (
         "python scripts/stage_extended_linux_evidence_upload.py \\\n"
         f"            --target {target} \\\n"
         '            --release-tag "${{ inputs.release_tag }}" \\\n'
-        "            --source-dir native-dist/linux \\\n"
+        f"            --source-dir {assets_dir} \\\n"
         "            --out-dir linux-evidence-upload \\\n"
         "            --force"
     )
@@ -73,10 +93,10 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
     )
     local_preflight_snippet = (
         "python scripts/check_platform_goal_local_evidence.py \\\n"
-        "            --root . \\\n"
+        "            --root platform-evidence-staging \\\n"
         '            --release-tag "${{ inputs.release_tag }}" \\\n'
         f"            --target {target} \\\n"
-        "            --assets-dir native-dist/linux \\\n"
+        f"            --assets-dir {assets_dir} \\\n"
         f"            --linux-builder-evidence {evidence_dir}/{builder_identity_name} \\\n"
         f"            --linux-smoke-evidence {evidence_dir}/{smoke_name} \\\n"
         '            --linux-workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \\\n'
@@ -96,37 +116,45 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
         "python3 -m venv .venv-native": "isolated release virtual environment",
         'python -m pip install --constraint requirements-release.txt pip setuptools wheel ".[security,package]"': "pinned release dependency installation",
         "bash scripts/make_linux_native.sh": "native Linux artifact build",
+        f"mkdir -p native-dist/linux {assets_dir}": "raw build output and target/release promotion staging directories",
+        f"mkdir -p {assets_dir}": "target-scoped Linux artifact staging directory",
         smoke_command_snippet: "native installer smoke evidence capture",
         (
             f'python scripts/check_platform_promotion_artifacts.py --target {target} '
-            '--assets-dir native-dist/linux --tag "${{ inputs.release_tag }}" --strict'
+            f'--assets-dir {assets_dir} --tag "${{{{ inputs.release_tag }}}}" --strict'
         ): "strict promotion artifact validation",
         local_preflight_snippet: "local protected goal evidence preflight",
         f"python scripts/make_platform_verified_evidence_record.py \\\n            --target {target}": "accepted-evidence record generation",
+        f"--assets-dir {assets_dir}": "target-scoped accepted-evidence artifact path",
         '--release-asset-base-url "${{ inputs.release_asset_base_url }}"': "release asset URL evidence input",
         '--workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"': "workflow run URL evidence",
         f"--release-source-artifact-name {source_artifact_name}": "release source artifact name binding",
         '--release-source-head-sha "${{ github.sha }}"': "release source head SHA evidence",
         f"--builder-evidence {evidence_dir}/{builder_identity_name}": "builder identity evidence input",
         f"--linux-smoke-evidence {evidence_dir}/{smoke_name}": "native smoke evidence input",
+        "--local-evidence-root platform-evidence-staging": "local evidence preflight root binding",
         "--runner-label self-hosted": "self-hosted runner-label evidence",
         "--runner-label linux": "linux runner-label evidence",
         f"--runner-label {runner}": "architecture runner-label evidence",
-        f"--out native-dist/linux/{record_name}": "candidate evidence record output",
+        f"--out {assets_dir}/{record_name}": "candidate evidence record output",
         f"python scripts/make_extended_linux_evidence_bundle.py \\\n            --target {target}": "review evidence bundle generation",
         f"--smoke-evidence {evidence_dir}/{smoke_name}": "review bundle smoke evidence input",
-        f"--candidate-record native-dist/linux/{record_name}": "candidate record bundle input",
-        f"python scripts/finalize_platform_verified_evidence_record.py \\\n            --candidate-record native-dist/linux/{record_name}": "finalized evidence record generation",
-        f"--bundle-manifest native-dist/linux/extended-linux-evidence-bundle-{target}-${{{{ inputs.release_tag }}}}.json": "finalized evidence manifest binding",
-        f"--bundle-archive native-dist/linux/extended-linux-evidence-bundle-{target}-${{{{ inputs.release_tag }}}}.zip": "finalized evidence archive binding",
-        f"--bundle-sha256s native-dist/linux/extended-linux-evidence-bundle-{target}-${{{{ inputs.release_tag }}}}-SHA256SUMS.txt": "finalized evidence checksum sidecar binding",
-        f"--out native-dist/linux/platform-verified-evidence-{target}-final.json": "finalized evidence record output",
+        f"--candidate-record {assets_dir}/{record_name}": "candidate record bundle input",
+        f"python scripts/finalize_platform_verified_evidence_record.py \\\n            --candidate-record {assets_dir}/{record_name}": "finalized evidence record generation",
+        f"--bundle-manifest {assets_dir}/extended-linux-evidence-bundle-{target}-${{{{ inputs.release_tag }}}}.json": "finalized evidence manifest binding",
+        f"--bundle-archive {assets_dir}/extended-linux-evidence-bundle-{target}-${{{{ inputs.release_tag }}}}.zip": "finalized evidence archive binding",
+        f"--bundle-sha256s {assets_dir}/extended-linux-evidence-bundle-{target}-${{{{ inputs.release_tag }}}}-SHA256SUMS.txt": "finalized evidence checksum sidecar binding",
+        f"--out {assets_dir}/platform-verified-evidence-{target}-final.json": "finalized evidence record output",
         stage_upload_snippet: "scoped Linux evidence upload staging",
         "actions/upload-artifact@v7": "evidence artifact upload",
         f"name: {source_artifact_name}": "target/release-scoped evidence artifact name",
         "path: linux-evidence-upload/*": "scoped staged upload path",
         "if-no-files-found: error": "missing evidence artifact failure",
     }
+    for artifact in LINUX_TARGET_ARTIFACTS[target]:
+        required_snippets[f"cp native-dist/linux/{artifact} {assets_dir}/"] = (
+            f"target-scoped artifact staging for {artifact}"
+        )
     for snippet, label in required_snippets.items():
         if snippet not in block:
             errors.append(f"{job} missing {label}: {snippet}")
@@ -153,6 +181,19 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
         errors.append(f"{job} must use strict Linux artifact preflight without --allow-extra-artifacts")
     if "path: native-dist/linux/*" in block:
         errors.append(f"{job} must upload scoped staged files, not raw native-dist/linux wildcard")
+    stale_paths = (
+        f"--root . \\\n            --release-tag \"${{{{ inputs.release_tag }}}}\" \\\n            --target {target}",
+        f"--assets-dir native-dist/linux/{target}",
+        f"--builder-evidence native-dist/linux-evidence/{target}/",
+        f"--linux-builder-evidence native-dist/linux-evidence/{target}/",
+        f"--smoke-evidence native-dist/linux-evidence/{target}/",
+        f"--linux-smoke-evidence native-dist/linux-evidence/{target}/",
+        f"--source-dir native-dist/linux/{target}",
+        f"native-dist/linux/{target}",
+    )
+    for stale in stale_paths:
+        if stale in block:
+            errors.append(f"{job} must use target/release-scoped platform-evidence-staging paths, found {stale}")
     if "softprops/action-gh-release" in block:
         errors.append(f"{job} must not publish GitHub releases")
     if re.search(r"(?m)^\s+[A-Za-z0-9_-]+:\s+write\s*$", block):

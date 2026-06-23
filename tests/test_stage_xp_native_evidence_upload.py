@@ -250,6 +250,29 @@ def test_stage_xp_native_evidence_upload_rejects_symlinked_source_directories(
     assert f"XP evidence output directory must not be a symlink: {evidence_output}" in errors
 
 
+def test_stage_xp_native_evidence_upload_rejects_file_shaped_source_directories(
+    tmp_path: Path,
+) -> None:
+    stager = _load_stager()
+    assets = tmp_path / "assets.zip"
+    evidence_output = tmp_path / "xp-evidence-output.zip"
+    assets.mkdir()
+    evidence_output.mkdir()
+
+    errors = stager.stage_xp_native_evidence_upload(
+        target="windows-xp-native-x86",
+        release_tag="v1.0.2",
+        assets_dir=assets,
+        evidence_output_dir=evidence_output,
+        out_dir=tmp_path / "upload",
+    )
+
+    assert f"XP native asset directory must be a directory path, got {assets.as_posix()!r}" in errors
+    assert (
+        f"XP evidence output directory must be a directory path, got {evidence_output.as_posix()!r}"
+    ) in errors
+
+
 def test_stage_xp_native_evidence_upload_rejects_symlinked_source(monkeypatch) -> None:
     stager = _load_stager()
     sources = {
@@ -325,6 +348,25 @@ def test_stage_xp_native_evidence_upload_rejects_symlinked_output_directory(
     assert errors == [
         f"windows-xp-native-x86 staged upload output directory must not be a symlink: {out_dir}"
     ]
+
+
+def test_stage_xp_native_evidence_upload_rejects_file_shaped_output_directory(
+    tmp_path: Path,
+) -> None:
+    stager = _load_stager()
+    out_dir = tmp_path / "xp-evidence-upload.zip"
+
+    errors = stager.prepare_output_directory(
+        "windows-xp-native-x86",
+        out_dir=out_dir,
+        force=False,
+    )
+
+    assert errors == [
+        "windows-xp-native-x86 staged upload output directory "
+        f"must be a directory path, got {out_dir.as_posix()!r}"
+    ]
+    assert not out_dir.exists()
 
 
 def test_stage_xp_native_evidence_upload_rejects_symlinked_output_parent(

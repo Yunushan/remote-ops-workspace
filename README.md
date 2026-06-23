@@ -304,7 +304,7 @@ same GitHub release repository and same release source head SHA. Mixed-tag,
 mixed-repository or mixed-source-head accepted records remain visible as aggregate evidence,
 but the protected goal parity block stays incomplete until one release source has all four targets. The release/verifier promotion
 gate is `python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> --release-assets-dir <release-assets-dir>`,
-which also runs `python scripts/check_release_publish_assets.py --assets-dir <release-assets-dir> --require-platform-goal-targets`
+which also runs `python scripts/check_release_publish_assets.py --assets-dir <release-assets-dir> --tag v<project.version> --require-platform-goal-targets`
 and must fail until the same four records are finalized and accepted from that same release source. Today Linux i386 and
 armhf remain script-supported at 70.0% until matching release builders, default
 release matrix entries, smoke evidence, checksum sidecars and native manifests
@@ -520,6 +520,7 @@ Release manifests include `size_bytes` and `sha256` for each artifact, and CI
 build jobs run with read-only checkout credentials until the final publish step.
 The release workflow also starts with a `release-preflight` job that runs
 `python scripts/verify.py --quick --no-cli-smoke --release-tag <tag>`,
+`python scripts/check_protected_platform_goal.py --release-tag <tag> --require-complete --show-requirements`,
 `python scripts/check_platform_verified_evidence.py --require-goal-targets --release-tag <tag>`
 and `python scripts/check_repository_cleanup.py --require-clean`; source, native
 `accepted-platform-evidence-assets` and publish jobs all depend on that gate.
@@ -528,7 +529,9 @@ The `accepted-platform-evidence-assets` job runs
 to copy only same-tag, same-repository and source-head-bound accepted evidence
 artifacts into the release asset directory, then runs
 `python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag <tag>`
-against the imported review bundles before upload. Linux i386, Linux armhf,
+against the imported review bundles before upload. That import job keeps only
+read permissions for repository contents and Actions artifacts, and source and
+native release jobs wait for it before building. Linux i386, Linux armhf,
 windows-xp-native-x86 and windows-xp-native-x64 require finalized accepted
 evidence records for the same release tag, GitHub release repository and release
 source head SHA before any 100% platform-readiness or native-host parity claim.

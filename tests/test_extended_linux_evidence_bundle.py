@@ -35,6 +35,7 @@ def test_extended_linux_evidence_bundle_packages_valid_i386_evidence(
             ),
             workflow_run_url="https://github.com/example/remote-ops-workspace/actions/runs/12345",
             release_source_head_sha="a" * 40,
+            release_source_run_attempt=1,
             runner_label=["self-hosted", "linux", "i386"],
             builder_evidence=builder,
             linux_smoke_evidence=smoke,
@@ -44,7 +45,7 @@ def test_extended_linux_evidence_bundle_packages_valid_i386_evidence(
     )
     assert errors == []
     candidate.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
-    out_dir = Path("bundle")
+    out_dir = assets
 
     errors = bundler.make_extended_linux_evidence_bundle(
         target=target,
@@ -98,6 +99,26 @@ def test_extended_linux_evidence_bundle_packages_valid_i386_evidence(
     assert f"{_sha256(archive)}  {archive.name}" in sidecar_text
 
 
+def test_extended_linux_evidence_bundle_rejects_unscoped_output_directory() -> None:
+    bundler = _load_script("make_extended_linux_evidence_bundle")
+
+    errors = bundler.check_target_release_path_segments(
+        "linux-i386",
+        "v1.0.2",
+        Path("bundle"),
+        label="extended Linux evidence bundle output directory",
+    )
+
+    assert any(
+        "extended Linux evidence bundle output directory must include target path segment 'linux-i386'" in error
+        for error in errors
+    )
+    assert any(
+        "extended Linux evidence bundle output directory must include release_tag path segment 'v1.0.2'" in error
+        for error in errors
+    )
+
+
 def test_extended_linux_evidence_bundle_rejects_artifact_hash_mismatch(
     tmp_path: Path,
     monkeypatch,
@@ -120,6 +141,7 @@ def test_extended_linux_evidence_bundle_rejects_artifact_hash_mismatch(
             ),
             workflow_run_url="https://github.com/example/remote-ops-workspace/actions/runs/12345",
             release_source_head_sha="a" * 40,
+            release_source_run_attempt=1,
             runner_label=["self-hosted", "linux", "i386"],
             builder_evidence=builder,
             linux_smoke_evidence=smoke,
@@ -167,6 +189,7 @@ def test_extended_linux_evidence_bundle_rejects_extra_artifact_file(
             ),
             workflow_run_url="https://github.com/example/remote-ops-workspace/actions/runs/12345",
             release_source_head_sha="a" * 40,
+            release_source_run_attempt=1,
             runner_label=["self-hosted", "linux", "i386"],
             builder_evidence=builder,
             linux_smoke_evidence=smoke,
@@ -214,6 +237,7 @@ def test_extended_linux_evidence_bundle_rejects_unscoped_evidence_file_names(
             ),
             workflow_run_url="https://github.com/example/remote-ops-workspace/actions/runs/12345",
             release_source_head_sha="a" * 40,
+            release_source_run_attempt=1,
             runner_label=["self-hosted", "linux", "i386"],
             builder_evidence=builder,
             linux_smoke_evidence=smoke,
@@ -517,6 +541,7 @@ def test_extended_linux_evidence_bundle_rejects_weak_smoke_log(
             ),
             workflow_run_url="https://github.com/example/remote-ops-workspace/actions/runs/12345",
             release_source_head_sha="a" * 40,
+            release_source_run_attempt=1,
             runner_label=["self-hosted", "linux", "i386"],
             builder_evidence=builder,
             linux_smoke_evidence=valid_smoke,
@@ -561,6 +586,7 @@ def _builder_identity(target: str) -> dict[str, object]:
         "target": target,
         "release_tag": "v1.0.2",
         "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        "workflow_run_attempt": 1,
         "source_head_sha": "a" * 40,
         "host_identity": _linux_host_identity(target),
         "sudo_non_interactive": True,
@@ -616,6 +642,7 @@ def _linux_host_identity(target: str, release_tag: str = "v1.0.2") -> dict[str, 
         "target": target,
         "release_tag": release_tag,
         "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        "workflow_run_attempt": 1,
         "host_label": f"{target}-builder",
         "evidence_run_id": f"{target}-{release_tag.removeprefix('v').replace('.', '-')}-run-12345",
         "observed_at_utc": "2026-06-20T12:00:00Z",

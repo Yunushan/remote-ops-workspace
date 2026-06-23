@@ -12,6 +12,7 @@ def test_builder_identity_context_accepts_release_run_and_source_sha() -> None:
         "linux-i386",
         "v1.0.2",
         "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        1,
         "a" * 40,
     )
 
@@ -25,6 +26,7 @@ def test_builder_identity_context_requires_lowercase_source_sha() -> None:
         "linux-armhf",
         "v1.0.2",
         "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        1,
         "A" * 40,
     )
 
@@ -38,9 +40,12 @@ def test_builder_identity_records_source_head_sha() -> None:
         "linux-i386",
         release_tag="v1.0.2",
         workflow_run_url="https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        workflow_run_attempt=1,
         source_head_sha="a" * 40,
     )
 
+    assert identity["workflow_run_attempt"] == 1
+    assert identity["host_identity"]["workflow_run_attempt"] == 1
     assert identity["source_head_sha"] == "a" * 40
 
 

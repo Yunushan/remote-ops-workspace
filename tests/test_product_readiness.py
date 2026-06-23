@@ -70,6 +70,77 @@ def test_product_readiness_rejects_inconsistent_protected_goal_release_source_fl
     )
 
 
+def test_product_readiness_rejects_missing_protected_goal_release_asset_source(monkeypatch) -> None:
+    checker = load_product_readiness_checker()
+    report = deepcopy(checker.coverage_report())
+    requirements = report["platform_verified_readiness"]["protected_goal_parity"][
+        "target_evidence_requirements"
+    ]
+    linux_i386 = next(item for item in requirements if item["target"] == "linux-i386")
+    linux_i386.pop("release_asset_source_required")
+    monkeypatch.setattr(checker, "coverage_report", lambda: report)
+
+    errors = checker.check_product_readiness()
+
+    assert (
+        "linux-i386 protected platform requirement missing release_asset_source_required"
+        in errors
+    )
+
+
+def test_product_readiness_rejects_weak_protected_goal_release_asset_source(monkeypatch) -> None:
+    checker = load_product_readiness_checker()
+    report = deepcopy(checker.coverage_report())
+    requirements = report["platform_verified_readiness"]["protected_goal_parity"][
+        "target_evidence_requirements"
+    ]
+    linux_i386 = next(item for item in requirements if item["target"] == "linux-i386")
+    linux_i386["release_asset_source_required"] = {
+        "type": "zip",
+        "workflow": ".github/workflows/xp-native-evidence.yml",
+        "workflow_run_url": "latest",
+        "artifact_name": "latest",
+        "head_sha": "latest",
+        "run_attempt": "latest",
+        "contains_files": ["remote-ops-workspace-v<project.version>-linux-i386.deb"],
+    }
+    monkeypatch.setattr(checker, "coverage_report", lambda: report)
+
+    errors = checker.check_product_readiness()
+
+    assert (
+        "linux-i386 protected platform requirement release_asset_source_required.type "
+        "must be github-actions-artifact"
+    ) in errors
+    assert (
+        "linux-i386 protected platform requirement release_asset_source_required.workflow "
+        "must be .github/workflows/extended-platform-evidence.yml"
+    ) in errors
+    assert (
+        "linux-i386 protected platform requirement release_asset_source_required.artifact_name "
+        "must be extended-linux-evidence-linux-i386-v<project.version>"
+    ) in errors
+    assert (
+        "linux-i386 protected platform requirement release_asset_source_required.workflow_run_url "
+        "must require a GitHub Actions run URL"
+    ) in errors
+    assert (
+        "linux-i386 protected platform requirement release_asset_source_required.head_sha "
+        "must require the release source Git SHA"
+    ) in errors
+    assert (
+        "linux-i386 protected platform requirement release_asset_source_required.run_attempt "
+        "must require the release source run attempt"
+    ) in errors
+    assert any(
+        error.startswith(
+            "linux-i386 protected platform requirement "
+            "release_asset_source_required.contains_files missing files:"
+        )
+        for error in errors
+    )
+
+
 def test_product_readiness_rejects_missing_linux_modern_default_security_proof(monkeypatch) -> None:
     checker = load_product_readiness_checker()
     report = deepcopy(checker.coverage_report())
@@ -89,3 +160,52 @@ def test_product_readiness_rejects_missing_linux_modern_default_security_proof(m
         and "modern Windows 10/11, Linux, and macOS defaults must keep hardened crypto" in error
         for error in errors
     )
+
+
+def test_product_readiness_requires_accepted_row_release_bindings(monkeypatch) -> None:
+    checker = load_product_readiness_checker()
+    report = deepcopy(checker.coverage_report())
+    linux_i386 = next(
+        row
+        for row in report["platform_verified_readiness"]["targets"]
+        if row["target"] == "linux-i386"
+    )
+    linux_i386["accepted_evidence_present_targets"] = ["linux-i386"]
+    linux_i386.pop("accepted_evidence_release_tags", None)
+    monkeypatch.setattr(checker, "coverage_report", lambda: report)
+
+    errors = checker.check_product_readiness()
+
+    assert "linux-i386 accepted evidence row must expose accepted_evidence_release_tags" in errors
+
+
+def test_product_readiness_rejects_weak_accepted_row_release_bindings(monkeypatch) -> None:
+    checker = load_product_readiness_checker()
+    report = deepcopy(checker.coverage_report())
+    linux_i386 = next(
+        row
+        for row in report["platform_verified_readiness"]["targets"]
+        if row["target"] == "linux-i386"
+    )
+    linux_i386["accepted_evidence_present_targets"] = ["linux-i386"]
+    linux_i386["accepted_evidence_release_tags"] = {"linux-i386": "latest"}
+    linux_i386["accepted_evidence_release_repositories"] = {
+        "linux-i386": ["example/remote-ops-workspace", "other/remote-ops-workspace"],
+    }
+    linux_i386["accepted_evidence_release_source_heads"] = {"linux-i386": "ABC123"}
+    monkeypatch.setattr(checker, "coverage_report", lambda: report)
+
+    errors = checker.check_product_readiness()
+
+    assert (
+        "linux-i386 accepted evidence accepted_evidence_release_tags[linux-i386] "
+        "must be a concrete vX.Y.Z release tag"
+    ) in errors
+    assert (
+        "linux-i386 accepted evidence accepted_evidence_release_repositories[linux-i386] "
+        "must list exactly one GitHub release repository"
+    ) in errors
+    assert (
+        "linux-i386 accepted evidence accepted_evidence_release_source_heads[linux-i386] "
+        "must be a 40-character lowercase Git SHA"
+    ) in errors

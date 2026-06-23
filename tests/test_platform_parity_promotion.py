@@ -135,6 +135,21 @@ def test_platform_parity_promotion_rejects_xp_local_preflight_without_xp_evidenc
     assert any("windows-xp-native-x64 local_evidence_preflight_command must be" in error for error in errors)
 
 
+def test_platform_parity_promotion_rejects_xp_local_preflight_without_source_binding() -> None:
+    checker = _load_platform_parity_promotion_checker()
+    promotion = _load_json("configs/platform_parity_promotion.json")
+    entry = _promotion_entry(promotion, "windows-xp-native-x86")
+    command = entry["promotion_to_100_requires"]["local_evidence_preflight_command"]
+    entry["promotion_to_100_requires"]["local_evidence_preflight_command"] = command.replace(
+        " --xp-source-workflow-run-url <github-actions-run-url>",
+        "",
+    )
+
+    errors = checker.check_platform_parity_promotion(promotion=promotion)
+
+    assert any("windows-xp-native-x86 local_evidence_preflight_command must be" in error for error in errors)
+
+
 def test_platform_parity_promotion_rejects_generic_xp_release_source_artifact_name() -> None:
     checker = _load_platform_parity_promotion_checker()
     promotion = _load_json("configs/platform_parity_promotion.json")
@@ -191,6 +206,35 @@ def test_platform_parity_promotion_rejects_missing_release_source_head_sha() -> 
     assert "linux-i386 accepted_evidence_candidate_command must bind release source head SHA" in errors
 
 
+def test_platform_parity_promotion_rejects_missing_release_source_run_attempt() -> None:
+    checker = _load_platform_parity_promotion_checker()
+    promotion = _load_json("configs/platform_parity_promotion.json")
+    entry = _promotion_entry(promotion, "windows-xp-native-x64")
+    requirements = entry["promotion_to_100_requires"]
+    requirements["accepted_evidence_candidate_command"] = requirements[
+        "accepted_evidence_candidate_command"
+    ].replace(" --release-source-run-attempt <github-actions-run-attempt>", "")
+
+    errors = checker.check_platform_parity_promotion(promotion=promotion)
+
+    assert "windows-xp-native-x64 accepted_evidence_candidate_command must bind release source run attempt" in errors
+
+
+def test_platform_parity_promotion_rejects_linux_local_preflight_without_source_run_attempt() -> None:
+    checker = _load_platform_parity_promotion_checker()
+    promotion = _load_json("configs/platform_parity_promotion.json")
+    entry = _promotion_entry(promotion, "linux-armhf")
+    command = entry["promotion_to_100_requires"]["local_evidence_preflight_command"]
+    entry["promotion_to_100_requires"]["local_evidence_preflight_command"] = command.replace(
+        " --linux-source-run-attempt <github-actions-run-attempt>",
+        "",
+    )
+
+    errors = checker.check_platform_parity_promotion(promotion=promotion)
+
+    assert any("linux-armhf local_evidence_preflight_command must be" in error for error in errors)
+
+
 def test_linux_blockers_describe_evidence_activated_publish_contracts() -> None:
     promotion = _load_json("configs/platform_parity_promotion.json")
 
@@ -219,6 +263,44 @@ def test_platform_parity_promotion_requires_review_bundle_candidate_record() -> 
     assert (
         "windows-xp-native-x86 review_bundle_command must bind the candidate record with --candidate-record"
         in errors
+    )
+
+
+def test_platform_parity_promotion_requires_target_release_scoped_review_bundle_output() -> None:
+    checker = _load_platform_parity_promotion_checker()
+    promotion = _load_json("configs/platform_parity_promotion.json")
+    linux = _promotion_entry(promotion, "linux-i386")["promotion_to_100_requires"]
+    linux["review_bundle_command"] = linux["review_bundle_command"].replace(
+        "--out-dir <target-release-artifact-dir>",
+        "--out-dir <bundle-dir>",
+    )
+    linux["finalized_evidence_record_command"] = linux["finalized_evidence_record_command"].replace(
+        "<target-release-artifact-dir>/",
+        "<bundle-dir>/",
+    )
+    xp = _promotion_entry(promotion, "windows-xp-native-x86")["promotion_to_100_requires"]
+    xp["review_bundle_command"] = xp["review_bundle_command"].replace(
+        "--out-dir <xp-evidence-output-dir>",
+        "--out-dir <bundle-dir>",
+    )
+    xp["finalized_evidence_record_command"] = xp["finalized_evidence_record_command"].replace(
+        "<xp-evidence-output-dir>/",
+        "<bundle-dir>/",
+    )
+
+    errors = checker.check_platform_parity_promotion(promotion=promotion)
+
+    assert "linux-i386 review_bundle_command must write to <target-release-artifact-dir>" in errors
+    assert "windows-xp-native-x86 review_bundle_command must write to <xp-evidence-output-dir>" in errors
+    assert any(
+        "linux-i386 finalized_evidence_record_command must bind review bundle file "
+        "<target-release-artifact-dir>/extended-linux-evidence-bundle-linux-i386" in error
+        for error in errors
+    )
+    assert any(
+        "windows-xp-native-x86 finalized_evidence_record_command must bind review bundle file "
+        "<xp-evidence-output-dir>/xp-native-evidence-bundle-windows-xp-native-x86" in error
+        for error in errors
     )
 
 

@@ -47,12 +47,16 @@ def main(argv: list[str] | None = None) -> int:
         targets=targets,
         linux_workflow_run_url=args.linux_workflow_run_url,
         linux_source_head_sha=args.linux_source_head_sha,
+        linux_source_run_attempt=args.linux_source_run_attempt,
         strict_artifacts=not args.allow_extra_artifacts,
         assets_dir=args.assets_dir,
         linux_builder_evidence=args.linux_builder_evidence,
         linux_smoke_evidence=args.linux_smoke_evidence,
         xp_evidence=args.xp_evidence,
         xp_evidence_dir=args.xp_evidence_dir,
+        xp_source_workflow_run_url=args.xp_source_workflow_run_url,
+        xp_source_head_sha=args.xp_source_head_sha,
+        xp_source_run_attempt=args.xp_source_run_attempt,
     )
     if errors:
         for error in errors:
@@ -100,6 +104,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--linux-source-run-attempt",
+        type=int,
+        help=(
+            "positive GitHub Actions run attempt that Linux builder evidence must bind; "
+            "omitted values are inferred from each target's builder identity JSON"
+        ),
+    )
+    parser.add_argument(
         "--allow-extra-artifacts",
         action="store_true",
         help="allow files outside the exact required artifact set in each artifacts directory",
@@ -129,6 +141,19 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=Path,
         help="explicit XP smoke evidence directory for a single XP --target preflight",
     )
+    parser.add_argument(
+        "--xp-source-workflow-run-url",
+        help="GitHub Actions run URL that the XP accepted-evidence source artifact must bind",
+    )
+    parser.add_argument(
+        "--xp-source-head-sha",
+        help="40-character source commit SHA that the XP accepted-evidence source artifact must bind",
+    )
+    parser.add_argument(
+        "--xp-source-run-attempt",
+        type=int,
+        help="positive GitHub Actions run attempt that the XP accepted-evidence source artifact must bind",
+    )
     return parser.parse_args(argv)
 
 
@@ -139,12 +164,16 @@ def check_platform_goal_local_evidence(
     targets: tuple[str, ...] = PROTECTED_GOAL_TARGETS,
     linux_workflow_run_url: str | None = None,
     linux_source_head_sha: str | None = None,
+    linux_source_run_attempt: int | None = None,
     strict_artifacts: bool = True,
     assets_dir: Path | None = None,
     linux_builder_evidence: Path | None = None,
     linux_smoke_evidence: Path | None = None,
     xp_evidence: Path | None = None,
     xp_evidence_dir: Path | None = None,
+    xp_source_workflow_run_url: str | None = None,
+    xp_source_head_sha: str | None = None,
+    xp_source_run_attempt: int | None = None,
 ) -> list[str]:
     errors: list[str] = []
     if not RELEASE_TAG_RE.fullmatch(release_tag):
@@ -186,6 +215,7 @@ def check_platform_goal_local_evidence(
                     promotion=promotion,
                     workflow_run_url=linux_workflow_run_url,
                     source_head_sha=linux_source_head_sha,
+                    source_run_attempt=linux_source_run_attempt,
                     strict_artifacts=strict_artifacts,
                     assets_dir=assets_dir,
                     builder_evidence=linux_builder_evidence,
@@ -202,6 +232,9 @@ def check_platform_goal_local_evidence(
                     assets_dir=assets_dir,
                     evidence_file=xp_evidence,
                     evidence_dir=xp_evidence_dir,
+                    source_workflow_run_url=xp_source_workflow_run_url,
+                    source_head_sha=xp_source_head_sha,
+                    source_run_attempt=xp_source_run_attempt,
                 )
             )
         else:
@@ -217,6 +250,7 @@ def check_linux_local_evidence(
     promotion: dict[str, Any],
     workflow_run_url: str | None,
     source_head_sha: str | None,
+    source_run_attempt: int | None,
     strict_artifacts: bool,
     assets_dir: Path | None = None,
     builder_evidence: Path | None = None,
@@ -264,6 +298,10 @@ def check_linux_local_evidence(
         errors.append(f"{target} --linux-source-head-sha is required for local Linux evidence preflight")
     elif source_head_sha and not GITHUB_HEAD_SHA_RE.fullmatch(str(source_head_sha)):
         errors.append(f"{target} --linux-source-head-sha must be a 40-character lowercase Git SHA")
+    if source_run_attempt is None and not infer_linux_bindings:
+        errors.append(f"{target} --linux-source-run-attempt is required for local Linux evidence preflight")
+    elif source_run_attempt is not None and source_run_attempt < 1:
+        errors.append(f"{target} --linux-source-run-attempt must be a positive integer")
     if builder_evidence.is_symlink():
         errors.append(f"{target} builder identity evidence must not be a symlink: {builder_evidence}")
     elif not builder_evidence.is_file():
@@ -296,13 +334,22 @@ def check_linux_local_evidence(
         if isinstance(builder_identity, dict)
         else source_head_sha or ""
     ).strip()
+    resolved_source_run_attempt = (
+        source_run_attempt
+        if source_run_attempt is not None
+        else builder_identity.get("workflow_run_attempt")
+        if isinstance(builder_identity, dict)
+        else None
+    )
     errors.extend(
         check_linux_resolved_run_bindings(
             target,
             workflow_run_url=resolved_workflow_run_url,
             source_head_sha=resolved_source_head_sha,
+            source_run_attempt=resolved_source_run_attempt,
             inferred_workflow_run_url=not workflow_run_url,
             inferred_source_head_sha=not source_head_sha,
+            inferred_source_run_attempt=source_run_attempt is None,
         )
     )
     if errors:
@@ -314,6 +361,7 @@ def check_linux_local_evidence(
             LINUX_TARGETS[target]["machine_names"],
             release_tag=release_tag,
             workflow_run_url=resolved_workflow_run_url,
+            workflow_run_attempt=resolved_source_run_attempt,
             source_head_sha=resolved_source_head_sha,
         )
     )
@@ -337,8 +385,10 @@ def check_linux_resolved_run_bindings(
     *,
     workflow_run_url: str,
     source_head_sha: str,
+    source_run_attempt: object,
     inferred_workflow_run_url: bool,
     inferred_source_head_sha: bool,
+    inferred_source_run_attempt: bool,
 ) -> list[str]:
     errors: list[str] = []
     workflow_label = (
@@ -351,6 +401,11 @@ def check_linux_resolved_run_bindings(
         if inferred_source_head_sha
         else "--linux-source-head-sha"
     )
+    attempt_label = (
+        "builder_identity.workflow_run_attempt"
+        if inferred_source_run_attempt
+        else "--linux-source-run-attempt"
+    )
     if not workflow_run_url:
         errors.append(f"{target} {workflow_label} is required for local Linux evidence preflight")
     elif not GITHUB_ACTIONS_RUN_RE.fullmatch(workflow_run_url.rstrip("/")):
@@ -359,6 +414,12 @@ def check_linux_resolved_run_bindings(
         errors.append(f"{target} {source_label} is required for local Linux evidence preflight")
     elif not GITHUB_HEAD_SHA_RE.fullmatch(source_head_sha):
         errors.append(f"{target} {source_label} must be a 40-character lowercase Git SHA")
+    if (
+        not isinstance(source_run_attempt, int)
+        or isinstance(source_run_attempt, bool)
+        or source_run_attempt < 1
+    ):
+        errors.append(f"{target} {attempt_label} must be a positive integer")
     return errors
 
 
@@ -371,6 +432,9 @@ def check_xp_local_evidence(
     assets_dir: Path | None = None,
     evidence_file: Path | None = None,
     evidence_dir: Path | None = None,
+    source_workflow_run_url: str | None = None,
+    source_head_sha: str | None = None,
+    source_run_attempt: int | None = None,
 ) -> list[str]:
     target_dir = root / target
     target_root = target_dir / release_tag
@@ -413,6 +477,14 @@ def check_xp_local_evidence(
             strict=strict_artifacts,
         )
     )
+    errors.extend(
+        check_xp_source_bindings(
+            target,
+            workflow_run_url=source_workflow_run_url,
+            source_head_sha=source_head_sha,
+            source_run_attempt=source_run_attempt,
+        )
+    )
     if not evidence_file.is_file():
         errors.append(f"{target} XP evidence file missing: {evidence_file}")
     if errors:
@@ -438,6 +510,29 @@ def check_xp_local_evidence(
                 f"{target} XP evidence artifact_validation.command --assets-dir must match "
                 f"local artifacts path {expected_assets_dir}, got {asset_dirs}"
             )
+    return errors
+
+
+def check_xp_source_bindings(
+    target: str,
+    *,
+    workflow_run_url: str | None,
+    source_head_sha: str | None,
+    source_run_attempt: int | None,
+) -> list[str]:
+    errors: list[str] = []
+    if not workflow_run_url:
+        errors.append(f"{target} --xp-source-workflow-run-url is required for local XP evidence preflight")
+    elif not GITHUB_ACTIONS_RUN_RE.fullmatch(str(workflow_run_url).rstrip("/")):
+        errors.append(f"{target} --xp-source-workflow-run-url must be a GitHub Actions run URL")
+    if not source_head_sha:
+        errors.append(f"{target} --xp-source-head-sha is required for local XP evidence preflight")
+    elif not GITHUB_HEAD_SHA_RE.fullmatch(str(source_head_sha)):
+        errors.append(f"{target} --xp-source-head-sha must be a 40-character lowercase Git SHA")
+    if source_run_attempt is None:
+        errors.append(f"{target} --xp-source-run-attempt is required for local XP evidence preflight")
+    elif source_run_attempt < 1:
+        errors.append(f"{target} --xp-source-run-attempt must be a positive integer")
     return errors
 
 

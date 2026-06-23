@@ -162,7 +162,7 @@ REQUIRED_DOC_SNIPPETS: dict[str, tuple[str, ...]] = {
         "`dpkg --print-architecture`",
         "`getconf LONG_BIT=32`",
         "modern Windows 10/11, Linux and macOS defaults remain hardened",
-        "python scripts/import_platform_evidence_artifacts.py --dry-run",
+        "python scripts/import_platform_evidence_artifacts.py --release-tag v<project.version> --require-goal-targets --out-dir <release-assets-dir> --dry-run --verify-source-run",
         "check_release_publish_assets.py --assets-dir <release-assets-dir> --tag v<project.version> --require-platform-goal-targets",
         "APK-style artifacts remain out of scope until there is a real native Android wrapper.",
         "iOS/iPadOS support is Web/PWA only; no native `.ipa` artifact is published.",

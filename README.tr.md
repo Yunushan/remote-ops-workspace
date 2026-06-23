@@ -275,14 +275,15 @@ daha genis platform katalogudur. Native installer smoke kapsami
 Windows, macOS ve Linux native islerinden sonra install, verify, upgrade and
 uninstall yollarini calistirir. Release workflow once `release-preflight` isinde
 `python scripts/verify.py --quick --no-cli-smoke --release-tag <tag>`,
-`python scripts/check_platform_verified_evidence.py --require-goal-targets --release-tag <tag>`
+`python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag <tag>`
 ve `python scripts/check_repository_cleanup.py --require-clean` calistirir;
 source, native, accepted-platform-evidence-assets ve publish isleri bu kapiya
 baglidir. Protected platform goal icin Linux i386, Linux armhf,
 windows-xp-native-x86 ve windows-xp-native-x64 kayitlarinin hepsi ayni release
-tag, ayni GitHub release repository ve ayni release source head SHA ile
-finalized accepted evidence olarak bulunmalidir. Protected evidence asset isi
-`python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets`
+tag, ayni GitHub release repository, ayni release source head SHA ve her
+kaydin pozitif release source run attempt degeri ile finalized accepted evidence
+olarak bulunmalidir. Protected evidence asset isi
+`python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run`
 ile sadece accepted kayitlarda ayni tag/repository/source-head bagli artifact ve
 review-bundle dosyalarini release-assets icine alir, sonra
 `python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag <tag>`

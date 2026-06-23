@@ -51,6 +51,7 @@ jobs:
             --target linux-i386 \
             --release-tag "${{ inputs.release_tag }}" \
             --workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --workflow-run-attempt "${{ github.run_attempt }}" \
             --source-head-sha "${{ github.sha }}" \
             --out platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/builder-identity-linux-i386.json
       - name: Create isolated release environment
@@ -90,7 +91,8 @@ jobs:
             --linux-builder-evidence platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/builder-identity-linux-i386.json \
             --linux-smoke-evidence platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/native-smoke-linux-i386.log \
             --linux-workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-            --linux-source-head-sha "${{ github.sha }}"
+            --linux-source-head-sha "${{ github.sha }}" \
+            --linux-source-run-attempt "${{ github.run_attempt }}"
       - name: Generate Linux i386 accepted-evidence candidate
         run: |
           . .venv-native/bin/activate
@@ -102,6 +104,7 @@ jobs:
             --workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
             --release-source-artifact-name extended-linux-evidence-linux-i386-${{ inputs.release_tag }} \
             --release-source-head-sha "${{ github.sha }}" \
+            --release-source-run-attempt "${{ github.run_attempt }}" \
             --builder-evidence platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/builder-identity-linux-i386.json \
             --linux-smoke-evidence platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/native-smoke-linux-i386.log \
             --local-evidence-root platform-evidence-staging \
@@ -166,6 +169,7 @@ jobs:
             --target linux-armhf \
             --release-tag "${{ inputs.release_tag }}" \
             --workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --workflow-run-attempt "${{ github.run_attempt }}" \
             --source-head-sha "${{ github.sha }}" \
             --out platform-evidence-staging/linux-armhf/${{ inputs.release_tag }}/builder-identity-linux-armhf.json
       - name: Create isolated release environment
@@ -205,7 +209,8 @@ jobs:
             --linux-builder-evidence platform-evidence-staging/linux-armhf/${{ inputs.release_tag }}/builder-identity-linux-armhf.json \
             --linux-smoke-evidence platform-evidence-staging/linux-armhf/${{ inputs.release_tag }}/native-smoke-linux-armhf.log \
             --linux-workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-            --linux-source-head-sha "${{ github.sha }}"
+            --linux-source-head-sha "${{ github.sha }}" \
+            --linux-source-run-attempt "${{ github.run_attempt }}"
       - name: Generate Linux armhf accepted-evidence candidate
         run: |
           . .venv-native/bin/activate
@@ -217,6 +222,7 @@ jobs:
             --workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
             --release-source-artifact-name extended-linux-evidence-linux-armhf-${{ inputs.release_tag }} \
             --release-source-head-sha "${{ github.sha }}" \
+            --release-source-run-attempt "${{ github.run_attempt }}" \
             --builder-evidence platform-evidence-staging/linux-armhf/${{ inputs.release_tag }}/builder-identity-linux-armhf.json \
             --linux-smoke-evidence platform-evidence-staging/linux-armhf/${{ inputs.release_tag }}/native-smoke-linux-armhf.log \
             --local-evidence-root platform-evidence-staging \

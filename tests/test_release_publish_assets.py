@@ -15,6 +15,7 @@ POLICY = (
     "review-bundle manifest release asset URL binding, review bundle release asset URLs, "
     "release-importable artifact source binding, "
     "release source head SHA binding, "
+    "release source run-attempt binding, "
     "release source workflow file binding, "
     "local protected-goal evidence preflight command binding, "
     "finalized accepted-record source file binding, "
@@ -22,6 +23,7 @@ POLICY = (
     "Linux release source artifact names must be target/release-scoped, "
     "Linux accepted evidence command paths must be target/release-scoped, "
     "XP release source artifact names must be target/release-scoped, "
+    "XP accepted evidence command paths must be target/release-scoped, "
     "and per-artifact SHA-256 digests, safe relative non-link native archive entries, "
     "exact safe checksum and native manifest file references, "
     "exact safe release asset URL filenames, "
@@ -33,6 +35,7 @@ POLICY = (
     "Linux builder source head SHA binding, "
     "Linux builder host identity binding when applicable, "
     "Linux builder rpm and non-interactive sudo evidence, Linux security patch evidence, "
+    "Linux security smoke proof-line binding, "
     "Linux native build and smoke command provenance, "
     "Linux smoke evidence SHA-256, Linux smoke release/run/source head SHA binding, "
     "Linux smoke runtime architecture and userland binding, "
@@ -1226,7 +1229,8 @@ def _linux_accepted_evidence(target: str) -> dict[str, object]:
             f"--linux-builder-evidence evidence/{target}/v1.0.2/builder-identity-{target}.json "
             f"--linux-smoke-evidence evidence/{target}/v1.0.2/native-smoke-{target}.log "
             "--linux-workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
-            f"--linux-source-head-sha {'a' * 40}"
+            f"--linux-source-head-sha {'a' * 40} "
+            "--linux-source-run-attempt 1"
         ),
         "artifact_validation_command": (
             f"python scripts/check_platform_promotion_artifacts.py --target {target} "
@@ -1362,7 +1366,10 @@ def _xp_accepted_evidence(target: str) -> dict[str, object]:
         "local_evidence_preflight_command": (
             "python scripts/check_platform_goal_local_evidence.py --root . "
             f"--release-tag v1.0.2 --target {target} --assets-dir {assets_dir} "
-            f"--xp-evidence {evidence_file} --xp-evidence-dir {evidence_dir}"
+            f"--xp-evidence {evidence_file} --xp-evidence-dir {evidence_dir} "
+            "--xp-source-workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
+            f"--xp-source-head-sha {'a' * 40} "
+            "--xp-source-run-attempt 1"
         ),
         "artifact_validation_command": (
             f"python scripts/check_platform_promotion_artifacts.py --target {target} "
@@ -1447,6 +1454,7 @@ def _release_asset_source(
         "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
         "artifact_name": artifact_name,
         "head_sha": "a" * 40,
+        "run_attempt": 1,
         "contains_files": sorted(contains_files),
     }
 
@@ -1550,6 +1558,7 @@ def _builder_identity(target: str) -> dict[str, object]:
         "target": target,
         "release_tag": "v1.0.2",
         "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        "workflow_run_attempt": 1,
         "source_head_sha": "a" * 40,
         "host_identity": _linux_host_identity(target),
         "sudo_non_interactive": True,
@@ -1582,6 +1591,7 @@ def _linux_host_identity(target: str, release_tag: str = "v1.0.2") -> dict[str, 
         "target": target,
         "release_tag": release_tag,
         "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        "workflow_run_attempt": 1,
         "host_label": f"{target}-builder",
         "evidence_run_id": f"{target}-{release_tag.removeprefix('v').replace('.', '-')}-run-12345",
         "observed_at_utc": "2026-06-20T12:00:00Z",

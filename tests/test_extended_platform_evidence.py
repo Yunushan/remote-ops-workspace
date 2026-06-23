@@ -65,6 +65,24 @@ def test_extended_platform_evidence_requires_review_bundle_generation() -> None:
     assert any("review evidence bundle generation" in error for error in errors)
 
 
+def test_extended_platform_evidence_requires_scoped_review_bundle_output() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8")
+    workflow = workflow.replace(
+        "            --out-dir platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/artifacts",
+        "            --out-dir bundle",
+        1,
+    )
+
+    errors = checker.check_extended_platform_evidence(workflow)
+
+    assert any("target/release scoped review bundle output directory" in error for error in errors)
+    assert (
+        "linux-i386-native-evidence must use target/release-scoped platform-evidence-staging paths, "
+        "found --out-dir bundle"
+    ) in errors
+
+
 def test_extended_platform_evidence_requires_builder_release_context() -> None:
     checker = _load_script("check_extended_platform_evidence")
     workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8")
@@ -80,9 +98,23 @@ def test_extended_platform_evidence_requires_builder_release_context() -> None:
     errors = checker.check_extended_platform_evidence(workflow)
 
     assert any(
-        "builder identity preflight must bind release_tag, workflow_run_url and source_head_sha" in error
+        "builder identity preflight must bind release_tag, workflow_run_url, workflow_run_attempt and source_head_sha"
+        in error
         for error in errors
     )
+
+
+def test_extended_platform_evidence_requires_builder_workflow_run_attempt() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
+        '            --workflow-run-attempt "${{ github.run_attempt }}" \\\n',
+        "",
+        1,
+    )
+
+    errors = checker.check_extended_platform_evidence(workflow)
+
+    assert any("builder workflow run-attempt evidence" in error for error in errors)
 
 
 def test_extended_platform_evidence_requires_release_source_artifact_name() -> None:
@@ -96,6 +128,32 @@ def test_extended_platform_evidence_requires_release_source_artifact_name() -> N
     errors = checker.check_extended_platform_evidence(workflow)
 
     assert any("release source artifact name binding" in error for error in errors)
+
+
+def test_extended_platform_evidence_requires_release_source_run_attempt() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
+        '            --release-source-run-attempt "${{ github.run_attempt }}" \\\n',
+        "",
+        1,
+    )
+
+    errors = checker.check_extended_platform_evidence(workflow)
+
+    assert any("release source run-attempt binding" in error for error in errors)
+
+
+def test_extended_platform_evidence_requires_local_source_run_attempt() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
+        '            --linux-source-run-attempt "${{ github.run_attempt }}"\n',
+        "\n",
+        1,
+    )
+
+    errors = checker.check_extended_platform_evidence(workflow)
+
+    assert any("local evidence source run-attempt binding" in error for error in errors)
 
 
 def test_extended_platform_evidence_requires_candidate_local_evidence_root_binding() -> None:
@@ -312,6 +370,8 @@ def test_extended_platform_builder_writes_identity_evidence(tmp_path: Path, monk
                 "v1.0.2",
                 "--workflow-run-url",
                 "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+                "--workflow-run-attempt",
+                "1",
                 "--source-head-sha",
                 "a" * 40,
                 "--out",
@@ -325,12 +385,14 @@ def test_extended_platform_builder_writes_identity_evidence(tmp_path: Path, monk
     assert data["target"] == "linux-i386"
     assert data["release_tag"] == "v1.0.2"
     assert data["workflow_run_url"] == "https://github.com/example/remote-ops-workspace/actions/runs/12345"
+    assert data["workflow_run_attempt"] == 1
     assert data["source_head_sha"] == "a" * 40
     assert data["host_identity"] == {
         "schema_version": 1,
         "target": "linux-i386",
         "release_tag": "v1.0.2",
         "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        "workflow_run_attempt": 1,
         "host_label": "linux-i386-builder",
         "evidence_run_id": "linux-i386-1-0-2-run-12345",
         "observed_at_utc": data["host_identity"]["observed_at_utc"],

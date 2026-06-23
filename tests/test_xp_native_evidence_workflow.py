@@ -58,6 +58,32 @@ def test_xp_native_evidence_workflow_requires_finalizer() -> None:
     assert any("finalized evidence record generation" in error for error in errors)
 
 
+def test_xp_native_evidence_workflow_requires_release_source_run_attempt() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8").replace(
+        '--release-source-run-attempt "${{ github.run_attempt }}" ',
+        "",
+        1,
+    )
+
+    errors = checker.check_xp_native_evidence_workflow(workflow)
+
+    assert any("release source run-attempt binding" in error for error in errors)
+
+
+def test_xp_native_evidence_workflow_requires_local_source_run_attempt() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8").replace(
+        ' --xp-source-run-attempt "${{ github.run_attempt }}"',
+        "",
+        1,
+    )
+
+    errors = checker.check_xp_native_evidence_workflow(workflow)
+
+    assert any("XP local source run-attempt binding" in error for error in errors)
+
+
 def test_xp_native_evidence_workflow_requires_dispatch_input_preflight() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8").replace(

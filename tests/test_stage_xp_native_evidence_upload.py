@@ -13,11 +13,11 @@ def test_stage_xp_native_evidence_upload_copies_only_expected_files(tmp_path: Pa
     checker = _load_platform_promotion_artifacts_checker()
     target = "windows-xp-native-x86"
     tag = f"v{checker.read_project_version()}"
-    assets = tmp_path / "assets"
-    evidence_output = tmp_path / "xp-evidence-output"
+    assets = _xp_assets_dir(tmp_path, target, tag)
+    evidence_output = _xp_evidence_output_dir(tmp_path, target, tag)
     staged = tmp_path / "xp-evidence-upload"
-    assets.mkdir()
-    evidence_output.mkdir()
+    assets.mkdir(parents=True)
+    evidence_output.mkdir(parents=True)
     expected_assets = _required_artifact_names(checker, target, tag)
     expected_evidence = [
         f"xp-native-evidence-bundle-{target}-{tag}.json",
@@ -57,10 +57,10 @@ def test_stage_xp_native_evidence_upload_rejects_extra_source_entries(tmp_path: 
     checker = _load_platform_promotion_artifacts_checker()
     target = "windows-xp-native-x86"
     tag = f"v{checker.read_project_version()}"
-    assets = tmp_path / "assets"
-    evidence_output = tmp_path / "xp-evidence-output"
-    assets.mkdir()
-    evidence_output.mkdir()
+    assets = _xp_assets_dir(tmp_path, target, tag)
+    evidence_output = _xp_evidence_output_dir(tmp_path, target, tag)
+    assets.mkdir(parents=True)
+    evidence_output.mkdir(parents=True)
     expected_assets = _required_artifact_names(checker, target, tag)
     expected_evidence = [
         f"xp-native-evidence-bundle-{target}-{tag}.json",
@@ -106,10 +106,10 @@ def test_stage_xp_native_evidence_upload_rejects_hash_mismatch(tmp_path: Path) -
     checker = _load_platform_promotion_artifacts_checker()
     target = "windows-xp-native-x86"
     tag = f"v{checker.read_project_version()}"
-    assets = tmp_path / "assets"
-    evidence_output = tmp_path / "xp-evidence-output"
-    assets.mkdir()
-    evidence_output.mkdir()
+    assets = _xp_assets_dir(tmp_path, target, tag)
+    evidence_output = _xp_evidence_output_dir(tmp_path, target, tag)
+    assets.mkdir(parents=True)
+    evidence_output.mkdir(parents=True)
     expected_assets = _required_artifact_names(checker, target, tag)
     expected_evidence = [
         f"xp-native-evidence-bundle-{target}-{tag}.json",
@@ -154,10 +154,10 @@ def test_stage_xp_native_evidence_upload_rejects_review_bundle_content_mismatch(
     checker = _load_platform_promotion_artifacts_checker()
     target = "windows-xp-native-x86"
     tag = f"v{checker.read_project_version()}"
-    assets = tmp_path / "assets"
-    evidence_output = tmp_path / "xp-evidence-output"
-    assets.mkdir()
-    evidence_output.mkdir()
+    assets = _xp_assets_dir(tmp_path, target, tag)
+    evidence_output = _xp_evidence_output_dir(tmp_path, target, tag)
+    assets.mkdir(parents=True)
+    evidence_output.mkdir(parents=True)
     expected_assets = _required_artifact_names(checker, target, tag)
     expected_evidence = [
         f"xp-native-evidence-bundle-{target}-{tag}.json",
@@ -230,8 +230,8 @@ def test_stage_xp_native_evidence_upload_rejects_symlinked_source_directories(
     stager = _load_stager()
     assets = tmp_path / "assets"
     evidence_output = tmp_path / "xp-evidence-output"
-    assets.mkdir()
-    evidence_output.mkdir()
+    assets.mkdir(parents=True)
+    evidence_output.mkdir(parents=True)
 
     def fake_is_symlink(path: Path) -> bool:
         return path in {assets, evidence_output}
@@ -256,8 +256,8 @@ def test_stage_xp_native_evidence_upload_rejects_file_shaped_source_directories(
     stager = _load_stager()
     assets = tmp_path / "assets.zip"
     evidence_output = tmp_path / "xp-evidence-output.zip"
-    assets.mkdir()
-    evidence_output.mkdir()
+    assets.mkdir(parents=True)
+    evidence_output.mkdir(parents=True)
 
     errors = stager.stage_xp_native_evidence_upload(
         target="windows-xp-native-x86",
@@ -456,10 +456,10 @@ def test_stage_xp_native_evidence_upload_rejects_missing_expected_file(tmp_path:
     checker = _load_platform_promotion_artifacts_checker()
     target = "windows-xp-native-x64"
     tag = f"v{checker.read_project_version()}"
-    assets = tmp_path / "assets"
-    evidence_output = tmp_path / "xp-evidence-output"
-    assets.mkdir()
-    evidence_output.mkdir()
+    assets = _xp_assets_dir(tmp_path, target, tag)
+    evidence_output = _xp_evidence_output_dir(tmp_path, target, tag)
+    assets.mkdir(parents=True)
+    evidence_output.mkdir(parents=True)
 
     errors = stager.stage_xp_native_evidence_upload(
         target=target,
@@ -478,10 +478,10 @@ def test_stage_xp_native_evidence_upload_rejects_invalid_final_record(tmp_path: 
     checker = _load_platform_promotion_artifacts_checker()
     target = "windows-xp-native-x64"
     tag = f"v{checker.read_project_version()}"
-    assets = tmp_path / "assets"
-    evidence_output = tmp_path / "xp-evidence-output"
-    assets.mkdir()
-    evidence_output.mkdir()
+    assets = _xp_assets_dir(tmp_path, target, tag)
+    evidence_output = _xp_evidence_output_dir(tmp_path, target, tag)
+    assets.mkdir(parents=True)
+    evidence_output.mkdir(parents=True)
     expected_assets = _required_artifact_names(checker, target, tag)
     expected_evidence = [
         f"xp-native-evidence-bundle-{target}-{tag}.json",
@@ -510,6 +510,41 @@ def test_stage_xp_native_evidence_upload_rejects_invalid_final_record(tmp_path: 
         f"{target} finalized accepted record failed strict validation" in error
         for error in errors
     )
+
+
+def test_stage_xp_native_evidence_upload_rejects_unscoped_source_directories(
+    tmp_path: Path,
+) -> None:
+    stager = _load_stager()
+    assets = tmp_path / "assets"
+    evidence_output = tmp_path / "xp-evidence-output"
+    assets.mkdir()
+    evidence_output.mkdir()
+
+    errors = stager.stage_xp_native_evidence_upload(
+        target="windows-xp-native-x86",
+        release_tag="v1.0.2",
+        assets_dir=assets,
+        evidence_output_dir=evidence_output,
+        out_dir=tmp_path / "upload",
+    )
+
+    assert (
+        "XP native asset directory must include target path segment "
+        f"'windows-xp-native-x86', got {assets.as_posix()!r}"
+    ) in errors
+    assert (
+        "XP native asset directory must include release_tag path segment "
+        f"'v1.0.2', got {assets.as_posix()!r}"
+    ) in errors
+    assert (
+        "XP evidence output directory must include target path segment "
+        f"'windows-xp-native-x86', got {evidence_output.as_posix()!r}"
+    ) in errors
+    assert (
+        "XP evidence output directory must include release_tag path segment "
+        f"'v1.0.2', got {evidence_output.as_posix()!r}"
+    ) in errors
 
 
 def test_stage_xp_native_evidence_upload_rejects_overlapping_staging_output_path(tmp_path: Path) -> None:
@@ -561,6 +596,14 @@ def _required_artifact_names(checker: Any, target: str, tag: str) -> list[str]:
     entries = checker.promotion_entries(promotion, [])
     version = checker.version_from_tag(tag, [])
     return [checker.expand_version(name, version) for name in checker.required_artifacts(entries[target])]
+
+
+def _xp_assets_dir(tmp_path: Path, target: str, tag: str) -> Path:
+    return tmp_path / "native-dist" / "windows-xp" / target / tag
+
+
+def _xp_evidence_output_dir(tmp_path: Path, target: str, tag: str) -> Path:
+    return tmp_path / "xp-evidence-output" / target / tag
 
 
 def _write_xp_final_record(path: Path, target: str, assets_dir: Path, evidence_output_dir: Path) -> None:

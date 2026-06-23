@@ -14,13 +14,15 @@ COMMON_SNIPPETS = (
     "python scripts/check_platform_verified_evidence.py",
     "python scripts/check_protected_platform_goal.py",
     "python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-complete",
-    "python scripts/check_platform_verified_evidence.py --require-goal-targets --release-tag v<project.version>",
+    "python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag v<project.version>",
     "python scripts/check_release_publish_assets.py",
     "python scripts/check_release_publish_assets.py --assets-dir <release-assets-dir> --tag v<project.version> --require-platform-goal-targets",
     "python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> --release-assets-dir <release-assets-dir>",
-    "python scripts/import_platform_evidence_artifacts.py --dry-run",
+    "python scripts/import_platform_evidence_artifacts.py --release-tag v<project.version> --require-goal-targets --out-dir <release-assets-dir> --dry-run --verify-source-run",
     "python scripts/make_extended_linux_evidence_bundle.py",
+    "Linux evidence bundle output directory must include the target id and release tag as path segments",
     "python scripts/make_xp_native_evidence_bundle.py",
+    "XP evidence bundle output directory must include the target id and release tag as path segments",
     "python scripts/check_platform_goal_local_evidence.py",
     "python scripts/make_platform_verified_evidence_record.py",
     "python scripts/finalize_platform_verified_evidence_record.py",
@@ -40,17 +42,27 @@ LINUX_SNIPPETS = (
     "builder-identity-<target>.json`, `native-smoke-<target>.log`, `platform-verified-evidence-<target>.json",
     "builder-identity",
     "python3 scripts/check_extended_platform_builder.py --target",
-    "--release-tag v<project.version> --workflow-run-url <github-actions-run-url> --source-head-sha <github-actions-head-sha> --out",
+    "--release-tag v<project.version> --workflow-run-url <github-actions-run-url> --workflow-run-attempt <github-actions-run-attempt> --source-head-sha <github-actions-head-sha> --out",
     "source_head_sha",
     "native_build_command",
     "native_smoke_command",
     "native installer smoke workflow run",
     "native installer smoke source head sha",
+    "native installer smoke uname machine",
+    "native installer smoke dpkg architecture",
+    "native installer smoke userland bits: 32",
+    "native installer smoke artifact sha256: <artifact> <sha256>",
+    "native installer smoke TLS minimum modern profiles: TLS 1.2",
+    "native installer smoke TLS preferred modern profiles: TLS 1.3",
+    "native installer smoke legacy compatibility profile: isolated-opt-in",
+    "native installer smoke modern defaults unchanged: true",
     "--source-head-sha <github-actions-head-sha>",
+    "--workflow-run-attempt <github-actions-run-attempt>",
     "scripts/make_linux_native.sh",
     "python scripts/stage_extended_linux_evidence_upload.py",
     "--linux-builder-evidence <builder-identity.json> --linux-smoke-evidence <native-smoke-log>",
     "--linux-source-head-sha <github-actions-head-sha>",
+    "--linux-source-run-attempt <github-actions-run-attempt>",
     "--local-evidence-root <staged-root>",
     "must contain only the expected release artifacts for strict promotion",
     "linux-evidence-upload",
@@ -58,7 +70,7 @@ LINUX_SNIPPETS = (
 )
 XP_SNIPPETS = (
     "python scripts/check_xp_native_evidence.py --evidence <target-release-evidence.json> --assets-dir <target-release-artifact-dir> --evidence-dir <target-release-evidence-dir>",
-    "--xp-evidence <target-release-evidence.json> --xp-evidence-dir <target-release-evidence-dir>",
+    "--xp-evidence <target-release-evidence.json> --xp-evidence-dir <target-release-evidence-dir> --xp-source-workflow-run-url <github-actions-run-url> --xp-source-head-sha <github-actions-head-sha> --xp-source-run-attempt <github-actions-run-attempt>",
     "--xp-evidence-dir",
     "cli_launch",
     "gui_or_legacy_host_ui_launch",
@@ -197,6 +209,14 @@ def check_xp_runbook(text: str, target_id: str, requirements: dict[str, Any]) ->
     for snippet in XP_SNIPPETS:
         if snippet not in text:
             errors.append(f"{target_id} runbook missing XP snippet: {snippet}")
+    expected_proof_line = (
+        f"Every smoke evidence file must include `xp smoke target: {target_id}`, "
+        "`xp smoke release: v<project.version>`, `xp smoke id: <smoke_id>`, "
+        "`xp smoke host label: <host_label>` and "
+        "`xp smoke evidence run id: <evidence_run_id>`."
+    )
+    if expected_proof_line not in text:
+        errors.append(f"{target_id} runbook missing XP smoke host identity proof line")
     runner = str(requirements.get("xp_vm_or_self_hosted_runner", ""))
     if runner and runner not in text:
         errors.append(f"{target_id} runbook missing XP runner requirement: {runner}")

@@ -257,6 +257,27 @@ def test_platform_verified_readiness_tracks_partial_targets() -> None:
         "review_bundle_required": True,
     }
     assert "remote-ops-workspace-v<project.version>-linux-i386.deb" in requirements["linux-i386"]["required_artifacts"]
+    linux_source = requirements["linux-i386"]["release_asset_source_required"]
+    assert linux_source["type"] == "github-actions-artifact"
+    assert linux_source["workflow"] == ".github/workflows/extended-platform-evidence.yml"
+    assert linux_source["artifact_name"] == "extended-linux-evidence-linux-i386-v<project.version>"
+    assert linux_source["head_sha"] == "40-character lowercase Git SHA matching release source"
+    assert linux_source["run_attempt"] == "positive GitHub Actions run attempt matching release source"
+    assert "GitHub Actions run URL" in linux_source["workflow_run_url"]
+    assert set(linux_source["contains_files"]) == (
+        set(requirements["linux-i386"]["required_artifacts"])
+        | set(requirements["linux-i386"]["required_review_bundle_files"])
+        | {"platform-verified-evidence-linux-i386-final.json"}
+    )
+    xp_source = requirements["windows-xp-native-x86"]["release_asset_source_required"]
+    assert xp_source["workflow"] == ".github/workflows/xp-native-evidence.yml"
+    assert xp_source["artifact_name"] == "xp-native-evidence-windows-xp-native-x86-v<project.version>"
+    assert xp_source["run_attempt"] == "positive GitHub Actions run attempt matching release source"
+    assert set(xp_source["contains_files"]) == (
+        set(requirements["windows-xp-native-x86"]["required_artifacts"])
+        | set(requirements["windows-xp-native-x86"]["required_review_bundle_files"])
+        | {"platform-verified-evidence-windows-xp-native-x86-final.json"}
+    )
     assert "artifact_validation_command" in requirements["linux-i386"]["required_commands"]
     assert "local_evidence_preflight_command" in requirements["linux-i386"]["required_commands"]
     assert "check_platform_goal_local_evidence.py" in requirements["linux-i386"]["required_commands"]["local_evidence_preflight_command"]
@@ -310,6 +331,15 @@ def test_platform_verified_readiness_promotes_only_with_accepted_evidence() -> N
     assert rows["linux-i386"]["status"] == "verified-accepted-native-evidence"
     assert rows["linux-i386"]["verified_readiness_scope"] is True
     assert rows["linux-i386"]["accepted_evidence_missing_targets"] == []
+    assert rows["linux-i386"]["accepted_evidence_release_tags"] == {
+        "linux-i386": "v1.0.2",
+    }
+    assert rows["linux-i386"]["accepted_evidence_release_repositories"] == {
+        "linux-i386": ["example/remote-ops-workspace"],
+    }
+    assert rows["linux-i386"]["accepted_evidence_release_source_heads"] == {
+        "linux-i386": "a" * 40,
+    }
     assert rows["linux-armhf"]["current_percent"] == 70.0
     assert rows["linux-armhf"]["verified_readiness_scope"] is False
     assert rows["Windows XP"]["current_percent"] == 25.0
@@ -744,6 +774,36 @@ def test_platform_verified_readiness_ignores_missing_release_asset_source() -> N
     assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
 
 
+def test_platform_verified_readiness_ignores_missing_release_source_run_attempt() -> None:
+    record = _linux_accepted_evidence("linux-i386")
+    del record["release_asset_source"]["run_attempt"]
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["linux-i386"]["current_percent"] == 70.0
+    assert rows["linux-i386"]["status"] == "manual-script-supported"
+    assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
+
+
+def test_platform_verified_readiness_ignores_invalid_release_source_run_attempt() -> None:
+    record = _linux_accepted_evidence("linux-i386")
+    record["release_asset_source"]["run_attempt"] = 0
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["linux-i386"]["current_percent"] == 70.0
+    assert rows["linux-i386"]["status"] == "manual-script-supported"
+    assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
+
+
 def test_platform_verified_readiness_ignores_release_asset_source_file_drift() -> None:
     record = _xp_accepted_evidence("windows-xp-native-x86")
     record["release_asset_source"]["contains_files"].append("unexpected.zip")
@@ -980,7 +1040,8 @@ def test_platform_verified_readiness_accepts_scoped_linux_local_preflight_root()
         f"--linux-builder-evidence {builder} "
         f"--linux-smoke-evidence {smoke} "
         "--linux-workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
-        f"--linux-source-head-sha {'a' * 40}"
+        f"--linux-source-head-sha {'a' * 40} "
+        "--linux-source-run-attempt 1"
     )
 
     report = _platform_verified_readiness(
@@ -1028,7 +1089,8 @@ def test_platform_verified_readiness_rejects_file_shaped_local_preflight_root() 
         f"--linux-builder-evidence {builder} "
         f"--linux-smoke-evidence {smoke} "
         "--linux-workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
-        f"--linux-source-head-sha {'a' * 40}"
+        f"--linux-source-head-sha {'a' * 40} "
+        "--linux-source-run-attempt 1"
     )
 
     report = _platform_verified_readiness(
@@ -1072,6 +1134,43 @@ def test_platform_verified_readiness_ignores_xp_local_preflight_path_drift() -> 
         "--xp-evidence-dir evidence/windows-xp-native-x86/v1.0.2",
         "--xp-evidence-dir evidence/windows-xp-native-x86/v1.0.2/other",
     )
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["Windows XP"]["current_percent"] == 25.0
+    assert rows["Windows XP"]["status"] == "remote-target-only"
+    assert rows["Windows XP"]["accepted_evidence_present_targets"] == []
+
+
+def test_platform_verified_readiness_ignores_xp_local_preflight_missing_source_binding() -> None:
+    record = _xp_accepted_evidence("windows-xp-native-x86")
+    record["local_evidence_preflight_command"] = str(
+        record["local_evidence_preflight_command"]
+    ).replace(
+        " --xp-source-workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        "",
+    )
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["Windows XP"]["current_percent"] == 25.0
+    assert rows["Windows XP"]["status"] == "remote-target-only"
+    assert rows["Windows XP"]["accepted_evidence_present_targets"] == []
+
+
+def test_platform_verified_readiness_ignores_xp_local_preflight_source_sha_drift() -> None:
+    record = _xp_accepted_evidence("windows-xp-native-x64")
+    record["local_evidence_preflight_command"] = str(
+        record["local_evidence_preflight_command"]
+    ).replace(f"--xp-source-head-sha {'a' * 40}", f"--xp-source-head-sha {'b' * 40}")
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
@@ -1725,7 +1824,8 @@ def _linux_accepted_evidence(target: str) -> dict[str, object]:
             f"--linux-builder-evidence evidence/{target}/v1.0.2/builder-identity-{target}.json "
             f"--linux-smoke-evidence evidence/{target}/v1.0.2/native-smoke-{target}.log "
             "--linux-workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
-            f"--linux-source-head-sha {'a' * 40}"
+            f"--linux-source-head-sha {'a' * 40} "
+            "--linux-source-run-attempt 1"
         ),
         "artifact_validation_command": (
             f"python scripts/check_platform_promotion_artifacts.py --target {target} "
@@ -1800,7 +1900,10 @@ def _xp_accepted_evidence(target: str) -> dict[str, object]:
         "local_evidence_preflight_command": (
             "python scripts/check_platform_goal_local_evidence.py --root . "
             f"--release-tag v1.0.2 --target {target} --assets-dir {assets_dir} "
-            f"--xp-evidence {evidence_file} --xp-evidence-dir {evidence_dir}"
+            f"--xp-evidence {evidence_file} --xp-evidence-dir {evidence_dir} "
+            "--xp-source-workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
+            f"--xp-source-head-sha {'a' * 40} "
+            "--xp-source-run-attempt 1"
         ),
         "artifact_validation_command": (
             f"python scripts/check_platform_promotion_artifacts.py --target {target} "
@@ -1836,6 +1939,7 @@ def _builder_identity(target: str) -> dict[str, object]:
         "target": target,
         "release_tag": "v1.0.2",
         "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        "workflow_run_attempt": 1,
         "source_head_sha": "a" * 40,
         "host_identity": _linux_host_identity(target),
         "sudo_non_interactive": True,
@@ -1868,6 +1972,7 @@ def _linux_host_identity(target: str, release_tag: str = "v1.0.2") -> dict[str, 
         "target": target,
         "release_tag": release_tag,
         "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        "workflow_run_attempt": 1,
         "host_label": f"{target}-builder",
         "evidence_run_id": f"{target}-{release_tag.removeprefix('v').replace('.', '-')}-run-12345",
         "observed_at_utc": "2026-06-20T12:00:00Z",
@@ -1903,6 +2008,7 @@ def _release_asset_source(
         "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
         "artifact_name": artifact_name,
         "head_sha": "a" * 40,
+        "run_attempt": 1,
         "contains_files": sorted(contains_files),
     }
 
@@ -2121,7 +2227,12 @@ def _replace_release_repository(record: dict[str, object], repository: str) -> N
 def _replace_release_source_head(record: dict[str, object], head_sha: str) -> None:
     source = record.get("release_asset_source")
     assert isinstance(source, dict)
+    old_head = str(source.get("head_sha", ""))
     source["head_sha"] = head_sha
+    if isinstance(record.get("local_evidence_preflight_command"), str) and old_head:
+        record["local_evidence_preflight_command"] = str(
+            record["local_evidence_preflight_command"]
+        ).replace(old_head, head_sha)
 
 
 def _security_patch_evidence() -> dict[str, object]:

@@ -27,6 +27,15 @@ def test_release_truth_checker_rejects_stale_default_linux_patterns() -> None:
     assert "remote-ops-workspace-v1.0.2-linux-<amd64|arm64>.deb" in checker.REQUIRED_DOC_SNIPPETS
 
 
+def test_release_truth_checker_rejects_stale_unfinalized_candidate_guidance() -> None:
+    checker = _load_release_truth_checker()
+
+    assert (
+        "`--allow-unfinalized-candidates` flag is only for local candidate checks before append"
+        in checker.STALE_PLATFORM_EVIDENCE_SNIPPETS
+    )
+
+
 def test_release_truth_checker_requires_turkish_platform_evidence_gate() -> None:
     checker = _load_release_truth_checker()
     original_read = checker.read
@@ -35,7 +44,7 @@ def test_release_truth_checker_requires_turkish_platform_evidence_gate() -> None
         text = original_read(relative)
         if relative == "README.tr.md":
             return text.replace(
-                "python scripts/check_platform_verified_evidence.py --require-goal-targets --release-tag <tag>",
+                "python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag <tag>",
                 "python scripts/check_platform_verified_evidence.py",
             )
         return text
@@ -213,8 +222,21 @@ def test_release_truth_checker_requires_early_platform_goal_evidence_gate() -> N
     checker = _load_release_truth_checker()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
         '      - name: Require protected platform evidence before release builds\n'
-        '        run: python scripts/check_platform_verified_evidence.py --require-goal-targets --release-tag "${{ github.ref_name }}"\n',
+        '        run: python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag "${{ github.ref_name }}"\n',
         "",
+    )
+
+    errors = checker.check_release_preflight(workflow)
+
+    assert any("strict accepted evidence registry gate" in error for error in errors)
+
+
+def test_release_truth_checker_rejects_preflight_evidence_gate_without_explicit_review_bundles() -> None:
+    checker = _load_release_truth_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        " --require-review-bundles",
+        "",
+        1,
     )
 
     errors = checker.check_release_preflight(workflow)
@@ -294,7 +316,7 @@ def test_release_truth_checker_requires_platform_evidence_import_command() -> No
     checker = _load_release_truth_checker()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
         'python scripts/import_platform_evidence_artifacts.py --release-tag "${{ github.ref_name }}" '
-        "--require-goal-targets --out-dir release-assets",
+        "--require-goal-targets --out-dir release-assets --verify-source-run",
         "python scripts/import_platform_evidence_artifacts.py --help",
     )
 

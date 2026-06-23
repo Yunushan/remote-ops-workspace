@@ -162,6 +162,16 @@ def make_extended_linux_evidence_bundle(
     archive_path = out_dir / f"{stem}.zip"
     sha_path = out_dir / f"{stem}-SHA256SUMS.txt"
     outputs = (manifest_path, archive_path, sha_path)
+    errors.extend(
+        check_target_release_path_segments(
+            target,
+            release_tag,
+            out_dir,
+            label="extended Linux evidence bundle output directory",
+        )
+    )
+    if errors:
+        return errors
     errors.extend(prepare_output_paths(out_dir=out_dir, outputs=outputs, force=force))
     if errors:
         return errors
@@ -268,6 +278,23 @@ def check_directory_path_hint(path: Path, label: str) -> list[str]:
     if directory_path_has_file_suffix(raw_path):
         return [f"{label} must be a directory path, got {raw_path!r}"]
     return []
+
+
+def check_target_release_path_segments(
+    target: str,
+    release_tag: str,
+    path: Path,
+    *,
+    label: str,
+) -> list[str]:
+    segments = {str(part) for part in path.parts if str(part)}
+    raw_path = path.as_posix()
+    errors: list[str] = []
+    if target not in segments:
+        errors.append(f"{label} must include target path segment {target!r}, got {raw_path!r}")
+    if release_tag not in segments:
+        errors.append(f"{label} must include release_tag path segment {release_tag!r}, got {raw_path!r}")
+    return errors
 
 
 def load_json(path: Path, label: str, errors: list[str]) -> dict[str, Any] | None:

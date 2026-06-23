@@ -108,6 +108,24 @@ def stage_xp_native_evidence_upload(
     )
     if errors:
         return errors
+    errors.extend(
+        check_target_release_path_segments(
+            target,
+            release_tag,
+            assets_dir,
+            label="XP native asset directory",
+        )
+    )
+    errors.extend(
+        check_target_release_path_segments(
+            target,
+            release_tag,
+            evidence_output_dir,
+            label="XP evidence output directory",
+        )
+    )
+    if errors:
+        return errors
 
     source_files = {
         **source_map(
@@ -416,6 +434,23 @@ def check_directory_path_hint(path: Path, label: str) -> list[str]:
     if directory_path_has_file_suffix(raw_path):
         return [f"{label} must be a directory path, got {raw_path!r}"]
     return []
+
+
+def check_target_release_path_segments(
+    target: str,
+    release_tag: str,
+    path: Path,
+    *,
+    label: str,
+) -> list[str]:
+    segments = {str(part) for part in path.parts if str(part)}
+    raw_path = path.as_posix()
+    errors: list[str] = []
+    if target not in segments:
+        errors.append(f"{label} must include target path segment {target!r}, got {raw_path!r}")
+    if release_tag not in segments:
+        errors.append(f"{label} must include release_tag path segment {release_tag!r}, got {raw_path!r}")
+    return errors
 
 
 def sha256_file(path: Path) -> str:

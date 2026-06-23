@@ -93,14 +93,22 @@ def test_platform_support_truth_requires_tagged_strict_platform_publish_docs() -
         "check_release_publish_assets.py --assets-dir <release-assets-dir> --require-platform-goal-targets",
     )
     docs["docs/PLATFORM_SUPPORT.md"] = docs["docs/PLATFORM_SUPPORT.md"].replace(
+        (
+            "python scripts/import_platform_evidence_artifacts.py --release-tag v<project.version> "
+            "--require-goal-targets --out-dir <release-assets-dir> --dry-run --verify-source-run"
+        ),
         "python scripts/import_platform_evidence_artifacts.py --dry-run",
-        "python scripts/import_platform_evidence_artifacts.py",
     )
 
     errors = checker.check_platform_docs(docs, coverage_report())
 
     assert any("README.md missing platform truth snippet" in error and "--tag v<project.version>" in error for error in errors)
-    assert any("docs/PLATFORM_SUPPORT.md missing platform truth snippet" in error and "--dry-run" in error for error in errors)
+    assert any(
+        "docs/PLATFORM_SUPPORT.md missing platform truth snippet" in error
+        and "--release-tag v<project.version>" in error
+        and "--verify-source-run" in error
+        for error in errors
+    )
 
 
 def test_platform_support_truth_tracks_required_targets() -> None:

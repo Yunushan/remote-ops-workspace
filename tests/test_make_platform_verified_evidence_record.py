@@ -52,6 +52,8 @@ def test_make_platform_verified_evidence_record_generates_linux_record(
                 "https://github.com/example/remote-ops-workspace/actions/runs/12345",
                 "--release-source-head-sha",
                 "a" * 40,
+                "--release-source-run-attempt",
+                "1",
                 "--builder-evidence",
                 str(builder_evidence),
                 "--linux-smoke-evidence",
@@ -77,6 +79,7 @@ def test_make_platform_verified_evidence_record_generates_linux_record(
         "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
         "artifact_name": f"extended-linux-evidence-linux-i386-{tag}",
         "head_sha": "a" * 40,
+        "run_attempt": 1,
         "contains_files": names,
     }
     assert record["workflow_inputs"] == {
@@ -89,7 +92,9 @@ def test_make_platform_verified_evidence_record_generates_linux_record(
     assert record["builder_identity"]["workflow_run_url"] == (
         "https://github.com/example/remote-ops-workspace/actions/runs/12345"
     )
+    assert record["builder_identity"]["workflow_run_attempt"] == 1
     assert record["builder_identity"]["source_head_sha"] == "a" * 40
+    assert record["builder_identity"]["host_identity"]["workflow_run_attempt"] == 1
     assert record["builder_identity"]["host_identity"]["host_label"] == "linux-i386-builder"
     assert record["builder_identity"]["host_identity"]["operator_private_data_redacted"] is True
     assert record["builder_identity_sha256"] == _json_sha256(record["builder_identity"])
@@ -120,7 +125,8 @@ def test_make_platform_verified_evidence_record_generates_linux_record(
         f"--linux-builder-evidence {builder_evidence.as_posix()} "
         f"--linux-smoke-evidence {smoke_evidence.as_posix()} "
         "--linux-workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
-        f"--linux-source-head-sha {'a' * 40}"
+        f"--linux-source-head-sha {'a' * 40} "
+        "--linux-source-run-attempt 1"
     )
     assert record["artifact_validation_command"] == (
         f"python scripts/check_platform_promotion_artifacts.py --target {target} "
@@ -170,6 +176,8 @@ def test_make_platform_verified_evidence_record_binds_local_evidence_root(
                 "https://github.com/example/remote-ops-workspace/actions/runs/12345",
                 "--release-source-head-sha",
                 "a" * 40,
+                "--release-source-run-attempt",
+                "1",
                 "--builder-evidence",
                 str(builder_evidence),
                 "--linux-smoke-evidence",
@@ -230,6 +238,8 @@ def test_make_platform_verified_evidence_record_rejects_file_shaped_linux_direct
                 "https://github.com/example/remote-ops-workspace/actions/runs/12345",
                 "--release-source-head-sha",
                 "a" * 40,
+                "--release-source-run-attempt",
+                "1",
                 "--builder-evidence",
                 str(builder_evidence),
                 "--linux-smoke-evidence",
@@ -289,6 +299,8 @@ def test_make_platform_verified_evidence_record_generates_xp_record(tmp_path: Pa
                 f"xp-native-evidence-{target}-{tag}",
                 "--release-source-head-sha",
                 "a" * 40,
+                "--release-source-run-attempt",
+                "1",
                 "--xp-evidence",
                 str(evidence),
                 "--xp-evidence-dir",
@@ -319,6 +331,7 @@ def test_make_platform_verified_evidence_record_generates_xp_record(tmp_path: Pa
         "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/54321",
         "artifact_name": f"xp-native-evidence-{target}-{tag}",
         "head_sha": "a" * 40,
+        "run_attempt": 1,
         "contains_files": names,
     }
     assert record["xp_evidence_sha256"] == _sha256(evidence)
@@ -331,7 +344,10 @@ def test_make_platform_verified_evidence_record_generates_xp_record(tmp_path: Pa
     assert record["local_evidence_preflight_command"] == (
         "python scripts/check_platform_goal_local_evidence.py --root . "
         f"--release-tag {tag} --target {target} --assets-dir {assets.as_posix()} "
-        f"--xp-evidence {evidence.as_posix()} --xp-evidence-dir {evidence.parent.as_posix()}"
+        f"--xp-evidence {evidence.as_posix()} --xp-evidence-dir {evidence.parent.as_posix()} "
+        "--xp-source-workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/54321 "
+        f"--xp-source-head-sha {'a' * 40} "
+        "--xp-source-run-attempt 1"
     )
     assert record["artifact_validation_command"] == (
         f"python scripts/check_platform_promotion_artifacts.py --target {target} "
@@ -442,6 +458,8 @@ def test_make_platform_verified_evidence_record_rejects_file_shaped_xp_evidence_
                 f"xp-native-evidence-{target}-{tag}",
                 "--release-source-head-sha",
                 "a" * 40,
+                "--release-source-run-attempt",
+                "1",
                 "--xp-evidence",
                 str(evidence),
                 "--xp-evidence-dir",
@@ -490,6 +508,8 @@ def test_make_platform_verified_evidence_record_rejects_symlinked_linux_evidence
                 "https://github.com/example/remote-ops-workspace/actions/runs/12345",
                 "--release-source-head-sha",
                 "a" * 40,
+                "--release-source-run-attempt",
+                "1",
                 "--builder-evidence",
                 str(builder_evidence),
                 "--linux-smoke-evidence",
@@ -546,6 +566,8 @@ def test_make_platform_verified_evidence_record_rejects_symlinked_linux_evidence
                 "https://github.com/example/remote-ops-workspace/actions/runs/12345",
                 "--release-source-head-sha",
                 "a" * 40,
+                "--release-source-run-attempt",
+                "1",
                 "--builder-evidence",
                 str(builder_evidence),
                 "--linux-smoke-evidence",
@@ -603,6 +625,8 @@ def test_make_platform_verified_evidence_record_rejects_symlinked_xp_evidence_in
                 f"xp-native-evidence-{target}-{tag}",
                 "--release-source-head-sha",
                 "a" * 40,
+                "--release-source-run-attempt",
+                "1",
                 "--xp-evidence",
                 str(evidence),
                 "--xp-evidence-dir",
@@ -654,6 +678,8 @@ def test_make_platform_verified_evidence_record_rejects_symlinked_xp_evidence_pa
                 f"xp-native-evidence-{target}-{tag}",
                 "--release-source-head-sha",
                 "a" * 40,
+                "--release-source-run-attempt",
+                "1",
                 "--xp-evidence",
                 str(evidence),
                 "--xp-evidence-dir",
@@ -697,6 +723,8 @@ def test_make_platform_verified_evidence_record_rejects_symlinked_artifact_paren
                 f"https://github.com/example/remote-ops-workspace/releases/download/{tag}",
                 "--release-source-head-sha",
                 "a" * 40,
+                "--release-source-run-attempt",
+                "1",
             ]
         )
     )
@@ -726,6 +754,8 @@ def test_make_platform_verified_evidence_record_rejects_path_qualified_release_b
                 f"https://github.com/example/remote-ops-workspace/nested/releases/download/{tag}",
                 "--release-source-head-sha",
                 "a" * 40,
+                "--release-source-run-attempt",
+                "1",
             ]
         )
     )
@@ -758,6 +788,8 @@ def test_make_platform_verified_evidence_record_rejects_malformed_release_base_r
                 f"https://github.com/example/remote-ops-workspace?download=1/releases/download/{tag}",
                 "--release-source-head-sha",
                 "a" * 40,
+                "--release-source-run-attempt",
+                "1",
             ]
         )
     )
@@ -790,11 +822,154 @@ def test_make_platform_verified_evidence_record_rejects_release_base_url_tag_mis
                 "https://github.com/example/remote-ops-workspace/releases/download/v9.9.9",
                 "--release-source-head-sha",
                 "a" * 40,
+                "--release-source-run-attempt",
+                "1",
             ]
         )
     )
 
     assert f"--release-asset-base-url release tag must match --release-tag {tag}" in errors
+
+
+def test_make_platform_verified_evidence_record_rejects_malformed_linux_workflow_run_urls(
+    tmp_path: Path,
+) -> None:
+    maker = _load_maker()
+    artifact_checker = _load_platform_promotion_artifacts_checker()
+    tag = f"v{artifact_checker.read_project_version()}"
+    args = maker.parse_args(
+        [
+            "--target",
+            "linux-i386",
+            "--release-tag",
+            tag,
+            "--assets-dir",
+            str(tmp_path / "linux-i386" / tag / "artifacts"),
+            "--release-asset-base-url",
+            f"https://github.com/example/remote-ops-workspace/releases/download/{tag}",
+            "--workflow-run-url",
+            "https://github.com/example/remote-ops-workspace/actions/runs/not-a-run-id",
+            "--release-source-workflow-run-url",
+            "https://github.com/example/remote-ops-workspace/actions/runs/not-a-run-id",
+            "--release-source-head-sha",
+            "a" * 40,
+            "--release-source-run-attempt",
+            "1",
+        ]
+    )
+
+    errors = maker.validate_linux_args(args)
+
+    assert "--workflow-run-url must be a GitHub Actions run URL" in errors
+    assert "--release-source-workflow-run-url must be a GitHub Actions run URL" in errors
+
+
+def test_make_platform_verified_evidence_record_rejects_malformed_xp_release_source_workflow_run_url(
+    tmp_path: Path,
+) -> None:
+    maker = _load_maker()
+    artifact_checker = _load_platform_promotion_artifacts_checker()
+    target = "windows-xp-native-x86"
+    tag = f"v{artifact_checker.read_project_version()}"
+    args = maker.parse_args(
+        [
+            "--target",
+            target,
+            "--release-tag",
+            tag,
+            "--assets-dir",
+            str(tmp_path / target / tag / "artifacts"),
+            "--release-asset-base-url",
+            f"https://github.com/example/remote-ops-workspace/releases/download/{tag}",
+            "--release-source-workflow-run-url",
+            "https://github.com/example/remote-ops-workspace/actions/workflows/xp-native-evidence.yml",
+            "--release-source-artifact-name",
+            f"xp-native-evidence-{target}-{tag}",
+            "--release-source-head-sha",
+            "a" * 40,
+            "--release-source-run-attempt",
+            "1",
+        ]
+    )
+
+    errors = maker.validate_xp_args(args)
+
+    assert "--release-source-workflow-run-url must be a GitHub Actions run URL" in errors
+
+
+def test_make_platform_verified_evidence_record_rejects_linux_workflow_run_repository_mismatch(
+    tmp_path: Path,
+) -> None:
+    maker = _load_maker()
+    artifact_checker = _load_platform_promotion_artifacts_checker()
+    tag = f"v{artifact_checker.read_project_version()}"
+    args = maker.parse_args(
+        [
+            "--target",
+            "linux-i386",
+            "--release-tag",
+            tag,
+            "--assets-dir",
+            str(tmp_path / "linux-i386" / tag / "artifacts"),
+            "--release-asset-base-url",
+            f"https://github.com/example/remote-ops-workspace/releases/download/{tag}",
+            "--workflow-run-url",
+            "https://github.com/other/remote-ops-workspace/actions/runs/12345",
+            "--release-source-workflow-run-url",
+            "https://github.com/other/remote-ops-workspace/actions/runs/12345",
+            "--release-source-head-sha",
+            "a" * 40,
+            "--release-source-run-attempt",
+            "1",
+        ]
+    )
+
+    errors = maker.validate_linux_args(args)
+
+    assert (
+        "--workflow-run-url repository must match --release-asset-base-url repository "
+        "example/remote-ops-workspace, got other/remote-ops-workspace"
+    ) in errors
+    assert (
+        "--release-source-workflow-run-url repository must match --release-asset-base-url repository "
+        "example/remote-ops-workspace, got other/remote-ops-workspace"
+    ) in errors
+
+
+def test_make_platform_verified_evidence_record_rejects_xp_release_source_repository_mismatch(
+    tmp_path: Path,
+) -> None:
+    maker = _load_maker()
+    artifact_checker = _load_platform_promotion_artifacts_checker()
+    target = "windows-xp-native-x64"
+    tag = f"v{artifact_checker.read_project_version()}"
+    args = maker.parse_args(
+        [
+            "--target",
+            target,
+            "--release-tag",
+            tag,
+            "--assets-dir",
+            str(tmp_path / target / tag / "artifacts"),
+            "--release-asset-base-url",
+            f"https://github.com/example/remote-ops-workspace/releases/download/{tag}",
+            "--release-source-workflow-run-url",
+            "https://github.com/other/remote-ops-workspace/actions/runs/12345",
+            "--release-source-artifact-name",
+            f"xp-native-evidence-{target}-{tag}",
+            "--release-source-head-sha",
+            "a" * 40,
+            "--release-source-run-attempt",
+            "1",
+        ]
+    )
+
+    errors = maker.validate_xp_args(args)
+
+    assert (
+        "--release-source-workflow-run-url repository must match --release-asset-base-url repository "
+        "example/remote-ops-workspace, got other/remote-ops-workspace"
+    ) in errors
 
 
 def test_make_platform_verified_evidence_record_rejects_wrong_linux_release_source_artifact_name(
@@ -824,6 +999,8 @@ def test_make_platform_verified_evidence_record_rejects_wrong_linux_release_sour
                 f"extended-linux-evidence-linux-armhf-{tag}",
                 "--release-source-head-sha",
                 "a" * 40,
+                "--release-source-run-attempt",
+                "1",
                 "--runner-label",
                 "self-hosted",
                 "--runner-label",
@@ -878,6 +1055,8 @@ def test_make_platform_verified_evidence_record_rejects_extra_xp_artifact_file(
                 f"xp-native-evidence-{target}-{tag}",
                 "--release-source-head-sha",
                 "a" * 40,
+                "--release-source-run-attempt",
+                "1",
                 "--xp-evidence",
                 str(evidence),
                 "--xp-evidence-dir",
@@ -930,6 +1109,8 @@ def test_make_platform_verified_evidence_record_rejects_xp_artifact_validation_a
                 f"xp-native-evidence-{target}-{tag}",
                 "--release-source-head-sha",
                 "a" * 40,
+                "--release-source-run-attempt",
+                "1",
                 "--xp-evidence",
                 str(evidence),
                 "--xp-evidence-dir",
@@ -980,6 +1161,8 @@ def test_make_platform_verified_evidence_record_rejects_unscoped_linux_evidence_
                 "https://github.com/example/remote-ops-workspace/actions/runs/12345",
                 "--release-source-head-sha",
                 "a" * 40,
+                "--release-source-run-attempt",
+                "1",
                 "--builder-evidence",
                 str(builder_evidence),
                 "--linux-smoke-evidence",
@@ -997,6 +1180,64 @@ def test_make_platform_verified_evidence_record_rejects_unscoped_linux_evidence_
     assert record == {}
     assert "--builder-evidence file name must be builder-identity-linux-i386.json" in errors
     assert "--linux-smoke-evidence file name must be native-smoke-linux-i386.log" in errors
+
+
+def test_make_platform_verified_evidence_record_rejects_unscoped_linux_generator_inputs(
+    tmp_path: Path,
+) -> None:
+    maker = _load_maker()
+    artifact_checker = _load_platform_promotion_artifacts_checker()
+    target = "linux-i386"
+    tag = f"v{artifact_checker.read_project_version()}"
+    assets = tmp_path / "linux"
+    assets.mkdir()
+    names = _required_names(artifact_checker, target, tag)
+    _write_artifact_set(assets, names)
+    builder_evidence = tmp_path / "builder-identity-linux-i386.json"
+    _write_builder_evidence(builder_evidence, target)
+    smoke_evidence = tmp_path / "native-smoke-linux-i386.log"
+    _write_linux_smoke_evidence(
+        smoke_evidence,
+        target,
+        _smoke_artifact_hashes(assets, names),
+    )
+
+    errors, record = maker.build_evidence_record(
+        maker.parse_args(
+            [
+                "--target",
+                target,
+                "--release-tag",
+                tag,
+                "--assets-dir",
+                str(assets),
+                "--release-asset-base-url",
+                f"https://github.com/example/remote-ops-workspace/releases/download/{tag}",
+                "--workflow-run-url",
+                "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+                "--release-source-head-sha",
+                "a" * 40,
+                "--release-source-run-attempt",
+                "1",
+                "--builder-evidence",
+                str(builder_evidence),
+                "--linux-smoke-evidence",
+                str(smoke_evidence),
+                "--runner-label",
+                "self-hosted",
+                "--runner-label",
+                "linux",
+                "--runner-label",
+                "i386",
+            ]
+        )
+    )
+
+    assert record == {}
+    assert any("artifact directory must include target path segment 'linux-i386'" in error for error in errors)
+    assert any("artifact directory must include release_tag path segment" in error for error in errors)
+    assert any("Linux builder evidence file must include target path segment 'linux-i386'" in error for error in errors)
+    assert any("Linux smoke evidence file must include release_tag path segment" in error for error in errors)
 
 
 def test_make_platform_verified_evidence_record_rejects_wrong_xp_release_source_artifact_name(
@@ -1028,6 +1269,8 @@ def test_make_platform_verified_evidence_record_rejects_wrong_xp_release_source_
                 f"xp-native-evidence-windows-xp-native-x64-{tag}",
                 "--release-source-head-sha",
                 "a" * 40,
+                "--release-source-run-attempt",
+                "1",
                 "--xp-evidence",
                 str(evidence),
                 "--xp-evidence-dir",
@@ -1041,6 +1284,64 @@ def test_make_platform_verified_evidence_record_rejects_wrong_xp_release_source_
         f"--release-source-artifact-name must be xp-native-evidence-{target}-{tag} "
         f"for {target} XP evidence"
     ) in errors
+
+
+def test_make_platform_verified_evidence_record_rejects_unscoped_xp_generator_inputs(
+    tmp_path: Path,
+) -> None:
+    maker = _load_maker()
+    artifact_checker = _load_platform_promotion_artifacts_checker()
+    target = "windows-xp-native-x86"
+    tag = f"v{artifact_checker.read_project_version()}"
+    names = _required_names(artifact_checker, target, tag)
+    assets = tmp_path / "xp"
+    assets.mkdir()
+    _write_artifact_set(assets, names)
+    evidence_dir = tmp_path / "evidence"
+    evidence_dir.mkdir()
+    evidence = evidence_dir / "xp-evidence.json"
+    data = _valid_xp_evidence(target, "x86", "SP3", tag, names)
+    data["artifact_validation"]["command"] = data["artifact_validation"]["command"].replace(
+        f"native-dist/windows-xp/{target}/{tag}",
+        assets.as_posix(),
+    )
+    _attach_smoke_evidence_files(evidence_dir, data)
+    evidence.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+    errors, record = maker.build_evidence_record(
+        maker.parse_args(
+            [
+                "--target",
+                target,
+                "--release-tag",
+                tag,
+                "--assets-dir",
+                str(assets),
+                "--release-asset-base-url",
+                f"https://github.com/example/remote-ops-workspace/releases/download/{tag}",
+                "--release-source-workflow-run-url",
+                "https://github.com/example/remote-ops-workspace/actions/runs/54321",
+                "--release-source-artifact-name",
+                f"xp-native-evidence-{target}-{tag}",
+                "--release-source-head-sha",
+                "a" * 40,
+                "--release-source-run-attempt",
+                "1",
+                "--xp-evidence",
+                str(evidence),
+                "--xp-evidence-dir",
+                str(evidence_dir),
+            ]
+        )
+    )
+
+    assert record == {}
+    assert any(
+        "artifact directory must include target path segment 'windows-xp-native-x86'" in error
+        for error in errors
+    )
+    assert any("XP evidence file must include release_tag path segment" in error for error in errors)
+    assert any("XP evidence directory must include target path segment 'windows-xp-native-x86'" in error for error in errors)
 
 
 def test_make_platform_verified_evidence_record_rejects_xp_evidence_target_mismatch(
@@ -1078,6 +1379,8 @@ def test_make_platform_verified_evidence_record_rejects_xp_evidence_target_misma
                 f"xp-native-evidence-{target}-{tag}",
                 "--release-source-head-sha",
                 "a" * 40,
+                "--release-source-run-attempt",
+                "1",
                 "--xp-evidence",
                 str(evidence),
                 "--xp-evidence-dir",
@@ -1127,6 +1430,8 @@ def test_make_platform_verified_evidence_record_rejects_xp_evidence_release_tag_
                 f"xp-native-evidence-{target}-{tag}",
                 "--release-source-head-sha",
                 "a" * 40,
+                "--release-source-run-attempt",
+                "1",
                 "--xp-evidence",
                 str(evidence),
                 "--xp-evidence-dir",
@@ -1170,6 +1475,8 @@ def test_make_platform_verified_evidence_record_rejects_weak_linux_smoke_log(tmp
                 "https://github.com/example/remote-ops-workspace/actions/runs/12345",
                 "--release-source-head-sha",
                 "a" * 40,
+                "--release-source-run-attempt",
+                "1",
                 "--builder-evidence",
                 str(builder_evidence),
                 "--linux-smoke-evidence",
@@ -1235,6 +1542,8 @@ def test_make_platform_verified_evidence_record_rejects_missing_linux_smoke_secu
                 "https://github.com/example/remote-ops-workspace/actions/runs/12345",
                 "--release-source-head-sha",
                 "a" * 40,
+                "--release-source-run-attempt",
+                "1",
                 "--builder-evidence",
                 str(builder_evidence),
                 "--linux-smoke-evidence",
@@ -1294,6 +1603,8 @@ def test_make_platform_verified_evidence_record_rejects_forbidden_linux_smoke_se
                 "https://github.com/example/remote-ops-workspace/actions/runs/12345",
                 "--release-source-head-sha",
                 "a" * 40,
+                "--release-source-run-attempt",
+                "1",
                 "--builder-evidence",
                 str(builder_evidence),
                 "--linux-smoke-evidence",
@@ -1361,6 +1672,8 @@ def test_make_platform_verified_evidence_record_rejects_wrong_linux_smoke_runtim
                 "https://github.com/example/remote-ops-workspace/actions/runs/12345",
                 "--release-source-head-sha",
                 "a" * 40,
+                "--release-source-run-attempt",
+                "1",
                 "--builder-evidence",
                 str(builder_evidence),
                 "--linux-smoke-evidence",
@@ -1417,6 +1730,8 @@ def test_make_platform_verified_evidence_record_rejects_builder_source_head_sha_
                 "https://github.com/example/remote-ops-workspace/actions/runs/12345",
                 "--release-source-head-sha",
                 "a" * 40,
+                "--release-source-run-attempt",
+                "1",
                 "--builder-evidence",
                 str(builder_evidence),
                 "--linux-smoke-evidence",
@@ -1483,6 +1798,8 @@ def test_append_platform_verified_evidence_record_updates_registry(
                 "https://github.com/example/remote-ops-workspace/actions/runs/67890",
                 "--release-source-head-sha",
                 "a" * 40,
+                "--release-source-run-attempt",
+                "1",
                 "--builder-evidence",
                 str(builder_evidence),
                 "--linux-smoke-evidence",
@@ -1564,6 +1881,8 @@ def test_append_platform_verified_evidence_record_rejects_unfinalized_candidate(
                 "https://github.com/example/remote-ops-workspace/actions/runs/67890",
                 "--release-source-head-sha",
                 "a" * 40,
+                "--release-source-run-attempt",
+                "1",
                 "--builder-evidence",
                 str(builder_evidence),
                 "--linux-smoke-evidence",
@@ -1582,6 +1901,46 @@ def test_append_platform_verified_evidence_record_rejects_unfinalized_candidate(
     append_errors = maker.append_record_to_registry(record, registry_path=registry)
 
     assert "linux-armhf review_bundle must be an object" in append_errors
+
+
+def test_make_platform_verified_evidence_record_cli_refuses_to_append_generated_candidate(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    maker = _load_maker()
+    registry = tmp_path / "platform_verified_evidence.json"
+    registry.write_text(json.dumps(_empty_registry(), indent=2) + "\n", encoding="utf-8")
+    output = tmp_path / "platform-verified-evidence-linux-i386.json"
+
+    def fake_build_evidence_record(_args):
+        return [], {"target": "linux-i386", "status": "accepted", "readiness_percent": 100.0}
+
+    monkeypatch.setattr(maker, "build_evidence_record", fake_build_evidence_record)
+
+    exit_code = maker.main(
+        [
+            "--target",
+            "linux-i386",
+            "--release-tag",
+            "v1.0.2",
+            "--assets-dir",
+            str(tmp_path / "artifacts"),
+            "--release-asset-base-url",
+            "https://github.com/example/remote-ops-workspace/releases/download/v1.0.2",
+            "--append-registry",
+            "--registry",
+            str(registry),
+            "--out",
+            str(output),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "linux-i386 generated evidence is an unfinalized candidate" in captured.err
+    assert not output.exists()
+    assert json.loads(registry.read_text(encoding="utf-8"))["accepted_evidence"] == []
 
 
 def test_append_platform_verified_evidence_record_rejects_duplicate_target(tmp_path: Path) -> None:
@@ -1705,6 +2064,8 @@ def test_make_platform_verified_evidence_record_rejects_missing_linux_runner_lab
                 "https://github.com/example/remote-ops-workspace/actions/runs/12345",
                 "--release-source-head-sha",
                 "a" * 40,
+                "--release-source-run-attempt",
+                "1",
                 "--runner-label",
                 "linux",
             ]
@@ -1754,6 +2115,7 @@ def _write_builder_evidence(
     *,
     release_tag: str = "v1.0.2",
     workflow_run_url: str = "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+    workflow_run_attempt: int = 1,
     source_head_sha: str = "a" * 40,
 ) -> None:
     machine = "i686" if target == "linux-i386" else "armv7l"
@@ -1763,8 +2125,9 @@ def _write_builder_evidence(
         "target": target,
         "release_tag": release_tag,
         "workflow_run_url": workflow_run_url,
+        "workflow_run_attempt": workflow_run_attempt,
         "source_head_sha": source_head_sha,
-        "host_identity": _linux_host_identity(target, release_tag, workflow_run_url),
+        "host_identity": _linux_host_identity(target, release_tag, workflow_run_url, workflow_run_attempt),
         "sudo_non_interactive": True,
         "sys_platform": "linux",
         "platform_machine": machine,
@@ -1790,13 +2153,19 @@ def _write_builder_evidence(
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 
-def _linux_host_identity(target: str, release_tag: str, workflow_run_url: str) -> dict[str, object]:
+def _linux_host_identity(
+    target: str,
+    release_tag: str,
+    workflow_run_url: str,
+    workflow_run_attempt: int,
+) -> dict[str, object]:
     run_id = workflow_run_url.rstrip("/").split("/")[-1]
     return {
         "schema_version": 1,
         "target": target,
         "release_tag": release_tag,
         "workflow_run_url": workflow_run_url,
+        "workflow_run_attempt": workflow_run_attempt,
         "host_label": f"{target}-builder",
         "evidence_run_id": f"{target}-{release_tag.removeprefix('v').replace('.', '-')}-run-{run_id}",
         "observed_at_utc": "2026-06-20T12:00:00Z",

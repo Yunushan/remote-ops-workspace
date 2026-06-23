@@ -101,15 +101,16 @@ evidence JSON and smoke files. Accepted promotion records are stored in
 accepted records, the generated readiness report must keep the current partial
 rows. The strict promotion path is
 `python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-complete`,
-`python scripts/check_platform_verified_evidence.py --require-goal-targets --release-tag v<project.version>`
+`python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag v<project.version>`
 and `python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> --release-assets-dir <release-assets-dir>`;
 those commands must fail until linux-i386, linux-armhf,
 windows-xp-native-x86 and windows-xp-native-x64 all have accepted records for
-the same release tag, same GitHub release repository and same release source head
-SHA. Mixed-tag, mixed-repository or mixed-source-head accepted records remain
+the same release tag, same GitHub release repository, same release source head
+SHA and positive per-record release source run attempts. Mixed-tag,
+mixed-repository or mixed-source-head accepted records remain
 aggregate evidence only and cannot complete the protected goal parity block.
 The strict verifier also runs
-`python scripts/import_platform_evidence_artifacts.py --dry-run --verify-source-run`
+`python scripts/import_platform_evidence_artifacts.py --release-tag v<project.version> --require-goal-targets --out-dir <release-assets-dir> --dry-run --verify-source-run`
 and `python scripts/check_release_publish_assets.py --assets-dir <release-assets-dir> --tag v<project.version> --require-platform-goal-targets`,
 so accepted records must be release-importable, bound to the current checkout
 head, backed by completed successful dispatch runs and matched by the downloaded
@@ -121,8 +122,8 @@ XP evidence validators pass; package the review bundle, then use
 only after the finalized record binds the real release/run evidence, review
 bundle manifest, review bundle archive and review bundle SHA-256 sidecar.
 `python scripts/check_platform_verified_evidence.py` checks the persisted
-registry in finalized-only mode by default; `--allow-unfinalized-candidates`
-is only for local candidate validation before append.
+registry in finalized-only mode. Candidate validation happens through the
+candidate-generation, review-bundle and finalization commands before append.
 Review bundle archives must include every native artifact recorded in their
 bundle manifests as safe relative non-symlink ZIP entries, so reviewers can
 verify the artifact bytes as well as the metadata, smoke logs and candidate
@@ -135,22 +136,23 @@ URL must use the same `/releases/download/<tag>/` segment as the record
 The URL and hash filename sets must exactly match the target's required
 artifact names; missing, duplicate or extra files keep the row partial. Staged
 Linux and XP promotion artifact directories and contained files must be plain
-non-symlink paths, and promotion uploads must also verify native artifact and
-review-bundle file hashes against the finalized accepted record before upload.
+non-symlink paths, and evidence bundle output directories must include the
+target id and release tag as path segments. Promotion uploads must also verify
+native artifact and review-bundle file hashes against the finalized accepted
+record before upload.
 The accepted record's artifact validation command must also use the same target
 id, exactly one concrete `--assets-dir` value and exactly one `--tag` value
 matching the record. Placeholder paths such as `<artifact-dir>` are valid in
-documentation examples only, not in accepted evidence records. Linux accepted
-evidence command paths must include the Linux target id as a path segment; XP
-accepted evidence command paths must include both the XP target id and release
-tag as path segments.
+documentation examples only, not in accepted evidence records. Linux and XP
+accepted evidence command paths must include both the target id and release tag
+as path segments.
 All release asset URLs in one accepted record must use the same GitHub
 repository, and Linux i386/armhf workflow run URLs must point to that repository
 too.
 Linux i386/armhf records must
 also include the builder identity JSON emitted by
-`python3 scripts/check_extended_platform_builder.py --release-tag v<project.version> --workflow-run-url <github-actions-run-url> --source-head-sha <github-actions-head-sha> --out ...`, including
-the same `release_tag` and `workflow_run_url` as the accepted record, plus `source_head_sha` matching `release_asset_source.head_sha`, a
+`python3 scripts/check_extended_platform_builder.py --release-tag v<project.version> --workflow-run-url <github-actions-run-url> --workflow-run-attempt <github-actions-run-attempt> --source-head-sha <github-actions-head-sha> --out ...`, including
+the same `release_tag`, `workflow_run_url` and `workflow_run_attempt` as the accepted record, plus `source_head_sha` matching `release_asset_source.head_sha`, a
 sanitized target-scoped `host_identity` block with
 `operator_private_data_redacted=true`, matching `platform.machine()`,
 `uname -m`, `dpkg --print-architecture`
@@ -223,10 +225,11 @@ Current readiness:
   `builder-identity-linux-i386.json` and
   `native-smoke-linux-i386.log` inside the review bundle, plus
   `platform-verified-evidence-linux-i386.json` as the reviewed registry-record
-  candidate. The accepted record's `release_asset_source.workflow` must be `.github/workflows/extended-platform-evidence.yml`.
-  That builder identity must prove `source_head_sha` matching the release source head SHA, `dpkg --print-architecture=i386`,
+  candidate. The accepted record's `release_asset_source.workflow` must be `.github/workflows/extended-platform-evidence.yml`,
+  and `release_asset_source.run_attempt` must be a positive GitHub Actions run attempt.
+  That builder identity must prove `source_head_sha` matching the release source head SHA, `workflow_run_attempt` matching the release source run attempt, `dpkg --print-architecture=i386`,
   `getconf LONG_BIT=32`, concrete `rpm`/`rpmbuild` tool paths and `sudo_non_interactive=true`, plus a target/release-scoped review bundle from
-  `python scripts/make_extended_linux_evidence_bundle.py --target linux-i386 --release-tag v<project.version> --assets-dir <target-release-artifact-dir> --builder-evidence <builder-identity.json> --smoke-evidence <native-smoke-log> --candidate-record <platform-verified-evidence-linux-i386.json> --out-dir <bundle-dir>`.
+  `python scripts/make_extended_linux_evidence_bundle.py --target linux-i386 --release-tag v<project.version> --assets-dir <target-release-artifact-dir> --builder-evidence <builder-identity.json> --smoke-evidence <native-smoke-log> --candidate-record <platform-verified-evidence-linux-i386.json> --out-dir <target-release-artifact-dir>`.
 - Linux armhf: 70.0%, script-supported native. Promotion requires a real
   armv7l/armhf release builder, default `linux-native` release matrix
   membership, upload/publish asset coverage, `scripts/make_linux_native.sh`
@@ -238,10 +241,11 @@ Current readiness:
   `builder-identity-linux-armhf.json` and
   `native-smoke-linux-armhf.log` inside the review bundle, plus
   `platform-verified-evidence-linux-armhf.json` as the reviewed registry-record
-  candidate. The accepted record's `release_asset_source.workflow` must be `.github/workflows/extended-platform-evidence.yml`.
-  That builder identity must prove `source_head_sha` matching the release source head SHA, `dpkg --print-architecture=armhf`,
+  candidate. The accepted record's `release_asset_source.workflow` must be `.github/workflows/extended-platform-evidence.yml`,
+  and `release_asset_source.run_attempt` must be a positive GitHub Actions run attempt.
+  That builder identity must prove `source_head_sha` matching the release source head SHA, `workflow_run_attempt` matching the release source run attempt, `dpkg --print-architecture=armhf`,
   `getconf LONG_BIT=32`, concrete `rpm`/`rpmbuild` tool paths and `sudo_non_interactive=true`, plus a target/release-scoped review bundle from
-  `python scripts/make_extended_linux_evidence_bundle.py --target linux-armhf --release-tag v<project.version> --assets-dir <target-release-artifact-dir> --builder-evidence <builder-identity.json> --smoke-evidence <native-smoke-log> --candidate-record <platform-verified-evidence-linux-armhf.json> --out-dir <bundle-dir>`.
+  `python scripts/make_extended_linux_evidence_bundle.py --target linux-armhf --release-tag v<project.version> --assets-dir <target-release-artifact-dir> --builder-evidence <builder-identity.json> --smoke-evidence <native-smoke-log> --candidate-record <platform-verified-evidence-linux-armhf.json> --out-dir <target-release-artifact-dir>`.
 - Windows XP native host: 25.0%, remote-target-only as a local operator host
   row. Promotion requires a separate XP-capable legacy toolchain, XP x86 SP3
   and Windows XP Professional x64 Edition SP2 VM or self-hosted runner smoke
@@ -279,7 +283,7 @@ Current readiness:
   Import the VM/toolchain smoke bundle with
   `python scripts/check_xp_native_evidence.py --evidence <target-release-evidence.json> --assets-dir <target-release-artifact-dir> --evidence-dir <target-release-evidence-dir>`.
   Package validated XP evidence for review with
-  `python scripts/make_xp_native_evidence_bundle.py --target <windows-xp-native-target> --evidence <evidence.json> --candidate-record <platform-verified-evidence-windows-xp-native-target.json> --assets-dir <artifact-dir> --out-dir <bundle-dir>`.
+  `python scripts/make_xp_native_evidence_bundle.py --target <windows-xp-native-target> --evidence <target-release-evidence.json> --candidate-record <platform-verified-evidence-windows-xp-native-target.json> --assets-dir <target-release-artifact-dir> --evidence-dir <target-release-evidence-dir> --out-dir <xp-evidence-output-dir>`.
   The accepted record must carry the evidence JSON SHA-256, the sanitized XP
   host identity SHA-256 and all required smoke evidence SHA-256 values from
   that validated bundle.

@@ -100,7 +100,8 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
         f"            --linux-builder-evidence {evidence_dir}/{builder_identity_name} \\\n"
         f"            --linux-smoke-evidence {evidence_dir}/{smoke_name} \\\n"
         '            --linux-workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \\\n'
-        '            --linux-source-head-sha "${{ github.sha }}"'
+        '            --linux-source-head-sha "${{ github.sha }}" \\\n'
+        '            --linux-source-run-attempt "${{ github.run_attempt }}"'
     )
     errors: list[str] = []
     required_snippets = {
@@ -112,6 +113,7 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
         f"python3 scripts/check_extended_platform_dispatch_inputs.py \\\n            --target {target}": "dispatch input preflight",
         f"python3 scripts/check_extended_platform_builder.py \\\n            --target {target}": "builder identity preflight evidence",
         f"--out {evidence_dir}/{builder_identity_name}": "builder identity output",
+        '--workflow-run-attempt "${{ github.run_attempt }}"': "builder workflow run-attempt evidence",
         '--source-head-sha "${{ github.sha }}"': "builder source head SHA evidence",
         "python3 -m venv .venv-native": "isolated release virtual environment",
         'python -m pip install --constraint requirements-release.txt pip setuptools wheel ".[security,package]"': "pinned release dependency installation",
@@ -130,6 +132,8 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
         '--workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"': "workflow run URL evidence",
         f"--release-source-artifact-name {source_artifact_name}": "release source artifact name binding",
         '--release-source-head-sha "${{ github.sha }}"': "release source head SHA evidence",
+        '--linux-source-run-attempt "${{ github.run_attempt }}"': "local evidence source run-attempt binding",
+        '--release-source-run-attempt "${{ github.run_attempt }}"': "release source run-attempt binding",
         f"--builder-evidence {evidence_dir}/{builder_identity_name}": "builder identity evidence input",
         f"--linux-smoke-evidence {evidence_dir}/{smoke_name}": "native smoke evidence input",
         "--local-evidence-root platform-evidence-staging": "local evidence preflight root binding",
@@ -140,6 +144,7 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
         f"python scripts/make_extended_linux_evidence_bundle.py \\\n            --target {target}": "review evidence bundle generation",
         f"--smoke-evidence {evidence_dir}/{smoke_name}": "review bundle smoke evidence input",
         f"--candidate-record {assets_dir}/{record_name}": "candidate record bundle input",
+        f"--out-dir {assets_dir}": "target/release scoped review bundle output directory",
         f"python scripts/finalize_platform_verified_evidence_record.py \\\n            --candidate-record {assets_dir}/{record_name}": "finalized evidence record generation",
         f"--bundle-manifest {assets_dir}/extended-linux-evidence-bundle-{target}-${{{{ inputs.release_tag }}}}.json": "finalized evidence manifest binding",
         f"--bundle-archive {assets_dir}/extended-linux-evidence-bundle-{target}-${{{{ inputs.release_tag }}}}.zip": "finalized evidence archive binding",
@@ -172,11 +177,15 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
         f"            --target {target} \\\n"
         '            --release-tag "${{ inputs.release_tag }}" \\\n'
         '            --workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \\\n'
+        '            --workflow-run-attempt "${{ github.run_attempt }}" \\\n'
         '            --source-head-sha "${{ github.sha }}" \\\n'
         f"            --out {evidence_dir}/{builder_identity_name}"
     )
     if builder_command not in block:
-        errors.append(f"{job} builder identity preflight must bind release_tag, workflow_run_url and source_head_sha")
+        errors.append(
+            f"{job} builder identity preflight must bind release_tag, workflow_run_url, "
+            "workflow_run_attempt and source_head_sha"
+        )
     if "--allow-extra-artifacts" in block:
         errors.append(f"{job} must use strict Linux artifact preflight without --allow-extra-artifacts")
     if "path: native-dist/linux/*" in block:
@@ -190,6 +199,9 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
         f"--linux-smoke-evidence native-dist/linux-evidence/{target}/",
         f"--source-dir native-dist/linux/{target}",
         f"native-dist/linux/{target}",
+        "--out-dir <bundle-dir>",
+        "--out-dir bundle",
+        "--out-dir linux-evidence-output",
     )
     for stale in stale_paths:
         if stale in block:

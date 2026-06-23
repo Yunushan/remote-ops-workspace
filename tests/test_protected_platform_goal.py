@@ -5,7 +5,6 @@ import json
 import sys
 from pathlib import Path
 
-
 LINUX_SECURITY_REQUIREMENTS = [
     "security patch evidence proving TLS 1.3 preferred, TLS 1.2 minimum, "
     "isolated legacy compatibility and CVE patch review",
@@ -51,6 +50,16 @@ def test_protected_platform_goal_strict_gate_fails_empty_registry() -> None:
     assert "artifact_validation_command" in requirements["linux-i386"]["required_commands"]
     assert "local_evidence_preflight_command" in requirements["linux-i386"]["required_commands"]
     assert "finalized_evidence_record_command" in requirements["linux-i386"]["required_commands"]
+    linux_source = requirements["linux-i386"]["release_asset_source_required"]
+    assert linux_source["workflow"] == ".github/workflows/extended-platform-evidence.yml"
+    assert linux_source["artifact_name"] == "extended-linux-evidence-linux-i386-v1.0.2"
+    assert linux_source["run_attempt"] == "positive GitHub Actions run attempt matching release source"
+    assert "platform-verified-evidence-linux-i386-final.json" in linux_source["contains_files"]
+    xp_source = requirements["windows-xp-native-x64"]["release_asset_source_required"]
+    assert xp_source["workflow"] == ".github/workflows/xp-native-evidence.yml"
+    assert xp_source["artifact_name"] == "xp-native-evidence-windows-xp-native-x64-v1.0.2"
+    assert xp_source["run_attempt"] == "positive GitHub Actions run attempt matching release source"
+    assert "platform-verified-evidence-windows-xp-native-x64-final.json" in xp_source["contains_files"]
     assert requirements["linux-i386"]["security_requirements"] == LINUX_SECURITY_REQUIREMENTS
     assert requirements["linux-armhf"]["security_requirements"] == LINUX_SECURITY_REQUIREMENTS
     assert requirements["windows-xp-native-x64"]["builder_or_host_evidence"].startswith(
@@ -62,6 +71,7 @@ def test_protected_platform_goal_strict_gate_fails_empty_registry() -> None:
     ]
     human_scope = checker.format_goal_scope(goal)
     assert "release scope: requires one release_tag, one GitHub release repository" in human_scope
+    assert "per-record release source run attempts" in human_scope
     assert "accepted release scope evidence: none" in human_scope
     human_requirements = checker.format_goal_requirements(goal)
     assert "required proof for missing targets:" in human_requirements
@@ -152,6 +162,36 @@ def test_protected_platform_goal_strict_gate_does_not_count_malformed_accepted_r
 
     assert any("linux-i386 review_bundle must be an object" in error for error in errors)
     assert any("protected platform goal is incomplete" in error for error in errors)
+    assert goal["release_tag"] == "v1.0.2"
+    assert goal["current_percent"] == 0.0
+    assert goal["accepted_target_count"] == 0
+    assert goal["accepted_targets"] == []
+    assert goal["complete"] is False
+    assert goal["status"] == "missing-accepted-evidence"
+
+
+def test_protected_platform_goal_report_does_not_count_unfinalized_candidate() -> None:
+    checker = _load_protected_goal_checker()
+    registry = _complete_registry()
+    records = registry["accepted_evidence"]
+    assert isinstance(records, list)
+    first_record = records[0]
+    assert isinstance(first_record, dict)
+    del first_record["review_bundle"]
+    del first_record["finalized_record_release_asset_url"]
+    release_source = first_record["release_asset_source"]
+    artifact_hashes = first_record["artifact_sha256"]
+    assert isinstance(release_source, dict)
+    assert isinstance(artifact_hashes, dict)
+    release_source["contains_files"] = sorted(str(name) for name in artifact_hashes)
+
+    errors, goal = checker.check_protected_platform_goal(
+        registry=registry,
+        release_tag="v1.0.2",
+    )
+
+    assert any("linux-i386 finalized_record_release_asset_url must be set" in error for error in errors)
+    assert any("linux-i386 review_bundle must be an object" in error for error in errors)
     assert goal["release_tag"] == "v1.0.2"
     assert goal["current_percent"] == 0.0
     assert goal["accepted_target_count"] == 0

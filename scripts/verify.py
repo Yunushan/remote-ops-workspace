@@ -185,6 +185,7 @@ def build_steps(
                         python,
                         "scripts/check_platform_verified_evidence.py",
                         "--require-goal-targets",
+                        "--require-review-bundles",
                         *(["--release-tag", release_tag] if release_tag else []),
                     ],
                     env=_source_env(),

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -33,6 +34,21 @@ XP_PROTECTED_SECURITY_REQUIREMENTS = (
     "legacy TLS, SSH, and RDP compatibility must remain profile-scoped opt-in",
     "modern Windows 10/11, Linux, and macOS defaults must keep hardened crypto",
 )
+LINUX_PROTECTED_TARGETS = {"linux-i386", "linux-armhf"}
+XP_PROTECTED_TARGETS = {"windows-xp-native-x86", "windows-xp-native-x64"}
+RELEASE_ASSET_SOURCE_REQUIREMENT_KEYS = {
+    "artifact_name",
+    "contains_files",
+    "head_sha",
+    "run_attempt",
+    "type",
+    "workflow",
+    "workflow_run_url",
+}
+GITHUB_OWNER_RE = r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?"
+GITHUB_REPOSITORY_RE = re.compile(rf"{GITHUB_OWNER_RE}/[A-Za-z0-9._-]+\Z")
+RELEASE_TAG_RE = re.compile(r"v\d+\.\d+\.\d+\Z")
+SOURCE_HEAD_RE = re.compile(r"[0-9a-f]{40}\Z")
 
 
 def main() -> int:
@@ -132,6 +148,8 @@ def check_product_readiness() -> list[str]:
     platform_rows = platform.get("targets", [])
     if not platform_rows:
         errors.append("platform verified readiness must include release and legacy targets")
+    for row in platform_rows:
+        errors.extend(check_accepted_evidence_row_bindings(row))
     partial_rows = [row for row in platform_rows if row["current_percent"] < 100.0]
     if not partial_rows:
         errors.append("platform verified readiness must expose partial non-default targets")
@@ -203,8 +221,9 @@ def check_product_readiness() -> list[str]:
                     errors.append(f"{target} protected platform requirement missing local evidence preflight command")
                 if not item.get("required_review_bundle_files"):
                     errors.append(f"{target} protected platform requirement missing review bundle files")
+                errors.extend(check_release_asset_source_requirement(target, item, accepted_record))
                 security = item.get("security_requirements")
-                if target in {"linux-i386", "linux-armhf"}:
+                if target in LINUX_PROTECTED_TARGETS:
                     errors.extend(
                         check_security_requirement_items(
                             target,
@@ -213,7 +232,7 @@ def check_product_readiness() -> list[str]:
                             "Linux protected platform requirement",
                         )
                     )
-                if target in {"windows-xp-native-x86", "windows-xp-native-x64"}:
+                if target in XP_PROTECTED_TARGETS:
                     errors.extend(
                         check_security_requirement_items(
                             target,
@@ -223,6 +242,173 @@ def check_product_readiness() -> list[str]:
                         )
                     )
     return errors
+
+
+def check_accepted_evidence_row_bindings(row: dict[str, object]) -> list[str]:
+    present = row.get("accepted_evidence_present_targets")
+    if not isinstance(present, list) or not present:
+        return []
+    target = row.get("target")
+    errors: list[str] = []
+    for field in (
+        "accepted_evidence_release_tags",
+        "accepted_evidence_release_repositories",
+        "accepted_evidence_release_source_heads",
+    ):
+        value = row.get(field)
+        if not isinstance(value, dict):
+            errors.append(f"{target} accepted evidence row must expose {field}")
+            continue
+        if sorted(str(key) for key in value) != sorted(str(item) for item in present):
+            errors.append(f"{target} accepted evidence {field} must cover present accepted targets")
+            continue
+        for present_target in present:
+            binding = value.get(str(present_target))
+            errors.extend(check_accepted_evidence_binding_value(target, str(present_target), field, binding))
+    return errors
+
+
+def check_accepted_evidence_binding_value(
+    row_target: object,
+    accepted_target: str,
+    field: str,
+    value: object,
+) -> list[str]:
+    label = f"{row_target} accepted evidence {field}[{accepted_target}]"
+    if field == "accepted_evidence_release_tags":
+        if not isinstance(value, str) or not RELEASE_TAG_RE.fullmatch(value):
+            return [f"{label} must be a concrete vX.Y.Z release tag"]
+        return []
+    if field == "accepted_evidence_release_repositories":
+        if not isinstance(value, list) or len(value) != 1:
+            return [f"{label} must list exactly one GitHub release repository"]
+        repository = str(value[0])
+        if not GITHUB_REPOSITORY_RE.fullmatch(repository):
+            return [f"{label} must be a GitHub owner/repository slug"]
+        return []
+    if field == "accepted_evidence_release_source_heads":
+        if not isinstance(value, str) or not SOURCE_HEAD_RE.fullmatch(value):
+            return [f"{label} must be a 40-character lowercase Git SHA"]
+        return []
+    return []
+
+
+def check_release_asset_source_requirement(
+    target: object,
+    item: dict[str, object],
+    accepted_record: object,
+) -> list[str]:
+    target_text = str(target)
+    source = item.get("release_asset_source_required")
+    if not isinstance(source, dict):
+        return [f"{target_text} protected platform requirement missing release_asset_source_required"]
+    errors: list[str] = []
+    keys = {str(key) for key in source}
+    missing_keys = sorted(RELEASE_ASSET_SOURCE_REQUIREMENT_KEYS - keys)
+    if missing_keys:
+        errors.append(
+            f"{target_text} protected platform requirement release_asset_source_required "
+            f"missing keys: {missing_keys}"
+        )
+    if source.get("type") != "github-actions-artifact":
+        errors.append(
+            f"{target_text} protected platform requirement release_asset_source_required.type "
+            "must be github-actions-artifact"
+        )
+    expected_workflow = expected_release_asset_source_workflow(target_text)
+    if source.get("workflow") != expected_workflow:
+        errors.append(
+            f"{target_text} protected platform requirement release_asset_source_required.workflow "
+            f"must be {expected_workflow}"
+        )
+    release_tag = expected_requirement_release_tag(accepted_record)
+    expected_artifact = expected_release_asset_source_artifact_name(target_text, release_tag)
+    if source.get("artifact_name") != expected_artifact:
+        errors.append(
+            f"{target_text} protected platform requirement release_asset_source_required.artifact_name "
+            f"must be {expected_artifact}"
+        )
+    workflow_run_url = str(source.get("workflow_run_url", ""))
+    if "GitHub Actions run URL" not in workflow_run_url:
+        errors.append(
+            f"{target_text} protected platform requirement release_asset_source_required.workflow_run_url "
+            "must require a GitHub Actions run URL"
+        )
+    if source.get("head_sha") != "40-character lowercase Git SHA matching release source":
+        errors.append(
+            f"{target_text} protected platform requirement release_asset_source_required.head_sha "
+            "must require the release source Git SHA"
+        )
+    if source.get("run_attempt") != "positive GitHub Actions run attempt matching release source":
+        errors.append(
+            f"{target_text} protected platform requirement release_asset_source_required.run_attempt "
+            "must require the release source run attempt"
+        )
+    raw_files = source.get("contains_files")
+    if not isinstance(raw_files, list) or not raw_files:
+        errors.append(
+            f"{target_text} protected platform requirement release_asset_source_required.contains_files "
+            "must be a non-empty list"
+        )
+        return errors
+    files = [str(filename) for filename in raw_files]
+    duplicate_files = sorted({filename for filename in files if files.count(filename) > 1})
+    if duplicate_files:
+        errors.append(
+            f"{target_text} protected platform requirement release_asset_source_required.contains_files "
+            f"contains duplicates: {duplicate_files}"
+        )
+    expected_files = expected_release_asset_source_files(target_text, item)
+    missing_files = sorted(expected_files - set(files))
+    if missing_files:
+        errors.append(
+            f"{target_text} protected platform requirement release_asset_source_required.contains_files "
+            f"missing files: {missing_files}"
+        )
+    unexpected_files = sorted(set(files) - expected_files)
+    if unexpected_files:
+        errors.append(
+            f"{target_text} protected platform requirement release_asset_source_required.contains_files "
+            f"has unexpected files: {unexpected_files}"
+        )
+    return errors
+
+
+def expected_requirement_release_tag(accepted_record: object) -> str:
+    if isinstance(accepted_record, dict):
+        release_tag = str(accepted_record.get("release_tag", ""))
+        if release_tag:
+            return release_tag
+    return "v<project.version>"
+
+
+def expected_release_asset_source_workflow(target: str) -> str:
+    if target in LINUX_PROTECTED_TARGETS:
+        return ".github/workflows/extended-platform-evidence.yml"
+    if target in XP_PROTECTED_TARGETS:
+        return ".github/workflows/xp-native-evidence.yml"
+    return ""
+
+
+def expected_release_asset_source_artifact_name(target: str, release_tag: str) -> str:
+    if target in LINUX_PROTECTED_TARGETS:
+        return f"extended-linux-evidence-{target}-{release_tag}"
+    if target in XP_PROTECTED_TARGETS:
+        return f"xp-native-evidence-{target}-{release_tag}"
+    return ""
+
+
+def expected_release_asset_source_files(target: str, item: dict[str, object]) -> set[str]:
+    files = requirement_string_set(item.get("required_artifacts"))
+    files.update(requirement_string_set(item.get("required_review_bundle_files")))
+    files.add(f"platform-verified-evidence-{target}-final.json")
+    return files
+
+
+def requirement_string_set(raw_value: object) -> set[str]:
+    if not isinstance(raw_value, list):
+        return set()
+    return {str(item) for item in raw_value if str(item)}
 
 
 def check_security_requirement_items(
@@ -271,7 +457,12 @@ def check_protected_goal_release_scope(goal: dict[str, object]) -> list[str]:
             "protected platform goal parity release_source_head_consistent must match release_source_heads"
         )
     scope = str(goal.get("scope", ""))
-    for snippet in ("one release_tag", "one GitHub release repository", "one release source head SHA"):
+    for snippet in (
+        "one release_tag",
+        "one GitHub release repository",
+        "one release source head SHA",
+        "per-record release source run attempts",
+    ):
         if snippet not in scope:
             errors.append(f"protected platform goal parity scope must mention {snippet}")
     if goal.get("complete") is True:

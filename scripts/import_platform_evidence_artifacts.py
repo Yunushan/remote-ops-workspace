@@ -20,14 +20,18 @@ from check_platform_review_bundle_artifacts import (  # noqa: E402
 from check_platform_verified_evidence import (  # noqa: E402
     EVIDENCE_PATH,
     GITHUB_ACTIONS_RUN_RE,
+    GITHUB_RELEASE_ASSET_RE,
     PROTECTED_GOAL_TARGETS,
     RELEASE_SOURCE_HEAD_SHA_RE,
     accepted_record_source_file,
     check_platform_verified_evidence,
     directory_path_has_file_suffix,
     exact_safe_file_name,
+    linux_release_source_artifact_name,
     read_json,
+    release_asset_repositories,
     release_source_workflow,
+    xp_release_source_artifact_name,
 )
 from make_platform_verified_evidence_record import sha256_file  # noqa: E402
 
@@ -102,8 +106,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--verify-source-run",
         action="store_true",
         help=(
-            "with --dry-run, inspect each recorded GitHub Actions source run "
-            "without downloading artifacts"
+            "inspect each recorded GitHub Actions source run during --dry-run; "
+            "real imports always verify source-run metadata before downloading artifacts"
         ),
     )
     return parser.parse_args(argv)
@@ -218,7 +222,9 @@ def import_record(
     run_url = str(source.get("workflow_run_url", "")).rstrip("/")
     run_match = GITHUB_ACTIONS_RUN_RE.fullmatch(run_url)
     artifact_name = str(source.get("artifact_name", "")).strip()
+    release_tag = str(record.get("release_tag", "")).strip()
     expected_head_sha = str(source.get("head_sha", "")).strip()
+    expected_run_attempt = source.get("run_attempt")
     expected_workflow = release_source_workflow(target)
     workflow = str(source.get("workflow", "")).strip()
     if not run_match:
@@ -227,8 +233,24 @@ def import_record(
         return [f"{target} release_asset_source.workflow must be {expected_workflow}"]
     if not artifact_name:
         return [f"{target} release_asset_source.artifact_name must be set"]
+    if not release_tag:
+        return [f"{target} release_tag must be set"]
+    expected_artifact_name = expected_release_source_artifact_name(target, release_tag)
+    if not expected_artifact_name:
+        return [f"{target} is not a protected platform evidence target"]
+    if artifact_name != expected_artifact_name:
+        return [f"{target} release_asset_source.artifact_name must be {expected_artifact_name}"]
+    url_errors = check_import_release_url_tags(record, release_tag)
+    if url_errors:
+        return url_errors
     if not RELEASE_SOURCE_HEAD_SHA_RE.fullmatch(expected_head_sha):
         return [f"{target} release_asset_source.head_sha must be a 40-character lowercase Git SHA"]
+    if (
+        not isinstance(expected_run_attempt, int)
+        or isinstance(expected_run_attempt, bool)
+        or expected_run_attempt < 1
+    ):
+        return [f"{target} release_asset_source.run_attempt must be a positive integer"]
     checkout_errors = check_release_checkout_head_sha(
         target,
         expected_head_sha=expected_head_sha,
@@ -237,6 +259,14 @@ def import_record(
     if checkout_errors:
         return checkout_errors
     repository = run_match.group(1)
+    release_repositories = release_repositories_for_import_record(record)
+    if not release_repositories:
+        return [f"{target} release asset import must have GitHub release asset URLs"]
+    if release_repositories != {repository}:
+        return [
+            f"{target} release_asset_source.workflow_run_url repository must match "
+            f"release asset repositories {sorted(release_repositories)}, got {repository}"
+        ]
     run_id = run_url.rstrip("/").rsplit("/", 1)[-1]
     destination = download_root / target
     view_command = source_run_view_command(run_id, repository)
@@ -260,6 +290,7 @@ def import_record(
                 target,
                 view_command,
                 expected_head_sha=expected_head_sha,
+                expected_run_attempt=expected_run_attempt,
                 release_head_sha=release_head_sha,
             )
     else:
@@ -267,6 +298,7 @@ def import_record(
             target,
             view_command,
             expected_head_sha=expected_head_sha,
+            expected_run_attempt=expected_run_attempt,
             release_head_sha=release_head_sha,
         )
         if errors:
@@ -288,6 +320,54 @@ def import_record(
     return errors
 
 
+def check_import_release_url_tags(record: dict[str, Any], release_tag: str) -> list[str]:
+    target = str(record.get("target", ""))
+    errors: list[str] = []
+    for label, url in import_release_asset_urls(record):
+        match = GITHUB_RELEASE_ASSET_RE.fullmatch(url)
+        if not match:
+            errors.append(f"{target} {label} must be a GitHub release asset URL: {url}")
+            continue
+        if match.group(2) != release_tag:
+            errors.append(f"{target} {label} tag must match release_tag {release_tag}: {url}")
+    return errors
+
+
+def import_release_asset_urls(record: dict[str, Any]) -> list[tuple[str, str]]:
+    urls: list[tuple[str, str]] = []
+    raw_release_urls = record.get("release_asset_urls")
+    if isinstance(raw_release_urls, list):
+        urls.extend(("release_asset_urls", str(url)) for url in raw_release_urls)
+    review_bundle = record.get("review_bundle")
+    if isinstance(review_bundle, dict):
+        raw_bundle_urls = review_bundle.get("release_asset_urls")
+        if isinstance(raw_bundle_urls, list):
+            urls.extend(("review_bundle release_asset_urls", str(url)) for url in raw_bundle_urls)
+    finalized_url = record.get("finalized_record_release_asset_url")
+    if isinstance(finalized_url, str):
+        urls.append(("finalized_record_release_asset_url", finalized_url))
+    return urls
+
+
+def expected_release_source_artifact_name(target: str, release_tag: str) -> str:
+    if target.startswith("linux-"):
+        return linux_release_source_artifact_name(target, release_tag)
+    if target.startswith("windows-xp-native-"):
+        return xp_release_source_artifact_name(target, release_tag)
+    return ""
+
+
+def release_repositories_for_import_record(record: dict[str, Any]) -> set[str]:
+    repositories = release_asset_repositories(record.get("release_asset_urls"))
+    review_bundle = record.get("review_bundle")
+    if isinstance(review_bundle, dict):
+        repositories.update(release_asset_repositories(review_bundle.get("release_asset_urls")))
+    finalized_url = record.get("finalized_record_release_asset_url")
+    if isinstance(finalized_url, str):
+        repositories.update(release_asset_repositories([finalized_url]))
+    return repositories
+
+
 def source_run_view_command(run_id: str, repository: str) -> list[str]:
     return [
         "gh",
@@ -297,7 +377,7 @@ def source_run_view_command(run_id: str, repository: str) -> list[str]:
         "--repo",
         repository,
         "--json",
-        "conclusion,event,headSha,status,workflowName",
+        "attempt,conclusion,event,headSha,status,workflowName",
     ]
 
 
@@ -306,6 +386,7 @@ def verify_source_run(
     command: list[str],
     *,
     expected_head_sha: str,
+    expected_run_attempt: int,
     release_head_sha: str | None = None,
 ) -> list[str]:
     try:
@@ -341,6 +422,11 @@ def verify_source_run(
         errors.append(
             f"{target} release_asset_source workflow run headSha must match accepted record "
             f"{expected_head_sha}, got {data.get('headSha')!r}"
+        )
+    if data.get("attempt") != expected_run_attempt:
+        errors.append(
+            f"{target} release_asset_source workflow run attempt must match accepted record "
+            f"{expected_run_attempt}, got {data.get('attempt')!r}"
         )
     errors.extend(
         check_release_checkout_head_sha(

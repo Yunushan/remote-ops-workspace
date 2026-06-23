@@ -12,6 +12,7 @@ POLICY = (
     "review-bundle manifest release asset URL binding, review bundle release asset URLs, "
     "release-importable artifact source binding, "
     "release source head SHA binding, "
+    "release source run-attempt binding, "
     "release source workflow file binding, "
     "local protected-goal evidence preflight command binding, "
     "finalized accepted-record source file binding, "
@@ -19,6 +20,7 @@ POLICY = (
     "Linux release source artifact names must be target/release-scoped, "
     "Linux accepted evidence command paths must be target/release-scoped, "
     "XP release source artifact names must be target/release-scoped, "
+    "XP accepted evidence command paths must be target/release-scoped, "
     "and per-artifact SHA-256 digests, safe relative non-link native archive entries, "
     "exact safe checksum and native manifest file references, "
     "exact safe release asset URL filenames, "
@@ -370,6 +372,23 @@ def test_platform_verified_evidence_rejects_missing_xp_release_source_artifact_s
     ) in errors
 
 
+def test_platform_verified_evidence_rejects_missing_xp_path_scope_policy() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY.replace(
+                "XP accepted evidence command paths must be target/release-scoped, ",
+                "",
+            ),
+            "accepted_evidence": [],
+        }
+    )
+
+    assert "platform verified evidence policy must require target/release-scoped XP accepted evidence paths" in errors
+
+
 def test_platform_verified_evidence_rejects_missing_xp_smoke_proof_file_policy() -> None:
     checker = _load_platform_verified_evidence_checker()
 
@@ -447,6 +466,22 @@ def test_platform_verified_evidence_rejects_missing_release_source_head_sha_poli
 
     assert (
         "platform verified evidence policy must require release source head SHA binding"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_missing_release_source_run_attempt_policy() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY.replace("release source run-attempt binding, ", ""),
+            "accepted_evidence": [],
+        }
+    )
+
+    assert (
+        "platform verified evidence policy must require release source run-attempt binding"
     ) in errors
 
 
@@ -612,7 +647,7 @@ def test_platform_verified_evidence_cli_requires_finalized_review_bundle(tmp_pat
     checker.EVIDENCE_PATH = registry_path
     try:
         assert checker.main() == 1
-        assert checker.main(["--allow-unfinalized-candidates"]) == 0
+        assert checker.main(["--allow-unfinalized-candidates"]) == 2
     finally:
         checker.EVIDENCE_PATH = original_path
 
@@ -1482,6 +1517,36 @@ def test_platform_verified_evidence_rejects_missing_release_source_head_sha() ->
     assert "linux-i386 release_asset_source.head_sha must be a 40-character lowercase Git SHA" in errors
 
 
+def test_platform_verified_evidence_rejects_missing_release_source_run_attempt() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    del record["release_asset_source"]["run_attempt"]
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "linux-i386 release_asset_source missing fields: ['run_attempt']" in errors
+
+
+def test_platform_verified_evidence_rejects_invalid_release_source_run_attempt() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    record["release_asset_source"]["run_attempt"] = 0
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "linux-i386 release_asset_source.run_attempt must be a positive integer" in errors
+
+
 def test_platform_verified_evidence_rejects_missing_local_evidence_preflight_command() -> None:
     checker = _load_platform_verified_evidence_checker()
     record = _linux_record("linux-i386")
@@ -1547,7 +1612,8 @@ def test_platform_verified_evidence_rejects_unsafe_linux_local_preflight_paths()
         "--linux-builder-evidence .github/builder-identity-linux-i386.json "
         "--linux-smoke-evidence evidence/.private/native-smoke-linux-i386.log "
         "--linux-workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
-        f"--linux-source-head-sha {'a' * 40}"
+        f"--linux-source-head-sha {'a' * 40} "
+        "--linux-source-run-attempt 1"
     )
     registry = {
         "schema_version": 1,
@@ -1577,7 +1643,8 @@ def test_platform_verified_evidence_rejects_linux_local_preflight_without_releas
         "--linux-builder-evidence evidence/linux-i386/builder-identity-linux-i386.json "
         "--linux-smoke-evidence evidence/linux-i386/native-smoke-linux-i386.log "
         "--linux-workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
-        f"--linux-source-head-sha {'a' * 40}"
+        f"--linux-source-head-sha {'a' * 40} "
+        "--linux-source-run-attempt 1"
     )
     registry = {
         "schema_version": 1,
@@ -1616,7 +1683,8 @@ def test_platform_verified_evidence_accepts_scoped_linux_local_preflight_root() 
         f"--linux-builder-evidence {builder} "
         f"--linux-smoke-evidence {smoke} "
         "--linux-workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
-        f"--linux-source-head-sha {'a' * 40}"
+        f"--linux-source-head-sha {'a' * 40} "
+        "--linux-source-run-attempt 1"
     )
     registry = {
         "schema_version": 1,
@@ -1640,7 +1708,8 @@ def test_platform_verified_evidence_rejects_local_preflight_paths_outside_root()
         f"--linux-builder-evidence evidence/{target}/v1.0.2/builder-identity-{target}.json "
         f"--linux-smoke-evidence evidence/{target}/v1.0.2/native-smoke-{target}.log "
         "--linux-workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
-        f"--linux-source-head-sha {'a' * 40}"
+        f"--linux-source-head-sha {'a' * 40} "
+        "--linux-source-run-attempt 1"
     )
     registry = {
         "schema_version": 1,
@@ -1700,7 +1769,8 @@ def test_platform_verified_evidence_rejects_file_shaped_local_preflight_root() -
         f"--linux-builder-evidence {builder} "
         f"--linux-smoke-evidence {smoke} "
         "--linux-workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
-        f"--linux-source-head-sha {'a' * 40}"
+        f"--linux-source-head-sha {'a' * 40} "
+        "--linux-source-run-attempt 1"
     )
     registry = {
         "schema_version": 1,
@@ -1736,6 +1806,49 @@ def test_platform_verified_evidence_rejects_xp_local_preflight_evidence_dir_mism
     assert (
         "windows-xp-native-x86 local_evidence_preflight_command --xp-evidence-dir must match "
         "native_evidence_validation_command --evidence-dir"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_xp_local_preflight_missing_source_run() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _xp_record("windows-xp-native-x86")
+    record["local_evidence_preflight_command"] = str(
+        record["local_evidence_preflight_command"]
+    ).replace(
+        " --xp-source-workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        "",
+    )
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "windows-xp-native-x86 local_evidence_preflight_command --xp-source-workflow-run-url "
+        "must match release_asset_source.workflow_run_url"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_xp_local_preflight_source_sha_mismatch() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _xp_record("windows-xp-native-x64")
+    record["local_evidence_preflight_command"] = str(
+        record["local_evidence_preflight_command"]
+    ).replace(f"--xp-source-head-sha {'a' * 40}", f"--xp-source-head-sha {'b' * 40}")
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "windows-xp-native-x64 local_evidence_preflight_command --xp-source-head-sha "
+        "must match release_asset_source.head_sha"
     ) in errors
 
 
@@ -3378,7 +3491,8 @@ def _linux_record(target: str) -> dict[str, object]:
             f"--linux-builder-evidence evidence/{target}/v1.0.2/builder-identity-{target}.json "
             f"--linux-smoke-evidence evidence/{target}/v1.0.2/native-smoke-{target}.log "
             "--linux-workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
-            f"--linux-source-head-sha {'a' * 40}"
+            f"--linux-source-head-sha {'a' * 40} "
+            "--linux-source-run-attempt 1"
         ),
         "artifact_validation_command": (
             f"python scripts/check_platform_promotion_artifacts.py --target {target} "
@@ -3460,7 +3574,10 @@ def _xp_record(target: str, *, release_tag: str = "v1.0.2") -> dict[str, object]
         "local_evidence_preflight_command": (
             "python scripts/check_platform_goal_local_evidence.py --root . "
             f"--release-tag {release_tag} --target {target} --assets-dir {assets_dir} "
-            f"--xp-evidence {evidence_file} --xp-evidence-dir {evidence_dir}"
+            f"--xp-evidence {evidence_file} --xp-evidence-dir {evidence_dir} "
+            "--xp-source-workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
+            f"--xp-source-head-sha {'a' * 40} "
+            "--xp-source-run-attempt 1"
         ),
         "artifact_validation_command": (
             f"python scripts/check_platform_promotion_artifacts.py --target {target} "
@@ -3540,6 +3657,7 @@ def _release_asset_source(
         "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
         "artifact_name": artifact_name,
         "head_sha": "a" * 40,
+        "run_attempt": 1,
         "contains_files": sorted(contains_files),
     }
 
@@ -3619,6 +3737,10 @@ def _replace_release_source_head(record: dict[str, object], head_sha: str) -> No
     if isinstance(source, dict):
         old_head = str(source.get("head_sha", ""))
         source["head_sha"] = head_sha
+    if isinstance(record.get("local_evidence_preflight_command"), str) and old_head:
+        record["local_evidence_preflight_command"] = str(
+            record["local_evidence_preflight_command"]
+        ).replace(old_head, head_sha)
     if not str(record.get("target", "")).startswith("linux-"):
         return
     builder_identity = record.get("builder_identity")
@@ -3730,6 +3852,7 @@ def _builder_identity(target: str) -> dict[str, object]:
         "target": target,
         "release_tag": "v1.0.2",
         "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        "workflow_run_attempt": 1,
         "source_head_sha": "a" * 40,
         "host_identity": _linux_host_identity(target),
         "sudo_non_interactive": True,
@@ -3762,6 +3885,7 @@ def _linux_host_identity(target: str, release_tag: str = "v1.0.2") -> dict[str, 
         "target": target,
         "release_tag": release_tag,
         "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        "workflow_run_attempt": 1,
         "host_label": f"{target}-builder",
         "evidence_run_id": f"{target}-{release_tag.removeprefix('v').replace('.', '-')}-run-12345",
         "observed_at_utc": "2026-06-20T12:00:00Z",

@@ -47,6 +47,7 @@ DEFAULT_EVIDENCE_POLICY = (
     "review-bundle manifest release asset URL binding, review bundle release asset URLs, "
     "release-importable artifact source binding, "
     "release source head SHA binding, "
+    "release source run-attempt binding, "
     "release source workflow file binding, "
     "local protected-goal evidence preflight command binding, "
     "finalized accepted-record source file binding, "
@@ -54,6 +55,7 @@ DEFAULT_EVIDENCE_POLICY = (
     "Linux release source artifact names must be target/release-scoped, "
     "Linux accepted evidence command paths must be target/release-scoped, "
     "XP release source artifact names must be target/release-scoped, "
+    "XP accepted evidence command paths must be target/release-scoped, "
     "per-artifact SHA-256 digests, safe relative non-link native archive entries, "
     "exact safe checksum and native manifest file references, exact safe release asset URL filenames, "
     "exact required check lists, exact workflow dispatch input sets, exact evidence source record fields, "
@@ -107,6 +109,7 @@ GITHUB_REPOSITORY_RE = rf"{GITHUB_OWNER_RE}/[A-Za-z0-9._-]+"
 GITHUB_RELEASE_BASE_RE = re.compile(
     rf"^https://github\.com/({GITHUB_REPOSITORY_RE})/releases/download/(v\d+\.\d+\.\d+)$"
 )
+GITHUB_ACTIONS_RUN_RE = re.compile(rf"^https://github\.com/({GITHUB_REPOSITORY_RE})/actions/runs/\d+/?$")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -124,6 +127,11 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"platform verified evidence record: {error}", file=sys.stderr)
             return 1
     if args.append_registry:
+        append_usage_errors = check_generator_append_registry_usage(record)
+        if append_usage_errors:
+            for error in append_usage_errors:
+                print(f"platform verified evidence record: {error}", file=sys.stderr)
+            return 1
         registry_errors = append_record_to_registry(record, registry_path=args.registry)
         if registry_errors:
             for error in registry_errors:
@@ -171,6 +179,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--release-source-head-sha",
         help="40-character Git commit SHA for the source workflow run that produced the release files.",
     )
+    parser.add_argument(
+        "--release-source-run-attempt",
+        type=int,
+        help="Positive GitHub Actions run attempt for the source workflow artifact.",
+    )
     parser.add_argument("--runner-label", action="append", default=[], help="Runner label for Linux evidence")
     parser.add_argument("--builder-evidence", type=Path, help="Linux builder identity JSON emitted by builder preflight")
     parser.add_argument("--linux-smoke-evidence", type=Path, help="Linux native smoke log captured from the builder")
@@ -193,8 +206,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--append-registry",
         action="store_true",
         help=(
-            "append a finalized record to configs/platform_verified_evidence.json; "
-            "unfinalized candidates are rejected"
+            "deprecated guardrail: generated candidates are not final records; use "
+            "scripts/finalize_platform_verified_evidence_record.py --append-registry"
         ),
     )
     parser.add_argument(
@@ -257,7 +270,8 @@ def build_evidence_record(args: argparse.Namespace) -> tuple[list[str], dict[str
         )
         errors.extend(check_xp_evidence_record_binding(args))
     if target in LINUX_TARGETS:
-        errors.extend(check_linux_builder_source_head_sha(args))
+        errors.extend(check_linux_builder_release_source_binding(args))
+    errors.extend(check_target_release_scoped_inputs(args))
     if errors:
         return errors, {}
 
@@ -269,6 +283,20 @@ def build_evidence_record(args: argparse.Namespace) -> tuple[list[str], dict[str
     }
     errors.extend(check_platform_verified_evidence(registry=registry, promotion=promotion))
     return errors, record
+
+
+def check_generator_append_registry_usage(record: dict[str, Any]) -> list[str]:
+    missing_final_fields = [
+        field for field in ("finalized_record_release_asset_url", "review_bundle") if field not in record
+    ]
+    if not missing_final_fields:
+        return []
+    target = str(record.get("target", "platform"))
+    return [
+        f"{target} generated evidence is an unfinalized candidate; "
+        "finalize it with scripts/finalize_platform_verified_evidence_record.py "
+        "--append-registry before adding it to configs/platform_verified_evidence.json"
+    ]
 
 
 def validate_common_args(args: argparse.Namespace) -> list[str]:
@@ -298,6 +326,10 @@ def validate_common_args(args: argparse.Namespace) -> list[str]:
         errors.append("--release-source-head-sha is required")
     elif not GITHUB_HEAD_SHA_RE.fullmatch(str(args.release_source_head_sha)):
         errors.append("--release-source-head-sha must be a 40-character lowercase Git SHA")
+    if args.release_source_run_attempt is None:
+        errors.append("--release-source-run-attempt is required")
+    elif args.release_source_run_attempt < 1:
+        errors.append("--release-source-run-attempt must be a positive integer")
     return errors
 
 
@@ -306,6 +338,10 @@ def validate_linux_args(args: argparse.Namespace) -> list[str]:
     target = str(args.target)
     if not args.workflow_run_url:
         errors.append("--workflow-run-url is required for Linux evidence")
+    elif not GITHUB_ACTIONS_RUN_RE.fullmatch(str(args.workflow_run_url).rstrip("/")):
+        errors.append("--workflow-run-url must be a GitHub Actions run URL")
+    else:
+        errors.extend(check_workflow_run_repository(args, str(args.workflow_run_url), "--workflow-run-url"))
     if args.builder_evidence is None:
         errors.append("--builder-evidence is required for Linux evidence")
     elif not args.builder_evidence.is_file():
@@ -335,8 +371,19 @@ def validate_linux_args(args: argparse.Namespace) -> list[str]:
     if args.xp_evidence_dir is not None:
         errors.append("--xp-evidence-dir is only valid for Windows XP evidence")
     release_source_workflow_run_url = getattr(args, "release_source_workflow_run_url", None)
-    if release_source_workflow_run_url and release_source_workflow_run_url != args.workflow_run_url:
-        errors.append("--release-source-workflow-run-url must match --workflow-run-url for Linux evidence")
+    if release_source_workflow_run_url:
+        if not GITHUB_ACTIONS_RUN_RE.fullmatch(str(release_source_workflow_run_url).rstrip("/")):
+            errors.append("--release-source-workflow-run-url must be a GitHub Actions run URL")
+        else:
+            errors.extend(
+                check_workflow_run_repository(
+                    args,
+                    str(release_source_workflow_run_url),
+                    "--release-source-workflow-run-url",
+                )
+            )
+        if release_source_workflow_run_url != args.workflow_run_url:
+            errors.append("--release-source-workflow-run-url must match --workflow-run-url for Linux evidence")
     release_source_artifact_name = getattr(args, "release_source_artifact_name", None)
     expected_artifact_name = linux_release_source_artifact_name(target, str(args.release_tag))
     if release_source_artifact_name and release_source_artifact_name != expected_artifact_name:
@@ -374,8 +421,19 @@ def validate_xp_args(args: argparse.Namespace) -> list[str]:
         errors.append("--workflow-run-url is only valid for Linux evidence")
     if args.runner_label:
         errors.append("--runner-label is only valid for Linux evidence")
-    if not getattr(args, "release_source_workflow_run_url", None):
+    release_source_workflow_run_url = getattr(args, "release_source_workflow_run_url", None)
+    if not release_source_workflow_run_url:
         errors.append("--release-source-workflow-run-url is required for Windows XP evidence")
+    elif not GITHUB_ACTIONS_RUN_RE.fullmatch(str(release_source_workflow_run_url).rstrip("/")):
+        errors.append("--release-source-workflow-run-url must be a GitHub Actions run URL")
+    else:
+        errors.extend(
+            check_workflow_run_repository(
+                args,
+                str(release_source_workflow_run_url),
+                "--release-source-workflow-run-url",
+            )
+        )
     release_source_artifact_name = getattr(args, "release_source_artifact_name", None)
     if not release_source_artifact_name:
         errors.append("--release-source-artifact-name is required for Windows XP evidence")
@@ -386,6 +444,25 @@ def validate_xp_args(args: argparse.Namespace) -> list[str]:
                 f"--release-source-artifact-name must be {expected_artifact_name} for {args.target} XP evidence"
             )
     return errors
+
+
+def check_workflow_run_repository(
+    args: argparse.Namespace,
+    workflow_run_url: str,
+    flag: str,
+) -> list[str]:
+    release_match = GITHUB_RELEASE_BASE_RE.fullmatch(str(args.release_asset_base_url))
+    workflow_match = GITHUB_ACTIONS_RUN_RE.fullmatch(workflow_run_url.rstrip("/"))
+    if not release_match or not workflow_match:
+        return []
+    release_repository = release_match.group(1)
+    workflow_repository = workflow_match.group(1)
+    if workflow_repository != release_repository:
+        return [
+            f"{flag} repository must match --release-asset-base-url repository "
+            f"{release_repository}, got {workflow_repository}"
+        ]
+    return []
 
 
 def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
@@ -403,6 +480,73 @@ def check_directory_path_hint(path: Path, label: str) -> list[str]:
     if directory_path_has_file_suffix(raw_path):
         return [f"{label} must be a directory path, got {raw_path!r}"]
     return []
+
+
+def check_target_release_scoped_inputs(args: argparse.Namespace) -> list[str]:
+    target = str(args.target)
+    release_tag = str(args.release_tag)
+    errors = check_target_release_path_segments(
+        target,
+        release_tag,
+        args.assets_dir,
+        label="artifact directory",
+    )
+    if target in LINUX_TARGETS:
+        if args.builder_evidence is not None:
+            errors.extend(
+                check_target_release_path_segments(
+                    target,
+                    release_tag,
+                    args.builder_evidence,
+                    label="Linux builder evidence file",
+                )
+            )
+        if args.linux_smoke_evidence is not None:
+            errors.extend(
+                check_target_release_path_segments(
+                    target,
+                    release_tag,
+                    args.linux_smoke_evidence,
+                    label="Linux smoke evidence file",
+                )
+            )
+    if target in XP_TARGETS:
+        if args.xp_evidence is not None:
+            errors.extend(
+                check_target_release_path_segments(
+                    target,
+                    release_tag,
+                    args.xp_evidence,
+                    label="XP evidence file",
+                )
+            )
+        if args.xp_evidence_dir is not None:
+            errors.extend(
+                check_target_release_path_segments(
+                    target,
+                    release_tag,
+                    args.xp_evidence_dir,
+                    label="XP evidence directory",
+                )
+            )
+    return errors
+
+
+def check_target_release_path_segments(
+    target: str,
+    release_tag: str,
+    path: Path,
+    *,
+    label: str,
+) -> list[str]:
+    segments = {str(part) for part in path.parts if str(part)}
+    raw_path = path.as_posix()
+    errors: list[str] = []
+    if target not in segments:
+        errors.append(f"{label} must include target path segment {target!r}, got {raw_path!r}")
+    if release_tag not in segments:
+        errors.append(f"{label} must include release_tag path segment {release_tag!r}, got {raw_path!r}")
+    return errors
 
 
 def check_linux_smoke_evidence_file(
@@ -430,19 +574,27 @@ def check_linux_smoke_evidence_file(
     )
 
 
-def check_linux_builder_source_head_sha(args: argparse.Namespace) -> list[str]:
+def check_linux_builder_release_source_binding(args: argparse.Namespace) -> list[str]:
     if args.builder_evidence is None or not args.builder_evidence.is_file():
         return []
     builder_identity = read_json(args.builder_evidence)
     target = str(args.target)
-    expected = str(args.release_source_head_sha or "").strip()
-    actual = str(builder_identity.get("source_head_sha", "")).strip()
-    if actual != expected:
-        return [
+    expected_head_sha = str(args.release_source_head_sha or "").strip()
+    actual_head_sha = str(builder_identity.get("source_head_sha", "")).strip()
+    errors: list[str] = []
+    if actual_head_sha != expected_head_sha:
+        errors.append(
             f"{target} builder evidence source_head_sha must match --release-source-head-sha "
-            f"{expected}, got {actual!r}"
-        ]
-    return []
+            f"{expected_head_sha}, got {actual_head_sha!r}"
+        )
+    expected_attempt = args.release_source_run_attempt
+    actual_attempt = builder_identity.get("workflow_run_attempt")
+    if actual_attempt != expected_attempt:
+        errors.append(
+            f"{target} builder evidence workflow_run_attempt must match "
+            f"--release-source-run-attempt {expected_attempt}, got {actual_attempt!r}"
+        )
+    return errors
 
 
 def check_xp_evidence_record_binding(args: argparse.Namespace) -> list[str]:
@@ -575,6 +727,7 @@ def release_asset_source(args: argparse.Namespace, target: str, promotion: dict[
         "workflow_run_url": workflow_run_url.rstrip("/"),
         "artifact_name": artifact_name,
         "head_sha": str(args.release_source_head_sha),
+        "run_attempt": int(args.release_source_run_attempt),
         "contains_files": expected_artifact_names(target, str(args.release_tag), promotion),
     }
 
@@ -656,11 +809,15 @@ def local_evidence_preflight_command(args: argparse.Namespace) -> str:
             f"{command} --linux-builder-evidence {args.builder_evidence.as_posix()} "
             f"--linux-smoke-evidence {args.linux_smoke_evidence.as_posix()} "
             f"--linux-workflow-run-url {args.workflow_run_url} "
-            f"--linux-source-head-sha {args.release_source_head_sha}"
+            f"--linux-source-head-sha {args.release_source_head_sha} "
+            f"--linux-source-run-attempt {args.release_source_run_attempt}"
         )
     return (
         f"{command} --xp-evidence {args.xp_evidence.as_posix()} "
-        f"--xp-evidence-dir {args.xp_evidence_dir.as_posix()}"
+        f"--xp-evidence-dir {args.xp_evidence_dir.as_posix()} "
+        f"--xp-source-workflow-run-url {args.release_source_workflow_run_url} "
+        f"--xp-source-head-sha {args.release_source_head_sha} "
+        f"--xp-source-run-attempt {args.release_source_run_attempt}"
     )
 
 

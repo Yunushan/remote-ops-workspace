@@ -91,6 +91,16 @@ def stage_extended_linux_evidence_upload(
     errors.extend(check_staging_path_separation(target, source_dir=source_dir, out_dir=out_dir))
     if errors:
         return errors
+    errors.extend(
+        check_target_release_path_segments(
+            target,
+            release_tag,
+            source_dir,
+            label="extended Linux evidence source directory",
+        )
+    )
+    if errors:
+        return errors
     sources = source_map(source_dir, expected_files)
     missing = sorted(name for name, path in sources.items() if not path.is_file())
     if missing:
@@ -379,6 +389,23 @@ def check_directory_path_hint(path: Path, label: str) -> list[str]:
     if directory_path_has_file_suffix(raw_path):
         return [f"{label} must be a directory path, got {raw_path!r}"]
     return []
+
+
+def check_target_release_path_segments(
+    target: str,
+    release_tag: str,
+    path: Path,
+    *,
+    label: str,
+) -> list[str]:
+    segments = {str(part) for part in path.parts if str(part)}
+    raw_path = path.as_posix()
+    errors: list[str] = []
+    if target not in segments:
+        errors.append(f"{label} must include target path segment {target!r}, got {raw_path!r}")
+    if release_tag not in segments:
+        errors.append(f"{label} must include release_tag path segment {release_tag!r}, got {raw_path!r}")
+    return errors
 
 
 def sha256_file(path: Path) -> str:

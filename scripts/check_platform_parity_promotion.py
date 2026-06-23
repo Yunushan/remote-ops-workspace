@@ -514,7 +514,8 @@ def check_local_evidence_preflight_command(
             "--linux-builder-evidence <builder-identity.json> "
             "--linux-smoke-evidence <native-smoke-log> "
             "--linux-workflow-run-url <github-actions-run-url> "
-            "--linux-source-head-sha <github-actions-head-sha>"
+            "--linux-source-head-sha <github-actions-head-sha> "
+            "--linux-source-run-attempt <github-actions-run-attempt>"
         )
     else:
         expected = (
@@ -524,7 +525,10 @@ def check_local_evidence_preflight_command(
             f"--target {label} "
             "--assets-dir <target-release-artifact-dir> "
             "--xp-evidence <target-release-evidence.json> "
-            "--xp-evidence-dir <target-release-evidence-dir>"
+            "--xp-evidence-dir <target-release-evidence-dir> "
+            "--xp-source-workflow-run-url <github-actions-run-url> "
+            "--xp-source-head-sha <github-actions-head-sha> "
+            "--xp-source-run-attempt <github-actions-run-attempt>"
         )
     if command != expected:
         return [f"{label} local_evidence_preflight_command must be {expected!r}"]
@@ -549,6 +553,8 @@ def check_finalized_evidence_requirements(
         errors.append(f"{label} accepted_evidence_candidate_command must write a candidate with --out")
     if "--release-source-head-sha <github-actions-head-sha>" not in candidate:
         errors.append(f"{label} accepted_evidence_candidate_command must bind release source head SHA")
+    if "--release-source-run-attempt <github-actions-run-attempt>" not in candidate:
+        errors.append(f"{label} accepted_evidence_candidate_command must bind release source run attempt")
     if kind == "linux":
         if "--linux-smoke-evidence <native-smoke-log>" not in candidate:
             errors.append(f"{label} accepted_evidence_candidate_command must bind Linux smoke evidence")
@@ -585,8 +591,9 @@ def check_finalized_evidence_requirements(
         errors.append(f"{label} review_bundle_command must bind the candidate record with --candidate-record")
     if kind == "linux" and "--smoke-evidence <native-smoke-log>" not in review:
         errors.append(f"{label} review_bundle_command must bind Linux smoke evidence")
-    if "--out-dir <bundle-dir>" not in review:
-        errors.append(f"{label} review_bundle_command must write to <bundle-dir>")
+    expected_out_dir = "<target-release-artifact-dir>" if kind == "linux" else "<xp-evidence-output-dir>"
+    if f"--out-dir {expected_out_dir}" not in review:
+        errors.append(f"{label} review_bundle_command must write to {expected_out_dir}")
     if not (ROOT / "scripts" / expected_review_script).is_file():
         errors.append(f"{label} review bundle script is missing")
 
@@ -623,8 +630,9 @@ def check_finalized_evidence_requirements(
     if actual_files != expected_files:
         errors.append(f"{label} review_bundle_files must be {sorted(expected_files)}")
     for filename in expected_files:
-        if filename not in final:
-            errors.append(f"{label} finalized_evidence_record_command must bind review bundle file {filename}")
+        expected_path = f"{expected_out_dir}/{filename}"
+        if expected_path not in final:
+            errors.append(f"{label} finalized_evidence_record_command must bind review bundle file {expected_path}")
     return errors
 
 

@@ -54,12 +54,13 @@ GITHUB_HEAD_SHA_RE = re.compile(r"[0-9a-f]{40}")
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     errors = check_extended_platform_builder(args.target)
-    if args.out or args.release_tag or args.workflow_run_url or args.source_head_sha:
+    if args.out or args.release_tag or args.workflow_run_url or args.source_head_sha or args.workflow_run_attempt:
         errors.extend(
             check_builder_identity_context(
                 args.target,
                 args.release_tag,
                 args.workflow_run_url,
+                args.workflow_run_attempt,
                 args.source_head_sha,
             )
         )
@@ -76,6 +77,7 @@ def main(argv: list[str] | None = None) -> int:
                 args.target,
                 release_tag=str(args.release_tag),
                 workflow_run_url=str(args.workflow_run_url),
+                workflow_run_attempt=int(args.workflow_run_attempt),
                 source_head_sha=str(args.source_head_sha),
             ),
         )
@@ -88,6 +90,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--target", choices=sorted(LINUX_TARGET_ARCHES), required=True)
     parser.add_argument("--release-tag", help="release tag this builder evidence is bound to, for example v1.0.2")
     parser.add_argument("--workflow-run-url", help="GitHub Actions run URL this builder evidence is bound to")
+    parser.add_argument(
+        "--workflow-run-attempt",
+        type=int,
+        help="positive GitHub Actions run attempt this builder evidence is bound to",
+    )
     parser.add_argument("--source-head-sha", help="40-character Git commit SHA checked out by this builder run")
     parser.add_argument("--out", type=Path, help="write builder identity evidence JSON after validation passes")
     return parser.parse_args(argv)
@@ -132,6 +139,7 @@ def check_builder_identity_context(
     target: str,
     release_tag: str | None,
     workflow_run_url: str | None,
+    workflow_run_attempt: int | None,
     source_head_sha: str | None,
 ) -> list[str]:
     errors: list[str] = []
@@ -143,6 +151,10 @@ def check_builder_identity_context(
         errors.append(f"{target} builder identity output requires --workflow-run-url")
     elif not GITHUB_ACTIONS_RUN_RE.fullmatch(str(workflow_run_url)):
         errors.append(f"{target} builder identity --workflow-run-url must be a GitHub Actions run URL")
+    if workflow_run_attempt is None:
+        errors.append(f"{target} builder identity output requires --workflow-run-attempt")
+    elif workflow_run_attempt < 1:
+        errors.append(f"{target} builder identity --workflow-run-attempt must be a positive integer")
     if not source_head_sha:
         errors.append(f"{target} builder identity output requires --source-head-sha")
     elif not GITHUB_HEAD_SHA_RE.fullmatch(str(source_head_sha)):
@@ -204,6 +216,7 @@ def builder_identity(
     *,
     release_tag: str = "",
     workflow_run_url: str = "",
+    workflow_run_attempt: int = 0,
     source_head_sha: str = "",
 ) -> dict[str, Any]:
     version = sys.version_info
@@ -215,6 +228,7 @@ def builder_identity(
         "target": target,
         "release_tag": release_tag,
         "workflow_run_url": workflow_run_url,
+        "workflow_run_attempt": workflow_run_attempt,
         "source_head_sha": source_head_sha,
         "sys_platform": sys.platform,
         "platform_machine": normalized_machine(),
@@ -226,6 +240,7 @@ def builder_identity(
             target,
             release_tag=release_tag,
             workflow_run_url=workflow_run_url,
+            workflow_run_attempt=workflow_run_attempt,
         ),
         "sudo_non_interactive": command_succeeds(["sudo", "-n", "true"]),
         "required_tools": {tool: shutil.which(tool) or "" for tool in REQUIRED_LINUX_TOOLS},
@@ -233,7 +248,13 @@ def builder_identity(
     }
 
 
-def builder_host_identity(target: str, *, release_tag: str, workflow_run_url: str) -> dict[str, Any]:
+def builder_host_identity(
+    target: str,
+    *,
+    release_tag: str,
+    workflow_run_url: str,
+    workflow_run_attempt: int,
+) -> dict[str, Any]:
     version = release_tag.removeprefix("v").replace(".", "-") if release_tag else "unbound"
     run_match = GITHUB_RUN_ID_RE.search(workflow_run_url)
     run_id = run_match.group(1) if run_match else "manual"
@@ -242,6 +263,7 @@ def builder_host_identity(target: str, *, release_tag: str, workflow_run_url: st
         "target": target,
         "release_tag": release_tag,
         "workflow_run_url": workflow_run_url,
+        "workflow_run_attempt": workflow_run_attempt,
         "host_label": f"{target}-builder",
         "evidence_run_id": f"{target}-{version}-run-{run_id}",
         "observed_at_utc": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),

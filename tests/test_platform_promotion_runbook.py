@@ -80,14 +80,21 @@ def test_platform_promotion_runbook_requires_asset_backed_strict_publish() -> No
 
 def test_platform_promotion_runbook_requires_strict_verify_import_dry_run() -> None:
     checker = _load_checker()
+    command = (
+        "python scripts/import_platform_evidence_artifacts.py --release-tag v<project.version> "
+        "--require-goal-targets --out-dir <release-assets-dir> --dry-run --verify-source-run"
+    )
     text = Path("docs/PLATFORM_PROMOTION_RUNBOOK.md").read_text(encoding="utf-8").replace(
+        command,
         "python scripts/import_platform_evidence_artifacts.py --dry-run",
-        "python scripts/import_platform_evidence_artifacts.py",
     )
 
     errors = checker.check_platform_promotion_runbook(runbook_text=text)
 
-    assert any("import_platform_evidence_artifacts.py --dry-run" in error for error in errors)
+    assert any("--release-tag v<project.version>" in error for error in errors)
+    assert any("--require-goal-targets" in error for error in errors)
+    assert any("--out-dir <release-assets-dir>" in error for error in errors)
+    assert any("--verify-source-run" in error for error in errors)
 
 
 def test_platform_promotion_runbook_requires_staged_upload_hash_binding() -> None:
@@ -108,6 +115,20 @@ def test_platform_promotion_runbook_requires_staged_review_bundle_refinalization
     errors = checker.check_platform_promotion_runbook(runbook_text=text)
 
     assert any("re-finalize to the accepted record before upload" in error for error in errors)
+
+
+def test_platform_promotion_runbook_requires_target_release_scoped_bundle_outputs() -> None:
+    checker = _load_checker()
+    linux_snippet = "Linux evidence bundle output directory must include the target id and release tag as path segments"
+    xp_snippet = "XP evidence bundle output directory must include the target id and release tag as path segments"
+    text = Path("docs/PLATFORM_PROMOTION_RUNBOOK.md").read_text(encoding="utf-8")
+    text = text.replace(linux_snippet, "Linux evidence bundle output directory must be plain")
+    text = text.replace(xp_snippet, "XP evidence bundle output directory must be plain")
+
+    errors = checker.check_platform_promotion_runbook(runbook_text=text)
+
+    assert any(linux_snippet in error for error in errors)
+    assert any(xp_snippet in error for error in errors)
 
 
 def test_platform_promotion_runbook_requires_local_goal_preflight() -> None:
@@ -172,6 +193,27 @@ def test_platform_promotion_runbook_requires_xp_target_release_scoped_dispatch_p
     assert any("target id and release tag as path segments" in error for error in errors)
 
 
+def test_platform_promotion_runbook_requires_xp_host_identity_smoke_proof_lines() -> None:
+    checker = _load_checker()
+    snippet = (
+        "Every smoke evidence file must include `xp smoke target: windows-xp-native-x86`, "
+        "`xp smoke release: v<project.version>`, `xp smoke id: <smoke_id>`, "
+        "`xp smoke host label: <host_label>` and "
+        "`xp smoke evidence run id: <evidence_run_id>`."
+    )
+    text = Path("docs/PLATFORM_PROMOTION_RUNBOOK.md").read_text(encoding="utf-8").replace(
+        snippet,
+        (
+            "Every smoke evidence file must include `xp smoke target: windows-xp-native-x86`, "
+            "`xp smoke release: v<project.version>` and `xp smoke id: <smoke_id>`."
+        ),
+    )
+
+    errors = checker.check_platform_promotion_runbook(runbook_text=text)
+
+    assert "windows-xp-native-x86 runbook missing XP smoke host identity proof line" in errors
+
+
 def test_platform_promotion_runbook_requires_linux_target_scoped_evidence_filenames() -> None:
     checker = _load_checker()
     snippet = "builder-identity-<target>.json`, `native-smoke-<target>.log`, `platform-verified-evidence-<target>.json"
@@ -192,6 +234,23 @@ def test_platform_promotion_runbook_requires_linux_builder_source_head_sha() -> 
     errors = checker.check_platform_promotion_runbook(runbook_text=text)
 
     assert any("--source-head-sha <github-actions-head-sha>" in error for error in errors)
+
+
+def test_platform_promotion_runbook_requires_linux_smoke_runtime_and_hash_proof() -> None:
+    checker = _load_checker()
+    text = Path("docs/PLATFORM_PROMOTION_RUNBOOK.md").read_text(encoding="utf-8").replace(
+        "`native installer smoke userland bits: 32`, ",
+        "",
+    )
+    text = text.replace(
+        "one `native installer smoke artifact sha256: <artifact> <sha256>` line for each expected DEB/RPM/AppImage artifact, ",
+        "",
+    )
+
+    errors = checker.check_platform_promotion_runbook(runbook_text=text)
+
+    assert any("native installer smoke userland bits: 32" in error for error in errors)
+    assert any("native installer smoke artifact sha256: <artifact> <sha256>" in error for error in errors)
 
 
 def test_platform_promotion_runbook_requires_linux_security_boundaries() -> None:

@@ -13,7 +13,7 @@ def test_stage_extended_linux_evidence_upload_copies_only_expected_files(tmp_pat
     checker = _load_platform_promotion_artifacts_checker()
     target = "linux-i386"
     tag = f"v{checker.read_project_version()}"
-    source = tmp_path / "native-dist" / "linux"
+    source = _linux_source_dir(tmp_path, target, tag)
     staged = tmp_path / "linux-evidence-upload"
     source.mkdir(parents=True)
     expected_artifacts = _required_artifact_names(checker, target, tag)
@@ -47,7 +47,7 @@ def test_stage_extended_linux_evidence_upload_rejects_extra_source_entries(tmp_p
     checker = _load_platform_promotion_artifacts_checker()
     target = "linux-i386"
     tag = f"v{checker.read_project_version()}"
-    source = tmp_path / "native-dist" / "linux"
+    source = _linux_source_dir(tmp_path, target, tag)
     source.mkdir(parents=True)
     expected_artifacts = _required_artifact_names(checker, target, tag)
     expected_evidence = [
@@ -85,7 +85,7 @@ def test_stage_extended_linux_evidence_upload_rejects_hash_mismatch(tmp_path: Pa
     checker = _load_platform_promotion_artifacts_checker()
     target = "linux-i386"
     tag = f"v{checker.read_project_version()}"
-    source = tmp_path / "native-dist" / "linux"
+    source = _linux_source_dir(tmp_path, target, tag)
     source.mkdir(parents=True)
     expected_artifacts = _required_artifact_names(checker, target, tag)
     expected_evidence = [
@@ -123,7 +123,7 @@ def test_stage_extended_linux_evidence_upload_rejects_review_bundle_content_mism
     checker = _load_platform_promotion_artifacts_checker()
     target = "linux-i386"
     tag = f"v{checker.read_project_version()}"
-    source = tmp_path / "native-dist" / "linux"
+    source = _linux_source_dir(tmp_path, target, tag)
     source.mkdir(parents=True)
     expected_artifacts = _required_artifact_names(checker, target, tag)
     expected_evidence = [
@@ -379,7 +379,7 @@ def test_stage_extended_linux_evidence_upload_rejects_missing_expected_file(tmp_
     checker = _load_platform_promotion_artifacts_checker()
     target = "linux-armhf"
     tag = f"v{checker.read_project_version()}"
-    source = tmp_path / "native-dist" / "linux"
+    source = _linux_source_dir(tmp_path, target, tag)
     source.mkdir(parents=True)
 
     errors = stager.stage_extended_linux_evidence_upload(
@@ -398,7 +398,7 @@ def test_stage_extended_linux_evidence_upload_rejects_invalid_final_record(tmp_p
     checker = _load_platform_promotion_artifacts_checker()
     target = "linux-i386"
     tag = f"v{checker.read_project_version()}"
-    source = tmp_path / "native-dist" / "linux"
+    source = _linux_source_dir(tmp_path, target, tag)
     source.mkdir(parents=True)
     expected_artifacts = _required_artifact_names(checker, target, tag)
     expected_evidence = [
@@ -424,6 +424,30 @@ def test_stage_extended_linux_evidence_upload_rejects_invalid_final_record(tmp_p
     )
 
 
+def test_stage_extended_linux_evidence_upload_rejects_unscoped_source_directory(
+    tmp_path: Path,
+) -> None:
+    stager = _load_stager()
+    source = tmp_path / "native-dist" / "linux"
+    source.mkdir(parents=True)
+
+    errors = stager.stage_extended_linux_evidence_upload(
+        target="linux-i386",
+        release_tag="v1.0.2",
+        source_dir=source,
+        out_dir=tmp_path / "upload",
+    )
+
+    assert (
+        "extended Linux evidence source directory must include target path segment "
+        f"'linux-i386', got {source.as_posix()!r}"
+    ) in errors
+    assert (
+        "extended Linux evidence source directory must include release_tag path segment "
+        f"'v1.0.2', got {source.as_posix()!r}"
+    ) in errors
+
+
 def test_stage_extended_linux_evidence_upload_rejects_overlapping_output_path(tmp_path: Path) -> None:
     stager = _load_stager()
     source = tmp_path / "native-dist" / "linux"
@@ -447,6 +471,10 @@ def _required_artifact_names(checker: Any, target: str, tag: str) -> list[str]:
     entries = checker.promotion_entries(promotion, [])
     version = checker.version_from_tag(tag, [])
     return [checker.expand_version(name, version) for name in checker.required_artifacts(entries[target])]
+
+
+def _linux_source_dir(tmp_path: Path, target: str, tag: str) -> Path:
+    return tmp_path / "platform-evidence-staging" / target / tag / "artifacts"
 
 
 def _write_linux_final_record(path: Path, target: str, source_dir: Path) -> None:

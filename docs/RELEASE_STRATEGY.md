@@ -28,7 +28,7 @@ Release integrity rules:
 - The `release-preflight` workflow job runs
   `python scripts/verify.py --quick --no-cli-smoke --release-tag <tag>` and
   `python scripts/check_protected_platform_goal.py --release-tag <tag> --require-complete --show-requirements` plus
-  `python scripts/check_platform_verified_evidence.py --require-goal-targets --release-tag <tag>`
+  `python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag <tag>`
   before any source, Python or native artifact build job can start, then
   `python scripts/check_repository_cleanup.py --require-clean`. The release tag
   is passed into the protected platform parity report, the per-target proof
@@ -45,7 +45,7 @@ Release integrity rules:
   `python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --require-platform-goal-targets`
   after downloading workflow artifacts and before uploading the GitHub release.
   The protected-platform asset job first runs
-  `python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets`
+  `python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run`
   to import only same-tag, same-repository and source-head-bound accepted Linux
   i386, Linux armhf and Windows XP native-host artifacts from their verified
   evidence workflow runs, then runs
@@ -62,8 +62,8 @@ Release integrity rules:
   evidence and the MobaXterm parity accepted-evidence registry. The protected
   platform goal flag makes release upload fail until Linux i386, Linux armhf,
   Windows XP native x86 and Windows XP native x64 all have finalized accepted
-  evidence for the same release tag, GitHub release repository and release
-  source head SHA. Use
+  evidence for the same release tag, GitHub release repository, release
+  source head SHA and a positive release source run attempt in each record. Use
   `--require-mobaxterm-parity-complete` only for releases that explicitly claim
   complete strict MobaXterm Home/Professional product-depth parity.
 - CI build jobs run with read-only repository contents permission and checkout
@@ -103,8 +103,10 @@ self-hosted `xp-evidence` runner, stages only the expected release/evidence
 files into a plain non-symlink `xp-evidence-upload` tree, and uploads
 `xp-native-evidence-<target>-<release_tag>`; workflow-generated candidate
 records, final records and review bundles must stay under
-`xp-evidence-output/<target>/<release_tag>`, and staged source and upload paths
-must not traverse symlinked parent directories.
+`xp-evidence-output/<target>/<release_tag>`, the staged XP artifact and
+evidence-output directories must include the target id and release tag as path
+segments, and staged source and upload paths must not traverse symlinked parent
+directories.
 
 `configs/platform_parity_promotion.json` and
 `python scripts/check_platform_parity_promotion.py` define the required evidence
@@ -127,14 +129,16 @@ i386]` and `[self-hosted, linux, armhf]` runners and uploads evidence artifacts
 without publishing a GitHub release. Before artifact upload it runs
 `python scripts/stage_extended_linux_evidence_upload.py`, stages the exact
 release-importable file set in a plain non-symlink `linux-evidence-upload` tree,
-rejects staged source or upload paths that traverse symlinked parent
-directories, and avoids uploading raw Linux builder output directories by wildcard. Each run also writes
+requires the staged source directory to include the target id and release tag as
+path segments, rejects staged source or upload paths that traverse symlinked
+parent directories, and avoids uploading raw Linux builder output directories by wildcard. Each run also writes
 `platform-verified-evidence-linux-i386.json` or
 `platform-verified-evidence-linux-armhf.json` into the uploaded evidence
 artifact and packages the review bundle with
 `python scripts/make_extended_linux_evidence_bundle.py`, whose output directory
-must be plain non-symlink without symlinked parent directories, and whose
-generated bundle files must be plain non-symlink paths. Accepted release
+must include the target id and release tag as path segments, must be plain
+non-symlink without symlinked parent directories, and whose generated bundle
+files must be plain non-symlink paths. Accepted release
 evidence records must be added to
 `configs/platform_verified_evidence.json` and pass
 `python scripts/check_platform_verified_evidence.py` before generated readiness
@@ -144,12 +148,12 @@ per-artifact SHA-256 digests, the Linux builder identity SHA-256 and the
 workflow dispatch inputs, `release_asset_source.workflow=.github/workflows/extended-platform-evidence.yml`,
 and the promotion config SHA-256 are derived from the same promotion contract.
 Linux records must also include the builder identity JSON emitted by
-`python3 scripts/check_extended_platform_builder.py --release-tag v<project.version> --workflow-run-url <github-actions-run-url> --source-head-sha <github-actions-head-sha> --out ...`; its
+`python3 scripts/check_extended_platform_builder.py --release-tag v<project.version> --workflow-run-url <github-actions-run-url> --workflow-run-attempt <github-actions-run-attempt> --source-head-sha <github-actions-head-sha> --out ...`; its
 `--out` path must be a plain non-symlink file without symlinked parent
 directories, `builder_identity_sha256` must
 match that JSON, generator input paths for the artifact directory, builder
 evidence and native smoke log must not traverse symlinked directories, and the JSON must bind the
-same `release_tag` and `workflow_run_url` as the accepted record while `source_head_sha` matches `release_asset_source.head_sha`, and also
+same `release_tag`, `workflow_run_url` and `workflow_run_attempt` as the accepted record while `source_head_sha` matches `release_asset_source.head_sha`, and also
 including a sanitized target-scoped `host_identity` block with
 `operator_private_data_redacted=true`, matching `platform.machine()` and
 `uname -m`, `dpkg --print-architecture`
@@ -178,8 +182,8 @@ traverse symlinked directories. Accepted release
 URLs must end in exact safe file names without query strings, fragments or
 path-qualified names. The default
 `python scripts/check_platform_verified_evidence.py` registry check is
-finalized-only; `--allow-unfinalized-candidates` is reserved for local
-candidate validation before append. The publish-time asset checker
+finalized-only, and candidate validation stays inside the generator, bundle
+and finalization commands before append. The publish-time asset checker
 revalidates finalized accepted evidence before trusting it, compares downloaded
 release file SHA-256 values against the accepted `artifact_sha256` map, requires
 the finalized review-bundle manifest/archive/SHA-256 sidecar files to be present
@@ -217,10 +221,10 @@ and the x64 evidence to include `os.service_pack=SP2` plus
 `operator_private_data_redacted=true`; do not record real usernames, personal
 hostnames, credentials or tokens in XP evidence.
 Package the validated XP evidence review artifact with
-`python scripts/make_xp_native_evidence_bundle.py --target <windows-xp-native-target> --evidence <evidence.json> --candidate-record <platform-verified-evidence-windows-xp-native-target.json> --assets-dir <artifact-dir> --out-dir <bundle-dir>`; the packer validates the full candidate record and requires the candidate XP validation command to match the bundled evidence inputs. XP accepted records must bind `release_asset_source.workflow=.github/workflows/xp-native-evidence.yml`.
-The XP bundle output directory must be plain non-symlink without symlinked
-parent directories, generated workflow bundle output must be target/release
-scoped, and generated bundle files must be plain non-symlink paths.
+`python scripts/make_xp_native_evidence_bundle.py --target <windows-xp-native-target> --evidence <target-release-evidence.json> --candidate-record <platform-verified-evidence-windows-xp-native-target.json> --assets-dir <target-release-artifact-dir> --evidence-dir <target-release-evidence-dir> --out-dir <xp-evidence-output-dir>`; the packer validates the full candidate record and requires the candidate XP validation command to match the bundled evidence inputs. XP accepted records must bind `release_asset_source.workflow=.github/workflows/xp-native-evidence.yml`.
+The XP bundle output directory must include the target id and release tag as
+path segments, must be plain non-symlink without symlinked parent directories,
+and generated bundle files must be plain non-symlink paths.
 Evidence generated by `python scripts/make_xp_native_evidence_template.py` is
 scaffolding only; any remaining `TODO`, `placeholder`, `replace with real` or
 `template evidence` marker in the JSON or referenced smoke files fails XP

@@ -198,6 +198,7 @@ RELEASE_ASSET_SOURCE_KEYS = {
     "artifact_name",
     "contains_files",
     "head_sha",
+    "run_attempt",
     "type",
     "workflow",
     "workflow_run_url",
@@ -287,11 +288,7 @@ def main(argv: list[str] | None = None) -> int:
     errors = check_platform_verified_evidence(
         required_targets=required_targets,
         required_release_tag=args.release_tag,
-        require_review_bundles=(
-            args.require_review_bundles
-            or args.require_goal_targets
-            or not args.allow_unfinalized_candidates
-        ),
+        require_review_bundles=True,
     )
     if errors:
         for error in errors:
@@ -335,8 +332,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--allow-unfinalized-candidates",
         action="store_true",
         help=(
-            "Allow candidate records without review_bundle digests. "
-            "Do not use for configs/platform_verified_evidence.json."
+            "Deprecated guardrail: rejected by this CLI because "
+            "configs/platform_verified_evidence.json is finalized-only."
         ),
     )
     parser.add_argument(
@@ -347,9 +344,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def strict_platform_goal_arg_errors(args: argparse.Namespace) -> list[str]:
+    errors: list[str] = []
+    if args.allow_unfinalized_candidates:
+        errors.append(
+            "--allow-unfinalized-candidates cannot be used with "
+            "configs/platform_verified_evidence.json; validate unfinalized "
+            "candidate records through the candidate-generation workflow before finalization"
+        )
     if args.require_goal_targets and not args.release_tag:
-        return ["--require-goal-targets requires --release-tag vX.Y.Z"]
-    return []
+        errors.append("--require-goal-targets requires --release-tag vX.Y.Z")
+    return errors
 
 
 def required_targets_from_args(args: argparse.Namespace) -> tuple[str, ...]:
@@ -572,6 +576,8 @@ def check_schema(registry: dict[str, Any]) -> list[str]:
         errors.append("platform verified evidence policy must require release-importable artifact source binding")
     if "release source head SHA binding" not in policy:
         errors.append("platform verified evidence policy must require release source head SHA binding")
+    if "release source run-attempt binding" not in policy:
+        errors.append("platform verified evidence policy must require release source run-attempt binding")
     if "protected platform goal records for one release must use one release source head SHA" not in policy:
         errors.append(
             "platform verified evidence policy must require protected platform goal source head SHA consistency"
@@ -610,6 +616,8 @@ def check_schema(registry: dict[str, Any]) -> list[str]:
         )
     if "XP release source artifact names must be target/release-scoped" not in policy:
         errors.append("platform verified evidence policy must require target/release-scoped XP release source artifacts")
+    if "XP accepted evidence command paths must be target/release-scoped" not in policy:
+        errors.append("platform verified evidence policy must require target/release-scoped XP accepted evidence paths")
     if "review bundle archive" not in policy:
         errors.append("platform verified evidence policy must require review bundle archive binding")
     if "safe relative non-symlink review bundle archive entries" not in policy:
@@ -700,8 +708,10 @@ def check_linux_evidence(
         errors.append(f"{target} artifact_name must be {expected_artifact_name}")
     source = entry.get("release_asset_source")
     source_head_sha = ""
+    source_run_attempt = None
     if isinstance(source, dict):
         source_head_sha = str(source.get("head_sha", "")).strip()
+        source_run_attempt = source.get("run_attempt")
         if source.get("workflow_run_url") != entry.get("workflow_run_url"):
             errors.append(f"{target} release_asset_source.workflow_run_url must match workflow_run_url")
         if source.get("artifact_name") != expected_artifact_name:
@@ -716,6 +726,7 @@ def check_linux_evidence(
             expected["machine_names"],
             release_tag=str(entry.get("release_tag", "")),
             workflow_run_url=str(entry.get("workflow_run_url", "")),
+            workflow_run_attempt=source_run_attempt,
             source_head_sha=source_head_sha,
         )
     )
@@ -892,6 +903,7 @@ def check_linux_builder_identity(
     *,
     release_tag: str,
     workflow_run_url: str,
+    workflow_run_attempt: object,
     source_head_sha: str,
 ) -> list[str]:
     if not isinstance(raw_identity, dict):
@@ -905,6 +917,10 @@ def check_linux_builder_identity(
         errors.append(f"{target} builder_identity release_tag must match record release_tag {release_tag}")
     if raw_identity.get("workflow_run_url") != workflow_run_url:
         errors.append(f"{target} builder_identity workflow_run_url must match record workflow_run_url")
+    if raw_identity.get("workflow_run_attempt") != workflow_run_attempt:
+        errors.append(
+            f"{target} builder_identity workflow_run_attempt must match release_asset_source.run_attempt"
+        )
     if raw_identity.get("source_head_sha") != source_head_sha:
         errors.append(f"{target} builder_identity source_head_sha must match release_asset_source.head_sha")
     sys_platform = str(raw_identity.get("sys_platform", ""))
@@ -936,6 +952,7 @@ def check_linux_builder_identity(
             target,
             release_tag,
             workflow_run_url,
+            workflow_run_attempt,
             raw_identity.get("host_identity"),
         )
     )
@@ -947,6 +964,7 @@ def check_linux_builder_host_identity(
     target: str,
     release_tag: str,
     workflow_run_url: str,
+    workflow_run_attempt: object,
     raw_identity: Any,
 ) -> list[str]:
     if not isinstance(raw_identity, dict):
@@ -962,6 +980,11 @@ def check_linux_builder_host_identity(
         )
     if raw_identity.get("workflow_run_url") != workflow_run_url:
         errors.append(f"{target} builder_identity host_identity.workflow_run_url must match record workflow_run_url")
+    if raw_identity.get("workflow_run_attempt") != workflow_run_attempt:
+        errors.append(
+            f"{target} builder_identity host_identity.workflow_run_attempt must match "
+            "release_asset_source.run_attempt"
+        )
     host_label = str(raw_identity.get("host_label", "")).strip()
     if not HOST_IDENTITY_LABEL_RE.fullmatch(host_label) or not host_label.startswith(f"{target}-"):
         errors.append(
@@ -2163,6 +2186,9 @@ def check_release_asset_source(
     head_sha = str(raw_source.get("head_sha", "")).strip()
     if not RELEASE_SOURCE_HEAD_SHA_RE.fullmatch(head_sha):
         errors.append(f"{target} release_asset_source.head_sha must be a 40-character lowercase Git SHA")
+    run_attempt = raw_source.get("run_attempt")
+    if not isinstance(run_attempt, int) or isinstance(run_attempt, bool) or run_attempt < 1:
+        errors.append(f"{target} release_asset_source.run_attempt must be a positive integer")
     raw_files = raw_source.get("contains_files")
     if not isinstance(raw_files, list) or not raw_files:
         errors.append(f"{target} release_asset_source.contains_files must be a non-empty list")
@@ -2561,6 +2587,13 @@ def check_linux_local_evidence_preflight_command(
             f"{target} local_evidence_preflight_command --linux-source-head-sha must match "
             "release_asset_source.head_sha"
         )
+    expected_run_attempt = str(source.get("run_attempt", "")) if isinstance(source, dict) else ""
+    source_run_attempts = command_argument_values(command, "--linux-source-run-attempt")
+    if source_run_attempts != [expected_run_attempt]:
+        errors.append(
+            f"{target} local_evidence_preflight_command --linux-source-run-attempt must match "
+            "release_asset_source.run_attempt"
+        )
     allow_extra_count = command_flag_count(command, "--allow-extra-artifacts")
     if allow_extra_count:
         errors.append(f"{target} local_evidence_preflight_command must not include --allow-extra-artifacts")
@@ -2579,6 +2612,7 @@ def check_xp_local_evidence_preflight_command(
         "--linux-smoke-evidence",
         "--linux-workflow-run-url",
         "--linux-source-head-sha",
+        "--linux-source-run-attempt",
     ):
         values = command_argument_values(command, forbidden)
         if values:
@@ -2586,6 +2620,33 @@ def check_xp_local_evidence_preflight_command(
     allow_extra_count = command_flag_count(command, "--allow-extra-artifacts")
     if allow_extra_count:
         errors.append(f"{target} local_evidence_preflight_command must not include --allow-extra-artifacts")
+
+    source = entry.get("release_asset_source")
+    expected_workflow_url = (
+        str(source.get("workflow_run_url", "")).rstrip("/")
+        if isinstance(source, dict)
+        else ""
+    )
+    workflow_urls = command_argument_values(command, "--xp-source-workflow-run-url")
+    if workflow_urls != [expected_workflow_url]:
+        errors.append(
+            f"{target} local_evidence_preflight_command --xp-source-workflow-run-url must match "
+            "release_asset_source.workflow_run_url"
+        )
+    expected_head_sha = str(source.get("head_sha", "")).strip() if isinstance(source, dict) else ""
+    source_head_shas = command_argument_values(command, "--xp-source-head-sha")
+    if source_head_shas != [expected_head_sha]:
+        errors.append(
+            f"{target} local_evidence_preflight_command --xp-source-head-sha must match "
+            "release_asset_source.head_sha"
+        )
+    expected_run_attempt = str(source.get("run_attempt", "")) if isinstance(source, dict) else ""
+    source_run_attempts = command_argument_values(command, "--xp-source-run-attempt")
+    if source_run_attempts != [expected_run_attempt]:
+        errors.append(
+            f"{target} local_evidence_preflight_command --xp-source-run-attempt must match "
+            "release_asset_source.run_attempt"
+        )
 
     native_paths = xp_native_evidence_validation_command_paths(
         str(entry.get("native_evidence_validation_command", ""))

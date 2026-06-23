@@ -123,7 +123,7 @@ def check_protected_platform_goal(
         record_validation_errors.extend(
             check_platform_verified_evidence(
                 registry=registry,
-                require_review_bundles=require_complete,
+                require_review_bundles=True,
                 check_consistency=False,
             )
         )
@@ -132,7 +132,7 @@ def check_protected_platform_goal(
                 registry=registry,
                 required_targets=PROTECTED_GOAL_TARGETS if require_complete else None,
                 required_release_tag=release_tag,
-                require_review_bundles=require_complete,
+                require_review_bundles=True,
             )
         )
         errors.extend(validation_errors)
@@ -198,6 +198,30 @@ def apply_required_release_tag(goal: dict[str, Any], release_tag: str) -> None:
         accepted_record = requirement.get("accepted_evidence_record")
         if isinstance(accepted_record, dict):
             accepted_record["release_tag"] = release_tag
+        for key in (
+            "required_artifacts",
+            "required_review_bundle_files",
+            "required_commands",
+            "release_asset_source_required",
+        ):
+            if key in requirement:
+                requirement[key] = replace_release_tag_placeholder(requirement[key], release_tag)
+
+
+def replace_release_tag_placeholder(value: Any, release_tag: str) -> Any:
+    if isinstance(value, str):
+        return value.replace("v<project.version>", release_tag).replace(
+            "<project.version>",
+            release_tag.removeprefix("v"),
+        )
+    if isinstance(value, list):
+        return [replace_release_tag_placeholder(item, release_tag) for item in value]
+    if isinstance(value, dict):
+        return {
+            key: replace_release_tag_placeholder(item, release_tag)
+            for key, item in value.items()
+        }
+    return value
 
 
 def format_goal_summary(goal: dict[str, Any]) -> str:
@@ -214,7 +238,8 @@ def format_goal_scope(goal: dict[str, Any]) -> str:
     accepted_count = int(goal.get("accepted_target_count", 0) or 0)
     aggregate_count = int(goal.get("aggregate_accepted_target_count", accepted_count) or 0)
     lines = [
-        "release scope: requires one release_tag, one GitHub release repository and one release source head SHA"
+        "release scope: requires one release_tag, one GitHub release repository, "
+        "one release source head SHA and per-record release source run attempts"
     ]
     if aggregate_count != accepted_count:
         lines.append(

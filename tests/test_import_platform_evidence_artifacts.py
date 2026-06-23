@@ -29,6 +29,7 @@ def test_import_record_downloads_expected_files_and_verifies_hashes(tmp_path: Pa
                 0,
                 stdout=json.dumps(
                     {
+                        "attempt": 1,
                         "status": "completed",
                         "conclusion": "success",
                         "event": "workflow_dispatch",
@@ -65,7 +66,7 @@ def test_import_record_downloads_expected_files_and_verifies_hashes(tmp_path: Pa
         "--repo",
         "example/remote-ops-workspace",
         "--json",
-        "conclusion,event,headSha,status,workflowName",
+        "attempt,conclusion,event,headSha,status,workflowName",
     ]
     assert commands[1][:4] == ["gh", "run", "download", "12345"]
     assert sorted(path.name for path in out_dir.iterdir()) == sorted(importer.expected_release_files(record))
@@ -664,6 +665,93 @@ def test_import_record_rejects_source_workflow_path_mismatch(tmp_path: Path, mon
     ) in errors
 
 
+def test_import_record_rejects_source_artifact_name_mismatch(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+    record["release_asset_source"]["artifact_name"] = "extended-linux-evidence-linux-armhf-v1.0.2"
+
+    def fail_run(*_args: Any, **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+        raise AssertionError("gh should not run when source artifact name is wrong")
+
+    monkeypatch.setattr(importer.subprocess, "run", fail_run)
+
+    errors = importer.import_record(
+        record,
+        out_dir=tmp_path / "release-assets",
+        download_root=tmp_path / "download",
+        dry_run=False,
+        release_head_sha=HEAD_SHA,
+    )
+
+    assert (
+        "linux-i386 release_asset_source.artifact_name must be "
+        "extended-linux-evidence-linux-i386-v1.0.2"
+    ) in errors
+
+
+def test_import_record_rejects_release_asset_url_tag_mismatch(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+    record["release_asset_urls"][0] = str(record["release_asset_urls"][0]).replace(
+        "/releases/download/v1.0.2/",
+        "/releases/download/v1.0.3/",
+    )
+
+    def fail_run(*_args: Any, **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+        raise AssertionError("gh should not run when release asset URL tag is wrong")
+
+    monkeypatch.setattr(importer.subprocess, "run", fail_run)
+
+    errors = importer.import_record(
+        record,
+        out_dir=tmp_path / "release-assets",
+        download_root=tmp_path / "download",
+        dry_run=False,
+        release_head_sha=HEAD_SHA,
+    )
+
+    assert any(
+        "linux-i386 release_asset_urls tag must match release_tag v1.0.2" in error
+        and "/releases/download/v1.0.3/" in error
+        for error in errors
+    )
+
+
+def test_import_record_rejects_source_workflow_repository_mismatch(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+    record["release_asset_source"]["workflow_run_url"] = (
+        "https://github.com/other/remote-ops-workspace/actions/runs/12345"
+    )
+
+    def fail_run(*_args: Any, **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+        raise AssertionError("gh should not run when source repository is wrong")
+
+    monkeypatch.setattr(importer.subprocess, "run", fail_run)
+
+    errors = importer.import_record(
+        record,
+        out_dir=tmp_path / "release-assets",
+        download_root=tmp_path / "download",
+        dry_run=False,
+        release_head_sha=HEAD_SHA,
+    )
+
+    assert (
+        "linux-i386 release_asset_source.workflow_run_url repository must match "
+        "release asset repositories ['example/remote-ops-workspace'], got other/remote-ops-workspace"
+    ) in errors
+
+
 def test_import_record_rejects_incomplete_or_non_dispatch_source_workflow_run(
     tmp_path: Path,
     monkeypatch,
@@ -726,6 +814,7 @@ def test_import_record_rejects_source_workflow_name_mismatch(tmp_path: Path, mon
             0,
             stdout=json.dumps(
                 {
+                    "attempt": 1,
                     "status": "completed",
                     "conclusion": "success",
                     "event": "workflow_dispatch",
@@ -824,6 +913,46 @@ def test_import_record_rejects_source_workflow_head_sha_mismatch(tmp_path: Path,
         f"linux-i386 release_asset_source workflow run headSha must match accepted record {HEAD_SHA}, "
         f"got '{'b' * 40}'"
     ) in errors
+
+
+def test_import_record_rejects_source_workflow_run_attempt_mismatch(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+
+    def fake_run(command: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        assert command[:3] == ["gh", "run", "view"]
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout=json.dumps(
+                {
+                    "attempt": 2,
+                    "status": "completed",
+                    "conclusion": "success",
+                    "event": "workflow_dispatch",
+                    "headSha": HEAD_SHA,
+                    "workflowName": "extended-platform-evidence",
+                }
+            ),
+        )
+
+    monkeypatch.setattr(importer.subprocess, "run", fake_run)
+
+    errors = importer.import_record(
+        record,
+        out_dir=tmp_path / "release-assets",
+        download_root=tmp_path / "download",
+        dry_run=False,
+        release_head_sha=HEAD_SHA,
+    )
+
+    assert (
+        "linux-i386 release_asset_source workflow run attempt must match accepted record 1, got 2"
+        in errors
+    )
 
 
 def test_import_record_rejects_release_checkout_head_sha_mismatch(tmp_path: Path, monkeypatch) -> None:
@@ -963,7 +1092,7 @@ def test_import_record_dry_run_can_verify_source_run_without_download(
             "--repo",
             "example/remote-ops-workspace",
             "--json",
-            "conclusion,event,headSha,status,workflowName",
+            "attempt,conclusion,event,headSha,status,workflowName",
         ]
     ]
     assert not (tmp_path / "download").exists()
@@ -1124,6 +1253,7 @@ def _successful_view(command: list[str]) -> subprocess.CompletedProcess[str]:
         0,
         stdout=json.dumps(
             {
+                "attempt": 1,
                 "status": "completed",
                 "conclusion": "success",
                 "event": "workflow_dispatch",

@@ -190,6 +190,7 @@ def test_verify_can_require_platform_goal_targets(tmp_path: Path) -> None:
     assert "--require-platform-goal-targets" not in default_publish.command
     assert "--require-platform-goal-targets" in strict_publish.command
     assert "--require-goal-targets" in strict_goal.command
+    assert "--require-review-bundles" in strict_goal.command
     assert ["--release-tag", "v1.0.3"] == strict_goal.command[-2:]
     assert ["--release-tag", "v1.0.3"] == strict_protected_report.command[-2:]
     assert "--require-complete" in strict_protected_gate.command

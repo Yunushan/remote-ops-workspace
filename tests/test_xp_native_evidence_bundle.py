@@ -29,7 +29,7 @@ def test_xp_native_evidence_bundle_packages_valid_x86_evidence(tmp_path: Path) -
     evidence.write_text(json.dumps(evidence_data, indent=2) + "\n", encoding="utf-8")
     candidate = tmp_path / f"platform-verified-evidence-{target}.json"
     _write_candidate_record(candidate, target, tag, evidence, evidence_data, assets, work_root=tmp_path)
-    out_dir = tmp_path / "bundle"
+    out_dir = tmp_path / "xp-evidence-output" / target / tag
 
     with _pushd(tmp_path):
         errors = bundler.make_xp_native_evidence_bundle(
@@ -38,7 +38,7 @@ def test_xp_native_evidence_bundle_packages_valid_x86_evidence(tmp_path: Path) -
             candidate_record=candidate.relative_to(tmp_path),
             assets_dir=assets.relative_to(tmp_path),
             evidence_dir=evidence_root.relative_to(tmp_path),
-            out_dir=Path("bundle"),
+            out_dir=out_dir.relative_to(tmp_path),
         )
 
     assert errors == []
@@ -90,6 +90,27 @@ def test_xp_native_evidence_bundle_packages_valid_x86_evidence(tmp_path: Path) -
         assert set(names).issubset(names_in_archive)
     assert f"{_sha256(manifest)}  {manifest.name}" in sidecar.read_text(encoding="utf-8")
     assert f"{_sha256(archive)}  {archive.name}" in sidecar.read_text(encoding="utf-8")
+
+
+def test_xp_native_evidence_bundle_rejects_unscoped_output_directory() -> None:
+    bundler = _load_bundle_script()
+
+    errors = bundler.check_target_release_path_segments(
+        "windows-xp-native-x86",
+        "v1.0.2",
+        Path("bundle"),
+        label="XP native evidence bundle output directory",
+    )
+
+    assert any(
+        "XP native evidence bundle output directory must include target path segment "
+        "'windows-xp-native-x86'" in error
+        for error in errors
+    )
+    assert any(
+        "XP native evidence bundle output directory must include release_tag path segment 'v1.0.2'" in error
+        for error in errors
+    )
 
 
 def test_xp_native_evidence_bundle_rejects_target_mismatch(tmp_path: Path) -> None:
@@ -723,6 +744,7 @@ def _write_candidate_record(
                 release_source_workflow_run_url="https://github.com/example/remote-ops-workspace/actions/runs/54321",
                 release_source_artifact_name=f"xp-native-evidence-{target}-{release_tag}",
                 release_source_head_sha="a" * 40,
+                release_source_run_attempt=1,
                 workflow_run_url="",
                 runner_label=[],
                 builder_evidence=None,

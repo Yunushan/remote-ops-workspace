@@ -43,30 +43,32 @@ REQUIRED_DOC_SNIPPETS = (
     "remote-ops-workspace-v1.0.2-macos-<x64|arm64>.pkg",
     "not uploaded by the default GitHub",
     "check_release_publish_assets.py --assets-dir release-assets --tag <tag> --require-platform-goal-targets",
-    "import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets",
+    "import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run",
+    "positive release source run attempt",
 )
 
 REQUIRED_TURKISH_DOC_SNIPPETS = (
     "![release](https://img.shields.io/badge/release-v1.0.2-blue)",
     "configs/platform_verified_evidence.json",
-    "python scripts/check_platform_verified_evidence.py --require-goal-targets --release-tag <tag>",
-    "python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets",
+    "python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag <tag>",
+    "python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run",
     "python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --require-platform-goal-targets",
     "Linux i386, Linux armhf, windows-xp-native-x86 ve windows-xp-native-x64",
-    "ayni GitHub release repository ve ayni release source head SHA",
+    "ayni GitHub release repository, ayni release source head SHA",
+    "pozitif release source run attempt",
     "Windows XP native-host readiness 25.0%",
 )
 
 REQUIRED_README_RELEASE_SECTION_SNIPPETS = (
     "python scripts/verify.py --quick --no-cli-smoke --release-tag <tag>",
     "python scripts/check_protected_platform_goal.py --release-tag <tag> --require-complete --show-requirements",
-    "python scripts/check_platform_verified_evidence.py --require-goal-targets --release-tag <tag>",
+    "python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag <tag>",
     "accepted-platform-evidence-assets",
-    "python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets",
+    "python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run",
     "Linux i386, Linux armhf, windows-xp-native-x86",
     "windows-xp-native-x64 require finalized accepted evidence records",
-    "same release tag, GitHub release repository and release",
-    "source head SHA before any 100% platform-readiness",
+    "same release tag, GitHub release repository, release",
+    "source head SHA and per-record release source run attempt before any 100%",
     "python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --require-platform-goal-targets",
     "configs/platform_verified_evidence.json",
     "accepted review-bundle hashes",
@@ -86,6 +88,10 @@ STALE_DEFAULT_ARTIFACT_SNIPPETS = (
     "remote-ops-workspace-v1.0.2-linux-<i686|x86_64|armhf|aarch64>-native.tar.gz",
     "remote-ops-workspace-v1.0.2-macos-<arch>.dmg",
     "remote-ops-workspace-v1.0.2-macos-<arch>.pkg",
+)
+
+STALE_PLATFORM_EVIDENCE_SNIPPETS = (
+    "`--allow-unfinalized-candidates` flag is only for local candidate checks before append",
 )
 
 
@@ -165,7 +171,7 @@ def check_release_preflight(workflow: str | None = None) -> list[str]:
             'python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" '
             "--require-complete --show-requirements"
         ): "hard protected platform goal completion gate",
-        'python scripts/check_platform_verified_evidence.py --require-goal-targets --release-tag "${{ github.ref_name }}"': (
+        'python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag "${{ github.ref_name }}"': (
             "strict accepted evidence registry gate"
         ),
         "python scripts/check_repository_cleanup.py --require-clean": "clean checkout requirement before tagging",
@@ -202,7 +208,7 @@ def check_accepted_platform_evidence_assets_job(workflow: str) -> list[str]:
         "GH_TOKEN: ${{ github.token }}": "GitHub token for gh run download",
         (
             'python scripts/import_platform_evidence_artifacts.py --release-tag "${{ github.ref_name }}" '
-            "--require-goal-targets --out-dir release-assets"
+            "--require-goal-targets --out-dir release-assets --verify-source-run"
         ): "accepted platform evidence artifact importer",
         (
             'python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets '
@@ -267,6 +273,9 @@ def check_release_docs() -> list[str]:
     for snippet in STALE_DEFAULT_ARTIFACT_SNIPPETS:
         if snippet in docs:
             errors.append(f"release docs still advertise stale default artifact pattern: {snippet}")
+    for snippet in STALE_PLATFORM_EVIDENCE_SNIPPETS:
+        if snippet in docs:
+            errors.append(f"release docs still advertise stale platform evidence workflow guidance: {snippet}")
     return errors
 
 

@@ -5,6 +5,10 @@ import json
 import sys
 from pathlib import Path
 
+XP_SOURCE_WORKFLOW_RUN_URL = "https://github.com/example/remote-ops-workspace/actions/runs/12345"
+XP_SOURCE_HEAD_SHA = "a" * 40
+XP_SOURCE_RUN_ATTEMPT = 1
+
 
 def test_platform_goal_local_evidence_rejects_missing_root(tmp_path: Path) -> None:
     checker = _load_local_evidence_checker()
@@ -577,6 +581,38 @@ def test_platform_goal_local_evidence_rejects_invalid_linux_run_bindings(tmp_pat
     assert f"{target} --linux-source-head-sha must be a 40-character lowercase Git SHA" in errors
 
 
+def test_platform_goal_local_evidence_requires_xp_source_bindings(tmp_path: Path) -> None:
+    checker = _load_local_evidence_checker()
+    target = "windows-xp-native-x86"
+    (tmp_path / target / "v1.0.2").mkdir(parents=True)
+
+    errors = checker.check_platform_goal_local_evidence(
+        root=tmp_path,
+        release_tag="v1.0.2",
+        targets=(target,),
+    )
+
+    assert f"{target} --xp-source-workflow-run-url is required for local XP evidence preflight" in errors
+    assert f"{target} --xp-source-head-sha is required for local XP evidence preflight" in errors
+
+
+def test_platform_goal_local_evidence_rejects_invalid_xp_source_bindings(tmp_path: Path) -> None:
+    checker = _load_local_evidence_checker()
+    target = "windows-xp-native-x64"
+    (tmp_path / target / "v1.0.2").mkdir(parents=True)
+
+    errors = checker.check_platform_goal_local_evidence(
+        root=tmp_path,
+        release_tag="v1.0.2",
+        targets=(target,),
+        xp_source_workflow_run_url="https://example.invalid/not-actions",
+        xp_source_head_sha="A" * 40,
+    )
+
+    assert f"{target} --xp-source-workflow-run-url must be a GitHub Actions run URL" in errors
+    assert f"{target} --xp-source-head-sha must be a 40-character lowercase Git SHA" in errors
+
+
 def test_platform_goal_local_evidence_accepts_xp_x86_staged_proof(tmp_path: Path) -> None:
     checker = _load_local_evidence_checker()
     fixtures = _load_record_fixtures()
@@ -603,6 +639,9 @@ def test_platform_goal_local_evidence_accepts_xp_x86_staged_proof(tmp_path: Path
         root=tmp_path,
         release_tag=tag,
         targets=(target,),
+        xp_source_workflow_run_url=XP_SOURCE_WORKFLOW_RUN_URL,
+        xp_source_head_sha=XP_SOURCE_HEAD_SHA,
+        xp_source_run_attempt=XP_SOURCE_RUN_ATTEMPT,
     )
 
     assert errors == []
@@ -825,6 +864,9 @@ def test_platform_goal_local_evidence_accepts_xp_explicit_target_scoped_paths(tm
         assets_dir=artifacts,
         xp_evidence=evidence_file,
         xp_evidence_dir=evidence_dir,
+        xp_source_workflow_run_url=XP_SOURCE_WORKFLOW_RUN_URL,
+        xp_source_head_sha=XP_SOURCE_HEAD_SHA,
+        xp_source_run_attempt=XP_SOURCE_RUN_ATTEMPT,
     )
 
     assert errors == []
@@ -858,6 +900,9 @@ def test_platform_goal_local_evidence_accepts_xp_workspace_prefixed_release_path
         assets_dir=artifacts,
         xp_evidence=evidence_file,
         xp_evidence_dir=evidence_dir,
+        xp_source_workflow_run_url=XP_SOURCE_WORKFLOW_RUN_URL,
+        xp_source_head_sha=XP_SOURCE_HEAD_SHA,
+        xp_source_run_attempt=XP_SOURCE_RUN_ATTEMPT,
     )
 
     assert errors == []
@@ -891,6 +936,9 @@ def test_platform_goal_local_evidence_rejects_xp_artifact_validation_assets_dir_
         root=tmp_path,
         release_tag=tag,
         targets=(target,),
+        xp_source_workflow_run_url=XP_SOURCE_WORKFLOW_RUN_URL,
+        xp_source_head_sha=XP_SOURCE_HEAD_SHA,
+        xp_source_run_attempt=XP_SOURCE_RUN_ATTEMPT,
     )
 
     assert (

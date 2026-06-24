@@ -18,6 +18,7 @@ from check_platform_verified_evidence import (  # noqa: E402
     EVIDENCE_PATH,
     KNOWN_TARGETS,
     PROTECTED_GOAL_TARGETS,
+    accepted_record_source_file,
     check_platform_verified_evidence,
     directory_path_has_file_suffix,
     exact_safe_file_name,
@@ -43,6 +44,7 @@ def main(argv: list[str] | None = None) -> int:
         bundle_dir=args.bundle_dir,
         required_targets=required_targets,
         required_release_tag=args.release_tag,
+        require_final_record_assets=args.require_final_record_assets,
     )
     if errors:
         for error in errors:
@@ -84,6 +86,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--release-tag",
         help="When requiring targets, require bundle-backed accepted evidence for this exact release tag.",
     )
+    parser.add_argument(
+        "--require-final-record-assets",
+        action="store_true",
+        help=(
+            "Also require each finalized public accepted-record JSON asset in --bundle-dir "
+            "and verify it matches the accepted registry entry."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -108,6 +118,7 @@ def check_platform_review_bundle_artifacts(
     bundle_dir: Path,
     required_targets: tuple[str, ...] | list[str] | set[str] | None = None,
     required_release_tag: str | None = None,
+    require_final_record_assets: bool = False,
 ) -> list[str]:
     validation_errors = check_platform_verified_evidence(
         registry=registry,
@@ -132,10 +143,39 @@ def check_platform_review_bundle_artifacts(
     if not bundle_root.is_dir():
         return [*validation_errors, f"review bundle directory missing: {bundle_dir}"]
     artifact_errors: list[str] = []
-    for record in rows:
+    for record in records_for_artifact_validation(
+        rows,
+        required_targets=required_targets,
+        required_release_tag=required_release_tag,
+    ):
         if isinstance(record, dict):
-            artifact_errors.extend(check_record_review_bundle_artifacts(record, bundle_root))
+            artifact_errors.extend(
+                check_record_review_bundle_artifacts(
+                    record,
+                    bundle_root,
+                    require_final_record_asset=require_final_record_assets,
+                )
+            )
     return [*validation_errors, *artifact_errors]
+
+
+def records_for_artifact_validation(
+    rows: list[Any],
+    *,
+    required_targets: tuple[str, ...] | list[str] | set[str] | None = None,
+    required_release_tag: str | None = None,
+) -> list[dict[str, Any]]:
+    target_filter = set(str(target) for target in (required_targets or ()))
+    records: list[dict[str, Any]] = []
+    for record in rows:
+        if not isinstance(record, dict):
+            continue
+        if target_filter and str(record.get("target", "")) not in target_filter:
+            continue
+        if required_release_tag and record.get("release_tag") != required_release_tag:
+            continue
+        records.append(record)
+    return records
 
 
 def has_record_scoped_validation_errors(errors: list[str], rows: list[Any]) -> bool:
@@ -147,7 +187,12 @@ def has_record_scoped_validation_errors(errors: list[str], rows: list[Any]) -> b
     return any(error.startswith(f"{target} ") for error in errors for target in targets)
 
 
-def check_record_review_bundle_artifacts(record: dict[str, Any], bundle_root: Path) -> list[str]:
+def check_record_review_bundle_artifacts(
+    record: dict[str, Any],
+    bundle_root: Path,
+    *,
+    require_final_record_asset: bool = False,
+) -> list[str]:
     target = str(record.get("target", ""))
     review_bundle = record.get("review_bundle")
     if not isinstance(review_bundle, dict):
@@ -201,7 +246,32 @@ def check_record_review_bundle_artifacts(record: dict[str, Any], bundle_root: Pa
     errors.extend(f"{target} {error}" for error in finalizer_errors)
     if not finalizer_errors and finalized != record:
         errors.append(f"{target} finalized review bundle record must match accepted evidence registry entry")
+    if require_final_record_asset:
+        errors.extend(check_final_record_asset(record, bundle_root))
     return errors
+
+
+def check_final_record_asset(record: dict[str, Any], bundle_root: Path) -> list[str]:
+    target = str(record.get("target", ""))
+    filename = accepted_record_source_file(target)
+    path = bundle_root / filename
+    if path.is_symlink():
+        return [f"{target} finalized accepted-record asset must not be a symlink: {filename}"]
+    if not path.is_file():
+        return [f"{target} finalized accepted-record asset missing from bundle directory: {filename}"]
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return [f"{target} finalized accepted-record asset is not readable JSON: {filename}: {exc}"]
+    if not isinstance(data, dict):
+        return [f"{target} finalized accepted-record asset must contain a JSON object: {filename}"]
+    if data != public_record(record):
+        return [f"{target} finalized accepted-record asset must match accepted registry record: {filename}"]
+    return []
+
+
+def public_record(record: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in record.items() if not str(key).startswith("_")}
 
 
 def prefinalized_candidate_record(record: dict[str, Any]) -> dict[str, Any]:

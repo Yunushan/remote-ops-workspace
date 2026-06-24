@@ -237,6 +237,8 @@ def test_platform_verified_readiness_tracks_partial_targets() -> None:
     assert goal["target_count"] == 4
     assert goal["complete"] is False
     assert goal["status"] == "missing-accepted-evidence"
+    assert goal["release_source_workflows"] == {}
+    assert goal["release_source_provenance_complete"] is False
     assert goal["missing_targets"] == [
         "linux-i386",
         "linux-armhf",
@@ -283,6 +285,14 @@ def test_platform_verified_readiness_tracks_partial_targets() -> None:
     assert "check_platform_goal_local_evidence.py" in requirements["linux-i386"]["required_commands"]["local_evidence_preflight_command"]
     assert requirements["linux-i386"]["security_requirements"] == LINUX_SECURITY_REQUIREMENTS
     assert requirements["linux-armhf"]["security_requirements"] == LINUX_SECURITY_REQUIREMENTS
+    assert (
+        "bind sanitized host label, deterministic evidence run ID and observed-at UTC timestamp into the native smoke log"
+        in requirements["linux-i386"]["smoke_evidence"]
+    )
+    assert (
+        "bind sanitized host label, deterministic evidence run ID and observed-at UTC timestamp into the native smoke log"
+        in requirements["linux-armhf"]["smoke_evidence"]
+    )
     assert requirements["windows-xp-native-x86"]["security_requirements"] == [
         "legacy TLS, SSH, and RDP compatibility must remain profile-scoped opt-in",
         "modern Windows 10/11, Linux, and macOS defaults must keep hardened crypto",
@@ -340,6 +350,12 @@ def test_platform_verified_readiness_promotes_only_with_accepted_evidence() -> N
     assert rows["linux-i386"]["accepted_evidence_release_source_heads"] == {
         "linux-i386": "a" * 40,
     }
+    assert rows["linux-i386"]["accepted_evidence_release_source_run_attempts"] == {
+        "linux-i386": 1,
+    }
+    assert rows["linux-i386"]["accepted_evidence_release_source_workflows"] == {
+        "linux-i386": ".github/workflows/extended-platform-evidence.yml",
+    }
     assert rows["linux-armhf"]["current_percent"] == 70.0
     assert rows["linux-armhf"]["verified_readiness_scope"] is False
     assert rows["Windows XP"]["current_percent"] == 25.0
@@ -347,9 +363,13 @@ def test_platform_verified_readiness_promotes_only_with_accepted_evidence() -> N
     assert rows["Windows XP"]["verified_readiness_scope"] is False
     assert rows["Windows XP"]["accepted_evidence_present_targets"] == ["windows-xp-native-x86"]
     assert rows["Windows XP"]["accepted_evidence_missing_targets"] == ["windows-xp-native-x64"]
+    assert rows["Windows XP"]["accepted_evidence_release_source_workflows"] == {
+        "windows-xp-native-x86": ".github/workflows/xp-native-evidence.yml",
+    }
     assert goal["current_percent"] == 50.0
     assert goal["accepted_targets"] == ["linux-i386", "windows-xp-native-x86"]
     assert goal["missing_targets"] == ["linux-armhf", "windows-xp-native-x64"]
+    assert goal["release_source_provenance_complete"] is False
     assert goal["complete"] is False
 
     evidence["accepted_evidence"].append(_xp_accepted_evidence("windows-xp-native-x64"))
@@ -378,9 +398,16 @@ def test_platform_verified_readiness_promotes_only_with_accepted_evidence() -> N
     assert rows["Windows XP"]["accepted_evidence_release_tags"] == {
         "windows-xp-native-x86": "v1.0.2",
     }
+    assert rows["Windows XP"]["accepted_evidence_release_source_run_attempts"] == {
+        "windows-xp-native-x86": 1,
+    }
+    assert rows["Windows XP"]["accepted_evidence_release_source_workflows"] == {
+        "windows-xp-native-x86": ".github/workflows/xp-native-evidence.yml",
+    }
     assert goal["current_percent"] == 50.0
     assert goal["accepted_targets"] == ["linux-i386", "windows-xp-native-x86"]
     assert goal["missing_targets"] == ["linux-armhf", "windows-xp-native-x64"]
+    assert goal["release_source_provenance_complete"] is False
 
 
 def test_platform_verified_readiness_goal_parity_completes_with_all_accepted_evidence() -> None:
@@ -408,6 +435,19 @@ def test_platform_verified_readiness_goal_parity_completes_with_all_accepted_evi
     assert goal["release_repositories"] == ["example/remote-ops-workspace"]
     assert goal["release_source_head"] == "a" * 40
     assert goal["release_source_heads"] == ["a" * 40]
+    assert goal["release_source_run_attempts"] == {
+        "linux-armhf": 1,
+        "linux-i386": 1,
+        "windows-xp-native-x64": 1,
+        "windows-xp-native-x86": 1,
+    }
+    assert goal["release_source_workflows"] == {
+        "linux-armhf": ".github/workflows/extended-platform-evidence.yml",
+        "linux-i386": ".github/workflows/extended-platform-evidence.yml",
+        "windows-xp-native-x64": ".github/workflows/xp-native-evidence.yml",
+        "windows-xp-native-x86": ".github/workflows/xp-native-evidence.yml",
+    }
+    assert goal["release_source_provenance_complete"] is True
     assert goal["release_consistent"] is True
     assert goal["release_repository_consistent"] is True
     assert goal["release_source_head_consistent"] is True
@@ -537,6 +577,14 @@ def test_platform_verified_readiness_goal_parity_requires_one_release_source_hea
     assert rows["Windows XP"]["accepted_evidence_release_source_heads"] == {
         "windows-xp-native-x86": "a" * 40,
         "windows-xp-native-x64": "b" * 40,
+    }
+    assert rows["Windows XP"]["accepted_evidence_release_source_run_attempts"] == {
+        "windows-xp-native-x86": 1,
+        "windows-xp-native-x64": 1,
+    }
+    assert rows["Windows XP"]["accepted_evidence_release_source_workflows"] == {
+        "windows-xp-native-x86": ".github/workflows/xp-native-evidence.yml",
+        "windows-xp-native-x64": ".github/workflows/xp-native-evidence.yml",
     }
     assert goal["current_percent"] == 75.0
     assert goal["gap_percent"] == 25.0
@@ -837,6 +885,38 @@ def test_platform_verified_readiness_ignores_release_asset_source_workflow_drift
 def test_platform_verified_readiness_ignores_builder_identity_source_head_sha_mismatch() -> None:
     record = _linux_accepted_evidence("linux-i386")
     record["builder_identity"]["source_head_sha"] = "b" * 40
+    record["builder_identity_sha256"] = _json_sha256(record["builder_identity"])
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["linux-i386"]["current_percent"] == 70.0
+    assert rows["linux-i386"]["status"] == "manual-script-supported"
+    assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
+
+
+def test_platform_verified_readiness_ignores_builder_identity_observed_git_head_sha_mismatch() -> None:
+    record = _linux_accepted_evidence("linux-i386")
+    record["builder_identity"]["observed_git_head_sha"] = "b" * 40
+    record["builder_identity_sha256"] = _json_sha256(record["builder_identity"])
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["linux-i386"]["current_percent"] == 70.0
+    assert rows["linux-i386"]["status"] == "manual-script-supported"
+    assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
+
+
+def test_platform_verified_readiness_ignores_dirty_builder_git_worktree() -> None:
+    record = _linux_accepted_evidence("linux-i386")
+    record["builder_identity"]["git_worktree_clean"] = False
     record["builder_identity_sha256"] = _json_sha256(record["builder_identity"])
 
     report = _platform_verified_readiness(
@@ -1469,6 +1549,21 @@ def test_platform_verified_readiness_ignores_mismatched_xp_evidence_summary() ->
     assert rows["Windows XP"]["accepted_evidence_present_targets"] == []
 
 
+def test_platform_verified_readiness_ignores_xp_evidence_summary_release_source_mismatch() -> None:
+    record = _xp_accepted_evidence("windows-xp-native-x86")
+    record["xp_evidence_summary"]["release_source"]["head_sha"] = "b" * 40
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["Windows XP"]["current_percent"] == 25.0
+    assert rows["Windows XP"]["status"] == "remote-target-only"
+    assert rows["Windows XP"]["accepted_evidence_present_targets"] == []
+
+
 def test_platform_verified_readiness_ignores_missing_xp_smoke_commands() -> None:
     record = _xp_accepted_evidence("windows-xp-native-x86")
     del record["xp_evidence_summary"]["smoke_commands"]
@@ -1578,6 +1673,46 @@ def test_platform_verified_readiness_ignores_xp_smoke_command_proof_file_mismatc
         "scripts/xp_smoke_runner.cmd --target windows-xp-native-x86 --release-tag v1.0.2 "
         "--smoke-id cli_launch --evidence-file xp-smoke-evidence/cli_launch.txt "
         "--proof-file xp-smoke-proof/other.txt"
+    )
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["Windows XP"]["current_percent"] == 25.0
+    assert rows["Windows XP"]["status"] == "remote-target-only"
+    assert rows["Windows XP"]["accepted_evidence_present_targets"] == []
+
+
+def test_platform_verified_readiness_ignores_xp_smoke_command_source_head_mismatch() -> None:
+    record = _xp_accepted_evidence("windows-xp-native-x86")
+    record["xp_evidence_summary"]["smoke_commands"]["cli_launch"] = record["xp_evidence_summary"][
+        "smoke_commands"
+    ]["cli_launch"].replace(
+        "--source-head-sha aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "--source-head-sha bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    )
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["Windows XP"]["current_percent"] == 25.0
+    assert rows["Windows XP"]["status"] == "remote-target-only"
+    assert rows["Windows XP"]["accepted_evidence_present_targets"] == []
+
+
+def test_platform_verified_readiness_ignores_xp_smoke_command_observed_at_mismatch() -> None:
+    record = _xp_accepted_evidence("windows-xp-native-x86")
+    record["xp_evidence_summary"]["smoke_commands"]["cli_launch"] = record["xp_evidence_summary"][
+        "smoke_commands"
+    ]["cli_launch"].replace(
+        "--observed-at-utc 2026-06-20T12:00:00Z",
+        "--observed-at-utc 2026-06-20T12:30:00Z",
     )
 
     report = _platform_verified_readiness(
@@ -1815,7 +1950,7 @@ def _linux_accepted_evidence(target: str) -> dict[str, object]:
         "native_smoke_command": (
             f"bash scripts/smoke_linux_native.sh --arch {arch} --dist native-dist/linux "
             f"--target {target} --workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
-            f"--source-head-sha {'a' * 40}"
+            f"--workflow-run-attempt 1 --source-head-sha {'a' * 40}"
         ),
         "linux_smoke_evidence_sha256": linux_smoke_hashes,
         "local_evidence_preflight_command": (
@@ -1941,6 +2076,8 @@ def _builder_identity(target: str) -> dict[str, object]:
         "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
         "workflow_run_attempt": 1,
         "source_head_sha": "a" * 40,
+        "observed_git_head_sha": "a" * 40,
+        "git_worktree_clean": True,
         "host_identity": _linux_host_identity(target),
         "sudo_non_interactive": True,
         "sys_platform": "linux",
@@ -2081,6 +2218,7 @@ def _xp_evidence_summary(target: str) -> dict[str, object]:
             "separate_legacy_toolchain": True,
             "current_python_pyqt6_stack": False,
         },
+        "release_source": _xp_release_source_summary(target),
         "security": {
             "legacy_crypto_profile_scoped": True,
             "modern_defaults_unchanged": True,
@@ -2090,6 +2228,15 @@ def _xp_evidence_summary(target: str) -> dict[str, object]:
         "smoke_ids": sorted(_xp_smoke_hashes()),
         "smoke_evidence_files": _xp_smoke_evidence_files(),
         "smoke_commands": _xp_smoke_commands(target),
+    }
+
+
+def _xp_release_source_summary(target: str) -> dict[str, object]:
+    return {
+        "workflow": _release_source_workflow(target),
+        "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        "head_sha": "a" * 40,
+        "run_attempt": 1,
     }
 
 
@@ -2165,13 +2312,28 @@ def _xp_evidence_sources(
 
 def _xp_smoke_commands(target: str) -> dict[str, str]:
     host_identity = _xp_host_identity(target)
+    os_identity = host_identity["os"]
+    assert isinstance(os_identity, dict)
+    release_source = _xp_release_source_summary(target)
     return {
         smoke_id: (
             f"scripts/xp_smoke_runner.cmd --target {target} --release-tag v1.0.2 "
             f"--smoke-id {smoke_id} --evidence-file xp-smoke-evidence/{smoke_id}.txt "
             f"--proof-file xp-smoke-proof/{smoke_id}.txt "
             f"--host-label {host_identity['host_label']} "
-            f"--evidence-run-id {host_identity['evidence_run_id']}"
+            f"--evidence-run-id {host_identity['evidence_run_id']} "
+            f"--observed-at-utc {host_identity['observed_at_utc']} "
+            f"--source-workflow-run-url {release_source['workflow_run_url']} "
+            f"--source-head-sha {release_source['head_sha']} "
+            f"--source-run-attempt {release_source['run_attempt']} "
+            f'--os-name "{os_identity["name"]}" '
+            f"--os-architecture {os_identity['architecture']} "
+            f"--os-service-pack {os_identity['service_pack']}"
+            + (
+                f' --os-edition "{os_identity["edition"]}"'
+                if "edition" in os_identity
+                else ""
+            )
         )
         for smoke_id in sorted(_xp_smoke_hashes())
     }
@@ -2229,10 +2391,30 @@ def _replace_release_source_head(record: dict[str, object], head_sha: str) -> No
     assert isinstance(source, dict)
     old_head = str(source.get("head_sha", ""))
     source["head_sha"] = head_sha
+    builder_identity = record.get("builder_identity")
+    if isinstance(builder_identity, dict):
+        builder_identity["source_head_sha"] = head_sha
+        builder_identity["observed_git_head_sha"] = head_sha
+        record["builder_identity_sha256"] = _json_sha256(builder_identity)
+        linux_sources = record.get("linux_evidence_sources")
+        if isinstance(linux_sources, dict) and isinstance(linux_sources.get("builder_identity"), dict):
+            linux_sources["builder_identity"]["sha256"] = record["builder_identity_sha256"]
     if isinstance(record.get("local_evidence_preflight_command"), str) and old_head:
         record["local_evidence_preflight_command"] = str(
             record["local_evidence_preflight_command"]
         ).replace(old_head, head_sha)
+    for field in ("native_smoke_command", "local_evidence_preflight_command"):
+        if isinstance(record.get(field), str) and old_head:
+            record[field] = str(record[field]).replace(old_head, head_sha)
+    xp_summary = record.get("xp_evidence_summary")
+    if isinstance(xp_summary, dict):
+        xp_source = xp_summary.get("release_source")
+        if isinstance(xp_source, dict):
+            xp_source["head_sha"] = head_sha
+        smoke_commands = xp_summary.get("smoke_commands")
+        if isinstance(smoke_commands, dict) and old_head:
+            for smoke_id, command in smoke_commands.items():
+                smoke_commands[smoke_id] = str(command).replace(old_head, head_sha)
 
 
 def _security_patch_evidence() -> dict[str, object]:

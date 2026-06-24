@@ -5,8 +5,11 @@ import sys
 from pathlib import Path
 
 
-def test_builder_identity_context_accepts_release_run_and_source_sha() -> None:
+def test_builder_identity_context_accepts_release_run_and_source_sha(monkeypatch) -> None:
     builder = _load_builder()
+    _clear_github_env(monkeypatch)
+    monkeypatch.setattr(builder, "git_head_sha", lambda: "a" * 40)
+    monkeypatch.setattr(builder, "git_status_porcelain", lambda: "")
 
     errors = builder.check_builder_identity_context(
         "linux-i386",
@@ -33,8 +36,110 @@ def test_builder_identity_context_requires_lowercase_source_sha() -> None:
     assert "linux-armhf builder identity --source-head-sha must be a 40-character lowercase Git SHA" in errors
 
 
-def test_builder_identity_records_source_head_sha() -> None:
+def test_builder_identity_context_requires_observed_git_head(monkeypatch) -> None:
     builder = _load_builder()
+    _clear_github_env(monkeypatch)
+    monkeypatch.setattr(builder, "git_head_sha", lambda: "")
+    monkeypatch.setattr(builder, "git_status_porcelain", lambda: "")
+
+    errors = builder.check_builder_identity_context(
+        "linux-i386",
+        "v1.0.2",
+        "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        1,
+        "a" * 40,
+    )
+
+    assert "linux-i386 builder identity requires git rev-parse HEAD for source head binding" in errors
+
+
+def test_builder_identity_context_rejects_observed_git_head_mismatch(monkeypatch) -> None:
+    builder = _load_builder()
+    _clear_github_env(monkeypatch)
+    monkeypatch.setattr(builder, "git_head_sha", lambda: "b" * 40)
+    monkeypatch.setattr(builder, "git_status_porcelain", lambda: "")
+
+    errors = builder.check_builder_identity_context(
+        "linux-i386",
+        "v1.0.2",
+        "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        1,
+        "a" * 40,
+    )
+
+    assert (
+        f"linux-i386 builder identity observed git HEAD {'b' * 40} "
+        f"must match --source-head-sha {'a' * 40}"
+    ) in errors
+
+
+def test_builder_identity_context_requires_git_status_for_clean_checkout(monkeypatch) -> None:
+    builder = _load_builder()
+    _clear_github_env(monkeypatch)
+    monkeypatch.setattr(builder, "git_head_sha", lambda: "a" * 40)
+    monkeypatch.setattr(builder, "git_status_porcelain", lambda: None)
+
+    errors = builder.check_builder_identity_context(
+        "linux-i386",
+        "v1.0.2",
+        "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        1,
+        "a" * 40,
+    )
+
+    assert "linux-i386 builder identity requires git status --porcelain for clean checkout proof" in errors
+
+
+def test_builder_identity_context_rejects_dirty_git_worktree(monkeypatch) -> None:
+    builder = _load_builder()
+    _clear_github_env(monkeypatch)
+    monkeypatch.setattr(builder, "git_head_sha", lambda: "a" * 40)
+    monkeypatch.setattr(builder, "git_status_porcelain", lambda: "M scripts/check_extended_platform_builder.py")
+
+    errors = builder.check_builder_identity_context(
+        "linux-i386",
+        "v1.0.2",
+        "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        1,
+        "a" * 40,
+    )
+
+    assert "linux-i386 builder identity requires a clean git worktree before native build" in errors
+
+
+def test_builder_identity_context_rejects_github_actions_env_mismatch(monkeypatch) -> None:
+    builder = _load_builder()
+    monkeypatch.setattr(builder, "git_head_sha", lambda: "a" * 40)
+    monkeypatch.setattr(builder, "git_status_porcelain", lambda: "")
+    monkeypatch.setenv("GITHUB_SHA", "b" * 40)
+    monkeypatch.setenv("GITHUB_RUN_ATTEMPT", "2")
+    monkeypatch.setenv("GITHUB_RUN_ID", "54321")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "other/remote-ops-workspace")
+
+    errors = builder.check_builder_identity_context(
+        "linux-i386",
+        "v1.0.2",
+        "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        1,
+        "a" * 40,
+    )
+
+    assert f"linux-i386 GITHUB_SHA {'b' * 40} must match --source-head-sha {'a' * 40}" in errors
+    assert "linux-i386 GITHUB_RUN_ATTEMPT 2 must match --workflow-run-attempt 1" in errors
+    assert (
+        "linux-i386 GITHUB_RUN_ID 54321 must match --workflow-run-url "
+        "https://github.com/example/remote-ops-workspace/actions/runs/12345"
+    ) in errors
+    assert (
+        "linux-i386 GITHUB_REPOSITORY other/remote-ops-workspace must match --workflow-run-url "
+        "https://github.com/example/remote-ops-workspace/actions/runs/12345"
+    ) in errors
+
+
+def test_builder_identity_records_source_head_sha(monkeypatch) -> None:
+    builder = _load_builder()
+    monkeypatch.setattr(builder, "git_head_sha", lambda: "a" * 40)
+    monkeypatch.setattr(builder, "git_worktree_clean", lambda: True)
 
     identity = builder.builder_identity(
         "linux-i386",
@@ -47,6 +152,8 @@ def test_builder_identity_records_source_head_sha() -> None:
     assert identity["workflow_run_attempt"] == 1
     assert identity["host_identity"]["workflow_run_attempt"] == 1
     assert identity["source_head_sha"] == "a" * 40
+    assert identity["observed_git_head_sha"] == "a" * 40
+    assert identity["git_worktree_clean"] is True
 
 
 def test_builder_identity_output_path_requires_target_scoped_name(tmp_path: Path) -> None:
@@ -69,3 +176,8 @@ def _load_builder():
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def _clear_github_env(monkeypatch) -> None:
+    for name in ("GITHUB_SHA", "GITHUB_RUN_ATTEMPT", "GITHUB_RUN_ID", "GITHUB_REPOSITORY"):
+        monkeypatch.delenv(name, raising=False)

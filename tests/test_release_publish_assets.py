@@ -32,18 +32,24 @@ POLICY = (
     "Linux builder identity evidence, builder identity "
     "SHA-256, builder identity release/run binding, "
     "Linux builder/smoke source file binding, "
+    "Linux builder/smoke host identity binding, "
     "Linux builder source head SHA binding, "
+    "Linux builder observed Git HEAD binding, "
+    "Linux builder clean checkout binding, "
     "Linux builder host identity binding when applicable, "
     "Linux builder rpm and non-interactive sudo evidence, Linux security patch evidence, "
     "Linux security smoke proof-line binding, "
     "Linux native build and smoke command provenance, "
     "Linux smoke evidence SHA-256, Linux smoke release/run/source head SHA binding, "
     "Linux smoke runtime architecture and userland binding, "
+    "Linux smoke sanitized host identity and observed-at timestamp binding, "
     "Linux workflow dispatch inputs when applicable, XP workflow dispatch inputs when applicable, "
-    "XP evidence source file binding, XP evidence bundle SHA-256 digests, "
+    "XP evidence source file binding, XP evidence release source binding, "
+    "XP evidence bundle SHA-256 digests, "
     "XP evidence validation command binding, XP evidence contract SHA-256, "
     "XP evidence summary binding, XP host identity SHA-256 binding, XP smoke host identity binding, "
-    "XP security patch evidence, "
+    "XP smoke observed-at timestamp binding, XP smoke OS identity binding, "
+    "XP smoke host probe proof-line binding, XP security patch evidence, "
     "tracked scripts/xp_smoke_runner.cmd XP smoke command provenance, "
     "canonical XP smoke proof-file command binding, "
     "canonical XP smoke evidence-file summary binding and "
@@ -55,9 +61,12 @@ POLICY = (
     "the promotion config SHA-256, have a unique target, include no unrecognized top-level fields, "
     "all release evidence for one record must "
     "use the same GitHub repository, protected platform goal records for one release must use "
-    "one release source head SHA, partial protected platform goal records must use one release_tag, "
-    "GitHub repository and release source head SHA before promotion, and Windows XP x86/x64 pairs must use the same release_tag, "
-    "GitHub repository and release source head SHA. "
+    "one release source head SHA and target-specific release source workflow files plus positive release source run attempts, "
+    "partial protected platform goal records must use one release_tag, GitHub repository, "
+    "target-specific release source workflow file, release source head SHA "
+    "and positive release source run attempt before promotion, and Windows XP x86/x64 pairs must use the same release_tag, "
+    "GitHub repository, target-specific release source workflow file, release source head SHA "
+    "and positive release source run attempts. "
     "Empty means no promotion."
 )
 MOBA_PARITY_POLICY = (
@@ -326,6 +335,18 @@ def test_publish_contract_requires_platform_review_bundle_validation() -> None:
     errors = checker.check_platform_evidence_import_job(workflow)
 
     assert any("imported platform review bundle validator" in error for error in errors)
+
+
+def test_publish_contract_requires_platform_final_record_asset_validation() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        " --require-final-record-assets",
+        "",
+    )
+
+    errors = checker.check_platform_evidence_import_job(workflow)
+
+    assert any("imported finalized accepted-record asset validator" in error for error in errors)
 
 
 def test_publish_contract_requires_platform_review_bundle_validation_before_upload() -> None:
@@ -1220,7 +1241,7 @@ def _linux_accepted_evidence(target: str) -> dict[str, object]:
         "native_smoke_command": (
             f"bash scripts/smoke_linux_native.sh --arch {arch} --dist native-dist/linux "
             f"--target {target} --workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
-            f"--source-head-sha {'a' * 40}"
+            f"--workflow-run-attempt 1 --source-head-sha {'a' * 40}"
         ),
         "linux_smoke_evidence_sha256": linux_smoke_hashes,
         "local_evidence_preflight_command": (
@@ -1283,9 +1304,11 @@ def _xp_accepted_evidence(target: str) -> dict[str, object]:
     if arch == "x64":
         os_summary["edition"] = "Professional x64 Edition"
     host_identity = _xp_host_identity(target)
+    release_source = _xp_release_source_summary(target)
     evidence_summary: dict[str, object] = {
         "target": target,
         "release_tag": "v1.0.2",
+        "release_source": release_source,
         "host_identity": host_identity,
         "os": os_summary,
         "toolchain": {
@@ -1309,7 +1332,19 @@ def _xp_accepted_evidence(target: str) -> dict[str, object]:
                 f"--smoke-id {smoke_id} --evidence-file xp-smoke-evidence/{smoke_id}.txt "
                 f"--proof-file xp-smoke-proof/{smoke_id}.txt "
                 f"--host-label {host_identity['host_label']} "
-                f"--evidence-run-id {host_identity['evidence_run_id']}"
+                f"--evidence-run-id {host_identity['evidence_run_id']} "
+                f"--observed-at-utc {host_identity['observed_at_utc']} "
+                f"--source-workflow-run-url {release_source['workflow_run_url']} "
+                f"--source-head-sha {release_source['head_sha']} "
+                f"--source-run-attempt {release_source['run_attempt']} "
+                f'--os-name "{os_summary["name"]}" '
+                f"--os-architecture {os_summary['architecture']} "
+                f"--os-service-pack {os_summary['service_pack']}"
+                + (
+                    f' --os-edition "{os_summary["edition"]}"'
+                    if "edition" in os_summary
+                    else ""
+                )
             )
             for smoke_id in smoke_ids
         },
@@ -1465,6 +1500,15 @@ def _release_source_workflow(target: str) -> str:
     return ".github/workflows/xp-native-evidence.yml"
 
 
+def _xp_release_source_summary(target: str) -> dict[str, object]:
+    return {
+        "workflow": _release_source_workflow(target),
+        "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        "head_sha": "a" * 40,
+        "run_attempt": 1,
+    }
+
+
 def _linux_smoke_hashes() -> dict[str, str]:
     return {"native_smoke": "6" * 64}
 
@@ -1560,6 +1604,8 @@ def _builder_identity(target: str) -> dict[str, object]:
         "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
         "workflow_run_attempt": 1,
         "source_head_sha": "a" * 40,
+        "observed_git_head_sha": "a" * 40,
+        "git_worktree_clean": True,
         "host_identity": _linux_host_identity(target),
         "sudo_non_interactive": True,
         "sys_platform": "linux",

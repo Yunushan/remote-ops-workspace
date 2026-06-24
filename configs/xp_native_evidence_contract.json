@@ -35,6 +35,12 @@
     "evidence_file",
     "evidence_sha256"
   ],
+  "required_release_source_fields": [
+    "workflow",
+    "workflow_run_url",
+    "head_sha",
+    "run_attempt"
+  ],
   "required_smoke_command_bindings": [
     "scripts/xp_smoke_runner.cmd",
     "--target <target>",
@@ -43,7 +49,11 @@
     "--evidence-file <evidence_file>",
     "--proof-file xp-smoke-proof/<smoke_id>.txt",
     "--host-label <host_label>",
-    "--evidence-run-id <evidence_run_id>"
+    "--evidence-run-id <evidence_run_id>",
+    "--observed-at-utc <observed_at_utc>",
+    "--source-workflow-run-url <github-actions-run-url>",
+    "--source-head-sha <github-actions-head-sha>",
+    "--source-run-attempt <github-actions-run-attempt>"
   ],
   "required_smoke_command_prefix": "scripts/xp_smoke_runner.cmd",
   "smoke_evidence_root": "Evidence files are resolved relative to the evidence JSON directory unless --evidence-dir is provided.",
@@ -52,8 +62,22 @@
     "xp smoke target: <target>",
     "xp smoke release: <release_tag>",
     "xp smoke id: <smoke_id>",
+    "xp smoke os name: <os.name>",
+    "xp smoke os architecture: <os.architecture>",
+    "xp smoke os service pack: <os.service_pack>",
+    "xp smoke os edition: <os.edition when required>",
+    "xp smoke host probe command: ver",
+    "xp smoke host probe output: <ver output>",
+    "xp smoke processor architecture env: <PROCESSOR_ARCHITECTURE>",
+    "xp smoke processor architecture w6432 env: <PROCESSOR_ARCHITEW6432 or empty>",
+    "xp smoke wmic os caption: <wmic Caption>",
+    "xp smoke wmic os csdversion: <wmic CSDVersion>",
     "xp smoke host label: <host_label>",
-    "xp smoke evidence run id: <evidence_run_id>"
+    "xp smoke evidence run id: <evidence_run_id>",
+    "xp smoke observed at utc: <observed_at_utc>",
+    "xp smoke source workflow run: <github-actions-run-url>",
+    "xp smoke source head sha: <github-actions-head-sha>",
+    "xp smoke source run attempt: <github-actions-run-attempt>"
   ],
   "required_security_smoke_evidence_lines": {
     "legacy_crypto_profile_scoped": [

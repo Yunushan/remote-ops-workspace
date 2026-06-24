@@ -44,17 +44,50 @@ REQUIRED_DOC_SNIPPETS = (
     "not uploaded by the default GitHub",
     "check_release_publish_assets.py --assets-dir release-assets --tag <tag> --require-platform-goal-targets",
     "import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run",
+    "check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag <tag> --require-final-record-assets",
+    "downloaded source artifact native artifact SHA-256 values plus review-bundle size/SHA-256 values",
+    "workflow-file, source-head and",
+    "run-attempt-bound accepted Linux i386, Linux armhf and Windows XP native-host artifacts",
+    "target-specific release source workflow file",
     "positive release source run attempt",
+    "observed_git_head_sha",
+    "git_worktree_clean",
+    "observed Git HEAD SHA matching the release source head SHA",
+    "--observed-at-utc",
+    "--source-workflow-run-url",
+    "--source-head-sha",
+    "--source-run-attempt",
+    "--os-name",
+    "--os-architecture",
+    "--os-service-pack",
+    "xp smoke observed at utc",
+    "xp smoke source workflow run",
+    "xp smoke source head sha",
+    "xp smoke source run attempt",
+    "xp smoke os name",
+    "xp smoke os architecture",
+    "xp smoke os service pack",
+    "xp smoke host probe command",
+    "xp smoke processor architecture env",
+    "xp smoke wmic os caption",
+    "wmic os get Caption,CSDVersion /value",
+    "xp_evidence_summary.release_source",
 )
 
 REQUIRED_TURKISH_DOC_SNIPPETS = (
     "![release](https://img.shields.io/badge/release-v1.0.2-blue)",
     "configs/platform_verified_evidence.json",
+    "python scripts/check_protected_platform_goal.py --release-tag <tag> --require-complete --show-requirements",
     "python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag <tag>",
     "python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run",
+    "python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag <tag> --require-final-record-assets",
+    "indirilen source artifact native",
+    "ayni tag/repository/workflow file path/source-head/run-attempt",
+    "target'a ozel release source workflow file path",
     "python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --require-platform-goal-targets",
     "Linux i386, Linux armhf, windows-xp-native-x86 ve windows-xp-native-x64",
-    "ayni GitHub release repository, ayni release source head SHA",
+    "ayni GitHub release repository, target'a ozel release source workflow file path",
+    "ayni release source head SHA",
     "pozitif release source run attempt",
     "Windows XP native-host readiness 25.0%",
 )
@@ -65,10 +98,15 @@ REQUIRED_README_RELEASE_SECTION_SNIPPETS = (
     "python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag <tag>",
     "accepted-platform-evidence-assets",
     "python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run",
+    "python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag <tag> --require-final-record-assets",
+    "downloaded source artifact native artifact SHA-256 values",
+    "workflow-file, source-head and",
+    "run-attempt-bound accepted evidence artifacts",
     "Linux i386, Linux armhf, windows-xp-native-x86",
     "windows-xp-native-x64 require finalized accepted evidence records",
-    "same release tag, GitHub release repository, release",
-    "source head SHA and per-record release source run attempt before any 100%",
+    "same release tag, GitHub release repository",
+    "target-specific release source workflow file",
+    "release source head SHA and per-record release source run attempt before any 100%",
     "python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --require-platform-goal-targets",
     "configs/platform_verified_evidence.json",
     "accepted review-bundle hashes",
@@ -92,6 +130,8 @@ STALE_DEFAULT_ARTIFACT_SNIPPETS = (
 
 STALE_PLATFORM_EVIDENCE_SNIPPETS = (
     "`--allow-unfinalized-candidates` flag is only for local candidate checks before append",
+    "source-head-bound accepted evidence artifacts",
+    "source-head-bound accepted Linux i386, Linux armhf and Windows XP native-host artifacts",
 )
 
 
@@ -212,8 +252,8 @@ def check_accepted_platform_evidence_assets_job(workflow: str) -> list[str]:
         ): "accepted platform evidence artifact importer",
         (
             'python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets '
-            '--require-goal-targets --release-tag "${{ github.ref_name }}"'
-        ): "imported platform review bundle validator",
+            '--require-goal-targets --release-tag "${{ github.ref_name }}" --require-final-record-assets'
+        ): "imported platform review bundle and final record validator",
         "name: release-platform-evidence-assets": "platform evidence release asset artifact name",
         "path: release-assets/*": "platform evidence release asset upload path",
         "if-no-files-found: error": "platform evidence upload must fail when empty",
@@ -274,7 +314,7 @@ def check_release_docs() -> list[str]:
         if snippet in docs:
             errors.append(f"release docs still advertise stale default artifact pattern: {snippet}")
     for snippet in STALE_PLATFORM_EVIDENCE_SNIPPETS:
-        if snippet in docs:
+        if contains_snippet(docs, snippet):
             errors.append(f"release docs still advertise stale platform evidence workflow guidance: {snippet}")
     return errors
 

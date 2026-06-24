@@ -370,11 +370,19 @@ def check_linux_local_evidence(
         check_linux_smoke_evidence_file(
             target,
             release_tag,
-            linux_native_smoke_command(target, promotion, resolved_workflow_run_url, resolved_source_head_sha),
+            linux_native_smoke_command(
+                target,
+                promotion,
+                resolved_workflow_run_url,
+                int(resolved_source_run_attempt),
+                resolved_source_head_sha,
+            ),
             resolved_workflow_run_url,
+            int(resolved_source_run_attempt),
             smoke_evidence,
             source_head_sha=resolved_source_head_sha,
             artifact_sha256=artifact_hashes,
+            builder_identity=builder_identity,
         )
     )
     return errors

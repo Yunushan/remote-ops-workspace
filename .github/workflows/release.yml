@@ -199,7 +199,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: python scripts/import_platform_evidence_artifacts.py --release-tag "${{ github.ref_name }}" --require-goal-targets --out-dir release-assets --verify-source-run
       - name: Validate imported protected platform review bundles
-        run: python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag "${{ github.ref_name }}"
+        run: python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag "${{ github.ref_name }}" --require-final-record-assets
       - uses: actions/upload-artifact@v7
         with:
           name: release-platform-evidence-assets

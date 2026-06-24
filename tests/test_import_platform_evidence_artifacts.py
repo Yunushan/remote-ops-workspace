@@ -22,7 +22,7 @@ def test_import_record_downloads_expected_files_and_verifies_hashes(tmp_path: Pa
     def fake_run(command: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
         commands.append(command)
         assert check is True
-        if command[:3] == ["gh", "run", "view"]:
+        if _is_metadata_command(command):
             assert kwargs == {"capture_output": True, "text": True}
             return subprocess.CompletedProcess(
                 command,
@@ -34,7 +34,7 @@ def test_import_record_downloads_expected_files_and_verifies_hashes(tmp_path: Pa
                         "conclusion": "success",
                         "event": "workflow_dispatch",
                         "headSha": HEAD_SHA,
-                        "workflowName": "extended-platform-evidence",
+                        "path": ".github/workflows/extended-platform-evidence.yml",
                     }
                 ),
             )
@@ -58,16 +58,7 @@ def test_import_record_downloads_expected_files_and_verifies_hashes(tmp_path: Pa
     )
 
     assert errors == []
-    assert commands[0] == [
-        "gh",
-        "run",
-        "view",
-        "12345",
-        "--repo",
-        "example/remote-ops-workspace",
-        "--json",
-        "attempt,conclusion,event,headSha,status,workflowName",
-    ]
+    assert commands[0] == _source_run_metadata_command(importer)
     assert commands[1][:4] == ["gh", "run", "download", "12345"]
     assert sorted(path.name for path in out_dir.iterdir()) == sorted(importer.expected_release_files(record))
 
@@ -77,7 +68,7 @@ def test_import_record_rejects_missing_downloaded_file(tmp_path: Path, monkeypat
     record = _record(tmp_path)
 
     def fake_run(command: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
-        if command[:3] == ["gh", "run", "view"]:
+        if _is_metadata_command(command):
             return _successful_view(command)
         Path(command[-1]).mkdir(parents=True)
         return subprocess.CompletedProcess(command, 0)
@@ -100,7 +91,7 @@ def test_import_record_rejects_missing_final_record_source_file(tmp_path: Path, 
     record = _record(tmp_path)
 
     def fake_run(command: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
-        if command[:3] == ["gh", "run", "view"]:
+        if _is_metadata_command(command):
             return _successful_view(command)
         destination = Path(command[-1])
         destination.mkdir(parents=True)
@@ -132,7 +123,7 @@ def test_import_record_rejects_final_record_source_file_drift(tmp_path: Path, mo
     record = _record(tmp_path)
 
     def fake_run(command: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
-        if command[:3] == ["gh", "run", "view"]:
+        if _is_metadata_command(command):
             return _successful_view(command)
         destination = Path(command[-1])
         destination.mkdir(parents=True)
@@ -166,7 +157,7 @@ def test_import_record_rejects_unexpected_downloaded_file(tmp_path: Path, monkey
     record = _record(tmp_path)
 
     def fake_run(command: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
-        if command[:3] == ["gh", "run", "view"]:
+        if _is_metadata_command(command):
             return _successful_view(command)
         destination = Path(command[-1])
         destination.mkdir(parents=True)
@@ -194,7 +185,7 @@ def test_import_record_rejects_nested_downloaded_artifact_directory(tmp_path: Pa
     record = _record(tmp_path)
 
     def fake_run(command: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
-        if command[:3] == ["gh", "run", "view"]:
+        if _is_metadata_command(command):
             return _successful_view(command)
         destination = Path(command[-1])
         nested = destination / "native-dist"
@@ -275,6 +266,40 @@ def test_validate_source_artifact_rejects_extra_declared_file(tmp_path: Path) ->
     assert (
         "linux-i386 release_asset_source.contains_files has unexpected files: "
         "['operator-private-builder.log']"
+    ) in errors
+
+
+def test_validate_source_artifact_rejects_downloaded_native_hash_mismatch(tmp_path: Path) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+    source_root = tmp_path / "downloaded"
+    _write_source_files(record, source_root)
+    first_asset = next(iter(record["artifact_sha256"]))
+    (source_root / str(first_asset)).write_bytes(b"tampered native artifact\n")
+
+    errors = importer.validate_source_artifact(record, source_root=source_root)
+
+    assert (
+        f"linux-i386 downloaded source artifact native artifact SHA-256 mismatch: {first_asset}"
+        in errors
+    )
+
+
+def test_validate_source_artifact_rejects_downloaded_review_bundle_hash_mismatch(
+    tmp_path: Path,
+) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+    source_root = tmp_path / "downloaded"
+    _write_source_files(record, source_root)
+    manifest_name = str(record["review_bundle"]["manifest"]["file"])
+    (source_root / manifest_name).write_text("{}\n", encoding="utf-8")
+
+    errors = importer.validate_source_artifact(record, source_root=source_root)
+
+    assert (
+        "linux-i386 downloaded source artifact review bundle manifest SHA-256 mismatch: "
+        f"{manifest_name}"
     ) in errors
 
 
@@ -583,7 +608,7 @@ def test_import_record_rejects_overwrite_with_different_file(tmp_path: Path, mon
     (out_dir / str(first_asset)).write_bytes(b"different\n")
 
     def fake_run(command: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
-        if command[:3] == ["gh", "run", "view"]:
+        if _is_metadata_command(command):
             return _successful_view(command)
         destination = Path(command[-1])
         destination.mkdir(parents=True)
@@ -605,12 +630,43 @@ def test_import_record_rejects_overwrite_with_different_file(tmp_path: Path, mon
     assert any("release asset import would overwrite different file" in error for error in errors)
 
 
+def test_import_record_rejects_tampered_source_file_before_copy(tmp_path: Path, monkeypatch) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+    out_dir = tmp_path / "release-assets"
+    first_asset = next(iter(record["artifact_sha256"]))
+
+    def fake_run(command: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        if _is_metadata_command(command):
+            return _successful_view(command)
+        destination = Path(command[-1])
+        _write_source_files(record, destination)
+        (destination / str(first_asset)).write_bytes(b"tampered before release staging\n")
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(importer.subprocess, "run", fake_run)
+
+    errors = importer.import_record(
+        record,
+        out_dir=out_dir,
+        download_root=tmp_path / "download",
+        dry_run=False,
+        release_head_sha=HEAD_SHA,
+    )
+
+    assert (
+        f"linux-i386 downloaded source artifact native artifact SHA-256 mismatch: {first_asset}"
+        in errors
+    )
+    assert not out_dir.exists()
+
+
 def test_import_record_rejects_failed_source_workflow_run(tmp_path: Path, monkeypatch) -> None:
     importer = _load_importer()
     record = _record(tmp_path)
 
     def fake_run(command: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
-        assert command[:3] == ["gh", "run", "view"]
+        assert _is_metadata_command(command)
         return subprocess.CompletedProcess(
             command,
             0,
@@ -620,7 +676,7 @@ def test_import_record_rejects_failed_source_workflow_run(tmp_path: Path, monkey
                     "conclusion": "failure",
                     "event": "workflow_dispatch",
                     "headSha": HEAD_SHA,
-                    "workflowName": "extended-platform-evidence",
+                    "path": ".github/workflows/extended-platform-evidence.yml",
                 }
             ),
         )
@@ -760,7 +816,7 @@ def test_import_record_rejects_incomplete_or_non_dispatch_source_workflow_run(
     record = _record(tmp_path)
 
     def fake_run(command: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
-        assert command[:3] == ["gh", "run", "view"]
+        assert _is_metadata_command(command)
         return subprocess.CompletedProcess(
             command,
             0,
@@ -770,7 +826,7 @@ def test_import_record_rejects_incomplete_or_non_dispatch_source_workflow_run(
                     "conclusion": None,
                     "event": "push",
                     "headSha": HEAD_SHA,
-                    "workflowName": "other-workflow",
+                    "path": ".github/workflows/other-workflow.yml",
                 }
             ),
         )
@@ -798,17 +854,18 @@ def test_import_record_rejects_incomplete_or_non_dispatch_source_workflow_run(
         in errors
     )
     assert (
-        "linux-i386 release_asset_source workflow run name must be 'extended-platform-evidence', "
-        "got 'other-workflow'"
+        "linux-i386 release_asset_source workflow run path must be "
+        "'.github/workflows/extended-platform-evidence.yml', "
+        "got '.github/workflows/other-workflow.yml'"
     ) in errors
 
 
-def test_import_record_rejects_source_workflow_name_mismatch(tmp_path: Path, monkeypatch) -> None:
+def test_import_record_rejects_source_workflow_path_mismatch(tmp_path: Path, monkeypatch) -> None:
     importer = _load_importer()
     record = _record(tmp_path)
 
     def fake_run(command: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
-        assert command[:3] == ["gh", "run", "view"]
+        assert _is_metadata_command(command)
         return subprocess.CompletedProcess(
             command,
             0,
@@ -819,7 +876,7 @@ def test_import_record_rejects_source_workflow_name_mismatch(tmp_path: Path, mon
                     "conclusion": "success",
                     "event": "workflow_dispatch",
                     "headSha": HEAD_SHA,
-                    "workflowName": "ci",
+                    "path": ".github/workflows/ci.yml",
                 }
             ),
         )
@@ -835,12 +892,13 @@ def test_import_record_rejects_source_workflow_name_mismatch(tmp_path: Path, mon
     )
 
     assert (
-        "linux-i386 release_asset_source workflow run name must be 'extended-platform-evidence', got 'ci'"
+        "linux-i386 release_asset_source workflow run path must be "
+        "'.github/workflows/extended-platform-evidence.yml', got '.github/workflows/ci.yml'"
         in errors
     )
 
 
-def test_import_record_rejects_xp_source_workflow_name_mismatch(tmp_path: Path, monkeypatch) -> None:
+def test_import_record_rejects_xp_source_workflow_path_mismatch(tmp_path: Path, monkeypatch) -> None:
     importer = _load_importer()
     record = _record(tmp_path)
     record["target"] = "windows-xp-native-x86"
@@ -848,7 +906,7 @@ def test_import_record_rejects_xp_source_workflow_name_mismatch(tmp_path: Path, 
     record["release_asset_source"]["artifact_name"] = "xp-native-evidence-windows-xp-native-x86-v1.0.2"
 
     def fake_run(command: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
-        assert command[:3] == ["gh", "run", "view"]
+        assert _is_metadata_command(command)
         return subprocess.CompletedProcess(
             command,
             0,
@@ -858,7 +916,7 @@ def test_import_record_rejects_xp_source_workflow_name_mismatch(tmp_path: Path, 
                     "conclusion": "success",
                     "event": "workflow_dispatch",
                     "headSha": HEAD_SHA,
-                    "workflowName": "extended-platform-evidence",
+                    "path": ".github/workflows/extended-platform-evidence.yml",
                 }
             ),
         )
@@ -874,8 +932,9 @@ def test_import_record_rejects_xp_source_workflow_name_mismatch(tmp_path: Path, 
     )
 
     assert (
-        "windows-xp-native-x86 release_asset_source workflow run name must be 'xp-native-evidence', "
-        "got 'extended-platform-evidence'"
+        "windows-xp-native-x86 release_asset_source workflow run path must be "
+        "'.github/workflows/xp-native-evidence.yml', "
+        "got '.github/workflows/extended-platform-evidence.yml'"
     ) in errors
 
 
@@ -884,7 +943,7 @@ def test_import_record_rejects_source_workflow_head_sha_mismatch(tmp_path: Path,
     record = _record(tmp_path)
 
     def fake_run(command: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
-        assert command[:3] == ["gh", "run", "view"]
+        assert _is_metadata_command(command)
         return subprocess.CompletedProcess(
             command,
             0,
@@ -894,7 +953,7 @@ def test_import_record_rejects_source_workflow_head_sha_mismatch(tmp_path: Path,
                     "conclusion": "success",
                     "event": "workflow_dispatch",
                     "headSha": "b" * 40,
-                    "workflowName": "extended-platform-evidence",
+                    "path": ".github/workflows/extended-platform-evidence.yml",
                 }
             ),
         )
@@ -923,7 +982,7 @@ def test_import_record_rejects_source_workflow_run_attempt_mismatch(
     record = _record(tmp_path)
 
     def fake_run(command: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
-        assert command[:3] == ["gh", "run", "view"]
+        assert _is_metadata_command(command)
         return subprocess.CompletedProcess(
             command,
             0,
@@ -934,7 +993,7 @@ def test_import_record_rejects_source_workflow_run_attempt_mismatch(
                     "conclusion": "success",
                     "event": "workflow_dispatch",
                     "headSha": HEAD_SHA,
-                    "workflowName": "extended-platform-evidence",
+                    "path": ".github/workflows/extended-platform-evidence.yml",
                 }
             ),
         )
@@ -960,7 +1019,7 @@ def test_import_record_rejects_release_checkout_head_sha_mismatch(tmp_path: Path
     record = _record(tmp_path)
 
     def fake_run(command: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
-        assert command[:3] == ["gh", "run", "view"]
+        assert _is_metadata_command(command)
         return _successful_view(command)
 
     monkeypatch.setattr(importer.subprocess, "run", fake_run)
@@ -1050,7 +1109,7 @@ def test_import_record_dry_run_prints_gh_download_command(tmp_path: Path, capsys
 
     assert errors == []
     captured = capsys.readouterr()
-    assert "gh run view 12345 --repo example/remote-ops-workspace" in captured.out
+    assert "gh api repos/example/remote-ops-workspace/actions/runs/12345/attempts/1" in captured.out
     assert "gh run download 12345 --repo example/remote-ops-workspace" in captured.out
     assert "--name extended-linux-evidence-linux-i386-v1.0.2" in captured.out
 
@@ -1067,7 +1126,7 @@ def test_import_record_dry_run_can_verify_source_run_without_download(
     def fake_run(command: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
         commands.append(command)
         assert check is True
-        assert command[:3] == ["gh", "run", "view"]
+        assert _is_metadata_command(command)
         assert kwargs == {"capture_output": True, "text": True}
         return _successful_view(command)
 
@@ -1083,21 +1142,10 @@ def test_import_record_dry_run_can_verify_source_run_without_download(
     )
 
     assert errors == []
-    assert commands == [
-        [
-            "gh",
-            "run",
-            "view",
-            "12345",
-            "--repo",
-            "example/remote-ops-workspace",
-            "--json",
-            "attempt,conclusion,event,headSha,status,workflowName",
-        ]
-    ]
+    assert commands == [_source_run_metadata_command(importer)]
     assert not (tmp_path / "download").exists()
     captured = capsys.readouterr()
-    assert "gh run view 12345 --repo example/remote-ops-workspace" in captured.out
+    assert "gh api repos/example/remote-ops-workspace/actions/runs/12345/attempts/1" in captured.out
     assert "gh run download 12345 --repo example/remote-ops-workspace" in captured.out
 
 
@@ -1109,7 +1157,7 @@ def test_import_record_dry_run_reports_verified_source_run_mismatch(
     record = _record(tmp_path)
 
     def fake_run(command: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
-        assert command[:3] == ["gh", "run", "view"]
+        assert _is_metadata_command(command)
         return subprocess.CompletedProcess(
             command,
             0,
@@ -1119,7 +1167,7 @@ def test_import_record_dry_run_reports_verified_source_run_mismatch(
                     "conclusion": "failure",
                     "event": "workflow_dispatch",
                     "headSha": HEAD_SHA,
-                    "workflowName": "extended-platform-evidence",
+                    "path": ".github/workflows/extended-platform-evidence.yml",
                 }
             ),
         )
@@ -1188,7 +1236,7 @@ def test_import_record_rejects_tampered_review_bundle_content(tmp_path: Path, mo
     record = _record(tmp_path)
 
     def fake_run(command: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
-        if command[:3] == ["gh", "run", "view"]:
+        if _is_metadata_command(command):
             return _successful_view(command)
         destination = Path(command[-1])
         destination.mkdir(parents=True)
@@ -1243,6 +1291,13 @@ def _record(tmp_path: Path) -> dict[str, Any]:
     return {**record, "_source_files": source_files}
 
 
+def _write_source_files(record: dict[str, Any], destination: Path) -> None:
+    destination.mkdir(parents=True, exist_ok=True)
+    for source in record["_source_files"]:
+        source_path = Path(str(source))
+        (destination / source_path.name).write_bytes(source_path.read_bytes())
+
+
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -1258,10 +1313,28 @@ def _successful_view(command: list[str]) -> subprocess.CompletedProcess[str]:
                 "conclusion": "success",
                 "event": "workflow_dispatch",
                 "headSha": HEAD_SHA,
-                "workflowName": "extended-platform-evidence",
+                "path": ".github/workflows/extended-platform-evidence.yml",
             }
         ),
     )
+
+
+def _source_run_metadata_command(importer: Any) -> list[str]:
+    return [
+        "gh",
+        "api",
+        "repos/example/remote-ops-workspace/actions/runs/12345/attempts/1",
+        "--jq",
+        importer.SOURCE_RUN_METADATA_JQ,
+    ]
+
+
+def _is_metadata_command(command: list[str]) -> bool:
+    return command[:3] == [
+        "gh",
+        "api",
+        "repos/example/remote-ops-workspace/actions/runs/12345/attempts/1",
+    ]
 
 
 def _load_importer() -> Any:

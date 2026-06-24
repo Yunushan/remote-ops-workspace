@@ -19,6 +19,12 @@ def test_make_xp_native_evidence_template_writes_incomplete_bundle(tmp_path: Pat
     evidence = json.loads((tmp_path / "xp-evidence.json").read_text(encoding="utf-8"))
     assert evidence["target"] == "windows-xp-native-x86"
     assert evidence["release_tag"] == "v1.0.2"
+    assert evidence["release_source"] == {
+        "workflow": ".github/workflows/xp-native-evidence.yml",
+        "workflow_run_url": "TODO-use-github-actions-run-url",
+        "head_sha": "TODO-use-github-actions-head-sha",
+        "run_attempt": "TODO-use-github-actions-run-attempt",
+    }
     assert evidence["artifact_validation"]["passed"] is False
     assert evidence["artifact_validation"]["command"].endswith("--tag v1.0.2 --strict")
     assert evidence["host_identity"]["target"] == "windows-xp-native-x86"
@@ -46,6 +52,61 @@ def test_make_xp_native_evidence_template_writes_incomplete_bundle(tmp_path: Pat
     assert all(result["command"].startswith("scripts/xp_smoke_runner.cmd ") for result in evidence["smoke_results"])
     assert all("--evidence-file xp-smoke-evidence/" in result["command"] for result in evidence["smoke_results"])
     assert all("--proof-file xp-smoke-proof/" in result["command"] for result in evidence["smoke_results"])
+    assert all(
+        "--observed-at-utc TODO-use-YYYY-MM-DDTHH:MM:SSZ" in result["command"]
+        for result in evidence["smoke_results"]
+    )
+    assert all(
+        "--source-workflow-run-url TODO-use-github-actions-run-url" in result["command"]
+        for result in evidence["smoke_results"]
+    )
+    assert all(
+        "--source-head-sha TODO-use-github-actions-head-sha" in result["command"]
+        for result in evidence["smoke_results"]
+    )
+    assert all(
+        "--source-run-attempt TODO-use-github-actions-run-attempt" in result["command"]
+        for result in evidence["smoke_results"]
+    )
+    assert all('--os-name "Windows XP"' in result["command"] for result in evidence["smoke_results"])
+    assert all("--os-architecture x86" in result["command"] for result in evidence["smoke_results"])
+    assert all("--os-service-pack SP3" in result["command"] for result in evidence["smoke_results"])
+    assert "xp smoke observed at utc: TODO-use-YYYY-MM-DDTHH:MM:SSZ" in (
+        tmp_path / "xp-smoke-evidence" / "cli_launch.txt"
+    ).read_text(encoding="utf-8")
+    assert "xp smoke source workflow run: TODO-use-github-actions-run-url" in (
+        tmp_path / "xp-smoke-evidence" / "cli_launch.txt"
+    ).read_text(encoding="utf-8")
+    assert "xp smoke source head sha: TODO-use-github-actions-head-sha" in (
+        tmp_path / "xp-smoke-evidence" / "cli_launch.txt"
+    ).read_text(encoding="utf-8")
+    assert "xp smoke source run attempt: TODO-use-github-actions-run-attempt" in (
+        tmp_path / "xp-smoke-evidence" / "cli_launch.txt"
+    ).read_text(encoding="utf-8")
+    assert "xp smoke os name: Windows XP" in (
+        tmp_path / "xp-smoke-evidence" / "cli_launch.txt"
+    ).read_text(encoding="utf-8")
+    assert "xp smoke os architecture: x86" in (
+        tmp_path / "xp-smoke-evidence" / "cli_launch.txt"
+    ).read_text(encoding="utf-8")
+    assert "xp smoke os service pack: SP3 TODO replace with real winver evidence" in (
+        tmp_path / "xp-smoke-evidence" / "cli_launch.txt"
+    ).read_text(encoding="utf-8")
+    assert "xp smoke host probe command: ver" in (
+        tmp_path / "xp-smoke-evidence" / "cli_launch.txt"
+    ).read_text(encoding="utf-8")
+    assert "xp smoke host probe output: Microsoft Windows XP [Version 5.1.2600] TODO replace with real ver output" in (
+        tmp_path / "xp-smoke-evidence" / "cli_launch.txt"
+    ).read_text(encoding="utf-8")
+    assert "xp smoke processor architecture env: x86 TODO replace with real %PROCESSOR_ARCHITECTURE% evidence" in (
+        tmp_path / "xp-smoke-evidence" / "cli_launch.txt"
+    ).read_text(encoding="utf-8")
+    assert "xp smoke wmic os caption: Microsoft Windows XP Professional TODO replace with real WMIC Caption evidence" in (
+        tmp_path / "xp-smoke-evidence" / "cli_launch.txt"
+    ).read_text(encoding="utf-8")
+    assert "xp smoke wmic os csdversion: Service Pack 3 TODO replace with real WMIC CSDVersion evidence" in (
+        tmp_path / "xp-smoke-evidence" / "cli_launch.txt"
+    ).read_text(encoding="utf-8")
 
 
 def test_xp_native_evidence_template_does_not_validate_as_real_evidence(tmp_path: Path) -> None:

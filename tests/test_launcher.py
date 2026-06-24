@@ -20,6 +20,47 @@ def test_sshv1_requires_explicit_insecure_opt_in() -> None:
         raise AssertionError("SSHv1 launch should require explicit insecure opt-in")
 
 
+def test_sshv1_rejects_generic_xp_legacy_target_aliases() -> None:
+    for legacy_target in ("xp", "winxp", "windows-xp", "windows-xp-x86", "windows-xp-x64"):
+        profile = Profile(
+            name="legacy",
+            protocol="ssh1",
+            host="192.0.2.10",
+            username="admin",
+            options={
+                "allow_insecure_sshv1": "true",
+                "legacy_target": legacy_target,
+                "allow_legacy_crypto": "true",
+            },
+        )
+        try:
+            build_launch_plan(profile)
+        except LauncherError as exc:
+            assert "legacy_target=windows-xp-32 or windows-xp-64" in str(exc)
+        else:
+            raise AssertionError(f"generic XP legacy target alias {legacy_target!r} should be rejected")
+
+
+def test_sshv1_requires_legacy_target_key() -> None:
+    profile = Profile(
+        name="legacy",
+        protocol="ssh1",
+        host="192.0.2.10",
+        username="admin",
+        options={
+            "allow_insecure_sshv1": "true",
+            "legacy_platform": "windows-xp-32",
+            "allow_legacy_crypto": "true",
+        },
+    )
+    try:
+        build_launch_plan(profile)
+    except LauncherError as exc:
+        assert "legacy_target=windows-xp-32 or windows-xp-64" in str(exc)
+    else:
+        raise AssertionError("legacy_platform must not unlock SSHv1 launch")
+
+
 def test_sshv1_command_builder_is_explicit_legacy_mode() -> None:
     profile = Profile(
         name="legacy",
@@ -67,6 +108,26 @@ def test_weak_ssh_algorithms_require_isolated_legacy_target() -> None:
         assert "allow_legacy_crypto=true" in str(exc)
     else:
         raise AssertionError("weak SSH algorithms should require explicit isolated legacy opt-in")
+
+
+def test_weak_ssh_algorithms_reject_generic_xp_legacy_target_alias() -> None:
+    profile = Profile(
+        name="legacy",
+        protocol="ssh",
+        host="192.0.2.10",
+        options={
+            "kex_algorithms": "+diffie-hellman-group1-sha1",
+            "legacy_target": "windows-xp",
+            "allow_legacy_crypto": "true",
+        },
+    )
+    try:
+        build_launch_plan(profile)
+    except LauncherError as exc:
+        assert "legacy_target=windows-xp-32" in str(exc)
+        assert "allow_legacy_crypto=true" in str(exc)
+    else:
+        raise AssertionError("generic XP legacy target alias should not unlock weak SSH algorithms")
 
 
 def test_weak_ssh_algorithms_allow_explicit_xp_remote_target_profile() -> None:

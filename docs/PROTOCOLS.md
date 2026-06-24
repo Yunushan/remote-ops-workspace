@@ -31,6 +31,12 @@ until an operator edits the profile and adds `allow_insecure_sshv1=true`,
 `legacy_target=windows-xp-32` or `windows-xp-64`, and
 `allow_legacy_crypto=true`.
 
+Generic XP labels such as `xp`, `winxp` and `windows-xp` are intentionally
+rejected for legacy SSH/RDP opt-ins, and `legacy_platform` is not a supported
+alias. Use the architecture-specific `legacy_target=windows-xp-32` or
+`legacy_target=windows-xp-64` value so the insecure exception stays tied to a
+known XP remote-target boundary.
+
 `row doctor` reports `ssh1` and `sshv1` as `legacy-insecure-opt-in` rather
 than normally available. A present `ssh` executable only means the external
 client exists; it does not prove that protocol v1 negotiation still works.

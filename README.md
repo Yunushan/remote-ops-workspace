@@ -301,8 +301,8 @@ The goal-specific gate is
 `python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag v<project.version>`;
 it must fail until linux-i386, linux-armhf, windows-xp-native-x86 and
 windows-xp-native-x64 all have finalized accepted records for the same release tag,
-same GitHub release repository, same release source head SHA and a positive
-release source run attempt in each record. Mixed-tag,
+same GitHub release repository, target-specific release source workflow file,
+same release source head SHA and a positive release source run attempt in each record. Mixed-tag,
 mixed-repository or mixed-source-head accepted records remain visible as aggregate evidence,
 but the protected goal parity block stays incomplete until one release source has all four targets. The release/verifier promotion
 gate is `python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> --release-assets-dir <release-assets-dir>`,
@@ -528,15 +528,20 @@ and `python scripts/check_repository_cleanup.py --require-clean`; source, native
 `accepted-platform-evidence-assets` and publish jobs all depend on that gate.
 The `accepted-platform-evidence-assets` job runs
 `python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run`
-to copy only same-tag, same-repository and source-head-bound accepted evidence
-artifacts into the release asset directory, then runs
-`python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag <tag>`
-against the imported review bundles before upload. That import job keeps only
+to copy only same-tag, same-repository, workflow-file, source-head and
+run-attempt-bound accepted evidence artifacts into the release asset directory
+after checking downloaded source artifact native artifact SHA-256 values and
+review-bundle size/SHA-256 values against the finalized accepted record,
+then runs
+`python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag <tag> --require-final-record-assets`
+against the imported review bundles and finalized public record JSON files
+before upload. That import job keeps only
 read permissions for repository contents and Actions artifacts, and source and
 native release jobs wait for it before building. Linux i386, Linux armhf,
 windows-xp-native-x86 and windows-xp-native-x64 require finalized accepted
-evidence records for the same release tag, GitHub release repository, release
-source head SHA and per-record release source run attempt before any 100%
+evidence records for the same release tag, GitHub release repository,
+target-specific release source workflow file, release source head SHA and
+per-record release source run attempt before any 100%
 platform-readiness or native-host parity claim.
 Before upload, the publish job runs
 `python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --require-platform-goal-targets`

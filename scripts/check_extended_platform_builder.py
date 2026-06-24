@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import platform
 import re
 import shutil
@@ -159,6 +160,56 @@ def check_builder_identity_context(
         errors.append(f"{target} builder identity output requires --source-head-sha")
     elif not GITHUB_HEAD_SHA_RE.fullmatch(str(source_head_sha)):
         errors.append(f"{target} builder identity --source-head-sha must be a 40-character lowercase Git SHA")
+    else:
+        observed_git_head = git_head_sha()
+        if not observed_git_head:
+            errors.append(f"{target} builder identity requires git rev-parse HEAD for source head binding")
+        elif observed_git_head != str(source_head_sha):
+            errors.append(
+                f"{target} builder identity observed git HEAD {observed_git_head} "
+                f"must match --source-head-sha {source_head_sha}"
+            )
+        git_status = git_status_porcelain()
+        if git_status is None:
+            errors.append(f"{target} builder identity requires git status --porcelain for clean checkout proof")
+        elif git_status:
+            errors.append(f"{target} builder identity requires a clean git worktree before native build")
+        errors.extend(
+            check_github_actions_context(
+                target,
+                str(workflow_run_url or ""),
+                workflow_run_attempt,
+                str(source_head_sha),
+            )
+        )
+    return errors
+
+
+def check_github_actions_context(
+    target: str,
+    workflow_run_url: str,
+    workflow_run_attempt: int | None,
+    source_head_sha: str,
+) -> list[str]:
+    errors: list[str] = []
+    github_sha = os.environ.get("GITHUB_SHA", "").strip().lower()
+    if github_sha and github_sha != source_head_sha:
+        errors.append(f"{target} GITHUB_SHA {github_sha} must match --source-head-sha {source_head_sha}")
+    github_attempt = os.environ.get("GITHUB_RUN_ATTEMPT", "").strip()
+    if github_attempt and str(workflow_run_attempt or "") != github_attempt:
+        errors.append(
+            f"{target} GITHUB_RUN_ATTEMPT {github_attempt} must match --workflow-run-attempt {workflow_run_attempt}"
+        )
+    github_run_id = os.environ.get("GITHUB_RUN_ID", "").strip()
+    run_match = GITHUB_RUN_ID_RE.search(workflow_run_url)
+    if github_run_id and run_match and github_run_id != run_match.group(1):
+        errors.append(f"{target} GITHUB_RUN_ID {github_run_id} must match --workflow-run-url {workflow_run_url}")
+    github_repository = os.environ.get("GITHUB_REPOSITORY", "").strip().lower()
+    repository_match = re.fullmatch(r"https://github\.com/([^/]+/[^/]+)/actions/runs/\d+/?", workflow_run_url)
+    if github_repository and repository_match and github_repository != repository_match.group(1).lower():
+        errors.append(
+            f"{target} GITHUB_REPOSITORY {github_repository} must match --workflow-run-url {workflow_run_url}"
+        )
     return errors
 
 
@@ -230,6 +281,8 @@ def builder_identity(
         "workflow_run_url": workflow_run_url,
         "workflow_run_attempt": workflow_run_attempt,
         "source_head_sha": source_head_sha,
+        "observed_git_head_sha": git_head_sha(),
+        "git_worktree_clean": git_worktree_clean(),
         "sys_platform": sys.platform,
         "platform_machine": normalized_machine(),
         "uname_machine": uname_machine(),
@@ -338,6 +391,27 @@ def dpkg_architecture() -> str:
 
 def userland_bits() -> str:
     return command_output(["getconf", "LONG_BIT"])
+
+
+def git_head_sha() -> str:
+    return command_output(["git", "rev-parse", "HEAD"])
+
+
+def git_worktree_clean() -> bool:
+    status = git_status_porcelain()
+    return status == ""
+
+
+def git_status_porcelain() -> str | None:
+    try:
+        return subprocess.run(
+            ["git", "status", "--porcelain"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip().lower()
+    except (OSError, subprocess.CalledProcessError):
+        return None
 
 
 def command_output(command: list[str]) -> str:

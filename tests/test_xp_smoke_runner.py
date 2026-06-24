@@ -40,6 +40,20 @@ def test_xp_smoke_runner_writes_bound_evidence_from_proof_file(tmp_path: Path) -
             "xp-x86-lab-01",
             "--evidence-run-id",
             "xp-x86-1-0-2-20260620t120000z",
+            "--observed-at-utc",
+            "2026-06-20T12:00:00Z",
+            "--source-workflow-run-url",
+            "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+            "--source-head-sha",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "--source-run-attempt",
+            "1",
+            "--os-name",
+            "Windows XP",
+            "--os-architecture",
+            "x86",
+            "--os-service-pack",
+            "SP3",
         ],
         cwd=Path.cwd(),
         text=True,
@@ -52,8 +66,21 @@ def test_xp_smoke_runner_writes_bound_evidence_from_proof_file(tmp_path: Path) -
     assert "xp smoke target: windows-xp-native-x86" in text
     assert "xp smoke release: v1.0.2" in text
     assert "xp smoke id: modern_defaults_unchanged" in text
+    assert "xp smoke os name: Windows XP" in text
+    assert "xp smoke os architecture: x86" in text
+    assert "xp smoke os service pack: SP3" in text
+    assert "xp smoke host probe command: ver" in text
+    assert "xp smoke host probe output:" in text
+    assert "xp smoke processor architecture env:" in text
+    assert "xp smoke processor architecture w6432 env:" in text
+    assert "xp smoke wmic os caption:" in text
+    assert "xp smoke wmic os csdversion:" in text
     assert "xp smoke host label: xp-x86-lab-01" in text
     assert "xp smoke evidence run id: xp-x86-1-0-2-20260620t120000z" in text
+    assert "xp smoke observed at utc: 2026-06-20T12:00:00Z" in text
+    assert "xp smoke source workflow run: https://github.com/example/remote-ops-workspace/actions/runs/12345" in text
+    assert "xp smoke source head sha: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" in text
+    assert "xp smoke source run attempt: 1" in text
     assert "modern TLS preferred: TLS 1.3" in text
     assert "weak crypto global default: false" in text
 
@@ -81,6 +108,20 @@ def test_xp_smoke_runner_requires_existing_proof_file(tmp_path: Path) -> None:
             "xp-x86-lab-01",
             "--evidence-run-id",
             "xp-x86-1-0-2-20260620t120000z",
+            "--observed-at-utc",
+            "2026-06-20T12:00:00Z",
+            "--source-workflow-run-url",
+            "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+            "--source-head-sha",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "--source-run-attempt",
+            "1",
+            "--os-name",
+            "Windows XP",
+            "--os-architecture",
+            "x86",
+            "--os-service-pack",
+            "SP3",
         ],
         cwd=Path.cwd(),
         text=True,

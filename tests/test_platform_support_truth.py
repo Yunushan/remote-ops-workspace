@@ -111,6 +111,130 @@ def test_platform_support_truth_requires_tagged_strict_platform_publish_docs() -
     )
 
 
+def test_platform_support_truth_requires_downloaded_source_hash_preflight_docs() -> None:
+    checker = _load_platform_support_truth_checker()
+    docs = _read_required_docs(checker)
+    docs["docs/PLATFORM_SUPPORT.md"] = docs["docs/PLATFORM_SUPPORT.md"].replace(
+        "hash-checked as downloaded",
+        "checked before platform promotion",
+    )
+    docs["docs/RELEASE_STRATEGY.md"] = docs["docs/RELEASE_STRATEGY.md"].replace(
+        "downloaded source artifact native artifact",
+        "downloaded source artifact checks",
+    )
+
+    errors = checker.check_platform_docs(docs, coverage_report())
+
+    assert any(
+        "docs/PLATFORM_SUPPORT.md missing platform truth snippet" in error
+        and "hash-checked as downloaded source artifacts" in error
+        for error in errors
+    )
+    assert any(
+        "docs/RELEASE_STRATEGY.md missing platform truth snippet" in error
+        and "downloaded source artifact native artifact SHA-256 values" in error
+        for error in errors
+    )
+
+
+def test_platform_support_truth_requires_final_record_asset_import_docs() -> None:
+    checker = _load_platform_support_truth_checker()
+    docs = _read_required_docs(checker)
+    docs["README.md"] = docs["README.md"].replace(" --require-final-record-assets", "")
+    docs["docs/RELEASE_STRATEGY.md"] = docs["docs/RELEASE_STRATEGY.md"].replace(
+        " --require-final-record-assets",
+        "",
+    )
+
+    errors = checker.check_platform_docs(docs, coverage_report())
+
+    assert any(
+        "README.md missing platform truth snippet" in error
+        and "--require-final-record-assets" in error
+        for error in errors
+    )
+    assert any(
+        "docs/RELEASE_STRATEGY.md missing platform truth snippet" in error
+        and "--require-final-record-assets" in error
+        for error in errors
+    )
+
+
+def test_platform_support_truth_requires_linux_smoke_run_attempt_docs() -> None:
+    checker = _load_platform_support_truth_checker()
+    docs = _read_required_docs(checker)
+    docs["docs/PLATFORM_SUPPORT.md"] = docs["docs/PLATFORM_SUPPORT.md"].replace(
+        (
+            "scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux --target linux-i386 "
+            "--workflow-run-url <github-actions-run-url> --workflow-run-attempt <github-actions-run-attempt> "
+            "--source-head-sha <github-actions-head-sha>"
+        ),
+        (
+            "scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux --target linux-i386 "
+            "--workflow-run-url <github-actions-run-url> --source-head-sha <github-actions-head-sha>"
+        ),
+    )
+
+    errors = checker.check_platform_docs(docs, coverage_report())
+
+    assert any(
+        "docs/PLATFORM_SUPPORT.md missing platform truth snippet" in error
+        and "--workflow-run-attempt <github-actions-run-attempt>" in error
+        for error in errors
+    )
+
+
+def test_platform_support_truth_requires_linux_smoke_git_head_docs() -> None:
+    checker = _load_platform_support_truth_checker()
+    docs = _read_required_docs(checker)
+    docs["docs/PLATFORM_SUPPORT.md"] = docs["docs/PLATFORM_SUPPORT.md"].replace(
+        "observed Git HEAD SHA matches that source head SHA",
+        "smoke log includes source metadata",
+    )
+
+    errors = checker.check_platform_docs(docs, coverage_report())
+
+    assert any(
+        "docs/PLATFORM_SUPPORT.md missing platform truth snippet" in error
+        and "observed Git HEAD SHA matches that source head SHA" in error
+        for error in errors
+    )
+
+
+def test_platform_support_truth_requires_linux_builder_git_head_docs() -> None:
+    checker = _load_platform_support_truth_checker()
+    docs = _read_required_docs(checker)
+    docs["docs/PLATFORM_SUPPORT.md"] = docs["docs/PLATFORM_SUPPORT.md"].replace(
+        "`source_head_sha` and `observed_git_head_sha` matching `release_asset_source.head_sha`",
+        "`source_head_sha` matching `release_asset_source.head_sha`",
+    )
+
+    errors = checker.check_platform_docs(docs, coverage_report())
+
+    assert any(
+        "docs/PLATFORM_SUPPORT.md missing platform truth snippet" in error
+        and "`source_head_sha` and `observed_git_head_sha`" in error
+        for error in errors
+    )
+
+
+def test_platform_support_truth_requires_linux_builder_clean_checkout_docs() -> None:
+    checker = _load_platform_support_truth_checker()
+    docs = _read_required_docs(checker)
+    docs["docs/PLATFORM_SUPPORT.md"] = docs["docs/PLATFORM_SUPPORT.md"].replace(
+        "`git_worktree_clean=true`",
+        "`checkout_clean=true`",
+    )
+
+    errors = checker.check_platform_docs(docs, coverage_report())
+
+    assert any(
+        "docs/PLATFORM_SUPPORT.md missing platform truth snippet" in error
+        and "`git_worktree_clean=true`" in error
+        for error in errors
+    )
+
+
 def test_platform_support_truth_tracks_required_targets() -> None:
     checker = _load_platform_support_truth_checker()
 
@@ -122,6 +246,15 @@ def test_platform_support_truth_tracks_required_targets() -> None:
     assert checker.EXPECTED_ARCHITECTURES["ios-web"]["github_release_channel"] == "default-web-pwa"
     assert checker.EXPECTED_ARCHITECTURES["ios-web"]["status"] == "verified-ios-web-pwa"
     assert checker.EXPECTED_LEGACY_WINDOWS["Windows XP"]["host_tier"] == "remote-target-only"
+
+
+def test_platform_support_truth_requires_xp_release_source_docs() -> None:
+    checker = _load_platform_support_truth_checker()
+
+    assert "`xp_evidence_summary.release_source` matching `release_asset_source`" in (
+        checker.REQUIRED_DOC_SNIPPETS["docs/PLATFORM_SUPPORT.md"]
+    )
+    assert "`xp smoke source head sha`" in checker.REQUIRED_DOC_SNIPPETS["docs/PLATFORM_SUPPORT.md"]
 
 
 def _read_required_docs(checker: Any) -> dict[str, str]:

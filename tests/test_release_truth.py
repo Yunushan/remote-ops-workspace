@@ -27,11 +27,32 @@ def test_release_truth_checker_rejects_stale_default_linux_patterns() -> None:
     assert "remote-ops-workspace-v1.0.2-linux-<amd64|arm64>.deb" in checker.REQUIRED_DOC_SNIPPETS
 
 
+def test_release_truth_checker_requires_linux_smoke_git_head_docs() -> None:
+    checker = _load_release_truth_checker()
+
+    assert "observed_git_head_sha" in checker.REQUIRED_DOC_SNIPPETS
+    assert "git_worktree_clean" in checker.REQUIRED_DOC_SNIPPETS
+    assert "observed Git HEAD SHA matching the release source head SHA" in checker.REQUIRED_DOC_SNIPPETS
+
+
+def test_release_truth_checker_requires_xp_release_source_docs() -> None:
+    checker = _load_release_truth_checker()
+
+    assert "--source-workflow-run-url" in checker.REQUIRED_DOC_SNIPPETS
+    assert "xp smoke source head sha" in checker.REQUIRED_DOC_SNIPPETS
+    assert "xp_evidence_summary.release_source" in checker.REQUIRED_DOC_SNIPPETS
+
+
 def test_release_truth_checker_rejects_stale_unfinalized_candidate_guidance() -> None:
     checker = _load_release_truth_checker()
 
     assert (
         "`--allow-unfinalized-candidates` flag is only for local candidate checks before append"
+        in checker.STALE_PLATFORM_EVIDENCE_SNIPPETS
+    )
+    assert "source-head-bound accepted evidence artifacts" in checker.STALE_PLATFORM_EVIDENCE_SNIPPETS
+    assert (
+        "source-head-bound accepted Linux i386, Linux armhf and Windows XP native-host artifacts"
         in checker.STALE_PLATFORM_EVIDENCE_SNIPPETS
     )
 
@@ -58,6 +79,32 @@ def test_release_truth_checker_requires_turkish_platform_evidence_gate() -> None
     assert any("README.tr.md missing protected platform evidence truth snippet" in error for error in errors)
 
 
+def test_release_truth_checker_requires_turkish_protected_goal_gate() -> None:
+    checker = _load_release_truth_checker()
+    original_read = checker.read
+
+    def fake_read(relative: str) -> str:
+        text = original_read(relative)
+        if relative == "README.tr.md":
+            return text.replace(
+                "python scripts/check_protected_platform_goal.py --release-tag <tag> --require-complete --show-requirements",
+                "python scripts/check_protected_platform_goal.py --release-tag <tag> --show-requirements",
+            )
+        return text
+
+    checker.read = fake_read
+    try:
+        errors = checker.check_release_docs()
+    finally:
+        checker.read = original_read
+
+    assert any(
+        "README.tr.md missing protected platform evidence truth snippet" in error
+        and "check_protected_platform_goal.py" in error
+        for error in errors
+    )
+
+
 def test_release_truth_checker_requires_readme_release_section_strict_platform_publish_gate() -> None:
     checker = _load_release_truth_checker()
     original_read = checker.read
@@ -80,6 +127,216 @@ def test_release_truth_checker_requires_readme_release_section_strict_platform_p
         checker.read = original_read
 
     assert any("README.md release section missing protected platform evidence truth snippet" in error for error in errors)
+
+
+def test_release_truth_checker_requires_source_artifact_hash_preflight_docs() -> None:
+    checker = _load_release_truth_checker()
+    original_read = checker.read
+
+    def fake_read(relative: str) -> str:
+        text = original_read(relative)
+        if relative == "README.md":
+            return text.replace(
+                "downloaded source artifact native artifact SHA-256 values",
+                "downloaded source artifact checks",
+            )
+        if relative == "docs/RELEASE_STRATEGY.md":
+            return text.replace(
+                "downloaded source artifact native artifact",
+                "downloaded source artifact checks",
+            )
+        return text
+
+    checker.read = fake_read
+    try:
+        errors = checker.check_release_docs()
+    finally:
+        checker.read = original_read
+
+    assert any(
+        "README.md release section missing protected platform evidence truth snippet" in error
+        and "downloaded source artifact native artifact SHA-256 values" in error
+        for error in errors
+    )
+    assert any(
+        "release docs missing workflow artifact truth snippet" in error
+        and "downloaded source artifact native artifact SHA-256 values" in error
+        for error in errors
+    )
+
+
+def test_release_truth_checker_requires_final_record_asset_import_docs() -> None:
+    checker = _load_release_truth_checker()
+    original_read = checker.read
+
+    def fake_read(relative: str) -> str:
+        text = original_read(relative)
+        if relative in {"README.md", "README.tr.md", "docs/RELEASE_STRATEGY.md"}:
+            return text.replace(" --require-final-record-assets", "")
+        return text
+
+    checker.read = fake_read
+    try:
+        errors = checker.check_release_docs()
+    finally:
+        checker.read = original_read
+
+    assert any(
+        "release docs missing workflow artifact truth snippet" in error
+        and "--require-final-record-assets" in error
+        for error in errors
+    )
+    assert any(
+        "README.md release section missing protected platform evidence truth snippet" in error
+        and "--require-final-record-assets" in error
+        for error in errors
+    )
+    assert any(
+        "README.tr.md missing protected platform evidence truth snippet" in error
+        and "--require-final-record-assets" in error
+        for error in errors
+    )
+
+
+def test_release_truth_checker_requires_readme_import_run_attempt_binding() -> None:
+    checker = _load_release_truth_checker()
+    original_read = checker.read
+
+    def fake_read(relative: str) -> str:
+        text = original_read(relative)
+        if relative == "README.md":
+            return text.replace(
+                "workflow-file, source-head and\nrun-attempt-bound accepted evidence artifacts",
+                "source-head-bound\naccepted evidence artifacts",
+            )
+        return text
+
+    checker.read = fake_read
+    try:
+        errors = checker.check_release_docs()
+    finally:
+        checker.read = original_read
+
+    assert any(
+        "README.md release section missing protected platform evidence truth snippet" in error
+        and "run-attempt-bound accepted evidence artifacts" in error
+        for error in errors
+    )
+    assert (
+        "release docs still advertise stale platform evidence workflow guidance: "
+        "source-head-bound accepted evidence artifacts"
+    ) in errors
+
+
+def test_release_truth_checker_requires_readme_target_specific_release_source_workflow() -> None:
+    checker = _load_release_truth_checker()
+    original_read = checker.read
+
+    def fake_read(relative: str) -> str:
+        text = original_read(relative)
+        if relative == "README.md":
+            return text.replace(
+                "target-specific release source workflow file",
+                "release source evidence",
+            )
+        return text
+
+    checker.read = fake_read
+    try:
+        errors = checker.check_release_docs()
+    finally:
+        checker.read = original_read
+
+    assert any(
+        "README.md release section missing protected platform evidence truth snippet" in error
+        and "target-specific release source workflow file" in error
+        for error in errors
+    )
+
+
+def test_release_truth_checker_requires_release_strategy_import_run_attempt_binding() -> None:
+    checker = _load_release_truth_checker()
+    original_read = checker.read
+
+    def fake_read(relative: str) -> str:
+        text = original_read(relative)
+        if relative == "docs/RELEASE_STRATEGY.md":
+            return text.replace(
+                "workflow-file, source-head and\n"
+                "  run-attempt-bound accepted Linux i386, Linux armhf and Windows XP native-host\n"
+                "  artifacts",
+                "source-head-bound\n"
+                "  accepted Linux i386, Linux armhf and Windows XP native-host artifacts",
+            )
+        return text
+
+    checker.read = fake_read
+    try:
+        errors = checker.check_release_docs()
+    finally:
+        checker.read = original_read
+
+    assert any(
+        "release docs missing workflow artifact truth snippet" in error
+        and "run-attempt-bound accepted Linux i386" in error
+        for error in errors
+    )
+    assert (
+        "release docs still advertise stale platform evidence workflow guidance: "
+        "source-head-bound accepted Linux i386, Linux armhf and Windows XP native-host artifacts"
+    ) in errors
+
+
+def test_release_truth_checker_requires_turkish_import_run_attempt_binding() -> None:
+    checker = _load_release_truth_checker()
+    original_read = checker.read
+
+    def fake_read(relative: str) -> str:
+        text = original_read(relative)
+        if relative == "README.tr.md":
+            return text.replace(
+                "ayni tag/repository/workflow file path/source-head/run-attempt",
+                "ayni tag/repository/source-head",
+            )
+        return text
+
+    checker.read = fake_read
+    try:
+        errors = checker.check_release_docs()
+    finally:
+        checker.read = original_read
+
+    assert any(
+        "README.tr.md missing protected platform evidence truth snippet" in error
+        and "ayni tag/repository/workflow file path/source-head/run-attempt" in error
+        for error in errors
+    )
+
+
+def test_release_truth_checker_requires_turkish_target_specific_release_source_workflow() -> None:
+    checker = _load_release_truth_checker()
+    original_read = checker.read
+
+    def fake_read(relative: str) -> str:
+        text = original_read(relative)
+        if relative == "README.tr.md":
+            return text.replace(
+                "target'a ozel release source workflow file",
+                "release source evidence",
+            )
+        return text
+
+    checker.read = fake_read
+    try:
+        errors = checker.check_release_docs()
+    finally:
+        checker.read = original_read
+
+    assert any(
+        "README.tr.md missing protected platform evidence truth snippet" in error
+        and "target'a ozel release source workflow file path" in error
+        for error in errors
+    )
 
 
 def test_release_truth_checker_rejects_stale_turkish_release_version() -> None:
@@ -329,13 +586,25 @@ def test_release_truth_checker_requires_imported_review_bundle_validation() -> N
     checker = _load_release_truth_checker()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
         'python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets '
-        '--require-goal-targets --release-tag "${{ github.ref_name }}"',
+        '--require-goal-targets --release-tag "${{ github.ref_name }}" --require-final-record-assets',
         "python scripts/check_platform_review_bundle_artifacts.py --help",
     )
 
     errors = checker.check_release_preflight(workflow)
 
-    assert any("imported platform review bundle validator" in error for error in errors)
+    assert any("imported platform review bundle and final record validator" in error for error in errors)
+
+
+def test_release_truth_checker_requires_imported_final_record_asset_validation() -> None:
+    checker = _load_release_truth_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        " --require-final-record-assets",
+        "",
+    )
+
+    errors = checker.check_release_preflight(workflow)
+
+    assert any("imported platform review bundle and final record validator" in error for error in errors)
 
 
 def test_release_truth_checker_requires_platform_import_gh_token() -> None:

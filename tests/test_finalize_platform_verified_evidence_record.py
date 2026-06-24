@@ -386,10 +386,83 @@ def test_finalize_platform_verified_evidence_record_rejects_weak_linux_smoke_log
         "linux-i386 archived native_smoke evidence missing required line: "
         "native installer smoke command: bash scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux "
         "--target linux-i386 --workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
-        f"--source-head-sha {'a' * 40}"
+        f"--workflow-run-attempt 1 --source-head-sha {'a' * 40}"
         in error
         for error in errors
     )
+
+
+def test_finalize_platform_verified_evidence_record_rejects_linux_builder_smoke_identity_drift(
+    tmp_path: Path,
+) -> None:
+    finalizer = _load_finalizer()
+    helpers = _load_platform_verified_evidence_tests()
+    target = "linux-i386"
+    release_tag = "v1.0.2"
+    candidate = helpers._linux_record(target)
+    _unfinalized_candidate(candidate)
+    artifact_archive_files = _attach_artifact_files(candidate)
+    candidate["builder_identity"]["host_identity"]["evidence_run_id"] = "linux-i386-1-0-2-run-99999"
+    candidate["builder_identity"]["host_identity"]["observed_at_utc"] = "2026-06-20T12:30:00Z"
+    builder_sha = helpers._json_sha256(candidate["builder_identity"])
+    candidate["builder_identity_sha256"] = builder_sha
+    candidate_path = tmp_path / "platform-verified-evidence-linux-i386.json"
+    builder_path = tmp_path / "builder-identity-linux-i386.json"
+    smoke_path = tmp_path / "native-smoke-linux-i386.log"
+    builder_path.write_text(json.dumps(candidate["builder_identity"], indent=2) + "\n", encoding="utf-8")
+    _sync_linux_source_record(candidate, "builder_identity", builder_sha, builder_path.stat().st_size)
+    _write_linux_smoke_evidence(smoke_path, target, candidate["artifact_sha256"])
+    smoke_sha = _sha256(smoke_path)
+    candidate["linux_smoke_evidence_sha256"] = {"native_smoke": smoke_sha}
+    _sync_linux_source_record(candidate, "native_smoke", smoke_sha, smoke_path.stat().st_size)
+    candidate_path.write_text(json.dumps(candidate, indent=2) + "\n", encoding="utf-8")
+    manifest, archive, sidecar = _write_bundle_files(
+        tmp_path,
+        stem=f"extended-linux-evidence-bundle-{target}-{release_tag}",
+        bundle_type="extended-linux-native-evidence",
+        target=target,
+        release_tag=release_tag,
+        manifest_records={
+            "promotion_config_sha256": candidate["promotion_config_sha256"],
+            "release_asset_urls": candidate["release_asset_urls"],
+            "release_asset_source": candidate["release_asset_source"],
+            "validated_commands": _linux_validated_commands(candidate),
+            "workflow": candidate["workflow"],
+            "workflow_inputs": candidate["workflow_inputs"],
+            "workflow_run_url": candidate["workflow_run_url"],
+            "runner_labels": candidate["runner_labels"],
+            "security_patch_evidence": candidate["builder_identity"]["security_patch_evidence"],
+            "builder_evidence": _file_record(builder_path),
+            "smoke_evidence": [_smoke_file_record(smoke_path, smoke_id="native_smoke", name=smoke_path.name)],
+            "candidate_record": _file_record(candidate_path),
+            "artifacts": _artifact_records(candidate),
+        },
+        archive_files={
+            **artifact_archive_files,
+            builder_path.name: builder_path.read_bytes(),
+            smoke_path.name: smoke_path.read_bytes(),
+            candidate_path.name: candidate_path.read_bytes(),
+        },
+    )
+
+    errors, record = finalizer.finalize_platform_verified_evidence_record(
+        candidate_record=candidate_path,
+        bundle_manifest=manifest,
+        bundle_archive=archive,
+        bundle_sha256s=sidecar,
+    )
+
+    assert record == {}
+    assert (
+        "linux-i386 archived native_smoke evidence native installer smoke evidence run id must match "
+        "builder_identity.host_identity.evidence_run_id 'linux-i386-1-0-2-run-99999', "
+        "got 'linux-i386-1-0-2-run-12345'"
+    ) in errors
+    assert (
+        "linux-i386 archived native_smoke evidence native installer smoke observed at utc must not be earlier than "
+        "builder_identity.host_identity.observed_at_utc '2026-06-20T12:30:00Z', "
+        "got '2026-06-20T12:00:00Z'"
+    ) in errors
 
 
 def test_finalize_platform_verified_evidence_record_binds_xp_review_bundle(tmp_path: Path) -> None:
@@ -596,6 +669,46 @@ def test_finalize_platform_verified_evidence_record_rejects_xp_archived_smoke_re
     assert (
         "windows-xp-native-x64 smoke result cli_launch evidence_file release binding must be "
         "['v1.0.2'], got ['v9.9.9']"
+    ) in errors
+
+
+def test_finalize_platform_verified_evidence_record_rejects_xp_archived_smoke_source_mismatch(
+    tmp_path: Path,
+) -> None:
+    finalizer = _load_finalizer()
+    helpers = _load_platform_verified_evidence_tests()
+    target = "windows-xp-native-x64"
+    release_tag = "v1.0.2"
+    candidate = helpers._xp_record(target)
+    _unfinalized_candidate(candidate)
+
+    def corrupt_smoke_source(smoke_id: str, text: str) -> str:
+        if smoke_id == "cli_launch":
+            return text.replace(
+                f"xp smoke source head sha: {'a' * 40}",
+                f"xp smoke source head sha: {'b' * 40}",
+            )
+        return text
+
+    candidate_path, manifest, archive, sidecar = _write_xp_candidate_and_bundle(
+        tmp_path,
+        candidate,
+        target=target,
+        release_tag=release_tag,
+        smoke_text_mutator=corrupt_smoke_source,
+    )
+
+    errors, record = finalizer.finalize_platform_verified_evidence_record(
+        candidate_record=candidate_path,
+        bundle_manifest=manifest,
+        bundle_archive=archive,
+        bundle_sha256s=sidecar,
+    )
+
+    assert record == {}
+    assert (
+        "windows-xp-native-x64 smoke result cli_launch evidence_file source head SHA binding "
+        f"must be [{repr('a' * 40)}], got [{repr('b' * 40)}]"
     ) in errors
 
 
@@ -1360,8 +1473,13 @@ def _write_xp_candidate_and_bundle(
     assert isinstance(smoke_hashes, dict)
     summary = candidate["xp_evidence_summary"]
     assert isinstance(summary, dict)
+    release_source = summary["release_source"]
+    assert isinstance(release_source, dict)
     host_identity = summary["host_identity"]
     assert isinstance(host_identity, dict)
+    os_identity = summary["os"]
+    assert isinstance(os_identity, dict)
+    host_probe_lines = _xp_host_probe_lines(target, os_identity)
     smoke_records: list[dict[str, object]] = []
     archive_files: dict[str, bytes] = {}
     for smoke_id in sorted(smoke_hashes):
@@ -1371,8 +1489,21 @@ def _write_xp_candidate_and_bundle(
             f"xp smoke target: {target}\n"
             f"xp smoke release: {release_tag}\n"
             f"xp smoke id: {smoke_id}\n"
-            f"xp smoke host label: {host_identity['host_label']}\n"
+            f"xp smoke os name: {os_identity['name']}\n"
+            f"xp smoke os architecture: {os_identity['architecture']}\n"
+            f"xp smoke os service pack: {os_identity['service_pack']}\n"
+            + (
+                f"xp smoke os edition: {os_identity['edition']}\n"
+                if "edition" in os_identity
+                else ""
+            )
+            + host_probe_lines
+            + f"xp smoke host label: {host_identity['host_label']}\n"
             f"xp smoke evidence run id: {host_identity['evidence_run_id']}\n"
+            f"xp smoke observed at utc: {host_identity['observed_at_utc']}\n"
+            f"xp smoke source workflow run: {release_source['workflow_run_url']}\n"
+            f"xp smoke source head sha: {release_source['head_sha']}\n"
+            f"xp smoke source run attempt: {release_source['run_attempt']}\n"
             f"{_xp_security_smoke_lines(str(smoke_id))}"
             f"{smoke_id} smoke evidence\n"
         )
@@ -1433,6 +1564,26 @@ def _write_xp_candidate_and_bundle(
     return candidate_path, manifest, archive, sidecar
 
 
+def _xp_host_probe_lines(target: str, os_identity: dict[str, Any]) -> str:
+    if target.endswith("x64"):
+        ver_output = "Microsoft Windows [Version 5.2.3790]"
+        processor_architecture = "AMD64"
+        caption = "Microsoft Windows XP Professional x64 Edition"
+    else:
+        ver_output = "Microsoft Windows XP [Version 5.1.2600]"
+        processor_architecture = "x86"
+        caption = "Microsoft Windows XP Professional"
+    service_pack = str(os_identity["service_pack"]).removeprefix("SP")
+    return (
+        "xp smoke host probe command: ver\n"
+        f"xp smoke host probe output: {ver_output}\n"
+        f"xp smoke processor architecture env: {processor_architecture}\n"
+        "xp smoke processor architecture w6432 env: \n"
+        f"xp smoke wmic os caption: {caption}\n"
+        f"xp smoke wmic os csdversion: Service Pack {service_pack}\n"
+    )
+
+
 def _xp_security_smoke_lines(smoke_id: str) -> str:
     if smoke_id == "legacy_crypto_profile_scoped":
         return (
@@ -1480,6 +1631,7 @@ def _xp_evidence_from_candidate(candidate: dict[str, object]) -> dict[str, objec
         "schema_version": 1,
         "target": summary["target"],
         "release_tag": summary["release_tag"],
+        "release_source": copy.deepcopy(summary["release_source"]),
         "host_identity": copy.deepcopy(summary["host_identity"]),
         "os": copy.deepcopy(summary["os"]),
         "toolchain": copy.deepcopy(summary["toolchain"]),
@@ -1530,11 +1682,14 @@ def _write_linux_smoke_evidence(
     artifact_hashes: dict[str, str],
     *,
     workflow_run_url: str = "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+    workflow_run_attempt: int = 1,
     source_head_sha: str = "a" * 40,
 ) -> None:
     arch = "i386" if target == "linux-i386" else "armhf"
     machine = "i686" if target == "linux-i386" else "armv7l"
     dpkg_arch = "i386" if target == "linux-i386" else "armhf"
+    run_id = workflow_run_url.rstrip("/").rsplit("/", 1)[-1]
+    evidence_run_id = f"{target}-1-0-2-run-{run_id}"
     artifact_lines = [
         f"native installer smoke artifact sha256: {name} {artifact_hashes[name]}"
         for name in sorted(artifact_hashes)
@@ -1545,12 +1700,18 @@ def _write_linux_smoke_evidence(
             [
                 f"native installer smoke command: bash scripts/smoke_linux_native.sh --arch {arch} "
                 f"--dist native-dist/linux --target {target} --workflow-run-url {workflow_run_url} "
+                f"--workflow-run-attempt {workflow_run_attempt} "
                 f"--source-head-sha {source_head_sha}",
                 "native installer smoke release: v1.0.2",
                 f"native installer smoke target arch: {arch}",
                 f"native installer smoke target: {target}",
                 f"native installer smoke workflow run: {workflow_run_url}",
+                f"native installer smoke workflow run attempt: {workflow_run_attempt}",
                 f"native installer smoke source head sha: {source_head_sha}",
+                f"native installer smoke git head sha: {source_head_sha}",
+                f"native installer smoke host label: {target}-builder",
+                f"native installer smoke evidence run id: {evidence_run_id}",
+                "native installer smoke observed at utc: 2026-06-20T12:00:00Z",
                 f"native installer smoke uname machine: {machine}",
                 f"native installer smoke dpkg architecture: {dpkg_arch}",
                 "native installer smoke userland bits: 32",

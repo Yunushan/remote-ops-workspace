@@ -99,6 +99,8 @@ def check_docs_and_verifier() -> list[str]:
         "legacy_target=windows-xp-32",
         "allow_legacy_crypto=true",
         "allow_legacy_rdp_security=true",
+        "generic XP labels such as `xp`, `winxp` and `windows-xp`",
+        "`legacy_platform` alias key",
     ):
         if snippet not in docs:
             errors.append(f"security docs missing required snippet: {snippet}")
@@ -230,6 +232,32 @@ def check_legacy_launcher_behavior(
             ),
         ),
         (
+            "SSHv1 launch must reject generic XP legacy_target aliases",
+            profile_type(
+                name="sshv1-generic-target",
+                protocol="ssh1",
+                host="192.0.2.10",
+                options={
+                    "allow_insecure_sshv1": "true",
+                    "legacy_target": "windows-xp",
+                    "allow_legacy_crypto": "true",
+                },
+            ),
+        ),
+        (
+            "SSHv1 launch must require the legacy_target key",
+            profile_type(
+                name="sshv1-legacy-platform-alias",
+                protocol="ssh1",
+                host="192.0.2.10",
+                options={
+                    "allow_insecure_sshv1": "true",
+                    "legacy_platform": "windows-xp-32",
+                    "allow_legacy_crypto": "true",
+                },
+            ),
+        ),
+        (
             "weak SSH algorithms must require an isolated XP legacy_target",
             profile_type(
                 name="weak-ssh-missing-target",
@@ -239,12 +267,38 @@ def check_legacy_launcher_behavior(
             ),
         ),
         (
+            "weak SSH algorithms must reject generic XP legacy_target aliases",
+            profile_type(
+                name="weak-ssh-generic-target",
+                protocol="ssh",
+                host="192.0.2.10",
+                options={
+                    "kex_algorithms": "+diffie-hellman-group1-sha1",
+                    "legacy_target": "windows-xp",
+                    "allow_legacy_crypto": "true",
+                },
+            ),
+        ),
+        (
             "RDP native security must require an isolated XP legacy_target",
             profile_type(
                 name="rdp-missing-target",
                 protocol="rdp",
                 host="192.0.2.10",
                 options={"security": "rdp", "allow_legacy_rdp_security": "true"},
+            ),
+        ),
+        (
+            "RDP native security must reject generic XP legacy_target aliases",
+            profile_type(
+                name="rdp-generic-target",
+                protocol="rdp",
+                host="192.0.2.10",
+                options={
+                    "security": "rdp",
+                    "legacy_target": "windows-xp",
+                    "allow_legacy_rdp_security": "true",
+                },
             ),
         ),
     )

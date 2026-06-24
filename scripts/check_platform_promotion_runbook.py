@@ -7,6 +7,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 PROMOTION_PATH = ROOT / "configs" / "platform_parity_promotion.json"
+XP_NATIVE_EVIDENCE_CONTRACT_PATH = ROOT / "configs" / "xp_native_evidence_contract.json"
 RUNBOOK_PATH = ROOT / "docs" / "PLATFORM_PROMOTION_RUNBOOK.md"
 
 COMMON_SNIPPETS = (
@@ -19,6 +20,7 @@ COMMON_SNIPPETS = (
     "python scripts/check_release_publish_assets.py --assets-dir <release-assets-dir> --tag v<project.version> --require-platform-goal-targets",
     "python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> --release-assets-dir <release-assets-dir>",
     "python scripts/import_platform_evidence_artifacts.py --release-tag v<project.version> --require-goal-targets --out-dir <release-assets-dir> --dry-run --verify-source-run",
+    "workflow file path\nmust match `release_asset_source.workflow`",
     "python scripts/make_extended_linux_evidence_bundle.py",
     "Linux evidence bundle output directory must include the target id and release tag as path segments",
     "python scripts/make_xp_native_evidence_bundle.py",
@@ -27,6 +29,7 @@ COMMON_SNIPPETS = (
     "python scripts/make_platform_verified_evidence_record.py",
     "python scripts/finalize_platform_verified_evidence_record.py",
     "staged native artifacts and review-bundle files must match the finalized accepted record hashes",
+    "downloaded source artifact native artifact SHA-256 mismatches",
     "staged review bundle must re-finalize to the accepted record before upload",
     "validated_commands` includes the candidate `local_evidence_preflight_command",
     "--append-registry",
@@ -44,10 +47,17 @@ LINUX_SNIPPETS = (
     "python3 scripts/check_extended_platform_builder.py --target",
     "--release-tag v<project.version> --workflow-run-url <github-actions-run-url> --workflow-run-attempt <github-actions-run-attempt> --source-head-sha <github-actions-head-sha> --out",
     "source_head_sha",
+    "observed_git_head_sha",
+    "git_worktree_clean=true",
     "native_build_command",
     "native_smoke_command",
     "native installer smoke workflow run",
+    "native installer smoke workflow run attempt",
     "native installer smoke source head sha",
+    "native installer smoke git head sha",
+    "native installer smoke host label",
+    "native installer smoke evidence run id",
+    "native installer smoke observed at utc",
     "native installer smoke uname machine",
     "native installer smoke dpkg architecture",
     "native installer smoke userland bits: 32",
@@ -72,6 +82,9 @@ XP_SNIPPETS = (
     "python scripts/check_xp_native_evidence.py --evidence <target-release-evidence.json> --assets-dir <target-release-artifact-dir> --evidence-dir <target-release-evidence-dir>",
     "--xp-evidence <target-release-evidence.json> --xp-evidence-dir <target-release-evidence-dir> --xp-source-workflow-run-url <github-actions-run-url> --xp-source-head-sha <github-actions-head-sha> --xp-source-run-attempt <github-actions-run-attempt>",
     "--xp-evidence-dir",
+    "--source-workflow-run-url <github-actions-run-url>",
+    "`xp_evidence_summary.release_source`",
+    "`xp smoke source head sha: <github-actions-head-sha>`",
     "cli_launch",
     "gui_or_legacy_host_ui_launch",
     "loopback_profile_dry_run",
@@ -209,14 +222,48 @@ def check_xp_runbook(text: str, target_id: str, requirements: dict[str, Any]) ->
     for snippet in XP_SNIPPETS:
         if snippet not in text:
             errors.append(f"{target_id} runbook missing XP snippet: {snippet}")
+    xp_contract = read_json(XP_NATIVE_EVIDENCE_CONTRACT_PATH)
+    xp_target_contract = xp_contract.get("targets", {}).get(target_id, {})
+    if not isinstance(xp_target_contract, dict):
+        xp_target_contract = {}
+    architecture = str(xp_target_contract.get("architecture", "")).strip()
+    service_pack = str(xp_target_contract.get("minimum_service_pack", "")).strip()
+    required_edition = str(xp_target_contract.get("required_edition", "")).strip()
+    os_edition_proof = f"`xp smoke os edition: {required_edition}`, " if required_edition else ""
+    if target_id.endswith("x64"):
+        host_probe_proof = (
+            "`xp smoke host probe command: ver`, "
+            "`xp smoke host probe output: Microsoft Windows [Version 5.2.3790]`, "
+            "`xp smoke processor architecture env: AMD64`, "
+            "`xp smoke processor architecture w6432 env: <empty-or-AMD64>`, "
+            "`xp smoke wmic os caption: Microsoft Windows XP Professional x64 Edition`, "
+            "`xp smoke wmic os csdversion: Service Pack 2`, "
+        )
+    else:
+        host_probe_proof = (
+            "`xp smoke host probe command: ver`, "
+            "`xp smoke host probe output: Microsoft Windows XP [Version 5.1.2600]`, "
+            "`xp smoke processor architecture env: x86`, "
+            "`xp smoke processor architecture w6432 env: <empty>`, "
+            "`xp smoke wmic os caption: Microsoft Windows XP <edition>`, "
+            "`xp smoke wmic os csdversion: Service Pack 3`, "
+        )
     expected_proof_line = (
         f"Every smoke evidence file must include `xp smoke target: {target_id}`, "
         "`xp smoke release: v<project.version>`, `xp smoke id: <smoke_id>`, "
-        "`xp smoke host label: <host_label>` and "
-        "`xp smoke evidence run id: <evidence_run_id>`."
+        f"`xp smoke os name: Windows XP`, `xp smoke os architecture: {architecture}`, "
+        f"`xp smoke os service pack: {service_pack}`, "
+        + os_edition_proof
+        + host_probe_proof
+        + "`xp smoke host label: <host_label>`, "
+        "`xp smoke evidence run id: <evidence_run_id>`, "
+        "`xp smoke observed at utc: <observed_at_utc>`, "
+        "`xp smoke source workflow run: <github-actions-run-url>`, "
+        "`xp smoke source head sha: <github-actions-head-sha>` and "
+        "`xp smoke source run attempt: <github-actions-run-attempt>`."
     )
     if expected_proof_line not in text:
-        errors.append(f"{target_id} runbook missing XP smoke host identity proof line")
+        errors.append(f"{target_id} runbook missing XP smoke OS and host identity proof line")
     runner = str(requirements.get("xp_vm_or_self_hosted_runner", ""))
     if runner and runner not in text:
         errors.append(f"{target_id} runbook missing XP runner requirement: {runner}")

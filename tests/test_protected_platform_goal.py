@@ -71,6 +71,7 @@ def test_protected_platform_goal_strict_gate_fails_empty_registry() -> None:
     ]
     human_scope = checker.format_goal_scope(goal)
     assert "release scope: requires one release_tag, one GitHub release repository" in human_scope
+    assert "per-target release source workflow files" in human_scope
     assert "per-record release source run attempts" in human_scope
     assert "accepted release scope evidence: none" in human_scope
     human_requirements = checker.format_goal_requirements(goal)
@@ -78,7 +79,23 @@ def test_protected_platform_goal_strict_gate_fails_empty_registry() -> None:
     assert "linux-i386: missing" in human_requirements
     assert "release_tag=v1.0.2 status=accepted readiness=100.0" in human_requirements
     assert "release proof: 6 artifacts, 3 review-bundle files" in human_requirements
+    assert (
+        "source workflow: .github/workflows/extended-platform-evidence.yml; "
+        "artifact=extended-linux-evidence-linux-i386-v1.0.2"
+    ) in human_requirements
     assert "commands: accepted_evidence_candidate_command, artifact_validation_command" in human_requirements
+    assert "    smoke evidence:" in human_requirements
+    assert (
+        "- capture native smoke log with target, release tag, workflow run URL, "
+        "workflow run attempt, source head SHA and observed git HEAD SHA"
+    ) in human_requirements
+    assert (
+        "bind sanitized host label, deterministic evidence run ID and observed-at UTC timestamp "
+        "into the native smoke log"
+    ) in human_requirements
+    assert "verify AppImage install, verify, upgrade and uninstall" in human_requirements
+    assert "- launch CLI without unsupported Windows APIs" in human_requirements
+    assert "validate artifact manifest and SHA256SUMS on the XP evidence host" in human_requirements
     assert LINUX_SECURITY_REQUIREMENTS[0] in human_requirements
     assert "builder/host: Windows XP Professional x64 Edition SP2 VM" in human_requirements
     assert "modern Windows 10/11, Linux, and macOS defaults must keep hardened crypto" in human_requirements
@@ -143,6 +160,17 @@ def test_protected_platform_goal_reports_release_scoped_completion() -> None:
     assert "accepted release tags: v1.0.2" in human_scope
     assert "accepted release repositories: example/remote-ops-workspace" in human_scope
     assert f"accepted release source heads: {'a' * 40}" in human_scope
+    assert (
+        "accepted release source workflows: "
+        "linux-armhf=.github/workflows/extended-platform-evidence.yml, "
+        "linux-i386=.github/workflows/extended-platform-evidence.yml"
+    ) in human_scope
+    assert (
+        "windows-xp-native-x64=.github/workflows/xp-native-evidence.yml, "
+        "windows-xp-native-x86=.github/workflows/xp-native-evidence.yml"
+    ) in human_scope
+    assert "accepted release source run attempts: linux-armhf=1, linux-i386=1" in human_scope
+    assert "windows-xp-native-x64=1, windows-xp-native-x86=1" in human_scope
 
 
 def test_protected_platform_goal_strict_gate_does_not_count_malformed_accepted_record() -> None:

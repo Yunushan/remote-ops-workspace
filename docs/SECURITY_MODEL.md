@@ -38,6 +38,10 @@ Profile and command launch hardening:
   isolated Windows XP remote target and explicitly sets `allow_legacy_crypto=true`;
 - FreeRDP `security=rdp` is blocked unless the profile is marked as an isolated
   Windows XP remote target and explicitly sets `allow_legacy_rdp_security=true`;
+- generic XP labels such as `xp`, `winxp` and `windows-xp`, plus the
+  `legacy_platform` alias key, are rejected for legacy crypto/RDP opt-ins; the
+  profile must use the architecture-specific `legacy_target=windows-xp-32` or
+  `legacy_target=windows-xp-64` boundary;
 - SFTP upload, delete, rename and local-overwrite download plans are marked destructive and are refused before execution unless the operator passes `--force`; broad delete/rename targets such as `/`, `.`, `~`, parent traversal and remote globs are rejected even with force;
 - GUI process-backed panes track their `QProcess` state, ask before closing tabs or quitting with live sessions, and apply terminate-then-kill cleanup with bounded waits;
 - `row serve-web` validates the bind host, refuses non-loopback interfaces unless `--allow-public-bind` is set, disables directory listing and adds static-app browser hardening headers;

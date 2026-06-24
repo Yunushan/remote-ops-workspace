@@ -19,6 +19,7 @@ from check_platform_verified_evidence import (  # noqa: E402
     KNOWN_TARGETS,
     REVIEW_BUNDLE_TYPES,
     accepted_record_source_file,
+    check_linux_smoke_builder_identity_binding,
     check_linux_smoke_log_text,
     check_platform_verified_evidence,
     read_json,
@@ -822,17 +823,31 @@ def check_linux_archive_smoke_log(
     except UnicodeDecodeError as exc:
         return [f"review bundle archive native_smoke evidence is not UTF-8: {exc}"]
     source = candidate.get("release_asset_source")
+    target = str(candidate.get("target", ""))
     source_head_sha = str(source.get("head_sha", "")).strip() if isinstance(source, dict) else ""
-    return check_linux_smoke_log_text(
-        str(candidate.get("target", "")),
+    source_run_attempt = source.get("run_attempt") if isinstance(source, dict) else 0
+    errors = check_linux_smoke_log_text(
+        target,
         str(candidate.get("release_tag", "")),
         str(candidate.get("native_smoke_command", "")),
         str(candidate.get("workflow_run_url", "")),
         text,
+        workflow_run_attempt=(
+            source_run_attempt if isinstance(source_run_attempt, int) and not isinstance(source_run_attempt, bool) else 0
+        ),
         source_head_sha=source_head_sha,
         label="archived native_smoke evidence",
         artifact_sha256=candidate.get("artifact_sha256"),
     )
+    errors.extend(
+        check_linux_smoke_builder_identity_binding(
+            target,
+            "archived native_smoke evidence",
+            text,
+            candidate.get("builder_identity"),
+        )
+    )
+    return errors
 
 
 def check_xp_archive_smoke_manifest_matches_evidence(
@@ -865,6 +880,8 @@ def check_xp_archive_smoke_files(
     target = str(archived_evidence.get("target", ""))
     release_tag = str(archived_evidence.get("release_tag", ""))
     host_identity = archived_evidence.get("host_identity")
+    os_identity = archived_evidence.get("os")
+    release_source = archived_evidence.get("release_source")
     smoke_results = archived_evidence.get("smoke_results")
     if not isinstance(smoke_results, list):
         return ["review bundle archive XP evidence smoke_results must be a list"]
@@ -893,6 +910,8 @@ def check_xp_archive_smoke_files(
                 smoke_id,
                 data,
                 host_identity=host_identity,
+                os_identity=os_identity,
+                release_source=release_source,
             )
         )
         errors.extend(

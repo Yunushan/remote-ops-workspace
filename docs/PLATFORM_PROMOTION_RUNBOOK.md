@@ -32,8 +32,9 @@ The strict `--require-goal-targets` and `--require-platform-goal-targets`
 commands must fail until linux-i386, linux-armhf, windows-xp-native-x86 and
 windows-xp-native-x64 all have finalized accepted evidence records.
 When a release tag is supplied, all four accepted records must match that exact
-tag, one GitHub release repository and one release source head SHA, and each
-record must bind a positive release source run attempt; stale evidence from a
+tag, one GitHub release repository, the target-specific release source workflow
+file and one release source head SHA, and each record must bind a positive
+release source run attempt; stale evidence from a
 previous release, different repository, different source commit or stale run
 attempt cannot promote a newer release.
 The strict `python scripts/verify.py --require-platform-goal-targets` command
@@ -51,7 +52,8 @@ that same repository.
 Release-imported evidence artifacts are downloaded only from the accepted
 record's `release_asset_source.workflow_run_url` after the release importer
 confirms the GitHub Actions run is `completed`, concluded `success`, and came
-from a `workflow_dispatch` event. The run's `headSha` must match both
+from a `workflow_dispatch` event. The exact run attempt's workflow file path
+must match `release_asset_source.workflow`. The run's `headSha` must match both
 `release_asset_source.head_sha` in the accepted record and the release
 checkout commit, and the run's attempt number must match
 `release_asset_source.run_attempt`. Failed, still-running, unrelated,
@@ -64,6 +66,9 @@ The downloaded source artifact must contain exactly the expected release and
 review-bundle files at artifact root; extra files, private raw logs and nested
 builder output directories are rejected before anything is copied into the
 release asset directory.
+The release importer also checks downloaded source artifact native artifact
+SHA-256 values, review-bundle file sizes and review-bundle SHA-256 values
+against the finalized accepted record before copying into `release-assets`.
 The recorded artifact validation command must use the same target id and
 `--tag` value as the accepted evidence record.
 Its `--assets-dir` value must be a staged workspace-relative non-hidden path,
@@ -123,6 +128,9 @@ The release importer rejects symlinked downloaded artifact and output
 directories, symlinked parent directories, symlinked destination files,
 non-file destinations and expected file names that are not exact safe file
 names before copying accepted evidence artifacts into `release-assets`.
+It also rejects downloaded source artifact native artifact SHA-256 mismatches
+and review-bundle size or SHA-256 mismatches before staging those files for
+release upload.
 The publish-time release asset checker repeats the boundary by rejecting a
 symlinked `release-assets` directory, symlinked parent directories and
 symlinked release asset files before upload.
@@ -160,8 +168,9 @@ Each accepted record must include the SHA-256 of the current
 promote readiness after required artifacts or evidence fields change.
 Accepted registry targets are unique. Windows XP native-host promotion requires
 the `windows-xp-native-x86` and `windows-xp-native-x64` records to use the same
-`release_tag`, GitHub release repository and release source head SHA, and each
-XP record must bind a positive release source run attempt; mismatched XP release
+`release_tag`, GitHub release repository, target-specific release source
+workflow file and release source head SHA, and each XP record must bind a
+positive release source run attempt; mismatched XP release
 evidence remains partial and cannot promote the row.
 Artifact validation checks names, non-empty payloads, exact SHA-256 sidecars,
 exact safe checksum/native-manifest file references, exact native manifest
@@ -177,15 +186,24 @@ validated XP evidence JSON, the SHA-256 of the sanitized XP host identity, and
 tracked `scripts/xp_smoke_runner.cmd` per-smoke command provenance that binds
 the target, release tag, smoke id, evidence file, canonical
 `--proof-file xp-smoke-proof/<smoke_id>.txt` path, sanitized `--host-label`
-and concrete `--evidence-run-id` for every smoke result.
+and concrete `--evidence-run-id`, `--observed-at-utc`, `--os-name`,
+`--os-architecture`, `--os-service-pack` and x64-only `--os-edition` for every
+smoke result.
 The accepted XP summary must carry `xp_evidence_summary.smoke_evidence_files`
 and each `xp_evidence_summary.smoke_commands` entry must bind `--evidence-file`
 to the matching summary file path and `--proof-file` to the canonical proof
-file path, with `--host-label` and `--evidence-run-id` matching
-`xp_evidence_summary.host_identity`.
+file path, with `--host-label`, `--evidence-run-id` and `--observed-at-utc`
+matching `xp_evidence_summary.host_identity`, and `--os-name`,
+`--os-architecture`, `--os-service-pack` plus required `--os-edition` matching
+`xp_evidence_summary.os`.
 Each smoke evidence file must also include `xp smoke target`, `xp smoke
-release`, `xp smoke id`, `xp smoke host label` and `xp smoke evidence run id`
-proof lines.
+release`, `xp smoke id`, `xp smoke os name`, `xp smoke os architecture`,
+`xp smoke os service pack`, x64-only `xp smoke os edition`,
+`xp smoke host probe command`, `xp smoke host probe output`,
+`xp smoke processor architecture env`, `xp smoke processor architecture w6432
+env`, `xp smoke wmic os caption`, `xp smoke wmic os csdversion`,
+`xp smoke host label`, `xp smoke evidence run id` and `xp smoke observed at
+utc` proof lines.
 They must be plain non-symlink files under `xp-smoke-evidence/` and include the
 SHA-256 values for each required smoke evidence file, so the registry stays
 tied to the reviewed XP VM/toolchain bundle without exposing real usernames,
@@ -255,14 +273,14 @@ Required real evidence:
 - Use a matching `[self-hosted, linux, i386]` runner or equivalent real i386/i686 builder.
 - Capture builder identity evidence with `python3 scripts/check_extended_platform_builder.py --target linux-i386 --release-tag v<project.version> --workflow-run-url <github-actions-run-url> --workflow-run-attempt <github-actions-run-attempt> --source-head-sha <github-actions-head-sha> --out <target-release-evidence-dir>/builder-identity-linux-i386.json`.
 - Builder identity must prove matching `platform.machine()` and `uname -m`, `dpkg --print-architecture=i386`, `getconf LONG_BIT=32`, concrete `rpm` and `rpmbuild` tool paths, and `sudo -n true` non-interactive sudo.
-- Accepted evidence must include `builder_identity_sha256` matching that builder identity JSON, and the JSON must bind the same `release_tag`, `workflow_run_url`, `workflow_run_attempt` and `source_head_sha` as the accepted record's release source, include a sanitized target-scoped `host_identity` block with `operator_private_data_redacted=true`, include security patch evidence proving TLS 1.3 preferred, TLS 1.2 minimum, isolated legacy compatibility and CVE patch review, and prove modern Windows 10/11, Linux and macOS defaults remain hardened.
+- Accepted evidence must include `builder_identity_sha256` matching that builder identity JSON, and the JSON must bind the same `release_tag`, `workflow_run_url`, `workflow_run_attempt`, `source_head_sha` and `observed_git_head_sha` as the accepted record's release source, prove `git_worktree_clean=true` before native build, include a sanitized target-scoped `host_identity` block with `operator_private_data_redacted=true`, include security patch evidence proving TLS 1.3 preferred, TLS 1.2 minimum, isolated legacy compatibility and CVE patch review, and prove modern Windows 10/11, Linux and macOS defaults remain hardened.
 - Accepted evidence must include `workflow_inputs` matching `target=linux-i386`, the record `release_tag` and the release asset base URL used by the workflow dispatch, `release_asset_source.workflow=.github/workflows/extended-platform-evidence.yml`, and positive `release_asset_source.run_attempt`.
 - Build with `scripts/make_linux_native.sh`.
-- Smoke with `scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux --target linux-i386 --workflow-run-url <github-actions-run-url> --source-head-sha <github-actions-head-sha>`.
+- Smoke with `scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux --target linux-i386 --workflow-run-url <github-actions-run-url> --workflow-run-attempt <github-actions-run-attempt> --source-head-sha <github-actions-head-sha>`.
 - Accepted evidence must include `native_build_command=TARGET_ARCH=i386 PYTHON_BIN=.venv-native/bin/python bash scripts/make_linux_native.sh`.
-- Accepted evidence must include `native_smoke_command=bash scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux --target linux-i386 --workflow-run-url <github-actions-run-url> --source-head-sha <github-actions-head-sha>`.
+- Accepted evidence must include `native_smoke_command=bash scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux --target linux-i386 --workflow-run-url <github-actions-run-url> --workflow-run-attempt <github-actions-run-attempt> --source-head-sha <github-actions-head-sha>`.
 - Capture the smoke output as `<target-release-evidence-dir>/native-smoke-linux-i386.log` and bind it into the accepted record as `linux_smoke_evidence_sha256.native_smoke`.
-- The captured smoke log must include `native installer smoke command: bash scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux --target linux-i386 --workflow-run-url <github-actions-run-url> --source-head-sha <github-actions-head-sha>`, `native installer smoke release: v<project.version>`, `native installer smoke target arch: i386`, `native installer smoke target: linux-i386`, `native installer smoke workflow run: <github-actions-run-url>`, `native installer smoke source head sha: <github-actions-head-sha>`, `native installer smoke uname machine: <i386-or-i686>`, `native installer smoke dpkg architecture: i386`, `native installer smoke userland bits: 32`, Linux security proof lines including `native installer smoke TLS minimum modern profiles: TLS 1.2`, `native installer smoke TLS preferred modern profiles: TLS 1.3`, `native installer smoke legacy compatibility profile: isolated-opt-in` and `native installer smoke modern defaults unchanged: true`, one `native installer smoke artifact sha256: <artifact> <sha256>` line for each expected DEB/RPM/AppImage artifact, every DEB/RPM/AppImage install/verify/upgrade/uninstall line and `native installer smoke passed for Linux i386`.
+- The captured smoke log must include `native installer smoke command: bash scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux --target linux-i386 --workflow-run-url <github-actions-run-url> --workflow-run-attempt <github-actions-run-attempt> --source-head-sha <github-actions-head-sha>`, `native installer smoke release: v<project.version>`, `native installer smoke target arch: i386`, `native installer smoke target: linux-i386`, `native installer smoke workflow run: <github-actions-run-url>`, `native installer smoke workflow run attempt: <github-actions-run-attempt>`, `native installer smoke source head sha: <github-actions-head-sha>`, `native installer smoke git head sha: <github-actions-head-sha>`, `native installer smoke host label: linux-i386-builder`, `native installer smoke evidence run id: linux-i386-<release>-run-<github-actions-run-id>`, `native installer smoke observed at utc: <YYYY-MM-DDTHH:MM:SSZ>`, `native installer smoke uname machine: <i386-or-i686>`, `native installer smoke dpkg architecture: i386`, `native installer smoke userland bits: 32`, Linux security proof lines including `native installer smoke TLS minimum modern profiles: TLS 1.2`, `native installer smoke TLS preferred modern profiles: TLS 1.3`, `native installer smoke legacy compatibility profile: isolated-opt-in` and `native installer smoke modern defaults unchanged: true`, one `native installer smoke artifact sha256: <artifact> <sha256>` line for each expected DEB/RPM/AppImage artifact, every DEB/RPM/AppImage install/verify/upgrade/uninstall line and `native installer smoke passed for Linux i386`.
 - Validate artifacts with `python scripts/check_platform_promotion_artifacts.py --target linux-i386 --assets-dir <target-release-artifact-dir> --tag v<project.version> --strict`.
 - Run the local protected-goal preflight with `python scripts/check_platform_goal_local_evidence.py --root . --release-tag v<project.version> --target linux-i386 --assets-dir <target-release-artifact-dir> --linux-builder-evidence <builder-identity.json> --linux-smoke-evidence <native-smoke-log> --linux-workflow-run-url <github-actions-run-url> --linux-source-head-sha <github-actions-head-sha> --linux-source-run-attempt <github-actions-run-attempt>` before generating the candidate record; `<target-release-artifact-dir>` must contain only the expected release artifacts for strict promotion and must include `linux-i386` and `v<project.version>` as path segments.
 - If the preflight used a narrower staging root instead of `.`, pass `--local-evidence-root <staged-root>` to `python scripts/make_platform_verified_evidence_record.py` so the accepted record's `local_evidence_preflight_command` matches the command actually run.
@@ -315,14 +333,14 @@ Required real evidence:
 - Use a matching `[self-hosted, linux, armhf]` runner or equivalent real armv7l/armhf builder.
 - Capture builder identity evidence with `python3 scripts/check_extended_platform_builder.py --target linux-armhf --release-tag v<project.version> --workflow-run-url <github-actions-run-url> --workflow-run-attempt <github-actions-run-attempt> --source-head-sha <github-actions-head-sha> --out <target-release-evidence-dir>/builder-identity-linux-armhf.json`.
 - Builder identity must prove matching `platform.machine()` and `uname -m`, `dpkg --print-architecture=armhf`, `getconf LONG_BIT=32`, concrete `rpm` and `rpmbuild` tool paths, and `sudo -n true` non-interactive sudo.
-- Accepted evidence must include `builder_identity_sha256` matching that builder identity JSON, and the JSON must bind the same `release_tag`, `workflow_run_url`, `workflow_run_attempt` and `source_head_sha` as the accepted record's release source, include a sanitized target-scoped `host_identity` block with `operator_private_data_redacted=true`, include security patch evidence proving TLS 1.3 preferred, TLS 1.2 minimum, isolated legacy compatibility and CVE patch review, and prove modern Windows 10/11, Linux and macOS defaults remain hardened.
+- Accepted evidence must include `builder_identity_sha256` matching that builder identity JSON, and the JSON must bind the same `release_tag`, `workflow_run_url`, `workflow_run_attempt`, `source_head_sha` and `observed_git_head_sha` as the accepted record's release source, prove `git_worktree_clean=true` before native build, include a sanitized target-scoped `host_identity` block with `operator_private_data_redacted=true`, include security patch evidence proving TLS 1.3 preferred, TLS 1.2 minimum, isolated legacy compatibility and CVE patch review, and prove modern Windows 10/11, Linux and macOS defaults remain hardened.
 - Accepted evidence must include `workflow_inputs` matching `target=linux-armhf`, the record `release_tag` and the release asset base URL used by the workflow dispatch, `release_asset_source.workflow=.github/workflows/extended-platform-evidence.yml`, and positive `release_asset_source.run_attempt`.
 - Build with `scripts/make_linux_native.sh`.
-- Smoke with `scripts/smoke_linux_native.sh --arch armhf --dist native-dist/linux --target linux-armhf --workflow-run-url <github-actions-run-url> --source-head-sha <github-actions-head-sha>`.
+- Smoke with `scripts/smoke_linux_native.sh --arch armhf --dist native-dist/linux --target linux-armhf --workflow-run-url <github-actions-run-url> --workflow-run-attempt <github-actions-run-attempt> --source-head-sha <github-actions-head-sha>`.
 - Accepted evidence must include `native_build_command=TARGET_ARCH=armhf PYTHON_BIN=.venv-native/bin/python bash scripts/make_linux_native.sh`.
-- Accepted evidence must include `native_smoke_command=bash scripts/smoke_linux_native.sh --arch armhf --dist native-dist/linux --target linux-armhf --workflow-run-url <github-actions-run-url> --source-head-sha <github-actions-head-sha>`.
+- Accepted evidence must include `native_smoke_command=bash scripts/smoke_linux_native.sh --arch armhf --dist native-dist/linux --target linux-armhf --workflow-run-url <github-actions-run-url> --workflow-run-attempt <github-actions-run-attempt> --source-head-sha <github-actions-head-sha>`.
 - Capture the smoke output as `<target-release-evidence-dir>/native-smoke-linux-armhf.log` and bind it into the accepted record as `linux_smoke_evidence_sha256.native_smoke`.
-- The captured smoke log must include `native installer smoke command: bash scripts/smoke_linux_native.sh --arch armhf --dist native-dist/linux --target linux-armhf --workflow-run-url <github-actions-run-url> --source-head-sha <github-actions-head-sha>`, `native installer smoke release: v<project.version>`, `native installer smoke target arch: armhf`, `native installer smoke target: linux-armhf`, `native installer smoke workflow run: <github-actions-run-url>`, `native installer smoke source head sha: <github-actions-head-sha>`, `native installer smoke uname machine: <armv7l-or-compatible>`, `native installer smoke dpkg architecture: armhf`, `native installer smoke userland bits: 32`, Linux security proof lines including `native installer smoke TLS minimum modern profiles: TLS 1.2`, `native installer smoke TLS preferred modern profiles: TLS 1.3`, `native installer smoke legacy compatibility profile: isolated-opt-in` and `native installer smoke modern defaults unchanged: true`, one `native installer smoke artifact sha256: <artifact> <sha256>` line for each expected DEB/RPM/AppImage artifact, every DEB/RPM/AppImage install/verify/upgrade/uninstall line and `native installer smoke passed for Linux armhf`.
+- The captured smoke log must include `native installer smoke command: bash scripts/smoke_linux_native.sh --arch armhf --dist native-dist/linux --target linux-armhf --workflow-run-url <github-actions-run-url> --workflow-run-attempt <github-actions-run-attempt> --source-head-sha <github-actions-head-sha>`, `native installer smoke release: v<project.version>`, `native installer smoke target arch: armhf`, `native installer smoke target: linux-armhf`, `native installer smoke workflow run: <github-actions-run-url>`, `native installer smoke workflow run attempt: <github-actions-run-attempt>`, `native installer smoke source head sha: <github-actions-head-sha>`, `native installer smoke git head sha: <github-actions-head-sha>`, `native installer smoke host label: linux-armhf-builder`, `native installer smoke evidence run id: linux-armhf-<release>-run-<github-actions-run-id>`, `native installer smoke observed at utc: <YYYY-MM-DDTHH:MM:SSZ>`, `native installer smoke uname machine: <armv7l-or-compatible>`, `native installer smoke dpkg architecture: armhf`, `native installer smoke userland bits: 32`, Linux security proof lines including `native installer smoke TLS minimum modern profiles: TLS 1.2`, `native installer smoke TLS preferred modern profiles: TLS 1.3`, `native installer smoke legacy compatibility profile: isolated-opt-in` and `native installer smoke modern defaults unchanged: true`, one `native installer smoke artifact sha256: <artifact> <sha256>` line for each expected DEB/RPM/AppImage artifact, every DEB/RPM/AppImage install/verify/upgrade/uninstall line and `native installer smoke passed for Linux armhf`.
 - Validate artifacts with `python scripts/check_platform_promotion_artifacts.py --target linux-armhf --assets-dir <target-release-artifact-dir> --tag v<project.version> --strict`.
 - Run the local protected-goal preflight with `python scripts/check_platform_goal_local_evidence.py --root . --release-tag v<project.version> --target linux-armhf --assets-dir <target-release-artifact-dir> --linux-builder-evidence <builder-identity.json> --linux-smoke-evidence <native-smoke-log> --linux-workflow-run-url <github-actions-run-url> --linux-source-head-sha <github-actions-head-sha> --linux-source-run-attempt <github-actions-run-attempt>` before generating the candidate record; `<target-release-artifact-dir>` must contain only the expected release artifacts for strict promotion and must include `linux-armhf` and `v<project.version>` as path segments.
 - If the preflight used a narrower staging root instead of `.`, pass `--local-evidence-root <staged-root>` to `python scripts/make_platform_verified_evidence_record.py` so the accepted record's `local_evidence_preflight_command` matches the command actually run.
@@ -376,7 +394,8 @@ Required real evidence:
 - The accepted evidence record must include `workflow=.github/workflows/xp-native-evidence.yml`, `release_asset_source.workflow=.github/workflows/xp-native-evidence.yml`, positive `release_asset_source.run_attempt` and `workflow_inputs` matching the dispatch `target`, `release_tag`, `release_asset_base_url`, `assets_dir`, `evidence_file` and `evidence_dir`; the three path inputs must match `native_evidence_validation_command`.
 - Start a non-promoting evidence skeleton with `python scripts/make_xp_native_evidence_template.py --target windows-xp-native-x86 --release-tag v<project.version> --out-dir <evidence-dir>`.
 - Produce smoke evidence files for `cli_launch`, `gui_or_legacy_host_ui_launch`, `loopback_profile_dry_run`, `artifact_manifest_validation`, `legacy_crypto_profile_scoped` and `modern_defaults_unchanged`.
-- Every smoke evidence file must include `xp smoke target: windows-xp-native-x86`, `xp smoke release: v<project.version>`, `xp smoke id: <smoke_id>`, `xp smoke host label: <host_label>` and `xp smoke evidence run id: <evidence_run_id>`.
+- Each `scripts/xp_smoke_runner.cmd` command must include `--source-workflow-run-url <github-actions-run-url>`, `--source-head-sha <github-actions-head-sha>` and `--source-run-attempt <github-actions-run-attempt>`.
+- Every smoke evidence file must include `xp smoke target: windows-xp-native-x86`, `xp smoke release: v<project.version>`, `xp smoke id: <smoke_id>`, `xp smoke os name: Windows XP`, `xp smoke os architecture: x86`, `xp smoke os service pack: SP3`, `xp smoke host probe command: ver`, `xp smoke host probe output: Microsoft Windows XP [Version 5.1.2600]`, `xp smoke processor architecture env: x86`, `xp smoke processor architecture w6432 env: <empty>`, `xp smoke wmic os caption: Microsoft Windows XP <edition>`, `xp smoke wmic os csdversion: Service Pack 3`, `xp smoke host label: <host_label>`, `xp smoke evidence run id: <evidence_run_id>`, `xp smoke observed at utc: <observed_at_utc>`, `xp smoke source workflow run: <github-actions-run-url>`, `xp smoke source head sha: <github-actions-head-sha>` and `xp smoke source run attempt: <github-actions-run-attempt>`.
 - legacy TLS, SSH, and RDP compatibility must remain profile-scoped opt-in.
 - Keep legacy TLS, SSH and RDP compatibility profile-scoped and opt-in.
 - modern Windows 10/11, Linux, and macOS defaults must keep hardened crypto.
@@ -385,16 +404,17 @@ Required real evidence:
 - Validate XP evidence with `python scripts/check_xp_native_evidence.py --evidence <target-release-evidence.json> --assets-dir <target-release-artifact-dir> --evidence-dir <target-release-evidence-dir>`.
 - Run the local protected-goal preflight with `python scripts/check_platform_goal_local_evidence.py --root . --release-tag v<project.version> --target windows-xp-native-x86 --assets-dir <target-release-artifact-dir> --xp-evidence <target-release-evidence.json> --xp-evidence-dir <target-release-evidence-dir> --xp-source-workflow-run-url <github-actions-run-url> --xp-source-head-sha <github-actions-head-sha> --xp-source-run-attempt <github-actions-run-attempt>` before generating the candidate record. The XP evidence JSON `artifact_validation.command --assets-dir` must match `<target-release-artifact-dir>`.
 - The XP evidence JSON `artifacts` list must exactly match the required XP x86 artifact names, and its `artifact_validation.command` must use exactly one `--tag` matching the evidence `release_tag` and exactly one `--strict`.
+- The XP evidence JSON `release_source` block must bind `.github/workflows/xp-native-evidence.yml`, `<github-actions-run-url>`, `<github-actions-head-sha>` and `<github-actions-run-attempt>`.
 - The XP evidence JSON `host_identity` block must use a sanitized lab
   `host_label`, concrete `evidence_run_id`, UTC `observed_at_utc`, matching
   OS/toolchain identity and `operator_private_data_redacted=true`.
 - The `legacy_crypto_profile_scoped` smoke file must include `legacy compatibility profile: isolated-opt-in`, `legacy crypto scope: profile-only` and `weak crypto global default: false`.
 - The `modern_defaults_unchanged` smoke file must include `modern TLS minimum: TLS 1.2`, `modern TLS preferred: TLS 1.3`, `modern defaults unchanged: true` and `weak crypto global default: false`.
 - Use `--xp-evidence-dir` when smoke evidence files live outside the evidence JSON directory.
-- Review the generated record's `xp_evidence_sha256`, `xp_evidence_contract_sha256`, `xp_host_identity_sha256`, `xp_evidence_summary`, XP security patch evidence and `xp_smoke_evidence_sha256` values against the validated XP evidence bundle before appending.
+- Review the generated record's `xp_evidence_sha256`, `xp_evidence_contract_sha256`, `xp_host_identity_sha256`, `xp_evidence_summary`, `xp_evidence_summary.release_source`, XP security patch evidence and `xp_smoke_evidence_sha256` values against the validated XP evidence bundle before appending.
 - Confirm `xp_evidence_sources` binds the candidate `xp-evidence.json` path, size and SHA-256 plus every required XP smoke evidence file path, size and SHA-256.
 - Package the XP review bundle with `python scripts/make_xp_native_evidence_bundle.py --target windows-xp-native-x86 --evidence <target-release-evidence.json> --candidate-record <platform-verified-evidence-windows-xp-native-x86.json> --assets-dir <target-release-artifact-dir> --evidence-dir <target-release-evidence-dir> --out-dir <xp-evidence-output-dir>`.
-- Confirm the XP bundle manifest `validated_commands` includes the candidate `local_evidence_preflight_command`, that `workflow`, `workflow_inputs`, `release_asset_source` and `release_asset_urls` exactly match the candidate record, and that `host_identity`, `toolchain` and `security` exactly match the candidate `xp_evidence_summary`.
+- Confirm the XP bundle manifest `validated_commands` includes the candidate `local_evidence_preflight_command`, that `workflow`, `workflow_inputs`, `release_asset_source` and `release_asset_urls` exactly match the candidate record, and that `release_source`, `host_identity`, `toolchain` and `security` exactly match the candidate `xp_evidence_summary`.
 - Finalize the accepted-evidence record with `python scripts/finalize_platform_verified_evidence_record.py --candidate-record <platform-verified-evidence-windows-xp-native-x86.json> --bundle-manifest <xp-evidence-output-dir>/xp-native-evidence-bundle-windows-xp-native-x86-v<project.version>.json --bundle-archive <xp-evidence-output-dir>/xp-native-evidence-bundle-windows-xp-native-x86-v<project.version>.zip --bundle-sha256s <xp-evidence-output-dir>/xp-native-evidence-bundle-windows-xp-native-x86-v<project.version>-SHA256SUMS.txt --out <final-record.json>`.
 
 Required artifacts:
@@ -441,7 +461,8 @@ Required real evidence:
 - The XP evidence JSON `os.service_pack` must include `SP2` and `os.edition`
   must be `Professional x64 Edition`.
 - Produce smoke evidence files for `cli_launch`, `gui_or_legacy_host_ui_launch`, `loopback_profile_dry_run`, `artifact_manifest_validation`, `legacy_crypto_profile_scoped` and `modern_defaults_unchanged`.
-- Every smoke evidence file must include `xp smoke target: windows-xp-native-x64`, `xp smoke release: v<project.version>`, `xp smoke id: <smoke_id>`, `xp smoke host label: <host_label>` and `xp smoke evidence run id: <evidence_run_id>`.
+- Each `scripts/xp_smoke_runner.cmd` command must include `--source-workflow-run-url <github-actions-run-url>`, `--source-head-sha <github-actions-head-sha>` and `--source-run-attempt <github-actions-run-attempt>`.
+- Every smoke evidence file must include `xp smoke target: windows-xp-native-x64`, `xp smoke release: v<project.version>`, `xp smoke id: <smoke_id>`, `xp smoke os name: Windows XP`, `xp smoke os architecture: x64`, `xp smoke os service pack: SP2`, `xp smoke os edition: Professional x64 Edition`, `xp smoke host probe command: ver`, `xp smoke host probe output: Microsoft Windows [Version 5.2.3790]`, `xp smoke processor architecture env: AMD64`, `xp smoke processor architecture w6432 env: <empty-or-AMD64>`, `xp smoke wmic os caption: Microsoft Windows XP Professional x64 Edition`, `xp smoke wmic os csdversion: Service Pack 2`, `xp smoke host label: <host_label>`, `xp smoke evidence run id: <evidence_run_id>`, `xp smoke observed at utc: <observed_at_utc>`, `xp smoke source workflow run: <github-actions-run-url>`, `xp smoke source head sha: <github-actions-head-sha>` and `xp smoke source run attempt: <github-actions-run-attempt>`.
 - legacy TLS, SSH, and RDP compatibility must remain profile-scoped opt-in.
 - Keep legacy TLS, SSH and RDP compatibility profile-scoped and opt-in.
 - modern Windows 10/11, Linux, and macOS defaults must keep hardened crypto.
@@ -450,16 +471,17 @@ Required real evidence:
 - Validate XP evidence with `python scripts/check_xp_native_evidence.py --evidence <target-release-evidence.json> --assets-dir <target-release-artifact-dir> --evidence-dir <target-release-evidence-dir>`.
 - Run the local protected-goal preflight with `python scripts/check_platform_goal_local_evidence.py --root . --release-tag v<project.version> --target windows-xp-native-x64 --assets-dir <target-release-artifact-dir> --xp-evidence <target-release-evidence.json> --xp-evidence-dir <target-release-evidence-dir> --xp-source-workflow-run-url <github-actions-run-url> --xp-source-head-sha <github-actions-head-sha> --xp-source-run-attempt <github-actions-run-attempt>` before generating the candidate record. The XP evidence JSON `artifact_validation.command --assets-dir` must match `<target-release-artifact-dir>`.
 - The XP evidence JSON `artifacts` list must exactly match the required XP x64 artifact names, and its `artifact_validation.command` must use exactly one `--tag` matching the evidence `release_tag` and exactly one `--strict`.
+- The XP evidence JSON `release_source` block must bind `.github/workflows/xp-native-evidence.yml`, `<github-actions-run-url>`, `<github-actions-head-sha>` and `<github-actions-run-attempt>`.
 - The XP evidence JSON `host_identity` block must use a sanitized lab
   `host_label`, concrete `evidence_run_id`, UTC `observed_at_utc`, matching
   OS/toolchain identity and `operator_private_data_redacted=true`.
 - The `legacy_crypto_profile_scoped` smoke file must include `legacy compatibility profile: isolated-opt-in`, `legacy crypto scope: profile-only` and `weak crypto global default: false`.
 - The `modern_defaults_unchanged` smoke file must include `modern TLS minimum: TLS 1.2`, `modern TLS preferred: TLS 1.3`, `modern defaults unchanged: true` and `weak crypto global default: false`.
 - Use `--xp-evidence-dir` when smoke evidence files live outside the evidence JSON directory.
-- Review the generated record's `xp_evidence_sha256`, `xp_evidence_contract_sha256`, `xp_host_identity_sha256`, `xp_evidence_summary`, XP security patch evidence and `xp_smoke_evidence_sha256` values against the validated XP evidence bundle before appending.
+- Review the generated record's `xp_evidence_sha256`, `xp_evidence_contract_sha256`, `xp_host_identity_sha256`, `xp_evidence_summary`, `xp_evidence_summary.release_source`, XP security patch evidence and `xp_smoke_evidence_sha256` values against the validated XP evidence bundle before appending.
 - Confirm `xp_evidence_sources` binds the candidate `xp-evidence.json` path, size and SHA-256 plus every required XP smoke evidence file path, size and SHA-256.
 - Package the XP review bundle with `python scripts/make_xp_native_evidence_bundle.py --target windows-xp-native-x64 --evidence <target-release-evidence.json> --candidate-record <platform-verified-evidence-windows-xp-native-x64.json> --assets-dir <target-release-artifact-dir> --evidence-dir <target-release-evidence-dir> --out-dir <xp-evidence-output-dir>`.
-- Confirm the XP bundle manifest `validated_commands` includes the candidate `local_evidence_preflight_command`, that `workflow`, `workflow_inputs`, `release_asset_source` and `release_asset_urls` exactly match the candidate record, and that `host_identity`, `toolchain` and `security` exactly match the candidate `xp_evidence_summary`.
+- Confirm the XP bundle manifest `validated_commands` includes the candidate `local_evidence_preflight_command`, that `workflow`, `workflow_inputs`, `release_asset_source` and `release_asset_urls` exactly match the candidate record, and that `release_source`, `host_identity`, `toolchain` and `security` exactly match the candidate `xp_evidence_summary`.
 - Finalize the accepted-evidence record with `python scripts/finalize_platform_verified_evidence_record.py --candidate-record <platform-verified-evidence-windows-xp-native-x64.json> --bundle-manifest <xp-evidence-output-dir>/xp-native-evidence-bundle-windows-xp-native-x64-v<project.version>.json --bundle-archive <xp-evidence-output-dir>/xp-native-evidence-bundle-windows-xp-native-x64-v<project.version>.zip --bundle-sha256s <xp-evidence-output-dir>/xp-native-evidence-bundle-windows-xp-native-x64-v<project.version>-SHA256SUMS.txt --out <final-record.json>`.
 
 Required artifacts:

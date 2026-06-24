@@ -17,6 +17,7 @@ from check_platform_promotion_artifacts import (  # noqa: E402
 )
 from check_platform_verified_evidence import (  # noqa: E402
     LINUX_TARGETS,
+    check_linux_smoke_builder_identity_binding,
     check_linux_smoke_log_text,
     check_platform_verified_evidence,
     directory_path_has_file_suffix,
@@ -139,6 +140,7 @@ def make_extended_linux_evidence_bundle(
         errors.append("candidate linux_evidence_sources must match builder and smoke evidence files")
     source = candidate.get("release_asset_source")
     source_head_sha = str(source.get("head_sha", "")).strip() if isinstance(source, dict) else ""
+    source_run_attempt = source.get("run_attempt") if isinstance(source, dict) else 0
     if smoke_evidence.is_file():
         errors.extend(
             check_linux_smoke_evidence_file(
@@ -146,9 +148,11 @@ def make_extended_linux_evidence_bundle(
                 release_tag,
                 str(candidate.get("native_smoke_command", "")),
                 str(candidate.get("workflow_run_url", "")),
+                source_run_attempt if isinstance(source_run_attempt, int) and not isinstance(source_run_attempt, bool) else 0,
                 smoke_evidence,
                 source_head_sha=source_head_sha,
                 artifact_sha256=candidate.get("artifact_sha256"),
+                builder_identity=builder_identity,
             )
         )
     actual_artifact_sha = artifact_sha256_map(target, release_tag, assets_dir, promotion)
@@ -340,24 +344,37 @@ def check_linux_smoke_evidence_file(
     release_tag: str,
     native_smoke_command: str,
     workflow_run_url: str,
+    workflow_run_attempt: int,
     smoke_evidence: Path,
     *,
     source_head_sha: str,
     artifact_sha256: Any | None = None,
+    builder_identity: Any | None = None,
 ) -> list[str]:
     try:
         text = smoke_evidence.read_text(encoding="utf-8")
     except UnicodeDecodeError as exc:
         return [f"{target} linux_smoke_evidence must be UTF-8 text: {exc}"]
-    return check_linux_smoke_log_text(
+    errors = check_linux_smoke_log_text(
         target,
         release_tag,
         native_smoke_command,
         workflow_run_url,
         text,
+        workflow_run_attempt=workflow_run_attempt,
         source_head_sha=source_head_sha,
         artifact_sha256=artifact_sha256,
     )
+    if builder_identity is not None:
+        errors.extend(
+            check_linux_smoke_builder_identity_binding(
+                target,
+                "linux_smoke_evidence",
+                text,
+                builder_identity,
+            )
+        )
+    return errors
 
 
 def bundle_manifest(

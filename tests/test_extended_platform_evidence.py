@@ -117,6 +117,20 @@ def test_extended_platform_evidence_requires_builder_workflow_run_attempt() -> N
     assert any("builder workflow run-attempt evidence" in error for error in errors)
 
 
+def test_extended_platform_evidence_requires_smoke_workflow_run_attempt() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
+        ' --workflow-run-attempt "${{ github.run_attempt }}" --source-head-sha "${{ github.sha }}"',
+        ' --source-head-sha "${{ github.sha }}"',
+        1,
+    )
+
+    errors = checker.check_extended_platform_evidence(workflow)
+
+    assert any("native installer smoke evidence capture" in error for error in errors)
+    assert any("native smoke workflow run-attempt evidence" in error for error in errors)
+
+
 def test_extended_platform_evidence_requires_release_source_artifact_name() -> None:
     checker = _load_script("check_extended_platform_evidence")
     workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
@@ -353,10 +367,14 @@ def test_extended_platform_builder_rejects_interactive_sudo(monkeypatch) -> None
 
 def test_extended_platform_builder_writes_identity_evidence(tmp_path: Path, monkeypatch) -> None:
     checker = _load_script("check_extended_platform_builder")
+    for name in ("GITHUB_SHA", "GITHUB_RUN_ATTEMPT", "GITHUB_RUN_ID", "GITHUB_REPOSITORY"):
+        monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(checker.sys, "platform", "linux")
     monkeypatch.setattr(checker.sys, "version_info", (3, 12, 0))
     monkeypatch.setattr(checker, "normalized_machine", lambda: "i686")
     monkeypatch.setattr(checker, "command_output", _linux_command_output("i686", "i386", "32"))
+    monkeypatch.setattr(checker, "git_status_porcelain", lambda: "")
+    monkeypatch.setattr(checker, "git_worktree_clean", lambda: True)
     monkeypatch.setattr(checker, "command_succeeds", lambda _command: True)
     monkeypatch.setattr(shutil, "which", lambda tool: f"/usr/bin/{tool}")
     output = tmp_path / "builder-identity-linux-i386.json"
@@ -387,6 +405,8 @@ def test_extended_platform_builder_writes_identity_evidence(tmp_path: Path, monk
     assert data["workflow_run_url"] == "https://github.com/example/remote-ops-workspace/actions/runs/12345"
     assert data["workflow_run_attempt"] == 1
     assert data["source_head_sha"] == "a" * 40
+    assert data["observed_git_head_sha"] == "a" * 40
+    assert data["git_worktree_clean"] is True
     assert data["host_identity"] == {
         "schema_version": 1,
         "target": "linux-i386",
@@ -513,6 +533,8 @@ def _linux_command_output(uname: str, dpkg_arch: str, bits: str):
             return bits
         if command == ["openssl", "version"]:
             return "openssl 3.0.13"
+        if command == ["git", "rev-parse", "HEAD"]:
+            return "a" * 40
         return ""
 
     return _output

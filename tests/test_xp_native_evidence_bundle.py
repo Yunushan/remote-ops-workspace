@@ -602,10 +602,12 @@ def _valid_evidence(
             "description": "Separate legacy XP-capable native host toolchain",
         },
     }
+    release_source = _xp_release_source()
     return {
         "schema_version": 1,
         "target": target,
         "release_tag": release_tag,
+        "release_source": release_source,
         "os": os_record,
         "toolchain": {
             "separate_legacy_toolchain": True,
@@ -631,7 +633,19 @@ def _valid_evidence(
                     f"--smoke-id {smoke_id} --evidence-file xp-smoke-evidence/{smoke_id}.txt "
                     f"--proof-file xp-smoke-proof/{smoke_id}.txt "
                     f"--host-label {host_identity['host_label']} "
-                    f"--evidence-run-id {host_identity['evidence_run_id']}"
+                    f"--evidence-run-id {host_identity['evidence_run_id']} "
+                    f"--observed-at-utc {host_identity['observed_at_utc']} "
+                    f"--source-workflow-run-url {release_source['workflow_run_url']} "
+                    f"--source-head-sha {release_source['head_sha']} "
+                    f"--source-run-attempt {release_source['run_attempt']} "
+                    f'--os-name "{os_record["name"]}" '
+                    f"--os-architecture {os_record['architecture']} "
+                    f"--os-service-pack {os_record['service_pack']}"
+                    + (
+                        f' --os-edition "{os_record["edition"]}"'
+                        if "edition" in os_record
+                        else ""
+                    )
                 ),
                 "evidence_file": f"xp-smoke-evidence/{smoke_id}.txt",
                 "evidence_sha256": hashlib.sha256(smoke_id.encode()).hexdigest(),
@@ -652,8 +666,19 @@ def _valid_evidence(
     }
 
 
+def _xp_release_source() -> dict[str, object]:
+    return {
+        "workflow": ".github/workflows/xp-native-evidence.yml",
+        "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/54321",
+        "head_sha": "a" * 40,
+        "run_attempt": 1,
+    }
+
+
 def _attach_smoke_evidence_files(root: Path, evidence: dict[str, Any]) -> None:
     host_identity = evidence["host_identity"]
+    release_source = evidence["release_source"]
+    host_probe_lines = _xp_host_probe_lines(evidence["target"], evidence["os"])
     for result in evidence["smoke_results"]:
         path = root / result["evidence_file"]
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -662,13 +687,46 @@ def _attach_smoke_evidence_files(root: Path, evidence: dict[str, Any]) -> None:
             f"xp smoke target: {evidence['target']}\n"
             f"xp smoke release: {evidence['release_tag']}\n"
             f"xp smoke id: {result['id']}\n"
-            f"xp smoke host label: {host_identity['host_label']}\n"
+            f"xp smoke os name: {evidence['os']['name']}\n"
+            f"xp smoke os architecture: {evidence['os']['architecture']}\n"
+            f"xp smoke os service pack: {evidence['os']['service_pack']}\n"
+            + (
+                f"xp smoke os edition: {evidence['os']['edition']}\n"
+                if "edition" in evidence["os"]
+                else ""
+            )
+            + host_probe_lines
+            + f"xp smoke host label: {host_identity['host_label']}\n"
             f"xp smoke evidence run id: {host_identity['evidence_run_id']}\n"
+            f"xp smoke observed at utc: {host_identity['observed_at_utc']}\n"
+            f"xp smoke source workflow run: {release_source['workflow_run_url']}\n"
+            f"xp smoke source head sha: {release_source['head_sha']}\n"
+            f"xp smoke source run attempt: {release_source['run_attempt']}\n"
             f"{security_lines}"
             f"{result['id']} passed on Windows XP evidence host\n",
             encoding="utf-8",
         )
         result["evidence_sha256"] = _sha256(path)
+
+
+def _xp_host_probe_lines(target: str, os_identity: dict[str, Any]) -> str:
+    if target.endswith("x64"):
+        ver_output = "Microsoft Windows [Version 5.2.3790]"
+        processor_architecture = "AMD64"
+        caption = "Microsoft Windows XP Professional x64 Edition"
+    else:
+        ver_output = "Microsoft Windows XP [Version 5.1.2600]"
+        processor_architecture = "x86"
+        caption = "Microsoft Windows XP Professional"
+    service_pack = str(os_identity["service_pack"]).removeprefix("SP")
+    return (
+        "xp smoke host probe command: ver\n"
+        f"xp smoke host probe output: {ver_output}\n"
+        f"xp smoke processor architecture env: {processor_architecture}\n"
+        "xp smoke processor architecture w6432 env: \n"
+        f"xp smoke wmic os caption: {caption}\n"
+        f"xp smoke wmic os csdversion: Service Pack {service_pack}\n"
+    )
 
 
 def _xp_security_smoke_lines(smoke_id: str) -> str:

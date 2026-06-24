@@ -113,8 +113,9 @@ The strict verifier also runs
 `python scripts/import_platform_evidence_artifacts.py --release-tag v<project.version> --require-goal-targets --out-dir <release-assets-dir> --dry-run --verify-source-run`
 and `python scripts/check_release_publish_assets.py --assets-dir <release-assets-dir> --tag v<project.version> --require-platform-goal-targets`,
 so accepted records must be release-importable, bound to the current checkout
-head, backed by completed successful dispatch runs and matched by the downloaded
-release asset directory before promotion is trusted.
+head, backed by completed successful dispatch runs, hash-checked as downloaded
+source artifacts before being copied into the release asset directory and
+matched by the downloaded release asset directory before promotion is trusted.
 Generate candidate accepted records with
 `python scripts/make_platform_verified_evidence_record.py` after artifact and
 XP evidence validators pass; package the review bundle, then use
@@ -139,7 +140,9 @@ Linux and XP promotion artifact directories and contained files must be plain
 non-symlink paths, and evidence bundle output directories must include the
 target id and release tag as path segments. Promotion uploads must also verify
 native artifact and review-bundle file hashes against the finalized accepted
-record before upload.
+record before upload, and the release importer performs the same native
+artifact SHA-256 plus review-bundle size/SHA-256 checks on the downloaded source
+artifact before copying into `release-assets`.
 The accepted record's artifact validation command must also use the same target
 id, exactly one concrete `--assets-dir` value and exactly one `--tag` value
 matching the record. Placeholder paths such as `<artifact-dir>` are valid in
@@ -152,7 +155,7 @@ too.
 Linux i386/armhf records must
 also include the builder identity JSON emitted by
 `python3 scripts/check_extended_platform_builder.py --release-tag v<project.version> --workflow-run-url <github-actions-run-url> --workflow-run-attempt <github-actions-run-attempt> --source-head-sha <github-actions-head-sha> --out ...`, including
-the same `release_tag`, `workflow_run_url` and `workflow_run_attempt` as the accepted record, plus `source_head_sha` matching `release_asset_source.head_sha`, a
+the same `release_tag`, `workflow_run_url` and `workflow_run_attempt` as the accepted record, plus `source_head_sha` and `observed_git_head_sha` matching `release_asset_source.head_sha`, `git_worktree_clean=true`, a
 sanitized target-scoped `host_identity` block with
 `operator_private_data_redacted=true`, matching `platform.machine()`,
 `uname -m`, `dpkg --print-architecture`
@@ -162,12 +165,15 @@ matches that JSON and security patch evidence proving TLS 1.3 preferred,
 TLS 1.2 minimum, isolated legacy compatibility and CVE patch review while
 modern Windows 10/11, Linux and macOS defaults remain hardened, a
 `native_build_command` and `native_smoke_command` matching the promotion
-contract, where the Linux smoke command includes the target id and workflow run
-URL, a `linux_smoke_evidence_sha256.native_smoke` digest for the captured native
-smoke log, whose evidence files must use target-scoped names
+contract, where the Linux smoke command includes the target id, workflow run
+URL, workflow run attempt and source head SHA, and the captured smoke log proves
+the observed Git HEAD SHA matches that source head SHA plus the sanitized host
+label, deterministic evidence run ID and observed-at UTC timestamp, a `linux_smoke_evidence_sha256.native_smoke`
+digest for the captured native smoke log, whose evidence files must use target-scoped names
 `builder-identity-<target>.json`, `native-smoke-<target>.log` and
 `platform-verified-evidence-<target>.json`, and whose content must include the canonical smoke command, target id,
-workflow run URL, release tag, target architecture, every DEB/RPM/AppImage
+workflow run URL, release tag, target architecture, host label, evidence run ID,
+observed-at timestamp, every DEB/RPM/AppImage
 install/verify/upgrade/uninstall line and the final pass line, plus
 `workflow_inputs` that bind the dispatch target, release tag and release asset
 base URL to the record. Windows
@@ -179,7 +185,9 @@ that bind the dispatch `target`, `release_tag`, `release_asset_base_url`,
 `xp_evidence_sources` that bind the evidence JSON path, file size and SHA-256
 plus every required smoke evidence file path, size and SHA-256,
 `xp_evidence_summary` for the XP target/release/toolchain/security/smoke
-binding, `xp_host_identity_sha256` for the sanitized XP host identity in
+binding, `xp_evidence_summary.release_source` matching `release_asset_source`
+for workflow, workflow run URL, head SHA and run attempt,
+`xp_host_identity_sha256` for the sanitized XP host identity in
 `xp_evidence_summary.host_identity`, required XP security patch evidence,
 security smoke proof lines for `legacy_crypto_profile_scoped` and
 `modern_defaults_unchanged`,
@@ -188,15 +196,27 @@ tracked `scripts/xp_smoke_runner.cmd` per-smoke command provenance in
 `xp_evidence_summary.smoke_evidence_files` bindings that match each
 `--evidence-file` command argument, canonical
 `--proof-file xp-smoke-proof/<smoke_id>.txt` command bindings, and
-`--host-label` plus `--evidence-run-id` command bindings that match
-`xp_evidence_summary.host_identity`,
+`--host-label`, `--evidence-run-id` and `--observed-at-utc` command bindings
+that match `xp_evidence_summary.host_identity`, plus
+`--source-workflow-run-url`, `--source-head-sha` and `--source-run-attempt`
+bindings that match `xp_evidence_summary.release_source`, plus `--os-name`,
+`--os-architecture`, `--os-service-pack` and required `--os-edition` command
+bindings that match `xp_evidence_summary.os`,
 `xp_smoke_evidence_sha256` for each required smoke evidence file, and
 `xp_evidence_contract_sha256` for the
 current XP evidence contract. Each smoke evidence file must include proof lines
-for `xp smoke target`, `xp smoke release`, `xp smoke id`, `xp smoke host label`
-and `xp smoke evidence run id`, so copied evidence from another target, smoke,
-release tag, lab host or evidence run cannot promote; smoke evidence paths
-must also be plain non-symlink files under `xp-smoke-evidence/`. The current XP
+for `xp smoke target`, `xp smoke release`, `xp smoke id`, `xp smoke os name`,
+`xp smoke os architecture`, `xp smoke os service pack`, required
+`xp smoke os edition`, `xp smoke host probe command`, `xp smoke host probe
+output`, `xp smoke processor architecture env`, `xp smoke processor
+architecture w6432 env`, `xp smoke wmic os caption`,
+`xp smoke wmic os csdversion`, `xp smoke host label`, `xp smoke evidence run
+id`, `xp smoke observed at utc`, `xp smoke source workflow run`,
+`xp smoke source head sha` and `xp smoke source run attempt`, so copied evidence from another target,
+smoke, release tag, lab host, evidence run, observed timestamp, operating
+system, architecture, service pack, edition, Windows version probe or processor
+architecture cannot promote; smoke evidence paths must
+also be plain non-symlink files under `xp-smoke-evidence/`. The current XP
 evidence contract requires XP x86
 SP3 evidence and Windows XP Professional x64 Edition SP2 evidence before either
 native-host row can promote.
@@ -217,7 +237,7 @@ Current readiness:
 - Linux i386: 70.0%, script-supported native. Promotion requires a real
   i386/i686 release builder, default `linux-native` release matrix membership,
   upload/publish asset coverage, `scripts/make_linux_native.sh` output,
-  `scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux --target linux-i386 --workflow-run-url <github-actions-run-url> --source-head-sha <github-actions-head-sha>`, native
+  `scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux --target linux-i386 --workflow-run-url <github-actions-run-url> --workflow-run-attempt <github-actions-run-attempt> --source-head-sha <github-actions-head-sha>`, native
   manifest evidence, checksum sidecars and
   `python scripts/check_platform_promotion_artifacts.py --target linux-i386 --assets-dir <target-release-artifact-dir> --tag v<project.version> --strict`.
   The dispatch-only evidence workflow uses a `[self-hosted, linux, i386]`
@@ -227,13 +247,13 @@ Current readiness:
   `platform-verified-evidence-linux-i386.json` as the reviewed registry-record
   candidate. The accepted record's `release_asset_source.workflow` must be `.github/workflows/extended-platform-evidence.yml`,
   and `release_asset_source.run_attempt` must be a positive GitHub Actions run attempt.
-  That builder identity must prove `source_head_sha` matching the release source head SHA, `workflow_run_attempt` matching the release source run attempt, `dpkg --print-architecture=i386`,
+  That builder identity must prove `source_head_sha` and `observed_git_head_sha` matching the release source head SHA, `git_worktree_clean=true`, `workflow_run_attempt` matching the release source run attempt, `dpkg --print-architecture=i386`,
   `getconf LONG_BIT=32`, concrete `rpm`/`rpmbuild` tool paths and `sudo_non_interactive=true`, plus a target/release-scoped review bundle from
   `python scripts/make_extended_linux_evidence_bundle.py --target linux-i386 --release-tag v<project.version> --assets-dir <target-release-artifact-dir> --builder-evidence <builder-identity.json> --smoke-evidence <native-smoke-log> --candidate-record <platform-verified-evidence-linux-i386.json> --out-dir <target-release-artifact-dir>`.
 - Linux armhf: 70.0%, script-supported native. Promotion requires a real
   armv7l/armhf release builder, default `linux-native` release matrix
   membership, upload/publish asset coverage, `scripts/make_linux_native.sh`
-  output, `scripts/smoke_linux_native.sh --arch armhf --dist native-dist/linux --target linux-armhf --workflow-run-url <github-actions-run-url> --source-head-sha <github-actions-head-sha>`,
+  output, `scripts/smoke_linux_native.sh --arch armhf --dist native-dist/linux --target linux-armhf --workflow-run-url <github-actions-run-url> --workflow-run-attempt <github-actions-run-attempt> --source-head-sha <github-actions-head-sha>`,
   native manifest evidence, checksum sidecars and
   `python scripts/check_platform_promotion_artifacts.py --target linux-armhf --assets-dir <target-release-artifact-dir> --tag v<project.version> --strict`.
   The dispatch-only evidence workflow uses a `[self-hosted, linux, armhf]`
@@ -243,7 +263,7 @@ Current readiness:
   `platform-verified-evidence-linux-armhf.json` as the reviewed registry-record
   candidate. The accepted record's `release_asset_source.workflow` must be `.github/workflows/extended-platform-evidence.yml`,
   and `release_asset_source.run_attempt` must be a positive GitHub Actions run attempt.
-  That builder identity must prove `source_head_sha` matching the release source head SHA, `workflow_run_attempt` matching the release source run attempt, `dpkg --print-architecture=armhf`,
+  That builder identity must prove `source_head_sha` and `observed_git_head_sha` matching the release source head SHA, `git_worktree_clean=true`, `workflow_run_attempt` matching the release source run attempt, `dpkg --print-architecture=armhf`,
   `getconf LONG_BIT=32`, concrete `rpm`/`rpmbuild` tool paths and `sudo_non_interactive=true`, plus a target/release-scoped review bundle from
   `python scripts/make_extended_linux_evidence_bundle.py --target linux-armhf --release-tag v<project.version> --assets-dir <target-release-artifact-dir> --builder-evidence <builder-identity.json> --smoke-evidence <native-smoke-log> --candidate-record <platform-verified-evidence-linux-armhf.json> --out-dir <target-release-artifact-dir>`.
 - Windows XP native host: 25.0%, remote-target-only as a local operator host
@@ -286,12 +306,14 @@ Current readiness:
   `python scripts/make_xp_native_evidence_bundle.py --target <windows-xp-native-target> --evidence <target-release-evidence.json> --candidate-record <platform-verified-evidence-windows-xp-native-target.json> --assets-dir <target-release-artifact-dir> --evidence-dir <target-release-evidence-dir> --out-dir <xp-evidence-output-dir>`.
   The accepted record must carry the evidence JSON SHA-256, the sanitized XP
   host identity SHA-256 and all required smoke evidence SHA-256 values from
-  that validated bundle.
+  that validated bundle, plus `xp_evidence_summary.release_source` matching
+  `release_asset_source`.
   Each required XP smoke result must reference a bundled evidence file, resolved
   relative to the evidence JSON directory unless `--evidence-dir` is supplied,
   must record the concrete command/action that produced that evidence, must bind
-  the sanitized host label and evidence run ID in both the command and smoke
-  file, and the recorded SHA-256 must match that file.
+  the sanitized host label, evidence run ID, release source workflow run URL,
+  release source head SHA and release source run attempt in both the command and
+  smoke file, and the recorded SHA-256 must match that file.
 
 The broad support catalog is exposed with:
 
@@ -320,6 +342,8 @@ legacy remote-target contract. Weak SSH algorithms, SSHv1 and FreeRDP
 `security=rdp` remain disabled unless the profile declares
 `legacy_target=windows-xp-32` or `windows-xp-64` and sets the matching
 `allow_legacy_crypto=true` or `allow_legacy_rdp_security=true` opt-in.
+Generic XP labels such as `xp`, `winxp` and `windows-xp`, and the
+`legacy_platform` alias key, do not unlock those legacy exceptions.
 
 Architecture targets:
 

@@ -22,6 +22,16 @@
         "workflow_runner_evidence": "matching self-hosted i386/i686 Linux runner or equivalent real i386 builder",
         "build_script": "scripts/make_linux_native.sh",
         "smoke_script": "scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux",
+        "smoke_evidence": [
+          "capture native smoke log with target, release tag, workflow run URL, workflow run attempt, source head SHA and observed git HEAD SHA",
+          "bind sanitized host label, deterministic evidence run ID and observed-at UTC timestamp into the native smoke log",
+          "prove 32-bit Linux userland and target architecture on the builder",
+          "bind DEB, RPM and AppImage SHA-256 lines into the native smoke log",
+          "verify DEB install, verify, upgrade and uninstall",
+          "verify RPM install, verify, upgrade and uninstall",
+          "verify AppImage install, verify, upgrade and uninstall",
+          "prove TLS 1.3 preferred, TLS 1.2 minimum, isolated legacy crypto and modern defaults unchanged"
+        ],
         "artifact_validation_command": "python scripts/check_platform_promotion_artifacts.py --target linux-i386 --assets-dir <target-release-artifact-dir> --tag v<project.version> --strict",
         "local_evidence_preflight_command": "python scripts/check_platform_goal_local_evidence.py --root . --release-tag v<project.version> --target linux-i386 --assets-dir <target-release-artifact-dir> --linux-builder-evidence <builder-identity.json> --linux-smoke-evidence <native-smoke-log> --linux-workflow-run-url <github-actions-run-url> --linux-source-head-sha <github-actions-head-sha> --linux-source-run-attempt <github-actions-run-attempt>",
         "accepted_evidence_candidate_command": "python scripts/make_platform_verified_evidence_record.py --target linux-i386 --release-tag v<project.version> --assets-dir <target-release-artifact-dir> --release-asset-base-url <github-release-download-url> --workflow-run-url <github-actions-run-url> --release-source-artifact-name extended-linux-evidence-linux-i386-v<project.version> --release-source-head-sha <github-actions-head-sha> --release-source-run-attempt <github-actions-run-attempt> --builder-evidence <builder-identity.json> --linux-smoke-evidence <native-smoke-log> --runner-label self-hosted --runner-label linux --runner-label i386 --out <platform-verified-evidence-linux-i386.json>",
@@ -71,6 +81,16 @@
         "workflow_runner_evidence": "matching self-hosted armv7l/armhf Linux runner or equivalent real armhf builder",
         "build_script": "scripts/make_linux_native.sh",
         "smoke_script": "scripts/smoke_linux_native.sh --arch armhf --dist native-dist/linux",
+        "smoke_evidence": [
+          "capture native smoke log with target, release tag, workflow run URL, workflow run attempt, source head SHA and observed git HEAD SHA",
+          "bind sanitized host label, deterministic evidence run ID and observed-at UTC timestamp into the native smoke log",
+          "prove 32-bit Linux userland and target architecture on the builder",
+          "bind DEB, RPM and AppImage SHA-256 lines into the native smoke log",
+          "verify DEB install, verify, upgrade and uninstall",
+          "verify RPM install, verify, upgrade and uninstall",
+          "verify AppImage install, verify, upgrade and uninstall",
+          "prove TLS 1.3 preferred, TLS 1.2 minimum, isolated legacy crypto and modern defaults unchanged"
+        ],
         "artifact_validation_command": "python scripts/check_platform_promotion_artifacts.py --target linux-armhf --assets-dir <target-release-artifact-dir> --tag v<project.version> --strict",
         "local_evidence_preflight_command": "python scripts/check_platform_goal_local_evidence.py --root . --release-tag v<project.version> --target linux-armhf --assets-dir <target-release-artifact-dir> --linux-builder-evidence <builder-identity.json> --linux-smoke-evidence <native-smoke-log> --linux-workflow-run-url <github-actions-run-url> --linux-source-head-sha <github-actions-head-sha> --linux-source-run-attempt <github-actions-run-attempt>",
         "accepted_evidence_candidate_command": "python scripts/make_platform_verified_evidence_record.py --target linux-armhf --release-tag v<project.version> --assets-dir <target-release-artifact-dir> --release-asset-base-url <github-release-download-url> --workflow-run-url <github-actions-run-url> --release-source-artifact-name extended-linux-evidence-linux-armhf-v<project.version> --release-source-head-sha <github-actions-head-sha> --release-source-run-attempt <github-actions-run-attempt> --builder-evidence <builder-identity.json> --linux-smoke-evidence <native-smoke-log> --runner-label self-hosted --runner-label linux --runner-label armhf --out <platform-verified-evidence-linux-armhf.json>",
@@ -136,7 +156,9 @@
           "launch CLI without unsupported Windows APIs",
           "open the selected GUI or legacy host UI without the current PyQt6 stack",
           "connect to loopback/local profile dry-run",
-          "verify isolated legacy crypto never changes modern defaults"
+          "validate artifact manifest and SHA256SUMS on the XP evidence host",
+          "prove legacy crypto remains profile-scoped opt-in",
+          "prove modern defaults remain unchanged"
         ],
         "security_requirements": [
           "legacy TLS, SSH, and RDP compatibility must remain profile-scoped opt-in",
@@ -185,7 +207,9 @@
           "launch CLI without unsupported Windows APIs",
           "open the selected GUI or legacy host UI without the current PyQt6 stack",
           "connect to loopback/local profile dry-run",
-          "verify isolated legacy crypto never changes modern defaults"
+          "validate artifact manifest and SHA256SUMS on the XP evidence host",
+          "prove legacy crypto remains profile-scoped opt-in",
+          "prove modern defaults remain unchanged"
         ],
         "security_requirements": [
           "legacy TLS, SSH, and RDP compatibility must remain profile-scoped opt-in",

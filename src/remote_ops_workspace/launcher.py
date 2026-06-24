@@ -58,16 +58,11 @@ SSH_V1_PROTOCOLS = {"ssh1", "sshv1"}
 SSH_V1_OPT_IN_OPTIONS = ("allow_insecure_sshv1", "allow_unsafe_sshv1")
 WINDOWS_XP_LEGACY_TARGETS = frozenset(
     {
-        "windows-xp",
         "windows-xp-32",
         "windows-xp-64",
-        "windows-xp-x86",
-        "windows-xp-x64",
-        "winxp",
-        "xp",
     }
 )
-LEGACY_TARGET_OPTIONS = ("legacy_target", "legacy_platform")
+LEGACY_TARGET_OPTIONS = ("legacy_target",)
 LEGACY_CRYPTO_OPT_IN_OPTIONS = ("allow_legacy_crypto", "allow_insecure_legacy_crypto")
 LEGACY_RDP_SECURITY_OPT_IN_OPTIONS = ("allow_legacy_rdp_security", "allow_insecure_rdp_security")
 CAPI_SMARTCARD_PROVIDER_ALIASES = frozenset(

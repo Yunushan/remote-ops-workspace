@@ -107,6 +107,16 @@ def test_platform_promotion_runbook_requires_staged_upload_hash_binding() -> Non
     assert any("finalized accepted record hashes" in error for error in errors)
 
 
+def test_platform_promotion_runbook_requires_downloaded_source_hash_preflight() -> None:
+    checker = _load_checker()
+    snippet = "downloaded source artifact native artifact SHA-256 mismatches"
+    text = Path("docs/PLATFORM_PROMOTION_RUNBOOK.md").read_text(encoding="utf-8").replace(snippet, "")
+
+    errors = checker.check_platform_promotion_runbook(runbook_text=text)
+
+    assert any("downloaded source artifact native artifact SHA-256 mismatches" in error for error in errors)
+
+
 def test_platform_promotion_runbook_requires_staged_review_bundle_refinalization() -> None:
     checker = _load_checker()
     snippet = "staged review bundle must re-finalize to the accepted record before upload"
@@ -198,9 +208,21 @@ def test_platform_promotion_runbook_requires_xp_host_identity_smoke_proof_lines(
     snippet = (
         "Every smoke evidence file must include `xp smoke target: windows-xp-native-x86`, "
         "`xp smoke release: v<project.version>`, `xp smoke id: <smoke_id>`, "
-        "`xp smoke host label: <host_label>` and "
-        "`xp smoke evidence run id: <evidence_run_id>`."
-    )
+        "`xp smoke os name: Windows XP`, `xp smoke os architecture: x86`, "
+        "`xp smoke os service pack: SP3`, "
+        "`xp smoke host probe command: ver`, "
+        "`xp smoke host probe output: Microsoft Windows XP [Version 5.1.2600]`, "
+        "`xp smoke processor architecture env: x86`, "
+        "`xp smoke processor architecture w6432 env: <empty>`, "
+            "`xp smoke wmic os caption: Microsoft Windows XP <edition>`, "
+            "`xp smoke wmic os csdversion: Service Pack 3`, "
+            "`xp smoke host label: <host_label>`, "
+            "`xp smoke evidence run id: <evidence_run_id>`, "
+            "`xp smoke observed at utc: <observed_at_utc>`, "
+            "`xp smoke source workflow run: <github-actions-run-url>`, "
+            "`xp smoke source head sha: <github-actions-head-sha>` and "
+            "`xp smoke source run attempt: <github-actions-run-attempt>`."
+        )
     text = Path("docs/PLATFORM_PROMOTION_RUNBOOK.md").read_text(encoding="utf-8").replace(
         snippet,
         (
@@ -211,7 +233,7 @@ def test_platform_promotion_runbook_requires_xp_host_identity_smoke_proof_lines(
 
     errors = checker.check_platform_promotion_runbook(runbook_text=text)
 
-    assert "windows-xp-native-x86 runbook missing XP smoke host identity proof line" in errors
+    assert "windows-xp-native-x86 runbook missing XP smoke OS and host identity proof line" in errors
 
 
 def test_platform_promotion_runbook_requires_linux_target_scoped_evidence_filenames() -> None:
@@ -230,10 +252,14 @@ def test_platform_promotion_runbook_requires_linux_builder_source_head_sha() -> 
         " --source-head-sha <github-actions-head-sha>",
         "",
     )
+    text = text.replace("`observed_git_head_sha`", "`observed_checkout_sha`")
+    text = text.replace("`git_worktree_clean=true`", "`checkout_clean=true`")
 
     errors = checker.check_platform_promotion_runbook(runbook_text=text)
 
     assert any("--source-head-sha <github-actions-head-sha>" in error for error in errors)
+    assert any("observed_git_head_sha" in error for error in errors)
+    assert any("git_worktree_clean=true" in error for error in errors)
 
 
 def test_platform_promotion_runbook_requires_linux_smoke_runtime_and_hash_proof() -> None:
@@ -246,11 +272,35 @@ def test_platform_promotion_runbook_requires_linux_smoke_runtime_and_hash_proof(
         "one `native installer smoke artifact sha256: <artifact> <sha256>` line for each expected DEB/RPM/AppImage artifact, ",
         "",
     )
+    text = text.replace(
+        "`native installer smoke workflow run attempt: <github-actions-run-attempt>`, ",
+        "",
+    )
+    text = text.replace(
+        "`native installer smoke git head sha: <github-actions-head-sha>`, ",
+        "",
+    )
+    text = text.replace("`native installer smoke host label: linux-i386-builder`, ", "")
+    text = text.replace("`native installer smoke host label: linux-armhf-builder`, ", "")
+    text = text.replace(
+        "`native installer smoke evidence run id: linux-i386-<release>-run-<github-actions-run-id>`, ",
+        "",
+    )
+    text = text.replace(
+        "`native installer smoke evidence run id: linux-armhf-<release>-run-<github-actions-run-id>`, ",
+        "",
+    )
+    text = text.replace("`native installer smoke observed at utc: <YYYY-MM-DDTHH:MM:SSZ>`, ", "")
 
     errors = checker.check_platform_promotion_runbook(runbook_text=text)
 
     assert any("native installer smoke userland bits: 32" in error for error in errors)
     assert any("native installer smoke artifact sha256: <artifact> <sha256>" in error for error in errors)
+    assert any("native installer smoke workflow run attempt" in error for error in errors)
+    assert any("native installer smoke git head sha" in error for error in errors)
+    assert any("native installer smoke host label" in error for error in errors)
+    assert any("native installer smoke evidence run id" in error for error in errors)
+    assert any("native installer smoke observed at utc" in error for error in errors)
 
 
 def test_platform_promotion_runbook_requires_linux_security_boundaries() -> None:

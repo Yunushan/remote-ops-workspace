@@ -8,6 +8,7 @@ ARCH="${TARGET_ARCH:-$(uname -m)}"
 VERSION=""
 TARGET=""
 WORKFLOW_RUN_URL=""
+WORKFLOW_RUN_ATTEMPT=""
 SOURCE_HEAD_SHA=""
 
 while [[ $# -gt 0 ]]; do
@@ -32,6 +33,10 @@ while [[ $# -gt 0 ]]; do
       WORKFLOW_RUN_URL="$2"
       shift 2
       ;;
+    --workflow-run-attempt)
+      WORKFLOW_RUN_ATTEMPT="$2"
+      shift 2
+      ;;
     --source-head-sha)
       SOURCE_HEAD_SHA="$2"
       shift 2
@@ -53,13 +58,28 @@ if [[ -n "$TARGET" && -z "$SOURCE_HEAD_SHA" ]]; then
   exit 2
 fi
 
+if [[ -n "$TARGET" && -z "$WORKFLOW_RUN_ATTEMPT" ]]; then
+  echo "--workflow-run-attempt is required with --target" >&2
+  exit 2
+fi
+
 if [[ -z "$TARGET" && -n "$SOURCE_HEAD_SHA" ]]; then
   echo "--source-head-sha requires --target" >&2
   exit 2
 fi
 
+if [[ -z "$TARGET" && -n "$WORKFLOW_RUN_ATTEMPT" ]]; then
+  echo "--workflow-run-attempt requires --target" >&2
+  exit 2
+fi
+
 if [[ -n "$SOURCE_HEAD_SHA" && ! "$SOURCE_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
   echo "--source-head-sha must be a 40-character lowercase Git SHA" >&2
+  exit 2
+fi
+
+if [[ -n "$WORKFLOW_RUN_ATTEMPT" && ! "$WORKFLOW_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]; then
+  echo "--workflow-run-attempt must be a positive integer" >&2
   exit 2
 fi
 
@@ -84,6 +104,8 @@ print(getattr(ssl, "OPENSSL_VERSION", ""))
 PY
 )"
 SMOKE_OPENSSL_CLI_VERSION="$(openssl version)"
+SMOKE_GIT_HEAD_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
+SMOKE_OBSERVED_AT_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 if [[ -n "$TARGET" ]]; then
   case "$TARGET" in
@@ -118,6 +140,14 @@ if [[ -n "$TARGET" ]]; then
   esac
   if [[ "$SMOKE_USERLAND_BITS" != "32" ]]; then
     echo "target $TARGET must smoke on a 32-bit userland, got $SMOKE_USERLAND_BITS" >&2
+    exit 2
+  fi
+  if [[ -z "$SMOKE_GIT_HEAD_SHA" ]]; then
+    echo "target $TARGET requires git rev-parse HEAD for source head binding" >&2
+    exit 2
+  fi
+  if [[ "$SMOKE_GIT_HEAD_SHA" != "$SOURCE_HEAD_SHA" ]]; then
+    echo "target $TARGET source head sha $SOURCE_HEAD_SHA does not match git HEAD $SMOKE_GIT_HEAD_SHA" >&2
     exit 2
   fi
 fi
@@ -185,7 +215,7 @@ done
 
 SMOKE_COMMAND="bash scripts/smoke_linux_native.sh --arch $ARCH --dist $DIST"
 if [[ -n "$TARGET" ]]; then
-  SMOKE_COMMAND="$SMOKE_COMMAND --target $TARGET --workflow-run-url $WORKFLOW_RUN_URL --source-head-sha $SOURCE_HEAD_SHA"
+  SMOKE_COMMAND="$SMOKE_COMMAND --target $TARGET --workflow-run-url $WORKFLOW_RUN_URL --workflow-run-attempt $WORKFLOW_RUN_ATTEMPT --source-head-sha $SOURCE_HEAD_SHA"
 fi
 
 echo "native installer smoke command: $SMOKE_COMMAND"
@@ -194,7 +224,14 @@ echo "native installer smoke target arch: $ARCH"
 if [[ -n "$TARGET" ]]; then
   echo "native installer smoke target: $TARGET"
   echo "native installer smoke workflow run: $WORKFLOW_RUN_URL"
+  echo "native installer smoke workflow run attempt: $WORKFLOW_RUN_ATTEMPT"
   echo "native installer smoke source head sha: $SOURCE_HEAD_SHA"
+  echo "native installer smoke git head sha: $SMOKE_GIT_HEAD_SHA"
+  SMOKE_WORKFLOW_RUN_ID="${WORKFLOW_RUN_URL%/}"
+  SMOKE_WORKFLOW_RUN_ID="${SMOKE_WORKFLOW_RUN_ID##*/}"
+  echo "native installer smoke host label: ${TARGET}-builder"
+  echo "native installer smoke evidence run id: ${TARGET}-${VERSION//./-}-run-${SMOKE_WORKFLOW_RUN_ID}"
+  echo "native installer smoke observed at utc: $SMOKE_OBSERVED_AT_UTC"
 fi
 echo "native installer smoke uname machine: $SMOKE_UNAME_MACHINE"
 echo "native installer smoke dpkg architecture: $SMOKE_DPKG_ARCH"

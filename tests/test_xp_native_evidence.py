@@ -33,6 +33,16 @@ def test_xp_native_evidence_contract_requires_proof_file_binding() -> None:
     ) in errors
 
 
+def test_xp_native_evidence_contract_requires_release_source_fields() -> None:
+    checker = _load_xp_native_evidence_checker()
+    contract = checker.read_json(Path("configs/xp_native_evidence_contract.json"))
+    contract["required_release_source_fields"] = ["workflow", "workflow_run_url", "head_sha"]
+
+    errors = checker.check_contract(contract)
+
+    assert "XP native evidence contract must require release_source workflow, URL, head SHA and run attempt" in errors
+
+
 def test_xp_native_evidence_accepts_x86_bundle(tmp_path: Path) -> None:
     checker = _load_xp_native_evidence_checker()
     artifact_checker = _load_platform_promotion_artifacts_checker()
@@ -97,6 +107,36 @@ def test_xp_native_evidence_rejects_missing_host_identity(tmp_path: Path) -> Non
     errors = checker.check_xp_native_evidence(path)
 
     assert "windows-xp-native-x86 evidence host_identity must be an object" in errors
+
+
+def test_xp_native_evidence_rejects_missing_release_source(tmp_path: Path) -> None:
+    checker = _load_xp_native_evidence_checker()
+    evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    del evidence["release_source"]
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path)
+
+    assert "windows-xp-native-x86 evidence release_source must be an object" in errors
+
+
+def test_xp_native_evidence_rejects_malformed_release_source(tmp_path: Path) -> None:
+    checker = _load_xp_native_evidence_checker()
+    evidence = _valid_evidence("windows-xp-native-x64", "x64", "SP2", "v1.0.2", [])
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    evidence["release_source"]["workflow_run_url"] = (
+        "https://github.com/example/remote-ops-workspace/actions/workflows/xp-native-evidence.yml"
+    )
+    evidence["release_source"]["head_sha"] = "A" * 40
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path)
+
+    assert "windows-xp-native-x64 evidence release_source.workflow_run_url must be a GitHub Actions run URL" in errors
+    assert "windows-xp-native-x64 evidence release_source.head_sha must be a 40-character lowercase Git SHA" in errors
 
 
 def test_xp_native_evidence_rejects_host_identity_target_mismatch(tmp_path: Path) -> None:
@@ -495,6 +535,7 @@ def test_xp_native_evidence_rejects_smoke_evidence_host_identity_binding_mismatc
         "xp smoke id: cli_launch\n"
         "xp smoke host label: xp-x86-lab-02\n"
         "xp smoke evidence run id: xp-x86-1-0-2-other\n"
+        "xp smoke observed at utc: 2026-06-20T12:30:00Z\n"
         "cli_launch passed on Windows XP evidence host\n",
         encoding="utf-8",
     )
@@ -511,6 +552,127 @@ def test_xp_native_evidence_rejects_smoke_evidence_host_identity_binding_mismatc
     assert (
         "windows-xp-native-x86 smoke result cli_launch evidence_file evidence-run-id binding must be "
         "['xp-x86-1-0-2-20260620t120000z'], got ['xp-x86-1-0-2-other']"
+    ) in errors
+    assert (
+        "windows-xp-native-x86 smoke result cli_launch evidence_file observed-at-utc binding must be "
+        "['2026-06-20T12:00:00Z'], got ['2026-06-20T12:30:00Z']"
+    ) in errors
+
+
+def test_xp_native_evidence_rejects_smoke_evidence_release_source_binding_mismatch(
+    tmp_path: Path,
+) -> None:
+    checker = _load_xp_native_evidence_checker()
+    evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    smoke_file = tmp_path / evidence["smoke_results"][0]["evidence_file"]
+    smoke_file.write_text(
+        smoke_file.read_text(encoding="utf-8").replace(
+            "xp smoke source head sha: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "xp smoke source head sha: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        ),
+        encoding="utf-8",
+    )
+    evidence["smoke_results"][0]["evidence_sha256"] = _sha256(smoke_file)
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path)
+
+    assert (
+        "windows-xp-native-x86 smoke result cli_launch evidence_file source head SHA binding "
+        "must be ['aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'], got "
+        "['bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb']"
+    ) in errors
+
+
+def test_xp_native_evidence_rejects_smoke_evidence_os_identity_mismatch(
+    tmp_path: Path,
+) -> None:
+    checker = _load_xp_native_evidence_checker()
+    evidence = _valid_evidence("windows-xp-native-x64", "x64", "SP2", "v1.0.2", [])
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    smoke_file = tmp_path / evidence["smoke_results"][0]["evidence_file"]
+    host_identity = evidence["host_identity"]
+    smoke_file.write_text(
+        "xp smoke target: windows-xp-native-x64\n"
+        "xp smoke release: v1.0.2\n"
+        "xp smoke id: cli_launch\n"
+        "xp smoke os name: Windows 7\n"
+        "xp smoke os architecture: x86\n"
+        "xp smoke os service pack: SP1\n"
+        "xp smoke os edition: Ultimate\n"
+        f"xp smoke host label: {host_identity['host_label']}\n"
+        f"xp smoke evidence run id: {host_identity['evidence_run_id']}\n"
+        f"xp smoke observed at utc: {host_identity['observed_at_utc']}\n"
+        "cli_launch passed on Windows XP evidence host\n",
+        encoding="utf-8",
+    )
+    evidence["smoke_results"][0]["evidence_sha256"] = _sha256(smoke_file)
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path)
+
+    assert (
+        "windows-xp-native-x64 smoke result cli_launch evidence_file OS name binding "
+        "must be ['Windows XP'], got ['Windows 7']"
+    ) in errors
+    assert (
+        "windows-xp-native-x64 smoke result cli_launch evidence_file OS architecture binding "
+        "must be ['x64'], got ['x86']"
+    ) in errors
+    assert (
+        "windows-xp-native-x64 smoke result cli_launch evidence_file OS service-pack binding "
+        "must be ['SP2'], got ['SP1']"
+    ) in errors
+    assert (
+        "windows-xp-native-x64 smoke result cli_launch evidence_file OS edition binding "
+        "must be ['Professional x64 Edition'], got ['Ultimate']"
+    ) in errors
+
+
+def test_xp_native_evidence_rejects_smoke_evidence_host_probe_mismatch(
+    tmp_path: Path,
+) -> None:
+    checker = _load_xp_native_evidence_checker()
+    evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    smoke_file = tmp_path / evidence["smoke_results"][0]["evidence_file"]
+    smoke_file.write_text(
+        smoke_file.read_text(encoding="utf-8")
+        .replace("Microsoft Windows XP [Version 5.1.2600]", "Microsoft Windows [Version 6.1.7601]")
+        .replace("xp smoke processor architecture env: x86", "xp smoke processor architecture env: AMD64")
+        .replace("xp smoke processor architecture w6432 env: ", "xp smoke processor architecture w6432 env: AMD64")
+        .replace("xp smoke wmic os caption: Microsoft Windows XP Professional", "xp smoke wmic os caption: Microsoft Windows 7 Ultimate")
+        .replace("xp smoke wmic os csdversion: Service Pack 3", "xp smoke wmic os csdversion: Service Pack 1"),
+        encoding="utf-8",
+    )
+    evidence["smoke_results"][0]["evidence_sha256"] = _sha256(smoke_file)
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path)
+
+    assert (
+        "windows-xp-native-x86 smoke result cli_launch evidence_file host-probe ver output "
+        "must contain Windows XP version marker '5.1.', got ['Microsoft Windows [Version 6.1.7601]']"
+    ) in errors
+    assert (
+        "windows-xp-native-x86 smoke result cli_launch evidence_file processor architecture env "
+        "must be ['x86'] for XP x86, got ['AMD64']"
+    ) in errors
+    assert (
+        "windows-xp-native-x86 smoke result cli_launch evidence_file processor architecture w6432 env "
+        "must be empty for XP x86, got ['AMD64']"
+    ) in errors
+    assert (
+        "windows-xp-native-x86 smoke result cli_launch evidence_file WMIC OS caption "
+        "must prove Windows XP, got ['Microsoft Windows 7 Ultimate']"
+    ) in errors
+    assert (
+        "windows-xp-native-x86 smoke result cli_launch evidence_file WMIC OS CSDVersion "
+        "must prove 'SP3', got ['Service Pack 1']"
     ) in errors
 
 
@@ -713,6 +875,10 @@ def test_xp_native_evidence_rejects_smoke_command_host_identity_binding_mismatch
         "--evidence-run-id xp-x86-1-0-2-20260620t120000z",
         "--evidence-run-id xp-x86-1-0-2-other",
     )
+    smoke["command"] = smoke["command"].replace(
+        "--observed-at-utc 2026-06-20T12:00:00Z",
+        "--observed-at-utc 2026-06-20T12:30:00Z",
+    )
     path = tmp_path / "xp-evidence.json"
     path.write_text(json.dumps(evidence), encoding="utf-8")
 
@@ -725,6 +891,33 @@ def test_xp_native_evidence_rejects_smoke_command_host_identity_binding_mismatch
     assert (
         "windows-xp-native-x86 smoke result cli_launch command must include exactly one "
         "--evidence-run-id xp-x86-1-0-2-20260620t120000z, got ['xp-x86-1-0-2-other']"
+    ) in errors
+    assert (
+        "windows-xp-native-x86 smoke result cli_launch command must include exactly one "
+        "--observed-at-utc 2026-06-20T12:00:00Z, got ['2026-06-20T12:30:00Z']"
+    ) in errors
+
+
+def test_xp_native_evidence_rejects_smoke_command_release_source_binding_mismatch(
+    tmp_path: Path,
+) -> None:
+    checker = _load_xp_native_evidence_checker()
+    evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    smoke = evidence["smoke_results"][0]
+    smoke["command"] = smoke["command"].replace(
+        "--source-head-sha aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "--source-head-sha bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    )
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path)
+
+    assert (
+        "windows-xp-native-x86 smoke result cli_launch command must include exactly one "
+        "--source-head-sha aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, got "
+        "['bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb']"
     ) in errors
 
 
@@ -1047,10 +1240,12 @@ def _valid_evidence(
             "description": "Separate legacy XP-capable native host toolchain",
         },
     }
+    release_source = _xp_release_source()
     return {
         "schema_version": 1,
         "target": target,
         "release_tag": release_tag,
+        "release_source": release_source,
         "os": os_record,
         "toolchain": {
             "separate_legacy_toolchain": True,
@@ -1075,7 +1270,19 @@ def _valid_evidence(
                     f"--smoke-id {smoke_id} --evidence-file xp-smoke-evidence/{smoke_id}.txt "
                     f"--proof-file xp-smoke-proof/{smoke_id}.txt "
                     f"--host-label {host_identity['host_label']} "
-                    f"--evidence-run-id {host_identity['evidence_run_id']}"
+                    f"--evidence-run-id {host_identity['evidence_run_id']} "
+                    f"--observed-at-utc {host_identity['observed_at_utc']} "
+                    f"--source-workflow-run-url {release_source['workflow_run_url']} "
+                    f"--source-head-sha {release_source['head_sha']} "
+                    f"--source-run-attempt {release_source['run_attempt']} "
+                    f'--os-name "{os_record["name"]}" '
+                    f"--os-architecture {os_record['architecture']} "
+                    f"--os-service-pack {os_record['service_pack']}"
+                    + (
+                        f' --os-edition "{os_record["edition"]}"'
+                        if "edition" in os_record
+                        else ""
+                    )
                 ),
                 "evidence_file": f"xp-smoke-evidence/{smoke_id}.txt",
                 "evidence_sha256": hashlib.sha256(smoke_id.encode()).hexdigest(),
@@ -1096,8 +1303,19 @@ def _valid_evidence(
     }
 
 
+def _xp_release_source() -> dict[str, object]:
+    return {
+        "workflow": ".github/workflows/xp-native-evidence.yml",
+        "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        "head_sha": "a" * 40,
+        "run_attempt": 1,
+    }
+
+
 def _attach_smoke_evidence_files(root: Path, evidence: dict[str, Any]) -> None:
     host_identity = evidence["host_identity"]
+    release_source = evidence["release_source"]
+    host_probe_lines = _xp_host_probe_lines(evidence["target"], evidence["os"])
     for result in evidence["smoke_results"]:
         path = root / result["evidence_file"]
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -1106,13 +1324,46 @@ def _attach_smoke_evidence_files(root: Path, evidence: dict[str, Any]) -> None:
             f"xp smoke target: {evidence['target']}\n"
             f"xp smoke release: {evidence['release_tag']}\n"
             f"xp smoke id: {result['id']}\n"
-            f"xp smoke host label: {host_identity['host_label']}\n"
+            f"xp smoke os name: {evidence['os']['name']}\n"
+            f"xp smoke os architecture: {evidence['os']['architecture']}\n"
+            f"xp smoke os service pack: {evidence['os']['service_pack']}\n"
+            + (
+                f"xp smoke os edition: {evidence['os']['edition']}\n"
+                if "edition" in evidence["os"]
+                else ""
+            )
+            + host_probe_lines
+            + f"xp smoke host label: {host_identity['host_label']}\n"
             f"xp smoke evidence run id: {host_identity['evidence_run_id']}\n"
+            f"xp smoke observed at utc: {host_identity['observed_at_utc']}\n"
+            f"xp smoke source workflow run: {release_source['workflow_run_url']}\n"
+            f"xp smoke source head sha: {release_source['head_sha']}\n"
+            f"xp smoke source run attempt: {release_source['run_attempt']}\n"
             f"{security_lines}"
             f"{result['id']} passed on Windows XP evidence host\n",
             encoding="utf-8",
         )
         result["evidence_sha256"] = _sha256(path)
+
+
+def _xp_host_probe_lines(target: str, os_identity: dict[str, Any]) -> str:
+    if target.endswith("x64"):
+        ver_output = "Microsoft Windows [Version 5.2.3790]"
+        processor_architecture = "AMD64"
+        caption = "Microsoft Windows XP Professional x64 Edition"
+    else:
+        ver_output = "Microsoft Windows XP [Version 5.1.2600]"
+        processor_architecture = "x86"
+        caption = "Microsoft Windows XP Professional"
+    service_pack = str(os_identity["service_pack"]).removeprefix("SP")
+    return (
+        "xp smoke host probe command: ver\n"
+        f"xp smoke host probe output: {ver_output}\n"
+        f"xp smoke processor architecture env: {processor_architecture}\n"
+        "xp smoke processor architecture w6432 env: \n"
+        f"xp smoke wmic os caption: {caption}\n"
+        f"xp smoke wmic os csdversion: Service Pack {service_pack}\n"
+    )
 
 
 def _security_smoke_lines(smoke_id: str) -> str:

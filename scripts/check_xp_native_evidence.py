@@ -63,6 +63,18 @@ REQUIRED_FORBIDDEN_EVIDENCE_PATTERNS = {
 HOST_IDENTITY_LABEL_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{2,63}$")
 HOST_IDENTITY_RUN_RE = re.compile(r"^[a-z0-9][a-z0-9._:-]{7,127}$")
 OBSERVED_AT_UTC_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+GITHUB_ACTIONS_RUN_RE = re.compile(r"^https://github\.com/[^/\s]+/[^/\s]+/actions/runs/\d+$")
+RELEASE_SOURCE_HEAD_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+XP_RELEASE_SOURCE_WORKFLOW = ".github/workflows/xp-native-evidence.yml"
+REQUIRED_RELEASE_SOURCE_FIELDS = {"workflow", "workflow_run_url", "head_sha", "run_attempt"}
+XP_VER_VERSION_MARKERS = {
+    "windows-xp-native-x86": "5.1.",
+    "windows-xp-native-x64": "5.2.",
+}
+XP_PROCESSOR_ARCHITECTURE_VALUES = {
+    "windows-xp-native-x86": {"x86"},
+    "windows-xp-native-x64": {"amd64"},
+}
 REQUIRED_HOST_IDENTITY_FIELDS = {
     "schema_version",
     "target",
@@ -150,6 +162,11 @@ def check_contract(contract: dict[str, Any]) -> list[str]:
             "XP native evidence contract must require smoke result id, passed, command, "
             "evidence_file, and evidence_sha256 fields"
         )
+    release_source_fields = contract.get("required_release_source_fields")
+    if not isinstance(release_source_fields, list) or not REQUIRED_RELEASE_SOURCE_FIELDS.issubset(
+        {str(item) for item in release_source_fields}
+    ):
+        errors.append("XP native evidence contract must require release_source workflow, URL, head SHA and run attempt")
     command_bindings = contract.get("required_smoke_command_bindings")
     required_command_bindings = {
         "scripts/xp_smoke_runner.cmd",
@@ -160,6 +177,10 @@ def check_contract(contract: dict[str, Any]) -> list[str]:
         "--proof-file xp-smoke-proof/<smoke_id>.txt",
         "--host-label <host_label>",
         "--evidence-run-id <evidence_run_id>",
+        "--observed-at-utc <observed_at_utc>",
+        "--source-workflow-run-url <github-actions-run-url>",
+        "--source-head-sha <github-actions-head-sha>",
+        "--source-run-attempt <github-actions-run-attempt>",
     }
     if not isinstance(command_bindings, list) or not required_command_bindings.issubset(
         {str(item) for item in command_bindings}
@@ -189,6 +210,17 @@ def check_contract(contract: dict[str, Any]) -> list[str]:
                     "--proof-file",
                     "--host-label",
                     "--evidence-run-id",
+                    "--observed-at-utc",
+                    "--source-workflow-run-url",
+                    "--source-head-sha",
+                    "--source-run-attempt",
+                    "--os-name",
+                    "--os-architecture",
+                    "--os-service-pack",
+                    "--os-edition",
+                    "ver",
+                    "PROCESSOR_ARCHITECTURE",
+                    "wmic os get Caption",
                 ):
                     if snippet not in runner_text:
                         errors.append(f"XP native smoke runner script must handle {snippet}")
@@ -205,15 +237,29 @@ def check_contract(contract: dict[str, Any]) -> list[str]:
         "xp smoke target: <target>",
         "xp smoke release: <release_tag>",
         "xp smoke id: <smoke_id>",
+        "xp smoke os name: <os.name>",
+        "xp smoke os architecture: <os.architecture>",
+        "xp smoke os service pack: <os.service_pack>",
+        "xp smoke os edition: <os.edition when required>",
+        "xp smoke host probe command: ver",
+        "xp smoke host probe output: <ver output>",
+        "xp smoke processor architecture env: <PROCESSOR_ARCHITECTURE>",
+        "xp smoke processor architecture w6432 env: <PROCESSOR_ARCHITEW6432 or empty>",
+        "xp smoke wmic os caption: <wmic Caption>",
+        "xp smoke wmic os csdversion: <wmic CSDVersion>",
         "xp smoke host label: <host_label>",
         "xp smoke evidence run id: <evidence_run_id>",
+        "xp smoke observed at utc: <observed_at_utc>",
+        "xp smoke source workflow run: <github-actions-run-url>",
+        "xp smoke source head sha: <github-actions-head-sha>",
+        "xp smoke source run attempt: <github-actions-run-attempt>",
     }
     if not isinstance(binding_lines, list) or not required_binding_lines.issubset(
         {str(item) for item in binding_lines}
     ):
         errors.append(
             "XP native evidence contract must require smoke evidence target, release-tag, smoke-id, "
-            "host-label and evidence-run-id binding lines"
+            "OS identity, host probe, host-label and evidence-run-id binding lines"
         )
     security_lines = contract.get("required_security_smoke_evidence_lines")
     required_security_lines = {
@@ -345,6 +391,8 @@ def check_xp_native_evidence(
     if not re.fullmatch(r"v\d+\.\d+\.\d+", release_tag):
         errors.append(f"XP native evidence release_tag must look like vX.Y.Z, got {release_tag!r}")
 
+    release_source = evidence.get("release_source")
+    errors.extend(check_release_source(target, release_source))
     errors.extend(check_os(target, evidence.get("os"), target_contract))
     errors.extend(check_toolchain(target, evidence.get("toolchain"), contract_data))
     errors.extend(
@@ -368,6 +416,8 @@ def check_xp_native_evidence(
             contract_data,
             evidence_root,
             host_identity=evidence.get("host_identity"),
+            os_identity=evidence.get("os"),
+            release_source=release_source,
         )
     )
     errors.extend(check_artifact_validation_record(target, evidence.get("artifact_validation"), release_tag))
@@ -410,6 +460,32 @@ def check_evidence_file_location(evidence_path: Path, evidence_root_input: Path)
                 "evidence file path must not contain symlinks: "
                 f"{display_relative_path(evidence_root_input, symlink)}"
             )
+    return errors
+
+
+def check_release_source(target: str, raw_source: Any) -> list[str]:
+    if not isinstance(raw_source, dict):
+        return [f"{target} evidence release_source must be an object"]
+    errors: list[str] = []
+    keys = {str(key) for key in raw_source}
+    missing = sorted(REQUIRED_RELEASE_SOURCE_FIELDS - keys)
+    unexpected = sorted(keys - REQUIRED_RELEASE_SOURCE_FIELDS)
+    if missing:
+        errors.append(f"{target} evidence release_source missing required fields: {missing}")
+    if unexpected:
+        errors.append(f"{target} evidence release_source has unexpected fields: {unexpected}")
+    workflow = str(raw_source.get("workflow", "")).strip()
+    if workflow != XP_RELEASE_SOURCE_WORKFLOW:
+        errors.append(f"{target} evidence release_source.workflow must be {XP_RELEASE_SOURCE_WORKFLOW}")
+    workflow_run_url = str(raw_source.get("workflow_run_url", "")).strip().rstrip("/")
+    if not GITHUB_ACTIONS_RUN_RE.fullmatch(workflow_run_url):
+        errors.append(f"{target} evidence release_source.workflow_run_url must be a GitHub Actions run URL")
+    head_sha = str(raw_source.get("head_sha", "")).strip()
+    if not RELEASE_SOURCE_HEAD_SHA_RE.fullmatch(head_sha):
+        errors.append(f"{target} evidence release_source.head_sha must be a 40-character lowercase Git SHA")
+    run_attempt = raw_source.get("run_attempt")
+    if not isinstance(run_attempt, int) or isinstance(run_attempt, bool) or run_attempt < 1:
+        errors.append(f"{target} evidence release_source.run_attempt must be a positive integer")
     return errors
 
 
@@ -552,6 +628,8 @@ def check_smoke_results(
     evidence_root: Path,
     *,
     host_identity: Any,
+    os_identity: Any,
+    release_source: Any,
 ) -> list[str]:
     if not isinstance(raw_results, list):
         return [f"{target} evidence smoke_results must be a list"]
@@ -594,6 +672,8 @@ def check_smoke_results(
                 item,
                 contract,
                 host_identity=host_identity,
+                os_identity=os_identity,
+                release_source=release_source,
             )
         )
         errors.extend(
@@ -605,6 +685,8 @@ def check_smoke_results(
                 evidence_root,
                 contract,
                 host_identity=host_identity,
+                os_identity=os_identity,
+                release_source=release_source,
             )
         )
     return errors
@@ -618,6 +700,8 @@ def check_smoke_command(
     contract: dict[str, Any],
     *,
     host_identity: Any,
+    os_identity: Any,
+    release_source: Any,
 ) -> list[str]:
     command = str(item.get("command", "")).strip()
     if not command:
@@ -640,6 +724,8 @@ def check_smoke_command(
             evidence_file=evidence_file,
             label=f"{target} smoke result {smoke_id} command",
             host_identity=host_identity,
+            os_identity=os_identity,
+            release_source=release_source,
         )
     )
     return errors
@@ -654,6 +740,8 @@ def check_smoke_command_binding(
     evidence_file: str | None = None,
     label: str,
     host_identity: Any,
+    os_identity: Any,
+    release_source: Any,
 ) -> list[str]:
     expected_values = {
         "--target": target,
@@ -666,12 +754,33 @@ def check_smoke_command_binding(
     if isinstance(host_identity, dict):
         expected_values["--host-label"] = str(host_identity.get("host_label", ""))
         expected_values["--evidence-run-id"] = str(host_identity.get("evidence_run_id", ""))
+        expected_values["--observed-at-utc"] = str(host_identity.get("observed_at_utc", ""))
+    if isinstance(release_source, dict):
+        expected_values["--source-workflow-run-url"] = str(release_source.get("workflow_run_url", "")).rstrip("/")
+        expected_values["--source-head-sha"] = str(release_source.get("head_sha", ""))
+        expected_values["--source-run-attempt"] = str(release_source.get("run_attempt", ""))
+    if isinstance(os_identity, dict):
+        expected_values["--os-name"] = str(os_identity.get("name", ""))
+        expected_values["--os-architecture"] = str(os_identity.get("architecture", ""))
+        expected_values["--os-service-pack"] = str(os_identity.get("service_pack", ""))
+        edition = str(os_identity.get("edition", "")).strip()
+        if edition:
+            expected_values["--os-edition"] = edition
     errors: list[str] = []
     for flag, expected in expected_values.items():
-        values = re.findall(rf"(?:^|\s){re.escape(flag)}\s+(\S+)(?=\s|$)", command)
+        values = command_flag_values(command, flag)
         if values != [expected]:
             errors.append(f"{label} must include exactly one {flag} {expected}, got {values}")
+    if isinstance(os_identity, dict) and not str(os_identity.get("edition", "")).strip():
+        edition_values = command_flag_values(command, "--os-edition")
+        if edition_values:
+            errors.append(f"{label} must omit --os-edition for this target, got {edition_values}")
     return errors
+
+
+def command_flag_values(command: str, flag: str) -> list[str]:
+    pattern = rf'(?:^|\s){re.escape(flag)}\s+(?:"([^"]+)"|(\S+))(?=\s|$)'
+    return [quoted or bare for quoted, bare in re.findall(pattern, command)]
 
 
 def check_smoke_evidence_file(
@@ -683,6 +792,8 @@ def check_smoke_evidence_file(
     contract: dict[str, Any],
     *,
     host_identity: Any,
+    os_identity: Any,
+    release_source: Any,
 ) -> list[str]:
     if contract.get("required_smoke_evidence_file") is not True:
         return []
@@ -717,7 +828,17 @@ def check_smoke_evidence_file(
     if re.fullmatch(r"[0-9a-f]{64}", expected_sha) and actual_sha != expected_sha:
         errors.append(f"{target} smoke result {smoke_id} evidence_file SHA-256 mismatch: {raw_file}")
     errors.extend(check_forbidden_patterns_bytes(data, contract, label=f"{smoke_id} evidence_file"))
-    errors.extend(check_smoke_evidence_binding(target, release_tag, smoke_id, data, host_identity=host_identity))
+    errors.extend(
+        check_smoke_evidence_binding(
+            target,
+            release_tag,
+            smoke_id,
+            data,
+            host_identity=host_identity,
+            os_identity=os_identity,
+            release_source=release_source,
+        )
+    )
     errors.extend(check_security_smoke_evidence_lines(target, smoke_id, data, contract))
     return errors
 
@@ -755,6 +876,8 @@ def check_smoke_evidence_binding(
     data: bytes,
     *,
     host_identity: Any,
+    os_identity: Any,
+    release_source: Any,
 ) -> list[str]:
     try:
         text = data.decode("utf-8")
@@ -795,6 +918,104 @@ def check_smoke_evidence_binding(
             if line.strip().startswith("xp smoke evidence run id:")
         }
     )
+    observed_at_values = sorted(
+        {
+            line.split(":", 1)[1].strip()
+            for line in text.splitlines()
+            if line.strip().startswith("xp smoke observed at utc:")
+        }
+    )
+    source_workflow_run_urls = sorted(
+        {
+            line.split(":", 1)[1].strip().rstrip("/")
+            for line in text.splitlines()
+            if line.strip().startswith("xp smoke source workflow run:")
+        }
+    )
+    source_head_shas = sorted(
+        {
+            line.split(":", 1)[1].strip()
+            for line in text.splitlines()
+            if line.strip().startswith("xp smoke source head sha:")
+        }
+    )
+    source_run_attempts = sorted(
+        {
+            line.split(":", 1)[1].strip()
+            for line in text.splitlines()
+            if line.strip().startswith("xp smoke source run attempt:")
+        }
+    )
+    os_names = sorted(
+        {
+            line.split(":", 1)[1].strip()
+            for line in text.splitlines()
+            if line.strip().startswith("xp smoke os name:")
+        }
+    )
+    os_architectures = sorted(
+        {
+            line.split(":", 1)[1].strip()
+            for line in text.splitlines()
+            if line.strip().startswith("xp smoke os architecture:")
+        }
+    )
+    os_service_packs = sorted(
+        {
+            line.split(":", 1)[1].strip()
+            for line in text.splitlines()
+            if line.strip().startswith("xp smoke os service pack:")
+        }
+    )
+    os_editions = sorted(
+        {
+            line.split(":", 1)[1].strip()
+            for line in text.splitlines()
+            if line.strip().startswith("xp smoke os edition:")
+        }
+    )
+    host_probe_commands = sorted(
+        {
+            line.split(":", 1)[1].strip()
+            for line in text.splitlines()
+            if line.strip().startswith("xp smoke host probe command:")
+        }
+    )
+    host_probe_outputs = sorted(
+        {
+            line.split(":", 1)[1].strip()
+            for line in text.splitlines()
+            if line.strip().startswith("xp smoke host probe output:")
+        }
+    )
+    processor_architectures = sorted(
+        {
+            line.split(":", 1)[1].strip()
+            for line in text.splitlines()
+            if line.strip().startswith("xp smoke processor architecture env:")
+        }
+    )
+    processor_architectures_w6432 = sorted(
+        {
+            line.split(":", 1)[1].strip()
+            for line in text.splitlines()
+            if line.strip().startswith("xp smoke processor architecture w6432 env:")
+        }
+    )
+    wmic_os_captions = sorted(
+        {
+            line.split(":", 1)[1].strip()
+            for line in text.splitlines()
+            if line.strip().startswith("xp smoke wmic os caption:")
+        }
+    )
+    wmic_os_csdversions = sorted(
+        {
+            line.split(":", 1)[1].strip()
+            for line in text.splitlines()
+            if line.strip().startswith("xp smoke wmic os csdversion:")
+        }
+    )
     errors: list[str] = []
     if targets != [target]:
         errors.append(
@@ -810,9 +1031,11 @@ def check_smoke_evidence_binding(
         )
     expected_host_label = ""
     expected_run_id = ""
+    expected_observed_at = ""
     if isinstance(host_identity, dict):
         expected_host_label = str(host_identity.get("host_label", ""))
         expected_run_id = str(host_identity.get("evidence_run_id", ""))
+        expected_observed_at = str(host_identity.get("observed_at_utc", ""))
     if host_labels != [expected_host_label]:
         errors.append(
             f"{target} smoke result {smoke_id} evidence_file host-label binding "
@@ -823,7 +1046,160 @@ def check_smoke_evidence_binding(
             f"{target} smoke result {smoke_id} evidence_file evidence-run-id binding "
             f"must be {[expected_run_id]}, got {evidence_run_ids}"
         )
+    if observed_at_values != [expected_observed_at]:
+        errors.append(
+            f"{target} smoke result {smoke_id} evidence_file observed-at-utc binding "
+            f"must be {[expected_observed_at]}, got {observed_at_values}"
+        )
+    expected_source_workflow_run_url = ""
+    expected_source_head_sha = ""
+    expected_source_run_attempt = ""
+    if isinstance(release_source, dict):
+        expected_source_workflow_run_url = str(release_source.get("workflow_run_url", "")).rstrip("/")
+        expected_source_head_sha = str(release_source.get("head_sha", ""))
+        expected_source_run_attempt = str(release_source.get("run_attempt", ""))
+    if source_workflow_run_urls != [expected_source_workflow_run_url]:
+        errors.append(
+            f"{target} smoke result {smoke_id} evidence_file source workflow run binding "
+            f"must be {[expected_source_workflow_run_url]}, got {source_workflow_run_urls}"
+        )
+    if source_head_shas != [expected_source_head_sha]:
+        errors.append(
+            f"{target} smoke result {smoke_id} evidence_file source head SHA binding "
+            f"must be {[expected_source_head_sha]}, got {source_head_shas}"
+        )
+    if source_run_attempts != [expected_source_run_attempt]:
+        errors.append(
+            f"{target} smoke result {smoke_id} evidence_file source run attempt binding "
+            f"must be {[expected_source_run_attempt]}, got {source_run_attempts}"
+        )
+    expected_os_name = ""
+    expected_os_architecture = ""
+    expected_os_service_pack = ""
+    expected_os_edition = ""
+    if isinstance(os_identity, dict):
+        expected_os_name = str(os_identity.get("name", "")).strip()
+        expected_os_architecture = str(os_identity.get("architecture", "")).strip()
+        expected_os_service_pack = str(os_identity.get("service_pack", "")).strip()
+        expected_os_edition = str(os_identity.get("edition", "")).strip()
+    if os_names != [expected_os_name]:
+        errors.append(
+            f"{target} smoke result {smoke_id} evidence_file OS name binding "
+            f"must be {[expected_os_name]}, got {os_names}"
+        )
+    if os_architectures != [expected_os_architecture]:
+        errors.append(
+            f"{target} smoke result {smoke_id} evidence_file OS architecture binding "
+            f"must be {[expected_os_architecture]}, got {os_architectures}"
+        )
+    if os_service_packs != [expected_os_service_pack]:
+        errors.append(
+            f"{target} smoke result {smoke_id} evidence_file OS service-pack binding "
+            f"must be {[expected_os_service_pack]}, got {os_service_packs}"
+        )
+    if expected_os_edition and os_editions != [expected_os_edition]:
+        errors.append(
+            f"{target} smoke result {smoke_id} evidence_file OS edition binding "
+            f"must be {[expected_os_edition]}, got {os_editions}"
+        )
+    if not expected_os_edition and os_editions:
+        errors.append(
+            f"{target} smoke result {smoke_id} evidence_file OS edition binding "
+            f"must be omitted for this target, got {os_editions}"
+        )
+    errors.extend(
+        check_xp_smoke_host_probe_binding(
+            target,
+            smoke_id,
+            host_probe_commands=host_probe_commands,
+            host_probe_outputs=host_probe_outputs,
+            processor_architectures=processor_architectures,
+            processor_architectures_w6432=processor_architectures_w6432,
+            wmic_os_captions=wmic_os_captions,
+            wmic_os_csdversions=wmic_os_csdversions,
+            os_identity=os_identity,
+        )
+    )
     return errors
+
+
+def check_xp_smoke_host_probe_binding(
+    target: str,
+    smoke_id: str,
+    *,
+    host_probe_commands: list[str],
+    host_probe_outputs: list[str],
+    processor_architectures: list[str],
+    processor_architectures_w6432: list[str],
+    wmic_os_captions: list[str],
+    wmic_os_csdversions: list[str],
+    os_identity: Any,
+) -> list[str]:
+    label = f"{target} smoke result {smoke_id} evidence_file"
+    errors: list[str] = []
+    if host_probe_commands != ["ver"]:
+        errors.append(f"{label} host-probe command must be ['ver'], got {host_probe_commands}")
+    expected_marker = XP_VER_VERSION_MARKERS.get(target, "")
+    if len(host_probe_outputs) != 1 or not expected_marker or expected_marker not in host_probe_outputs[0]:
+        errors.append(
+            f"{label} host-probe ver output must contain Windows XP version marker "
+            f"{expected_marker!r}, got {host_probe_outputs}"
+        )
+    normalized_arches = {value.lower() for value in processor_architectures}
+    normalized_w6432 = {value.lower() for value in processor_architectures_w6432 if value}
+    if len(processor_architectures_w6432) != 1:
+        errors.append(
+            f"{label} processor architecture w6432 env must have exactly one proof line, "
+            f"got {processor_architectures_w6432}"
+        )
+    if target == "windows-xp-native-x86":
+        if normalized_arches != XP_PROCESSOR_ARCHITECTURE_VALUES[target]:
+            errors.append(
+                f"{label} processor architecture env must be ['x86'] for XP x86, "
+                f"got {processor_architectures}"
+            )
+        if normalized_w6432:
+            errors.append(
+                f"{label} processor architecture w6432 env must be empty for XP x86, "
+                f"got {processor_architectures_w6432}"
+            )
+    if target == "windows-xp-native-x64":
+        if "amd64" not in normalized_arches and "amd64" not in normalized_w6432:
+            errors.append(
+                f"{label} processor architecture env must prove AMD64 for XP x64, "
+                f"got PROCESSOR_ARCHITECTURE={processor_architectures}, "
+                f"PROCESSOR_ARCHITEW6432={processor_architectures_w6432}"
+            )
+    caption = wmic_os_captions[0] if len(wmic_os_captions) == 1 else ""
+    caption_lower = caption.lower()
+    if len(wmic_os_captions) != 1 or "windows" not in caption_lower or "xp" not in caption_lower:
+        errors.append(f"{label} WMIC OS caption must prove Windows XP, got {wmic_os_captions}")
+    if target == "windows-xp-native-x86" and "x64" in caption_lower:
+        errors.append(f"{label} WMIC OS caption must not be x64 for XP x86, got {wmic_os_captions}")
+    if target == "windows-xp-native-x64" and "x64" not in caption_lower:
+        errors.append(f"{label} WMIC OS caption must prove x64 edition, got {wmic_os_captions}")
+    expected_service_pack = ""
+    if isinstance(os_identity, dict):
+        expected_service_pack = str(os_identity.get("service_pack", "")).strip()
+    if len(wmic_os_csdversions) != 1 or not service_pack_probe_matches(
+        wmic_os_csdversions[0],
+        expected_service_pack,
+    ):
+        errors.append(
+            f"{label} WMIC OS CSDVersion must prove {expected_service_pack!r}, "
+            f"got {wmic_os_csdversions}"
+        )
+    return errors
+
+
+def service_pack_probe_matches(probe_value: str, expected_service_pack: str) -> bool:
+    match = re.fullmatch(r"SP(\d+)", expected_service_pack.strip(), flags=re.IGNORECASE)
+    if not match:
+        return False
+    number = match.group(1)
+    normalized = re.sub(r"[^a-z0-9]+", " ", probe_value.lower()).strip()
+    compact = normalized.replace(" ", "")
+    return f"service pack {number}" in normalized or f"sp{number}" in compact
 
 
 def check_security_smoke_evidence_lines(

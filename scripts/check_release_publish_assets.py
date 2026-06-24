@@ -213,6 +213,7 @@ def check_platform_evidence_import_job(workflow: str) -> list[str]:
         "python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets": (
             "imported platform review bundle validator"
         ),
+        "--require-final-record-assets": "imported finalized accepted-record asset validator",
         "actions/upload-artifact@v7": "imported artifact upload",
         "name: release-platform-evidence-assets": "platform evidence release artifact name",
         "path: release-assets/*": "platform evidence release artifact path",

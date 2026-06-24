@@ -1023,15 +1023,33 @@ def _protected_platform_goal_parity(evidence_registry: dict[str, Any] | None) ->
             if (source_head := _release_source_head(entry))
         }
     )
+    release_source_run_attempts = {
+        target: attempt
+        for target, entry in entries.items()
+        if (attempt := _release_source_run_attempt(entry)) > 0
+    }
+    release_source_workflows = {
+        target: workflow
+        for target, entry in entries.items()
+        if (workflow := _release_source_workflow_from_entry(entry, target))
+    }
     target_count = len(PROTECTED_PLATFORM_GOAL_TARGETS)
     accepted_count = len(present)
+    release_source_provenance_complete = all(
+        target in present
+        and target in release_source_run_attempts
+        and target in release_source_workflows
+        for target in PROTECTED_PLATFORM_GOAL_TARGETS
+    )
     current_percent = (accepted_count / target_count * 100.0) if target_count else 0.0
-    complete = accepted_count == target_count
+    complete = accepted_count == target_count and release_source_provenance_complete
     release_consistent = len(release_tags) <= 1
     release_repository_consistent = len(release_repositories) <= 1
     release_source_head_consistent = len(release_source_heads) <= 1
     if complete:
         status = "complete"
+    elif accepted_count == target_count and not release_source_provenance_complete:
+        status = "missing-release-source-provenance"
     elif release_repositories and not release_repository_consistent:
         status = "mixed-release-repository-evidence"
     elif release_tags and not release_consistent:
@@ -1058,6 +1076,16 @@ def _protected_platform_goal_parity(evidence_registry: dict[str, Any] | None) ->
             for target in aggregate_present
             if entries[target].get("release_tag")
         },
+        "accepted_evidence_release_source_run_attempts": {
+            target: release_source_run_attempts[target]
+            for target in aggregate_present
+            if target in release_source_run_attempts
+        },
+        "accepted_evidence_release_source_workflows": {
+            target: release_source_workflows[target]
+            for target in aggregate_present
+            if target in release_source_workflows
+        },
         "target_evidence_requirements": _protected_platform_goal_target_requirements(
             present_targets=set(present),
             release_tag=release_tag,
@@ -1068,6 +1096,15 @@ def _protected_platform_goal_parity(evidence_registry: dict[str, Any] | None) ->
         "release_repositories": release_repositories,
         "release_source_head": release_source_head,
         "release_source_heads": release_source_heads,
+        "release_source_run_attempts": {
+            target: release_source_run_attempts[target]
+            for target in sorted(release_source_run_attempts)
+        },
+        "release_source_workflows": {
+            target: release_source_workflows[target]
+            for target in sorted(release_source_workflows)
+        },
+        "release_source_provenance_complete": release_source_provenance_complete,
         "release_consistent": release_consistent,
         "release_repository_consistent": release_repository_consistent,
         "release_source_head_consistent": release_source_head_consistent,
@@ -1076,8 +1113,8 @@ def _protected_platform_goal_parity(evidence_registry: dict[str, Any] | None) ->
         "scope": (
             "Counts only Linux i386, Linux armhf, Windows XP native x86 and "
             "Windows XP native x64 accepted evidence records for one release_tag, "
-            "one GitHub release repository, one release source head SHA and "
-            "per-record release source run attempts. "
+            "one GitHub release repository, per-target release source workflow files, "
+            "one release source head SHA and per-record release source run attempts. "
             "The broader platform_verified_readiness overall score does not promote "
             "this goal unless this block reaches 100% for a single release."
         ),
@@ -1675,9 +1712,11 @@ def _is_linux_accepted_evidence_entry(item: dict[str, Any], target: str) -> bool
         return False
     source = item.get("release_asset_source")
     source_head_sha = str(source.get("head_sha", "")).strip() if isinstance(source, dict) else ""
+    source_run_attempt = source.get("run_attempt") if isinstance(source, dict) else ""
     expected_smoke = (
         f"{LINUX_ACCEPTED_EVIDENCE_SMOKE_COMMANDS[target]} "
         f"--workflow-run-url {item.get('workflow_run_url')} "
+        f"--workflow-run-attempt {source_run_attempt} "
         f"--source-head-sha {source_head_sha}"
     )
     if item.get("native_smoke_command") != expected_smoke:
@@ -1728,6 +1767,24 @@ def _release_source_head(item: dict[str, Any]) -> str:
         return ""
     source_head = str(source.get("head_sha", "")).strip()
     return source_head if re.fullmatch(r"[0-9a-f]{40}", source_head) else ""
+
+
+def _release_source_run_attempt(item: dict[str, Any]) -> int:
+    source = item.get("release_asset_source")
+    if not isinstance(source, dict):
+        return 0
+    run_attempt = source.get("run_attempt")
+    if isinstance(run_attempt, int) and not isinstance(run_attempt, bool) and run_attempt > 0:
+        return run_attempt
+    return 0
+
+
+def _release_source_workflow_from_entry(item: dict[str, Any], target: str) -> str:
+    source = item.get("release_asset_source")
+    if not isinstance(source, dict):
+        return ""
+    workflow = str(source.get("workflow", "")).strip()
+    return workflow if workflow == _release_source_workflow(target) else ""
 
 
 def _release_asset_repositories(raw_assets: Any) -> set[str]:
@@ -1783,6 +1840,10 @@ def _has_linux_builder_identity_binding(item: dict[str, Any], target: str) -> bo
         return False
     source = item.get("release_asset_source")
     if not isinstance(source, dict) or raw_identity.get("source_head_sha") != source.get("head_sha"):
+        return False
+    if raw_identity.get("observed_git_head_sha") != source.get("head_sha"):
+        return False
+    if raw_identity.get("git_worktree_clean") is not True:
         return False
     if raw_identity.get("workflow_run_attempt") != source.get("run_attempt"):
         return False
@@ -2054,6 +2115,9 @@ def _has_xp_evidence_summary(item: dict[str, Any], target: str) -> bool:
         return False
     if summary.get("target") != target or summary.get("release_tag") != item.get("release_tag"):
         return False
+    release_source = summary.get("release_source")
+    if not _has_xp_summary_release_source(release_source, item.get("release_asset_source")):
+        return False
     if not _has_xp_host_identity(summary.get("host_identity"), target, str(item.get("release_tag", ""))):
         return False
     os_data = summary.get("os")
@@ -2090,9 +2154,22 @@ def _has_xp_evidence_summary(item: dict[str, Any], target: str) -> bool:
     return _has_xp_smoke_commands(
         summary.get("smoke_commands"),
         smoke_evidence_files,
+        summary.get("host_identity"),
+        release_source,
         target,
         str(summary.get("release_tag", "")),
     )
+
+
+def _has_xp_summary_release_source(raw_summary_source: Any, raw_release_asset_source: Any) -> bool:
+    if not isinstance(raw_summary_source, dict) or not isinstance(raw_release_asset_source, dict):
+        return False
+    for field in ("workflow", "head_sha", "run_attempt"):
+        if raw_summary_source.get(field) != raw_release_asset_source.get(field):
+            return False
+    return str(raw_summary_source.get("workflow_run_url", "")).rstrip("/") == str(
+        raw_release_asset_source.get("workflow_run_url", "")
+    ).rstrip("/")
 
 
 def _has_xp_host_identity_digest(item: dict[str, Any], target: str) -> bool:
@@ -2167,10 +2244,21 @@ def _has_xp_smoke_evidence_files(raw_files: Any) -> bool:
     return True
 
 
-def _has_xp_smoke_commands(raw_commands: Any, raw_files: Any, target: str, release_tag: str) -> bool:
+def _has_xp_smoke_commands(
+    raw_commands: Any,
+    raw_files: Any,
+    raw_host_identity: Any,
+    raw_release_source: Any,
+    target: str,
+    release_tag: str,
+) -> bool:
     if not isinstance(raw_commands, dict):
         return False
     if not isinstance(raw_files, dict):
+        return False
+    if not isinstance(raw_host_identity, dict):
+        return False
+    if not isinstance(raw_release_source, dict):
         return False
     commands = {str(name): str(value).strip() for name, value in raw_commands.items()}
     evidence_files = {str(name): str(value).strip() for name, value in raw_files.items()}
@@ -2180,7 +2268,15 @@ def _has_xp_smoke_commands(raw_commands: Any, raw_files: Any, target: str, relea
         command
         and "<" not in command
         and ">" not in command
-        and _xp_smoke_command_bound(command, target, release_tag, smoke_id, evidence_files.get(smoke_id, ""))
+        and _xp_smoke_command_bound(
+            command,
+            target,
+            release_tag,
+            smoke_id,
+            evidence_files.get(smoke_id, ""),
+            raw_host_identity,
+            raw_release_source,
+        )
         for smoke_id, command in commands.items()
     )
 
@@ -2191,6 +2287,8 @@ def _xp_smoke_command_bound(
     release_tag: str,
     smoke_id: str,
     evidence_file: str,
+    host_identity: dict[str, Any],
+    release_source: dict[str, Any],
 ) -> bool:
     expected_values = {
         "--target": target,
@@ -2198,6 +2296,12 @@ def _xp_smoke_command_bound(
         "--smoke-id": smoke_id,
         "--evidence-file": evidence_file,
         "--proof-file": f"xp-smoke-proof/{smoke_id}.txt",
+        "--host-label": str(host_identity.get("host_label", "")),
+        "--evidence-run-id": str(host_identity.get("evidence_run_id", "")),
+        "--observed-at-utc": str(host_identity.get("observed_at_utc", "")),
+        "--source-workflow-run-url": str(release_source.get("workflow_run_url", "")).rstrip("/"),
+        "--source-head-sha": str(release_source.get("head_sha", "")),
+        "--source-run-attempt": str(release_source.get("run_attempt", "")),
     }
     return all(
         re.findall(rf"(?:^|\s){re.escape(flag)}\s+(\S+)(?=\s|$)", command) == [expected]
@@ -2296,6 +2400,12 @@ def _single_target_evidence_status(
         row["accepted_evidence_release_tags"] = {target: str(entry.get("release_tag", ""))}
         row["accepted_evidence_release_repositories"] = {target: repositories}
         row["accepted_evidence_release_source_heads"] = {target: source_head}
+        row["accepted_evidence_release_source_run_attempts"] = {
+            target: _release_source_run_attempt(entry)
+        }
+        row["accepted_evidence_release_source_workflows"] = {
+            target: _release_source_workflow_from_entry(entry, target)
+        }
     return row
 
 
@@ -2326,6 +2436,16 @@ def _windows_xp_evidence_status(evidence_registry: dict[str, Any] | None) -> dic
             target: _release_source_head(entries[target])
             for target in present
             if _release_source_head(entries[target])
+        },
+        "accepted_evidence_release_source_run_attempts": {
+            target: _release_source_run_attempt(entries[target])
+            for target in present
+            if _release_source_run_attempt(entries[target]) > 0
+        },
+        "accepted_evidence_release_source_workflows": {
+            target: _release_source_workflow_from_entry(entries[target], target)
+            for target in present
+            if _release_source_workflow_from_entry(entries[target], target)
         },
     }
 

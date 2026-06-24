@@ -29,18 +29,24 @@ POLICY = (
     "Linux builder identity evidence, builder identity "
     "SHA-256, builder identity release/run binding, "
     "Linux builder/smoke source file binding, "
+    "Linux builder/smoke host identity binding, "
     "Linux builder source head SHA binding, "
+    "Linux builder observed Git HEAD binding, "
+    "Linux builder clean checkout binding, "
     "Linux builder host identity binding when applicable, "
     "Linux builder rpm and non-interactive sudo evidence, Linux security patch evidence, "
     "Linux security smoke proof-line binding, "
     "Linux native build and smoke command provenance, "
     "Linux smoke evidence SHA-256, Linux smoke release/run/source head SHA binding, "
     "Linux smoke runtime architecture and userland binding, "
+    "Linux smoke sanitized host identity and observed-at timestamp binding, "
     "Linux workflow dispatch inputs when applicable, XP workflow dispatch inputs when applicable, "
-    "XP evidence source file binding, XP evidence bundle SHA-256 digests, "
+    "XP evidence source file binding, XP evidence release source binding, "
+    "XP evidence bundle SHA-256 digests, "
     "XP evidence validation command binding, XP evidence contract SHA-256, "
     "XP evidence summary binding, XP host identity SHA-256 binding, XP smoke host identity binding, "
-    "XP security patch evidence, "
+    "XP smoke observed-at timestamp binding, XP smoke OS identity binding, "
+    "XP smoke host probe proof-line binding, XP security patch evidence, "
     "tracked scripts/xp_smoke_runner.cmd XP smoke command provenance, "
     "canonical XP smoke proof-file command binding, "
     "canonical XP smoke evidence-file summary binding and "
@@ -52,9 +58,12 @@ POLICY = (
     "the promotion config SHA-256, have a unique target, include no unrecognized top-level fields, "
     "all release evidence for one record must "
     "use the same GitHub repository, protected platform goal records for one release must use "
-    "one release source head SHA, partial protected platform goal records must use one release_tag, "
-    "GitHub repository and release source head SHA before promotion, and Windows XP x86/x64 pairs must use the same release_tag, "
-    "GitHub repository and release source head SHA. "
+    "one release source head SHA and target-specific release source workflow files plus positive release source run attempts, "
+    "partial protected platform goal records must use one release_tag, GitHub repository, "
+    "target-specific release source workflow file, release source head SHA "
+    "and positive release source run attempt before promotion, and Windows XP x86/x64 pairs must use the same release_tag, "
+    "GitHub repository, target-specific release source workflow file, release source head SHA "
+    "and positive release source run attempts. "
     "Empty means no promotion."
 )
 
@@ -123,6 +132,20 @@ def test_platform_verified_evidence_rejects_missing_xp_evidence_source_policy() 
     assert "platform verified evidence policy must require XP evidence source file binding" in errors
 
 
+def test_platform_verified_evidence_rejects_missing_xp_release_source_policy() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY.replace("XP evidence release source binding, ", ""),
+            "accepted_evidence": [],
+        }
+    )
+
+    assert "platform verified evidence policy must require XP evidence release source binding" in errors
+
+
 def test_platform_verified_evidence_rejects_missing_linux_workflow_input_policy() -> None:
     checker = _load_platform_verified_evidence_checker()
 
@@ -152,6 +175,40 @@ def test_platform_verified_evidence_rejects_missing_linux_smoke_runtime_policy()
         "platform verified evidence policy must require Linux smoke runtime architecture and userland binding"
         in errors
     )
+
+
+def test_platform_verified_evidence_rejects_missing_linux_smoke_identity_policy() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY.replace(
+                "Linux smoke sanitized host identity and observed-at timestamp binding, ",
+                "",
+            ),
+            "accepted_evidence": [],
+        }
+    )
+
+    assert (
+        "platform verified evidence policy must require Linux smoke sanitized host identity and observed-at timestamp binding"
+        in errors
+    )
+
+
+def test_platform_verified_evidence_rejects_missing_linux_builder_smoke_identity_policy() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY.replace("Linux builder/smoke host identity binding, ", ""),
+            "accepted_evidence": [],
+        }
+    )
+
+    assert "platform verified evidence policy must require Linux builder/smoke host identity binding" in errors
 
 
 def test_platform_verified_evidence_rejects_missing_linux_security_smoke_policy() -> None:
@@ -417,6 +474,48 @@ def test_platform_verified_evidence_rejects_missing_xp_smoke_host_identity_polic
     assert "platform verified evidence policy must require XP smoke host identity binding" in errors
 
 
+def test_platform_verified_evidence_rejects_missing_xp_smoke_observed_at_policy() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY.replace("XP smoke observed-at timestamp binding, ", ""),
+            "accepted_evidence": [],
+        }
+    )
+
+    assert "platform verified evidence policy must require XP smoke observed-at timestamp binding" in errors
+
+
+def test_platform_verified_evidence_rejects_missing_xp_smoke_os_identity_policy() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY.replace("XP smoke OS identity binding, ", ""),
+            "accepted_evidence": [],
+        }
+    )
+
+    assert "platform verified evidence policy must require XP smoke OS identity binding" in errors
+
+
+def test_platform_verified_evidence_rejects_missing_xp_smoke_host_probe_policy() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY.replace("XP smoke host probe proof-line binding, ", ""),
+            "accepted_evidence": [],
+        }
+    )
+
+    assert "platform verified evidence policy must require XP smoke host probe proof-line binding" in errors
+
+
 def test_platform_verified_evidence_rejects_missing_linux_release_source_artifact_scope_policy() -> None:
     checker = _load_platform_verified_evidence_checker()
 
@@ -493,7 +592,8 @@ def test_platform_verified_evidence_rejects_missing_protected_goal_source_head_p
             "schema_version": 1,
             "policy": POLICY.replace(
                 "protected platform goal records for one release must use "
-                "one release source head SHA, ",
+                "one release source head SHA and target-specific release source workflow files "
+                "plus positive release source run attempts, ",
                 "",
             ),
             "accepted_evidence": [],
@@ -501,7 +601,74 @@ def test_platform_verified_evidence_rejects_missing_protected_goal_source_head_p
     )
 
     assert (
-        "platform verified evidence policy must require protected platform goal source head SHA consistency"
+        "platform verified evidence policy must require protected platform goal source workflow, "
+        "source head SHA and run-attempt binding"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_protected_goal_policy_without_workflow_files() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY.replace(
+                " and target-specific release source workflow files plus",
+                " and",
+            ),
+            "accepted_evidence": [],
+        }
+    )
+
+    assert (
+        "platform verified evidence policy must require protected platform goal source workflow, "
+        "source head SHA and run-attempt binding"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_missing_partial_goal_run_attempt_policy() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY.replace(
+                "partial protected platform goal records must use one release_tag, GitHub repository, "
+                "target-specific release source workflow file, release source head SHA "
+                "and positive release source run attempt before promotion, ",
+                "",
+            ),
+            "accepted_evidence": [],
+        }
+    )
+
+    assert (
+        "platform verified evidence policy must require partial protected platform goal release scope, "
+        "workflow and run-attempt binding"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_partial_goal_policy_without_workflow_file() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY.replace(
+                "target-specific release source workflow file, ",
+                "",
+            ),
+            "accepted_evidence": [],
+        }
+    )
+
+    assert (
+        "platform verified evidence policy must require partial protected platform goal release scope, "
+        "workflow and run-attempt binding"
+    ) in errors
+    assert (
+        "platform verified evidence policy must require Windows XP pair source workflow, "
+        "source head SHA and run-attempt binding"
     ) in errors
 
 
@@ -513,7 +680,8 @@ def test_platform_verified_evidence_rejects_missing_xp_pair_source_head_policy()
             "schema_version": 1,
             "policy": POLICY.replace(
                 "Windows XP x86/x64 pairs must use the same release_tag, "
-                "GitHub repository and release source head SHA. ",
+                "GitHub repository, target-specific release source workflow file, release source head SHA "
+                "and positive release source run attempts. ",
                 "Windows XP x86/x64 pairs must use the same release_tag and GitHub repository. ",
             ),
             "accepted_evidence": [],
@@ -521,7 +689,8 @@ def test_platform_verified_evidence_rejects_missing_xp_pair_source_head_policy()
     )
 
     assert (
-        "platform verified evidence policy must require Windows XP pair source head SHA consistency"
+        "platform verified evidence policy must require Windows XP pair source workflow, "
+        "source head SHA and run-attempt binding"
     ) in errors
 
 
@@ -600,6 +769,38 @@ def test_platform_verified_evidence_rejects_missing_linux_builder_source_head_sh
 
     assert (
         "platform verified evidence policy must require Linux builder source head SHA binding"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_missing_linux_builder_observed_git_head_policy() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY.replace("Linux builder observed Git HEAD binding, ", ""),
+            "accepted_evidence": [],
+        }
+    )
+
+    assert (
+        "platform verified evidence policy must require Linux builder observed Git HEAD binding"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_missing_linux_builder_clean_checkout_policy() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY.replace("Linux builder clean checkout binding, ", ""),
+            "accepted_evidence": [],
+        }
+    )
+
+    assert (
+        "platform verified evidence policy must require Linux builder clean checkout binding"
     ) in errors
 
 
@@ -1421,7 +1622,8 @@ def test_platform_verified_evidence_rejects_linux_smoke_run_context_mismatch() -
         "linux-i386 native_smoke_command must be "
         "'bash scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux "
         "--target linux-i386 --workflow-run-url "
-        f"https://github.com/example/remote-ops-workspace/actions/runs/67890 --source-head-sha {'a' * 40}'"
+        f"https://github.com/example/remote-ops-workspace/actions/runs/67890 "
+        f"--workflow-run-attempt 1 --source-head-sha {'a' * 40}'"
     ) in errors
 
 
@@ -2033,7 +2235,8 @@ def test_platform_verified_evidence_rejects_missing_linux_command_provenance() -
         "linux-i386 native_smoke_command must be "
         "'bash scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux "
         "--target linux-i386 --workflow-run-url "
-        f"https://github.com/example/remote-ops-workspace/actions/runs/12345 --source-head-sha {'a' * 40}'"
+        f"https://github.com/example/remote-ops-workspace/actions/runs/12345 "
+        f"--workflow-run-attempt 1 --source-head-sha {'a' * 40}'"
     ) in errors
 
 
@@ -2074,7 +2277,8 @@ def test_platform_verified_evidence_rejects_linux_smoke_command_without_source_s
         "linux-i386 native_smoke_command must be "
         "'bash scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux "
         "--target linux-i386 --workflow-run-url "
-        f"https://github.com/example/remote-ops-workspace/actions/runs/12345 --source-head-sha {'a' * 40}'"
+        f"https://github.com/example/remote-ops-workspace/actions/runs/12345 "
+        f"--workflow-run-attempt 1 --source-head-sha {'a' * 40}'"
     ) in errors
 
 
@@ -2758,6 +2962,38 @@ def test_platform_verified_evidence_rejects_builder_identity_source_head_sha_mis
     assert "linux-i386 builder_identity source_head_sha must match release_asset_source.head_sha" in errors
 
 
+def test_platform_verified_evidence_rejects_builder_identity_observed_git_head_sha_mismatch() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    record["builder_identity"]["observed_git_head_sha"] = "b" * 40
+    record["builder_identity_sha256"] = _json_sha256(record["builder_identity"])
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "linux-i386 builder_identity observed_git_head_sha must match release_asset_source.head_sha" in errors
+
+
+def test_platform_verified_evidence_rejects_dirty_builder_git_worktree() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    record["builder_identity"]["git_worktree_clean"] = False
+    record["builder_identity_sha256"] = _json_sha256(record["builder_identity"])
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "linux-i386 builder_identity git_worktree_clean must be true" in errors
+
+
 def test_platform_verified_evidence_rejects_missing_linux_builder_host_identity() -> None:
     checker = _load_platform_verified_evidence_checker()
     record = _linux_record("linux-i386")
@@ -3203,6 +3439,24 @@ def test_platform_verified_evidence_rejects_xp_evidence_summary_target_mismatch(
     assert "windows-xp-native-x64 xp_evidence_summary target must be windows-xp-native-x64" in errors
 
 
+def test_platform_verified_evidence_rejects_xp_evidence_summary_release_source_mismatch() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _xp_record("windows-xp-native-x86")
+    record["xp_evidence_summary"]["release_source"]["head_sha"] = "b" * 40
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "windows-xp-native-x86 xp_evidence_summary release_source.head_sha must match "
+        "release_asset_source.head_sha"
+    ) in errors
+
+
 def test_platform_verified_evidence_rejects_missing_xp_smoke_commands() -> None:
     checker = _load_platform_verified_evidence_checker()
     record = _xp_record("windows-xp-native-x86")
@@ -3337,6 +3591,30 @@ def test_platform_verified_evidence_rejects_xp_smoke_command_proof_file_mismatch
     ) in errors
 
 
+def test_platform_verified_evidence_rejects_xp_smoke_command_release_source_mismatch() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _xp_record("windows-xp-native-x86")
+    record["xp_evidence_summary"]["smoke_commands"]["cli_launch"] = record["xp_evidence_summary"][
+        "smoke_commands"
+    ]["cli_launch"].replace(
+        "--source-head-sha aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "--source-head-sha bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    )
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "windows-xp-native-x86 xp_evidence_summary smoke_commands cli_launch must include exactly one "
+        "--source-head-sha aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, got "
+        "['bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb']"
+    ) in errors
+
+
 def test_platform_verified_evidence_rejects_xp_smoke_command_host_identity_mismatch() -> None:
     checker = _load_platform_verified_evidence_checker()
     record = _xp_record("windows-xp-native-x86")
@@ -3348,6 +3626,9 @@ def test_platform_verified_evidence_rejects_xp_smoke_command_host_identity_misma
     ).replace(
         "--evidence-run-id xp-x86-1-0-2-20260620t120000z",
         "--evidence-run-id xp-x86-1-0-2-other",
+    ).replace(
+        "--observed-at-utc 2026-06-20T12:00:00Z",
+        "--observed-at-utc 2026-06-20T12:30:00Z",
     )
     registry = {
         "schema_version": 1,
@@ -3364,6 +3645,54 @@ def test_platform_verified_evidence_rejects_xp_smoke_command_host_identity_misma
     assert (
         "windows-xp-native-x86 xp_evidence_summary smoke_commands cli_launch must include exactly one "
         "--evidence-run-id xp-x86-1-0-2-20260620t120000z, got ['xp-x86-1-0-2-other']"
+    ) in errors
+    assert (
+        "windows-xp-native-x86 xp_evidence_summary smoke_commands cli_launch must include exactly one "
+        "--observed-at-utc 2026-06-20T12:00:00Z, got ['2026-06-20T12:30:00Z']"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_xp_smoke_command_os_identity_mismatch() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _xp_record("windows-xp-native-x64")
+    record["xp_evidence_summary"]["smoke_commands"]["cli_launch"] = record["xp_evidence_summary"][
+        "smoke_commands"
+    ]["cli_launch"].replace(
+        '--os-name "Windows XP"',
+        '--os-name "Windows 7"',
+    ).replace(
+        "--os-architecture x64",
+        "--os-architecture x86",
+    ).replace(
+        "--os-service-pack SP2",
+        "--os-service-pack SP1",
+    ).replace(
+        '--os-edition "Professional x64 Edition"',
+        '--os-edition "Ultimate"',
+    )
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "windows-xp-native-x64 xp_evidence_summary smoke_commands cli_launch must include exactly one "
+        "--os-name Windows XP, got ['Windows 7']"
+    ) in errors
+    assert (
+        "windows-xp-native-x64 xp_evidence_summary smoke_commands cli_launch must include exactly one "
+        "--os-architecture x64, got ['x86']"
+    ) in errors
+    assert (
+        "windows-xp-native-x64 xp_evidence_summary smoke_commands cli_launch must include exactly one "
+        "--os-service-pack SP2, got ['SP1']"
+    ) in errors
+    assert (
+        "windows-xp-native-x64 xp_evidence_summary smoke_commands cli_launch must include exactly one "
+        "--os-edition Professional x64 Edition, got ['Ultimate']"
     ) in errors
 
 
@@ -3482,7 +3811,7 @@ def _linux_record(target: str) -> dict[str, object]:
         "native_smoke_command": (
             f"bash scripts/smoke_linux_native.sh --arch {arch} --dist native-dist/linux "
             f"--target {target} --workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
-            f"--source-head-sha {'a' * 40}"
+            f"--workflow-run-attempt 1 --source-head-sha {'a' * 40}"
         ),
         "linux_smoke_evidence_sha256": linux_smoke_hashes,
         "local_evidence_preflight_command": (
@@ -3741,11 +4070,21 @@ def _replace_release_source_head(record: dict[str, object], head_sha: str) -> No
         record["local_evidence_preflight_command"] = str(
             record["local_evidence_preflight_command"]
         ).replace(old_head, head_sha)
+    xp_summary = record.get("xp_evidence_summary")
+    if isinstance(xp_summary, dict):
+        xp_source = xp_summary.get("release_source")
+        if isinstance(xp_source, dict):
+            xp_source["head_sha"] = head_sha
+        smoke_commands = xp_summary.get("smoke_commands")
+        if isinstance(smoke_commands, dict) and old_head:
+            for smoke_id, command in smoke_commands.items():
+                smoke_commands[smoke_id] = str(command).replace(old_head, head_sha)
     if not str(record.get("target", "")).startswith("linux-"):
         return
     builder_identity = record.get("builder_identity")
     if isinstance(builder_identity, dict):
         builder_identity["source_head_sha"] = head_sha
+        builder_identity["observed_git_head_sha"] = head_sha
         builder_identity_sha = _json_sha256(builder_identity)
         record["builder_identity_sha256"] = builder_identity_sha
         linux_sources = record.get("linux_evidence_sources")
@@ -3774,6 +4113,7 @@ def _xp_evidence_summary(target: str, release_tag: str = "v1.0.2") -> dict[str, 
             "separate_legacy_toolchain": True,
             "current_python_pyqt6_stack": False,
         },
+        "release_source": _xp_release_source_summary(target),
         "security": {
             "legacy_crypto_profile_scoped": True,
             "modern_defaults_unchanged": True,
@@ -3783,6 +4123,15 @@ def _xp_evidence_summary(target: str, release_tag: str = "v1.0.2") -> dict[str, 
         "smoke_ids": sorted(_xp_smoke_hashes()),
         "smoke_evidence_files": _xp_smoke_evidence_files(),
         "smoke_commands": _xp_smoke_commands(target, release_tag),
+    }
+
+
+def _xp_release_source_summary(target: str) -> dict[str, object]:
+    return {
+        "workflow": _release_source_workflow(target),
+        "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        "head_sha": "a" * 40,
+        "run_attempt": 1,
     }
 
 
@@ -3832,13 +4181,28 @@ def _xp_smoke_evidence_files() -> dict[str, str]:
 
 def _xp_smoke_commands(target: str, release_tag: str = "v1.0.2") -> dict[str, str]:
     host_identity = _xp_host_identity(target, release_tag)
+    os_identity = host_identity["os"]
+    assert isinstance(os_identity, dict)
+    release_source = _xp_release_source_summary(target)
     return {
         smoke_id: (
             f"scripts/xp_smoke_runner.cmd --target {target} --release-tag {release_tag} "
             f"--smoke-id {smoke_id} --evidence-file xp-smoke-evidence/{smoke_id}.txt "
             f"--proof-file xp-smoke-proof/{smoke_id}.txt "
             f"--host-label {host_identity['host_label']} "
-            f"--evidence-run-id {host_identity['evidence_run_id']}"
+            f"--evidence-run-id {host_identity['evidence_run_id']} "
+            f"--observed-at-utc {host_identity['observed_at_utc']} "
+            f"--source-workflow-run-url {release_source['workflow_run_url']} "
+            f"--source-head-sha {release_source['head_sha']} "
+            f"--source-run-attempt {release_source['run_attempt']} "
+            f'--os-name "{os_identity["name"]}" '
+            f"--os-architecture {os_identity['architecture']} "
+            f"--os-service-pack {os_identity['service_pack']}"
+            + (
+                f' --os-edition "{os_identity["edition"]}"'
+                if "edition" in os_identity
+                else ""
+            )
         )
         for smoke_id in sorted(_xp_smoke_hashes())
     }
@@ -3854,6 +4218,8 @@ def _builder_identity(target: str) -> dict[str, object]:
         "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
         "workflow_run_attempt": 1,
         "source_head_sha": "a" * 40,
+        "observed_git_head_sha": "a" * 40,
+        "git_worktree_clean": True,
         "host_identity": _linux_host_identity(target),
         "sudo_non_interactive": True,
         "sys_platform": "linux",

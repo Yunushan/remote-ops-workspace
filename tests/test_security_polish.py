@@ -142,8 +142,12 @@ def test_security_polish_rejects_permissive_legacy_launcher_behavior() -> None:
     )
 
     assert "SSHv1 launch must require an isolated XP legacy_target" in errors
+    assert "SSHv1 launch must reject generic XP legacy_target aliases" in errors
+    assert "SSHv1 launch must require the legacy_target key" in errors
     assert "weak SSH algorithms must require an isolated XP legacy_target" in errors
+    assert "weak SSH algorithms must reject generic XP legacy_target aliases" in errors
     assert "RDP native security must require an isolated XP legacy_target" in errors
+    assert "RDP native security must reject generic XP legacy_target aliases" in errors
 
 
 def _security_baseline() -> dict[str, object]:

@@ -275,19 +275,24 @@ daha genis platform katalogudur. Native installer smoke kapsami
 Windows, macOS ve Linux native islerinden sonra install, verify, upgrade and
 uninstall yollarini calistirir. Release workflow once `release-preflight` isinde
 `python scripts/verify.py --quick --no-cli-smoke --release-tag <tag>`,
+`python scripts/check_protected_platform_goal.py --release-tag <tag> --require-complete --show-requirements`,
 `python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag <tag>`
 ve `python scripts/check_repository_cleanup.py --require-clean` calistirir;
 source, native, accepted-platform-evidence-assets ve publish isleri bu kapiya
 baglidir. Protected platform goal icin Linux i386, Linux armhf,
 windows-xp-native-x86 ve windows-xp-native-x64 kayitlarinin hepsi ayni release
-tag, ayni GitHub release repository, ayni release source head SHA ve her
-kaydin pozitif release source run attempt degeri ile finalized accepted evidence
+tag, ayni GitHub release repository, target'a ozel release source workflow file
+path, ayni release source head SHA ve her kaydin pozitif release source run
+attempt degeri ile finalized accepted evidence
 olarak bulunmalidir. Protected evidence asset isi
 `python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run`
-ile sadece accepted kayitlarda ayni tag/repository/source-head bagli artifact ve
-review-bundle dosyalarini release-assets icine alir, sonra
-`python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag <tag>`
-ile import edilen review-bundle dosyalarini upload oncesi yeniden dogrular. Publish isi upload
+ile sadece accepted kayitlarda ayni tag/repository/workflow file path/source-head/run-attempt
+bagli artifact ve review-bundle dosyalarini, indirilen source artifact native
+artifact SHA-256 degerleri ve review-bundle size/SHA-256 degerleri finalized
+accepted kayitla eslestikten sonra release-assets icine alir, sonra
+`python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag <tag> --require-final-record-assets`
+ile import edilen review-bundle dosyalarini ve finalized public record JSON
+dosyalarini upload oncesi yeniden dogrular. Publish isi upload
 oncesinde
 `python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --require-platform-goal-targets`
 calistirip indirilen asset setini, checksum yan dosyalarini, release manifestini,

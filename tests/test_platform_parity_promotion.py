@@ -82,6 +82,17 @@ def test_platform_parity_promotion_requires_local_evidence_preflight() -> None:
     assert "linux-i386 promotion_to_100_requires missing keys: ['local_evidence_preflight_command']" in errors
 
 
+def test_platform_parity_promotion_requires_linux_smoke_evidence_key() -> None:
+    checker = _load_platform_parity_promotion_checker()
+    promotion = _load_json("configs/platform_parity_promotion.json")
+    entry = _promotion_entry(promotion, "linux-armhf")
+    del entry["promotion_to_100_requires"]["smoke_evidence"]
+
+    errors = checker.check_platform_parity_promotion(promotion=promotion)
+
+    assert "linux-armhf promotion_to_100_requires missing keys: ['smoke_evidence']" in errors
+
+
 def test_platform_parity_promotion_requires_target_release_scoped_linux_command_placeholders() -> None:
     checker = _load_platform_parity_promotion_checker()
     promotion = _load_json("configs/platform_parity_promotion.json")
@@ -118,6 +129,33 @@ def test_platform_parity_promotion_requires_linux_security_boundaries() -> None:
         and "modern Windows 10/11, Linux, and macOS defaults must keep hardened crypto" in error
         for error in errors
     )
+
+
+def test_platform_parity_promotion_requires_linux_smoke_identity_freshness() -> None:
+    checker = _load_platform_parity_promotion_checker()
+    promotion = _load_json("configs/platform_parity_promotion.json")
+    entry = _promotion_entry(promotion, "linux-i386")
+    requirements = entry["promotion_to_100_requires"]
+    requirements["smoke_evidence"] = [
+        "capture native smoke log with target, release tag, workflow run URL, workflow run attempt, source head SHA and observed git HEAD SHA",
+        "capture native smoke log with target, release tag, workflow run URL, workflow run attempt, source head SHA and observed git HEAD SHA",
+        "run a Linux smoke script",
+    ]
+
+    errors = checker.check_platform_parity_promotion(promotion=promotion)
+
+    assert (
+        "linux-i386 smoke_evidence contains duplicates: "
+        "['capture native smoke log with target, release tag, workflow run URL, workflow run attempt, source head SHA and observed git HEAD SHA']"
+    ) in errors
+    assert any(
+        error.startswith("linux-i386 smoke_evidence missing:")
+        and "bind sanitized host label, deterministic evidence run ID and observed-at UTC timestamp into the native smoke log" in error
+        and "prove 32-bit Linux userland and target architecture on the builder" in error
+        and "bind DEB, RPM and AppImage SHA-256 lines into the native smoke log" in error
+        for error in errors
+    )
+    assert "linux-i386 smoke_evidence has unexpected items: ['run a Linux smoke script']" in errors
 
 
 def test_platform_parity_promotion_rejects_xp_local_preflight_without_xp_evidence_dir() -> None:

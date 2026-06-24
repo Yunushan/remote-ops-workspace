@@ -239,7 +239,8 @@ def format_goal_scope(goal: dict[str, Any]) -> str:
     aggregate_count = int(goal.get("aggregate_accepted_target_count", accepted_count) or 0)
     lines = [
         "release scope: requires one release_tag, one GitHub release repository, "
-        "one release source head SHA and per-record release source run attempts"
+        "per-target release source workflow files, one release source head SHA "
+        "and per-record release source run attempts"
     ]
     if aggregate_count != accepted_count:
         lines.append(
@@ -255,7 +256,17 @@ def format_goal_scope(goal: dict[str, Any]) -> str:
         lines.append(f"accepted release repositories: {', '.join(repositories)}")
     if source_heads:
         lines.append(f"accepted release source heads: {', '.join(source_heads)}")
-    if not any((release_tags, repositories, source_heads)):
+    workflows = dict_values(goal.get("release_source_workflows"))
+    if workflows:
+        workflow_summary = ", ".join(
+            f"{target}={workflow}" for target, workflow in sorted(workflows.items())
+        )
+        lines.append(f"accepted release source workflows: {workflow_summary}")
+    run_attempts = dict_values(goal.get("release_source_run_attempts"))
+    if run_attempts:
+        attempts = ", ".join(f"{target}={attempt}" for target, attempt in sorted(run_attempts.items()))
+        lines.append(f"accepted release source run attempts: {attempts}")
+    if not any((release_tags, repositories, source_heads, workflows, run_attempts)):
         lines.append("accepted release scope evidence: none")
     return "\n".join(lines)
 
@@ -296,12 +307,26 @@ def format_goal_requirements(goal: dict[str, Any]) -> str:
                 f"{len(artifacts) if isinstance(artifacts, list) else 0} artifacts, "
                 f"{len(review_bundles) if isinstance(review_bundles, list) else 0} review-bundle files"
             )
+        source = item.get("release_asset_source_required", {})
+        if isinstance(source, dict):
+            workflow = str(source.get("workflow", ""))
+            artifact_name = str(source.get("artifact_name", ""))
+            if workflow or artifact_name:
+                lines.append(
+                    "    source workflow: "
+                    f"{workflow or '<missing>'}; artifact={artifact_name or '<missing>'}"
+                )
         commands = item.get("required_commands", {})
         if isinstance(commands, dict) and commands:
             lines.append(f"    commands: {', '.join(sorted(str(key) for key in commands))}")
         builder_or_host = str(item.get("builder_or_host_evidence", ""))
         if builder_or_host:
             lines.append(f"    builder/host: {builder_or_host}")
+        smoke_evidence = item.get("smoke_evidence", [])
+        if isinstance(smoke_evidence, list) and smoke_evidence:
+            lines.append("    smoke evidence:")
+            for value in smoke_evidence:
+                lines.append(f"      - {value}")
         security = item.get("security_requirements", [])
         if isinstance(security, list) and security:
             lines.append(f"    security: {'; '.join(str(value) for value in security)}")
@@ -312,6 +337,12 @@ def list_values(raw: Any) -> list[str]:
     if not isinstance(raw, list):
         return []
     return [str(value) for value in raw if str(value)]
+
+
+def dict_values(raw: Any) -> dict[str, Any]:
+    if not isinstance(raw, dict):
+        return {}
+    return {str(key): value for key, value in raw.items()}
 
 
 if __name__ == "__main__":

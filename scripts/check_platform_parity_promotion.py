@@ -35,6 +35,16 @@ LINUX_SECURITY_REQUIREMENTS = (
     "isolated legacy compatibility and CVE patch review",
     "modern Windows 10/11, Linux, and macOS defaults must keep hardened crypto",
 )
+LINUX_SMOKE_EVIDENCE_REQUIREMENTS = (
+    "capture native smoke log with target, release tag, workflow run URL, workflow run attempt, source head SHA and observed git HEAD SHA",
+    "bind sanitized host label, deterministic evidence run ID and observed-at UTC timestamp into the native smoke log",
+    "prove 32-bit Linux userland and target architecture on the builder",
+    "bind DEB, RPM and AppImage SHA-256 lines into the native smoke log",
+    "verify DEB install, verify, upgrade and uninstall",
+    "verify RPM install, verify, upgrade and uninstall",
+    "verify AppImage install, verify, upgrade and uninstall",
+    "prove TLS 1.3 preferred, TLS 1.2 minimum, isolated legacy crypto and modern defaults unchanged",
+)
 XP_SECURITY_REQUIREMENTS = (
     "legacy TLS, SSH, and RDP compatibility must remain profile-scoped opt-in",
     "modern Windows 10/11, Linux, and macOS defaults must keep hardened crypto",
@@ -51,6 +61,7 @@ LINUX_REQUIRED_PROMOTION_KEYS = {
     "workflow_runner_evidence",
     "build_script",
     "smoke_script",
+    "smoke_evidence",
     "artifact_validation_command",
     "local_evidence_preflight_command",
     "accepted_evidence_candidate_command",
@@ -297,6 +308,7 @@ def check_linux_promotion_entry(
 
     errors.extend(check_script_requirement(label, requirements, "build_script"))
     errors.extend(check_script_requirement(label, requirements, "smoke_script"))
+    errors.extend(check_linux_smoke_evidence_requirements(label, requirements))
     errors.extend(check_artifact_validation_command(label, requirements))
     errors.extend(check_local_evidence_preflight_command(label, requirements, kind="linux"))
     errors.extend(check_finalized_evidence_requirements(label, requirements, kind="linux"))
@@ -431,6 +443,28 @@ def check_security_requirements(
     if missing:
         return [f"{label} security_requirements missing: {missing}"]
     return []
+
+
+def check_linux_smoke_evidence_requirements(
+    label: str,
+    requirements: dict[str, Any],
+) -> list[str]:
+    raw_requirements = requirements.get("smoke_evidence")
+    if not isinstance(raw_requirements, list) or not raw_requirements:
+        return [f"{label} promotion requires non-empty smoke_evidence"]
+    values = [str(item) for item in raw_requirements]
+    expected = set(LINUX_SMOKE_EVIDENCE_REQUIREMENTS)
+    errors: list[str] = []
+    duplicate_values = sorted({value for value in values if values.count(value) > 1})
+    if duplicate_values:
+        errors.append(f"{label} smoke_evidence contains duplicates: {duplicate_values}")
+    missing = [item for item in LINUX_SMOKE_EVIDENCE_REQUIREMENTS if item not in values]
+    if missing:
+        errors.append(f"{label} smoke_evidence missing: {missing}")
+    unexpected = sorted(set(values) - expected)
+    if unexpected:
+        errors.append(f"{label} smoke_evidence has unexpected items: {unexpected}")
+    return errors
 
 
 def check_docs(docs: dict[str, str]) -> list[str]:

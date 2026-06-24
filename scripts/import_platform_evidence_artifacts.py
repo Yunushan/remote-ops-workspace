@@ -35,12 +35,10 @@ from check_platform_verified_evidence import (  # noqa: E402
 )
 from make_platform_verified_evidence_record import sha256_file  # noqa: E402
 
-EXPECTED_SOURCE_WORKFLOW_NAMES = {
-    "linux-i386": "extended-platform-evidence",
-    "linux-armhf": "extended-platform-evidence",
-    "windows-xp-native-x86": "xp-native-evidence",
-    "windows-xp-native-x64": "xp-native-evidence",
-}
+SOURCE_RUN_METADATA_JQ = (
+    "{attempt: .run_attempt, status: .status, conclusion: .conclusion, "
+    "event: .event, headSha: .head_sha, path: .path}"
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -269,7 +267,11 @@ def import_record(
         ]
     run_id = run_url.rstrip("/").rsplit("/", 1)[-1]
     destination = download_root / target
-    view_command = source_run_view_command(run_id, repository)
+    metadata_command = source_run_attempt_metadata_command(
+        run_id,
+        repository,
+        expected_run_attempt,
+    )
     command = [
         "gh",
         "run",
@@ -283,12 +285,12 @@ def import_record(
         str(destination),
     ]
     if dry_run:
-        print(" ".join(view_command))
+        print(" ".join(metadata_command))
         print(" ".join(command))
         if verify_source_run_metadata:
             return verify_source_run(
                 target,
-                view_command,
+                metadata_command,
                 expected_head_sha=expected_head_sha,
                 expected_run_attempt=expected_run_attempt,
                 release_head_sha=release_head_sha,
@@ -296,7 +298,7 @@ def import_record(
     else:
         errors = verify_source_run(
             target,
-            view_command,
+            metadata_command,
             expected_head_sha=expected_head_sha,
             expected_run_attempt=expected_run_attempt,
             release_head_sha=release_head_sha,
@@ -368,16 +370,17 @@ def release_repositories_for_import_record(record: dict[str, Any]) -> set[str]:
     return repositories
 
 
-def source_run_view_command(run_id: str, repository: str) -> list[str]:
+def source_run_attempt_metadata_command(
+    run_id: str,
+    repository: str,
+    run_attempt: int,
+) -> list[str]:
     return [
         "gh",
-        "run",
-        "view",
-        run_id,
-        "--repo",
-        repository,
-        "--json",
-        "attempt,conclusion,event,headSha,status,workflowName",
+        "api",
+        f"repos/{repository}/actions/runs/{run_id}/attempts/{run_attempt}",
+        "--jq",
+        SOURCE_RUN_METADATA_JQ,
     ]
 
 
@@ -412,11 +415,11 @@ def verify_source_run(
         errors.append(
             f"{target} release_asset_source workflow run event must be workflow_dispatch, got {data.get('event')!r}"
         )
-    expected_workflow = EXPECTED_SOURCE_WORKFLOW_NAMES.get(target)
-    if expected_workflow and data.get("workflowName") != expected_workflow:
+    expected_workflow = release_source_workflow(target)
+    if data.get("path") != expected_workflow:
         errors.append(
-            f"{target} release_asset_source workflow run name must be {expected_workflow!r}, "
-            f"got {data.get('workflowName')!r}"
+            f"{target} release_asset_source workflow run path must be {expected_workflow!r}, "
+            f"got {data.get('path')!r}"
         )
     if data.get("headSha") != expected_head_sha:
         errors.append(
@@ -520,6 +523,9 @@ def validate_source_artifact(record: dict[str, Any], *, source_root: Path) -> li
     )
     if errors:
         return errors
+    errors = check_downloaded_source_hashes(record, source_root=source_root)
+    if errors:
+        return errors
     return validate_downloaded_final_record(record, source_root=source_root)
 
 
@@ -574,6 +580,40 @@ def validate_downloaded_source_file_set(
     unexpected = sorted(root_files - expected_files)
     if unexpected:
         errors.append(f"{target} downloaded artifact contains unexpected files: {unexpected}")
+    return errors
+
+
+def check_downloaded_source_hashes(record: dict[str, Any], *, source_root: Path) -> list[str]:
+    target = str(record.get("target", ""))
+    errors: list[str] = []
+    artifact_hashes = record.get("artifact_sha256")
+    if isinstance(artifact_hashes, dict):
+        for filename, digest in sorted(artifact_hashes.items()):
+            path = source_root / str(filename)
+            if not path.is_file():
+                errors.append(f"{target} downloaded source artifact missing native artifact: {filename}")
+                continue
+            if sha256_file(path) != str(digest):
+                errors.append(f"{target} downloaded source artifact native artifact SHA-256 mismatch: {filename}")
+    review_bundle = record.get("review_bundle")
+    if isinstance(review_bundle, dict):
+        for key in ("manifest", "archive", "sha256s"):
+            bundle_record = review_bundle.get(key)
+            if not isinstance(bundle_record, dict):
+                continue
+            filename = str(bundle_record.get("file", ""))
+            path = source_root / filename
+            if not path.is_file():
+                errors.append(f"{target} downloaded source artifact missing review bundle {key}: {filename}")
+                continue
+            if bundle_record.get("size_bytes") != path.stat().st_size:
+                errors.append(
+                    f"{target} downloaded source artifact review bundle {key} size_bytes mismatch: {filename}"
+                )
+            if sha256_file(path) != str(bundle_record.get("sha256", "")):
+                errors.append(
+                    f"{target} downloaded source artifact review bundle {key} SHA-256 mismatch: {filename}"
+                )
     return errors
 
 

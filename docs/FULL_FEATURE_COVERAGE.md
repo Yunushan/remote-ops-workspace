@@ -95,8 +95,8 @@ candidate records without review-bundle digests. The goal-specific gate is
 plus `python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag v<project.version>`;
 it must fail until linux-i386, linux-armhf, windows-xp-native-x86 and
 windows-xp-native-x64 all have finalized accepted records for the same release tag,
-same GitHub release repository, same release source head SHA and a positive
-release source run attempt in each record. Mixed-tag,
+same GitHub release repository, target-specific release source workflow file,
+same release source head SHA and a positive release source run attempt in each record. Mixed-tag,
 mixed-repository or mixed-source-head accepted records remain aggregate evidence only
 and cannot complete the protected goal parity block. The release/verifier promotion
 gate is `python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> --release-assets-dir <release-assets-dir>`,

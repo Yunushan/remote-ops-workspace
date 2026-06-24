@@ -24,6 +24,7 @@ from check_platform_promotion_artifacts import (  # noqa: E402
 from check_platform_verified_evidence import (  # noqa: E402
     LINUX_TARGETS,
     XP_TARGETS,
+    check_linux_smoke_builder_identity_binding,
     check_linux_smoke_log_text,
     check_platform_verified_evidence,
     directory_path_has_file_suffix,
@@ -62,17 +63,23 @@ DEFAULT_EVIDENCE_POLICY = (
     "exact release source and review bundle fields, "
     "Linux builder identity evidence, builder identity SHA-256, "
     "Linux builder/smoke source file binding, "
+    "Linux builder/smoke host identity binding, "
     "builder identity release/run binding, Linux builder source head SHA binding, "
+    "Linux builder observed Git HEAD binding, Linux builder clean checkout binding, "
     "Linux builder host identity binding when applicable, "
     "Linux builder rpm and non-interactive sudo evidence, "
     "Linux security patch evidence, Linux security smoke proof-line binding, "
     "Linux native build and smoke command provenance, "
     "Linux smoke evidence SHA-256, Linux smoke release/run/source head SHA binding, "
     "Linux smoke runtime architecture and userland binding, "
+    "Linux smoke sanitized host identity and observed-at timestamp binding, "
     "Linux workflow dispatch inputs when applicable, XP workflow dispatch inputs when applicable, "
-    "XP evidence source file binding, and XP evidence bundle SHA-256 digests, "
+    "XP evidence source file binding, XP evidence release source binding, and "
+    "XP evidence bundle SHA-256 digests, "
     "XP evidence validation command binding, XP evidence contract SHA-256, "
     "XP evidence summary binding, XP host identity SHA-256 binding, XP smoke host identity binding, "
+    "XP smoke observed-at timestamp binding, XP smoke OS identity binding, "
+    "XP smoke host probe proof-line binding, "
     "XP security patch evidence, "
     "tracked scripts/xp_smoke_runner.cmd XP smoke command provenance, "
     "canonical XP smoke proof-file command binding, "
@@ -84,9 +91,13 @@ DEFAULT_EVIDENCE_POLICY = (
     "config SHA-256, have a unique "
     "target, include no unrecognized top-level fields, "
     "all release evidence for one record must use the same GitHub repository, protected platform "
-    "goal records for one release must use one release source head SHA, partial protected platform "
-    "goal records must use one release_tag, GitHub repository and release source head SHA before promotion, and Windows XP x86/x64 pairs "
-    "must use the same release_tag, GitHub repository and release source head SHA. Empty means no promotion."
+    "goal records for one release must use one release source head SHA and target-specific release source "
+    "workflow files plus positive release source run attempts, "
+    "partial protected platform goal records must use one release_tag, GitHub repository, "
+    "target-specific release source workflow file, release source head SHA "
+    "and positive release source run attempt before promotion, and Windows XP x86/x64 pairs must use the same release_tag, "
+    "GitHub repository, target-specific release source workflow file, release source head SHA and positive "
+    "release source run attempts. Empty means no promotion."
 )
 LINUX_CHECKS = [
     "builder_preflight",
@@ -243,6 +254,7 @@ def build_evidence_record(args: argparse.Namespace) -> tuple[list[str], dict[str
         if target in LINUX_TARGETS and not artifact_errors
         else None
     )
+    builder_identity = read_json(args.builder_evidence) if target in LINUX_TARGETS else None
     if target in LINUX_TARGETS:
         errors.extend(
             check_linux_smoke_evidence_file(
@@ -252,12 +264,15 @@ def build_evidence_record(args: argparse.Namespace) -> tuple[list[str], dict[str
                     target,
                     promotion,
                     str(args.workflow_run_url),
+                    int(args.release_source_run_attempt),
                     str(args.release_source_head_sha),
                 ),
                 str(args.workflow_run_url),
+                int(args.release_source_run_attempt),
                 args.linux_smoke_evidence,
                 source_head_sha=str(args.release_source_head_sha),
                 artifact_sha256=artifact_hashes,
+                builder_identity=builder_identity,
             )
         )
     if target in XP_TARGETS:
@@ -554,24 +569,37 @@ def check_linux_smoke_evidence_file(
     release_tag: str,
     native_smoke_command: str,
     workflow_run_url: str,
+    workflow_run_attempt: int,
     smoke_evidence: Path,
     *,
     source_head_sha: str,
     artifact_sha256: Any | None = None,
+    builder_identity: Any | None = None,
 ) -> list[str]:
     try:
         text = smoke_evidence.read_text(encoding="utf-8")
     except UnicodeDecodeError as exc:
         return [f"{target} linux_smoke_evidence must be UTF-8 text: {exc}"]
-    return check_linux_smoke_log_text(
+    errors = check_linux_smoke_log_text(
         target,
         release_tag,
         native_smoke_command,
         workflow_run_url,
         text,
+        workflow_run_attempt=workflow_run_attempt,
         source_head_sha=source_head_sha,
         artifact_sha256=artifact_sha256,
     )
+    if builder_identity is not None:
+        errors.extend(
+            check_linux_smoke_builder_identity_binding(
+                target,
+                "linux_smoke_evidence",
+                text,
+                builder_identity,
+            )
+        )
+    return errors
 
 
 def check_linux_builder_release_source_binding(args: argparse.Namespace) -> list[str]:
@@ -587,6 +615,14 @@ def check_linux_builder_release_source_binding(args: argparse.Namespace) -> list
             f"{target} builder evidence source_head_sha must match --release-source-head-sha "
             f"{expected_head_sha}, got {actual_head_sha!r}"
         )
+    actual_observed_head_sha = str(builder_identity.get("observed_git_head_sha", "")).strip()
+    if actual_observed_head_sha != expected_head_sha:
+        errors.append(
+            f"{target} builder evidence observed_git_head_sha must match --release-source-head-sha "
+            f"{expected_head_sha}, got {actual_observed_head_sha!r}"
+        )
+    if builder_identity.get("git_worktree_clean") is not True:
+        errors.append(f"{target} builder evidence git_worktree_clean must be true")
     expected_attempt = args.release_source_run_attempt
     actual_attempt = builder_identity.get("workflow_run_attempt")
     if actual_attempt != expected_attempt:
@@ -624,6 +660,34 @@ def check_xp_evidence_record_binding(args: argparse.Namespace) -> list[str]:
             f"{target} XP evidence artifact_validation.command --assets-dir must match "
             f"--assets-dir {expected_assets_dir}, got {asset_dirs}"
         )
+    source = evidence.get("release_source")
+    if not isinstance(source, dict):
+        errors.append(f"{target} XP evidence release_source must be an object")
+        return errors
+    expected_workflow = release_source_workflow(target)
+    if source.get("workflow") != expected_workflow:
+        errors.append(f"{target} XP evidence release_source.workflow must be {expected_workflow}")
+    expected_workflow_run_url = str(args.release_source_workflow_run_url or "").rstrip("/")
+    actual_workflow_run_url = str(source.get("workflow_run_url", "")).rstrip("/")
+    if actual_workflow_run_url != expected_workflow_run_url:
+        errors.append(
+            f"{target} XP evidence release_source.workflow_run_url must match "
+            f"--release-source-workflow-run-url {expected_workflow_run_url}, got {actual_workflow_run_url!r}"
+        )
+    expected_head_sha = str(args.release_source_head_sha or "")
+    actual_head_sha = str(source.get("head_sha", "")).strip()
+    if actual_head_sha != expected_head_sha:
+        errors.append(
+            f"{target} XP evidence release_source.head_sha must match "
+            f"--release-source-head-sha {expected_head_sha}, got {actual_head_sha!r}"
+        )
+    expected_run_attempt = args.release_source_run_attempt
+    actual_run_attempt = source.get("run_attempt")
+    if actual_run_attempt != expected_run_attempt:
+        errors.append(
+            f"{target} XP evidence release_source.run_attempt must match "
+            f"--release-source-run-attempt {expected_run_attempt}, got {actual_run_attempt!r}"
+        )
     return errors
 
 
@@ -656,6 +720,7 @@ def linux_record(args: argparse.Namespace, promotion: dict[str, Any]) -> dict[st
             target,
             promotion,
             str(args.workflow_run_url),
+            int(args.release_source_run_attempt),
             str(args.release_source_head_sha),
         ),
         "linux_smoke_evidence_sha256": linux_smoke_evidence_sha256_map(args.linux_smoke_evidence),
@@ -702,12 +767,14 @@ def linux_native_smoke_command(
     target: str,
     promotion: dict[str, Any],
     workflow_run_url: str,
+    workflow_run_attempt: int,
     source_head_sha: str,
 ) -> str:
     requirements = promotion_requirements(target, promotion)
     return (
         f"bash {requirements.get('smoke_script', '')} --target {target} "
-        f"--workflow-run-url {workflow_run_url} --source-head-sha {source_head_sha}"
+        f"--workflow-run-url {workflow_run_url} --workflow-run-attempt {workflow_run_attempt} "
+        f"--source-head-sha {source_head_sha}"
     )
 
 
@@ -918,6 +985,7 @@ def sha256_file(path: Path) -> str:
 
 
 def xp_evidence_summary(target: str, release_tag: str, evidence: dict[str, Any]) -> dict[str, Any]:
+    release_source = evidence.get("release_source", {})
     os_data = evidence.get("os", {})
     toolchain = evidence.get("toolchain", {})
     security = evidence.get("security", {})
@@ -950,6 +1018,7 @@ def xp_evidence_summary(target: str, release_tag: str, evidence: dict[str, Any])
     return {
         "target": target,
         "release_tag": release_tag,
+        "release_source": xp_release_source_summary(release_source),
         "host_identity": xp_host_identity_summary(evidence),
         "os": os_summary,
         "toolchain": {
@@ -972,6 +1041,17 @@ def xp_evidence_summary(target: str, release_tag: str, evidence: dict[str, Any])
             for smoke_id in sorted(smoke_evidence_files)
         },
         "smoke_commands": {smoke_id: smoke_commands[smoke_id] for smoke_id in sorted(smoke_commands)},
+    }
+
+
+def xp_release_source_summary(raw_source: Any) -> dict[str, Any]:
+    if not isinstance(raw_source, dict):
+        return {}
+    return {
+        "workflow": str(raw_source.get("workflow", "")),
+        "workflow_run_url": str(raw_source.get("workflow_run_url", "")).rstrip("/"),
+        "head_sha": str(raw_source.get("head_sha", "")),
+        "run_attempt": raw_source.get("run_attempt"),
     }
 
 

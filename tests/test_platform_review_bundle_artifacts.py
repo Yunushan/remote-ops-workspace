@@ -33,6 +33,86 @@ def test_platform_review_bundle_artifacts_validates_finalized_linux_bundle(tmp_p
     assert errors == []
 
 
+def test_platform_review_bundle_artifacts_validates_final_record_asset_when_required(
+    tmp_path: Path,
+) -> None:
+    validator = _load_script("check_platform_review_bundle_artifacts")
+    record = _finalized_linux_record(tmp_path)
+    _write_final_record_asset(record, tmp_path)
+    registry = _registry_with(record)
+
+    errors = validator.check_platform_review_bundle_artifacts(
+        registry=registry,
+        bundle_dir=tmp_path,
+        require_final_record_assets=True,
+    )
+
+    assert errors == []
+
+
+def test_platform_review_bundle_artifacts_requires_final_record_asset_when_requested(
+    tmp_path: Path,
+) -> None:
+    validator = _load_script("check_platform_review_bundle_artifacts")
+    record = _finalized_linux_record(tmp_path)
+    registry = _registry_with(record)
+
+    errors = validator.check_platform_review_bundle_artifacts(
+        registry=registry,
+        bundle_dir=tmp_path,
+        require_final_record_assets=True,
+    )
+
+    assert (
+        "linux-i386 finalized accepted-record asset missing from bundle directory: "
+        "platform-verified-evidence-linux-i386-final.json"
+    ) in errors
+
+
+def test_platform_review_bundle_artifacts_rejects_final_record_asset_drift(
+    tmp_path: Path,
+) -> None:
+    validator = _load_script("check_platform_review_bundle_artifacts")
+    record = _finalized_linux_record(tmp_path)
+    final_record = _write_final_record_asset(record, tmp_path)
+    data = json.loads(final_record.read_text(encoding="utf-8"))
+    data["readiness_percent"] = 99.0
+    final_record.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    registry = _registry_with(record)
+
+    errors = validator.check_platform_review_bundle_artifacts(
+        registry=registry,
+        bundle_dir=tmp_path,
+        require_final_record_assets=True,
+    )
+
+    assert (
+        "linux-i386 finalized accepted-record asset must match accepted registry record: "
+        "platform-verified-evidence-linux-i386-final.json"
+    ) in errors
+
+
+def test_platform_review_bundle_artifacts_scopes_final_record_assets_to_required_targets(
+    tmp_path: Path,
+) -> None:
+    validator = _load_script("check_platform_review_bundle_artifacts")
+    linux_record = _finalized_linux_record(tmp_path)
+    xp_record = _finalized_xp_record(tmp_path)
+    _write_final_record_asset(linux_record, tmp_path)
+    registry = json.loads(Path("configs/platform_verified_evidence.json").read_text(encoding="utf-8"))
+    registry = {**registry, "accepted_evidence": [linux_record, xp_record]}
+
+    errors = validator.check_platform_review_bundle_artifacts(
+        registry=registry,
+        bundle_dir=tmp_path,
+        required_targets=("linux-i386",),
+        required_release_tag="v1.0.2",
+        require_final_record_assets=True,
+    )
+
+    assert errors == []
+
+
 def test_platform_review_bundle_artifacts_accepts_required_release_tag(tmp_path: Path) -> None:
     validator = _load_script("check_platform_review_bundle_artifacts")
     record = _finalized_xp_record(tmp_path)
@@ -378,6 +458,13 @@ def _finalized_linux_record(tmp_path: Path) -> dict[str, Any]:
 def _registry_with(record: dict[str, Any]) -> dict[str, Any]:
     registry = json.loads(Path("configs/platform_verified_evidence.json").read_text(encoding="utf-8"))
     return {**registry, "accepted_evidence": [record]}
+
+
+def _write_final_record_asset(record: dict[str, Any], root: Path) -> Path:
+    target = str(record["target"])
+    path = root / f"platform-verified-evidence-{target}-final.json"
+    path.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    return path
 
 
 def _prefinalized_candidate(record: dict[str, Any]) -> dict[str, Any]:

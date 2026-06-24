@@ -80,7 +80,10 @@ def make_xp_native_evidence_template(
     for smoke_id in smoke_ids:
         smoke_path = smoke_dir / f"{smoke_id}.txt"
         if not smoke_path.exists() or force:
-            smoke_path.write_text(template_smoke_text(target, release_tag, smoke_id), encoding="utf-8")
+            smoke_path.write_text(
+                template_smoke_text(target, release_tag, smoke_id, target_contract),
+                encoding="utf-8",
+            )
 
     evidence = evidence_template(
         target=target,
@@ -154,6 +157,12 @@ def evidence_template(
         ),
         "target": target,
         "release_tag": release_tag,
+        "release_source": {
+            "workflow": ".github/workflows/xp-native-evidence.yml",
+            "workflow_run_url": "TODO-use-github-actions-run-url",
+            "head_sha": "TODO-use-github-actions-head-sha",
+            "run_attempt": "TODO-use-github-actions-run-attempt",
+        },
         "os": {
             "name": target_contract["os_name"],
             "architecture": target_contract["architecture"],
@@ -202,7 +211,19 @@ def evidence_template(
                     f"--smoke-id {smoke_id} --evidence-file xp-smoke-evidence/{smoke_id}.txt "
                     f"--proof-file xp-smoke-proof/{smoke_id}.txt "
                     "--host-label TODO-use-sanitized-lab-label-not-real-hostname "
-                    "--evidence-run-id TODO-use-sanitized-run-id"
+                    "--evidence-run-id TODO-use-sanitized-run-id "
+                    "--observed-at-utc TODO-use-YYYY-MM-DDTHH:MM:SSZ "
+                    "--source-workflow-run-url TODO-use-github-actions-run-url "
+                    "--source-head-sha TODO-use-github-actions-head-sha "
+                    "--source-run-attempt TODO-use-github-actions-run-attempt "
+                    f"--os-name \"{target_contract['os_name']}\" "
+                    f"--os-architecture {target_contract['architecture']} "
+                    f"--os-service-pack {target_contract['minimum_service_pack']}"
+                    + (
+                        f" --os-edition \"{target_contract['required_edition']}\""
+                        if target_contract.get("required_edition")
+                        else ""
+                    )
                 ),
                 "evidence_file": f"xp-smoke-evidence/{smoke_id}.txt",
                 "evidence_sha256": "<replace-with-real-sha256>",
@@ -223,18 +244,66 @@ def evidence_template(
     }
 
 
-def template_smoke_text(target: str, release_tag: str, smoke_id: str) -> str:
+def template_smoke_text(
+    target: str,
+    release_tag: str,
+    smoke_id: str,
+    target_contract: dict[str, Any],
+) -> str:
     return (
         f"xp smoke target: {target}\n"
         f"xp smoke release: {release_tag}\n"
         f"xp smoke id: {smoke_id}\n"
-        "xp smoke host label: TODO-use-sanitized-lab-label-not-real-hostname\n"
+        f"xp smoke os name: {target_contract['os_name']}\n"
+        f"xp smoke os architecture: {target_contract['architecture']}\n"
+        f"xp smoke os service pack: {target_contract['minimum_service_pack']} TODO replace with real winver evidence\n"
+        + (
+            f"xp smoke os edition: {target_contract['required_edition']} TODO replace with real winver evidence\n"
+            if target_contract.get("required_edition")
+            else ""
+        )
+        + "xp smoke host probe command: ver\n"
+        f"xp smoke host probe output: {template_ver_output(target_contract)} TODO replace with real ver output\n"
+        f"xp smoke processor architecture env: {template_processor_architecture(target_contract)} TODO replace with real %PROCESSOR_ARCHITECTURE% evidence\n"
+        "xp smoke processor architecture w6432 env: TODO replace with real %PROCESSOR_ARCHITEW6432% evidence or leave empty when not set\n"
+        f"xp smoke wmic os caption: {template_wmic_caption(target_contract)} TODO replace with real WMIC Caption evidence\n"
+        f"xp smoke wmic os csdversion: {template_wmic_csdversion(target_contract)} TODO replace with real WMIC CSDVersion evidence\n"
+        + "xp smoke host label: TODO-use-sanitized-lab-label-not-real-hostname\n"
         "xp smoke evidence run id: TODO-use-sanitized-run-id\n"
+        "xp smoke observed at utc: TODO-use-YYYY-MM-DDTHH:MM:SSZ\n"
+        "xp smoke source workflow run: TODO-use-github-actions-run-url\n"
+        "xp smoke source head sha: TODO-use-github-actions-head-sha\n"
+        "xp smoke source run attempt: TODO-use-github-actions-run-attempt\n"
         f"{template_security_smoke_lines(smoke_id)}"
         f"Template evidence for {target} {release_tag} smoke id {smoke_id}.\n"
         "Replace this file with real Windows XP host output before validation.\n"
         "Do not include confidential access material or other sensitive values.\n"
     )
+
+
+def template_ver_output(target_contract: dict[str, Any]) -> str:
+    if target_contract.get("architecture") == "x64":
+        return "Microsoft Windows [Version 5.2.3790]"
+    return "Microsoft Windows XP [Version 5.1.2600]"
+
+
+def template_processor_architecture(target_contract: dict[str, Any]) -> str:
+    if target_contract.get("architecture") == "x64":
+        return "AMD64"
+    return "x86"
+
+
+def template_wmic_caption(target_contract: dict[str, Any]) -> str:
+    if target_contract.get("required_edition"):
+        return "Microsoft Windows XP Professional x64 Edition"
+    return "Microsoft Windows XP Professional"
+
+
+def template_wmic_csdversion(target_contract: dict[str, Any]) -> str:
+    service_pack = str(target_contract.get("minimum_service_pack", ""))
+    if service_pack.upper().startswith("SP") and len(service_pack) > 2:
+        return f"Service Pack {service_pack[2:]}"
+    return service_pack
 
 
 def template_security_smoke_lines(smoke_id: str) -> str:

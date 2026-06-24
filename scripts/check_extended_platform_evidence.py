@@ -88,6 +88,7 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
         f"bash scripts/smoke_linux_native.sh --arch {runner} --dist native-dist/linux "
         f"--target {target} --workflow-run-url "
         '"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" '
+        '--workflow-run-attempt "${{ github.run_attempt }}" '
         '--source-head-sha "${{ github.sha }}" '
         f"2>&1 | tee {evidence_dir}/{smoke_name}"
     )
@@ -113,7 +114,7 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
         f"python3 scripts/check_extended_platform_dispatch_inputs.py \\\n            --target {target}": "dispatch input preflight",
         f"python3 scripts/check_extended_platform_builder.py \\\n            --target {target}": "builder identity preflight evidence",
         f"--out {evidence_dir}/{builder_identity_name}": "builder identity output",
-        '--workflow-run-attempt "${{ github.run_attempt }}"': "builder workflow run-attempt evidence",
+        '            --workflow-run-attempt "${{ github.run_attempt }}" \\\n': "builder workflow run-attempt evidence",
         '--source-head-sha "${{ github.sha }}"': "builder source head SHA evidence",
         "python3 -m venv .venv-native": "isolated release virtual environment",
         'python -m pip install --constraint requirements-release.txt pip setuptools wheel ".[security,package]"': "pinned release dependency installation",
@@ -121,6 +122,9 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
         f"mkdir -p native-dist/linux {assets_dir}": "raw build output and target/release promotion staging directories",
         f"mkdir -p {assets_dir}": "target-scoped Linux artifact staging directory",
         smoke_command_snippet: "native installer smoke evidence capture",
+        '--workflow-run-attempt "${{ github.run_attempt }}" --source-head-sha "${{ github.sha }}"': (
+            "native smoke workflow run-attempt evidence"
+        ),
         (
             f'python scripts/check_platform_promotion_artifacts.py --target {target} '
             f'--assets-dir {assets_dir} --tag "${{{{ inputs.release_tag }}}}" --strict'

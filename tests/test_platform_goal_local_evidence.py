@@ -5,7 +5,7 @@ import json
 import sys
 from pathlib import Path
 
-XP_SOURCE_WORKFLOW_RUN_URL = "https://github.com/example/remote-ops-workspace/actions/runs/12345"
+XP_SOURCE_WORKFLOW_RUN_URL = "https://github.com/example/remote-ops-workspace/actions/runs/54321"
 XP_SOURCE_HEAD_SHA = "a" * 40
 XP_SOURCE_RUN_ATTEMPT = 1
 
@@ -51,6 +51,46 @@ def test_platform_goal_local_evidence_rejects_file_shaped_root(tmp_path: Path) -
 
     assert errors == [f"local evidence root must be a directory path, got {root.as_posix()!r}"]
     assert not root.exists()
+
+
+def test_platform_goal_local_evidence_report_tracks_partial_target_failure() -> None:
+    checker = _load_local_evidence_checker()
+
+    report = checker.platform_goal_local_evidence_report(
+        targets=("linux-i386", "linux-armhf"),
+        errors=[
+            "artifact directory missing: linux-i386\\v1.0.2\\artifacts",
+            "linux-i386 native smoke evidence missing: staged/linux-i386/v1.0.2/native-smoke-linux-i386.log",
+        ],
+    )
+
+    assert report["metric"] == "protected_platform_goal_local_evidence_preflight"
+    assert report["passed_target_count"] == 1
+    assert report["failed_target_count"] == 1
+    assert report["current_percent"] == 50.0
+    assert report["complete"] is False
+    assert report["global_errors"] == []
+    assert report["passed_targets"] == ["linux-armhf"]
+    assert report["failed_targets"] == ["linux-i386"]
+    assert report["target_results"][0]["status"] == "failed"
+    assert len(report["target_results"][0]["errors"]) == 2
+    assert report["target_results"][1]["status"] == "passed"
+
+
+def test_platform_goal_local_evidence_report_blocks_targets_on_global_failure() -> None:
+    checker = _load_local_evidence_checker()
+
+    report = checker.platform_goal_local_evidence_report(
+        targets=("linux-i386", "linux-armhf"),
+        errors=["release_tag must look like vX.Y.Z: latest"],
+    )
+
+    assert report["passed_target_count"] == 0
+    assert report["failed_target_count"] == 2
+    assert report["current_percent"] == 0.0
+    assert report["global_errors"] == ["release_tag must look like vX.Y.Z: latest"]
+    assert report["target_results"][0]["status"] == "blocked-by-global-error"
+    assert report["target_results"][1]["status"] == "blocked-by-global-error"
 
 
 def test_platform_goal_local_evidence_rejects_symlinked_root_parent(
@@ -647,6 +687,151 @@ def test_platform_goal_local_evidence_accepts_xp_x86_staged_proof(tmp_path: Path
     assert errors == []
 
 
+def test_platform_goal_local_evidence_accepts_xp_targets_with_inferred_source_bindings(
+    tmp_path: Path,
+) -> None:
+    checker = _load_local_evidence_checker()
+    fixtures = _load_record_fixtures()
+    artifact_checker = fixtures._load_platform_promotion_artifacts_checker()
+    tag = f"v{artifact_checker.read_project_version()}"
+    staged_sources = {
+        "windows-xp-native-x86": {
+            "arch": "x86",
+            "service_pack": "SP3",
+            "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/11111",
+            "head_sha": "a" * 40,
+            "run_attempt": 1,
+        },
+        "windows-xp-native-x64": {
+            "arch": "x64",
+            "service_pack": "SP2",
+            "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/22222",
+            "head_sha": "b" * 40,
+            "run_attempt": 2,
+        },
+    }
+    for target, source in staged_sources.items():
+        target_root = tmp_path / target / tag
+        artifacts = target_root / "artifacts"
+        artifacts.mkdir(parents=True)
+        names = fixtures._required_names(artifact_checker, target, tag)
+        fixtures._write_artifact_set(artifacts, names)
+        evidence = fixtures._valid_xp_evidence(
+            target,
+            str(source["arch"]),
+            str(source["service_pack"]),
+            tag,
+            names,
+        )
+        evidence["artifact_validation"]["command"] = evidence["artifact_validation"]["command"].replace(
+            f"native-dist/windows-xp/{target}/{tag}",
+            f"{target}/{tag}/artifacts",
+        )
+        _set_xp_release_source(
+            evidence,
+            workflow_run_url=str(source["workflow_run_url"]),
+            head_sha=str(source["head_sha"]),
+            run_attempt=int(source["run_attempt"]),
+        )
+        fixtures._attach_smoke_evidence_files(target_root, evidence)
+        (target_root / "xp-evidence.json").write_text(
+            json.dumps(evidence, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+    errors = checker.check_platform_goal_local_evidence(
+        root=tmp_path,
+        release_tag=tag,
+        targets=tuple(staged_sources),
+    )
+
+    assert errors == []
+
+
+def test_platform_goal_local_evidence_rejects_invalid_inferred_xp_source_bindings(
+    tmp_path: Path,
+) -> None:
+    checker = _load_local_evidence_checker()
+    fixtures = _load_record_fixtures()
+    artifact_checker = fixtures._load_platform_promotion_artifacts_checker()
+    target = "windows-xp-native-x86"
+    tag = f"v{artifact_checker.read_project_version()}"
+    target_root = tmp_path / target / tag
+    artifacts = target_root / "artifacts"
+    artifacts.mkdir(parents=True)
+    names = fixtures._required_names(artifact_checker, target, tag)
+    fixtures._write_artifact_set(artifacts, names)
+    evidence = {
+        "release_source": {
+            "workflow_run_url": "https://example.invalid/not-actions",
+            "head_sha": "A" * 40,
+            "run_attempt": "first",
+        }
+    }
+    (target_root / "xp-evidence.json").write_text(
+        json.dumps(evidence, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    errors = checker.check_platform_goal_local_evidence(
+        root=tmp_path,
+        release_tag=tag,
+        targets=(target,),
+    )
+
+    assert f"{target} XP evidence release_source.workflow_run_url must be a GitHub Actions run URL" in errors
+    assert f"{target} XP evidence release_source.head_sha must be a 40-character lowercase Git SHA" in errors
+    assert f"{target} XP evidence release_source.run_attempt must be a positive integer" in errors
+
+
+def test_platform_goal_local_evidence_rejects_explicit_xp_source_binding_mismatch(
+    tmp_path: Path,
+) -> None:
+    checker = _load_local_evidence_checker()
+    fixtures = _load_record_fixtures()
+    artifact_checker = fixtures._load_platform_promotion_artifacts_checker()
+    target = "windows-xp-native-x86"
+    tag = f"v{artifact_checker.read_project_version()}"
+    target_root = tmp_path / target / tag
+    artifacts = target_root / "artifacts"
+    artifacts.mkdir(parents=True)
+    names = fixtures._required_names(artifact_checker, target, tag)
+    fixtures._write_artifact_set(artifacts, names)
+    evidence = fixtures._valid_xp_evidence(target, "x86", "SP3", tag, names)
+    evidence["artifact_validation"]["command"] = evidence["artifact_validation"]["command"].replace(
+        f"native-dist/windows-xp/{target}/{tag}",
+        f"{target}/{tag}/artifacts",
+    )
+    fixtures._attach_smoke_evidence_files(target_root, evidence)
+    (target_root / "xp-evidence.json").write_text(
+        json.dumps(evidence, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    expected_url = "https://github.com/example/remote-ops-workspace/actions/runs/99999"
+
+    errors = checker.check_platform_goal_local_evidence(
+        root=tmp_path,
+        release_tag=tag,
+        targets=(target,),
+        xp_source_workflow_run_url=expected_url,
+        xp_source_head_sha="b" * 40,
+        xp_source_run_attempt=2,
+    )
+
+    assert (
+        f"{target} XP evidence release_source.workflow_run_url must match "
+        f"--xp-source-workflow-run-url {expected_url}, got 'https://github.com/example/remote-ops-workspace/actions/runs/54321'"
+    ) in errors
+    assert (
+        f"{target} XP evidence release_source.head_sha must match "
+        f"--xp-source-head-sha {'b' * 40}, got '{'a' * 40}'"
+    ) in errors
+    assert (
+        f"{target} XP evidence release_source.run_attempt must match "
+        "--xp-source-run-attempt 2, got 1"
+    ) in errors
+
+
 def test_platform_goal_local_evidence_rejects_symlinked_xp_target_roots(
     tmp_path: Path,
     monkeypatch,
@@ -945,6 +1130,37 @@ def test_platform_goal_local_evidence_rejects_xp_artifact_validation_assets_dir_
         f"{target} XP evidence artifact_validation.command --assets-dir must match "
         f"local artifacts path {target}/{tag}/artifacts, got ['staged/{target}/{tag}/artifacts']"
     ) in errors
+
+
+def _set_xp_release_source(
+    evidence: dict,
+    *,
+    workflow_run_url: str,
+    head_sha: str,
+    run_attempt: int,
+) -> None:
+    previous = dict(evidence["release_source"])
+    evidence["release_source"] = {
+        **previous,
+        "workflow_run_url": workflow_run_url,
+        "head_sha": head_sha,
+        "run_attempt": run_attempt,
+    }
+    for result in evidence["smoke_results"]:
+        command = str(result["command"])
+        command = command.replace(
+            f"--source-workflow-run-url {previous['workflow_run_url']}",
+            f"--source-workflow-run-url {workflow_run_url}",
+        )
+        command = command.replace(
+            f"--source-head-sha {previous['head_sha']}",
+            f"--source-head-sha {head_sha}",
+        )
+        command = command.replace(
+            f"--source-run-attempt {previous['run_attempt']}",
+            f"--source-run-attempt {run_attempt}",
+        )
+        result["command"] = command
 
 
 def _load_local_evidence_checker():

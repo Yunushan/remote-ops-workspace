@@ -67,17 +67,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--assets-dir",
         required=True,
-        help="workspace-relative XP native artifact directory containing target and release_tag path segments",
+        help="workspace-relative XP native artifact directory containing adjacent target/release_tag path segments",
     )
     parser.add_argument(
         "--evidence-file",
         required=True,
-        help="workspace-relative XP evidence JSON path containing target and release_tag path segments",
+        help="workspace-relative XP evidence JSON path containing adjacent target/release_tag path segments",
     )
     parser.add_argument(
         "--evidence-dir",
         required=True,
-        help="workspace-relative XP smoke evidence directory containing target and release_tag path segments",
+        help="workspace-relative XP smoke evidence directory containing adjacent target/release_tag path segments",
     )
     return parser.parse_args(argv)
 
@@ -196,7 +196,23 @@ def check_target_release_scoped_path(
         errors.append(f"{label} must include target path segment {target!r}, got {raw_path!r}")
     if release_tag not in normalized_parts:
         errors.append(f"{label} must include release_tag path segment {release_tag!r}, got {raw_path!r}")
+    if not errors and not has_adjacent_target_release_segments(normalized_parts, target, release_tag):
+        errors.append(
+            f"{label} must include adjacent target/release path segment "
+            f"{target}/{release_tag}, got {raw_path!r}"
+        )
     return errors
+
+
+def has_adjacent_target_release_segments(
+    parts: tuple[str, ...],
+    target: str,
+    release_tag: str,
+) -> bool:
+    return any(
+        part == target and index + 1 < len(parts) and parts[index + 1] == release_tag
+        for index, part in enumerate(parts)
+    )
 
 
 def workspace_path_parts(path: str) -> tuple[tuple[str, ...], bool]:

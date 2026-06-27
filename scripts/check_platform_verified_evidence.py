@@ -52,6 +52,34 @@ LINUX_WORKFLOW_INPUT_KEYS = {
     "release_tag",
     "release_asset_base_url",
 }
+ARTIFACT_VALIDATION_COMMAND_FLAGS = {
+    "--target",
+    "--assets-dir",
+    "--tag",
+    "--strict",
+}
+COMMON_LOCAL_EVIDENCE_PREFLIGHT_FLAGS = {
+    "--root",
+    "--release-tag",
+    "--target",
+    "--assets-dir",
+}
+LINUX_LOCAL_EVIDENCE_PREFLIGHT_FLAGS = {
+    *COMMON_LOCAL_EVIDENCE_PREFLIGHT_FLAGS,
+    "--linux-builder-evidence",
+    "--linux-smoke-evidence",
+    "--linux-workflow-run-url",
+    "--linux-source-head-sha",
+    "--linux-source-run-attempt",
+}
+XP_LOCAL_EVIDENCE_PREFLIGHT_FLAGS = {
+    *COMMON_LOCAL_EVIDENCE_PREFLIGHT_FLAGS,
+    "--xp-evidence",
+    "--xp-evidence-dir",
+    "--xp-source-workflow-run-url",
+    "--xp-source-head-sha",
+    "--xp-source-run-attempt",
+}
 RESERVED_WORKSPACE_ROOTS = {".agents", ".codex", ".git", ".github"}
 FILE_LIKE_DIRECTORY_SUFFIXES = (
     ".appimage",
@@ -194,6 +222,18 @@ REQUIRED_XP_SECURITY_FLAGS = {
     "modern_defaults_unchanged": True,
     "weak_crypto_global_default": False,
 }
+FORBIDDEN_HOST_IDENTITY_FIELDS = {
+    "computer_name",
+    "computername",
+    "domain",
+    "fqdn",
+    "host_name",
+    "hostname",
+    "login",
+    "runner_name",
+    "user",
+    "username",
+}
 RELEASE_ASSET_SOURCE_TYPES = {"github-actions-artifact"}
 RELEASE_ASSET_SOURCE_KEYS = {
     "artifact_name",
@@ -222,9 +262,24 @@ REQUIRED_SECURITY_PATCH_EVIDENCE = {
     "legacy_compatibility_profile": "isolated-opt-in",
     "cve_patch_reviewed": True,
 }
+REQUIRED_SECURITY_PATCH_PROVENANCE_FIELDS = (
+    "security_update_channel",
+    "cve_review_reference",
+)
+FORBIDDEN_SECURITY_PROVENANCE_MARKERS = (
+    "<",
+    ">",
+    "dummy",
+    "placeholder",
+    "replace",
+    "test-",
+    "todo",
+)
 REQUIRED_LINUX_SECURITY_SMOKE_VALUE_LINES = (
     "native installer smoke python ssl openssl",
     "native installer smoke openssl cli version",
+    "native installer smoke security update channel",
+    "native installer smoke CVE review reference",
 )
 REQUIRED_LINUX_SECURITY_SMOKE_LINES = (
     "native installer smoke TLS minimum modern profiles: TLS 1.2",
@@ -444,6 +499,7 @@ def check_required_targets(
         for entry in rows
         if isinstance(entry, dict)
         and entry.get("status") == "accepted"
+        and entry.get("readiness_percent") == 100.0
         and (required_release_tag is None or entry.get("release_tag") == required_release_tag)
     }
     missing = sorted(requested - accepted_targets)
@@ -536,10 +592,14 @@ def check_schema(registry: dict[str, Any]) -> list[str]:
         errors.append("platform verified evidence policy must require Linux builder identity SHA-256 binding")
     if "builder identity release/run" not in policy:
         errors.append("platform verified evidence policy must require Linux builder identity release/run binding")
+    if "Linux builder workflow provenance binding" not in policy:
+        errors.append("platform verified evidence policy must require Linux builder workflow provenance binding")
     if "Linux builder/smoke source file binding" not in policy:
         errors.append("platform verified evidence policy must require Linux builder/smoke source file binding")
     if "Linux builder/smoke host identity binding" not in policy:
         errors.append("platform verified evidence policy must require Linux builder/smoke host identity binding")
+    if "Linux builder/smoke security evidence binding" not in policy:
+        errors.append("platform verified evidence policy must require Linux builder/smoke security evidence binding")
     if "Linux builder source head SHA binding" not in policy:
         errors.append("platform verified evidence policy must require Linux builder source head SHA binding")
     if "Linux builder observed Git HEAD binding" not in policy:
@@ -667,12 +727,16 @@ def check_schema(registry: dict[str, Any]) -> list[str]:
         errors.append("platform verified evidence policy must require XP evidence summary binding")
     if "XP host identity SHA-256" not in policy:
         errors.append("platform verified evidence policy must require XP host identity SHA-256 binding")
+    if "XP sanitized target-scoped host identity binding" not in policy:
+        errors.append("platform verified evidence policy must require XP sanitized target-scoped host identity binding")
     if "XP security patch evidence" not in policy:
         errors.append("platform verified evidence policy must require XP security patch evidence binding")
     if "tracked scripts/xp_smoke_runner.cmd XP smoke command provenance" not in policy:
         errors.append("platform verified evidence policy must require tracked XP smoke runner provenance")
     if "canonical XP smoke proof-file command binding" not in policy:
         errors.append("platform verified evidence policy must require canonical XP smoke proof-file command binding")
+    if "XP security smoke command provenance binding" not in policy:
+        errors.append("platform verified evidence policy must require XP security smoke command provenance binding")
     if "XP smoke evidence-file summary binding" not in policy:
         errors.append("platform verified evidence policy must require XP smoke evidence-file summary binding")
     if "XP smoke host identity binding" not in policy:
@@ -785,13 +849,22 @@ def check_linux_command_provenance(
     source = entry.get("release_asset_source")
     source_head_sha = str(source.get("head_sha", "")).strip() if isinstance(source, dict) else ""
     source_run_attempt = source.get("run_attempt") if isinstance(source, dict) else ""
+    preflight_command = str(entry.get("local_evidence_preflight_command", ""))
+    builder_evidence_paths = command_argument_values(preflight_command, "--linux-builder-evidence")
+    builder_evidence_path = builder_evidence_paths[0] if len(builder_evidence_paths) == 1 else "<builder-evidence>"
     expected_smoke = (
-        f"bash {smoke_script} --target {target} --workflow-run-url {workflow_run_url} "
-        f"--workflow-run-attempt {source_run_attempt} --source-head-sha {source_head_sha}"
+        f"bash {smoke_script} --target {target} "
+        f"--workflow-run-url {workflow_run_url} --workflow-run-attempt {source_run_attempt} "
+        f"--source-head-sha {source_head_sha} --builder-evidence {builder_evidence_path}"
     )
     errors: list[str] = []
     if entry.get("native_build_command") != expected_build:
         errors.append(f"{target} native_build_command must be {expected_build!r}")
+    if len(builder_evidence_paths) != 1:
+        errors.append(
+            f"{target} local_evidence_preflight_command must include exactly one "
+            f"--linux-builder-evidence, got {builder_evidence_paths}"
+        )
     if entry.get("native_smoke_command") != expected_smoke:
         errors.append(f"{target} native_smoke_command must be {expected_smoke!r}")
     return errors
@@ -951,6 +1024,14 @@ def check_linux_builder_identity(
         errors.append(f"{target} builder_identity release_tag must match record release_tag {release_tag}")
     if raw_identity.get("workflow_run_url") != workflow_run_url:
         errors.append(f"{target} builder_identity workflow_run_url must match record workflow_run_url")
+    errors.extend(
+        check_linux_builder_workflow_identity(
+            target,
+            raw_identity,
+            workflow_run_url=workflow_run_url,
+            source_head_sha=source_head_sha,
+        )
+    )
     if raw_identity.get("workflow_run_attempt") != workflow_run_attempt:
         errors.append(
             f"{target} builder_identity workflow_run_attempt must match release_asset_source.run_attempt"
@@ -995,6 +1076,35 @@ def check_linux_builder_identity(
         )
     )
     errors.extend(check_linux_security_patch_evidence(target, raw_identity.get("security_patch_evidence")))
+    return errors
+
+
+def check_linux_builder_workflow_identity(
+    target: str,
+    raw_identity: dict[str, Any],
+    *,
+    workflow_run_url: str,
+    source_head_sha: str,
+) -> list[str]:
+    errors: list[str] = []
+    expected_workflow = release_source_workflow(target)
+    workflow_match = GITHUB_ACTIONS_RUN_RE.fullmatch(workflow_run_url.rstrip("/"))
+    expected_repository = workflow_match.group(1).lower() if workflow_match else ""
+    workflow_ref = str(raw_identity.get("workflow_ref", "")).strip()
+    if not workflow_ref:
+        errors.append(f"{target} builder_identity workflow_ref must be set")
+    else:
+        expected_prefix = f"{expected_repository}/{expected_workflow}@"
+        if not expected_repository or not workflow_ref.lower().startswith(expected_prefix.lower()):
+            errors.append(
+                f"{target} builder_identity workflow_ref must point at "
+                f"{expected_prefix}<ref>, got {workflow_ref!r}"
+            )
+    workflow_sha = str(raw_identity.get("workflow_sha", "")).strip()
+    if not RELEASE_SOURCE_HEAD_SHA_RE.fullmatch(workflow_sha):
+        errors.append(f"{target} builder_identity workflow_sha must be a 40-character lowercase Git SHA")
+    elif workflow_sha != source_head_sha:
+        errors.append(f"{target} builder_identity workflow_sha must match release_asset_source.head_sha")
     return errors
 
 
@@ -1046,7 +1156,7 @@ def check_linux_builder_host_identity(
     forbidden_fields = sorted(
         field
         for field in raw_identity
-        if str(field).lower() in {"hostname", "host_name", "username", "user", "login", "runner_name"}
+        if str(field).lower() in FORBIDDEN_HOST_IDENTITY_FIELDS
     )
     if forbidden_fields:
         errors.append(f"{target} builder_identity host_identity contains forbidden private fields: {forbidden_fields}")
@@ -1538,6 +1648,7 @@ def check_xp_evidence_summary(target: str, release_tag: str, raw_summary: Any) -
             raw_summary.get("host_identity"),
             raw_summary.get("os"),
             raw_summary.get("release_source"),
+            raw_summary.get("security"),
         )
     )
     return errors
@@ -1588,16 +1699,26 @@ def check_xp_host_identity_summary(target: str, release_tag: str, raw_identity: 
         errors.append(
             f"{target} xp_evidence_summary host_identity.release_tag must match record release_tag {release_tag}"
         )
-    host_label = str(raw_identity.get("host_label", "")).strip()
-    if not HOST_IDENTITY_LABEL_RE.fullmatch(host_label):
+    forbidden_fields = sorted(
+        field
+        for field in raw_identity
+        if str(field).lower() in FORBIDDEN_HOST_IDENTITY_FIELDS
+    )
+    if forbidden_fields:
         errors.append(
-            f"{target} xp_evidence_summary host_identity.host_label must be a sanitized lab label, "
+            f"{target} xp_evidence_summary host_identity contains forbidden private fields: {forbidden_fields}"
+        )
+    host_label = str(raw_identity.get("host_label", "")).strip()
+    host_prefix = xp_host_identity_prefix(target)
+    if not HOST_IDENTITY_LABEL_RE.fullmatch(host_label) or not host_label.startswith(host_prefix):
+        errors.append(
+            f"{target} xp_evidence_summary host_identity.host_label must be a sanitized target-scoped lab label, "
             f"got {host_label!r}"
         )
     evidence_run_id = str(raw_identity.get("evidence_run_id", "")).strip()
-    if not HOST_IDENTITY_RUN_RE.fullmatch(evidence_run_id):
+    if not HOST_IDENTITY_RUN_RE.fullmatch(evidence_run_id) or not evidence_run_id.startswith(host_prefix):
         errors.append(
-            f"{target} xp_evidence_summary host_identity.evidence_run_id must be a sanitized concrete run id, "
+            f"{target} xp_evidence_summary host_identity.evidence_run_id must be a sanitized target-scoped run id, "
             f"got {evidence_run_id!r}"
         )
     observed_at = str(raw_identity.get("observed_at_utc", "")).strip()
@@ -1606,6 +1727,13 @@ def check_xp_host_identity_summary(target: str, release_tag: str, raw_identity: 
             f"{target} xp_evidence_summary host_identity.observed_at_utc must be UTC ISO-8601 seconds ending in Z, "
             f"got {observed_at!r}"
         )
+    else:
+        expected_run_marker = xp_host_identity_run_marker(release_tag, observed_at)
+        if expected_run_marker not in evidence_run_id:
+            errors.append(
+                f"{target} xp_evidence_summary host_identity.evidence_run_id must include "
+                f"release/observed-at marker {expected_run_marker!r}, got {evidence_run_id!r}"
+            )
     if raw_identity.get("operator_private_data_redacted") is not True:
         errors.append(f"{target} xp_evidence_summary host_identity.operator_private_data_redacted must be true")
 
@@ -1652,6 +1780,18 @@ def check_xp_host_identity_summary(target: str, release_tag: str, raw_identity: 
                 "must describe the XP-capable toolchain"
             )
     return errors
+
+
+def xp_host_identity_prefix(target: str) -> str:
+    if target in XP_TARGETS:
+        return f"xp-{XP_TARGETS[target]['architecture']}-"
+    return f"{target}-"
+
+
+def xp_host_identity_run_marker(release_tag: str, observed_at_utc: str) -> str:
+    version = release_tag.removeprefix("v").replace(".", "-")
+    observed_marker = observed_at_utc.replace("-", "").replace(":", "").replace("T", "t").removesuffix("Z")
+    return f"{version}-{observed_marker}z"
 
 
 def check_xp_smoke_evidence_files(target: str, raw_files: Any) -> list[str]:
@@ -1706,6 +1846,7 @@ def check_xp_smoke_commands(
     raw_host_identity: Any,
     raw_os_identity: Any,
     raw_release_source: Any,
+    raw_security: Any,
 ) -> list[str]:
     if not isinstance(raw_commands, dict):
         return [f"{target} xp_evidence_summary smoke_commands must be an object"]
@@ -1747,6 +1888,7 @@ def check_xp_smoke_commands(
                     host_identity=raw_host_identity,
                     os_identity=raw_os_identity,
                     release_source=raw_release_source,
+                    security=raw_security,
                 )
             )
     return errors
@@ -1762,6 +1904,7 @@ def check_xp_smoke_command_binding(
     host_identity: Any,
     os_identity: Any,
     release_source: Any,
+    security: Any,
 ) -> list[str]:
     expected_values = {
         "--target": target,
@@ -1801,6 +1944,22 @@ def check_xp_smoke_command_binding(
                 f"{target} xp_evidence_summary smoke_commands {smoke_id} "
                 f"must omit --os-edition for this target, got {edition_values}"
             )
+    if smoke_id in {"legacy_crypto_profile_scoped", "modern_defaults_unchanged"}:
+        patch_evidence = security.get("patch_evidence") if isinstance(security, dict) else None
+        if isinstance(patch_evidence, dict):
+            security_command_flags = {
+                "--security-update-channel": "security_update_channel",
+                "--cve-review-reference": "cve_review_reference",
+            }
+            for flag, field in security_command_flags.items():
+                expected = str(patch_evidence.get(field, "")).strip()
+                if expected:
+                    values = command_flag_values(command, flag)
+                    if values != [expected]:
+                        errors.append(
+                            f"{target} xp_evidence_summary smoke_commands {smoke_id} "
+                            f"must include exactly one {flag} {expected}, got {values}"
+                        )
     return errors
 
 
@@ -1821,7 +1980,18 @@ def check_security_patch_evidence(
     for key, expected in sorted(REQUIRED_SECURITY_PATCH_EVIDENCE.items()):
         if raw_evidence.get(key) != expected:
             errors.append(f"{target} {prefix}.{key} must be {expected!r}")
+    for key in REQUIRED_SECURITY_PATCH_PROVENANCE_FIELDS:
+        value = str(raw_evidence.get(key, ""))
+        if not value.strip():
+            errors.append(f"{target} {prefix}.{key} must be set")
+        elif not is_concrete_security_provenance(value):
+            errors.append(f"{target} {prefix}.{key} must name concrete non-placeholder provenance")
     return errors
+
+
+def is_concrete_security_provenance(value: str) -> bool:
+    lowered = value.strip().lower()
+    return bool(lowered) and not any(marker in lowered for marker in FORBIDDEN_SECURITY_PROVENANCE_MARKERS)
 
 
 def check_linux_security_patch_evidence(target: str, raw_evidence: Any) -> list[str]:
@@ -1893,6 +2063,9 @@ def check_linux_smoke_log_text(
         f"--target {target} --workflow-run-url {workflow_run_url} "
         f"--workflow-run-attempt {workflow_run_attempt_text} --source-head-sha {source_head_sha}"
     )
+    builder_evidence_paths = command_flag_values(native_smoke_command, "--builder-evidence")
+    builder_evidence_path = builder_evidence_paths[0] if len(builder_evidence_paths) == 1 else "<builder-evidence>"
+    expected_command = f"{expected_command} --builder-evidence {builder_evidence_path}"
     required_lines = [
         f"native installer smoke command: {expected_command}",
         f"native installer smoke release: {release_tag}",
@@ -1914,6 +2087,11 @@ def check_linux_smoke_log_text(
         errors.append(f"{target} {label} workflow run attempt must be a positive integer")
     if native_smoke_command != expected_command:
         errors.append(f"{target} {label} command provenance must be {expected_command!r}")
+    if len(builder_evidence_paths) != 1:
+        errors.append(
+            f"{target} {label} command provenance must include exactly one "
+            f"--builder-evidence, got {builder_evidence_paths}"
+        )
     if not text.strip():
         return [*errors, f"{target} {label} must not be empty"]
     for line in required_lines:
@@ -2073,6 +2251,33 @@ def check_linux_smoke_builder_identity_binding(
             f"{target} {label} native installer smoke observed at utc must not be earlier than "
             f"builder_identity.host_identity.observed_at_utc {expected_observed_at!r}, got {smoke_observed_values[0]!r}"
         )
+
+    raw_security = raw_builder_identity.get("security_patch_evidence")
+    if not isinstance(raw_security, dict):
+        errors.append(
+            f"{target} {label} builder_identity.security_patch_evidence must be an object for smoke binding"
+        )
+    else:
+        security_bindings = {
+            "native installer smoke python ssl openssl": "python_ssl_openssl",
+            "native installer smoke openssl cli version": "openssl_cli_version",
+            "native installer smoke security update channel": "security_update_channel",
+            "native installer smoke CVE review reference": "cve_review_reference",
+        }
+        for smoke_key, builder_key in security_bindings.items():
+            expected_security_value = str(raw_security.get(builder_key, "")).strip()
+            smoke_values = linux_smoke_line_values(text, smoke_key)
+            if not expected_security_value:
+                errors.append(
+                    f"{target} {label} builder_identity.security_patch_evidence.{builder_key} "
+                    "must be set for smoke binding"
+                )
+            elif len(smoke_values) == 1 and smoke_values[0] != expected_security_value:
+                errors.append(
+                    f"{target} {label} {smoke_key} must match "
+                    f"builder_identity.security_patch_evidence.{builder_key} "
+                    f"{expected_security_value!r}, got {smoke_values[0]!r}"
+                )
 
     return errors
 
@@ -2625,6 +2830,14 @@ def check_artifact_validation_command(target: str, release_tag: str, command: st
     errors: list[str] = []
     if not command.startswith(expected_prefix):
         errors.append(f"{target} artifact_validation_command must start with {expected_prefix!r}")
+    errors.extend(
+        check_no_unexpected_command_flags(
+            target,
+            "artifact_validation_command",
+            command,
+            ARTIFACT_VALIDATION_COMMAND_FLAGS,
+        )
+    )
     asset_dirs = re.findall(r"(?:^|\s)--assets-dir\s+(\S+)(?=\s|$)", command)
     if len(asset_dirs) != 1:
         errors.append(f"{target} artifact_validation_command must include exactly one --assets-dir, got {asset_dirs}")
@@ -2665,6 +2878,14 @@ def check_local_evidence_preflight_command(
         errors.append(
             f"{target} local_evidence_preflight_command must start with {expected_prefix!r}"
         )
+    errors.extend(
+        check_no_unexpected_command_flags(
+            target,
+            "local_evidence_preflight_command",
+            command,
+            local_evidence_preflight_allowed_flags(target),
+        )
+    )
     roots = command_argument_values(command, "--root")
     root = roots[0] if len(roots) == 1 else ""
     if len(roots) != 1:
@@ -2933,6 +3154,30 @@ def command_argument_values(command: str, flag: str) -> list[str]:
 
 def command_flag_count(command: str, flag: str) -> int:
     return len(re.findall(rf"(?:^|\s){re.escape(flag)}(?=\s|$)", command))
+
+
+def command_flags(command: str) -> list[str]:
+    return re.findall(r"(?<!\S)(--[A-Za-z0-9][A-Za-z0-9_-]*)(?=\s|=|$)", command)
+
+
+def check_no_unexpected_command_flags(
+    target: str,
+    command_label: str,
+    command: str,
+    allowed_flags: set[str],
+) -> list[str]:
+    unexpected = sorted(set(command_flags(command)) - allowed_flags)
+    if unexpected:
+        return [f"{target} {command_label} has unexpected flags: {unexpected}"]
+    return []
+
+
+def local_evidence_preflight_allowed_flags(target: str) -> set[str]:
+    if target in LINUX_TARGETS:
+        return LINUX_LOCAL_EVIDENCE_PREFLIGHT_FLAGS
+    if target in XP_TARGETS:
+        return XP_LOCAL_EVIDENCE_PREFLIGHT_FLAGS
+    return COMMON_LOCAL_EVIDENCE_PREFLIGHT_FLAGS
 
 
 def concrete_path_value(value: str) -> bool:

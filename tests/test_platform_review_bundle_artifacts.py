@@ -407,7 +407,12 @@ def _finalized_linux_record(tmp_path: Path) -> dict[str, Any]:
     builder_path = tmp_path / "builder-identity-linux-i386.json"
     smoke_path = tmp_path / "native-smoke-linux-i386.log"
     builder_path.write_text(json.dumps(candidate["builder_identity"], indent=2) + "\n", encoding="utf-8")
-    bundle_helpers._write_linux_smoke_evidence(smoke_path, target, candidate["artifact_sha256"])
+    bundle_helpers._write_linux_smoke_evidence(
+        smoke_path,
+        target,
+        candidate["artifact_sha256"],
+        builder_evidence=bundle_helpers._candidate_builder_evidence_path(target, release_tag),
+    )
     smoke_sha = bundle_helpers._sha256(smoke_path)
     candidate["linux_smoke_evidence_sha256"] = {"native_smoke": smoke_sha}
     _sync_linux_source_record(candidate, "native_smoke", smoke_sha, smoke_path.stat().st_size)

@@ -66,6 +66,43 @@ def test_linux_smoke_requires_workflow_run_attempt_for_target_bound_evidence() -
     assert "native installer smoke workflow run attempt: $WORKFLOW_RUN_ATTEMPT" in script
 
 
+def test_linux_smoke_requires_builder_evidence_for_target_bound_evidence() -> None:
+    script = Path("scripts/smoke_linux_native.sh").read_text(encoding="utf-8")
+
+    assert "--builder-evidence is required with --target" in script
+    assert "--builder-evidence requires --target" in script
+    assert "target $TARGET builder evidence file missing" in script
+    assert "BUILDER_BINDING_TSV" in script
+    assert 'require_builder_match "target"' in script
+    assert 'require_builder_match "release_tag"' in script
+    assert 'require_builder_match "workflow_run_url"' in script
+    assert 'require_builder_match "workflow_run_attempt"' in script
+    assert 'require_builder_match "source_head_sha"' in script
+    assert 'require_builder_match "observed_git_head_sha"' in script
+    assert 'require_builder_match "security_patch_evidence.python_ssl_openssl"' in script
+    assert 'require_builder_match "security_patch_evidence.openssl_cli_version"' in script
+    assert 'require_builder_value "security_patch_evidence.security_update_channel"' in script
+    assert 'require_builder_value "security_patch_evidence.cve_review_reference"' in script
+    assert 'require_builder_match "security_patch_evidence.security_update_channel"' in script
+    assert 'require_builder_match "security_patch_evidence.cve_review_reference"' in script
+    assert "native installer smoke builder evidence: $BUILDER_EVIDENCE" in script
+
+
+def test_linux_smoke_binds_github_actions_environment_when_available() -> None:
+    script = Path("scripts/smoke_linux_native.sh").read_text(encoding="utf-8")
+
+    assert "--workflow-run-url must be a GitHub Actions run URL" in script
+    assert 'REQUESTED_WORKFLOW_RUN_ID="${WORKFLOW_RUN_URL%/}"' in script
+    assert 'REQUESTED_WORKFLOW_REPOSITORY="${WORKFLOW_RUN_URL#https://github.com/}"' in script
+    assert "GITHUB_SHA" in script
+    assert "must match --source-head-sha" in script
+    assert "GITHUB_RUN_ATTEMPT" in script
+    assert "must match --workflow-run-attempt" in script
+    assert "GITHUB_RUN_ID" in script
+    assert "GITHUB_REPOSITORY" in script
+    assert "must match --workflow-run-url" in script
+
+
 def test_linux_smoke_binds_runtime_architecture_for_protected_targets() -> None:
     script = Path("scripts/smoke_linux_native.sh").read_text(encoding="utf-8")
 
@@ -84,10 +121,86 @@ def test_linux_smoke_emits_sanitized_identity_for_target_bound_evidence() -> Non
     script = Path("scripts/smoke_linux_native.sh").read_text(encoding="utf-8")
 
     assert 'SMOKE_OBSERVED_AT_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"' in script
-    assert 'SMOKE_WORKFLOW_RUN_ID="${WORKFLOW_RUN_URL%/}"' in script
-    assert "native installer smoke host label: ${TARGET}-builder" in script
-    assert "native installer smoke evidence run id: ${TARGET}-${VERSION//./-}-run-${SMOKE_WORKFLOW_RUN_ID}" in script
+    assert 'REQUESTED_WORKFLOW_RUN_ID="${WORKFLOW_RUN_URL%/}"' in script
+    assert "native installer smoke host label: $SMOKE_HOST_LABEL" in script
+    assert "native installer smoke evidence run id: $SMOKE_EVIDENCE_RUN_ID" in script
     assert "native installer smoke observed at utc: $SMOKE_OBSERVED_AT_UTC" in script
+
+
+def test_linux_smoke_binds_security_lines_to_builder_evidence() -> None:
+    script = Path("scripts/smoke_linux_native.sh").read_text(encoding="utf-8")
+
+    assert "openssl version | tr '[:upper:]' '[:lower:]'" in script
+    assert 'SMOKE_SECURITY_UPDATE_CHANNEL="distribution-security-updates"' in script
+    assert 'SMOKE_CVE_REVIEW_REFERENCE="distribution-security-tracker-and-release-notes"' in script
+    assert 'BUILDER_SECURITY_UPDATE_CHANNEL="$value"' in script
+    assert 'BUILDER_CVE_REVIEW_REFERENCE="$value"' in script
+    assert "SMOKE_SECURITY_UPDATE_CHANNEL" in script
+    assert "SMOKE_CVE_REVIEW_REFERENCE" in script
+    assert "native installer smoke security update channel: $SMOKE_SECURITY_UPDATE_CHANNEL" in script
+    assert "native installer smoke CVE review reference: $SMOKE_CVE_REVIEW_REFERENCE" in script
+
+
+def test_native_installer_smoke_checker_requires_linux_smoke_identity_contract(tmp_path: Path) -> None:
+    checker = _load_checker()
+    script = tmp_path / "smoke_linux_native.sh"
+    text = """
+--workflow-run-url must be a GitHub Actions run URL
+REQUESTED_WORKFLOW_RUN_ID="${WORKFLOW_RUN_URL%/}"
+REQUESTED_WORKFLOW_REPOSITORY="${WORKFLOW_RUN_URL#https://github.com/}"
+GITHUB_SHA
+must match --source-head-sha
+GITHUB_RUN_ATTEMPT
+must match --workflow-run-attempt
+GITHUB_RUN_ID
+GITHUB_REPOSITORY
+must match --workflow-run-url
+"""
+
+    errors = checker.check_linux_smoke_source_binding(script, text)
+
+    assert any(
+        error.endswith(
+            "missing Linux smoke target/architecture mismatch failure: "
+            "target $TARGET does not match smoke arch $ARCH"
+        )
+        for error in errors
+    )
+    assert any(
+        error.endswith(
+            "missing Linux smoke UTC observation timestamp capture: "
+            'SMOKE_OBSERVED_AT_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"'
+        )
+        for error in errors
+    )
+    assert any(
+        error.endswith(
+            "missing Linux smoke builder evidence requirement: "
+            "--builder-evidence is required with --target"
+        )
+        for error in errors
+    )
+    assert any(
+        error.endswith(
+            "missing Linux smoke builder-bound smoke host label: "
+            "native installer smoke host label: $SMOKE_HOST_LABEL"
+        )
+        for error in errors
+    )
+    assert any(
+        error.endswith(
+            "missing Linux smoke builder-bound smoke evidence run id: "
+            "native installer smoke evidence run id: $SMOKE_EVIDENCE_RUN_ID"
+        )
+        for error in errors
+    )
+    assert any(
+        error.endswith(
+            "missing Linux smoke UTC observation timestamp evidence line: "
+            "native installer smoke observed at utc: $SMOKE_OBSERVED_AT_UTC"
+        )
+        for error in errors
+    )
 
 
 def _load_checker():

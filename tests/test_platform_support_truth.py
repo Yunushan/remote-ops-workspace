@@ -167,11 +167,12 @@ def test_platform_support_truth_requires_linux_smoke_run_attempt_docs() -> None:
         (
             "scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux --target linux-i386 "
             "--workflow-run-url <github-actions-run-url> --workflow-run-attempt <github-actions-run-attempt> "
-            "--source-head-sha <github-actions-head-sha>"
+            "--source-head-sha <github-actions-head-sha> --builder-evidence <builder-identity.json>"
         ),
         (
             "scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux --target linux-i386 "
-            "--workflow-run-url <github-actions-run-url> --source-head-sha <github-actions-head-sha>"
+            "--workflow-run-url <github-actions-run-url> --source-head-sha <github-actions-head-sha> "
+            "--builder-evidence <builder-identity.json>"
         ),
     )
 
@@ -180,6 +181,26 @@ def test_platform_support_truth_requires_linux_smoke_run_attempt_docs() -> None:
     assert any(
         "docs/PLATFORM_SUPPORT.md missing platform truth snippet" in error
         and "--workflow-run-attempt <github-actions-run-attempt>" in error
+        for error in errors
+    )
+
+
+def test_platform_support_truth_requires_linux_smoke_builder_evidence_docs() -> None:
+    checker = _load_platform_support_truth_checker()
+    docs = _read_required_docs(checker)
+    docs["docs/PLATFORM_SUPPORT.md"] = docs["docs/PLATFORM_SUPPORT.md"].replace(
+        (
+            "--source-head-sha <github-actions-head-sha> "
+            "--builder-evidence <builder-identity.json>"
+        ),
+        "--source-head-sha <github-actions-head-sha>",
+    )
+
+    errors = checker.check_platform_docs(docs, coverage_report())
+
+    assert any(
+        "docs/PLATFORM_SUPPORT.md missing platform truth snippet" in error
+        and "--builder-evidence <builder-identity.json>" in error
         for error in errors
     )
 
@@ -205,7 +226,7 @@ def test_platform_support_truth_requires_linux_builder_git_head_docs() -> None:
     checker = _load_platform_support_truth_checker()
     docs = _read_required_docs(checker)
     docs["docs/PLATFORM_SUPPORT.md"] = docs["docs/PLATFORM_SUPPORT.md"].replace(
-        "`source_head_sha` and `observed_git_head_sha` matching `release_asset_source.head_sha`",
+        "`workflow_ref` pointing at `.github/workflows/extended-platform-evidence.yml`, `workflow_sha`, `source_head_sha` and `observed_git_head_sha` matching `release_asset_source.head_sha`",
         "`source_head_sha` matching `release_asset_source.head_sha`",
     )
 
@@ -213,7 +234,7 @@ def test_platform_support_truth_requires_linux_builder_git_head_docs() -> None:
 
     assert any(
         "docs/PLATFORM_SUPPORT.md missing platform truth snippet" in error
-        and "`source_head_sha` and `observed_git_head_sha`" in error
+        and "`workflow_ref` pointing at `.github/workflows/extended-platform-evidence.yml`" in error
         for error in errors
     )
 

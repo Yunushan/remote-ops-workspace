@@ -161,3 +161,14 @@ def test_linux_appimagetool_download_supports_sha256_verification() -> None:
     assert "https://github.com/AppImage/appimagetool/releases/download/continuous" in linux
     assert "APPIMAGETOOL_SHA256" in linux
     assert "sha256sum -c -" in linux
+
+
+def test_linux_native_build_allows_branch_evidence_dispatch_with_release_tag_binding() -> None:
+    linux = Path("scripts/make_linux_native.sh").read_text(encoding="utf-8")
+    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8")
+
+    assert 'EXPECTED_TAG="v${VERSION}"' in linux
+    assert 'RELEASE_TAG=\'${RELEASE_TAG}\'' in linux
+    assert '"${GITHUB_REF_TYPE:-}" == "tag"' in linux
+    assert '"${GITHUB_REF_NAME}" == v*' in linux
+    assert "RELEASE_TAG: ${{ inputs.release_tag }}" in workflow

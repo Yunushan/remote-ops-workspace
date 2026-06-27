@@ -239,6 +239,11 @@ def test_platform_verified_readiness_tracks_partial_targets() -> None:
     assert goal["status"] == "missing-accepted-evidence"
     assert goal["release_source_workflows"] == {}
     assert goal["release_source_provenance_complete"] is False
+    assert goal["release_import_dry_run_command"] == (
+        "python scripts/import_platform_evidence_artifacts.py "
+        "--release-tag v<project.version> --require-goal-targets "
+        "--out-dir <release-assets-dir> --dry-run --verify-source-run"
+    )
     assert goal["missing_targets"] == [
         "linux-i386",
         "linux-armhf",
@@ -271,6 +276,12 @@ def test_platform_verified_readiness_tracks_partial_targets() -> None:
         | set(requirements["linux-i386"]["required_review_bundle_files"])
         | {"platform-verified-evidence-linux-i386-final.json"}
     )
+    assert requirements["linux-i386"]["workflow_dispatch_command"] == (
+        "gh workflow run extended-platform-evidence.yml --repo <owner>/<repo> "
+        "--ref <github-actions-head-sha-or-branch> -f target=linux-i386 "
+        "-f release_tag=v<project.version> "
+        "-f release_asset_base_url=<github-release-download-url>"
+    )
     xp_source = requirements["windows-xp-native-x86"]["release_asset_source_required"]
     assert xp_source["workflow"] == ".github/workflows/xp-native-evidence.yml"
     assert xp_source["artifact_name"] == "xp-native-evidence-windows-xp-native-x86-v<project.version>"
@@ -279,6 +290,15 @@ def test_platform_verified_readiness_tracks_partial_targets() -> None:
         set(requirements["windows-xp-native-x86"]["required_artifacts"])
         | set(requirements["windows-xp-native-x86"]["required_review_bundle_files"])
         | {"platform-verified-evidence-windows-xp-native-x86-final.json"}
+    )
+    assert requirements["windows-xp-native-x86"]["workflow_dispatch_command"] == (
+        "gh workflow run xp-native-evidence.yml --repo <owner>/<repo> "
+        "--ref <github-actions-head-sha-or-branch> -f target=windows-xp-native-x86 "
+        "-f release_tag=v<project.version> "
+        "-f release_asset_base_url=<github-release-download-url> "
+        "-f assets_dir=<target-release-artifact-dir> "
+        "-f evidence_file=<target-release-evidence.json> "
+        "-f evidence_dir=<target-release-evidence-dir>"
     )
     assert "artifact_validation_command" in requirements["linux-i386"]["required_commands"]
     assert "local_evidence_preflight_command" in requirements["linux-i386"]["required_commands"]
@@ -325,13 +345,10 @@ def test_platform_verified_readiness_tracks_partial_targets() -> None:
 
 def test_platform_verified_readiness_promotes_only_with_accepted_evidence() -> None:
     manifest = _extended_platform_manifest()
-    evidence = {
-        "schema_version": 1,
-        "accepted_evidence": [
-            _linux_accepted_evidence("linux-i386"),
-            _xp_accepted_evidence("windows-xp-native-x86"),
-        ],
-    }
+    evidence = _accepted_evidence_registry(
+        _linux_accepted_evidence("linux-i386"),
+        _xp_accepted_evidence("windows-xp-native-x86"),
+    )
 
     report = _platform_verified_readiness(platform_data=manifest, evidence_registry=evidence)
     rows = {row["target"]: row for row in report["targets"]}
@@ -412,15 +429,12 @@ def test_platform_verified_readiness_promotes_only_with_accepted_evidence() -> N
 
 def test_platform_verified_readiness_goal_parity_completes_with_all_accepted_evidence() -> None:
     manifest = _extended_platform_manifest()
-    evidence = {
-        "schema_version": 1,
-        "accepted_evidence": [
-            _linux_accepted_evidence("linux-i386"),
-            _linux_accepted_evidence("linux-armhf"),
-            _xp_accepted_evidence("windows-xp-native-x86"),
-            _xp_accepted_evidence("windows-xp-native-x64"),
-        ],
-    }
+    evidence = _accepted_evidence_registry(
+        _linux_accepted_evidence("linux-i386"),
+        _linux_accepted_evidence("linux-armhf"),
+        _xp_accepted_evidence("windows-xp-native-x86"),
+        _xp_accepted_evidence("windows-xp-native-x64"),
+    )
 
     report = _platform_verified_readiness(platform_data=manifest, evidence_registry=evidence)
     goal = report["protected_goal_parity"]
@@ -470,15 +484,12 @@ def test_platform_verified_readiness_goal_parity_requires_one_release_repository
     manifest = _extended_platform_manifest()
     xp_x64 = _xp_accepted_evidence("windows-xp-native-x64")
     _replace_release_repository(xp_x64, "other/remote-ops-workspace")
-    evidence = {
-        "schema_version": 1,
-        "accepted_evidence": [
-            _linux_accepted_evidence("linux-i386"),
-            _linux_accepted_evidence("linux-armhf"),
-            _xp_accepted_evidence("windows-xp-native-x86"),
-            xp_x64,
-        ],
-    }
+    evidence = _accepted_evidence_registry(
+        _linux_accepted_evidence("linux-i386"),
+        _linux_accepted_evidence("linux-armhf"),
+        _xp_accepted_evidence("windows-xp-native-x86"),
+        xp_x64,
+    )
 
     report = _platform_verified_readiness(platform_data=manifest, evidence_registry=evidence)
     rows = {row["target"]: row for row in report["targets"]}
@@ -513,15 +524,12 @@ def test_platform_verified_readiness_goal_parity_requires_one_release_repository
 
 def test_platform_verified_readiness_goal_parity_requires_one_release_tag() -> None:
     manifest = _extended_platform_manifest()
-    evidence = {
-        "schema_version": 1,
-        "accepted_evidence": [
-            _linux_accepted_evidence("linux-i386"),
-            _retag_accepted_evidence(_linux_accepted_evidence("linux-armhf"), "v1.0.3"),
-            _retag_accepted_evidence(_xp_accepted_evidence("windows-xp-native-x86"), "v1.0.3"),
-            _retag_accepted_evidence(_xp_accepted_evidence("windows-xp-native-x64"), "v1.0.3"),
-        ],
-    }
+    evidence = _accepted_evidence_registry(
+        _linux_accepted_evidence("linux-i386"),
+        _retag_accepted_evidence(_linux_accepted_evidence("linux-armhf"), "v1.0.3"),
+        _retag_accepted_evidence(_xp_accepted_evidence("windows-xp-native-x86"), "v1.0.3"),
+        _retag_accepted_evidence(_xp_accepted_evidence("windows-xp-native-x64"), "v1.0.3"),
+    )
 
     report = _platform_verified_readiness(platform_data=manifest, evidence_registry=evidence)
     goal = report["protected_goal_parity"]
@@ -553,15 +561,12 @@ def test_platform_verified_readiness_goal_parity_requires_one_release_source_hea
     manifest = _extended_platform_manifest()
     xp_x64 = _xp_accepted_evidence("windows-xp-native-x64")
     _replace_release_source_head(xp_x64, "b" * 40)
-    evidence = {
-        "schema_version": 1,
-        "accepted_evidence": [
-            _linux_accepted_evidence("linux-i386"),
-            _linux_accepted_evidence("linux-armhf"),
-            _xp_accepted_evidence("windows-xp-native-x86"),
-            xp_x64,
-        ],
-    }
+    evidence = _accepted_evidence_registry(
+        _linux_accepted_evidence("linux-i386"),
+        _linux_accepted_evidence("linux-armhf"),
+        _xp_accepted_evidence("windows-xp-native-x86"),
+        xp_x64,
+    )
 
     report = _platform_verified_readiness(platform_data=manifest, evidence_registry=evidence)
     rows = {row["target"]: row for row in report["targets"]}
@@ -614,7 +619,7 @@ def test_platform_verified_readiness_ignores_release_asset_url_tag_mismatch() ->
     )
     report = _platform_verified_readiness(
         platform_data=manifest,
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
     rows = {row["target"]: row for row in report["targets"]}
 
@@ -633,7 +638,7 @@ def test_platform_verified_readiness_ignores_malformed_release_asset_repository_
 
     report = _platform_verified_readiness(
         platform_data=manifest,
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
     rows = {row["target"]: row for row in report["targets"]}
 
@@ -649,7 +654,7 @@ def test_platform_verified_readiness_ignores_unfinalized_platform_candidate() ->
 
     report = _platform_verified_readiness(
         platform_data=manifest,
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
     rows = {row["target"]: row for row in report["targets"]}
 
@@ -665,7 +670,7 @@ def test_platform_verified_readiness_ignores_linux_workflow_repository_mismatch(
     record["workflow_run_url"] = "https://github.com/other/remote-ops-workspace/actions/runs/12345"
     report = _platform_verified_readiness(
         platform_data=manifest,
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
     rows = {row["target"]: row for row in report["targets"]}
 
@@ -681,7 +686,7 @@ def test_platform_verified_readiness_ignores_linux_smoke_run_context_mismatch() 
 
     report = _platform_verified_readiness(
         platform_data=manifest,
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
     rows = {row["target"]: row for row in report["targets"]}
 
@@ -699,7 +704,7 @@ def test_platform_verified_readiness_ignores_linux_smoke_command_without_target_
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -716,7 +721,7 @@ def test_platform_verified_readiness_ignores_linux_workflow_input_mismatch() -> 
     )
     report = _platform_verified_readiness(
         platform_data=manifest,
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
     rows = {row["target"]: row for row in report["targets"]}
 
@@ -733,7 +738,7 @@ def test_platform_verified_readiness_ignores_linux_workflow_input_trailing_slash
     )
     report = _platform_verified_readiness(
         platform_data=manifest,
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
     rows = {row["target"]: row for row in report["targets"]}
 
@@ -751,7 +756,7 @@ def test_platform_verified_readiness_ignores_mixed_release_repositories() -> Non
     )
     report = _platform_verified_readiness(
         platform_data=manifest,
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
     rows = {row["target"]: row for row in report["targets"]}
 
@@ -768,7 +773,7 @@ def test_platform_verified_readiness_ignores_xp_workflow_input_trailing_slash_ba
     )
     report = _platform_verified_readiness(
         platform_data=manifest,
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
     rows = {row["target"]: row for row in report["targets"]}
 
@@ -783,7 +788,7 @@ def test_platform_verified_readiness_ignores_missing_review_bundle_release_asset
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -798,7 +803,7 @@ def test_platform_verified_readiness_ignores_missing_final_record_release_asset_
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -813,7 +818,7 @@ def test_platform_verified_readiness_ignores_missing_release_asset_source() -> N
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -828,7 +833,7 @@ def test_platform_verified_readiness_ignores_missing_release_source_run_attempt(
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -843,7 +848,7 @@ def test_platform_verified_readiness_ignores_invalid_release_source_run_attempt(
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -858,7 +863,7 @@ def test_platform_verified_readiness_ignores_release_asset_source_file_drift() -
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -873,7 +878,7 @@ def test_platform_verified_readiness_ignores_release_asset_source_workflow_drift
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -889,7 +894,26 @@ def test_platform_verified_readiness_ignores_builder_identity_source_head_sha_mi
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["linux-i386"]["current_percent"] == 70.0
+    assert rows["linux-i386"]["status"] == "manual-script-supported"
+    assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
+
+
+def test_platform_verified_readiness_ignores_builder_identity_workflow_provenance_mismatch() -> None:
+    record = _linux_accepted_evidence("linux-i386")
+    record["builder_identity"]["workflow_ref"] = (
+        f"example/remote-ops-workspace/.github/workflows/ci.yml@{'a' * 40}"
+    )
+    record["builder_identity_sha256"] = _json_sha256(record["builder_identity"])
+    record["linux_evidence_sources"]["builder_identity"]["sha256"] = record["builder_identity_sha256"]
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -905,7 +929,7 @@ def test_platform_verified_readiness_ignores_builder_identity_observed_git_head_
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -921,7 +945,7 @@ def test_platform_verified_readiness_ignores_dirty_builder_git_worktree() -> Non
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -939,7 +963,7 @@ def test_platform_verified_readiness_ignores_review_bundle_repository_mismatch()
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -956,7 +980,7 @@ def test_platform_verified_readiness_ignores_final_record_release_asset_url_repo
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -974,7 +998,7 @@ def test_platform_verified_readiness_ignores_artifact_validation_command_tag_mis
     )
     report = _platform_verified_readiness(
         platform_data=manifest,
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
     rows = {row["target"]: row for row in report["targets"]}
 
@@ -992,7 +1016,7 @@ def test_platform_verified_readiness_ignores_duplicate_artifact_validation_tag()
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -1010,7 +1034,7 @@ def test_platform_verified_readiness_ignores_missing_artifact_validation_strict(
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -1028,7 +1052,7 @@ def test_platform_verified_readiness_ignores_placeholder_artifact_validation_ass
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -1046,7 +1070,7 @@ def test_platform_verified_readiness_ignores_unscoped_xp_artifact_validation_ass
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -1061,7 +1085,7 @@ def test_platform_verified_readiness_ignores_missing_local_evidence_preflight_co
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -1078,7 +1102,7 @@ def test_platform_verified_readiness_ignores_linux_local_preflight_source_sha_dr
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -1095,7 +1119,7 @@ def test_platform_verified_readiness_ignores_linux_local_preflight_allow_extra_a
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -1123,10 +1147,14 @@ def test_platform_verified_readiness_accepts_scoped_linux_local_preflight_root()
         f"--linux-source-head-sha {'a' * 40} "
         "--linux-source-run-attempt 1"
     )
+    record["native_smoke_command"] = str(record["native_smoke_command"]).replace(
+        f"evidence/{target}/v1.0.2/builder-identity-{target}.json",
+        builder,
+    )
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -1144,7 +1172,7 @@ def test_platform_verified_readiness_rejects_linux_preflight_paths_outside_root(
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -1175,7 +1203,7 @@ def test_platform_verified_readiness_rejects_file_shaped_local_preflight_root() 
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -1197,7 +1225,7 @@ def test_platform_verified_readiness_rejects_unscoped_linux_artifact_validation_
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -1217,7 +1245,7 @@ def test_platform_verified_readiness_ignores_xp_local_preflight_path_drift() -> 
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -1237,7 +1265,7 @@ def test_platform_verified_readiness_ignores_xp_local_preflight_missing_source_b
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -1254,7 +1282,7 @@ def test_platform_verified_readiness_ignores_xp_local_preflight_source_sha_drift
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -1269,7 +1297,7 @@ def test_platform_verified_readiness_ignores_wrong_linux_artifact_name() -> None
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -1285,7 +1313,7 @@ def test_platform_verified_readiness_ignores_missing_linux_command_provenance() 
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -1301,7 +1329,24 @@ def test_platform_verified_readiness_ignores_missing_linux_security_patch_eviden
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["linux-i386"]["current_percent"] == 70.0
+    assert rows["linux-i386"]["status"] == "manual-script-supported"
+    assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
+
+
+def test_platform_verified_readiness_ignores_placeholder_linux_security_patch_provenance() -> None:
+    record = _linux_accepted_evidence("linux-i386")
+    record["builder_identity"]["security_patch_evidence"]["security_update_channel"] = "test-security-update-channel"
+    record["builder_identity"]["security_patch_evidence"]["cve_review_reference"] = "<replace-with-real-cve-review>"
+    record["builder_identity_sha256"] = _json_sha256(record["builder_identity"])
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -1317,7 +1362,7 @@ def test_platform_verified_readiness_ignores_weak_linux_tool_path() -> None:
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -1333,7 +1378,7 @@ def test_platform_verified_readiness_ignores_missing_noninteractive_sudo() -> No
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -1350,7 +1395,7 @@ def test_platform_verified_readiness_ignores_builder_identity_release_context_mi
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -1365,7 +1410,7 @@ def test_platform_verified_readiness_ignores_missing_linux_smoke_evidence() -> N
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -1380,7 +1425,7 @@ def test_platform_verified_readiness_ignores_missing_linux_evidence_sources() ->
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -1395,7 +1440,7 @@ def test_platform_verified_readiness_ignores_wrong_xp_native_validation_command(
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -1415,7 +1460,7 @@ def test_platform_verified_readiness_ignores_unsafe_xp_native_validation_command
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -1435,7 +1480,7 @@ def test_platform_verified_readiness_ignores_unscoped_xp_native_validation_comma
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -1450,7 +1495,7 @@ def test_platform_verified_readiness_ignores_wrong_xp_workflow() -> None:
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -1465,7 +1510,7 @@ def test_platform_verified_readiness_ignores_missing_xp_workflow_inputs() -> Non
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -1480,7 +1525,7 @@ def test_platform_verified_readiness_ignores_xp_workflow_input_path_drift() -> N
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -1495,7 +1540,7 @@ def test_platform_verified_readiness_ignores_missing_xp_evidence_sources() -> No
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -1510,7 +1555,7 @@ def test_platform_verified_readiness_ignores_xp_evidence_source_hash_drift() -> 
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -1525,7 +1570,7 @@ def test_platform_verified_readiness_ignores_stale_xp_evidence_contract_hash() -
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -1540,7 +1585,7 @@ def test_platform_verified_readiness_ignores_mismatched_xp_evidence_summary() ->
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -1555,7 +1600,7 @@ def test_platform_verified_readiness_ignores_xp_evidence_summary_release_source_
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -1570,7 +1615,7 @@ def test_platform_verified_readiness_ignores_missing_xp_smoke_commands() -> None
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -1585,7 +1630,7 @@ def test_platform_verified_readiness_ignores_missing_xp_smoke_evidence_files() -
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -1600,7 +1645,7 @@ def test_platform_verified_readiness_ignores_placeholder_xp_smoke_command() -> N
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -1619,7 +1664,7 @@ def test_platform_verified_readiness_ignores_xp_smoke_command_target_mismatch() 
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -1638,7 +1683,7 @@ def test_platform_verified_readiness_ignores_xp_smoke_command_evidence_file_mism
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -1658,7 +1703,7 @@ def test_platform_verified_readiness_ignores_xp_smoke_evidence_file_path_mismatc
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -1677,7 +1722,7 @@ def test_platform_verified_readiness_ignores_xp_smoke_command_proof_file_mismatc
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -1697,7 +1742,7 @@ def test_platform_verified_readiness_ignores_xp_smoke_command_source_head_mismat
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -1717,7 +1762,7 @@ def test_platform_verified_readiness_ignores_xp_smoke_command_observed_at_mismat
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -1736,7 +1781,27 @@ def test_platform_verified_readiness_ignores_weak_xp_x64_summary() -> None:
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["Windows XP"]["current_percent"] == 25.0
+    assert rows["Windows XP"]["status"] == "remote-target-only"
+    assert rows["Windows XP"]["accepted_evidence_present_targets"] == []
+
+
+def test_platform_verified_readiness_ignores_xp_security_smoke_command_provenance_mismatch() -> None:
+    record = _xp_accepted_evidence("windows-xp-native-x86")
+    record["xp_evidence_summary"]["smoke_commands"]["modern_defaults_unchanged"] = record["xp_evidence_summary"][
+        "smoke_commands"
+    ]["modern_defaults_unchanged"].replace(
+        "--security-update-channel vendor-security-updates-2026-06",
+        "--security-update-channel stale-security-channel",
+    )
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -1751,7 +1816,23 @@ def test_platform_verified_readiness_ignores_missing_xp_security_patch_summary()
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["Windows XP"]["current_percent"] == 25.0
+    assert rows["Windows XP"]["status"] == "remote-target-only"
+    assert rows["Windows XP"]["accepted_evidence_present_targets"] == []
+
+
+def test_platform_verified_readiness_ignores_placeholder_xp_security_patch_summary() -> None:
+    record = _xp_accepted_evidence("windows-xp-native-x86")
+    record["xp_evidence_summary"]["security"]["patch_evidence"]["security_update_channel"] = "test-security"
+    record["xp_evidence_summary"]["security"]["patch_evidence"]["cve_review_reference"] = "TODO"
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -1766,7 +1847,7 @@ def test_platform_verified_readiness_ignores_missing_xp_host_identity_summary() 
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -1782,7 +1863,7 @@ def test_platform_verified_readiness_ignores_incomplete_artifact_set() -> None:
     del record["artifact_sha256"][Path(removed_url).name]
     report = _platform_verified_readiness(
         platform_data=manifest,
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
     rows = {row["target"]: row for row in report["targets"]}
 
@@ -1798,7 +1879,7 @@ def test_platform_verified_readiness_ignores_malformed_artifact_hash() -> None:
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -1807,13 +1888,56 @@ def test_platform_verified_readiness_ignores_malformed_artifact_hash() -> None:
     assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
 
 
+def test_platform_verified_readiness_ignores_unfinalized_linux_evidence() -> None:
+    record = _linux_accepted_evidence("linux-i386")
+    del record["finalized_record_release_asset_url"]
+    source = record["release_asset_source"]
+    assert isinstance(source, dict)
+    source["contains_files"] = sorted(str(name) for name in record["artifact_sha256"])
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry=_accepted_evidence_registry(record),
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    goal = report["protected_goal_parity"]
+    assert rows["linux-i386"]["current_percent"] == 70.0
+    assert rows["linux-i386"]["status"] == "manual-script-supported"
+    assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
+    assert goal["current_percent"] == 0.0
+    assert goal["accepted_targets"] == []
+
+
+def test_platform_verified_readiness_ignores_review_bundle_free_xp_evidence() -> None:
+    record = _xp_accepted_evidence("windows-xp-native-x86")
+    del record["review_bundle"]
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry=_accepted_evidence_registry(record),
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    goal = report["protected_goal_parity"]
+    assert rows["Windows XP"]["current_percent"] == 25.0
+    assert rows["Windows XP"]["status"] == "remote-target-only"
+    assert rows["Windows XP"]["accepted_evidence_present_targets"] == []
+    assert rows["Windows XP"]["accepted_evidence_missing_targets"] == [
+        "windows-xp-native-x86",
+        "windows-xp-native-x64",
+    ]
+    assert goal["current_percent"] == 0.0
+    assert goal["accepted_targets"] == []
+
+
 def test_platform_verified_readiness_ignores_duplicate_release_asset_urls() -> None:
     record = _linux_accepted_evidence("linux-armhf")
     record["release_asset_urls"].append(record["release_asset_urls"][0])
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -1828,7 +1952,7 @@ def test_platform_verified_readiness_ignores_stale_promotion_config_hash() -> No
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -1843,7 +1967,7 @@ def test_platform_verified_readiness_ignores_stale_builder_identity_hash() -> No
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
 
     rows = {row["target"]: row for row in report["targets"]}
@@ -1858,7 +1982,7 @@ def test_platform_verified_readiness_ignores_extra_artifact_hashes() -> None:
     record["artifact_sha256"]["remote-ops-workspace-v1.0.2-windows-xp-x86-extra.zip"] = "3" * 64
     report = _platform_verified_readiness(
         platform_data=manifest,
-        evidence_registry={"schema_version": 1, "accepted_evidence": [record]},
+        evidence_registry=_accepted_evidence_registry(record),
     )
     rows = {row["target"]: row for row in report["targets"]}
 
@@ -1900,6 +2024,21 @@ def _extended_platform_manifest() -> dict[str, object]:
                 "supported_remote_protocols": ["rdp"],
             }
         ],
+    }
+
+
+def _platform_verified_evidence_policy() -> str:
+    registry = json.loads(Path("configs/platform_verified_evidence.json").read_text(encoding="utf-8"))
+    policy = registry.get("policy")
+    assert isinstance(policy, str)
+    return policy
+
+
+def _accepted_evidence_registry(*records: dict[str, object]) -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "policy": _platform_verified_evidence_policy(),
+        "accepted_evidence": list(records),
     }
 
 
@@ -1950,7 +2089,8 @@ def _linux_accepted_evidence(target: str) -> dict[str, object]:
         "native_smoke_command": (
             f"bash scripts/smoke_linux_native.sh --arch {arch} --dist native-dist/linux "
             f"--target {target} --workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
-            f"--workflow-run-attempt 1 --source-head-sha {'a' * 40}"
+            f"--workflow-run-attempt 1 --source-head-sha {'a' * 40} "
+            f"--builder-evidence evidence/{target}/v1.0.2/builder-identity-{target}.json"
         ),
         "linux_smoke_evidence_sha256": linux_smoke_hashes,
         "local_evidence_preflight_command": (
@@ -2075,6 +2215,11 @@ def _builder_identity(target: str) -> dict[str, object]:
         "release_tag": "v1.0.2",
         "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
         "workflow_run_attempt": 1,
+        "workflow_ref": (
+            "example/remote-ops-workspace/.github/workflows/"
+            f"extended-platform-evidence.yml@{'a' * 40}"
+        ),
+        "workflow_sha": "a" * 40,
         "source_head_sha": "a" * 40,
         "observed_git_head_sha": "a" * 40,
         "git_worktree_clean": True,
@@ -2315,6 +2460,7 @@ def _xp_smoke_commands(target: str) -> dict[str, str]:
     os_identity = host_identity["os"]
     assert isinstance(os_identity, dict)
     release_source = _xp_release_source_summary(target)
+    security = _security_patch_evidence()
     return {
         smoke_id: (
             f"scripts/xp_smoke_runner.cmd --target {target} --release-tag v1.0.2 "
@@ -2326,6 +2472,8 @@ def _xp_smoke_commands(target: str) -> dict[str, str]:
             f"--source-workflow-run-url {release_source['workflow_run_url']} "
             f"--source-head-sha {release_source['head_sha']} "
             f"--source-run-attempt {release_source['run_attempt']} "
+            f"--security-update-channel {security['security_update_channel']} "
+            f"--cve-review-reference {security['cve_review_reference']} "
             f'--os-name "{os_identity["name"]}" '
             f"--os-architecture {os_identity['architecture']} "
             f"--os-service-pack {os_identity['service_pack']}"
@@ -2393,6 +2541,8 @@ def _replace_release_source_head(record: dict[str, object], head_sha: str) -> No
     source["head_sha"] = head_sha
     builder_identity = record.get("builder_identity")
     if isinstance(builder_identity, dict):
+        builder_identity["workflow_ref"] = str(builder_identity.get("workflow_ref", "")).replace(old_head, head_sha)
+        builder_identity["workflow_sha"] = head_sha
         builder_identity["source_head_sha"] = head_sha
         builder_identity["observed_git_head_sha"] = head_sha
         record["builder_identity_sha256"] = _json_sha256(builder_identity)
@@ -2425,6 +2575,8 @@ def _security_patch_evidence() -> dict[str, object]:
         "tls_preferred_modern_profiles": "TLS 1.3",
         "legacy_compatibility_profile": "isolated-opt-in",
         "cve_patch_reviewed": True,
+        "security_update_channel": "vendor-security-updates-2026-06",
+        "cve_review_reference": "vendor-cve-advisory-review-2026-06",
     }
 
 

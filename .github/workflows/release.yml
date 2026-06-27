@@ -184,6 +184,7 @@ jobs:
   accepted-platform-evidence-assets:
     needs: release-preflight
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       actions: read
       contents: read
@@ -205,6 +206,8 @@ jobs:
           name: release-platform-evidence-assets
           path: release-assets/*
           if-no-files-found: error
+          include-hidden-files: false
+          retention-days: 90
 
   publish:
     runs-on: ubuntu-latest
@@ -228,6 +231,8 @@ jobs:
         with:
           path: release-assets
           merge-multiple: true
+      - name: Require protected platform release assets
+        run: python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" --require-complete --assets-dir release-assets
       - name: Validate release publish assets
         run: python scripts/check_release_publish_assets.py --assets-dir release-assets --tag "${{ github.ref_name }}" --require-platform-goal-targets
       - name: Upload release assets

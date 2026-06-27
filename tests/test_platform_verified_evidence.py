@@ -28,8 +28,9 @@ POLICY = (
     "exact release source and review bundle fields, "
     "Linux builder identity evidence, builder identity "
     "SHA-256, builder identity release/run binding, "
+    "Linux builder workflow provenance binding, "
     "Linux builder/smoke source file binding, "
-    "Linux builder/smoke host identity binding, "
+    "Linux builder/smoke host identity binding, Linux builder/smoke security evidence binding, "
     "Linux builder source head SHA binding, "
     "Linux builder observed Git HEAD binding, "
     "Linux builder clean checkout binding, "
@@ -44,11 +45,13 @@ POLICY = (
     "XP evidence source file binding, XP evidence release source binding, "
     "XP evidence bundle SHA-256 digests, "
     "XP evidence validation command binding, XP evidence contract SHA-256, "
-    "XP evidence summary binding, XP host identity SHA-256 binding, XP smoke host identity binding, "
+    "XP evidence summary binding, XP host identity SHA-256 binding, "
+    "XP sanitized target-scoped host identity binding, XP smoke host identity binding, "
     "XP smoke observed-at timestamp binding, XP smoke OS identity binding, "
     "XP smoke host probe proof-line binding, XP security patch evidence, "
     "tracked scripts/xp_smoke_runner.cmd XP smoke command provenance, "
     "canonical XP smoke proof-file command binding, "
+    "XP security smoke command provenance binding when applicable, "
     "canonical XP smoke evidence-file summary binding and "
     "XP security smoke proof-line binding when applicable, and review "
     "bundle manifest, review bundle archive, safe relative non-symlink review bundle archive entries, "
@@ -209,6 +212,20 @@ def test_platform_verified_evidence_rejects_missing_linux_builder_smoke_identity
     )
 
     assert "platform verified evidence policy must require Linux builder/smoke host identity binding" in errors
+
+
+def test_platform_verified_evidence_rejects_missing_linux_builder_smoke_security_policy() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY.replace("Linux builder/smoke security evidence binding, ", ""),
+            "accepted_evidence": [],
+        }
+    )
+
+    assert "platform verified evidence policy must require Linux builder/smoke security evidence binding" in errors
 
 
 def test_platform_verified_evidence_rejects_missing_linux_security_smoke_policy() -> None:
@@ -460,6 +477,20 @@ def test_platform_verified_evidence_rejects_missing_xp_smoke_proof_file_policy()
     assert "platform verified evidence policy must require canonical XP smoke proof-file command binding" in errors
 
 
+def test_platform_verified_evidence_rejects_missing_xp_security_smoke_command_policy() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY.replace("XP security smoke command provenance binding when applicable, ", ""),
+            "accepted_evidence": [],
+        }
+    )
+
+    assert "platform verified evidence policy must require XP security smoke command provenance binding" in errors
+
+
 def test_platform_verified_evidence_rejects_missing_xp_smoke_host_identity_policy() -> None:
     checker = _load_platform_verified_evidence_checker()
 
@@ -472,6 +503,20 @@ def test_platform_verified_evidence_rejects_missing_xp_smoke_host_identity_polic
     )
 
     assert "platform verified evidence policy must require XP smoke host identity binding" in errors
+
+
+def test_platform_verified_evidence_rejects_missing_xp_sanitized_identity_policy() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY.replace("XP sanitized target-scoped host identity binding, ", ""),
+            "accepted_evidence": [],
+        }
+    )
+
+    assert "platform verified evidence policy must require XP sanitized target-scoped host identity binding" in errors
 
 
 def test_platform_verified_evidence_rejects_missing_xp_smoke_observed_at_policy() -> None:
@@ -772,6 +817,22 @@ def test_platform_verified_evidence_rejects_missing_linux_builder_source_head_sh
     ) in errors
 
 
+def test_platform_verified_evidence_rejects_missing_linux_builder_workflow_provenance_policy() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY.replace("Linux builder workflow provenance binding, ", ""),
+            "accepted_evidence": [],
+        }
+    )
+
+    assert (
+        "platform verified evidence policy must require Linux builder workflow provenance binding"
+    ) in errors
+
+
 def test_platform_verified_evidence_rejects_missing_linux_builder_observed_git_head_policy() -> None:
     checker = _load_platform_verified_evidence_checker()
 
@@ -910,6 +971,35 @@ def test_platform_verified_evidence_goal_required_targets_pass_with_all_records(
     )
 
     assert errors == []
+
+
+def test_platform_verified_evidence_goal_required_targets_ignore_non_100_readiness() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    linux_i386 = _linux_record("linux-i386")
+    linux_i386["readiness_percent"] = 99.0
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [
+            linux_i386,
+            _linux_record("linux-armhf"),
+            _xp_record("windows-xp-native-x86"),
+            _xp_record("windows-xp-native-x64"),
+        ],
+    }
+
+    errors = checker.check_platform_verified_evidence(
+        registry=registry,
+        required_targets=checker.PROTECTED_GOAL_TARGETS,
+        required_release_tag="v1.0.2",
+        require_review_bundles=True,
+    )
+
+    assert "linux-i386 evidence readiness_percent must be 100.0" in errors
+    assert (
+        "missing required accepted evidence targets for release_tag v1.0.2: "
+        "['linux-i386']"
+    ) in errors
 
 
 def test_platform_verified_evidence_rejects_linux_unexpected_top_level_fields() -> None:
@@ -1623,7 +1713,8 @@ def test_platform_verified_evidence_rejects_linux_smoke_run_context_mismatch() -
         "'bash scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux "
         "--target linux-i386 --workflow-run-url "
         f"https://github.com/example/remote-ops-workspace/actions/runs/67890 "
-        f"--workflow-run-attempt 1 --source-head-sha {'a' * 40}'"
+        f"--workflow-run-attempt 1 --source-head-sha {'a' * 40} "
+        "--builder-evidence evidence/linux-i386/v1.0.2/builder-identity-linux-i386.json'"
     ) in errors
 
 
@@ -1804,6 +1895,26 @@ def test_platform_verified_evidence_rejects_linux_local_preflight_allow_extra_ar
     assert "linux-i386 local_evidence_preflight_command must not include --allow-extra-artifacts" in errors
 
 
+def test_platform_verified_evidence_rejects_unexpected_local_preflight_flag() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-armhf")
+    record["local_evidence_preflight_command"] = (
+        f"{record['local_evidence_preflight_command']} --json"
+    )
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "linux-armhf local_evidence_preflight_command has unexpected flags: ['--json']"
+        in errors
+    )
+
+
 def test_platform_verified_evidence_rejects_unsafe_linux_local_preflight_paths() -> None:
     checker = _load_platform_verified_evidence_checker()
     record = _linux_record("linux-i386")
@@ -1887,6 +1998,12 @@ def test_platform_verified_evidence_accepts_scoped_linux_local_preflight_root() 
         "--linux-workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
         f"--linux-source-head-sha {'a' * 40} "
         "--linux-source-run-attempt 1"
+    )
+    record["native_smoke_command"] = (
+        "bash scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux "
+        f"--target {target} --workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
+        f"--workflow-run-attempt 1 --source-head-sha {'a' * 40} "
+        f"--builder-evidence {builder}"
     )
     registry = {
         "schema_version": 1,
@@ -2236,7 +2353,8 @@ def test_platform_verified_evidence_rejects_missing_linux_command_provenance() -
         "'bash scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux "
         "--target linux-i386 --workflow-run-url "
         f"https://github.com/example/remote-ops-workspace/actions/runs/12345 "
-        f"--workflow-run-attempt 1 --source-head-sha {'a' * 40}'"
+        f"--workflow-run-attempt 1 --source-head-sha {'a' * 40} "
+        "--builder-evidence evidence/linux-i386/v1.0.2/builder-identity-linux-i386.json'"
     ) in errors
 
 
@@ -2278,7 +2396,8 @@ def test_platform_verified_evidence_rejects_linux_smoke_command_without_source_s
         "'bash scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux "
         "--target linux-i386 --workflow-run-url "
         f"https://github.com/example/remote-ops-workspace/actions/runs/12345 "
-        f"--workflow-run-attempt 1 --source-head-sha {'a' * 40}'"
+        f"--workflow-run-attempt 1 --source-head-sha {'a' * 40} "
+        "--builder-evidence evidence/linux-i386/v1.0.2/builder-identity-linux-i386.json'"
     ) in errors
 
 
@@ -2360,6 +2479,26 @@ def test_platform_verified_evidence_rejects_duplicate_artifact_validation_comman
         "linux-i386 artifact_validation_command must include exactly one --tag v1.0.2, "
         "got ['v1.0.2', 'v9.9.9']"
     ) in errors
+
+
+def test_platform_verified_evidence_rejects_unexpected_artifact_validation_flag() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _xp_record("windows-xp-native-x64")
+    record["artifact_validation_command"] = (
+        f"{record['artifact_validation_command']} --dry-run"
+    )
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "windows-xp-native-x64 artifact_validation_command has unexpected flags: ['--dry-run']"
+        in errors
+    )
 
 
 def test_platform_verified_evidence_rejects_missing_artifact_validation_strict() -> None:
@@ -2946,6 +3085,31 @@ def test_platform_verified_evidence_rejects_builder_identity_release_context_mis
     assert "linux-i386 builder_identity workflow_run_url must match record workflow_run_url" in errors
 
 
+def test_platform_verified_evidence_rejects_builder_identity_workflow_provenance_mismatch() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    record["builder_identity"]["workflow_ref"] = (
+        "example/remote-ops-workspace/.github/workflows/ci.yml@refs/heads/main"
+    )
+    record["builder_identity"]["workflow_sha"] = "b" * 40
+    record["builder_identity_sha256"] = _json_sha256(record["builder_identity"])
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert any(
+        "linux-i386 builder_identity workflow_ref must point at "
+        "example/remote-ops-workspace/.github/workflows/extended-platform-evidence.yml@<ref>"
+        in error
+        for error in errors
+    )
+    assert "linux-i386 builder_identity workflow_sha must match release_asset_source.head_sha" in errors
+
+
 def test_platform_verified_evidence_rejects_builder_identity_source_head_sha_mismatch() -> None:
     checker = _load_platform_verified_evidence_checker()
     record = _linux_record("linux-i386")
@@ -3128,6 +3292,48 @@ def test_platform_verified_evidence_rejects_missing_linux_security_patch_evidenc
     errors = checker.check_platform_verified_evidence(registry=registry)
 
     assert "linux-i386 builder_identity security_patch_evidence must be an object" in errors
+
+
+def test_platform_verified_evidence_rejects_missing_security_patch_provenance() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    del record["builder_identity"]["security_patch_evidence"]["cve_review_reference"]
+    record["builder_identity"]["security_patch_evidence"]["security_update_channel"] = ""
+    record["builder_identity_sha256"] = _json_sha256(record["builder_identity"])
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "linux-i386 builder_identity security_patch_evidence.cve_review_reference must be set" in errors
+    assert "linux-i386 builder_identity security_patch_evidence.security_update_channel must be set" in errors
+
+
+def test_platform_verified_evidence_rejects_placeholder_security_patch_provenance() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    record["builder_identity"]["security_patch_evidence"]["security_update_channel"] = "test-security-update-channel"
+    record["builder_identity"]["security_patch_evidence"]["cve_review_reference"] = "<replace-with-real-cve-review>"
+    record["builder_identity_sha256"] = _json_sha256(record["builder_identity"])
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "linux-i386 builder_identity security_patch_evidence.security_update_channel "
+        "must name concrete non-placeholder provenance"
+    ) in errors
+    assert (
+        "linux-i386 builder_identity security_patch_evidence.cve_review_reference "
+        "must name concrete non-placeholder provenance"
+    ) in errors
 
 
 def test_platform_verified_evidence_rejects_missing_linux_smoke_evidence() -> None:
@@ -3394,6 +3600,67 @@ def test_platform_verified_evidence_rejects_missing_xp_host_identity_summary() -
     assert "windows-xp-native-x86 xp_evidence_summary host_identity must be an object" in errors
 
 
+def test_platform_verified_evidence_rejects_private_xp_host_identity_fields() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _xp_record("windows-xp-native-x86")
+    host_identity = record["xp_evidence_summary"]["host_identity"]
+    assert isinstance(host_identity, dict)
+    host_identity["host_label"] = "yunus-pc"
+    host_identity["evidence_run_id"] = "manual-run-20260620t120000z"
+    host_identity["hostname"] = "yunus-pc"
+    record["xp_host_identity_sha256"] = _json_sha256(host_identity)
+    smoke_commands = record["xp_evidence_summary"]["smoke_commands"]
+    assert isinstance(smoke_commands, dict)
+    for smoke_id, command in list(smoke_commands.items()):
+        smoke_commands[smoke_id] = str(command).replace(
+            "--host-label xp-x86-lab-01",
+            "--host-label yunus-pc",
+        ).replace(
+            "--evidence-run-id xp-x86-1-0-2-20260620t120000z",
+            "--evidence-run-id manual-run-20260620t120000z",
+        )
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "windows-xp-native-x86 xp_evidence_summary host_identity.host_label "
+        "must be a sanitized target-scoped lab label, got 'yunus-pc'"
+    ) in errors
+    assert (
+        "windows-xp-native-x86 xp_evidence_summary host_identity.evidence_run_id "
+        "must be a sanitized target-scoped run id, got 'manual-run-20260620t120000z'"
+    ) in errors
+    assert (
+        "windows-xp-native-x86 xp_evidence_summary host_identity contains forbidden private fields: ['hostname']"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_xp_run_id_not_bound_to_observed_at() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _xp_record("windows-xp-native-x64")
+    host_identity = record["xp_evidence_summary"]["host_identity"]
+    assert isinstance(host_identity, dict)
+    host_identity["evidence_run_id"] = "xp-x64-1-0-2-20260620t123000z"
+    record["xp_host_identity_sha256"] = _json_sha256(host_identity)
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "windows-xp-native-x64 xp_evidence_summary host_identity.evidence_run_id must include "
+        "release/observed-at marker '1-0-2-20260620t120000z', got 'xp-x64-1-0-2-20260620t123000z'"
+    ) in errors
+
+
 def test_platform_verified_evidence_rejects_missing_xp_smoke_digest() -> None:
     checker = _load_platform_verified_evidence_checker()
     record = _xp_record("windows-xp-native-x64")
@@ -3652,6 +3919,30 @@ def test_platform_verified_evidence_rejects_xp_smoke_command_host_identity_misma
     ) in errors
 
 
+def test_platform_verified_evidence_rejects_xp_security_smoke_command_provenance_mismatch() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _xp_record("windows-xp-native-x86")
+    record["xp_evidence_summary"]["smoke_commands"]["legacy_crypto_profile_scoped"] = record["xp_evidence_summary"][
+        "smoke_commands"
+    ]["legacy_crypto_profile_scoped"].replace(
+        "--cve-review-reference vendor-cve-advisory-review-2026-06",
+        "--cve-review-reference stale-cve-review",
+    )
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "windows-xp-native-x86 xp_evidence_summary smoke_commands legacy_crypto_profile_scoped "
+        "must include exactly one --cve-review-reference vendor-cve-advisory-review-2026-06, "
+        "got ['stale-cve-review']"
+    ) in errors
+
+
 def test_platform_verified_evidence_rejects_xp_smoke_command_os_identity_mismatch() -> None:
     checker = _load_platform_verified_evidence_checker()
     record = _xp_record("windows-xp-native-x64")
@@ -3733,6 +4024,29 @@ def test_platform_verified_evidence_rejects_missing_xp_security_patch_summary() 
     assert "windows-xp-native-x86 xp_evidence_summary security.patch_evidence must be an object" in errors
 
 
+def test_platform_verified_evidence_rejects_placeholder_xp_security_patch_summary() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _xp_record("windows-xp-native-x86")
+    record["xp_evidence_summary"]["security"]["patch_evidence"]["security_update_channel"] = "test-security"
+    record["xp_evidence_summary"]["security"]["patch_evidence"]["cve_review_reference"] = "TODO"
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "windows-xp-native-x86 xp_evidence_summary security.patch_evidence.security_update_channel "
+        "must name concrete non-placeholder provenance"
+    ) in errors
+    assert (
+        "windows-xp-native-x86 xp_evidence_summary security.patch_evidence.cve_review_reference "
+        "must name concrete non-placeholder provenance"
+    ) in errors
+
+
 def test_platform_verified_evidence_rejects_weak_xp_x64_summary() -> None:
     checker = _load_platform_verified_evidence_checker()
     record = _xp_record("windows-xp-native-x64")
@@ -3811,7 +4125,8 @@ def _linux_record(target: str) -> dict[str, object]:
         "native_smoke_command": (
             f"bash scripts/smoke_linux_native.sh --arch {arch} --dist native-dist/linux "
             f"--target {target} --workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
-            f"--workflow-run-attempt 1 --source-head-sha {'a' * 40}"
+            f"--workflow-run-attempt 1 --source-head-sha {'a' * 40} "
+            f"--builder-evidence evidence/{target}/v1.0.2/builder-identity-{target}.json"
         ),
         "linux_smoke_evidence_sha256": linux_smoke_hashes,
         "local_evidence_preflight_command": (
@@ -4083,6 +4398,12 @@ def _replace_release_source_head(record: dict[str, object], head_sha: str) -> No
         return
     builder_identity = record.get("builder_identity")
     if isinstance(builder_identity, dict):
+        if old_head and isinstance(builder_identity.get("workflow_ref"), str):
+            builder_identity["workflow_ref"] = str(builder_identity["workflow_ref"]).replace(
+                old_head,
+                head_sha,
+            )
+        builder_identity["workflow_sha"] = head_sha
         builder_identity["source_head_sha"] = head_sha
         builder_identity["observed_git_head_sha"] = head_sha
         builder_identity_sha = _json_sha256(builder_identity)
@@ -4184,6 +4505,7 @@ def _xp_smoke_commands(target: str, release_tag: str = "v1.0.2") -> dict[str, st
     os_identity = host_identity["os"]
     assert isinstance(os_identity, dict)
     release_source = _xp_release_source_summary(target)
+    security = _security_patch_evidence()
     return {
         smoke_id: (
             f"scripts/xp_smoke_runner.cmd --target {target} --release-tag {release_tag} "
@@ -4195,6 +4517,8 @@ def _xp_smoke_commands(target: str, release_tag: str = "v1.0.2") -> dict[str, st
             f"--source-workflow-run-url {release_source['workflow_run_url']} "
             f"--source-head-sha {release_source['head_sha']} "
             f"--source-run-attempt {release_source['run_attempt']} "
+            f"--security-update-channel {security['security_update_channel']} "
+            f"--cve-review-reference {security['cve_review_reference']} "
             f'--os-name "{os_identity["name"]}" '
             f"--os-architecture {os_identity['architecture']} "
             f"--os-service-pack {os_identity['service_pack']}"
@@ -4217,6 +4541,11 @@ def _builder_identity(target: str) -> dict[str, object]:
         "release_tag": "v1.0.2",
         "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
         "workflow_run_attempt": 1,
+        "workflow_ref": (
+            "example/remote-ops-workspace/.github/workflows/"
+            f"extended-platform-evidence.yml@{'a' * 40}"
+        ),
+        "workflow_sha": "a" * 40,
         "source_head_sha": "a" * 40,
         "observed_git_head_sha": "a" * 40,
         "git_worktree_clean": True,
@@ -4267,6 +4596,8 @@ def _security_patch_evidence() -> dict[str, object]:
         "tls_preferred_modern_profiles": "TLS 1.3",
         "legacy_compatibility_profile": "isolated-opt-in",
         "cve_patch_reviewed": True,
+        "security_update_channel": "vendor-security-updates-2026-06",
+        "cve_review_reference": "vendor-cve-advisory-review-2026-06",
     }
 
 

@@ -36,6 +36,7 @@ XP_PROTECTED_SECURITY_REQUIREMENTS = (
 )
 LINUX_PROTECTED_SMOKE_EVIDENCE_REQUIREMENTS = (
     "capture native smoke log with target, release tag, workflow run URL, workflow run attempt, source head SHA and observed git HEAD SHA",
+    "consume matching builder identity evidence during native smoke and bind host identity plus security provenance from it",
     "bind sanitized host label, deterministic evidence run ID and observed-at UTC timestamp into the native smoke log",
     "prove 32-bit Linux userland and target architecture on the builder",
     "bind DEB, RPM and AppImage SHA-256 lines into the native smoke log",
@@ -48,7 +49,7 @@ XP_PROTECTED_SMOKE_EVIDENCE_REQUIREMENTS = (
     "launch CLI without unsupported Windows APIs",
     "open the selected GUI or legacy host UI without the current PyQt6 stack",
     "connect to loopback/local profile dry-run",
-    "validate artifact manifest and SHA256SUMS on the XP evidence host",
+    "validate artifact manifest and SHA256SUMS on the Windows XP host before collector upload",
     "prove legacy crypto remains profile-scoped opt-in",
     "prove modern defaults remain unchanged",
 )
@@ -417,8 +418,18 @@ def expected_builder_or_host_evidence(target: str) -> str:
     return {
         "linux-i386": "matching self-hosted i386/i686 Linux runner or equivalent real i386 builder",
         "linux-armhf": "matching self-hosted armv7l/armhf Linux runner or equivalent real armhf builder",
-        "windows-xp-native-x86": "Windows XP SP3 32-bit VM or physical/self-hosted runner",
-        "windows-xp-native-x64": "Windows XP Professional x64 Edition SP2 VM or physical/self-hosted runner",
+        "windows-xp-native-x86": (
+            "Windows XP SP3 32-bit VM or physical host running scripts/xp_smoke_runner.cmd "
+            "and artifact validation; collector: modern self-hosted xp-evidence collector "
+            "with Python 3.12 and GitHub Actions support; validates staged XP host proof "
+            "but does not replace XP host smoke evidence"
+        ),
+        "windows-xp-native-x64": (
+            "Windows XP Professional x64 Edition SP2 VM or physical host running "
+            "scripts/xp_smoke_runner.cmd and artifact validation; collector: modern "
+            "self-hosted xp-evidence collector with Python 3.12 and GitHub Actions support; "
+            "validates staged XP host proof but does not replace XP host smoke evidence"
+        ),
     }.get(target, "")
 
 

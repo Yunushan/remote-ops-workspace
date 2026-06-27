@@ -292,19 +292,26 @@ artifact SHA-256 degerleri ve review-bundle size/SHA-256 degerleri finalized
 accepted kayitla eslestikten sonra release-assets icine alir, sonra
 `python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag <tag> --require-final-record-assets`
 ile import edilen review-bundle dosyalarini ve finalized public record JSON
-dosyalarini upload oncesi yeniden dogrular. Publish isi upload
+dosyalarini upload oncesi yeniden dogrular. Import edilen platform evidence
+artifact upload'i bosken fail eder, hidden dosyalari haric tutar ve 90 gun
+retention kullanir. Publish isi upload
 oncesinde
+`python scripts/check_protected_platform_goal.py --release-tag <tag> --require-complete --assets-dir release-assets`
+ve
 `python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --require-platform-goal-targets`
-calistirip indirilen asset setini, checksum yan dosyalarini, release manifestini,
-accepted platform evidence kayitlarini ve review-bundle hashlerini karsilastirir.
+calistirip publish-ready release-assets dizinindeki finalized record, review
+bundle, native artifact, checksum yan dosyasi, release manifesti ve accepted
+platform evidence hashlerini karsilastirir.
 Windows XP accepted evidence kayitlari sanitized host identity SHA-256 degeri
 tasir ve her smoke komutu/dosyasi ayni host label ile evidence run ID degerine
 bagli olmak zorundadir.
 Windows XP native-host readiness 25.0% olarak kalir; yalnizca XP x86 SP3 ve XP
-Professional x64 SP2 icin ayri legacy toolchain, VM/self-hosted smoke evidence,
-native artifact evidence, `python scripts/check_xp_native_evidence.py`
-dogrulamasi ve modern default'lari zayiflatmayan security proof ile 100%
-olabilir. Python yayin araclari `requirements-release.txt` ile sabitlenir ve
+Professional x64 SP2 host uzerinde `scripts/xp_smoke_runner.cmd` ile yakalanan
+smoke evidence, ayri legacy toolchain, native artifact evidence, modern
+self-hosted `xp-evidence` collector paketlemesi,
+`python scripts/check_xp_native_evidence.py` dogrulamasi ve modern default'lari
+zayiflatmayan security proof ile 100% olabilir. Python yayin araclari
+`requirements-release.txt` ile sabitlenir ve
 release manifestine `configs/release_toolchain.json` uzerinden yazilir. Native
 Windows, macOS ve Linux isleri kendi `native-SHA256SUMS.txt` yan dosyalarini da
 uretir. CI checkout credential'lari final publish adimina kadar read-only kalir.

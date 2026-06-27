@@ -32,6 +32,7 @@ LINUX_TARGET_USERLAND_BITS = {
     "linux-i386": "32",
     "linux-armhf": "32",
 }
+EXPECTED_WORKFLOW_PATH = ".github/workflows/extended-platform-evidence.yml"
 
 REQUIRED_LINUX_TOOLS = (
     "bash",
@@ -50,6 +51,19 @@ RELEASE_TAG_RE = re.compile(r"v\d+\.\d+\.\d+")
 GITHUB_ACTIONS_RUN_RE = re.compile(r"https://github\.com/[^/]+/[^/]+/actions/runs/\d+/?")
 GITHUB_RUN_ID_RE = re.compile(r"/actions/runs/(\d+)/?$")
 GITHUB_HEAD_SHA_RE = re.compile(r"[0-9a-f]{40}")
+REQUIRED_SECURITY_PATCH_PROVENANCE_FIELDS = (
+    "security_update_channel",
+    "cve_review_reference",
+)
+FORBIDDEN_SECURITY_PROVENANCE_MARKERS = (
+    "<",
+    ">",
+    "dummy",
+    "placeholder",
+    "replace",
+    "test-",
+    "todo",
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -210,6 +224,29 @@ def check_github_actions_context(
         errors.append(
             f"{target} GITHUB_REPOSITORY {github_repository} must match --workflow-run-url {workflow_run_url}"
         )
+    expected_repository = repository_match.group(1).lower() if repository_match else github_repository
+    github_actions = os.environ.get("GITHUB_ACTIONS", "").strip().lower() == "true"
+    github_workflow_ref = os.environ.get("GITHUB_WORKFLOW_REF", "").strip()
+    if github_actions and not github_workflow_ref:
+        errors.append(f"{target} GITHUB_WORKFLOW_REF is required for builder workflow provenance")
+    elif github_workflow_ref:
+        expected_prefix = f"{expected_repository}/{EXPECTED_WORKFLOW_PATH}@"
+        if not expected_repository or not github_workflow_ref.lower().startswith(expected_prefix.lower()):
+            errors.append(
+                f"{target} GITHUB_WORKFLOW_REF {github_workflow_ref} must point at "
+                f"{expected_prefix}<ref>"
+            )
+    github_workflow_sha = os.environ.get("GITHUB_WORKFLOW_SHA", "").strip().lower()
+    if github_actions and not github_workflow_sha:
+        errors.append(f"{target} GITHUB_WORKFLOW_SHA is required for builder workflow provenance")
+    elif github_workflow_sha:
+        if not GITHUB_HEAD_SHA_RE.fullmatch(github_workflow_sha):
+            errors.append(f"{target} GITHUB_WORKFLOW_SHA must be a 40-character lowercase Git SHA")
+        elif github_workflow_sha != source_head_sha:
+            errors.append(
+                f"{target} GITHUB_WORKFLOW_SHA {github_workflow_sha} must match "
+                f"--source-head-sha {source_head_sha}"
+            )
     return errors
 
 
@@ -280,6 +317,8 @@ def builder_identity(
         "release_tag": release_tag,
         "workflow_run_url": workflow_run_url,
         "workflow_run_attempt": workflow_run_attempt,
+        "workflow_ref": github_workflow_ref(),
+        "workflow_sha": github_workflow_sha(),
         "source_head_sha": source_head_sha,
         "observed_git_head_sha": git_head_sha(),
         "git_worktree_clean": git_worktree_clean(),
@@ -339,7 +378,23 @@ def check_security_patch_evidence(target: str) -> list[str]:
         errors.append(f"{target} builder legacy compatibility must remain isolated opt-in")
     if evidence["cve_patch_reviewed"] is not True:
         errors.append(f"{target} builder CVE patch review evidence must be true")
+    provenance_labels = {
+        "security_update_channel": "security update channel",
+        "cve_review_reference": "CVE review reference",
+    }
+    for key in REQUIRED_SECURITY_PATCH_PROVENANCE_FIELDS:
+        value = str(evidence.get(key, ""))
+        label = provenance_labels[key]
+        if not value.strip():
+            errors.append(f"{target} builder {label} evidence must be set")
+        elif not is_concrete_security_provenance(value):
+            errors.append(f"{target} builder {label} evidence must name concrete non-placeholder provenance")
     return errors
+
+
+def is_concrete_security_provenance(value: str) -> bool:
+    lowered = value.strip().lower()
+    return bool(lowered) and not any(marker in lowered for marker in FORBIDDEN_SECURITY_PROVENANCE_MARKERS)
 
 
 def security_patch_evidence() -> dict[str, Any]:
@@ -350,6 +405,8 @@ def security_patch_evidence() -> dict[str, Any]:
         "tls_preferred_modern_profiles": "TLS 1.3",
         "legacy_compatibility_profile": "isolated-opt-in",
         "cve_patch_reviewed": True,
+        "security_update_channel": "distribution-security-updates",
+        "cve_review_reference": "distribution-security-tracker-and-release-notes",
     }
 
 
@@ -400,6 +457,14 @@ def git_head_sha() -> str:
 def git_worktree_clean() -> bool:
     status = git_status_porcelain()
     return status == ""
+
+
+def github_workflow_ref() -> str:
+    return os.environ.get("GITHUB_WORKFLOW_REF", "").strip()
+
+
+def github_workflow_sha() -> str:
+    return os.environ.get("GITHUB_WORKFLOW_SHA", "").strip().lower()
 
 
 def git_status_porcelain() -> str | None:

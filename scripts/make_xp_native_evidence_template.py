@@ -142,6 +142,15 @@ def check_directory_path_hint(path: Path, label: str) -> list[str]:
     return []
 
 
+def smoke_security_args(smoke_id: str) -> str:
+    if smoke_id not in {"legacy_crypto_profile_scoped", "modern_defaults_unchanged"}:
+        return ""
+    return (
+        " --security-update-channel \"TODO document offline security update channel or lab patch baseline\""
+        " --cve-review-reference \"TODO document CVE review reference for this XP evidence run\""
+    )
+
+
 def evidence_template(
     *,
     target: str,
@@ -224,6 +233,7 @@ def evidence_template(
                         if target_contract.get("required_edition")
                         else ""
                     )
+                    + smoke_security_args(smoke_id)
                 ),
                 "evidence_file": f"xp-smoke-evidence/{smoke_id}.txt",
                 "evidence_sha256": "<replace-with-real-sha256>",
@@ -239,6 +249,8 @@ def evidence_template(
                 "tls_preferred_modern_profiles": "TODO verify TLS 1.3 preferred is unchanged",
                 "legacy_compatibility_profile": "TODO verify isolated opt-in legacy profile only",
                 "cve_patch_reviewed": False,
+                "security_update_channel": "TODO document offline security update channel or lab patch baseline",
+                "cve_review_reference": "TODO document CVE review reference for this XP evidence run",
             },
         },
     }
@@ -313,6 +325,8 @@ def template_security_smoke_lines(smoke_id: str) -> str:
             "legacy compatibility profile: isolated-opt-in\n"
             "legacy crypto scope: profile-only\n"
             "weak crypto global default: false\n"
+            "security update channel: TODO document offline security update channel or lab patch baseline\n"
+            "CVE review reference: TODO document CVE review reference for this XP evidence run\n"
         )
     if smoke_id == "modern_defaults_unchanged":
         return (
@@ -321,6 +335,8 @@ def template_security_smoke_lines(smoke_id: str) -> str:
             "modern TLS preferred: TLS 1.3\n"
             "modern defaults unchanged: true\n"
             "weak crypto global default: false\n"
+            "security update channel: TODO document offline security update channel or lab patch baseline\n"
+            "CVE review reference: TODO document CVE review reference for this XP evidence run\n"
         )
     return ""
 

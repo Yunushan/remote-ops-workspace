@@ -64,6 +64,7 @@ def check_xp_job(workflow: str) -> list[str]:
         "persist-credentials: false": "checkout credential isolation",
         "uses: actions/setup-python@v6": "Python setup",
         'python-version: "3.12"': "Python version pin",
+        "XP evidence collector validates staged proof captured on real Windows XP hosts; run scripts/xp_smoke_runner.cmd on the XP host before dispatch.": "XP host versus collector boundary",
         f"Path('{XP_EVIDENCE_OUTPUT_DIR}').mkdir(parents=True, exist_ok=True)": "target/release scoped XP evidence output directory creation",
         'python scripts/check_xp_native_evidence_dispatch_inputs.py --target "${{ inputs.target }}" --release-tag "${{ inputs.release_tag }}" --release-asset-base-url "${{ inputs.release_asset_base_url }}" --workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" --assets-dir "${{ inputs.assets_dir }}" --evidence-file "${{ inputs.evidence_file }}" --evidence-dir "${{ inputs.evidence_dir }}"': "XP dispatch input preflight",
         'python scripts/check_xp_native_evidence.py --evidence "${{ inputs.evidence_file }}" --assets-dir "${{ inputs.assets_dir }}" --evidence-dir "${{ inputs.evidence_dir }}"': "XP evidence validation",
@@ -92,6 +93,8 @@ def check_xp_job(workflow: str) -> list[str]:
         "name: xp-native-evidence-${{ inputs.target }}-${{ inputs.release_tag }}": "target/release scoped uploaded artifact",
         "path: xp-evidence-upload/*": "scoped staged upload path",
         "if-no-files-found: error": "missing evidence artifact failure",
+        "include-hidden-files: false": "hidden file exclusion for evidence artifact upload",
+        "retention-days: 90": "evidence artifact retention window",
     }
     for snippet, label in required_snippets.items():
         if snippet not in block:

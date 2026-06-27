@@ -118,6 +118,76 @@ def check_scripts_exist(config: dict[str, Any]) -> list[str]:
         for step in REQUIRED_LIFECYCLE_STEPS:
             if step not in text.lower():
                 errors.append(f"{repo_path(script)} must mention {step} smoke lifecycle")
+        if str(platform) == "linux":
+            errors.extend(check_linux_smoke_source_binding(script, text))
+    return errors
+
+
+def check_linux_smoke_source_binding(script: Path, text: str) -> list[str]:
+    errors: list[str] = []
+    required_snippets = {
+        "--workflow-run-url must be a GitHub Actions run URL": "workflow run URL format validation",
+        'REQUESTED_WORKFLOW_RUN_ID="${WORKFLOW_RUN_URL%/}"': "workflow run id parsing",
+        'REQUESTED_WORKFLOW_REPOSITORY="${WORKFLOW_RUN_URL#https://github.com/}"': (
+            "workflow repository parsing"
+        ),
+        "GITHUB_SHA": "GitHub source SHA environment binding",
+        "must match --source-head-sha": "source SHA mismatch failure",
+        "GITHUB_RUN_ATTEMPT": "GitHub run-attempt environment binding",
+        "must match --workflow-run-attempt": "run-attempt mismatch failure",
+        "GITHUB_RUN_ID": "GitHub run-id environment binding",
+        "GITHUB_REPOSITORY": "GitHub repository environment binding",
+        "must match --workflow-run-url": "workflow URL mismatch failure",
+        "target $TARGET does not match smoke arch $ARCH": "target/architecture mismatch failure",
+        "--builder-evidence is required with --target": "builder evidence requirement",
+        "--builder-evidence requires --target": "builder evidence target binding",
+        "target $TARGET builder evidence file missing": "builder evidence file existence check",
+        "BUILDER_BINDING_TSV": "builder evidence JSON parsing",
+        "require_builder_match \"target\"": "builder evidence target match",
+        "require_builder_match \"release_tag\"": "builder evidence release match",
+        "require_builder_match \"workflow_run_url\"": "builder evidence workflow URL match",
+        "require_builder_match \"workflow_run_attempt\"": "builder evidence workflow attempt match",
+        "require_builder_match \"source_head_sha\"": "builder evidence source SHA match",
+        "require_builder_match \"observed_git_head_sha\"": "builder evidence git HEAD match",
+        "require_builder_match \"security_patch_evidence.python_ssl_openssl\"": (
+            "builder evidence Python OpenSSL security match"
+        ),
+        "require_builder_match \"security_patch_evidence.openssl_cli_version\"": (
+            "builder evidence OpenSSL CLI security match"
+        ),
+        "require_builder_value \"security_patch_evidence.security_update_channel\"": (
+            "builder evidence security update channel presence"
+        ),
+        "require_builder_value \"security_patch_evidence.cve_review_reference\"": (
+            "builder evidence CVE review reference presence"
+        ),
+        "require_builder_match \"security_patch_evidence.security_update_channel\"": (
+            "builder evidence security update channel match"
+        ),
+        "require_builder_match \"security_patch_evidence.cve_review_reference\"": (
+            "builder evidence CVE review reference match"
+        ),
+        "openssl version | tr '[:upper:]' '[:lower:]'": "builder-compatible OpenSSL CLI normalization",
+        'SMOKE_OBSERVED_AT_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"': (
+            "UTC observation timestamp capture"
+        ),
+        "SMOKE_WORKFLOW_RUN_ID=\"$REQUESTED_WORKFLOW_RUN_ID\"": "workflow run id reuse in evidence id",
+        "native installer smoke builder evidence: $BUILDER_EVIDENCE": "builder evidence path line",
+        "native installer smoke host label: $SMOKE_HOST_LABEL": "builder-bound smoke host label",
+        "native installer smoke evidence run id: $SMOKE_EVIDENCE_RUN_ID": "builder-bound smoke evidence run id",
+        "native installer smoke observed at utc: $SMOKE_OBSERVED_AT_UTC": (
+            "UTC observation timestamp evidence line"
+        ),
+        "native installer smoke security update channel: $SMOKE_SECURITY_UPDATE_CHANNEL": (
+            "builder-bound security update channel"
+        ),
+        "native installer smoke CVE review reference: $SMOKE_CVE_REVIEW_REFERENCE": (
+            "builder-bound CVE review reference"
+        ),
+    }
+    for snippet, label in required_snippets.items():
+        if snippet not in text:
+            errors.append(f"{repo_path(script)} missing Linux smoke {label}: {snippet}")
     return errors
 
 

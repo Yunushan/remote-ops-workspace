@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 from pathlib import Path
@@ -58,11 +59,15 @@ def main(argv: list[str] | None = None) -> int:
         xp_source_head_sha=args.xp_source_head_sha,
         xp_source_run_attempt=args.xp_source_run_attempt,
     )
+    report = platform_goal_local_evidence_report(targets=targets, errors=errors)
+    if args.json:
+        print(json.dumps(report, indent=2, sort_keys=True))
+        return 1 if errors else 0
     if errors:
         for error in errors:
             print(f"platform goal local evidence: {error}", file=sys.stderr)
         return 1
-    print(f"platform goal local evidence checks passed: {', '.join(targets)}")
+    print(format_platform_goal_local_evidence_summary(report))
     return 0
 
 
@@ -154,7 +159,87 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=int,
         help="positive GitHub Actions run attempt that the XP accepted-evidence source artifact must bind",
     )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="print a machine-readable target-by-target local preflight parity report",
+    )
     return parser.parse_args(argv)
+
+
+def platform_goal_local_evidence_report(
+    *,
+    targets: tuple[str, ...],
+    errors: list[str],
+) -> dict[str, Any]:
+    target_errors = {target: [] for target in targets}
+    global_errors: list[str] = []
+    for error in errors:
+        matched = False
+        for target in targets:
+            if local_evidence_error_matches_target(error, target):
+                target_errors[target].append(error)
+                matched = True
+                break
+        if not matched:
+            global_errors.append(error)
+
+    blocked_by_global_errors = bool(global_errors)
+    target_results: list[dict[str, Any]] = []
+    passed_targets: list[str] = []
+    failed_targets: list[str] = []
+    for target in targets:
+        errors_for_target = target_errors[target]
+        if blocked_by_global_errors and not errors_for_target:
+            status = "blocked-by-global-error"
+        elif errors_for_target:
+            status = "failed"
+        else:
+            status = "passed"
+            passed_targets.append(target)
+        if status != "passed":
+            failed_targets.append(target)
+        target_results.append(
+            {
+                "target": target,
+                "status": status,
+                "errors": errors_for_target,
+            }
+        )
+
+    target_count = len(targets)
+    passed_target_count = len(passed_targets)
+    current_percent = (passed_target_count / target_count * 100.0) if target_count else 0.0
+    return {
+        "metric": "protected_platform_goal_local_evidence_preflight",
+        "target_count": target_count,
+        "passed_target_count": passed_target_count,
+        "failed_target_count": len(failed_targets),
+        "current_percent": round(current_percent, 1),
+        "target_percent": 100.0,
+        "gap_percent": round(100.0 - current_percent, 1),
+        "complete": target_count > 0 and passed_target_count == target_count and not global_errors,
+        "status": "local-preflight-passed" if passed_target_count == target_count and not global_errors else "missing-local-evidence",
+        "passed_targets": passed_targets,
+        "failed_targets": failed_targets,
+        "global_errors": global_errors,
+        "target_results": target_results,
+    }
+
+
+def format_platform_goal_local_evidence_summary(report: dict[str, Any]) -> str:
+    targets = ", ".join(str(target) for target in report.get("passed_targets", []))
+    return (
+        "platform goal local evidence preflight: "
+        f"{report.get('passed_target_count', 0)}/{report.get('target_count', 0)} passed "
+        f"({float(report.get('current_percent', 0.0)):.1f}%); "
+        f"status={report.get('status', 'unknown')}; targets={targets}"
+    )
+
+
+def local_evidence_error_matches_target(error: str, target: str) -> bool:
+    normalized = error.replace("\\", "/")
+    return re.search(rf"(?<![A-Za-z0-9_.-]){re.escape(target)}(?![A-Za-z0-9_.-])", normalized) is not None
 
 
 def check_platform_goal_local_evidence(
@@ -250,7 +335,7 @@ def check_linux_local_evidence(
     promotion: dict[str, Any],
     workflow_run_url: str | None,
     source_head_sha: str | None,
-    source_run_attempt: int | None,
+    source_run_attempt: object,
     strict_artifacts: bool,
     assets_dir: Path | None = None,
     builder_evidence: Path | None = None,
@@ -376,6 +461,7 @@ def check_linux_local_evidence(
                 resolved_workflow_run_url,
                 int(resolved_source_run_attempt),
                 resolved_source_head_sha,
+                builder_evidence,
             ),
             resolved_workflow_run_url,
             int(resolved_source_run_attempt),
@@ -485,16 +571,28 @@ def check_xp_local_evidence(
             strict=strict_artifacts,
         )
     )
+    if not evidence_file.is_file():
+        errors.append(f"{target} XP evidence file missing: {evidence_file}")
+        errors.extend(
+            check_xp_source_bindings(
+                target,
+                workflow_run_url=source_workflow_run_url,
+                source_head_sha=source_head_sha,
+                source_run_attempt=source_run_attempt,
+            )
+        )
+    if errors:
+        return errors
+    evidence = read_json(evidence_file)
     errors.extend(
-        check_xp_source_bindings(
+        check_xp_resolved_source_bindings(
             target,
+            evidence,
             workflow_run_url=source_workflow_run_url,
             source_head_sha=source_head_sha,
             source_run_attempt=source_run_attempt,
         )
     )
-    if not evidence_file.is_file():
-        errors.append(f"{target} XP evidence file missing: {evidence_file}")
     if errors:
         return errors
     errors.extend(
@@ -504,7 +602,6 @@ def check_xp_local_evidence(
             evidence_dir=evidence_dir,
         )
     )
-    evidence = read_json(evidence_file)
     if isinstance(evidence, dict) and evidence.get("release_tag") != release_tag:
         errors.append(
             f"{target} XP evidence release_tag must match --release-tag {release_tag}, "
@@ -527,20 +624,84 @@ def check_xp_source_bindings(
     workflow_run_url: str | None,
     source_head_sha: str | None,
     source_run_attempt: int | None,
+    workflow_label: str = "--xp-source-workflow-run-url",
+    source_label: str = "--xp-source-head-sha",
+    attempt_label: str = "--xp-source-run-attempt",
 ) -> list[str]:
     errors: list[str] = []
     if not workflow_run_url:
-        errors.append(f"{target} --xp-source-workflow-run-url is required for local XP evidence preflight")
+        errors.append(f"{target} {workflow_label} is required for local XP evidence preflight")
     elif not GITHUB_ACTIONS_RUN_RE.fullmatch(str(workflow_run_url).rstrip("/")):
-        errors.append(f"{target} --xp-source-workflow-run-url must be a GitHub Actions run URL")
+        errors.append(f"{target} {workflow_label} must be a GitHub Actions run URL")
     if not source_head_sha:
-        errors.append(f"{target} --xp-source-head-sha is required for local XP evidence preflight")
+        errors.append(f"{target} {source_label} is required for local XP evidence preflight")
     elif not GITHUB_HEAD_SHA_RE.fullmatch(str(source_head_sha)):
-        errors.append(f"{target} --xp-source-head-sha must be a 40-character lowercase Git SHA")
+        errors.append(f"{target} {source_label} must be a 40-character lowercase Git SHA")
     if source_run_attempt is None:
-        errors.append(f"{target} --xp-source-run-attempt is required for local XP evidence preflight")
-    elif source_run_attempt < 1:
-        errors.append(f"{target} --xp-source-run-attempt must be a positive integer")
+        errors.append(f"{target} {attempt_label} is required for local XP evidence preflight")
+    elif not isinstance(source_run_attempt, int) or isinstance(source_run_attempt, bool) or source_run_attempt < 1:
+        errors.append(f"{target} {attempt_label} must be a positive integer")
+    return errors
+
+
+def check_xp_resolved_source_bindings(
+    target: str,
+    evidence: dict[str, Any],
+    *,
+    workflow_run_url: str | None,
+    source_head_sha: str | None,
+    source_run_attempt: int | None,
+) -> list[str]:
+    source = evidence.get("release_source") if isinstance(evidence, dict) else None
+    if not isinstance(source, dict):
+        return [f"{target} XP evidence release_source must be an object for local XP evidence preflight"]
+
+    actual_workflow_run_url = str(source.get("workflow_run_url", "")).strip().rstrip("/")
+    actual_source_head_sha = str(source.get("head_sha", "")).strip()
+    actual_source_run_attempt = source.get("run_attempt")
+    expected_workflow_run_url = (
+        str(workflow_run_url).strip().rstrip("/") if workflow_run_url else actual_workflow_run_url
+    )
+    expected_source_head_sha = str(source_head_sha).strip() if source_head_sha else actual_source_head_sha
+    expected_source_run_attempt: object = (
+        source_run_attempt if source_run_attempt is not None else actual_source_run_attempt
+    )
+    errors = check_xp_source_bindings(
+        target,
+        workflow_run_url=expected_workflow_run_url,
+        source_head_sha=expected_source_head_sha,
+        source_run_attempt=expected_source_run_attempt,
+        workflow_label=(
+            "--xp-source-workflow-run-url"
+            if workflow_run_url
+            else "XP evidence release_source.workflow_run_url"
+        ),
+        source_label=(
+            "--xp-source-head-sha"
+            if source_head_sha
+            else "XP evidence release_source.head_sha"
+        ),
+        attempt_label=(
+            "--xp-source-run-attempt"
+            if source_run_attempt is not None
+            else "XP evidence release_source.run_attempt"
+        ),
+    )
+    if workflow_run_url and actual_workflow_run_url != expected_workflow_run_url:
+        errors.append(
+            f"{target} XP evidence release_source.workflow_run_url must match "
+            f"--xp-source-workflow-run-url {expected_workflow_run_url}, got {actual_workflow_run_url!r}"
+        )
+    if source_head_sha and actual_source_head_sha != expected_source_head_sha:
+        errors.append(
+            f"{target} XP evidence release_source.head_sha must match "
+            f"--xp-source-head-sha {expected_source_head_sha}, got {actual_source_head_sha!r}"
+        )
+    if source_run_attempt is not None and actual_source_run_attempt != expected_source_run_attempt:
+        errors.append(
+            f"{target} XP evidence release_source.run_attempt must match "
+            f"--xp-source-run-attempt {expected_source_run_attempt}, got {actual_source_run_attempt!r}"
+        )
     return errors
 
 

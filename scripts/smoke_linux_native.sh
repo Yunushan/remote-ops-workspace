@@ -10,6 +10,9 @@ TARGET=""
 WORKFLOW_RUN_URL=""
 WORKFLOW_RUN_ATTEMPT=""
 SOURCE_HEAD_SHA=""
+BUILDER_EVIDENCE=""
+SMOKE_SECURITY_UPDATE_CHANNEL="distribution-security-updates"
+SMOKE_CVE_REVIEW_REFERENCE="distribution-security-tracker-and-release-notes"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -41,6 +44,10 @@ while [[ $# -gt 0 ]]; do
       SOURCE_HEAD_SHA="$2"
       shift 2
       ;;
+    --builder-evidence)
+      BUILDER_EVIDENCE="$2"
+      shift 2
+      ;;
     *)
       echo "unknown argument: $1" >&2
       exit 2
@@ -63,6 +70,11 @@ if [[ -n "$TARGET" && -z "$WORKFLOW_RUN_ATTEMPT" ]]; then
   exit 2
 fi
 
+if [[ -n "$TARGET" && -z "$BUILDER_EVIDENCE" ]]; then
+  echo "--builder-evidence is required with --target" >&2
+  exit 2
+fi
+
 if [[ -z "$TARGET" && -n "$SOURCE_HEAD_SHA" ]]; then
   echo "--source-head-sha requires --target" >&2
   exit 2
@@ -70,6 +82,11 @@ fi
 
 if [[ -z "$TARGET" && -n "$WORKFLOW_RUN_ATTEMPT" ]]; then
   echo "--workflow-run-attempt requires --target" >&2
+  exit 2
+fi
+
+if [[ -z "$TARGET" && -n "$BUILDER_EVIDENCE" ]]; then
+  echo "--builder-evidence requires --target" >&2
   exit 2
 fi
 
@@ -83,7 +100,32 @@ if [[ -n "$WORKFLOW_RUN_ATTEMPT" && ! "$WORKFLOW_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]
   exit 2
 fi
 
+if [[ -n "$WORKFLOW_RUN_URL" && ! "$WORKFLOW_RUN_URL" =~ ^https://github\.com/[^/]+/[^/]+/actions/runs/[0-9]+/?$ ]]; then
+  echo "--workflow-run-url must be a GitHub Actions run URL" >&2
+  exit 2
+fi
+
 if [[ -n "$TARGET" ]]; then
+  REQUESTED_WORKFLOW_RUN_ID="${WORKFLOW_RUN_URL%/}"
+  REQUESTED_WORKFLOW_RUN_ID="${REQUESTED_WORKFLOW_RUN_ID##*/}"
+  REQUESTED_WORKFLOW_REPOSITORY="${WORKFLOW_RUN_URL#https://github.com/}"
+  REQUESTED_WORKFLOW_REPOSITORY="${REQUESTED_WORKFLOW_REPOSITORY%/actions/runs/*}"
+  if [[ -n "${GITHUB_SHA:-}" && "${GITHUB_SHA,,}" != "$SOURCE_HEAD_SHA" ]]; then
+    echo "target $TARGET GITHUB_SHA ${GITHUB_SHA,,} must match --source-head-sha $SOURCE_HEAD_SHA" >&2
+    exit 2
+  fi
+  if [[ -n "${GITHUB_RUN_ATTEMPT:-}" && "$GITHUB_RUN_ATTEMPT" != "$WORKFLOW_RUN_ATTEMPT" ]]; then
+    echo "target $TARGET GITHUB_RUN_ATTEMPT $GITHUB_RUN_ATTEMPT must match --workflow-run-attempt $WORKFLOW_RUN_ATTEMPT" >&2
+    exit 2
+  fi
+  if [[ -n "${GITHUB_RUN_ID:-}" && "$GITHUB_RUN_ID" != "$REQUESTED_WORKFLOW_RUN_ID" ]]; then
+    echo "target $TARGET GITHUB_RUN_ID $GITHUB_RUN_ID must match --workflow-run-url $WORKFLOW_RUN_URL" >&2
+    exit 2
+  fi
+  if [[ -n "${GITHUB_REPOSITORY:-}" && "${GITHUB_REPOSITORY,,}" != "${REQUESTED_WORKFLOW_REPOSITORY,,}" ]]; then
+    echo "target $TARGET GITHUB_REPOSITORY ${GITHUB_REPOSITORY,,} must match --workflow-run-url $WORKFLOW_RUN_URL" >&2
+    exit 2
+  fi
   case "$TARGET:$ARCH" in
     linux-i386:i386|linux-armhf:armhf)
       ;;
@@ -103,7 +145,7 @@ import ssl
 print(getattr(ssl, "OPENSSL_VERSION", ""))
 PY
 )"
-SMOKE_OPENSSL_CLI_VERSION="$(openssl version)"
+SMOKE_OPENSSL_CLI_VERSION="$(openssl version | tr '[:upper:]' '[:lower:]')"
 SMOKE_GIT_HEAD_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
 SMOKE_OBSERVED_AT_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
@@ -166,6 +208,122 @@ PY
 )"
 fi
 
+if [[ -n "$TARGET" ]]; then
+  if [[ ! -f "$BUILDER_EVIDENCE" ]]; then
+    echo "target $TARGET builder evidence file missing: $BUILDER_EVIDENCE" >&2
+    exit 2
+  fi
+  BUILDER_BINDING_TSV="$(python3 - "$BUILDER_EVIDENCE" <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+try:
+    with open(path, "r", encoding="utf-8") as handle:
+        data = json.load(handle)
+except OSError as exc:
+    raise SystemExit(f"cannot read builder evidence: {exc}")
+except json.JSONDecodeError as exc:
+    raise SystemExit(f"builder evidence is not valid JSON: {exc}")
+
+if not isinstance(data, dict):
+    raise SystemExit("builder evidence must be a JSON object")
+
+fields = (
+    ("target", ("target",)),
+    ("release_tag", ("release_tag",)),
+    ("workflow_run_url", ("workflow_run_url",)),
+    ("workflow_run_attempt", ("workflow_run_attempt",)),
+    ("source_head_sha", ("source_head_sha",)),
+    ("observed_git_head_sha", ("observed_git_head_sha",)),
+    ("host_target", ("host_identity", "target")),
+    ("host_release_tag", ("host_identity", "release_tag")),
+    ("host_workflow_run_url", ("host_identity", "workflow_run_url")),
+    ("host_workflow_run_attempt", ("host_identity", "workflow_run_attempt")),
+    ("host_label", ("host_identity", "host_label")),
+    ("evidence_run_id", ("host_identity", "evidence_run_id")),
+    ("python_ssl_openssl", ("security_patch_evidence", "python_ssl_openssl")),
+    ("openssl_cli_version", ("security_patch_evidence", "openssl_cli_version")),
+    ("security_update_channel", ("security_patch_evidence", "security_update_channel")),
+    ("cve_review_reference", ("security_patch_evidence", "cve_review_reference")),
+)
+
+for label, keys in fields:
+    value = data
+    for key in keys:
+        if not isinstance(value, dict) or key not in value:
+            raise SystemExit(f"builder evidence missing {'.'.join(keys)}")
+        value = value[key]
+    value = str(value).strip()
+    if not value:
+        raise SystemExit(f"builder evidence {'.'.join(keys)} must not be empty")
+    print(f"{label}\t{value}")
+PY
+)"
+  while IFS=$'\t' read -r key value; do
+    case "$key" in
+      target) BUILDER_TARGET="$value" ;;
+      release_tag) BUILDER_RELEASE_TAG="$value" ;;
+      workflow_run_url) BUILDER_WORKFLOW_RUN_URL="$value" ;;
+      workflow_run_attempt) BUILDER_WORKFLOW_RUN_ATTEMPT="$value" ;;
+      source_head_sha) BUILDER_SOURCE_HEAD_SHA="$value" ;;
+      observed_git_head_sha) BUILDER_OBSERVED_GIT_HEAD_SHA="$value" ;;
+      host_target) BUILDER_HOST_TARGET="$value" ;;
+      host_release_tag) BUILDER_HOST_RELEASE_TAG="$value" ;;
+      host_workflow_run_url) BUILDER_HOST_WORKFLOW_RUN_URL="$value" ;;
+      host_workflow_run_attempt) BUILDER_HOST_WORKFLOW_RUN_ATTEMPT="$value" ;;
+      host_label) SMOKE_HOST_LABEL="$value" ;;
+      evidence_run_id) SMOKE_EVIDENCE_RUN_ID="$value" ;;
+      python_ssl_openssl) BUILDER_PYTHON_SSL_OPENSSL="$value" ;;
+      openssl_cli_version) BUILDER_OPENSSL_CLI_VERSION="$value" ;;
+      security_update_channel)
+        BUILDER_SECURITY_UPDATE_CHANNEL="$value"
+        SMOKE_SECURITY_UPDATE_CHANNEL="$value"
+        ;;
+      cve_review_reference)
+        BUILDER_CVE_REVIEW_REFERENCE="$value"
+        SMOKE_CVE_REVIEW_REFERENCE="$value"
+        ;;
+    esac
+  done <<< "$BUILDER_BINDING_TSV"
+
+  require_builder_match() {
+    local label="$1"
+    local expected="$2"
+    local actual="$3"
+    if [[ "$expected" != "$actual" ]]; then
+      echo "target $TARGET builder evidence $label $expected must match smoke value $actual" >&2
+      exit 2
+    fi
+  }
+
+  require_builder_value() {
+    local label="$1"
+    local value="$2"
+    if [[ -z "$value" ]]; then
+      echo "target $TARGET builder evidence $label must be set" >&2
+      exit 2
+    fi
+  }
+
+  require_builder_match "target" "$BUILDER_TARGET" "$TARGET"
+  require_builder_match "release_tag" "$BUILDER_RELEASE_TAG" "v$VERSION"
+  require_builder_match "workflow_run_url" "$BUILDER_WORKFLOW_RUN_URL" "$WORKFLOW_RUN_URL"
+  require_builder_match "workflow_run_attempt" "$BUILDER_WORKFLOW_RUN_ATTEMPT" "$WORKFLOW_RUN_ATTEMPT"
+  require_builder_match "source_head_sha" "$BUILDER_SOURCE_HEAD_SHA" "$SOURCE_HEAD_SHA"
+  require_builder_match "observed_git_head_sha" "$BUILDER_OBSERVED_GIT_HEAD_SHA" "$SMOKE_GIT_HEAD_SHA"
+  require_builder_match "host_identity.target" "$BUILDER_HOST_TARGET" "$TARGET"
+  require_builder_match "host_identity.release_tag" "$BUILDER_HOST_RELEASE_TAG" "v$VERSION"
+  require_builder_match "host_identity.workflow_run_url" "$BUILDER_HOST_WORKFLOW_RUN_URL" "$WORKFLOW_RUN_URL"
+  require_builder_match "host_identity.workflow_run_attempt" "$BUILDER_HOST_WORKFLOW_RUN_ATTEMPT" "$WORKFLOW_RUN_ATTEMPT"
+  require_builder_match "security_patch_evidence.python_ssl_openssl" "$BUILDER_PYTHON_SSL_OPENSSL" "$SMOKE_PYTHON_SSL_OPENSSL"
+  require_builder_match "security_patch_evidence.openssl_cli_version" "$BUILDER_OPENSSL_CLI_VERSION" "$SMOKE_OPENSSL_CLI_VERSION"
+  require_builder_value "security_patch_evidence.security_update_channel" "$BUILDER_SECURITY_UPDATE_CHANNEL"
+  require_builder_value "security_patch_evidence.cve_review_reference" "$BUILDER_CVE_REVIEW_REFERENCE"
+  require_builder_match "security_patch_evidence.security_update_channel" "$BUILDER_SECURITY_UPDATE_CHANNEL" "$SMOKE_SECURITY_UPDATE_CHANNEL"
+  require_builder_match "security_patch_evidence.cve_review_reference" "$BUILDER_CVE_REVIEW_REFERENCE" "$SMOKE_CVE_REVIEW_REFERENCE"
+fi
+
 case "$ARCH" in
   x86_64)
     DEB_ARCH="amd64"
@@ -215,7 +373,7 @@ done
 
 SMOKE_COMMAND="bash scripts/smoke_linux_native.sh --arch $ARCH --dist $DIST"
 if [[ -n "$TARGET" ]]; then
-  SMOKE_COMMAND="$SMOKE_COMMAND --target $TARGET --workflow-run-url $WORKFLOW_RUN_URL --workflow-run-attempt $WORKFLOW_RUN_ATTEMPT --source-head-sha $SOURCE_HEAD_SHA"
+  SMOKE_COMMAND="$SMOKE_COMMAND --target $TARGET --workflow-run-url $WORKFLOW_RUN_URL --workflow-run-attempt $WORKFLOW_RUN_ATTEMPT --source-head-sha $SOURCE_HEAD_SHA --builder-evidence $BUILDER_EVIDENCE"
 fi
 
 echo "native installer smoke command: $SMOKE_COMMAND"
@@ -227,10 +385,10 @@ if [[ -n "$TARGET" ]]; then
   echo "native installer smoke workflow run attempt: $WORKFLOW_RUN_ATTEMPT"
   echo "native installer smoke source head sha: $SOURCE_HEAD_SHA"
   echo "native installer smoke git head sha: $SMOKE_GIT_HEAD_SHA"
-  SMOKE_WORKFLOW_RUN_ID="${WORKFLOW_RUN_URL%/}"
-  SMOKE_WORKFLOW_RUN_ID="${SMOKE_WORKFLOW_RUN_ID##*/}"
-  echo "native installer smoke host label: ${TARGET}-builder"
-  echo "native installer smoke evidence run id: ${TARGET}-${VERSION//./-}-run-${SMOKE_WORKFLOW_RUN_ID}"
+  SMOKE_WORKFLOW_RUN_ID="$REQUESTED_WORKFLOW_RUN_ID"
+  echo "native installer smoke builder evidence: $BUILDER_EVIDENCE"
+  echo "native installer smoke host label: $SMOKE_HOST_LABEL"
+  echo "native installer smoke evidence run id: $SMOKE_EVIDENCE_RUN_ID"
   echo "native installer smoke observed at utc: $SMOKE_OBSERVED_AT_UTC"
 fi
 echo "native installer smoke uname machine: $SMOKE_UNAME_MACHINE"
@@ -238,6 +396,8 @@ echo "native installer smoke dpkg architecture: $SMOKE_DPKG_ARCH"
 echo "native installer smoke userland bits: $SMOKE_USERLAND_BITS"
 echo "native installer smoke python ssl openssl: $SMOKE_PYTHON_SSL_OPENSSL"
 echo "native installer smoke openssl cli version: $SMOKE_OPENSSL_CLI_VERSION"
+echo "native installer smoke security update channel: $SMOKE_SECURITY_UPDATE_CHANNEL"
+echo "native installer smoke CVE review reference: $SMOKE_CVE_REVIEW_REFERENCE"
 echo "native installer smoke TLS minimum modern profiles: TLS 1.2"
 echo "native installer smoke TLS preferred modern profiles: TLS 1.3"
 echo "native installer smoke legacy compatibility profile: isolated-opt-in"

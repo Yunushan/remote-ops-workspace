@@ -202,6 +202,19 @@ ACCEPTED_EVIDENCE_SECURITY_PATCH_EVIDENCE = {
     "legacy_compatibility_profile": "isolated-opt-in",
     "cve_patch_reviewed": True,
 }
+ACCEPTED_EVIDENCE_SECURITY_PATCH_PROVENANCE_FIELDS = (
+    "security_update_channel",
+    "cve_review_reference",
+)
+FORBIDDEN_SECURITY_PROVENANCE_MARKERS = (
+    "<",
+    ">",
+    "dummy",
+    "placeholder",
+    "replace",
+    "test-",
+    "todo",
+)
 ACCEPTED_EVIDENCE_REVIEW_BUNDLE_TYPES = {
     "linux-i386": "extended-linux-native-evidence",
     "linux-armhf": "extended-linux-native-evidence",
@@ -1104,6 +1117,9 @@ def _protected_platform_goal_parity(evidence_registry: dict[str, Any] | None) ->
             target: release_source_workflows[target]
             for target in sorted(release_source_workflows)
         },
+        "release_import_dry_run_command": _protected_platform_release_import_dry_run_command(
+            release_tag or "v<project.version>"
+        ),
         "release_source_provenance_complete": release_source_provenance_complete,
         "release_consistent": release_consistent,
         "release_repository_consistent": release_repository_consistent,
@@ -1167,12 +1183,14 @@ def _protected_platform_goal_target_requirements(
                 target,
                 requirement_release_tag,
             ),
+            "workflow_dispatch_command": _protected_platform_workflow_dispatch_command(
+                target,
+                requirement_release_tag,
+            ),
         }
-        builder_or_host = requirements.get("workflow_runner_evidence") or requirements.get(
-            "xp_vm_or_self_hosted_runner"
-        )
+        builder_or_host = _protected_platform_builder_or_host_evidence(target, requirements)
         if builder_or_host:
-            row["builder_or_host_evidence"] = str(builder_or_host)
+            row["builder_or_host_evidence"] = builder_or_host
         security_requirements = _requirement_list(requirements.get("security_requirements", []))
         if security_requirements:
             row["security_requirements"] = security_requirements
@@ -1198,6 +1216,38 @@ def _protected_platform_release_asset_source_required(
     }
 
 
+def _protected_platform_workflow_dispatch_command(target: str, release_tag: str) -> str:
+    if target.startswith("linux-"):
+        return (
+            "gh workflow run extended-platform-evidence.yml --repo <owner>/<repo> "
+            "--ref <github-actions-head-sha-or-branch> "
+            f"-f target={target} "
+            f"-f release_tag={release_tag} "
+            "-f release_asset_base_url=<github-release-download-url>"
+        )
+    return (
+        "gh workflow run xp-native-evidence.yml --repo <owner>/<repo> "
+        "--ref <github-actions-head-sha-or-branch> "
+        f"-f target={target} "
+        f"-f release_tag={release_tag} "
+        "-f release_asset_base_url=<github-release-download-url> "
+        "-f assets_dir=<target-release-artifact-dir> "
+        "-f evidence_file=<target-release-evidence.json> "
+        "-f evidence_dir=<target-release-evidence-dir>"
+    )
+
+
+def _protected_platform_release_import_dry_run_command(release_tag: str) -> str:
+    return (
+        "python scripts/import_platform_evidence_artifacts.py "
+        f"--release-tag {release_tag} "
+        "--require-goal-targets "
+        "--out-dir <release-assets-dir> "
+        "--dry-run "
+        "--verify-source-run"
+    )
+
+
 def _platform_parity_promotion_config() -> dict[str, Any]:
     path = repo_root() / "configs" / "platform_parity_promotion.json"
     try:
@@ -1219,6 +1269,19 @@ def _protected_platform_support_boundary(target: str, entry: dict[str, Any]) -> 
         f"{target} remains Windows XP native-host {current}; XP remote-target "
         "coverage does not imply native-host readiness."
     )
+
+
+def _protected_platform_builder_or_host_evidence(
+    target: str,
+    requirements: dict[str, Any],
+) -> str:
+    if target.startswith("linux-"):
+        return str(requirements.get("workflow_runner_evidence", ""))
+    host = str(requirements.get("xp_vm_or_self_hosted_runner", "")).strip()
+    collector = str(requirements.get("xp_evidence_collector_runner", "")).strip()
+    if host and collector:
+        return f"{host}; collector: {collector}"
+    return host or collector
 
 
 def _requirement_list(value: Any) -> list[str]:
@@ -1491,7 +1554,8 @@ def _has_xp_local_evidence_preflight_command(
 
 
 def _command_values(command: str, flag: str) -> list[str]:
-    return re.findall(rf"(?:^|\s){re.escape(flag)}\s+(\S+)(?=\s|$)", command)
+    pattern = rf'(?:^|\s){re.escape(flag)}\s+(?:"([^"]+)"|(\S+))(?=\s|$)'
+    return [quoted or bare for quoted, bare in re.findall(pattern, command)]
 
 
 def _command_flag_count(command: str, flag: str) -> int:
@@ -1710,6 +1774,9 @@ def _is_linux_accepted_evidence_entry(item: dict[str, Any], target: str) -> bool
         return False
     if item.get("native_build_command") != LINUX_ACCEPTED_EVIDENCE_BUILD_COMMANDS[target]:
         return False
+    preflight_command = str(item.get("local_evidence_preflight_command", ""))
+    builder_evidence_paths = _command_values(preflight_command, "--linux-builder-evidence")
+    builder_evidence_path = builder_evidence_paths[0] if len(builder_evidence_paths) == 1 else ""
     source = item.get("release_asset_source")
     source_head_sha = str(source.get("head_sha", "")).strip() if isinstance(source, dict) else ""
     source_run_attempt = source.get("run_attempt") if isinstance(source, dict) else ""
@@ -1717,9 +1784,10 @@ def _is_linux_accepted_evidence_entry(item: dict[str, Any], target: str) -> bool
         f"{LINUX_ACCEPTED_EVIDENCE_SMOKE_COMMANDS[target]} "
         f"--workflow-run-url {item.get('workflow_run_url')} "
         f"--workflow-run-attempt {source_run_attempt} "
-        f"--source-head-sha {source_head_sha}"
+        f"--source-head-sha {source_head_sha} "
+        f"--builder-evidence {builder_evidence_path}"
     )
-    if item.get("native_smoke_command") != expected_smoke:
+    if len(builder_evidence_paths) != 1 or item.get("native_smoke_command") != expected_smoke:
         return False
     labels = {str(label) for label in item.get("runner_labels", [])}
     if not LINUX_ACCEPTED_EVIDENCE_LABELS[target].issubset(labels):
@@ -1842,6 +1910,14 @@ def _has_linux_builder_identity_binding(item: dict[str, Any], target: str) -> bo
     if not isinstance(source, dict) or raw_identity.get("source_head_sha") != source.get("head_sha"):
         return False
     if raw_identity.get("observed_git_head_sha") != source.get("head_sha"):
+        return False
+    workflow_repository = _github_actions_repository(source.get("workflow_run_url"))
+    expected_workflow_ref = (
+        f"{workflow_repository}/{LINUX_ACCEPTED_EVIDENCE_WORKFLOW}@{source.get('head_sha')}"
+    )
+    if str(raw_identity.get("workflow_ref", "")).lower() != expected_workflow_ref.lower():
+        return False
+    if raw_identity.get("workflow_sha") != source.get("head_sha"):
         return False
     if raw_identity.get("git_worktree_clean") is not True:
         return False
@@ -2156,6 +2232,7 @@ def _has_xp_evidence_summary(item: dict[str, Any], target: str) -> bool:
         smoke_evidence_files,
         summary.get("host_identity"),
         release_source,
+        summary.get("security"),
         target,
         str(summary.get("release_tag", "")),
     )
@@ -2249,6 +2326,7 @@ def _has_xp_smoke_commands(
     raw_files: Any,
     raw_host_identity: Any,
     raw_release_source: Any,
+    raw_security: Any,
     target: str,
     release_tag: str,
 ) -> bool:
@@ -2276,6 +2354,7 @@ def _has_xp_smoke_commands(
             evidence_files.get(smoke_id, ""),
             raw_host_identity,
             raw_release_source,
+            raw_security,
         )
         for smoke_id, command in commands.items()
     )
@@ -2289,6 +2368,7 @@ def _xp_smoke_command_bound(
     evidence_file: str,
     host_identity: dict[str, Any],
     release_source: dict[str, Any],
+    security: Any,
 ) -> bool:
     expected_values = {
         "--target": target,
@@ -2303,8 +2383,16 @@ def _xp_smoke_command_bound(
         "--source-head-sha": str(release_source.get("head_sha", "")),
         "--source-run-attempt": str(release_source.get("run_attempt", "")),
     }
+    if smoke_id in {"legacy_crypto_profile_scoped", "modern_defaults_unchanged"}:
+        patch_evidence = security.get("patch_evidence") if isinstance(security, dict) else None
+        if not isinstance(patch_evidence, dict):
+            return False
+        expected_values["--security-update-channel"] = str(
+            patch_evidence.get("security_update_channel", "")
+        ).strip()
+        expected_values["--cve-review-reference"] = str(patch_evidence.get("cve_review_reference", "")).strip()
     return all(
-        re.findall(rf"(?:^|\s){re.escape(flag)}\s+(\S+)(?=\s|$)", command) == [expected]
+        expected and _command_values(command, flag) == [expected]
         for flag, expected in expected_values.items()
     )
 
@@ -2315,7 +2403,16 @@ def _has_security_patch_evidence(raw_evidence: Any) -> bool:
     return all(
         raw_evidence.get(key) == expected
         for key, expected in ACCEPTED_EVIDENCE_SECURITY_PATCH_EVIDENCE.items()
+    ) and all(
+        _is_concrete_security_provenance(str(raw_evidence.get(key, "")))
+        for key in ACCEPTED_EVIDENCE_SECURITY_PATCH_PROVENANCE_FIELDS
     )
+
+
+def _is_concrete_security_provenance(value: str) -> bool:
+    stripped = value.strip()
+    lowered = stripped.lower()
+    return bool(stripped) and not any(marker in lowered for marker in FORBIDDEN_SECURITY_PROVENANCE_MARKERS)
 
 
 def _has_linux_security_patch_evidence(raw_evidence: Any) -> bool:

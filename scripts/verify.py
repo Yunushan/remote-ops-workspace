@@ -164,22 +164,6 @@ def build_steps(
         *(
             [
                 VerifyStep(
-                    "protected platform goal parity gate",
-                    [
-                        python,
-                        "scripts/check_protected_platform_goal.py",
-                        "--require-complete",
-                        *(["--release-tag", release_tag] if release_tag else []),
-                    ],
-                    env=_source_env(),
-                )
-            ]
-            if require_platform_goal_targets
-            else []
-        ),
-        *(
-            [
-                VerifyStep(
                     "platform verified evidence goal gate",
                     [
                         python,
@@ -246,11 +230,29 @@ def build_steps(
                         str(platform_review_bundle_dir),
                         *(["--require-goal-targets"] if require_platform_goal_targets else []),
                         *(["--release-tag", release_tag] if release_tag else []),
+                        *(["--require-final-record-assets"] if require_platform_goal_targets else []),
                     ],
                     env=_source_env(),
                 )
             ]
             if platform_review_bundle_dir is not None
+            else []
+        ),
+        *(
+            [
+                VerifyStep(
+                    "protected platform goal parity gate",
+                    [
+                        python,
+                        "scripts/check_protected_platform_goal.py",
+                        "--require-complete",
+                        *(["--release-tag", release_tag] if release_tag else []),
+                        *(["--assets-dir", str(release_assets_dir)] if release_assets_dir is not None else []),
+                    ],
+                    env=_source_env(),
+                )
+            ]
+            if require_platform_goal_targets
             else []
         ),
         VerifyStep(

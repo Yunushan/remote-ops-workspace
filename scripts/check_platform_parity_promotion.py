@@ -37,6 +37,7 @@ LINUX_SECURITY_REQUIREMENTS = (
 )
 LINUX_SMOKE_EVIDENCE_REQUIREMENTS = (
     "capture native smoke log with target, release tag, workflow run URL, workflow run attempt, source head SHA and observed git HEAD SHA",
+    "consume matching builder identity evidence during native smoke and bind host identity plus security provenance from it",
     "bind sanitized host label, deterministic evidence run ID and observed-at UTC timestamp into the native smoke log",
     "prove 32-bit Linux userland and target architecture on the builder",
     "bind DEB, RPM and AppImage SHA-256 lines into the native smoke log",
@@ -48,6 +49,28 @@ LINUX_SMOKE_EVIDENCE_REQUIREMENTS = (
 XP_SECURITY_REQUIREMENTS = (
     "legacy TLS, SSH, and RDP compatibility must remain profile-scoped opt-in",
     "modern Windows 10/11, Linux, and macOS defaults must keep hardened crypto",
+)
+XP_SMOKE_EVIDENCE_REQUIREMENTS = (
+    "launch CLI without unsupported Windows APIs",
+    "open the selected GUI or legacy host UI without the current PyQt6 stack",
+    "connect to loopback/local profile dry-run",
+    "validate artifact manifest and SHA256SUMS on the Windows XP host before collector upload",
+    "prove legacy crypto remains profile-scoped opt-in",
+    "prove modern defaults remain unchanged",
+)
+XP_HOST_EVIDENCE_REQUIREMENTS = {
+    "windows-xp-native-x86": (
+        "Windows XP SP3 32-bit VM or physical host running "
+        "scripts/xp_smoke_runner.cmd and artifact validation"
+    ),
+    "windows-xp-native-x64": (
+        "Windows XP Professional x64 Edition SP2 VM or physical host running "
+        "scripts/xp_smoke_runner.cmd and artifact validation"
+    ),
+}
+XP_EVIDENCE_COLLECTOR_REQUIREMENT = (
+    "modern self-hosted xp-evidence collector with Python 3.12 and GitHub Actions support; "
+    "validates staged XP host proof but does not replace XP host smoke evidence"
 )
 
 LINUX_REQUIRED_PROMOTION_KEYS = {
@@ -74,6 +97,7 @@ LINUX_REQUIRED_PROMOTION_KEYS = {
 XP_REQUIRED_PROMOTION_KEYS = {
     "separate_legacy_toolchain",
     "xp_vm_or_self_hosted_runner",
+    "xp_evidence_collector_runner",
     "release_source_workflow",
     "native_artifacts",
     "artifact_validation_command",
@@ -403,6 +427,13 @@ def check_xp_promotion_entry(
         return errors
     if requirements.get("separate_legacy_toolchain") is not True:
         errors.append(f"{label} promotion requires separate_legacy_toolchain=true")
+    expected_xp_host = XP_HOST_EVIDENCE_REQUIREMENTS.get(label)
+    if requirements.get("xp_vm_or_self_hosted_runner") != expected_xp_host:
+        errors.append(f"{label} xp_vm_or_self_hosted_runner must be {expected_xp_host}")
+    if requirements.get("xp_evidence_collector_runner") != XP_EVIDENCE_COLLECTOR_REQUIREMENT:
+        errors.append(
+            f"{label} xp_evidence_collector_runner must be {XP_EVIDENCE_COLLECTOR_REQUIREMENT}"
+        )
     source_workflow = str(requirements.get("release_source_workflow", ""))
     if source_workflow != ".github/workflows/xp-native-evidence.yml":
         errors.append(f"{label} release_source_workflow must be .github/workflows/xp-native-evidence.yml")
@@ -419,9 +450,7 @@ def check_xp_promotion_entry(
                 errors.append(f"{label} artifact must include architecture {expected_arch}: {artifact}")
             if "<project.version>" not in artifact_text:
                 errors.append(f"{label} artifact must use <project.version> placeholder: {artifact}")
-    smoke_evidence = requirements.get("smoke_evidence")
-    if not isinstance(smoke_evidence, list) or not smoke_evidence:
-        errors.append(f"{label} promotion requires non-empty smoke_evidence")
+    errors.extend(check_xp_smoke_evidence_requirements(label, requirements))
     errors.extend(check_security_requirements(label, requirements, XP_SECURITY_REQUIREMENTS))
     errors.extend(check_artifact_validation_command(label, requirements))
     errors.extend(check_xp_native_evidence_validation_command(label, requirements))
@@ -459,6 +488,28 @@ def check_linux_smoke_evidence_requirements(
     if duplicate_values:
         errors.append(f"{label} smoke_evidence contains duplicates: {duplicate_values}")
     missing = [item for item in LINUX_SMOKE_EVIDENCE_REQUIREMENTS if item not in values]
+    if missing:
+        errors.append(f"{label} smoke_evidence missing: {missing}")
+    unexpected = sorted(set(values) - expected)
+    if unexpected:
+        errors.append(f"{label} smoke_evidence has unexpected items: {unexpected}")
+    return errors
+
+
+def check_xp_smoke_evidence_requirements(
+    label: str,
+    requirements: dict[str, Any],
+) -> list[str]:
+    raw_requirements = requirements.get("smoke_evidence")
+    if not isinstance(raw_requirements, list) or not raw_requirements:
+        return [f"{label} promotion requires non-empty smoke_evidence"]
+    values = [str(item) for item in raw_requirements]
+    expected = set(XP_SMOKE_EVIDENCE_REQUIREMENTS)
+    errors: list[str] = []
+    duplicate_values = sorted({value for value in values if values.count(value) > 1})
+    if duplicate_values:
+        errors.append(f"{label} smoke_evidence contains duplicates: {duplicate_values}")
+    missing = [item for item in XP_SMOKE_EVIDENCE_REQUIREMENTS if item not in values]
     if missing:
         errors.append(f"{label} smoke_evidence missing: {missing}")
     unexpected = sorted(set(values) - expected)
@@ -639,6 +690,7 @@ def check_finalized_evidence_requirements(
         "--bundle-manifest",
         "--bundle-archive",
         "--bundle-sha256s",
+        "--out",
         "--append-registry",
     ):
         if required_arg not in final:
@@ -667,6 +719,12 @@ def check_finalized_evidence_requirements(
         expected_path = f"{expected_out_dir}/{filename}"
         if expected_path not in final:
             errors.append(f"{label} finalized_evidence_record_command must bind review bundle file {expected_path}")
+    expected_final_record = f"--out {expected_out_dir}/platform-verified-evidence-{label}-final.json"
+    if expected_final_record not in final:
+        errors.append(
+            f"{label} finalized_evidence_record_command must write finalized record next to review bundle with "
+            f"{expected_final_record}"
+        )
     return errors
 
 

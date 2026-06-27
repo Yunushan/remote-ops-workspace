@@ -29,6 +29,10 @@ PLATFORM_GOAL_TARGETS = (
     "windows-xp-native-x86",
     "windows-xp-native-x64",
 )
+PUBLISH_PROTECTED_PLATFORM_ASSET_COMMAND = (
+    'python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" '
+    "--require-complete --assets-dir release-assets"
+)
 FINAL_ACCEPTED_RECORD_RE = re.compile(
     r"^platform-verified-evidence-(linux-i386|linux-armhf|windows-xp-native-x86|windows-xp-native-x64)-final\.json$"
 )
@@ -177,6 +181,7 @@ def check_publish_contract(
     required_snippets = {
         "actions/download-artifact@v8": "artifact download",
         "merge-multiple: true": "merged downloaded artifact directory",
+        PUBLISH_PROTECTED_PLATFORM_ASSET_COMMAND: "protected platform release asset gate",
         "python scripts/check_release_publish_assets.py --assets-dir release-assets --tag": "publish asset validation",
         "--require-platform-goal-targets": "protected platform goal publish gate",
         "softprops/action-gh-release@v3": "GitHub release upload",
@@ -185,8 +190,13 @@ def check_publish_contract(
     for snippet, label in required_snippets.items():
         if snippet not in publish_block:
             errors.append(f"publish job missing {label}: {snippet}")
+    protected_gate_index = publish_block.find(PUBLISH_PROTECTED_PLATFORM_ASSET_COMMAND)
     validate_index = publish_block.find("scripts/check_release_publish_assets.py")
     upload_index = publish_block.find("softprops/action-gh-release")
+    if protected_gate_index < 0 or validate_index < 0 or protected_gate_index > validate_index:
+        errors.append("protected platform release asset gate must run before publish asset validation")
+    if protected_gate_index < 0 or upload_index < 0 or protected_gate_index > upload_index:
+        errors.append("protected platform release asset gate must run before GitHub release upload")
     if validate_index < 0 or upload_index < 0 or validate_index > upload_index:
         errors.append("publish asset validation must run before GitHub release upload")
     if "- accepted-platform-evidence-assets" not in publish_block:
@@ -201,6 +211,7 @@ def check_platform_evidence_import_job(workflow: str) -> list[str]:
     errors: list[str] = []
     required_snippets = {
         "needs: release-preflight": "release preflight dependency",
+        "timeout-minutes: 20": "bounded platform evidence import timeout",
         "actions: read": "Actions artifact read permission",
         "contents: read": "read-only repository permission",
         "uses: actions/checkout@v6": "repository checkout",
@@ -210,6 +221,7 @@ def check_platform_evidence_import_job(workflow: str) -> list[str]:
         "python scripts/import_platform_evidence_artifacts.py --release-tag": "platform evidence artifact importer",
         "--require-goal-targets": "strict protected target import",
         "--out-dir release-assets": "release asset import directory",
+        "--verify-source-run": "source run metadata verification",
         "python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets": (
             "imported platform review bundle validator"
         ),
@@ -218,6 +230,8 @@ def check_platform_evidence_import_job(workflow: str) -> list[str]:
         "name: release-platform-evidence-assets": "platform evidence release artifact name",
         "path: release-assets/*": "platform evidence release artifact path",
         "if-no-files-found: error": "missing imported asset failure",
+        "include-hidden-files: false": "imported asset hidden file exclusion",
+        "retention-days: 90": "imported asset retention window",
     }
     for snippet, label in required_snippets.items():
         if snippet not in block:

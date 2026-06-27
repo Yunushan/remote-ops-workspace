@@ -33,6 +33,8 @@ jobs:
     if: ${{ inputs.target == 'linux-i386' }}
     runs-on: [self-hosted, linux, i386]
     timeout-minutes: 90
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -66,7 +68,7 @@ jobs:
       - name: Smoke Linux i386 native artifacts
         run: |
           set -o pipefail
-          bash scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux --target linux-i386 --workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" --workflow-run-attempt "${{ github.run_attempt }}" --source-head-sha "${{ github.sha }}" 2>&1 | tee platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/native-smoke-linux-i386.log
+          bash scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux --target linux-i386 --workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" --workflow-run-attempt "${{ github.run_attempt }}" --source-head-sha "${{ github.sha }}" --builder-evidence platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/builder-identity-linux-i386.json 2>&1 | tee platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/native-smoke-linux-i386.log
       - name: Stage Linux i386 target artifacts
         run: |
           mkdir -p platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/artifacts
@@ -146,11 +148,15 @@ jobs:
           name: extended-linux-evidence-linux-i386-${{ inputs.release_tag }}
           path: linux-evidence-upload/*
           if-no-files-found: error
+          include-hidden-files: false
+          retention-days: 90
 
   linux-armhf-native-evidence:
     if: ${{ inputs.target == 'linux-armhf' }}
     runs-on: [self-hosted, linux, armhf]
     timeout-minutes: 90
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -184,7 +190,7 @@ jobs:
       - name: Smoke Linux armhf native artifacts
         run: |
           set -o pipefail
-          bash scripts/smoke_linux_native.sh --arch armhf --dist native-dist/linux --target linux-armhf --workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" --workflow-run-attempt "${{ github.run_attempt }}" --source-head-sha "${{ github.sha }}" 2>&1 | tee platform-evidence-staging/linux-armhf/${{ inputs.release_tag }}/native-smoke-linux-armhf.log
+          bash scripts/smoke_linux_native.sh --arch armhf --dist native-dist/linux --target linux-armhf --workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" --workflow-run-attempt "${{ github.run_attempt }}" --source-head-sha "${{ github.sha }}" --builder-evidence platform-evidence-staging/linux-armhf/${{ inputs.release_tag }}/builder-identity-linux-armhf.json 2>&1 | tee platform-evidence-staging/linux-armhf/${{ inputs.release_tag }}/native-smoke-linux-armhf.log
       - name: Stage Linux armhf target artifacts
         run: |
           mkdir -p platform-evidence-staging/linux-armhf/${{ inputs.release_tag }}/artifacts
@@ -264,3 +270,5 @@ jobs:
           name: extended-linux-evidence-linux-armhf-${{ inputs.release_tag }}
           path: linux-evidence-upload/*
           if-no-files-found: error
+          include-hidden-files: false
+          retention-days: 90

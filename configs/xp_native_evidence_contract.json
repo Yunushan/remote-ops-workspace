@@ -53,7 +53,9 @@
     "--observed-at-utc <observed_at_utc>",
     "--source-workflow-run-url <github-actions-run-url>",
     "--source-head-sha <github-actions-head-sha>",
-    "--source-run-attempt <github-actions-run-attempt>"
+    "--source-run-attempt <github-actions-run-attempt>",
+    "--security-update-channel <security_update_channel>",
+    "--cve-review-reference <cve_review_reference>"
   ],
   "required_smoke_command_prefix": "scripts/xp_smoke_runner.cmd",
   "smoke_evidence_root": "Evidence files are resolved relative to the evidence JSON directory unless --evidence-dir is provided.",
@@ -78,6 +80,13 @@
     "xp smoke source workflow run: <github-actions-run-url>",
     "xp smoke source head sha: <github-actions-head-sha>",
     "xp smoke source run attempt: <github-actions-run-attempt>"
+  ],
+  "required_artifact_manifest_smoke_evidence_lines": [
+    "xp smoke artifact file: <required native artifact>",
+    "xp smoke artifact file: <required manifest>",
+    "xp smoke artifact file: <required SHA256SUMS>",
+    "xp smoke artifact manifest validated: true",
+    "xp smoke artifact sha256s validated: true"
   ],
   "required_security_smoke_evidence_lines": {
     "legacy_crypto_profile_scoped": [
@@ -120,6 +129,18 @@
     "toolchain"
   ],
   "host_identity_policy": "Use a sanitized lab host label and evidence run id. Do not record real usernames, passwords, hostnames containing personal names, private keys, tokens, or endpoint credentials.",
+  "forbidden_host_identity_fields": [
+    "computer_name",
+    "computername",
+    "domain",
+    "fqdn",
+    "host_name",
+    "hostname",
+    "login",
+    "runner_name",
+    "user",
+    "username"
+  ],
   "required_artifact_list_exact": true,
   "artifact_validation_tag_must_match_release_tag": true,
   "required_security_flags": {
@@ -133,6 +154,14 @@
     "legacy_compatibility_profile": "isolated-opt-in",
     "cve_patch_reviewed": true
   },
+  "required_security_patch_provenance_fields": [
+    "security_update_channel",
+    "cve_review_reference"
+  ],
+  "required_security_smoke_provenance_fields": [
+    "security_update_channel",
+    "cve_review_reference"
+  ],
   "required_toolchain_flags": {
     "separate_legacy_toolchain": true,
     "current_python_pyqt6_stack": false

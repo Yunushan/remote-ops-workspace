@@ -292,7 +292,10 @@ record binds the review-bundle manifest, archive and SHA-256 sidecar. Linux
 accepted records include builder identity JSON plus its matching SHA-256,
 sanitized target-scoped host identity and workflow dispatch input binding.
 Windows XP accepted records include sanitized host identity SHA-256 and require
-each smoke command/file to bind the same host label and evidence run ID.
+each smoke command/file to bind the same host label and evidence run ID; the
+XP smoke proof is captured on real XP x86/x64 hosts with
+`scripts/xp_smoke_runner.cmd`, then packaged by a modern self-hosted
+`xp-evidence` collector rather than treating the collector as the XP host.
 `python scripts/check_platform_verified_evidence.py`
 validates the registry in finalized-only mode and rejects
 `--allow-unfinalized-candidates`; candidate validation stays inside the
@@ -306,13 +309,15 @@ same release source head SHA and a positive release source run attempt in each r
 mixed-repository or mixed-source-head accepted records remain visible as aggregate evidence,
 but the protected goal parity block stays incomplete until one release source has all four targets. The release/verifier promotion
 gate is `python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> --release-assets-dir <release-assets-dir>`,
-which also runs `python scripts/check_release_publish_assets.py --assets-dir <release-assets-dir> --tag v<project.version> --require-platform-goal-targets`
+which also runs `python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-complete --assets-dir <release-assets-dir>`
+and `python scripts/check_release_publish_assets.py --assets-dir <release-assets-dir> --tag v<project.version> --require-platform-goal-targets`
 and must fail until the same four records are finalized and accepted from that same release source. Today Linux i386 and
 armhf remain script-supported at 70.0% until matching release builders, default
 release matrix entries, smoke evidence, checksum sidecars and native manifests
 exist. Windows XP native-host readiness remains 25.0% until a separate
-XP-capable legacy toolchain, x86/x64 XP VM smoke evidence, native artifact
-evidence, and a passing `python scripts/check_xp_native_evidence.py --evidence <evidence.json> --assets-dir <artifact-dir>` bundle exist; XP remote-target coverage stays 100.0% through isolated legacy-profile opt-ins.
+XP-capable legacy toolchain, x86/x64 XP host smoke evidence captured with
+`scripts/xp_smoke_runner.cmd`, native artifact evidence, modern `xp-evidence`
+collector packaging, and a passing `python scripts/check_xp_native_evidence.py --evidence <evidence.json> --assets-dir <artifact-dir>` bundle exist; XP remote-target coverage stays 100.0% through isolated legacy-profile opt-ins.
 
 Run:
 
@@ -526,6 +531,9 @@ The release workflow also starts with a `release-preflight` job that runs
 `python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag <tag>`
 and `python scripts/check_repository_cleanup.py --require-clean`; source, native
 `accepted-platform-evidence-assets` and publish jobs all depend on that gate.
+Windows XP proof for those accepted records is captured on real XP hosts with
+`scripts/xp_smoke_runner.cmd`; the modern self-hosted `xp-evidence` collector
+packages and validates staged evidence, but is not counted as the XP host.
 The `accepted-platform-evidence-assets` job runs
 `python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run`
 to copy only same-tag, same-repository, workflow-file, source-head and
@@ -535,7 +543,8 @@ review-bundle size/SHA-256 values against the finalized accepted record,
 then runs
 `python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag <tag> --require-final-record-assets`
 against the imported review bundles and finalized public record JSON files
-before upload. That import job keeps only
+before upload. The imported platform evidence artifact upload fails when empty,
+excludes hidden files and keeps a 90-day retention window. That import job keeps only
 read permissions for repository contents and Actions artifacts, and source and
 native release jobs wait for it before building. Linux i386, Linux armhf,
 windows-xp-native-x86 and windows-xp-native-x64 require finalized accepted
@@ -544,8 +553,11 @@ target-specific release source workflow file, release source head SHA and
 per-record release source run attempt before any 100%
 platform-readiness or native-host parity claim.
 Before upload, the publish job runs
+`python scripts/check_protected_platform_goal.py --release-tag <tag> --require-complete --assets-dir release-assets`
+and then
 `python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --require-platform-goal-targets`
-to verify the downloaded asset set, checksum sidecars and release manifest
+to verify the downloaded asset set, finalized protected-platform records,
+review bundles, native artifacts, checksum sidecars and release manifest
 against `configs/release_matrix.json`, `configs/platform_verified_evidence.json`
 and the accepted review-bundle hashes; the same check validates
 `configs/mobaxterm_parity_evidence.json`, and

@@ -36,8 +36,8 @@ def test_platform_promotion_runbook_rejects_missing_blocker() -> None:
 def test_platform_promotion_runbook_requires_protected_goal_gate() -> None:
     checker = _load_checker()
     text = Path("docs/PLATFORM_PROMOTION_RUNBOOK.md").read_text(encoding="utf-8").replace(
-        "python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-complete\n",
-        "",
+        "python scripts/check_protected_platform_goal.py",
+        "python scripts/removed_protected_platform_goal.py",
     )
 
     errors = checker.check_platform_promotion_runbook(runbook_text=text)
@@ -127,6 +127,22 @@ def test_platform_promotion_runbook_requires_staged_review_bundle_refinalization
     assert any("re-finalize to the accepted record before upload" in error for error in errors)
 
 
+def test_platform_promotion_runbook_requires_final_record_asset_bundle_validation() -> None:
+    checker = _load_checker()
+    command = (
+        "python scripts/check_platform_review_bundle_artifacts.py --bundle-dir <bundle-dir> "
+        "--require-goal-targets --release-tag v<project.version> --require-final-record-assets"
+    )
+    text = Path("docs/PLATFORM_PROMOTION_RUNBOOK.md").read_text(encoding="utf-8").replace(
+        command,
+        command.replace(" --require-final-record-assets", ""),
+    )
+
+    errors = checker.check_platform_promotion_runbook(runbook_text=text)
+
+    assert any("--require-final-record-assets" in error for error in errors)
+
+
 def test_platform_promotion_runbook_requires_target_release_scoped_bundle_outputs() -> None:
     checker = _load_checker()
     linux_snippet = "Linux evidence bundle output directory must include the target id and release tag as path segments"
@@ -139,6 +155,29 @@ def test_platform_promotion_runbook_requires_target_release_scoped_bundle_output
 
     assert any(linux_snippet in error for error in errors)
     assert any(xp_snippet in error for error in errors)
+
+
+def test_platform_promotion_runbook_rejects_generic_final_record_placeholder() -> None:
+    checker = _load_checker()
+    promotion = json.loads(Path("configs/platform_parity_promotion.json").read_text(encoding="utf-8"))
+    target = "linux-i386"
+    exact = f"<target-release-artifact-dir>/platform-verified-evidence-{target}-final.json"
+    stale = "<final-record.json>"
+    text = Path("docs/PLATFORM_PROMOTION_RUNBOOK.md").read_text(encoding="utf-8").replace(exact, stale)
+    for item in promotion["protected_targets"]:
+        if item["id"] == target:
+            requirements = item["promotion_to_100_requires"]
+            requirements["finalized_evidence_record_command"] = requirements[
+                "finalized_evidence_record_command"
+            ].replace(exact, stale)
+
+    errors = checker.check_platform_promotion_runbook(runbook_text=text, promotion=promotion)
+
+    assert any("must not use generic <final-record.json>" in error for error in errors)
+    assert any(
+        f"{target} finalized evidence record command must write --out {exact}" in error
+        for error in errors
+    )
 
 
 def test_platform_promotion_runbook_requires_local_goal_preflight() -> None:
@@ -175,6 +214,21 @@ def test_platform_promotion_runbook_requires_xp_source_workflow() -> None:
     assert f"windows-xp-native-x86 runbook missing XP release source workflow: {workflow}" in errors
 
 
+def test_platform_promotion_runbook_requires_xp_host_collector_boundary() -> None:
+    checker = _load_checker()
+    text = Path("docs/PLATFORM_PROMOTION_RUNBOOK.md").read_text(encoding="utf-8")
+    text = text.replace("XP host requirement: Windows XP", "XP host requirement removed")
+    text = text.replace(
+        "modern self-hosted `xp-evidence` collector with Python 3.12 and GitHub Actions support",
+        "XP runner",
+    )
+
+    errors = checker.check_platform_promotion_runbook(runbook_text=text)
+
+    assert any("XP host requirement" in error for error in errors)
+    assert any("xp-evidence" in error and "collector" in error for error in errors)
+
+
 def test_platform_promotion_runbook_requires_xp_scoped_upload_staging() -> None:
     checker = _load_checker()
     text = Path("docs/PLATFORM_PROMOTION_RUNBOOK.md").read_text(encoding="utf-8").replace(
@@ -185,6 +239,33 @@ def test_platform_promotion_runbook_requires_xp_scoped_upload_staging() -> None:
     errors = checker.check_platform_promotion_runbook(runbook_text=text)
 
     assert any("stage_xp_native_evidence_upload.py" in error for error in errors)
+
+
+def test_platform_promotion_runbook_requires_target_dispatch_commands() -> None:
+    checker = _load_checker()
+    linux_command = (
+        "gh workflow run extended-platform-evidence.yml --repo <owner>/<repo> "
+        "--ref <github-actions-head-sha-or-branch> -f target=linux-i386 "
+        "-f release_tag=v<project.version> "
+        "-f release_asset_base_url=<github-release-download-url>"
+    )
+    xp_command = (
+        "gh workflow run xp-native-evidence.yml --repo <owner>/<repo> "
+        "--ref <github-actions-head-sha-or-branch> -f target=windows-xp-native-x86 "
+        "-f release_tag=v<project.version> "
+        "-f release_asset_base_url=<github-release-download-url> "
+        "-f assets_dir=<target-release-artifact-dir> "
+        "-f evidence_file=<target-release-evidence.json> "
+        "-f evidence_dir=<target-release-evidence-dir>"
+    )
+    text = Path("docs/PLATFORM_PROMOTION_RUNBOOK.md").read_text(encoding="utf-8")
+    text = text.replace(linux_command, "gh workflow run extended-platform-evidence.yml")
+    text = text.replace(xp_command, "gh workflow run xp-native-evidence.yml")
+
+    errors = checker.check_platform_promotion_runbook(runbook_text=text)
+
+    assert f"linux-i386 runbook missing Linux workflow dispatch command: {linux_command}" in errors
+    assert f"windows-xp-native-x86 runbook missing XP workflow dispatch command: {xp_command}" in errors
 
 
 def test_platform_promotion_runbook_requires_xp_target_release_scoped_dispatch_paths() -> None:
@@ -253,12 +334,16 @@ def test_platform_promotion_runbook_requires_linux_builder_source_head_sha() -> 
         "",
     )
     text = text.replace("`observed_git_head_sha`", "`observed_checkout_sha`")
+    text = text.replace("`workflow_ref`", "`workflow_file_ref`")
+    text = text.replace("`workflow_sha`", "`workflow_file_sha`")
     text = text.replace("`git_worktree_clean=true`", "`checkout_clean=true`")
 
     errors = checker.check_platform_promotion_runbook(runbook_text=text)
 
     assert any("--source-head-sha <github-actions-head-sha>" in error for error in errors)
     assert any("observed_git_head_sha" in error for error in errors)
+    assert any("workflow_ref" in error for error in errors)
+    assert any("workflow_sha" in error for error in errors)
     assert any("git_worktree_clean=true" in error for error in errors)
 
 
@@ -291,6 +376,14 @@ def test_platform_promotion_runbook_requires_linux_smoke_runtime_and_hash_proof(
         "",
     )
     text = text.replace("`native installer smoke observed at utc: <YYYY-MM-DDTHH:MM:SSZ>`, ", "")
+    text = text.replace(
+        "`native installer smoke security update channel: <security-update-channel>`, ",
+        "",
+    )
+    text = text.replace(
+        "`native installer smoke CVE review reference: <cve-review-reference>`, ",
+        "",
+    )
 
     errors = checker.check_platform_promotion_runbook(runbook_text=text)
 
@@ -301,6 +394,8 @@ def test_platform_promotion_runbook_requires_linux_smoke_runtime_and_hash_proof(
     assert any("native installer smoke host label" in error for error in errors)
     assert any("native installer smoke evidence run id" in error for error in errors)
     assert any("native installer smoke observed at utc" in error for error in errors)
+    assert any("native installer smoke security update channel" in error for error in errors)
+    assert any("native installer smoke CVE review reference" in error for error in errors)
 
 
 def test_platform_promotion_runbook_requires_linux_security_boundaries() -> None:
@@ -316,6 +411,27 @@ def test_platform_promotion_runbook_requires_linux_security_boundaries() -> None
     errors = checker.check_platform_promotion_runbook(runbook_text=text, promotion=promotion)
 
     assert f"linux-i386 runbook missing security requirement: {security_requirement}" in errors
+
+
+def test_platform_promotion_runbook_requires_xp_security_smoke_provenance() -> None:
+    checker = _load_checker()
+    text = Path("docs/PLATFORM_PROMOTION_RUNBOOK.md").read_text(encoding="utf-8").replace(
+        "`security update channel: <security-update-channel>` and ",
+        "",
+    )
+    text = text.replace(
+        "`security update channel: <security-update-channel>`, ",
+        "",
+    )
+    text = text.replace(
+        "`CVE review reference: <cve-review-reference>`",
+        "`CVE review reference removed`",
+    )
+
+    errors = checker.check_platform_promotion_runbook(runbook_text=text)
+
+    assert any("security update channel: <security-update-channel>" in error for error in errors)
+    assert any("CVE review reference: <cve-review-reference>" in error for error in errors)
 
 
 def test_platform_promotion_runbook_requires_exact_candidate_command() -> None:

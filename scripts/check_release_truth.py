@@ -29,6 +29,10 @@ PLATFORM_EVIDENCE_IMPORT_DEPENDENTS = (
     "macos-native",
     "linux-native",
 )
+PUBLISH_PROTECTED_PLATFORM_ASSET_COMMAND = (
+    'python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" '
+    "--require-complete --assets-dir release-assets"
+)
 PUBLISH_PLATFORM_GOAL_COMMAND = (
     'python scripts/check_release_publish_assets.py --assets-dir release-assets '
     '--tag "${{ github.ref_name }}" --require-platform-goal-targets'
@@ -42,6 +46,7 @@ REQUIRED_DOC_SNIPPETS = (
     "remote-ops-workspace-v1.0.2-macos-<x64|arm64>.dmg",
     "remote-ops-workspace-v1.0.2-macos-<x64|arm64>.pkg",
     "not uploaded by the default GitHub",
+    "check_protected_platform_goal.py --release-tag <tag> --require-complete --assets-dir release-assets",
     "check_release_publish_assets.py --assets-dir release-assets --tag <tag> --require-platform-goal-targets",
     "import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run",
     "check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag <tag> --require-final-record-assets",
@@ -72,6 +77,8 @@ REQUIRED_DOC_SNIPPETS = (
     "xp smoke wmic os caption",
     "wmic os get Caption,CSDVersion /value",
     "xp_evidence_summary.release_source",
+    "scripts/xp_smoke_runner.cmd",
+    "modern self-hosted `xp-evidence` collector",
 )
 
 REQUIRED_TURKISH_DOC_SNIPPETS = (
@@ -84,12 +91,15 @@ REQUIRED_TURKISH_DOC_SNIPPETS = (
     "indirilen source artifact native",
     "ayni tag/repository/workflow file path/source-head/run-attempt",
     "target'a ozel release source workflow file path",
+    "python scripts/check_protected_platform_goal.py --release-tag <tag> --require-complete --assets-dir release-assets",
     "python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --require-platform-goal-targets",
     "Linux i386, Linux armhf, windows-xp-native-x86 ve windows-xp-native-x64",
     "ayni GitHub release repository, target'a ozel release source workflow file path",
     "ayni release source head SHA",
     "pozitif release source run attempt",
     "Windows XP native-host readiness 25.0%",
+    "self-hosted `xp-evidence` collector",
+    "`scripts/xp_smoke_runner.cmd`",
 )
 
 REQUIRED_README_RELEASE_SECTION_SNIPPETS = (
@@ -107,10 +117,19 @@ REQUIRED_README_RELEASE_SECTION_SNIPPETS = (
     "same release tag, GitHub release repository",
     "target-specific release source workflow file",
     "release source head SHA and per-record release source run attempt before any 100%",
+    "python scripts/check_protected_platform_goal.py --release-tag <tag> --require-complete --assets-dir release-assets",
     "python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --require-platform-goal-targets",
     "configs/platform_verified_evidence.json",
     "accepted review-bundle hashes",
     "source and native release jobs wait for it before building",
+    "`scripts/xp_smoke_runner.cmd`",
+    "`xp-evidence` collector",
+)
+
+REQUIRED_RELEASE_STRATEGY_SNIPPETS = (
+    "python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir <release-assets-dir> --dry-run --verify-source-run",
+    "pre-release protected-platform import dry-run",
+    "does not stage files for upload",
 )
 
 STALE_TURKISH_RELEASE_SNIPPETS = (
@@ -243,6 +262,7 @@ def check_accepted_platform_evidence_assets_job(workflow: str) -> list[str]:
         return ["release workflow missing accepted-platform-evidence-assets job"]
     errors: list[str] = []
     required_snippets = {
+        "timeout-minutes: 20": "bounded platform evidence import timeout",
         "actions: read": "Actions read permission for artifact import",
         "contents: read": "contents read permission for checkout",
         "GH_TOKEN: ${{ github.token }}": "GitHub token for gh run download",
@@ -257,6 +277,8 @@ def check_accepted_platform_evidence_assets_job(workflow: str) -> list[str]:
         "name: release-platform-evidence-assets": "platform evidence release asset artifact name",
         "path: release-assets/*": "platform evidence release asset upload path",
         "if-no-files-found: error": "platform evidence upload must fail when empty",
+        "include-hidden-files: false": "platform evidence upload hidden file exclusion",
+        "retention-days: 90": "platform evidence upload retention window",
     }
     for snippet, label in required_snippets.items():
         if snippet not in block:
@@ -273,10 +295,24 @@ def check_publish_platform_evidence_dependency(workflow: str) -> list[str]:
     errors: list[str] = []
     if not job_depends_on(block, "accepted-platform-evidence-assets"):
         errors.append("publish job must depend on accepted-platform-evidence-assets")
+    protected_asset_gate_index = block.find(PUBLISH_PROTECTED_PLATFORM_ASSET_COMMAND)
     gate_index = block.find(PUBLISH_PLATFORM_GOAL_COMMAND)
     upload_index = block.find("softprops/action-gh-release")
+    if protected_asset_gate_index < 0:
+        errors.append(
+            "publish job missing protected platform release asset gate: "
+            f"{PUBLISH_PROTECTED_PLATFORM_ASSET_COMMAND}"
+        )
     if gate_index < 0:
         errors.append(f"publish job missing publish-time protected platform goal gate: {PUBLISH_PLATFORM_GOAL_COMMAND}")
+    if (
+        protected_asset_gate_index >= 0
+        and gate_index >= 0
+        and protected_asset_gate_index > gate_index
+    ):
+        errors.append("protected platform release asset gate must run before publish asset validation")
+    if protected_asset_gate_index >= 0 and upload_index >= 0 and protected_asset_gate_index > upload_index:
+        errors.append("protected platform release asset gate must run before GitHub release upload")
     if gate_index >= 0 and upload_index >= 0 and gate_index > upload_index:
         errors.append("publish-time protected platform goal gate must run before GitHub release upload")
     return errors
@@ -285,6 +321,7 @@ def check_publish_platform_evidence_dependency(workflow: str) -> list[str]:
 def check_release_docs() -> list[str]:
     errors: list[str] = []
     readme = normalize_markdown_pipes(read("README.md"))
+    release_strategy = normalize_markdown_pipes(read("docs/RELEASE_STRATEGY.md"))
     docs = "\n".join(
         normalize_markdown_pipes(read(path))
         for path in (
@@ -304,6 +341,9 @@ def check_release_docs() -> list[str]:
         for snippet in REQUIRED_README_RELEASE_SECTION_SNIPPETS:
             if not contains_snippet(readme_release_section, snippet):
                 errors.append(f"README.md release section missing protected platform evidence truth snippet: {snippet}")
+    for snippet in REQUIRED_RELEASE_STRATEGY_SNIPPETS:
+        if not contains_snippet(release_strategy, snippet):
+            errors.append(f"docs/RELEASE_STRATEGY.md missing pre-release platform import truth snippet: {snippet}")
     for snippet in REQUIRED_TURKISH_DOC_SNIPPETS:
         if not contains_snippet(turkish_readme, snippet):
             errors.append(f"README.tr.md missing protected platform evidence truth snippet: {snippet}")

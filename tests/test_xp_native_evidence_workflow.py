@@ -46,6 +46,19 @@ def test_xp_native_evidence_workflow_requires_scoped_artifact_name() -> None:
     assert any("target/release scoped uploaded artifact" in error for error in errors)
 
 
+def test_xp_native_evidence_workflow_requires_collector_boundary() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8").replace(
+        "XP evidence collector validates staged proof captured on real Windows XP hosts; "
+        "run scripts/xp_smoke_runner.cmd on the XP host before dispatch.",
+        "XP evidence workflow validates staged proof.",
+    )
+
+    errors = checker.check_xp_native_evidence_workflow(workflow)
+
+    assert any("XP host versus collector boundary" in error for error in errors)
+
+
 def test_xp_native_evidence_workflow_requires_finalizer() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8").replace(
@@ -120,6 +133,18 @@ def test_xp_native_evidence_workflow_requires_scoped_upload_staging() -> None:
     assert any("scoped XP upload staging" in error for error in errors)
 
 
+def test_xp_native_evidence_workflow_rejects_malformed_scoped_upload_release_tag() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8").replace(
+        '--evidence-output-dir "xp-evidence-output/${{ inputs.target }}/${{ inputs.release_tag }}"',
+        '--evidence-output-dir "xp-evidence-output/${{ inputs.target }}/${{ inputs.release_tag }"',
+    )
+
+    errors = checker.check_xp_native_evidence_workflow(workflow)
+
+    assert any("scoped XP upload staging" in error for error in errors)
+
+
 def test_xp_native_evidence_workflow_requires_target_release_scoped_output_dir() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8").replace(
@@ -143,6 +168,30 @@ def test_xp_native_evidence_workflow_rejects_raw_artifact_wildcards() -> None:
 
     assert "xp-native-evidence job must not upload raw operator-supplied assets_dir wildcard" in errors
     assert "xp-native-evidence job must upload scoped staged files, not raw xp-evidence-output wildcard" in errors
+
+
+def test_xp_native_evidence_workflow_requires_hidden_file_exclusion_for_upload() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8").replace(
+        "          include-hidden-files: false\n",
+        "",
+    )
+
+    errors = checker.check_xp_native_evidence_workflow(workflow)
+
+    assert any("hidden file exclusion for evidence artifact upload" in error for error in errors)
+
+
+def test_xp_native_evidence_workflow_requires_retained_source_artifact_upload() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8").replace(
+        "          retention-days: 90\n",
+        "",
+    )
+
+    errors = checker.check_xp_native_evidence_workflow(workflow)
+
+    assert any("evidence artifact retention window" in error for error in errors)
 
 
 def test_xp_native_evidence_dispatch_rejects_file_shaped_directory_inputs() -> None:

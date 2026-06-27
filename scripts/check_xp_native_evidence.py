@@ -60,6 +60,28 @@ REQUIRED_FORBIDDEN_EVIDENCE_PATTERNS = {
     "secret=",
     "token=",
 }
+REQUIRED_SECURITY_PATCH_PROVENANCE_FIELDS = {"security_update_channel", "cve_review_reference"}
+FORBIDDEN_SECURITY_PROVENANCE_MARKERS = (
+    "<",
+    ">",
+    "dummy",
+    "placeholder",
+    "replace",
+    "test-",
+    "todo",
+)
+FORBIDDEN_HOST_IDENTITY_FIELDS = {
+    "computer_name",
+    "computername",
+    "domain",
+    "fqdn",
+    "host_name",
+    "hostname",
+    "login",
+    "runner_name",
+    "user",
+    "username",
+}
 HOST_IDENTITY_LABEL_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{2,63}$")
 HOST_IDENTITY_RUN_RE = re.compile(r"^[a-z0-9][a-z0-9._:-]{7,127}$")
 OBSERVED_AT_UTC_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
@@ -181,6 +203,8 @@ def check_contract(contract: dict[str, Any]) -> list[str]:
         "--source-workflow-run-url <github-actions-run-url>",
         "--source-head-sha <github-actions-head-sha>",
         "--source-run-attempt <github-actions-run-attempt>",
+        "--security-update-channel <security_update_channel>",
+        "--cve-review-reference <cve_review_reference>",
     }
     if not isinstance(command_bindings, list) or not required_command_bindings.issubset(
         {str(item) for item in command_bindings}
@@ -209,15 +233,37 @@ def check_contract(contract: dict[str, Any]) -> list[str]:
                     "--evidence-file",
                     "--proof-file",
                     "--host-label",
+                    "--host-label must use target-scoped prefix",
                     "--evidence-run-id",
+                    "--evidence-run-id must use target-scoped prefix",
                     "--observed-at-utc",
+                    "--observed-at-utc must use YYYY-MM-DDTHH:MM:SSZ",
                     "--source-workflow-run-url",
                     "--source-head-sha",
+                    "--source-head-sha must be a lowercase 40-character Git commit SHA",
                     "--source-run-attempt",
+                    "--source-run-attempt must be a positive integer",
+                    "--source-workflow-run-url must be a GitHub Actions run URL",
+                    "REQUESTED_SOURCE_RUN_ID",
+                    "--source-workflow-run-url must end with a numeric GitHub Actions run id",
+                    "REQUESTED_SOURCE_REPOSITORY",
+                    "GITHUB_SHA",
+                    "must match --source-head-sha",
+                    "GITHUB_RUN_ATTEMPT",
+                    "must match --source-run-attempt",
+                    "GITHUB_RUN_ID",
+                    "GITHUB_REPOSITORY",
+                    "must match --source-workflow-run-url",
                     "--os-name",
                     "--os-architecture",
                     "--os-service-pack",
                     "--os-edition",
+                    "--security-update-channel",
+                    "--security-update-channel is required for XP security smoke evidence",
+                    "--cve-review-reference",
+                    "--cve-review-reference is required for XP security smoke evidence",
+                    "proof file must include security update channel",
+                    "proof file must include CVE review reference",
                     "ver",
                     "PROCESSOR_ARCHITECTURE",
                     "wmic os get Caption",
@@ -260,6 +306,21 @@ def check_contract(contract: dict[str, Any]) -> list[str]:
         errors.append(
             "XP native evidence contract must require smoke evidence target, release-tag, smoke-id, "
             "OS identity, host probe, host-label and evidence-run-id binding lines"
+        )
+    artifact_manifest_lines = contract.get("required_artifact_manifest_smoke_evidence_lines")
+    required_artifact_manifest_lines = {
+        "xp smoke artifact file: <required native artifact>",
+        "xp smoke artifact file: <required manifest>",
+        "xp smoke artifact file: <required SHA256SUMS>",
+        "xp smoke artifact manifest validated: true",
+        "xp smoke artifact sha256s validated: true",
+    }
+    if not isinstance(artifact_manifest_lines, list) or not required_artifact_manifest_lines.issubset(
+        {str(item) for item in artifact_manifest_lines}
+    ):
+        errors.append(
+            "XP native evidence contract must require artifact_manifest_validation "
+            "smoke proof lines for every release artifact, manifest, and SHA256SUMS sidecar"
         )
     security_lines = contract.get("required_security_smoke_evidence_lines")
     required_security_lines = {
@@ -335,6 +396,26 @@ def check_contract(contract: dict[str, Any]) -> list[str]:
     patch_evidence = contract.get("required_security_patch_evidence")
     if not isinstance(patch_evidence, dict) or not patch_evidence:
         errors.append("XP native evidence contract must define required_security_patch_evidence")
+    provenance_fields = contract.get("required_security_patch_provenance_fields")
+    if not isinstance(provenance_fields, list) or not REQUIRED_SECURITY_PATCH_PROVENANCE_FIELDS.issubset(
+        {str(item) for item in provenance_fields}
+    ):
+        errors.append("XP native evidence contract must require security patch provenance fields")
+    smoke_provenance_fields = contract.get("required_security_smoke_provenance_fields")
+    if not isinstance(smoke_provenance_fields, list) or not REQUIRED_SECURITY_PATCH_PROVENANCE_FIELDS.issubset(
+        {str(item) for item in smoke_provenance_fields}
+    ):
+        errors.append("XP native evidence contract must require security smoke provenance fields")
+    forbidden_identity_fields = contract.get("forbidden_host_identity_fields")
+    if not isinstance(forbidden_identity_fields, list):
+        errors.append("XP native evidence contract must define forbidden_host_identity_fields")
+    else:
+        missing_fields = sorted(FORBIDDEN_HOST_IDENTITY_FIELDS - {str(item) for item in forbidden_identity_fields})
+        if missing_fields:
+            errors.append(
+                "XP native evidence contract forbidden_host_identity_fields missing required entries: "
+                f"{missing_fields}"
+            )
     forbidden = contract.get("forbidden_evidence_patterns")
     if not isinstance(forbidden, list) or not forbidden:
         errors.append("XP native evidence contract must define forbidden_evidence_patterns")
@@ -418,6 +499,7 @@ def check_xp_native_evidence(
             host_identity=evidence.get("host_identity"),
             os_identity=evidence.get("os"),
             release_source=release_source,
+            security=evidence.get("security"),
         )
     )
     errors.extend(check_artifact_validation_record(target, evidence.get("artifact_validation"), release_tag))
@@ -539,6 +621,13 @@ def check_host_identity(
     missing = sorted(required_fields - set(raw_identity))
     if missing:
         errors.append(f"{target} evidence host_identity missing required fields: {missing}")
+    forbidden_fields = sorted(
+        field
+        for field in raw_identity
+        if str(field).lower() in forbidden_host_identity_fields(contract)
+    )
+    if forbidden_fields:
+        errors.append(f"{target} evidence host_identity contains forbidden private fields: {forbidden_fields}")
     if raw_identity.get("schema_version") != 1:
         errors.append(f"{target} evidence host_identity.schema_version must be 1")
     if raw_identity.get("target") != target:
@@ -547,14 +636,16 @@ def check_host_identity(
         errors.append(f"{target} evidence host_identity.release_tag must match evidence release_tag {release_tag}")
 
     host_label = str(raw_identity.get("host_label", "")).strip()
-    if not HOST_IDENTITY_LABEL_RE.fullmatch(host_label):
+    host_prefix = xp_host_identity_prefix(target)
+    if not HOST_IDENTITY_LABEL_RE.fullmatch(host_label) or not host_label.startswith(host_prefix):
         errors.append(
-            f"{target} evidence host_identity.host_label must be a sanitized lab label, got {host_label!r}"
+            f"{target} evidence host_identity.host_label must be a sanitized target-scoped lab label, "
+            f"got {host_label!r}"
         )
     evidence_run_id = str(raw_identity.get("evidence_run_id", "")).strip()
-    if not HOST_IDENTITY_RUN_RE.fullmatch(evidence_run_id):
+    if not HOST_IDENTITY_RUN_RE.fullmatch(evidence_run_id) or not evidence_run_id.startswith(host_prefix):
         errors.append(
-            f"{target} evidence host_identity.evidence_run_id must be a sanitized concrete run id, "
+            f"{target} evidence host_identity.evidence_run_id must be a sanitized target-scoped run id, "
             f"got {evidence_run_id!r}"
         )
     observed_at = str(raw_identity.get("observed_at_utc", "")).strip()
@@ -563,6 +654,13 @@ def check_host_identity(
             f"{target} evidence host_identity.observed_at_utc must be UTC ISO-8601 seconds ending in Z, "
             f"got {observed_at!r}"
         )
+    else:
+        expected_run_marker = xp_host_identity_run_marker(release_tag, observed_at)
+        if expected_run_marker not in evidence_run_id:
+            errors.append(
+                f"{target} evidence host_identity.evidence_run_id must include release/observed-at marker "
+                f"{expected_run_marker!r}, got {evidence_run_id!r}"
+            )
     if raw_identity.get("operator_private_data_redacted") is not True:
         errors.append(f"{target} evidence host_identity.operator_private_data_redacted must be true")
 
@@ -584,6 +682,27 @@ def check_host_identity(
     else:
         errors.extend(check_toolchain(target, identity_toolchain, contract))
     return errors
+
+
+def forbidden_host_identity_fields(contract: dict[str, Any]) -> set[str]:
+    raw_fields = contract.get("forbidden_host_identity_fields")
+    if isinstance(raw_fields, list):
+        return {str(item).lower() for item in raw_fields}
+    return FORBIDDEN_HOST_IDENTITY_FIELDS
+
+
+def xp_host_identity_prefix(target: str) -> str:
+    if target.endswith("x86"):
+        return "xp-x86-"
+    if target.endswith("x64"):
+        return "xp-x64-"
+    return f"{target}-"
+
+
+def xp_host_identity_run_marker(release_tag: str, observed_at_utc: str) -> str:
+    version = release_tag.removeprefix("v").replace(".", "-")
+    observed_marker = observed_at_utc.replace("-", "").replace(":", "").replace("T", "t").removesuffix("Z")
+    return f"{version}-{observed_marker}z"
 
 
 def normalized_host_os(raw_os: Any) -> dict[str, Any]:
@@ -617,7 +736,23 @@ def check_security(target: str, raw_security: Any, contract: dict[str, Any]) -> 
         for key, expected in required_patch_evidence.items():
             if patch_evidence.get(key) != expected:
                 errors.append(f"{target} evidence security.patch_evidence.{key} must be {expected!r}")
+    required_patch_provenance = contract.get("required_security_patch_provenance_fields", [])
+    if isinstance(required_patch_provenance, list):
+        for key in sorted(str(item) for item in required_patch_provenance):
+            value = str(patch_evidence.get(key, ""))
+            if not value.strip():
+                errors.append(f"{target} evidence security.patch_evidence.{key} must be set")
+            elif not is_concrete_security_provenance(value):
+                errors.append(
+                    f"{target} evidence security.patch_evidence.{key} "
+                    "must name concrete non-placeholder provenance"
+                )
     return errors
+
+
+def is_concrete_security_provenance(value: str) -> bool:
+    lowered = value.strip().lower()
+    return bool(lowered) and not any(marker in lowered for marker in FORBIDDEN_SECURITY_PROVENANCE_MARKERS)
 
 
 def check_smoke_results(
@@ -630,6 +765,7 @@ def check_smoke_results(
     host_identity: Any,
     os_identity: Any,
     release_source: Any,
+    security: Any,
 ) -> list[str]:
     if not isinstance(raw_results, list):
         return [f"{target} evidence smoke_results must be a list"]
@@ -674,6 +810,7 @@ def check_smoke_results(
                 host_identity=host_identity,
                 os_identity=os_identity,
                 release_source=release_source,
+                security=security,
             )
         )
         errors.extend(
@@ -687,6 +824,7 @@ def check_smoke_results(
                 host_identity=host_identity,
                 os_identity=os_identity,
                 release_source=release_source,
+                security=security,
             )
         )
     return errors
@@ -702,6 +840,7 @@ def check_smoke_command(
     host_identity: Any,
     os_identity: Any,
     release_source: Any,
+    security: Any,
 ) -> list[str]:
     command = str(item.get("command", "")).strip()
     if not command:
@@ -726,6 +865,8 @@ def check_smoke_command(
             host_identity=host_identity,
             os_identity=os_identity,
             release_source=release_source,
+            security=security,
+            contract=contract,
         )
     )
     return errors
@@ -742,6 +883,8 @@ def check_smoke_command_binding(
     host_identity: Any,
     os_identity: Any,
     release_source: Any,
+    security: Any,
+    contract: dict[str, Any],
 ) -> list[str]:
     expected_values = {
         "--target": target,
@@ -775,7 +918,25 @@ def check_smoke_command_binding(
         edition_values = command_flag_values(command, "--os-edition")
         if edition_values:
             errors.append(f"{label} must omit --os-edition for this target, got {edition_values}")
+    if smoke_id_requires_security_provenance(smoke_id, contract):
+        patch_evidence = security.get("patch_evidence") if isinstance(security, dict) else None
+        if isinstance(patch_evidence, dict):
+            security_command_flags = {
+                "--security-update-channel": "security_update_channel",
+                "--cve-review-reference": "cve_review_reference",
+            }
+            for flag, field in security_command_flags.items():
+                expected = str(patch_evidence.get(field, "")).strip()
+                if expected:
+                    values = command_flag_values(command, flag)
+                    if values != [expected]:
+                        errors.append(f"{label} must include exactly one {flag} {expected}, got {values}")
     return errors
+
+
+def smoke_id_requires_security_provenance(smoke_id: str, contract: dict[str, Any]) -> bool:
+    required = contract.get("required_security_smoke_evidence_lines")
+    return isinstance(required, dict) and smoke_id in {str(key) for key in required}
 
 
 def command_flag_values(command: str, flag: str) -> list[str]:
@@ -794,6 +955,7 @@ def check_smoke_evidence_file(
     host_identity: Any,
     os_identity: Any,
     release_source: Any,
+    security: Any,
 ) -> list[str]:
     if contract.get("required_smoke_evidence_file") is not True:
         return []
@@ -839,7 +1001,8 @@ def check_smoke_evidence_file(
             release_source=release_source,
         )
     )
-    errors.extend(check_security_smoke_evidence_lines(target, smoke_id, data, contract))
+    errors.extend(check_security_smoke_evidence_lines(target, smoke_id, data, contract, security=security))
+    errors.extend(check_artifact_manifest_smoke_evidence(target, release_tag, smoke_id, data, contract))
     return errors
 
 
@@ -1202,11 +1365,60 @@ def service_pack_probe_matches(probe_value: str, expected_service_pack: str) -> 
     return f"service pack {number}" in normalized or f"sp{number}" in compact
 
 
+def check_artifact_manifest_smoke_evidence(
+    target: str,
+    release_tag: str,
+    smoke_id: str,
+    data: bytes,
+    contract: dict[str, Any],
+) -> list[str]:
+    if smoke_id != "artifact_manifest_validation":
+        return []
+    if not isinstance(contract.get("required_artifact_manifest_smoke_evidence_lines"), list):
+        return []
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        return [
+            f"{target} smoke result {smoke_id} evidence_file must be UTF-8 text for artifact proof: {exc}"
+        ]
+    errors: list[str] = []
+    expected = expected_artifact_names(target, release_tag, errors)
+    if not expected:
+        return errors
+    artifact_lines = sorted(
+        {
+            line.split(":", 1)[1].strip()
+            for line in text.splitlines()
+            if line.strip().startswith("xp smoke artifact file:")
+        }
+    )
+    expected_lines = sorted(expected)
+    if artifact_lines != expected_lines:
+        errors.append(
+            f"{target} smoke result {smoke_id} evidence_file artifact list proof "
+            f"must match expected release artifacts {expected_lines}, got {artifact_lines}"
+        )
+    normalized_lines = {line.strip().lower() for line in text.splitlines() if line.strip()}
+    for required_line in (
+        "xp smoke artifact manifest validated: true",
+        "xp smoke artifact sha256s validated: true",
+    ):
+        if required_line not in normalized_lines:
+            errors.append(
+                f"{target} smoke result {smoke_id} evidence_file missing artifact proof line: "
+                f"{required_line}"
+            )
+    return errors
+
+
 def check_security_smoke_evidence_lines(
     target: str,
     smoke_id: str,
     data: bytes,
     contract: dict[str, Any],
+    *,
+    security: Any,
 ) -> list[str]:
     required = contract.get("required_security_smoke_evidence_lines")
     if not isinstance(required, dict):
@@ -1226,6 +1438,15 @@ def check_security_smoke_evidence_lines(
             errors.append(
                 f"{target} smoke result {smoke_id} evidence_file missing security proof line: {expected}"
             )
+    errors.extend(
+        check_security_smoke_provenance_lines(
+            target,
+            smoke_id,
+            normalized_lines,
+            contract,
+            security=security,
+        )
+    )
     forbidden = contract.get("forbidden_security_smoke_evidence_lines")
     if isinstance(forbidden, dict):
         raw_forbidden_lines = forbidden.get(smoke_id)
@@ -1237,6 +1458,38 @@ def check_security_smoke_evidence_lines(
                         f"{target} smoke result {smoke_id} evidence_file "
                         f"contains forbidden security proof line: {forbidden_line}"
                     )
+    return errors
+
+
+def check_security_smoke_provenance_lines(
+    target: str,
+    smoke_id: str,
+    normalized_lines: set[str],
+    contract: dict[str, Any],
+    *,
+    security: Any,
+) -> list[str]:
+    fields = contract.get("required_security_smoke_provenance_fields")
+    if not isinstance(fields, list):
+        return []
+    patch_evidence = security.get("patch_evidence") if isinstance(security, dict) else None
+    if not isinstance(patch_evidence, dict):
+        return []
+    labels = {
+        "security_update_channel": "security update channel",
+        "cve_review_reference": "CVE review reference",
+    }
+    errors: list[str] = []
+    for field in sorted(str(item) for item in fields):
+        expected_value = str(patch_evidence.get(field, "")).strip()
+        if not expected_value:
+            continue
+        label = labels.get(field, field.replace("_", " "))
+        expected = f"{label}: {expected_value}"
+        if expected.lower() not in normalized_lines:
+            errors.append(
+                f"{target} smoke result {smoke_id} evidence_file missing security proof line: {expected}"
+            )
     return errors
 
 

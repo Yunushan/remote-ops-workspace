@@ -31,8 +31,10 @@ POLICY = (
     "exact release source and review bundle fields, "
     "Linux builder identity evidence, builder identity "
     "SHA-256, builder identity release/run binding, "
+    "Linux builder workflow provenance binding, "
     "Linux builder/smoke source file binding, "
     "Linux builder/smoke host identity binding, "
+    "Linux builder/smoke security evidence binding, "
     "Linux builder source head SHA binding, "
     "Linux builder observed Git HEAD binding, "
     "Linux builder clean checkout binding, "
@@ -47,11 +49,13 @@ POLICY = (
     "XP evidence source file binding, XP evidence release source binding, "
     "XP evidence bundle SHA-256 digests, "
     "XP evidence validation command binding, XP evidence contract SHA-256, "
-    "XP evidence summary binding, XP host identity SHA-256 binding, XP smoke host identity binding, "
+    "XP evidence summary binding, XP host identity SHA-256 binding, "
+    "XP sanitized target-scoped host identity binding, XP smoke host identity binding, "
     "XP smoke observed-at timestamp binding, XP smoke OS identity binding, "
     "XP smoke host probe proof-line binding, XP security patch evidence, "
     "tracked scripts/xp_smoke_runner.cmd XP smoke command provenance, "
     "canonical XP smoke proof-file command binding, "
+    "XP security smoke command provenance binding when applicable, "
     "canonical XP smoke evidence-file summary binding and "
     "XP security smoke proof-line binding when applicable, and review "
     "bundle manifest, review bundle archive, safe relative non-symlink review bundle archive entries, "
@@ -256,6 +260,54 @@ def test_publish_contract_requires_platform_goal_gate_before_upload() -> None:
     assert any("protected platform goal publish gate" in error for error in errors)
 
 
+def test_publish_contract_requires_protected_platform_release_asset_gate() -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        '      - name: Require protected platform release assets\n'
+        '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" --require-complete --assets-dir release-assets\n',
+        "",
+    )
+
+    errors = checker.check_publish_contract(matrix, workflow)
+
+    assert any("protected platform release asset gate" in error for error in errors)
+
+
+def test_publish_contract_requires_protected_asset_gate_before_publish_asset_validation() -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    protected_gate = (
+        '      - name: Require protected platform release assets\n'
+        '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" --require-complete --assets-dir release-assets\n'
+    )
+    publish_gate = (
+        '      - name: Validate release publish assets\n'
+        '        run: python scripts/check_release_publish_assets.py --assets-dir release-assets --tag "${{ github.ref_name }}" --require-platform-goal-targets\n'
+    )
+    workflow = workflow.replace(protected_gate, "").replace(publish_gate, publish_gate + protected_gate)
+
+    errors = checker.check_publish_contract(matrix, workflow)
+
+    assert "protected platform release asset gate must run before publish asset validation" in errors
+
+
+def test_publish_contract_requires_protected_asset_gate_before_release_upload() -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    protected_gate = (
+        '      - name: Require protected platform release assets\n'
+        '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" --require-complete --assets-dir release-assets\n'
+    )
+    workflow = workflow.replace(protected_gate, "") + protected_gate
+
+    errors = checker.check_publish_contract(matrix, workflow)
+
+    assert "protected platform release asset gate must run before GitHub release upload" in errors
+
+
 def test_publish_contract_requires_platform_evidence_import_job() -> None:
     checker = _load_checker()
     matrix = _load_matrix()
@@ -295,6 +347,43 @@ def test_publish_contract_rejects_platform_evidence_import_nonstandard_write_per
     assert "accepted-platform-evidence-assets job must not request write permissions" in errors
 
 
+def test_publish_contract_requires_platform_evidence_import_timeout() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        "    runs-on: ubuntu-latest\n    timeout-minutes: 20\n    permissions:",
+        "    runs-on: ubuntu-latest\n    permissions:",
+        1,
+    )
+
+    errors = checker.check_platform_evidence_import_job(workflow)
+
+    assert any("bounded platform evidence import timeout" in error for error in errors)
+
+
+def test_publish_contract_requires_platform_evidence_import_hidden_file_exclusion() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        "          include-hidden-files: false\n",
+        "",
+    )
+
+    errors = checker.check_platform_evidence_import_job(workflow)
+
+    assert any("imported asset hidden file exclusion" in error for error in errors)
+
+
+def test_publish_contract_requires_platform_evidence_import_retention_window() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        "          retention-days: 90\n",
+        "",
+    )
+
+    errors = checker.check_platform_evidence_import_job(workflow)
+
+    assert any("imported asset retention window" in error for error in errors)
+
+
 def test_publish_contract_requires_platform_evidence_import_before_upload() -> None:
     checker = _load_checker()
     workflow = """
@@ -323,6 +412,18 @@ jobs:
     errors = checker.check_platform_evidence_import_job(workflow)
 
     assert "platform evidence import must run before imported artifact upload" in errors
+
+
+def test_publish_contract_requires_platform_evidence_source_run_verification() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        " --verify-source-run",
+        "",
+    )
+
+    errors = checker.check_platform_evidence_import_job(workflow)
+
+    assert any("source run metadata verification" in error for error in errors)
 
 
 def test_publish_contract_requires_platform_review_bundle_validation() -> None:
@@ -1033,7 +1134,12 @@ def _write_accepted_review_bundle_assets(record: dict[str, object], root: Path) 
         builder_path = work_root / f"builder-identity-{target}.json"
         smoke_path = work_root / f"native-smoke-{target}.log"
         builder_path.write_text(json.dumps(candidate["builder_identity"], indent=2) + "\n", encoding="utf-8")
-        bundle_helpers._write_linux_smoke_evidence(smoke_path, target, hashes)
+        bundle_helpers._write_linux_smoke_evidence(
+            smoke_path,
+            target,
+            hashes,
+            builder_evidence=f"evidence/{target}/{release_tag}/builder-identity-{target}.json",
+        )
         smoke_sha = _sha256(smoke_path)
         candidate["linux_smoke_evidence_sha256"] = {"native_smoke": smoke_sha}
         _sync_linux_source_record(candidate, "native_smoke", smoke_sha, smoke_path.stat().st_size)
@@ -1241,7 +1347,8 @@ def _linux_accepted_evidence(target: str) -> dict[str, object]:
         "native_smoke_command": (
             f"bash scripts/smoke_linux_native.sh --arch {arch} --dist native-dist/linux "
             f"--target {target} --workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
-            f"--workflow-run-attempt 1 --source-head-sha {'a' * 40}"
+            f"--workflow-run-attempt 1 --source-head-sha {'a' * 40} "
+            f"--builder-evidence evidence/{target}/v1.0.2/builder-identity-{target}.json"
         ),
         "linux_smoke_evidence_sha256": linux_smoke_hashes,
         "local_evidence_preflight_command": (
@@ -1305,6 +1412,7 @@ def _xp_accepted_evidence(target: str) -> dict[str, object]:
         os_summary["edition"] = "Professional x64 Edition"
     host_identity = _xp_host_identity(target)
     release_source = _xp_release_source_summary(target)
+    security = _security_patch_evidence()
     evidence_summary: dict[str, object] = {
         "target": target,
         "release_tag": "v1.0.2",
@@ -1319,7 +1427,7 @@ def _xp_accepted_evidence(target: str) -> dict[str, object]:
             "legacy_crypto_profile_scoped": True,
             "modern_defaults_unchanged": True,
             "weak_crypto_global_default": False,
-            "patch_evidence": _security_patch_evidence(),
+            "patch_evidence": security,
         },
         "smoke_ids": sorted(smoke_ids),
         "smoke_evidence_files": {
@@ -1337,6 +1445,8 @@ def _xp_accepted_evidence(target: str) -> dict[str, object]:
                 f"--source-workflow-run-url {release_source['workflow_run_url']} "
                 f"--source-head-sha {release_source['head_sha']} "
                 f"--source-run-attempt {release_source['run_attempt']} "
+                f"--security-update-channel {security['security_update_channel']} "
+                f"--cve-review-reference {security['cve_review_reference']} "
                 f'--os-name "{os_summary["name"]}" '
                 f"--os-architecture {os_summary['architecture']} "
                 f"--os-service-pack {os_summary['service_pack']}"
@@ -1603,6 +1713,11 @@ def _builder_identity(target: str) -> dict[str, object]:
         "release_tag": "v1.0.2",
         "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
         "workflow_run_attempt": 1,
+        "workflow_ref": (
+            "example/remote-ops-workspace/.github/workflows/"
+            f"extended-platform-evidence.yml@{'a' * 40}"
+        ),
+        "workflow_sha": "a" * 40,
         "source_head_sha": "a" * 40,
         "observed_git_head_sha": "a" * 40,
         "git_worktree_clean": True,
@@ -1653,6 +1768,8 @@ def _security_patch_evidence() -> dict[str, object]:
         "tls_preferred_modern_profiles": "TLS 1.3",
         "legacy_compatibility_profile": "isolated-opt-in",
         "cve_patch_reviewed": True,
+        "security_update_channel": "vendor-security-updates-2026-06",
+        "cve_review_reference": "vendor-cve-advisory-review-2026-06",
     }
 
 

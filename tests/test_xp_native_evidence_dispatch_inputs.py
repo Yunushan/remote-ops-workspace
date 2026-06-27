@@ -43,6 +43,36 @@ def test_xp_dispatch_inputs_reject_unscoped_staging_paths() -> None:
     assert "evidence_dir must include release_tag path segment 'v1.0.2', got 'staged/xp-x86/smoke'" in errors
 
 
+def test_xp_dispatch_inputs_reject_nonadjacent_target_release_paths() -> None:
+    checker = _load_checker()
+
+    errors = checker.check_xp_native_evidence_dispatch_inputs(
+        target="windows-xp-native-x86",
+        release_tag="v1.0.2",
+        release_asset_base_url="https://github.com/example/remote-ops-workspace/releases/download/v1.0.2",
+        workflow_run_url="https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        assets_dir="staged/v1.0.2/windows-xp-native-x86/artifacts",
+        evidence_file="staged/v1.0.2/windows-xp-native-x86/xp-evidence.json",
+        evidence_dir="staged/v1.0.2/windows-xp-native-x86/smoke",
+    )
+
+    assert (
+        "assets_dir must include adjacent target/release path segment "
+        "windows-xp-native-x86/v1.0.2, got "
+        "'staged/v1.0.2/windows-xp-native-x86/artifacts'"
+    ) in errors
+    assert (
+        "evidence_file must include adjacent target/release path segment "
+        "windows-xp-native-x86/v1.0.2, got "
+        "'staged/v1.0.2/windows-xp-native-x86/xp-evidence.json'"
+    ) in errors
+    assert (
+        "evidence_dir must include adjacent target/release path segment "
+        "windows-xp-native-x86/v1.0.2, got "
+        "'staged/v1.0.2/windows-xp-native-x86/smoke'"
+    ) in errors
+
+
 def test_xp_dispatch_inputs_reject_release_tag_mismatch() -> None:
     checker = _load_checker()
 

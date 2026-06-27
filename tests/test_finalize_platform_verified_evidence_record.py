@@ -25,7 +25,12 @@ def test_finalize_platform_verified_evidence_record_binds_review_bundle(tmp_path
     builder_path = tmp_path / "builder-identity-linux-i386.json"
     builder_path.write_text(json.dumps(candidate["builder_identity"], indent=2) + "\n", encoding="utf-8")
     smoke_path = tmp_path / "native-smoke-linux-i386.log"
-    _write_linux_smoke_evidence(smoke_path, target, candidate["artifact_sha256"])
+    _write_linux_smoke_evidence(
+        smoke_path,
+        target,
+        candidate["artifact_sha256"],
+        builder_evidence=_candidate_builder_evidence_path(target, release_tag),
+    )
     smoke_sha = _sha256(smoke_path)
     candidate["linux_smoke_evidence_sha256"] = {"native_smoke": smoke_sha}
     _sync_linux_source_record(candidate, "native_smoke", smoke_sha, smoke_path.stat().st_size)
@@ -152,6 +157,243 @@ def test_finalize_platform_verified_evidence_record_rejects_already_finalized_ca
     ) in errors
 
 
+def test_finalize_platform_verified_evidence_record_requires_strict_candidate_validation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    finalizer = _load_finalizer()
+    helpers = _load_platform_verified_evidence_tests()
+    target = "windows-xp-native-x86"
+    release_tag = "v1.0.2"
+    candidate = helpers._xp_record(target)
+    _unfinalized_candidate(candidate)
+    candidate_path, manifest, archive, sidecar = _write_xp_candidate_and_bundle(
+        tmp_path,
+        candidate,
+        target=target,
+        release_tag=release_tag,
+    )
+    monkeypatch.setattr(
+        finalizer,
+        "check_unfinalized_candidate_record",
+        lambda candidate: ["candidate strict validation sentinel failure"],
+    )
+
+    errors, record = finalizer.finalize_platform_verified_evidence_record(
+        candidate_record=candidate_path,
+        bundle_manifest=manifest,
+        bundle_archive=archive,
+        bundle_sha256s=sidecar,
+    )
+
+    assert record == {}
+    assert "candidate strict validation sentinel failure" in errors
+
+
+def test_finalize_platform_verified_evidence_record_rejects_mixed_bundle_directories(
+    tmp_path: Path,
+) -> None:
+    finalizer = _load_finalizer()
+    helpers = _load_platform_verified_evidence_tests()
+    target = "windows-xp-native-x86"
+    release_tag = "v1.0.2"
+    candidate = helpers._xp_record(target)
+    _unfinalized_candidate(candidate)
+    candidate_path, manifest, archive, sidecar = _write_xp_candidate_and_bundle(
+        tmp_path,
+        candidate,
+        target=target,
+        release_tag=release_tag,
+    )
+    copied_dir = tmp_path / "copied-sidecar"
+    copied_dir.mkdir()
+    copied_sidecar = copied_dir / sidecar.name
+    copied_sidecar.write_text(sidecar.read_text(encoding="utf-8"), encoding="utf-8")
+
+    errors, record = finalizer.finalize_platform_verified_evidence_record(
+        candidate_record=candidate_path,
+        bundle_manifest=manifest,
+        bundle_archive=archive,
+        bundle_sha256s=copied_sidecar,
+    )
+
+    assert record == {}
+    assert any("review bundle files must be siblings in one directory" in error for error in errors)
+
+
+def test_finalize_platform_verified_evidence_record_rejects_xp_candidate_name_drift(
+    tmp_path: Path,
+) -> None:
+    finalizer = _load_finalizer()
+    helpers = _load_platform_verified_evidence_tests()
+    target = "windows-xp-native-x86"
+    release_tag = "v1.0.2"
+    candidate = helpers._xp_record(target)
+    _unfinalized_candidate(candidate)
+    candidate_path, manifest, archive, sidecar = _write_xp_candidate_and_bundle(
+        tmp_path,
+        candidate,
+        target=target,
+        release_tag=release_tag,
+    )
+    copied_candidate = tmp_path / f"platform-verified-evidence-{target}-copy.json"
+    copied_candidate.write_bytes(candidate_path.read_bytes())
+    manifest_data = json.loads(manifest.read_text(encoding="utf-8"))
+    manifest_data["candidate_record"] = _file_record(copied_candidate)
+    manifest.write_text(json.dumps(manifest_data, indent=2) + "\n", encoding="utf-8")
+    _replace_archive_entries(
+        archive,
+        replacements={
+            manifest.name: manifest.read_bytes(),
+            copied_candidate.name: copied_candidate.read_bytes(),
+        },
+        remove={candidate_path.name},
+    )
+    _rewrite_sidecar(sidecar, manifest=manifest, archive=archive)
+
+    errors, record = finalizer.finalize_platform_verified_evidence_record(
+        candidate_record=copied_candidate,
+        bundle_manifest=manifest,
+        bundle_archive=archive,
+        bundle_sha256s=sidecar,
+    )
+
+    assert record == {}
+    assert (
+        f"candidate evidence record file name must be platform-verified-evidence-{target}.json, "
+        f"got 'platform-verified-evidence-{target}-copy.json'"
+    ) in errors
+
+
+def test_finalize_platform_verified_evidence_record_rejects_wrong_output_file_name(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    finalizer = _load_finalizer()
+    helpers = _load_platform_verified_evidence_tests()
+    target = "windows-xp-native-x86"
+    release_tag = "v1.0.2"
+    candidate = helpers._xp_record(target)
+    _unfinalized_candidate(candidate)
+    candidate_path, manifest, archive, sidecar = _write_xp_candidate_and_bundle(
+        tmp_path,
+        candidate,
+        target=target,
+        release_tag=release_tag,
+    )
+    wrong_output = tmp_path / "finalized-record.json"
+
+    rc = finalizer.main(
+        [
+            "--candidate-record",
+            str(candidate_path),
+            "--bundle-manifest",
+            str(manifest),
+            "--bundle-archive",
+            str(archive),
+            "--bundle-sha256s",
+            str(sidecar),
+            "--out",
+            str(wrong_output),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert not wrong_output.exists()
+    assert (
+        "finalize platform evidence record: finalized platform evidence record output file name must be "
+        "platform-verified-evidence-windows-xp-native-x86-final.json, got 'finalized-record.json'"
+    ) in captured.err
+
+
+def test_finalize_platform_verified_evidence_record_requires_output_for_registry_append(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    finalizer = _load_finalizer()
+    helpers = _load_platform_verified_evidence_tests()
+    target = "windows-xp-native-x86"
+    release_tag = "v1.0.2"
+    candidate = helpers._xp_record(target)
+    _unfinalized_candidate(candidate)
+    candidate_path, manifest, archive, sidecar = _write_xp_candidate_and_bundle(
+        tmp_path,
+        candidate,
+        target=target,
+        release_tag=release_tag,
+    )
+    registry = tmp_path / "platform_verified_evidence.json"
+
+    rc = finalizer.main(
+        [
+            "--candidate-record",
+            str(candidate_path),
+            "--bundle-manifest",
+            str(manifest),
+            "--bundle-archive",
+            str(archive),
+            "--bundle-sha256s",
+            str(sidecar),
+            "--append-registry",
+            "--registry",
+            str(registry),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert not registry.exists()
+    assert (
+        "finalize platform evidence record: --append-registry requires --out "
+        "so the finalized release artifact is written before registry append"
+    ) in captured.err
+
+
+def test_finalize_platform_verified_evidence_record_rejects_output_outside_bundle_directory(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    finalizer = _load_finalizer()
+    helpers = _load_platform_verified_evidence_tests()
+    target = "windows-xp-native-x86"
+    release_tag = "v1.0.2"
+    candidate = helpers._xp_record(target)
+    _unfinalized_candidate(candidate)
+    candidate_path, manifest, archive, sidecar = _write_xp_candidate_and_bundle(
+        tmp_path,
+        candidate,
+        target=target,
+        release_tag=release_tag,
+    )
+    output_dir = tmp_path / "copied-final-record"
+    output_dir.mkdir()
+    output = output_dir / f"platform-verified-evidence-{target}-final.json"
+
+    rc = finalizer.main(
+        [
+            "--candidate-record",
+            str(candidate_path),
+            "--bundle-manifest",
+            str(manifest),
+            "--bundle-archive",
+            str(archive),
+            "--bundle-sha256s",
+            str(sidecar),
+            "--out",
+            str(output),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert not output.exists()
+    assert (
+        "finalize platform evidence record: finalized platform evidence record output file "
+        "must be written next to review bundle files:"
+    ) in captured.err
+
+
 def test_finalize_platform_verified_evidence_record_rejects_symlinked_input_parent(
     tmp_path: Path,
     monkeypatch,
@@ -239,7 +481,12 @@ def test_finalize_platform_verified_evidence_record_rejects_archive_missing_cand
     builder_path = tmp_path / "builder-identity-linux-i386.json"
     builder_path.write_text(json.dumps(candidate["builder_identity"], indent=2) + "\n", encoding="utf-8")
     smoke_path = tmp_path / "native-smoke-linux-i386.log"
-    _write_linux_smoke_evidence(smoke_path, target, candidate["artifact_sha256"])
+    _write_linux_smoke_evidence(
+        smoke_path,
+        target,
+        candidate["artifact_sha256"],
+        builder_evidence=_candidate_builder_evidence_path(target, release_tag),
+    )
     smoke_sha = _sha256(smoke_path)
     candidate["linux_smoke_evidence_sha256"] = {"native_smoke": smoke_sha}
     _sync_linux_source_record(candidate, "native_smoke", smoke_sha, smoke_path.stat().st_size)
@@ -386,7 +633,8 @@ def test_finalize_platform_verified_evidence_record_rejects_weak_linux_smoke_log
         "linux-i386 archived native_smoke evidence missing required line: "
         "native installer smoke command: bash scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux "
         "--target linux-i386 --workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
-        f"--workflow-run-attempt 1 --source-head-sha {'a' * 40}"
+        f"--workflow-run-attempt 1 --source-head-sha {'a' * 40} "
+        f"--builder-evidence {_candidate_builder_evidence_path(target, release_tag)}"
         in error
         for error in errors
     )
@@ -411,7 +659,12 @@ def test_finalize_platform_verified_evidence_record_rejects_linux_builder_smoke_
     smoke_path = tmp_path / "native-smoke-linux-i386.log"
     builder_path.write_text(json.dumps(candidate["builder_identity"], indent=2) + "\n", encoding="utf-8")
     _sync_linux_source_record(candidate, "builder_identity", builder_sha, builder_path.stat().st_size)
-    _write_linux_smoke_evidence(smoke_path, target, candidate["artifact_sha256"])
+    _write_linux_smoke_evidence(
+        smoke_path,
+        target,
+        candidate["artifact_sha256"],
+        builder_evidence=_candidate_builder_evidence_path(target, release_tag),
+    )
     smoke_sha = _sha256(smoke_path)
     candidate["linux_smoke_evidence_sha256"] = {"native_smoke": smoke_sha}
     _sync_linux_source_record(candidate, "native_smoke", smoke_sha, smoke_path.stat().st_size)
@@ -852,7 +1105,12 @@ def test_finalize_platform_verified_evidence_record_rejects_candidate_bundle_mis
     builder_path = tmp_path / "builder-identity-linux-i386.json"
     builder_path.write_text(json.dumps(candidate["builder_identity"], indent=2) + "\n", encoding="utf-8")
     smoke_path = tmp_path / "native-smoke-linux-i386.log"
-    _write_linux_smoke_evidence(smoke_path, target, candidate["artifact_sha256"])
+    _write_linux_smoke_evidence(
+        smoke_path,
+        target,
+        candidate["artifact_sha256"],
+        builder_evidence=_candidate_builder_evidence_path(target, release_tag),
+    )
     smoke_sha = _sha256(smoke_path)
     candidate["linux_smoke_evidence_sha256"] = {"native_smoke": smoke_sha}
     _sync_linux_source_record(candidate, "native_smoke", smoke_sha, smoke_path.stat().st_size)
@@ -1460,6 +1718,24 @@ def _rewrite_archive_entry_as_symlink(archive: Path, entry_name: str) -> None:
             zipped.writestr(info, payload)
 
 
+def _replace_archive_entries(
+    archive: Path,
+    *,
+    replacements: dict[str, bytes],
+    remove: set[str],
+) -> None:
+    with zipfile.ZipFile(archive) as zipped:
+        entries = {
+            info.filename: zipped.read(info.filename)
+            for info in zipped.infolist()
+            if not info.is_dir() and info.filename not in remove and info.filename not in replacements
+        }
+    entries.update(replacements)
+    with zipfile.ZipFile(archive, mode="w", compression=zipfile.ZIP_DEFLATED) as zipped:
+        for name, payload in entries.items():
+            zipped.writestr(name, payload)
+
+
 def _write_xp_candidate_and_bundle(
     root: Path,
     candidate: dict[str, object],
@@ -1590,6 +1866,8 @@ def _xp_security_smoke_lines(smoke_id: str) -> str:
             "legacy compatibility profile: isolated-opt-in\n"
             "legacy crypto scope: profile-only\n"
             "weak crypto global default: false\n"
+            "security update channel: vendor-security-updates-2026-06\n"
+            "CVE review reference: vendor-cve-advisory-review-2026-06\n"
         )
     if smoke_id == "modern_defaults_unchanged":
         return (
@@ -1597,6 +1875,8 @@ def _xp_security_smoke_lines(smoke_id: str) -> str:
             "modern TLS preferred: TLS 1.3\n"
             "modern defaults unchanged: true\n"
             "weak crypto global default: false\n"
+            "security update channel: vendor-security-updates-2026-06\n"
+            "CVE review reference: vendor-cve-advisory-review-2026-06\n"
         )
     return ""
 
@@ -1684,12 +1964,18 @@ def _write_linux_smoke_evidence(
     workflow_run_url: str = "https://github.com/example/remote-ops-workspace/actions/runs/12345",
     workflow_run_attempt: int = 1,
     source_head_sha: str = "a" * 40,
+    builder_evidence: Path | str | None = None,
 ) -> None:
     arch = "i386" if target == "linux-i386" else "armhf"
     machine = "i686" if target == "linux-i386" else "armv7l"
     dpkg_arch = "i386" if target == "linux-i386" else "armhf"
     run_id = workflow_run_url.rstrip("/").rsplit("/", 1)[-1]
     evidence_run_id = f"{target}-1-0-2-run-{run_id}"
+    builder_evidence_path = (
+        Path(builder_evidence).as_posix()
+        if builder_evidence is not None
+        else (path.parent / f"builder-identity-{target}.json").as_posix()
+    )
     artifact_lines = [
         f"native installer smoke artifact sha256: {name} {artifact_hashes[name]}"
         for name in sorted(artifact_hashes)
@@ -1701,7 +1987,7 @@ def _write_linux_smoke_evidence(
                 f"native installer smoke command: bash scripts/smoke_linux_native.sh --arch {arch} "
                 f"--dist native-dist/linux --target {target} --workflow-run-url {workflow_run_url} "
                 f"--workflow-run-attempt {workflow_run_attempt} "
-                f"--source-head-sha {source_head_sha}",
+                f"--source-head-sha {source_head_sha} --builder-evidence {builder_evidence_path}",
                 "native installer smoke release: v1.0.2",
                 f"native installer smoke target arch: {arch}",
                 f"native installer smoke target: {target}",
@@ -1717,6 +2003,8 @@ def _write_linux_smoke_evidence(
                 "native installer smoke userland bits: 32",
                 "native installer smoke python ssl openssl: OpenSSL 3.0.13",
                 "native installer smoke openssl cli version: OpenSSL 3.0.13",
+                "native installer smoke security update channel: vendor-security-updates-2026-06",
+                "native installer smoke CVE review reference: vendor-cve-advisory-review-2026-06",
                 "native installer smoke TLS minimum modern profiles: TLS 1.2",
                 "native installer smoke TLS preferred modern profiles: TLS 1.3",
                 "native installer smoke legacy compatibility profile: isolated-opt-in",
@@ -1742,6 +2030,10 @@ def _write_linux_smoke_evidence(
         ),
         encoding="utf-8",
     )
+
+
+def _candidate_builder_evidence_path(target: str, release_tag: str) -> str:
+    return f"evidence/{target}/{release_tag}/builder-identity-{target}.json"
 
 
 def _artifact_records(candidate: dict[str, object]) -> list[dict[str, object]]:

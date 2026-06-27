@@ -44,6 +44,13 @@ from make_platform_verified_evidence_record import (  # noqa: E402
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    if args.append_registry and not args.out:
+        print(
+            "finalize platform evidence record: --append-registry requires --out "
+            "so the finalized release artifact is written before registry append",
+            file=sys.stderr,
+        )
+        return 1
     errors, record = finalize_platform_verified_evidence_record(
         candidate_record=args.candidate_record,
         bundle_manifest=args.bundle_manifest,
@@ -57,7 +64,11 @@ def main(argv: list[str] | None = None) -> int:
 
     output = json.dumps(record, indent=2, sort_keys=True) + "\n"
     if args.out:
-        output_errors = check_text_output_path(args.out, "finalized platform evidence record output file")
+        output_errors = check_finalized_record_output_path(
+            args.out,
+            record,
+            bundle_manifest=args.bundle_manifest,
+        )
         if output_errors:
             for error in output_errors:
                 print(f"finalize platform evidence record: {error}", file=sys.stderr)
@@ -108,6 +119,7 @@ def finalize_platform_verified_evidence_record(
         ("review bundle SHA-256 sidecar", bundle_sha256s),
     ):
         check_input_file(path, label, errors)
+    errors.extend(check_review_bundle_input_siblings(bundle_manifest, bundle_archive, bundle_sha256s))
     if candidate is None or manifest is None or errors:
         return errors, {}
 
@@ -115,6 +127,8 @@ def finalize_platform_verified_evidence_record(
     release_tag = str(candidate.get("release_tag", ""))
     if target not in KNOWN_TARGETS:
         errors.append(f"candidate target is not protected: {target}")
+    else:
+        errors.extend(check_candidate_record_file_name(candidate_record, target))
     if manifest.get("target") != target:
         errors.append(f"review bundle manifest target must match candidate target {target}")
     if manifest.get("release_tag") != release_tag:
@@ -122,7 +136,10 @@ def finalize_platform_verified_evidence_record(
     expected_bundle_type = REVIEW_BUNDLE_TYPES.get(target)
     if expected_bundle_type and manifest.get("bundle_type") != expected_bundle_type:
         errors.append(f"review bundle manifest bundle_type must be {expected_bundle_type}")
-    errors.extend(check_candidate_is_unfinalized(candidate))
+    candidate_finalization_errors = check_candidate_is_unfinalized(candidate)
+    errors.extend(candidate_finalization_errors)
+    if not candidate_finalization_errors:
+        errors.extend(check_unfinalized_candidate_record(candidate))
     errors.extend(check_bundle_manifest_records(manifest))
     errors.extend(check_candidate_manifest_binding(candidate_record, candidate, manifest))
 
@@ -199,6 +216,21 @@ def check_candidate_is_unfinalized(candidate: dict[str, Any]) -> list[str]:
             f"remove fields: {finalized_fields}"
         ]
     return []
+
+
+def check_unfinalized_candidate_record(candidate: dict[str, Any]) -> list[str]:
+    registry = {
+        "schema_version": 1,
+        "policy": platform_evidence_policy(),
+        "accepted_evidence": [candidate],
+    }
+    return [
+        f"candidate evidence record failed strict candidate validation: {error}"
+        for error in check_platform_verified_evidence(
+            registry=registry,
+            require_review_bundles=False,
+        )
+    ]
 
 
 def check_candidate_release_asset_source_files(
@@ -350,7 +382,7 @@ def check_candidate_manifest_binding(
             check_manifest_file_record(
                 "candidate_record",
                 manifest.get("candidate_record"),
-                expected_file=f"platform-verified-evidence-{target}.json",
+                expected_file=candidate_record_file_name(target),
                 expected_sha256=sha256_file(candidate_record),
                 expected_size=candidate_record.stat().st_size,
             )
@@ -375,7 +407,7 @@ def check_candidate_manifest_binding(
             check_manifest_file_record(
                 "candidate_record",
                 manifest.get("candidate_record"),
-                expected_file=candidate_record.name,
+                expected_file=candidate_record_file_name(str(candidate.get("target", ""))),
                 expected_sha256=sha256_file(candidate_record),
                 expected_size=candidate_record.stat().st_size,
             )
@@ -920,6 +952,7 @@ def check_xp_archive_smoke_files(
                 smoke_id,
                 data,
                 read_json(ROOT / "configs" / "xp_native_evidence_contract.json"),
+                security=archived_evidence.get("security"),
             )
         )
     return errors
@@ -1022,6 +1055,69 @@ def check_input_file(path: Path, label: str, errors: list[str]) -> bool:
         errors.append(f"{label} file missing: {path}")
         return False
     return True
+
+
+def check_candidate_record_file_name(candidate_record: Path, target: str) -> list[str]:
+    expected_name = candidate_record_file_name(target)
+    if candidate_record.name == expected_name:
+        return []
+    return [
+        f"candidate evidence record file name must be {expected_name}, "
+        f"got {candidate_record.name!r}"
+    ]
+
+
+def candidate_record_file_name(target: str) -> str:
+    return f"platform-verified-evidence-{target}.json"
+
+
+def check_finalized_record_output_path(
+    path: Path,
+    record: dict[str, Any],
+    *,
+    bundle_manifest: Path | None = None,
+) -> list[str]:
+    target = str(record.get("target", ""))
+    expected_name = accepted_record_source_file(target)
+    errors: list[str] = []
+    if path.name != expected_name:
+        errors.append(
+            f"finalized platform evidence record output file name must be {expected_name}, "
+            f"got {path.name!r}"
+        )
+    errors.extend(check_text_output_path(path, "finalized platform evidence record output file"))
+    if bundle_manifest is not None:
+        output_parent = normalized_parent(path)
+        bundle_parent = normalized_parent(bundle_manifest)
+        if output_parent != bundle_parent:
+            errors.append(
+                "finalized platform evidence record output file must be written next to review bundle files: "
+                f"output={output_parent}, review_bundle={bundle_parent}"
+            )
+    return errors
+
+
+def check_review_bundle_input_siblings(
+    manifest: Path,
+    archive: Path,
+    sidecar: Path,
+) -> list[str]:
+    parents = {
+        "manifest": normalized_parent(manifest),
+        "archive": normalized_parent(archive),
+        "sha256s": normalized_parent(sidecar),
+    }
+    if len(set(parents.values())) == 1:
+        return []
+    return [
+        "review bundle files must be siblings in one directory: "
+        f"manifest={parents['manifest']}, archive={parents['archive']}, sha256s={parents['sha256s']}"
+    ]
+
+
+def normalized_parent(path: Path) -> Path:
+    check_path = path if path.is_absolute() else Path.cwd() / path
+    return check_path.parent.resolve()
 
 
 if __name__ == "__main__":

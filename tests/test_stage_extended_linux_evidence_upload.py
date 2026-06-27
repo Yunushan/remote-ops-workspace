@@ -374,6 +374,32 @@ def test_stage_extended_linux_evidence_upload_rejects_unsafe_destination(
     ]
 
 
+def test_stage_extended_linux_evidence_upload_rejects_staged_output_drift(
+    tmp_path: Path,
+) -> None:
+    stager = _load_stager()
+    out_dir = tmp_path / "linux-evidence-upload"
+    out_dir.mkdir()
+    (out_dir / "expected.deb").write_text("drifted artifact\n", encoding="utf-8")
+    (out_dir / "unexpected.txt").write_text("unexpected upload file\n", encoding="utf-8")
+    (out_dir / "nested").mkdir()
+    expected_hashes = {
+        "expected.deb": hashlib.sha256(b"expected artifact\n").hexdigest(),
+        "missing.rpm": hashlib.sha256(b"missing rpm\n").hexdigest(),
+    }
+
+    errors = stager.check_staged_output(
+        "linux-i386",
+        out_dir=out_dir,
+        expected_hashes=expected_hashes,
+    )
+
+    assert "linux-i386 staged upload output contains non-file entries: ['nested']" in errors
+    assert "linux-i386 staged upload output missing expected files: ['missing.rpm']" in errors
+    assert "linux-i386 staged upload output contains unexpected files: ['unexpected.txt']" in errors
+    assert "linux-i386 staged upload output SHA-256 mismatch: expected.deb" in errors
+
+
 def test_stage_extended_linux_evidence_upload_rejects_missing_expected_file(tmp_path: Path) -> None:
     stager = _load_stager()
     checker = _load_platform_promotion_artifacts_checker()
@@ -446,6 +472,26 @@ def test_stage_extended_linux_evidence_upload_rejects_unscoped_source_directory(
         "extended Linux evidence source directory must include release_tag path segment "
         f"'v1.0.2', got {source.as_posix()!r}"
     ) in errors
+
+
+def test_stage_extended_linux_evidence_upload_rejects_nonadjacent_target_release_scope(
+    tmp_path: Path,
+) -> None:
+    stager = _load_stager()
+    source = tmp_path / "platform-evidence-staging" / "v1.0.2" / "linux-i386" / "artifacts"
+    source.mkdir(parents=True)
+
+    errors = stager.stage_extended_linux_evidence_upload(
+        target="linux-i386",
+        release_tag="v1.0.2",
+        source_dir=source,
+        out_dir=tmp_path / "upload",
+    )
+
+    assert errors == [
+        "extended Linux evidence source directory must include adjacent target/release path segment "
+        f"linux-i386/v1.0.2, got {source.as_posix()!r}"
+    ]
 
 
 def test_stage_extended_linux_evidence_upload_rejects_overlapping_output_path(tmp_path: Path) -> None:

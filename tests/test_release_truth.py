@@ -41,6 +41,45 @@ def test_release_truth_checker_requires_xp_release_source_docs() -> None:
     assert "--source-workflow-run-url" in checker.REQUIRED_DOC_SNIPPETS
     assert "xp smoke source head sha" in checker.REQUIRED_DOC_SNIPPETS
     assert "xp_evidence_summary.release_source" in checker.REQUIRED_DOC_SNIPPETS
+    assert "scripts/xp_smoke_runner.cmd" in checker.REQUIRED_DOC_SNIPPETS
+    assert "modern self-hosted `xp-evidence` collector" in checker.REQUIRED_DOC_SNIPPETS
+
+
+def test_release_truth_checker_requires_release_strategy_import_dry_run_docs() -> None:
+    checker = _load_release_truth_checker()
+
+    assert (
+        "python scripts/import_platform_evidence_artifacts.py --release-tag <tag> "
+        "--require-goal-targets --out-dir <release-assets-dir> --dry-run --verify-source-run"
+    ) in checker.REQUIRED_RELEASE_STRATEGY_SNIPPETS
+    assert "pre-release protected-platform import dry-run" in checker.REQUIRED_RELEASE_STRATEGY_SNIPPETS
+    assert "does not stage files for upload" in checker.REQUIRED_RELEASE_STRATEGY_SNIPPETS
+
+
+def test_release_truth_checker_requires_xp_host_collector_docs() -> None:
+    checker = _load_release_truth_checker()
+    original_read = checker.read
+
+    def fake_read(relative: str) -> str:
+        text = original_read(relative)
+        if relative in {"README.md", "README.tr.md", "docs/PLATFORM_SUPPORT.md", "docs/RELEASE_STRATEGY.md"}:
+            return (
+                text.replace("modern self-hosted `xp-evidence` collector", "XP runner")
+                .replace("self-hosted `xp-evidence` collector", "XP runner")
+                .replace("`xp-evidence` collector", "XP runner")
+                .replace("`scripts/xp_smoke_runner.cmd`", "`xp_smoke.cmd`")
+                .replace("scripts/xp_smoke_runner.cmd", "xp_smoke.cmd")
+            )
+        return text
+
+    checker.read = fake_read
+    try:
+        errors = checker.check_release_docs()
+    finally:
+        checker.read = original_read
+
+    assert any("scripts/xp_smoke_runner.cmd" in error for error in errors)
+    assert any("xp-evidence" in error and "collector" in error for error in errors)
 
 
 def test_release_truth_checker_rejects_stale_unfinalized_candidate_guidance() -> None:
@@ -285,6 +324,33 @@ def test_release_truth_checker_requires_release_strategy_import_run_attempt_bind
         "release docs still advertise stale platform evidence workflow guidance: "
         "source-head-bound accepted Linux i386, Linux armhf and Windows XP native-host artifacts"
     ) in errors
+
+
+def test_release_truth_checker_requires_release_strategy_import_dry_run_proof() -> None:
+    checker = _load_release_truth_checker()
+    original_read = checker.read
+
+    def fake_read(relative: str) -> str:
+        text = original_read(relative)
+        if relative == "docs/RELEASE_STRATEGY.md":
+            return text.replace(
+                "python scripts/import_platform_evidence_artifacts.py --release-tag <tag> "
+                "--require-goal-targets --out-dir <release-assets-dir> --dry-run --verify-source-run",
+                "python scripts/import_platform_evidence_artifacts.py --help",
+            )
+        return text
+
+    checker.read = fake_read
+    try:
+        errors = checker.check_release_docs()
+    finally:
+        checker.read = original_read
+
+    assert any(
+        "docs/RELEASE_STRATEGY.md missing pre-release platform import truth snippet" in error
+        and "--dry-run --verify-source-run" in error
+        for error in errors
+    )
 
 
 def test_release_truth_checker_requires_turkish_import_run_attempt_binding() -> None:
@@ -551,6 +617,51 @@ def test_release_truth_checker_requires_tagged_publish_time_platform_goal_gate()
     assert any("publish-time protected platform goal gate" in error and "--tag" in error for error in errors)
 
 
+def test_release_truth_checker_requires_protected_platform_release_asset_gate() -> None:
+    checker = _load_release_truth_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        '      - name: Require protected platform release assets\n'
+        '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" --require-complete --assets-dir release-assets\n',
+        "",
+    )
+
+    errors = checker.check_release_preflight(workflow)
+
+    assert any("protected platform release asset gate" in error for error in errors)
+
+
+def test_release_truth_checker_requires_protected_asset_gate_before_publish_asset_validation() -> None:
+    checker = _load_release_truth_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    protected_gate = (
+        '      - name: Require protected platform release assets\n'
+        '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" --require-complete --assets-dir release-assets\n'
+    )
+    publish_gate = (
+        '      - name: Validate release publish assets\n'
+        '        run: python scripts/check_release_publish_assets.py --assets-dir release-assets --tag "${{ github.ref_name }}" --require-platform-goal-targets\n'
+    )
+    workflow = workflow.replace(protected_gate, "").replace(publish_gate, publish_gate + protected_gate)
+
+    errors = checker.check_release_preflight(workflow)
+
+    assert "protected platform release asset gate must run before publish asset validation" in errors
+
+
+def test_release_truth_checker_requires_protected_asset_gate_before_release_upload() -> None:
+    checker = _load_release_truth_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    protected_gate = (
+        '      - name: Require protected platform release assets\n'
+        '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" --require-complete --assets-dir release-assets\n'
+    )
+    workflow = workflow.replace(protected_gate, "") + protected_gate
+
+    errors = checker.check_release_preflight(workflow)
+
+    assert "protected platform release asset gate must run before GitHub release upload" in errors
+
+
 def test_release_truth_checker_requires_publish_gate_before_release_upload() -> None:
     checker = _load_release_truth_checker()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
@@ -641,6 +752,43 @@ def test_release_truth_checker_rejects_platform_import_nonstandard_write_permiss
     errors = checker.check_release_preflight(workflow)
 
     assert "accepted-platform-evidence-assets must not request write permissions" in errors
+
+
+def test_release_truth_checker_requires_platform_import_timeout() -> None:
+    checker = _load_release_truth_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        "    runs-on: ubuntu-latest\n    timeout-minutes: 20\n    permissions:",
+        "    runs-on: ubuntu-latest\n    permissions:",
+        1,
+    )
+
+    errors = checker.check_release_preflight(workflow)
+
+    assert any("bounded platform evidence import timeout" in error for error in errors)
+
+
+def test_release_truth_checker_requires_platform_import_hidden_file_exclusion() -> None:
+    checker = _load_release_truth_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        "          include-hidden-files: false\n",
+        "",
+    )
+
+    errors = checker.check_release_preflight(workflow)
+
+    assert any("platform evidence upload hidden file exclusion" in error for error in errors)
+
+
+def test_release_truth_checker_requires_platform_import_retention_window() -> None:
+    checker = _load_release_truth_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        "          retention-days: 90\n",
+        "",
+    )
+
+    errors = checker.check_release_preflight(workflow)
+
+    assert any("platform evidence upload retention window" in error for error in errors)
 
 
 def test_release_truth_checker_requires_publish_to_need_platform_evidence_assets() -> None:

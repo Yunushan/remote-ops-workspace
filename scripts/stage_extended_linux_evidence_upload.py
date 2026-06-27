@@ -140,6 +140,7 @@ def stage_extended_linux_evidence_upload(
     errors.extend(prepare_output_directory(target, out_dir=out_dir, force=force))
     if errors:
         return errors
+    source_hashes = {name: sha256_file(source) for name, source in sorted(sources.items())}
     for name, source in sorted(sources.items()):
         destination = out_dir / name
         errors.extend(check_destination_path(target, destination, name))
@@ -148,6 +149,7 @@ def stage_extended_linux_evidence_upload(
         if destination.exists() and not force:
             return [f"refusing to overwrite staged extended Linux upload file: {destination}"]
         shutil.copy2(source, destination)
+    errors.extend(check_staged_output(target, out_dir=out_dir, expected_hashes=source_hashes))
     return []
 
 
@@ -374,6 +376,45 @@ def check_destination_path(target: str, destination: Path, filename: str) -> lis
     return []
 
 
+def check_staged_output(
+    target: str,
+    *,
+    out_dir: Path,
+    expected_hashes: dict[str, str],
+) -> list[str]:
+    if out_dir.is_symlink():
+        return [f"{target} staged upload output directory must not be a symlink: {out_dir}"]
+    if not out_dir.is_dir():
+        return [f"{target} staged upload output directory missing after copy: {out_dir}"]
+    errors: list[str] = []
+    root_files: set[str] = set()
+    symlinked: list[str] = []
+    non_files: list[str] = []
+    for child in out_dir.iterdir():
+        if child.is_symlink():
+            symlinked.append(child.name)
+        elif child.is_file():
+            root_files.add(child.name)
+        else:
+            non_files.append(child.name)
+    if symlinked:
+        errors.append(f"{target} staged upload output contains symlinked entries: {sorted(symlinked)}")
+    if non_files:
+        errors.append(f"{target} staged upload output contains non-file entries: {sorted(non_files)}")
+    expected_files = set(expected_hashes)
+    missing = sorted(expected_files - root_files)
+    unexpected = sorted(root_files - expected_files)
+    if missing:
+        errors.append(f"{target} staged upload output missing expected files: {missing}")
+    if unexpected:
+        errors.append(f"{target} staged upload output contains unexpected files: {unexpected}")
+    for filename, expected_sha in sorted(expected_hashes.items()):
+        path = out_dir / filename
+        if filename in root_files and sha256_file(path) != expected_sha:
+            errors.append(f"{target} staged upload output SHA-256 mismatch: {filename}")
+    return errors
+
+
 def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
     check_path = path if path.is_absolute() else Path.cwd() / path
     for parent in reversed(check_path.parents):
@@ -398,14 +439,31 @@ def check_target_release_path_segments(
     *,
     label: str,
 ) -> list[str]:
-    segments = {str(part) for part in path.parts if str(part)}
+    parts = tuple(str(part) for part in path.parts if str(part))
+    segments = set(parts)
     raw_path = path.as_posix()
     errors: list[str] = []
     if target not in segments:
         errors.append(f"{label} must include target path segment {target!r}, got {raw_path!r}")
     if release_tag not in segments:
         errors.append(f"{label} must include release_tag path segment {release_tag!r}, got {raw_path!r}")
+    if not errors and not has_adjacent_target_release_segments(parts, target, release_tag):
+        errors.append(
+            f"{label} must include adjacent target/release path segment "
+            f"{target}/{release_tag}, got {raw_path!r}"
+        )
     return errors
+
+
+def has_adjacent_target_release_segments(
+    parts: tuple[str, ...],
+    target: str,
+    release_tag: str,
+) -> bool:
+    return any(
+        part == target and index + 1 < len(parts) and parts[index + 1] == release_tag
+        for index, part in enumerate(parts)
+    )
 
 
 def sha256_file(path: Path) -> str:

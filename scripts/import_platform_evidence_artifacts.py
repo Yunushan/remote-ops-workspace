@@ -39,6 +39,7 @@ SOURCE_RUN_METADATA_JQ = (
     "{attempt: .run_attempt, status: .status, conclusion: .conclusion, "
     "event: .event, headSha: .head_sha, path: .path}"
 )
+SOURCE_RUN_ARTIFACTS_PAGE_SIZE = 100
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -104,8 +105,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--verify-source-run",
         action="store_true",
         help=(
-            "inspect each recorded GitHub Actions source run during --dry-run; "
-            "real imports always verify source-run metadata before downloading artifacts"
+            "inspect each recorded GitHub Actions source run and source artifact "
+            "inventory during --dry-run; real imports always verify source-run "
+            "metadata and artifact inventory before downloading artifacts"
         ),
     )
     return parser.parse_args(argv)
@@ -151,6 +153,8 @@ def import_platform_evidence_artifacts(
 ) -> list[str]:
     errors: list[str] = []
     errors.extend(ensure_output_directory(out_dir))
+    if records and not dry_run:
+        errors.extend(check_output_directory_empty(out_dir))
     if errors:
         return errors
     if records and (not dry_run or verify_source_run_metadata):
@@ -185,6 +189,18 @@ def ensure_output_directory(out_dir: Path) -> list[str]:
         return parent_errors
     if out_dir.exists() and not out_dir.is_dir():
         return [f"release asset import output path must be a directory: {out_dir}"]
+    return []
+
+
+def check_output_directory_empty(out_dir: Path) -> list[str]:
+    if not out_dir.exists():
+        return []
+    entries = sorted(path.name for path in out_dir.iterdir())
+    if entries:
+        return [
+            "release asset import output directory must be empty before import: "
+            f"{entries}"
+        ]
     return []
 
 
@@ -272,6 +288,7 @@ def import_record(
         repository,
         expected_run_attempt,
     )
+    artifacts_command = source_run_artifacts_command(run_id, repository)
     command = [
         "gh",
         "run",
@@ -286,14 +303,25 @@ def import_record(
     ]
     if dry_run:
         print(" ".join(metadata_command))
+        print(" ".join(artifacts_command))
         print(" ".join(command))
         if verify_source_run_metadata:
-            return verify_source_run(
+            errors = verify_source_run(
                 target,
                 metadata_command,
                 expected_head_sha=expected_head_sha,
                 expected_run_attempt=expected_run_attempt,
                 release_head_sha=release_head_sha,
+            )
+            if errors:
+                return errors
+            return verify_source_artifact(
+                target,
+                artifacts_command,
+                artifact_name=artifact_name,
+                expected_repository=repository,
+                expected_run_id=run_id,
+                expected_head_sha=expected_head_sha,
             )
     else:
         errors = verify_source_run(
@@ -302,6 +330,16 @@ def import_record(
             expected_head_sha=expected_head_sha,
             expected_run_attempt=expected_run_attempt,
             release_head_sha=release_head_sha,
+        )
+        if errors:
+            return errors
+        errors = verify_source_artifact(
+            target,
+            artifacts_command,
+            artifact_name=artifact_name,
+            expected_repository=repository,
+            expected_run_id=run_id,
+            expected_head_sha=expected_head_sha,
         )
         if errors:
             return errors
@@ -384,6 +422,14 @@ def source_run_attempt_metadata_command(
     ]
 
 
+def source_run_artifacts_command(run_id: str, repository: str) -> list[str]:
+    return [
+        "gh",
+        "api",
+        f"repos/{repository}/actions/runs/{run_id}/artifacts?per_page={SOURCE_RUN_ARTIFACTS_PAGE_SIZE}",
+    ]
+
+
 def verify_source_run(
     target: str,
     command: list[str],
@@ -438,6 +484,97 @@ def verify_source_run(
             release_head_sha=release_head_sha,
         )
     )
+    return errors
+
+
+def verify_source_artifact(
+    target: str,
+    command: list[str],
+    *,
+    artifact_name: str,
+    expected_repository: str,
+    expected_run_id: str,
+    expected_head_sha: str,
+) -> list[str]:
+    try:
+        result = subprocess.run(command, check=True, capture_output=True, text=True)
+    except (OSError, subprocess.CalledProcessError) as exc:
+        return [f"{target} failed to inspect release_asset_source artifacts: {exc}"]
+    try:
+        data = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        return [f"{target} release_asset_source artifact metadata is not JSON: {exc}"]
+    if not isinstance(data, dict):
+        return [f"{target} release_asset_source artifact metadata must be a JSON object"]
+    raw_artifacts = data.get("artifacts")
+    if not isinstance(raw_artifacts, list):
+        return [f"{target} release_asset_source artifact metadata must include artifacts list"]
+    total_count = data.get("total_count")
+    if (
+        not isinstance(total_count, int)
+        or isinstance(total_count, bool)
+        or total_count != len(raw_artifacts)
+    ):
+        return [
+            f"{target} release_asset_source artifact metadata total_count must match "
+            f"the complete artifacts list length, got {total_count!r} for {len(raw_artifacts)} artifacts"
+        ]
+    matches = [
+        artifact
+        for artifact in raw_artifacts
+        if isinstance(artifact, dict) and artifact.get("name") == artifact_name
+    ]
+    if len(matches) != 1:
+        return [
+            f"{target} release_asset_source artifact list must contain exactly one "
+            f"{artifact_name!r}, got {len(matches)}"
+        ]
+    artifact = matches[0]
+    errors: list[str] = []
+    artifact_id = artifact.get("id")
+    if not isinstance(artifact_id, int) or isinstance(artifact_id, bool) or artifact_id <= 0:
+        errors.append(
+            f"{target} release_asset_source artifact {artifact_name} id must be a positive integer, "
+            f"got {artifact_id!r}"
+        )
+    else:
+        expected_archive_url = (
+            f"https://api.github.com/repos/{expected_repository}/actions/artifacts/{artifact_id}/zip"
+        )
+        if artifact.get("archive_download_url") != expected_archive_url:
+            errors.append(
+                f"{target} release_asset_source artifact {artifact_name} archive_download_url "
+                f"must be {expected_archive_url!r}, got {artifact.get('archive_download_url')!r}"
+            )
+    if artifact.get("expired") is not False:
+        errors.append(
+            f"{target} release_asset_source artifact {artifact_name} must not be expired, "
+            f"got {artifact.get('expired')!r}"
+        )
+    size = artifact.get("size_in_bytes")
+    if not isinstance(size, int) or isinstance(size, bool) or size <= 0:
+        errors.append(
+            f"{target} release_asset_source artifact {artifact_name} size_in_bytes must be positive, "
+            f"got {size!r}"
+        )
+    workflow_run = artifact.get("workflow_run")
+    if not isinstance(workflow_run, dict):
+        errors.append(
+            f"{target} release_asset_source artifact {artifact_name} workflow_run must be an object"
+        )
+    else:
+        artifact_run_id = workflow_run.get("id")
+        if str(artifact_run_id) != expected_run_id:
+            errors.append(
+                f"{target} release_asset_source artifact {artifact_name} workflow_run.id must match "
+                f"run {expected_run_id}, got {artifact_run_id!r}"
+            )
+        artifact_head_sha = str(workflow_run.get("head_sha", "")).strip()
+        if artifact_head_sha != expected_head_sha:
+            errors.append(
+                f"{target} release_asset_source artifact {artifact_name} workflow_run.head_sha must match "
+                f"accepted record {expected_head_sha}, got {artifact_head_sha!r}"
+            )
     return errors
 
 
@@ -649,11 +786,16 @@ def check_imported_hashes(record: dict[str, Any], *, out_dir: Path) -> list[str]
 
 def check_imported_review_bundle(record: dict[str, Any], *, out_dir: Path) -> list[str]:
     registry = read_json(EVIDENCE_PATH)
+    target = str(record.get("target", "")).strip()
+    release_tag = str(record.get("release_tag", "")).strip()
     errors = check_platform_review_bundle_artifacts(
         registry={**registry, "accepted_evidence": [public_record(record)]},
         bundle_dir=out_dir,
+        required_targets=(target,) if target else None,
+        required_release_tag=release_tag or None,
+        require_final_record_assets=True,
     )
-    return [f"{str(record.get('target', ''))} imported review bundle validation failed: {error}" for error in errors]
+    return [f"{target} imported review bundle validation failed: {error}" for error in errors]
 
 
 def expected_release_files(record: dict[str, Any]) -> set[str]:

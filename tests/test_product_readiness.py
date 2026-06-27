@@ -246,7 +246,10 @@ def test_product_readiness_rejects_wrong_xp_builder_or_host_evidence(monkeypatch
 
     assert (
         "windows-xp-native-x64 protected platform requirement builder_or_host_evidence must be "
-        "Windows XP Professional x64 Edition SP2 VM or physical/self-hosted runner"
+        "Windows XP Professional x64 Edition SP2 VM or physical host running "
+        "scripts/xp_smoke_runner.cmd and artifact validation; collector: modern "
+        "self-hosted xp-evidence collector with Python 3.12 and GitHub Actions support; "
+        "validates staged XP host proof but does not replace XP host smoke evidence"
     ) in errors
 
 
@@ -272,6 +275,7 @@ def test_product_readiness_rejects_weak_linux_smoke_evidence_requirements(monkey
     ) in errors
     assert any(
         error.startswith("linux-i386 protected platform requirement smoke_evidence missing:")
+        and "consume matching builder identity evidence during native smoke and bind host identity plus security provenance from it" in error
         and "bind sanitized host label, deterministic evidence run ID and observed-at UTC timestamp into the native smoke log" in error
         and "prove 32-bit Linux userland and target architecture on the builder" in error
         and "bind DEB, RPM and AppImage SHA-256 lines into the native smoke log" in error
@@ -307,7 +311,7 @@ def test_product_readiness_rejects_weak_xp_smoke_evidence_requirements(monkeypat
     ) in errors
     assert any(
         error.startswith("windows-xp-native-x86 protected platform requirement smoke_evidence missing:")
-        and "validate artifact manifest and SHA256SUMS on the XP evidence host" in error
+        and "validate artifact manifest and SHA256SUMS on the Windows XP host before collector upload" in error
         and "prove legacy crypto remains profile-scoped opt-in" in error
         and "prove modern defaults remain unchanged" in error
         for error in errors

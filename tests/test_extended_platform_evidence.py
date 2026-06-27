@@ -104,6 +104,19 @@ def test_extended_platform_evidence_requires_builder_release_context() -> None:
     )
 
 
+def test_extended_platform_evidence_requires_release_tag_env_for_native_build() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
+        "    env:\n      RELEASE_TAG: ${{ inputs.release_tag }}\n",
+        "",
+        1,
+    )
+
+    errors = checker.check_extended_platform_evidence(workflow)
+
+    assert any("release-tag environment binding for native build script" in error for error in errors)
+
+
 def test_extended_platform_evidence_requires_builder_workflow_run_attempt() -> None:
     checker = _load_script("check_extended_platform_evidence")
     workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
@@ -129,6 +142,19 @@ def test_extended_platform_evidence_requires_smoke_workflow_run_attempt() -> Non
 
     assert any("native installer smoke evidence capture" in error for error in errors)
     assert any("native smoke workflow run-attempt evidence" in error for error in errors)
+
+
+def test_extended_platform_evidence_requires_smoke_builder_identity_binding() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
+        " --builder-evidence platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/builder-identity-linux-i386.json",
+        "",
+        1,
+    )
+
+    errors = checker.check_extended_platform_evidence(workflow)
+
+    assert any("native installer smoke evidence capture" in error for error in errors)
 
 
 def test_extended_platform_evidence_requires_release_source_artifact_name() -> None:
@@ -236,6 +262,30 @@ def test_extended_platform_evidence_rejects_raw_upload_wildcard() -> None:
     errors = checker.check_extended_platform_evidence(workflow)
 
     assert "linux-i386-native-evidence must upload scoped staged files, not raw native-dist/linux wildcard" in errors
+
+
+def test_extended_platform_evidence_requires_hidden_file_exclusion_for_upload() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
+        "          include-hidden-files: false\n",
+        "",
+    )
+
+    errors = checker.check_extended_platform_evidence(workflow)
+
+    assert any("hidden file exclusion for evidence artifact upload" in error for error in errors)
+
+
+def test_extended_platform_evidence_requires_retained_source_artifact_upload() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
+        "          retention-days: 90\n",
+        "",
+    )
+
+    errors = checker.check_extended_platform_evidence(workflow)
+
+    assert any("evidence artifact retention window" in error for error in errors)
 
 
 def test_extended_platform_evidence_requires_dispatch_input_preflight() -> None:
@@ -367,8 +417,26 @@ def test_extended_platform_builder_rejects_interactive_sudo(monkeypatch) -> None
 
 def test_extended_platform_builder_writes_identity_evidence(tmp_path: Path, monkeypatch) -> None:
     checker = _load_script("check_extended_platform_builder")
-    for name in ("GITHUB_SHA", "GITHUB_RUN_ATTEMPT", "GITHUB_RUN_ID", "GITHUB_REPOSITORY"):
+    for name in (
+        "GITHUB_ACTIONS",
+        "GITHUB_SHA",
+        "GITHUB_RUN_ATTEMPT",
+        "GITHUB_RUN_ID",
+        "GITHUB_REPOSITORY",
+        "GITHUB_WORKFLOW_REF",
+        "GITHUB_WORKFLOW_SHA",
+    ):
         monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("GITHUB_SHA", "a" * 40)
+    monkeypatch.setenv("GITHUB_RUN_ATTEMPT", "1")
+    monkeypatch.setenv("GITHUB_RUN_ID", "12345")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "example/remote-ops-workspace")
+    monkeypatch.setenv(
+        "GITHUB_WORKFLOW_REF",
+        "example/remote-ops-workspace/.github/workflows/extended-platform-evidence.yml@refs/heads/main",
+    )
+    monkeypatch.setenv("GITHUB_WORKFLOW_SHA", "a" * 40)
     monkeypatch.setattr(checker.sys, "platform", "linux")
     monkeypatch.setattr(checker.sys, "version_info", (3, 12, 0))
     monkeypatch.setattr(checker, "normalized_machine", lambda: "i686")
@@ -404,6 +472,10 @@ def test_extended_platform_builder_writes_identity_evidence(tmp_path: Path, monk
     assert data["release_tag"] == "v1.0.2"
     assert data["workflow_run_url"] == "https://github.com/example/remote-ops-workspace/actions/runs/12345"
     assert data["workflow_run_attempt"] == 1
+    assert data["workflow_ref"] == (
+        "example/remote-ops-workspace/.github/workflows/extended-platform-evidence.yml@refs/heads/main"
+    )
+    assert data["workflow_sha"] == "a" * 40
     assert data["source_head_sha"] == "a" * 40
     assert data["observed_git_head_sha"] == "a" * 40
     assert data["git_worktree_clean"] is True

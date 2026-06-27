@@ -84,8 +84,9 @@ and armhf must gain real default release builders, smoke evidence, native
 manifests and checksum sidecars through
 `.github/workflows/extended-platform-evidence.yml` before they leave the 70.0%
 script-supported row. Windows XP native-host readiness must gain a separate
-XP-capable legacy toolchain plus x86/x64 XP VM evidence that passes
-`python scripts/check_xp_native_evidence.py` before it leaves the 25.0%
+XP-capable legacy toolchain plus x86/x64 XP host evidence captured with
+`scripts/xp_smoke_runner.cmd`, packaged by a modern `xp-evidence` collector,
+and validated by `python scripts/check_xp_native_evidence.py` before it leaves the 25.0%
 remote-target-only row. Accepted evidence records live in
 `configs/platform_verified_evidence.json` and are checked by
 `python scripts/check_platform_verified_evidence.py`; an empty registry means no
@@ -100,7 +101,8 @@ same release source head SHA and a positive release source run attempt in each r
 mixed-repository or mixed-source-head accepted records remain aggregate evidence only
 and cannot complete the protected goal parity block. The release/verifier promotion
 gate is `python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> --release-assets-dir <release-assets-dir>`,
-which also runs `python scripts/check_release_publish_assets.py --assets-dir <release-assets-dir> --tag v<project.version> --require-platform-goal-targets`
+which also runs `python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-complete --assets-dir <release-assets-dir>`
+and `python scripts/check_release_publish_assets.py --assets-dir <release-assets-dir> --tag v<project.version> --require-platform-goal-targets`
 and must fail until the same four records are finalized and accepted from that same release source. Use
 `python scripts/make_platform_verified_evidence_record.py`
 to generate a candidate accepted record from validated artifact and XP evidence

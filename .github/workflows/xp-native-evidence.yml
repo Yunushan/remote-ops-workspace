@@ -51,6 +51,8 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+      - name: Record XP evidence collector boundary
+        run: python -c "print('XP evidence collector validates staged proof captured on real Windows XP hosts; run scripts/xp_smoke_runner.cmd on the XP host before dispatch.')"
       - name: Create XP evidence output directory
         run: python -c "from pathlib import Path; Path('xp-evidence-output/${{ inputs.target }}/${{ inputs.release_tag }}').mkdir(parents=True, exist_ok=True)"
       - name: Validate XP evidence dispatch inputs
@@ -74,3 +76,5 @@ jobs:
           name: xp-native-evidence-${{ inputs.target }}-${{ inputs.release_tag }}
           path: xp-evidence-upload/*
           if-no-files-found: error
+          include-hidden-files: false
+          retention-days: 90

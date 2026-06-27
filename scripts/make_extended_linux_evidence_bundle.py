@@ -15,11 +15,13 @@ if str(SRC) not in sys.path:
 from check_platform_promotion_artifacts import (  # noqa: E402
     check_platform_promotion_artifacts,
 )
+from check_platform_goal_local_evidence import check_platform_goal_local_evidence  # noqa: E402
 from check_platform_verified_evidence import (  # noqa: E402
     LINUX_TARGETS,
     check_linux_smoke_builder_identity_binding,
     check_linux_smoke_log_text,
     check_platform_verified_evidence,
+    command_argument_values,
     directory_path_has_file_suffix,
     json_sha256,
     promotion_config_sha256,
@@ -158,6 +160,17 @@ def make_extended_linux_evidence_bundle(
     actual_artifact_sha = artifact_sha256_map(target, release_tag, assets_dir, promotion)
     if candidate.get("artifact_sha256") != actual_artifact_sha:
         errors.append("candidate artifact_sha256 must match current artifact files")
+    if not errors:
+        errors.extend(
+            check_local_protected_goal_preflight(
+                target=target,
+                release_tag=release_tag,
+                assets_dir=assets_dir,
+                builder_evidence=builder_evidence,
+                smoke_evidence=smoke_evidence,
+                candidate=candidate,
+            )
+        )
     if errors:
         return errors
 
@@ -238,6 +251,43 @@ def check_candidate_is_unfinalized(candidate: dict[str, Any]) -> list[str]:
             f"remove fields: {finalized_fields}"
         ]
     return []
+
+
+def check_local_protected_goal_preflight(
+    *,
+    target: str,
+    release_tag: str,
+    assets_dir: Path,
+    builder_evidence: Path,
+    smoke_evidence: Path,
+    candidate: dict[str, Any],
+) -> list[str]:
+    errors: list[str] = []
+    roots = command_argument_values(str(candidate.get("local_evidence_preflight_command", "")), "--root")
+    if len(roots) != 1:
+        errors.append(f"{target} candidate local evidence preflight command must include exactly one --root")
+        return [f"local protected-goal preflight failed: {error}" for error in errors]
+    source = candidate.get("release_asset_source")
+    if not isinstance(source, dict):
+        errors.append(f"{target} candidate release_asset_source must be an object")
+        return [f"local protected-goal preflight failed: {error}" for error in errors]
+    source_run_attempt = source.get("run_attempt")
+    if not isinstance(source_run_attempt, int) or isinstance(source_run_attempt, bool):
+        errors.append(f"{target} candidate release_asset_source.run_attempt must be an integer")
+        return [f"local protected-goal preflight failed: {error}" for error in errors]
+    preflight_errors = check_platform_goal_local_evidence(
+        root=Path(roots[0]),
+        release_tag=release_tag,
+        targets=(target,),
+        linux_workflow_run_url=str(candidate.get("workflow_run_url", "")),
+        linux_source_head_sha=str(source.get("head_sha", "")),
+        linux_source_run_attempt=source_run_attempt,
+        strict_artifacts=True,
+        assets_dir=assets_dir,
+        linux_builder_evidence=builder_evidence,
+        linux_smoke_evidence=smoke_evidence,
+    )
+    return [f"local protected-goal preflight failed: {error}" for error in preflight_errors]
 
 
 def prepare_output_paths(*, out_dir: Path, outputs: tuple[Path, ...], force: bool) -> list[str]:

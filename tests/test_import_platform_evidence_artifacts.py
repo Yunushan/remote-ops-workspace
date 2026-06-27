@@ -38,6 +38,9 @@ def test_import_record_downloads_expected_files_and_verifies_hashes(tmp_path: Pa
                     }
                 ),
             )
+        if _is_artifacts_command(command):
+            assert kwargs == {"capture_output": True, "text": True}
+            return _successful_artifacts(command)
         assert kwargs == {}
         assert command[:6] == ["gh", "run", "download", "12345", "--repo", "example/remote-ops-workspace"]
         destination = Path(command[-1])
@@ -59,7 +62,8 @@ def test_import_record_downloads_expected_files_and_verifies_hashes(tmp_path: Pa
 
     assert errors == []
     assert commands[0] == _source_run_metadata_command(importer)
-    assert commands[1][:4] == ["gh", "run", "download", "12345"]
+    assert commands[1] == _source_run_artifacts_command(importer)
+    assert commands[2][:4] == ["gh", "run", "download", "12345"]
     assert sorted(path.name for path in out_dir.iterdir()) == sorted(importer.expected_release_files(record))
 
 
@@ -70,6 +74,8 @@ def test_import_record_rejects_missing_downloaded_file(tmp_path: Path, monkeypat
     def fake_run(command: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
         if _is_metadata_command(command):
             return _successful_view(command)
+        if _is_artifacts_command(command):
+            return _successful_artifacts(command)
         Path(command[-1]).mkdir(parents=True)
         return subprocess.CompletedProcess(command, 0)
 
@@ -93,6 +99,8 @@ def test_import_record_rejects_missing_final_record_source_file(tmp_path: Path, 
     def fake_run(command: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
         if _is_metadata_command(command):
             return _successful_view(command)
+        if _is_artifacts_command(command):
+            return _successful_artifacts(command)
         destination = Path(command[-1])
         destination.mkdir(parents=True)
         for source in record["_source_files"]:
@@ -125,6 +133,8 @@ def test_import_record_rejects_final_record_source_file_drift(tmp_path: Path, mo
     def fake_run(command: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
         if _is_metadata_command(command):
             return _successful_view(command)
+        if _is_artifacts_command(command):
+            return _successful_artifacts(command)
         destination = Path(command[-1])
         destination.mkdir(parents=True)
         for source in record["_source_files"]:
@@ -159,6 +169,8 @@ def test_import_record_rejects_unexpected_downloaded_file(tmp_path: Path, monkey
     def fake_run(command: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
         if _is_metadata_command(command):
             return _successful_view(command)
+        if _is_artifacts_command(command):
+            return _successful_artifacts(command)
         destination = Path(command[-1])
         destination.mkdir(parents=True)
         for source in record["_source_files"]:
@@ -187,6 +199,8 @@ def test_import_record_rejects_nested_downloaded_artifact_directory(tmp_path: Pa
     def fake_run(command: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
         if _is_metadata_command(command):
             return _successful_view(command)
+        if _is_artifacts_command(command):
+            return _successful_artifacts(command)
         destination = Path(command[-1])
         nested = destination / "native-dist"
         nested.mkdir(parents=True)
@@ -461,6 +475,56 @@ def test_import_platform_evidence_artifacts_rejects_symlinked_output_parent(
     assert not out_dir.exists()
 
 
+def test_import_platform_evidence_artifacts_rejects_nonempty_output_directory(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+    out_dir = tmp_path / "release-assets"
+    out_dir.mkdir()
+    stale_file = out_dir / "stale.txt"
+    stale_file.write_text("stale\n", encoding="utf-8")
+
+    def fail_run(*_args: Any, **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+        raise AssertionError("gh should not run when output directory is not empty")
+
+    monkeypatch.setattr(importer.subprocess, "run", fail_run)
+
+    errors = importer.import_platform_evidence_artifacts(
+        [record],
+        out_dir=out_dir,
+        dry_run=False,
+        release_head_sha=HEAD_SHA,
+    )
+
+    assert errors == [
+        "release asset import output directory must be empty before import: ['stale.txt']"
+    ]
+    assert stale_file.exists()
+
+
+def test_import_platform_evidence_artifacts_dry_run_allows_nonempty_output_directory(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+    out_dir = tmp_path / "release-assets"
+    out_dir.mkdir()
+    (out_dir / "stale.txt").write_text("stale\n", encoding="utf-8")
+
+    errors = importer.import_platform_evidence_artifacts(
+        [record],
+        out_dir=out_dir,
+        dry_run=True,
+        release_head_sha=HEAD_SHA,
+    )
+
+    assert errors == []
+    assert "gh run download 12345" in capsys.readouterr().out
+
+
 def test_import_platform_evidence_artifacts_requires_gh_for_downloads(
     tmp_path: Path,
     monkeypatch,
@@ -610,6 +674,8 @@ def test_import_record_rejects_overwrite_with_different_file(tmp_path: Path, mon
     def fake_run(command: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
         if _is_metadata_command(command):
             return _successful_view(command)
+        if _is_artifacts_command(command):
+            return _successful_artifacts(command)
         destination = Path(command[-1])
         destination.mkdir(parents=True)
         for source in record["_source_files"]:
@@ -639,6 +705,8 @@ def test_import_record_rejects_tampered_source_file_before_copy(tmp_path: Path, 
     def fake_run(command: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
         if _is_metadata_command(command):
             return _successful_view(command)
+        if _is_artifacts_command(command):
+            return _successful_artifacts(command)
         destination = Path(command[-1])
         _write_source_files(record, destination)
         (destination / str(first_asset)).write_bytes(b"tampered before release staging\n")
@@ -1110,6 +1178,7 @@ def test_import_record_dry_run_prints_gh_download_command(tmp_path: Path, capsys
     assert errors == []
     captured = capsys.readouterr()
     assert "gh api repos/example/remote-ops-workspace/actions/runs/12345/attempts/1" in captured.out
+    assert "gh api repos/example/remote-ops-workspace/actions/runs/12345/artifacts?per_page=100" in captured.out
     assert "gh run download 12345 --repo example/remote-ops-workspace" in captured.out
     assert "--name extended-linux-evidence-linux-i386-v1.0.2" in captured.out
 
@@ -1126,9 +1195,11 @@ def test_import_record_dry_run_can_verify_source_run_without_download(
     def fake_run(command: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
         commands.append(command)
         assert check is True
-        assert _is_metadata_command(command)
         assert kwargs == {"capture_output": True, "text": True}
-        return _successful_view(command)
+        if _is_metadata_command(command):
+            return _successful_view(command)
+        assert _is_artifacts_command(command)
+        return _successful_artifacts(command)
 
     monkeypatch.setattr(importer.subprocess, "run", fake_run)
 
@@ -1142,11 +1213,258 @@ def test_import_record_dry_run_can_verify_source_run_without_download(
     )
 
     assert errors == []
-    assert commands == [_source_run_metadata_command(importer)]
+    assert commands == [
+        _source_run_metadata_command(importer),
+        _source_run_artifacts_command(importer),
+    ]
     assert not (tmp_path / "download").exists()
     captured = capsys.readouterr()
     assert "gh api repos/example/remote-ops-workspace/actions/runs/12345/attempts/1" in captured.out
+    assert "gh api repos/example/remote-ops-workspace/actions/runs/12345/artifacts?per_page=100" in captured.out
     assert "gh run download 12345 --repo example/remote-ops-workspace" in captured.out
+
+
+def test_import_record_dry_run_rejects_missing_source_artifact(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+
+    def fake_run(command: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        assert check is True
+        assert kwargs == {"capture_output": True, "text": True}
+        if _is_metadata_command(command):
+            return _successful_view(command)
+        assert _is_artifacts_command(command)
+        return _successful_artifacts(command, artifacts=[])
+
+    monkeypatch.setattr(importer.subprocess, "run", fake_run)
+
+    errors = importer.import_record(
+        record,
+        out_dir=tmp_path / "release-assets",
+        download_root=tmp_path / "download",
+        dry_run=True,
+        verify_source_run_metadata=True,
+        release_head_sha=HEAD_SHA,
+    )
+
+    assert errors == [
+        "linux-i386 release_asset_source artifact list must contain exactly one "
+        "'extended-linux-evidence-linux-i386-v1.0.2', got 0"
+    ]
+
+
+def test_verify_source_artifact_rejects_expired_or_empty_artifact(monkeypatch) -> None:
+    importer = _load_importer()
+    command = _source_run_artifacts_command(importer)
+
+    def fake_run(command_arg: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        assert command_arg == command
+        assert check is True
+        assert kwargs == {"capture_output": True, "text": True}
+        return _successful_artifacts(
+            command_arg,
+            artifacts=[
+                {
+                    "id": 98765,
+                    "name": "extended-linux-evidence-linux-i386-v1.0.2",
+                    "archive_download_url": (
+                        "https://api.github.com/repos/example/remote-ops-workspace/"
+                        "actions/artifacts/98765/zip"
+                    ),
+                    "expired": True,
+                    "size_in_bytes": 0,
+                    "workflow_run": {"id": 12345, "head_sha": HEAD_SHA},
+                }
+            ],
+        )
+
+    monkeypatch.setattr(importer.subprocess, "run", fake_run)
+
+    errors = importer.verify_source_artifact(
+        "linux-i386",
+        command,
+        artifact_name="extended-linux-evidence-linux-i386-v1.0.2",
+        expected_repository="example/remote-ops-workspace",
+        expected_run_id="12345",
+        expected_head_sha=HEAD_SHA,
+    )
+
+    assert (
+        "linux-i386 release_asset_source artifact extended-linux-evidence-linux-i386-v1.0.2 "
+        "must not be expired, got True"
+    ) in errors
+    assert (
+        "linux-i386 release_asset_source artifact extended-linux-evidence-linux-i386-v1.0.2 "
+        "size_in_bytes must be positive, got 0"
+    ) in errors
+
+
+def test_verify_source_artifact_rejects_partial_artifact_inventory(monkeypatch) -> None:
+    importer = _load_importer()
+    command = _source_run_artifacts_command(importer)
+
+    def fake_run(command_arg: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        assert command_arg == command
+        assert check is True
+        assert kwargs == {"capture_output": True, "text": True}
+        return _successful_artifacts(command_arg, total_count=101)
+
+    monkeypatch.setattr(importer.subprocess, "run", fake_run)
+
+    errors = importer.verify_source_artifact(
+        "linux-i386",
+        command,
+        artifact_name="extended-linux-evidence-linux-i386-v1.0.2",
+        expected_repository="example/remote-ops-workspace",
+        expected_run_id="12345",
+        expected_head_sha=HEAD_SHA,
+    )
+
+    assert errors == [
+        "linux-i386 release_asset_source artifact metadata total_count must match "
+        "the complete artifacts list length, got 101 for 1 artifacts"
+    ]
+
+
+def test_verify_source_artifact_rejects_wrong_workflow_run_binding(monkeypatch) -> None:
+    importer = _load_importer()
+    command = _source_run_artifacts_command(importer)
+    bad_head_sha = "b" * 40
+
+    def fake_run(command_arg: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        assert command_arg == command
+        assert check is True
+        assert kwargs == {"capture_output": True, "text": True}
+        return _successful_artifacts(
+            command_arg,
+            artifacts=[
+                {
+                    "id": 98765,
+                    "name": "extended-linux-evidence-linux-i386-v1.0.2",
+                    "archive_download_url": (
+                        "https://api.github.com/repos/example/remote-ops-workspace/"
+                        "actions/artifacts/98765/zip"
+                    ),
+                    "expired": False,
+                    "size_in_bytes": 4096,
+                    "workflow_run": {"id": 99999, "head_sha": bad_head_sha},
+                }
+            ],
+        )
+
+    monkeypatch.setattr(importer.subprocess, "run", fake_run)
+
+    errors = importer.verify_source_artifact(
+        "linux-i386",
+        command,
+        artifact_name="extended-linux-evidence-linux-i386-v1.0.2",
+        expected_repository="example/remote-ops-workspace",
+        expected_run_id="12345",
+        expected_head_sha=HEAD_SHA,
+    )
+
+    assert (
+        "linux-i386 release_asset_source artifact extended-linux-evidence-linux-i386-v1.0.2 "
+        "workflow_run.id must match run 12345, got 99999"
+    ) in errors
+    assert (
+        "linux-i386 release_asset_source artifact extended-linux-evidence-linux-i386-v1.0.2 "
+        f"workflow_run.head_sha must match accepted record {HEAD_SHA}, got {bad_head_sha!r}"
+    ) in errors
+
+
+def test_verify_source_artifact_rejects_unbound_artifact_identity(monkeypatch) -> None:
+    importer = _load_importer()
+    command = _source_run_artifacts_command(importer)
+
+    def fake_run(command_arg: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        assert command_arg == command
+        assert check is True
+        assert kwargs == {"capture_output": True, "text": True}
+        return _successful_artifacts(
+            command_arg,
+            artifacts=[
+                {
+                    "id": "98765",
+                    "name": "extended-linux-evidence-linux-i386-v1.0.2",
+                    "archive_download_url": "https://api.github.com/repos/other/repo/actions/artifacts/98765/zip",
+                    "expired": False,
+                    "size_in_bytes": 4096,
+                    "workflow_run": {"id": 12345, "head_sha": HEAD_SHA},
+                },
+                {
+                    "id": 98766,
+                    "name": "extended-linux-evidence-linux-armhf-v1.0.2",
+                    "archive_download_url": (
+                        "https://api.github.com/repos/example/remote-ops-workspace/"
+                        "actions/artifacts/98766/zip"
+                    ),
+                    "expired": False,
+                    "size_in_bytes": 4096,
+                    "workflow_run": {"id": 12345, "head_sha": HEAD_SHA},
+                },
+            ],
+        )
+
+    monkeypatch.setattr(importer.subprocess, "run", fake_run)
+
+    errors = importer.verify_source_artifact(
+        "linux-i386",
+        command,
+        artifact_name="extended-linux-evidence-linux-i386-v1.0.2",
+        expected_repository="example/remote-ops-workspace",
+        expected_run_id="12345",
+        expected_head_sha=HEAD_SHA,
+    )
+
+    assert errors == [
+        "linux-i386 release_asset_source artifact extended-linux-evidence-linux-i386-v1.0.2 "
+        "id must be a positive integer, got '98765'"
+    ]
+
+
+def test_verify_source_artifact_rejects_archive_download_url_mismatch(monkeypatch) -> None:
+    importer = _load_importer()
+    command = _source_run_artifacts_command(importer)
+
+    def fake_run(command_arg: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        assert command_arg == command
+        assert check is True
+        assert kwargs == {"capture_output": True, "text": True}
+        return _successful_artifacts(
+            command_arg,
+            artifacts=[
+                {
+                    "id": 98765,
+                    "name": "extended-linux-evidence-linux-i386-v1.0.2",
+                    "archive_download_url": "https://api.github.com/repos/other/repo/actions/artifacts/98765/zip",
+                    "expired": False,
+                    "size_in_bytes": 4096,
+                    "workflow_run": {"id": 12345, "head_sha": HEAD_SHA},
+                },
+            ],
+        )
+
+    monkeypatch.setattr(importer.subprocess, "run", fake_run)
+
+    errors = importer.verify_source_artifact(
+        "linux-i386",
+        command,
+        artifact_name="extended-linux-evidence-linux-i386-v1.0.2",
+        expected_repository="example/remote-ops-workspace",
+        expected_run_id="12345",
+        expected_head_sha=HEAD_SHA,
+    )
+
+    assert errors == [
+        "linux-i386 release_asset_source artifact extended-linux-evidence-linux-i386-v1.0.2 "
+        "archive_download_url must be "
+        "'https://api.github.com/repos/example/remote-ops-workspace/actions/artifacts/98765/zip', "
+        "got 'https://api.github.com/repos/other/repo/actions/artifacts/98765/zip'"
+    ]
 
 
 def test_import_record_dry_run_reports_verified_source_run_mismatch(
@@ -1231,6 +1549,45 @@ def test_check_imported_hashes_rejects_missing_imported_files(tmp_path: Path) ->
     assert f"linux-i386 imported review bundle archive missing: {missing_bundle}" in errors
 
 
+def test_check_imported_review_bundle_requires_final_record_asset(tmp_path: Path) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+    _write_source_files(record, tmp_path)
+    (tmp_path / "platform-verified-evidence-linux-i386-final.json").unlink()
+
+    errors = importer.check_imported_review_bundle(record, out_dir=tmp_path)
+
+    assert (
+        "linux-i386 imported review bundle validation failed: "
+        "linux-i386 finalized accepted-record asset missing from bundle directory: "
+        "platform-verified-evidence-linux-i386-final.json"
+    ) in errors
+
+
+def test_check_imported_review_bundle_binds_target_and_release_tag(tmp_path: Path, monkeypatch) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+    calls: list[dict[str, Any]] = []
+
+    def fake_check_platform_review_bundle_artifacts(**kwargs: Any) -> list[str]:
+        calls.append(kwargs)
+        return []
+
+    monkeypatch.setattr(
+        importer,
+        "check_platform_review_bundle_artifacts",
+        fake_check_platform_review_bundle_artifacts,
+    )
+
+    errors = importer.check_imported_review_bundle(record, out_dir=tmp_path)
+
+    assert errors == []
+    assert len(calls) == 1
+    assert calls[0]["required_targets"] == ("linux-i386",)
+    assert calls[0]["required_release_tag"] == "v1.0.2"
+    assert calls[0]["require_final_record_assets"] is True
+
+
 def test_import_record_rejects_tampered_review_bundle_content(tmp_path: Path, monkeypatch) -> None:
     importer = _load_importer()
     record = _record(tmp_path)
@@ -1238,6 +1595,8 @@ def test_import_record_rejects_tampered_review_bundle_content(tmp_path: Path, mo
     def fake_run(command: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
         if _is_metadata_command(command):
             return _successful_view(command)
+        if _is_artifacts_command(command):
+            return _successful_artifacts(command)
         destination = Path(command[-1])
         destination.mkdir(parents=True)
         for source in record["_source_files"]:
@@ -1319,6 +1678,38 @@ def _successful_view(command: list[str]) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _successful_artifacts(
+    command: list[str],
+    *,
+    artifacts: list[dict[str, object]] | None = None,
+    total_count: int | None = None,
+) -> subprocess.CompletedProcess[str]:
+    if artifacts is None:
+        artifacts = [
+            {
+                "id": 98765,
+                "name": "extended-linux-evidence-linux-i386-v1.0.2",
+                "archive_download_url": (
+                    "https://api.github.com/repos/example/remote-ops-workspace/"
+                    "actions/artifacts/98765/zip"
+                ),
+                "expired": False,
+                "size_in_bytes": 4096,
+                "workflow_run": {"id": 12345, "head_sha": HEAD_SHA},
+            }
+        ]
+    return subprocess.CompletedProcess(
+        command,
+        0,
+        stdout=json.dumps(
+            {
+                "total_count": len(artifacts) if total_count is None else total_count,
+                "artifacts": artifacts,
+            }
+        ),
+    )
+
+
 def _source_run_metadata_command(importer: Any) -> list[str]:
     return [
         "gh",
@@ -1329,11 +1720,27 @@ def _source_run_metadata_command(importer: Any) -> list[str]:
     ]
 
 
+def _source_run_artifacts_command(importer: Any) -> list[str]:
+    return [
+        "gh",
+        "api",
+        "repos/example/remote-ops-workspace/actions/runs/12345/artifacts?per_page=100",
+    ]
+
+
 def _is_metadata_command(command: list[str]) -> bool:
     return command[:3] == [
         "gh",
         "api",
         "repos/example/remote-ops-workspace/actions/runs/12345/attempts/1",
+    ]
+
+
+def _is_artifacts_command(command: list[str]) -> bool:
+    return command == [
+        "gh",
+        "api",
+        "repos/example/remote-ops-workspace/actions/runs/12345/artifacts?per_page=100",
     ]
 
 

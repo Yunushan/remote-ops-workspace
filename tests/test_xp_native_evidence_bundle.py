@@ -92,6 +92,50 @@ def test_xp_native_evidence_bundle_packages_valid_x86_evidence(tmp_path: Path) -
     assert f"{_sha256(archive)}  {archive.name}" in sidecar.read_text(encoding="utf-8")
 
 
+def test_xp_native_evidence_bundle_reruns_local_protected_goal_preflight(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bundler = _load_bundle_script()
+    artifact_checker = _load_platform_promotion_artifacts_checker()
+    tag = f"v{artifact_checker.read_project_version()}"
+    target = "windows-xp-native-x86"
+    assets = tmp_path / "native-dist" / "windows-xp" / target / tag
+    assets.mkdir(parents=True)
+    names = _required_artifact_names(artifact_checker, target, tag)
+    _write_artifact_set(assets, names)
+    evidence_data = _valid_evidence(target, "x86", "SP3", tag, names)
+    evidence_root = tmp_path / "evidence" / target / tag
+    _attach_smoke_evidence_files(evidence_root, evidence_data)
+    evidence = evidence_root / "xp-evidence.json"
+    evidence.write_text(json.dumps(evidence_data, indent=2) + "\n", encoding="utf-8")
+    candidate = tmp_path / f"platform-verified-evidence-{target}.json"
+    _write_candidate_record(candidate, target, tag, evidence, evidence_data, assets, work_root=tmp_path)
+    candidate_data = json.loads(candidate.read_text(encoding="utf-8"))
+    calls: list[dict[str, Any]] = []
+
+    def fail_preflight(**kwargs):
+        calls.append(kwargs)
+        return ["sentinel local preflight failure"]
+
+    monkeypatch.setattr(bundler, "check_local_protected_goal_preflight", fail_preflight)
+
+    with _pushd(tmp_path):
+        errors = bundler.make_xp_native_evidence_bundle(
+            target=target,
+            evidence=evidence.relative_to(tmp_path),
+            candidate_record=candidate.relative_to(tmp_path),
+            assets_dir=assets.relative_to(tmp_path),
+            evidence_dir=evidence_root.relative_to(tmp_path),
+            out_dir=Path("bundle") / target / tag,
+        )
+
+    assert errors == ["sentinel local preflight failure"]
+    assert calls[0]["target"] == target
+    assert calls[0]["candidate"] == candidate_data
+    assert not (tmp_path / "bundle" / target / tag / f"xp-native-evidence-bundle-{target}-{tag}.json").exists()
+
+
 def test_xp_native_evidence_bundle_rejects_unscoped_output_directory() -> None:
     bundler = _load_bundle_script()
 
@@ -603,6 +647,14 @@ def _valid_evidence(
         },
     }
     release_source = _xp_release_source()
+    security_patch = {
+        "tls_minimum_modern_profiles": "TLS 1.2",
+        "tls_preferred_modern_profiles": "TLS 1.3",
+        "legacy_compatibility_profile": "isolated-opt-in",
+        "cve_patch_reviewed": True,
+        "security_update_channel": "vendor-security-updates-2026-06",
+        "cve_review_reference": "vendor-cve-advisory-review-2026-06",
+    }
     return {
         "schema_version": 1,
         "target": target,
@@ -638,6 +690,8 @@ def _valid_evidence(
                     f"--source-workflow-run-url {release_source['workflow_run_url']} "
                     f"--source-head-sha {release_source['head_sha']} "
                     f"--source-run-attempt {release_source['run_attempt']} "
+                    f"--security-update-channel {security_patch['security_update_channel']} "
+                    f"--cve-review-reference {security_patch['cve_review_reference']} "
                     f'--os-name "{os_record["name"]}" '
                     f"--os-architecture {os_record['architecture']} "
                     f"--os-service-pack {os_record['service_pack']}"
@@ -656,12 +710,7 @@ def _valid_evidence(
             "legacy_crypto_profile_scoped": True,
             "modern_defaults_unchanged": True,
             "weak_crypto_global_default": False,
-            "patch_evidence": {
-                "tls_minimum_modern_profiles": "TLS 1.2",
-                "tls_preferred_modern_profiles": "TLS 1.3",
-                "legacy_compatibility_profile": "isolated-opt-in",
-                "cve_patch_reviewed": True,
-            },
+            "patch_evidence": security_patch,
         },
     }
 
@@ -702,6 +751,7 @@ def _attach_smoke_evidence_files(root: Path, evidence: dict[str, Any]) -> None:
             f"xp smoke source workflow run: {release_source['workflow_run_url']}\n"
             f"xp smoke source head sha: {release_source['head_sha']}\n"
             f"xp smoke source run attempt: {release_source['run_attempt']}\n"
+            f"{_xp_artifact_manifest_smoke_lines(evidence, str(result['id']))}"
             f"{security_lines}"
             f"{result['id']} passed on Windows XP evidence host\n",
             encoding="utf-8",
@@ -735,6 +785,8 @@ def _xp_security_smoke_lines(smoke_id: str) -> str:
             "legacy compatibility profile: isolated-opt-in\n"
             "legacy crypto scope: profile-only\n"
             "weak crypto global default: false\n"
+            "security update channel: vendor-security-updates-2026-06\n"
+            "CVE review reference: vendor-cve-advisory-review-2026-06\n"
         )
     if smoke_id == "modern_defaults_unchanged":
         return (
@@ -742,8 +794,20 @@ def _xp_security_smoke_lines(smoke_id: str) -> str:
             "modern TLS preferred: TLS 1.3\n"
             "modern defaults unchanged: true\n"
             "weak crypto global default: false\n"
+            "security update channel: vendor-security-updates-2026-06\n"
+            "CVE review reference: vendor-cve-advisory-review-2026-06\n"
         )
     return ""
+
+
+def _xp_artifact_manifest_smoke_lines(evidence: dict[str, Any], smoke_id: str) -> str:
+    if smoke_id != "artifact_manifest_validation":
+        return ""
+    return (
+        "".join(f"xp smoke artifact file: {name}\n" for name in evidence["artifacts"])
+        + "xp smoke artifact manifest validated: true\n"
+        + "xp smoke artifact sha256s validated: true\n"
+    )
 
 
 def _required_artifact_names(checker: Any, target: str, tag: str) -> list[str]:

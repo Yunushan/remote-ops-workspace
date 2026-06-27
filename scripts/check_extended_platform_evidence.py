@@ -90,6 +90,7 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
         '"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" '
         '--workflow-run-attempt "${{ github.run_attempt }}" '
         '--source-head-sha "${{ github.sha }}" '
+        f"--builder-evidence {evidence_dir}/{builder_identity_name} "
         f"2>&1 | tee {evidence_dir}/{smoke_name}"
     )
     local_preflight_snippet = (
@@ -109,6 +110,7 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
         f"if: ${{{{ inputs.target == '{target}' }}}}": "target guard",
         f"runs-on: [self-hosted, linux, {runner}]": "matching self-hosted runner labels",
         "timeout-minutes: 90": "bounded native evidence job timeout",
+        "RELEASE_TAG: ${{ inputs.release_tag }}": "release-tag environment binding for native build script",
         "uses: actions/checkout@v6": "repository checkout",
         "persist-credentials: false": "checkout credential isolation",
         f"python3 scripts/check_extended_platform_dispatch_inputs.py \\\n            --target {target}": "dispatch input preflight",
@@ -159,6 +161,8 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
         f"name: {source_artifact_name}": "target/release-scoped evidence artifact name",
         "path: linux-evidence-upload/*": "scoped staged upload path",
         "if-no-files-found: error": "missing evidence artifact failure",
+        "include-hidden-files: false": "hidden file exclusion for evidence artifact upload",
+        "retention-days: 90": "evidence artifact retention window",
     }
     for artifact in LINUX_TARGET_ARTIFACTS[target]:
         required_snippets[f"cp native-dist/linux/{artifact} {assets_dir}/"] = (

@@ -74,6 +74,12 @@ def check_native_manifest_integrity() -> list[str]:
             errors.append(f"{display(path)} native manifest must include sha256")
         if "GITHUB_REF_NAME" not in text:
             errors.append(f"{display(path)} must reject tag/version mismatches")
+    linux = NATIVE_SCRIPTS["linux"].read_text(encoding="utf-8")
+    if "RELEASE_TAG" not in linux or "GITHUB_REF_TYPE" not in linux or "EXPECTED_TAG" not in linux:
+        errors.append(
+            "scripts/make_linux_native.sh must bind manual evidence builds with RELEASE_TAG "
+            "while keeping tag-ref version mismatch checks"
+        )
     return errors
 
 

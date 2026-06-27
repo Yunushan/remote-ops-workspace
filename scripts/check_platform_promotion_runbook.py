@@ -19,8 +19,13 @@ COMMON_SNIPPETS = (
     "python scripts/check_release_publish_assets.py",
     "python scripts/check_release_publish_assets.py --assets-dir <release-assets-dir> --tag v<project.version> --require-platform-goal-targets",
     "python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> --release-assets-dir <release-assets-dir>",
+    "python scripts/check_platform_review_bundle_artifacts.py --bundle-dir <bundle-dir> --require-goal-targets --release-tag v<project.version> --require-final-record-assets",
     "python scripts/import_platform_evidence_artifacts.py --release-tag v<project.version> --require-goal-targets --out-dir <release-assets-dir> --dry-run --verify-source-run",
     "workflow file path\nmust match `release_asset_source.workflow`",
+    "artifact inventory must be complete",
+    "exactly one `release_asset_source.artifact_name` entry",
+    "`workflow_run.id` and `workflow_run.head_sha`",
+    "wrong-artifact-run, missing-artifact, expired-artifact or empty-artifact source",
     "python scripts/make_extended_linux_evidence_bundle.py",
     "Linux evidence bundle output directory must include the target id and release tag as path segments",
     "python scripts/make_xp_native_evidence_bundle.py",
@@ -29,8 +34,13 @@ COMMON_SNIPPETS = (
     "python scripts/make_platform_verified_evidence_record.py",
     "python scripts/finalize_platform_verified_evidence_record.py",
     "staged native artifacts and review-bundle files must match the finalized accepted record hashes",
+    "staged upload output must re-check the exact root file set",
+    "pre-copy SHA-256 for every staged file",
     "downloaded source artifact native artifact SHA-256 mismatches",
     "staged review bundle must re-finalize to the accepted record before upload",
+    "`if-no-files-found: error`",
+    "`include-hidden-files: false`",
+    "`retention-days: 90`",
     "validated_commands` includes the candidate `local_evidence_preflight_command",
     "--append-registry",
     "configs/platform_verified_evidence.json",
@@ -46,6 +56,8 @@ LINUX_SNIPPETS = (
     "builder-identity",
     "python3 scripts/check_extended_platform_builder.py --target",
     "--release-tag v<project.version> --workflow-run-url <github-actions-run-url> --workflow-run-attempt <github-actions-run-attempt> --source-head-sha <github-actions-head-sha> --out",
+    "workflow_ref",
+    "workflow_sha",
     "source_head_sha",
     "observed_git_head_sha",
     "git_worktree_clean=true",
@@ -55,6 +67,7 @@ LINUX_SNIPPETS = (
     "native installer smoke workflow run attempt",
     "native installer smoke source head sha",
     "native installer smoke git head sha",
+    "native installer smoke builder evidence",
     "native installer smoke host label",
     "native installer smoke evidence run id",
     "native installer smoke observed at utc",
@@ -62,12 +75,15 @@ LINUX_SNIPPETS = (
     "native installer smoke dpkg architecture",
     "native installer smoke userland bits: 32",
     "native installer smoke artifact sha256: <artifact> <sha256>",
+    "native installer smoke security update channel: <security-update-channel>",
+    "native installer smoke CVE review reference: <cve-review-reference>",
     "native installer smoke TLS minimum modern profiles: TLS 1.2",
     "native installer smoke TLS preferred modern profiles: TLS 1.3",
     "native installer smoke legacy compatibility profile: isolated-opt-in",
     "native installer smoke modern defaults unchanged: true",
     "--source-head-sha <github-actions-head-sha>",
     "--workflow-run-attempt <github-actions-run-attempt>",
+    "--builder-evidence <builder-identity.json>",
     "scripts/make_linux_native.sh",
     "python scripts/stage_extended_linux_evidence_upload.py",
     "--linux-builder-evidence <builder-identity.json> --linux-smoke-evidence <native-smoke-log>",
@@ -91,6 +107,8 @@ XP_SNIPPETS = (
     "artifact_manifest_validation",
     "legacy_crypto_profile_scoped",
     "modern_defaults_unchanged",
+    "`legacy_crypto_profile_scoped` smoke file must include `legacy compatibility profile: isolated-opt-in`, `legacy crypto scope: profile-only`, `weak crypto global default: false`, `security update channel: <security-update-channel>` and `CVE review reference: <cve-review-reference>`",
+    "`modern_defaults_unchanged` smoke file must include `modern TLS minimum: TLS 1.2`, `modern TLS preferred: TLS 1.3`, `modern defaults unchanged: true`, `weak crypto global default: false`, `security update channel: <security-update-channel>` and `CVE review reference: <cve-review-reference>`",
     "python scripts/stage_xp_native_evidence_upload.py",
     "xp-evidence-upload",
     "raw operator-supplied XP artifact or evidence directories are not uploaded by wildcard",
@@ -98,6 +116,8 @@ XP_SNIPPETS = (
     "artifact_validation.command` must use exactly one `--tag` matching the evidence `release_tag` and exactly one `--strict`",
     "artifact_validation.command --assets-dir` must match `<target-release-artifact-dir>`",
     "`host_identity`, `toolchain` and `security` exactly match the candidate `xp_evidence_summary`",
+    "XP host requirement: Windows XP",
+    "modern self-hosted `xp-evidence` collector with Python 3.12 and GitHub Actions support",
 )
 XP_X64_SNIPPETS = (
     "SP2",
@@ -130,6 +150,11 @@ def check_platform_promotion_runbook(
     for snippet in COMMON_SNIPPETS:
         if snippet not in text:
             errors.append(f"promotion runbook missing common snippet: {snippet}")
+    if "<final-record.json>" in text:
+        errors.append(
+            "promotion runbook must not use generic <final-record.json>; "
+            "use the release-scoped platform-verified-evidence-<target>-final.json"
+        )
 
     protected = promotion_data.get("protected_targets")
     if not isinstance(protected, list) or not protected:
@@ -194,6 +219,21 @@ def check_required_commands(text: str, target_id: str, requirements: dict[str, A
         command = str(requirements.get(key, ""))
         if command and command not in text:
             errors.append(f"{target_id} runbook missing {label}: {command}")
+        if key == "finalized_evidence_record_command":
+            expected_dir = (
+                "<target-release-artifact-dir>"
+                if target_id.startswith("linux-")
+                else "<xp-evidence-output-dir>"
+            )
+            expected_output = f"--out {expected_dir}/platform-verified-evidence-{target_id}-final.json"
+            if "<final-record.json>" in command:
+                errors.append(
+                    f"{target_id} finalized evidence record command must not use generic <final-record.json>"
+                )
+            if expected_output not in command:
+                errors.append(
+                    f"{target_id} finalized evidence record command must write {expected_output}"
+                )
     smoke_script = str(requirements.get("smoke_script", ""))
     if smoke_script and smoke_script not in text:
         errors.append(f"{target_id} runbook missing smoke script: {smoke_script}")
@@ -205,6 +245,11 @@ def check_linux_runbook(text: str, target_id: str, requirements: dict[str, Any])
     for snippet in LINUX_SNIPPETS:
         if snippet not in text:
             errors.append(f"{target_id} runbook missing Linux snippet: {snippet}")
+    dispatch_command = linux_dispatch_command(target_id)
+    if dispatch_command not in text:
+        errors.append(
+            f"{target_id} runbook missing Linux workflow dispatch command: {dispatch_command}"
+        )
     runner_evidence = str(requirements.get("workflow_runner_evidence", ""))
     if runner_evidence and runner_evidence not in text:
         errors.append(f"{target_id} runbook missing runner evidence: {runner_evidence}")
@@ -222,6 +267,9 @@ def check_xp_runbook(text: str, target_id: str, requirements: dict[str, Any]) ->
     for snippet in XP_SNIPPETS:
         if snippet not in text:
             errors.append(f"{target_id} runbook missing XP snippet: {snippet}")
+    dispatch_command = xp_dispatch_command(target_id)
+    if dispatch_command not in text:
+        errors.append(f"{target_id} runbook missing XP workflow dispatch command: {dispatch_command}")
     xp_contract = read_json(XP_NATIVE_EVIDENCE_CONTRACT_PATH)
     xp_target_contract = xp_contract.get("targets", {}).get(target_id, {})
     if not isinstance(xp_target_contract, dict):
@@ -284,6 +332,29 @@ def check_xp_runbook(text: str, target_id: str, requirements: dict[str, Any]) ->
 
 def read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def linux_dispatch_command(target_id: str) -> str:
+    return (
+        "gh workflow run extended-platform-evidence.yml --repo <owner>/<repo> "
+        "--ref <github-actions-head-sha-or-branch> "
+        f"-f target={target_id} "
+        "-f release_tag=v<project.version> "
+        "-f release_asset_base_url=<github-release-download-url>"
+    )
+
+
+def xp_dispatch_command(target_id: str) -> str:
+    return (
+        "gh workflow run xp-native-evidence.yml --repo <owner>/<repo> "
+        "--ref <github-actions-head-sha-or-branch> "
+        f"-f target={target_id} "
+        "-f release_tag=v<project.version> "
+        "-f release_asset_base_url=<github-release-download-url> "
+        "-f assets_dir=<target-release-artifact-dir> "
+        "-f evidence_file=<target-release-evidence.json> "
+        "-f evidence_dir=<target-release-evidence-dir>"
+    )
 
 
 if __name__ == "__main__":

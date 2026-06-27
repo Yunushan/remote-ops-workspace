@@ -35,6 +35,15 @@ Release integrity rules:
   checklist, the hard completion gate and the strict accepted evidence gate, so
   Linux i386, Linux armhf and Windows XP native-host evidence status is evaluated
   against the tag being built before build minutes are spent.
+- Before tagging or rerunning a protected-platform promotion, run the
+  pre-release protected-platform import dry-run
+  `python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir <release-assets-dir> --dry-run --verify-source-run`.
+  It proves the accepted records for Linux i386, Linux armhf and Windows XP
+  native-host targets are importable from successful same-source workflow runs
+  with a complete artifact inventory containing exactly one non-expired,
+  non-empty expected source artifact whose `workflow_run.id` and
+  `workflow_run.head_sha` bind it to the accepted source run, without copying
+  files into the publish directory, and it does not stage files for upload.
 - The `accepted-platform-evidence-assets` job keeps read-only repository and
   Actions artifact permissions; it must not request any write-scoped GitHub
   permission while importing protected-platform evidence. Source and native
@@ -42,16 +51,25 @@ Release integrity rules:
   wrong-commit protected-platform evidence stops the release before new build
   artifacts are produced.
 - The publish job runs
+  `python scripts/check_protected_platform_goal.py --release-tag <tag> --require-complete --assets-dir release-assets`
+  and then
   `python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --require-platform-goal-targets`
   after downloading workflow artifacts and before uploading the GitHub release.
+  The first command keeps the protected parity gate bound to the publish-ready
+  release asset directory; the second verifies the full release asset contract.
   The protected-platform asset job first runs
   `python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run`
   to import only same-tag, same-repository, workflow-file, source-head and
   run-attempt-bound accepted Linux i386, Linux armhf and Windows XP native-host
-  artifacts from their verified evidence workflow runs, then runs
+  artifacts from verified evidence workflow runs whose artifact inventory
+  is complete and contains exactly one non-expired, non-empty expected source
+  artifact bound by `workflow_run.id` and `workflow_run.head_sha`, then runs
   `python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag <tag> --require-final-record-assets`
   against the imported review bundles and finalized public record JSON files
-  before uploading the platform evidence asset set.
+  before uploading the platform evidence asset set. That upload must use
+  `if-no-files-found: error`, `include-hidden-files: false` and
+  `retention-days: 90` so missing imports fail, hidden scratch/private files
+  stay excluded and the publish job can download the imported assets.
   The importer rejects symlinked downloaded-artifact/output roots, symlinked
   parent directories and symlinked destinations before copying into
   `release-assets`, and it checks downloaded source artifact native artifact
@@ -103,8 +121,10 @@ If those endpoints are promoted to native-host evidence, the release-importable
 source artifact must come from `.github/workflows/xp-native-evidence.yml`,
 which validates staged XP artifacts and sanitized smoke evidence on a
 self-hosted `xp-evidence` runner, stages only the expected release/evidence
-files into a plain non-symlink `xp-evidence-upload` tree, and uploads
-`xp-native-evidence-<target>-<release_tag>`; workflow-generated candidate
+files into a plain non-symlink `xp-evidence-upload` tree, re-checks the staged
+output exact root file set and pre-copy SHA-256 values, and uploads
+`xp-native-evidence-<target>-<release_tag>` with `if-no-files-found: error`,
+`include-hidden-files: false` and `retention-days: 90`; workflow-generated candidate
 records, final records and review bundles must stay under
 `xp-evidence-output/<target>/<release_tag>`, the staged XP artifact and
 evidence-output directories must include the target id and release tag as path
@@ -134,7 +154,10 @@ without publishing a GitHub release. Before artifact upload it runs
 release-importable file set in a plain non-symlink `linux-evidence-upload` tree,
 requires the staged source directory to include the target id and release tag as
 path segments, rejects staged source or upload paths that traverse symlinked
-parent directories, and avoids uploading raw Linux builder output directories by wildcard. Each run also writes
+parent directories, re-checks the staged output exact root file set and pre-copy
+SHA-256 values, requires `if-no-files-found: error`,
+`include-hidden-files: false` and `retention-days: 90` on the source artifact
+upload, and avoids uploading raw Linux builder output directories by wildcard. Each run also writes
 `platform-verified-evidence-linux-i386.json` or
 `platform-verified-evidence-linux-armhf.json` into the uploaded evidence
 artifact and packages the review bundle with
@@ -202,7 +225,9 @@ i386/armhf native assets in the default release asset set unless the matching
 finalized accepted evidence target is present.
 Windows XP native-host readiness can move from remote-target-only only through a
 separate XP-capable legacy toolchain with XP x86 SP3 and Windows XP
-Professional x64 Edition SP2 VM or self-hosted runner evidence and proof that
+Professional x64 Edition SP2 VM or physical-host evidence captured with
+`scripts/xp_smoke_runner.cmd`, then packaged by a modern self-hosted
+`xp-evidence` collector with Python 3.12 and GitHub Actions support, plus proof that
 legacy crypto compatibility stays isolated from modern defaults. XP artifact
 directories must pass
 `python scripts/check_platform_promotion_artifacts.py --target windows-xp-native-x86 --assets-dir <artifact-dir> --tag v<project.version> --strict`
@@ -294,7 +319,8 @@ reviewing the XP VM/toolchain evidence bundle and the per-artifact SHA-256
 digests recorded for the XP native artifacts.
 The same publish-time guard rejects Windows XP native assets unless the registry
 passes full finalized accepted-evidence validation, downloaded source artifact
-SHA-256 values match the accepted records before staging, each artifact
+SHA-256 values match the accepted records before staging, post-copy staged
+output exact root file sets and pre-copy SHA-256 values match, each artifact
 validation command carries one
 concrete `--assets-dir`, finalized XP review-bundle files are present in the
 release with matching hashes, same-repository release URLs and bundle contents

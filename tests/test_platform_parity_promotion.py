@@ -150,6 +150,7 @@ def test_platform_parity_promotion_requires_linux_smoke_identity_freshness() -> 
     ) in errors
     assert any(
         error.startswith("linux-i386 smoke_evidence missing:")
+        and "consume matching builder identity evidence during native smoke and bind host identity plus security provenance from it" in error
         and "bind sanitized host label, deterministic evidence run ID and observed-at UTC timestamp into the native smoke log" in error
         and "prove 32-bit Linux userland and target architecture on the builder" in error
         and "bind DEB, RPM and AppImage SHA-256 lines into the native smoke log" in error
@@ -186,6 +187,43 @@ def test_platform_parity_promotion_rejects_xp_local_preflight_without_source_bin
     errors = checker.check_platform_parity_promotion(promotion=promotion)
 
     assert any("windows-xp-native-x86 local_evidence_preflight_command must be" in error for error in errors)
+
+
+def test_platform_parity_promotion_requires_xp_host_and_collector_boundary() -> None:
+    checker = _load_platform_parity_promotion_checker()
+    promotion = _load_json("configs/platform_parity_promotion.json")
+    entry = _promotion_entry(promotion, "windows-xp-native-x86")
+    requirements = entry["promotion_to_100_requires"]
+    requirements["xp_vm_or_self_hosted_runner"] = "Windows XP runner"
+    requirements["xp_evidence_collector_runner"] = "same XP runner"
+
+    errors = checker.check_platform_parity_promotion(promotion=promotion)
+
+    assert any("windows-xp-native-x86 xp_vm_or_self_hosted_runner must be" in error for error in errors)
+    assert any("windows-xp-native-x86 xp_evidence_collector_runner must be" in error for error in errors)
+
+
+def test_platform_parity_promotion_requires_xp_smoke_on_host_before_collector() -> None:
+    checker = _load_platform_parity_promotion_checker()
+    promotion = _load_json("configs/platform_parity_promotion.json")
+    entry = _promotion_entry(promotion, "windows-xp-native-x64")
+    requirements = entry["promotion_to_100_requires"]
+    requirements["smoke_evidence"] = [
+        "launch CLI without unsupported Windows APIs",
+        "validate artifact manifest and SHA256SUMS on the XP evidence host",
+    ]
+
+    errors = checker.check_platform_parity_promotion(promotion=promotion)
+
+    assert any(
+        error.startswith("windows-xp-native-x64 smoke_evidence missing:")
+        and "validate artifact manifest and SHA256SUMS on the Windows XP host before collector upload" in error
+        for error in errors
+    )
+    assert (
+        "windows-xp-native-x64 smoke_evidence has unexpected items: "
+        "['validate artifact manifest and SHA256SUMS on the XP evidence host']"
+    ) in errors
 
 
 def test_platform_parity_promotion_rejects_generic_xp_release_source_artifact_name() -> None:

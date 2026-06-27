@@ -113,6 +113,7 @@ def check_legacy_security_policy(
     xp_contract: dict[str, Any] | None = None,
     platform_required_flags: dict[str, bool] | None = None,
     platform_required_patch_evidence: dict[str, Any] | None = None,
+    platform_required_patch_provenance_fields: tuple[str, ...] | None = None,
 ) -> list[str]:
     errors: list[str] = []
     baseline = baseline or json.loads(read("configs/security_baseline.json"))
@@ -121,6 +122,8 @@ def check_legacy_security_policy(
     platform_required_patch_evidence = (
         platform_required_patch_evidence or load_platform_required_security_patch_evidence()
     )
+    if platform_required_patch_provenance_fields is None:
+        platform_required_patch_provenance_fields = load_platform_required_security_patch_provenance_fields()
     modern = baseline.get("modern_defaults", {})
     if modern.get("preferred_tls") != "TLS 1.3":
         errors.append("security_baseline preferred_tls must stay TLS 1.3")
@@ -179,6 +182,20 @@ def check_legacy_security_policy(
         errors.append(
             "platform verified evidence REQUIRED_SECURITY_PATCH_EVIDENCE must match "
             f"{expected_patch_evidence}, got {platform_required_patch_evidence}"
+        )
+    expected_patch_provenance_fields = ("cve_review_reference", "security_update_channel")
+    contract_patch_provenance_fields = tuple(
+        sorted(str(item) for item in xp_contract.get("required_security_patch_provenance_fields", []))
+    )
+    if contract_patch_provenance_fields != expected_patch_provenance_fields:
+        errors.append(
+            "XP native evidence contract required_security_patch_provenance_fields must match "
+            f"{list(expected_patch_provenance_fields)}, got {list(contract_patch_provenance_fields)}"
+        )
+    if tuple(sorted(platform_required_patch_provenance_fields)) != expected_patch_provenance_fields:
+        errors.append(
+            "platform verified evidence REQUIRED_SECURITY_PATCH_PROVENANCE_FIELDS must match "
+            f"{list(expected_patch_provenance_fields)}, got {list(platform_required_patch_provenance_fields)}"
         )
     smoke_ids = set(str(item) for item in xp_contract.get("required_smoke_ids", []))
     for smoke_id in ("legacy_crypto_profile_scoped", "modern_defaults_unchanged"):
@@ -337,6 +354,20 @@ def load_platform_required_security_patch_evidence() -> dict[str, Any]:
     spec.loader.exec_module(module)
     evidence = getattr(module, "REQUIRED_SECURITY_PATCH_EVIDENCE", {})
     return evidence if isinstance(evidence, dict) else {}
+
+
+def load_platform_required_security_patch_provenance_fields() -> tuple[str, ...]:
+    path = ROOT / "scripts" / "check_platform_verified_evidence.py"
+    spec = importlib.util.spec_from_file_location("check_platform_verified_evidence_security_patch", path)
+    if spec is None or spec.loader is None:
+        return ()
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    fields = getattr(module, "REQUIRED_SECURITY_PATCH_PROVENANCE_FIELDS", ())
+    if not isinstance(fields, (list, tuple, set)):
+        return ()
+    return tuple(str(field) for field in fields)
 
 
 def read(relative: str) -> str:

@@ -43,6 +43,85 @@ def test_xp_native_evidence_contract_requires_release_source_fields() -> None:
     assert "XP native evidence contract must require release_source workflow, URL, head SHA and run attempt" in errors
 
 
+def test_xp_native_evidence_contract_requires_security_smoke_provenance_fields() -> None:
+    checker = _load_xp_native_evidence_checker()
+    contract = checker.read_json(Path("configs/xp_native_evidence_contract.json"))
+    contract["required_security_smoke_provenance_fields"] = ["security_update_channel"]
+
+    errors = checker.check_contract(contract)
+
+    assert "XP native evidence contract must require security smoke provenance fields" in errors
+
+
+def test_xp_native_evidence_contract_requires_artifact_manifest_smoke_lines() -> None:
+    checker = _load_xp_native_evidence_checker()
+    contract = checker.read_json(Path("configs/xp_native_evidence_contract.json"))
+    contract["required_artifact_manifest_smoke_evidence_lines"] = [
+        "xp smoke artifact manifest validated: true"
+    ]
+
+    errors = checker.check_contract(contract)
+
+    assert (
+        "XP native evidence contract must require artifact_manifest_validation "
+        "smoke proof lines for every release artifact, manifest, and SHA256SUMS sidecar"
+    ) in errors
+
+
+def test_xp_native_evidence_contract_requires_runner_source_env_binding(tmp_path: Path) -> None:
+    checker = _load_xp_native_evidence_checker()
+    contract = checker.read_json(Path("configs/xp_native_evidence_contract.json"))
+    runner = tmp_path / "scripts" / "xp_smoke_runner.cmd"
+    runner.parent.mkdir()
+    runner.write_text(
+        "scripts/xp_smoke_runner.cmd --target --release-tag --smoke-id "
+        "--evidence-file --proof-file --host-label --evidence-run-id "
+        "--observed-at-utc --source-workflow-run-url --source-head-sha "
+        "--source-run-attempt --os-name --os-architecture --os-service-pack "
+        "--os-edition ver PROCESSOR_ARCHITECTURE wmic os get Caption\n",
+        encoding="utf-8",
+    )
+    checker.ROOT = tmp_path
+
+    errors = checker.check_contract(contract)
+
+    assert any(
+        "XP native smoke runner script must handle --source-workflow-run-url must be a GitHub Actions run URL"
+        in error
+        for error in errors
+    )
+    assert any(
+        "XP native smoke runner script must handle --source-workflow-run-url must end with a numeric GitHub Actions run id"
+        in error
+        for error in errors
+    )
+    assert any(
+        "XP native smoke runner script must handle --host-label must use target-scoped prefix" in error
+        for error in errors
+    )
+    assert any(
+        "XP native smoke runner script must handle --evidence-run-id must use target-scoped prefix" in error
+        for error in errors
+    )
+    assert any(
+        "XP native smoke runner script must handle --observed-at-utc must use YYYY-MM-DDTHH:MM:SSZ" in error
+        for error in errors
+    )
+    assert any(
+        "XP native smoke runner script must handle --source-head-sha must be a lowercase 40-character Git commit SHA"
+        in error
+        for error in errors
+    )
+    assert any(
+        "XP native smoke runner script must handle --source-run-attempt must be a positive integer" in error
+        for error in errors
+    )
+    assert any("XP native smoke runner script must handle GITHUB_SHA" in error for error in errors)
+    assert any("XP native smoke runner script must handle GITHUB_RUN_ID" in error for error in errors)
+    assert any("XP native smoke runner script must handle GITHUB_RUN_ATTEMPT" in error for error in errors)
+    assert any("XP native smoke runner script must handle GITHUB_REPOSITORY" in error for error in errors)
+
+
 def test_xp_native_evidence_accepts_x86_bundle(tmp_path: Path) -> None:
     checker = _load_xp_native_evidence_checker()
     artifact_checker = _load_platform_promotion_artifacts_checker()
@@ -163,9 +242,51 @@ def test_xp_native_evidence_rejects_unsanitized_host_identity_label(tmp_path: Pa
     errors = checker.check_xp_native_evidence(path)
 
     assert (
-        "windows-xp-native-x64 evidence host_identity.host_label must be a sanitized lab label, got 'Yunus-PC'"
+        "windows-xp-native-x64 evidence host_identity.host_label must be a sanitized target-scoped lab label, "
+        "got 'Yunus-PC'"
         in errors
     )
+
+
+def test_xp_native_evidence_rejects_private_host_identity_fields(tmp_path: Path) -> None:
+    checker = _load_xp_native_evidence_checker()
+    evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
+    evidence["host_identity"]["host_label"] = "yunus-pc"
+    evidence["host_identity"]["evidence_run_id"] = "manual-run-20260620t120000z"
+    evidence["host_identity"]["hostname"] = "yunus-pc"
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path)
+
+    assert (
+        "windows-xp-native-x86 evidence host_identity.host_label must be a sanitized target-scoped lab label, "
+        "got 'yunus-pc'"
+    ) in errors
+    assert (
+        "windows-xp-native-x86 evidence host_identity.evidence_run_id must be a sanitized target-scoped run id, "
+        "got 'manual-run-20260620t120000z'"
+    ) in errors
+    assert (
+        "windows-xp-native-x86 evidence host_identity contains forbidden private fields: ['hostname']"
+    ) in errors
+
+
+def test_xp_native_evidence_rejects_run_id_not_bound_to_observed_at(tmp_path: Path) -> None:
+    checker = _load_xp_native_evidence_checker()
+    evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
+    evidence["host_identity"]["evidence_run_id"] = "xp-x86-1-0-2-20260620t123000z"
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path)
+
+    assert (
+        "windows-xp-native-x86 evidence host_identity.evidence_run_id must include "
+        "release/observed-at marker '1-0-2-20260620t120000z', got 'xp-x86-1-0-2-20260620t123000z'"
+    ) in errors
 
 
 def test_xp_native_evidence_rejects_missing_smoke(tmp_path: Path) -> None:
@@ -729,6 +850,29 @@ def test_xp_native_evidence_rejects_missing_modern_defaults_security_proof_line(
     ) in errors
 
 
+def test_xp_native_evidence_rejects_missing_security_smoke_provenance_line(tmp_path: Path) -> None:
+    checker = _load_xp_native_evidence_checker()
+    evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    result = next(item for item in evidence["smoke_results"] if item["id"] == "legacy_crypto_profile_scoped")
+    smoke_file = tmp_path / result["evidence_file"]
+    missing_line = "CVE review reference: vendor-cve-advisory-review-2026-06"
+    smoke_file.write_text(
+        smoke_file.read_text(encoding="utf-8").replace(f"{missing_line}\n", ""),
+        encoding="utf-8",
+    )
+    result["evidence_sha256"] = _sha256(smoke_file)
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path)
+
+    assert (
+        "windows-xp-native-x86 smoke result legacy_crypto_profile_scoped evidence_file "
+        "missing security proof line: CVE review reference: vendor-cve-advisory-review-2026-06"
+    ) in errors
+
+
 def test_xp_native_evidence_rejects_forbidden_legacy_crypto_security_proof_line(tmp_path: Path) -> None:
     checker = _load_xp_native_evidence_checker()
     evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
@@ -921,6 +1065,28 @@ def test_xp_native_evidence_rejects_smoke_command_release_source_binding_mismatc
     ) in errors
 
 
+def test_xp_native_evidence_rejects_security_smoke_command_provenance_mismatch(
+    tmp_path: Path,
+) -> None:
+    checker = _load_xp_native_evidence_checker()
+    evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    smoke = next(item for item in evidence["smoke_results"] if item["id"] == "modern_defaults_unchanged")
+    smoke["command"] = smoke["command"].replace(
+        "--security-update-channel vendor-security-updates-2026-06",
+        "--security-update-channel stale-security-channel",
+    )
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path)
+
+    assert (
+        "windows-xp-native-x86 smoke result modern_defaults_unchanged command must include exactly one "
+        "--security-update-channel vendor-security-updates-2026-06, got ['stale-security-channel']"
+    ) in errors
+
+
 def test_xp_native_evidence_rejects_missing_security_patch_evidence(tmp_path: Path) -> None:
     checker = _load_xp_native_evidence_checker()
     evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
@@ -934,6 +1100,42 @@ def test_xp_native_evidence_rejects_missing_security_patch_evidence(tmp_path: Pa
     assert "windows-xp-native-x86 evidence security.patch_evidence must be an object" in errors
 
 
+def test_xp_native_evidence_rejects_missing_security_patch_provenance(tmp_path: Path) -> None:
+    checker = _load_xp_native_evidence_checker()
+    evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    del evidence["security"]["patch_evidence"]["cve_review_reference"]
+    evidence["security"]["patch_evidence"]["security_update_channel"] = ""
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path)
+
+    assert "windows-xp-native-x86 evidence security.patch_evidence.cve_review_reference must be set" in errors
+    assert "windows-xp-native-x86 evidence security.patch_evidence.security_update_channel must be set" in errors
+
+
+def test_xp_native_evidence_rejects_placeholder_security_patch_provenance(tmp_path: Path) -> None:
+    checker = _load_xp_native_evidence_checker()
+    evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    evidence["security"]["patch_evidence"]["security_update_channel"] = "test-security-update-channel"
+    evidence["security"]["patch_evidence"]["cve_review_reference"] = "<replace-with-real-cve-review>"
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path)
+
+    assert (
+        "windows-xp-native-x86 evidence security.patch_evidence.security_update_channel "
+        "must name concrete non-placeholder provenance"
+    ) in errors
+    assert (
+        "windows-xp-native-x86 evidence security.patch_evidence.cve_review_reference "
+        "must name concrete non-placeholder provenance"
+    ) in errors
+
+
 def test_xp_native_evidence_rejects_smoke_evidence_hash_mismatch(tmp_path: Path) -> None:
     checker = _load_xp_native_evidence_checker()
     evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
@@ -945,6 +1147,74 @@ def test_xp_native_evidence_rejects_smoke_evidence_hash_mismatch(tmp_path: Path)
     errors = checker.check_xp_native_evidence(path)
 
     assert any("smoke result cli_launch evidence_file SHA-256 mismatch" in error for error in errors)
+
+
+def test_xp_native_evidence_rejects_missing_artifact_manifest_smoke_proof(
+    tmp_path: Path,
+) -> None:
+    checker = _load_xp_native_evidence_checker()
+    artifact_checker = _load_platform_promotion_artifacts_checker()
+    tag = f"v{artifact_checker.read_project_version()}"
+    target = "windows-xp-native-x86"
+    names = _required_artifact_names(artifact_checker, target, tag)
+    evidence = _valid_evidence(target, "x86", "SP3", tag, names)
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    smoke_path = tmp_path / "xp-smoke-evidence" / "artifact_manifest_validation.txt"
+    removed = next(name for name in names if name.endswith("SHA256SUMS.txt"))
+    smoke_path.write_text(
+        smoke_path.read_text(encoding="utf-8").replace(f"xp smoke artifact file: {removed}\n", ""),
+        encoding="utf-8",
+    )
+    for result in evidence["smoke_results"]:
+        if result["id"] == "artifact_manifest_validation":
+            result["evidence_sha256"] = _sha256(smoke_path)
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path)
+
+    assert any(
+        "smoke result artifact_manifest_validation evidence_file artifact list proof "
+        "must match expected release artifacts" in error
+        for error in errors
+    )
+
+
+def test_xp_native_evidence_rejects_artifact_manifest_smoke_without_validation_lines(
+    tmp_path: Path,
+) -> None:
+    checker = _load_xp_native_evidence_checker()
+    artifact_checker = _load_platform_promotion_artifacts_checker()
+    tag = f"v{artifact_checker.read_project_version()}"
+    target = "windows-xp-native-x64"
+    names = _required_artifact_names(artifact_checker, target, tag)
+    evidence = _valid_evidence(target, "x64", "SP2", tag, names)
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    smoke_path = tmp_path / "xp-smoke-evidence" / "artifact_manifest_validation.txt"
+    smoke_path.write_text(
+        smoke_path.read_text(encoding="utf-8").replace(
+            "xp smoke artifact manifest validated: true\n"
+            "xp smoke artifact sha256s validated: true\n",
+            "",
+        ),
+        encoding="utf-8",
+    )
+    for result in evidence["smoke_results"]:
+        if result["id"] == "artifact_manifest_validation":
+            result["evidence_sha256"] = _sha256(smoke_path)
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path)
+
+    assert (
+        "windows-xp-native-x64 smoke result artifact_manifest_validation evidence_file "
+        "missing artifact proof line: xp smoke artifact manifest validated: true"
+    ) in errors
+    assert (
+        "windows-xp-native-x64 smoke result artifact_manifest_validation evidence_file "
+        "missing artifact proof line: xp smoke artifact sha256s validated: true"
+    ) in errors
 
 
 def test_xp_native_evidence_rejects_artifact_validation_tag_mismatch(tmp_path: Path) -> None:
@@ -1241,6 +1511,14 @@ def _valid_evidence(
         },
     }
     release_source = _xp_release_source()
+    security_patch = {
+        "tls_minimum_modern_profiles": "TLS 1.2",
+        "tls_preferred_modern_profiles": "TLS 1.3",
+        "legacy_compatibility_profile": "isolated-opt-in",
+        "cve_patch_reviewed": True,
+        "security_update_channel": "vendor-security-updates-2026-06",
+        "cve_review_reference": "vendor-cve-advisory-review-2026-06",
+    }
     return {
         "schema_version": 1,
         "target": target,
@@ -1275,6 +1553,8 @@ def _valid_evidence(
                     f"--source-workflow-run-url {release_source['workflow_run_url']} "
                     f"--source-head-sha {release_source['head_sha']} "
                     f"--source-run-attempt {release_source['run_attempt']} "
+                    f"--security-update-channel {security_patch['security_update_channel']} "
+                    f"--cve-review-reference {security_patch['cve_review_reference']} "
                     f'--os-name "{os_record["name"]}" '
                     f"--os-architecture {os_record['architecture']} "
                     f"--os-service-pack {os_record['service_pack']}"
@@ -1293,12 +1573,7 @@ def _valid_evidence(
             "legacy_crypto_profile_scoped": True,
             "modern_defaults_unchanged": True,
             "weak_crypto_global_default": False,
-            "patch_evidence": {
-                "tls_minimum_modern_profiles": "TLS 1.2",
-                "tls_preferred_modern_profiles": "TLS 1.3",
-                "legacy_compatibility_profile": "isolated-opt-in",
-                "cve_patch_reviewed": True,
-            },
+            "patch_evidence": security_patch,
         },
     }
 
@@ -1339,6 +1614,7 @@ def _attach_smoke_evidence_files(root: Path, evidence: dict[str, Any]) -> None:
             f"xp smoke source workflow run: {release_source['workflow_run_url']}\n"
             f"xp smoke source head sha: {release_source['head_sha']}\n"
             f"xp smoke source run attempt: {release_source['run_attempt']}\n"
+            f"{_artifact_manifest_smoke_lines(evidence, str(result['id']))}"
             f"{security_lines}"
             f"{result['id']} passed on Windows XP evidence host\n",
             encoding="utf-8",
@@ -1372,6 +1648,8 @@ def _security_smoke_lines(smoke_id: str) -> str:
             "legacy compatibility profile: isolated-opt-in\n"
             "legacy crypto scope: profile-only\n"
             "weak crypto global default: false\n"
+            "security update channel: vendor-security-updates-2026-06\n"
+            "CVE review reference: vendor-cve-advisory-review-2026-06\n"
         )
     if smoke_id == "modern_defaults_unchanged":
         return (
@@ -1379,8 +1657,20 @@ def _security_smoke_lines(smoke_id: str) -> str:
             "modern TLS preferred: TLS 1.3\n"
             "modern defaults unchanged: true\n"
             "weak crypto global default: false\n"
+            "security update channel: vendor-security-updates-2026-06\n"
+            "CVE review reference: vendor-cve-advisory-review-2026-06\n"
         )
     return ""
+
+
+def _artifact_manifest_smoke_lines(evidence: dict[str, Any], smoke_id: str) -> str:
+    if smoke_id != "artifact_manifest_validation":
+        return ""
+    return (
+        "".join(f"xp smoke artifact file: {name}\n" for name in evidence["artifacts"])
+        + "xp smoke artifact manifest validated: true\n"
+        + "xp smoke artifact sha256s validated: true\n"
+    )
 
 
 def _required_artifact_names(checker: Any, target: str, tag: str) -> list[str]:

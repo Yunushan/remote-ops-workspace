@@ -62,8 +62,9 @@ DEFAULT_EVIDENCE_POLICY = (
     "exact required check lists, exact workflow dispatch input sets, exact evidence source record fields, "
     "exact release source and review bundle fields, "
     "Linux builder identity evidence, builder identity SHA-256, "
+    "Linux builder workflow provenance binding, "
     "Linux builder/smoke source file binding, "
-    "Linux builder/smoke host identity binding, "
+    "Linux builder/smoke host identity binding, Linux builder/smoke security evidence binding, "
     "builder identity release/run binding, Linux builder source head SHA binding, "
     "Linux builder observed Git HEAD binding, Linux builder clean checkout binding, "
     "Linux builder host identity binding when applicable, "
@@ -77,12 +78,14 @@ DEFAULT_EVIDENCE_POLICY = (
     "XP evidence source file binding, XP evidence release source binding, and "
     "XP evidence bundle SHA-256 digests, "
     "XP evidence validation command binding, XP evidence contract SHA-256, "
-    "XP evidence summary binding, XP host identity SHA-256 binding, XP smoke host identity binding, "
+    "XP evidence summary binding, XP host identity SHA-256 binding, "
+    "XP sanitized target-scoped host identity binding, XP smoke host identity binding, "
     "XP smoke observed-at timestamp binding, XP smoke OS identity binding, "
     "XP smoke host probe proof-line binding, "
     "XP security patch evidence, "
     "tracked scripts/xp_smoke_runner.cmd XP smoke command provenance, "
     "canonical XP smoke proof-file command binding, "
+    "XP security smoke command provenance binding when applicable, "
     "canonical XP smoke evidence-file summary binding and "
     "XP security smoke proof-line binding when applicable, and review bundle manifest, "
     "review bundle archive, safe relative non-symlink review bundle archive entries, and review bundle SHA-256 "
@@ -132,7 +135,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     output = json.dumps(record, indent=2) + "\n"
     if args.out:
-        output_errors = check_text_output_path(args.out, "platform verified evidence record output file")
+        output_errors = check_generated_record_output_path(args.out, record)
         if output_errors:
             for error in output_errors:
                 print(f"platform verified evidence record: {error}", file=sys.stderr)
@@ -266,6 +269,7 @@ def build_evidence_record(args: argparse.Namespace) -> tuple[list[str], dict[str
                     str(args.workflow_run_url),
                     int(args.release_source_run_attempt),
                     str(args.release_source_head_sha),
+                    args.builder_evidence,
                 ),
                 str(args.workflow_run_url),
                 int(args.release_source_run_attempt),
@@ -287,6 +291,8 @@ def build_evidence_record(args: argparse.Namespace) -> tuple[list[str], dict[str
     if target in LINUX_TARGETS:
         errors.extend(check_linux_builder_release_source_binding(args))
     errors.extend(check_target_release_scoped_inputs(args))
+    if not errors:
+        errors.extend(check_local_evidence_preflight(args))
     if errors:
         return errors, {}
 
@@ -691,6 +697,38 @@ def check_xp_evidence_record_binding(args: argparse.Namespace) -> list[str]:
     return errors
 
 
+def check_local_evidence_preflight(args: argparse.Namespace) -> list[str]:
+    from check_platform_goal_local_evidence import check_platform_goal_local_evidence
+
+    target = str(args.target)
+    local_evidence_root = getattr(args, "local_evidence_root", Path("."))
+    if target in LINUX_TARGETS:
+        return check_platform_goal_local_evidence(
+            root=local_evidence_root,
+            release_tag=str(args.release_tag),
+            targets=(target,),
+            linux_workflow_run_url=str(args.workflow_run_url),
+            linux_source_head_sha=str(args.release_source_head_sha),
+            linux_source_run_attempt=args.release_source_run_attempt,
+            strict_artifacts=True,
+            assets_dir=args.assets_dir,
+            linux_builder_evidence=args.builder_evidence,
+            linux_smoke_evidence=args.linux_smoke_evidence,
+        )
+    return check_platform_goal_local_evidence(
+        root=local_evidence_root,
+        release_tag=str(args.release_tag),
+        targets=(target,),
+        strict_artifacts=True,
+        assets_dir=args.assets_dir,
+        xp_evidence=args.xp_evidence,
+        xp_evidence_dir=args.xp_evidence_dir,
+        xp_source_workflow_run_url=str(args.release_source_workflow_run_url),
+        xp_source_head_sha=str(args.release_source_head_sha),
+        xp_source_run_attempt=args.release_source_run_attempt,
+    )
+
+
 def linux_record(args: argparse.Namespace, promotion: dict[str, Any]) -> dict[str, Any]:
     target = str(args.target)
     expected = LINUX_TARGETS[target]
@@ -722,6 +760,7 @@ def linux_record(args: argparse.Namespace, promotion: dict[str, Any]) -> dict[st
             str(args.workflow_run_url),
             int(args.release_source_run_attempt),
             str(args.release_source_head_sha),
+            args.builder_evidence,
         ),
         "linux_smoke_evidence_sha256": linux_smoke_evidence_sha256_map(args.linux_smoke_evidence),
         "local_evidence_preflight_command": local_evidence_preflight_command(args),
@@ -769,12 +808,14 @@ def linux_native_smoke_command(
     workflow_run_url: str,
     workflow_run_attempt: int,
     source_head_sha: str,
+    builder_evidence: Path | str,
 ) -> str:
     requirements = promotion_requirements(target, promotion)
+    script = str(requirements.get("smoke_script", ""))
     return (
-        f"bash {requirements.get('smoke_script', '')} --target {target} "
+        f"bash {script} --target {target} "
         f"--workflow-run-url {workflow_run_url} --workflow-run-attempt {workflow_run_attempt} "
-        f"--source-head-sha {source_head_sha}"
+        f"--source-head-sha {source_head_sha} --builder-evidence {Path(builder_evidence).as_posix()}"
     )
 
 
@@ -1152,6 +1193,21 @@ def check_text_output_path(path: Path, label: str) -> list[str]:
     if path.exists() and not path.is_file():
         return [f"{label} must be a regular file: {path}"]
     return []
+
+
+def check_generated_record_output_path(path: Path, record: dict[str, Any]) -> list[str]:
+    target = str(record.get("target", ""))
+    expected_name = generated_record_file_name(target)
+    if path.name != expected_name:
+        return [
+            f"platform verified evidence record output file name must be {expected_name}, "
+            f"got {path.name!r}"
+        ]
+    return check_text_output_path(path, "platform verified evidence record output file")
+
+
+def generated_record_file_name(target: str) -> str:
+    return f"platform-verified-evidence-{target}.json"
 
 
 def write_text_output(path: Path, text: str) -> None:

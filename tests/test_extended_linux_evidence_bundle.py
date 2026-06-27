@@ -99,6 +99,63 @@ def test_extended_linux_evidence_bundle_packages_valid_i386_evidence(
     assert f"{_sha256(archive)}  {archive.name}" in sidecar_text
 
 
+def test_extended_linux_evidence_bundle_reruns_local_protected_goal_preflight(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bundler = _load_script("make_extended_linux_evidence_bundle")
+    generator = _load_script("make_platform_verified_evidence_record")
+    artifact_checker = _load_script("check_platform_promotion_artifacts")
+    target = "linux-i386"
+    tag = f"v{artifact_checker.read_project_version()}"
+    names = _required_artifact_names(artifact_checker, target, tag)
+    monkeypatch.chdir(tmp_path)
+    assets, builder, smoke = _stage_valid_linux_evidence_inputs(target, tag, names)
+    candidate = Path(target) / tag / "platform-verified-evidence-linux-i386.json"
+    errors, record = generator.build_evidence_record(
+        SimpleNamespace(
+            target=target,
+            release_tag=tag,
+            assets_dir=assets,
+            release_asset_base_url=(
+                f"https://github.com/example/remote-ops-workspace/releases/download/{tag}"
+            ),
+            workflow_run_url="https://github.com/example/remote-ops-workspace/actions/runs/12345",
+            release_source_head_sha="a" * 40,
+            release_source_run_attempt=1,
+            runner_label=["self-hosted", "linux", "i386"],
+            builder_evidence=builder,
+            linux_smoke_evidence=smoke,
+            xp_evidence=None,
+            xp_evidence_dir=None,
+        )
+    )
+    assert errors == []
+    candidate.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    calls: list[dict[str, Any]] = []
+
+    def fail_preflight(**kwargs):
+        calls.append(kwargs)
+        return ["sentinel local preflight failure"]
+
+    monkeypatch.setattr(bundler, "check_local_protected_goal_preflight", fail_preflight)
+
+    errors = bundler.make_extended_linux_evidence_bundle(
+        target=target,
+        release_tag=tag,
+        assets_dir=assets,
+        builder_evidence=builder,
+        smoke_evidence=smoke,
+        candidate_record=candidate,
+        out_dir=assets,
+    )
+
+    assert errors == ["sentinel local preflight failure"]
+    assert calls[0]["target"] == target
+    assert calls[0]["candidate"] == record
+    assert not (assets / f"extended-linux-evidence-bundle-{target}-{tag}.json").exists()
+
+
 def test_extended_linux_evidence_bundle_rejects_unscoped_output_directory() -> None:
     bundler = _load_script("make_extended_linux_evidence_bundle")
 
@@ -572,7 +629,8 @@ def test_extended_linux_evidence_bundle_rejects_weak_smoke_log(
         "linux-i386 linux_smoke_evidence missing required line: "
         "native installer smoke command: bash scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux "
         "--target linux-i386 --workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
-        f"--workflow-run-attempt 1 --source-head-sha {'a' * 40}"
+        f"--workflow-run-attempt 1 --source-head-sha {'a' * 40} "
+        f"--builder-evidence {builder.as_posix()}"
         in error
         for error in errors
     )
@@ -642,6 +700,70 @@ def test_extended_linux_evidence_bundle_rejects_builder_smoke_identity_drift(
     ) in errors
 
 
+def test_extended_linux_evidence_bundle_rejects_builder_smoke_security_drift(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bundler = _load_script("make_extended_linux_evidence_bundle")
+    generator = _load_script("make_platform_verified_evidence_record")
+    artifact_checker = _load_script("check_platform_promotion_artifacts")
+    target = "linux-armhf"
+    tag = f"v{artifact_checker.read_project_version()}"
+    names = _required_artifact_names(artifact_checker, target, tag)
+    monkeypatch.chdir(tmp_path)
+    assets, builder, smoke = _stage_valid_linux_evidence_inputs(target, tag, names)
+    errors, record = generator.build_evidence_record(
+        SimpleNamespace(
+            target=target,
+            release_tag=tag,
+            assets_dir=assets,
+            release_asset_base_url=(
+                f"https://github.com/example/remote-ops-workspace/releases/download/{tag}"
+            ),
+            workflow_run_url="https://github.com/example/remote-ops-workspace/actions/runs/12345",
+            release_source_head_sha="a" * 40,
+            release_source_run_attempt=1,
+            runner_label=["self-hosted", "linux", "armhf"],
+            builder_evidence=builder,
+            linux_smoke_evidence=smoke,
+            xp_evidence=None,
+            xp_evidence_dir=None,
+        )
+    )
+    assert errors == []
+    builder_identity = json.loads(builder.read_text(encoding="utf-8"))
+    builder_identity["security_patch_evidence"]["security_update_channel"] = "vendor-security-updates-2026-07"
+    builder_identity["security_patch_evidence"]["cve_review_reference"] = "vendor-cve-advisory-review-2026-07"
+    builder.write_text(json.dumps(builder_identity, indent=2) + "\n", encoding="utf-8")
+    builder_sha = generator.json_sha256(builder_identity)
+    record["builder_identity"] = builder_identity
+    record["builder_identity_sha256"] = builder_sha
+    _sync_linux_source_record(record, "builder_identity", builder_sha, builder.stat().st_size)
+    candidate = Path(target) / tag / "platform-verified-evidence-linux-armhf.json"
+    candidate.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+
+    errors = bundler.make_extended_linux_evidence_bundle(
+        target=target,
+        release_tag=tag,
+        assets_dir=assets,
+        builder_evidence=builder,
+        smoke_evidence=smoke,
+        candidate_record=candidate,
+        out_dir=Path("bundle"),
+    )
+
+    assert (
+        "linux-armhf linux_smoke_evidence native installer smoke security update channel must match "
+        "builder_identity.security_patch_evidence.security_update_channel 'vendor-security-updates-2026-07', "
+        "got 'vendor-security-updates-2026-06'"
+    ) in errors
+    assert (
+        "linux-armhf linux_smoke_evidence native installer smoke CVE review reference must match "
+        "builder_identity.security_patch_evidence.cve_review_reference 'vendor-cve-advisory-review-2026-07', "
+        "got 'vendor-cve-advisory-review-2026-06'"
+    ) in errors
+
+
 def _builder_identity(target: str) -> dict[str, object]:
     machine = "i686" if target == "linux-i386" else "armv7l"
     dpkg_arch = "i386" if target == "linux-i386" else "armhf"
@@ -651,6 +773,11 @@ def _builder_identity(target: str) -> dict[str, object]:
         "release_tag": "v1.0.2",
         "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
         "workflow_run_attempt": 1,
+        "workflow_ref": (
+            "example/remote-ops-workspace/.github/workflows/"
+            f"extended-platform-evidence.yml@{'a' * 40}"
+        ),
+        "workflow_sha": "a" * 40,
         "source_head_sha": "a" * 40,
         "observed_git_head_sha": "a" * 40,
         "git_worktree_clean": True,
@@ -682,6 +809,8 @@ def _builder_identity(target: str) -> dict[str, object]:
             "tls_preferred_modern_profiles": "TLS 1.3",
             "legacy_compatibility_profile": "isolated-opt-in",
             "cve_patch_reviewed": True,
+            "security_update_channel": "vendor-security-updates-2026-06",
+            "cve_review_reference": "vendor-cve-advisory-review-2026-06",
         },
     }
 
@@ -757,12 +886,18 @@ def _write_linux_smoke_evidence(
     workflow_run_url: str = "https://github.com/example/remote-ops-workspace/actions/runs/12345",
     workflow_run_attempt: int = 1,
     source_head_sha: str = "a" * 40,
+    builder_evidence: Path | str | None = None,
 ) -> None:
     arch = "i386" if target == "linux-i386" else "armhf"
     machine = "i686" if target == "linux-i386" else "armv7l"
     dpkg_arch = "i386" if target == "linux-i386" else "armhf"
     run_id = workflow_run_url.rstrip("/").rsplit("/", 1)[-1]
     evidence_run_id = f"{target}-1-0-2-run-{run_id}"
+    builder_evidence_path = (
+        Path(builder_evidence).as_posix()
+        if builder_evidence is not None
+        else (path.parent / f"builder-identity-{target}.json").as_posix()
+    )
     artifact_lines = [
         f"native installer smoke artifact sha256: {name} {artifact_hashes[name]}"
         for name in sorted(artifact_hashes)
@@ -773,7 +908,7 @@ def _write_linux_smoke_evidence(
                 f"native installer smoke command: bash scripts/smoke_linux_native.sh --arch {arch} "
                 f"--dist native-dist/linux --target {target} --workflow-run-url {workflow_run_url} "
                 f"--workflow-run-attempt {workflow_run_attempt} "
-                f"--source-head-sha {source_head_sha}",
+                f"--source-head-sha {source_head_sha} --builder-evidence {builder_evidence_path}",
                 "native installer smoke release: v1.0.2",
                 f"native installer smoke target arch: {arch}",
                 f"native installer smoke target: {target}",
@@ -789,6 +924,8 @@ def _write_linux_smoke_evidence(
                 "native installer smoke userland bits: 32",
                 "native installer smoke python ssl openssl: OpenSSL 3.0.13",
                 "native installer smoke openssl cli version: OpenSSL 3.0.13",
+                "native installer smoke security update channel: vendor-security-updates-2026-06",
+                "native installer smoke CVE review reference: vendor-cve-advisory-review-2026-06",
                 "native installer smoke TLS minimum modern profiles: TLS 1.2",
                 "native installer smoke TLS preferred modern profiles: TLS 1.3",
                 "native installer smoke legacy compatibility profile: isolated-opt-in",

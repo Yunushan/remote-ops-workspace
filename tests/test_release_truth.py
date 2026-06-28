@@ -693,6 +693,21 @@ def test_release_truth_checker_requires_platform_evidence_import_command() -> No
     assert any("accepted platform evidence artifact importer" in error for error in errors)
 
 
+def test_release_truth_checker_rejects_platform_import_dry_run() -> None:
+    checker = _load_release_truth_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        "--require-goal-targets --out-dir release-assets --verify-source-run",
+        "--require-goal-targets --out-dir release-assets --verify-source-run --dry-run",
+    )
+
+    errors = checker.check_release_preflight(workflow)
+
+    assert (
+        "accepted-platform-evidence-assets must download accepted artifacts, not run importer with --dry-run"
+        in errors
+    )
+
+
 def test_release_truth_checker_requires_imported_review_bundle_validation() -> None:
     checker = _load_release_truth_checker()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(

@@ -461,6 +461,8 @@ def test_platform_verified_readiness_goal_parity_completes_with_all_accepted_evi
         "windows-xp-native-x64": ".github/workflows/xp-native-evidence.yml",
         "windows-xp-native-x86": ".github/workflows/xp-native-evidence.yml",
     }
+    assert goal["selected_release_source_run_attempts"] == goal["release_source_run_attempts"]
+    assert goal["selected_release_source_workflows"] == goal["release_source_workflows"]
     assert goal["release_source_provenance_complete"] is True
     assert goal["release_consistent"] is True
     assert goal["release_repository_consistent"] is True
@@ -512,6 +514,21 @@ def test_platform_verified_readiness_goal_parity_requires_one_release_repository
     assert goal["release_repository"] == "example/remote-ops-workspace"
     assert goal["release_repositories"] == ["example/remote-ops-workspace"]
     assert goal["release_repository_consistent"] is True
+    assert goal["selected_release_source_run_attempts"] == {
+        "linux-i386": 1,
+        "linux-armhf": 1,
+        "windows-xp-native-x86": 1,
+    }
+    assert goal["selected_release_source_workflows"] == {
+        "linux-i386": ".github/workflows/extended-platform-evidence.yml",
+        "linux-armhf": ".github/workflows/extended-platform-evidence.yml",
+        "windows-xp-native-x86": ".github/workflows/xp-native-evidence.yml",
+    }
+    assert goal["release_source_run_attempts"] == {
+        "linux-armhf": 1,
+        "linux-i386": 1,
+        "windows-xp-native-x86": 1,
+    }
     assert goal["accepted_targets"] == [
         "linux-i386",
         "linux-armhf",
@@ -541,6 +558,16 @@ def test_platform_verified_readiness_goal_parity_requires_one_release_tag() -> N
     assert goal["release_tag"] == "v1.0.3"
     assert goal["release_tags"] == ["v1.0.2", "v1.0.3"]
     assert goal["release_consistent"] is False
+    assert goal["selected_release_source_run_attempts"] == {
+        "linux-armhf": 1,
+        "windows-xp-native-x86": 1,
+        "windows-xp-native-x64": 1,
+    }
+    assert goal["selected_release_source_workflows"] == {
+        "linux-armhf": ".github/workflows/extended-platform-evidence.yml",
+        "windows-xp-native-x86": ".github/workflows/xp-native-evidence.yml",
+        "windows-xp-native-x64": ".github/workflows/xp-native-evidence.yml",
+    }
     assert goal["accepted_targets"] == [
         "linux-armhf",
         "windows-xp-native-x86",
@@ -600,6 +627,22 @@ def test_platform_verified_readiness_goal_parity_requires_one_release_source_hea
     assert goal["release_source_head"] == "a" * 40
     assert goal["release_source_heads"] == ["a" * 40, "b" * 40]
     assert goal["release_source_head_consistent"] is False
+    assert goal["selected_release_source_run_attempts"] == {
+        "linux-i386": 1,
+        "linux-armhf": 1,
+        "windows-xp-native-x86": 1,
+    }
+    assert goal["selected_release_source_workflows"] == {
+        "linux-i386": ".github/workflows/extended-platform-evidence.yml",
+        "linux-armhf": ".github/workflows/extended-platform-evidence.yml",
+        "windows-xp-native-x86": ".github/workflows/xp-native-evidence.yml",
+    }
+    assert goal["release_source_run_attempts"] == {
+        "linux-armhf": 1,
+        "linux-i386": 1,
+        "windows-xp-native-x64": 1,
+        "windows-xp-native-x86": 1,
+    }
     assert goal["accepted_targets"] == [
         "linux-i386",
         "linux-armhf",
@@ -942,6 +985,44 @@ def test_platform_verified_readiness_ignores_dirty_builder_git_worktree() -> Non
     record = _linux_accepted_evidence("linux-i386")
     record["builder_identity"]["git_worktree_clean"] = False
     record["builder_identity_sha256"] = _json_sha256(record["builder_identity"])
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry=_accepted_evidence_registry(record),
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["linux-i386"]["current_percent"] == 70.0
+    assert rows["linux-i386"]["status"] == "manual-script-supported"
+    assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
+
+
+def test_platform_verified_readiness_ignores_missing_linux_runtime_identity() -> None:
+    record = _linux_accepted_evidence("linux-i386")
+    del record["builder_identity"]["os_release"]
+    record["builder_identity"]["glibc_version"] = ""
+    record["builder_identity_sha256"] = _json_sha256(record["builder_identity"])
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry=_accepted_evidence_registry(record),
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["linux-i386"]["current_percent"] == 70.0
+    assert rows["linux-i386"]["status"] == "manual-script-supported"
+    assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
+
+
+def test_platform_verified_readiness_ignores_unexpected_linux_builder_identity_fields() -> None:
+    record = _linux_accepted_evidence("linux-i386")
+    record["builder_identity"]["hostname"] = "private-builder"
+    record["builder_identity"]["scratch_note"] = "manual copy"
+    record["builder_identity"]["host_identity"]["runner_name"] = "private-runner"
+    record["builder_identity"]["required_tools"]["home_dir"] = "/home/private-user"
+    record["builder_identity"]["security_patch_evidence"]["operator_note"] = "manual review"
+    record["builder_identity_sha256"] = _json_sha256(record["builder_identity"])
+    record["linux_evidence_sources"]["builder_identity"]["sha256"] = record["builder_identity_sha256"]
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
@@ -1609,6 +1690,31 @@ def test_platform_verified_readiness_ignores_xp_evidence_summary_release_source_
     assert rows["Windows XP"]["accepted_evidence_present_targets"] == []
 
 
+def test_platform_verified_readiness_ignores_unexpected_xp_evidence_summary_fields() -> None:
+    record = _xp_accepted_evidence("windows-xp-native-x86")
+    summary = record["xp_evidence_summary"]
+    summary["operator_note"] = "manual copy"
+    summary["release_source"]["scratch"] = "manual"
+    summary["os"]["computer_name"] = "private-xp-host"
+    summary["toolchain"]["tool_path"] = "C:\\private\\toolchain"
+    summary["security"]["operator_note"] = "manual review"
+    summary["security"]["patch_evidence"]["operator_note"] = "manual review"
+    summary["host_identity"]["runner_name"] = "private-runner"
+    summary["host_identity"]["os"]["hostname"] = "private-xp-host"
+    summary["host_identity"]["toolchain"]["builder_user"] = "private-user"
+    record["xp_host_identity_sha256"] = _json_sha256(summary["host_identity"])
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry=_accepted_evidence_registry(record),
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["Windows XP"]["current_percent"] == 25.0
+    assert rows["Windows XP"]["status"] == "remote-target-only"
+    assert rows["Windows XP"]["accepted_evidence_present_targets"] == []
+
+
 def test_platform_verified_readiness_ignores_missing_xp_smoke_commands() -> None:
     record = _xp_accepted_evidence("windows-xp-native-x86")
     del record["xp_evidence_summary"]["smoke_commands"]
@@ -2230,6 +2336,9 @@ def _builder_identity(target: str) -> dict[str, object]:
         "uname_machine": machine,
         "dpkg_architecture": dpkg_arch,
         "userland_bits": "32",
+        "os_release": "Debian GNU/Linux 12 (bookworm)",
+        "kernel_release": "6.1.0-i386-ci",
+        "glibc_version": "glibc 2.36",
         "python_version": "3.12.0",
         "required_tools": {
             "bash": "/usr/bin/bash",
@@ -2368,7 +2477,7 @@ def _xp_evidence_summary(target: str) -> dict[str, object]:
             "legacy_crypto_profile_scoped": True,
             "modern_defaults_unchanged": True,
             "weak_crypto_global_default": False,
-            "patch_evidence": _security_patch_evidence(),
+            "patch_evidence": _xp_security_patch_evidence(),
         },
         "smoke_ids": sorted(_xp_smoke_hashes()),
         "smoke_evidence_files": _xp_smoke_evidence_files(),
@@ -2460,7 +2569,7 @@ def _xp_smoke_commands(target: str) -> dict[str, str]:
     os_identity = host_identity["os"]
     assert isinstance(os_identity, dict)
     release_source = _xp_release_source_summary(target)
-    security = _security_patch_evidence()
+    security = _xp_security_patch_evidence()
     return {
         smoke_id: (
             f"scripts/xp_smoke_runner.cmd --target {target} --release-tag v1.0.2 "
@@ -2571,6 +2680,17 @@ def _security_patch_evidence() -> dict[str, object]:
     return {
         "python_ssl_openssl": "OpenSSL 3.0.13",
         "openssl_cli_version": "OpenSSL 3.0.13",
+        "tls_minimum_modern_profiles": "TLS 1.2",
+        "tls_preferred_modern_profiles": "TLS 1.3",
+        "legacy_compatibility_profile": "isolated-opt-in",
+        "cve_patch_reviewed": True,
+        "security_update_channel": "vendor-security-updates-2026-06",
+        "cve_review_reference": "vendor-cve-advisory-review-2026-06",
+    }
+
+
+def _xp_security_patch_evidence() -> dict[str, object]:
+    return {
         "tls_minimum_modern_profiles": "TLS 1.2",
         "tls_preferred_modern_profiles": "TLS 1.3",
         "legacy_compatibility_profile": "isolated-opt-in",

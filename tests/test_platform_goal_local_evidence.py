@@ -53,6 +53,18 @@ def test_platform_goal_local_evidence_rejects_file_shaped_root(tmp_path: Path) -
     assert not root.exists()
 
 
+def test_platform_goal_local_evidence_requires_strict_artifacts_for_full_goal(tmp_path: Path) -> None:
+    checker = _load_local_evidence_checker()
+
+    errors = checker.check_platform_goal_local_evidence(
+        root=tmp_path,
+        release_tag="v1.0.2",
+        strict_artifacts=False,
+    )
+
+    assert errors == [checker.FULL_GOAL_STRICT_ARTIFACTS_ERROR]
+
+
 def test_platform_goal_local_evidence_report_tracks_partial_target_failure() -> None:
     checker = _load_local_evidence_checker()
 
@@ -496,6 +508,58 @@ def test_platform_goal_local_evidence_accepts_linux_targets_with_inferred_run_bi
     assert errors == []
 
 
+def test_platform_goal_local_evidence_rejects_linux_source_head_drift(
+    tmp_path: Path,
+) -> None:
+    checker = _load_local_evidence_checker()
+    fixtures = _load_record_fixtures()
+    artifact_checker = fixtures._load_platform_promotion_artifacts_checker()
+    tag = f"v{artifact_checker.read_project_version()}"
+    source_heads = {
+        "linux-i386": "a" * 40,
+        "linux-armhf": "b" * 40,
+    }
+    run_urls = {
+        "linux-i386": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        "linux-armhf": "https://github.com/example/remote-ops-workspace/actions/runs/67890",
+    }
+    for target, workflow_run_url in run_urls.items():
+        target_root = tmp_path / target / tag
+        artifacts = target_root / "artifacts"
+        artifacts.mkdir(parents=True)
+        names = fixtures._required_names(artifact_checker, target, tag)
+        fixtures._write_artifact_set(artifacts, names)
+        builder = target_root / f"builder-identity-{target}.json"
+        fixtures._write_builder_evidence(
+            builder,
+            target,
+            release_tag=tag,
+            workflow_run_url=workflow_run_url,
+            source_head_sha=source_heads[target],
+        )
+        smoke = target_root / f"native-smoke-{target}.log"
+        fixtures._write_linux_smoke_evidence(
+            smoke,
+            target,
+            fixtures._smoke_artifact_hashes(artifacts, names),
+            workflow_run_url=workflow_run_url,
+            source_head_sha=source_heads[target],
+        )
+
+    errors = checker.check_platform_goal_local_evidence(
+        root=tmp_path,
+        release_tag=tag,
+        targets=("linux-i386", "linux-armhf"),
+    )
+
+    assert (
+        "local protected platform evidence must use one release source head SHA before promotion"
+        in errors[0]
+    )
+    assert "'linux-i386': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'" in errors[0]
+    assert "'linux-armhf': 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'" in errors[0]
+
+
 def test_platform_goal_local_evidence_rejects_misnamed_linux_proof_inputs(tmp_path: Path) -> None:
     checker = _load_local_evidence_checker()
     fixtures = _load_record_fixtures()
@@ -706,7 +770,7 @@ def test_platform_goal_local_evidence_accepts_xp_targets_with_inferred_source_bi
             "arch": "x64",
             "service_pack": "SP2",
             "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/22222",
-            "head_sha": "b" * 40,
+            "head_sha": "a" * 40,
             "run_attempt": 2,
         },
     }
@@ -746,6 +810,72 @@ def test_platform_goal_local_evidence_accepts_xp_targets_with_inferred_source_bi
     )
 
     assert errors == []
+
+
+def test_platform_goal_local_evidence_rejects_xp_source_head_drift(
+    tmp_path: Path,
+) -> None:
+    checker = _load_local_evidence_checker()
+    fixtures = _load_record_fixtures()
+    artifact_checker = fixtures._load_platform_promotion_artifacts_checker()
+    tag = f"v{artifact_checker.read_project_version()}"
+    staged_sources = {
+        "windows-xp-native-x86": {
+            "arch": "x86",
+            "service_pack": "SP3",
+            "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/11111",
+            "head_sha": "a" * 40,
+            "run_attempt": 1,
+        },
+        "windows-xp-native-x64": {
+            "arch": "x64",
+            "service_pack": "SP2",
+            "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/22222",
+            "head_sha": "b" * 40,
+            "run_attempt": 2,
+        },
+    }
+    for target, source in staged_sources.items():
+        target_root = tmp_path / target / tag
+        artifacts = target_root / "artifacts"
+        artifacts.mkdir(parents=True)
+        names = fixtures._required_names(artifact_checker, target, tag)
+        fixtures._write_artifact_set(artifacts, names)
+        evidence = fixtures._valid_xp_evidence(
+            target,
+            str(source["arch"]),
+            str(source["service_pack"]),
+            tag,
+            names,
+        )
+        evidence["artifact_validation"]["command"] = evidence["artifact_validation"]["command"].replace(
+            f"native-dist/windows-xp/{target}/{tag}",
+            f"{target}/{tag}/artifacts",
+        )
+        _set_xp_release_source(
+            evidence,
+            workflow_run_url=str(source["workflow_run_url"]),
+            head_sha=str(source["head_sha"]),
+            run_attempt=int(source["run_attempt"]),
+        )
+        fixtures._attach_smoke_evidence_files(target_root, evidence)
+        (target_root / "xp-evidence.json").write_text(
+            json.dumps(evidence, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+    errors = checker.check_platform_goal_local_evidence(
+        root=tmp_path,
+        release_tag=tag,
+        targets=tuple(staged_sources),
+    )
+
+    assert (
+        "local protected platform evidence must use one release source head SHA before promotion"
+        in errors[0]
+    )
+    assert "'windows-xp-native-x86': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'" in errors[0]
+    assert "'windows-xp-native-x64': 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'" in errors[0]
 
 
 def test_platform_goal_local_evidence_rejects_invalid_inferred_xp_source_bindings(

@@ -22,6 +22,7 @@ from check_platform_verified_evidence import (  # noqa: E402
     XP_TARGETS,
     check_linux_builder_identity,
     directory_path_has_file_suffix,
+    format_values_by_target,
 )
 from check_xp_native_evidence import (  # noqa: E402
     artifact_validation_asset_dirs,
@@ -36,7 +37,12 @@ from make_platform_verified_evidence_record import (  # noqa: E402
 
 RELEASE_TAG_RE = re.compile(r"^v\d+\.\d+\.\d+$")
 GITHUB_ACTIONS_RUN_RE = re.compile(r"^https://github\.com/[^/]+/[^/]+/actions/runs/\d+/?$")
+GITHUB_ACTIONS_RUN_REPOSITORY_RE = re.compile(r"^https://github\.com/([^/]+/[^/]+)/actions/runs/\d+/?$")
 GITHUB_HEAD_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+FULL_GOAL_STRICT_ARTIFACTS_ERROR = (
+    "full protected goal local evidence preflight must use strict artifact directories; "
+    "--allow-extra-artifacts requires exactly one --target"
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -276,6 +282,9 @@ def check_platform_goal_local_evidence(
     if not root.is_dir():
         errors.append(f"local evidence root missing: {root}")
         return errors
+    if not strict_artifacts and len(targets) != 1:
+        errors.append(FULL_GOAL_STRICT_ARTIFACTS_ERROR)
+        return errors
     if any(
         path is not None
         for path in (
@@ -324,7 +333,101 @@ def check_platform_goal_local_evidence(
             )
         else:
             errors.append(f"unknown protected target: {target}")
+    if not errors:
+        errors.extend(
+            check_multi_target_release_source_scope(
+                root=root,
+                release_tag=release_tag,
+                targets=targets,
+                linux_workflow_run_url=linux_workflow_run_url,
+                linux_source_head_sha=linux_source_head_sha,
+                xp_source_workflow_run_url=xp_source_workflow_run_url,
+                xp_source_head_sha=xp_source_head_sha,
+            )
+        )
     return errors
+
+
+def check_multi_target_release_source_scope(
+    *,
+    root: Path,
+    release_tag: str,
+    targets: tuple[str, ...],
+    linux_workflow_run_url: str | None,
+    linux_source_head_sha: str | None,
+    xp_source_workflow_run_url: str | None,
+    xp_source_head_sha: str | None,
+) -> list[str]:
+    if len(targets) < 2:
+        return []
+    bindings = local_release_source_bindings(
+        root=root,
+        release_tag=release_tag,
+        targets=targets,
+        linux_workflow_run_url=linux_workflow_run_url,
+        linux_source_head_sha=linux_source_head_sha,
+        xp_source_workflow_run_url=xp_source_workflow_run_url,
+        xp_source_head_sha=xp_source_head_sha,
+    )
+    errors: list[str] = []
+    heads_by_target = {
+        target: binding["head_sha"]
+        for target, binding in bindings.items()
+        if binding.get("head_sha")
+    }
+    if len(heads_by_target) == len(targets) and len(set(heads_by_target.values())) != 1:
+        errors.append(
+            "local protected platform evidence must use one release source head SHA "
+            f"before promotion, got {format_values_by_target(heads_by_target)}"
+        )
+    repositories_by_target = {
+        target: binding["repository"]
+        for target, binding in bindings.items()
+        if binding.get("repository")
+    }
+    if len(repositories_by_target) == len(targets) and len(set(repositories_by_target.values())) != 1:
+        errors.append(
+            "local protected platform evidence must use one GitHub repository "
+            f"before promotion, got {format_values_by_target(repositories_by_target)}"
+        )
+    return errors
+
+
+def local_release_source_bindings(
+    *,
+    root: Path,
+    release_tag: str,
+    targets: tuple[str, ...],
+    linux_workflow_run_url: str | None,
+    linux_source_head_sha: str | None,
+    xp_source_workflow_run_url: str | None,
+    xp_source_head_sha: str | None,
+) -> dict[str, dict[str, str]]:
+    bindings: dict[str, dict[str, str]] = {}
+    for target in targets:
+        if target in LINUX_TARGETS:
+            builder = read_json(root / target / release_tag / f"builder-identity-{target}.json")
+            workflow_run_url = str(linux_workflow_run_url or builder.get("workflow_run_url", "")).rstrip("/")
+            head_sha = str(linux_source_head_sha or builder.get("source_head_sha", "")).strip()
+        elif target in XP_TARGETS:
+            evidence = read_json(root / target / release_tag / "xp-evidence.json")
+            source = evidence.get("release_source") if isinstance(evidence, dict) else {}
+            source = source if isinstance(source, dict) else {}
+            workflow_run_url = str(xp_source_workflow_run_url or source.get("workflow_run_url", "")).rstrip("/")
+            head_sha = str(xp_source_head_sha or source.get("head_sha", "")).strip()
+        else:
+            continue
+        bindings[target] = {
+            "workflow_run_url": workflow_run_url,
+            "repository": repository_from_workflow_run_url(workflow_run_url),
+            "head_sha": head_sha,
+        }
+    return bindings
+
+
+def repository_from_workflow_run_url(workflow_run_url: str) -> str:
+    match = GITHUB_ACTIONS_RUN_REPOSITORY_RE.fullmatch(workflow_run_url.rstrip("/"))
+    return match.group(1) if match else ""
 
 
 def check_linux_local_evidence(

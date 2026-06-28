@@ -366,16 +366,40 @@ def format_goal_scope(goal: dict[str, Any]) -> str:
         lines.append(f"accepted release repositories: {', '.join(repositories)}")
     if source_heads:
         lines.append(f"accepted release source heads: {', '.join(source_heads)}")
-    workflows = dict_values(goal.get("release_source_workflows"))
+    selected_workflows = dict_values(goal.get("selected_release_source_workflows"))
+    workflows = selected_workflows or dict_values(goal.get("release_source_workflows"))
     if workflows:
         workflow_summary = ", ".join(
             f"{target}={workflow}" for target, workflow in sorted(workflows.items())
         )
-        lines.append(f"accepted release source workflows: {workflow_summary}")
-    run_attempts = dict_values(goal.get("release_source_run_attempts"))
+        label = (
+            "selected release source workflows"
+            if aggregate_count != accepted_count
+            else "accepted release source workflows"
+        )
+        lines.append(f"{label}: {workflow_summary}")
+    selected_run_attempts = dict_values(goal.get("selected_release_source_run_attempts"))
+    run_attempts = selected_run_attempts or dict_values(goal.get("release_source_run_attempts"))
     if run_attempts:
         attempts = ", ".join(f"{target}={attempt}" for target, attempt in sorted(run_attempts.items()))
-        lines.append(f"accepted release source run attempts: {attempts}")
+        label = (
+            "selected release source run attempts"
+            if aggregate_count != accepted_count
+            else "accepted release source run attempts"
+        )
+        lines.append(f"{label}: {attempts}")
+    aggregate_workflows = dict_values(goal.get("release_source_workflows"))
+    if aggregate_count != accepted_count and aggregate_workflows and aggregate_workflows != selected_workflows:
+        workflow_summary = ", ".join(
+            f"{target}={workflow}" for target, workflow in sorted(aggregate_workflows.items())
+        )
+        lines.append(f"aggregate accepted release source workflows: {workflow_summary}")
+    aggregate_run_attempts = dict_values(goal.get("release_source_run_attempts"))
+    if aggregate_count != accepted_count and aggregate_run_attempts and aggregate_run_attempts != selected_run_attempts:
+        attempts = ", ".join(
+            f"{target}={attempt}" for target, attempt in sorted(aggregate_run_attempts.items())
+        )
+        lines.append(f"aggregate accepted release source run attempts: {attempts}")
     import_command = str(goal.get("release_import_dry_run_command", "")).strip()
     if import_command:
         lines.append(f"pre-release import dry-run: {import_command}")

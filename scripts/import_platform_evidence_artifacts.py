@@ -36,14 +36,22 @@ from check_platform_verified_evidence import (  # noqa: E402
 from make_platform_verified_evidence_record import sha256_file  # noqa: E402
 
 SOURCE_RUN_METADATA_JQ = (
-    "{attempt: .run_attempt, status: .status, conclusion: .conclusion, "
-    "event: .event, headSha: .head_sha, path: .path}"
+    "{id: .id, htmlUrl: .html_url, attempt: .run_attempt, status: .status, "
+    "conclusion: .conclusion, event: .event, headSha: .head_sha, path: .path}"
 )
 SOURCE_RUN_ARTIFACTS_PAGE_SIZE = 100
+REQUIRE_VERIFY_SOURCE_RUN_DRY_RUN_ERROR = (
+    "--dry-run for the protected platform goal requires --verify-source-run"
+)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    arg_errors = strict_import_arg_errors(args)
+    if arg_errors:
+        for error in arg_errors:
+            print(f"platform evidence import: {error}", file=sys.stderr)
+        return 2
     required_targets = required_targets_from_args(args)
     registry = read_json(args.registry)
     errors = check_platform_verified_evidence(
@@ -107,10 +115,22 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help=(
             "inspect each recorded GitHub Actions source run and source artifact "
             "inventory during --dry-run; real imports always verify source-run "
-            "metadata and artifact inventory before downloading artifacts"
+            "metadata and artifact inventory before downloading artifacts; "
+            "required for protected-goal dry-runs"
         ),
     )
     return parser.parse_args(argv)
+
+
+def strict_import_arg_errors(args: argparse.Namespace) -> list[str]:
+    if not args.dry_run or args.verify_source_run:
+        return []
+    requested_targets = set(str(target) for target in args.require_target)
+    protected_targets = set(PROTECTED_GOAL_TARGETS)
+    is_full_goal = args.require_goal_targets or not requested_targets or requested_targets == protected_targets
+    if is_full_goal:
+        return [REQUIRE_VERIFY_SOURCE_RUN_DRY_RUN_ERROR]
+    return []
 
 
 def required_targets_from_args(args: argparse.Namespace) -> tuple[str, ...]:
@@ -302,6 +322,9 @@ def import_record(
         str(destination),
     ]
     if dry_run:
+        declared_file_errors = check_release_source_declared_files_for_record(record)
+        if declared_file_errors:
+            return declared_file_errors
         print(" ".join(metadata_command))
         print(" ".join(artifacts_command))
         print(" ".join(command))
@@ -309,6 +332,8 @@ def import_record(
             errors = verify_source_run(
                 target,
                 metadata_command,
+                expected_run_id=run_id,
+                expected_workflow_run_url=run_url,
                 expected_head_sha=expected_head_sha,
                 expected_run_attempt=expected_run_attempt,
                 release_head_sha=release_head_sha,
@@ -327,6 +352,8 @@ def import_record(
         errors = verify_source_run(
             target,
             metadata_command,
+            expected_run_id=run_id,
+            expected_workflow_run_url=run_url,
             expected_head_sha=expected_head_sha,
             expected_run_attempt=expected_run_attempt,
             release_head_sha=release_head_sha,
@@ -343,6 +370,9 @@ def import_record(
         )
         if errors:
             return errors
+        declared_file_errors = check_release_source_declared_files_for_record(record)
+        if declared_file_errors:
+            return declared_file_errors
         try:
             subprocess.run(command, check=True)
         except (OSError, subprocess.CalledProcessError) as exc:
@@ -434,6 +464,8 @@ def verify_source_run(
     target: str,
     command: list[str],
     *,
+    expected_run_id: str,
+    expected_workflow_run_url: str,
     expected_head_sha: str,
     expected_run_attempt: int,
     release_head_sha: str | None = None,
@@ -449,6 +481,16 @@ def verify_source_run(
     if not isinstance(data, dict):
         return [f"{target} release_asset_source workflow run metadata must be a JSON object"]
     errors: list[str] = []
+    if str(data.get("id", "")) != expected_run_id:
+        errors.append(
+            f"{target} release_asset_source workflow run id must match accepted record "
+            f"{expected_run_id}, got {data.get('id')!r}"
+        )
+    if str(data.get("htmlUrl", "")).rstrip("/") != expected_workflow_run_url.rstrip("/"):
+        errors.append(
+            f"{target} release_asset_source workflow run htmlUrl must match accepted record "
+            f"{expected_workflow_run_url}, got {data.get('htmlUrl')!r}"
+        )
     if data.get("status") != "completed":
         errors.append(
             f"{target} release_asset_source workflow run status must be completed, got {data.get('status')!r}"
@@ -646,11 +688,7 @@ def validate_source_artifact(record: dict[str, Any], *, source_root: Path) -> li
     source_errors, expected_files = release_source_contains_files(record)
     if source_errors:
         return source_errors
-    declared_errors = check_release_source_declared_files(
-        target,
-        declared_files=expected_files,
-        expected_files=expected_release_files(record),
-    )
+    declared_errors = check_release_source_declared_files_for_record(record)
     if declared_errors:
         return declared_errors
     errors = validate_downloaded_source_file_set(
@@ -664,6 +702,18 @@ def validate_source_artifact(record: dict[str, Any], *, source_root: Path) -> li
     if errors:
         return errors
     return validate_downloaded_final_record(record, source_root=source_root)
+
+
+def check_release_source_declared_files_for_record(record: dict[str, Any]) -> list[str]:
+    target = str(record.get("target", ""))
+    source_errors, declared_files = release_source_contains_files(record)
+    if source_errors:
+        return source_errors
+    return check_release_source_declared_files(
+        target,
+        declared_files=declared_files,
+        expected_files=expected_release_files(record),
+    )
 
 
 def check_release_source_declared_files(

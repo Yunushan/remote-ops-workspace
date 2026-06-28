@@ -483,7 +483,7 @@ def test_make_platform_verified_evidence_record_generates_xp_record(tmp_path: Pa
             "legacy_crypto_profile_scoped": True,
             "modern_defaults_unchanged": True,
             "weak_crypto_global_default": False,
-            "patch_evidence": _security_patch_evidence(),
+            "patch_evidence": _xp_security_patch_evidence(),
         },
         "smoke_ids": sorted(result["id"] for result in data["smoke_results"]),
         "smoke_evidence_files": {
@@ -2496,7 +2496,16 @@ def test_make_platform_verified_evidence_record_cli_refuses_to_append_generated_
     output = tmp_path / "platform-verified-evidence-linux-i386.json"
 
     def fake_build_evidence_record(_args):
-        return [], {"target": "linux-i386", "status": "accepted", "readiness_percent": 100.0}
+        return [], {
+            "target": "linux-i386",
+            "status": "accepted",
+            "readiness_percent": 100.0,
+            "review_bundle": {},
+            "finalized_record_release_asset_url": (
+                "https://github.com/example/remote-ops-workspace/releases/download/v1.0.2/"
+                "platform-verified-evidence-linux-i386-final.json"
+            ),
+        }
 
     monkeypatch.setattr(maker, "build_evidence_record", fake_build_evidence_record)
 
@@ -2520,7 +2529,8 @@ def test_make_platform_verified_evidence_record_cli_refuses_to_append_generated_
 
     captured = capsys.readouterr()
     assert exit_code == 1
-    assert "linux-i386 generated evidence is an unfinalized candidate" in captured.err
+    assert "linux-i386 generated evidence cannot be appended by this generator" in captured.err
+    assert "scripts/finalize_platform_verified_evidence_record.py --append-registry" in captured.err
     assert not output.exists()
     assert json.loads(registry.read_text(encoding="utf-8"))["accepted_evidence"] == []
 
@@ -2762,6 +2772,9 @@ def _write_builder_evidence(
         "uname_machine": machine,
         "dpkg_architecture": dpkg_arch,
         "userland_bits": "32",
+        "os_release": "Debian GNU/Linux 12 (bookworm)",
+        "kernel_release": "6.1.0-i386-ci",
+        "glibc_version": "glibc 2.36",
         "python_version": "3.12.0",
         "required_tools": {
             "bash": "/usr/bin/bash",
@@ -2845,6 +2858,9 @@ def _write_linux_smoke_evidence(
                 f"native installer smoke uname machine: {machine}",
                 f"native installer smoke dpkg architecture: {dpkg_arch}",
                 "native installer smoke userland bits: 32",
+                "native installer smoke os release: Debian GNU/Linux 12 (bookworm)",
+                "native installer smoke kernel release: 6.1.0-i386-ci",
+                "native installer smoke glibc version: glibc 2.36",
                 "native installer smoke python ssl openssl: OpenSSL 3.0.13",
                 "native installer smoke openssl cli version: OpenSSL 3.0.13",
                 "native installer smoke security update channel: vendor-security-updates-2026-06",
@@ -2953,7 +2969,7 @@ def _valid_xp_evidence(
         },
     }
     release_source = _xp_release_source()
-    security = _security_patch_evidence()
+    security = _xp_security_patch_evidence()
     return {
         "schema_version": 1,
         "target": target,
@@ -3142,6 +3158,17 @@ def _security_patch_evidence() -> dict[str, object]:
     return {
         "python_ssl_openssl": "OpenSSL 3.0.13",
         "openssl_cli_version": "OpenSSL 3.0.13",
+        "tls_minimum_modern_profiles": "TLS 1.2",
+        "tls_preferred_modern_profiles": "TLS 1.3",
+        "legacy_compatibility_profile": "isolated-opt-in",
+        "cve_patch_reviewed": True,
+        "security_update_channel": "vendor-security-updates-2026-06",
+        "cve_review_reference": "vendor-cve-advisory-review-2026-06",
+    }
+
+
+def _xp_security_patch_evidence() -> dict[str, object]:
+    return {
         "tls_minimum_modern_profiles": "TLS 1.2",
         "tls_preferred_modern_profiles": "TLS 1.3",
         "legacy_compatibility_profile": "isolated-opt-in",

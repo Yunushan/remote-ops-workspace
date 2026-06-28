@@ -24,20 +24,7 @@ def test_import_record_downloads_expected_files_and_verifies_hashes(tmp_path: Pa
         assert check is True
         if _is_metadata_command(command):
             assert kwargs == {"capture_output": True, "text": True}
-            return subprocess.CompletedProcess(
-                command,
-                0,
-                stdout=json.dumps(
-                    {
-                        "attempt": 1,
-                        "status": "completed",
-                        "conclusion": "success",
-                        "event": "workflow_dispatch",
-                        "headSha": HEAD_SHA,
-                        "path": ".github/workflows/extended-platform-evidence.yml",
-                    }
-                ),
-            )
+            return _successful_view(command)
         if _is_artifacts_command(command):
             assert kwargs == {"capture_output": True, "text": True}
             return _successful_artifacts(command)
@@ -1082,6 +1069,64 @@ def test_import_record_rejects_source_workflow_run_attempt_mismatch(
     )
 
 
+def test_import_record_rejects_source_workflow_run_id_mismatch(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+
+    def fake_run(command: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        assert _is_metadata_command(command)
+        return _source_run_metadata(command, id=99999)
+
+    monkeypatch.setattr(importer.subprocess, "run", fake_run)
+
+    errors = importer.import_record(
+        record,
+        out_dir=tmp_path / "release-assets",
+        download_root=tmp_path / "download",
+        dry_run=False,
+        release_head_sha=HEAD_SHA,
+    )
+
+    assert (
+        "linux-i386 release_asset_source workflow run id must match accepted record 12345, got 99999"
+        in errors
+    )
+
+
+def test_import_record_rejects_source_workflow_run_url_mismatch(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+
+    def fake_run(command: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        assert _is_metadata_command(command)
+        return _source_run_metadata(
+            command,
+            htmlUrl="https://github.com/example/remote-ops-workspace/actions/runs/99999",
+        )
+
+    monkeypatch.setattr(importer.subprocess, "run", fake_run)
+
+    errors = importer.import_record(
+        record,
+        out_dir=tmp_path / "release-assets",
+        download_root=tmp_path / "download",
+        dry_run=False,
+        release_head_sha=HEAD_SHA,
+    )
+
+    assert (
+        "linux-i386 release_asset_source workflow run htmlUrl must match accepted record "
+        "https://github.com/example/remote-ops-workspace/actions/runs/12345, "
+        "got 'https://github.com/example/remote-ops-workspace/actions/runs/99999'"
+    ) in errors
+
+
 def test_import_record_rejects_release_checkout_head_sha_mismatch(tmp_path: Path, monkeypatch) -> None:
     importer = _load_importer()
     record = _record(tmp_path)
@@ -1163,6 +1208,60 @@ def test_import_platform_evidence_artifacts_cli_dry_run_checks_release_checkout_
     assert result == 1
 
 
+def test_import_platform_evidence_artifacts_cli_requires_source_run_verification_for_goal_dry_run(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    importer = _load_importer()
+    registry = tmp_path / "platform_verified_evidence.json"
+
+    result = importer.main(
+        [
+            "--registry",
+            str(registry),
+            "--release-tag",
+            "v1.0.2",
+            "--require-goal-targets",
+            "--out-dir",
+            str(tmp_path / "release-assets"),
+            "--dry-run",
+        ]
+    )
+
+    assert result == 2
+    assert (
+        "platform evidence import: --dry-run for the protected platform goal requires --verify-source-run"
+        in capsys.readouterr().err
+    )
+
+
+def test_import_platform_evidence_artifacts_cli_requires_source_run_verification_for_all_targets_dry_run(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    importer = _load_importer()
+    registry = tmp_path / "platform_verified_evidence.json"
+    args = [
+        "--registry",
+        str(registry),
+        "--release-tag",
+        "v1.0.2",
+        "--out-dir",
+        str(tmp_path / "release-assets"),
+        "--dry-run",
+    ]
+    for target in sorted(importer.PROTECTED_GOAL_TARGETS):
+        args.extend(["--require-target", target])
+
+    result = importer.main(args)
+
+    assert result == 2
+    assert (
+        "platform evidence import: --dry-run for the protected platform goal requires --verify-source-run"
+        in capsys.readouterr().err
+    )
+
+
 def test_import_record_dry_run_prints_gh_download_command(tmp_path: Path, capsys) -> None:
     importer = _load_importer()
     record = _record(tmp_path)
@@ -1181,6 +1280,34 @@ def test_import_record_dry_run_prints_gh_download_command(tmp_path: Path, capsys
     assert "gh api repos/example/remote-ops-workspace/actions/runs/12345/artifacts?per_page=100" in captured.out
     assert "gh run download 12345 --repo example/remote-ops-workspace" in captured.out
     assert "--name extended-linux-evidence-linux-i386-v1.0.2" in captured.out
+
+
+def test_import_record_dry_run_rejects_declared_source_file_drift(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+    source = record["release_asset_source"]
+    source["contains_files"] = [
+        name
+        for name in source["contains_files"]
+        if name != "platform-verified-evidence-linux-i386-final.json"
+    ]
+
+    errors = importer.import_record(
+        record,
+        out_dir=tmp_path / "release-assets",
+        download_root=tmp_path / "download",
+        dry_run=True,
+        release_head_sha=HEAD_SHA,
+    )
+
+    assert errors == [
+        "linux-i386 release_asset_source.contains_files missing expected files: "
+        "['platform-verified-evidence-linux-i386-final.json']"
+    ]
+    assert capsys.readouterr().out == ""
 
 
 def test_import_record_dry_run_can_verify_source_run_without_download(
@@ -1661,21 +1788,30 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _successful_view(command: list[str]) -> subprocess.CompletedProcess[str]:
+def _source_run_metadata(
+    command: list[str],
+    **overrides: object,
+) -> subprocess.CompletedProcess[str]:
+    data = {
+        "id": 12345,
+        "htmlUrl": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        "attempt": 1,
+        "status": "completed",
+        "conclusion": "success",
+        "event": "workflow_dispatch",
+        "headSha": HEAD_SHA,
+        "path": ".github/workflows/extended-platform-evidence.yml",
+    }
+    data.update(overrides)
     return subprocess.CompletedProcess(
         command,
         0,
-        stdout=json.dumps(
-            {
-                "attempt": 1,
-                "status": "completed",
-                "conclusion": "success",
-                "event": "workflow_dispatch",
-                "headSha": HEAD_SHA,
-                "path": ".github/workflows/extended-platform-evidence.yml",
-            }
-        ),
+        stdout=json.dumps(data),
     )
+
+
+def _successful_view(command: list[str]) -> subprocess.CompletedProcess[str]:
+    return _source_run_metadata(command)
 
 
 def _successful_artifacts(

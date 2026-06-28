@@ -29,11 +29,13 @@ POLICY = (
     "Linux builder identity evidence, builder identity "
     "SHA-256, builder identity release/run binding, "
     "Linux builder workflow provenance binding, "
+    "exact Linux builder identity fields, "
     "Linux builder/smoke source file binding, "
     "Linux builder/smoke host identity binding, Linux builder/smoke security evidence binding, "
     "Linux builder source head SHA binding, "
     "Linux builder observed Git HEAD binding, "
     "Linux builder clean checkout binding, "
+    "Linux builder/smoke runtime OS identity binding, "
     "Linux builder host identity binding when applicable, "
     "Linux builder rpm and non-interactive sudo evidence, Linux security patch evidence, "
     "Linux security smoke proof-line binding, "
@@ -45,7 +47,7 @@ POLICY = (
     "XP evidence source file binding, XP evidence release source binding, "
     "XP evidence bundle SHA-256 digests, "
     "XP evidence validation command binding, XP evidence contract SHA-256, "
-    "XP evidence summary binding, XP host identity SHA-256 binding, "
+    "XP evidence summary binding, exact XP evidence summary fields, XP host identity SHA-256 binding, "
     "XP sanitized target-scoped host identity binding, XP smoke host identity binding, "
     "XP smoke observed-at timestamp binding, XP smoke OS identity binding, "
     "XP smoke host probe proof-line binding, XP security patch evidence, "
@@ -89,6 +91,20 @@ def test_platform_verified_evidence_rejects_missing_xp_validation_policy() -> No
     )
 
     assert "platform verified evidence policy must require XP evidence validation command binding" in errors
+
+
+def test_platform_verified_evidence_rejects_missing_exact_xp_evidence_summary_fields_policy() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY.replace("exact XP evidence summary fields, ", ""),
+            "accepted_evidence": [],
+        }
+    )
+
+    assert "platform verified evidence policy must require exact XP evidence summary fields" in errors
 
 
 def test_platform_verified_evidence_rejects_missing_local_evidence_preflight_policy() -> None:
@@ -833,6 +849,20 @@ def test_platform_verified_evidence_rejects_missing_linux_builder_workflow_prove
     ) in errors
 
 
+def test_platform_verified_evidence_rejects_missing_linux_builder_identity_fields_policy() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY.replace("exact Linux builder identity fields, ", ""),
+            "accepted_evidence": [],
+        }
+    )
+
+    assert "platform verified evidence policy must require exact Linux builder identity fields" in errors
+
+
 def test_platform_verified_evidence_rejects_missing_linux_builder_observed_git_head_policy() -> None:
     checker = _load_platform_verified_evidence_checker()
 
@@ -862,6 +892,22 @@ def test_platform_verified_evidence_rejects_missing_linux_builder_clean_checkout
 
     assert (
         "platform verified evidence policy must require Linux builder clean checkout binding"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_missing_linux_runtime_identity_policy() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY.replace("Linux builder/smoke runtime OS identity binding, ", ""),
+            "accepted_evidence": [],
+        }
+    )
+
+    assert (
+        "platform verified evidence policy must require Linux builder/smoke runtime OS identity binding"
     ) in errors
 
 
@@ -1002,6 +1048,35 @@ def test_platform_verified_evidence_goal_required_targets_ignore_non_100_readine
     ) in errors
 
 
+def test_platform_verified_evidence_goal_required_targets_ignore_invalid_records() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    linux_i386 = _linux_record("linux-i386")
+    del linux_i386["review_bundle"]
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [
+            linux_i386,
+            _linux_record("linux-armhf"),
+            _xp_record("windows-xp-native-x86"),
+            _xp_record("windows-xp-native-x64"),
+        ],
+    }
+
+    errors = checker.check_platform_verified_evidence(
+        registry=registry,
+        required_targets=checker.PROTECTED_GOAL_TARGETS,
+        required_release_tag="v1.0.2",
+        require_review_bundles=True,
+    )
+
+    assert "linux-i386 review_bundle must be an object" in errors
+    assert (
+        "missing required accepted evidence targets for release_tag v1.0.2: "
+        "['linux-i386']"
+    ) in errors
+
+
 def test_platform_verified_evidence_rejects_linux_unexpected_top_level_fields() -> None:
     checker = _load_platform_verified_evidence_checker()
     record = _linux_record("linux-i386")
@@ -1064,11 +1139,12 @@ def test_platform_verified_evidence_goal_required_targets_reject_mixed_release_r
     )
 
     assert (
-        "protected platform goal evidence for release_tag v1.0.2 must use one GitHub release repository, "
-        "got {'linux-armhf': ['example/remote-ops-workspace'], "
-        "'linux-i386': ['example/remote-ops-workspace'], "
-        "'windows-xp-native-x64': ['other/remote-ops-workspace'], "
-        "'windows-xp-native-x86': ['example/remote-ops-workspace']}"
+        "windows-xp-native-x64 release_asset_source.workflow_run_url repository must match "
+        "release asset repository ['other/remote-ops-workspace'], got example/remote-ops-workspace"
+    ) in errors
+    assert (
+        "missing required accepted evidence targets for release_tag v1.0.2: "
+        "['windows-xp-native-x64']"
     ) in errors
 
 
@@ -3174,6 +3250,38 @@ def test_platform_verified_evidence_rejects_missing_linux_builder_host_identity(
     assert "linux-i386 builder_identity host_identity must be an object" in errors
 
 
+def test_platform_verified_evidence_rejects_unexpected_linux_builder_identity_fields() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    record["builder_identity"]["hostname"] = "private-builder"
+    record["builder_identity"]["scratch_note"] = "manual copy"
+    record["builder_identity"]["host_identity"]["runner_name"] = "private-runner"
+    record["builder_identity"]["required_tools"]["home_dir"] = "/home/private-user"
+    record["builder_identity"]["security_patch_evidence"]["operator_note"] = "manual review"
+    record["builder_identity_sha256"] = _json_sha256(record["builder_identity"])
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "linux-i386 builder_identity unexpected fields: ['hostname', 'scratch_note']" in errors
+    assert (
+        "linux-i386 builder_identity host_identity unexpected fields: ['runner_name']"
+    ) in errors
+    assert (
+        "linux-i386 builder_identity host_identity contains forbidden private fields: ['runner_name']"
+    ) in errors
+    assert (
+        "linux-i386 builder_identity required_tools unexpected fields: ['home_dir']"
+    ) in errors
+    assert (
+        "linux-i386 builder_identity security_patch_evidence unexpected fields: ['operator_note']"
+    ) in errors
+
+
 def test_platform_verified_evidence_rejects_private_linux_builder_host_identity_fields() -> None:
     checker = _load_platform_verified_evidence_checker()
     record = _linux_record("linux-armhf")
@@ -3242,6 +3350,24 @@ def test_platform_verified_evidence_rejects_wrong_linux_userland_bits() -> None:
     errors = checker.check_platform_verified_evidence(registry=registry)
 
     assert "linux-i386 builder_identity userland_bits must be '32', got '64'" in errors
+
+
+def test_platform_verified_evidence_rejects_missing_linux_runtime_identity() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    del record["builder_identity"]["os_release"]
+    record["builder_identity"]["kernel_release"] = ""
+    record["builder_identity_sha256"] = _json_sha256(record["builder_identity"])
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "linux-i386 builder_identity os_release must be set" in errors
+    assert "linux-i386 builder_identity kernel_release must be set" in errors
 
 
 def test_platform_verified_evidence_rejects_weak_linux_tool_paths() -> None:
@@ -3704,6 +3830,56 @@ def test_platform_verified_evidence_rejects_xp_evidence_summary_target_mismatch(
     errors = checker.check_platform_verified_evidence(registry=registry)
 
     assert "windows-xp-native-x64 xp_evidence_summary target must be windows-xp-native-x64" in errors
+
+
+def test_platform_verified_evidence_rejects_unexpected_xp_evidence_summary_fields() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _xp_record("windows-xp-native-x86")
+    summary = record["xp_evidence_summary"]
+    summary["operator_note"] = "manual copy"
+    summary["release_source"]["scratch"] = "manual"
+    summary["os"]["computer_name"] = "private-xp-host"
+    summary["toolchain"]["tool_path"] = "C:\\private\\toolchain"
+    summary["security"]["operator_note"] = "manual review"
+    summary["security"]["patch_evidence"]["operator_note"] = "manual review"
+    summary["host_identity"]["runner_name"] = "private-runner"
+    summary["host_identity"]["os"]["hostname"] = "private-xp-host"
+    summary["host_identity"]["toolchain"]["builder_user"] = "private-user"
+    record["xp_host_identity_sha256"] = _json_sha256(summary["host_identity"])
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "windows-xp-native-x86 xp_evidence_summary unexpected fields: ['operator_note']" in errors
+    assert (
+        "windows-xp-native-x86 xp_evidence_summary release_source unexpected fields: ['scratch']"
+    ) in errors
+    assert "windows-xp-native-x86 xp_evidence_summary os unexpected fields: ['computer_name']" in errors
+    assert (
+        "windows-xp-native-x86 xp_evidence_summary toolchain unexpected fields: ['tool_path']"
+    ) in errors
+    assert (
+        "windows-xp-native-x86 xp_evidence_summary security unexpected fields: ['operator_note']"
+    ) in errors
+    assert (
+        "windows-xp-native-x86 xp_evidence_summary security.patch_evidence unexpected fields: ['operator_note']"
+    ) in errors
+    assert (
+        "windows-xp-native-x86 xp_evidence_summary host_identity unexpected fields: ['runner_name']"
+    ) in errors
+    assert (
+        "windows-xp-native-x86 xp_evidence_summary host_identity contains forbidden private fields: ['runner_name']"
+    ) in errors
+    assert (
+        "windows-xp-native-x86 xp_evidence_summary host_identity.os unexpected fields: ['hostname']"
+    ) in errors
+    assert (
+        "windows-xp-native-x86 xp_evidence_summary host_identity.toolchain unexpected fields: ['builder_user']"
+    ) in errors
 
 
 def test_platform_verified_evidence_rejects_xp_evidence_summary_release_source_mismatch() -> None:
@@ -4439,7 +4615,7 @@ def _xp_evidence_summary(target: str, release_tag: str = "v1.0.2") -> dict[str, 
             "legacy_crypto_profile_scoped": True,
             "modern_defaults_unchanged": True,
             "weak_crypto_global_default": False,
-            "patch_evidence": _security_patch_evidence(),
+            "patch_evidence": _xp_security_patch_evidence(),
         },
         "smoke_ids": sorted(_xp_smoke_hashes()),
         "smoke_evidence_files": _xp_smoke_evidence_files(),
@@ -4505,7 +4681,7 @@ def _xp_smoke_commands(target: str, release_tag: str = "v1.0.2") -> dict[str, st
     os_identity = host_identity["os"]
     assert isinstance(os_identity, dict)
     release_source = _xp_release_source_summary(target)
-    security = _security_patch_evidence()
+    security = _xp_security_patch_evidence()
     return {
         smoke_id: (
             f"scripts/xp_smoke_runner.cmd --target {target} --release-tag {release_tag} "
@@ -4556,6 +4732,9 @@ def _builder_identity(target: str) -> dict[str, object]:
         "uname_machine": machine,
         "dpkg_architecture": dpkg_arch,
         "userland_bits": "32",
+        "os_release": "Debian GNU/Linux 12 (bookworm)",
+        "kernel_release": "6.1.0-i386-ci",
+        "glibc_version": "glibc 2.36",
         "python_version": "3.12.0",
         "required_tools": {
             "bash": "/usr/bin/bash",
@@ -4592,6 +4771,17 @@ def _security_patch_evidence() -> dict[str, object]:
     return {
         "python_ssl_openssl": "OpenSSL 3.0.13",
         "openssl_cli_version": "OpenSSL 3.0.13",
+        "tls_minimum_modern_profiles": "TLS 1.2",
+        "tls_preferred_modern_profiles": "TLS 1.3",
+        "legacy_compatibility_profile": "isolated-opt-in",
+        "cve_patch_reviewed": True,
+        "security_update_channel": "vendor-security-updates-2026-06",
+        "cve_review_reference": "vendor-cve-advisory-review-2026-06",
+    }
+
+
+def _xp_security_patch_evidence() -> dict[str, object]:
+    return {
         "tls_minimum_modern_profiles": "TLS 1.2",
         "tls_preferred_modern_profiles": "TLS 1.3",
         "legacy_compatibility_profile": "isolated-opt-in",

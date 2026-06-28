@@ -268,6 +268,40 @@ def test_platform_parity_promotion_rejects_missing_linux_release_source_artifact
     ) in errors
 
 
+def test_platform_parity_promotion_rejects_missing_linux_candidate_local_evidence_root() -> None:
+    checker = _load_platform_parity_promotion_checker()
+    promotion = _load_json("configs/platform_parity_promotion.json")
+    entry = _promotion_entry(promotion, "linux-i386")
+    requirements = entry["promotion_to_100_requires"]
+    requirements["accepted_evidence_candidate_command"] = requirements[
+        "accepted_evidence_candidate_command"
+    ].replace(" --local-evidence-root .", "")
+
+    errors = checker.check_platform_parity_promotion(promotion=promotion)
+
+    assert (
+        "linux-i386 accepted_evidence_candidate_command must bind the local evidence root"
+        in errors
+    )
+
+
+def test_platform_parity_promotion_rejects_missing_xp_candidate_local_evidence_root() -> None:
+    checker = _load_platform_parity_promotion_checker()
+    promotion = _load_json("configs/platform_parity_promotion.json")
+    entry = _promotion_entry(promotion, "windows-xp-native-x64")
+    requirements = entry["promotion_to_100_requires"]
+    requirements["accepted_evidence_candidate_command"] = requirements[
+        "accepted_evidence_candidate_command"
+    ].replace(" --local-evidence-root .", "")
+
+    errors = checker.check_platform_parity_promotion(promotion=promotion)
+
+    assert (
+        "windows-xp-native-x64 accepted_evidence_candidate_command must bind the local evidence root"
+        in errors
+    )
+
+
 def test_platform_parity_promotion_rejects_missing_release_source_head_sha() -> None:
     checker = _load_platform_parity_promotion_checker()
     promotion = _load_json("configs/platform_parity_promotion.json")

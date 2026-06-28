@@ -700,6 +700,74 @@ def test_extended_linux_evidence_bundle_rejects_builder_smoke_identity_drift(
     ) in errors
 
 
+def test_extended_linux_evidence_bundle_rejects_builder_smoke_runtime_drift(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bundler = _load_script("make_extended_linux_evidence_bundle")
+    generator = _load_script("make_platform_verified_evidence_record")
+    artifact_checker = _load_script("check_platform_promotion_artifacts")
+    target = "linux-armhf"
+    tag = f"v{artifact_checker.read_project_version()}"
+    names = _required_artifact_names(artifact_checker, target, tag)
+    monkeypatch.chdir(tmp_path)
+    assets, builder, smoke = _stage_valid_linux_evidence_inputs(target, tag, names)
+    errors, record = generator.build_evidence_record(
+        SimpleNamespace(
+            target=target,
+            release_tag=tag,
+            assets_dir=assets,
+            release_asset_base_url=(
+                f"https://github.com/example/remote-ops-workspace/releases/download/{tag}"
+            ),
+            workflow_run_url="https://github.com/example/remote-ops-workspace/actions/runs/12345",
+            release_source_head_sha="a" * 40,
+            release_source_run_attempt=1,
+            runner_label=["self-hosted", "linux", "armhf"],
+            builder_evidence=builder,
+            linux_smoke_evidence=smoke,
+            xp_evidence=None,
+            xp_evidence_dir=None,
+        )
+    )
+    assert errors == []
+    builder_identity = json.loads(builder.read_text(encoding="utf-8"))
+    builder_identity["os_release"] = "Debian GNU/Linux 13 (trixie)"
+    builder_identity["kernel_release"] = "6.12.0-armhf-ci"
+    builder_identity["glibc_version"] = "glibc 2.40"
+    builder.write_text(json.dumps(builder_identity, indent=2) + "\n", encoding="utf-8")
+    builder_sha = generator.json_sha256(builder_identity)
+    record["builder_identity"] = builder_identity
+    record["builder_identity_sha256"] = builder_sha
+    _sync_linux_source_record(record, "builder_identity", builder_sha, builder.stat().st_size)
+    candidate = Path(target) / tag / "platform-verified-evidence-linux-armhf.json"
+    candidate.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+
+    errors = bundler.make_extended_linux_evidence_bundle(
+        target=target,
+        release_tag=tag,
+        assets_dir=assets,
+        builder_evidence=builder,
+        smoke_evidence=smoke,
+        candidate_record=candidate,
+        out_dir=Path("bundle"),
+    )
+
+    assert (
+        "linux-armhf linux_smoke_evidence native installer smoke os release must match "
+        "builder_identity.os_release 'Debian GNU/Linux 13 (trixie)', "
+        "got 'Debian GNU/Linux 12 (bookworm)'"
+    ) in errors
+    assert (
+        "linux-armhf linux_smoke_evidence native installer smoke kernel release must match "
+        "builder_identity.kernel_release '6.12.0-armhf-ci', got '6.1.0-i386-ci'"
+    ) in errors
+    assert (
+        "linux-armhf linux_smoke_evidence native installer smoke glibc version must match "
+        "builder_identity.glibc_version 'glibc 2.40', got 'glibc 2.36'"
+    ) in errors
+
+
 def test_extended_linux_evidence_bundle_rejects_builder_smoke_security_drift(
     tmp_path: Path,
     monkeypatch,
@@ -788,6 +856,9 @@ def _builder_identity(target: str) -> dict[str, object]:
         "uname_machine": machine,
         "dpkg_architecture": dpkg_arch,
         "userland_bits": "32",
+        "os_release": "Debian GNU/Linux 12 (bookworm)",
+        "kernel_release": "6.1.0-i386-ci",
+        "glibc_version": "glibc 2.36",
         "python_version": "3.12.0",
         "required_tools": {
             "bash": "/usr/bin/bash",
@@ -922,6 +993,9 @@ def _write_linux_smoke_evidence(
                 f"native installer smoke uname machine: {machine}",
                 f"native installer smoke dpkg architecture: {dpkg_arch}",
                 "native installer smoke userland bits: 32",
+                "native installer smoke os release: Debian GNU/Linux 12 (bookworm)",
+                "native installer smoke kernel release: 6.1.0-i386-ci",
+                "native installer smoke glibc version: glibc 2.36",
                 "native installer smoke python ssl openssl: OpenSSL 3.0.13",
                 "native installer smoke openssl cli version: OpenSSL 3.0.13",
                 "native installer smoke security update channel: vendor-security-updates-2026-06",

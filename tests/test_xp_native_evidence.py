@@ -273,6 +273,48 @@ def test_xp_native_evidence_rejects_private_host_identity_fields(tmp_path: Path)
     ) in errors
 
 
+def test_xp_native_evidence_rejects_unexpected_evidence_fields(tmp_path: Path) -> None:
+    checker = _load_xp_native_evidence_checker()
+    evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    evidence["operator_note"] = "manual review"
+    evidence["release_source"]["scratch"] = "manual"
+    evidence["os"]["computer_name"] = "private-xp-host"
+    evidence["toolchain"]["tool_path"] = "C:\\private\\toolchain"
+    evidence["host_identity"]["runner_name"] = "private-runner"
+    evidence["host_identity"]["os"]["hostname"] = "private-xp-host"
+    evidence["host_identity"]["toolchain"]["builder_user"] = "private-user"
+    evidence["artifact_validation"]["operator_note"] = "manual review"
+    evidence["smoke_results"][0]["operator_note"] = "manual review"
+    evidence["security"]["operator_note"] = "manual review"
+    evidence["security"]["patch_evidence"]["operator_note"] = "manual review"
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path)
+
+    assert "windows-xp-native-x86 evidence unexpected fields: ['operator_note']" in errors
+    assert "windows-xp-native-x86 evidence release_source has unexpected fields: ['scratch']" in errors
+    assert "windows-xp-native-x86 evidence os unexpected fields: ['computer_name']" in errors
+    assert "windows-xp-native-x86 evidence toolchain unexpected fields: ['tool_path']" in errors
+    assert "windows-xp-native-x86 evidence host_identity unexpected fields: ['runner_name']" in errors
+    assert (
+        "windows-xp-native-x86 evidence host_identity contains forbidden private fields: ['runner_name']"
+    ) in errors
+    assert "windows-xp-native-x86 evidence host_identity.os unexpected fields: ['hostname']" in errors
+    assert (
+        "windows-xp-native-x86 evidence host_identity.toolchain unexpected fields: ['builder_user']"
+    ) in errors
+    assert (
+        "windows-xp-native-x86 evidence artifact_validation unexpected fields: ['operator_note']"
+    ) in errors
+    assert "windows-xp-native-x86 smoke result cli_launch unexpected fields: ['operator_note']" in errors
+    assert "windows-xp-native-x86 evidence security unexpected fields: ['operator_note']" in errors
+    assert (
+        "windows-xp-native-x86 evidence security.patch_evidence unexpected fields: ['operator_note']"
+    ) in errors
+
+
 def test_xp_native_evidence_rejects_run_id_not_bound_to_observed_at(tmp_path: Path) -> None:
     checker = _load_xp_native_evidence_checker()
     evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])

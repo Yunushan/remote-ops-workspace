@@ -63,10 +63,12 @@ DEFAULT_EVIDENCE_POLICY = (
     "exact release source and review bundle fields, "
     "Linux builder identity evidence, builder identity SHA-256, "
     "Linux builder workflow provenance binding, "
+    "exact Linux builder identity fields, "
     "Linux builder/smoke source file binding, "
     "Linux builder/smoke host identity binding, Linux builder/smoke security evidence binding, "
     "builder identity release/run binding, Linux builder source head SHA binding, "
     "Linux builder observed Git HEAD binding, Linux builder clean checkout binding, "
+    "Linux builder/smoke runtime OS identity binding, "
     "Linux builder host identity binding when applicable, "
     "Linux builder rpm and non-interactive sudo evidence, "
     "Linux security patch evidence, Linux security smoke proof-line binding, "
@@ -78,7 +80,7 @@ DEFAULT_EVIDENCE_POLICY = (
     "XP evidence source file binding, XP evidence release source binding, and "
     "XP evidence bundle SHA-256 digests, "
     "XP evidence validation command binding, XP evidence contract SHA-256, "
-    "XP evidence summary binding, XP host identity SHA-256 binding, "
+    "XP evidence summary binding, exact XP evidence summary fields, XP host identity SHA-256 binding, "
     "XP sanitized target-scoped host identity binding, XP smoke host identity binding, "
     "XP smoke observed-at timestamp binding, XP smoke OS identity binding, "
     "XP smoke host probe proof-line binding, "
@@ -307,16 +309,11 @@ def build_evidence_record(args: argparse.Namespace) -> tuple[list[str], dict[str
 
 
 def check_generator_append_registry_usage(record: dict[str, Any]) -> list[str]:
-    missing_final_fields = [
-        field for field in ("finalized_record_release_asset_url", "review_bundle") if field not in record
-    ]
-    if not missing_final_fields:
-        return []
     target = str(record.get("target", "platform"))
     return [
-        f"{target} generated evidence is an unfinalized candidate; "
-        "finalize it with scripts/finalize_platform_verified_evidence_record.py "
-        "--append-registry before adding it to configs/platform_verified_evidence.json"
+        f"{target} generated evidence cannot be appended by this generator; "
+        "write the candidate, package and validate its review bundle, then append with "
+        "scripts/finalize_platform_verified_evidence_record.py --append-registry"
     ]
 
 

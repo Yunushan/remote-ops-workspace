@@ -32,12 +32,14 @@ POLICY = (
     "Linux builder identity evidence, builder identity "
     "SHA-256, builder identity release/run binding, "
     "Linux builder workflow provenance binding, "
+    "exact Linux builder identity fields, "
     "Linux builder/smoke source file binding, "
     "Linux builder/smoke host identity binding, "
     "Linux builder/smoke security evidence binding, "
     "Linux builder source head SHA binding, "
     "Linux builder observed Git HEAD binding, "
     "Linux builder clean checkout binding, "
+    "Linux builder/smoke runtime OS identity binding, "
     "Linux builder host identity binding when applicable, "
     "Linux builder rpm and non-interactive sudo evidence, Linux security patch evidence, "
     "Linux security smoke proof-line binding, "
@@ -49,7 +51,7 @@ POLICY = (
     "XP evidence source file binding, XP evidence release source binding, "
     "XP evidence bundle SHA-256 digests, "
     "XP evidence validation command binding, XP evidence contract SHA-256, "
-    "XP evidence summary binding, XP host identity SHA-256 binding, "
+    "XP evidence summary binding, exact XP evidence summary fields, XP host identity SHA-256 binding, "
     "XP sanitized target-scoped host identity binding, XP smoke host identity binding, "
     "XP smoke observed-at timestamp binding, XP smoke OS identity binding, "
     "XP smoke host probe proof-line binding, XP security patch evidence, "
@@ -424,6 +426,18 @@ def test_publish_contract_requires_platform_evidence_source_run_verification() -
     errors = checker.check_platform_evidence_import_job(workflow)
 
     assert any("source run metadata verification" in error for error in errors)
+
+
+def test_publish_contract_rejects_platform_evidence_import_dry_run() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        " --verify-source-run",
+        " --verify-source-run --dry-run",
+    )
+
+    errors = checker.check_platform_evidence_import_job(workflow)
+
+    assert "platform evidence import job must download accepted artifacts, not run with --dry-run" in errors
 
 
 def test_publish_contract_requires_platform_review_bundle_validation() -> None:
@@ -1412,7 +1426,7 @@ def _xp_accepted_evidence(target: str) -> dict[str, object]:
         os_summary["edition"] = "Professional x64 Edition"
     host_identity = _xp_host_identity(target)
     release_source = _xp_release_source_summary(target)
-    security = _security_patch_evidence()
+    security = _xp_security_patch_evidence()
     evidence_summary: dict[str, object] = {
         "target": target,
         "release_tag": "v1.0.2",
@@ -1728,6 +1742,9 @@ def _builder_identity(target: str) -> dict[str, object]:
         "uname_machine": machine,
         "dpkg_architecture": dpkg_arch,
         "userland_bits": "32",
+        "os_release": "Debian GNU/Linux 12 (bookworm)",
+        "kernel_release": "6.1.0-i386-ci",
+        "glibc_version": "glibc 2.36",
         "python_version": "3.12.0",
         "required_tools": {
             "bash": "/usr/bin/bash",
@@ -1764,6 +1781,17 @@ def _security_patch_evidence() -> dict[str, object]:
     return {
         "python_ssl_openssl": "OpenSSL 3.0.13",
         "openssl_cli_version": "OpenSSL 3.0.13",
+        "tls_minimum_modern_profiles": "TLS 1.2",
+        "tls_preferred_modern_profiles": "TLS 1.3",
+        "legacy_compatibility_profile": "isolated-opt-in",
+        "cve_patch_reviewed": True,
+        "security_update_channel": "vendor-security-updates-2026-06",
+        "cve_review_reference": "vendor-cve-advisory-review-2026-06",
+    }
+
+
+def _xp_security_patch_evidence() -> dict[str, object]:
+    return {
         "tls_minimum_modern_profiles": "TLS 1.2",
         "tls_preferred_modern_profiles": "TLS 1.3",
         "legacy_compatibility_profile": "isolated-opt-in",

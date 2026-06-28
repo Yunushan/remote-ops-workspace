@@ -139,6 +139,26 @@ fi
 SMOKE_UNAME_MACHINE="$(uname -m)"
 SMOKE_DPKG_ARCH="$(dpkg --print-architecture)"
 SMOKE_USERLAND_BITS="$(getconf LONG_BIT)"
+SMOKE_OS_RELEASE="$(python3 - <<'PY'
+from pathlib import Path
+
+values = {}
+try:
+    for raw_line in Path("/etc/os-release").read_text(encoding="utf-8").splitlines():
+        if "=" not in raw_line or raw_line.startswith("#"):
+            continue
+        key, value = raw_line.split("=", 1)
+        values[key] = value.strip().strip('"')
+except OSError:
+    pass
+
+print(values.get("PRETTY_NAME") or " ".join(
+    value for value in (values.get("ID", ""), values.get("VERSION_ID", "")) if value
+))
+PY
+)"
+SMOKE_KERNEL_RELEASE="$(uname -r)"
+SMOKE_GLIBC_VERSION="$(getconf GNU_LIBC_VERSION)"
 SMOKE_PYTHON_SSL_OPENSSL="$(python3 - <<'PY'
 import ssl
 
@@ -236,6 +256,9 @@ fields = (
     ("workflow_run_attempt", ("workflow_run_attempt",)),
     ("source_head_sha", ("source_head_sha",)),
     ("observed_git_head_sha", ("observed_git_head_sha",)),
+    ("os_release", ("os_release",)),
+    ("kernel_release", ("kernel_release",)),
+    ("glibc_version", ("glibc_version",)),
     ("host_target", ("host_identity", "target")),
     ("host_release_tag", ("host_identity", "release_tag")),
     ("host_workflow_run_url", ("host_identity", "workflow_run_url")),
@@ -268,6 +291,9 @@ PY
       workflow_run_attempt) BUILDER_WORKFLOW_RUN_ATTEMPT="$value" ;;
       source_head_sha) BUILDER_SOURCE_HEAD_SHA="$value" ;;
       observed_git_head_sha) BUILDER_OBSERVED_GIT_HEAD_SHA="$value" ;;
+      os_release) BUILDER_OS_RELEASE="$value" ;;
+      kernel_release) BUILDER_KERNEL_RELEASE="$value" ;;
+      glibc_version) BUILDER_GLIBC_VERSION="$value" ;;
       host_target) BUILDER_HOST_TARGET="$value" ;;
       host_release_tag) BUILDER_HOST_RELEASE_TAG="$value" ;;
       host_workflow_run_url) BUILDER_HOST_WORKFLOW_RUN_URL="$value" ;;
@@ -312,6 +338,9 @@ PY
   require_builder_match "workflow_run_attempt" "$BUILDER_WORKFLOW_RUN_ATTEMPT" "$WORKFLOW_RUN_ATTEMPT"
   require_builder_match "source_head_sha" "$BUILDER_SOURCE_HEAD_SHA" "$SOURCE_HEAD_SHA"
   require_builder_match "observed_git_head_sha" "$BUILDER_OBSERVED_GIT_HEAD_SHA" "$SMOKE_GIT_HEAD_SHA"
+  require_builder_match "os_release" "$BUILDER_OS_RELEASE" "$SMOKE_OS_RELEASE"
+  require_builder_match "kernel_release" "$BUILDER_KERNEL_RELEASE" "$SMOKE_KERNEL_RELEASE"
+  require_builder_match "glibc_version" "$BUILDER_GLIBC_VERSION" "$SMOKE_GLIBC_VERSION"
   require_builder_match "host_identity.target" "$BUILDER_HOST_TARGET" "$TARGET"
   require_builder_match "host_identity.release_tag" "$BUILDER_HOST_RELEASE_TAG" "v$VERSION"
   require_builder_match "host_identity.workflow_run_url" "$BUILDER_HOST_WORKFLOW_RUN_URL" "$WORKFLOW_RUN_URL"
@@ -394,6 +423,9 @@ fi
 echo "native installer smoke uname machine: $SMOKE_UNAME_MACHINE"
 echo "native installer smoke dpkg architecture: $SMOKE_DPKG_ARCH"
 echo "native installer smoke userland bits: $SMOKE_USERLAND_BITS"
+echo "native installer smoke os release: $SMOKE_OS_RELEASE"
+echo "native installer smoke kernel release: $SMOKE_KERNEL_RELEASE"
+echo "native installer smoke glibc version: $SMOKE_GLIBC_VERSION"
 echo "native installer smoke python ssl openssl: $SMOKE_PYTHON_SSL_OPENSSL"
 echo "native installer smoke openssl cli version: $SMOKE_OPENSSL_CLI_VERSION"
 echo "native installer smoke security update channel: $SMOKE_SECURITY_UPDATE_CHANNEL"

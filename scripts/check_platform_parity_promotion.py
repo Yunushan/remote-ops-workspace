@@ -640,6 +640,10 @@ def check_finalized_evidence_requirements(
         errors.append(f"{label} accepted_evidence_candidate_command must bind release source head SHA")
     if "--release-source-run-attempt <github-actions-run-attempt>" not in candidate:
         errors.append(f"{label} accepted_evidence_candidate_command must bind release source run attempt")
+    if "--local-evidence-root ." not in candidate:
+        errors.append(
+            f"{label} accepted_evidence_candidate_command must bind the local evidence root"
+        )
     if kind == "linux":
         if "--linux-smoke-evidence <native-smoke-log>" not in candidate:
             errors.append(f"{label} accepted_evidence_candidate_command must bind Linux smoke evidence")

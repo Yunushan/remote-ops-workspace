@@ -175,6 +175,9 @@ def test_builder_identity_records_source_head_sha(monkeypatch) -> None:
     builder = _load_builder()
     monkeypatch.setattr(builder, "git_head_sha", lambda: "a" * 40)
     monkeypatch.setattr(builder, "git_worktree_clean", lambda: True)
+    monkeypatch.setattr(builder, "os_release", lambda: "Debian GNU/Linux 12 (bookworm)")
+    monkeypatch.setattr(builder, "kernel_release", lambda: "6.1.0-i386-ci")
+    monkeypatch.setattr(builder, "glibc_version", lambda: "glibc 2.36")
     monkeypatch.setenv(
         "GITHUB_WORKFLOW_REF",
         "example/remote-ops-workspace/.github/workflows/extended-platform-evidence.yml@refs/heads/main",
@@ -198,6 +201,22 @@ def test_builder_identity_records_source_head_sha(monkeypatch) -> None:
     assert identity["source_head_sha"] == "a" * 40
     assert identity["observed_git_head_sha"] == "a" * 40
     assert identity["git_worktree_clean"] is True
+    assert identity["os_release"] == "Debian GNU/Linux 12 (bookworm)"
+    assert identity["kernel_release"] == "6.1.0-i386-ci"
+    assert identity["glibc_version"] == "glibc 2.36"
+
+
+def test_builder_runtime_identity_requires_os_kernel_and_glibc(monkeypatch) -> None:
+    builder = _load_builder()
+    monkeypatch.setattr(builder, "os_release", lambda: "")
+    monkeypatch.setattr(builder, "kernel_release", lambda: "")
+    monkeypatch.setattr(builder, "glibc_version", lambda: "")
+
+    errors = builder.check_runtime_identity("linux-i386")
+
+    assert "linux-i386 builder cannot report os_release" in errors
+    assert "linux-i386 builder cannot report kernel_release" in errors
+    assert "linux-i386 builder cannot report glibc_version" in errors
 
 
 def test_builder_identity_output_path_requires_target_scoped_name(tmp_path: Path) -> None:

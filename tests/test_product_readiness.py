@@ -76,6 +76,42 @@ def test_product_readiness_rejects_missing_protected_goal_release_source_workflo
     assert "protected platform goal parity must expose release_source_workflows" in errors
 
 
+def test_product_readiness_rejects_missing_protected_goal_selected_release_source_maps(monkeypatch) -> None:
+    checker = load_product_readiness_checker()
+    report = deepcopy(checker.coverage_report())
+    goal = report["platform_verified_readiness"]["protected_goal_parity"]
+    del goal["selected_release_source_run_attempts"]
+    del goal["selected_release_source_workflows"]
+    monkeypatch.setattr(checker, "coverage_report", lambda: report)
+
+    errors = checker.check_product_readiness()
+
+    assert "protected platform goal parity must expose selected_release_source_run_attempts" in errors
+    assert "protected platform goal parity must expose selected_release_source_workflows" in errors
+
+
+def test_product_readiness_rejects_selected_release_source_maps_outside_scope(monkeypatch) -> None:
+    checker = load_product_readiness_checker()
+    report = deepcopy(checker.coverage_report())
+    goal = report["platform_verified_readiness"]["protected_goal_parity"]
+    goal["selected_release_source_run_attempts"] = {"linux-i386": 1}
+    goal["selected_release_source_workflows"] = {
+        "linux-i386": ".github/workflows/extended-platform-evidence.yml",
+    }
+    monkeypatch.setattr(checker, "coverage_report", lambda: report)
+
+    errors = checker.check_product_readiness()
+
+    assert (
+        "protected platform goal parity selected_release_source_run_attempts "
+        "contains targets outside selected release scope: ['linux-i386']"
+    ) in errors
+    assert (
+        "protected platform goal parity selected_release_source_workflows "
+        "contains targets outside selected release scope: ['linux-i386']"
+    ) in errors
+
+
 def test_product_readiness_rejects_missing_protected_goal_release_source_provenance_flag(monkeypatch) -> None:
     checker = load_product_readiness_checker()
     report = deepcopy(checker.coverage_report())

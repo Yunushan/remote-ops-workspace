@@ -84,6 +84,19 @@ def test_xp_native_evidence_workflow_requires_release_source_run_attempt() -> No
     assert any("release source run-attempt binding" in error for error in errors)
 
 
+def test_xp_native_evidence_workflow_requires_candidate_local_evidence_root() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8").replace(
+        " --local-evidence-root .",
+        "",
+        1,
+    )
+
+    errors = checker.check_xp_native_evidence_workflow(workflow)
+
+    assert any("candidate local evidence root binding" in error for error in errors)
+
+
 def test_xp_native_evidence_workflow_requires_local_source_run_attempt() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8").replace(

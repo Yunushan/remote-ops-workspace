@@ -236,6 +236,8 @@ def check_platform_evidence_import_job(workflow: str) -> list[str]:
     for snippet, label in required_snippets.items():
         if snippet not in block:
             errors.append(f"accepted-platform-evidence-assets job missing {label}: {snippet}")
+    if "--dry-run" in block:
+        errors.append("platform evidence import job must download accepted artifacts, not run with --dry-run")
     import_index = block.find("scripts/import_platform_evidence_artifacts.py")
     review_bundle_index = block.find("scripts/check_platform_review_bundle_artifacts.py")
     upload_index = block.find("actions/upload-artifact@v7")

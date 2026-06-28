@@ -222,6 +222,43 @@ REQUIRED_XP_SECURITY_FLAGS = {
     "modern_defaults_unchanged": True,
     "weak_crypto_global_default": False,
 }
+XP_EVIDENCE_SUMMARY_KEYS = {
+    "target",
+    "release_tag",
+    "host_identity",
+    "os",
+    "toolchain",
+    "release_source",
+    "security",
+    "smoke_ids",
+    "smoke_evidence_files",
+    "smoke_commands",
+}
+XP_RELEASE_SOURCE_SUMMARY_KEYS = {
+    "workflow",
+    "workflow_run_url",
+    "head_sha",
+    "run_attempt",
+}
+XP_HOST_IDENTITY_KEYS = {
+    "schema_version",
+    "target",
+    "release_tag",
+    "host_label",
+    "evidence_run_id",
+    "observed_at_utc",
+    "operator_private_data_redacted",
+    "os",
+    "toolchain",
+}
+XP_OS_BASE_KEYS = {
+    "name",
+    "architecture",
+    "service_pack",
+}
+XP_SUMMARY_TOOLCHAIN_KEYS = set(REQUIRED_XP_TOOLCHAIN_FLAGS)
+XP_HOST_TOOLCHAIN_KEYS = set(REQUIRED_XP_TOOLCHAIN_FLAGS) | {"description"}
+XP_SECURITY_KEYS = set(REQUIRED_XP_SECURITY_FLAGS) | {"patch_evidence"}
 FORBIDDEN_HOST_IDENTITY_FIELDS = {
     "computer_name",
     "computername",
@@ -265,6 +302,9 @@ REQUIRED_SECURITY_PATCH_EVIDENCE = {
 REQUIRED_SECURITY_PATCH_PROVENANCE_FIELDS = (
     "security_update_channel",
     "cve_review_reference",
+)
+XP_SECURITY_PATCH_EVIDENCE_KEYS = set(REQUIRED_SECURITY_PATCH_EVIDENCE) | set(
+    REQUIRED_SECURITY_PATCH_PROVENANCE_FIELDS
 )
 FORBIDDEN_SECURITY_PROVENANCE_MARKERS = (
     "<",
@@ -321,6 +361,48 @@ REQUIRED_LINUX_DPKG_ARCHES = {
 REQUIRED_LINUX_USERLAND_BITS = {
     "linux-i386": "32",
     "linux-armhf": "32",
+}
+LINUX_BUILDER_IDENTITY_KEYS = {
+    "schema_version",
+    "target",
+    "release_tag",
+    "workflow_run_url",
+    "workflow_run_attempt",
+    "workflow_ref",
+    "workflow_sha",
+    "source_head_sha",
+    "observed_git_head_sha",
+    "git_worktree_clean",
+    "sys_platform",
+    "platform_machine",
+    "uname_machine",
+    "dpkg_architecture",
+    "userland_bits",
+    "os_release",
+    "kernel_release",
+    "glibc_version",
+    "python_version",
+    "host_identity",
+    "sudo_non_interactive",
+    "required_tools",
+    "security_patch_evidence",
+}
+LINUX_BUILDER_HOST_IDENTITY_KEYS = {
+    "schema_version",
+    "target",
+    "release_tag",
+    "workflow_run_url",
+    "workflow_run_attempt",
+    "host_label",
+    "evidence_run_id",
+    "observed_at_utc",
+    "operator_private_data_redacted",
+}
+LINUX_SECURITY_PATCH_EVIDENCE_KEYS = {
+    *REQUIRED_SECURITY_PATCH_EVIDENCE,
+    *REQUIRED_SECURITY_PATCH_PROVENANCE_FIELDS,
+    "python_ssl_openssl",
+    "openssl_cli_version",
 }
 GITHUB_OWNER_RE = r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?"
 GITHUB_REPOSITORY_RE = rf"{GITHUB_OWNER_RE}/[A-Za-z0-9._-]+"
@@ -439,13 +521,15 @@ def check_platform_verified_evidence(
         return errors
     promotion_entries = promotion_entries_by_id(promotion_data, errors)
     promotion_hash = promotion_config_sha256(promotion_data)
+    invalid_targets: set[str] = set()
     for entry in registry_data.get("accepted_evidence", []):
         if not isinstance(entry, dict):
             errors.append("accepted_evidence entries must be objects")
             continue
         target = str(entry.get("target", ""))
+        entry_errors: list[str] = []
         if target in LINUX_TARGETS:
-            errors.extend(
+            entry_errors.extend(
                 check_linux_evidence(
                     entry,
                     promotion_entries,
@@ -454,7 +538,7 @@ def check_platform_verified_evidence(
                 )
             )
         elif target in XP_TARGETS:
-            errors.extend(
+            entry_errors.extend(
                 check_xp_evidence(
                     entry,
                     promotion_entries,
@@ -463,7 +547,10 @@ def check_platform_verified_evidence(
                 )
             )
         else:
-            errors.append(f"accepted_evidence target is not protected: {target}")
+            entry_errors.append(f"accepted_evidence target is not protected: {target}")
+        if entry_errors and target:
+            invalid_targets.add(target)
+        errors.extend(entry_errors)
     if check_consistency:
         errors.extend(check_registry_consistency(registry_data))
     if required_targets:
@@ -472,6 +559,7 @@ def check_platform_verified_evidence(
                 registry_data,
                 required_targets,
                 required_release_tag=required_release_tag,
+                invalid_targets=invalid_targets,
             )
         )
     return errors
@@ -482,8 +570,10 @@ def check_required_targets(
     required_targets: tuple[str, ...] | list[str] | set[str],
     *,
     required_release_tag: str | None = None,
+    invalid_targets: set[str] | None = None,
 ) -> list[str]:
     requested = {str(target) for target in required_targets}
+    invalid = {str(target) for target in (invalid_targets or set())}
     unknown = sorted(requested - KNOWN_TARGETS)
     if unknown:
         return [f"required platform evidence targets are not protected: {unknown}"]
@@ -501,6 +591,7 @@ def check_required_targets(
         and entry.get("status") == "accepted"
         and entry.get("readiness_percent") == 100.0
         and (required_release_tag is None or entry.get("release_tag") == required_release_tag)
+        and str(entry.get("target", "")) not in invalid
     }
     missing = sorted(requested - accepted_targets)
     if required_release_tag is not None:
@@ -516,6 +607,7 @@ def check_required_targets(
                 and str(entry.get("target", "")) in PROTECTED_GOAL_TARGETS
                 and entry.get("status") == "accepted"
                 and entry.get("release_tag") == required_release_tag
+                and str(entry.get("target", "")) not in invalid
             }
             consistency_errors = check_protected_goal_release_consistency(entries, required_release_tag)
             if consistency_errors:
@@ -594,6 +686,8 @@ def check_schema(registry: dict[str, Any]) -> list[str]:
         errors.append("platform verified evidence policy must require Linux builder identity release/run binding")
     if "Linux builder workflow provenance binding" not in policy:
         errors.append("platform verified evidence policy must require Linux builder workflow provenance binding")
+    if "exact Linux builder identity fields" not in policy:
+        errors.append("platform verified evidence policy must require exact Linux builder identity fields")
     if "Linux builder/smoke source file binding" not in policy:
         errors.append("platform verified evidence policy must require Linux builder/smoke source file binding")
     if "Linux builder/smoke host identity binding" not in policy:
@@ -606,6 +700,8 @@ def check_schema(registry: dict[str, Any]) -> list[str]:
         errors.append("platform verified evidence policy must require Linux builder observed Git HEAD binding")
     if "Linux builder clean checkout binding" not in policy:
         errors.append("platform verified evidence policy must require Linux builder clean checkout binding")
+    if "Linux builder/smoke runtime OS identity binding" not in policy:
+        errors.append("platform verified evidence policy must require Linux builder/smoke runtime OS identity binding")
     if "Linux builder host identity" not in policy:
         errors.append("platform verified evidence policy must require Linux builder host identity binding")
     if "Linux builder rpm and non-interactive sudo evidence" not in policy:
@@ -725,6 +821,8 @@ def check_schema(registry: dict[str, Any]) -> list[str]:
         errors.append("platform verified evidence policy must require XP evidence contract SHA-256 binding")
     if "XP evidence summary" not in policy:
         errors.append("platform verified evidence policy must require XP evidence summary binding")
+    if "exact XP evidence summary fields" not in policy:
+        errors.append("platform verified evidence policy must require exact XP evidence summary fields")
     if "XP host identity SHA-256" not in policy:
         errors.append("platform verified evidence policy must require XP host identity SHA-256 binding")
     if "XP sanitized target-scoped host identity binding" not in policy:
@@ -987,6 +1085,14 @@ def check_linux_required_tool_paths(target: str, raw_tools: Any) -> list[str]:
     if not isinstance(raw_tools, dict):
         return [f"{target} builder_identity required_tools must be an object"]
     errors: list[str] = []
+    errors.extend(
+        check_exact_object_keys(
+            target,
+            "builder_identity required_tools",
+            raw_tools,
+            REQUIRED_LINUX_TOOLS,
+        )
+    )
     missing_tools = sorted(tool for tool in REQUIRED_LINUX_TOOLS if not str(raw_tools.get(tool, "")).strip())
     if missing_tools:
         errors.append(f"{target} builder_identity missing required tool paths: {missing_tools}")
@@ -1016,6 +1122,7 @@ def check_linux_builder_identity(
     if not isinstance(raw_identity, dict):
         return [f"{target} evidence must include builder_identity object"]
     errors: list[str] = []
+    errors.extend(check_exact_object_keys(target, "builder_identity", raw_identity, LINUX_BUILDER_IDENTITY_KEYS))
     if raw_identity.get("schema_version") != 1:
         errors.append(f"{target} builder_identity schema_version must be 1")
     if raw_identity.get("target") != target:
@@ -1065,6 +1172,7 @@ def check_linux_builder_identity(
     version = python_version_tuple(str(raw_identity.get("python_version", "")))
     if version < (3, 10):
         errors.append(f"{target} builder_identity python_version must be 3.10 or newer")
+    errors.extend(check_linux_runtime_identity(target, raw_identity))
     errors.extend(check_linux_required_tool_paths(target, raw_identity.get("required_tools")))
     errors.extend(
         check_linux_builder_host_identity(
@@ -1118,6 +1226,14 @@ def check_linux_builder_host_identity(
     if not isinstance(raw_identity, dict):
         return [f"{target} builder_identity host_identity must be an object"]
     errors: list[str] = []
+    errors.extend(
+        check_exact_object_keys(
+            target,
+            "builder_identity host_identity",
+            raw_identity,
+            LINUX_BUILDER_HOST_IDENTITY_KEYS,
+        )
+    )
     if raw_identity.get("schema_version") != 1:
         errors.append(f"{target} builder_identity host_identity.schema_version must be 1")
     if raw_identity.get("target") != target:
@@ -1168,6 +1284,15 @@ def python_version_tuple(version: str) -> tuple[int, int]:
     if not match:
         return (0, 0)
     return int(match.group(1)), int(match.group(2))
+
+
+def check_linux_runtime_identity(target: str, raw_identity: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    for key in ("os_release", "kernel_release", "glibc_version"):
+        value = str(raw_identity.get(key, "")).strip()
+        if not value:
+            errors.append(f"{target} builder_identity {key} must be set")
+    return errors
 
 
 def check_xp_evidence(
@@ -1572,6 +1697,7 @@ def check_xp_evidence_summary(target: str, release_tag: str, raw_summary: Any) -
     if not isinstance(raw_summary, dict):
         return [f"{target} xp_evidence_summary must be an object"]
     errors: list[str] = []
+    errors.extend(check_exact_object_keys(target, "xp_evidence_summary", raw_summary, XP_EVIDENCE_SUMMARY_KEYS))
     if raw_summary.get("target") != target:
         errors.append(f"{target} xp_evidence_summary target must be {target}")
     if raw_summary.get("release_tag") != release_tag:
@@ -1583,6 +1709,7 @@ def check_xp_evidence_summary(target: str, release_tag: str, raw_summary: Any) -
     if not isinstance(os_data, dict):
         errors.append(f"{target} xp_evidence_summary os must be an object")
     else:
+        errors.extend(check_exact_object_keys(target, "xp_evidence_summary os", os_data, xp_os_identity_keys(target)))
         target_contract = xp_target_contract(target)
         if os_data.get("name") != "Windows XP":
             errors.append(f"{target} xp_evidence_summary os.name must be Windows XP")
@@ -1608,6 +1735,14 @@ def check_xp_evidence_summary(target: str, release_tag: str, raw_summary: Any) -
     if not isinstance(toolchain, dict):
         errors.append(f"{target} xp_evidence_summary toolchain must be an object")
     else:
+        errors.extend(
+            check_exact_object_keys(
+                target,
+                "xp_evidence_summary toolchain",
+                toolchain,
+                XP_SUMMARY_TOOLCHAIN_KEYS,
+            )
+        )
         for flag, expected in sorted(REQUIRED_XP_TOOLCHAIN_FLAGS.items()):
             if toolchain.get(flag) is not expected:
                 errors.append(f"{target} xp_evidence_summary toolchain.{flag} must be {str(expected).lower()}")
@@ -1616,16 +1751,18 @@ def check_xp_evidence_summary(target: str, release_tag: str, raw_summary: Any) -
     if not isinstance(security, dict):
         errors.append(f"{target} xp_evidence_summary security must be an object")
     else:
+        errors.extend(
+            check_exact_object_keys(
+                target,
+                "xp_evidence_summary security",
+                security,
+                XP_SECURITY_KEYS,
+            )
+        )
         for flag, expected in sorted(REQUIRED_XP_SECURITY_FLAGS.items()):
             if security.get(flag) is not expected:
                 errors.append(f"{target} xp_evidence_summary security.{flag} must be {str(expected).lower()}")
-        errors.extend(
-            check_security_patch_evidence(
-                target,
-                security.get("patch_evidence"),
-                prefix="xp_evidence_summary security.patch_evidence",
-            )
-        )
+        errors.extend(check_xp_security_patch_evidence(target, security.get("patch_evidence")))
 
     smoke_ids = raw_summary.get("smoke_ids")
     if not isinstance(smoke_ids, list):
@@ -1662,6 +1799,14 @@ def check_xp_evidence_summary_release_source(
     if not isinstance(raw_summary_source, dict):
         return [f"{target} xp_evidence_summary release_source must be an object"]
     errors: list[str] = []
+    errors.extend(
+        check_exact_object_keys(
+            target,
+            "xp_evidence_summary release_source",
+            raw_summary_source,
+            XP_RELEASE_SOURCE_SUMMARY_KEYS,
+        )
+    )
     if not isinstance(raw_release_asset_source, dict):
         return errors
     for field in ("workflow", "workflow_run_url", "head_sha", "run_attempt"):
@@ -1691,6 +1836,14 @@ def check_xp_host_identity_summary(target: str, release_tag: str, raw_identity: 
     if not isinstance(raw_identity, dict):
         return [f"{target} xp_evidence_summary host_identity must be an object"]
     errors: list[str] = []
+    errors.extend(
+        check_exact_object_keys(
+            target,
+            "xp_evidence_summary host_identity",
+            raw_identity,
+            XP_HOST_IDENTITY_KEYS,
+        )
+    )
     if raw_identity.get("schema_version") != 1:
         errors.append(f"{target} xp_evidence_summary host_identity.schema_version must be 1")
     if raw_identity.get("target") != target:
@@ -1741,6 +1894,14 @@ def check_xp_host_identity_summary(target: str, release_tag: str, raw_identity: 
     if not isinstance(identity_os, dict):
         errors.append(f"{target} xp_evidence_summary host_identity.os must be an object")
     else:
+        errors.extend(
+            check_exact_object_keys(
+                target,
+                "xp_evidence_summary host_identity.os",
+                identity_os,
+                xp_os_identity_keys(target),
+            )
+        )
         target_contract = xp_target_contract(target)
         if identity_os.get("name") != "Windows XP":
             errors.append(f"{target} xp_evidence_summary host_identity.os.name must be Windows XP")
@@ -1767,6 +1928,14 @@ def check_xp_host_identity_summary(target: str, release_tag: str, raw_identity: 
     if not isinstance(identity_toolchain, dict):
         errors.append(f"{target} xp_evidence_summary host_identity.toolchain must be an object")
     else:
+        errors.extend(
+            check_exact_object_keys(
+                target,
+                "xp_evidence_summary host_identity.toolchain",
+                identity_toolchain,
+                XP_HOST_TOOLCHAIN_KEYS,
+            )
+        )
         for flag, expected in sorted(REQUIRED_XP_TOOLCHAIN_FLAGS.items()):
             if identity_toolchain.get(flag) is not expected:
                 errors.append(
@@ -1779,6 +1948,32 @@ def check_xp_host_identity_summary(target: str, release_tag: str, raw_identity: 
                 f"{target} xp_evidence_summary host_identity.toolchain.description "
                 "must describe the XP-capable toolchain"
             )
+    return errors
+
+
+def xp_os_identity_keys(target: str) -> set[str]:
+    keys = set(XP_OS_BASE_KEYS)
+    if str(xp_target_contract(target).get("required_edition", "")).strip():
+        keys.add("edition")
+    return keys
+
+
+def check_xp_security_patch_evidence(target: str, raw_evidence: Any) -> list[str]:
+    errors = check_security_patch_evidence(
+        target,
+        raw_evidence,
+        prefix="xp_evidence_summary security.patch_evidence",
+    )
+    if not isinstance(raw_evidence, dict):
+        return errors
+    errors.extend(
+        check_exact_object_keys(
+            target,
+            "xp_evidence_summary security.patch_evidence",
+            raw_evidence,
+            XP_SECURITY_PATCH_EVIDENCE_KEYS,
+        )
+    )
     return errors
 
 
@@ -1998,6 +2193,14 @@ def check_linux_security_patch_evidence(target: str, raw_evidence: Any) -> list[
     errors = check_security_patch_evidence(target, raw_evidence)
     if not isinstance(raw_evidence, dict):
         return errors
+    errors.extend(
+        check_exact_object_keys(
+            target,
+            "builder_identity security_patch_evidence",
+            raw_evidence,
+            LINUX_SECURITY_PATCH_EVIDENCE_KEYS,
+        )
+    )
     for key in ("python_ssl_openssl", "openssl_cli_version"):
         if not str(raw_evidence.get(key, "")).strip():
             errors.append(f"{target} builder_identity security_patch_evidence.{key} must be set")
@@ -2134,6 +2337,7 @@ def check_linux_smoke_log_text(
         )
     )
     errors.extend(check_linux_smoke_observed_at_line(target, label, text))
+    errors.extend(check_linux_smoke_runtime_identity_lines(target, label, text))
     errors.extend(check_linux_smoke_security_value_lines(target, label, text))
     errors.extend(check_forbidden_linux_smoke_security_lines(target, label, text))
     if artifact_sha256 is not None:
@@ -2178,6 +2382,23 @@ def check_linux_smoke_observed_at_line(target: str, label: str, text: str) -> li
             f"{target} {label} {key} must be UTC ISO-8601 seconds ending in Z, got {value!r}"
         ]
     return []
+
+
+def check_linux_smoke_runtime_identity_lines(target: str, label: str, text: str) -> list[str]:
+    errors: list[str] = []
+    for key in (
+        "native installer smoke os release",
+        "native installer smoke kernel release",
+        "native installer smoke glibc version",
+    ):
+        values = linux_smoke_line_values(text, key)
+        if not values:
+            errors.append(f"{target} {label} missing required line: {key}: <runtime value>")
+        elif len(values) != 1:
+            errors.append(f"{target} {label} must include exactly one {key} value, got {values}")
+        elif not values[0].strip():
+            errors.append(f"{target} {label} {key} must not be empty")
+    return errors
 
 
 def linux_smoke_line_values(text: str, key: str) -> list[str]:
@@ -2251,6 +2472,22 @@ def check_linux_smoke_builder_identity_binding(
             f"{target} {label} native installer smoke observed at utc must not be earlier than "
             f"builder_identity.host_identity.observed_at_utc {expected_observed_at!r}, got {smoke_observed_values[0]!r}"
         )
+
+    runtime_bindings = {
+        "native installer smoke os release": "os_release",
+        "native installer smoke kernel release": "kernel_release",
+        "native installer smoke glibc version": "glibc_version",
+    }
+    for smoke_key, builder_key in runtime_bindings.items():
+        expected_runtime_value = str(raw_builder_identity.get(builder_key, "")).strip()
+        smoke_values = linux_smoke_line_values(text, smoke_key)
+        if not expected_runtime_value:
+            errors.append(f"{target} {label} builder_identity.{builder_key} must be set for smoke binding")
+        elif len(smoke_values) == 1 and smoke_values[0] != expected_runtime_value:
+            errors.append(
+                f"{target} {label} {smoke_key} must match "
+                f"builder_identity.{builder_key} {expected_runtime_value!r}, got {smoke_values[0]!r}"
+            )
 
     raw_security = raw_builder_identity.get("security_patch_evidence")
     if not isinstance(raw_security, dict):

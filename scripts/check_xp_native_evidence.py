@@ -108,6 +108,37 @@ REQUIRED_HOST_IDENTITY_FIELDS = {
     "os",
     "toolchain",
 }
+XP_EVIDENCE_FIELDS = {
+    "schema_version",
+    "target",
+    "release_tag",
+    "release_source",
+    "os",
+    "toolchain",
+    "host_identity",
+    "artifact_validation",
+    "artifacts",
+    "smoke_results",
+    "security",
+}
+XP_BASE_OS_FIELDS = {"name", "architecture", "service_pack"}
+XP_TOOLCHAIN_FIELDS = {"separate_legacy_toolchain", "current_python_pyqt6_stack", "description"}
+XP_SECURITY_FIELDS = {
+    "legacy_crypto_profile_scoped",
+    "modern_defaults_unchanged",
+    "weak_crypto_global_default",
+    "patch_evidence",
+}
+XP_SECURITY_PATCH_FIELDS = {
+    "tls_minimum_modern_profiles",
+    "tls_preferred_modern_profiles",
+    "legacy_compatibility_profile",
+    "cve_patch_reviewed",
+    "security_update_channel",
+    "cve_review_reference",
+}
+XP_ARTIFACT_VALIDATION_FIELDS = {"passed", "command"}
+XP_SMOKE_RESULT_FIELDS = {"id", "passed", "command", "evidence_file", "evidence_sha256"}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -466,6 +497,7 @@ def check_xp_native_evidence(
     target_contract = target_contract_for(contract_data, target, errors)
     if target_contract is None:
         return errors
+    errors.extend(check_unexpected_fields(f"{target} evidence", evidence, XP_EVIDENCE_FIELDS))
     if evidence.get("schema_version") != 1:
         errors.append("XP native evidence schema_version must be 1")
     release_tag = str(evidence.get("release_tag", ""))
@@ -571,37 +603,63 @@ def check_release_source(target: str, raw_source: Any) -> list[str]:
     return errors
 
 
-def check_os(target: str, raw_os: Any, target_contract: dict[str, Any]) -> list[str]:
+def check_unexpected_fields(label: str, raw_object: dict[str, Any], allowed_fields: set[str]) -> list[str]:
+    unexpected = sorted(str(key) for key in raw_object if str(key) not in allowed_fields)
+    if not unexpected:
+        return []
+    return [f"{label} unexpected fields: {unexpected}"]
+
+
+def check_os(
+    target: str,
+    raw_os: Any,
+    target_contract: dict[str, Any],
+    *,
+    label: str | None = None,
+) -> list[str]:
+    label = label or f"{target} evidence os"
     if not isinstance(raw_os, dict):
-        return [f"{target} evidence os must be an object"]
+        return [f"{label} must be an object"]
     errors: list[str] = []
+    allowed_fields = set(XP_BASE_OS_FIELDS)
+    if target_contract.get("required_edition"):
+        allowed_fields.add("edition")
+    errors.extend(check_unexpected_fields(label, raw_os, allowed_fields))
     for key in ("name", "architecture"):
         expected = target_contract.get(key if key != "name" else "os_name")
         if raw_os.get(key) != expected:
-            errors.append(f"{target} evidence os.{key} must be {expected!r}, got {raw_os.get(key)!r}")
+            errors.append(f"{label}.{key} must be {expected!r}, got {raw_os.get(key)!r}")
     expected_edition = str(target_contract.get("required_edition", ""))
     if expected_edition and raw_os.get("edition") != expected_edition:
-        errors.append(f"{target} evidence os.edition must be {expected_edition!r}, got {raw_os.get('edition')!r}")
+        errors.append(f"{label}.edition must be {expected_edition!r}, got {raw_os.get('edition')!r}")
     service_pack = str(raw_os.get("service_pack", ""))
     expected_service_pack = str(target_contract.get("minimum_service_pack", ""))
     if expected_service_pack and expected_service_pack not in service_pack:
         errors.append(
-            f"{target} evidence os.service_pack must include {expected_service_pack!r}, got {service_pack!r}"
+            f"{label}.service_pack must include {expected_service_pack!r}, got {service_pack!r}"
         )
     return errors
 
 
-def check_toolchain(target: str, raw_toolchain: Any, contract: dict[str, Any]) -> list[str]:
+def check_toolchain(
+    target: str,
+    raw_toolchain: Any,
+    contract: dict[str, Any],
+    *,
+    label: str | None = None,
+) -> list[str]:
+    label = label or f"{target} evidence toolchain"
     if not isinstance(raw_toolchain, dict):
-        return [f"{target} evidence toolchain must be an object"]
+        return [f"{label} must be an object"]
     errors: list[str] = []
+    errors.extend(check_unexpected_fields(label, raw_toolchain, XP_TOOLCHAIN_FIELDS))
     required_flags = contract.get("required_toolchain_flags", {})
     for key, expected in required_flags.items():
         if raw_toolchain.get(key) is not expected:
-            errors.append(f"{target} evidence toolchain.{key} must be {expected!r}")
+            errors.append(f"{label}.{key} must be {expected!r}")
     description = str(raw_toolchain.get("description", ""))
     if len(description.strip()) < 12:
-        errors.append(f"{target} evidence toolchain.description must describe the XP-capable toolchain")
+        errors.append(f"{label}.description must describe the XP-capable toolchain")
     return errors
 
 
@@ -621,6 +679,7 @@ def check_host_identity(
     missing = sorted(required_fields - set(raw_identity))
     if missing:
         errors.append(f"{target} evidence host_identity missing required fields: {missing}")
+    errors.extend(check_unexpected_fields(f"{target} evidence host_identity", raw_identity, required_fields))
     forbidden_fields = sorted(
         field
         for field in raw_identity
@@ -668,19 +727,33 @@ def check_host_identity(
     identity_os = raw_identity.get("os")
     if not isinstance(identity_os, dict):
         errors.append(f"{target} evidence host_identity.os must be an object")
-    elif identity_os != expected_os:
-        errors.append(f"{target} evidence host_identity.os must match evidence os")
     else:
-        errors.extend(check_os(target, identity_os, target_contract))
+        errors.extend(
+            check_os(
+                target,
+                identity_os,
+                target_contract,
+                label=f"{target} evidence host_identity.os",
+            )
+        )
+        if identity_os != expected_os:
+            errors.append(f"{target} evidence host_identity.os must match evidence os")
 
     expected_toolchain = normalized_host_toolchain(raw_toolchain)
     identity_toolchain = raw_identity.get("toolchain")
     if not isinstance(identity_toolchain, dict):
         errors.append(f"{target} evidence host_identity.toolchain must be an object")
-    elif identity_toolchain != expected_toolchain:
-        errors.append(f"{target} evidence host_identity.toolchain must match evidence toolchain identity")
     else:
-        errors.extend(check_toolchain(target, identity_toolchain, contract))
+        errors.extend(
+            check_toolchain(
+                target,
+                identity_toolchain,
+                contract,
+                label=f"{target} evidence host_identity.toolchain",
+            )
+        )
+        if identity_toolchain != expected_toolchain:
+            errors.append(f"{target} evidence host_identity.toolchain must match evidence toolchain identity")
     return errors
 
 
@@ -723,6 +796,7 @@ def check_security(target: str, raw_security: Any, contract: dict[str, Any]) -> 
     if not isinstance(raw_security, dict):
         return [f"{target} evidence security must be an object"]
     errors: list[str] = []
+    errors.extend(check_unexpected_fields(f"{target} evidence security", raw_security, XP_SECURITY_FIELDS))
     required_flags = contract.get("required_security_flags", {})
     for key, expected in required_flags.items():
         if raw_security.get(key) is not expected:
@@ -731,6 +805,13 @@ def check_security(target: str, raw_security: Any, contract: dict[str, Any]) -> 
     if not isinstance(patch_evidence, dict):
         errors.append(f"{target} evidence security.patch_evidence must be an object")
         return errors
+    errors.extend(
+        check_unexpected_fields(
+            f"{target} evidence security.patch_evidence",
+            patch_evidence,
+            XP_SECURITY_PATCH_FIELDS,
+        )
+    )
     required_patch_evidence = contract.get("required_security_patch_evidence", {})
     if isinstance(required_patch_evidence, dict):
         for key, expected in required_patch_evidence.items():
@@ -777,6 +858,19 @@ def check_smoke_results(
             errors.append(f"{target} smoke result entries must be objects")
             continue
         smoke_id = str(item.get("id", ""))
+        expected_fields = contract.get("required_smoke_result_fields")
+        allowed_fields = (
+            {str(field) for field in expected_fields}
+            if isinstance(expected_fields, list)
+            else XP_SMOKE_RESULT_FIELDS
+        )
+        errors.extend(
+            check_unexpected_fields(
+                f"{target} smoke result {smoke_id or '<missing-id>'}",
+                item,
+                allowed_fields,
+            )
+        )
         if not smoke_id:
             errors.append(f"{target} smoke result entry missing id")
             continue
@@ -1497,6 +1591,13 @@ def check_artifact_validation_record(target: str, raw_record: Any, release_tag: 
     if not isinstance(raw_record, dict):
         return [f"{target} evidence artifact_validation must be an object"]
     errors: list[str] = []
+    errors.extend(
+        check_unexpected_fields(
+            f"{target} evidence artifact_validation",
+            raw_record,
+            XP_ARTIFACT_VALIDATION_FIELDS,
+        )
+    )
     if raw_record.get("passed") is not True:
         errors.append(f"{target} evidence artifact_validation.passed must be true")
     command = str(raw_record.get("command", ""))

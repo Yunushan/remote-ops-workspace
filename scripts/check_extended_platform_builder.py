@@ -142,6 +142,7 @@ def check_extended_platform_builder(target: str) -> list[str]:
     errors.extend(check_uname_machine(target, expected))
     errors.extend(check_dpkg_architecture(target, LINUX_TARGET_DPKG_ARCHES[target]))
     errors.extend(check_userland_bits(target, LINUX_TARGET_USERLAND_BITS[target]))
+    errors.extend(check_runtime_identity(target))
     errors.extend(check_security_patch_evidence(target))
     return errors
 
@@ -327,6 +328,9 @@ def builder_identity(
         "uname_machine": uname_machine(),
         "dpkg_architecture": dpkg_architecture(),
         "userland_bits": userland_bits(),
+        "os_release": os_release(),
+        "kernel_release": kernel_release(),
+        "glibc_version": glibc_version(),
         "python_version": f"{major}.{minor}.{micro}",
         "host_identity": builder_host_identity(
             target,
@@ -436,6 +440,43 @@ def check_userland_bits(target: str, expected: str) -> list[str]:
     if output != expected:
         return [f"{target} userland bits must be {expected}, got {output}"]
     return []
+
+
+def check_runtime_identity(target: str) -> list[str]:
+    errors: list[str] = []
+    required = {
+        "os_release": os_release(),
+        "kernel_release": kernel_release(),
+        "glibc_version": glibc_version(),
+    }
+    for key, value in required.items():
+        if not value.strip():
+            errors.append(f"{target} builder cannot report {key}")
+    return errors
+
+
+def os_release() -> str:
+    path = Path("/etc/os-release")
+    try:
+        values: dict[str, str] = {}
+        for raw_line in path.read_text(encoding="utf-8").splitlines():
+            if "=" not in raw_line or raw_line.startswith("#"):
+                continue
+            key, value = raw_line.split("=", 1)
+            values[key] = value.strip().strip('"')
+    except OSError:
+        return ""
+    return values.get("PRETTY_NAME") or " ".join(
+        value for value in (values.get("ID", ""), values.get("VERSION_ID", "")) if value
+    )
+
+
+def kernel_release() -> str:
+    return command_output(["uname", "-r"])
+
+
+def glibc_version() -> str:
+    return command_output(["getconf", "GNU_LIBC_VERSION"])
 
 
 def uname_machine() -> str:

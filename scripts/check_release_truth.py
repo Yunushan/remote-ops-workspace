@@ -283,6 +283,8 @@ def check_accepted_platform_evidence_assets_job(workflow: str) -> list[str]:
     for snippet, label in required_snippets.items():
         if snippet not in block:
             errors.append(f"accepted-platform-evidence-assets missing {label}: {snippet}")
+    if "--dry-run" in block:
+        errors.append("accepted-platform-evidence-assets must download accepted artifacts, not run importer with --dry-run")
     if re.search(r"(?m)^\s+[A-Za-z0-9_-]+:\s+write\s*$", block):
         errors.append("accepted-platform-evidence-assets must not request write permissions")
     return errors

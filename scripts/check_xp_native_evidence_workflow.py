@@ -77,6 +77,7 @@ def check_xp_job(workflow: str) -> list[str]:
         '--release-source-head-sha "${{ github.sha }}"': "release source head SHA binding",
         '--xp-source-run-attempt "${{ github.run_attempt }}"': "XP local source run-attempt binding",
         '--release-source-run-attempt "${{ github.run_attempt }}"': "release source run-attempt binding",
+        "--local-evidence-root .": "candidate local evidence root binding",
         '--xp-evidence "${{ inputs.evidence_file }}"': "XP evidence input binding",
         '--xp-evidence-dir "${{ inputs.evidence_dir }}"': "XP evidence directory binding",
         f'--out "{XP_EVIDENCE_OUTPUT_DIR}/platform-verified-evidence-{GHA_TARGET}.json"': "target/release scoped candidate evidence output",

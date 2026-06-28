@@ -123,6 +123,42 @@ LINUX_ACCEPTED_EVIDENCE_TOOLS = {
 LINUX_ACCEPTED_EVIDENCE_SMOKE_IDS = {
     "native_smoke",
 }
+LINUX_ACCEPTED_EVIDENCE_BUILDER_IDENTITY_KEYS = {
+    "schema_version",
+    "target",
+    "release_tag",
+    "workflow_run_url",
+    "workflow_run_attempt",
+    "workflow_ref",
+    "workflow_sha",
+    "source_head_sha",
+    "observed_git_head_sha",
+    "git_worktree_clean",
+    "sys_platform",
+    "platform_machine",
+    "uname_machine",
+    "dpkg_architecture",
+    "userland_bits",
+    "os_release",
+    "kernel_release",
+    "glibc_version",
+    "python_version",
+    "host_identity",
+    "sudo_non_interactive",
+    "required_tools",
+    "security_patch_evidence",
+}
+LINUX_ACCEPTED_EVIDENCE_BUILDER_HOST_IDENTITY_KEYS = {
+    "schema_version",
+    "target",
+    "release_tag",
+    "workflow_run_url",
+    "workflow_run_attempt",
+    "host_label",
+    "evidence_run_id",
+    "observed_at_utc",
+    "operator_private_data_redacted",
+}
 ACCEPTED_EVIDENCE_ARTIFACT_TEMPLATES = {
     "linux-i386": {
         "remote-ops-workspace-v{version}-linux-i386.deb",
@@ -196,6 +232,43 @@ XP_ACCEPTED_EVIDENCE_SECURITY_FLAGS = {
     "modern_defaults_unchanged": True,
     "weak_crypto_global_default": False,
 }
+XP_ACCEPTED_EVIDENCE_SUMMARY_KEYS = {
+    "target",
+    "release_tag",
+    "host_identity",
+    "os",
+    "toolchain",
+    "release_source",
+    "security",
+    "smoke_ids",
+    "smoke_evidence_files",
+    "smoke_commands",
+}
+XP_ACCEPTED_EVIDENCE_RELEASE_SOURCE_SUMMARY_KEYS = {
+    "workflow",
+    "workflow_run_url",
+    "head_sha",
+    "run_attempt",
+}
+XP_ACCEPTED_EVIDENCE_HOST_IDENTITY_KEYS = {
+    "schema_version",
+    "target",
+    "release_tag",
+    "host_label",
+    "evidence_run_id",
+    "observed_at_utc",
+    "operator_private_data_redacted",
+    "os",
+    "toolchain",
+}
+XP_ACCEPTED_EVIDENCE_OS_BASE_KEYS = {
+    "name",
+    "architecture",
+    "service_pack",
+}
+XP_ACCEPTED_EVIDENCE_SUMMARY_TOOLCHAIN_KEYS = set(XP_ACCEPTED_EVIDENCE_TOOLCHAIN_FLAGS)
+XP_ACCEPTED_EVIDENCE_HOST_TOOLCHAIN_KEYS = set(XP_ACCEPTED_EVIDENCE_TOOLCHAIN_FLAGS) | {"description"}
+XP_ACCEPTED_EVIDENCE_SECURITY_KEYS = set(XP_ACCEPTED_EVIDENCE_SECURITY_FLAGS) | {"patch_evidence"}
 ACCEPTED_EVIDENCE_SECURITY_PATCH_EVIDENCE = {
     "tls_minimum_modern_profiles": "TLS 1.2",
     "tls_preferred_modern_profiles": "TLS 1.3",
@@ -205,6 +278,15 @@ ACCEPTED_EVIDENCE_SECURITY_PATCH_EVIDENCE = {
 ACCEPTED_EVIDENCE_SECURITY_PATCH_PROVENANCE_FIELDS = (
     "security_update_channel",
     "cve_review_reference",
+)
+LINUX_ACCEPTED_EVIDENCE_SECURITY_PATCH_KEYS = (
+    set(ACCEPTED_EVIDENCE_SECURITY_PATCH_EVIDENCE)
+    | set(ACCEPTED_EVIDENCE_SECURITY_PATCH_PROVENANCE_FIELDS)
+    | {"python_ssl_openssl", "openssl_cli_version"}
+)
+XP_ACCEPTED_EVIDENCE_SECURITY_PATCH_KEYS = (
+    set(ACCEPTED_EVIDENCE_SECURITY_PATCH_EVIDENCE)
+    | set(ACCEPTED_EVIDENCE_SECURITY_PATCH_PROVENANCE_FIELDS)
 )
 FORBIDDEN_SECURITY_PROVENANCE_MARKERS = (
     "<",
@@ -1046,12 +1128,22 @@ def _protected_platform_goal_parity(evidence_registry: dict[str, Any] | None) ->
         for target, entry in entries.items()
         if (workflow := _release_source_workflow_from_entry(entry, target))
     }
+    selected_release_source_run_attempts = {
+        target: release_source_run_attempts[target]
+        for target in present
+        if target in release_source_run_attempts
+    }
+    selected_release_source_workflows = {
+        target: release_source_workflows[target]
+        for target in present
+        if target in release_source_workflows
+    }
     target_count = len(PROTECTED_PLATFORM_GOAL_TARGETS)
     accepted_count = len(present)
     release_source_provenance_complete = all(
         target in present
-        and target in release_source_run_attempts
-        and target in release_source_workflows
+        and target in selected_release_source_run_attempts
+        and target in selected_release_source_workflows
         for target in PROTECTED_PLATFORM_GOAL_TARGETS
     )
     current_percent = (accepted_count / target_count * 100.0) if target_count else 0.0
@@ -1109,6 +1201,8 @@ def _protected_platform_goal_parity(evidence_registry: dict[str, Any] | None) ->
         "release_repositories": release_repositories,
         "release_source_head": release_source_head,
         "release_source_heads": release_source_heads,
+        "selected_release_source_run_attempts": selected_release_source_run_attempts,
+        "selected_release_source_workflows": selected_release_source_workflows,
         "release_source_run_attempts": {
             target: release_source_run_attempts[target]
             for target in sorted(release_source_run_attempts)
@@ -1869,6 +1963,8 @@ def _release_asset_repositories(raw_assets: Any) -> set[str]:
 def _has_linux_builder_identity(raw_identity: Any, target: str) -> bool:
     if not isinstance(raw_identity, dict):
         return False
+    if set(str(key) for key in raw_identity) != LINUX_ACCEPTED_EVIDENCE_BUILDER_IDENTITY_KEYS:
+        return False
     expected_machines = LINUX_ACCEPTED_EVIDENCE_MACHINES[target]
     if raw_identity.get("schema_version") != 1 or raw_identity.get("target") != target:
         return False
@@ -1880,6 +1976,11 @@ def _has_linux_builder_identity(raw_identity: Any, target: str) -> bool:
         return False
     if _python_version_tuple(str(raw_identity.get("python_version", ""))) < (3, 10):
         return False
+    if not all(
+        str(raw_identity.get(key, "")).strip()
+        for key in ("os_release", "kernel_release", "glibc_version")
+    ):
+        return False
     if raw_identity.get("sudo_non_interactive") is not True:
         return False
     if not _has_linux_required_tool_paths(raw_identity.get("required_tools")):
@@ -1889,6 +1990,8 @@ def _has_linux_builder_identity(raw_identity: Any, target: str) -> bool:
 
 def _has_linux_required_tool_paths(raw_tools: Any) -> bool:
     if not isinstance(raw_tools, dict):
+        return False
+    if set(str(tool) for tool in raw_tools) != LINUX_ACCEPTED_EVIDENCE_TOOLS:
         return False
     for tool in LINUX_ACCEPTED_EVIDENCE_TOOLS:
         value = str(raw_tools.get(tool, "")).strip()
@@ -1925,6 +2028,8 @@ def _has_linux_builder_identity_binding(item: dict[str, Any], target: str) -> bo
         return False
     host_identity = raw_identity.get("host_identity")
     if not isinstance(host_identity, dict) or host_identity.get("workflow_run_attempt") != source.get("run_attempt"):
+        return False
+    if set(str(key) for key in host_identity) != LINUX_ACCEPTED_EVIDENCE_BUILDER_HOST_IDENTITY_KEYS:
         return False
     return digest == _json_sha256(raw_identity) and _has_linux_builder_identity(raw_identity, target)
 
@@ -2189,6 +2294,8 @@ def _has_xp_evidence_summary(item: dict[str, Any], target: str) -> bool:
     summary = item.get("xp_evidence_summary")
     if not isinstance(summary, dict):
         return False
+    if set(str(key) for key in summary) != XP_ACCEPTED_EVIDENCE_SUMMARY_KEYS:
+        return False
     if summary.get("target") != target or summary.get("release_tag") != item.get("release_tag"):
         return False
     release_source = summary.get("release_source")
@@ -2198,6 +2305,8 @@ def _has_xp_evidence_summary(item: dict[str, Any], target: str) -> bool:
         return False
     os_data = summary.get("os")
     if not isinstance(os_data, dict):
+        return False
+    if set(str(key) for key in os_data) != _xp_os_identity_keys(target):
         return False
     if os_data.get("name") != "Windows XP":
         return False
@@ -2212,14 +2321,18 @@ def _has_xp_evidence_summary(item: dict[str, Any], target: str) -> bool:
     toolchain = summary.get("toolchain")
     if not isinstance(toolchain, dict):
         return False
+    if set(str(key) for key in toolchain) != XP_ACCEPTED_EVIDENCE_SUMMARY_TOOLCHAIN_KEYS:
+        return False
     if any(toolchain.get(flag) is not expected for flag, expected in XP_ACCEPTED_EVIDENCE_TOOLCHAIN_FLAGS.items()):
         return False
     security = summary.get("security")
     if not isinstance(security, dict):
         return False
+    if set(str(key) for key in security) != XP_ACCEPTED_EVIDENCE_SECURITY_KEYS:
+        return False
     if any(security.get(flag) is not expected for flag, expected in XP_ACCEPTED_EVIDENCE_SECURITY_FLAGS.items()):
         return False
-    if not _has_security_patch_evidence(security.get("patch_evidence")):
+    if not _has_xp_security_patch_evidence(security.get("patch_evidence")):
         return False
     smoke_ids = summary.get("smoke_ids")
     if not isinstance(smoke_ids, list) or {str(smoke_id) for smoke_id in smoke_ids} != XP_ACCEPTED_EVIDENCE_SMOKE_IDS:
@@ -2240,6 +2353,8 @@ def _has_xp_evidence_summary(item: dict[str, Any], target: str) -> bool:
 
 def _has_xp_summary_release_source(raw_summary_source: Any, raw_release_asset_source: Any) -> bool:
     if not isinstance(raw_summary_source, dict) or not isinstance(raw_release_asset_source, dict):
+        return False
+    if set(str(key) for key in raw_summary_source) != XP_ACCEPTED_EVIDENCE_RELEASE_SOURCE_SUMMARY_KEYS:
         return False
     for field in ("workflow", "head_sha", "run_attempt"):
         if raw_summary_source.get(field) != raw_release_asset_source.get(field):
@@ -2267,6 +2382,8 @@ def _has_xp_host_identity_digest(item: dict[str, Any], target: str) -> bool:
 def _has_xp_host_identity(raw_identity: Any, target: str, release_tag: str) -> bool:
     if not isinstance(raw_identity, dict):
         return False
+    if set(str(key) for key in raw_identity) != XP_ACCEPTED_EVIDENCE_HOST_IDENTITY_KEYS:
+        return False
     if raw_identity.get("schema_version") != 1:
         return False
     if raw_identity.get("target") != target or raw_identity.get("release_tag") != release_tag:
@@ -2285,6 +2402,8 @@ def _has_xp_host_identity(raw_identity: Any, target: str, release_tag: str) -> b
     os_data = raw_identity.get("os")
     if not isinstance(os_data, dict):
         return False
+    if set(str(key) for key in os_data) != _xp_os_identity_keys(target):
+        return False
     if os_data.get("name") != "Windows XP":
         return False
     if os_data.get("architecture") != XP_ACCEPTED_EVIDENCE_ARCHITECTURES[target]:
@@ -2297,9 +2416,18 @@ def _has_xp_host_identity(raw_identity: Any, target: str, release_tag: str) -> b
     toolchain = raw_identity.get("toolchain")
     if not isinstance(toolchain, dict):
         return False
+    if set(str(key) for key in toolchain) != XP_ACCEPTED_EVIDENCE_HOST_TOOLCHAIN_KEYS:
+        return False
     if any(toolchain.get(flag) is not expected for flag, expected in XP_ACCEPTED_EVIDENCE_TOOLCHAIN_FLAGS.items()):
         return False
     return len(str(toolchain.get("description", "")).strip()) >= 12
+
+
+def _xp_os_identity_keys(target: str) -> set[str]:
+    keys = set(XP_ACCEPTED_EVIDENCE_OS_BASE_KEYS)
+    if XP_ACCEPTED_EVIDENCE_EDITIONS.get(target):
+        keys.add("edition")
+    return keys
 
 
 def _has_xp_smoke_evidence_files(raw_files: Any) -> bool:
@@ -2409,6 +2537,14 @@ def _has_security_patch_evidence(raw_evidence: Any) -> bool:
     )
 
 
+def _has_xp_security_patch_evidence(raw_evidence: Any) -> bool:
+    if not _has_security_patch_evidence(raw_evidence):
+        return False
+    if not isinstance(raw_evidence, dict):
+        return False
+    return set(str(key) for key in raw_evidence) == XP_ACCEPTED_EVIDENCE_SECURITY_PATCH_KEYS
+
+
 def _is_concrete_security_provenance(value: str) -> bool:
     stripped = value.strip()
     lowered = stripped.lower()
@@ -2417,6 +2553,10 @@ def _is_concrete_security_provenance(value: str) -> bool:
 
 def _has_linux_security_patch_evidence(raw_evidence: Any) -> bool:
     if not _has_security_patch_evidence(raw_evidence):
+        return False
+    if not isinstance(raw_evidence, dict):
+        return False
+    if set(str(key) for key in raw_evidence) != LINUX_ACCEPTED_EVIDENCE_SECURITY_PATCH_KEYS:
         return False
     return all(
         str(raw_evidence.get(key, "")).strip()

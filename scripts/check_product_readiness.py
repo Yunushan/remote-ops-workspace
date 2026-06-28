@@ -674,6 +674,8 @@ def check_protected_goal_release_scope(goal: dict[str, object]) -> list[str]:
     release_tags = goal.get("release_tags")
     release_repositories = goal.get("release_repositories")
     release_source_heads = goal.get("release_source_heads")
+    selected_release_source_run_attempts = goal.get("selected_release_source_run_attempts")
+    selected_release_source_workflows = goal.get("selected_release_source_workflows")
     release_source_run_attempts = goal.get("release_source_run_attempts")
     release_source_workflows = goal.get("release_source_workflows")
     if not isinstance(release_tags, list):
@@ -685,6 +687,12 @@ def check_protected_goal_release_scope(goal: dict[str, object]) -> list[str]:
     if not isinstance(release_source_heads, list):
         errors.append("protected platform goal parity must expose release_source_heads")
         release_source_heads = []
+    if not isinstance(selected_release_source_run_attempts, dict):
+        errors.append("protected platform goal parity must expose selected_release_source_run_attempts")
+        selected_release_source_run_attempts = {}
+    if not isinstance(selected_release_source_workflows, dict):
+        errors.append("protected platform goal parity must expose selected_release_source_workflows")
+        selected_release_source_workflows = {}
     if not isinstance(release_source_run_attempts, dict):
         errors.append("protected platform goal parity must expose release_source_run_attempts")
         release_source_run_attempts = {}
@@ -746,19 +754,76 @@ def check_protected_goal_release_scope(goal: dict[str, object]) -> list[str]:
                     "protected platform goal parity release_source_workflows"
                     f"[{target}] must be {expected}"
                 )
+    if isinstance(selected_targets, list):
+        selected_target_ids = {str(target) for target in selected_targets}
+        if isinstance(selected_release_source_run_attempts, dict):
+            missing_selected_attempts = sorted(
+                target
+                for target in selected_target_ids
+                if target not in selected_release_source_run_attempts
+            )
+            if missing_selected_attempts:
+                errors.append(
+                    "protected platform goal parity selected_release_source_run_attempts "
+                    f"missing selected targets: {missing_selected_attempts}"
+                )
+            unexpected_selected_attempts = sorted(
+                str(target)
+                for target in selected_release_source_run_attempts
+                if str(target) not in selected_target_ids
+            )
+            if unexpected_selected_attempts:
+                errors.append(
+                    "protected platform goal parity selected_release_source_run_attempts "
+                    f"contains targets outside selected release scope: {unexpected_selected_attempts}"
+                )
+            for target, attempt in sorted(selected_release_source_run_attempts.items()):
+                if not isinstance(attempt, int) or isinstance(attempt, bool) or attempt < 1:
+                    errors.append(
+                        "protected platform goal parity selected_release_source_run_attempts"
+                        f"[{target}] must be a positive integer"
+                    )
+        if isinstance(selected_release_source_workflows, dict):
+            missing_selected_workflows = sorted(
+                target
+                for target in selected_target_ids
+                if target not in selected_release_source_workflows
+            )
+            if missing_selected_workflows:
+                errors.append(
+                    "protected platform goal parity selected_release_source_workflows "
+                    f"missing selected targets: {missing_selected_workflows}"
+                )
+            unexpected_selected_workflows = sorted(
+                str(target)
+                for target in selected_release_source_workflows
+                if str(target) not in selected_target_ids
+            )
+            if unexpected_selected_workflows:
+                errors.append(
+                    "protected platform goal parity selected_release_source_workflows "
+                    f"contains targets outside selected release scope: {unexpected_selected_workflows}"
+                )
+            for target, workflow in sorted(selected_release_source_workflows.items()):
+                expected = expected_release_asset_source_workflow(str(target))
+                if workflow != expected:
+                    errors.append(
+                        "protected platform goal parity selected_release_source_workflows"
+                        f"[{target}] must be {expected}"
+                    )
     if (
         isinstance(required_targets, list)
         and isinstance(selected_targets, list)
-        and isinstance(release_source_run_attempts, dict)
-        and isinstance(release_source_workflows, dict)
+        and isinstance(selected_release_source_run_attempts, dict)
+        and isinstance(selected_release_source_workflows, dict)
         and isinstance(provenance_complete, bool)
     ):
         expected_provenance_complete = (
             bool(required_targets)
             and sorted(str(target) for target in selected_targets)
             == sorted(str(target) for target in required_targets)
-            and all(str(target) in release_source_run_attempts for target in required_targets)
-            and all(str(target) in release_source_workflows for target in required_targets)
+            and all(str(target) in selected_release_source_run_attempts for target in required_targets)
+            and all(str(target) in selected_release_source_workflows for target in required_targets)
         )
         if provenance_complete is not expected_provenance_complete:
             errors.append(

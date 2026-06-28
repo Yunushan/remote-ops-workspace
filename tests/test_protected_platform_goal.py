@@ -414,6 +414,9 @@ def test_protected_platform_goal_human_scope_reports_mixed_release_source_heads(
     human_scope = checker.format_goal_scope(goal)
     assert "accepted in selected release scope: 3/4; aggregate accepted records: 4/4" in human_scope
     assert f"accepted release source heads: {'a' * 40}, {'b' * 40}" in human_scope
+    assert "selected release source run attempts: linux-armhf=1" in human_scope
+    assert "windows-xp-native-x64=1, windows-xp-native-x86=1" in human_scope
+    assert "aggregate accepted release source run attempts: linux-armhf=1, linux-i386=1" in human_scope
     assert any("must use one release source head SHA" in error for error in errors)
 
 

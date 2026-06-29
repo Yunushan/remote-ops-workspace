@@ -1138,6 +1138,11 @@ def _protected_platform_goal_parity(evidence_registry: dict[str, Any] | None) ->
         for target, entry in entries.items()
         if (attempt := _release_source_run_attempt(entry)) > 0
     }
+    release_source_run_urls = {
+        target: run_url
+        for target, entry in entries.items()
+        if (run_url := _release_source_workflow_run_url(entry))
+    }
     release_source_workflows = {
         target: workflow
         for target, entry in entries.items()
@@ -1148,19 +1153,29 @@ def _protected_platform_goal_parity(evidence_registry: dict[str, Any] | None) ->
         for target in present
         if target in release_source_run_attempts
     }
+    selected_release_source_run_urls = {
+        target: release_source_run_urls[target]
+        for target in present
+        if target in release_source_run_urls
+    }
     selected_release_source_workflows = {
         target: release_source_workflows[target]
         for target in present
         if target in release_source_workflows
     }
+    release_source_run_attempt_conflicts = _release_source_run_attempt_conflicts(
+        release_source_run_urls,
+        release_source_run_attempts,
+    )
     target_count = len(PROTECTED_PLATFORM_GOAL_TARGETS)
     accepted_count = len(present)
     release_source_provenance_complete = all(
         target in present
         and target in selected_release_source_run_attempts
+        and target in selected_release_source_run_urls
         and target in selected_release_source_workflows
         for target in PROTECTED_PLATFORM_GOAL_TARGETS
-    )
+    ) and not release_source_run_attempt_conflicts
     current_percent = (accepted_count / target_count * 100.0) if target_count else 0.0
     complete = accepted_count == target_count and release_source_provenance_complete
     release_consistent = len(release_tags) <= 1
@@ -1201,6 +1216,11 @@ def _protected_platform_goal_parity(evidence_registry: dict[str, Any] | None) ->
             for target in aggregate_present
             if target in release_source_run_attempts
         },
+        "accepted_evidence_release_source_run_urls": {
+            target: release_source_run_urls[target]
+            for target in aggregate_present
+            if target in release_source_run_urls
+        },
         "accepted_evidence_release_source_workflows": {
             target: release_source_workflows[target]
             for target in aggregate_present
@@ -1217,10 +1237,16 @@ def _protected_platform_goal_parity(evidence_registry: dict[str, Any] | None) ->
         "release_source_head": release_source_head,
         "release_source_heads": release_source_heads,
         "selected_release_source_run_attempts": selected_release_source_run_attempts,
+        "selected_release_source_run_urls": selected_release_source_run_urls,
         "selected_release_source_workflows": selected_release_source_workflows,
+        "release_source_run_attempt_conflicts": release_source_run_attempt_conflicts,
         "release_source_run_attempts": {
             target: release_source_run_attempts[target]
             for target in sorted(release_source_run_attempts)
+        },
+        "release_source_run_urls": {
+            target: release_source_run_urls[target]
+            for target in sorted(release_source_run_urls)
         },
         "release_source_workflows": {
             target: release_source_workflows[target]
@@ -1239,7 +1265,8 @@ def _protected_platform_goal_parity(evidence_registry: dict[str, Any] | None) ->
             "Counts only Linux i386, Linux armhf, Windows XP native x86 and "
             "Windows XP native x64 accepted evidence records for one release_tag, "
             "one GitHub release repository, per-target release source workflow files, "
-            "one release source head SHA and per-record release source run attempts. "
+            "one release source head SHA and per-record release source run attempts "
+            "without conflicting attempts for one run URL. "
             "The broader platform_verified_readiness overall score does not promote "
             "this goal unless this block reaches 100% for a single release."
         ),
@@ -2044,6 +2071,34 @@ def _release_source_run_attempt(item: dict[str, Any]) -> int:
     return 0
 
 
+def _release_source_workflow_run_url(item: dict[str, Any]) -> str:
+    source = item.get("release_asset_source")
+    if not isinstance(source, dict):
+        return ""
+    workflow_run_url = str(source.get("workflow_run_url", "")).strip().rstrip("/")
+    return workflow_run_url if GITHUB_ACTIONS_RUN_RE.fullmatch(workflow_run_url) else ""
+
+
+def _release_source_run_attempt_conflicts(
+    run_urls_by_target: dict[str, str],
+    attempts_by_target: dict[str, int],
+) -> dict[str, dict[str, int]]:
+    attempts_by_url: dict[str, dict[str, int]] = {}
+    for target, run_url in sorted(run_urls_by_target.items()):
+        attempt = attempts_by_target.get(target, 0)
+        if attempt <= 0:
+            continue
+        attempts_by_url.setdefault(run_url, {})[target] = attempt
+    return {
+        run_url: {
+            target: attempts_by_target[target]
+            for target in sorted(attempts_by_target)
+        }
+        for run_url, attempts_by_target in sorted(attempts_by_url.items())
+        if len(set(attempts_by_target.values())) > 1
+    }
+
+
 def _release_source_workflow_from_entry(item: dict[str, Any], target: str) -> str:
     source = item.get("release_asset_source")
     if not isinstance(source, dict):
@@ -2709,7 +2764,21 @@ def _has_windows_xp_native_evidence(evidence_registry: dict[str, Any] | None) ->
         _release_source_head(entries[target])
         for target in required
     }
-    return "" not in source_heads and len(source_heads) == 1
+    if "" in source_heads or len(source_heads) != 1:
+        return False
+    run_urls = {
+        target: _release_source_workflow_run_url(entries[target])
+        for target in required
+    }
+    if any(not run_url for run_url in run_urls.values()):
+        return False
+    run_attempts = {
+        target: _release_source_run_attempt(entries[target])
+        for target in required
+    }
+    if any(attempt <= 0 for attempt in run_attempts.values()):
+        return False
+    return not _release_source_run_attempt_conflicts(run_urls, run_attempts)
 
 
 def _has_partial_windows_xp_native_evidence(evidence_registry: dict[str, Any] | None) -> bool:
@@ -2742,6 +2811,9 @@ def _single_target_evidence_status(
         row["accepted_evidence_release_source_heads"] = {target: source_head}
         row["accepted_evidence_release_source_run_attempts"] = {
             target: _release_source_run_attempt(entry)
+        }
+        row["accepted_evidence_release_source_run_urls"] = {
+            target: _release_source_workflow_run_url(entry)
         }
         row["accepted_evidence_release_source_workflows"] = {
             target: _release_source_workflow_from_entry(entry, target)
@@ -2781,6 +2853,11 @@ def _windows_xp_evidence_status(evidence_registry: dict[str, Any] | None) -> dic
             target: _release_source_run_attempt(entries[target])
             for target in present
             if _release_source_run_attempt(entries[target]) > 0
+        },
+        "accepted_evidence_release_source_run_urls": {
+            target: _release_source_workflow_run_url(entries[target])
+            for target in present
+            if _release_source_workflow_run_url(entries[target])
         },
         "accepted_evidence_release_source_workflows": {
             target: _release_source_workflow_from_entry(entries[target], target)

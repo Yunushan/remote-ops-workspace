@@ -16,6 +16,18 @@ from remote_ops_workspace.features import coverage_report  # noqa: E402
 
 PLATFORM_TARGETS_PATH = ROOT / "configs" / "platform_targets.json"
 RELEASE_MATRIX_PATH = ROOT / "configs" / "release_matrix.json"
+LINUX_PROTECTED_TARGETS = {"linux-i386", "linux-armhf"}
+XP_PROTECTED_TARGET_ORDER = ["windows-xp-native-x86", "windows-xp-native-x64"]
+XP_PROTECTED_TARGETS = set(XP_PROTECTED_TARGET_ORDER)
+PROTECTED_RELEASE_SOURCE_WORKFLOWS = {
+    "linux-i386": ".github/workflows/extended-platform-evidence.yml",
+    "linux-armhf": ".github/workflows/extended-platform-evidence.yml",
+    "windows-xp-native-x86": ".github/workflows/xp-native-evidence.yml",
+    "windows-xp-native-x64": ".github/workflows/xp-native-evidence.yml",
+}
+RELEASE_TAG_RE = re.compile(r"^v\d+\.\d+\.\d+$")
+SOURCE_HEAD_RE = re.compile(r"^[0-9a-f]{40}$")
+GITHUB_REPOSITORY_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?/[A-Za-z0-9._-]+$")
 
 EXPECTED_ARCHITECTURES: dict[str, dict[str, Any]] = {
     "windows-x86": {
@@ -224,6 +236,12 @@ MISLEADING_PLATFORM_CLAIMS = (
     "iOS native installer",
 )
 
+DYNAMIC_PROTECTED_GOAL_DOC_PATHS = (
+    "README.md",
+    "docs/PLATFORM_SUPPORT.md",
+    "docs/FULL_FEATURE_COVERAGE.md",
+)
+
 
 def main() -> int:
     errors = check_platform_support_truth()
@@ -407,6 +425,8 @@ def check_platform_docs(docs: dict[str, str], report: dict[str, Any]) -> list[st
         if normalize_text(claim) in combined:
             errors.append(f"platform docs contain misleading support claim: {claim}")
 
+    errors.extend(check_dynamic_protected_goal_docs(docs, report))
+
     full_coverage = docs.get("docs/FULL_FEATURE_COVERAGE.md", "")
     for row in report.get("platform_verified_readiness", {}).get("targets", []):
         expected = (
@@ -426,6 +446,33 @@ def check_platform_docs(docs: dict[str, str], report: dict[str, Any]) -> list[st
     return errors
 
 
+def check_dynamic_protected_goal_docs(
+    docs: dict[str, str],
+    report: dict[str, Any],
+) -> list[str]:
+    platform = report.get("platform_verified_readiness", {})
+    goal = platform.get("protected_goal_parity", {}) if isinstance(platform, dict) else {}
+    if not isinstance(goal, dict):
+        return ["platform readiness report must expose protected_goal_parity for docs"]
+    try:
+        current_percent = float(goal.get("current_percent", 0.0))
+    except (TypeError, ValueError):
+        current_percent = 0.0
+    status = str(goal.get("status", "unknown"))
+    snippet = (
+        f"Protected platform goal parity is **{current_percent:.1f}%** for the "
+        f"current accepted-evidence registry (status={status})"
+    )
+    normalized_snippet = normalize_text(snippet)
+    errors: list[str] = []
+    for path in DYNAMIC_PROTECTED_GOAL_DOC_PATHS:
+        if normalized_snippet not in normalize_text(docs.get(path, "")):
+            errors.append(
+                f"{path} missing current protected platform goal snippet: {snippet}"
+            )
+    return errors
+
+
 def check_expected_fields(label: str, row: dict[str, Any], expected: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     for key, expected_value in expected.items():
@@ -439,20 +486,199 @@ def check_expected_fields(label: str, row: dict[str, Any], expected: dict[str, A
 
 def check_readiness_row(target: str, row: dict[str, Any], expected: dict[str, Any]) -> list[str]:
     errors: list[str] = []
-    if row.get("current_percent") != expected["score"]:
-        errors.append(f"{target} readiness score must be {expected['score']}%, got {row.get('current_percent')}%")
-    if row.get("gap_percent") != round(100.0 - float(expected["score"]), 1):
-        errors.append(f"{target} readiness gap must match score {expected['score']}%")
-    if row.get("status") != expected["status"]:
-        errors.append(f"{target} readiness status must be {expected['status']}, got {row.get('status')}")
-    expected_scope = expected_verified_readiness_scope(expected)
+    effective_expected, evidence_errors = evidence_adjusted_readiness_expectation(target, row, expected)
+    errors.extend(evidence_errors)
+    if row.get("current_percent") != effective_expected["score"]:
+        errors.append(
+            f"{target} readiness score must be {effective_expected['score']}%, "
+            f"got {row.get('current_percent')}%"
+        )
+    if row.get("gap_percent") != round(100.0 - float(effective_expected["score"]), 1):
+        errors.append(f"{target} readiness gap must match score {effective_expected['score']}%")
+    if row.get("status") != effective_expected["status"]:
+        errors.append(
+            f"{target} readiness status must be {effective_expected['status']}, "
+            f"got {row.get('status')}"
+        )
+    expected_scope = expected_verified_readiness_scope(effective_expected)
     if row.get("verified_readiness_scope") is not expected_scope:
         errors.append(
             f"{target} verified_readiness_scope must be {expected_scope}, "
             f"got {row.get('verified_readiness_scope')}"
         )
-    if float(expected["score"]) < 100.0 and row.get("status") == "verified-default-native":
+    if float(effective_expected["score"]) < 100.0 and row.get("status") == "verified-default-native":
         errors.append(f"{target} partial target must not report verified-default-native")
+    return errors
+
+
+def evidence_adjusted_readiness_expectation(
+    target: str,
+    row: dict[str, Any],
+    expected: dict[str, Any],
+) -> tuple[dict[str, Any], list[str]]:
+    if target in LINUX_PROTECTED_TARGETS:
+        return linux_readiness_expectation(target, row, expected)
+    if target == "Windows XP":
+        return xp_readiness_expectation(row, expected)
+    return expected, []
+
+
+def linux_readiness_expectation(
+    target: str,
+    row: dict[str, Any],
+    expected: dict[str, Any],
+) -> tuple[dict[str, Any], list[str]]:
+    status = str(row.get("status", ""))
+    has_accepted = accepted_evidence_lists_match(
+        row,
+        required_targets=[target],
+        present_targets=[target],
+        missing_targets=[],
+    )
+    if status != "verified-accepted-native-evidence" and not has_accepted:
+        return expected, []
+
+    promoted = {
+        **expected,
+        "score": 100.0,
+        "status": "verified-accepted-native-evidence",
+    }
+    errors: list[str] = []
+    if not has_accepted:
+        errors.append(
+            f"{target} evidence-backed readiness must expose accepted evidence "
+            f"present={[target]!r} and missing=[]"
+        )
+    errors.extend(check_release_binding_fields(target, row, [target]))
+    return promoted, errors
+
+
+def xp_readiness_expectation(
+    row: dict[str, Any],
+    expected: dict[str, Any],
+) -> tuple[dict[str, Any], list[str]]:
+    status = str(row.get("status", ""))
+    present = accepted_evidence_values(row, "accepted_evidence_present_targets")
+    has_xp_evidence = bool(set(present) & XP_PROTECTED_TARGETS)
+    has_full_pair = accepted_evidence_lists_match(
+        row,
+        required_targets=XP_PROTECTED_TARGET_ORDER,
+        present_targets=XP_PROTECTED_TARGET_ORDER,
+        missing_targets=[],
+    )
+    if status not in {
+        "verified-xp-native-host-evidence",
+        "partial-xp-native-host-evidence",
+    } and not has_xp_evidence:
+        return expected, []
+
+    if status == "verified-xp-native-host-evidence":
+        promoted = {
+            **expected,
+            "score": 100.0,
+            "status": "verified-xp-native-host-evidence",
+        }
+        errors: list[str] = []
+        if not has_full_pair:
+            errors.append(
+                "Windows XP native-host readiness must expose accepted evidence "
+                "for both XP x86 and XP x64 with no missing targets"
+            )
+        errors.extend(check_release_binding_fields("Windows XP", row, XP_PROTECTED_TARGET_ORDER))
+        return promoted, errors
+
+    partial = {**expected, "status": "partial-xp-native-host-evidence"}
+    errors = check_xp_partial_evidence_lists(row)
+    present_targets = [target for target in XP_PROTECTED_TARGET_ORDER if target in set(present)]
+    errors.extend(check_release_binding_fields("Windows XP", row, present_targets))
+    return partial, errors
+
+
+def check_xp_partial_evidence_lists(row: dict[str, Any]) -> list[str]:
+    required = accepted_evidence_values(row, "accepted_evidence_required_targets")
+    present = accepted_evidence_values(row, "accepted_evidence_present_targets")
+    missing = accepted_evidence_values(row, "accepted_evidence_missing_targets")
+    present_set = set(present)
+    missing_set = set(missing)
+    required_set = set(required)
+    errors: list[str] = []
+    if required_set != XP_PROTECTED_TARGETS:
+        errors.append(
+            "Windows XP partial native-host evidence must expose required XP x86/x64 targets"
+        )
+    if not present_set or not present_set.issubset(XP_PROTECTED_TARGETS):
+        errors.append(
+            "Windows XP partial native-host evidence must expose at least one accepted XP target"
+        )
+    if not missing_set.issubset(XP_PROTECTED_TARGETS):
+        errors.append(
+            "Windows XP partial native-host evidence missing targets must stay within XP x86/x64"
+        )
+    if required_set == XP_PROTECTED_TARGETS and present_set | missing_set != XP_PROTECTED_TARGETS:
+        errors.append(
+            "Windows XP partial native-host evidence present/missing targets must cover XP x86/x64"
+        )
+    return errors
+
+
+def accepted_evidence_lists_match(
+    row: dict[str, Any],
+    *,
+    required_targets: list[str],
+    present_targets: list[str],
+    missing_targets: list[str],
+) -> bool:
+    return (
+        accepted_evidence_values(row, "accepted_evidence_required_targets") == required_targets
+        and accepted_evidence_values(row, "accepted_evidence_present_targets") == present_targets
+        and accepted_evidence_values(row, "accepted_evidence_missing_targets") == missing_targets
+    )
+
+
+def accepted_evidence_values(row: dict[str, Any], field: str) -> list[str]:
+    raw = row.get(field)
+    if not isinstance(raw, list):
+        return []
+    return [str(item) for item in raw]
+
+
+def check_release_binding_fields(
+    row_label: str,
+    row: dict[str, Any],
+    targets: list[str],
+) -> list[str]:
+    if not targets:
+        return []
+    errors: list[str] = []
+    tags = row.get("accepted_evidence_release_tags")
+    repositories = row.get("accepted_evidence_release_repositories")
+    heads = row.get("accepted_evidence_release_source_heads")
+    attempts = row.get("accepted_evidence_release_source_run_attempts")
+    workflows = row.get("accepted_evidence_release_source_workflows")
+    for target in targets:
+        if not isinstance(tags, dict) or not RELEASE_TAG_RE.fullmatch(str(tags.get(target, ""))):
+            errors.append(f"{row_label} accepted evidence for {target} must expose a concrete release tag")
+        raw_repositories = repositories.get(target) if isinstance(repositories, dict) else None
+        if (
+            not isinstance(raw_repositories, list)
+            or len(raw_repositories) != 1
+            or GITHUB_REPOSITORY_RE.fullmatch(str(raw_repositories[0])) is None
+        ):
+            errors.append(
+                f"{row_label} accepted evidence for {target} must expose exactly one GitHub repository"
+            )
+        if not isinstance(heads, dict) or SOURCE_HEAD_RE.fullmatch(str(heads.get(target, ""))) is None:
+            errors.append(f"{row_label} accepted evidence for {target} must expose a source head SHA")
+        attempt = attempts.get(target) if isinstance(attempts, dict) else None
+        if not isinstance(attempt, int) or isinstance(attempt, bool) or attempt < 1:
+            errors.append(
+                f"{row_label} accepted evidence for {target} must expose a positive source run attempt"
+            )
+        expected_workflow = PROTECTED_RELEASE_SOURCE_WORKFLOWS[target]
+        if not isinstance(workflows, dict) or workflows.get(target) != expected_workflow:
+            errors.append(
+                f"{row_label} accepted evidence for {target} must expose workflow {expected_workflow}"
+            )
     return errors
 
 
@@ -474,6 +700,8 @@ def expected_platform_overall(platform_targets: dict[str, Any]) -> float:
 def expected_verified_readiness_scope(expected: dict[str, Any]) -> bool:
     return str(expected.get("status", "")) in {
         "verified-default-native",
+        "verified-accepted-native-evidence",
+        "verified-xp-native-host-evidence",
         "verified-termux-web-mobile",
         "verified-ios-web-pwa",
     }

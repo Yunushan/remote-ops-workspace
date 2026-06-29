@@ -4,6 +4,7 @@ from pathlib import Path
 
 from remote_ops_workspace.features import (
     _platform_verified_readiness,
+    _release_source_run_attempt_conflicts,
     coverage_report,
     load_feature_manifest,
 )
@@ -237,7 +238,10 @@ def test_platform_verified_readiness_tracks_partial_targets() -> None:
     assert goal["target_count"] == 4
     assert goal["complete"] is False
     assert goal["status"] == "missing-accepted-evidence"
+    assert goal["release_source_run_urls"] == {}
     assert goal["release_source_workflows"] == {}
+    assert goal["selected_release_source_run_urls"] == {}
+    assert goal["release_source_run_attempt_conflicts"] == {}
     assert goal["release_source_provenance_complete"] is False
     assert goal["release_import_dry_run_command"] == (
         "python scripts/import_platform_evidence_artifacts.py "
@@ -389,6 +393,9 @@ def test_platform_verified_readiness_promotes_only_with_accepted_evidence() -> N
     assert rows["linux-i386"]["accepted_evidence_release_source_run_attempts"] == {
         "linux-i386": 1,
     }
+    assert rows["linux-i386"]["accepted_evidence_release_source_run_urls"] == {
+        "linux-i386": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+    }
     assert rows["linux-i386"]["accepted_evidence_release_source_workflows"] == {
         "linux-i386": ".github/workflows/extended-platform-evidence.yml",
     }
@@ -437,6 +444,9 @@ def test_platform_verified_readiness_promotes_only_with_accepted_evidence() -> N
     assert rows["Windows XP"]["accepted_evidence_release_source_run_attempts"] == {
         "windows-xp-native-x86": 1,
     }
+    assert rows["Windows XP"]["accepted_evidence_release_source_run_urls"] == {
+        "windows-xp-native-x86": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+    }
     assert rows["Windows XP"]["accepted_evidence_release_source_workflows"] == {
         "windows-xp-native-x86": ".github/workflows/xp-native-evidence.yml",
     }
@@ -474,6 +484,12 @@ def test_platform_verified_readiness_goal_parity_completes_with_all_accepted_evi
         "windows-xp-native-x64": 1,
         "windows-xp-native-x86": 1,
     }
+    assert goal["release_source_run_urls"] == {
+        "linux-armhf": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        "linux-i386": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        "windows-xp-native-x64": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        "windows-xp-native-x86": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+    }
     assert goal["release_source_workflows"] == {
         "linux-armhf": ".github/workflows/extended-platform-evidence.yml",
         "linux-i386": ".github/workflows/extended-platform-evidence.yml",
@@ -481,7 +497,9 @@ def test_platform_verified_readiness_goal_parity_completes_with_all_accepted_evi
         "windows-xp-native-x86": ".github/workflows/xp-native-evidence.yml",
     }
     assert goal["selected_release_source_run_attempts"] == goal["release_source_run_attempts"]
+    assert goal["selected_release_source_run_urls"] == goal["release_source_run_urls"]
     assert goal["selected_release_source_workflows"] == goal["release_source_workflows"]
+    assert goal["release_source_run_attempt_conflicts"] == {}
     assert goal["release_source_provenance_complete"] is True
     assert goal["release_consistent"] is True
     assert goal["release_repository_consistent"] is True
@@ -499,6 +517,65 @@ def test_platform_verified_readiness_goal_parity_completes_with_all_accepted_evi
         item["accepted"] is True and item["status"] == "accepted"
         for item in goal["target_evidence_requirements"]
     )
+
+
+def test_platform_verified_readiness_detects_conflicting_source_attempts() -> None:
+    assert _release_source_run_attempt_conflicts(
+        {
+            "linux-i386": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+            "linux-armhf": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+            "windows-xp-native-x86": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+            "windows-xp-native-x64": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+            "windows-x64": "https://github.com/example/remote-ops-workspace/actions/runs/99999",
+        },
+        {
+            "linux-i386": 1,
+            "linux-armhf": 1,
+            "windows-xp-native-x86": 2,
+            "windows-xp-native-x64": 1,
+            "windows-x64": 3,
+        },
+    ) == {
+        "https://github.com/example/remote-ops-workspace/actions/runs/12345": {
+            "linux-armhf": 1,
+            "linux-i386": 1,
+            "windows-xp-native-x64": 1,
+            "windows-xp-native-x86": 2,
+        }
+    }
+
+
+def test_platform_verified_readiness_xp_row_rejects_conflicting_source_attempts() -> None:
+    manifest = _extended_platform_manifest()
+    xp_x64 = _xp_accepted_evidence("windows-xp-native-x64")
+    _replace_xp_release_source_run_attempt(xp_x64, 2)
+    evidence = _accepted_evidence_registry(
+        _xp_accepted_evidence("windows-xp-native-x86"),
+        xp_x64,
+    )
+
+    report = _platform_verified_readiness(platform_data=manifest, evidence_registry=evidence)
+    rows = {row["target"]: row for row in report["targets"]}
+    goal = report["protected_goal_parity"]
+
+    assert rows["Windows XP"]["current_percent"] == 25.0
+    assert rows["Windows XP"]["status"] == "partial-xp-native-host-evidence"
+    assert rows["Windows XP"]["verified_readiness_scope"] is False
+    assert rows["Windows XP"]["accepted_evidence_present_targets"] == [
+        "windows-xp-native-x86",
+        "windows-xp-native-x64",
+    ]
+    assert rows["Windows XP"]["accepted_evidence_release_source_run_attempts"] == {
+        "windows-xp-native-x86": 1,
+        "windows-xp-native-x64": 2,
+    }
+    assert goal["release_source_run_attempt_conflicts"] == {
+        "https://github.com/example/remote-ops-workspace/actions/runs/12345": {
+            "windows-xp-native-x64": 2,
+            "windows-xp-native-x86": 1,
+        }
+    }
+    assert goal["complete"] is False
 
 
 def test_platform_verified_readiness_goal_parity_requires_one_release_repository() -> None:
@@ -2763,6 +2840,30 @@ def _replace_release_source_head(record: dict[str, object], head_sha: str) -> No
         if isinstance(smoke_commands, dict) and old_head:
             for smoke_id, command in smoke_commands.items():
                 smoke_commands[smoke_id] = str(command).replace(old_head, head_sha)
+
+
+def _replace_xp_release_source_run_attempt(record: dict[str, object], run_attempt: int) -> None:
+    source = record.get("release_asset_source")
+    assert isinstance(source, dict)
+    old_attempt = str(source.get("run_attempt", ""))
+    source["run_attempt"] = run_attempt
+    if isinstance(record.get("local_evidence_preflight_command"), str) and old_attempt:
+        record["local_evidence_preflight_command"] = str(
+            record["local_evidence_preflight_command"]
+        ).replace(f"--xp-source-run-attempt {old_attempt}", f"--xp-source-run-attempt {run_attempt}")
+    xp_summary = record.get("xp_evidence_summary")
+    if not isinstance(xp_summary, dict):
+        return
+    xp_source = xp_summary.get("release_source")
+    if isinstance(xp_source, dict):
+        xp_source["run_attempt"] = run_attempt
+    smoke_commands = xp_summary.get("smoke_commands")
+    if isinstance(smoke_commands, dict) and old_attempt:
+        for smoke_id, command in smoke_commands.items():
+            smoke_commands[smoke_id] = str(command).replace(
+                f"--source-run-attempt {old_attempt}",
+                f"--source-run-attempt {run_attempt}",
+            )
 
 
 def _security_patch_evidence() -> dict[str, object]:

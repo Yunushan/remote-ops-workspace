@@ -14,6 +14,7 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 from check_platform_review_bundle_artifacts import (  # noqa: E402
+    canonical_public_record_bytes,
     check_platform_review_bundle_artifacts,
 )
 from check_platform_verified_evidence import (  # noqa: E402
@@ -155,7 +156,8 @@ def stage_extended_linux_evidence_upload(
 
 def check_final_record(target: str, release_tag: str, final_record: Path) -> tuple[list[str], dict[str, Any] | None]:
     try:
-        record = json.loads(final_record.read_text(encoding="utf-8"))
+        raw_bytes = final_record.read_bytes()
+        record = json.loads(raw_bytes.decode("utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         return [f"{target} finalized accepted record is not readable JSON: {final_record.name}: {exc}"], None
     if not isinstance(record, dict):
@@ -167,6 +169,8 @@ def check_final_record(target: str, release_tag: str, final_record: Path) -> tup
         required_release_tag=release_tag,
         require_review_bundles=True,
     )
+    if raw_bytes != canonical_public_record_bytes(record):
+        errors.append(f"{target} finalized accepted record must use canonical sorted JSON: {final_record.name}")
     return [f"{target} finalized accepted record failed strict validation: {error}" for error in errors], record
 
 

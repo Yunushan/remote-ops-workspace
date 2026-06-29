@@ -212,6 +212,7 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: write
     needs:
       - release-preflight
@@ -240,3 +241,7 @@ jobs:
         with:
           fail_on_unmatched_files: true
           files: release-assets/**
+      - name: Audit published protected platform evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/check_platform_release_evidence_remote.py --repository "${{ github.repository }}" --release-tag "${{ github.ref_name }}" --require-goal-targets --require-source-runs

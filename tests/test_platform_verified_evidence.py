@@ -13,12 +13,14 @@ POLICY = (
     "release-importable artifact source binding, "
     "release source head SHA binding, "
     "release source run-attempt binding, "
+    "same release source workflow run URL cannot carry conflicting run attempts, "
     "release source workflow file binding, "
     "local protected-goal evidence preflight command binding, "
     "source artifact staged upload command binding, "
     "staged upload source/evidence/output root separation, "
     "finalized accepted-record source file binding, "
     "finalized accepted-record release asset URL binding, "
+    "canonical finalized accepted-record JSON byte binding, "
     "Linux release source artifact names must be target/release-scoped, "
     "Linux accepted evidence command paths must be target/release-scoped, "
     "XP release source artifact names must be target/release-scoped, "
@@ -61,7 +63,8 @@ POLICY = (
     "bundle manifest, review bundle archive, safe relative non-symlink review bundle archive entries, "
     "and review bundle SHA-256 sidecar digests "
     "before strict promotion, and release uploads must include those review bundle files with matching "
-    "size, SHA-256 and checksum-sidecar coverage; each accepted record must include "
+    "size, SHA-256 and checksum-sidecar coverage plus canonical finalized accepted-record JSON "
+    "with matching size and SHA-256; each accepted record must include "
     "the promotion config SHA-256, have a unique target, include no unrecognized top-level fields, "
     "all release evidence for one record must "
     "use the same GitHub repository, protected platform goal records for one release must use "
@@ -300,7 +303,8 @@ def test_platform_verified_evidence_rejects_missing_review_bundle_upload_policy(
             "schema_version": 1,
             "policy": POLICY.replace(
                 "and release uploads must include those review bundle files with matching "
-                "size, SHA-256 and checksum-sidecar coverage; ",
+                "size, SHA-256 and checksum-sidecar coverage plus canonical finalized accepted-record JSON "
+                "with matching size and SHA-256; ",
                 "",
             ),
             "accepted_evidence": [],
@@ -310,6 +314,26 @@ def test_platform_verified_evidence_rejects_missing_review_bundle_upload_policy(
     assert (
         "platform verified evidence policy must require release upload review bundle size, "
         "SHA-256, and checksum-sidecar coverage"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_missing_final_record_upload_policy() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY.replace(
+                " plus canonical finalized accepted-record JSON with matching size and SHA-256",
+                "",
+            ),
+            "accepted_evidence": [],
+        }
+    )
+
+    assert (
+        "platform verified evidence policy must require release upload finalized accepted-record "
+        "canonical JSON size and SHA-256 binding"
     ) in errors
 
 
@@ -663,6 +687,26 @@ def test_platform_verified_evidence_rejects_missing_release_source_run_attempt_p
     ) in errors
 
 
+def test_platform_verified_evidence_rejects_missing_conflicting_source_attempt_policy() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY.replace(
+                "same release source workflow run URL cannot carry conflicting run attempts, ",
+                "",
+            ),
+            "accepted_evidence": [],
+        }
+    )
+
+    assert (
+        "platform verified evidence policy must forbid conflicting run attempts "
+        "for one release source workflow run URL"
+    ) in errors
+
+
 def test_platform_verified_evidence_rejects_missing_protected_goal_source_head_policy() -> None:
     checker = _load_platform_verified_evidence_checker()
 
@@ -816,6 +860,22 @@ def test_platform_verified_evidence_rejects_missing_final_record_release_url_pol
 
     assert (
         "platform verified evidence policy must require finalized accepted-record release asset URL binding"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_missing_canonical_final_record_policy() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY.replace("canonical finalized accepted-record JSON byte binding, ", ""),
+            "accepted_evidence": [],
+        }
+    )
+
+    assert (
+        "platform verified evidence policy must require canonical finalized accepted-record JSON byte binding"
     ) in errors
 
 
@@ -1267,6 +1327,34 @@ def test_platform_verified_evidence_rejects_partial_protected_goal_mixed_source_
     assert (
         "partial protected platform goal evidence must use one release source head SHA before promotion, "
         f"got {{'linux-i386': '{'b' * 40}', 'windows-xp-native-x86': '{'a' * 40}'}}"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_conflicting_attempts_for_one_source_run_url() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    xp_x86 = _xp_record("windows-xp-native-x86")
+    source = xp_x86["release_asset_source"]
+    assert isinstance(source, dict)
+    source["run_attempt"] = 2
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [
+            _linux_record("linux-i386"),
+            xp_x86,
+        ],
+    }
+
+    errors = checker.check_platform_verified_evidence(
+        registry=registry,
+        require_review_bundles=True,
+    )
+
+    assert (
+        "partial protected platform goal evidence must not reuse one release source workflow run URL "
+        "with conflicting run attempts before promotion, got "
+        "https://github.com/example/remote-ops-workspace/actions/runs/12345: "
+        "{'linux-i386': 1, 'windows-xp-native-x86': 2}"
     ) in errors
 
 

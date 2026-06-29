@@ -764,6 +764,11 @@ def check_schema(registry: dict[str, Any]) -> list[str]:
         errors.append("platform verified evidence policy must require release source head SHA binding")
     if "release source run-attempt binding" not in policy:
         errors.append("platform verified evidence policy must require release source run-attempt binding")
+    if "same release source workflow run URL cannot carry conflicting run attempts" not in policy:
+        errors.append(
+            "platform verified evidence policy must forbid conflicting run attempts "
+            "for one release source workflow run URL"
+        )
     if (
         "protected platform goal records for one release must use one release source head SHA "
         "and target-specific release source workflow files plus positive release source run attempts"
@@ -813,6 +818,10 @@ def check_schema(registry: dict[str, Any]) -> list[str]:
         errors.append(
             "platform verified evidence policy must require finalized accepted-record release asset URL binding"
         )
+    if "canonical finalized accepted-record JSON byte binding" not in policy:
+        errors.append(
+            "platform verified evidence policy must require canonical finalized accepted-record JSON byte binding"
+        )
     if "Linux release source artifact names must be target/release-scoped" not in policy:
         errors.append(
             "platform verified evidence policy must require target/release-scoped Linux release source artifacts"
@@ -840,6 +849,11 @@ def check_schema(registry: dict[str, Any]) -> list[str]:
         errors.append(
             "platform verified evidence policy must require release upload review bundle size, "
             "SHA-256, and checksum-sidecar coverage"
+        )
+    if "canonical finalized accepted-record JSON with matching size and SHA-256" not in policy:
+        errors.append(
+            "platform verified evidence policy must require release upload finalized accepted-record "
+            "canonical JSON size and SHA-256 binding"
         )
     if "XP evidence contract SHA-256" not in policy:
         errors.append("platform verified evidence policy must require XP evidence contract SHA-256 binding")
@@ -3791,6 +3805,29 @@ def check_partial_protected_goal_release_scope(entries: dict[str, dict[str, Any]
         errors.append(
             "partial protected platform goal evidence must use one release source head SHA before promotion, "
             f"got {format_values_by_target(heads_by_target)}"
+        )
+    run_attempts_by_url: dict[str, dict[str, int]] = {}
+    for target, entry in sorted(entries.items()):
+        source = entry.get("release_asset_source")
+        if not isinstance(source, dict):
+            continue
+        run_url = str(source.get("workflow_run_url", "")).strip().rstrip("/")
+        run_attempt = source.get("run_attempt")
+        if (
+            not run_url
+            or not isinstance(run_attempt, int)
+            or isinstance(run_attempt, bool)
+            or run_attempt <= 0
+        ):
+            continue
+        run_attempts_by_url.setdefault(run_url, {})[target] = run_attempt
+    for run_url, attempts_by_target in sorted(run_attempts_by_url.items()):
+        if len(set(attempts_by_target.values())) == 1:
+            continue
+        formatted = {target: attempts_by_target[target] for target in sorted(attempts_by_target)}
+        errors.append(
+            "partial protected platform goal evidence must not reuse one release source workflow run URL "
+            f"with conflicting run attempts before promotion, got {run_url}: {formatted}"
         )
     return errors
 

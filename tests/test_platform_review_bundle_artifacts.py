@@ -92,6 +92,27 @@ def test_platform_review_bundle_artifacts_rejects_final_record_asset_drift(
     ) in errors
 
 
+def test_platform_review_bundle_artifacts_rejects_noncanonical_final_record_asset(
+    tmp_path: Path,
+) -> None:
+    validator = _load_script("check_platform_review_bundle_artifacts")
+    record = _finalized_linux_record(tmp_path)
+    final_record = _write_final_record_asset(record, tmp_path)
+    final_record.write_bytes((json.dumps(record, sort_keys=True) + "\n").encode("utf-8"))
+    registry = _registry_with(record)
+
+    errors = validator.check_platform_review_bundle_artifacts(
+        registry=registry,
+        bundle_dir=tmp_path,
+        require_final_record_assets=True,
+    )
+
+    assert (
+        "linux-i386 finalized accepted-record asset must use canonical sorted JSON: "
+        "platform-verified-evidence-linux-i386-final.json"
+    ) in errors
+
+
 def test_platform_review_bundle_artifacts_scopes_final_record_assets_to_required_targets(
     tmp_path: Path,
 ) -> None:
@@ -468,7 +489,7 @@ def _registry_with(record: dict[str, Any]) -> dict[str, Any]:
 def _write_final_record_asset(record: dict[str, Any], root: Path) -> Path:
     target = str(record["target"])
     path = root / f"platform-verified-evidence-{target}-final.json"
-    path.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    path.write_bytes((json.dumps(record, indent=2, sort_keys=True) + "\n").encode("utf-8"))
     return path
 
 

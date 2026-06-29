@@ -94,6 +94,7 @@ def test_protected_platform_goal_strict_gate_fails_empty_registry() -> None:
     assert "release scope: requires one release_tag, one GitHub release repository" in human_scope
     assert "per-target release source workflow files" in human_scope
     assert "per-record release source run attempts" in human_scope
+    assert "without conflicting attempts for one run URL" in human_scope
     assert (
         "pre-release import dry-run: python scripts/import_platform_evidence_artifacts.py "
         "--release-tag v1.0.2 --require-goal-targets "
@@ -353,6 +354,8 @@ def test_protected_platform_goal_reports_release_scoped_completion() -> None:
         "windows-xp-native-x64=.github/workflows/xp-native-evidence.yml, "
         "windows-xp-native-x86=.github/workflows/xp-native-evidence.yml"
     ) in human_scope
+    assert "accepted release source run URLs: linux-armhf=https://github.com/example/remote-ops-workspace/actions/runs/12345" in human_scope
+    assert "windows-xp-native-x86=https://github.com/example/remote-ops-workspace/actions/runs/12345" in human_scope
     assert "accepted release source run attempts: linux-armhf=1, linux-i386=1" in human_scope
     assert "windows-xp-native-x64=1, windows-xp-native-x86=1" in human_scope
     assert (
@@ -461,6 +464,46 @@ def test_protected_platform_goal_human_scope_reports_mixed_release_source_heads(
     assert "windows-xp-native-x64=1, windows-xp-native-x86=1" in human_scope
     assert "aggregate accepted release source run attempts: linux-armhf=1, linux-i386=1" in human_scope
     assert any("must use one release source head SHA" in error for error in errors)
+
+
+def test_protected_platform_goal_human_scope_reports_source_attempt_conflicts() -> None:
+    checker = _load_protected_goal_checker()
+
+    human_scope = checker.format_goal_scope(
+        {
+            "target_count": 4,
+            "accepted_target_count": 4,
+            "aggregate_accepted_target_count": 4,
+            "release_tags": ["v1.0.2"],
+            "release_repositories": ["example/remote-ops-workspace"],
+            "release_source_heads": ["a" * 40],
+            "release_source_workflows": {
+                "linux-i386": ".github/workflows/extended-platform-evidence.yml",
+                "windows-xp-native-x86": ".github/workflows/xp-native-evidence.yml",
+            },
+            "release_source_run_urls": {
+                "linux-i386": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+                "windows-xp-native-x86": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+            },
+            "release_source_run_attempts": {
+                "linux-i386": 1,
+                "windows-xp-native-x86": 2,
+            },
+            "release_source_run_attempt_conflicts": {
+                "https://github.com/example/remote-ops-workspace/actions/runs/12345": {
+                    "linux-i386": 1,
+                    "windows-xp-native-x86": 2,
+                }
+            },
+        }
+    )
+
+    assert "accepted release source run URLs: linux-i386=https://github.com/example/remote-ops-workspace/actions/runs/12345" in human_scope
+    assert (
+        "conflicting release source run attempts: "
+        "https://github.com/example/remote-ops-workspace/actions/runs/12345: "
+        "linux-i386=1, windows-xp-native-x86=2"
+    ) in human_scope
 
 
 def test_protected_platform_goal_filters_nonmatching_release_tag() -> None:

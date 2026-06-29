@@ -16,12 +16,14 @@ POLICY = (
     "release-importable artifact source binding, "
     "release source head SHA binding, "
     "release source run-attempt binding, "
+    "same release source workflow run URL cannot carry conflicting run attempts, "
     "release source workflow file binding, "
     "local protected-goal evidence preflight command binding, "
     "source artifact staged upload command binding, "
     "staged upload source/evidence/output root separation, "
     "finalized accepted-record source file binding, "
     "finalized accepted-record release asset URL binding, "
+    "canonical finalized accepted-record JSON byte binding, "
     "Linux release source artifact names must be target/release-scoped, "
     "Linux accepted evidence command paths must be target/release-scoped, "
     "XP release source artifact names must be target/release-scoped, "
@@ -65,7 +67,8 @@ POLICY = (
     "bundle manifest, review bundle archive, safe relative non-symlink review bundle archive entries, "
     "and review bundle SHA-256 sidecar digests "
     "before strict promotion, and release uploads must include those review bundle files with matching "
-    "size, SHA-256 and checksum-sidecar coverage; each accepted record must include "
+    "size, SHA-256 and checksum-sidecar coverage plus canonical finalized accepted-record JSON "
+    "with matching size and SHA-256; each accepted record must include "
     "the promotion config SHA-256, have a unique target, include no unrecognized top-level fields, "
     "all release evidence for one record must "
     "use the same GitHub repository, protected platform goal records for one release must use "
@@ -310,6 +313,66 @@ def test_publish_contract_requires_protected_asset_gate_before_release_upload() 
     errors = checker.check_publish_contract(matrix, workflow)
 
     assert "protected platform release asset gate must run before GitHub release upload" in errors
+
+
+def test_publish_contract_requires_remote_evidence_audit_after_upload() -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    audit_step = (
+        '      - name: Audit published protected platform evidence\n'
+        '        env:\n'
+        '          GH_TOKEN: ${{ github.token }}\n'
+        '        run: python scripts/check_platform_release_evidence_remote.py --repository "${{ github.repository }}" --release-tag "${{ github.ref_name }}" --require-goal-targets --require-source-runs\n'
+    )
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        audit_step,
+        "",
+    )
+
+    errors = checker.check_publish_contract(matrix, workflow)
+
+    assert any("published protected platform evidence audit" in error for error in errors)
+
+
+def test_publish_contract_rejects_remote_evidence_audit_before_upload() -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    audit_step = (
+        '      - name: Audit published protected platform evidence\n'
+        '        env:\n'
+        '          GH_TOKEN: ${{ github.token }}\n'
+        '        run: python scripts/check_platform_release_evidence_remote.py --repository "${{ github.repository }}" --release-tag "${{ github.ref_name }}" --require-goal-targets --require-source-runs\n'
+    )
+    upload_step = (
+        '      - name: Upload release assets\n'
+        '        uses: softprops/action-gh-release@v3\n'
+        '        with:\n'
+        '          fail_on_unmatched_files: true\n'
+        '          files: release-assets/**\n'
+    )
+    workflow = workflow.replace(audit_step, "").replace(upload_step, audit_step + upload_step)
+
+    errors = checker.check_publish_contract(matrix, workflow)
+
+    assert "published protected platform evidence audit must run after GitHub release upload" in errors
+
+
+def test_publish_contract_requires_remote_evidence_audit_token_and_actions_read() -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        "      actions: read\n",
+        "",
+    ).replace(
+        "          GH_TOKEN: ${{ github.token }}\n",
+        "",
+    )
+
+    errors = checker.check_publish_contract(matrix, workflow)
+
+    assert any("Actions metadata read permission" in error for error in errors)
+    assert any("GitHub token for published evidence audit" in error for error in errors)
 
 
 def test_publish_contract_requires_platform_evidence_import_job() -> None:

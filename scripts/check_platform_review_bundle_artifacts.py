@@ -260,18 +260,25 @@ def check_final_record_asset(record: dict[str, Any], bundle_root: Path) -> list[
     if not path.is_file():
         return [f"{target} finalized accepted-record asset missing from bundle directory: {filename}"]
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raw_bytes = path.read_bytes()
+        data = json.loads(raw_bytes.decode("utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         return [f"{target} finalized accepted-record asset is not readable JSON: {filename}: {exc}"]
     if not isinstance(data, dict):
         return [f"{target} finalized accepted-record asset must contain a JSON object: {filename}"]
     if data != public_record(record):
         return [f"{target} finalized accepted-record asset must match accepted registry record: {filename}"]
+    if raw_bytes != canonical_public_record_bytes(record):
+        return [f"{target} finalized accepted-record asset must use canonical sorted JSON: {filename}"]
     return []
 
 
 def public_record(record: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in record.items() if not str(key).startswith("_")}
+
+
+def canonical_public_record_bytes(record: dict[str, Any]) -> bytes:
+    return (json.dumps(public_record(record), indent=2, sort_keys=True) + "\n").encode("utf-8")
 
 
 def prefinalized_candidate_record(record: dict[str, Any]) -> dict[str, Any]:

@@ -276,7 +276,7 @@ For the stricter MobaXterm Home/Professional parity backlog, see [`docs/MOBAXTER
 | Xming (or VcXsrv) + PuTTY / mRemoteNG | 100.0% | 100.0% | 100.0% | 0.0% | 10 |
 | **Overall** | **100.0%** | **100.0%** | **100.0%** | **0.0%** | **70** |
 
-Adapter-ready coverage and release-backed product workflow parity use the manifest status weights directly and do not use blanket per-product overrides. Platform verified readiness is still separate and currently reports **100.0% overall** for verified default-native, Termux/Web and Web/PWA release targets; manual Linux i386/armhf and legacy Windows rows remain visible outside the verified-readiness denominator.
+Adapter-ready coverage and release-backed product workflow parity use the manifest status weights directly and do not use blanket per-product overrides. Platform verified readiness is still separate and currently reports **100.0% overall** for verified default-native, Termux/Web and Web/PWA release targets; manual Linux i386/armhf and legacy Windows rows remain visible outside the verified-readiness denominator. Protected platform goal parity is **0.0%** for the current accepted-evidence registry (status=missing-accepted-evidence); that separate goal is the only score that can reach 100% for Linux i386/armhf plus Windows XP x86/x64 native-host readiness.
 Linux i386/armhf and Windows XP native-host promotion to 100% is gated by
 [`configs/platform_parity_promotion.json`](configs/platform_parity_promotion.json)
 and `python scripts/check_platform_parity_promotion.py`; real builder output is
@@ -295,7 +295,8 @@ also pass `--xp-evidence-output-dir <xp-evidence-output-dir>`. Linux
 release-source upload staging must use
 `python scripts/stage_extended_linux_evidence_upload.py`, and XP release-source
 upload staging must use `python scripts/stage_xp_native_evidence_upload.py`;
-both stagers re-check finalized accepted-record assets before upload. Linux
+both stagers re-check finalized accepted-record assets before upload and require
+the public final record to use canonical LF-terminated, sorted JSON bytes. Linux
 accepted records include builder identity JSON plus its matching SHA-256,
 sanitized target-scoped host identity and workflow dispatch input binding.
 Windows XP accepted records include sanitized host identity SHA-256 and require
@@ -325,6 +326,16 @@ exist. Windows XP native-host readiness remains 25.0% until a separate
 XP-capable legacy toolchain, x86/x64 XP host smoke evidence captured with
 `scripts/xp_smoke_runner.cmd`, native artifact evidence, modern `xp-evidence`
 collector packaging, and a passing `python scripts/check_xp_native_evidence.py --evidence <evidence.json> --assets-dir <artifact-dir>` bundle exist; XP remote-target coverage stays 100.0% through isolated legacy-profile opt-ins.
+After a release is published, audit the actual GitHub release and evidence
+workflow runs with
+`python scripts/check_platform_release_evidence_remote.py --repository <owner>/<repo> --release-tag v<project.version> --require-goal-targets --require-source-runs`;
+it must still fail if finalized accepted records, protected evidence release
+assets, published asset digests/sizes, exact successful source workflow run
+metadata, or non-expired source workflow artifacts bound to those runs are
+missing, or if stale protected-platform native/evidence assets remain on the
+release outside the audited accepted-evidence scope. The release workflow runs that audit after
+`softprops/action-gh-release` uploads the assets, using read-only Actions
+metadata access plus the repository token.
 
 Run:
 
@@ -550,10 +561,12 @@ review-bundle size/SHA-256 values against the finalized accepted record,
 then runs
 `python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag <tag> --require-final-record-assets`
 against the imported review bundles and finalized public record JSON files
-before upload. The imported platform evidence artifact upload fails when empty,
-excludes hidden files and keeps a 90-day retention window. That import job keeps only
-read permissions for repository contents and Actions artifacts, and source and
-native release jobs wait for it before building. Linux i386, Linux armhf,
+before upload; final public records must use canonical LF-terminated sorted JSON
+bytes so post-upload release asset digests are stable. The imported platform
+evidence artifact upload fails when empty, excludes hidden files and keeps a
+90-day retention window. That import job keeps only read permissions for
+repository contents and Actions artifacts, and source and native release jobs
+wait for it before building. Linux i386, Linux armhf,
 windows-xp-native-x86 and windows-xp-native-x64 require finalized accepted
 evidence records for the same release tag, GitHub release repository,
 target-specific release source workflow file, release source head SHA and

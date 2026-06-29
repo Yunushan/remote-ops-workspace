@@ -392,7 +392,7 @@ def format_goal_scope(goal: dict[str, Any]) -> str:
     lines = [
         "release scope: requires one release_tag, one GitHub release repository, "
         "per-target release source workflow files, one release source head SHA "
-        "and per-record release source run attempts"
+        "and per-record release source run attempts without conflicting attempts for one run URL"
     ]
     if aggregate_count != accepted_count:
         lines.append(
@@ -420,6 +420,18 @@ def format_goal_scope(goal: dict[str, Any]) -> str:
             else "accepted release source workflows"
         )
         lines.append(f"{label}: {workflow_summary}")
+    selected_run_urls = dict_values(goal.get("selected_release_source_run_urls"))
+    run_urls = selected_run_urls or dict_values(goal.get("release_source_run_urls"))
+    if run_urls:
+        run_url_summary = ", ".join(
+            f"{target}={run_url}" for target, run_url in sorted(run_urls.items())
+        )
+        label = (
+            "selected release source run URLs"
+            if aggregate_count != accepted_count
+            else "accepted release source run URLs"
+        )
+        lines.append(f"{label}: {run_url_summary}")
     selected_run_attempts = dict_values(goal.get("selected_release_source_run_attempts"))
     run_attempts = selected_run_attempts or dict_values(goal.get("release_source_run_attempts"))
     if run_attempts:
@@ -436,16 +448,33 @@ def format_goal_scope(goal: dict[str, Any]) -> str:
             f"{target}={workflow}" for target, workflow in sorted(aggregate_workflows.items())
         )
         lines.append(f"aggregate accepted release source workflows: {workflow_summary}")
+    aggregate_run_urls = dict_values(goal.get("release_source_run_urls"))
+    if aggregate_count != accepted_count and aggregate_run_urls and aggregate_run_urls != selected_run_urls:
+        run_url_summary = ", ".join(
+            f"{target}={run_url}" for target, run_url in sorted(aggregate_run_urls.items())
+        )
+        lines.append(f"aggregate accepted release source run URLs: {run_url_summary}")
     aggregate_run_attempts = dict_values(goal.get("release_source_run_attempts"))
     if aggregate_count != accepted_count and aggregate_run_attempts and aggregate_run_attempts != selected_run_attempts:
         attempts = ", ".join(
             f"{target}={attempt}" for target, attempt in sorted(aggregate_run_attempts.items())
         )
         lines.append(f"aggregate accepted release source run attempts: {attempts}")
+    run_attempt_conflicts = dict_values(goal.get("release_source_run_attempt_conflicts"))
+    if run_attempt_conflicts:
+        conflict_parts: list[str] = []
+        for run_url, raw_attempts in sorted(run_attempt_conflicts.items()):
+            attempts_by_target = dict_values(raw_attempts)
+            attempts = ", ".join(
+                f"{target}={attempt}" for target, attempt in sorted(attempts_by_target.items())
+            )
+            conflict_parts.append(f"{run_url}: {attempts}")
+        if conflict_parts:
+            lines.append(f"conflicting release source run attempts: {'; '.join(conflict_parts)}")
     import_command = str(goal.get("release_import_dry_run_command", "")).strip()
     if import_command:
         lines.append(f"pre-release import dry-run: {import_command}")
-    if not any((release_tags, repositories, source_heads, workflows, run_attempts)):
+    if not any((release_tags, repositories, source_heads, workflows, run_urls, run_attempts)):
         lines.append("accepted release scope evidence: none")
     return "\n".join(lines)
 

@@ -144,7 +144,7 @@ def test_stage_extended_linux_evidence_upload_rejects_review_bundle_content_mism
     archive_path.write_text("not a readable review bundle\n", encoding="utf-8")
     record["review_bundle"]["archive"]["sha256"] = _sha256(archive_path)
     record["review_bundle"]["archive"]["size_bytes"] = archive_path.stat().st_size
-    final_record.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    final_record.write_bytes((json.dumps(record, indent=2, sort_keys=True) + "\n").encode("utf-8"))
 
     errors = stager.stage_extended_linux_evidence_upload(
         target=target,
@@ -184,6 +184,45 @@ def test_stage_extended_linux_evidence_upload_requires_final_record_asset_review
     assert captured["require_final_record_assets"] is True
     assert captured["required_targets"] == ("linux-i386",)
     assert captured["required_release_tag"] == "v1.0.2"
+
+
+def test_stage_extended_linux_evidence_upload_rejects_noncanonical_final_record(
+    tmp_path: Path,
+) -> None:
+    stager = _load_stager()
+    checker = _load_platform_promotion_artifacts_checker()
+    target = "linux-i386"
+    tag = f"v{checker.read_project_version()}"
+    source = _linux_source_dir(tmp_path, target, tag)
+    source.mkdir(parents=True)
+    expected_artifacts = _required_artifact_names(checker, target, tag)
+    expected_evidence = [
+        f"extended-linux-evidence-bundle-{target}-{tag}.json",
+        f"extended-linux-evidence-bundle-{target}-{tag}.zip",
+        f"extended-linux-evidence-bundle-{target}-{tag}-SHA256SUMS.txt",
+        f"platform-verified-evidence-{target}-final.json",
+    ]
+    for name in [*expected_artifacts, *expected_evidence]:
+        if name == f"platform-verified-evidence-{target}-final.json":
+            continue
+        (source / name).write_bytes(f"{name}\n".encode())
+    final_record = source / f"platform-verified-evidence-{target}-final.json"
+    _write_linux_final_record(final_record, target, source)
+    record = json.loads(final_record.read_text(encoding="utf-8"))
+    final_record.write_bytes((json.dumps(record, sort_keys=True) + "\n").encode("utf-8"))
+
+    errors = stager.stage_extended_linux_evidence_upload(
+        target=target,
+        release_tag=tag,
+        source_dir=source,
+        out_dir=tmp_path / "upload",
+    )
+
+    assert (
+        f"{target} finalized accepted record failed strict validation: "
+        f"{target} finalized accepted record must use canonical sorted JSON: "
+        f"platform-verified-evidence-{target}-final.json"
+    ) in errors
 
 
 def test_stage_extended_linux_evidence_upload_rejects_release_source_file_set_drift() -> None:
@@ -558,7 +597,7 @@ def _write_linux_final_record(path: Path, target: str, source_dir: Path) -> None
     if isinstance(artifact_hashes, dict):
         for name in artifact_hashes:
             (source_dir / str(name)).write_bytes(bundle_helpers._artifact_payload(str(name)))
-    path.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    path.write_bytes((json.dumps(record, indent=2, sort_keys=True) + "\n").encode("utf-8"))
 
 
 def _sha256(path: Path) -> str:

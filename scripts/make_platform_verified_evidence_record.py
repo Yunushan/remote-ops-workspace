@@ -49,12 +49,14 @@ DEFAULT_EVIDENCE_POLICY = (
     "release-importable artifact source binding, "
     "release source head SHA binding, "
     "release source run-attempt binding, "
+    "same release source workflow run URL cannot carry conflicting run attempts, "
     "release source workflow file binding, "
     "local protected-goal evidence preflight command binding, "
     "source artifact staged upload command binding, "
     "staged upload source/evidence/output root separation, "
     "finalized accepted-record source file binding, "
     "finalized accepted-record release asset URL binding, "
+    "canonical finalized accepted-record JSON byte binding, "
     "Linux release source artifact names must be target/release-scoped, "
     "Linux accepted evidence command paths must be target/release-scoped, "
     "XP release source artifact names must be target/release-scoped, "
@@ -94,7 +96,8 @@ DEFAULT_EVIDENCE_POLICY = (
     "XP security smoke proof-line binding when applicable, and review bundle manifest, "
     "review bundle archive, safe relative non-symlink review bundle archive entries, and review bundle SHA-256 "
     "sidecar digests before strict promotion, and release uploads must include those review bundle "
-    "files with matching size, SHA-256 and checksum-sidecar coverage; each accepted record must include the promotion "
+    "files with matching size, SHA-256 and checksum-sidecar coverage plus canonical finalized "
+    "accepted-record JSON with matching size and SHA-256; each accepted record must include the promotion "
     "config SHA-256, have a unique "
     "target, include no unrecognized top-level fields, "
     "all release evidence for one record must use the same GitHub repository, protected platform "
@@ -1262,7 +1265,7 @@ def generated_record_file_name(target: str) -> str:
 
 def write_text_output(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
+    path.write_text(text, encoding="utf-8", newline="\n")
 
 
 def read_evidence_registry(path: Path) -> dict[str, Any]:

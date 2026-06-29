@@ -149,6 +149,46 @@ def test_import_record_rejects_final_record_source_file_drift(tmp_path: Path, mo
     ) in errors
 
 
+def test_import_record_rejects_noncanonical_final_record_source_file(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+
+    def fake_run(command: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        if _is_metadata_command(command):
+            return _successful_view(command)
+        if _is_artifacts_command(command):
+            return _successful_artifacts(command)
+        destination = Path(command[-1])
+        destination.mkdir(parents=True)
+        for source in record["_source_files"]:
+            source_path = Path(str(source))
+            (destination / source_path.name).write_bytes(source_path.read_bytes())
+        final_record = destination / "platform-verified-evidence-linux-i386-final.json"
+        final_record.write_text(
+            json.dumps(importer.public_record(record), indent=2) + "\n",
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(importer.subprocess, "run", fake_run)
+
+    errors = importer.import_record(
+        record,
+        out_dir=tmp_path / "release-assets",
+        download_root=tmp_path / "download",
+        dry_run=False,
+        release_head_sha=HEAD_SHA,
+    )
+
+    assert (
+        "linux-i386 finalized accepted record source file must use canonical sorted JSON: "
+        "platform-verified-evidence-linux-i386-final.json"
+    ) in errors
+
+
 def test_import_record_rejects_unexpected_downloaded_file(tmp_path: Path, monkeypatch) -> None:
     importer = _load_importer()
     record = _record(tmp_path)
@@ -1127,6 +1167,41 @@ def test_import_record_rejects_source_workflow_run_url_mismatch(
     ) in errors
 
 
+def test_import_record_rejects_source_workflow_run_repository_mismatch(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+
+    def fake_run(command: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        assert _is_metadata_command(command)
+        return _source_run_metadata(
+            command,
+            repositoryFullName="other/remote-ops-workspace",
+            headRepositoryFullName="example/forked-remote-ops-workspace",
+        )
+
+    monkeypatch.setattr(importer.subprocess, "run", fake_run)
+
+    errors = importer.import_record(
+        record,
+        out_dir=tmp_path / "release-assets",
+        download_root=tmp_path / "download",
+        dry_run=False,
+        release_head_sha=HEAD_SHA,
+    )
+
+    assert (
+        "linux-i386 release_asset_source workflow run repositoryFullName must match accepted record "
+        "example/remote-ops-workspace, got 'other/remote-ops-workspace'"
+    ) in errors
+    assert (
+        "linux-i386 release_asset_source workflow run headRepositoryFullName must match accepted record "
+        "example/remote-ops-workspace, got 'example/forked-remote-ops-workspace'"
+    ) in errors
+
+
 def test_import_record_rejects_release_checkout_head_sha_mismatch(tmp_path: Path, monkeypatch) -> None:
     importer = _load_importer()
     record = _record(tmp_path)
@@ -1767,7 +1842,9 @@ def _record(tmp_path: Path) -> dict[str, Any]:
     for filename in sorted(str(name) for name in artifact_hashes):
         (tmp_path / filename).write_bytes(bundle_helpers._artifact_payload(filename))
     final_record = tmp_path / "platform-verified-evidence-linux-i386-final.json"
-    final_record.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    final_record.write_bytes(
+        json.dumps(record, indent=2, sort_keys=True).encode("utf-8") + b"\n"
+    )
     source_files = [tmp_path / str(name) for name in artifact_hashes]
     source_files.extend(
         tmp_path / str(record["review_bundle"][key]["file"])
@@ -1795,6 +1872,8 @@ def _source_run_metadata(
     data = {
         "id": 12345,
         "htmlUrl": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        "repositoryFullName": "example/remote-ops-workspace",
+        "headRepositoryFullName": "example/remote-ops-workspace",
         "attempt": 1,
         "status": "completed",
         "conclusion": "success",

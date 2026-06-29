@@ -107,7 +107,7 @@ those commands must fail until linux-i386, linux-armhf,
 windows-xp-native-x86 and windows-xp-native-x64 all have accepted records for
 the same release tag, same GitHub release repository, same release source head
 SHA and positive per-record release source run attempts. Mixed-tag,
-mixed-repository or mixed-source-head accepted records remain
+mixed-repository, mixed-source-head or same-run-URL conflicting-attempt accepted records remain
 aggregate evidence only and cannot complete the protected goal parity block.
 The strict verifier also runs
 `python scripts/import_platform_evidence_artifacts.py --release-tag v<project.version> --require-goal-targets --out-dir <release-assets-dir> --dry-run --verify-source-run`
@@ -129,7 +129,8 @@ also pass `--xp-evidence-output-dir <xp-evidence-output-dir>`.
 Linux release-source upload staging must use
 `python scripts/stage_extended_linux_evidence_upload.py`, and XP release-source
 upload staging must use `python scripts/stage_xp_native_evidence_upload.py`;
-both stagers re-check finalized accepted-record assets before upload.
+both stagers re-check finalized accepted-record assets before upload and require
+the public final record to use canonical LF-terminated sorted JSON bytes.
 `python scripts/check_platform_verified_evidence.py` checks the persisted
 registry in finalized-only mode. Candidate validation happens through the
 candidate-generation, review-bundle and finalization commands before append.
@@ -229,8 +230,9 @@ evidence contract requires XP x86
 SP3 evidence and Windows XP Professional x64 Edition SP2 evidence before either
 native-host row can promote.
 The accepted evidence registry also rejects duplicate target records, and
-Windows XP x86/x64 native evidence must use the same `release_tag` before the
-Windows XP native-host row can promote.
+Windows XP x86/x64 native evidence must use the same `release_tag` and must
+not reuse one source workflow run URL with conflicting accepted run attempts
+before the Windows XP native-host row can promote.
 The generated `platform_verified_readiness` rows expose
 `accepted_evidence_required_targets`, `accepted_evidence_present_targets` and
 `accepted_evidence_missing_targets` so partial Linux or XP promotion evidence is
@@ -239,6 +241,10 @@ also exposes `protected_goal_parity`, which is the authoritative four-target
 parity score for linux-i386, linux-armhf, windows-xp-native-x86 and
 windows-xp-native-x64. The broader `overall` score only covers verified-scope
 default/mobile targets and does not mean the protected goal is complete.
+Protected platform goal parity is **0.0%** for the current accepted-evidence
+registry (status=missing-accepted-evidence); it remains separate from the
+100.0% overall verified-readiness denominator until all four protected targets
+have real accepted evidence for one release source.
 
 Current readiness:
 

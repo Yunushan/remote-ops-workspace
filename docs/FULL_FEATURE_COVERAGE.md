@@ -114,7 +114,8 @@ must also pass `--xp-evidence-output-dir <xp-evidence-output-dir>`.
 Linux release-source upload staging must use
 `python scripts/stage_extended_linux_evidence_upload.py`, and XP release-source
 upload staging must use `python scripts/stage_xp_native_evidence_upload.py`;
-both stagers re-check finalized accepted-record assets before upload.
+both stagers re-check finalized accepted-record assets before upload and require
+the public final record to use canonical LF-terminated sorted JSON bytes.
 Every accepted record must include the current promotion config SHA-256. Linux
 records must include builder identity evidence plus its matching SHA-256,
 sanitized target-scoped builder `host_identity` binding and workflow dispatch
@@ -147,6 +148,10 @@ Windows XP rows. The JSON output keeps the same row data under
 `target_evidence_requirements` entries that list the required accepted registry
 record, release artifacts, review-bundle files, validation/finalization commands
 and XP security/smoke requirements for each protected target.
+Protected platform goal parity is **0.0%** for the current accepted-evidence
+registry (status=missing-accepted-evidence); the 100.0% overall verified
+readiness row does not include Linux i386, Linux armhf or Windows XP
+native-host promotion until real accepted evidence completes that separate goal.
 
 ## Scoring method
 

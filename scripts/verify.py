@@ -198,6 +198,11 @@ def build_steps(
             [python, "scripts/import_platform_evidence_artifacts.py", "--help"],
             env=_source_env(),
         ),
+        VerifyStep(
+            "platform remote release evidence auditor",
+            [python, "scripts/check_platform_release_evidence_remote.py", "--help"],
+            env=_source_env(),
+        ),
         *(
             [
                 VerifyStep(

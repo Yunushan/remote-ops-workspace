@@ -52,7 +52,8 @@ also runs
 `python scripts/import_platform_evidence_artifacts.py --release-tag v<project.version> --require-goal-targets --out-dir <release-assets-dir> --dry-run --verify-source-run`
 against the supplied release tag and release asset directory, proving the
 accepted records are release-importable, bound to the current checkout head and
-backed by completed successful dispatch runs with a complete artifact inventory
+backed by exact completed successful dispatch runs at the accepted run id,
+attempt, workflow path and source SHA with a complete artifact inventory
 containing exactly one non-expired, non-empty expected source artifact before
 downloaded bundle and publish-asset validation can pass. It then runs
 `python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-complete --assets-dir <release-assets-dir>`
@@ -70,8 +71,10 @@ confirms the GitHub Actions run is `completed`, concluded `success`, and came
 from a `workflow_dispatch` event. The exact run attempt's workflow file path
 must match `release_asset_source.workflow`. The run's `headSha` must match both
 `release_asset_source.head_sha` in the accepted record and the release
-checkout commit, and the run's attempt number must match
-`release_asset_source.run_attempt`. The run artifact inventory must be complete:
+checkout commit, the run's attempt number must match
+`release_asset_source.run_attempt`, and both `repository.full_name` and
+`head_repository.full_name` in the exact run metadata must match the repository
+in `release_asset_source.workflow_run_url`. The run artifact inventory must be complete:
 its `total_count` must match the fetched artifact list length, it must contain
 exactly one `release_asset_source.artifact_name` entry, and that artifact must
 not be expired or empty. The matched artifact metadata must also bind
@@ -80,6 +83,9 @@ commit. Failed, still-running, unrelated, wrong-attempt, wrong-commit,
 wrong-artifact-run, missing-artifact, expired-artifact or empty-artifact source
 runs are not valid release artifact provenance even when an artifact name
 matches.
+The same release source workflow run URL cannot carry conflicting accepted run
+attempts across protected-platform records for one release; that ambiguity is
+aggregate evidence only and cannot complete the parity block.
 The release workflow's `accepted-platform-evidence-assets` job must keep only
 read permissions for repository content and Actions artifacts; no write-scoped
 GitHub permission is acceptable for importing protected-platform evidence.
@@ -190,14 +196,18 @@ The publish asset checker also treats each finalized accepted-record JSON and
 each finalized review bundle manifest, archive and SHA-256 sidecar as release
 assets for the accepted target, so a promoted release must upload those evidence
 files. The final accepted-record JSON must exactly match the accepted registry
-entry and its `finalized_record_release_asset_url`; review bundle files must
-match the exact size and SHA-256 recorded in
-`configs/platform_verified_evidence.json`, and checksum sidecars must
-collectively cover every expected non-sidecar release file except the final
-accepted-record JSON, which is verified by content. When those same-tag accepted
-records are present, the publish asset checker also re-reads the uploaded review
-bundle ZIPs and reruns finalization to prove the release asset contents still
-match the accepted registry entries.
+entry, use canonical LF-terminated sorted JSON bytes, and bind its
+`finalized_record_release_asset_url`; review bundle files must match the exact
+size and SHA-256 recorded in `configs/platform_verified_evidence.json`, and
+checksum sidecars must collectively cover every expected non-sidecar release
+file except the final accepted-record JSON, which is verified by content. The
+post-upload remote release audit also checks the published final-record asset
+size and SHA-256 digest against that canonical public record and rejects stale
+protected-platform native/evidence assets that remain outside the audited
+accepted-evidence scope. When those same-tag accepted records are present, the
+publish asset checker also re-reads the uploaded review bundle ZIPs and reruns
+finalization to prove the release asset contents still match the accepted
+registry entries.
 Each accepted record must include the SHA-256 of the current
 `configs/platform_parity_promotion.json` contract, so stale records cannot
 promote readiness after required artifacts or evidence fields change.

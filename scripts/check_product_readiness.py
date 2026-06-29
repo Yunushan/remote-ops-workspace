@@ -66,6 +66,9 @@ RELEASE_ASSET_SOURCE_REQUIREMENT_KEYS = {
 }
 GITHUB_OWNER_RE = r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?"
 GITHUB_REPOSITORY_RE = re.compile(rf"{GITHUB_OWNER_RE}/[A-Za-z0-9._-]+\Z")
+GITHUB_ACTIONS_RUN_RE = re.compile(
+    rf"https://github\.com/{GITHUB_OWNER_RE}/[A-Za-z0-9._-]+/actions/runs/\d+\Z"
+)
 RELEASE_TAG_RE = re.compile(r"v\d+\.\d+\.\d+\Z")
 SOURCE_HEAD_RE = re.compile(r"[0-9a-f]{40}\Z")
 
@@ -302,6 +305,7 @@ def check_accepted_evidence_row_bindings(row: dict[str, object]) -> list[str]:
         "accepted_evidence_release_repositories",
         "accepted_evidence_release_source_heads",
         "accepted_evidence_release_source_run_attempts",
+        "accepted_evidence_release_source_run_urls",
         "accepted_evidence_release_source_workflows",
     ):
         value = row.get(field)
@@ -342,6 +346,10 @@ def check_accepted_evidence_binding_value(
     if field == "accepted_evidence_release_source_run_attempts":
         if not isinstance(value, int) or isinstance(value, bool) or value < 1:
             return [f"{label} must be a positive integer GitHub Actions run attempt"]
+        return []
+    if field == "accepted_evidence_release_source_run_urls":
+        if not isinstance(value, str) or not GITHUB_ACTIONS_RUN_RE.fullmatch(value):
+            return [f"{label} must be a GitHub Actions run URL"]
         return []
     if field == "accepted_evidence_release_source_workflows":
         expected = expected_release_asset_source_workflow(accepted_target)
@@ -849,6 +857,28 @@ def expected_protected_goal_status(
     return "missing-accepted-evidence"
 
 
+def expected_release_source_run_attempt_conflicts(
+    run_urls_by_target: dict[str, object],
+    attempts_by_target: dict[str, object],
+) -> dict[str, dict[str, int]]:
+    attempts_by_url: dict[str, dict[str, int]] = {}
+    for target, run_url in sorted(run_urls_by_target.items()):
+        attempt = attempts_by_target.get(target)
+        if not isinstance(run_url, str) or not isinstance(attempt, int) or isinstance(attempt, bool):
+            continue
+        if attempt <= 0:
+            continue
+        attempts_by_url.setdefault(run_url.rstrip("/"), {})[str(target)] = attempt
+    return {
+        run_url: {
+            target: attempts_by_target[target]
+            for target in sorted(attempts_by_target)
+        }
+        for run_url, attempts_by_target in sorted(attempts_by_url.items())
+        if len(set(attempts_by_target.values())) > 1
+    }
+
+
 def check_protected_goal_release_scope(goal: dict[str, object]) -> list[str]:
     errors: list[str] = []
     required_targets = goal.get("required_targets")
@@ -857,8 +887,11 @@ def check_protected_goal_release_scope(goal: dict[str, object]) -> list[str]:
     release_repositories = goal.get("release_repositories")
     release_source_heads = goal.get("release_source_heads")
     selected_release_source_run_attempts = goal.get("selected_release_source_run_attempts")
+    selected_release_source_run_urls = goal.get("selected_release_source_run_urls")
     selected_release_source_workflows = goal.get("selected_release_source_workflows")
     release_source_run_attempts = goal.get("release_source_run_attempts")
+    release_source_run_urls = goal.get("release_source_run_urls")
+    reported_release_source_run_attempt_conflicts = goal.get("release_source_run_attempt_conflicts")
     release_source_workflows = goal.get("release_source_workflows")
     if not isinstance(release_tags, list):
         errors.append("protected platform goal parity must expose release_tags")
@@ -872,12 +905,21 @@ def check_protected_goal_release_scope(goal: dict[str, object]) -> list[str]:
     if not isinstance(selected_release_source_run_attempts, dict):
         errors.append("protected platform goal parity must expose selected_release_source_run_attempts")
         selected_release_source_run_attempts = {}
+    if not isinstance(selected_release_source_run_urls, dict):
+        errors.append("protected platform goal parity must expose selected_release_source_run_urls")
+        selected_release_source_run_urls = {}
     if not isinstance(selected_release_source_workflows, dict):
         errors.append("protected platform goal parity must expose selected_release_source_workflows")
         selected_release_source_workflows = {}
     if not isinstance(release_source_run_attempts, dict):
         errors.append("protected platform goal parity must expose release_source_run_attempts")
         release_source_run_attempts = {}
+    if not isinstance(release_source_run_urls, dict):
+        errors.append("protected platform goal parity must expose release_source_run_urls")
+        release_source_run_urls = {}
+    if not isinstance(reported_release_source_run_attempt_conflicts, dict):
+        errors.append("protected platform goal parity must expose release_source_run_attempt_conflicts")
+        reported_release_source_run_attempt_conflicts = {}
     if not isinstance(release_source_workflows, dict):
         errors.append("protected platform goal parity must expose release_source_workflows")
         release_source_workflows = {}
@@ -917,6 +959,23 @@ def check_protected_goal_release_scope(goal: dict[str, object]) -> list[str]:
                 errors.append(
                     "protected platform goal parity release_source_run_attempts"
                     f"[{target}] must be a positive integer"
+                )
+    if isinstance(accepted_targets, list) and isinstance(release_source_run_urls, dict):
+        missing_run_urls = sorted(
+            str(target)
+            for target in accepted_targets
+            if str(target) not in release_source_run_urls
+        )
+        if missing_run_urls:
+            errors.append(
+                "protected platform goal parity release_source_run_urls missing accepted targets: "
+                f"{missing_run_urls}"
+            )
+        for target, run_url in sorted(release_source_run_urls.items()):
+            if not isinstance(run_url, str) or not GITHUB_ACTIONS_RUN_RE.fullmatch(run_url):
+                errors.append(
+                    "protected platform goal parity release_source_run_urls"
+                    f"[{target}] must be a GitHub Actions run URL"
                 )
     if isinstance(accepted_targets, list) and isinstance(release_source_workflows, dict):
         missing_workflows = sorted(
@@ -965,6 +1024,33 @@ def check_protected_goal_release_scope(goal: dict[str, object]) -> list[str]:
                         "protected platform goal parity selected_release_source_run_attempts"
                         f"[{target}] must be a positive integer"
                     )
+        if isinstance(selected_release_source_run_urls, dict):
+            missing_selected_run_urls = sorted(
+                target
+                for target in selected_target_ids
+                if target not in selected_release_source_run_urls
+            )
+            if missing_selected_run_urls:
+                errors.append(
+                    "protected platform goal parity selected_release_source_run_urls "
+                    f"missing selected targets: {missing_selected_run_urls}"
+                )
+            unexpected_selected_run_urls = sorted(
+                str(target)
+                for target in selected_release_source_run_urls
+                if str(target) not in selected_target_ids
+            )
+            if unexpected_selected_run_urls:
+                errors.append(
+                    "protected platform goal parity selected_release_source_run_urls "
+                    f"contains targets outside selected release scope: {unexpected_selected_run_urls}"
+                )
+            for target, run_url in sorted(selected_release_source_run_urls.items()):
+                if not isinstance(run_url, str) or not GITHUB_ACTIONS_RUN_RE.fullmatch(run_url):
+                    errors.append(
+                        "protected platform goal parity selected_release_source_run_urls"
+                        f"[{target}] must be a GitHub Actions run URL"
+                    )
         if isinstance(selected_release_source_workflows, dict):
             missing_selected_workflows = sorted(
                 target
@@ -993,10 +1079,20 @@ def check_protected_goal_release_scope(goal: dict[str, object]) -> list[str]:
                         "protected platform goal parity selected_release_source_workflows"
                         f"[{target}] must be {expected}"
                     )
+    expected_conflicts = expected_release_source_run_attempt_conflicts(
+        release_source_run_urls,
+        release_source_run_attempts,
+    )
+    if reported_release_source_run_attempt_conflicts != expected_conflicts:
+        errors.append(
+            "protected platform goal parity release_source_run_attempt_conflicts must match "
+            "release source run URLs and attempts"
+        )
     if (
         isinstance(required_targets, list)
         and isinstance(selected_targets, list)
         and isinstance(selected_release_source_run_attempts, dict)
+        and isinstance(selected_release_source_run_urls, dict)
         and isinstance(selected_release_source_workflows, dict)
         and isinstance(provenance_complete, bool)
     ):
@@ -1005,12 +1101,14 @@ def check_protected_goal_release_scope(goal: dict[str, object]) -> list[str]:
             and sorted(str(target) for target in selected_targets)
             == sorted(str(target) for target in required_targets)
             and all(str(target) in selected_release_source_run_attempts for target in required_targets)
+            and all(str(target) in selected_release_source_run_urls for target in required_targets)
             and all(str(target) in selected_release_source_workflows for target in required_targets)
+            and not expected_conflicts
         )
         if provenance_complete is not expected_provenance_complete:
             errors.append(
                 "protected platform goal parity release_source_provenance_complete must match "
-                "required target run-attempt and workflow coverage"
+                "required target run-attempt, run URL, workflow and conflict coverage"
             )
     scope = str(goal.get("scope", ""))
     for snippet in (
@@ -1019,6 +1117,7 @@ def check_protected_goal_release_scope(goal: dict[str, object]) -> list[str]:
         "per-target release source workflow files",
         "one release source head SHA",
         "per-record release source run attempts",
+        "without conflicting attempts for one run URL",
     ):
         if snippet not in scope:
             errors.append(f"protected platform goal parity scope must mention {snippet}")

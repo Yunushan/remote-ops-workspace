@@ -15,6 +15,7 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 from check_platform_review_bundle_artifacts import (  # noqa: E402
+    canonical_public_record_bytes,
     check_platform_review_bundle_artifacts,
 )
 from check_platform_verified_evidence import (  # noqa: E402
@@ -37,7 +38,9 @@ from make_platform_verified_evidence_record import sha256_file  # noqa: E402
 
 SOURCE_RUN_METADATA_JQ = (
     "{id: .id, htmlUrl: .html_url, attempt: .run_attempt, status: .status, "
-    "conclusion: .conclusion, event: .event, headSha: .head_sha, path: .path}"
+    "conclusion: .conclusion, event: .event, headSha: .head_sha, path: .path, "
+    "repositoryFullName: .repository.full_name, "
+    "headRepositoryFullName: .head_repository.full_name}"
 )
 SOURCE_RUN_ARTIFACTS_PAGE_SIZE = 100
 REQUIRE_VERIFY_SOURCE_RUN_DRY_RUN_ERROR = (
@@ -491,6 +494,17 @@ def verify_source_run(
             f"{target} release_asset_source workflow run htmlUrl must match accepted record "
             f"{expected_workflow_run_url}, got {data.get('htmlUrl')!r}"
         )
+    expected_repository = repository_from_workflow_run_url(expected_workflow_run_url)
+    if data.get("repositoryFullName") != expected_repository:
+        errors.append(
+            f"{target} release_asset_source workflow run repositoryFullName must match accepted record "
+            f"{expected_repository}, got {data.get('repositoryFullName')!r}"
+        )
+    if data.get("headRepositoryFullName") != expected_repository:
+        errors.append(
+            f"{target} release_asset_source workflow run headRepositoryFullName must match accepted record "
+            f"{expected_repository}, got {data.get('headRepositoryFullName')!r}"
+        )
     if data.get("status") != "completed":
         errors.append(
             f"{target} release_asset_source workflow run status must be completed, got {data.get('status')!r}"
@@ -527,6 +541,11 @@ def verify_source_run(
         )
     )
     return errors
+
+
+def repository_from_workflow_run_url(workflow_run_url: str) -> str:
+    match = GITHUB_ACTIONS_RUN_RE.fullmatch(workflow_run_url.rstrip("/"))
+    return match.group(1) if match else ""
 
 
 def verify_source_artifact(
@@ -902,13 +921,19 @@ def validate_downloaded_final_record(record: dict[str, Any], *, source_root: Pat
     if not path.is_file():
         return [f"{target} downloaded artifact missing finalized accepted record: {filename}"]
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        raw_bytes = path.read_bytes()
+    except OSError as exc:
+        return [f"{target} finalized accepted record source file is not readable JSON: {filename}: {exc}"]
+    try:
+        data = json.loads(raw_bytes.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         return [f"{target} finalized accepted record source file is not readable JSON: {filename}: {exc}"]
     if not isinstance(data, dict):
         return [f"{target} finalized accepted record source file must contain a JSON object: {filename}"]
     if data != public_record(record):
         return [f"{target} finalized accepted record source file must match accepted registry record: {filename}"]
+    if raw_bytes != canonical_public_record_bytes(record):
+        return [f"{target} finalized accepted record source file must use canonical sorted JSON: {filename}"]
     return []
 
 

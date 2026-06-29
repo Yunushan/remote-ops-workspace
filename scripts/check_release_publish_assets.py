@@ -33,6 +33,10 @@ PUBLISH_PROTECTED_PLATFORM_ASSET_COMMAND = (
     'python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" '
     "--require-complete --assets-dir release-assets"
 )
+PUBLISH_REMOTE_PLATFORM_EVIDENCE_AUDIT_COMMAND = (
+    'python scripts/check_platform_release_evidence_remote.py --repository "${{ github.repository }}" '
+    '--release-tag "${{ github.ref_name }}" --require-goal-targets --require-source-runs'
+)
 FINAL_ACCEPTED_RECORD_RE = re.compile(
     r"^platform-verified-evidence-(linux-i386|linux-armhf|windows-xp-native-x86|windows-xp-native-x64)-final\.json$"
 )
@@ -180,10 +184,14 @@ def check_publish_contract(
         return [*errors, "release workflow missing publish job"]
     required_snippets = {
         "actions/download-artifact@v8": "artifact download",
+        "actions: read": "Actions metadata read permission for published evidence audit",
+        "GH_TOKEN: ${{ github.token }}": "GitHub token for published evidence audit",
         "merge-multiple: true": "merged downloaded artifact directory",
         PUBLISH_PROTECTED_PLATFORM_ASSET_COMMAND: "protected platform release asset gate",
         "python scripts/check_release_publish_assets.py --assets-dir release-assets --tag": "publish asset validation",
+        PUBLISH_REMOTE_PLATFORM_EVIDENCE_AUDIT_COMMAND: "published protected platform evidence audit",
         "--require-platform-goal-targets": "protected platform goal publish gate",
+        "--require-source-runs": "published evidence source run audit",
         "softprops/action-gh-release@v3": "GitHub release upload",
         "fail_on_unmatched_files: true": "strict GitHub release upload",
     }
@@ -193,12 +201,15 @@ def check_publish_contract(
     protected_gate_index = publish_block.find(PUBLISH_PROTECTED_PLATFORM_ASSET_COMMAND)
     validate_index = publish_block.find("scripts/check_release_publish_assets.py")
     upload_index = publish_block.find("softprops/action-gh-release")
+    remote_audit_index = publish_block.find(PUBLISH_REMOTE_PLATFORM_EVIDENCE_AUDIT_COMMAND)
     if protected_gate_index < 0 or validate_index < 0 or protected_gate_index > validate_index:
         errors.append("protected platform release asset gate must run before publish asset validation")
     if protected_gate_index < 0 or upload_index < 0 or protected_gate_index > upload_index:
         errors.append("protected platform release asset gate must run before GitHub release upload")
     if validate_index < 0 or upload_index < 0 or validate_index > upload_index:
         errors.append("publish asset validation must run before GitHub release upload")
+    if remote_audit_index < 0 or upload_index < 0 or remote_audit_index < upload_index:
+        errors.append("published protected platform evidence audit must run after GitHub release upload")
     if "- accepted-platform-evidence-assets" not in publish_block:
         errors.append("publish job must depend on accepted-platform-evidence-assets")
     return errors

@@ -76,17 +76,30 @@ def test_product_readiness_rejects_missing_protected_goal_release_source_workflo
     assert "protected platform goal parity must expose release_source_workflows" in errors
 
 
+def test_product_readiness_rejects_missing_protected_goal_release_source_run_urls(monkeypatch) -> None:
+    checker = load_product_readiness_checker()
+    report = deepcopy(checker.coverage_report())
+    del report["platform_verified_readiness"]["protected_goal_parity"]["release_source_run_urls"]
+    monkeypatch.setattr(checker, "coverage_report", lambda: report)
+
+    errors = checker.check_product_readiness()
+
+    assert "protected platform goal parity must expose release_source_run_urls" in errors
+
+
 def test_product_readiness_rejects_missing_protected_goal_selected_release_source_maps(monkeypatch) -> None:
     checker = load_product_readiness_checker()
     report = deepcopy(checker.coverage_report())
     goal = report["platform_verified_readiness"]["protected_goal_parity"]
     del goal["selected_release_source_run_attempts"]
+    del goal["selected_release_source_run_urls"]
     del goal["selected_release_source_workflows"]
     monkeypatch.setattr(checker, "coverage_report", lambda: report)
 
     errors = checker.check_product_readiness()
 
     assert "protected platform goal parity must expose selected_release_source_run_attempts" in errors
+    assert "protected platform goal parity must expose selected_release_source_run_urls" in errors
     assert "protected platform goal parity must expose selected_release_source_workflows" in errors
 
 
@@ -95,6 +108,9 @@ def test_product_readiness_rejects_selected_release_source_maps_outside_scope(mo
     report = deepcopy(checker.coverage_report())
     goal = report["platform_verified_readiness"]["protected_goal_parity"]
     goal["selected_release_source_run_attempts"] = {"linux-i386": 1}
+    goal["selected_release_source_run_urls"] = {
+        "linux-i386": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+    }
     goal["selected_release_source_workflows"] = {
         "linux-i386": ".github/workflows/extended-platform-evidence.yml",
     }
@@ -104,6 +120,10 @@ def test_product_readiness_rejects_selected_release_source_maps_outside_scope(mo
 
     assert (
         "protected platform goal parity selected_release_source_run_attempts "
+        "contains targets outside selected release scope: ['linux-i386']"
+    ) in errors
+    assert (
+        "protected platform goal parity selected_release_source_run_urls "
         "contains targets outside selected release scope: ['linux-i386']"
     ) in errors
     assert (
@@ -136,7 +156,30 @@ def test_product_readiness_rejects_inconsistent_protected_goal_release_source_pr
 
     assert (
         "protected platform goal parity release_source_provenance_complete must match "
-        "required target run-attempt and workflow coverage"
+        "required target run-attempt, run URL, workflow and conflict coverage"
+    ) in errors
+
+
+def test_product_readiness_rejects_inconsistent_source_run_attempt_conflict_map(monkeypatch) -> None:
+    checker = load_product_readiness_checker()
+    report = deepcopy(checker.coverage_report())
+    goal = report["platform_verified_readiness"]["protected_goal_parity"]
+    goal["release_source_run_urls"] = {
+        "linux-i386": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        "windows-xp-native-x86": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+    }
+    goal["release_source_run_attempts"] = {
+        "linux-i386": 1,
+        "windows-xp-native-x86": 2,
+    }
+    goal["release_source_run_attempt_conflicts"] = {}
+    monkeypatch.setattr(checker, "coverage_report", lambda: report)
+
+    errors = checker.check_product_readiness()
+
+    assert (
+        "protected platform goal parity release_source_run_attempt_conflicts must match "
+        "release source run URLs and attempts"
     ) in errors
 
 
@@ -711,6 +754,23 @@ def test_product_readiness_rejects_missing_accepted_row_release_source_run_attem
     assert "linux-i386 accepted evidence row must expose accepted_evidence_release_source_run_attempts" in errors
 
 
+def test_product_readiness_rejects_missing_accepted_row_release_source_run_urls(monkeypatch) -> None:
+    checker = load_product_readiness_checker()
+    report = deepcopy(checker.coverage_report())
+    linux_i386 = next(
+        row
+        for row in report["platform_verified_readiness"]["targets"]
+        if row["target"] == "linux-i386"
+    )
+    linux_i386["accepted_evidence_present_targets"] = ["linux-i386"]
+    linux_i386.pop("accepted_evidence_release_source_run_urls", None)
+    monkeypatch.setattr(checker, "coverage_report", lambda: report)
+
+    errors = checker.check_product_readiness()
+
+    assert "linux-i386 accepted evidence row must expose accepted_evidence_release_source_run_urls" in errors
+
+
 def test_product_readiness_rejects_missing_accepted_row_release_source_workflows(monkeypatch) -> None:
     checker = load_product_readiness_checker()
     report = deepcopy(checker.coverage_report())
@@ -743,6 +803,7 @@ def test_product_readiness_rejects_weak_accepted_row_release_bindings(monkeypatc
     }
     linux_i386["accepted_evidence_release_source_heads"] = {"linux-i386": "ABC123"}
     linux_i386["accepted_evidence_release_source_run_attempts"] = {"linux-i386": 0}
+    linux_i386["accepted_evidence_release_source_run_urls"] = {"linux-i386": "latest"}
     linux_i386["accepted_evidence_release_source_workflows"] = {
         "linux-i386": ".github/workflows/xp-native-evidence.yml",
     }
@@ -765,6 +826,10 @@ def test_product_readiness_rejects_weak_accepted_row_release_bindings(monkeypatc
     assert (
         "linux-i386 accepted evidence accepted_evidence_release_source_run_attempts[linux-i386] "
         "must be a positive integer GitHub Actions run attempt"
+    ) in errors
+    assert (
+        "linux-i386 accepted evidence accepted_evidence_release_source_run_urls[linux-i386] "
+        "must be a GitHub Actions run URL"
     ) in errors
     assert (
         "linux-i386 accepted evidence accepted_evidence_release_source_workflows[linux-i386] "

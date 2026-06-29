@@ -59,6 +59,96 @@ def test_platform_support_truth_rejects_inflated_manual_readiness() -> None:
     assert "linux-armhf verified_readiness_scope must be False, got True" in errors
 
 
+def test_platform_support_truth_accepts_evidence_backed_linux_promotion() -> None:
+    checker = _load_platform_support_truth_checker()
+    targets = _load_json("configs/platform_targets.json")
+    report = deepcopy(coverage_report())
+    rows = {row["target"]: row for row in report["platform_verified_readiness"]["targets"]}
+    linux_i386 = rows["linux-i386"]
+    linux_i386["current_percent"] = 100.0
+    linux_i386["gap_percent"] = 0.0
+    linux_i386["status"] = "verified-accepted-native-evidence"
+    linux_i386["verified_readiness_scope"] = True
+    _bind_accepted_evidence_row(linux_i386, ["linux-i386"])
+
+    errors = checker.check_platform_readiness_report(targets, report)
+
+    assert errors == []
+
+
+def test_platform_support_truth_accepts_partial_xp_native_evidence() -> None:
+    checker = _load_platform_support_truth_checker()
+    targets = _load_json("configs/platform_targets.json")
+    report = deepcopy(coverage_report())
+    rows = {row["target"]: row for row in report["platform_verified_readiness"]["targets"]}
+    xp = rows["Windows XP"]
+    xp["status"] = "partial-xp-native-host-evidence"
+    xp["accepted_evidence_present_targets"] = ["windows-xp-native-x86"]
+    xp["accepted_evidence_missing_targets"] = ["windows-xp-native-x64"]
+    _bind_accepted_evidence_row(xp, ["windows-xp-native-x86"])
+
+    errors = checker.check_platform_readiness_report(targets, report)
+
+    assert errors == []
+
+
+def test_platform_support_truth_accepts_mixed_pair_as_partial_xp_native_evidence() -> None:
+    checker = _load_platform_support_truth_checker()
+    targets = _load_json("configs/platform_targets.json")
+    report = deepcopy(coverage_report())
+    rows = {row["target"]: row for row in report["platform_verified_readiness"]["targets"]}
+    xp = rows["Windows XP"]
+    xp["status"] = "partial-xp-native-host-evidence"
+    _bind_accepted_evidence_row(
+        xp,
+        ["windows-xp-native-x86", "windows-xp-native-x64"],
+    )
+
+    errors = checker.check_platform_readiness_report(targets, report)
+
+    assert errors == []
+
+
+def test_platform_support_truth_accepts_full_xp_native_evidence_promotion() -> None:
+    checker = _load_platform_support_truth_checker()
+    targets = _load_json("configs/platform_targets.json")
+    report = deepcopy(coverage_report())
+    rows = {row["target"]: row for row in report["platform_verified_readiness"]["targets"]}
+    xp = rows["Windows XP"]
+    xp["current_percent"] = 100.0
+    xp["gap_percent"] = 0.0
+    xp["status"] = "verified-xp-native-host-evidence"
+    xp["verified_readiness_scope"] = True
+    _bind_accepted_evidence_row(
+        xp,
+        ["windows-xp-native-x86", "windows-xp-native-x64"],
+    )
+
+    errors = checker.check_platform_readiness_report(targets, report)
+
+    assert errors == []
+
+
+def test_platform_support_truth_rejects_unbound_evidence_backed_linux_promotion() -> None:
+    checker = _load_platform_support_truth_checker()
+    targets = _load_json("configs/platform_targets.json")
+    report = deepcopy(coverage_report())
+    rows = {row["target"]: row for row in report["platform_verified_readiness"]["targets"]}
+    linux_i386 = rows["linux-i386"]
+    linux_i386["current_percent"] = 100.0
+    linux_i386["gap_percent"] = 0.0
+    linux_i386["status"] = "verified-accepted-native-evidence"
+    linux_i386["verified_readiness_scope"] = True
+
+    errors = checker.check_platform_readiness_report(targets, report)
+
+    assert (
+        "linux-i386 evidence-backed readiness must expose accepted evidence "
+        "present=['linux-i386'] and missing=[]"
+    ) in errors
+    assert "linux-i386 accepted evidence for linux-i386 must expose a concrete release tag" in errors
+
+
 def test_platform_support_truth_rejects_native_legacy_windows_claim() -> None:
     checker = _load_platform_support_truth_checker()
     docs = _read_required_docs(checker)
@@ -80,6 +170,27 @@ def test_platform_support_truth_requires_generated_platform_rows() -> None:
     errors = checker.check_platform_docs(docs, coverage_report())
 
     assert any("missing generated platform row" in error and "linux-i386" in error for error in errors)
+
+
+def test_platform_support_truth_requires_current_protected_goal_docs() -> None:
+    checker = _load_platform_support_truth_checker()
+    docs = _read_required_docs(checker)
+    docs["README.md"] = docs["README.md"].replace(
+        (
+            "Protected platform goal parity is **0.0%** for the current "
+            "accepted-evidence registry (status=missing-accepted-evidence)"
+        ),
+        "Protected platform goal parity is complete",
+    )
+
+    errors = checker.check_platform_docs(docs, coverage_report())
+
+    assert any(
+        "README.md missing current protected platform goal snippet" in error
+        and "Protected platform goal parity is **0.0%**" in error
+        and "status=missing-accepted-evidence" in error
+        for error in errors
+    )
 
 
 def test_platform_support_truth_requires_tagged_strict_platform_publish_docs() -> None:
@@ -287,6 +398,33 @@ def _read_required_docs(checker: Any) -> dict[str, str]:
 
 def _load_json(path: str) -> dict[str, Any]:
     return json.loads(Path(path).read_text(encoding="utf-8"))
+
+
+def _bind_accepted_evidence_row(row: dict[str, Any], targets: list[str]) -> None:
+    required = (
+        ["windows-xp-native-x86", "windows-xp-native-x64"]
+        if any(target.startswith("windows-xp-native-") for target in targets)
+        else targets
+    )
+    row["accepted_evidence_required_targets"] = required
+    row["accepted_evidence_present_targets"] = targets
+    row["accepted_evidence_missing_targets"] = [
+        target for target in required if target not in targets
+    ]
+    row["accepted_evidence_release_tags"] = {target: "v1.0.2" for target in targets}
+    row["accepted_evidence_release_repositories"] = {
+        target: ["example/remote-ops-workspace"] for target in targets
+    }
+    row["accepted_evidence_release_source_heads"] = {target: "a" * 40 for target in targets}
+    row["accepted_evidence_release_source_run_attempts"] = {target: 1 for target in targets}
+    row["accepted_evidence_release_source_workflows"] = {
+        target: (
+            ".github/workflows/xp-native-evidence.yml"
+            if target.startswith("windows-xp-native-")
+            else ".github/workflows/extended-platform-evidence.yml"
+        )
+        for target in targets
+    }
 
 
 def _load_platform_support_truth_checker():

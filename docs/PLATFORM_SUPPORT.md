@@ -122,7 +122,14 @@ Generate candidate accepted records with
 XP evidence validators pass; package the review bundle, then use
 `python scripts/finalize_platform_verified_evidence_record.py --append-registry`
 only after the finalized record binds the real release/run evidence, review
-bundle manifest, review bundle archive and review bundle SHA-256 sidecar.
+bundle manifest, review bundle archive, review bundle SHA-256 sidecar and
+source artifact staged upload command. Candidate generation must pass
+`--staged-upload-out-dir <release-upload-staging-dir>`, and XP candidates must
+also pass `--xp-evidence-output-dir <xp-evidence-output-dir>`.
+Linux release-source upload staging must use
+`python scripts/stage_extended_linux_evidence_upload.py`, and XP release-source
+upload staging must use `python scripts/stage_xp_native_evidence_upload.py`;
+both stagers re-check finalized accepted-record assets before upload.
 `python scripts/check_platform_verified_evidence.py` checks the persisted
 registry in finalized-only mode. Candidate validation happens through the
 candidate-generation, review-bundle and finalization commands before append.

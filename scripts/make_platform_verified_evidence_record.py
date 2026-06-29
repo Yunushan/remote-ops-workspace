@@ -51,6 +51,8 @@ DEFAULT_EVIDENCE_POLICY = (
     "release source run-attempt binding, "
     "release source workflow file binding, "
     "local protected-goal evidence preflight command binding, "
+    "source artifact staged upload command binding, "
+    "staged upload source/evidence/output root separation, "
     "finalized accepted-record source file binding, "
     "finalized accepted-record release asset URL binding, "
     "Linux release source artifact names must be target/release-scoped, "
@@ -212,11 +214,27 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "defaults to the workspace root"
         ),
     )
+    parser.add_argument(
+        "--staged-upload-out-dir",
+        type=Path,
+        help=(
+            "directory populated by the staged release-upload command; defaults to "
+            "linux-evidence-upload for Linux targets or xp-evidence-upload for XP targets"
+        ),
+    )
     parser.add_argument("--xp-evidence", type=Path, help="Windows XP native evidence JSON for XP targets")
     parser.add_argument(
         "--xp-evidence-dir",
         type=Path,
         help="directory containing smoke evidence files referenced by --xp-evidence",
+    )
+    parser.add_argument(
+        "--xp-evidence-output-dir",
+        type=Path,
+        help=(
+            "XP finalized evidence bundle directory used by staged upload; defaults to "
+            "xp-evidence-output/<target>/<release-tag>"
+        ),
     )
     parser.add_argument(
         "--append-registry",
@@ -761,6 +779,7 @@ def linux_record(args: argparse.Namespace, promotion: dict[str, Any]) -> dict[st
         ),
         "linux_smoke_evidence_sha256": linux_smoke_evidence_sha256_map(args.linux_smoke_evidence),
         "local_evidence_preflight_command": local_evidence_preflight_command(args),
+        "staged_upload_command": staged_upload_command(args),
         "artifact_validation_command": (
             f"python scripts/check_platform_promotion_artifacts.py --target {target} "
             f"--assets-dir {args.assets_dir.as_posix()} --tag {args.release_tag} --strict"
@@ -876,6 +895,7 @@ def xp_record(args: argparse.Namespace, promotion: dict[str, Any]) -> dict[str, 
         "release_asset_source": release_asset_source(args, target, promotion),
         "native_evidence_validation_command": xp_native_evidence_validation_command(args),
         "local_evidence_preflight_command": local_evidence_preflight_command(args),
+        "staged_upload_command": staged_upload_command(args),
         "artifact_validation_command": (
             f"python scripts/check_platform_promotion_artifacts.py --target {target} "
             f"--assets-dir {args.assets_dir.as_posix()} --tag {args.release_tag} --strict"
@@ -924,6 +944,39 @@ def local_evidence_preflight_command(args: argparse.Namespace) -> str:
         f"--xp-source-head-sha {args.release_source_head_sha} "
         f"--xp-source-run-attempt {args.release_source_run_attempt}"
     )
+
+
+def staged_upload_command(args: argparse.Namespace) -> str:
+    target = str(args.target)
+    out_dir = staged_upload_out_dir(args)
+    if target in LINUX_TARGETS:
+        return (
+            "python scripts/stage_extended_linux_evidence_upload.py "
+            f"--target {target} --release-tag {args.release_tag} "
+            f"--source-dir {args.assets_dir.as_posix()} "
+            f"--out-dir {out_dir.as_posix()} --force"
+        )
+    return (
+        "python scripts/stage_xp_native_evidence_upload.py "
+        f"--target {target} --release-tag {args.release_tag} "
+        f"--assets-dir {args.assets_dir.as_posix()} "
+        f"--evidence-output-dir {xp_evidence_output_dir(args).as_posix()} "
+        f"--out-dir {out_dir.as_posix()} --force"
+    )
+
+
+def staged_upload_out_dir(args: argparse.Namespace) -> Path:
+    override = getattr(args, "staged_upload_out_dir", None)
+    if override is not None:
+        return override
+    return Path("linux-evidence-upload") if str(args.target) in LINUX_TARGETS else Path("xp-evidence-upload")
+
+
+def xp_evidence_output_dir(args: argparse.Namespace) -> Path:
+    override = getattr(args, "xp_evidence_output_dir", None)
+    if override is not None:
+        return override
+    return Path("xp-evidence-output") / str(args.target) / str(args.release_tag)
 
 
 def xp_workflow_inputs(args: argparse.Namespace) -> dict[str, str]:

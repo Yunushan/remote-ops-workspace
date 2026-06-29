@@ -82,6 +82,85 @@ def test_platform_parity_promotion_requires_local_evidence_preflight() -> None:
     assert "linux-i386 promotion_to_100_requires missing keys: ['local_evidence_preflight_command']" in errors
 
 
+def test_platform_parity_promotion_requires_staged_upload_command() -> None:
+    checker = _load_platform_parity_promotion_checker()
+    promotion = _load_json("configs/platform_parity_promotion.json")
+    linux = _promotion_entry(promotion, "linux-armhf")
+    xp = _promotion_entry(promotion, "windows-xp-native-x86")
+    del linux["promotion_to_100_requires"]["staged_upload_command"]
+    del xp["promotion_to_100_requires"]["staged_upload_command"]
+
+    errors = checker.check_platform_parity_promotion(promotion=promotion)
+
+    assert "linux-armhf promotion_to_100_requires missing keys: ['staged_upload_command']" in errors
+    assert "windows-xp-native-x86 promotion_to_100_requires missing keys: ['staged_upload_command']" in errors
+
+
+def test_platform_parity_promotion_rejects_unscoped_staged_upload_command() -> None:
+    checker = _load_platform_parity_promotion_checker()
+    promotion = _load_json("configs/platform_parity_promotion.json")
+    linux = _promotion_entry(promotion, "linux-i386")["promotion_to_100_requires"]
+    linux["staged_upload_command"] = linux["staged_upload_command"].replace(
+        "<target-release-artifact-dir>",
+        "<artifact-dir>",
+    )
+    xp = _promotion_entry(promotion, "windows-xp-native-x64")["promotion_to_100_requires"]
+    xp["staged_upload_command"] = xp["staged_upload_command"].replace(
+        "<xp-evidence-output-dir>",
+        "<evidence-output>",
+    )
+
+    errors = checker.check_platform_parity_promotion(promotion=promotion)
+
+    assert any("linux-i386 staged_upload_command must be" in error for error in errors)
+    assert any("windows-xp-native-x64 staged_upload_command must be" in error for error in errors)
+
+
+def test_platform_parity_promotion_rejects_staged_upload_command_without_force() -> None:
+    checker = _load_platform_parity_promotion_checker()
+    promotion = _load_json("configs/platform_parity_promotion.json")
+    linux = _promotion_entry(promotion, "linux-armhf")["promotion_to_100_requires"]
+    linux["staged_upload_command"] = linux["staged_upload_command"].replace(" --force", "")
+    xp = _promotion_entry(promotion, "windows-xp-native-x86")["promotion_to_100_requires"]
+    xp["staged_upload_command"] = xp["staged_upload_command"].replace(" --force", "")
+
+    errors = checker.check_platform_parity_promotion(promotion=promotion)
+
+    assert any("linux-armhf staged_upload_command must be" in error for error in errors)
+    assert any("windows-xp-native-x86 staged_upload_command must be" in error for error in errors)
+
+
+def test_platform_parity_promotion_requires_candidate_upload_path_bindings() -> None:
+    checker = _load_platform_parity_promotion_checker()
+    promotion = _load_json("configs/platform_parity_promotion.json")
+    linux = _promotion_entry(promotion, "linux-i386")["promotion_to_100_requires"]
+    linux["accepted_evidence_candidate_command"] = linux[
+        "accepted_evidence_candidate_command"
+    ].replace(" --staged-upload-out-dir <release-upload-staging-dir>", "")
+    xp = _promotion_entry(promotion, "windows-xp-native-x64")["promotion_to_100_requires"]
+    xp["accepted_evidence_candidate_command"] = xp[
+        "accepted_evidence_candidate_command"
+    ].replace(" --staged-upload-out-dir <release-upload-staging-dir>", "")
+    xp["accepted_evidence_candidate_command"] = xp[
+        "accepted_evidence_candidate_command"
+    ].replace(" --xp-evidence-output-dir <xp-evidence-output-dir>", "")
+
+    errors = checker.check_platform_parity_promotion(promotion=promotion)
+
+    assert (
+        "linux-i386 accepted_evidence_candidate_command must bind staged upload out dir"
+        in errors
+    )
+    assert (
+        "windows-xp-native-x64 accepted_evidence_candidate_command must bind staged upload out dir"
+        in errors
+    )
+    assert (
+        "windows-xp-native-x64 accepted_evidence_candidate_command must bind XP evidence output dir"
+        in errors
+    )
+
+
 def test_platform_parity_promotion_requires_linux_smoke_evidence_key() -> None:
     checker = _load_platform_parity_promotion_checker()
     promotion = _load_json("configs/platform_parity_promotion.json")

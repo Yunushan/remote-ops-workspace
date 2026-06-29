@@ -80,6 +80,21 @@ XP_LOCAL_EVIDENCE_PREFLIGHT_FLAGS = {
     "--xp-source-head-sha",
     "--xp-source-run-attempt",
 }
+LINUX_STAGED_UPLOAD_COMMAND_FLAGS = {
+    "--target",
+    "--release-tag",
+    "--source-dir",
+    "--out-dir",
+    "--force",
+}
+XP_STAGED_UPLOAD_COMMAND_FLAGS = {
+    "--target",
+    "--release-tag",
+    "--assets-dir",
+    "--evidence-output-dir",
+    "--out-dir",
+    "--force",
+}
 RESERVED_WORKSPACE_ROOTS = {".agents", ".codex", ".git", ".github"}
 FILE_LIKE_DIRECTORY_SUFFIXES = (
     ".appimage",
@@ -170,6 +185,7 @@ COMMON_EVIDENCE_KEYS = {
     "release_asset_urls",
     "release_tag",
     "status",
+    "staged_upload_command",
     "target",
     "workflow",
     "workflow_inputs",
@@ -782,6 +798,14 @@ def check_schema(registry: dict[str, Any]) -> list[str]:
     if "local protected-goal evidence preflight command binding" not in policy:
         errors.append(
             "platform verified evidence policy must require local protected-goal evidence preflight command binding"
+        )
+    if "source artifact staged upload command binding" not in policy:
+        errors.append(
+            "platform verified evidence policy must require source artifact staged upload command binding"
+        )
+    if "staged upload source/evidence/output root separation" not in policy:
+        errors.append(
+            "platform verified evidence policy must require staged upload source/evidence/output root separation"
         )
     if "finalized accepted-record source file" not in policy:
         errors.append("platform verified evidence policy must require finalized accepted-record source file binding")
@@ -2645,6 +2669,7 @@ def check_common_evidence(
     command = str(entry.get("artifact_validation_command", ""))
     errors.extend(check_artifact_validation_command(target, release_tag, command))
     errors.extend(check_local_evidence_preflight_command(target, release_tag, entry))
+    errors.extend(check_staged_upload_command(target, release_tag, entry))
     promotion_config_sha = str(entry.get("promotion_config_sha256", ""))
     if not re.fullmatch(r"[0-9a-f]{64}", promotion_config_sha):
         errors.append(f"{target} promotion_config_sha256 must be a SHA-256 hex digest")
@@ -3385,6 +3410,198 @@ def check_xp_local_evidence_preflight_command(
     return errors
 
 
+def check_staged_upload_command(
+    target: str,
+    release_tag: str,
+    entry: dict[str, Any],
+) -> list[str]:
+    command = str(entry.get("staged_upload_command", ""))
+    expected_prefix = (
+        "python scripts/stage_extended_linux_evidence_upload.py "
+        if target in LINUX_TARGETS
+        else "python scripts/stage_xp_native_evidence_upload.py "
+    )
+    errors: list[str] = []
+    if not command.startswith(expected_prefix):
+        errors.append(f"{target} staged_upload_command must start with {expected_prefix!r}")
+    errors.extend(
+        check_no_unexpected_command_flags(
+            target,
+            "staged_upload_command",
+            command,
+            staged_upload_allowed_flags(target),
+        )
+    )
+    targets = command_argument_values(command, "--target")
+    if targets != [target]:
+        errors.append(
+            f"{target} staged_upload_command must include exactly one --target {target}, got {targets}"
+        )
+    release_tags = command_argument_values(command, "--release-tag")
+    if release_tags != [release_tag]:
+        errors.append(
+            f"{target} staged_upload_command must include exactly one --release-tag {release_tag}, "
+            f"got {release_tags}"
+        )
+    out_dirs = command_argument_values(command, "--out-dir")
+    if len(out_dirs) != 1:
+        errors.append(f"{target} staged_upload_command must include exactly one --out-dir, got {out_dirs}")
+    elif not concrete_path_value(out_dirs[0]):
+        errors.append(f"{target} staged_upload_command --out-dir must be concrete, got {out_dirs[0]!r}")
+    else:
+        errors.extend(
+            check_xp_validation_command_path(
+                target,
+                "--out-dir",
+                out_dirs[0],
+                command_label="staged_upload_command",
+                require_directory_hint=True,
+            )
+        )
+    force_count = command_flag_count(command, "--force")
+    if force_count != 1:
+        errors.append(f"{target} staged_upload_command must include exactly one --force, got {force_count}")
+    if target in LINUX_TARGETS:
+        errors.extend(check_linux_staged_upload_command(target, release_tag, entry, command))
+    elif target in XP_TARGETS:
+        errors.extend(check_xp_staged_upload_command(target, release_tag, entry, command))
+    return errors
+
+
+def check_linux_staged_upload_command(
+    target: str,
+    release_tag: str,
+    entry: dict[str, Any],
+    command: str,
+) -> list[str]:
+    errors: list[str] = []
+    source_dirs = command_argument_values(command, "--source-dir")
+    if len(source_dirs) != 1:
+        errors.append(
+            f"{target} staged_upload_command must include exactly one --source-dir, got {source_dirs}"
+        )
+        return errors
+    source_dir = source_dirs[0]
+    if not concrete_path_value(source_dir):
+        errors.append(f"{target} staged_upload_command --source-dir must be concrete, got {source_dir!r}")
+        return errors
+    artifact_asset_dirs = command_argument_values(str(entry.get("artifact_validation_command", "")), "--assets-dir")
+    if len(artifact_asset_dirs) == 1 and source_dirs != artifact_asset_dirs:
+        errors.append(
+            f"{target} staged_upload_command --source-dir must match artifact_validation_command --assets-dir"
+        )
+    out_dirs = command_argument_values(command, "--out-dir")
+    if len(out_dirs) == 1 and command_paths_overlap(source_dir, out_dirs[0]):
+        errors.append(
+            f"{target} staged_upload_command --out-dir must be a separate root from --source-dir"
+        )
+    errors.extend(
+        check_xp_validation_command_path(
+            target,
+            "--source-dir",
+            source_dir,
+            command_label="staged_upload_command",
+            require_directory_hint=True,
+            require_target_release_scope=True,
+            release_tag=release_tag,
+        )
+    )
+    return errors
+
+
+def check_xp_staged_upload_command(
+    target: str,
+    release_tag: str,
+    entry: dict[str, Any],
+    command: str,
+) -> list[str]:
+    errors: list[str] = []
+    out_dirs = command_argument_values(command, "--out-dir")
+    asset_dirs = command_argument_values(command, "--assets-dir")
+    if len(asset_dirs) != 1:
+        errors.append(f"{target} staged_upload_command must include exactly one --assets-dir, got {asset_dirs}")
+    else:
+        assets_dir = asset_dirs[0]
+        if not concrete_path_value(assets_dir):
+            errors.append(f"{target} staged_upload_command --assets-dir must be concrete, got {assets_dir!r}")
+        else:
+            artifact_asset_dirs = command_argument_values(
+                str(entry.get("artifact_validation_command", "")),
+                "--assets-dir",
+            )
+            if len(artifact_asset_dirs) == 1 and asset_dirs != artifact_asset_dirs:
+                errors.append(
+                    f"{target} staged_upload_command --assets-dir must match "
+                    "artifact_validation_command --assets-dir"
+                )
+            errors.extend(
+                check_xp_validation_command_path(
+                    target,
+                    "--assets-dir",
+                    assets_dir,
+                    command_label="staged_upload_command",
+                    require_directory_hint=True,
+                    require_target_release_scope=True,
+                    release_tag=release_tag,
+                )
+            )
+    output_dirs = command_argument_values(command, "--evidence-output-dir")
+    if len(output_dirs) != 1:
+        errors.append(
+            f"{target} staged_upload_command must include exactly one --evidence-output-dir, "
+            f"got {output_dirs}"
+        )
+    else:
+        output_dir = output_dirs[0]
+        if not concrete_path_value(output_dir):
+            errors.append(
+                f"{target} staged_upload_command --evidence-output-dir must be concrete, got {output_dir!r}"
+            )
+        else:
+            errors.extend(
+                check_xp_validation_command_path(
+                    target,
+                    "--evidence-output-dir",
+                    output_dir,
+                    command_label="staged_upload_command",
+                    require_directory_hint=True,
+                    require_target_release_scope=True,
+                    release_tag=release_tag,
+                )
+            )
+    if len(asset_dirs) == 1 and len(output_dirs) == 1 and command_paths_overlap(asset_dirs[0], output_dirs[0]):
+        errors.append(
+            f"{target} staged_upload_command --assets-dir and --evidence-output-dir must be separate roots"
+        )
+    if len(asset_dirs) == 1 and len(out_dirs) == 1 and command_paths_overlap(asset_dirs[0], out_dirs[0]):
+        errors.append(
+            f"{target} staged_upload_command --out-dir must be a separate root from --assets-dir"
+        )
+    if len(output_dirs) == 1 and len(out_dirs) == 1 and command_paths_overlap(output_dirs[0], out_dirs[0]):
+        errors.append(
+            f"{target} staged_upload_command --out-dir must be a separate root from --evidence-output-dir"
+        )
+    return errors
+
+
+def command_paths_overlap(left: str, right: str) -> bool:
+    left_parts = normalized_command_path_parts(left)
+    right_parts = normalized_command_path_parts(right)
+    if not left_parts or not right_parts:
+        return False
+    return path_parts_contain(left_parts, right_parts) or path_parts_contain(right_parts, left_parts)
+
+
+def normalized_command_path_parts(raw_path: str) -> tuple[str, ...]:
+    path = raw_path.strip().replace("\\", "/")
+    parts = PurePosixPath(path).parts
+    return tuple(part for part in parts if part not in ("", ".", "/"))
+
+
+def path_parts_contain(parent: tuple[str, ...], child: tuple[str, ...]) -> bool:
+    return len(parent) <= len(child) and child[: len(parent)] == parent
+
+
 def command_argument_values(command: str, flag: str) -> list[str]:
     return re.findall(rf"(?:^|\s){re.escape(flag)}\s+(\S+)(?=\s|$)", command)
 
@@ -3415,6 +3632,14 @@ def local_evidence_preflight_allowed_flags(target: str) -> set[str]:
     if target in XP_TARGETS:
         return XP_LOCAL_EVIDENCE_PREFLIGHT_FLAGS
     return COMMON_LOCAL_EVIDENCE_PREFLIGHT_FLAGS
+
+
+def staged_upload_allowed_flags(target: str) -> set[str]:
+    if target in LINUX_TARGETS:
+        return LINUX_STAGED_UPLOAD_COMMAND_FLAGS
+    if target in XP_TARGETS:
+        return XP_STAGED_UPLOAD_COMMAND_FLAGS
+    return {"--target", "--release-tag", "--out-dir", "--force"}
 
 
 def concrete_path_value(value: str) -> bool:

@@ -447,6 +447,7 @@ def bundle_manifest(
             str(candidate.get("native_build_command", "")),
             str(candidate.get("native_smoke_command", "")),
             str(candidate.get("local_evidence_preflight_command", "")),
+            str(candidate.get("staged_upload_command", "")),
             str(candidate.get("artifact_validation_command", "")),
             "python scripts/check_platform_verified_evidence.py",
         ],

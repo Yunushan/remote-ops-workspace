@@ -288,7 +288,14 @@ after `python scripts/check_platform_verified_evidence.py` passes. Generate a
 candidate accepted record with
 `python scripts/make_platform_verified_evidence_record.py`, then finalize it
 with `python scripts/finalize_platform_verified_evidence_record.py` so the
-record binds the review-bundle manifest, archive and SHA-256 sidecar. Linux
+record binds the staged upload command, review-bundle manifest, archive and
+SHA-256 sidecar. Candidate generation must pass
+`--staged-upload-out-dir <release-upload-staging-dir>`, and XP candidates must
+also pass `--xp-evidence-output-dir <xp-evidence-output-dir>`. Linux
+release-source upload staging must use
+`python scripts/stage_extended_linux_evidence_upload.py`, and XP release-source
+upload staging must use `python scripts/stage_xp_native_evidence_upload.py`;
+both stagers re-check finalized accepted-record assets before upload. Linux
 accepted records include builder identity JSON plus its matching SHA-256,
 sanitized target-scoped host identity and workflow dispatch input binding.
 Windows XP accepted records include sanitized host identity SHA-256 and require

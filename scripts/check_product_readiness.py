@@ -260,11 +260,7 @@ def check_product_readiness() -> list[str]:
                     errors.append(f"{target} protected platform requirement missing accepted_evidence_record")
                 else:
                     errors.extend(check_required_accepted_evidence_record(target, accepted_record))
-                commands = item.get("required_commands")
-                if not isinstance(commands, dict) or "artifact_validation_command" not in commands:
-                    errors.append(f"{target} protected platform requirement missing artifact validation command")
-                if not isinstance(commands, dict) or "local_evidence_preflight_command" not in commands:
-                    errors.append(f"{target} protected platform requirement missing local evidence preflight command")
+                errors.extend(check_protected_requirement_commands(target, item.get("required_commands")))
                 errors.extend(
                     check_required_review_bundle_files(
                         target,
@@ -468,6 +464,192 @@ def check_smoke_evidence_requirements(target: object, raw_smoke: object) -> list
     if unexpected:
         errors.append(f"{target_text} protected platform requirement smoke_evidence has unexpected items: {unexpected}")
     return errors
+
+
+def check_protected_requirement_commands(
+    target: object,
+    raw_commands: object,
+) -> list[str]:
+    target_text = str(target)
+    if not isinstance(raw_commands, dict):
+        return [f"{target_text} protected platform requirement missing required_commands"]
+    command_keys = {str(key) for key in raw_commands}
+    expected_commands = expected_protected_requirement_commands(target_text)
+    if not expected_commands:
+        return [f"{target_text} protected platform requirement uses an unknown command target"]
+    expected_keys = set(expected_commands)
+    errors: list[str] = []
+    missing = sorted(expected_keys - command_keys)
+    if missing:
+        errors.append(f"{target_text} protected platform requirement required_commands missing: {missing}")
+    unexpected = sorted(command_keys - expected_keys)
+    if unexpected:
+        errors.append(
+            f"{target_text} protected platform requirement required_commands has unexpected keys: "
+            f"{unexpected}"
+        )
+    for key, expected in sorted(expected_commands.items()):
+        if raw_commands.get(key) != expected:
+            errors.append(
+                f"{target_text} protected platform requirement {key} must be {expected!r}"
+            )
+    return errors
+
+
+def expected_protected_requirement_commands(target: str) -> dict[str, str]:
+    if target in LINUX_PROTECTED_TARGETS:
+        return expected_linux_protected_requirement_commands(target)
+    if target in XP_PROTECTED_TARGETS:
+        return expected_xp_protected_requirement_commands(target)
+    return {}
+
+
+def expected_linux_protected_requirement_commands(target: str) -> dict[str, str]:
+    arch = "i386" if target == "linux-i386" else "armhf"
+    source_artifact = f"extended-linux-evidence-{target}-v<project.version>"
+    candidate = f"platform-verified-evidence-{target}.json"
+    bundle_stem = f"extended-linux-evidence-bundle-{target}-v<project.version>"
+    final_record = f"platform-verified-evidence-{target}-final.json"
+    return {
+        "artifact_validation_command": (
+            "python scripts/check_platform_promotion_artifacts.py "
+            f"--target {target} --assets-dir <target-release-artifact-dir> "
+            "--tag v<project.version> --strict"
+        ),
+        "local_evidence_preflight_command": (
+            "python scripts/check_platform_goal_local_evidence.py "
+            "--root . --release-tag v<project.version> "
+            f"--target {target} "
+            "--assets-dir <target-release-artifact-dir> "
+            "--linux-builder-evidence <builder-identity.json> "
+            "--linux-smoke-evidence <native-smoke-log> "
+            "--linux-workflow-run-url <github-actions-run-url> "
+            "--linux-source-head-sha <github-actions-head-sha> "
+            "--linux-source-run-attempt <github-actions-run-attempt>"
+        ),
+        "accepted_evidence_candidate_command": (
+            "python scripts/make_platform_verified_evidence_record.py "
+            f"--target {target} --release-tag v<project.version> "
+            "--assets-dir <target-release-artifact-dir> "
+            "--release-asset-base-url <github-release-download-url> "
+            "--workflow-run-url <github-actions-run-url> "
+            f"--release-source-artifact-name {source_artifact} "
+            "--release-source-head-sha <github-actions-head-sha> "
+            "--release-source-run-attempt <github-actions-run-attempt> "
+            "--builder-evidence <builder-identity.json> "
+            "--linux-smoke-evidence <native-smoke-log> "
+            "--local-evidence-root . "
+            "--staged-upload-out-dir <release-upload-staging-dir> "
+            f"--runner-label self-hosted --runner-label linux --runner-label {arch} "
+            f"--out <{candidate}>"
+        ),
+        "review_bundle_command": (
+            "python scripts/make_extended_linux_evidence_bundle.py "
+            f"--target {target} --release-tag v<project.version> "
+            "--assets-dir <target-release-artifact-dir> "
+            "--builder-evidence <builder-identity.json> "
+            "--smoke-evidence <native-smoke-log> "
+            f"--candidate-record <{candidate}> "
+            "--out-dir <target-release-artifact-dir>"
+        ),
+        "finalized_evidence_record_command": (
+            "python scripts/finalize_platform_verified_evidence_record.py "
+            f"--candidate-record <{candidate}> "
+            f"--bundle-manifest <target-release-artifact-dir>/{bundle_stem}.json "
+            f"--bundle-archive <target-release-artifact-dir>/{bundle_stem}.zip "
+            f"--bundle-sha256s <target-release-artifact-dir>/{bundle_stem}-SHA256SUMS.txt "
+            f"--out <target-release-artifact-dir>/{final_record} --append-registry"
+        ),
+        "staged_upload_command": expected_staged_upload_command(target),
+    }
+
+
+def expected_xp_protected_requirement_commands(target: str) -> dict[str, str]:
+    candidate = f"platform-verified-evidence-{target}.json"
+    bundle_stem = f"xp-native-evidence-bundle-{target}-v<project.version>"
+    final_record = f"platform-verified-evidence-{target}-final.json"
+    source_artifact = f"xp-native-evidence-{target}-v<project.version>"
+    return {
+        "artifact_validation_command": (
+            "python scripts/check_platform_promotion_artifacts.py "
+            f"--target {target} --assets-dir <target-release-artifact-dir> "
+            "--tag v<project.version> --strict"
+        ),
+        "native_evidence_validation_command": (
+            "python scripts/check_xp_native_evidence.py "
+            "--evidence <target-release-evidence.json> "
+            "--assets-dir <target-release-artifact-dir> "
+            "--evidence-dir <target-release-evidence-dir>"
+        ),
+        "local_evidence_preflight_command": (
+            "python scripts/check_platform_goal_local_evidence.py "
+            "--root . --release-tag v<project.version> "
+            f"--target {target} "
+            "--assets-dir <target-release-artifact-dir> "
+            "--xp-evidence <target-release-evidence.json> "
+            "--xp-evidence-dir <target-release-evidence-dir> "
+            "--xp-source-workflow-run-url <github-actions-run-url> "
+            "--xp-source-head-sha <github-actions-head-sha> "
+            "--xp-source-run-attempt <github-actions-run-attempt>"
+        ),
+        "accepted_evidence_candidate_command": (
+            "python scripts/make_platform_verified_evidence_record.py "
+            f"--target {target} --release-tag v<project.version> "
+            "--assets-dir <target-release-artifact-dir> "
+            "--release-asset-base-url <github-release-download-url> "
+            "--release-source-workflow-run-url <github-actions-run-url> "
+            f"--release-source-artifact-name {source_artifact} "
+            "--release-source-head-sha <github-actions-head-sha> "
+            "--release-source-run-attempt <github-actions-run-attempt> "
+            "--local-evidence-root . "
+            "--xp-evidence <target-release-evidence.json> "
+            "--xp-evidence-dir <target-release-evidence-dir> "
+            "--staged-upload-out-dir <release-upload-staging-dir> "
+            "--xp-evidence-output-dir <xp-evidence-output-dir> "
+            f"--out <{candidate}>"
+        ),
+        "review_bundle_command": (
+            "python scripts/make_xp_native_evidence_bundle.py "
+            f"--target {target} "
+            "--evidence <target-release-evidence.json> "
+            f"--candidate-record <{candidate}> "
+            "--assets-dir <target-release-artifact-dir> "
+            "--evidence-dir <target-release-evidence-dir> "
+            "--out-dir <xp-evidence-output-dir>"
+        ),
+        "finalized_evidence_record_command": (
+            "python scripts/finalize_platform_verified_evidence_record.py "
+            f"--candidate-record <{candidate}> "
+            f"--bundle-manifest <xp-evidence-output-dir>/{bundle_stem}.json "
+            f"--bundle-archive <xp-evidence-output-dir>/{bundle_stem}.zip "
+            f"--bundle-sha256s <xp-evidence-output-dir>/{bundle_stem}-SHA256SUMS.txt "
+            f"--out <xp-evidence-output-dir>/{final_record} --append-registry"
+        ),
+        "staged_upload_command": expected_staged_upload_command(target),
+    }
+
+
+def expected_staged_upload_command(target: str) -> str:
+    if target in LINUX_PROTECTED_TARGETS:
+        return (
+            "python scripts/stage_extended_linux_evidence_upload.py "
+            f"--target {target} "
+            "--release-tag v<project.version> "
+            "--source-dir <target-release-artifact-dir> "
+            "--out-dir <release-upload-staging-dir> "
+            "--force"
+        )
+    if target in XP_PROTECTED_TARGETS:
+        return (
+            "python scripts/stage_xp_native_evidence_upload.py "
+            f"--target {target} "
+            "--release-tag v<project.version> "
+            "--assets-dir <target-release-artifact-dir> "
+            "--evidence-output-dir <xp-evidence-output-dir> "
+            "--out-dir <release-upload-staging-dir> "
+            "--force"
+        )
+    return ""
 
 
 def check_release_asset_source_requirement(

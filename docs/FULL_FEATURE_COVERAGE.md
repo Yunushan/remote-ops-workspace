@@ -108,6 +108,13 @@ and must fail until the same four records are finalized and accepted from that s
 to generate a candidate accepted record from validated artifact and XP evidence
 inputs, then bind the packaged review-bundle manifest, archive and SHA-256
 sidecar with `python scripts/finalize_platform_verified_evidence_record.py`.
+Candidate generation must pass `--staged-upload-out-dir <release-upload-staging-dir>`
+so the accepted record carries the exact upload staging command; XP candidates
+must also pass `--xp-evidence-output-dir <xp-evidence-output-dir>`.
+Linux release-source upload staging must use
+`python scripts/stage_extended_linux_evidence_upload.py`, and XP release-source
+upload staging must use `python scripts/stage_xp_native_evidence_upload.py`;
+both stagers re-check finalized accepted-record assets before upload.
 Every accepted record must include the current promotion config SHA-256. Linux
 records must include builder identity evidence plus its matching SHA-256,
 sanitized target-scoped builder `host_identity` binding and workflow dispatch

@@ -18,6 +18,8 @@ POLICY = (
     "release source run-attempt binding, "
     "release source workflow file binding, "
     "local protected-goal evidence preflight command binding, "
+    "source artifact staged upload command binding, "
+    "staged upload source/evidence/output root separation, "
     "finalized accepted-record source file binding, "
     "finalized accepted-record release asset URL binding, "
     "Linux release source artifact names must be target/release-scoped, "
@@ -1374,6 +1376,11 @@ def _linux_accepted_evidence(target: str) -> dict[str, object]:
             f"--linux-source-head-sha {'a' * 40} "
             "--linux-source-run-attempt 1"
         ),
+        "staged_upload_command": (
+            "python scripts/stage_extended_linux_evidence_upload.py "
+            f"--target {target} --release-tag v1.0.2 --source-dir {assets_dir} "
+            "--out-dir linux-evidence-upload --force"
+        ),
         "artifact_validation_command": (
             f"python scripts/check_platform_promotion_artifacts.py --target {target} "
             f"--assets-dir {assets_dir} --tag v1.0.2 --strict"
@@ -1529,6 +1536,12 @@ def _xp_accepted_evidence(target: str) -> dict[str, object]:
             "--xp-source-workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
             f"--xp-source-head-sha {'a' * 40} "
             "--xp-source-run-attempt 1"
+        ),
+        "staged_upload_command": (
+            "python scripts/stage_xp_native_evidence_upload.py "
+            f"--target {target} --release-tag v1.0.2 --assets-dir {assets_dir} "
+            f"--evidence-output-dir xp-evidence-output/{target}/v1.0.2 "
+            "--out-dir xp-evidence-upload --force"
         ),
         "artifact_validation_command": (
             f"python scripts/check_platform_promotion_artifacts.py --target {target} "

@@ -216,6 +216,21 @@ XP_ACCEPTED_EVIDENCE_WORKFLOW_INPUT_KEYS = {
     "evidence_file",
     "evidence_dir",
 }
+LINUX_STAGED_UPLOAD_COMMAND_FLAGS = {
+    "--target",
+    "--release-tag",
+    "--source-dir",
+    "--out-dir",
+    "--force",
+}
+XP_STAGED_UPLOAD_COMMAND_FLAGS = {
+    "--target",
+    "--release-tag",
+    "--assets-dir",
+    "--evidence-output-dir",
+    "--out-dir",
+    "--force",
+}
 XP_ACCEPTED_EVIDENCE_SERVICE_PACKS = {
     "windows-xp-native-x86": "SP3",
     "windows-xp-native-x64": "SP2",
@@ -1392,6 +1407,7 @@ def _protected_platform_required_commands(requirements: dict[str, Any]) -> dict[
         "accepted_evidence_candidate_command",
         "review_bundle_command",
         "finalized_evidence_record_command",
+        "staged_upload_command",
     )
     return {
         key: str(requirements[key])
@@ -1451,6 +1467,8 @@ def _is_accepted_evidence_entry(item: dict[str, Any]) -> bool:
     if not _has_artifact_validation_command(item, target):
         return False
     if not _has_local_evidence_preflight_command(item, target):
+        return False
+    if not _has_staged_upload_command(item, target):
         return False
     if not _has_release_assets_and_hashes(item, target):
         return False
@@ -1517,6 +1535,73 @@ def _has_local_evidence_preflight_command(item: dict[str, Any], target: str) -> 
     return False
 
 
+def _has_staged_upload_command(item: dict[str, Any], target: str) -> bool:
+    release_tag = str(item.get("release_tag", ""))
+    command = str(item.get("staged_upload_command", ""))
+    if target in LINUX_ACCEPTED_EVIDENCE_MACHINES:
+        expected_prefix = "python scripts/stage_extended_linux_evidence_upload.py "
+        allowed_flags = LINUX_STAGED_UPLOAD_COMMAND_FLAGS
+    elif target in XP_ACCEPTED_EVIDENCE_ARCHITECTURES:
+        expected_prefix = "python scripts/stage_xp_native_evidence_upload.py "
+        allowed_flags = XP_STAGED_UPLOAD_COMMAND_FLAGS
+    else:
+        return False
+    if not command.startswith(expected_prefix):
+        return False
+    if set(_command_flags(command)) - allowed_flags:
+        return False
+    if _command_values(command, "--target") != [target]:
+        return False
+    if _command_values(command, "--release-tag") != [release_tag]:
+        return False
+    out_dirs = _command_values(command, "--out-dir")
+    if len(out_dirs) != 1 or not _is_safe_xp_validation_path(out_dirs[0], require_directory_hint=True):
+        return False
+    if _command_flag_count(command, "--force") != 1:
+        return False
+    artifact_asset_dirs = _command_values(str(item.get("artifact_validation_command", "")), "--assets-dir")
+    if len(artifact_asset_dirs) != 1:
+        return False
+    if target in LINUX_ACCEPTED_EVIDENCE_MACHINES:
+        source_dirs = _command_values(command, "--source-dir")
+        return (
+            len(source_dirs) == 1
+            and source_dirs == artifact_asset_dirs
+            and not _paths_overlap(source_dirs[0], out_dirs[0])
+            and _is_safe_xp_validation_path(
+                source_dirs[0],
+                target=target,
+                release_tag=release_tag,
+                require_directory_hint=True,
+                require_target_release_scope=True,
+            )
+        )
+    asset_dirs = _command_values(command, "--assets-dir")
+    output_dirs = _command_values(command, "--evidence-output-dir")
+    return (
+        len(asset_dirs) == 1
+        and asset_dirs == artifact_asset_dirs
+        and not _paths_overlap(asset_dirs[0], out_dirs[0])
+        and _is_safe_xp_validation_path(
+            asset_dirs[0],
+            target=target,
+            release_tag=release_tag,
+            require_directory_hint=True,
+            require_target_release_scope=True,
+        )
+        and len(output_dirs) == 1
+        and not _paths_overlap(asset_dirs[0], output_dirs[0])
+        and not _paths_overlap(output_dirs[0], out_dirs[0])
+        and _is_safe_xp_validation_path(
+            output_dirs[0],
+            target=target,
+            release_tag=release_tag,
+            require_directory_hint=True,
+            require_target_release_scope=True,
+        )
+    )
+
+
 def _is_safe_local_evidence_root(raw_root: str) -> bool:
     return raw_root == "." or _is_safe_xp_validation_path(raw_root, require_directory_hint=True)
 
@@ -1539,6 +1624,20 @@ def _path_stays_under_root(raw_root: str, raw_path: str) -> bool:
         len(path_parts) >= len(root_parts)
         and path_parts[: len(root_parts)] == root_parts
     )
+
+
+def _paths_overlap(left: str, right: str) -> bool:
+    left_parts = _relative_path_parts(left)
+    right_parts = _relative_path_parts(right)
+    if not left_parts or not right_parts:
+        return False
+    return _path_parts_contain(left_parts, right_parts) or _path_parts_contain(
+        right_parts, left_parts
+    )
+
+
+def _path_parts_contain(parent: tuple[str, ...], child: tuple[str, ...]) -> bool:
+    return len(parent) <= len(child) and child[: len(parent)] == parent
 
 
 def _relative_path_parts(raw_path: str) -> tuple[str, ...]:
@@ -1650,6 +1749,10 @@ def _has_xp_local_evidence_preflight_command(
 def _command_values(command: str, flag: str) -> list[str]:
     pattern = rf'(?:^|\s){re.escape(flag)}\s+(?:"([^"]+)"|(\S+))(?=\s|$)'
     return [quoted or bare for quoted, bare in re.findall(pattern, command)]
+
+
+def _command_flags(command: str) -> list[str]:
+    return re.findall(r"(?<!\S)(--[A-Za-z0-9][A-Za-z0-9_-]*)(?=\s|=|$)", command)
 
 
 def _command_flag_count(command: str, flag: str) -> int:

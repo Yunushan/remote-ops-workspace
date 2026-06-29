@@ -252,6 +252,7 @@ def check_review_bundle_artifacts(
         bundle_dir=bundle_dir,
         required_targets=(target,),
         required_release_tag=release_tag,
+        require_final_record_assets=True,
     )
     return [
         f"{target} staged upload review bundle failed re-finalization: {error}"

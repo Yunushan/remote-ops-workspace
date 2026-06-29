@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+from copy import deepcopy
 from pathlib import Path
 
 LINUX_SECURITY_REQUIREMENTS = [
@@ -196,6 +197,48 @@ def test_protected_platform_goal_strict_gate_requires_release_tag() -> None:
         "windows-xp-native-x86",
         "windows-xp-native-x64",
     ]
+
+
+def test_protected_platform_goal_rejects_drifted_requirement_command_metadata(
+    monkeypatch,
+) -> None:
+    checker = _load_protected_goal_checker()
+    original_readiness = checker._platform_verified_readiness
+
+    def fake_platform_verified_readiness(*args, **kwargs):
+        report = original_readiness(*args, **kwargs)
+        drifted = deepcopy(report)
+        requirements = drifted["protected_goal_parity"]["target_evidence_requirements"]
+        linux_i386 = next(item for item in requirements if item["target"] == "linux-i386")
+        linux_i386["required_commands"]["staged_upload_command"] = linux_i386[
+            "required_commands"
+        ]["staged_upload_command"].replace(
+            "stage_extended_linux_evidence_upload.py",
+            "stage_linux_upload.py",
+        )
+        return drifted
+
+    monkeypatch.setattr(checker, "_platform_verified_readiness", fake_platform_verified_readiness)
+
+    errors, goal = checker.check_protected_platform_goal(
+        registry=_complete_registry(),
+        release_tag="v1.0.2",
+        require_complete=True,
+    )
+
+    assert any(
+        "linux-i386 protected platform requirement staged_upload_command must be"
+        in error
+        for error in errors
+    )
+    assert goal["complete"] is False
+    assert goal["status"] == "requirement-metadata-invalid"
+    assert goal["requirement_metadata_complete"] is False
+    assert goal["requirement_metadata_error_count"] == 1
+    assert goal["report_validation_errors"] == [
+        error for error in errors if "staged_upload_command must be" in error
+    ]
+    assert "protected platform goal is incomplete: status=requirement-metadata-invalid" in errors
 
 
 def test_protected_platform_goal_rejects_malformed_release_tag() -> None:

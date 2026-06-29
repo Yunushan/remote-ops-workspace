@@ -75,6 +75,7 @@ def test_extended_linux_evidence_bundle_packages_valid_i386_evidence(
         record["native_build_command"],
         record["native_smoke_command"],
         record["local_evidence_preflight_command"],
+        record["staged_upload_command"],
         record["artifact_validation_command"],
         "python scripts/check_platform_verified_evidence.py",
     ]

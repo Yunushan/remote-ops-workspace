@@ -1171,6 +1171,7 @@ def test_finalize_platform_verified_evidence_record_rejects_placeholder_validate
             candidate["native_build_command"],
             candidate["native_smoke_command"],
             candidate["local_evidence_preflight_command"],
+            candidate["staged_upload_command"],
             (
                 "python scripts/check_platform_promotion_artifacts.py --target linux-i386 "
                 "--assets-dir <artifact-dir> --tag v1.0.2 --strict"
@@ -1195,6 +1196,7 @@ def test_finalize_platform_verified_evidence_record_rejects_missing_linux_local_
         "validated_commands": [
             candidate["native_build_command"],
             candidate["native_smoke_command"],
+            candidate["staged_upload_command"],
             candidate["artifact_validation_command"],
             "python scripts/check_platform_verified_evidence.py",
         ],
@@ -1204,6 +1206,30 @@ def test_finalize_platform_verified_evidence_record_rejects_missing_linux_local_
 
     assert (
         "review bundle manifest validated_commands must include exactly one local evidence preflight command"
+    ) in errors
+    assert "review bundle manifest validated_commands must match Linux candidate command provenance" in errors
+
+
+def test_finalize_platform_verified_evidence_record_rejects_missing_staged_upload_command() -> None:
+    finalizer = _load_finalizer()
+    helpers = _load_platform_verified_evidence_tests()
+    candidate = helpers._linux_record("linux-i386")
+    _unfinalized_candidate(candidate)
+    manifest = {
+        "bundle_type": "extended-linux-native-evidence",
+        "validated_commands": [
+            candidate["native_build_command"],
+            candidate["native_smoke_command"],
+            candidate["local_evidence_preflight_command"],
+            candidate["artifact_validation_command"],
+            "python scripts/check_platform_verified_evidence.py",
+        ],
+    }
+
+    errors = finalizer.check_manifest_validated_commands(candidate, manifest)
+
+    assert (
+        "review bundle manifest validated_commands must include exactly one staged upload command"
     ) in errors
     assert "review bundle manifest validated_commands must match Linux candidate command provenance" in errors
 
@@ -1417,6 +1443,7 @@ def test_finalize_platform_verified_evidence_record_rejects_missing_xp_validatio
         "bundle_type": "windows-xp-native-host-evidence",
         "validated_commands": [
             candidate["local_evidence_preflight_command"],
+            candidate["staged_upload_command"],
             candidate["artifact_validation_command"],
             "python scripts/check_platform_verified_evidence.py",
         ],
@@ -1437,6 +1464,7 @@ def test_finalize_platform_verified_evidence_record_rejects_missing_xp_local_pre
         "bundle_type": "windows-xp-native-host-evidence",
         "validated_commands": [
             candidate["native_evidence_validation_command"],
+            candidate["staged_upload_command"],
             candidate["artifact_validation_command"],
             "python scripts/check_platform_verified_evidence.py",
         ],
@@ -1460,6 +1488,7 @@ def test_finalize_platform_verified_evidence_record_rejects_xp_validation_comman
         "validated_commands": [
             "python scripts/check_xp_native_evidence.py --evidence other-xp-evidence.json --assets-dir native-dist/windows-xp",
             candidate["local_evidence_preflight_command"],
+            candidate["staged_upload_command"],
             candidate["artifact_validation_command"],
             "python scripts/check_platform_verified_evidence.py",
         ],
@@ -1886,6 +1915,7 @@ def _linux_validated_commands(candidate: dict[str, object]) -> list[str]:
         str(candidate["native_build_command"]),
         str(candidate["native_smoke_command"]),
         str(candidate["local_evidence_preflight_command"]),
+        str(candidate["staged_upload_command"]),
         str(candidate["artifact_validation_command"]),
         "python scripts/check_platform_verified_evidence.py",
     ]
@@ -1895,6 +1925,7 @@ def _xp_validated_commands(candidate: dict[str, object]) -> list[str]:
     return [
         str(candidate["native_evidence_validation_command"]),
         str(candidate["local_evidence_preflight_command"]),
+        str(candidate["staged_upload_command"]),
         str(candidate["artifact_validation_command"]),
         "python scripts/check_platform_verified_evidence.py",
     ]

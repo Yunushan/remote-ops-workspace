@@ -20,6 +20,7 @@ from check_platform_verified_evidence import (  # noqa: E402
     check_platform_verified_evidence,
     read_json,
 )
+from check_product_readiness import check_protected_requirement_commands  # noqa: E402
 from check_release_publish_assets import check_release_assets  # noqa: E402
 
 from remote_ops_workspace.features import _platform_verified_readiness  # noqa: E402
@@ -140,6 +141,7 @@ def check_protected_platform_goal(
     validation_errors: list[str] = []
     record_validation_errors: list[str] = []
     release_asset_validation_errors: list[str] = []
+    report_validation_errors: list[str] = []
     release_tag_valid = release_tag is None or re.fullmatch(r"v\d+\.\d+\.\d+", release_tag)
     if release_tag is not None and not release_tag_valid:
         errors.append(f"release_tag must look like vX.Y.Z: {release_tag}")
@@ -180,6 +182,8 @@ def check_protected_platform_goal(
     goal_source_registry = invalid_evidence_goal_registry(registry) if record_validation_errors else registry
     goal_registry = strict_goal_registry(goal_source_registry, release_tag, require_complete=require_complete)
     goal = _platform_verified_readiness(evidence_registry=goal_registry)["protected_goal_parity"]
+    report_validation_errors.extend(check_goal_requirement_metadata(goal))
+    errors.extend(report_validation_errors)
     if release_tag is not None:
         goal = dict(goal)
         apply_required_release_tag(goal, release_tag)
@@ -190,6 +194,8 @@ def check_protected_platform_goal(
         goal["scope_error"] = REQUIRE_COMPLETE_RELEASE_TAG_ERROR
     if release_asset_validation_errors and goal.get("complete"):
         goal = mark_release_assets_invalid(goal, release_asset_validation_errors)
+    if report_validation_errors and goal.get("complete"):
+        goal = mark_requirement_metadata_invalid(goal, report_validation_errors)
     if require_complete and not goal.get("complete"):
         missing_targets = list_values(goal.get("missing_targets"))
         if missing_targets:
@@ -204,6 +210,7 @@ def check_protected_platform_goal(
         validation_errors=validation_errors,
         record_validation_errors=record_validation_errors,
         release_asset_validation_errors=release_asset_validation_errors,
+        report_validation_errors=report_validation_errors,
         release_assets_dir=assets_dir,
         blocking_errors=errors,
     )
@@ -224,12 +231,46 @@ def mark_release_assets_invalid(
     return downgraded
 
 
+def mark_requirement_metadata_invalid(
+    goal: dict[str, Any],
+    report_validation_errors: list[str],
+) -> dict[str, Any]:
+    downgraded = dict(goal)
+    downgraded["complete"] = False
+    downgraded["status"] = "requirement-metadata-invalid"
+    downgraded["requirement_metadata_complete"] = False
+    downgraded["requirement_metadata_error_count"] = len(
+        unique_messages(report_validation_errors)
+    )
+    return downgraded
+
+
+def check_goal_requirement_metadata(goal: dict[str, Any]) -> list[str]:
+    requirements = goal.get("target_evidence_requirements")
+    if not isinstance(requirements, list):
+        return ["protected platform goal parity must expose target_evidence_requirements"]
+    errors: list[str] = []
+    for item in requirements:
+        if not isinstance(item, dict):
+            errors.append("protected platform goal parity requirement entries must be objects")
+            continue
+        target = item.get("target")
+        errors.extend(
+            check_protected_requirement_commands(
+                target,
+                item.get("required_commands"),
+            )
+        )
+    return errors
+
+
 def attach_goal_error_context(
     goal: dict[str, Any],
     *,
     validation_errors: list[str],
     record_validation_errors: list[str],
     release_asset_validation_errors: list[str],
+    report_validation_errors: list[str],
     release_assets_dir: Path | None,
     blocking_errors: list[str],
 ) -> dict[str, Any]:
@@ -237,6 +278,7 @@ def attach_goal_error_context(
     enriched["validation_errors"] = unique_messages(validation_errors)
     enriched["record_validation_errors"] = unique_messages(record_validation_errors)
     enriched["release_asset_validation_errors"] = unique_messages(release_asset_validation_errors)
+    enriched["report_validation_errors"] = unique_messages(report_validation_errors)
     enriched["release_assets_dir"] = str(release_assets_dir) if release_assets_dir is not None else ""
     enriched["blocking_errors"] = unique_messages(blocking_errors)
     return enriched

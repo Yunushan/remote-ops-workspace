@@ -433,6 +433,7 @@ def bundle_manifest(
         "validated_commands": [
             xp_evidence_validation_command(evidence=evidence, assets_dir=assets_dir, evidence_root=evidence_root),
             str(candidate_data.get("local_evidence_preflight_command", "")),
+            str(candidate_data.get("staged_upload_command", "")),
             xp_strict_artifact_validation_command(candidate_data),
             "python scripts/check_platform_verified_evidence.py",
         ],

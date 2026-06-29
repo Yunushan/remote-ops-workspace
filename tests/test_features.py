@@ -303,6 +303,25 @@ def test_platform_verified_readiness_tracks_partial_targets() -> None:
     assert "artifact_validation_command" in requirements["linux-i386"]["required_commands"]
     assert "local_evidence_preflight_command" in requirements["linux-i386"]["required_commands"]
     assert "check_platform_goal_local_evidence.py" in requirements["linux-i386"]["required_commands"]["local_evidence_preflight_command"]
+    linux_candidate_command = requirements["linux-i386"]["required_commands"][
+        "accepted_evidence_candidate_command"
+    ]
+    xp_candidate_command = requirements["windows-xp-native-x86"]["required_commands"][
+        "accepted_evidence_candidate_command"
+    ]
+    assert "--staged-upload-out-dir <release-upload-staging-dir>" in linux_candidate_command
+    assert "--staged-upload-out-dir <release-upload-staging-dir>" in xp_candidate_command
+    assert "--xp-evidence-output-dir <xp-evidence-output-dir>" in xp_candidate_command
+    assert "staged_upload_command" in requirements["linux-i386"]["required_commands"]
+    assert (
+        "stage_extended_linux_evidence_upload.py"
+        in requirements["linux-i386"]["required_commands"]["staged_upload_command"]
+    )
+    assert "staged_upload_command" in requirements["windows-xp-native-x86"]["required_commands"]
+    assert (
+        "stage_xp_native_evidence_upload.py"
+        in requirements["windows-xp-native-x86"]["required_commands"]["staged_upload_command"]
+    )
     assert requirements["linux-i386"]["security_requirements"] == LINUX_SECURITY_REQUIREMENTS
     assert requirements["linux-armhf"]["security_requirements"] == LINUX_SECURITY_REQUIREMENTS
     assert (
@@ -1175,6 +1194,60 @@ def test_platform_verified_readiness_ignores_missing_local_evidence_preflight_co
     assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
 
 
+def test_platform_verified_readiness_ignores_missing_staged_upload_command() -> None:
+    record = _linux_accepted_evidence("linux-i386")
+    del record["staged_upload_command"]
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry=_accepted_evidence_registry(record),
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["linux-i386"]["current_percent"] == 70.0
+    assert rows["linux-i386"]["status"] == "manual-script-supported"
+    assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
+
+
+def test_platform_verified_readiness_ignores_overlapping_linux_staged_upload_command() -> None:
+    record = _linux_accepted_evidence("linux-i386")
+    record["staged_upload_command"] = str(record["staged_upload_command"]).replace(
+        "--out-dir linux-evidence-upload",
+        "--out-dir staged/linux-i386/v1.0.2/artifacts/linux-evidence-upload",
+    )
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry=_accepted_evidence_registry(record),
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["linux-i386"]["current_percent"] == 70.0
+    assert rows["linux-i386"]["status"] == "manual-script-supported"
+    assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
+
+
+def test_platform_verified_readiness_ignores_overlapping_xp_staged_upload_command() -> None:
+    record = _xp_accepted_evidence("windows-xp-native-x64")
+    record["staged_upload_command"] = str(record["staged_upload_command"]).replace(
+        "--out-dir xp-evidence-upload",
+        "--out-dir xp-evidence-output/windows-xp-native-x64/v1.0.2/upload",
+    )
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry=_accepted_evidence_registry(record),
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["Windows XP"]["current_percent"] == 25.0
+    assert rows["Windows XP"]["status"] == "remote-target-only"
+    assert rows["Windows XP"]["accepted_evidence_missing_targets"] == [
+        "windows-xp-native-x86",
+        "windows-xp-native-x64",
+    ]
+
+
 def test_platform_verified_readiness_ignores_linux_local_preflight_source_sha_drift() -> None:
     record = _linux_accepted_evidence("linux-armhf")
     record["local_evidence_preflight_command"] = str(
@@ -1218,6 +1291,11 @@ def test_platform_verified_readiness_accepts_scoped_linux_local_preflight_root()
     record["artifact_validation_command"] = (
         f"python scripts/check_platform_promotion_artifacts.py --target {target} "
         f"--assets-dir {assets_dir} --tag v1.0.2 --strict"
+    )
+    record["staged_upload_command"] = (
+        "python scripts/stage_extended_linux_evidence_upload.py "
+        f"--target {target} --release-tag v1.0.2 --source-dir {assets_dir} "
+        "--out-dir linux-evidence-upload --force"
     )
     record["local_evidence_preflight_command"] = (
         "python scripts/check_platform_goal_local_evidence.py --root platform-evidence-staging "
@@ -2208,6 +2286,11 @@ def _linux_accepted_evidence(target: str) -> dict[str, object]:
             f"--linux-source-head-sha {'a' * 40} "
             "--linux-source-run-attempt 1"
         ),
+        "staged_upload_command": (
+            "python scripts/stage_extended_linux_evidence_upload.py "
+            f"--target {target} --release-tag v1.0.2 --source-dir {assets_dir} "
+            "--out-dir linux-evidence-upload --force"
+        ),
         "artifact_validation_command": (
             f"python scripts/check_platform_promotion_artifacts.py --target {target} "
             f"--assets-dir {assets_dir} --tag v1.0.2 --strict"
@@ -2285,6 +2368,12 @@ def _xp_accepted_evidence(target: str) -> dict[str, object]:
             "--xp-source-workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
             f"--xp-source-head-sha {'a' * 40} "
             "--xp-source-run-attempt 1"
+        ),
+        "staged_upload_command": (
+            "python scripts/stage_xp_native_evidence_upload.py "
+            f"--target {target} --release-tag v1.0.2 --assets-dir {assets_dir} "
+            f"--evidence-output-dir xp-evidence-output/{target}/v1.0.2 "
+            "--out-dir xp-evidence-upload --force"
         ),
         "artifact_validation_command": (
             f"python scripts/check_platform_promotion_artifacts.py --target {target} "

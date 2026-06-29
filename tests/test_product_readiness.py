@@ -358,6 +358,143 @@ def test_product_readiness_rejects_weak_xp_smoke_evidence_requirements(monkeypat
     ) in errors
 
 
+def test_product_readiness_rejects_missing_protected_goal_staged_upload_command(monkeypatch) -> None:
+    checker = load_product_readiness_checker()
+    report = deepcopy(checker.coverage_report())
+    requirements = report["platform_verified_readiness"]["protected_goal_parity"][
+        "target_evidence_requirements"
+    ]
+    linux_i386 = next(item for item in requirements if item["target"] == "linux-i386")
+    del linux_i386["required_commands"]["staged_upload_command"]
+    monkeypatch.setattr(checker, "coverage_report", lambda: report)
+
+    errors = checker.check_product_readiness()
+
+    assert (
+        "linux-i386 protected platform requirement required_commands missing: "
+        "['staged_upload_command']"
+    ) in errors
+
+
+def test_product_readiness_rejects_wrong_protected_goal_staged_upload_command(monkeypatch) -> None:
+    checker = load_product_readiness_checker()
+    report = deepcopy(checker.coverage_report())
+    requirements = report["platform_verified_readiness"]["protected_goal_parity"][
+        "target_evidence_requirements"
+    ]
+    xp_x64 = next(item for item in requirements if item["target"] == "windows-xp-native-x64")
+    xp_x64["required_commands"]["staged_upload_command"] = xp_x64["required_commands"][
+        "staged_upload_command"
+    ].replace("stage_xp_native_evidence_upload.py", "stage_xp_upload.py")
+    monkeypatch.setattr(checker, "coverage_report", lambda: report)
+
+    errors = checker.check_product_readiness()
+
+    assert any(
+        "windows-xp-native-x64 protected platform requirement staged_upload_command must be"
+        in error
+        for error in errors
+    )
+
+
+def test_product_readiness_rejects_protected_goal_staged_upload_without_force(monkeypatch) -> None:
+    checker = load_product_readiness_checker()
+    report = deepcopy(checker.coverage_report())
+    requirements = report["platform_verified_readiness"]["protected_goal_parity"][
+        "target_evidence_requirements"
+    ]
+    linux_i386 = next(item for item in requirements if item["target"] == "linux-i386")
+    linux_i386["required_commands"]["staged_upload_command"] = linux_i386["required_commands"][
+        "staged_upload_command"
+    ].replace(" --force", "")
+    monkeypatch.setattr(checker, "coverage_report", lambda: report)
+
+    errors = checker.check_product_readiness()
+
+    assert any(
+        "linux-i386 protected platform requirement staged_upload_command must be" in error
+        for error in errors
+    )
+
+
+def test_product_readiness_rejects_wrong_protected_goal_command_template(monkeypatch) -> None:
+    checker = load_product_readiness_checker()
+    report = deepcopy(checker.coverage_report())
+    requirements = report["platform_verified_readiness"]["protected_goal_parity"][
+        "target_evidence_requirements"
+    ]
+    linux_armhf = next(item for item in requirements if item["target"] == "linux-armhf")
+    linux_armhf["required_commands"]["accepted_evidence_candidate_command"] = linux_armhf[
+        "required_commands"
+    ]["accepted_evidence_candidate_command"].replace(
+        " --release-source-run-attempt <github-actions-run-attempt>",
+        "",
+    )
+    monkeypatch.setattr(checker, "coverage_report", lambda: report)
+
+    errors = checker.check_product_readiness()
+
+    assert any(
+        "linux-armhf protected platform requirement accepted_evidence_candidate_command must be"
+        in error
+        for error in errors
+    )
+
+
+def test_product_readiness_rejects_unbound_candidate_upload_paths(monkeypatch) -> None:
+    checker = load_product_readiness_checker()
+    report = deepcopy(checker.coverage_report())
+    requirements = report["platform_verified_readiness"]["protected_goal_parity"][
+        "target_evidence_requirements"
+    ]
+    linux_i386 = next(item for item in requirements if item["target"] == "linux-i386")
+    linux_i386["required_commands"]["accepted_evidence_candidate_command"] = linux_i386[
+        "required_commands"
+    ]["accepted_evidence_candidate_command"].replace(
+        " --staged-upload-out-dir <release-upload-staging-dir>",
+        "",
+    )
+    xp_x64 = next(item for item in requirements if item["target"] == "windows-xp-native-x64")
+    xp_x64["required_commands"]["accepted_evidence_candidate_command"] = xp_x64[
+        "required_commands"
+    ]["accepted_evidence_candidate_command"].replace(
+        " --xp-evidence-output-dir <xp-evidence-output-dir>",
+        "",
+    )
+    monkeypatch.setattr(checker, "coverage_report", lambda: report)
+
+    errors = checker.check_product_readiness()
+
+    assert any(
+        "linux-i386 protected platform requirement accepted_evidence_candidate_command must be"
+        in error
+        for error in errors
+    )
+    assert any(
+        "windows-xp-native-x64 protected platform requirement accepted_evidence_candidate_command must be"
+        in error
+        for error in errors
+    )
+
+
+def test_product_readiness_rejects_unexpected_protected_goal_command(monkeypatch) -> None:
+    checker = load_product_readiness_checker()
+    report = deepcopy(checker.coverage_report())
+    requirements = report["platform_verified_readiness"]["protected_goal_parity"][
+        "target_evidence_requirements"
+    ]
+    xp_x86 = next(item for item in requirements if item["target"] == "windows-xp-native-x86")
+    xp_x86["required_commands"]["unsafe_upload_command"] = "python scripts/upload_everything.py"
+    monkeypatch.setattr(checker, "coverage_report", lambda: report)
+
+    errors = checker.check_product_readiness()
+
+    assert (
+        "windows-xp-native-x86 protected platform requirement required_commands has unexpected keys: "
+        "['unsafe_upload_command']"
+    ) in errors
+
+
 def test_product_readiness_rejects_inconsistent_protected_goal_release_source_flag(monkeypatch) -> None:
     checker = load_product_readiness_checker()
     report = deepcopy(checker.coverage_report())

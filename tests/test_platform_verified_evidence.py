@@ -15,6 +15,8 @@ POLICY = (
     "release source run-attempt binding, "
     "release source workflow file binding, "
     "local protected-goal evidence preflight command binding, "
+    "source artifact staged upload command binding, "
+    "staged upload source/evidence/output root separation, "
     "finalized accepted-record source file binding, "
     "finalized accepted-record release asset URL binding, "
     "Linux release source artifact names must be target/release-scoped, "
@@ -120,6 +122,22 @@ def test_platform_verified_evidence_rejects_missing_local_evidence_preflight_pol
 
     assert (
         "platform verified evidence policy must require local protected-goal evidence preflight command binding"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_missing_staged_upload_root_separation_policy() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY.replace("staged upload source/evidence/output root separation, ", ""),
+            "accepted_evidence": [],
+        }
+    )
+
+    assert (
+        "platform verified evidence policy must require staged upload source/evidence/output root separation"
     ) in errors
 
 
@@ -1934,6 +1952,167 @@ def test_platform_verified_evidence_rejects_missing_local_evidence_preflight_com
     )
 
 
+def test_platform_verified_evidence_rejects_missing_staged_upload_command() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    del record["staged_upload_command"]
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert any("linux-i386 staged_upload_command must start with" in error for error in errors)
+
+
+def test_platform_verified_evidence_rejects_linux_staged_upload_source_drift() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-armhf")
+    record["staged_upload_command"] = str(record["staged_upload_command"]).replace(
+        "--source-dir staged/linux-armhf/v1.0.2/artifacts",
+        "--source-dir staged/linux-armhf/v1.0.2/other-artifacts",
+    )
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "linux-armhf staged_upload_command --source-dir must match "
+        "artifact_validation_command --assets-dir"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_linux_staged_upload_overlapping_output_dir() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    record["staged_upload_command"] = str(record["staged_upload_command"]).replace(
+        "--out-dir linux-evidence-upload",
+        "--out-dir staged/linux-i386/v1.0.2/artifacts/linux-evidence-upload",
+    )
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "linux-i386 staged_upload_command --out-dir must be a separate root from --source-dir"
+        in errors
+    )
+
+
+def test_platform_verified_evidence_rejects_xp_staged_upload_missing_force() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _xp_record("windows-xp-native-x86")
+    record["staged_upload_command"] = str(record["staged_upload_command"]).replace(" --force", "")
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "windows-xp-native-x86 staged_upload_command must include exactly one --force, got 0" in errors
+
+
+def test_platform_verified_evidence_rejects_xp_staged_upload_unscoped_output_dir() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _xp_record("windows-xp-native-x64")
+    record["staged_upload_command"] = str(record["staged_upload_command"]).replace(
+        "--evidence-output-dir xp-evidence-output/windows-xp-native-x64/v1.0.2",
+        "--evidence-output-dir xp-evidence-output/latest",
+    )
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "windows-xp-native-x64 staged_upload_command --evidence-output-dir "
+        "must include target path segment 'windows-xp-native-x64', got "
+        "'xp-evidence-output/latest'"
+    ) in errors
+    assert (
+        "windows-xp-native-x64 staged_upload_command --evidence-output-dir "
+        "must include release_tag path segment 'v1.0.2', got 'xp-evidence-output/latest'"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_xp_staged_upload_overlapping_output_dir() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _xp_record("windows-xp-native-x86")
+    record["staged_upload_command"] = str(record["staged_upload_command"]).replace(
+        "--out-dir xp-evidence-upload",
+        "--out-dir native-dist/windows-xp/windows-xp-native-x86/v1.0.2/xp-evidence-upload",
+    )
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "windows-xp-native-x86 staged_upload_command --out-dir "
+        "must be a separate root from --assets-dir"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_xp_staged_upload_overlapping_evidence_output_dir() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _xp_record("windows-xp-native-x64")
+    record["staged_upload_command"] = str(record["staged_upload_command"]).replace(
+        "--out-dir xp-evidence-upload",
+        "--out-dir xp-evidence-output/windows-xp-native-x64/v1.0.2/upload",
+    )
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "windows-xp-native-x64 staged_upload_command --out-dir "
+        "must be a separate root from --evidence-output-dir"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_xp_asset_evidence_output_overlap() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _xp_record("windows-xp-native-x86")
+    record["staged_upload_command"] = str(record["staged_upload_command"]).replace(
+        "--evidence-output-dir xp-evidence-output/windows-xp-native-x86/v1.0.2",
+        "--evidence-output-dir native-dist/windows-xp/windows-xp-native-x86/v1.0.2/evidence-output",
+    )
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "windows-xp-native-x86 staged_upload_command --assets-dir and "
+        "--evidence-output-dir must be separate roots"
+    ) in errors
+
+
 def test_platform_verified_evidence_rejects_linux_local_preflight_source_sha_mismatch() -> None:
     checker = _load_platform_verified_evidence_checker()
     record = _linux_record("linux-armhf")
@@ -2065,6 +2244,11 @@ def test_platform_verified_evidence_accepts_scoped_linux_local_preflight_root() 
     record["artifact_validation_command"] = (
         f"python scripts/check_platform_promotion_artifacts.py --target {target} "
         f"--assets-dir {assets_dir} --tag v1.0.2 --strict"
+    )
+    record["staged_upload_command"] = (
+        "python scripts/stage_extended_linux_evidence_upload.py "
+        f"--target {target} --release-tag v1.0.2 --source-dir {assets_dir} "
+        "--out-dir linux-evidence-upload --force"
     )
     record["local_evidence_preflight_command"] = (
         "python scripts/check_platform_goal_local_evidence.py --root platform-evidence-staging "
@@ -4314,6 +4498,11 @@ def _linux_record(target: str) -> dict[str, object]:
             f"--linux-source-head-sha {'a' * 40} "
             "--linux-source-run-attempt 1"
         ),
+        "staged_upload_command": (
+            "python scripts/stage_extended_linux_evidence_upload.py "
+            f"--target {target} --release-tag v1.0.2 --source-dir {assets_dir} "
+            "--out-dir linux-evidence-upload --force"
+        ),
         "artifact_validation_command": (
             f"python scripts/check_platform_promotion_artifacts.py --target {target} "
             f"--assets-dir {assets_dir} --tag v1.0.2 --strict"
@@ -4398,6 +4587,12 @@ def _xp_record(target: str, *, release_tag: str = "v1.0.2") -> dict[str, object]
             "--xp-source-workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
             f"--xp-source-head-sha {'a' * 40} "
             "--xp-source-run-attempt 1"
+        ),
+        "staged_upload_command": (
+            "python scripts/stage_xp_native_evidence_upload.py "
+            f"--target {target} --release-tag {release_tag} --assets-dir {assets_dir} "
+            f"--evidence-output-dir xp-evidence-output/{target}/{release_tag} "
+            "--out-dir xp-evidence-upload --force"
         ),
         "artifact_validation_command": (
             f"python scripts/check_platform_promotion_artifacts.py --target {target} "

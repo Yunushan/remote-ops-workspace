@@ -381,6 +381,9 @@ def test_extended_platform_builder_accepts_matching_i386(monkeypatch) -> None:
     monkeypatch.setattr(checker.sys, "version_info", (3, 12, 0))
     monkeypatch.setattr(checker, "normalized_machine", lambda: "i686")
     monkeypatch.setattr(checker, "command_output", _linux_command_output("i686", "i386", "32"))
+    monkeypatch.setattr(checker, "os_release", lambda: "Debian GNU/Linux 12 (bookworm)")
+    monkeypatch.setattr(checker, "kernel_release", lambda: "6.1.0-i386-ci")
+    monkeypatch.setattr(checker, "glibc_version", lambda: "glibc 2.36")
     monkeypatch.setattr(checker, "command_succeeds", lambda _command: True)
     monkeypatch.setattr(shutil, "which", lambda _tool: f"/usr/bin/{_tool}")
 
@@ -441,6 +444,9 @@ def test_extended_platform_builder_writes_identity_evidence(tmp_path: Path, monk
     monkeypatch.setattr(checker.sys, "version_info", (3, 12, 0))
     monkeypatch.setattr(checker, "normalized_machine", lambda: "i686")
     monkeypatch.setattr(checker, "command_output", _linux_command_output("i686", "i386", "32"))
+    monkeypatch.setattr(checker, "os_release", lambda: "Debian GNU/Linux 12 (bookworm)")
+    monkeypatch.setattr(checker, "kernel_release", lambda: "6.1.0-i386-ci")
+    monkeypatch.setattr(checker, "glibc_version", lambda: "glibc 2.36")
     monkeypatch.setattr(checker, "git_status_porcelain", lambda: "")
     monkeypatch.setattr(checker, "git_worktree_clean", lambda: True)
     monkeypatch.setattr(checker, "command_succeeds", lambda _command: True)
@@ -492,6 +498,9 @@ def test_extended_platform_builder_writes_identity_evidence(tmp_path: Path, monk
     }
     assert data["host_identity"]["observed_at_utc"].endswith("Z")
     assert data["platform_machine"] == "i686"
+    assert data["os_release"] == "Debian GNU/Linux 12 (bookworm)"
+    assert data["kernel_release"] == "6.1.0-i386-ci"
+    assert data["glibc_version"] == "glibc 2.36"
     assert data["uname_machine"] == "i686"
     assert data["dpkg_architecture"] == "i386"
     assert data["userland_bits"] == "32"

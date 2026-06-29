@@ -90,6 +90,7 @@ LINUX_REQUIRED_PROMOTION_KEYS = {
     "accepted_evidence_candidate_command",
     "review_bundle_command",
     "finalized_evidence_record_command",
+    "staged_upload_command",
     "review_bundle_files",
     "required_artifacts",
     "security_requirements",
@@ -106,6 +107,7 @@ XP_REQUIRED_PROMOTION_KEYS = {
     "accepted_evidence_candidate_command",
     "review_bundle_command",
     "finalized_evidence_record_command",
+    "staged_upload_command",
     "review_bundle_files",
     "smoke_evidence",
     "security_requirements",
@@ -123,6 +125,8 @@ REQUIRED_DOC_SNIPPETS: dict[str, tuple[str, ...]] = {
         "python scripts/check_platform_verified_evidence.py",
         "python scripts/make_platform_verified_evidence_record.py",
         "python scripts/finalize_platform_verified_evidence_record.py",
+        "python scripts/stage_extended_linux_evidence_upload.py",
+        "python scripts/stage_xp_native_evidence_upload.py",
     ),
     "docs/PLATFORM_SUPPORT.md": (
         "## Promotion to 100% for extended targets",
@@ -136,6 +140,8 @@ REQUIRED_DOC_SNIPPETS: dict[str, tuple[str, ...]] = {
         "python scripts/check_platform_verified_evidence.py",
         "python scripts/make_platform_verified_evidence_record.py",
         "python scripts/finalize_platform_verified_evidence_record.py",
+        "python scripts/stage_extended_linux_evidence_upload.py",
+        "python scripts/stage_xp_native_evidence_upload.py",
     ),
     "docs/RELEASE_STRATEGY.md": (
         "configs/platform_parity_promotion.json",
@@ -147,6 +153,8 @@ REQUIRED_DOC_SNIPPETS: dict[str, tuple[str, ...]] = {
         "python scripts/check_platform_verified_evidence.py",
         "python scripts/make_platform_verified_evidence_record.py",
         "python scripts/finalize_platform_verified_evidence_record.py",
+        "python scripts/stage_extended_linux_evidence_upload.py",
+        "python scripts/stage_xp_native_evidence_upload.py",
         "Linux i386 and Linux armhf can move from script-supported to default-native",
     ),
     "docs/FULL_FEATURE_COVERAGE.md": (
@@ -160,6 +168,8 @@ REQUIRED_DOC_SNIPPETS: dict[str, tuple[str, ...]] = {
         "python scripts/check_platform_verified_evidence.py",
         "python scripts/make_platform_verified_evidence_record.py",
         "python scripts/finalize_platform_verified_evidence_record.py",
+        "python scripts/stage_extended_linux_evidence_upload.py",
+        "python scripts/stage_xp_native_evidence_upload.py",
     ),
     "docs/VERIFYING.md": (
         "python scripts/check_platform_parity_promotion.py",
@@ -169,6 +179,8 @@ REQUIRED_DOC_SNIPPETS: dict[str, tuple[str, ...]] = {
         "python scripts/check_platform_verified_evidence.py",
         "python scripts/make_platform_verified_evidence_record.py",
         "python scripts/finalize_platform_verified_evidence_record.py",
+        "python scripts/stage_extended_linux_evidence_upload.py",
+        "python scripts/stage_xp_native_evidence_upload.py",
         "Linux i386/armhf and Windows XP native-host promotion",
     ),
 }
@@ -336,6 +348,7 @@ def check_linux_promotion_entry(
     errors.extend(check_artifact_validation_command(label, requirements))
     errors.extend(check_local_evidence_preflight_command(label, requirements, kind="linux"))
     errors.extend(check_finalized_evidence_requirements(label, requirements, kind="linux"))
+    errors.extend(check_staged_upload_command(label, requirements, kind="linux"))
     artifacts = requirements.get("required_artifacts")
     if not isinstance(artifacts, list) or len(artifacts) < 5:
         errors.append(f"{label} must list required 100% release artifacts")
@@ -456,6 +469,7 @@ def check_xp_promotion_entry(
     errors.extend(check_xp_native_evidence_validation_command(label, requirements))
     errors.extend(check_local_evidence_preflight_command(label, requirements, kind="xp"))
     errors.extend(check_finalized_evidence_requirements(label, requirements, kind="xp"))
+    errors.extend(check_staged_upload_command(label, requirements, kind="xp"))
     return errors
 
 
@@ -622,6 +636,43 @@ def check_local_evidence_preflight_command(
     return []
 
 
+def check_staged_upload_command(
+    label: str,
+    requirements: dict[str, Any],
+    *,
+    kind: str,
+) -> list[str]:
+    command = requirements.get("staged_upload_command")
+    if not isinstance(command, str) or not command:
+        return [f"{label} promotion requires staged_upload_command"]
+    if kind == "linux":
+        expected = (
+            "python scripts/stage_extended_linux_evidence_upload.py "
+            f"--target {label} "
+            "--release-tag v<project.version> "
+            "--source-dir <target-release-artifact-dir> "
+            "--out-dir <release-upload-staging-dir> "
+            "--force"
+        )
+        script = "stage_extended_linux_evidence_upload.py"
+    else:
+        expected = (
+            "python scripts/stage_xp_native_evidence_upload.py "
+            f"--target {label} "
+            "--release-tag v<project.version> "
+            "--assets-dir <target-release-artifact-dir> "
+            "--evidence-output-dir <xp-evidence-output-dir> "
+            "--out-dir <release-upload-staging-dir> "
+            "--force"
+        )
+        script = "stage_xp_native_evidence_upload.py"
+    if command != expected:
+        return [f"{label} staged_upload_command must be {expected!r}"]
+    if not (ROOT / "scripts" / script).is_file():
+        return [f"{label} staged upload script is missing"]
+    return []
+
+
 def check_finalized_evidence_requirements(
     label: str,
     requirements: dict[str, Any],
@@ -644,6 +695,10 @@ def check_finalized_evidence_requirements(
         errors.append(
             f"{label} accepted_evidence_candidate_command must bind the local evidence root"
         )
+    if "--staged-upload-out-dir <release-upload-staging-dir>" not in candidate:
+        errors.append(
+            f"{label} accepted_evidence_candidate_command must bind staged upload out dir"
+        )
     if kind == "linux":
         if "--linux-smoke-evidence <native-smoke-log>" not in candidate:
             errors.append(f"{label} accepted_evidence_candidate_command must bind Linux smoke evidence")
@@ -657,6 +712,10 @@ def check_finalized_evidence_requirements(
     if kind == "xp":
         if "--release-source-workflow-run-url <github-actions-run-url>" not in candidate:
             errors.append(f"{label} accepted_evidence_candidate_command must bind release source workflow run")
+        if "--xp-evidence-output-dir <xp-evidence-output-dir>" not in candidate:
+            errors.append(
+                f"{label} accepted_evidence_candidate_command must bind XP evidence output dir"
+            )
         expected_source_artifact_arg = (
             f"--release-source-artifact-name xp-native-evidence-{label}-v<project.version>"
         )

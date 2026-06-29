@@ -467,10 +467,12 @@ def check_manifest_validated_commands(candidate: dict[str, Any], manifest: dict[
     bundle_type = str(manifest.get("bundle_type", ""))
     if bundle_type == "extended-linux-native-evidence":
         errors.extend(check_manifest_local_evidence_preflight_command(candidate, commands))
+        errors.extend(check_manifest_staged_upload_command(candidate, commands))
         expected = [
             str(candidate.get("native_build_command", "")),
             str(candidate.get("native_smoke_command", "")),
             str(candidate.get("local_evidence_preflight_command", "")),
+            str(candidate.get("staged_upload_command", "")),
             str(candidate.get("artifact_validation_command", "")),
             "python scripts/check_platform_verified_evidence.py",
         ]
@@ -479,6 +481,7 @@ def check_manifest_validated_commands(candidate: dict[str, Any], manifest: dict[
     elif bundle_type == "windows-xp-native-host-evidence":
         expected_xp_command = str(candidate.get("native_evidence_validation_command", ""))
         errors.extend(check_manifest_local_evidence_preflight_command(candidate, commands))
+        errors.extend(check_manifest_staged_upload_command(candidate, commands))
         xp_commands = [
             command
             for command in commands
@@ -491,6 +494,7 @@ def check_manifest_validated_commands(candidate: dict[str, Any], manifest: dict[
         expected = [
             expected_xp_command,
             str(candidate.get("local_evidence_preflight_command", "")),
+            str(candidate.get("staged_upload_command", "")),
             strict_artifact_validation_command(str(candidate.get("artifact_validation_command", ""))),
             "python scripts/check_platform_verified_evidence.py",
         ]
@@ -516,6 +520,28 @@ def check_manifest_local_evidence_preflight_command(
     if matches[0] != expected:
         return [
             "review bundle manifest validated_commands must match candidate local_evidence_preflight_command"
+        ]
+    return []
+
+
+def check_manifest_staged_upload_command(
+    candidate: dict[str, Any],
+    commands: list[str],
+) -> list[str]:
+    expected = str(candidate.get("staged_upload_command", ""))
+    matches = [
+        command
+        for command in commands
+        if command.startswith("python scripts/stage_extended_linux_evidence_upload.py ")
+        or command.startswith("python scripts/stage_xp_native_evidence_upload.py ")
+    ]
+    if len(matches) != 1:
+        return [
+            "review bundle manifest validated_commands must include exactly one staged upload command"
+        ]
+    if matches[0] != expected:
+        return [
+            "review bundle manifest validated_commands must match candidate staged_upload_command"
         ]
     return []
 

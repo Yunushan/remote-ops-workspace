@@ -160,6 +160,32 @@ def test_stage_extended_linux_evidence_upload_rejects_review_bundle_content_mism
     )
 
 
+def test_stage_extended_linux_evidence_upload_requires_final_record_asset_review(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    stager = _load_stager()
+    captured: dict[str, Any] = {}
+
+    def fake_review_bundle_checker(**kwargs: Any) -> list[str]:
+        captured.update(kwargs)
+        return []
+
+    monkeypatch.setattr(stager, "check_platform_review_bundle_artifacts", fake_review_bundle_checker)
+
+    errors = stager.check_review_bundle_artifacts(
+        "linux-i386",
+        "v1.0.2",
+        {"target": "linux-i386"},
+        bundle_dir=tmp_path,
+    )
+
+    assert errors == []
+    assert captured["require_final_record_assets"] is True
+    assert captured["required_targets"] == ("linux-i386",)
+    assert captured["required_release_tag"] == "v1.0.2"
+
+
 def test_stage_extended_linux_evidence_upload_rejects_release_source_file_set_drift() -> None:
     stager = _load_stager()
     record = {

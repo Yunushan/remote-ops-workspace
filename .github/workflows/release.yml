@@ -212,8 +212,8 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     permissions:
-      actions: read
       contents: write
+      actions: read
     needs:
       - release-preflight
       - source-and-python

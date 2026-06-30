@@ -163,7 +163,7 @@ jobs:
           python -m http.server 8765 --directory apps/web &
           echo $! > web-server.pid
       - name: iOS Web/PWA simulator smoke
-        run: python scripts/check_mobile_emulator_smoke.py --platform ios --url http://127.0.0.1:8765/index.html --out-dir artifacts/mobile
+        run: python scripts/check_mobile_emulator_smoke.py --platform ios --url http://127.0.0.1:8765/index.html --ios-open-url-attempts 3 --out-dir artifacts/mobile
       - uses: actions/upload-artifact@v7
         with:
           name: ios-web-pwa-simulator

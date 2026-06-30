@@ -6,8 +6,14 @@ import shutil
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Any
+
+DEFAULT_IOS_OPEN_URL_ATTEMPTS = 3
+DEFAULT_IOS_OPEN_URL_RETRY_DELAY_SECONDS = 10.0
+DEFAULT_WEB_READY_TIMEOUT_SECONDS = 30.0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -15,6 +21,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--platform", choices=("android", "ios"), required=True)
     parser.add_argument("--url", required=True)
     parser.add_argument("--android-api", type=int)
+    parser.add_argument(
+        "--ios-open-url-attempts",
+        type=int,
+        default=DEFAULT_IOS_OPEN_URL_ATTEMPTS,
+        help="Retry budget for first-boot iOS simulator URL opening.",
+    )
     parser.add_argument("--out-dir", default="artifacts/mobile")
     args = parser.parse_args(argv)
 
@@ -24,7 +36,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.android_api is None:
             raise SystemExit("--android-api is required for Android smoke")
         return check_android(api_level=args.android_api, url=args.url, out_dir=out_dir)
-    return check_ios(url=args.url, out_dir=out_dir)
+    return check_ios(url=args.url, out_dir=out_dir, open_url_attempts=args.ios_open_url_attempts)
 
 
 def check_android(*, api_level: int, url: str, out_dir: Path) -> int:
@@ -46,15 +58,17 @@ def check_android(*, api_level: int, url: str, out_dir: Path) -> int:
     return 0
 
 
-def check_ios(*, url: str, out_dir: Path) -> int:
+def check_ios(*, url: str, out_dir: Path, open_url_attempts: int = DEFAULT_IOS_OPEN_URL_ATTEMPTS) -> int:
     require_tool("xcrun")
+    wait_for_web_url(url)
     runtime = latest_ios_runtime()
     device_type = preferred_iphone_device_type()
     udid = run(["xcrun", "simctl", "create", "row-web-pwa", device_type, runtime["identifier"]]).stdout.strip()
     try:
         run(["xcrun", "simctl", "boot", udid], check=False)
         run(["xcrun", "simctl", "bootstatus", udid, "-b"])
-        run(["xcrun", "simctl", "openurl", udid, url])
+        warm_ios_browser(udid)
+        open_ios_url(udid, url, attempts=open_url_attempts)
         time.sleep(5)
         target = out_dir / "ios-simulator-web-pwa.png"
         run(["xcrun", "simctl", "io", udid, "screenshot", str(target)])
@@ -65,6 +79,52 @@ def check_ios(*, url: str, out_dir: Path) -> int:
     finally:
         run(["xcrun", "simctl", "shutdown", udid], check=False)
         run(["xcrun", "simctl", "delete", udid], check=False)
+
+
+def wait_for_web_url(url: str, timeout_seconds: float = DEFAULT_WEB_READY_TIMEOUT_SECONDS) -> None:
+    deadline = time.monotonic() + timeout_seconds
+    last_error = ""
+    while time.monotonic() < deadline:
+        try:
+            with urllib.request.urlopen(url, timeout=3) as response:
+                if response.status < 500:
+                    return
+                last_error = f"HTTP {response.status}"
+        except (OSError, urllib.error.URLError) as exc:
+            last_error = str(exc)
+        time.sleep(1)
+    raise SystemExit(f"Web/PWA server did not become reachable at {url}: {last_error}")
+
+
+def warm_ios_browser(udid: str) -> None:
+    run(["xcrun", "simctl", "launch", udid, "com.apple.mobilesafari"], check=False)
+    time.sleep(2)
+
+
+def open_ios_url(
+    udid: str,
+    url: str,
+    *,
+    attempts: int = DEFAULT_IOS_OPEN_URL_ATTEMPTS,
+    retry_delay_seconds: float = DEFAULT_IOS_OPEN_URL_RETRY_DELAY_SECONDS,
+) -> None:
+    if attempts < 1:
+        raise SystemExit("--ios-open-url-attempts must be at least 1")
+    last_error = ""
+    for attempt in range(1, attempts + 1):
+        result = run(["xcrun", "simctl", "openurl", udid, url], check=False)
+        if result.returncode == 0:
+            return
+        last_error = result.stderr.strip()
+        print(
+            f"iOS simulator openurl attempt {attempt}/{attempts} failed: {last_error}",
+            file=sys.stderr,
+        )
+        if attempt < attempts:
+            run(["xcrun", "simctl", "bootstatus", udid, "-b"], check=False)
+            warm_ios_browser(udid)
+            time.sleep(retry_delay_seconds)
+    raise SystemExit(f"iOS simulator failed to open {url} after {attempts} attempts: {last_error}")
 
 
 def latest_ios_runtime() -> dict[str, Any]:

@@ -182,6 +182,7 @@ def check_ios_simulator_web_job(workflow: str) -> list[str]:
         "tests/test_mobile_support.py": "mobile support contract tests",
         "python -m http.server 8765 --directory apps/web": "local Web/PWA server",
         "scripts/check_mobile_emulator_smoke.py --platform ios": "iOS simulator smoke helper",
+        "--ios-open-url-attempts 3": "iOS simulator openurl retry budget",
         "http://127.0.0.1:8765/index.html": "iOS simulator host loopback URL",
         "actions/upload-artifact@v7": "iOS smoke screenshot upload",
         "if-no-files-found: error": "artifact upload failure on missing iOS screenshots",

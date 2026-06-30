@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import platform
 import re
@@ -7,8 +9,6 @@ import shutil
 import signal
 import socket
 import subprocess
-import hashlib
-import json
 import sys
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -872,7 +872,7 @@ def discover_packaged_x_server_runtimes(
     system_key = (system or platform.system()).lower()
     candidates: list[XServerRuntimeCandidate] = []
     for root in x_server_packaged_runtime_roots(roots):
-        for key, label, executable, bundled in _runtime_specs(system_key):
+        for key, label, executable, _bundled in _runtime_specs(system_key):
             for candidate_path in _packaged_executable_paths(root, system_key, key, label, executable):
                 if candidate_path.is_file():
                     candidates.append(

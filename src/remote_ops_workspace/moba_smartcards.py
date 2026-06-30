@@ -5,9 +5,10 @@ import json
 import platform
 import re
 import shutil
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from . import command_safety as safe
 from .file_safety import write_json_atomic

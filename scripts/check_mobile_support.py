@@ -112,6 +112,8 @@ def check_workflow(workflow: str) -> list[str]:
     snippets = {
         "android-emulator-web:": "Android emulator Web/PWA job",
         "api-level: [31, 32, 33, 34, 35, 36]": "Android API 31-36 matrix",
+        "Configure Android SDK command-line tools": "Android SDK command-line tools PATH setup",
+        "cmdline-tools/latest/bin": "Android SDK command-line tools discovery path",
         "sdkmanager": "Android SDK package installation",
         "avdmanager create avd": "Android AVD creation",
         "--platform android": "Android mobile smoke helper call",

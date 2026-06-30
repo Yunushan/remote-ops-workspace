@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import importlib.util
 import hashlib
+import importlib.util
 import json
 import os
 import sys
@@ -1189,15 +1189,15 @@ def _release_asset(release: dict[str, Any], name: str) -> dict[str, Any]:
 
 def _bind_release_asset_bytes(checker: Any, record: dict[str, Any]) -> dict[str, bytes]:
     for filename in sorted(record["artifact_sha256"]):
-        payload = f"published bytes for {filename}\n".encode("utf-8")
+        payload = f"published bytes for {filename}\n".encode()
         record["artifact_sha256"][filename] = hashlib.sha256(payload).hexdigest()
     for key in ("manifest", "archive", "sha256s"):
         bundle = record["review_bundle"][key]
-        payload = f"published bytes for {bundle['file']}\n".encode("utf-8")
+        payload = f"published bytes for {bundle['file']}\n".encode()
         bundle["sha256"] = hashlib.sha256(payload).hexdigest()
         bundle["size_bytes"] = len(payload)
     return {
-        str(asset["url"]): f"published bytes for {asset['filename']}\n".encode("utf-8")
+        str(asset["url"]): f"published bytes for {asset['filename']}\n".encode()
         for asset in checker.expected_release_asset_byte_sources(record)
     }
 

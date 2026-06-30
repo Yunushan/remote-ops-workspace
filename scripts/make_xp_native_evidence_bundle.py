@@ -13,10 +13,10 @@ SRC = ROOT / "scripts"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+from check_platform_goal_local_evidence import check_platform_goal_local_evidence  # noqa: E402
 from check_platform_promotion_artifacts import (  # noqa: E402
     check_platform_promotion_artifacts,
 )
-from check_platform_goal_local_evidence import check_platform_goal_local_evidence  # noqa: E402
 from check_platform_verified_evidence import (  # noqa: E402
     check_platform_verified_evidence,
     command_argument_values,

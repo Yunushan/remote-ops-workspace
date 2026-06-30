@@ -10,7 +10,9 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from remote_ops_workspace.moba_customizer import validate_professional_deployment_evidence  # noqa: E402
+from remote_ops_workspace.moba_customizer import (  # noqa: E402
+    validate_professional_deployment_evidence,
+)
 
 
 def main() -> int:

@@ -102,7 +102,9 @@ def test_mobapt_install_plan_uses_safe_argv_for_apt() -> None:
 
 
 def test_mobapt_search_and_update_plans_are_available_for_winget() -> None:
-    which = lambda name: f"C:/Tools/{name}.exe" if name == "winget" else None
+    def which(name: str) -> str | None:
+        return f"C:/Tools/{name}.exe" if name == "winget" else None
+
     search = build_mobapt_package_plan(
         "search",
         "OpenSSH.Beta",

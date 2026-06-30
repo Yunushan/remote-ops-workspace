@@ -792,7 +792,9 @@ def test_import_record_rejects_failed_source_workflow_run(tmp_path: Path, monkey
     )
 
 
-def test_import_record_rejects_source_workflow_path_mismatch(tmp_path: Path, monkeypatch) -> None:
+def test_import_record_rejects_source_workflow_run_path_mismatch(
+    tmp_path: Path, monkeypatch
+) -> None:
     importer = _load_importer()
     record = _record(tmp_path)
     record["release_asset_source"]["workflow"] = ".github/workflows/xp-native-evidence.yml"

@@ -4,8 +4,9 @@ import argparse
 import hashlib
 import json
 import sys
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
@@ -14,7 +15,9 @@ if str(SRC) not in sys.path:
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from remote_ops_workspace.moba_customizer import validate_professional_deployment_evidence  # noqa: E402
+from remote_ops_workspace.moba_customizer import (  # noqa: E402
+    validate_professional_deployment_evidence,
+)
 from remote_ops_workspace.moba_macros import validate_macro_live_replay_evidence  # noqa: E402
 from remote_ops_workspace.moba_mobapt import validate_mobapt_cache_evidence  # noqa: E402
 from remote_ops_workspace.moba_servers import validate_moba_server_release_evidence  # noqa: E402

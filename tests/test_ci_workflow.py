@@ -94,6 +94,33 @@ def test_ci_workflow_requires_android_api_31_to_36_matrix() -> None:
     assert "ci android-emulator-web job missing Android 12-16 API matrix" in "\n".join(errors)
 
 
+def test_ci_workflow_requires_android_sdk_path_setup() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
+        "      - name: Configure Android SDK command-line tools\n"
+        "        run: |\n"
+        "          set -euo pipefail\n"
+        '          sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"\n'
+        '          sdk_tools="$sdk_root/cmdline-tools/latest/bin"\n'
+        '          if [[ ! -x "$sdk_tools/sdkmanager" || ! -x "$sdk_tools/avdmanager" ]]; then\n'
+        '            echo "::error::Android SDK command-line tools not found under $sdk_tools"\n'
+        '            find "$sdk_root" -maxdepth 4 -type f \\( -name sdkmanager -o -name avdmanager \\) -print || true\n'
+        "            exit 1\n"
+        "          fi\n"
+        '          echo "ANDROID_HOME=$sdk_root" >> "$GITHUB_ENV"\n'
+        '          echo "ANDROID_SDK_ROOT=$sdk_root" >> "$GITHUB_ENV"\n'
+        '          echo "$sdk_tools" >> "$GITHUB_PATH"\n'
+        '          echo "$sdk_root/emulator" >> "$GITHUB_PATH"\n'
+        '          echo "$sdk_root/platform-tools" >> "$GITHUB_PATH"\n'
+        '          "$sdk_tools/sdkmanager" --version\n',
+        "",
+    )
+
+    errors = checker.check_ci_workflow(workflow)
+
+    assert any("Android SDK command-line tools PATH setup" in error for error in errors)
+
+
 def test_ci_workflow_requires_ios_simulator_web_job() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(

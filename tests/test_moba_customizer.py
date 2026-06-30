@@ -9,8 +9,8 @@ from remote_ops_workspace.cli import build_parser
 from remote_ops_workspace.moba_customizer import (
     build_enterprise_update_channel_plan,
     build_moba_professional_customizer_plan,
-    build_professional_deployment_plan,
     build_professional_deployment_evidence_bundle_plan,
+    build_professional_deployment_plan,
     canonical_update_manifest_payload,
     validate_professional_deployment_evidence,
     validate_professional_update_manifest,

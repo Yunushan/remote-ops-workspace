@@ -6,15 +6,15 @@ from pathlib import Path
 
 from remote_ops_workspace.cli import build_parser
 from remote_ops_workspace.moba_servers import (
-    build_moba_server_plan,
+    SERVER_DEFAULT_PORTS,
     build_moba_server_config_plan,
     build_moba_server_gui_config_surface,
+    build_moba_server_plan,
     build_moba_server_runtime_bundle_plan,
     build_moba_server_runtime_status,
     build_moba_server_suite_status,
     discover_packaged_moba_server_runtimes,
     load_moba_server_record,
-    SERVER_DEFAULT_PORTS,
     start_moba_server,
     stop_moba_server,
     validate_moba_server_release_evidence,
@@ -253,7 +253,7 @@ def _write_server_evidence_bundle(tmp_path: Path) -> Path:
     for service in SERVER_DEFAULT_PORTS:
         runtime = tmp_path / "runtimes" / service / f"{service}d"
         runtime.parent.mkdir(parents=True, exist_ok=True)
-        runtime.write_bytes(f"fake {service} daemon".encode("utf-8"))
+        runtime.write_bytes(f"fake {service} daemon".encode())
         client_evidence = tmp_path / "evidence" / f"{service}-client.txt"
         client_evidence.parent.mkdir(parents=True, exist_ok=True)
         client_evidence.write_text(f"{service} client passed\n", encoding="utf-8")

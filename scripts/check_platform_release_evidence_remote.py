@@ -17,6 +17,7 @@ SCRIPTS = ROOT / "scripts"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
+from check_platform_review_bundle_artifacts import canonical_public_record_bytes  # noqa: E402
 from check_platform_verified_evidence import (  # noqa: E402
     EVIDENCE_PATH,
     PROMOTION_PATH,
@@ -29,7 +30,6 @@ from check_platform_verified_evidence import (  # noqa: E402
     release_source_workflow,
     review_bundle_expected_files,
 )
-from check_platform_review_bundle_artifacts import canonical_public_record_bytes  # noqa: E402
 
 GITHUB_API = "https://api.github.com"
 PROTECTED_RELEASE_ASSET_PATTERNS = {

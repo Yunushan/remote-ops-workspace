@@ -207,7 +207,7 @@ def test_moba_macro_live_evidence_validation_accepts_real_connected_bundle(tmp_p
     review_log.write_text("row macro live-plan triage --profile edge --connected-profile edge\n", encoding="utf-8")
     replay_log.write_text("live pane replay edge\n", encoding="utf-8")
     evidence = tmp_path / "macro-live-evidence.json"
-    input_sha = hashlib.sha256("hostname\n".encode("utf-8")).hexdigest()
+    input_sha = hashlib.sha256(b"hostname\n").hexdigest()
     evidence.write_text(
         json.dumps(
             {

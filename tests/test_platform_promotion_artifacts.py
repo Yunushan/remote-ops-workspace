@@ -278,6 +278,57 @@ def test_platform_promotion_artifacts_reject_duplicate_manifest_record(tmp_path:
     assert any("linux-armhf native manifest contains duplicate payload records" in error for error in errors)
 
 
+def test_platform_promotion_artifacts_reject_manifest_architecture_drift(tmp_path: Path) -> None:
+    checker = _load_platform_promotion_artifacts_checker()
+    tag = f"v{checker.read_project_version()}"
+    names = _required_names(checker, "linux-armhf", tag)
+    _write_artifact_set(tmp_path, names)
+    manifest = next(tmp_path.glob("*manifest.json"))
+    records = json.loads(manifest.read_text(encoding="utf-8"))
+    deb_record = next(record for record in records if str(record["file"]).endswith(".deb"))
+    deb_record["architecture"] = "arm64"
+    manifest.write_text(json.dumps(records, indent=2) + "\n", encoding="utf-8")
+    _rewrite_sidecar_only(tmp_path, names)
+
+    errors = checker.check_platform_promotion_artifacts(
+        target="linux-armhf",
+        assets_dir=tmp_path,
+        tag=tag,
+    )
+
+    assert any(
+        "linux-armhf native manifest record "
+        "remote-ops-workspace-v1.0.2-linux-armhf.deb architecture must be 'armhf', got 'arm64'"
+        in error
+        for error in errors
+    )
+
+
+def test_platform_promotion_artifacts_reject_manifest_format_drift(tmp_path: Path) -> None:
+    checker = _load_platform_promotion_artifacts_checker()
+    tag = f"v{checker.read_project_version()}"
+    names = _required_names(checker, "windows-xp-native-x64", tag)
+    _write_artifact_set(tmp_path, names)
+    manifest = next(tmp_path.glob("*manifest.json"))
+    records = json.loads(manifest.read_text(encoding="utf-8"))
+    records[0]["format"] = "tar.gz"
+    manifest.write_text(json.dumps(records, indent=2) + "\n", encoding="utf-8")
+    _rewrite_sidecar_only(tmp_path, names)
+
+    errors = checker.check_platform_promotion_artifacts(
+        target="windows-xp-native-x64",
+        assets_dir=tmp_path,
+        tag=tag,
+    )
+
+    assert any(
+        "windows-xp-native-x64 native manifest record "
+        "remote-ops-workspace-v1.0.2-windows-xp-x64-native.zip format must be 'zip', got 'tar.gz'"
+        in error
+        for error in errors
+    )
+
+
 def test_platform_promotion_artifacts_reject_invalid_payload_signature(tmp_path: Path) -> None:
     checker = _load_platform_promotion_artifacts_checker()
     tag = f"v{checker.read_project_version()}"
@@ -427,6 +478,7 @@ def _rewrite_manifest_and_sidecar(root: Path, names: list[str], *, manifest_as_o
     records = [
         {
             "file": name,
+            **_manifest_record_metadata(name),
             "size_bytes": (root / name).stat().st_size,
             "sha256": _sha256(root / name),
         }
@@ -458,6 +510,36 @@ def _rewrite_sidecar_only(root: Path, names: list[str]) -> Path:
         encoding="utf-8",
     )
     return sidecar
+
+
+def _manifest_record_metadata(name: str) -> dict[str, str]:
+    if name.endswith(".tar.gz"):
+        return {"architecture": _artifact_architecture(name), "format": "tar.gz"}
+    if name.endswith(".AppImage"):
+        return {"architecture": _artifact_architecture(name), "format": "AppImage"}
+    if name.endswith(".deb"):
+        return {"architecture": _artifact_architecture(name), "format": "deb"}
+    if name.endswith(".rpm"):
+        return {"architecture": _artifact_architecture(name), "format": "rpm"}
+    if name.endswith(".zip"):
+        return {"architecture": _artifact_architecture(name), "format": "zip"}
+    return {}
+
+
+def _artifact_architecture(name: str) -> str:
+    if "-linux-i386." in name:
+        return "i386"
+    if "-linux-i686." in name or "-linux-i686-native." in name:
+        return "i686"
+    if "-linux-armhf." in name or "-linux-armhf-native." in name:
+        return "armhf"
+    if "-linux-armv7hl." in name:
+        return "armv7hl"
+    if "-windows-xp-x86-native." in name:
+        return "x86"
+    if "-windows-xp-x64-native." in name:
+        return "x64"
+    return ""
 
 
 def _payload_bytes(name: str) -> bytes:

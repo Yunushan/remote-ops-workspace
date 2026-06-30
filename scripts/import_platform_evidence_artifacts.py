@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -39,8 +40,12 @@ from make_platform_verified_evidence_record import sha256_file  # noqa: E402
 SOURCE_RUN_METADATA_JQ = (
     "{id: .id, htmlUrl: .html_url, attempt: .run_attempt, status: .status, "
     "conclusion: .conclusion, event: .event, headSha: .head_sha, path: .path, "
+    "runStartedAt: .run_started_at, "
+    "runUpdatedAt: .updated_at, "
     "repositoryFullName: .repository.full_name, "
-    "headRepositoryFullName: .head_repository.full_name}"
+    "headRepositoryFullName: .head_repository.full_name, "
+    "repositoryId: .repository.id, "
+    "headRepositoryId: .head_repository.id}"
 )
 SOURCE_RUN_ARTIFACTS_PAGE_SIZE = 100
 REQUIRE_VERIFY_SOURCE_RUN_DRY_RUN_ERROR = (
@@ -332,6 +337,7 @@ def import_record(
         print(" ".join(artifacts_command))
         print(" ".join(command))
         if verify_source_run_metadata:
+            source_run_observed: dict[str, Any] = {}
             errors = verify_source_run(
                 target,
                 metadata_command,
@@ -340,6 +346,7 @@ def import_record(
                 expected_head_sha=expected_head_sha,
                 expected_run_attempt=expected_run_attempt,
                 release_head_sha=release_head_sha,
+                observed_source_run=source_run_observed,
             )
             if errors:
                 return errors
@@ -350,8 +357,13 @@ def import_record(
                 expected_repository=repository,
                 expected_run_id=run_id,
                 expected_head_sha=expected_head_sha,
+                expected_repository_id=source_run_observed.get("repository_id"),
+                expected_head_repository_id=source_run_observed.get("head_repository_id"),
+                expected_run_started_at=source_run_observed.get("run_started_at"),
+                expected_run_updated_at=source_run_observed.get("run_updated_at"),
             )
     else:
+        source_run_observed: dict[str, Any] = {}
         errors = verify_source_run(
             target,
             metadata_command,
@@ -360,6 +372,7 @@ def import_record(
             expected_head_sha=expected_head_sha,
             expected_run_attempt=expected_run_attempt,
             release_head_sha=release_head_sha,
+            observed_source_run=source_run_observed,
         )
         if errors:
             return errors
@@ -370,6 +383,10 @@ def import_record(
             expected_repository=repository,
             expected_run_id=run_id,
             expected_head_sha=expected_head_sha,
+            expected_repository_id=source_run_observed.get("repository_id"),
+            expected_head_repository_id=source_run_observed.get("head_repository_id"),
+            expected_run_started_at=source_run_observed.get("run_started_at"),
+            expected_run_updated_at=source_run_observed.get("run_updated_at"),
         )
         if errors:
             return errors
@@ -472,6 +489,7 @@ def verify_source_run(
     expected_head_sha: str,
     expected_run_attempt: int,
     release_head_sha: str | None = None,
+    observed_source_run: dict[str, Any] | None = None,
 ) -> list[str]:
     try:
         result = subprocess.run(command, check=True, capture_output=True, text=True)
@@ -505,6 +523,38 @@ def verify_source_run(
             f"{target} release_asset_source workflow run headRepositoryFullName must match accepted record "
             f"{expected_repository}, got {data.get('headRepositoryFullName')!r}"
         )
+    if observed_source_run is not None:
+        repository_id = positive_int_value(data.get("repositoryId"))
+        head_repository_id = positive_int_value(data.get("headRepositoryId"))
+        if repository_id is not None:
+            observed_source_run["repository_id"] = repository_id
+        if head_repository_id is not None:
+            observed_source_run["head_repository_id"] = head_repository_id
+        run_started_at = data.get("runStartedAt")
+        run_updated_at = data.get("runUpdatedAt")
+        if run_started_at is not None:
+            if parse_github_timestamp(run_started_at) is None:
+                errors.append(
+                    f"{target} release_asset_source workflow run runStartedAt "
+                    f"must be a GitHub ISO-8601 timestamp, got {run_started_at!r}"
+                )
+            else:
+                observed_source_run["run_started_at"] = str(run_started_at).strip()
+        if run_updated_at is not None:
+            if parse_github_timestamp(run_updated_at) is None:
+                errors.append(
+                    f"{target} release_asset_source workflow run runUpdatedAt "
+                    f"must be a GitHub ISO-8601 timestamp, got {run_updated_at!r}"
+                )
+            else:
+                observed_source_run["run_updated_at"] = str(run_updated_at).strip()
+        start = parse_github_timestamp(run_started_at)
+        updated = parse_github_timestamp(run_updated_at)
+        if start is not None and updated is not None and updated < start:
+            errors.append(
+                f"{target} release_asset_source workflow run runUpdatedAt "
+                f"must be at or after runStartedAt {run_started_at}, got {run_updated_at!r}"
+            )
     if data.get("status") != "completed":
         errors.append(
             f"{target} release_asset_source workflow run status must be completed, got {data.get('status')!r}"
@@ -548,6 +598,27 @@ def repository_from_workflow_run_url(workflow_run_url: str) -> str:
     return match.group(1) if match else ""
 
 
+def positive_int_value(raw_value: Any) -> int | None:
+    if isinstance(raw_value, int) and not isinstance(raw_value, bool) and raw_value > 0:
+        return raw_value
+    return None
+
+
+def parse_github_timestamp(raw_value: Any) -> datetime | None:
+    if not isinstance(raw_value, str) or not raw_value.strip():
+        return None
+    text = raw_value.strip()
+    if text.endswith("Z"):
+        text = f"{text[:-1]}+00:00"
+    try:
+        value = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
 def verify_source_artifact(
     target: str,
     command: list[str],
@@ -556,6 +627,10 @@ def verify_source_artifact(
     expected_repository: str,
     expected_run_id: str,
     expected_head_sha: str,
+    expected_repository_id: int | None = None,
+    expected_head_repository_id: int | None = None,
+    expected_run_started_at: str | None = None,
+    expected_run_updated_at: str | None = None,
 ) -> list[str]:
     try:
         result = subprocess.run(command, check=True, capture_output=True, text=True)
@@ -618,6 +693,15 @@ def verify_source_artifact(
             f"{target} release_asset_source artifact {artifact_name} size_in_bytes must be positive, "
             f"got {size!r}"
         )
+    errors.extend(
+        check_source_artifact_created_within_run_window(
+            target,
+            artifact_name,
+            artifact.get("created_at"),
+            expected_run_started_at=expected_run_started_at,
+            expected_run_updated_at=expected_run_updated_at,
+        )
+    )
     workflow_run = artifact.get("workflow_run")
     if not isinstance(workflow_run, dict):
         errors.append(
@@ -636,6 +720,56 @@ def verify_source_artifact(
                 f"{target} release_asset_source artifact {artifact_name} workflow_run.head_sha must match "
                 f"accepted record {expected_head_sha}, got {artifact_head_sha!r}"
             )
+        if expected_repository_id is not None and workflow_run.get("repository_id") != expected_repository_id:
+            errors.append(
+                f"{target} release_asset_source artifact {artifact_name} workflow_run.repository_id "
+                f"must match exact source run repository id {expected_repository_id}, "
+                f"got {workflow_run.get('repository_id')!r}"
+            )
+        if (
+            expected_head_repository_id is not None
+            and workflow_run.get("head_repository_id") != expected_head_repository_id
+        ):
+            errors.append(
+                f"{target} release_asset_source artifact {artifact_name} workflow_run.head_repository_id "
+                f"must match exact source run head repository id {expected_head_repository_id}, "
+                f"got {workflow_run.get('head_repository_id')!r}"
+            )
+    return errors
+
+
+def check_source_artifact_created_within_run_window(
+    target: str,
+    artifact_name: str,
+    raw_created_at: Any,
+    *,
+    expected_run_started_at: str | None,
+    expected_run_updated_at: str | None,
+) -> list[str]:
+    if expected_run_started_at is None and expected_run_updated_at is None:
+        return []
+    run_started_at = parse_github_timestamp(expected_run_started_at)
+    run_updated_at = parse_github_timestamp(expected_run_updated_at)
+    created_at = parse_github_timestamp(raw_created_at)
+    if created_at is None:
+        return [
+            f"{target} release_asset_source artifact {artifact_name} created_at "
+            f"must be a GitHub ISO-8601 timestamp when exact source run timestamps are known, "
+            f"got {raw_created_at!r}"
+        ]
+    errors: list[str] = []
+    if run_started_at is not None and created_at < run_started_at:
+        errors.append(
+            f"{target} release_asset_source artifact {artifact_name} created_at "
+            f"must be at or after exact source run start {expected_run_started_at}, "
+            f"got {raw_created_at!r}"
+        )
+    if run_updated_at is not None and created_at > run_updated_at:
+        errors.append(
+            f"{target} release_asset_source artifact {artifact_name} created_at "
+            f"must be at or before exact source run update {expected_run_updated_at}, "
+            f"got {raw_created_at!r}"
+        )
     return errors
 
 

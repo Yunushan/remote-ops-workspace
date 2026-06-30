@@ -76,6 +76,16 @@ publishing policy is declared in `configs/release_matrix.json`, and
 release matrix, generated readiness scores and platform docs keep the same
 default-native, script-supported, Termux/Web, Web/PWA and legacy remote-target
 meaning.
+The same catalog carries a top-level `protected_readiness_goal` contract for
+Linux i386, Linux armhf and Windows XP native-host readiness. That contract sets
+a `static_catalog_boundary` of `not native-host/readiness proof`, keeps
+`status_source` pointing at `configs/platform_verified_evidence.json`, records
+the accepted-evidence and protected-goal gate commands, and names the
+`release_asset_provenance_gate` that must run with `--assets-dir` before
+published native bytes can count as proven.
+Its JSON consumer guidance is explicit:
+`row platforms --json is the static platform catalog; use row features --coverage --json`
+for the evidence-backed readiness report.
 The generated platform verified readiness overall is scoped to verified
 default-native, Termux/Web and Web/PWA release targets. Manual Linux i386/armhf
 and legacy Windows rows remain visible as extended compatibility rows outside
@@ -103,6 +113,10 @@ rows. The strict promotion path is
 `python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-complete`,
 `python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag v<project.version>`
 and `python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> --release-assets-dir <release-assets-dir>`;
+add `--release-repository <owner>/<repo>` to that strict verifier when the
+same run must also audit an already-published GitHub release, exact source-run
+metadata, published native/review-bundle asset bytes and published final
+accepted-record JSON bytes.
 those commands must fail until linux-i386, linux-armhf,
 windows-xp-native-x86 and windows-xp-native-x64 all have accepted records for
 the same release tag, same GitHub release repository, same release source head
@@ -117,6 +131,16 @@ so accepted records must be release-importable, bound to the current checkout
 head, backed by completed successful dispatch runs, hash-checked as downloaded
 source artifacts before being copied into the release asset directory and
 matched by the downloaded release asset directory before promotion is trusted.
+The generated static readiness report keeps
+`release_asset_provenance_complete=false`; only the asset-backed protected goal
+gate can flip that proof state after finalized records, review bundles and
+native release bytes match in the publish-ready asset directory.
+Source artifact inventory checks bind `workflow_run.id`,
+`workflow_run.head_sha`, `workflow_run.repository_id` and
+`workflow_run.head_repository_id` when GitHub exposes repository IDs, reject
+artifact `created_at` values outside the exact source run start/update window
+when GitHub exposes timestamps, and compare the finalized public record asset to canonical
+accepted-record JSON bytes before a published release can pass the live audit.
 Generate candidate accepted records with
 `python scripts/make_platform_verified_evidence_record.py` after artifact and
 XP evidence validators pass; package the review bundle, then use
@@ -146,8 +170,10 @@ URL must use the same `/releases/download/<tag>/` segment as the record
 The URL and hash filename sets must exactly match the target's required
 artifact names; missing, duplicate or extra files keep the row partial. Staged
 Linux and XP promotion artifact directories and contained files must be plain
-non-symlink paths, and evidence bundle output directories must include the
-target id and release tag as path segments. Promotion uploads must also verify
+non-symlink paths, native manifest payload records must bind the expected
+target architecture and package/container format for each payload, and evidence
+bundle output directories must include the target id and release tag as path
+segments. Promotion uploads must also verify
 native artifact and review-bundle file hashes against the finalized accepted
 record before upload, and the release importer performs the same native
 artifact SHA-256 plus review-bundle size/SHA-256 checks on the downloaded source
@@ -165,6 +191,8 @@ Linux i386/armhf records must
 also include the builder identity JSON emitted by
 `python3 scripts/check_extended_platform_builder.py --release-tag v<project.version> --workflow-run-url <github-actions-run-url> --workflow-run-attempt <github-actions-run-attempt> --source-head-sha <github-actions-head-sha> --out ...`, including
 the same `release_tag`, `workflow_run_url` and `workflow_run_attempt` as the accepted record, plus `workflow_ref` pointing at `.github/workflows/extended-platform-evidence.yml`, `workflow_sha`, `source_head_sha` and `observed_git_head_sha` matching `release_asset_source.head_sha`, `git_worktree_clean=true`, a
+native smoke log with exact single-occurrence proof lines and case-insensitive
+rejection of forbidden weak-security proof lines, a
 sanitized target-scoped `host_identity` block with
 `operator_private_data_redacted=true`, matching `platform.machine()`,
 `uname -m`, `dpkg --print-architecture`
@@ -178,7 +206,9 @@ contract, where the Linux smoke command includes the target id, workflow run
 URL, workflow run attempt and source head SHA, and the captured smoke log proves
 the observed Git HEAD SHA matches that source head SHA plus the sanitized host
 label, deterministic evidence run ID and observed-at UTC timestamp, a `linux_smoke_evidence_sha256.native_smoke`
-digest for the captured native smoke log, whose evidence files must use target-scoped names
+digest for the captured native smoke log, and a `linux_smoke_summary` that repeats the
+accepted release/run/source, architecture, userland, host identity, OpenSSL and
+profile-only legacy crypto scope facts in structured form. Evidence files must use target-scoped names
 `builder-identity-<target>.json`, `native-smoke-<target>.log` and
 `platform-verified-evidence-<target>.json`, and whose content must include the canonical smoke command, target id,
 workflow run URL, release tag, target architecture, host label, evidence run ID,
@@ -221,10 +251,13 @@ output`, `xp smoke processor architecture env`, `xp smoke processor
 architecture w6432 env`, `xp smoke wmic os caption`,
 `xp smoke wmic os csdversion`, `xp smoke host label`, `xp smoke evidence run
 id`, `xp smoke observed at utc`, `xp smoke source workflow run`,
-`xp smoke source head sha` and `xp smoke source run attempt`, so copied evidence from another target,
-smoke, release tag, lab host, evidence run, observed timestamp, operating
-system, architecture, service pack, edition, Windows version probe or processor
-architecture cannot promote; smoke evidence paths must
+`xp smoke source head sha` and `xp smoke source run attempt` exactly once;
+duplicated source, artifact, host, OS or security proof lines are rejected.
+Forbidden weak-security proof lines are rejected case-insensitively.
+These exact single-occurrence bindings prevent copied evidence from another
+target, smoke, release tag, lab host, evidence run, observed timestamp,
+operating system, architecture, service pack, edition, Windows version probe or
+processor architecture from promoting; smoke evidence paths must
 also be plain non-symlink files under `xp-smoke-evidence/`. The current XP
 evidence contract requires XP x86
 SP3 evidence and Windows XP Professional x64 Edition SP2 evidence before either
@@ -337,6 +370,16 @@ The broad support catalog is exposed with:
 row platforms
 row platforms --json
 ```
+
+The human `row platforms` output includes an `Evidence-backed protected
+readiness` section. That section prints the protected platform goal percentage,
+the `Release asset provenance` state, missing accepted evidence targets and the
+explicit warning that the static platform catalog is not native-host/readiness
+proof for Linux i386/armhf or Windows XP. The `row platforms --json` output
+stays the static catalog from `configs/platform_targets.json`; its
+`protected_readiness_goal` metadata repeats the protected target list, accepted
+evidence source, security boundary and asset-provenance gate, but the
+evidence-backed score still comes from `row features --coverage --json`.
 
 ## Windows and Windows Server
 

@@ -68,6 +68,29 @@ def test_xp_native_evidence_contract_requires_artifact_manifest_smoke_lines() ->
     ) in errors
 
 
+def test_xp_native_evidence_contract_requires_exact_smoke_proof_line_occurrences() -> None:
+    checker = _load_xp_native_evidence_checker()
+    contract = checker.read_json(Path("configs/xp_native_evidence_contract.json"))
+    del contract["exact_smoke_proof_line_occurrences_required"]
+
+    errors = checker.check_contract(contract)
+
+    assert "XP native evidence contract must require exact single-occurrence smoke proof lines" in errors
+
+
+def test_xp_native_evidence_contract_requires_case_insensitive_forbidden_security_lines() -> None:
+    checker = _load_xp_native_evidence_checker()
+    contract = checker.read_json(Path("configs/xp_native_evidence_contract.json"))
+    del contract["forbidden_security_smoke_lines_case_insensitive"]
+
+    errors = checker.check_contract(contract)
+
+    assert (
+        "XP native evidence contract must require "
+        "case-insensitive forbidden security proof-line rejection"
+    ) in errors
+
+
 def test_xp_native_evidence_contract_requires_runner_source_env_binding(tmp_path: Path) -> None:
     checker = _load_xp_native_evidence_checker()
     contract = checker.read_json(Path("configs/xp_native_evidence_contract.json"))
@@ -749,6 +772,26 @@ def test_xp_native_evidence_rejects_smoke_evidence_release_source_binding_mismat
     ) in errors
 
 
+def test_xp_native_evidence_rejects_duplicate_smoke_source_binding_line(tmp_path: Path) -> None:
+    checker = _load_xp_native_evidence_checker()
+    evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    smoke_file = tmp_path / evidence["smoke_results"][0]["evidence_file"]
+    duplicate_line = f"xp smoke source head sha: {evidence['release_source']['head_sha']}\n"
+    smoke_file.write_text(smoke_file.read_text(encoding="utf-8") + duplicate_line, encoding="utf-8")
+    evidence["smoke_results"][0]["evidence_sha256"] = _sha256(smoke_file)
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path)
+
+    expected = evidence["release_source"]["head_sha"]
+    assert (
+        "windows-xp-native-x86 smoke result cli_launch evidence_file source head SHA binding "
+        f"must be ['{expected}'], got ['{expected}', '{expected}']"
+    ) in errors
+
+
 def test_xp_native_evidence_rejects_smoke_evidence_os_identity_mismatch(
     tmp_path: Path,
 ) -> None:
@@ -915,6 +958,26 @@ def test_xp_native_evidence_rejects_missing_security_smoke_provenance_line(tmp_p
     ) in errors
 
 
+def test_xp_native_evidence_rejects_duplicate_security_smoke_proof_line(tmp_path: Path) -> None:
+    checker = _load_xp_native_evidence_checker()
+    evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    result = next(item for item in evidence["smoke_results"] if item["id"] == "legacy_crypto_profile_scoped")
+    smoke_file = tmp_path / result["evidence_file"]
+    duplicate_line = "legacy crypto scope: profile-only\n"
+    smoke_file.write_text(smoke_file.read_text(encoding="utf-8") + duplicate_line, encoding="utf-8")
+    result["evidence_sha256"] = _sha256(smoke_file)
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path)
+
+    assert (
+        "windows-xp-native-x86 smoke result legacy_crypto_profile_scoped evidence_file "
+        "must include exactly one security proof line: legacy crypto scope: profile-only (got 2)"
+    ) in errors
+
+
 def test_xp_native_evidence_rejects_forbidden_legacy_crypto_security_proof_line(tmp_path: Path) -> None:
     checker = _load_xp_native_evidence_checker()
     evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
@@ -923,6 +986,28 @@ def test_xp_native_evidence_rejects_forbidden_legacy_crypto_security_proof_line(
     smoke_file = tmp_path / result["evidence_file"]
     smoke_file.write_text(
         smoke_file.read_text(encoding="utf-8") + "weak crypto global default: true\n",
+        encoding="utf-8",
+    )
+    result["evidence_sha256"] = _sha256(smoke_file)
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path)
+
+    assert (
+        "windows-xp-native-x86 smoke result legacy_crypto_profile_scoped evidence_file "
+        "contains forbidden security proof line: weak crypto global default: true"
+    ) in errors
+
+
+def test_xp_native_evidence_rejects_case_variant_forbidden_security_proof_line(tmp_path: Path) -> None:
+    checker = _load_xp_native_evidence_checker()
+    evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    result = next(item for item in evidence["smoke_results"] if item["id"] == "legacy_crypto_profile_scoped")
+    smoke_file = tmp_path / result["evidence_file"]
+    smoke_file.write_text(
+        smoke_file.read_text(encoding="utf-8") + "Weak Crypto Global Default: TRUE\n",
         encoding="utf-8",
     )
     result["evidence_sha256"] = _sha256(smoke_file)
@@ -1256,6 +1341,34 @@ def test_xp_native_evidence_rejects_artifact_manifest_smoke_without_validation_l
     assert (
         "windows-xp-native-x64 smoke result artifact_manifest_validation evidence_file "
         "missing artifact proof line: xp smoke artifact sha256s validated: true"
+    ) in errors
+
+
+def test_xp_native_evidence_rejects_duplicate_artifact_manifest_smoke_proof_line(
+    tmp_path: Path,
+) -> None:
+    checker = _load_xp_native_evidence_checker()
+    artifact_checker = _load_platform_promotion_artifacts_checker()
+    tag = f"v{artifact_checker.read_project_version()}"
+    target = "windows-xp-native-x64"
+    names = _required_artifact_names(artifact_checker, target, tag)
+    evidence = _valid_evidence(target, "x64", "SP2", tag, names)
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    smoke_path = tmp_path / "xp-smoke-evidence" / "artifact_manifest_validation.txt"
+    duplicate_line = "xp smoke artifact manifest validated: true\n"
+    smoke_path.write_text(smoke_path.read_text(encoding="utf-8") + duplicate_line, encoding="utf-8")
+    for result in evidence["smoke_results"]:
+        if result["id"] == "artifact_manifest_validation":
+            result["evidence_sha256"] = _sha256(smoke_path)
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path)
+
+    assert (
+        "windows-xp-native-x64 smoke result artifact_manifest_validation evidence_file "
+        "must include exactly one artifact proof line: "
+        "xp smoke artifact manifest validated: true (got 2)"
     ) in errors
 
 
@@ -1735,6 +1848,7 @@ def _write_artifact_set(root: Path, names: list[str]) -> None:
     records = [
         {
             "file": name,
+            **_manifest_record_metadata(name),
             "size_bytes": (root / name).stat().st_size,
             "sha256": _sha256(root / name),
         }
@@ -1746,6 +1860,20 @@ def _write_artifact_set(root: Path, names: list[str]) -> None:
         "".join(f"{_sha256(root / name)}  {name}\n" for name in sidecar_names),
         encoding="utf-8",
     )
+
+
+def _manifest_record_metadata(name: str) -> dict[str, str]:
+    if name.endswith(".zip"):
+        return {"architecture": _artifact_architecture(name), "format": "zip"}
+    return {}
+
+
+def _artifact_architecture(name: str) -> str:
+    if "-windows-xp-x86-native." in name:
+        return "x86"
+    if "-windows-xp-x64-native." in name:
+        return "x64"
+    return ""
 
 
 def _payload_bytes(name: str) -> bytes:

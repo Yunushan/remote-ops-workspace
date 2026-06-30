@@ -11,6 +11,9 @@ POLICY = (
     "or Windows XP native-host readiness. Accepted records must include release asset URLs, "
     "review-bundle manifest release asset URL binding, review bundle release asset URLs, "
     "release-importable artifact source binding, "
+    "source artifact repository-id binding when exact source-run metadata exposes repository IDs, "
+    "source artifact run-start timestamp binding when exact source-run metadata exposes run start timestamps, "
+    "source artifact run-window timestamp binding when exact source-run metadata exposes run update timestamps, "
     "release source head SHA binding, "
     "release source run-attempt binding, "
     "same release source workflow run URL cannot carry conflicting run attempts, "
@@ -21,12 +24,14 @@ POLICY = (
     "finalized accepted-record source file binding, "
     "finalized accepted-record release asset URL binding, "
     "canonical finalized accepted-record JSON byte binding, "
+    "published native and review-bundle release asset byte binding, "
     "Linux release source artifact names must be target/release-scoped, "
     "Linux accepted evidence command paths must be target/release-scoped, "
     "XP release source artifact names must be target/release-scoped, "
     "XP accepted evidence command paths must be target/release-scoped, "
     "and per-artifact SHA-256 digests, safe relative non-link native archive entries, "
     "exact safe checksum and native manifest file references, "
+    "target architecture/format manifest binding, "
     "exact safe release asset URL filenames, "
     "exact required check lists, exact workflow dispatch input sets, exact evidence source record fields, "
     "exact release source and review bundle fields, "
@@ -43,6 +48,9 @@ POLICY = (
     "Linux builder host identity binding when applicable, "
     "Linux builder rpm and non-interactive sudo evidence, Linux security patch evidence, "
     "Linux security smoke proof-line binding, "
+    "exact Linux smoke proof-line occurrence binding, "
+    "case-insensitive Linux forbidden security proof-line rejection, "
+    "Linux native smoke summary binding, "
     "Linux native build and smoke command provenance, "
     "Linux smoke evidence SHA-256, Linux smoke release/run/source head SHA binding, "
     "Linux smoke runtime architecture and userland binding, "
@@ -54,7 +62,9 @@ POLICY = (
     "XP evidence summary binding, exact XP evidence summary fields, XP host identity SHA-256 binding, "
     "XP sanitized target-scoped host identity binding, XP smoke host identity binding, "
     "XP smoke observed-at timestamp binding, XP smoke OS identity binding, "
-    "XP smoke host probe proof-line binding, XP security patch evidence, "
+    "XP smoke host probe proof-line binding, exact XP smoke proof-line occurrence binding, "
+    "case-insensitive XP forbidden security proof-line rejection, "
+    "XP security patch evidence, "
     "tracked scripts/xp_smoke_runner.cmd XP smoke command provenance, "
     "canonical XP smoke proof-file command binding, "
     "XP security smoke command provenance binding when applicable, "
@@ -279,6 +289,53 @@ def test_platform_verified_evidence_rejects_missing_linux_security_smoke_policy(
     assert "platform verified evidence policy must require Linux security smoke proof-line binding" in errors
 
 
+def test_platform_verified_evidence_rejects_missing_exact_linux_smoke_proof_line_policy() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY.replace("exact Linux smoke proof-line occurrence binding, ", ""),
+            "accepted_evidence": [],
+        }
+    )
+
+    assert "platform verified evidence policy must require exact Linux smoke proof-line occurrence binding" in errors
+
+
+def test_platform_verified_evidence_rejects_missing_linux_forbidden_security_case_policy() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY.replace(
+                "case-insensitive Linux forbidden security proof-line rejection, ",
+                "",
+            ),
+            "accepted_evidence": [],
+        }
+    )
+
+    assert (
+        "platform verified evidence policy must require case-insensitive Linux forbidden security proof-line rejection"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_missing_linux_smoke_summary_policy() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY.replace("Linux native smoke summary binding, ", ""),
+            "accepted_evidence": [],
+        }
+    )
+
+    assert "platform verified evidence policy must require Linux native smoke summary binding" in errors
+
+
 def test_platform_verified_evidence_rejects_missing_review_bundle_manifest_url_policy() -> None:
     checker = _load_platform_verified_evidence_checker()
 
@@ -394,6 +451,25 @@ def test_platform_verified_evidence_rejects_missing_exact_artifact_reference_pol
     ) in errors
 
 
+def test_platform_verified_evidence_rejects_missing_manifest_architecture_policy() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY.replace(
+                "target architecture/format manifest binding, ",
+                "",
+            ),
+            "accepted_evidence": [],
+        }
+    )
+
+    assert (
+        "platform verified evidence policy must require target architecture/format manifest binding"
+    ) in errors
+
+
 def test_platform_verified_evidence_rejects_missing_exact_release_url_filename_policy() -> None:
     checker = _load_platform_verified_evidence_checker()
 
@@ -482,6 +558,63 @@ def test_platform_verified_evidence_rejects_missing_release_asset_source_policy(
 
     assert (
         "platform verified evidence policy must require release-importable artifact source binding"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_missing_source_artifact_repository_id_policy() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY.replace(
+                "source artifact repository-id binding when exact source-run metadata exposes repository IDs, ",
+                "",
+            ),
+            "accepted_evidence": [],
+        }
+    )
+
+    assert (
+        "platform verified evidence policy must require source artifact repository-id binding"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_missing_source_artifact_run_start_policy() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY.replace(
+                "source artifact run-start timestamp binding when exact source-run metadata exposes run start timestamps, ",
+                "",
+            ),
+            "accepted_evidence": [],
+        }
+    )
+
+    assert (
+        "platform verified evidence policy must require source artifact run-start timestamp binding"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_missing_source_artifact_run_window_policy() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY.replace(
+                "source artifact run-window timestamp binding when exact source-run metadata exposes run update timestamps, ",
+                "",
+            ),
+            "accepted_evidence": [],
+        }
+    )
+
+    assert (
+        "platform verified evidence policy must require source artifact run-window timestamp binding"
     ) in errors
 
 
@@ -617,6 +750,37 @@ def test_platform_verified_evidence_rejects_missing_xp_smoke_host_probe_policy()
     )
 
     assert "platform verified evidence policy must require XP smoke host probe proof-line binding" in errors
+
+
+def test_platform_verified_evidence_rejects_missing_exact_xp_smoke_proof_line_policy() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY.replace("exact XP smoke proof-line occurrence binding, ", ""),
+            "accepted_evidence": [],
+        }
+    )
+
+    assert "platform verified evidence policy must require exact XP smoke proof-line occurrence binding" in errors
+
+
+def test_platform_verified_evidence_rejects_missing_xp_forbidden_security_case_policy() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY.replace("case-insensitive XP forbidden security proof-line rejection, ", ""),
+            "accepted_evidence": [],
+        }
+    )
+
+    assert (
+        "platform verified evidence policy must require "
+        "case-insensitive XP forbidden security proof-line rejection"
+    ) in errors
 
 
 def test_platform_verified_evidence_rejects_missing_linux_release_source_artifact_scope_policy() -> None:
@@ -876,6 +1040,22 @@ def test_platform_verified_evidence_rejects_missing_canonical_final_record_polic
 
     assert (
         "platform verified evidence policy must require canonical finalized accepted-record JSON byte binding"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_missing_published_release_asset_byte_policy() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY.replace("published native and review-bundle release asset byte binding, ", ""),
+            "accepted_evidence": [],
+        }
+    )
+
+    assert (
+        "platform verified evidence policy must require published native and review-bundle release asset byte binding"
     ) in errors
 
 
@@ -3764,6 +3944,92 @@ def test_platform_verified_evidence_rejects_wrong_linux_smoke_evidence() -> None
     assert "linux-armhf linux_smoke_evidence_sha256 for native_smoke must be a SHA-256 hex digest" in errors
 
 
+def test_platform_verified_evidence_rejects_missing_linux_smoke_summary() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    del record["linux_smoke_summary"]
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "linux-i386 linux_smoke_summary must be an object" in errors
+
+
+def test_platform_verified_evidence_rejects_weak_linux_smoke_summary_security() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    summary = record["linux_smoke_summary"]
+    assert isinstance(summary, dict)
+    security = summary["security"]
+    assert isinstance(security, dict)
+    security["tls_minimum_modern_profiles"] = "TLS 1.1"
+    security["weak_crypto_global_default"] = True
+    security["modern_defaults_unchanged"] = False
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "linux-i386 linux_smoke_summary security.tls_minimum_modern_profiles must be 'TLS 1.2'" in errors
+    assert "linux-i386 linux_smoke_summary security.weak_crypto_global_default must be False" in errors
+    assert "linux-i386 linux_smoke_summary security.modern_defaults_unchanged must be True" in errors
+
+
+def test_platform_verified_evidence_rejects_wrong_linux_smoke_summary_runtime() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-armhf")
+    summary = record["linux_smoke_summary"]
+    assert isinstance(summary, dict)
+    summary["uname_machine"] = "x86_64"
+    summary["dpkg_architecture"] = "arm64"
+    summary["userland_bits"] = "64"
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert any("linux-armhf linux_smoke_summary uname_machine must be one of" in error for error in errors)
+    assert "linux-armhf linux_smoke_summary dpkg_architecture must be one of ['armhf'], got 'arm64'" in errors
+    assert "linux-armhf linux_smoke_summary userland_bits must be '32', got '64'" in errors
+
+
+def test_platform_verified_evidence_rejects_placeholder_linux_smoke_summary_provenance() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    summary = record["linux_smoke_summary"]
+    assert isinstance(summary, dict)
+    security = summary["security"]
+    assert isinstance(security, dict)
+    security["security_update_channel"] = "test-security-update-channel"
+    security["cve_review_reference"] = "<replace-with-real-cve-review>"
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "linux-i386 linux_smoke_summary security.security_update_channel "
+        "must name concrete non-placeholder provenance"
+    ) in errors
+    assert (
+        "linux-i386 linux_smoke_summary security.cve_review_reference "
+        "must name concrete non-placeholder provenance"
+    ) in errors
+
+
 def test_platform_verified_evidence_rejects_missing_linux_evidence_sources() -> None:
     checker = _load_platform_verified_evidence_checker()
     record = _linux_record("linux-i386")
@@ -4577,6 +4843,7 @@ def _linux_record(target: str) -> dict[str, object]:
             f"--builder-evidence evidence/{target}/v1.0.2/builder-identity-{target}.json"
         ),
         "linux_smoke_evidence_sha256": linux_smoke_hashes,
+        "linux_smoke_summary": _linux_smoke_summary(target),
         "local_evidence_preflight_command": (
             "python scripts/check_platform_goal_local_evidence.py --root . "
             f"--release-tag v1.0.2 --target {target} --assets-dir {assets_dir} "
@@ -4775,6 +5042,42 @@ def _linux_smoke_hashes() -> dict[str, str]:
     return {"native_smoke": "6" * 64}
 
 
+def _linux_smoke_summary(target: str, release_tag: str = "v1.0.2") -> dict[str, object]:
+    machine = "i686" if target == "linux-i386" else "armv7l"
+    dpkg_arch = "i386" if target == "linux-i386" else "armhf"
+    target_arch = "i386" if target == "linux-i386" else "armhf"
+    return {
+        "target": target,
+        "release_tag": release_tag,
+        "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        "workflow_run_attempt": 1,
+        "source_head_sha": "a" * 40,
+        "git_head_sha": "a" * 40,
+        "target_arch": target_arch,
+        "host_label": f"{target}-builder",
+        "evidence_run_id": f"{target}-{release_tag.removeprefix('v').replace('.', '-')}-run-12345",
+        "observed_at_utc": "2026-06-20T12:00:00Z",
+        "uname_machine": machine,
+        "dpkg_architecture": dpkg_arch,
+        "userland_bits": "32",
+        "os_release": "Debian GNU/Linux 12 (bookworm)",
+        "kernel_release": "6.1.0-i386-ci",
+        "glibc_version": "glibc 2.36",
+        "python_ssl_openssl": "OpenSSL 3.0.13",
+        "openssl_cli_version": "OpenSSL 3.0.13",
+        "security": {
+            "tls_minimum_modern_profiles": "TLS 1.2",
+            "tls_preferred_modern_profiles": "TLS 1.3",
+            "legacy_compatibility_profile": "isolated-opt-in",
+            "legacy_crypto_scope": "profile-only",
+            "weak_crypto_global_default": False,
+            "modern_defaults_unchanged": True,
+            "security_update_channel": "vendor-security-updates-2026-06",
+            "cve_review_reference": "vendor-cve-advisory-review-2026-06",
+        },
+    }
+
+
 def _linux_evidence_sources(
     target: str,
     builder_identity_sha: str,
@@ -4870,6 +5173,10 @@ def _replace_release_source_head(record: dict[str, object], head_sha: str) -> No
         linux_sources = record.get("linux_evidence_sources")
         if isinstance(linux_sources, dict) and isinstance(linux_sources.get("builder_identity"), dict):
             linux_sources["builder_identity"]["sha256"] = builder_identity_sha
+    linux_smoke_summary = record.get("linux_smoke_summary")
+    if isinstance(linux_smoke_summary, dict):
+        linux_smoke_summary["source_head_sha"] = head_sha
+        linux_smoke_summary["git_head_sha"] = head_sha
     for field in ("native_smoke_command", "local_evidence_preflight_command"):
         if isinstance(record.get(field), str) and old_head:
             record[field] = str(record[field]).replace(old_head, head_sha)

@@ -937,6 +937,7 @@ def _write_artifact_set(root: Path, names: list[str]) -> None:
     records = [
         {
             "file": name,
+            **_manifest_record_metadata(name),
             "size_bytes": (root / name).stat().st_size,
             "sha256": _sha256(root / name),
         }
@@ -948,6 +949,30 @@ def _write_artifact_set(root: Path, names: list[str]) -> None:
         "".join(f"{_sha256(root / name)}  {name}\n" for name in sidecar_names),
         encoding="utf-8",
     )
+
+
+def _manifest_record_metadata(name: str) -> dict[str, str]:
+    if name.endswith(".tar.gz"):
+        return {"architecture": _artifact_architecture(name), "format": "tar.gz"}
+    if name.endswith(".AppImage"):
+        return {"architecture": _artifact_architecture(name), "format": "AppImage"}
+    if name.endswith(".deb"):
+        return {"architecture": _artifact_architecture(name), "format": "deb"}
+    if name.endswith(".rpm"):
+        return {"architecture": _artifact_architecture(name), "format": "rpm"}
+    return {}
+
+
+def _artifact_architecture(name: str) -> str:
+    if "-linux-i386." in name:
+        return "i386"
+    if "-linux-i686." in name or "-linux-i686-native." in name:
+        return "i686"
+    if "-linux-armhf." in name or "-linux-armhf-native." in name:
+        return "armhf"
+    if "-linux-armv7hl." in name:
+        return "armv7hl"
+    return ""
 
 
 def _write_linux_smoke_evidence(

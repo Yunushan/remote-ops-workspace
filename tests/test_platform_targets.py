@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from remote_ops_workspace.cli import main
@@ -25,6 +26,13 @@ REQUIRED_LEGACY_WINDOWS = {
     "Windows 8",
     "Windows 8.1",
 }
+
+PROTECTED_GOAL_TARGETS = [
+    "linux-i386",
+    "linux-armhf",
+    "windows-xp-native-x86",
+    "windows-xp-native-x64",
+]
 
 
 def test_platform_targets_cover_requested_architectures() -> None:
@@ -63,6 +71,46 @@ def test_legacy_windows_targets_are_declared_as_remote_targets() -> None:
     )
 
 
+def test_platform_targets_declare_protected_readiness_goal_boundary() -> None:
+    targets = load_platform_targets()
+    goal = targets["protected_readiness_goal"]
+
+    assert goal["required_targets"] == PROTECTED_GOAL_TARGETS
+    assert goal["status_source"] == "configs/platform_verified_evidence.json"
+    assert goal["static_catalog_boundary"] == "not native-host/readiness proof"
+    assert "row platforms --json is the static platform catalog" in goal[
+        "static_json_consumer_guidance"
+    ]
+    assert "row features --coverage --json" in goal["static_json_consumer_guidance"]
+    assert goal["accepted_evidence_gate"] == (
+        "python scripts/check_platform_verified_evidence.py "
+        "--require-goal-targets --require-review-bundles --release-tag v<project.version>"
+    )
+    assert goal["release_asset_provenance_gate"] == (
+        "python scripts/check_protected_platform_goal.py "
+        "--release-tag v<project.version> --require-complete --assets-dir <release-assets-dir>"
+    )
+    assert goal["published_release_audit_gate"] == (
+        "python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets "
+        "--release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> "
+        "--release-assets-dir <release-assets-dir> --release-repository <owner>/<repo>"
+    )
+    assert goal["target_evidence_sources"] == {
+        "linux-i386": ".github/workflows/extended-platform-evidence.yml",
+        "linux-armhf": ".github/workflows/extended-platform-evidence.yml",
+        "windows-xp-native-x86": ".github/workflows/xp-native-evidence.yml",
+        "windows-xp-native-x64": ".github/workflows/xp-native-evidence.yml",
+    }
+    assert goal["security_boundary"] == {
+        "legacy_compatibility_profile": "isolated-opt-in",
+        "legacy_crypto_scope": "profile-only",
+        "weak_crypto_global_default": False,
+        "modern_defaults_unchanged": True,
+        "modern_tls_minimum": "TLS 1.2",
+        "modern_tls_preferred": "TLS 1.3",
+    }
+
+
 def test_native_release_scripts_reference_expanded_architectures() -> None:
     root = Path(__file__).resolve().parents[1]
     windows_script = (root / "scripts" / "make_windows_native.ps1").read_text(encoding="utf-8")
@@ -82,6 +130,40 @@ def test_platforms_cli_reports_architecture_targets(capsys) -> None:
     assert "arm64" in output
     assert "Windows XP" in output
     assert "100.0% x86/x64 isolated-legacy-opt-in" in output
+    assert "Evidence-backed protected readiness:" in output
+    assert (
+        "Protected platform goal       : 0.0% "
+        "(100.0% gap; 0/4 accepted; missing-accepted-evidence)"
+    ) in output
+    assert "Release asset provenance      : not checked by static platform catalog" in output
+    assert (
+        "Missing accepted evidence     : linux-i386, linux-armhf, "
+        "windows-xp-native-x86, windows-xp-native-x64"
+    ) in output
+    assert (
+        "Static platform catalog       : not native-host/readiness proof "
+        "for Linux i386/armhf or Windows XP"
+    ) in output
+
+
+def test_platforms_cli_json_exposes_protected_readiness_boundary(capsys) -> None:
+    assert main(["platforms", "--json"]) == 0
+    data = json.loads(capsys.readouterr().out)
+    goal = data["protected_readiness_goal"]
+
+    assert goal["required_targets"] == PROTECTED_GOAL_TARGETS
+    assert goal["static_catalog_boundary"] == "not native-host/readiness proof"
+    assert goal["status_source"] == "configs/platform_verified_evidence.json"
+    assert goal["security_boundary"]["weak_crypto_global_default"] is False
+    assert goal["release_asset_provenance_gate"] == (
+        "python scripts/check_protected_platform_goal.py "
+        "--release-tag v<project.version> --require-complete --assets-dir <release-assets-dir>"
+    )
+    assert goal["published_release_audit_gate"] == (
+        "python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets "
+        "--release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> "
+        "--release-assets-dir <release-assets-dir> --release-repository <owner>/<repo>"
+    )
 
 
 def test_features_coverage_cli_reports_missing_platform_evidence(capsys) -> None:
@@ -94,3 +176,8 @@ def test_features_coverage_cli_reports_missing_platform_evidence(capsys) -> None
     assert "missing evidence linux-armhf" in output
     assert "Windows XP" in output
     assert "missing evidence windows-xp-native-x86, windows-xp-native-x64" in output
+    assert "Release asset provenance : not checked by static report" in output
+    assert (
+        "Asset provenance gate    : python scripts/check_protected_platform_goal.py "
+        "--release-tag v<project.version> --require-complete --assets-dir <release-assets-dir>"
+    ) in output

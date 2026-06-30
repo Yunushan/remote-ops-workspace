@@ -91,6 +91,18 @@ LINUX_ACCEPTED_EVIDENCE_MACHINES = {
     "linux-i386": {"i386", "i486", "i586", "i686", "x86"},
     "linux-armhf": {"armv6l", "armv7l", "armv7hl", "armhf"},
 }
+LINUX_ACCEPTED_EVIDENCE_SMOKE_ARCHES = {
+    "linux-i386": "i386",
+    "linux-armhf": "armhf",
+}
+LINUX_ACCEPTED_EVIDENCE_DPKG_ARCHITECTURES = {
+    "linux-i386": {"i386"},
+    "linux-armhf": {"armhf"},
+}
+LINUX_ACCEPTED_EVIDENCE_USERLAND_BITS = {
+    "linux-i386": "32",
+    "linux-armhf": "32",
+}
 LINUX_ACCEPTED_EVIDENCE_LABELS = {
     "linux-i386": {"self-hosted", "linux", "i386"},
     "linux-armhf": {"self-hosted", "linux", "armhf"},
@@ -159,6 +171,37 @@ LINUX_ACCEPTED_EVIDENCE_BUILDER_HOST_IDENTITY_KEYS = {
     "observed_at_utc",
     "operator_private_data_redacted",
 }
+LINUX_ACCEPTED_EVIDENCE_SMOKE_SUMMARY_KEYS = {
+    "target",
+    "release_tag",
+    "workflow_run_url",
+    "workflow_run_attempt",
+    "source_head_sha",
+    "git_head_sha",
+    "target_arch",
+    "host_label",
+    "evidence_run_id",
+    "observed_at_utc",
+    "uname_machine",
+    "dpkg_architecture",
+    "userland_bits",
+    "os_release",
+    "kernel_release",
+    "glibc_version",
+    "python_ssl_openssl",
+    "openssl_cli_version",
+    "security",
+}
+LINUX_ACCEPTED_EVIDENCE_SMOKE_SECURITY_SUMMARY_KEYS = {
+    "tls_minimum_modern_profiles",
+    "tls_preferred_modern_profiles",
+    "legacy_compatibility_profile",
+    "legacy_crypto_scope",
+    "weak_crypto_global_default",
+    "modern_defaults_unchanged",
+    "security_update_channel",
+    "cve_review_reference",
+}
 ACCEPTED_EVIDENCE_ARTIFACT_TEMPLATES = {
     "linux-i386": {
         "remote-ops-workspace-v{version}-linux-i386.deb",
@@ -215,6 +258,49 @@ XP_ACCEPTED_EVIDENCE_WORKFLOW_INPUT_KEYS = {
     "assets_dir",
     "evidence_file",
     "evidence_dir",
+}
+COMMON_ACCEPTED_EVIDENCE_KEYS = {
+    "artifact_sha256",
+    "artifact_validation_command",
+    "checks",
+    "evidence_type",
+    "finalized_record_release_asset_url",
+    "local_evidence_preflight_command",
+    "promotion_config_sha256",
+    "readiness_percent",
+    "release_asset_source",
+    "release_asset_urls",
+    "release_tag",
+    "review_bundle",
+    "status",
+    "staged_upload_command",
+    "target",
+    "workflow",
+    "workflow_inputs",
+}
+LINUX_ACCEPTED_EVIDENCE_KEYS = COMMON_ACCEPTED_EVIDENCE_KEYS | {
+    "artifact_name",
+    "builder_identity",
+    "builder_identity_sha256",
+    "linux_evidence_sources",
+    "linux_smoke_evidence_sha256",
+    "linux_smoke_summary",
+    "native_build_command",
+    "native_smoke_command",
+    "runner_labels",
+    "workflow_run_url",
+}
+XP_ACCEPTED_EVIDENCE_KEYS = COMMON_ACCEPTED_EVIDENCE_KEYS | {
+    "architecture",
+    "current_python_pyqt6_stack",
+    "native_evidence_validation_command",
+    "separate_legacy_toolchain",
+    "xp_evidence_contract_sha256",
+    "xp_evidence_sha256",
+    "xp_evidence_sources",
+    "xp_evidence_summary",
+    "xp_host_identity_sha256",
+    "xp_smoke_evidence_sha256",
 }
 LINUX_STAGED_UPLOAD_COMMAND_FLAGS = {
     "--target",
@@ -948,6 +1034,7 @@ def _platform_verified_readiness(
         if version == "Windows XP":
             row.update(_windows_xp_evidence_status(evidence_data))
         rows.append(row)
+    denominator = _platform_denominator(rows)
     return {
         "target_percent": 100.0,
         "method": (
@@ -957,6 +1044,7 @@ def _platform_verified_readiness(
             "rows outside the verified-readiness denominator until matching "
             "release or host verification exists in configs/platform_verified_evidence.json."
         ),
+        "denominator": denominator,
         "overall": _platform_overall(rows),
         "protected_goal_parity": _protected_platform_goal_parity(evidence_data),
         "targets": rows,
@@ -1255,7 +1343,13 @@ def _protected_platform_goal_parity(evidence_registry: dict[str, Any] | None) ->
         "release_import_dry_run_command": _protected_platform_release_import_dry_run_command(
             release_tag or "v<project.version>"
         ),
+        "release_asset_provenance_command": (
+            "python scripts/check_protected_platform_goal.py "
+            f"--release-tag {release_tag or 'v<project.version>'} "
+            "--require-complete --assets-dir <release-assets-dir>"
+        ),
         "release_source_provenance_complete": release_source_provenance_complete,
+        "release_asset_provenance_complete": False,
         "release_consistent": release_consistent,
         "release_repository_consistent": release_repository_consistent,
         "release_source_head_consistent": release_source_head_consistent,
@@ -1267,6 +1361,8 @@ def _protected_platform_goal_parity(evidence_registry: dict[str, Any] | None) ->
             "one GitHub release repository, per-target release source workflow files, "
             "one release source head SHA and per-record release source run attempts "
             "without conflicting attempts for one run URL. "
+            "Published release asset byte provenance is separate and requires "
+            "the asset-backed protected goal gate with --assets-dir. "
             "The broader platform_verified_readiness overall score does not promote "
             "this goal unless this block reaches 100% for a single release."
         ),
@@ -1481,6 +1577,8 @@ def _accepted_evidence_entries(evidence_registry: dict[str, Any] | None) -> list
 
 def _is_accepted_evidence_entry(item: dict[str, Any]) -> bool:
     target = str(item.get("target", ""))
+    if not _has_exact_accepted_evidence_keys(item, target):
+        return False
     if item.get("status") != "accepted" or item.get("readiness_percent") != 100.0:
         return False
     if not re.fullmatch(r"v\d+\.\d+\.\d+", str(item.get("release_tag", ""))):
@@ -1506,6 +1604,23 @@ def _is_accepted_evidence_entry(item: dict[str, Any]) -> bool:
     if target in XP_ACCEPTED_EVIDENCE_ARCHITECTURES:
         return _is_xp_accepted_evidence_entry(item, target)
     return False
+
+
+def _has_exact_accepted_evidence_keys(item: dict[str, Any], target: str) -> bool:
+    if target in LINUX_ACCEPTED_EVIDENCE_MACHINES:
+        expected = LINUX_ACCEPTED_EVIDENCE_KEYS
+    elif target in XP_ACCEPTED_EVIDENCE_ARCHITECTURES:
+        expected = XP_ACCEPTED_EVIDENCE_KEYS
+    else:
+        return False
+    return set(str(key) for key in item) == expected
+
+
+def _has_exact_evidence_checks(raw_checks: Any, required_checks: set[str]) -> bool:
+    if not isinstance(raw_checks, list):
+        return False
+    checks = [str(check) for check in raw_checks]
+    return len(checks) == len(set(checks)) and set(checks) == required_checks
 
 
 def _has_artifact_validation_command(item: dict[str, Any], target: str) -> bool:
@@ -2016,12 +2131,12 @@ def _is_linux_accepted_evidence_entry(item: dict[str, Any], target: str) -> bool
     labels = {str(label) for label in item.get("runner_labels", [])}
     if not LINUX_ACCEPTED_EVIDENCE_LABELS[target].issubset(labels):
         return False
-    checks = {str(check) for check in item.get("checks", [])}
-    if not LINUX_ACCEPTED_EVIDENCE_CHECKS.issubset(checks):
+    if not _has_exact_evidence_checks(item.get("checks"), LINUX_ACCEPTED_EVIDENCE_CHECKS):
         return False
     return (
         _has_linux_builder_identity_binding(item, target)
         and _has_linux_smoke_evidence_hashes(item)
+        and _has_linux_smoke_summary(item, target)
         and _has_linux_evidence_sources(item, target)
     )
 
@@ -2237,6 +2352,138 @@ def _has_linux_smoke_evidence_hashes(item: dict[str, Any]) -> bool:
     return all(re.fullmatch(r"[0-9a-f]{64}", str(value)) for value in smoke_hashes.values())
 
 
+def _has_linux_smoke_summary(item: dict[str, Any], target: str) -> bool:
+    summary = item.get("linux_smoke_summary")
+    if not isinstance(summary, dict):
+        return False
+    if set(str(key) for key in summary) != LINUX_ACCEPTED_EVIDENCE_SMOKE_SUMMARY_KEYS:
+        return False
+    source = item.get("release_asset_source")
+    if not isinstance(source, dict):
+        return False
+    source_head = str(source.get("head_sha", "")).strip()
+    if not re.fullmatch(r"[0-9a-f]{40}", source_head):
+        return False
+    if summary.get("target") != target or summary.get("release_tag") != item.get("release_tag"):
+        return False
+    if summary.get("workflow_run_url") != item.get("workflow_run_url"):
+        return False
+    if summary.get("workflow_run_attempt") != source.get("run_attempt"):
+        return False
+    if summary.get("source_head_sha") != source_head or summary.get("git_head_sha") != source_head:
+        return False
+    if summary.get("target_arch") != LINUX_ACCEPTED_EVIDENCE_SMOKE_ARCHES[target]:
+        return False
+    if str(summary.get("uname_machine", "")).strip().lower() not in LINUX_ACCEPTED_EVIDENCE_MACHINES[target]:
+        return False
+    if (
+        str(summary.get("dpkg_architecture", "")).strip().lower()
+        not in LINUX_ACCEPTED_EVIDENCE_DPKG_ARCHITECTURES[target]
+    ):
+        return False
+    if str(summary.get("userland_bits", "")).strip() != LINUX_ACCEPTED_EVIDENCE_USERLAND_BITS[target]:
+        return False
+    if not _has_linux_smoke_summary_host_binding(summary, item.get("builder_identity"), target):
+        return False
+    return _has_linux_smoke_summary_runtime_binding(summary, item.get("builder_identity"))
+
+
+def _has_linux_smoke_summary_host_binding(
+    summary: dict[str, Any],
+    raw_builder_identity: Any,
+    target: str,
+) -> bool:
+    builder = raw_builder_identity if isinstance(raw_builder_identity, dict) else {}
+    host_identity = builder.get("host_identity") if isinstance(builder.get("host_identity"), dict) else {}
+    host_label = str(summary.get("host_label", "")).strip()
+    if re.fullmatch(r"^[a-z0-9][a-z0-9._-]{2,63}$", host_label) is None:
+        return False
+    if not host_label.startswith(f"{target}-"):
+        return False
+    if host_identity and host_label != str(host_identity.get("host_label", "")).strip():
+        return False
+    evidence_run_id = str(summary.get("evidence_run_id", "")).strip()
+    if re.fullmatch(r"^[a-z0-9][a-z0-9._:-]{7,127}$", evidence_run_id) is None:
+        return False
+    if not evidence_run_id.startswith(f"{target}-"):
+        return False
+    if host_identity and evidence_run_id != str(host_identity.get("evidence_run_id", "")).strip():
+        return False
+    observed_at = str(summary.get("observed_at_utc", "")).strip()
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", observed_at) is None:
+        return False
+    builder_observed_at = str(host_identity.get("observed_at_utc", "")).strip()
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", builder_observed_at):
+        return observed_at >= builder_observed_at
+    return True
+
+
+def _has_linux_smoke_summary_runtime_binding(
+    summary: dict[str, Any],
+    raw_builder_identity: Any,
+) -> bool:
+    builder = raw_builder_identity if isinstance(raw_builder_identity, dict) else {}
+    for summary_key, builder_key in (
+        ("os_release", "os_release"),
+        ("kernel_release", "kernel_release"),
+        ("glibc_version", "glibc_version"),
+    ):
+        value = str(summary.get(summary_key, "")).strip()
+        if not value:
+            return False
+        expected = str(builder.get(builder_key, "")).strip()
+        if expected and value != expected:
+            return False
+    security_patch = (
+        builder.get("security_patch_evidence")
+        if isinstance(builder.get("security_patch_evidence"), dict)
+        else {}
+    )
+    for summary_key, builder_key in (
+        ("python_ssl_openssl", "python_ssl_openssl"),
+        ("openssl_cli_version", "openssl_cli_version"),
+    ):
+        value = str(summary.get(summary_key, "")).strip()
+        if not value or not _is_concrete_security_provenance(value):
+            return False
+        expected = str(security_patch.get(builder_key, "")).strip()
+        if expected and value != expected:
+            return False
+    return _has_linux_smoke_summary_security(summary.get("security"), security_patch)
+
+
+def _has_linux_smoke_summary_security(raw_security: Any, builder_security: dict[str, Any]) -> bool:
+    if not isinstance(raw_security, dict):
+        return False
+    if set(str(key) for key in raw_security) != LINUX_ACCEPTED_EVIDENCE_SMOKE_SECURITY_SUMMARY_KEYS:
+        return False
+    expected_values = {
+        "tls_minimum_modern_profiles": "TLS 1.2",
+        "tls_preferred_modern_profiles": "TLS 1.3",
+        "legacy_compatibility_profile": "isolated-opt-in",
+        "legacy_crypto_scope": "profile-only",
+        "weak_crypto_global_default": False,
+        "modern_defaults_unchanged": True,
+    }
+    if any(raw_security.get(key) != expected for key, expected in expected_values.items()):
+        return False
+    for key in ("security_update_channel", "cve_review_reference"):
+        value = str(raw_security.get(key, "")).strip()
+        if not value or not _is_concrete_security_provenance(value):
+            return False
+    for key in (
+        "tls_minimum_modern_profiles",
+        "tls_preferred_modern_profiles",
+        "legacy_compatibility_profile",
+        "security_update_channel",
+        "cve_review_reference",
+    ):
+        expected = builder_security.get(key)
+        if expected is not None and raw_security.get(key) != expected:
+            return False
+    return True
+
+
 def _is_xp_accepted_evidence_entry(item: dict[str, Any], target: str) -> bool:
     if item.get("evidence_type") != "windows-xp-native-host":
         return False
@@ -2269,8 +2516,7 @@ def _is_xp_accepted_evidence_entry(item: dict[str, Any], target: str) -> bool:
         return False
     if not _has_xp_evidence_sources(item, target):
         return False
-    checks = {str(check) for check in item.get("checks", [])}
-    return XP_ACCEPTED_EVIDENCE_CHECKS.issubset(checks)
+    return _has_exact_evidence_checks(item.get("checks"), XP_ACCEPTED_EVIDENCE_CHECKS)
 
 
 def _has_xp_native_evidence_validation_command(item: dict[str, Any]) -> bool:
@@ -2914,6 +3160,12 @@ def _platform_row(
 
 def _platform_overall(rows: list[dict[str, Any]]) -> dict[str, Any]:
     scoped_rows = [row for row in rows if row.get("verified_readiness_scope") is True]
+    scoped_targets = [str(row.get("target", "")) for row in scoped_rows]
+    excluded_targets = [
+        str(row.get("target", ""))
+        for row in rows
+        if row.get("verified_readiness_scope") is not True
+    ]
     current_percent = (
         sum(float(row["current_percent"]) for row in scoped_rows) / len(scoped_rows)
         if scoped_rows
@@ -2924,7 +3176,34 @@ def _platform_overall(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "target_count": len(scoped_rows),
         "tracked_target_count": len(rows),
         "extended_target_count": len(rows) - len(scoped_rows),
+        "included_targets": scoped_targets,
+        "excluded_targets": excluded_targets,
+        "denominator_scope": "verified_readiness_scope=true rows only",
         "current_percent": round(current_percent, 1),
         "target_percent": 100.0,
         "gap_percent": round(max(100.0 - current_percent, 0.0), 1),
+    }
+
+
+def _platform_denominator(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    included_targets = [
+        str(row.get("target", ""))
+        for row in rows
+        if row.get("verified_readiness_scope") is True
+    ]
+    excluded_targets = [
+        str(row.get("target", ""))
+        for row in rows
+        if row.get("verified_readiness_scope") is not True
+    ]
+    return {
+        "scope": "verified_readiness_scope=true rows only",
+        "included_targets": included_targets,
+        "excluded_targets": excluded_targets,
+        "included_target_count": len(included_targets),
+        "excluded_target_count": len(excluded_targets),
+        "denominator_excludes_extended_compatibility_rows": True,
+        "protected_goal_targets": list(PROTECTED_PLATFORM_GOAL_TARGETS),
+        "protected_goal_score_source": "protected_goal_parity",
+        "release_asset_provenance_in_static_score": False,
     }

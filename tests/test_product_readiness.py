@@ -54,6 +54,31 @@ def test_product_readiness_rejects_missing_protected_goal_release_source_heads(m
     assert "protected platform goal parity must expose release_source_heads" in errors
 
 
+def test_product_readiness_rejects_missing_platform_denominator(monkeypatch) -> None:
+    checker = load_product_readiness_checker()
+    report = deepcopy(checker.coverage_report())
+    del report["platform_verified_readiness"]["denominator"]
+    monkeypatch.setattr(checker, "coverage_report", lambda: report)
+
+    errors = checker.check_product_readiness()
+
+    assert "platform verified readiness must expose structured denominator" in errors
+
+
+def test_product_readiness_rejects_platform_denominator_target_drift(monkeypatch) -> None:
+    checker = load_product_readiness_checker()
+    report = deepcopy(checker.coverage_report())
+    denominator = report["platform_verified_readiness"]["denominator"]
+    denominator["included_targets"] = []
+    denominator["release_asset_provenance_in_static_score"] = True
+    monkeypatch.setattr(checker, "coverage_report", lambda: report)
+
+    errors = checker.check_product_readiness()
+
+    assert "platform verified readiness denominator included_targets must match verified rows" in errors
+    assert "platform verified readiness denominator must keep release asset provenance outside static score" in errors
+
+
 def test_product_readiness_rejects_missing_protected_goal_release_source_run_attempts(monkeypatch) -> None:
     checker = load_product_readiness_checker()
     report = deepcopy(checker.coverage_report())
@@ -143,6 +168,47 @@ def test_product_readiness_rejects_missing_protected_goal_release_source_provena
     errors = checker.check_product_readiness()
 
     assert "protected platform goal parity must expose release_source_provenance_complete" in errors
+
+
+def test_product_readiness_rejects_missing_protected_goal_release_asset_provenance_flag(monkeypatch) -> None:
+    checker = load_product_readiness_checker()
+    report = deepcopy(checker.coverage_report())
+    del report["platform_verified_readiness"]["protected_goal_parity"][
+        "release_asset_provenance_complete"
+    ]
+    monkeypatch.setattr(checker, "coverage_report", lambda: report)
+
+    errors = checker.check_product_readiness()
+
+    assert "protected platform goal parity must expose release_asset_provenance_complete" in errors
+
+
+def test_product_readiness_rejects_static_release_asset_provenance_claim(monkeypatch) -> None:
+    checker = load_product_readiness_checker()
+    report = deepcopy(checker.coverage_report())
+    goal = report["platform_verified_readiness"]["protected_goal_parity"]
+    goal["release_asset_provenance_complete"] = True
+    monkeypatch.setattr(checker, "coverage_report", lambda: report)
+
+    errors = checker.check_product_readiness()
+
+    assert (
+        "protected platform goal parity release_asset_provenance_complete must be false "
+        "in the static readiness report; use the asset-backed protected goal gate"
+    ) in errors
+
+
+def test_product_readiness_rejects_missing_protected_goal_release_asset_provenance_command(monkeypatch) -> None:
+    checker = load_product_readiness_checker()
+    report = deepcopy(checker.coverage_report())
+    del report["platform_verified_readiness"]["protected_goal_parity"][
+        "release_asset_provenance_command"
+    ]
+    monkeypatch.setattr(checker, "coverage_report", lambda: report)
+
+    errors = checker.check_product_readiness()
+
+    assert "protected platform goal parity must expose release_asset_provenance_command" in errors
 
 
 def test_product_readiness_rejects_inconsistent_protected_goal_release_source_provenance_flag(monkeypatch) -> None:

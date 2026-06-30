@@ -222,6 +222,37 @@
       ]
     }
   ],
+  "protected_readiness_goal": {
+    "id": "extended-native-host-readiness",
+    "scope": "Evidence-backed native-host readiness for Linux i386, Linux armhf, Windows XP native x86, and Windows XP native x64.",
+    "status_source": "configs/platform_verified_evidence.json",
+    "static_catalog_boundary": "not native-host/readiness proof",
+    "static_json_consumer_guidance": "row platforms --json is the static platform catalog; use row features --coverage --json for the evidence-backed readiness report.",
+    "required_targets": [
+      "linux-i386",
+      "linux-armhf",
+      "windows-xp-native-x86",
+      "windows-xp-native-x64"
+    ],
+    "accepted_evidence_gate": "python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag v<project.version>",
+    "protected_goal_gate": "python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-complete",
+    "release_asset_provenance_gate": "python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-complete --assets-dir <release-assets-dir>",
+    "published_release_audit_gate": "python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> --release-assets-dir <release-assets-dir> --release-repository <owner>/<repo>",
+    "target_evidence_sources": {
+      "linux-i386": ".github/workflows/extended-platform-evidence.yml",
+      "linux-armhf": ".github/workflows/extended-platform-evidence.yml",
+      "windows-xp-native-x86": ".github/workflows/xp-native-evidence.yml",
+      "windows-xp-native-x64": ".github/workflows/xp-native-evidence.yml"
+    },
+    "security_boundary": {
+      "legacy_compatibility_profile": "isolated-opt-in",
+      "legacy_crypto_scope": "profile-only",
+      "weak_crypto_global_default": false,
+      "modern_defaults_unchanged": true,
+      "modern_tls_minimum": "TLS 1.2",
+      "modern_tls_preferred": "TLS 1.3"
+    }
+  },
   "windows_legacy_targets": [
     {
       "version": "Windows 8.1",

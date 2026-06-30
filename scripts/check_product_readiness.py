@@ -180,6 +180,7 @@ def check_product_readiness() -> list[str]:
             errors.append(f"{row['target']} partial compatibility row must stay outside verified readiness scope")
     if platform.get("overall", {}).get("current_percent") != 100.0:
         errors.append("platform verified readiness overall must be 100 for verified-scope targets")
+    errors.extend(check_platform_denominator(platform, platform_rows))
     goal = platform.get("protected_goal_parity", {})
     if not isinstance(goal, dict):
         errors.append("platform verified readiness must expose protected_goal_parity")
@@ -220,6 +221,15 @@ def check_product_readiness() -> list[str]:
             errors.append("protected platform goal parity gap_percent must match accepted target count")
         if not isinstance(goal.get("release_source_provenance_complete"), bool):
             errors.append("protected platform goal parity must expose release_source_provenance_complete")
+        if not isinstance(goal.get("release_asset_provenance_complete"), bool):
+            errors.append("protected platform goal parity must expose release_asset_provenance_complete")
+        elif goal.get("release_asset_provenance_complete") is True:
+            errors.append(
+                "protected platform goal parity release_asset_provenance_complete must be false "
+                "in the static readiness report; use the asset-backed protected goal gate"
+            )
+        if not str(goal.get("release_asset_provenance_command", "")).strip():
+            errors.append("protected platform goal parity must expose release_asset_provenance_command")
         provenance_complete = goal.get("release_source_provenance_complete") is True
         complete = len(present) == len(required) and bool(required) and provenance_complete
         if goal.get("complete") is not complete:
@@ -291,6 +301,60 @@ def check_product_readiness() -> list[str]:
                             "XP protected platform requirement",
                         )
                     )
+    return errors
+
+
+def check_platform_denominator(
+    platform: dict[str, object],
+    platform_rows: list[dict[str, object]],
+) -> list[str]:
+    denominator = platform.get("denominator")
+    if not isinstance(denominator, dict):
+        return ["platform verified readiness must expose structured denominator"]
+
+    included = [
+        str(row.get("target", ""))
+        for row in platform_rows
+        if row.get("verified_readiness_scope") is True
+    ]
+    excluded = [
+        str(row.get("target", ""))
+        for row in platform_rows
+        if row.get("verified_readiness_scope") is not True
+    ]
+    errors: list[str] = []
+    if denominator.get("scope") != "verified_readiness_scope=true rows only":
+        errors.append("platform verified readiness denominator scope must be verified_readiness_scope=true rows only")
+    if denominator.get("included_targets") != included:
+        errors.append("platform verified readiness denominator included_targets must match verified rows")
+    if denominator.get("excluded_targets") != excluded:
+        errors.append("platform verified readiness denominator excluded_targets must match extended rows")
+    if denominator.get("included_target_count") != len(included):
+        errors.append("platform verified readiness denominator included_target_count must match included_targets")
+    if denominator.get("excluded_target_count") != len(excluded):
+        errors.append("platform verified readiness denominator excluded_target_count must match excluded_targets")
+    if denominator.get("denominator_excludes_extended_compatibility_rows") is not True:
+        errors.append("platform verified readiness denominator must flag extended compatibility row exclusion")
+    if denominator.get("protected_goal_targets") != [
+        "linux-i386",
+        "linux-armhf",
+        "windows-xp-native-x86",
+        "windows-xp-native-x64",
+    ]:
+        errors.append("platform verified readiness denominator must expose protected_goal_targets")
+    if denominator.get("protected_goal_score_source") != "protected_goal_parity":
+        errors.append("platform verified readiness denominator must point protected_goal_score_source at protected_goal_parity")
+    if denominator.get("release_asset_provenance_in_static_score") is not False:
+        errors.append("platform verified readiness denominator must keep release asset provenance outside static score")
+
+    overall = platform.get("overall", {})
+    if isinstance(overall, dict):
+        if overall.get("included_targets") != included:
+            errors.append("platform verified readiness overall included_targets must match denominator")
+        if overall.get("excluded_targets") != excluded:
+            errors.append("platform verified readiness overall excluded_targets must match denominator")
+        if overall.get("denominator_scope") != denominator.get("scope"):
+            errors.append("platform verified readiness overall denominator_scope must match denominator scope")
     return errors
 
 
@@ -1118,6 +1182,8 @@ def check_protected_goal_release_scope(goal: dict[str, object]) -> list[str]:
         "one release source head SHA",
         "per-record release source run attempts",
         "without conflicting attempts for one run URL",
+        "Published release asset byte provenance",
+        "--assets-dir",
     ):
         if snippet not in scope:
             errors.append(f"protected platform goal parity scope must mention {snippet}")

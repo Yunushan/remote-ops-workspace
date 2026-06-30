@@ -35,7 +35,8 @@ PUBLISH_PROTECTED_PLATFORM_ASSET_COMMAND = (
 )
 PUBLISH_REMOTE_PLATFORM_EVIDENCE_AUDIT_COMMAND = (
     'python scripts/check_platform_release_evidence_remote.py --repository "${{ github.repository }}" '
-    '--release-tag "${{ github.ref_name }}" --require-goal-targets --require-source-runs'
+    '--release-tag "${{ github.ref_name }}" --require-goal-targets --require-source-runs '
+    "--require-final-record-bytes --require-release-asset-bytes --require-tag-source-head"
 )
 FINAL_ACCEPTED_RECORD_RE = re.compile(
     r"^platform-verified-evidence-(linux-i386|linux-armhf|windows-xp-native-x86|windows-xp-native-x64)-final\.json$"

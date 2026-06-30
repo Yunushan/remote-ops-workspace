@@ -33,6 +33,8 @@ def test_release_truth_checker_requires_linux_smoke_git_head_docs() -> None:
     assert "observed_git_head_sha" in checker.REQUIRED_DOC_SNIPPETS
     assert "git_worktree_clean" in checker.REQUIRED_DOC_SNIPPETS
     assert "observed Git HEAD SHA matching the release source head SHA" in checker.REQUIRED_DOC_SNIPPETS
+    assert "linux_smoke_summary" in checker.REQUIRED_DOC_SNIPPETS
+    assert "`linux_smoke_summary`" in checker.REQUIRED_README_RELEASE_SECTION_SNIPPETS
 
 
 def test_release_truth_checker_requires_xp_release_source_docs() -> None:
@@ -200,6 +202,120 @@ def test_release_truth_checker_requires_source_artifact_hash_preflight_docs() ->
     assert any(
         "release docs missing workflow artifact truth snippet" in error
         and "downloaded source artifact native artifact SHA-256 values" in error
+        for error in errors
+    )
+
+
+def test_release_truth_checker_requires_published_remote_audit_docs() -> None:
+    checker = _load_release_truth_checker()
+    original_read = checker.read
+    command = (
+        "python scripts/check_platform_release_evidence_remote.py --repository <owner>/<repo> "
+        "--release-tag <tag> --require-goal-targets --require-source-runs "
+        "--require-final-record-bytes --require-release-asset-bytes --require-tag-source-head"
+    )
+
+    def fake_read(relative: str) -> str:
+        text = original_read(relative)
+        if relative in {"README.md", "README.tr.md", "docs/PLATFORM_SUPPORT.md", "docs/RELEASE_STRATEGY.md"}:
+            return text.replace(command, "python scripts/check_platform_release_evidence_remote.py --help")
+        return text
+
+    checker.read = fake_read
+    try:
+        errors = checker.check_release_docs()
+    finally:
+        checker.read = original_read
+
+    assert any(
+        "release docs missing workflow artifact truth snippet" in error
+        and "check_platform_release_evidence_remote.py" in error
+        for error in errors
+    )
+    assert any(
+        "README.md release section missing protected platform evidence truth snippet" in error
+        and "check_platform_release_evidence_remote.py" in error
+        for error in errors
+    )
+    assert any(
+        "README.tr.md missing protected platform evidence truth snippet" in error
+        and "check_platform_release_evidence_remote.py" in error
+        for error in errors
+    )
+
+
+def test_release_truth_checker_requires_published_source_artifact_repository_id_docs() -> None:
+    checker = _load_release_truth_checker()
+    original_read = checker.read
+
+    def fake_read(relative: str) -> str:
+        text = original_read(relative)
+        if relative in {"README.md", "README.tr.md", "docs/PLATFORM_SUPPORT.md", "docs/RELEASE_STRATEGY.md"}:
+            return (
+                text.replace("`workflow_run.repository_id`", "`workflow_run.repository`")
+                .replace("`workflow_run.head_repository_id`", "`workflow_run.head_repository`")
+                .replace("workflow_run.repository_id", "workflow_run.repository")
+                .replace("workflow_run.head_repository_id", "workflow_run.head_repository")
+            )
+        return text
+
+    checker.read = fake_read
+    try:
+        errors = checker.check_release_docs()
+    finally:
+        checker.read = original_read
+
+    assert any(
+        "release docs missing workflow artifact truth snippet" in error
+        and "workflow_run.repository_id" in error
+        for error in errors
+    )
+    assert any(
+        "README.md release section missing protected platform evidence truth snippet" in error
+        and "workflow_run.repository_id" in error
+        for error in errors
+    )
+    assert any(
+        "README.tr.md missing protected platform evidence truth snippet" in error
+        and "workflow_run.repository_id" in error
+        for error in errors
+    )
+
+
+def test_release_truth_checker_requires_source_artifact_run_window_docs() -> None:
+    checker = _load_release_truth_checker()
+    original_read = checker.read
+
+    def fake_read(relative: str) -> str:
+        text = original_read(relative)
+        if relative in {"README.md", "README.tr.md", "docs/PLATFORM_SUPPORT.md", "docs/RELEASE_STRATEGY.md"}:
+            return (
+                text.replace("source run start/update window", "source run start")
+                .replace("source\n  run start/update window", "source run start")
+                .replace("source run\nstart/update araligi", "source run start")
+                .replace("source run start/update araligi", "source run start")
+            )
+        return text
+
+    checker.read = fake_read
+    try:
+        errors = checker.check_release_docs()
+    finally:
+        checker.read = original_read
+
+    assert any(
+        "release docs missing workflow artifact truth snippet" in error
+        and "source run start/update window" in error
+        for error in errors
+    )
+    assert any(
+        "README.md release section missing protected platform evidence truth snippet" in error
+        and "source run start/update window" in error
+        for error in errors
+    )
+    assert any(
+        "README.tr.md missing protected platform evidence truth snippet" in error
+        and "source run start/update" in error
         for error in errors
     )
 
@@ -678,6 +794,75 @@ def test_release_truth_checker_requires_publish_gate_before_release_upload() -> 
     errors = checker.check_release_preflight(workflow)
 
     assert "publish-time protected platform goal gate must run before GitHub release upload" in errors
+
+
+def test_release_truth_checker_requires_published_platform_evidence_audit() -> None:
+    checker = _load_release_truth_checker()
+    audit_step = (
+        '      - name: Audit published protected platform evidence\n'
+        '        env:\n'
+        '          GH_TOKEN: ${{ github.token }}\n'
+        '        run: python scripts/check_platform_release_evidence_remote.py --repository "${{ github.repository }}" --release-tag "${{ github.ref_name }}" --require-goal-targets --require-source-runs --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head\n'
+    )
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        audit_step,
+        "",
+    )
+
+    errors = checker.check_release_preflight(workflow)
+
+    assert any("published protected platform evidence audit" in error for error in errors)
+
+
+def test_release_truth_checker_requires_published_platform_audit_after_release_upload() -> None:
+    checker = _load_release_truth_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    audit_step = (
+        '      - name: Audit published protected platform evidence\n'
+        '        env:\n'
+        '          GH_TOKEN: ${{ github.token }}\n'
+        '        run: python scripts/check_platform_release_evidence_remote.py --repository "${{ github.repository }}" --release-tag "${{ github.ref_name }}" --require-goal-targets --require-source-runs --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head\n'
+    )
+    upload_step = (
+        "      - name: Upload release assets\n"
+        "        uses: softprops/action-gh-release@v3\n"
+    )
+    workflow = workflow.replace(audit_step, "").replace(upload_step, audit_step + upload_step)
+
+    errors = checker.check_release_preflight(workflow)
+
+    assert "published protected platform evidence audit must run after GitHub release upload" in errors
+
+
+def test_release_truth_checker_requires_published_platform_audit_scope() -> None:
+    checker = _load_release_truth_checker()
+    audit_step = (
+        '      - name: Audit published protected platform evidence\n'
+        '        env:\n'
+        '          GH_TOKEN: ${{ github.token }}\n'
+        '        run: python scripts/check_platform_release_evidence_remote.py --repository "${{ github.repository }}" --release-tag "${{ github.ref_name }}" --require-goal-targets --require-source-runs --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head\n'
+    )
+    publish_permissions = (
+        "  publish:\n"
+        "    runs-on: ubuntu-latest\n"
+        "    permissions:\n"
+        "      actions: read\n"
+        "      contents: write\n"
+    )
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    workflow = workflow.replace(
+        audit_step,
+        audit_step.replace('          GH_TOKEN: ${{ github.token }}\n', ""),
+    )
+    workflow = workflow.replace(
+        publish_permissions,
+        publish_permissions.replace("      actions: read\n", ""),
+    )
+
+    errors = checker.check_release_preflight(workflow)
+
+    assert "publish job missing Actions read permission for published protected platform evidence audit" in errors
+    assert "publish job missing GitHub token for published protected platform evidence audit" in errors
 
 
 def test_release_truth_checker_requires_platform_evidence_import_command() -> None:

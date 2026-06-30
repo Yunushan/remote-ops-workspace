@@ -19,11 +19,39 @@ RELEASE_MATRIX_PATH = ROOT / "configs" / "release_matrix.json"
 LINUX_PROTECTED_TARGETS = {"linux-i386", "linux-armhf"}
 XP_PROTECTED_TARGET_ORDER = ["windows-xp-native-x86", "windows-xp-native-x64"]
 XP_PROTECTED_TARGETS = set(XP_PROTECTED_TARGET_ORDER)
+PROTECTED_GOAL_TARGET_ORDER = [
+    "linux-i386",
+    "linux-armhf",
+    *XP_PROTECTED_TARGET_ORDER,
+]
+PROTECTED_GOAL_TARGETS = set(PROTECTED_GOAL_TARGET_ORDER)
 PROTECTED_RELEASE_SOURCE_WORKFLOWS = {
     "linux-i386": ".github/workflows/extended-platform-evidence.yml",
     "linux-armhf": ".github/workflows/extended-platform-evidence.yml",
     "windows-xp-native-x86": ".github/workflows/xp-native-evidence.yml",
     "windows-xp-native-x64": ".github/workflows/xp-native-evidence.yml",
+}
+PROTECTED_READINESS_GATE_COMMANDS = {
+    "accepted_evidence_gate": (
+        "python scripts/check_platform_verified_evidence.py "
+        "--require-goal-targets --require-review-bundles --release-tag v<project.version>"
+    ),
+    "protected_goal_gate": (
+        "python scripts/check_protected_platform_goal.py "
+        "--release-tag v<project.version> --require-complete"
+    ),
+    "release_asset_provenance_gate": (
+        "python scripts/check_protected_platform_goal.py "
+        "--release-tag v<project.version> --require-complete "
+        "--assets-dir <release-assets-dir>"
+    ),
+    "published_release_audit_gate": (
+        "python scripts/verify.py --quick --no-cli-smoke "
+        "--require-platform-goal-targets --release-tag v<project.version> "
+        "--platform-review-bundle-dir <bundle-dir> "
+        "--release-assets-dir <release-assets-dir> "
+        "--release-repository <owner>/<repo>"
+    ),
 }
 RELEASE_TAG_RE = re.compile(r"^v\d+\.\d+\.\d+$")
 SOURCE_HEAD_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -159,15 +187,30 @@ REQUIRED_DOC_SNIPPETS: dict[str, tuple[str, ...]] = {
         "Windows XP x86/x64 remote endpoints use isolated per-profile legacy opt-ins",
         "Linux `i386`/`i686` and `armhf` outputs for matching builders, but those are not uploaded",
         "manual Linux i386/armhf and legacy Windows rows remain visible outside the verified-readiness denominator",
+        "`protected_readiness_goal` metadata block",
+        "`not native-host/readiness proof`",
+        "`configs/platform_verified_evidence.json`",
         "check_release_publish_assets.py --assets-dir <release-assets-dir> --tag v<project.version> --require-platform-goal-targets",
+        "release_asset_provenance_complete=false",
+        "asset-backed protected goal gate",
         "check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag <tag> --require-final-record-assets",
+        "`linux_smoke_summary` carrying the native smoke release/run",
         "iOS/iPadOS is Web/PWA only; no native `.ipa` or App Store package is published.",
         "Android 12 through Android 16 (API 31-36)",
         "iOS/iPadOS 15 through 26.x",
     ),
     "docs/PLATFORM_SUPPORT.md": (
         "Architecture support is declared in `configs/platform_targets.json`",
+        "`protected_readiness_goal`",
+        "`static_catalog_boundary` of `not native-host/readiness proof`",
+        "`status_source` pointing at `configs/platform_verified_evidence.json`",
+        "`row platforms --json is the static platform catalog; use row features --coverage --json`",
+        "`release_asset_provenance_gate`",
         "python scripts/check_platform_support_truth.py",
+        "Evidence-backed protected readiness",
+        "Release asset provenance",
+        "static platform catalog is not native-host/readiness proof",
+        "row features --coverage --json",
         "Windows Vista and Windows XP as remote targets only.",
         "Windows XP remote-target coverage is 100.0% for x86 and x64 endpoints",
         "i386/i686: 32-bit x86 Linux packages, script-supported only.",
@@ -179,10 +222,21 @@ REQUIRED_DOC_SNIPPETS: dict[str, tuple[str, ...]] = {
         "`git_worktree_clean=true`",
         "Linux smoke command includes the target id, workflow run URL, workflow run attempt and source head SHA",
         "observed Git HEAD SHA matches that source head SHA",
+        "`linux_smoke_summary` that repeats the",
+        "profile-only legacy crypto scope facts",
         "`scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux --target linux-i386 --workflow-run-url <github-actions-run-url> --workflow-run-attempt <github-actions-run-attempt> --source-head-sha <github-actions-head-sha> --builder-evidence <builder-identity.json>`",
         "`scripts/smoke_linux_native.sh --arch armhf --dist native-dist/linux --target linux-armhf --workflow-run-url <github-actions-run-url> --workflow-run-attempt <github-actions-run-attempt> --source-head-sha <github-actions-head-sha> --builder-evidence <builder-identity.json>`",
         "python scripts/import_platform_evidence_artifacts.py --release-tag v<project.version> --require-goal-targets --out-dir <release-assets-dir> --dry-run --verify-source-run",
         "hash-checked as downloaded source artifacts before being copied into the release asset directory",
+        "release_asset_provenance_complete=false",
+        "asset-backed protected goal",
+        "add `--release-repository <owner>/<repo>` to that strict verifier",
+        "published native/review-bundle asset bytes",
+        "published final accepted-record JSON bytes",
+        "`workflow_run.repository_id` and",
+        "`workflow_run.head_repository_id`",
+        "artifact `created_at` values outside the exact source run start/update window",
+        "canonical accepted-record JSON bytes",
         "native artifact SHA-256 plus review-bundle size/SHA-256 checks on the downloaded source artifact",
         "check_release_publish_assets.py --assets-dir <release-assets-dir> --tag v<project.version> --require-platform-goal-targets",
         "`--host-label`, `--evidence-run-id` and `--observed-at-utc` command bindings",
@@ -205,19 +259,29 @@ REQUIRED_DOC_SNIPPETS: dict[str, tuple[str, ...]] = {
         "Linux `i386`/`i686` and `armv7l`/`armhf` native outputs are script-supported",
         "`dpkg --print-architecture` as `i386` or `armhf`",
         "`getconf LONG_BIT` as",
+        "`linux_smoke_summary`",
+        "weak crypto disabled by",
         "modern Windows 10/11,",
         "Treats Windows XP, Vista, Windows 7 and Windows 8.0 as legacy remote targets",
         "Windows XP x86/x64 remote endpoints use isolated per-profile legacy opt-ins",
         "`xp_evidence_summary.release_source` matching `release_asset_source`",
         "`xp smoke source head sha`",
         "downloaded source artifact native artifact SHA-256 values plus review-bundle size/SHA-256 values",
+        "artifact created_at inside the exact source run start/update window",
         "check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag <tag> --require-final-record-assets",
+        "release_asset_provenance_complete=false",
+        "asset-backed protected goal",
         "Android remains Termux plus Web/PWA until there is a real native Android wrapper.",
         "iOS/iPadOS remains Web/PWA-only until there is a real native iOS wrapper.",
     ),
     "docs/FULL_FEATURE_COVERAGE.md": (
         "Platform verified readiness",
         "Platform verified readiness remains separate",
+        "release_asset_provenance_complete=false",
+        "release_asset_provenance_command",
+        "Release asset provenance",
+        "Asset provenance gate",
+        "asset-backed protected goal gate",
     ),
 }
 
@@ -277,6 +341,11 @@ def check_platform_catalog(platform_targets: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     rows = rows_by_key(platform_targets.get("release_architectures", []), "id", errors)
     legacy_rows = rows_by_key(platform_targets.get("windows_legacy_targets", []), "version", errors)
+    errors.extend(
+        check_protected_readiness_catalog_contract(
+            platform_targets.get("protected_readiness_goal")
+        )
+    )
 
     for target_id, expected in EXPECTED_ARCHITECTURES.items():
         row = rows.get(target_id)
@@ -305,6 +374,68 @@ def check_platform_catalog(platform_targets: dict[str, Any]) -> list[str]:
             for protocol in ("rdp", "vnc", "ssh", "sshv1", "telnet", "serial", "raw"):
                 if protocol not in protocols:
                     errors.append(f"Windows XP remote target support must include {protocol}")
+
+    return errors
+
+
+def check_protected_readiness_catalog_contract(raw_goal: Any) -> list[str]:
+    label = "platform protected_readiness_goal"
+    if not isinstance(raw_goal, dict):
+        return ["platform catalog must declare protected_readiness_goal contract"]
+
+    errors: list[str] = []
+    if raw_goal.get("required_targets") != PROTECTED_GOAL_TARGET_ORDER:
+        errors.append(
+            f"{label} required_targets must be {PROTECTED_GOAL_TARGET_ORDER!r}, "
+            f"got {raw_goal.get('required_targets')!r}"
+        )
+    if raw_goal.get("status_source") != "configs/platform_verified_evidence.json":
+        errors.append(f"{label} status_source must point at configs/platform_verified_evidence.json")
+
+    boundary = normalize_text(str(raw_goal.get("static_catalog_boundary", "")))
+    if boundary != "not native-host/readiness proof":
+        errors.append(f"{label} static_catalog_boundary must be not native-host/readiness proof")
+
+    guidance = normalize_text(str(raw_goal.get("static_json_consumer_guidance", "")))
+    if "row platforms --json is the static platform catalog" not in guidance:
+        errors.append(f"{label} guidance must say row platforms --json is the static catalog")
+    if "row features --coverage --json" not in guidance:
+        errors.append(f"{label} guidance must point to row features --coverage --json")
+
+    for key, expected in PROTECTED_READINESS_GATE_COMMANDS.items():
+        actual = normalize_command(str(raw_goal.get(key, "")))
+        if actual != normalize_command(expected):
+            errors.append(f"{label} {key} must be {expected!r}, got {raw_goal.get(key)!r}")
+
+    sources = raw_goal.get("target_evidence_sources")
+    if not isinstance(sources, dict):
+        errors.append(f"{label} target_evidence_sources must be an object")
+    else:
+        actual_targets = set(str(target) for target in sources)
+        if actual_targets != PROTECTED_GOAL_TARGETS:
+            errors.append(
+                f"{label} target_evidence_sources must cover exactly "
+                f"{sorted(PROTECTED_GOAL_TARGETS)}, got {sorted(actual_targets)}"
+            )
+        for target, workflow in PROTECTED_RELEASE_SOURCE_WORKFLOWS.items():
+            if sources.get(target) != workflow:
+                errors.append(f"{label} evidence source for {target} must be {workflow}")
+
+    security = raw_goal.get("security_boundary")
+    if not isinstance(security, dict):
+        errors.append(f"{label} security_boundary must be an object")
+    else:
+        expected_security = {
+            "legacy_compatibility_profile": "isolated-opt-in",
+            "legacy_crypto_scope": "profile-only",
+            "weak_crypto_global_default": False,
+            "modern_defaults_unchanged": True,
+            "modern_tls_minimum": "TLS 1.2",
+            "modern_tls_preferred": "TLS 1.3",
+        }
+        for key, expected in expected_security.items():
+            if security.get(key) != expected:
+                errors.append(f"{label} security_boundary.{key} must be {expected!r}")
 
     return errors
 
@@ -406,6 +537,56 @@ def check_platform_readiness_report(
     actual_overall = platform.get("overall", {}).get("current_percent")
     if actual_overall != expected_overall:
         errors.append(f"platform readiness overall must be {expected_overall}%, got {actual_overall}%")
+    errors.extend(
+        check_protected_readiness_report_alignment(
+            platform_targets.get("protected_readiness_goal"),
+            platform,
+        )
+    )
+    return errors
+
+
+def check_protected_readiness_report_alignment(
+    raw_goal_contract: Any,
+    platform_report: dict[str, Any],
+) -> list[str]:
+    if not isinstance(raw_goal_contract, dict):
+        return []
+
+    goal = platform_report.get("protected_goal_parity", {})
+    if not isinstance(goal, dict):
+        return ["platform readiness report must expose protected_goal_parity"]
+
+    errors: list[str] = []
+    required_targets = raw_goal_contract.get("required_targets")
+    if goal.get("required_targets") != required_targets:
+        errors.append(
+            "protected platform goal report required_targets must match "
+            f"platform catalog protected_readiness_goal (expected {required_targets!r}, "
+            f"got {goal.get('required_targets')!r})"
+        )
+    if goal.get("target_count") != len(PROTECTED_GOAL_TARGET_ORDER):
+        errors.append("protected platform goal report target_count must match catalog required targets")
+
+    expected_asset_command = normalize_command(
+        str(raw_goal_contract.get("release_asset_provenance_gate", ""))
+    )
+    actual_asset_command = normalize_command(
+        release_tag_template_command(
+            str(goal.get("release_asset_provenance_command", "")),
+            str(goal.get("release_tag", "")),
+        )
+    )
+    if actual_asset_command != expected_asset_command:
+        errors.append(
+            "protected platform goal report release_asset_provenance_command must match "
+            "platform catalog release_asset_provenance_gate"
+        )
+    if goal.get("release_asset_provenance_complete") is not False:
+        errors.append(
+            "static protected platform goal report must keep "
+            "release_asset_provenance_complete=false"
+        )
     return errors
 
 
@@ -746,6 +927,16 @@ def read_json(path: Path) -> dict[str, Any]:
 
 def normalize_text(text: str) -> str:
     return re.sub(r"\s+", " ", text.replace("\\|", "|")).strip()
+
+
+def normalize_command(command: str) -> str:
+    return re.sub(r"\s+", " ", command).strip()
+
+
+def release_tag_template_command(command: str, release_tag: str) -> str:
+    if RELEASE_TAG_RE.fullmatch(release_tag):
+        return command.replace(f"--release-tag {release_tag}", "--release-tag v<project.version>")
+    return command
 
 
 def clone_json(data: dict[str, Any]) -> dict[str, Any]:

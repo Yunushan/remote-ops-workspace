@@ -309,6 +309,10 @@ def check_contract(contract: dict[str, Any]) -> list[str]:
             "XP native evidence contract must require smoke evidence files under "
             "xp-smoke-evidence/<smoke_id>.txt"
         )
+    if contract.get("exact_smoke_proof_line_occurrences_required") is not True:
+        errors.append("XP native evidence contract must require exact single-occurrence smoke proof lines")
+    if contract.get("forbidden_security_smoke_lines_case_insensitive") is not True:
+        errors.append("XP native evidence contract must require case-insensitive forbidden security proof-line rejection")
     binding_lines = contract.get("required_smoke_evidence_binding_lines")
     required_binding_lines = {
         "xp smoke target: <target>",
@@ -1140,139 +1144,25 @@ def check_smoke_evidence_binding(
         text = data.decode("utf-8")
     except UnicodeDecodeError as exc:
         return [f"{target} smoke result {smoke_id} evidence_file must be UTF-8 text for binding validation: {exc}"]
-    targets = sorted(
-        {
-            line.split(":", 1)[1].strip()
-            for line in text.splitlines()
-            if line.strip().startswith("xp smoke target:")
-        }
-    )
-    smoke_ids = sorted(
-        {
-            line.split(":", 1)[1].strip()
-            for line in text.splitlines()
-            if line.strip().startswith("xp smoke id:")
-        }
-    )
-    release_tags = sorted(
-        {
-            line.split(":", 1)[1].strip()
-            for line in text.splitlines()
-            if line.strip().startswith("xp smoke release:")
-        }
-    )
-    host_labels = sorted(
-        {
-            line.split(":", 1)[1].strip()
-            for line in text.splitlines()
-            if line.strip().startswith("xp smoke host label:")
-        }
-    )
-    evidence_run_ids = sorted(
-        {
-            line.split(":", 1)[1].strip()
-            for line in text.splitlines()
-            if line.strip().startswith("xp smoke evidence run id:")
-        }
-    )
-    observed_at_values = sorted(
-        {
-            line.split(":", 1)[1].strip()
-            for line in text.splitlines()
-            if line.strip().startswith("xp smoke observed at utc:")
-        }
-    )
-    source_workflow_run_urls = sorted(
-        {
-            line.split(":", 1)[1].strip().rstrip("/")
-            for line in text.splitlines()
-            if line.strip().startswith("xp smoke source workflow run:")
-        }
-    )
-    source_head_shas = sorted(
-        {
-            line.split(":", 1)[1].strip()
-            for line in text.splitlines()
-            if line.strip().startswith("xp smoke source head sha:")
-        }
-    )
-    source_run_attempts = sorted(
-        {
-            line.split(":", 1)[1].strip()
-            for line in text.splitlines()
-            if line.strip().startswith("xp smoke source run attempt:")
-        }
-    )
-    os_names = sorted(
-        {
-            line.split(":", 1)[1].strip()
-            for line in text.splitlines()
-            if line.strip().startswith("xp smoke os name:")
-        }
-    )
-    os_architectures = sorted(
-        {
-            line.split(":", 1)[1].strip()
-            for line in text.splitlines()
-            if line.strip().startswith("xp smoke os architecture:")
-        }
-    )
-    os_service_packs = sorted(
-        {
-            line.split(":", 1)[1].strip()
-            for line in text.splitlines()
-            if line.strip().startswith("xp smoke os service pack:")
-        }
-    )
-    os_editions = sorted(
-        {
-            line.split(":", 1)[1].strip()
-            for line in text.splitlines()
-            if line.strip().startswith("xp smoke os edition:")
-        }
-    )
-    host_probe_commands = sorted(
-        {
-            line.split(":", 1)[1].strip()
-            for line in text.splitlines()
-            if line.strip().startswith("xp smoke host probe command:")
-        }
-    )
-    host_probe_outputs = sorted(
-        {
-            line.split(":", 1)[1].strip()
-            for line in text.splitlines()
-            if line.strip().startswith("xp smoke host probe output:")
-        }
-    )
-    processor_architectures = sorted(
-        {
-            line.split(":", 1)[1].strip()
-            for line in text.splitlines()
-            if line.strip().startswith("xp smoke processor architecture env:")
-        }
-    )
-    processor_architectures_w6432 = sorted(
-        {
-            line.split(":", 1)[1].strip()
-            for line in text.splitlines()
-            if line.strip().startswith("xp smoke processor architecture w6432 env:")
-        }
-    )
-    wmic_os_captions = sorted(
-        {
-            line.split(":", 1)[1].strip()
-            for line in text.splitlines()
-            if line.strip().startswith("xp smoke wmic os caption:")
-        }
-    )
-    wmic_os_csdversions = sorted(
-        {
-            line.split(":", 1)[1].strip()
-            for line in text.splitlines()
-            if line.strip().startswith("xp smoke wmic os csdversion:")
-        }
-    )
+    targets = xp_smoke_line_values(text, "xp smoke target")
+    smoke_ids = xp_smoke_line_values(text, "xp smoke id")
+    release_tags = xp_smoke_line_values(text, "xp smoke release")
+    host_labels = xp_smoke_line_values(text, "xp smoke host label")
+    evidence_run_ids = xp_smoke_line_values(text, "xp smoke evidence run id")
+    observed_at_values = xp_smoke_line_values(text, "xp smoke observed at utc")
+    source_workflow_run_urls = [value.rstrip("/") for value in xp_smoke_line_values(text, "xp smoke source workflow run")]
+    source_head_shas = xp_smoke_line_values(text, "xp smoke source head sha")
+    source_run_attempts = xp_smoke_line_values(text, "xp smoke source run attempt")
+    os_names = xp_smoke_line_values(text, "xp smoke os name")
+    os_architectures = xp_smoke_line_values(text, "xp smoke os architecture")
+    os_service_packs = xp_smoke_line_values(text, "xp smoke os service pack")
+    os_editions = xp_smoke_line_values(text, "xp smoke os edition")
+    host_probe_commands = xp_smoke_line_values(text, "xp smoke host probe command")
+    host_probe_outputs = xp_smoke_line_values(text, "xp smoke host probe output")
+    processor_architectures = xp_smoke_line_values(text, "xp smoke processor architecture env")
+    processor_architectures_w6432 = xp_smoke_line_values(text, "xp smoke processor architecture w6432 env")
+    wmic_os_captions = xp_smoke_line_values(text, "xp smoke wmic os caption")
+    wmic_os_csdversions = xp_smoke_line_values(text, "xp smoke wmic os csdversion")
     errors: list[str] = []
     if targets != [target]:
         errors.append(
@@ -1380,6 +1270,15 @@ def check_smoke_evidence_binding(
     return errors
 
 
+def xp_smoke_line_values(text: str, key: str) -> list[str]:
+    prefix = f"{key}:"
+    return sorted(
+        line.split(":", 1)[1].strip()
+        for raw_line in text.splitlines()
+        if (line := raw_line.strip()).startswith(prefix)
+    )
+
+
 def check_xp_smoke_host_probe_binding(
     target: str,
     smoke_id: str,
@@ -1480,29 +1379,25 @@ def check_artifact_manifest_smoke_evidence(
     expected = expected_artifact_names(target, release_tag, errors)
     if not expected:
         return errors
-    artifact_lines = sorted(
-        {
-            line.split(":", 1)[1].strip()
-            for line in text.splitlines()
-            if line.strip().startswith("xp smoke artifact file:")
-        }
-    )
+    artifact_lines = xp_smoke_line_values(text, "xp smoke artifact file")
     expected_lines = sorted(expected)
     if artifact_lines != expected_lines:
         errors.append(
             f"{target} smoke result {smoke_id} evidence_file artifact list proof "
             f"must match expected release artifacts {expected_lines}, got {artifact_lines}"
         )
-    normalized_lines = {line.strip().lower() for line in text.splitlines() if line.strip()}
-    for required_line in (
-        "xp smoke artifact manifest validated: true",
-        "xp smoke artifact sha256s validated: true",
-    ):
-        if required_line not in normalized_lines:
-            errors.append(
-                f"{target} smoke result {smoke_id} evidence_file missing artifact proof line: "
-                f"{required_line}"
-            )
+    errors.extend(
+        check_required_xp_smoke_proof_lines(
+            target,
+            smoke_id,
+            text,
+            (
+                "xp smoke artifact manifest validated: true",
+                "xp smoke artifact sha256s validated: true",
+            ),
+            proof_kind="artifact",
+        )
+    )
     return errors
 
 
@@ -1524,19 +1419,21 @@ def check_security_smoke_evidence_lines(
         text = data.decode("utf-8")
     except UnicodeDecodeError as exc:
         return [f"{target} smoke result {smoke_id} evidence_file must be UTF-8 text for security proof: {exc}"]
-    normalized_lines = {line.strip().lower() for line in text.splitlines() if line.strip()}
     errors: list[str] = []
-    for line in raw_lines:
-        expected = str(line).strip()
-        if expected.lower() not in normalized_lines:
-            errors.append(
-                f"{target} smoke result {smoke_id} evidence_file missing security proof line: {expected}"
-            )
+    errors.extend(
+        check_required_xp_smoke_proof_lines(
+            target,
+            smoke_id,
+            text,
+            [str(line) for line in raw_lines],
+            proof_kind="security",
+        )
+    )
     errors.extend(
         check_security_smoke_provenance_lines(
             target,
             smoke_id,
-            normalized_lines,
+            text,
             contract,
             security=security,
         )
@@ -1545,20 +1442,21 @@ def check_security_smoke_evidence_lines(
     if isinstance(forbidden, dict):
         raw_forbidden_lines = forbidden.get(smoke_id)
         if isinstance(raw_forbidden_lines, list):
+            normalized_observed = xp_smoke_normalized_lines(text)
             for line in raw_forbidden_lines:
                 forbidden_line = str(line).strip()
-                if forbidden_line.lower() in normalized_lines:
+                if forbidden_line.lower() in normalized_observed:
                     errors.append(
                         f"{target} smoke result {smoke_id} evidence_file "
                         f"contains forbidden security proof line: {forbidden_line}"
-                    )
+            )
     return errors
 
 
 def check_security_smoke_provenance_lines(
     target: str,
     smoke_id: str,
-    normalized_lines: set[str],
+    text: str,
     contract: dict[str, Any],
     *,
     security: Any,
@@ -1580,9 +1478,50 @@ def check_security_smoke_provenance_lines(
             continue
         label = labels.get(field, field.replace("_", " "))
         expected = f"{label}: {expected_value}"
-        if expected.lower() not in normalized_lines:
+        errors.extend(
+            check_required_xp_smoke_proof_lines(
+                target,
+                smoke_id,
+                text,
+                (expected,),
+                proof_kind="security",
+            )
+        )
+    return errors
+
+
+def xp_smoke_stripped_lines(text: str) -> list[str]:
+    return [line.strip() for line in text.splitlines() if line.strip()]
+
+
+def xp_smoke_normalized_lines(text: str) -> set[str]:
+    return {line.lower() for line in xp_smoke_stripped_lines(text)}
+
+
+def check_required_xp_smoke_proof_lines(
+    target: str,
+    smoke_id: str,
+    text: str,
+    required_lines: tuple[str, ...] | list[str],
+    *,
+    proof_kind: str,
+) -> list[str]:
+    observed = xp_smoke_stripped_lines(text)
+    errors: list[str] = []
+    for raw_line in required_lines:
+        required_line = str(raw_line).strip()
+        if not required_line:
+            continue
+        count = sum(1 for line in observed if line == required_line)
+        if count == 0:
             errors.append(
-                f"{target} smoke result {smoke_id} evidence_file missing security proof line: {expected}"
+                f"{target} smoke result {smoke_id} evidence_file missing {proof_kind} proof line: "
+                f"{required_line}"
+            )
+        elif count != 1:
+            errors.append(
+                f"{target} smoke result {smoke_id} evidence_file must include exactly one "
+                f"{proof_kind} proof line: {required_line} (got {count})"
             )
     return errors
 

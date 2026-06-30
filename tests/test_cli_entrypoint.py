@@ -62,8 +62,17 @@ def test_module_entrypoint_coverage_prints_protected_platform_goal(tmp_path: Pat
     assert result.returncode == 0
     assert "Platform verified readiness   : 100.0%" in result.stdout
     assert (
+        "Verified denominator        : 10 included, 7 extended excluded; "
+        "protected goal source=protected_goal_parity"
+    ) in result.stdout
+    assert (
         "Protected platform goal       : 0.0% "
         "(100.0% gap; 0/4 accepted; missing-accepted-evidence)"
+    ) in result.stdout
+    assert "Release asset provenance : not checked by static report" in result.stdout
+    assert (
+        "Asset provenance gate    : python scripts/check_protected_platform_goal.py "
+        "--release-tag v<project.version> --require-complete --assets-dir <release-assets-dir>"
     ) in result.stdout
     assert (
         "Missing protected evidence  : linux-i386, linux-armhf, "

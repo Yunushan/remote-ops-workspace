@@ -146,14 +146,31 @@ def test_verify_can_require_platform_goal_targets(tmp_path: Path) -> None:
         release_assets_dir=release_assets_dir,
         row_home=tmp_path,
     )
+    remote_strict_steps = verify.build_steps(
+        "python",
+        quick=True,
+        require_platform_goal_targets=True,
+        release_tag="v1.0.3",
+        release_repository="example/remote-ops-workspace",
+        platform_review_bundle_dir=bundle_dir,
+        release_assets_dir=release_assets_dir,
+        row_home=tmp_path,
+    )
 
     default_names = [step.name for step in default_steps]
     strict_names = [step.name for step in strict_steps]
+    remote_strict_names = [step.name for step in remote_strict_steps]
     default_publish = next(
         step for step in default_steps if step.name == "release publish asset contract"
     )
     strict_publish = next(
         step for step in strict_steps if step.name == "release publish asset contract"
+    )
+    remote_strict_publish = next(
+        step for step in remote_strict_steps if step.name == "release publish asset contract"
+    )
+    remote_audit = next(
+        step for step in remote_strict_steps if step.name == "published platform release evidence audit"
     )
     strict_goal = next(
         step for step in strict_steps if step.name == "platform verified evidence goal gate"
@@ -181,6 +198,9 @@ def test_verify_can_require_platform_goal_targets(tmp_path: Path) -> None:
     assert "platform evidence artifact import dry-run" in strict_names
     assert "platform review bundle artifact validation" not in default_names
     assert "platform review bundle artifact validation" in strict_names
+    assert "published platform release evidence audit" not in default_names
+    assert "published platform release evidence audit" not in strict_names
+    assert "published platform release evidence audit" in remote_strict_names
     assert strict_names.index("platform evidence artifact import dry-run") < strict_names.index(
         "platform review bundle artifact validation"
     )
@@ -195,6 +215,9 @@ def test_verify_can_require_platform_goal_targets(tmp_path: Path) -> None:
     )
     assert strict_names.index("platform evidence artifact import dry-run") < strict_names.index(
         "release publish asset contract"
+    )
+    assert remote_strict_names.index("release publish asset contract") < remote_strict_names.index(
+        "published platform release evidence audit"
     )
     assert "--require-platform-goal-targets" not in default_publish.command
     assert "--require-platform-goal-targets" in strict_publish.command
@@ -227,6 +250,20 @@ def test_verify_can_require_platform_goal_targets(tmp_path: Path) -> None:
     assert strict_bundle.command[-1] == "--require-final-record-assets"
     assert ["--assets-dir", str(release_assets_dir)] == strict_publish.command[2:4]
     assert ["--tag", "v1.0.3"] == strict_publish.command[4:6]
+    assert remote_strict_publish.command == strict_publish.command
+    assert remote_audit.command == [
+        "python",
+        "scripts/check_platform_release_evidence_remote.py",
+        "--repository",
+        "example/remote-ops-workspace",
+        "--release-tag",
+        "v1.0.3",
+        "--require-goal-targets",
+        "--require-source-runs",
+        "--require-final-record-bytes",
+        "--require-release-asset-bytes",
+        "--require-tag-source-head",
+    ]
 
 
 def test_verify_rejects_strict_platform_goal_without_release_tag(tmp_path: Path) -> None:
@@ -241,6 +278,21 @@ def test_verify_rejects_strict_platform_goal_without_release_tag(tmp_path: Path)
             str(tmp_path),
             "--release-assets-dir",
             str(tmp_path / "release-assets"),
+        ]
+    )
+
+    assert result == 2
+
+
+def test_verify_rejects_release_repository_without_platform_goal_mode() -> None:
+    verify = _load_verify_module()
+
+    result = verify.main(
+        [
+            "--quick",
+            "--no-cli-smoke",
+            "--release-repository",
+            "example/remote-ops-workspace",
         ]
     )
 

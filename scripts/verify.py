@@ -32,6 +32,7 @@ def build_steps(
     require_real_gui: bool = False,
     require_platform_goal_targets: bool = False,
     release_tag: str | None = None,
+    release_repository: str | None = None,
     platform_review_bundle_dir: Path | None = None,
     release_assets_dir: Path | None = None,
     row_home: Path | None = None,
@@ -286,6 +287,29 @@ def build_steps(
             ],
             env=_source_env(),
         ),
+        *(
+            [
+                VerifyStep(
+                    "published platform release evidence audit",
+                    [
+                        python,
+                        "scripts/check_platform_release_evidence_remote.py",
+                        "--repository",
+                        release_repository,
+                        "--release-tag",
+                        release_tag,
+                        "--require-goal-targets",
+                        "--require-source-runs",
+                        "--require-final-record-bytes",
+                        "--require-release-asset-bytes",
+                        "--require-tag-source-head",
+                    ],
+                    env=_source_env(),
+                )
+            ]
+            if require_platform_goal_targets and release_tag and release_repository
+            else []
+        ),
         VerifyStep(
             "optional dependency smoke",
             [python, "scripts/check_optional_dependencies.py"],
@@ -442,6 +466,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="When running release-sensitive gates, validate accepted evidence against this tag.",
     )
     parser.add_argument(
+        "--release-repository",
+        help=(
+            "GitHub owner/repository used for the optional live published-release "
+            "evidence audit in strict platform-goal verification."
+        ),
+    )
+    parser.add_argument(
         "--platform-review-bundle-dir",
         type=Path,
         help=(
@@ -477,6 +508,7 @@ def main(argv: list[str] | None = None) -> int:
             require_real_gui=args.require_real_gui,
             require_platform_goal_targets=args.require_platform_goal_targets,
             release_tag=args.release_tag,
+            release_repository=args.release_repository,
             platform_review_bundle_dir=args.platform_review_bundle_dir,
             release_assets_dir=args.release_assets_dir,
             row_home=row_home,
@@ -485,9 +517,11 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def strict_platform_goal_arg_errors(args: argparse.Namespace) -> list[str]:
-    if not args.require_platform_goal_targets:
-        return []
     errors: list[str] = []
+    if args.release_repository and not args.require_platform_goal_targets:
+        errors.append("--release-repository requires --require-platform-goal-targets")
+    if not args.require_platform_goal_targets:
+        return errors
     if not args.release_tag:
         errors.append("--require-platform-goal-targets requires --release-tag vX.Y.Z")
     if args.platform_review_bundle_dir is None:

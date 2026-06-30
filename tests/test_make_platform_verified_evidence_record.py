@@ -127,6 +127,36 @@ def test_make_platform_verified_evidence_record_generates_linux_record(
         f"--builder-evidence {builder_evidence.as_posix()}"
     )
     assert record["linux_smoke_evidence_sha256"] == {"native_smoke": _sha256(smoke_evidence)}
+    assert record["linux_smoke_summary"] == {
+        "target": target,
+        "release_tag": tag,
+        "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        "workflow_run_attempt": 1,
+        "source_head_sha": "a" * 40,
+        "git_head_sha": "a" * 40,
+        "target_arch": "i386",
+        "host_label": "linux-i386-builder",
+        "evidence_run_id": "linux-i386-1-0-2-run-12345",
+        "observed_at_utc": "2026-06-20T12:00:00Z",
+        "uname_machine": "i686",
+        "dpkg_architecture": "i386",
+        "userland_bits": "32",
+        "os_release": "Debian GNU/Linux 12 (bookworm)",
+        "kernel_release": "6.1.0-i386-ci",
+        "glibc_version": "glibc 2.36",
+        "python_ssl_openssl": "OpenSSL 3.0.13",
+        "openssl_cli_version": "OpenSSL 3.0.13",
+        "security": {
+            "tls_minimum_modern_profiles": "TLS 1.2",
+            "tls_preferred_modern_profiles": "TLS 1.3",
+            "legacy_compatibility_profile": "isolated-opt-in",
+            "legacy_crypto_scope": "profile-only",
+            "weak_crypto_global_default": False,
+            "modern_defaults_unchanged": True,
+            "security_update_channel": "vendor-security-updates-2026-06",
+            "cve_review_reference": "vendor-cve-advisory-review-2026-06",
+        },
+    }
     assert record["local_evidence_preflight_command"] == (
         "python scripts/check_platform_goal_local_evidence.py --root . "
         f"--release-tag {tag} --target {target} --assets-dir {assets.as_posix()} "
@@ -1707,6 +1737,53 @@ def test_make_platform_verified_evidence_record_rejects_missing_linux_smoke_secu
     assert f"linux-i386 linux_smoke_evidence missing required line: {missing_line}" in errors
 
 
+def test_linux_smoke_log_rejects_required_line_suffix_spoof(tmp_path: Path) -> None:
+    maker = _load_maker()
+    smoke_evidence = tmp_path / "native-smoke-linux-i386.log"
+    _write_linux_smoke_evidence(smoke_evidence, "linux-i386", {})
+    text = smoke_evidence.read_text(encoding="utf-8")
+    required_line = "native installer smoke passed for Linux i386"
+    spoofed_text = text.replace(required_line, f"{required_line} with suffix")
+    native_smoke_command = text.splitlines()[0].removeprefix("native installer smoke command: ")
+
+    errors = maker.check_linux_smoke_log_text(
+        "linux-i386",
+        "v1.0.2",
+        native_smoke_command,
+        "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        spoofed_text,
+        workflow_run_attempt=1,
+        source_head_sha="a" * 40,
+    )
+
+    assert f"linux-i386 linux_smoke_evidence missing required line: {required_line}" in errors
+
+
+def test_linux_smoke_log_rejects_duplicate_required_line(tmp_path: Path) -> None:
+    maker = _load_maker()
+    smoke_evidence = tmp_path / "native-smoke-linux-i386.log"
+    _write_linux_smoke_evidence(smoke_evidence, "linux-i386", {})
+    text = smoke_evidence.read_text(encoding="utf-8")
+    required_line = "native installer smoke passed for Linux i386"
+    duplicated_text = f"{text}{required_line}\n"
+    native_smoke_command = text.splitlines()[0].removeprefix("native installer smoke command: ")
+
+    errors = maker.check_linux_smoke_log_text(
+        "linux-i386",
+        "v1.0.2",
+        native_smoke_command,
+        "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        duplicated_text,
+        workflow_run_attempt=1,
+        source_head_sha="a" * 40,
+    )
+
+    assert (
+        "linux-i386 linux_smoke_evidence must include exactly one required line: "
+        "native installer smoke passed for Linux i386 (got 2)"
+    ) in errors
+
+
 def test_make_platform_verified_evidence_record_rejects_missing_linux_smoke_git_head_proof(
     tmp_path: Path,
 ) -> None:
@@ -1892,6 +1969,69 @@ def test_make_platform_verified_evidence_record_rejects_forbidden_linux_smoke_se
         "linux-armhf linux_smoke_evidence contains forbidden security proof line: "
         "native installer smoke TLS minimum modern profiles: TLS 1.0"
     ) in errors
+    assert (
+        "linux-armhf linux_smoke_evidence contains forbidden security proof line: "
+        "native installer smoke weak crypto global default: true"
+    ) in errors
+
+
+def test_make_platform_verified_evidence_record_rejects_case_variant_forbidden_linux_smoke_security_proof(
+    tmp_path: Path,
+) -> None:
+    maker = _load_maker()
+    artifact_checker = _load_platform_promotion_artifacts_checker()
+    target = "linux-armhf"
+    tag = f"v{artifact_checker.read_project_version()}"
+    assets = tmp_path / "linux"
+    assets.mkdir()
+    names = _required_names(artifact_checker, target, tag)
+    _write_artifact_set(assets, names)
+    builder_evidence = tmp_path / "builder-identity-linux-armhf.json"
+    _write_builder_evidence(builder_evidence, target)
+    smoke_evidence = tmp_path / "native-smoke-linux-armhf.log"
+    _write_linux_smoke_evidence(
+        smoke_evidence,
+        target,
+        _smoke_artifact_hashes(assets, names),
+    )
+    smoke_evidence.write_text(
+        smoke_evidence.read_text(encoding="utf-8")
+        + "Native Installer Smoke Weak Crypto Global Default: TRUE\n",
+        encoding="utf-8",
+    )
+
+    errors, record = maker.build_evidence_record(
+        maker.parse_args(
+            [
+                "--target",
+                target,
+                "--release-tag",
+                tag,
+                "--assets-dir",
+                str(assets),
+                "--release-asset-base-url",
+                f"https://github.com/example/remote-ops-workspace/releases/download/{tag}",
+                "--workflow-run-url",
+                "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+                "--release-source-head-sha",
+                "a" * 40,
+                "--release-source-run-attempt",
+                "1",
+                "--builder-evidence",
+                str(builder_evidence),
+                "--linux-smoke-evidence",
+                str(smoke_evidence),
+                "--runner-label",
+                "self-hosted",
+                "--runner-label",
+                "linux",
+                "--runner-label",
+                "armhf",
+            ]
+        )
+    )
+
+    assert record == {}
     assert (
         "linux-armhf linux_smoke_evidence contains forbidden security proof line: "
         "native installer smoke weak crypto global default: true"
@@ -2736,6 +2876,7 @@ def _write_artifact_set(root: Path, names: list[str]) -> None:
     records = [
         {
             "file": name,
+            **_manifest_record_metadata(name),
             "size_bytes": (root / name).stat().st_size,
             "sha256": _sha256(root / name),
         }
@@ -2747,6 +2888,36 @@ def _write_artifact_set(root: Path, names: list[str]) -> None:
         "".join(f"{_sha256(root / name)}  {name}\n" for name in sidecar_names),
         encoding="utf-8",
     )
+
+
+def _manifest_record_metadata(name: str) -> dict[str, str]:
+    if name.endswith(".tar.gz"):
+        return {"architecture": _artifact_architecture(name), "format": "tar.gz"}
+    if name.endswith(".AppImage"):
+        return {"architecture": _artifact_architecture(name), "format": "AppImage"}
+    if name.endswith(".deb"):
+        return {"architecture": _artifact_architecture(name), "format": "deb"}
+    if name.endswith(".rpm"):
+        return {"architecture": _artifact_architecture(name), "format": "rpm"}
+    if name.endswith(".zip"):
+        return {"architecture": _artifact_architecture(name), "format": "zip"}
+    return {}
+
+
+def _artifact_architecture(name: str) -> str:
+    if "-linux-i386." in name:
+        return "i386"
+    if "-linux-i686." in name or "-linux-i686-native." in name:
+        return "i686"
+    if "-linux-armhf." in name or "-linux-armhf-native." in name:
+        return "armhf"
+    if "-linux-armv7hl." in name:
+        return "armv7hl"
+    if "-windows-xp-x86-native." in name:
+        return "x86"
+    if "-windows-xp-x64-native." in name:
+        return "x64"
+    return ""
 
 
 def _write_builder_evidence(

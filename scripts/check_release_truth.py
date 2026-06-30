@@ -37,6 +37,11 @@ PUBLISH_PLATFORM_GOAL_COMMAND = (
     'python scripts/check_release_publish_assets.py --assets-dir release-assets '
     '--tag "${{ github.ref_name }}" --require-platform-goal-targets'
 )
+PUBLISH_REMOTE_PLATFORM_EVIDENCE_AUDIT_COMMAND = (
+    'python scripts/check_platform_release_evidence_remote.py --repository "${{ github.repository }}" '
+    '--release-tag "${{ github.ref_name }}" --require-goal-targets --require-source-runs '
+    "--require-final-record-bytes --require-release-asset-bytes --require-tag-source-head"
+)
 
 REQUIRED_DOC_SNIPPETS = (
     "remote-ops-workspace-v1.0.2-linux-<amd64|arm64>.deb",
@@ -47,10 +52,20 @@ REQUIRED_DOC_SNIPPETS = (
     "remote-ops-workspace-v1.0.2-macos-<x64|arm64>.pkg",
     "not uploaded by the default GitHub",
     "check_protected_platform_goal.py --release-tag <tag> --require-complete --assets-dir release-assets",
+    "release_asset_provenance_complete=false",
+    "asset-backed protected goal gate",
     "check_release_publish_assets.py --assets-dir release-assets --tag <tag> --require-platform-goal-targets",
     "import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run",
     "check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag <tag> --require-final-record-assets",
+    "check_platform_release_evidence_remote.py --repository <owner>/<repo> --release-tag <tag> --require-goal-targets --require-source-runs --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head",
     "downloaded source artifact native artifact SHA-256 values plus review-bundle size/SHA-256 values",
+    "published asset digests, sizes and bytes",
+    "published final accepted-record JSON bytes",
+    "release tag Git object/source head SHA",
+    "workflow_run.repository_id",
+    "workflow_run.head_repository_id",
+    "artifact created_at",
+    "source run start/update window",
     "workflow-file, source-head and",
     "run-attempt-bound accepted Linux i386, Linux armhf and Windows XP native-host artifacts",
     "target-specific release source workflow file",
@@ -58,6 +73,9 @@ REQUIRED_DOC_SNIPPETS = (
     "observed_git_head_sha",
     "git_worktree_clean",
     "observed Git HEAD SHA matching the release source head SHA",
+    "linux_smoke_summary",
+    "profile-only legacy crypto scope",
+    "weak crypto disabled by",
     "--observed-at-utc",
     "--source-workflow-run-url",
     "--source-head-sha",
@@ -88,15 +106,26 @@ REQUIRED_TURKISH_DOC_SNIPPETS = (
     "python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag <tag>",
     "python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run",
     "python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag <tag> --require-final-record-assets",
+    "python scripts/check_platform_release_evidence_remote.py --repository <owner>/<repo> --release-tag <tag> --require-goal-targets --require-source-runs --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head",
     "indirilen source artifact native",
+    "published asset digest/size/byte",
+    "published final accepted-record JSON bytes",
+    "release tag Git object/source head SHA",
+    "workflow_run.repository_id",
+    "workflow_run.head_repository_id",
+    "artifact created_at",
+    "source run start/update",
     "ayni tag/repository/workflow file path/source-head/run-attempt",
     "target'a ozel release source workflow file path",
     "python scripts/check_protected_platform_goal.py --release-tag <tag> --require-complete --assets-dir release-assets",
+    "release_asset_provenance_complete=false",
+    "asset-backed protected goal",
     "python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --require-platform-goal-targets",
     "Linux i386, Linux armhf, windows-xp-native-x86 ve windows-xp-native-x64",
     "ayni GitHub release repository, target'a ozel release source workflow file path",
     "ayni release source head SHA",
     "pozitif release source run attempt",
+    "linux_smoke_summary",
     "Windows XP native-host readiness 25.0%",
     "self-hosted `xp-evidence` collector",
     "`scripts/xp_smoke_runner.cmd`",
@@ -109,7 +138,15 @@ REQUIRED_README_RELEASE_SECTION_SNIPPETS = (
     "accepted-platform-evidence-assets",
     "python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run",
     "python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag <tag> --require-final-record-assets",
+    "python scripts/check_platform_release_evidence_remote.py --repository <owner>/<repo> --release-tag <tag> --require-goal-targets --require-source-runs --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head",
     "downloaded source artifact native artifact SHA-256 values",
+    "published asset digests, sizes and bytes",
+    "published final accepted-record JSON bytes",
+    "release tag Git object/source head SHA",
+    "workflow_run.repository_id",
+    "workflow_run.head_repository_id",
+    "artifact created_at",
+    "source run start/update window",
     "workflow-file, source-head and",
     "run-attempt-bound accepted evidence artifacts",
     "Linux i386, Linux armhf, windows-xp-native-x86",
@@ -118,10 +155,13 @@ REQUIRED_README_RELEASE_SECTION_SNIPPETS = (
     "target-specific release source workflow file",
     "release source head SHA and per-record release source run attempt before any 100%",
     "python scripts/check_protected_platform_goal.py --release-tag <tag> --require-complete --assets-dir release-assets",
+    "release_asset_provenance_complete=false",
+    "asset-backed protected goal gate",
     "python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --require-platform-goal-targets",
     "configs/platform_verified_evidence.json",
     "accepted review-bundle hashes",
     "source and native release jobs wait for it before building",
+    "`linux_smoke_summary`",
     "`scripts/xp_smoke_runner.cmd`",
     "`xp-evidence` collector",
 )
@@ -130,6 +170,8 @@ REQUIRED_RELEASE_STRATEGY_SNIPPETS = (
     "python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir <release-assets-dir> --dry-run --verify-source-run",
     "pre-release protected-platform import dry-run",
     "does not stage files for upload",
+    "release_asset_provenance_complete=false",
+    "asset-backed protected goal gate",
 )
 
 STALE_TURKISH_RELEASE_SNIPPETS = (
@@ -300,6 +342,7 @@ def check_publish_platform_evidence_dependency(workflow: str) -> list[str]:
     protected_asset_gate_index = block.find(PUBLISH_PROTECTED_PLATFORM_ASSET_COMMAND)
     gate_index = block.find(PUBLISH_PLATFORM_GOAL_COMMAND)
     upload_index = block.find("softprops/action-gh-release")
+    remote_audit_index = block.find(PUBLISH_REMOTE_PLATFORM_EVIDENCE_AUDIT_COMMAND)
     if protected_asset_gate_index < 0:
         errors.append(
             "publish job missing protected platform release asset gate: "
@@ -307,6 +350,15 @@ def check_publish_platform_evidence_dependency(workflow: str) -> list[str]:
         )
     if gate_index < 0:
         errors.append(f"publish job missing publish-time protected platform goal gate: {PUBLISH_PLATFORM_GOAL_COMMAND}")
+    if remote_audit_index < 0:
+        errors.append(
+            "publish job missing published protected platform evidence audit: "
+            f"{PUBLISH_REMOTE_PLATFORM_EVIDENCE_AUDIT_COMMAND}"
+        )
+    if "actions: read" not in block:
+        errors.append("publish job missing Actions read permission for published protected platform evidence audit")
+    if "GH_TOKEN: ${{ github.token }}" not in block:
+        errors.append("publish job missing GitHub token for published protected platform evidence audit")
     if (
         protected_asset_gate_index >= 0
         and gate_index >= 0
@@ -317,6 +369,8 @@ def check_publish_platform_evidence_dependency(workflow: str) -> list[str]:
         errors.append("protected platform release asset gate must run before GitHub release upload")
     if gate_index >= 0 and upload_index >= 0 and gate_index > upload_index:
         errors.append("publish-time protected platform goal gate must run before GitHub release upload")
+    if remote_audit_index >= 0 and upload_index >= 0 and remote_audit_index < upload_index:
+        errors.append("published protected platform evidence audit must run after GitHub release upload")
     return errors
 
 

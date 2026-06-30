@@ -194,6 +194,8 @@ def check_protected_platform_goal(
         goal["scope_error"] = REQUIRE_COMPLETE_RELEASE_TAG_ERROR
     if release_asset_validation_errors and goal.get("complete"):
         goal = mark_release_assets_invalid(goal, release_asset_validation_errors)
+    elif assets_dir is not None and require_complete and release_tag is not None and goal.get("complete"):
+        goal = mark_release_assets_valid(goal)
     if report_validation_errors and goal.get("complete"):
         goal = mark_requirement_metadata_invalid(goal, report_validation_errors)
     if require_complete and not goal.get("complete"):
@@ -229,6 +231,13 @@ def mark_release_assets_invalid(
         unique_messages(release_asset_validation_errors)
     )
     return downgraded
+
+
+def mark_release_assets_valid(goal: dict[str, Any]) -> dict[str, Any]:
+    proven = dict(goal)
+    proven["release_asset_provenance_complete"] = True
+    proven["release_asset_error_count"] = 0
+    return proven
 
 
 def mark_requirement_metadata_invalid(
@@ -474,6 +483,13 @@ def format_goal_scope(goal: dict[str, Any]) -> str:
     import_command = str(goal.get("release_import_dry_run_command", "")).strip()
     if import_command:
         lines.append(f"pre-release import dry-run: {import_command}")
+    asset_command = str(goal.get("release_asset_provenance_command", "")).strip()
+    if asset_command:
+        lines.append(f"release asset provenance gate: {asset_command}")
+    if goal.get("release_asset_provenance_complete") is True:
+        lines.append("release asset provenance: complete")
+    elif goal.get("release_assets_dir"):
+        lines.append("release asset provenance: incomplete")
     if not any((release_tags, repositories, source_heads, workflows, run_urls, run_attempts)):
         lines.append("accepted release scope evidence: none")
     return "\n".join(lines)

@@ -43,8 +43,12 @@ Release integrity rules:
   workflow runs at the accepted run id, attempt, workflow path and source SHA,
   with a complete artifact inventory containing exactly one non-expired,
   non-empty expected source artifact whose `workflow_run.id` and
-  `workflow_run.head_sha` bind it to the accepted source run, without copying
-  files into the publish directory, and it does not stage files for upload.
+  `workflow_run.head_sha` bind it to the accepted source run, plus
+  `workflow_run.repository_id` and `workflow_run.head_repository_id` binding
+  when exact source-run metadata exposes repository IDs, and artifact created_at
+  inside the exact source run start/update window when GitHub exposes timestamps,
+  without copying files
+  into the publish directory, and it does not stage files for upload.
 - The `accepted-platform-evidence-assets` job keeps read-only repository and
   Actions artifact permissions; it must not request any write-scoped GitHub
   permission while importing protected-platform evidence. Source and native
@@ -58,13 +62,20 @@ Release integrity rules:
   after downloading workflow artifacts and before uploading the GitHub release.
   The first command keeps the protected parity gate bound to the publish-ready
   release asset directory; the second verifies the full release asset contract.
+  Static readiness JSON does not download release assets and therefore keeps
+  `release_asset_provenance_complete=false`; only the asset-backed protected
+  goal gate can flip that proof state after finalized records, review bundles
+  and native release bytes match.
   The protected-platform asset job first runs
   `python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run`
   to import only same-tag, same-repository, workflow-file, source-head and
   run-attempt-bound accepted Linux i386, Linux armhf and Windows XP native-host
   artifacts from verified exact evidence workflow runs whose artifact inventory
   is complete and contains exactly one non-expired, non-empty expected source
-  artifact bound by `workflow_run.id` and `workflow_run.head_sha`, then runs
+  artifact bound by `workflow_run.id`, `workflow_run.head_sha`,
+  `workflow_run.repository_id` and `workflow_run.head_repository_id` when exact
+  repository IDs are available, with artifact created_at inside the exact source
+  run start/update window when GitHub exposes timestamps, then runs
   `python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag <tag> --require-final-record-assets`
   against the imported review bundles and finalized public record JSON files
   before uploading the platform evidence asset set. That upload must use
@@ -86,8 +97,18 @@ Release integrity rules:
   evidence for the same release tag, GitHub release repository,
   target-specific release source workflow file, release source head SHA and a
   positive release source run attempt in each record. After upload, the remote
-  evidence audit rejects stale protected-platform native/evidence assets that
-  remain on the GitHub Release outside the audited accepted-evidence scope. Use
+  evidence audit
+  `python scripts/check_platform_release_evidence_remote.py --repository <owner>/<repo> --release-tag <tag> --require-goal-targets --require-source-runs --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head`
+  checks the actual GitHub Release, published asset digests, sizes and bytes, exact
+  published final accepted-record JSON bytes, release tag Git object/source head SHA,
+  source workflow run metadata,
+  and source artifact `workflow_run.id`,
+  `workflow_run.head_sha`, `workflow_run.repository_id` and
+  `workflow_run.head_repository_id` binding when GitHub exposes repository IDs,
+  plus artifact created_at inside the exact source run start/update window when
+  GitHub exposes timestamps;
+  it also rejects stale protected-platform native/evidence assets that remain
+  on the GitHub Release outside the audited accepted-evidence scope. Use
   `--require-mobaxterm-parity-complete` only for releases that explicitly claim
   complete strict MobaXterm Home/Professional product-depth parity.
 - CI build jobs run with read-only repository contents permission and checkout
@@ -139,8 +160,10 @@ directories.
 before extended targets can be promoted. Linux i386 and Linux armhf can move
 from script-supported to default-native only when the release matrix, release
 workflow, publish asset contract, native build outputs, smoke tests, checksum
-sidecars and native manifests all include those architectures. The produced
-artifact directory must pass
+sidecars and native manifests all include those architectures. Linux smoke
+proof lines must be exact single-occurrence bindings, and forbidden
+weak-security proof lines are rejected case-insensitively. The produced artifact
+directory must pass
 `python scripts/check_platform_promotion_artifacts.py --target linux-i386 --assets-dir <target-release-artifact-dir> --tag v<project.version> --strict`
 or
 `python scripts/check_platform_promotion_artifacts.py --target linux-armhf --assets-dir <target-release-artifact-dir> --tag v<project.version> --strict`.
@@ -197,7 +220,10 @@ Linux and macOS defaults remain hardened. Linux records must also
 include `native_build_command` and `native_smoke_command` matching the promotion
 contract, where the smoke command binds the target id, workflow run URL, workflow
 run attempt and source head SHA, plus `linux_smoke_evidence_sha256.native_smoke`, which is the SHA-256 of the captured
-`scripts/smoke_linux_native.sh` output from the same builder. That smoke log
+`scripts/smoke_linux_native.sh` output from the same builder, and `linux_smoke_summary`,
+which exposes the accepted release/run/source, architecture, userland, host identity,
+OpenSSL, TLS floor/preference, profile-only legacy crypto scope, weak crypto disabled by
+default and modern defaults unchanged values without rereading the raw log. That smoke log
 must contain the canonical command, target id, workflow run URL, release tag,
 target architecture, sanitized host label, deterministic evidence run ID,
 observed-at UTC timestamp, the observed Git HEAD SHA matching the release source head
@@ -292,7 +318,10 @@ architecture w6432 env`, `xp smoke wmic os caption`,
 `xp smoke wmic os csdversion`, `xp smoke host label`, `xp smoke evidence run
 id`, `xp smoke observed at utc`, `xp smoke source workflow run`,
 `xp smoke source head sha` and `xp smoke source run attempt` proof lines, and
-checks the recorded SHA-256.
+checks the recorded SHA-256. XP smoke proof lines must be exact
+single-occurrence bindings; duplicate source, artifact, host, OS or security
+proof lines are rejected, and forbidden weak-security proof lines are rejected
+case-insensitively.
 Accepted XP records generated from that bundle must include `xp_evidence_sha256`
 for the evidence JSON, `xp_evidence_summary` for the XP target/release/toolchain/security/smoke
 binding, `xp_evidence_summary.release_source` matching `release_asset_source`

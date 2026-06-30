@@ -244,4 +244,4 @@ jobs:
       - name: Audit published protected platform evidence
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python scripts/check_platform_release_evidence_remote.py --repository "${{ github.repository }}" --release-tag "${{ github.ref_name }}" --require-goal-targets --require-source-runs
+        run: python scripts/check_platform_release_evidence_remote.py --repository "${{ github.repository }}" --release-tag "${{ github.ref_name }}" --require-goal-targets --require-source-runs --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head

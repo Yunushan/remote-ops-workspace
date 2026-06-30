@@ -298,12 +298,20 @@ upload staging must use `python scripts/stage_xp_native_evidence_upload.py`;
 both stagers re-check finalized accepted-record assets before upload and require
 the public final record to use canonical LF-terminated, sorted JSON bytes. Linux
 accepted records include builder identity JSON plus its matching SHA-256,
-sanitized target-scoped host identity and workflow dispatch input binding.
+sanitized target-scoped host identity, workflow dispatch input binding and a
+`linux_smoke_summary` carrying the native smoke release/run, runtime
+architecture, OpenSSL and legacy-crypto-scope proof values.
+Linux native smoke proof lines are exact single-occurrence bindings; substring
+matches, duplicated pass/security lines or case variants of forbidden
+weak-security proof lines are not promotion evidence.
 Windows XP accepted records include sanitized host identity SHA-256 and require
 each smoke command/file to bind the same host label and evidence run ID; the
 XP smoke proof is captured on real XP x86/x64 hosts with
 `scripts/xp_smoke_runner.cmd`, then packaged by a modern self-hosted
 `xp-evidence` collector rather than treating the collector as the XP host.
+XP smoke proof lines are exact single-occurrence bindings; duplicated source,
+artifact, host, OS or security proof lines are rejected, and weak-security
+contradictions are rejected case-insensitively.
 `python scripts/check_platform_verified_evidence.py`
 validates the registry in finalized-only mode and rejects
 `--allow-unfinalized-candidates`; candidate validation stays inside the
@@ -319,18 +327,25 @@ but the protected goal parity block stays incomplete until one release source ha
 gate is `python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> --release-assets-dir <release-assets-dir>`,
 which also runs `python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-complete --assets-dir <release-assets-dir>`
 and `python scripts/check_release_publish_assets.py --assets-dir <release-assets-dir> --tag v<project.version> --require-platform-goal-targets`
-and must fail until the same four records are finalized and accepted from that same release source. Today Linux i386 and
+and must fail until the same four records are finalized and accepted from that same release source.
+The static readiness report keeps `release_asset_provenance_complete=false`;
+only the asset-backed protected goal gate can flip that proof state after
+checking finalized records, review bundles and native release bytes.
+Add `--release-repository <owner>/<repo>` to the same strict verifier when validating
+an already-published GitHub release; that also runs the live protected-platform
+release/source-run audit. Today Linux i386 and
 armhf remain script-supported at 70.0% until matching release builders, default
 release matrix entries, smoke evidence, checksum sidecars and native manifests
-exist. Windows XP native-host readiness remains 25.0% until a separate
+with target architecture/format binding exist. Windows XP native-host readiness remains 25.0% until a separate
 XP-capable legacy toolchain, x86/x64 XP host smoke evidence captured with
 `scripts/xp_smoke_runner.cmd`, native artifact evidence, modern `xp-evidence`
 collector packaging, and a passing `python scripts/check_xp_native_evidence.py --evidence <evidence.json> --assets-dir <artifact-dir>` bundle exist; XP remote-target coverage stays 100.0% through isolated legacy-profile opt-ins.
 After a release is published, audit the actual GitHub release and evidence
 workflow runs with
-`python scripts/check_platform_release_evidence_remote.py --repository <owner>/<repo> --release-tag v<project.version> --require-goal-targets --require-source-runs`;
+`python scripts/check_platform_release_evidence_remote.py --repository <owner>/<repo> --release-tag v<project.version> --require-goal-targets --require-source-runs --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head`;
 it must still fail if finalized accepted records, protected evidence release
-assets, published asset digests/sizes, exact successful source workflow run
+assets, published asset digests, sizes and bytes, published final accepted-record JSON bytes,
+release tag Git object/source head SHA, exact successful source workflow run
 metadata, or non-expired source workflow artifacts bound to those runs are
 missing, or if stale protected-platform native/evidence assets remain on the
 release outside the audited accepted-evidence scope. The release workflow runs that audit after
@@ -541,6 +556,11 @@ The machine-readable release decision lives in
 [`configs/release_matrix.json`](configs/release_matrix.json), while
 [`configs/platform_targets.json`](configs/platform_targets.json) remains the
 broader platform support catalog exposed by `row platforms --json`.
+That catalog also carries a `protected_readiness_goal` metadata block that
+marks the static catalog boundary as `not native-host/readiness proof`, points
+JSON consumers to `configs/platform_verified_evidence.json`, and records the
+accepted-evidence plus asset-provenance gates for Linux i386/armhf and Windows
+XP native-host readiness.
 Release manifests include `size_bytes` and `sha256` for each artifact, and CI
 build jobs run with read-only checkout credentials until the final publish step.
 The release workflow also starts with a `release-preflight` job that runs
@@ -552,11 +572,18 @@ and `python scripts/check_repository_cleanup.py --require-clean`; source, native
 Windows XP proof for those accepted records is captured on real XP hosts with
 `scripts/xp_smoke_runner.cmd`; the modern self-hosted `xp-evidence` collector
 packages and validates staged evidence, but is not counted as the XP host.
+Linux accepted records in the same path must include `linux_smoke_summary`
+runtime, OpenSSL and profile-only legacy crypto proof values alongside the
+captured smoke log hash.
 The `accepted-platform-evidence-assets` job runs
 `python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run`
 to copy only same-tag, same-repository, workflow-file, source-head and
 run-attempt-bound accepted evidence artifacts into the release asset directory
-after checking downloaded source artifact native artifact SHA-256 values and
+after checking exact source artifact `workflow_run.id`,
+`workflow_run.head_sha`, `workflow_run.repository_id` and
+`workflow_run.head_repository_id` binding when exact repository IDs are
+available, artifact created_at inside the exact source run start/update window
+when GitHub exposes timestamps, plus downloaded source artifact native artifact SHA-256 values and
 review-bundle size/SHA-256 values against the finalized accepted record,
 then runs
 `python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag <tag> --require-final-record-assets`
@@ -572,6 +599,10 @@ evidence records for the same release tag, GitHub release repository,
 target-specific release source workflow file, release source head SHA and
 per-record release source run attempt before any 100%
 platform-readiness or native-host parity claim.
+The static readiness report intentionally leaves
+`release_asset_provenance_complete=false`; the asset-backed protected goal gate
+is the proof that finalized accepted records, review bundles and native release
+bytes match before upload.
 Before upload, the publish job runs
 `python scripts/check_protected_platform_goal.py --release-tag <tag> --require-complete --assets-dir release-assets`
 and then
@@ -583,6 +614,16 @@ and the accepted review-bundle hashes; the same check validates
 `configs/mobaxterm_parity_evidence.json`, and
 `--require-mobaxterm-parity-complete` is the hard gate for releases that claim
 complete strict MobaXterm Home/Professional product-depth parity.
+After upload, the publish job runs
+`python scripts/check_platform_release_evidence_remote.py --repository <owner>/<repo> --release-tag <tag> --require-goal-targets --require-source-runs --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head`
+against the actual GitHub release, requiring published asset digests, sizes and bytes,
+published final accepted-record JSON bytes, release tag Git object/source head SHA,
+exact source workflow run metadata,
+and source artifact `workflow_run.id`,
+`workflow_run.head_sha`, `workflow_run.repository_id` and
+`workflow_run.head_repository_id` binding when GitHub exposes repository IDs,
+plus artifact created_at inside the exact source run start/update window when
+GitHub exposes timestamps.
 Python release tooling is constrained by `requirements-release.txt` and recorded
 in each release manifest through `configs/release_toolchain.json`. Native
 Windows, macOS and Linux jobs also emit per-platform `native-SHA256SUMS.txt`

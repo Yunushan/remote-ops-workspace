@@ -28,6 +28,8 @@
   "evidence_directory_plain_path_required": true,
   "required_smoke_evidence_file": true,
   "smoke_evidence_plain_file_required": true,
+  "exact_smoke_proof_line_occurrences_required": true,
+  "forbidden_security_smoke_lines_case_insensitive": true,
   "required_smoke_result_fields": [
     "id",
     "passed",

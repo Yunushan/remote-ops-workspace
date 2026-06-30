@@ -231,6 +231,24 @@ def test_platform_verified_readiness_tracks_partial_targets() -> None:
     assert platform["overall"]["gap_percent"] == 0.0
     assert platform["overall"]["target_count"] == 10
     assert platform["overall"]["extended_target_count"] == 7
+    denominator = platform["denominator"]
+    assert denominator["scope"] == "verified_readiness_scope=true rows only"
+    assert denominator["included_target_count"] == 10
+    assert denominator["excluded_target_count"] == 7
+    assert denominator["included_targets"] == platform["overall"]["included_targets"]
+    assert denominator["excluded_targets"] == platform["overall"]["excluded_targets"]
+    assert denominator["denominator_excludes_extended_compatibility_rows"] is True
+    assert denominator["protected_goal_targets"] == [
+        "linux-i386",
+        "linux-armhf",
+        "windows-xp-native-x86",
+        "windows-xp-native-x64",
+    ]
+    assert denominator["protected_goal_score_source"] == "protected_goal_parity"
+    assert denominator["release_asset_provenance_in_static_score"] is False
+    assert "linux-i386" in denominator["excluded_targets"]
+    assert "linux-armhf" in denominator["excluded_targets"]
+    assert "Windows XP" in denominator["excluded_targets"]
     goal = platform["protected_goal_parity"]
     assert goal["current_percent"] == 0.0
     assert goal["gap_percent"] == 100.0
@@ -467,6 +485,7 @@ def test_platform_verified_readiness_goal_parity_completes_with_all_accepted_evi
 
     report = _platform_verified_readiness(platform_data=manifest, evidence_registry=evidence)
     goal = report["protected_goal_parity"]
+    denominator = report["denominator"]
 
     assert goal["current_percent"] == 100.0
     assert goal["gap_percent"] == 0.0
@@ -501,6 +520,11 @@ def test_platform_verified_readiness_goal_parity_completes_with_all_accepted_evi
     assert goal["selected_release_source_workflows"] == goal["release_source_workflows"]
     assert goal["release_source_run_attempt_conflicts"] == {}
     assert goal["release_source_provenance_complete"] is True
+    assert goal["release_asset_provenance_complete"] is False
+    assert goal["release_asset_provenance_command"] == (
+        "python scripts/check_protected_platform_goal.py "
+        "--release-tag v1.0.2 --require-complete --assets-dir <release-assets-dir>"
+    )
     assert goal["release_consistent"] is True
     assert goal["release_repository_consistent"] is True
     assert goal["release_source_head_consistent"] is True
@@ -512,6 +536,8 @@ def test_platform_verified_readiness_goal_parity_completes_with_all_accepted_evi
     ]
     assert goal["missing_targets"] == []
     assert goal["complete"] is True
+    assert denominator["included_targets"] == ["linux-i386", "linux-armhf", "Windows XP"]
+    assert denominator["excluded_targets"] == []
     assert goal["status"] == "complete"
     assert all(
         item["accepted"] is True and item["status"] == "accepted"
@@ -1131,6 +1157,42 @@ def test_platform_verified_readiness_ignores_unexpected_linux_builder_identity_f
     assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
 
 
+def test_platform_verified_readiness_ignores_linux_unexpected_top_level_fields() -> None:
+    record = _linux_accepted_evidence("linux-i386")
+    record["_source_files"] = ["native-dist/linux/private-builder-output.log"]
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry=_accepted_evidence_registry(record),
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    goal = report["protected_goal_parity"]
+    assert rows["linux-i386"]["current_percent"] == 70.0
+    assert rows["linux-i386"]["status"] == "manual-script-supported"
+    assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
+    assert goal["current_percent"] == 0.0
+    assert goal["accepted_targets"] == []
+
+
+def test_platform_verified_readiness_ignores_unexpected_linux_evidence_check() -> None:
+    record = _linux_accepted_evidence("linux-i386")
+    record["checks"].append("manual_override")
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry=_accepted_evidence_registry(record),
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    goal = report["protected_goal_parity"]
+    assert rows["linux-i386"]["current_percent"] == 70.0
+    assert rows["linux-i386"]["status"] == "manual-script-supported"
+    assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
+    assert goal["current_percent"] == 0.0
+    assert goal["accepted_targets"] == []
+
+
 def test_platform_verified_readiness_ignores_review_bundle_repository_mismatch() -> None:
     record = _linux_accepted_evidence("linux-armhf")
     record["review_bundle"]["release_asset_urls"] = [
@@ -1164,6 +1226,50 @@ def test_platform_verified_readiness_ignores_final_record_release_asset_url_repo
     assert rows["Windows XP"]["current_percent"] == 25.0
     assert rows["Windows XP"]["status"] == "remote-target-only"
     assert rows["Windows XP"]["accepted_evidence_present_targets"] == []
+
+
+def test_platform_verified_readiness_ignores_xp_unexpected_top_level_fields() -> None:
+    record = _xp_accepted_evidence("windows-xp-native-x86")
+    record["operator_notes"] = "local lab scratch notes must stay out of accepted evidence"
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry=_accepted_evidence_registry(record),
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    goal = report["protected_goal_parity"]
+    assert rows["Windows XP"]["current_percent"] == 25.0
+    assert rows["Windows XP"]["status"] == "remote-target-only"
+    assert rows["Windows XP"]["accepted_evidence_present_targets"] == []
+    assert rows["Windows XP"]["accepted_evidence_missing_targets"] == [
+        "windows-xp-native-x86",
+        "windows-xp-native-x64",
+    ]
+    assert goal["current_percent"] == 0.0
+    assert goal["accepted_targets"] == []
+
+
+def test_platform_verified_readiness_ignores_duplicate_xp_evidence_check() -> None:
+    record = _xp_accepted_evidence("windows-xp-native-x86")
+    record["checks"].append("artifact_validation")
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry=_accepted_evidence_registry(record),
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    goal = report["protected_goal_parity"]
+    assert rows["Windows XP"]["current_percent"] == 25.0
+    assert rows["Windows XP"]["status"] == "remote-target-only"
+    assert rows["Windows XP"]["accepted_evidence_present_targets"] == []
+    assert rows["Windows XP"]["accepted_evidence_missing_targets"] == [
+        "windows-xp-native-x86",
+        "windows-xp-native-x64",
+    ]
+    assert goal["current_percent"] == 0.0
+    assert goal["accepted_targets"] == []
 
 
 def test_platform_verified_readiness_ignores_artifact_validation_command_tag_mismatch() -> None:
@@ -1653,6 +1759,46 @@ def test_platform_verified_readiness_ignores_missing_linux_smoke_evidence() -> N
     assert rows["linux-i386"]["current_percent"] == 70.0
     assert rows["linux-i386"]["status"] == "manual-script-supported"
     assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
+
+
+def test_platform_verified_readiness_ignores_missing_linux_smoke_summary() -> None:
+    record = _linux_accepted_evidence("linux-i386")
+    del record["linux_smoke_summary"]
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry=_accepted_evidence_registry(record),
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    goal = report["protected_goal_parity"]
+    assert rows["linux-i386"]["current_percent"] == 70.0
+    assert rows["linux-i386"]["status"] == "manual-script-supported"
+    assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
+    assert goal["current_percent"] == 0.0
+    assert goal["accepted_targets"] == []
+
+
+def test_platform_verified_readiness_ignores_weak_linux_smoke_summary_security() -> None:
+    record = _linux_accepted_evidence("linux-i386")
+    summary = record["linux_smoke_summary"]
+    assert isinstance(summary, dict)
+    security = summary["security"]
+    assert isinstance(security, dict)
+    security["weak_crypto_global_default"] = True
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry=_accepted_evidence_registry(record),
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    goal = report["protected_goal_parity"]
+    assert rows["linux-i386"]["current_percent"] == 70.0
+    assert rows["linux-i386"]["status"] == "manual-script-supported"
+    assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
+    assert goal["current_percent"] == 0.0
+    assert goal["accepted_targets"] == []
 
 
 def test_platform_verified_readiness_ignores_missing_linux_evidence_sources() -> None:
@@ -2354,6 +2500,7 @@ def _linux_accepted_evidence(target: str) -> dict[str, object]:
             f"--builder-evidence evidence/{target}/v1.0.2/builder-identity-{target}.json"
         ),
         "linux_smoke_evidence_sha256": linux_smoke_hashes,
+        "linux_smoke_summary": _linux_smoke_summary(target),
         "local_evidence_preflight_command": (
             "python scripts/check_platform_goal_local_evidence.py --root . "
             f"--release-tag v1.0.2 --target {target} --assets-dir {assets_dir} "
@@ -2578,6 +2725,42 @@ def _release_source_workflow(target: str) -> str:
 
 def _linux_smoke_hashes() -> dict[str, str]:
     return {"native_smoke": "6" * 64}
+
+
+def _linux_smoke_summary(target: str, release_tag: str = "v1.0.2") -> dict[str, object]:
+    machine = "i686" if target == "linux-i386" else "armv7l"
+    dpkg_arch = "i386" if target == "linux-i386" else "armhf"
+    target_arch = "i386" if target == "linux-i386" else "armhf"
+    return {
+        "target": target,
+        "release_tag": release_tag,
+        "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        "workflow_run_attempt": 1,
+        "source_head_sha": "a" * 40,
+        "git_head_sha": "a" * 40,
+        "target_arch": target_arch,
+        "host_label": f"{target}-builder",
+        "evidence_run_id": f"{target}-{release_tag.removeprefix('v').replace('.', '-')}-run-12345",
+        "observed_at_utc": "2026-06-20T12:00:00Z",
+        "uname_machine": machine,
+        "dpkg_architecture": dpkg_arch,
+        "userland_bits": "32",
+        "os_release": "Debian GNU/Linux 12 (bookworm)",
+        "kernel_release": "6.1.0-i386-ci",
+        "glibc_version": "glibc 2.36",
+        "python_ssl_openssl": "OpenSSL 3.0.13",
+        "openssl_cli_version": "OpenSSL 3.0.13",
+        "security": {
+            "tls_minimum_modern_profiles": "TLS 1.2",
+            "tls_preferred_modern_profiles": "TLS 1.3",
+            "legacy_compatibility_profile": "isolated-opt-in",
+            "legacy_crypto_scope": "profile-only",
+            "weak_crypto_global_default": False,
+            "modern_defaults_unchanged": True,
+            "security_update_channel": "vendor-security-updates-2026-06",
+            "cve_review_reference": "vendor-cve-advisory-review-2026-06",
+        },
+    }
 
 
 def _linux_evidence_sources(

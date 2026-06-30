@@ -14,6 +14,9 @@ POLICY = (
     "or Windows XP native-host readiness. Accepted records must include release asset URLs, "
     "review-bundle manifest release asset URL binding, review bundle release asset URLs, "
     "release-importable artifact source binding, "
+    "source artifact repository-id binding when exact source-run metadata exposes repository IDs, "
+    "source artifact run-start timestamp binding when exact source-run metadata exposes run start timestamps, "
+    "source artifact run-window timestamp binding when exact source-run metadata exposes run update timestamps, "
     "release source head SHA binding, "
     "release source run-attempt binding, "
     "same release source workflow run URL cannot carry conflicting run attempts, "
@@ -24,12 +27,14 @@ POLICY = (
     "finalized accepted-record source file binding, "
     "finalized accepted-record release asset URL binding, "
     "canonical finalized accepted-record JSON byte binding, "
+    "published native and review-bundle release asset byte binding, "
     "Linux release source artifact names must be target/release-scoped, "
     "Linux accepted evidence command paths must be target/release-scoped, "
     "XP release source artifact names must be target/release-scoped, "
     "XP accepted evidence command paths must be target/release-scoped, "
     "and per-artifact SHA-256 digests, safe relative non-link native archive entries, "
     "exact safe checksum and native manifest file references, "
+    "target architecture/format manifest binding, "
     "exact safe release asset URL filenames, "
     "exact required check lists, exact workflow dispatch input sets, exact evidence source record fields, "
     "exact release source and review bundle fields, "
@@ -46,7 +51,9 @@ POLICY = (
     "Linux builder/smoke runtime OS identity binding, "
     "Linux builder host identity binding when applicable, "
     "Linux builder rpm and non-interactive sudo evidence, Linux security patch evidence, "
-    "Linux security smoke proof-line binding, "
+    "Linux security smoke proof-line binding, exact Linux smoke proof-line occurrence binding, "
+    "case-insensitive Linux forbidden security proof-line rejection, "
+    "Linux native smoke summary binding, "
     "Linux native build and smoke command provenance, "
     "Linux smoke evidence SHA-256, Linux smoke release/run/source head SHA binding, "
     "Linux smoke runtime architecture and userland binding, "
@@ -58,7 +65,9 @@ POLICY = (
     "XP evidence summary binding, exact XP evidence summary fields, XP host identity SHA-256 binding, "
     "XP sanitized target-scoped host identity binding, XP smoke host identity binding, "
     "XP smoke observed-at timestamp binding, XP smoke OS identity binding, "
-    "XP smoke host probe proof-line binding, XP security patch evidence, "
+    "XP smoke host probe proof-line binding, exact XP smoke proof-line occurrence binding, "
+    "case-insensitive XP forbidden security proof-line rejection, "
+    "XP security patch evidence, "
     "tracked scripts/xp_smoke_runner.cmd XP smoke command provenance, "
     "canonical XP smoke proof-file command binding, "
     "XP security smoke command provenance binding when applicable, "
@@ -322,7 +331,7 @@ def test_publish_contract_requires_remote_evidence_audit_after_upload() -> None:
         '      - name: Audit published protected platform evidence\n'
         '        env:\n'
         '          GH_TOKEN: ${{ github.token }}\n'
-        '        run: python scripts/check_platform_release_evidence_remote.py --repository "${{ github.repository }}" --release-tag "${{ github.ref_name }}" --require-goal-targets --require-source-runs\n'
+        '        run: python scripts/check_platform_release_evidence_remote.py --repository "${{ github.repository }}" --release-tag "${{ github.ref_name }}" --require-goal-targets --require-source-runs --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head\n'
     )
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
         audit_step,
@@ -342,7 +351,7 @@ def test_publish_contract_rejects_remote_evidence_audit_before_upload() -> None:
         '      - name: Audit published protected platform evidence\n'
         '        env:\n'
         '          GH_TOKEN: ${{ github.token }}\n'
-        '        run: python scripts/check_platform_release_evidence_remote.py --repository "${{ github.repository }}" --release-tag "${{ github.ref_name }}" --require-goal-targets --require-source-runs\n'
+        '        run: python scripts/check_platform_release_evidence_remote.py --repository "${{ github.repository }}" --release-tag "${{ github.ref_name }}" --require-goal-targets --require-source-runs --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head\n'
     )
     upload_step = (
         '      - name: Upload release assets\n'
@@ -1430,6 +1439,7 @@ def _linux_accepted_evidence(target: str) -> dict[str, object]:
             f"--builder-evidence evidence/{target}/v1.0.2/builder-identity-{target}.json"
         ),
         "linux_smoke_evidence_sha256": linux_smoke_hashes,
+        "linux_smoke_summary": _linux_smoke_summary(target),
         "local_evidence_preflight_command": (
             "python scripts/check_platform_goal_local_evidence.py --root . "
             f"--release-tag v1.0.2 --target {target} --assets-dir {assets_dir} "
@@ -1711,6 +1721,42 @@ def _xp_release_source_summary(target: str) -> dict[str, object]:
 
 def _linux_smoke_hashes() -> dict[str, str]:
     return {"native_smoke": "6" * 64}
+
+
+def _linux_smoke_summary(target: str, release_tag: str = "v1.0.2") -> dict[str, object]:
+    machine = "i686" if target == "linux-i386" else "armv7l"
+    dpkg_arch = "i386" if target == "linux-i386" else "armhf"
+    target_arch = "i386" if target == "linux-i386" else "armhf"
+    return {
+        "target": target,
+        "release_tag": release_tag,
+        "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        "workflow_run_attempt": 1,
+        "source_head_sha": "a" * 40,
+        "git_head_sha": "a" * 40,
+        "target_arch": target_arch,
+        "host_label": f"{target}-builder",
+        "evidence_run_id": f"{target}-{release_tag.removeprefix('v').replace('.', '-')}-run-12345",
+        "observed_at_utc": "2026-06-20T12:00:00Z",
+        "uname_machine": machine,
+        "dpkg_architecture": dpkg_arch,
+        "userland_bits": "32",
+        "os_release": "Debian GNU/Linux 12 (bookworm)",
+        "kernel_release": "6.1.0-i386-ci",
+        "glibc_version": "glibc 2.36",
+        "python_ssl_openssl": "OpenSSL 3.0.13",
+        "openssl_cli_version": "OpenSSL 3.0.13",
+        "security": {
+            "tls_minimum_modern_profiles": "TLS 1.2",
+            "tls_preferred_modern_profiles": "TLS 1.3",
+            "legacy_compatibility_profile": "isolated-opt-in",
+            "legacy_crypto_scope": "profile-only",
+            "weak_crypto_global_default": False,
+            "modern_defaults_unchanged": True,
+            "security_update_channel": "vendor-security-updates-2026-06",
+            "cve_review_reference": "vendor-cve-advisory-review-2026-06",
+        },
+    }
 
 
 def _linux_evidence_sources(

@@ -30,6 +30,7 @@ from check_platform_verified_evidence import (  # noqa: E402
     directory_path_has_file_suffix,
     json_sha256,
     linux_release_source_artifact_name,
+    linux_smoke_line_values,
     promotion_config_sha256,
     release_source_workflow,
     xp_native_evidence_contract_sha256,
@@ -47,6 +48,9 @@ DEFAULT_EVIDENCE_POLICY = (
     "or Windows XP native-host readiness. Accepted records must include release asset URLs, "
     "review-bundle manifest release asset URL binding, review bundle release asset URLs, "
     "release-importable artifact source binding, "
+    "source artifact repository-id binding when exact source-run metadata exposes repository IDs, "
+    "source artifact run-start timestamp binding when exact source-run metadata exposes run start timestamps, "
+    "source artifact run-window timestamp binding when exact source-run metadata exposes run update timestamps, "
     "release source head SHA binding, "
     "release source run-attempt binding, "
     "same release source workflow run URL cannot carry conflicting run attempts, "
@@ -57,12 +61,14 @@ DEFAULT_EVIDENCE_POLICY = (
     "finalized accepted-record source file binding, "
     "finalized accepted-record release asset URL binding, "
     "canonical finalized accepted-record JSON byte binding, "
+    "published native and review-bundle release asset byte binding, "
     "Linux release source artifact names must be target/release-scoped, "
     "Linux accepted evidence command paths must be target/release-scoped, "
     "XP release source artifact names must be target/release-scoped, "
     "XP accepted evidence command paths must be target/release-scoped, "
     "per-artifact SHA-256 digests, safe relative non-link native archive entries, "
-    "exact safe checksum and native manifest file references, exact safe release asset URL filenames, "
+    "exact safe checksum and native manifest file references, "
+    "target architecture/format manifest binding, exact safe release asset URL filenames, "
     "exact required check lists, exact workflow dispatch input sets, exact evidence source record fields, "
     "exact release source and review bundle fields, "
     "Linux builder identity evidence, builder identity SHA-256, "
@@ -76,6 +82,9 @@ DEFAULT_EVIDENCE_POLICY = (
     "Linux builder host identity binding when applicable, "
     "Linux builder rpm and non-interactive sudo evidence, "
     "Linux security patch evidence, Linux security smoke proof-line binding, "
+    "exact Linux smoke proof-line occurrence binding, "
+    "case-insensitive Linux forbidden security proof-line rejection, "
+    "Linux native smoke summary binding, "
     "Linux native build and smoke command provenance, "
     "Linux smoke evidence SHA-256, Linux smoke release/run/source head SHA binding, "
     "Linux smoke runtime architecture and userland binding, "
@@ -88,6 +97,8 @@ DEFAULT_EVIDENCE_POLICY = (
     "XP sanitized target-scoped host identity binding, XP smoke host identity binding, "
     "XP smoke observed-at timestamp binding, XP smoke OS identity binding, "
     "XP smoke host probe proof-line binding, "
+    "exact XP smoke proof-line occurrence binding, "
+    "case-insensitive XP forbidden security proof-line rejection, "
     "XP security patch evidence, "
     "tracked scripts/xp_smoke_runner.cmd XP smoke command provenance, "
     "canonical XP smoke proof-file command binding, "
@@ -781,6 +792,11 @@ def linux_record(args: argparse.Namespace, promotion: dict[str, Any]) -> dict[st
             args.builder_evidence,
         ),
         "linux_smoke_evidence_sha256": linux_smoke_evidence_sha256_map(args.linux_smoke_evidence),
+        "linux_smoke_summary": linux_smoke_summary(
+            target,
+            str(args.release_tag),
+            args.linux_smoke_evidence,
+        ),
         "local_evidence_preflight_command": local_evidence_preflight_command(args),
         "staged_upload_command": staged_upload_command(args),
         "artifact_validation_command": (
@@ -1196,6 +1212,49 @@ def xp_smoke_evidence_sha256_map(evidence: dict[str, Any]) -> dict[str, str]:
 
 def linux_smoke_evidence_sha256_map(smoke_evidence: Path) -> dict[str, str]:
     return {"native_smoke": sha256_file(smoke_evidence)}
+
+
+def linux_smoke_summary(target: str, release_tag: str, smoke_evidence: Path) -> dict[str, Any]:
+    text = smoke_evidence.read_text(encoding="utf-8")
+
+    def value(key: str) -> str:
+        values = linux_smoke_line_values(text, key)
+        return values[0] if len(values) == 1 else ""
+
+    def bool_value(key: str) -> bool:
+        return value(key).lower() == "true"
+
+    attempt = value("native installer smoke workflow run attempt")
+    return {
+        "target": value("native installer smoke target") or target,
+        "release_tag": value("native installer smoke release") or release_tag,
+        "workflow_run_url": value("native installer smoke workflow run"),
+        "workflow_run_attempt": int(attempt) if attempt.isdigit() else 0,
+        "source_head_sha": value("native installer smoke source head sha"),
+        "git_head_sha": value("native installer smoke git head sha"),
+        "target_arch": value("native installer smoke target arch"),
+        "host_label": value("native installer smoke host label"),
+        "evidence_run_id": value("native installer smoke evidence run id"),
+        "observed_at_utc": value("native installer smoke observed at utc"),
+        "uname_machine": value("native installer smoke uname machine"),
+        "dpkg_architecture": value("native installer smoke dpkg architecture"),
+        "userland_bits": value("native installer smoke userland bits"),
+        "os_release": value("native installer smoke os release"),
+        "kernel_release": value("native installer smoke kernel release"),
+        "glibc_version": value("native installer smoke glibc version"),
+        "python_ssl_openssl": value("native installer smoke python ssl openssl"),
+        "openssl_cli_version": value("native installer smoke openssl cli version"),
+        "security": {
+            "tls_minimum_modern_profiles": value("native installer smoke TLS minimum modern profiles"),
+            "tls_preferred_modern_profiles": value("native installer smoke TLS preferred modern profiles"),
+            "legacy_compatibility_profile": value("native installer smoke legacy compatibility profile"),
+            "legacy_crypto_scope": value("native installer smoke legacy crypto scope"),
+            "weak_crypto_global_default": bool_value("native installer smoke weak crypto global default"),
+            "modern_defaults_unchanged": bool_value("native installer smoke modern defaults unchanged"),
+            "security_update_channel": value("native installer smoke security update channel"),
+            "cve_review_reference": value("native installer smoke CVE review reference"),
+        },
+    }
 
 
 def append_record_to_registry(record: dict[str, Any], *, registry_path: Path = EVIDENCE_PATH) -> list[str]:

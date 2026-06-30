@@ -28,6 +28,26 @@ FORMAT_SIGNATURES: tuple[tuple[str, tuple[bytes, ...]], ...] = (
     (".tar.gz", (bytes.fromhex("1f8b"),)),
     (".zip", (b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08")),
 )
+MANIFEST_ARCHITECTURE_PATTERNS: dict[str, tuple[tuple[str, str], ...]] = {
+    "linux-i386": (
+        (r"-linux-i386\.deb$", "i386"),
+        (r"-linux-i686\.rpm$", "i686"),
+        (r"-linux-i686\.AppImage$", "i686"),
+        (r"-linux-i686-native\.tar\.gz$", "i686"),
+    ),
+    "linux-armhf": (
+        (r"-linux-armhf\.deb$", "armhf"),
+        (r"-linux-armv7hl\.rpm$", "armv7hl"),
+        (r"-linux-armhf\.AppImage$", "armhf"),
+        (r"-linux-armhf-native\.tar\.gz$", "armhf"),
+    ),
+    "windows-xp-native-x86": (
+        (r"-windows-xp-x86-native\.zip$", "x86"),
+    ),
+    "windows-xp-native-x64": (
+        (r"-windows-xp-x64-native\.zip$", "x64"),
+    ),
+}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -397,7 +417,51 @@ def check_native_manifest(target: str, root: Path, expected: set[str]) -> list[s
             errors.append(f"{target} native manifest record {filename} missing sha256")
         elif checksum != sha256_file(path):
             errors.append(f"{target} native manifest checksum mismatch for {filename}")
+        errors.extend(check_native_manifest_target_binding(target, filename, record))
     return errors
+
+
+def check_native_manifest_target_binding(
+    target: str,
+    filename: str,
+    record: dict[str, Any],
+) -> list[str]:
+    errors: list[str] = []
+    expected_architecture = expected_manifest_architecture(target, filename)
+    if expected_architecture:
+        architecture = str(record.get("architecture", "")).strip()
+        if architecture != expected_architecture:
+            errors.append(
+                f"{target} native manifest record {filename} architecture must be "
+                f"{expected_architecture!r}, got {record.get('architecture')!r}"
+            )
+    expected_format = expected_manifest_format(filename)
+    if expected_format:
+        actual_format = str(record.get("format", "")).strip()
+        if actual_format != expected_format:
+            errors.append(
+                f"{target} native manifest record {filename} format must be "
+                f"{expected_format!r}, got {record.get('format')!r}"
+            )
+    return errors
+
+
+def expected_manifest_architecture(target: str, filename: str) -> str:
+    for pattern, architecture in MANIFEST_ARCHITECTURE_PATTERNS.get(target, ()):
+        if re.search(pattern, filename):
+            return architecture
+    return ""
+
+
+def expected_manifest_format(filename: str) -> str:
+    if filename.endswith(".tar.gz"):
+        return "tar.gz"
+    if filename.endswith(".AppImage"):
+        return "AppImage"
+    for suffix in (".deb", ".rpm", ".zip"):
+        if filename.endswith(suffix):
+            return suffix[1:]
+    return ""
 
 
 def manifest_records(raw_manifest: Any) -> list[dict[str, Any]] | None:

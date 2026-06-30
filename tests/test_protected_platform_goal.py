@@ -323,6 +323,63 @@ def test_protected_platform_goal_assets_dir_validation_blocks_completion(
     assert goal["blocking_errors"] == errors
 
 
+def test_protected_platform_goal_assets_dir_success_marks_release_asset_provenance(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    checker = _load_protected_goal_checker()
+    registry = _complete_registry()
+    calls = []
+
+    def fake_check_release_assets(
+        assets_dir,
+        matrix,
+        *,
+        tag,
+        evidence_registry,
+        require_platform_goal_targets,
+        **_kwargs,
+    ):
+        calls.append(
+            {
+                "assets_dir": assets_dir,
+                "matrix": matrix,
+                "tag": tag,
+                "same_registry": evidence_registry is registry,
+                "require_platform_goal_targets": require_platform_goal_targets,
+            }
+        )
+        return []
+
+    monkeypatch.setattr(checker, "read_release_matrix", lambda: {"matrix": "sentinel"})
+    monkeypatch.setattr(checker, "check_release_assets", fake_check_release_assets)
+
+    errors, goal = checker.check_protected_platform_goal(
+        registry=registry,
+        release_tag="v1.0.2",
+        require_complete=True,
+        assets_dir=tmp_path,
+    )
+
+    assert errors == []
+    assert calls == [
+        {
+            "assets_dir": tmp_path,
+            "matrix": {"matrix": "sentinel"},
+            "tag": "v1.0.2",
+            "same_registry": True,
+            "require_platform_goal_targets": True,
+        }
+    ]
+    assert goal["complete"] is True
+    assert goal["status"] == "complete"
+    assert goal["release_asset_provenance_complete"] is True
+    assert goal["release_asset_error_count"] == 0
+    assert goal["release_asset_validation_errors"] == []
+    assert goal["release_assets_dir"] == str(tmp_path)
+    assert "release asset provenance: complete" in checker.format_goal_scope(goal)
+
+
 def test_protected_platform_goal_reports_release_scoped_completion() -> None:
     checker = _load_protected_goal_checker()
 
@@ -339,6 +396,7 @@ def test_protected_platform_goal_reports_release_scoped_completion() -> None:
     assert goal["missing_targets"] == []
     assert goal["complete"] is True
     assert goal["status"] == "complete"
+    assert goal["release_asset_provenance_complete"] is False
     assert goal["release_asset_validation_errors"] == []
     assert goal["release_assets_dir"] == ""
     human_scope = checker.format_goal_scope(goal)
@@ -362,6 +420,10 @@ def test_protected_platform_goal_reports_release_scoped_completion() -> None:
         "pre-release import dry-run: python scripts/import_platform_evidence_artifacts.py "
         "--release-tag v1.0.2 --require-goal-targets "
         "--out-dir <release-assets-dir> --dry-run --verify-source-run"
+    ) in human_scope
+    assert (
+        "release asset provenance gate: python scripts/check_protected_platform_goal.py "
+        "--release-tag v1.0.2 --require-complete --assets-dir <release-assets-dir>"
     ) in human_scope
 
 

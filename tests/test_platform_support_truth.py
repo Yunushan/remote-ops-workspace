@@ -27,6 +27,28 @@ def test_platform_support_truth_rejects_fake_bit_width() -> None:
     assert "platform target windows-x86 uses unsupported bit width: 128" in errors
 
 
+def test_platform_support_truth_rejects_missing_protected_readiness_contract() -> None:
+    checker = _load_platform_support_truth_checker()
+    targets = _load_json("configs/platform_targets.json")
+    del targets["protected_readiness_goal"]
+
+    errors = checker.check_platform_catalog(targets)
+
+    assert "platform catalog must declare protected_readiness_goal contract" in errors
+
+
+def test_platform_support_truth_rejects_weak_protected_asset_gate() -> None:
+    checker = _load_platform_support_truth_checker()
+    targets = _load_json("configs/platform_targets.json")
+    targets["protected_readiness_goal"]["release_asset_provenance_gate"] = (
+        "python scripts/check_protected_platform_goal.py --release-tag v<project.version>"
+    )
+
+    errors = checker.check_platform_catalog(targets)
+
+    assert any("release_asset_provenance_gate must be" in error for error in errors)
+
+
 def test_platform_support_truth_rejects_manual_linux_promoted_to_default() -> None:
     checker = _load_platform_support_truth_checker()
     targets = _load_json("configs/platform_targets.json")
@@ -57,6 +79,24 @@ def test_platform_support_truth_rejects_inflated_manual_readiness() -> None:
     assert "linux-armhf readiness score must be 70.0%, got 100.0%" in errors
     assert "linux-armhf readiness status must be manual-script-supported, got verified-default-native" in errors
     assert "linux-armhf verified_readiness_scope must be False, got True" in errors
+
+
+def test_platform_support_truth_rejects_protected_goal_report_catalog_drift() -> None:
+    checker = _load_platform_support_truth_checker()
+    targets = _load_json("configs/platform_targets.json")
+    report = deepcopy(coverage_report())
+    goal = report["platform_verified_readiness"]["protected_goal_parity"]
+    goal["required_targets"] = [
+        target for target in goal["required_targets"] if target != "linux-armhf"
+    ]
+
+    errors = checker.check_platform_readiness_report(targets, report)
+
+    assert any(
+        "protected platform goal report required_targets must match platform catalog"
+        in error
+        for error in errors
+    )
 
 
 def test_platform_support_truth_accepts_evidence_backed_linux_promotion() -> None:
@@ -193,6 +233,64 @@ def test_platform_support_truth_requires_current_protected_goal_docs() -> None:
     )
 
 
+def test_platform_support_truth_requires_platforms_cli_evidence_boundary_docs() -> None:
+    checker = _load_platform_support_truth_checker()
+    docs = _read_required_docs(checker)
+    docs["docs/PLATFORM_SUPPORT.md"] = (
+        docs["docs/PLATFORM_SUPPORT.md"]
+        .replace("Evidence-backed protected\nreadiness", "Protected platform summary")
+        .replace("Release asset provenance", "Release asset state")
+        .replace(
+            "static platform catalog is not native-host/readiness\nproof",
+            "static platform catalog describes supported targets",
+        )
+    )
+
+    errors = checker.check_platform_docs(docs, coverage_report())
+
+    assert any(
+        "docs/PLATFORM_SUPPORT.md missing platform truth snippet" in error
+        and "Evidence-backed protected readiness" in error
+        for error in errors
+    )
+    assert any(
+        "docs/PLATFORM_SUPPORT.md missing platform truth snippet" in error
+        and "Release asset provenance" in error
+        for error in errors
+    )
+    assert any(
+        "docs/PLATFORM_SUPPORT.md missing platform truth snippet" in error
+        and "static platform catalog is not native-host/readiness proof" in error
+        for error in errors
+    )
+
+
+def test_platform_support_truth_requires_cli_asset_provenance_docs() -> None:
+    checker = _load_platform_support_truth_checker()
+    docs = _read_required_docs(checker)
+    docs["docs/FULL_FEATURE_COVERAGE.md"] = docs["docs/FULL_FEATURE_COVERAGE.md"].replace(
+        "Release asset\nprovenance",
+        "Release byte\nproof",
+    )
+    docs["docs/FULL_FEATURE_COVERAGE.md"] = docs["docs/FULL_FEATURE_COVERAGE.md"].replace(
+        "`release_asset_provenance_command`",
+        "`asset_gate_command`",
+    )
+
+    errors = checker.check_platform_docs(docs, coverage_report())
+
+    assert any(
+        "docs/FULL_FEATURE_COVERAGE.md missing platform truth snippet" in error
+        and "Release asset provenance" in error
+        for error in errors
+    )
+    assert any(
+        "docs/FULL_FEATURE_COVERAGE.md missing platform truth snippet" in error
+        and "release_asset_provenance_command" in error
+        for error in errors
+    )
+
+
 def test_platform_support_truth_requires_tagged_strict_platform_publish_docs() -> None:
     checker = _load_platform_support_truth_checker()
     docs = _read_required_docs(checker)
@@ -244,6 +342,58 @@ def test_platform_support_truth_requires_downloaded_source_hash_preflight_docs()
     assert any(
         "docs/RELEASE_STRATEGY.md missing platform truth snippet" in error
         and "downloaded source artifact native artifact SHA-256 values" in error
+        for error in errors
+    )
+
+
+def test_platform_support_truth_requires_published_release_audit_docs() -> None:
+    checker = _load_platform_support_truth_checker()
+    docs = _read_required_docs(checker)
+    docs["docs/PLATFORM_SUPPORT.md"] = (
+        docs["docs/PLATFORM_SUPPORT.md"]
+        .replace("add `--release-repository <owner>/<repo>` to that strict verifier", "use the strict verifier")
+        .replace(
+            "published native/review-bundle asset bytes and published final\naccepted-record JSON bytes",
+            "published evidence files",
+        )
+        .replace("`workflow_run.repository_id` and\n`workflow_run.head_repository_id`", "`workflow_run.id`")
+        .replace(
+            "artifact `created_at` values outside the exact source run start/update window",
+            "stale artifact timestamps",
+        )
+        .replace("canonical\naccepted-record JSON bytes", "accepted record metadata")
+    )
+
+    errors = checker.check_platform_docs(docs, coverage_report())
+
+    assert any(
+        "docs/PLATFORM_SUPPORT.md missing platform truth snippet" in error
+        and "--release-repository <owner>/<repo>" in error
+        for error in errors
+    )
+    assert any(
+        "docs/PLATFORM_SUPPORT.md missing platform truth snippet" in error
+        and "published native/review-bundle asset bytes" in error
+        for error in errors
+    )
+    assert any(
+        "docs/PLATFORM_SUPPORT.md missing platform truth snippet" in error
+        and "published final accepted-record JSON bytes" in error
+        for error in errors
+    )
+    assert any(
+        "docs/PLATFORM_SUPPORT.md missing platform truth snippet" in error
+        and "workflow_run.repository_id" in error
+        for error in errors
+    )
+    assert any(
+        "docs/PLATFORM_SUPPORT.md missing platform truth snippet" in error
+        and "artifact `created_at` values outside the exact source run start/update window" in error
+        for error in errors
+    )
+    assert any(
+        "docs/PLATFORM_SUPPORT.md missing platform truth snippet" in error
+        and "canonical accepted-record JSON bytes" in error
         for error in errors
     )
 

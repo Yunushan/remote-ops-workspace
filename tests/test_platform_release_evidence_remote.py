@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import hashlib
 import json
 import os
 import sys
@@ -97,6 +98,127 @@ def test_remote_release_audit_accepts_exact_source_run_metadata(tmp_path: Path) 
     )
 
     assert errors == []
+
+
+def test_remote_release_audit_accepts_release_tag_source_head(tmp_path: Path) -> None:
+    checker = _load_checker()
+    helpers = _load_platform_verified_evidence_helpers()
+    record = helpers._linux_record("linux-i386")
+    registry = _registry_with(record)
+    promotion = checker.read_json(checker.PROMOTION_PATH)
+    required_assets = checker.required_release_assets_by_target(
+        promotion,
+        release_tag="v1.0.2",
+        targets=("linux-i386",),
+    )
+    release = _release_with_record_assets(checker, record, sorted(required_assets["linux-i386"]))
+    head_sha = record["release_asset_source"]["head_sha"]
+
+    errors = checker.check_remote_platform_release_evidence(
+        registry=registry,
+        promotion=promotion,
+        release=release,
+        workflow_runs_by_workflow={},
+        tag_ref={"ref": "refs/tags/v1.0.2", "object": {"type": "commit", "sha": head_sha}},
+        release_tag="v1.0.2",
+        required_targets=("linux-i386",),
+        require_tag_source_head=True,
+    )
+
+    assert errors == []
+
+
+def test_remote_release_audit_rejects_release_tag_source_head_drift(tmp_path: Path) -> None:
+    checker = _load_checker()
+    helpers = _load_platform_verified_evidence_helpers()
+    record = helpers._linux_record("linux-i386")
+    registry = _registry_with(record)
+    promotion = checker.read_json(checker.PROMOTION_PATH)
+    required_assets = checker.required_release_assets_by_target(
+        promotion,
+        release_tag="v1.0.2",
+        targets=("linux-i386",),
+    )
+    release = _release_with_record_assets(checker, record, sorted(required_assets["linux-i386"]))
+    expected_head = record["release_asset_source"]["head_sha"]
+
+    errors = checker.check_remote_platform_release_evidence(
+        registry=registry,
+        promotion=promotion,
+        release=release,
+        workflow_runs_by_workflow={},
+        tag_ref={"ref": "refs/tags/v1.0.2", "object": {"type": "commit", "sha": "b" * 40}},
+        release_tag="v1.0.2",
+        required_targets=("linux-i386",),
+        require_tag_source_head=True,
+    )
+
+    assert (
+        f"remote release tag v1.0.2 Git object must resolve to accepted "
+        f"release source head {expected_head}, got {'b' * 40}"
+    ) in errors
+
+
+def test_remote_release_audit_accepts_annotated_release_tag_source_head(tmp_path: Path) -> None:
+    checker = _load_checker()
+    helpers = _load_platform_verified_evidence_helpers()
+    record = helpers._linux_record("linux-i386")
+    registry = _registry_with(record)
+    promotion = checker.read_json(checker.PROMOTION_PATH)
+    required_assets = checker.required_release_assets_by_target(
+        promotion,
+        release_tag="v1.0.2",
+        targets=("linux-i386",),
+    )
+    release = _release_with_record_assets(checker, record, sorted(required_assets["linux-i386"]))
+    head_sha = record["release_asset_source"]["head_sha"]
+    tag_object_sha = "c" * 40
+
+    errors = checker.check_remote_platform_release_evidence(
+        registry=registry,
+        promotion=promotion,
+        release=release,
+        workflow_runs_by_workflow={},
+        tag_ref={"ref": "refs/tags/v1.0.2", "object": {"type": "tag", "sha": tag_object_sha}},
+        tag_object={
+            "sha": tag_object_sha,
+            "tag": "v1.0.2",
+            "object": {"type": "commit", "sha": head_sha},
+        },
+        release_tag="v1.0.2",
+        required_targets=("linux-i386",),
+        require_tag_source_head=True,
+    )
+
+    assert errors == []
+
+
+def test_remote_release_audit_requires_annotated_tag_object(tmp_path: Path) -> None:
+    checker = _load_checker()
+    helpers = _load_platform_verified_evidence_helpers()
+    record = helpers._linux_record("linux-i386")
+    registry = _registry_with(record)
+    promotion = checker.read_json(checker.PROMOTION_PATH)
+    required_assets = checker.required_release_assets_by_target(
+        promotion,
+        release_tag="v1.0.2",
+        targets=("linux-i386",),
+    )
+    release = _release_with_record_assets(checker, record, sorted(required_assets["linux-i386"]))
+    tag_object_sha = "c" * 40
+
+    errors = checker.check_remote_platform_release_evidence(
+        registry=registry,
+        promotion=promotion,
+        release=release,
+        workflow_runs_by_workflow={},
+        tag_ref={"ref": "refs/tags/v1.0.2", "object": {"type": "tag", "sha": tag_object_sha}},
+        release_tag="v1.0.2",
+        required_targets=("linux-i386",),
+        require_tag_source_head=True,
+    )
+
+    assert f"release tag v1.0.2 annotated tag object metadata missing for {tag_object_sha}" in errors
 
 
 def test_remote_release_audit_requires_exact_source_run_when_no_workflow_list(
@@ -290,6 +412,225 @@ def test_remote_release_audit_rejects_published_asset_metadata_mismatch(tmp_path
     )
 
 
+def test_remote_release_audit_verifies_final_record_asset_bytes(tmp_path: Path) -> None:
+    checker = _load_checker()
+    helpers = _load_platform_verified_evidence_helpers()
+    record = helpers._linux_record("linux-i386")
+    registry = _registry_with(record)
+    promotion = checker.read_json(checker.PROMOTION_PATH)
+    required_assets = checker.required_release_assets_by_target(
+        promotion,
+        release_tag="v1.0.2",
+        targets=("linux-i386",),
+    )
+    release = _release_with_record_assets(checker, record, sorted(required_assets["linux-i386"]))
+
+    errors = checker.check_remote_platform_release_evidence(
+        registry=registry,
+        promotion=promotion,
+        release=release,
+        source_runs_by_run=_source_runs_for(record),
+        workflow_runs_by_workflow={},
+        source_artifacts_by_run=_source_artifacts_for(record),
+        final_record_bytes_by_url={
+            record["finalized_record_release_asset_url"]: checker.canonical_public_record_bytes(record)
+        },
+        release_tag="v1.0.2",
+        required_targets=("linux-i386",),
+        require_source_runs=True,
+        require_final_record_bytes=True,
+    )
+
+    assert errors == []
+
+
+def test_remote_release_audit_verifies_published_release_asset_bytes(tmp_path: Path) -> None:
+    checker = _load_checker()
+    helpers = _load_platform_verified_evidence_helpers()
+    record = helpers._linux_record("linux-i386")
+    release_asset_bytes = _bind_release_asset_bytes(checker, record)
+    registry = _registry_with(record)
+    promotion = checker.read_json(checker.PROMOTION_PATH)
+    required_assets = checker.required_release_assets_by_target(
+        promotion,
+        release_tag="v1.0.2",
+        targets=("linux-i386",),
+    )
+    release = _release_with_record_assets(checker, record, sorted(required_assets["linux-i386"]))
+
+    errors = checker.check_remote_platform_release_evidence(
+        registry=registry,
+        promotion=promotion,
+        release=release,
+        source_runs_by_run=_source_runs_for(record),
+        workflow_runs_by_workflow={},
+        source_artifacts_by_run=_source_artifacts_for(record),
+        release_asset_bytes_by_url=release_asset_bytes,
+        release_tag="v1.0.2",
+        required_targets=("linux-i386",),
+        require_source_runs=True,
+        require_release_asset_bytes=True,
+    )
+
+    assert errors == []
+
+
+def test_remote_release_audit_rejects_missing_published_release_asset_bytes(
+    tmp_path: Path,
+) -> None:
+    checker = _load_checker()
+    helpers = _load_platform_verified_evidence_helpers()
+    record = helpers._linux_record("linux-i386")
+    registry = _registry_with(record)
+    promotion = checker.read_json(checker.PROMOTION_PATH)
+    required_assets = checker.required_release_assets_by_target(
+        promotion,
+        release_tag="v1.0.2",
+        targets=("linux-i386",),
+    )
+    release = _release_with_record_assets(checker, record, sorted(required_assets["linux-i386"]))
+
+    errors = checker.check_remote_platform_release_evidence(
+        registry=registry,
+        promotion=promotion,
+        release=release,
+        source_runs_by_run=_source_runs_for(record),
+        workflow_runs_by_workflow={},
+        source_artifacts_by_run=_source_artifacts_for(record),
+        release_asset_bytes_by_url={},
+        release_tag="v1.0.2",
+        required_targets=("linux-i386",),
+        require_source_runs=True,
+        require_release_asset_bytes=True,
+    )
+
+    assert any(
+        "linux-i386 published release asset bytes missing for "
+        "remote-ops-workspace-v1.0.2-linux-i386.deb at "
+        "https://github.com/example/remote-ops-workspace/releases/download/v1.0.2/"
+        "remote-ops-workspace-v1.0.2-linux-i386.deb"
+        in error
+        for error in errors
+    )
+
+
+def test_remote_release_audit_rejects_published_release_asset_byte_drift(
+    tmp_path: Path,
+) -> None:
+    checker = _load_checker()
+    helpers = _load_platform_verified_evidence_helpers()
+    record = helpers._linux_record("linux-i386")
+    release_asset_bytes = _bind_release_asset_bytes(checker, record)
+    zip_asset = "extended-linux-evidence-bundle-linux-i386-v1.0.2.zip"
+    zip_url = next(
+        str(asset["url"])
+        for asset in checker.expected_release_asset_byte_sources(record)
+        if asset["filename"] == zip_asset
+    )
+    release_asset_bytes[zip_url] = b"tampered release asset bytes\n"
+    registry = _registry_with(record)
+    promotion = checker.read_json(checker.PROMOTION_PATH)
+    required_assets = checker.required_release_assets_by_target(
+        promotion,
+        release_tag="v1.0.2",
+        targets=("linux-i386",),
+    )
+    release = _release_with_record_assets(checker, record, sorted(required_assets["linux-i386"]))
+
+    errors = checker.check_remote_platform_release_evidence(
+        registry=registry,
+        promotion=promotion,
+        release=release,
+        source_runs_by_run=_source_runs_for(record),
+        workflow_runs_by_workflow={},
+        source_artifacts_by_run=_source_artifacts_for(record),
+        release_asset_bytes_by_url=release_asset_bytes,
+        release_tag="v1.0.2",
+        required_targets=("linux-i386",),
+        require_source_runs=True,
+        require_release_asset_bytes=True,
+    )
+
+    assert any(
+        "linux-i386 published release asset extended-linux-evidence-bundle-linux-i386-v1.0.2.zip "
+        "bytes SHA-256 must match accepted evidence"
+        in error
+        for error in errors
+    )
+    assert any(
+        "linux-i386 published release asset extended-linux-evidence-bundle-linux-i386-v1.0.2.zip "
+        "byte size must match accepted evidence"
+        in error
+        for error in errors
+    )
+
+
+def test_remote_release_audit_rejects_missing_final_record_asset_bytes(tmp_path: Path) -> None:
+    checker = _load_checker()
+    helpers = _load_platform_verified_evidence_helpers()
+    record = helpers._linux_record("linux-i386")
+    registry = _registry_with(record)
+    promotion = checker.read_json(checker.PROMOTION_PATH)
+    required_assets = checker.required_release_assets_by_target(
+        promotion,
+        release_tag="v1.0.2",
+        targets=("linux-i386",),
+    )
+    release = _release_with_record_assets(checker, record, sorted(required_assets["linux-i386"]))
+
+    errors = checker.check_remote_platform_release_evidence(
+        registry=registry,
+        promotion=promotion,
+        release=release,
+        source_runs_by_run=_source_runs_for(record),
+        workflow_runs_by_workflow={},
+        source_artifacts_by_run=_source_artifacts_for(record),
+        final_record_bytes_by_url={},
+        release_tag="v1.0.2",
+        required_targets=("linux-i386",),
+        require_source_runs=True,
+        require_final_record_bytes=True,
+    )
+
+    assert (
+        "linux-i386 finalized accepted-record release asset bytes missing for "
+        f"{record['finalized_record_release_asset_url']}"
+    ) in errors
+
+
+def test_remote_release_audit_rejects_final_record_asset_byte_drift(tmp_path: Path) -> None:
+    checker = _load_checker()
+    helpers = _load_platform_verified_evidence_helpers()
+    record = helpers._linux_record("linux-i386")
+    registry = _registry_with(record)
+    promotion = checker.read_json(checker.PROMOTION_PATH)
+    required_assets = checker.required_release_assets_by_target(
+        promotion,
+        release_tag="v1.0.2",
+        targets=("linux-i386",),
+    )
+    release = _release_with_record_assets(checker, record, sorted(required_assets["linux-i386"]))
+
+    errors = checker.check_remote_platform_release_evidence(
+        registry=registry,
+        promotion=promotion,
+        release=release,
+        source_runs_by_run=_source_runs_for(record),
+        workflow_runs_by_workflow={},
+        source_artifacts_by_run=_source_artifacts_for(record),
+        final_record_bytes_by_url={record["finalized_record_release_asset_url"]: b"{}\n"},
+        release_tag="v1.0.2",
+        required_targets=("linux-i386",),
+        require_source_runs=True,
+        require_final_record_bytes=True,
+    )
+
+    assert (
+        "linux-i386 finalized accepted-record release asset bytes must match "
+        "canonical public accepted registry record"
+    ) in errors
+
+
 def test_remote_release_audit_requires_exact_source_run_metadata(tmp_path: Path) -> None:
     checker = _load_checker()
     helpers = _load_platform_verified_evidence_helpers()
@@ -401,6 +742,120 @@ def test_remote_release_audit_requires_source_artifact_inventory(tmp_path: Path)
     ) in errors
 
 
+def test_remote_release_audit_binds_source_artifact_repository_ids(tmp_path: Path) -> None:
+    checker = _load_checker()
+    helpers = _load_platform_verified_evidence_helpers()
+    record = helpers._linux_record("linux-i386")
+    registry = _registry_with(record)
+    promotion = checker.read_json(checker.PROMOTION_PATH)
+    required_assets = checker.required_release_assets_by_target(
+        promotion,
+        release_tag="v1.0.2",
+        targets=("linux-i386",),
+    )
+    release = _release_with_record_assets(checker, record, sorted(required_assets["linux-i386"]))
+    source_artifacts = _source_artifacts_for(record)
+    run_url = str(record["release_asset_source"]["workflow_run_url"])
+    artifact = source_artifacts[run_url]["artifacts"][0]
+    artifact["workflow_run"]["repository_id"] = 2222
+    artifact["workflow_run"]["head_repository_id"] = 3333
+
+    errors = checker.check_remote_platform_release_evidence(
+        registry=registry,
+        promotion=promotion,
+        release=release,
+        source_runs_by_run=_source_runs_for(record),
+        workflow_runs_by_workflow={},
+        source_artifacts_by_run=source_artifacts,
+        release_tag="v1.0.2",
+        required_targets=("linux-i386",),
+        require_source_runs=True,
+    )
+
+    assert (
+        "linux-i386 source workflow artifact extended-linux-evidence-linux-i386-v1.0.2 "
+        "workflow_run.repository_id must match exact source run repository id 1001, got 2222"
+    ) in errors
+    assert (
+        "linux-i386 source workflow artifact extended-linux-evidence-linux-i386-v1.0.2 "
+        "workflow_run.head_repository_id must match exact source run head repository id 1001, got 3333"
+    ) in errors
+
+
+def test_remote_release_audit_rejects_artifact_created_before_exact_run_start(
+    tmp_path: Path,
+) -> None:
+    checker = _load_checker()
+    helpers = _load_platform_verified_evidence_helpers()
+    record = helpers._linux_record("linux-i386")
+    registry = _registry_with(record)
+    promotion = checker.read_json(checker.PROMOTION_PATH)
+    required_assets = checker.required_release_assets_by_target(
+        promotion,
+        release_tag="v1.0.2",
+        targets=("linux-i386",),
+    )
+    release = _release_with_record_assets(checker, record, sorted(required_assets["linux-i386"]))
+    source_artifacts = _source_artifacts_for(record)
+    run_url = str(record["release_asset_source"]["workflow_run_url"])
+    source_artifacts[run_url]["artifacts"][0]["created_at"] = "2026-06-30T11:59:59Z"
+
+    errors = checker.check_remote_platform_release_evidence(
+        registry=registry,
+        promotion=promotion,
+        release=release,
+        source_runs_by_run=_source_runs_for(record),
+        workflow_runs_by_workflow={},
+        source_artifacts_by_run=source_artifacts,
+        release_tag="v1.0.2",
+        required_targets=("linux-i386",),
+        require_source_runs=True,
+    )
+
+    assert (
+        "linux-i386 source workflow artifact extended-linux-evidence-linux-i386-v1.0.2 "
+        "created_at must be at or after exact source run start 2026-06-30T12:00:00Z, "
+        "got '2026-06-30T11:59:59Z'"
+    ) in errors
+
+
+def test_remote_release_audit_rejects_artifact_created_after_exact_run_update(
+    tmp_path: Path,
+) -> None:
+    checker = _load_checker()
+    helpers = _load_platform_verified_evidence_helpers()
+    record = helpers._linux_record("linux-i386")
+    registry = _registry_with(record)
+    promotion = checker.read_json(checker.PROMOTION_PATH)
+    required_assets = checker.required_release_assets_by_target(
+        promotion,
+        release_tag="v1.0.2",
+        targets=("linux-i386",),
+    )
+    release = _release_with_record_assets(checker, record, sorted(required_assets["linux-i386"]))
+    source_artifacts = _source_artifacts_for(record)
+    run_url = str(record["release_asset_source"]["workflow_run_url"])
+    source_artifacts[run_url]["artifacts"][0]["created_at"] = "2026-06-30T12:05:01Z"
+
+    errors = checker.check_remote_platform_release_evidence(
+        registry=registry,
+        promotion=promotion,
+        release=release,
+        source_runs_by_run=_source_runs_for(record),
+        workflow_runs_by_workflow={},
+        source_artifacts_by_run=source_artifacts,
+        release_tag="v1.0.2",
+        required_targets=("linux-i386",),
+        require_source_runs=True,
+    )
+
+    assert (
+        "linux-i386 source workflow artifact extended-linux-evidence-linux-i386-v1.0.2 "
+        "created_at must be at or before exact source run update 2026-06-30T12:05:00Z, "
+        "got '2026-06-30T12:05:01Z'"
+    ) in errors
+
+
 def test_remote_release_audit_rejects_bad_source_artifact_metadata(tmp_path: Path) -> None:
     checker = _load_checker()
     helpers = _load_platform_verified_evidence_helpers()
@@ -488,6 +943,181 @@ def test_source_run_attempt_api_url_uses_exact_attempt_endpoint() -> None:
     )
 
 
+def test_offline_require_source_runs_requires_exact_source_run_json(tmp_path: Path) -> None:
+    checker = _load_checker()
+    args = checker.parse_args(
+        [
+            "--release-tag",
+            "v1.0.2",
+            "--release-json",
+            str(tmp_path / "release.json"),
+            "--require-source-runs",
+            "--workflow-runs-json",
+            f".github/workflows/extended-platform-evidence.yml={tmp_path / 'runs.json'}",
+            "--source-artifacts-json",
+            f"https://github.com/example/remote-ops-workspace/actions/runs/12345={tmp_path / 'artifacts.json'}",
+        ]
+    )
+
+    errors = checker.strict_arg_errors(args)
+
+    assert (
+        "--require-source-runs without --repository requires --source-run-json "
+        "for exact accepted source run metadata"
+    ) in errors
+
+
+def test_offline_require_final_record_bytes_requires_final_record_json(tmp_path: Path) -> None:
+    checker = _load_checker()
+    args = checker.parse_args(
+        [
+            "--release-tag",
+            "v1.0.2",
+            "--release-json",
+            str(tmp_path / "release.json"),
+            "--require-final-record-bytes",
+        ]
+    )
+
+    errors = checker.strict_arg_errors(args)
+
+    assert "--require-final-record-bytes without --repository requires --final-record-json" in errors
+
+
+def test_offline_require_release_asset_bytes_requires_release_asset(tmp_path: Path) -> None:
+    checker = _load_checker()
+    args = checker.parse_args(
+        [
+            "--release-tag",
+            "v1.0.2",
+            "--release-json",
+            str(tmp_path / "release.json"),
+            "--require-release-asset-bytes",
+        ]
+    )
+
+    errors = checker.strict_arg_errors(args)
+
+    assert "--require-release-asset-bytes without --repository requires --release-asset" in errors
+
+
+def test_offline_require_tag_source_head_requires_tag_ref_json(tmp_path: Path) -> None:
+    checker = _load_checker()
+    args = checker.parse_args(
+        [
+            "--release-tag",
+            "v1.0.2",
+            "--release-json",
+            str(tmp_path / "release.json"),
+            "--require-tag-source-head",
+        ]
+    )
+
+    errors = checker.strict_arg_errors(args)
+
+    assert "--require-tag-source-head without --repository requires --tag-ref-json" in errors
+
+
+def test_live_final_record_byte_loader_rejects_unscoped_url_before_fetch(
+    tmp_path: Path,
+) -> None:
+    checker = _load_checker()
+    helpers = _load_platform_verified_evidence_helpers()
+    record = helpers._linux_record("linux-i386")
+    record["finalized_record_release_asset_url"] = (
+        "https://example.com/remote-ops-workspace/releases/download/v1.0.2/"
+        "platform-verified-evidence-linux-i386-final.json"
+    )
+    registry = _registry_with(record)
+    args = checker.parse_args(
+        [
+            "--repository",
+            "example/remote-ops-workspace",
+            "--release-tag",
+            "v1.0.2",
+            "--require-final-record-bytes",
+        ]
+    )
+    called = False
+    original_fetch_bytes = checker.fetch_bytes
+
+    def fake_fetch_bytes(url: str, *, timeout: float) -> tuple[bytes | None, list[str]]:
+        nonlocal called
+        called = True
+        return b"{}", []
+
+    checker.fetch_bytes = fake_fetch_bytes
+    try:
+        records_by_url, errors = checker.load_final_record_bytes(
+            args,
+            registry,
+            ("linux-i386",),
+        )
+    finally:
+        checker.fetch_bytes = original_fetch_bytes
+
+    assert records_by_url == {}
+    assert called is False
+    assert (
+        "linux-i386 finalized accepted-record release asset URL must be "
+        "https://github.com/example/remote-ops-workspace/releases/download/v1.0.2/"
+        "platform-verified-evidence-linux-i386-final.json before live byte fetch"
+    ) in errors[0]
+
+
+def test_live_release_asset_byte_loader_rejects_unscoped_url_before_fetch(
+    tmp_path: Path,
+) -> None:
+    checker = _load_checker()
+    helpers = _load_platform_verified_evidence_helpers()
+    record = helpers._linux_record("linux-i386")
+    record["release_asset_urls"] = [
+        str(url).replace("https://github.com/", "https://example.com/")
+        for url in record["release_asset_urls"]
+    ]
+    record["review_bundle"]["release_asset_urls"] = [
+        str(url).replace("https://github.com/", "https://example.com/")
+        for url in record["review_bundle"]["release_asset_urls"]
+    ]
+    registry = _registry_with(record)
+    args = checker.parse_args(
+        [
+            "--repository",
+            "example/remote-ops-workspace",
+            "--release-tag",
+            "v1.0.2",
+            "--require-release-asset-bytes",
+        ]
+    )
+    called = False
+    original_fetch_bytes = checker.fetch_bytes
+
+    def fake_fetch_bytes(url: str, *, timeout: float) -> tuple[bytes | None, list[str]]:
+        nonlocal called
+        called = True
+        return b"{}", []
+
+    checker.fetch_bytes = fake_fetch_bytes
+    try:
+        assets_by_url, errors = checker.load_release_asset_bytes(
+            args,
+            registry,
+            ("linux-i386",),
+        )
+    finally:
+        checker.fetch_bytes = original_fetch_bytes
+
+    assert assets_by_url == {}
+    assert called is False
+    assert any(
+        "linux-i386 release asset remote-ops-workspace-v1.0.2-linux-i386.deb URL must be "
+        "https://github.com/example/remote-ops-workspace/releases/download/v1.0.2/"
+        "remote-ops-workspace-v1.0.2-linux-i386.deb before live byte fetch"
+        in error
+        for error in errors
+    )
+
+
 def test_github_api_headers_use_environment_token() -> None:
     checker = _load_checker()
     original_gh_token = os.environ.get("GH_TOKEN")
@@ -557,6 +1187,21 @@ def _release_asset(release: dict[str, Any], name: str) -> dict[str, Any]:
     raise AssertionError(f"missing release asset fixture {name}")
 
 
+def _bind_release_asset_bytes(checker: Any, record: dict[str, Any]) -> dict[str, bytes]:
+    for filename in sorted(record["artifact_sha256"]):
+        payload = f"published bytes for {filename}\n".encode("utf-8")
+        record["artifact_sha256"][filename] = hashlib.sha256(payload).hexdigest()
+    for key in ("manifest", "archive", "sha256s"):
+        bundle = record["review_bundle"][key]
+        payload = f"published bytes for {bundle['file']}\n".encode("utf-8")
+        bundle["sha256"] = hashlib.sha256(payload).hexdigest()
+        bundle["size_bytes"] = len(payload)
+    return {
+        str(asset["url"]): f"published bytes for {asset['filename']}\n".encode("utf-8")
+        for asset in checker.expected_release_asset_byte_sources(record)
+    }
+
+
 def _workflow_runs_for(record: dict[str, Any]) -> dict[str, dict[str, Any]]:
     source = record["release_asset_source"]
     run_url = str(source["workflow_run_url"])
@@ -569,14 +1214,16 @@ def _workflow_runs_for(record: dict[str, Any]) -> dict[str, dict[str, Any]]:
                 {
                     "id": run_id,
                     "html_url": run_url,
-                    "repository": {"full_name": repository},
-                    "head_repository": {"full_name": repository},
+                    "repository": {"full_name": repository, "id": 1001},
+                    "head_repository": {"full_name": repository, "id": 1001},
                     "status": "completed",
                     "conclusion": "success",
                     "event": "workflow_dispatch",
                     "head_sha": source["head_sha"],
                     "run_attempt": source["run_attempt"],
                     "path": workflow,
+                    "run_started_at": "2026-06-30T12:00:00Z",
+                    "updated_at": "2026-06-30T12:05:00Z",
                 }
             ]
         }
@@ -593,14 +1240,16 @@ def _source_runs_for(record: dict[str, Any]) -> dict[str, dict[str, Any]]:
         run_url: {
             "id": run_id,
             "htmlUrl": run_url,
-            "repository": {"full_name": repository},
-            "head_repository": {"full_name": repository},
+            "repository": {"full_name": repository, "id": 1001},
+            "head_repository": {"full_name": repository, "id": 1001},
             "status": "completed",
             "conclusion": "success",
             "event": "workflow_dispatch",
             "headSha": source["head_sha"],
             "attempt": source["run_attempt"],
             "path": workflow,
+            "runStartedAt": "2026-06-30T12:00:00Z",
+            "updatedAt": "2026-06-30T12:05:00Z",
         }
     }
 
@@ -627,8 +1276,11 @@ def _source_artifacts_for(record: dict[str, Any]) -> dict[str, dict[str, Any]]:
                     ),
                     "expired": False,
                     "size_in_bytes": 4096,
+                    "created_at": "2026-06-30T12:03:00Z",
                     "workflow_run": {
                         "id": run_id,
+                        "repository_id": 1001,
+                        "head_repository_id": 1001,
                         "head_sha": source["head_sha"],
                     },
                 }

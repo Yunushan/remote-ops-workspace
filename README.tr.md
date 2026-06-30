@@ -269,7 +269,12 @@ paketleri, Windows `x86`/`x64`/`arm64`, macOS `x64`/`arm64` ve Linux
 release is akisinda accepted evidence olmadan yuklenmez. Makine tarafindan
 okunabilen yayin karari `configs/release_matrix.json` icindedir;
 `configs/platform_targets.json` ise `row platforms --json` tarafindan gosterilen
-daha genis platform katalogudur. Native installer smoke kapsami
+daha genis platform katalogudur. Bu katalog ayrica static catalog boundary
+alanini `not native-host/readiness proof` olarak isaretleyen, JSON tuketicilerini
+`configs/platform_verified_evidence.json` dosyasina yonlendiren ve Linux
+i386/armhf ile Windows XP native-host readiness icin accepted-evidence ve
+asset-provenance gate komutlarini kaydeden `protected_readiness_goal` metadata
+blogunu tasir. Native installer smoke kapsami
 `configs/native_installer_smoke.json` icindedir ve
 `python scripts/check_native_installer_smoke.py` ile denetlenir; release workflow
 Windows, macOS ve Linux native islerinden sonra install, verify, upgrade and
@@ -288,6 +293,10 @@ olarak bulunmalidir. Protected evidence asset isi
 `python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run`
 ile sadece accepted kayitlarda ayni tag/repository/workflow file path/source-head/run-attempt
 bagli artifact ve review-bundle dosyalarini, indirilen source artifact native
+artifact `workflow_run.id`, `workflow_run.head_sha`,
+`workflow_run.repository_id`, `workflow_run.head_repository_id` bagini,
+GitHub timestamp sagladiginda artifact created_at degerinin exact source run
+start/update araligi icinde kaldigini, native
 artifact SHA-256 degerleri ve review-bundle size/SHA-256 degerleri finalized
 accepted kayitla eslestikten sonra release-assets icine alir, sonra
 `python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag <tag> --require-final-record-assets`
@@ -302,9 +311,32 @@ ve
 calistirip publish-ready release-assets dizinindeki finalized record, review
 bundle, native artifact, checksum yan dosyasi, release manifesti ve accepted
 platform evidence hashlerini karsilastirir.
+Static readiness raporu `release_asset_provenance_complete=false` birakir;
+bu proof state ancak `--assets-dir` ile calisan asset-backed protected goal
+gate finalized record, review bundle ve native release byte degerlerini
+dogruladiginda true olur.
+Upload sonrasinda publish isi
+`python scripts/check_platform_release_evidence_remote.py --repository <owner>/<repo> --release-tag <tag> --require-goal-targets --require-source-runs --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head`
+ile gercek GitHub Release uzerindeki published asset digest/size/byte degerlerini,
+published final accepted-record JSON bytes degerlerini, release tag Git object/source head SHA bagini,
+exact source workflow run metadata bilgisini ve GitHub repository ID saglarsa
+source artifact `workflow_run.id`, `workflow_run.head_sha`,
+`workflow_run.repository_id` ve `workflow_run.head_repository_id` bagini
+ve GitHub timestamp sagladiginda artifact created_at degerinin exact source run
+start/update araligi icinde kaldigini dogrular.
+Linux accepted evidence kayitlari builder identity SHA-256 degeri, sanitized
+target-scoped host identity, workflow dispatch input bagi ve native smoke
+release/run, runtime architecture, OpenSSL ve legacy-crypto-scope proof
+degerlerini tasiyan `linux_smoke_summary` alanini icermek zorundadir.
+Linux native smoke proof line'lari exact single-occurrence baglardir; substring
+eslesmeleri, yinelenen pass/security satirlari veya forbidden weak-security
+proof line'larin case variant'lari promotion evidence sayilmaz.
 Windows XP accepted evidence kayitlari sanitized host identity SHA-256 degeri
 tasir ve her smoke komutu/dosyasi ayni host label ile evidence run ID degerine
 bagli olmak zorundadir.
+XP smoke proof line'lari exact single-occurrence baglardir; yinelenen source,
+artifact, host, OS veya security proof satirlari reddedilir ve zayif-security
+celiskileri case-insensitive olarak reddedilir.
 Windows XP native-host readiness 25.0% olarak kalir; yalnizca XP x86 SP3 ve XP
 Professional x64 SP2 host uzerinde `scripts/xp_smoke_runner.cmd` ile yakalanan
 smoke evidence, ayri legacy toolchain, native artifact evidence, modern

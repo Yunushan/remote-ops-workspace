@@ -1245,6 +1245,34 @@ def cmd_platforms(args: argparse.Namespace) -> int:
             f"  {item['version']:<{version_width}} host {item['host_tier']}, "
             f"remote target {remote_detail}"
         )
+
+    platform = coverage_report()["platform_verified_readiness"]
+    protected_goal = platform.get("protected_goal_parity", {})
+    if protected_goal:
+        print("\nEvidence-backed protected readiness:")
+        print(
+            f"  Protected platform goal       : {float(protected_goal.get('current_percent', 0.0)):.1f}% "
+            f"({float(protected_goal.get('gap_percent', 0.0)):.1f}% gap; "
+            f"{int(protected_goal.get('accepted_target_count', 0))}/"
+            f"{int(protected_goal.get('target_count', 0))} accepted; "
+            f"{protected_goal.get('status', 'unknown')})"
+        )
+        asset_provenance_complete = (
+            protected_goal.get("release_asset_provenance_complete") is True
+        )
+        asset_provenance_state = (
+            "complete" if asset_provenance_complete else "not checked by static platform catalog"
+        )
+        print(f"  Release asset provenance      : {asset_provenance_state}")
+        missing_targets = [
+            str(target) for target in protected_goal.get("missing_targets", [])
+        ]
+        if missing_targets:
+            print(f"  Missing accepted evidence     : {', '.join(missing_targets)}")
+        print(
+            "  Static platform catalog       : not native-host/readiness proof "
+            "for Linux i386/armhf or Windows XP"
+        )
     return 0
 
 
@@ -1281,6 +1309,14 @@ def cmd_features(args: argparse.Namespace) -> int:
             f"{platform_overall['target_count']} verified targets; "
             f"{platform_overall.get('extended_target_count', 0)} extended rows)"
         )
+        denominator = platform.get("denominator", {})
+        if denominator:
+            print(
+                "Verified denominator        : "
+                f"{int(denominator.get('included_target_count', 0))} included, "
+                f"{int(denominator.get('excluded_target_count', 0))} extended excluded; "
+                f"protected goal source={denominator.get('protected_goal_score_source', 'unknown')}"
+            )
         protected_goal = platform.get("protected_goal_parity", {})
         if protected_goal:
             missing_targets = [
@@ -1293,6 +1329,16 @@ def cmd_features(args: argparse.Namespace) -> int:
                 f"{int(protected_goal.get('target_count', 0))} accepted; "
                 f"{protected_goal.get('status', 'unknown')})"
             )
+            asset_provenance_complete = (
+                protected_goal.get("release_asset_provenance_complete") is True
+            )
+            asset_provenance_state = (
+                "complete" if asset_provenance_complete else "not checked by static report"
+            )
+            print(f"  Release asset provenance : {asset_provenance_state}")
+            asset_command = str(protected_goal.get("release_asset_provenance_command", "")).strip()
+            if not asset_provenance_complete and asset_command:
+                print(f"  Asset provenance gate    : {asset_command}")
             if missing_targets:
                 print(f"  Missing protected evidence  : {', '.join(missing_targets)}")
         evidence = report["evidence_summary"]

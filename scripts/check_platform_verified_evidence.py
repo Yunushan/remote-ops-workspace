@@ -200,6 +200,7 @@ LINUX_EVIDENCE_KEYS = COMMON_EVIDENCE_KEYS | {
     "builder_identity_sha256",
     "linux_evidence_sources",
     "linux_smoke_evidence_sha256",
+    "linux_smoke_summary",
     "native_build_command",
     "native_smoke_command",
     "runner_labels",
@@ -419,6 +420,37 @@ LINUX_SECURITY_PATCH_EVIDENCE_KEYS = {
     *REQUIRED_SECURITY_PATCH_PROVENANCE_FIELDS,
     "python_ssl_openssl",
     "openssl_cli_version",
+}
+LINUX_SMOKE_SUMMARY_KEYS = {
+    "target",
+    "release_tag",
+    "workflow_run_url",
+    "workflow_run_attempt",
+    "source_head_sha",
+    "git_head_sha",
+    "target_arch",
+    "host_label",
+    "evidence_run_id",
+    "observed_at_utc",
+    "uname_machine",
+    "dpkg_architecture",
+    "userland_bits",
+    "os_release",
+    "kernel_release",
+    "glibc_version",
+    "python_ssl_openssl",
+    "openssl_cli_version",
+    "security",
+}
+LINUX_SMOKE_SECURITY_SUMMARY_KEYS = {
+    "tls_minimum_modern_profiles",
+    "tls_preferred_modern_profiles",
+    "legacy_compatibility_profile",
+    "legacy_crypto_scope",
+    "weak_crypto_global_default",
+    "modern_defaults_unchanged",
+    "security_update_channel",
+    "cve_review_reference",
 }
 GITHUB_OWNER_RE = r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?"
 GITHUB_REPOSITORY_RE = rf"{GITHUB_OWNER_RE}/[A-Za-z0-9._-]+"
@@ -682,6 +714,10 @@ def check_schema(registry: dict[str, Any]) -> list[str]:
         errors.append(
             "platform verified evidence policy must require exact safe checksum and native manifest file references"
         )
+    if "target architecture/format manifest binding" not in policy:
+        errors.append(
+            "platform verified evidence policy must require target architecture/format manifest binding"
+        )
     if "exact safe release asset URL filenames" not in policy:
         errors.append(
             "platform verified evidence policy must require exact safe release asset URL filenames"
@@ -726,6 +762,14 @@ def check_schema(registry: dict[str, Any]) -> list[str]:
         errors.append("platform verified evidence policy must require Linux security patch evidence")
     if "Linux security smoke proof-line binding" not in policy:
         errors.append("platform verified evidence policy must require Linux security smoke proof-line binding")
+    if "exact Linux smoke proof-line occurrence binding" not in policy:
+        errors.append("platform verified evidence policy must require exact Linux smoke proof-line occurrence binding")
+    if "case-insensitive Linux forbidden security proof-line rejection" not in policy:
+        errors.append(
+            "platform verified evidence policy must require case-insensitive Linux forbidden security proof-line rejection"
+        )
+    if "Linux native smoke summary binding" not in policy:
+        errors.append("platform verified evidence policy must require Linux native smoke summary binding")
     if "Linux native build and smoke command provenance" not in policy:
         errors.append("platform verified evidence policy must require Linux native build and smoke command provenance")
     if "Linux smoke evidence SHA-256" not in policy:
@@ -760,6 +804,12 @@ def check_schema(registry: dict[str, Any]) -> list[str]:
         errors.append("platform verified evidence policy must require review bundle release asset URL binding")
     if "release-importable artifact source" not in policy:
         errors.append("platform verified evidence policy must require release-importable artifact source binding")
+    if "source artifact repository-id binding" not in policy:
+        errors.append("platform verified evidence policy must require source artifact repository-id binding")
+    if "source artifact run-start timestamp binding" not in policy:
+        errors.append("platform verified evidence policy must require source artifact run-start timestamp binding")
+    if "source artifact run-window timestamp binding" not in policy:
+        errors.append("platform verified evidence policy must require source artifact run-window timestamp binding")
     if "release source head SHA binding" not in policy:
         errors.append("platform verified evidence policy must require release source head SHA binding")
     if "release source run-attempt binding" not in policy:
@@ -822,6 +872,10 @@ def check_schema(registry: dict[str, Any]) -> list[str]:
         errors.append(
             "platform verified evidence policy must require canonical finalized accepted-record JSON byte binding"
         )
+    if "published native and review-bundle release asset byte binding" not in policy:
+        errors.append(
+            "platform verified evidence policy must require published native and review-bundle release asset byte binding"
+        )
     if "Linux release source artifact names must be target/release-scoped" not in policy:
         errors.append(
             "platform verified evidence policy must require target/release-scoped Linux release source artifacts"
@@ -883,6 +937,12 @@ def check_schema(registry: dict[str, Any]) -> list[str]:
         errors.append("platform verified evidence policy must require XP smoke OS identity binding")
     if "XP smoke host probe proof-line binding" not in policy:
         errors.append("platform verified evidence policy must require XP smoke host probe proof-line binding")
+    if "exact XP smoke proof-line occurrence binding" not in policy:
+        errors.append("platform verified evidence policy must require exact XP smoke proof-line occurrence binding")
+    if "case-insensitive XP forbidden security proof-line rejection" not in policy:
+        errors.append(
+            "platform verified evidence policy must require case-insensitive XP forbidden security proof-line rejection"
+        )
     if "XP security smoke proof-line binding" not in policy:
         errors.append("platform verified evidence policy must require XP security smoke proof-line binding")
     if "promotion config SHA-256" not in policy:
@@ -965,6 +1025,18 @@ def check_linux_evidence(
     )
     errors.extend(check_linux_builder_identity_sha256(target, entry))
     errors.extend(check_linux_smoke_evidence_hashes(target, entry.get("linux_smoke_evidence_sha256")))
+    errors.extend(
+        check_linux_smoke_summary(
+            target,
+            entry.get("linux_smoke_summary"),
+            release_tag=release_tag,
+            workflow_run_url=str(entry.get("workflow_run_url", "")),
+            workflow_run_attempt=source_run_attempt,
+            source_head_sha=source_head_sha,
+            expected_machines=expected["machine_names"],
+            builder_identity=entry.get("builder_identity"),
+        )
+    )
     errors.extend(check_linux_evidence_sources(target, entry))
     return errors
 
@@ -1116,6 +1188,204 @@ def check_exact_object_keys(
         errors.append(f"{target} {label} missing fields: {missing}")
     if unexpected:
         errors.append(f"{target} {label} unexpected fields: {unexpected}")
+    return errors
+
+
+def check_linux_smoke_summary(
+    target: str,
+    raw_summary: Any,
+    *,
+    release_tag: str,
+    workflow_run_url: str,
+    workflow_run_attempt: object,
+    source_head_sha: str,
+    expected_machines: set[str],
+    builder_identity: Any,
+) -> list[str]:
+    if not isinstance(raw_summary, dict):
+        return [f"{target} linux_smoke_summary must be an object"]
+
+    errors: list[str] = []
+    errors.extend(check_exact_object_keys(target, "linux_smoke_summary", raw_summary, LINUX_SMOKE_SUMMARY_KEYS))
+    if raw_summary.get("target") != target:
+        errors.append(f"{target} linux_smoke_summary target must be {target}")
+    if raw_summary.get("release_tag") != release_tag:
+        errors.append(f"{target} linux_smoke_summary release_tag must match record release_tag {release_tag}")
+    if raw_summary.get("workflow_run_url") != workflow_run_url:
+        errors.append(f"{target} linux_smoke_summary workflow_run_url must match record workflow_run_url")
+
+    summary_attempt = raw_summary.get("workflow_run_attempt")
+    if not isinstance(summary_attempt, int) or isinstance(summary_attempt, bool) or summary_attempt < 1:
+        errors.append(f"{target} linux_smoke_summary workflow_run_attempt must be a positive integer")
+    elif summary_attempt != workflow_run_attempt:
+        errors.append(f"{target} linux_smoke_summary workflow_run_attempt must match release_asset_source.run_attempt")
+
+    summary_source_head = str(raw_summary.get("source_head_sha", "")).strip()
+    if not RELEASE_SOURCE_HEAD_SHA_RE.fullmatch(summary_source_head):
+        errors.append(f"{target} linux_smoke_summary source_head_sha must be a 40-character lowercase Git SHA")
+    elif summary_source_head != source_head_sha:
+        errors.append(f"{target} linux_smoke_summary source_head_sha must match release_asset_source.head_sha")
+
+    summary_git_head = str(raw_summary.get("git_head_sha", "")).strip()
+    if not RELEASE_SOURCE_HEAD_SHA_RE.fullmatch(summary_git_head):
+        errors.append(f"{target} linux_smoke_summary git_head_sha must be a 40-character lowercase Git SHA")
+    elif summary_git_head != source_head_sha:
+        errors.append(f"{target} linux_smoke_summary git_head_sha must match release_asset_source.head_sha")
+
+    expected_arch = REQUIRED_LINUX_SMOKE_ARCHES[target]
+    if raw_summary.get("target_arch") != expected_arch:
+        errors.append(f"{target} linux_smoke_summary target_arch must be {expected_arch!r}")
+
+    uname_machine = str(raw_summary.get("uname_machine", "")).strip().lower()
+    if uname_machine not in expected_machines:
+        errors.append(
+            f"{target} linux_smoke_summary uname_machine must be one of {sorted(expected_machines)}, "
+            f"got {uname_machine!r}"
+        )
+    dpkg_architecture = str(raw_summary.get("dpkg_architecture", "")).strip().lower()
+    expected_dpkg_arches = REQUIRED_LINUX_DPKG_ARCHES[target]
+    if dpkg_architecture not in expected_dpkg_arches:
+        errors.append(
+            f"{target} linux_smoke_summary dpkg_architecture must be one of "
+            f"{sorted(expected_dpkg_arches)}, got {dpkg_architecture!r}"
+        )
+    expected_bits = REQUIRED_LINUX_USERLAND_BITS[target]
+    userland_bits = str(raw_summary.get("userland_bits", "")).strip()
+    if userland_bits != expected_bits:
+        errors.append(f"{target} linux_smoke_summary userland_bits must be {expected_bits!r}, got {userland_bits!r}")
+
+    builder = builder_identity if isinstance(builder_identity, dict) else {}
+    builder_host = builder.get("host_identity") if isinstance(builder.get("host_identity"), dict) else {}
+    host_label = str(raw_summary.get("host_label", "")).strip()
+    if not HOST_IDENTITY_LABEL_RE.fullmatch(host_label) or not host_label.startswith(f"{target}-"):
+        errors.append(f"{target} linux_smoke_summary host_label must be a sanitized target-scoped label, got {host_label!r}")
+    elif builder_host:
+        expected_host_label = str(builder_host.get("host_label", "")).strip()
+        if expected_host_label and host_label != expected_host_label:
+            errors.append(
+                f"{target} linux_smoke_summary host_label must match "
+                f"builder_identity.host_identity.host_label {expected_host_label!r}, got {host_label!r}"
+            )
+
+    evidence_run_id = str(raw_summary.get("evidence_run_id", "")).strip()
+    if not HOST_IDENTITY_RUN_RE.fullmatch(evidence_run_id) or not evidence_run_id.startswith(f"{target}-"):
+        errors.append(
+            f"{target} linux_smoke_summary evidence_run_id must be a sanitized target-scoped run id, "
+            f"got {evidence_run_id!r}"
+        )
+    elif builder_host:
+        expected_run_id = str(builder_host.get("evidence_run_id", "")).strip()
+        if expected_run_id and evidence_run_id != expected_run_id:
+            errors.append(
+                f"{target} linux_smoke_summary evidence_run_id must match "
+                f"builder_identity.host_identity.evidence_run_id {expected_run_id!r}, got {evidence_run_id!r}"
+            )
+
+    observed_at_value = str(raw_summary.get("observed_at_utc", "")).strip()
+    observed_at = observed_at_utc_datetime(observed_at_value)
+    if observed_at is None:
+        errors.append(
+            f"{target} linux_smoke_summary observed_at_utc must be UTC ISO-8601 seconds ending in Z, "
+            f"got {observed_at_value!r}"
+        )
+    elif builder_host:
+        builder_observed_at_value = str(builder_host.get("observed_at_utc", "")).strip()
+        builder_observed_at = observed_at_utc_datetime(builder_observed_at_value)
+        if builder_observed_at is not None and observed_at < builder_observed_at:
+            errors.append(
+                f"{target} linux_smoke_summary observed_at_utc must not be earlier than "
+                f"builder_identity.host_identity.observed_at_utc {builder_observed_at_value!r}, "
+                f"got {observed_at_value!r}"
+            )
+
+    runtime_bindings = {
+        "os_release": "os_release",
+        "kernel_release": "kernel_release",
+        "glibc_version": "glibc_version",
+    }
+    for summary_key, builder_key in runtime_bindings.items():
+        value = str(raw_summary.get(summary_key, "")).strip()
+        if not value:
+            errors.append(f"{target} linux_smoke_summary {summary_key} must be set")
+            continue
+        expected_value = str(builder.get(builder_key, "")).strip()
+        if expected_value and value != expected_value:
+            errors.append(
+                f"{target} linux_smoke_summary {summary_key} must match "
+                f"builder_identity.{builder_key} {expected_value!r}, got {value!r}"
+            )
+
+    builder_security = builder.get("security_patch_evidence") if isinstance(builder.get("security_patch_evidence"), dict) else {}
+    for summary_key, builder_key in (
+        ("python_ssl_openssl", "python_ssl_openssl"),
+        ("openssl_cli_version", "openssl_cli_version"),
+    ):
+        value = str(raw_summary.get(summary_key, "")).strip()
+        if not value:
+            errors.append(f"{target} linux_smoke_summary {summary_key} must be set")
+            continue
+        if not is_concrete_security_provenance(value):
+            errors.append(f"{target} linux_smoke_summary {summary_key} must be concrete")
+        expected_value = str(builder_security.get(builder_key, "")).strip()
+        if expected_value and value != expected_value:
+            errors.append(
+                f"{target} linux_smoke_summary {summary_key} must match "
+                f"builder_identity.security_patch_evidence.{builder_key} {expected_value!r}, got {value!r}"
+            )
+
+    errors.extend(check_linux_smoke_summary_security(target, raw_summary.get("security"), builder_security))
+    return errors
+
+
+def check_linux_smoke_summary_security(
+    target: str,
+    raw_security: Any,
+    builder_security: dict[str, Any],
+) -> list[str]:
+    if not isinstance(raw_security, dict):
+        return [f"{target} linux_smoke_summary security must be an object"]
+
+    errors: list[str] = []
+    errors.extend(
+        check_exact_object_keys(
+            target,
+            "linux_smoke_summary security",
+            raw_security,
+            LINUX_SMOKE_SECURITY_SUMMARY_KEYS,
+        )
+    )
+    expected_values: dict[str, object] = {
+        "tls_minimum_modern_profiles": "TLS 1.2",
+        "tls_preferred_modern_profiles": "TLS 1.3",
+        "legacy_compatibility_profile": "isolated-opt-in",
+        "legacy_crypto_scope": "profile-only",
+        "weak_crypto_global_default": False,
+        "modern_defaults_unchanged": True,
+    }
+    for key, expected in sorted(expected_values.items()):
+        if raw_security.get(key) != expected:
+            errors.append(f"{target} linux_smoke_summary security.{key} must be {expected!r}")
+
+    for key in ("security_update_channel", "cve_review_reference"):
+        value = str(raw_security.get(key, "")).strip()
+        if not value:
+            errors.append(f"{target} linux_smoke_summary security.{key} must be set")
+        elif not is_concrete_security_provenance(value):
+            errors.append(f"{target} linux_smoke_summary security.{key} must name concrete non-placeholder provenance")
+
+    for key in (
+        "tls_minimum_modern_profiles",
+        "tls_preferred_modern_profiles",
+        "legacy_compatibility_profile",
+        "security_update_channel",
+        "cve_review_reference",
+    ):
+        expected = builder_security.get(key)
+        if expected is not None and raw_security.get(key) != expected:
+            errors.append(
+                f"{target} linux_smoke_summary security.{key} must match "
+                f"builder_identity.security_patch_evidence.{key} {expected!r}, got {raw_security.get(key)!r}"
+            )
     return errors
 
 
@@ -2335,9 +2605,7 @@ def check_linux_smoke_log_text(
         )
     if not text.strip():
         return [*errors, f"{target} {label} must not be empty"]
-    for line in required_lines:
-        if line not in text:
-            errors.append(f"{target} {label} missing required line: {line}")
+    errors.extend(check_required_linux_smoke_exact_lines(target, label, text, required_lines))
     errors.extend(
         check_linux_smoke_runtime_line(
             target,
@@ -2380,6 +2648,26 @@ def check_linux_smoke_log_text(
     errors.extend(check_forbidden_linux_smoke_security_lines(target, label, text))
     if artifact_sha256 is not None:
         errors.extend(check_linux_smoke_artifact_sha256_lines(target, release_tag, text, artifact_sha256, label=label))
+    return errors
+
+
+def check_required_linux_smoke_exact_lines(
+    target: str,
+    label: str,
+    text: str,
+    required_lines: list[str],
+) -> list[str]:
+    lines = text.splitlines()
+    errors: list[str] = []
+    for required_line in required_lines:
+        count = sum(1 for line in lines if line == required_line)
+        if count == 0:
+            errors.append(f"{target} {label} missing required line: {required_line}")
+        elif count != 1:
+            errors.append(
+                f"{target} {label} must include exactly one required line: "
+                f"{required_line} (got {count})"
+            )
     return errors
 
 
@@ -2580,8 +2868,9 @@ def check_linux_smoke_security_value_lines(target: str, label: str, text: str) -
 
 def check_forbidden_linux_smoke_security_lines(target: str, label: str, text: str) -> list[str]:
     errors: list[str] = []
+    normalized_text = text.lower()
     for line in FORBIDDEN_LINUX_SECURITY_SMOKE_LINES:
-        if line in text:
+        if line.lower() in normalized_text:
             errors.append(f"{target} {label} contains forbidden security proof line: {line}")
     return errors
 

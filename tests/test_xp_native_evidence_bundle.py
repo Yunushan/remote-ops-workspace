@@ -831,6 +831,7 @@ def _write_artifact_set(root: Path, names: list[str]) -> None:
     records = [
         {
             "file": name,
+            **_manifest_record_metadata(name),
             "size_bytes": (root / name).stat().st_size,
             "sha256": _sha256(root / name),
         }
@@ -842,6 +843,20 @@ def _write_artifact_set(root: Path, names: list[str]) -> None:
         "".join(f"{_sha256(root / name)}  {name}\n" for name in sidecar_names),
         encoding="utf-8",
     )
+
+
+def _manifest_record_metadata(name: str) -> dict[str, str]:
+    if name.endswith(".zip"):
+        return {"architecture": _artifact_architecture(name), "format": "zip"}
+    return {}
+
+
+def _artifact_architecture(name: str) -> str:
+    if "-windows-xp-x86-native." in name:
+        return "x86"
+    if "-windows-xp-x64-native." in name:
+        return "x64"
+    return ""
 
 
 def _write_candidate_record(

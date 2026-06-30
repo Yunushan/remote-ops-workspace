@@ -103,7 +103,10 @@ and cannot complete the protected goal parity block. The release/verifier promot
 gate is `python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> --release-assets-dir <release-assets-dir>`,
 which also runs `python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-complete --assets-dir <release-assets-dir>`
 and `python scripts/check_release_publish_assets.py --assets-dir <release-assets-dir> --tag v<project.version> --require-platform-goal-targets`
-and must fail until the same four records are finalized and accepted from that same release source. Use
+and must fail until the same four records are finalized and accepted from that same release source.
+Static readiness JSON keeps `release_asset_provenance_complete=false`; only the
+asset-backed protected goal gate can flip that proof state after finalized
+records, review bundles and native release bytes match. Use
 `python scripts/make_platform_verified_evidence_record.py`
 to generate a candidate accepted record from validated artifact and XP evidence
 inputs, then bind the packaged review-bundle manifest, archive and SHA-256
@@ -118,8 +121,9 @@ both stagers re-check finalized accepted-record assets before upload and require
 the public final record to use canonical LF-terminated sorted JSON bytes.
 Every accepted record must include the current promotion config SHA-256. Linux
 records must include builder identity evidence plus its matching SHA-256,
-sanitized target-scoped builder `host_identity` binding and workflow dispatch
-input binding, and XP records must include the validated XP
+sanitized target-scoped builder `host_identity` binding, workflow dispatch
+input binding and `linux_smoke_summary` release/run, runtime architecture,
+OpenSSL and legacy-crypto-scope proof values, and XP records must include the validated XP
 evidence JSON SHA-256, the current XP evidence contract SHA-256, XP evidence
 summary binding and every required smoke evidence SHA-256. Release asset URLs and artifact hash maps must exactly match
 the required artifact names for the target; incomplete, duplicate or extra artifact sets do
@@ -140,14 +144,18 @@ row features --coverage --json
 ```
 
 The human `row features --coverage` output prints a `Protected platform goal`
-line with the four-target accepted-evidence percentage and missing targets, then
-also includes missing accepted evidence next to Linux i386, Linux armhf and
-Windows XP rows. The JSON output keeps the same row data under
+line with the four-target accepted-evidence percentage, a `Release asset
+provenance` line that stays `not checked by static report` until the
+asset-backed protected goal gate runs, the exact `Asset provenance gate`
+command, and missing targets. It also includes missing accepted evidence next to
+Linux i386, Linux armhf and Windows XP rows. The JSON output keeps the same row data under
 `accepted_evidence_missing_targets` and exposes the four-target goal status under
 `platform_verified_readiness.protected_goal_parity`, including
-`target_evidence_requirements` entries that list the required accepted registry
-record, release artifacts, review-bundle files, validation/finalization commands
-and XP security/smoke requirements for each protected target.
+`release_asset_provenance_complete=false`,
+`release_asset_provenance_command` and `target_evidence_requirements` entries
+that list the required accepted registry record, release artifacts,
+review-bundle files, validation/finalization commands and XP security/smoke
+requirements for each protected target.
 Protected platform goal parity is **0.0%** for the current accepted-evidence
 registry (status=missing-accepted-evidence); the 100.0% overall verified
 readiness row does not include Linux i386, Linux armhf or Windows XP

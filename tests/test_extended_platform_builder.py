@@ -247,6 +247,34 @@ def test_builder_security_patch_evidence_rejects_placeholder_provenance(monkeypa
     assert "linux-i386 builder CVE review reference evidence must name concrete non-placeholder provenance" in errors
 
 
+def test_builder_security_patch_evidence_rejects_vague_provenance(monkeypatch) -> None:
+    builder = _load_builder()
+    evidence = builder.security_patch_evidence()
+    evidence["security_update_channel"] = "monthly maintenance baseline"
+    evidence["cve_review_reference"] = "internal review 2026 06"
+    monkeypatch.setattr(builder, "security_patch_evidence", lambda: evidence)
+
+    errors = builder.check_security_patch_evidence("linux-armhf")
+
+    assert (
+        "linux-armhf builder security update channel evidence must name concrete non-placeholder provenance"
+        in errors
+    )
+    assert "linux-armhf builder CVE review reference evidence must name concrete non-placeholder provenance" in errors
+
+
+def test_builder_security_patch_evidence_accepts_update_and_advisory_namespaces(monkeypatch) -> None:
+    builder = _load_builder()
+    evidence = builder.security_patch_evidence()
+    evidence["security_update_channel"] = "ubuntu-security-updates-usn-2026-07"
+    evidence["cve_review_reference"] = "vendor-cve-advisory-review-2026-07"
+    monkeypatch.setattr(builder, "security_patch_evidence", lambda: evidence)
+
+    errors = builder.check_security_patch_evidence("linux-i386")
+
+    assert not errors
+
+
 def _load_builder():
     path = Path("scripts/check_extended_platform_builder.py")
     spec = importlib.util.spec_from_file_location("check_extended_platform_builder", path)

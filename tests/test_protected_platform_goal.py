@@ -10,7 +10,8 @@ import pytest
 
 LINUX_SECURITY_REQUIREMENTS = [
     "security patch evidence proving TLS 1.3 preferred, TLS 1.2 minimum, "
-    "isolated legacy compatibility and CVE patch review",
+    "isolated legacy compatibility and CVE patch review with concrete "
+    "security_update_channel and cve_review_reference update/advisory provenance",
     "modern Windows 10/11, Linux, and macOS defaults must keep hardened crypto",
 ]
 
@@ -60,7 +61,7 @@ def test_protected_platform_goal_strict_gate_fails_empty_registry() -> None:
     assert "platform-verified-evidence-linux-i386-final.json" in linux_source["contains_files"]
     assert requirements["linux-i386"]["workflow_dispatch_command"] == (
         "gh workflow run extended-platform-evidence.yml --repo <owner>/<repo> "
-        "--ref <github-actions-head-sha-or-branch> -f target=linux-i386 "
+        "--ref <github-actions-head-sha> -f target=linux-i386 "
         "-f release_tag=v1.0.2 "
         "-f release_asset_base_url=<github-release-download-url>"
     )
@@ -71,7 +72,7 @@ def test_protected_platform_goal_strict_gate_fails_empty_registry() -> None:
     assert "platform-verified-evidence-windows-xp-native-x64-final.json" in xp_source["contains_files"]
     assert requirements["windows-xp-native-x64"]["workflow_dispatch_command"] == (
         "gh workflow run xp-native-evidence.yml --repo <owner>/<repo> "
-        "--ref <github-actions-head-sha-or-branch> -f target=windows-xp-native-x64 "
+        "--ref <github-actions-head-sha> -f target=windows-xp-native-x64 "
         "-f release_tag=v1.0.2 "
         "-f release_asset_base_url=<github-release-download-url> "
         "-f assets_dir=<target-release-artifact-dir> "
@@ -94,6 +95,8 @@ def test_protected_platform_goal_strict_gate_fails_empty_registry() -> None:
     )
     assert requirements["windows-xp-native-x64"]["security_requirements"] == [
         "legacy TLS, SSH, and RDP compatibility must remain profile-scoped opt-in",
+        "XP security patch evidence must include concrete security_update_channel "
+        "and cve_review_reference update/advisory provenance",
         "modern Windows 10/11, Linux, and macOS defaults must keep hardened crypto",
     ]
     human_scope = checker.format_goal_scope(goal)
@@ -118,13 +121,13 @@ def test_protected_platform_goal_strict_gate_fails_empty_registry() -> None:
     ) in human_requirements
     assert (
         "dispatch command: gh workflow run extended-platform-evidence.yml "
-        "--repo <owner>/<repo> --ref <github-actions-head-sha-or-branch> "
+        "--repo <owner>/<repo> --ref <github-actions-head-sha> "
         "-f target=linux-i386 -f release_tag=v1.0.2 "
         "-f release_asset_base_url=<github-release-download-url>"
     ) in human_requirements
     assert (
         "dispatch command: gh workflow run xp-native-evidence.yml "
-        "--repo <owner>/<repo> --ref <github-actions-head-sha-or-branch> "
+        "--repo <owner>/<repo> --ref <github-actions-head-sha> "
         "-f target=windows-xp-native-x64 -f release_tag=v1.0.2 "
         "-f release_asset_base_url=<github-release-download-url> "
         "-f assets_dir=<target-release-artifact-dir> "
@@ -435,12 +438,12 @@ def test_protected_platform_goal_reports_release_scoped_completion() -> None:
     assert goal["current_percent"] == 100.0
     assert goal["accepted_target_count"] == 4
     assert goal["missing_targets"] == []
-    assert goal["complete"] is True
+    assert goal["complete"] is False
     assert goal["record_complete"] is True
     assert goal["release_backed_complete"] is False
     assert goal["completion_requires_release_asset_provenance"] is True
     assert goal["completion_evidence"] == "accepted-records-only"
-    assert goal["status"] == "complete"
+    assert goal["status"] == "release-asset-provenance-required"
     assert goal["release_asset_provenance_complete"] is False
     assert goal["release_asset_validation_errors"] == []
     assert goal["release_assets_dir"] == ""

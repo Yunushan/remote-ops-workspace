@@ -170,6 +170,106 @@ def test_security_polish_rejects_xp_patch_provenance_field_drift() -> None:
     )
 
 
+def test_security_polish_rejects_xp_patch_provenance_namespace_drift() -> None:
+    checker = load_security_checker()
+    xp_contract = _xp_contract()
+    xp_contract["required_security_patch_provenance_namespaces"]["security_update_channel"] = [
+        "security-update"
+    ]
+
+    errors = checker.check_legacy_security_policy(
+        baseline=_security_baseline(),
+        xp_contract=xp_contract,
+        platform_required_flags={
+            "legacy_crypto_profile_scoped": True,
+            "modern_defaults_unchanged": True,
+            "weak_crypto_global_default": False,
+        },
+    )
+
+    assert any(
+        "XP native evidence contract required_security_patch_provenance_namespaces.security_update_channel "
+        "must match platform verifier markers" in error
+        and "windows-update" in error
+        for error in errors
+    )
+
+
+def test_security_polish_rejects_platform_provenance_namespace_drift() -> None:
+    checker = load_security_checker()
+
+    errors = checker.check_legacy_security_policy(
+        baseline=_security_baseline(),
+        xp_contract=_xp_contract(),
+        platform_required_flags={
+            "legacy_crypto_profile_scoped": True,
+            "modern_defaults_unchanged": True,
+            "weak_crypto_global_default": False,
+        },
+        platform_security_provenance_namespaces={
+            "security_update_channel": ("security-update",),
+            "cve_review_reference": ("cve-", "https://"),
+        },
+    )
+
+    assert any(
+        "XP native evidence contract required_security_patch_provenance_namespaces.security_update_channel "
+        "must match platform verifier markers" in error
+        and "windows-update" in error
+        for error in errors
+    )
+
+
+def test_security_polish_rejects_runtime_feature_provenance_namespace_drift() -> None:
+    checker = load_security_checker()
+
+    errors = checker.check_legacy_security_policy(
+        baseline=_security_baseline(),
+        xp_contract=_xp_contract(),
+        platform_required_flags={
+            "legacy_crypto_profile_scoped": True,
+            "modern_defaults_unchanged": True,
+            "weak_crypto_global_default": False,
+        },
+        feature_security_provenance_namespaces={
+            "security_update_channel": ("security-update",),
+            "cve_review_reference": ("cve-", "https://"),
+        },
+    )
+
+    assert any(
+        "runtime feature security provenance namespaces.security_update_channel "
+        "must match platform verifier markers" in error
+        and "windows-update" in error
+        for error in errors
+    )
+
+
+def test_security_polish_rejects_builder_provenance_namespace_drift() -> None:
+    checker = load_security_checker()
+
+    errors = checker.check_legacy_security_policy(
+        baseline=_security_baseline(),
+        xp_contract=_xp_contract(),
+        platform_required_flags={
+            "legacy_crypto_profile_scoped": True,
+            "modern_defaults_unchanged": True,
+            "weak_crypto_global_default": False,
+        },
+        builder_security_provenance_namespaces={
+            "security_update_channel": ("security-update",),
+            "cve_review_reference": ("cve-", "https://"),
+        },
+    )
+
+    assert any(
+        "Linux builder preflight security provenance namespaces.security_update_channel "
+        "must match platform verifier markers" in error
+        and "windows-update" in error
+        for error in errors
+    )
+
+
 def test_security_polish_rejects_missing_xp_security_smoke_id() -> None:
     checker = load_security_checker()
     xp_contract = _xp_contract()

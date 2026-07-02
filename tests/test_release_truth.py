@@ -290,10 +290,10 @@ def test_release_truth_checker_requires_source_artifact_run_window_docs() -> Non
         text = original_read(relative)
         if relative in {"README.md", "README.tr.md", "docs/PLATFORM_SUPPORT.md", "docs/RELEASE_STRATEGY.md"}:
             return (
-                text.replace("source run start/update window", "source run start")
-                .replace("source\n  run start/update window", "source run start")
-                .replace("source run\nstart/update araligi", "source run start")
-                .replace("source run start/update araligi", "source run start")
+                text.replace("source run creation/start/update window", "source run start")
+                .replace("source\n  run creation/start/update window", "source run start")
+                .replace("source run\ncreation/start/update araligi", "source run start")
+                .replace("source run creation/start/update araligi", "source run start")
             )
         return text
 
@@ -305,17 +305,17 @@ def test_release_truth_checker_requires_source_artifact_run_window_docs() -> Non
 
     assert any(
         "release docs missing workflow artifact truth snippet" in error
-        and "source run start/update window" in error
+        and "source run creation/start/update window" in error
         for error in errors
     )
     assert any(
         "README.md release section missing protected platform evidence truth snippet" in error
-        and "source run start/update window" in error
+        and "source run creation/start/update window" in error
         for error in errors
     )
     assert any(
         "README.tr.md missing protected platform evidence truth snippet" in error
-        and "source run start/update" in error
+        and "source run creation/start/update" in error
         for error in errors
     )
 
@@ -643,6 +643,51 @@ def test_release_truth_checker_requires_preflight_cleanup_command() -> None:
     errors = checker.check_release_preflight(workflow)
 
     assert any("clean checkout requirement" in error for error in errors)
+
+
+def test_release_truth_checker_rejects_preflight_credentials_outside_checkout_step() -> None:
+    checker = _load_release_truth_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    block = checker.workflow_job_block(workflow, checker.RELEASE_PREFLIGHT_JOB)
+    assert block
+    mutated = block.replace("          persist-credentials: false\n", "", 1).replace(
+        "      - uses: actions/setup-python@v6\n",
+        "      - name: Misleading checkout credential setting\n"
+        "        run: echo persist\n"
+        "        env:\n"
+        "          persist-credentials: false\n"
+        "      - uses: actions/setup-python@v6\n",
+        1,
+    )
+    workflow = workflow.replace(block, mutated, 1)
+
+    errors = checker.check_release_preflight(workflow)
+
+    assert (
+        "release-preflight checkout step missing credential isolation: "
+        "persist-credentials: false"
+    ) in errors
+
+
+def test_release_truth_checker_rejects_preflight_clean_setting_outside_checkout_step() -> None:
+    checker = _load_release_truth_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    block = checker.workflow_job_block(workflow, checker.RELEASE_PREFLIGHT_JOB)
+    assert block
+    mutated = block.replace("          clean: true\n", "", 1).replace(
+        "      - uses: actions/setup-python@v6\n",
+        "      - name: Misleading clean setting\n"
+        "        run: echo clean\n"
+        "        env:\n"
+        "          clean: true\n"
+        "      - uses: actions/setup-python@v6\n",
+        1,
+    )
+    workflow = workflow.replace(block, mutated, 1)
+
+    errors = checker.check_release_preflight(workflow)
+
+    assert "release-preflight checkout step missing workspace cleanup: clean: true" in errors
 
 
 def test_release_truth_checker_requires_tag_scoped_preflight_verifier() -> None:

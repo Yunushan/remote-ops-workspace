@@ -110,11 +110,16 @@ records, review bundles and native release bytes match. Use
 The readiness JSON also separates `record_complete` from
 `release_backed_complete`, so accepted records alone cannot be mistaken for
 published release-byte proof.
+Protected Linux i386/armhf and Windows XP rows mirror that split with
+`accepted_evidence_record_complete`, `release_asset_provenance_complete=false`,
+`release_backed_readiness_complete=false` and `static_readiness_evidence_scope`
+fields, so row-level readiness never claims published asset-byte proof before
+the asset-backed protected goal gate runs with `--assets-dir`.
 `python scripts/make_platform_verified_evidence_record.py`
 to generate a candidate accepted record from validated artifact and XP evidence
 inputs, then bind the packaged review-bundle manifest, archive and SHA-256
 sidecar with `python scripts/finalize_platform_verified_evidence_record.py`.
-Candidate generation must pass `--staged-upload-out-dir <release-upload-staging-dir>`
+Candidate generation must pass `--staged-upload-out-dir platform-evidence-upload/<target>/v<project.version>`
 so the accepted record carries the exact upload staging command; XP candidates
 must also pass `--xp-evidence-output-dir <xp-evidence-output-dir>`.
 Linux release-source upload staging must use
@@ -151,7 +156,8 @@ line with the four-target accepted-evidence percentage, a `Release asset
 provenance` line that stays `not checked by static report` until the
 asset-backed protected goal gate runs, the exact `Asset provenance gate`
 command, and missing targets. It also includes missing accepted evidence next to
-Linux i386, Linux armhf and Windows XP rows. The JSON output keeps the same row data under
+Linux i386, Linux armhf and Windows XP rows plus a row-level
+accepted-record/release-asset provenance note. The JSON output keeps the same row data under
 `accepted_evidence_missing_targets` and exposes the four-target goal status under
 `platform_verified_readiness.protected_goal_parity`, including
 `release_asset_provenance_complete=false`,

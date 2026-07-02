@@ -1376,14 +1376,26 @@ def cmd_features(args: argparse.Namespace) -> int:
                 missing_targets = row.get("accepted_evidence_missing_targets", [])
                 if missing_targets:
                     missing = f"; missing evidence {', '.join(str(target) for target in missing_targets)}"
+                provenance = _protected_platform_row_provenance_note(row)
                 print(
                     f"  {row['target']:<{target_width}} {row['current_percent']:>5.1f}% "
-                    f"{row['status']} ({row['channel']}){remote}{missing}"
+                    f"{row['status']} ({row['channel']}){remote}{missing}{provenance}"
                 )
         return 0
     for row in feature_summary():
         print(f"{row['id']:<32} {row['status']:<18} {row['coverage']}")
     return 0
+
+
+def _protected_platform_row_provenance_note(row: dict[str, object]) -> str:
+    required = row.get("accepted_evidence_required_targets")
+    if not isinstance(required, list) or not required:
+        return ""
+    if row.get("release_backed_readiness_complete") is True:
+        return "; release-backed proof complete"
+    if row.get("accepted_evidence_record_complete") is True:
+        return "; accepted records complete, release assets pending"
+    return "; accepted records/release assets pending"
 
 
 def cmd_plugins_list(args: argparse.Namespace) -> int:

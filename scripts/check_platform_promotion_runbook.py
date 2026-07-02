@@ -102,7 +102,7 @@ LINUX_SNIPPETS = (
     "--linux-source-run-attempt <github-actions-run-attempt>",
     "--local-evidence-root <staged-root>",
     "must contain only the expected release artifacts for strict promotion",
-    "linux-evidence-upload",
+    "platform-evidence-upload/<target>/<release_tag>",
     "raw Linux builder output directories are not uploaded by wildcard",
 )
 XP_SNIPPETS = (
@@ -121,7 +121,7 @@ XP_SNIPPETS = (
     "`legacy_crypto_profile_scoped` smoke file must include `legacy compatibility profile: isolated-opt-in`, `legacy crypto scope: profile-only`, `weak crypto global default: false`, `security update channel: <security-update-channel>` and `CVE review reference: <cve-review-reference>`",
     "`modern_defaults_unchanged` smoke file must include `modern TLS minimum: TLS 1.2`, `modern TLS preferred: TLS 1.3`, `modern defaults unchanged: true`, `weak crypto global default: false`, `security update channel: <security-update-channel>` and `CVE review reference: <cve-review-reference>`",
     "python scripts/stage_xp_native_evidence_upload.py",
-    "xp-evidence-upload",
+    "platform-evidence-upload/<target>/<release_tag>",
     "raw operator-supplied XP artifact or evidence directories are not uploaded by wildcard",
     "assets_dir, evidence_file and evidence_dir dispatch inputs must be workspace-relative staged paths that include the target id and release tag as path segments",
     "artifact_validation.command` must use exactly one `--tag` matching the evidence `release_tag` and exactly one `--strict`",
@@ -348,7 +348,7 @@ def read_json(path: Path) -> dict[str, Any]:
 def linux_dispatch_command(target_id: str) -> str:
     return (
         "gh workflow run extended-platform-evidence.yml --repo <owner>/<repo> "
-        "--ref <github-actions-head-sha-or-branch> "
+        "--ref <github-actions-head-sha> "
         f"-f target={target_id} "
         "-f release_tag=v<project.version> "
         "-f release_asset_base_url=<github-release-download-url>"
@@ -358,7 +358,7 @@ def linux_dispatch_command(target_id: str) -> str:
 def xp_dispatch_command(target_id: str) -> str:
     return (
         "gh workflow run xp-native-evidence.yml --repo <owner>/<repo> "
-        "--ref <github-actions-head-sha-or-branch> "
+        "--ref <github-actions-head-sha> "
         f"-f target={target_id} "
         "-f release_tag=v<project.version> "
         "-f release_asset_base_url=<github-release-download-url> "

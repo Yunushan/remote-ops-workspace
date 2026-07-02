@@ -332,6 +332,40 @@ FORBIDDEN_SECURITY_PROVENANCE_MARKERS = (
     "test-",
     "todo",
 )
+SECURITY_UPDATE_PROVENANCE_MARKERS = (
+    "security-update",
+    "security-updates",
+    "windows-update",
+    "microsoft-update",
+    "update-catalog",
+    "apt",
+    "dnf",
+    "yum",
+    "apk",
+    "patch",
+    "hotfix",
+    "kb",
+    "usn-",
+    "dsa-",
+    "rhsa-",
+    "alsa-",
+    "errata",
+)
+CVE_REVIEW_PROVENANCE_MARKERS = (
+    "cve-",
+    "ghsa-",
+    "advisory",
+    "vulnerability",
+    "security-advisory",
+    "security-tracker",
+    "release-notes",
+    "security-review",
+    "kb",
+    "usn-",
+    "dsa-",
+    "rhsa-",
+    "alsa-",
+)
 REQUIRED_LINUX_SECURITY_SMOKE_VALUE_LINES = (
     "native installer smoke python ssl openssl",
     "native installer smoke openssl cli version",
@@ -737,6 +771,8 @@ def check_schema(registry: dict[str, Any]) -> list[str]:
         errors.append("platform verified evidence policy must require exact accepted evidence check lists")
     if "exact workflow dispatch input sets" not in policy:
         errors.append("platform verified evidence policy must require exact workflow dispatch input sets")
+    if "workflow dispatch release repository binding" not in policy:
+        errors.append("platform verified evidence policy must require workflow dispatch release repository binding")
     if "exact evidence source record fields" not in policy:
         errors.append("platform verified evidence policy must require exact evidence source record fields")
     if "exact release source and review bundle fields" not in policy:
@@ -817,10 +853,14 @@ def check_schema(registry: dict[str, Any]) -> list[str]:
         errors.append("platform verified evidence policy must require release-importable artifact source binding")
     if "source artifact repository-id binding" not in policy:
         errors.append("platform verified evidence policy must require source artifact repository-id binding")
+    if "source artifact run-created timestamp binding" not in policy:
+        errors.append("platform verified evidence policy must require source artifact run-created timestamp binding")
     if "source artifact run-start timestamp binding" not in policy:
         errors.append("platform verified evidence policy must require source artifact run-start timestamp binding")
     if "source artifact run-window timestamp binding" not in policy:
         errors.append("platform verified evidence policy must require source artifact run-window timestamp binding")
+    if "source artifact retention expiration binding" not in policy:
+        errors.append("platform verified evidence policy must require source artifact retention expiration binding")
     if "release source head SHA binding" not in policy:
         errors.append("platform verified evidence policy must require release source head SHA binding")
     if "release source run-attempt binding" not in policy:
@@ -1121,6 +1161,19 @@ def check_linux_workflow_inputs(target: str, entry: dict[str, Any]) -> list[str]
     if isinstance(release_assets, list) and base_url:
         if any(not str(url).startswith(f"{base_url}/") for url in release_assets):
             errors.append(f"{target} workflow_inputs release_asset_base_url must prefix every release_asset_url")
+    source = entry.get("release_asset_source")
+    source_workflow_run_url = (
+        str(source.get("workflow_run_url", "")).rstrip("/")
+        if isinstance(source, dict)
+        else ""
+    )
+    source_match = GITHUB_ACTIONS_RUN_RE.fullmatch(source_workflow_run_url)
+    if release_match and source_match and release_match.group(1) != source_match.group(1):
+        errors.append(
+            f"{target} workflow_inputs release_asset_base_url repository must match "
+            f"release_asset_source.workflow_run_url repository {source_match.group(1)}, "
+            f"got {release_match.group(1)}"
+        )
     return errors
 
 
@@ -1385,7 +1438,7 @@ def check_linux_smoke_summary_security(
         value = str(raw_security.get(key, "")).strip()
         if not value:
             errors.append(f"{target} linux_smoke_summary security.{key} must be set")
-        elif not is_concrete_security_provenance(value):
+        elif not is_concrete_security_provenance(value, key):
             errors.append(f"{target} linux_smoke_summary security.{key} must name concrete non-placeholder provenance")
 
     for key in (
@@ -2502,14 +2555,22 @@ def check_security_patch_evidence(
         value = str(raw_evidence.get(key, ""))
         if not value.strip():
             errors.append(f"{target} {prefix}.{key} must be set")
-        elif not is_concrete_security_provenance(value):
+        elif not is_concrete_security_provenance(value, key):
             errors.append(f"{target} {prefix}.{key} must name concrete non-placeholder provenance")
     return errors
 
 
-def is_concrete_security_provenance(value: str) -> bool:
+def is_concrete_security_provenance(value: str, field: str = "") -> bool:
     lowered = value.strip().lower()
-    return bool(lowered) and not any(marker in lowered for marker in FORBIDDEN_SECURITY_PROVENANCE_MARKERS)
+    if not lowered or any(marker in lowered for marker in FORBIDDEN_SECURITY_PROVENANCE_MARKERS):
+        return False
+    if field == "security_update_channel":
+        return any(marker in lowered for marker in SECURITY_UPDATE_PROVENANCE_MARKERS)
+    if field == "cve_review_reference":
+        return any(marker in lowered for marker in CVE_REVIEW_PROVENANCE_MARKERS) or lowered.startswith(
+            "https://"
+        )
+    return True
 
 
 def check_linux_security_patch_evidence(target: str, raw_evidence: Any) -> list[str]:
@@ -3059,7 +3120,7 @@ def check_common_evidence(
             entry.get("release_asset_source"),
             expected_files=expected_source_files,
             allowed_files=expected_source_files,
-            native_release_assets=entry.get("release_asset_urls"),
+            native_release_assets=release_package_asset_urls(entry),
         )
     )
     return errors
@@ -3146,6 +3207,22 @@ def check_finalized_record_release_asset_url(
             f"{sorted(release_repositories)}, got {repository}"
         )
     return errors
+
+
+def release_package_asset_urls(entry: dict[str, Any]) -> list[str]:
+    urls: list[str] = []
+    raw_release_assets = entry.get("release_asset_urls")
+    if isinstance(raw_release_assets, list):
+        urls.extend(str(url) for url in raw_release_assets)
+    review_bundle = entry.get("review_bundle")
+    if isinstance(review_bundle, dict):
+        raw_review_assets = review_bundle.get("release_asset_urls")
+        if isinstance(raw_review_assets, list):
+            urls.extend(str(url) for url in raw_review_assets)
+    finalized_url = entry.get("finalized_record_release_asset_url")
+    if isinstance(finalized_url, str):
+        urls.append(finalized_url)
+    return urls
 
 
 def check_release_asset_source(
@@ -3774,6 +3851,8 @@ def check_staged_upload_command(
                 out_dirs[0],
                 command_label="staged_upload_command",
                 require_directory_hint=True,
+                require_target_release_scope=True,
+                release_tag=release_tag,
             )
         )
     force_count = command_flag_count(command, "--force")

@@ -32,7 +32,8 @@ LINUX_RELEASE_SOURCE_ARTIFACTS = {
 }
 LINUX_SECURITY_REQUIREMENTS = (
     "security patch evidence proving TLS 1.3 preferred, TLS 1.2 minimum, "
-    "isolated legacy compatibility and CVE patch review",
+    "isolated legacy compatibility and CVE patch review with concrete "
+    "security_update_channel and cve_review_reference update/advisory provenance",
     "modern Windows 10/11, Linux, and macOS defaults must keep hardened crypto",
 )
 LINUX_SMOKE_EVIDENCE_REQUIREMENTS = (
@@ -48,6 +49,8 @@ LINUX_SMOKE_EVIDENCE_REQUIREMENTS = (
 )
 XP_SECURITY_REQUIREMENTS = (
     "legacy TLS, SSH, and RDP compatibility must remain profile-scoped opt-in",
+    "XP security patch evidence must include concrete security_update_channel "
+    "and cve_review_reference update/advisory provenance",
     "modern Windows 10/11, Linux, and macOS defaults must keep hardened crypto",
 )
 XP_SMOKE_EVIDENCE_REQUIREMENTS = (
@@ -645,13 +648,14 @@ def check_staged_upload_command(
     command = requirements.get("staged_upload_command")
     if not isinstance(command, str) or not command:
         return [f"{label} promotion requires staged_upload_command"]
+    scoped_upload_dir = f"platform-evidence-upload/{label}/v<project.version>"
     if kind == "linux":
         expected = (
             "python scripts/stage_extended_linux_evidence_upload.py "
             f"--target {label} "
             "--release-tag v<project.version> "
             "--source-dir <target-release-artifact-dir> "
-            "--out-dir <release-upload-staging-dir> "
+            f"--out-dir {scoped_upload_dir} "
             "--force"
         )
         script = "stage_extended_linux_evidence_upload.py"
@@ -662,7 +666,7 @@ def check_staged_upload_command(
             "--release-tag v<project.version> "
             "--assets-dir <target-release-artifact-dir> "
             "--evidence-output-dir <xp-evidence-output-dir> "
-            "--out-dir <release-upload-staging-dir> "
+            f"--out-dir {scoped_upload_dir} "
             "--force"
         )
         script = "stage_xp_native_evidence_upload.py"
@@ -695,7 +699,10 @@ def check_finalized_evidence_requirements(
         errors.append(
             f"{label} accepted_evidence_candidate_command must bind the local evidence root"
         )
-    if "--staged-upload-out-dir <release-upload-staging-dir>" not in candidate:
+    scoped_upload_arg = (
+        f"--staged-upload-out-dir platform-evidence-upload/{label}/v<project.version>"
+    )
+    if scoped_upload_arg not in candidate:
         errors.append(
             f"{label} accepted_evidence_candidate_command must bind staged upload out dir"
         )

@@ -189,30 +189,49 @@ def check_linux_appimagetool_download() -> list[str]:
     return errors
 
 
-def check_native_workflow_boundaries() -> list[str]:
-    workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+def check_native_workflow_boundaries(workflow: str | None = None) -> list[str]:
+    workflow_text = workflow if workflow is not None else (ROOT / ".github" / "workflows" / "release.yml").read_text(
+        encoding="utf-8"
+    )
     errors: list[str] = []
     for job in WORKFLOW_NATIVE_JOBS:
-        block = workflow_job_block(workflow, job)
+        block = workflow_job_block(workflow_text, job)
         if not block:
             errors.append(f"release workflow missing native job: {job}")
             continue
-        if "persist-credentials: false" not in block:
-            errors.append(f"{job} must disable checkout credential persistence")
+        errors.extend(check_checkout_step(block, job=job))
         if "if-no-files-found: error" not in block:
             errors.append(f"{job} artifact upload must fail when native assets are missing")
-    if "permissions:\n  contents: read" not in workflow:
+    if "permissions:\n  contents: read" not in workflow_text:
         errors.append("release workflow native jobs must inherit read-only contents permission")
-    if "runner: macos-13" in workflow:
+    if "runner: macos-13" in workflow_text:
         errors.append("macOS x64 release builds must not use the deprecated macos-13 runner label")
-    if "runner: macos-15-intel" not in workflow:
+    if "runner: macos-15-intel" not in workflow_text:
         errors.append("macOS x64 release builds must use the Intel macos-15-intel runner")
+    return errors
+
+
+def check_checkout_step(job_block: str, *, job: str) -> list[str]:
+    checkout = workflow_step_block(job_block, "uses: actions/checkout@v6")
+    if not checkout:
+        return [f"{job} missing repository checkout: uses: actions/checkout@v6"]
+    errors: list[str] = []
+    if "persist-credentials: false" not in checkout:
+        errors.append(f"{job} checkout step must disable credential persistence")
+    if "clean: true" not in checkout:
+        errors.append(f"{job} checkout step must clean the workspace")
     return errors
 
 
 def workflow_job_block(workflow: str, job: str) -> str:
     match = re.search(rf"(?ms)^  {re.escape(job)}:\n(.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)", workflow)
     return match.group(1) if match else ""
+
+
+def workflow_step_block(job_block: str, marker: str) -> str:
+    pattern = rf"(?ms)^      - {re.escape(marker)}\n(.*?)(?=^      - |\Z)"
+    match = re.search(pattern, job_block)
+    return match.group(0) if match else ""
 
 
 def display(path: Path) -> str:

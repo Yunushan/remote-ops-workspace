@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import importlib.util
 import json
 import sys
@@ -115,6 +116,9 @@ def check_legacy_security_policy(
     platform_required_flags: dict[str, bool] | None = None,
     platform_required_patch_evidence: dict[str, Any] | None = None,
     platform_required_patch_provenance_fields: tuple[str, ...] | None = None,
+    platform_security_provenance_namespaces: dict[str, tuple[str, ...]] | None = None,
+    feature_security_provenance_namespaces: dict[str, tuple[str, ...]] | None = None,
+    builder_security_provenance_namespaces: dict[str, tuple[str, ...]] | None = None,
     platform_linux_security_smoke_lines: tuple[str, ...] | None = None,
     platform_forbidden_linux_security_smoke_lines: tuple[str, ...] | None = None,
 ) -> list[str]:
@@ -127,6 +131,12 @@ def check_legacy_security_policy(
     )
     if platform_required_patch_provenance_fields is None:
         platform_required_patch_provenance_fields = load_platform_required_security_patch_provenance_fields()
+    if platform_security_provenance_namespaces is None:
+        platform_security_provenance_namespaces = load_platform_security_provenance_namespaces()
+    if feature_security_provenance_namespaces is None:
+        feature_security_provenance_namespaces = load_feature_security_provenance_namespaces()
+    if builder_security_provenance_namespaces is None:
+        builder_security_provenance_namespaces = load_builder_security_provenance_namespaces()
     if platform_linux_security_smoke_lines is None:
         platform_linux_security_smoke_lines = load_platform_linux_security_smoke_lines()
     if platform_forbidden_linux_security_smoke_lines is None:
@@ -204,6 +214,43 @@ def check_legacy_security_policy(
             "platform verified evidence REQUIRED_SECURITY_PATCH_PROVENANCE_FIELDS must match "
             f"{list(expected_patch_provenance_fields)}, got {list(platform_required_patch_provenance_fields)}"
         )
+    expected_provenance_namespaces = {
+        "security_update_channel": set(
+            platform_security_provenance_namespaces.get("security_update_channel", ())
+        ),
+        "cve_review_reference": set(
+            platform_security_provenance_namespaces.get("cve_review_reference", ())
+        ),
+    }
+    if not expected_provenance_namespaces["security_update_channel"]:
+        errors.append("platform verified evidence security_update_channel provenance markers must be defined")
+    if not expected_provenance_namespaces["cve_review_reference"]:
+        errors.append("platform verified evidence cve_review_reference provenance markers must be defined")
+    contract_namespaces = xp_contract.get("required_security_patch_provenance_namespaces", {})
+    if not isinstance(contract_namespaces, dict):
+        errors.append("XP native evidence contract required_security_patch_provenance_namespaces must be an object")
+    else:
+        errors.extend(
+            compare_security_provenance_namespaces(
+                "XP native evidence contract required_security_patch_provenance_namespaces",
+                contract_namespaces,
+                expected_provenance_namespaces,
+            )
+        )
+    errors.extend(
+        compare_security_provenance_namespaces(
+            "runtime feature security provenance namespaces",
+            feature_security_provenance_namespaces,
+            expected_provenance_namespaces,
+        )
+    )
+    errors.extend(
+        compare_security_provenance_namespaces(
+            "Linux builder preflight security provenance namespaces",
+            builder_security_provenance_namespaces,
+            expected_provenance_namespaces,
+        )
+    )
     expected_linux_security_lines = {
         f"native installer smoke TLS minimum modern profiles: {modern.get('minimum_tls')}",
         f"native installer smoke TLS preferred modern profiles: {modern.get('preferred_tls')}",
@@ -258,6 +305,28 @@ def check_legacy_security_policy(
         if snippet not in launcher:
             errors.append(f"launcher missing legacy security enforcement snippet: {snippet}")
     errors.extend(check_legacy_launcher_behavior())
+    return errors
+
+
+def compare_security_provenance_namespaces(
+    label: str,
+    actual_namespaces: dict[str, Any],
+    expected_namespaces: dict[str, set[str]],
+) -> list[str]:
+    errors: list[str] = []
+    for field, expected_markers in sorted(expected_namespaces.items()):
+        actual_markers = actual_namespaces.get(field)
+        if not isinstance(actual_markers, (list, tuple, set)):
+            errors.append(f"{label} must define {field}")
+            continue
+        actual = {str(marker) for marker in actual_markers}
+        missing = sorted(expected_markers - actual)
+        unexpected = sorted(actual - expected_markers)
+        if missing or unexpected:
+            errors.append(
+                f"{label}.{field} must match platform verifier markers; "
+                f"missing={missing}, unexpected={unexpected}"
+            )
     return errors
 
 
@@ -405,6 +474,54 @@ def load_platform_required_security_patch_provenance_fields() -> tuple[str, ...]
     if not isinstance(fields, (list, tuple, set)):
         return ()
     return tuple(str(field) for field in fields)
+
+
+def load_platform_security_provenance_namespaces() -> dict[str, tuple[str, ...]]:
+    path = ROOT / "scripts" / "check_platform_verified_evidence.py"
+    spec = importlib.util.spec_from_file_location("check_platform_verified_evidence_security_namespaces", path)
+    if spec is None or spec.loader is None:
+        return {}
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    update_markers = getattr(module, "SECURITY_UPDATE_PROVENANCE_MARKERS", ())
+    cve_markers = getattr(module, "CVE_REVIEW_PROVENANCE_MARKERS", ())
+    if not isinstance(update_markers, (list, tuple, set)) or not isinstance(cve_markers, (list, tuple, set)):
+        return {}
+    return {
+        "security_update_channel": tuple(str(marker) for marker in update_markers),
+        "cve_review_reference": tuple(str(marker) for marker in cve_markers) + ("https://",),
+    }
+
+
+def load_feature_security_provenance_namespaces() -> dict[str, tuple[str, ...]]:
+    module = importlib.import_module("remote_ops_workspace.features")
+    update_markers = getattr(module, "SECURITY_UPDATE_PROVENANCE_MARKERS", ())
+    cve_markers = getattr(module, "CVE_REVIEW_PROVENANCE_MARKERS", ())
+    if not isinstance(update_markers, (list, tuple, set)) or not isinstance(cve_markers, (list, tuple, set)):
+        return {}
+    return {
+        "security_update_channel": tuple(str(marker) for marker in update_markers),
+        "cve_review_reference": tuple(str(marker) for marker in cve_markers) + ("https://",),
+    }
+
+
+def load_builder_security_provenance_namespaces() -> dict[str, tuple[str, ...]]:
+    path = ROOT / "scripts" / "check_extended_platform_builder.py"
+    spec = importlib.util.spec_from_file_location("check_extended_platform_builder_security_namespaces", path)
+    if spec is None or spec.loader is None:
+        return {}
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    update_markers = getattr(module, "SECURITY_UPDATE_PROVENANCE_MARKERS", ())
+    cve_markers = getattr(module, "CVE_REVIEW_PROVENANCE_MARKERS", ())
+    if not isinstance(update_markers, (list, tuple, set)) or not isinstance(cve_markers, (list, tuple, set)):
+        return {}
+    return {
+        "security_update_channel": tuple(str(marker) for marker in update_markers),
+        "cve_review_reference": tuple(str(marker) for marker in cve_markers) + ("https://",),
+    }
 
 
 def load_platform_linux_security_smoke_lines() -> tuple[str, ...]:

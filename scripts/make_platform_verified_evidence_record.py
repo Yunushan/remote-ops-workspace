@@ -49,9 +49,11 @@ DEFAULT_EVIDENCE_POLICY = (
     "or Windows XP native-host readiness. Accepted records must include release asset URLs, "
     "review-bundle manifest release asset URL binding, review bundle release asset URLs, "
     "release-importable artifact source binding, "
-    "source artifact repository-id binding when exact source-run metadata exposes repository IDs, "
-    "source artifact run-start timestamp binding when exact source-run metadata exposes run start timestamps, "
-    "source artifact run-window timestamp binding when exact source-run metadata exposes run update timestamps, "
+    "source artifact repository-id binding from exact source-run metadata, "
+    "source artifact run-created timestamp binding from exact source-run metadata, "
+    "source artifact run-start timestamp binding from exact source-run metadata, "
+    "source artifact run-window timestamp binding from exact source-run metadata, "
+    "source artifact retention expiration binding from exact source artifact metadata, "
     "release source head SHA binding, "
     "release source run-attempt binding, "
     "same release source workflow run URL cannot carry conflicting run attempts, "
@@ -71,14 +73,16 @@ DEFAULT_EVIDENCE_POLICY = (
     "per-artifact SHA-256 digests, safe relative non-link native archive entries, "
     "exact safe checksum and native manifest file references, "
     "target architecture/format manifest binding, exact safe release asset URL filenames, "
-    "exact required check lists, exact workflow dispatch input sets, exact evidence source record fields, "
+    "exact required check lists, exact workflow dispatch input sets, "
+    "workflow dispatch release repository binding, exact evidence source record fields, "
     "exact release source and review bundle fields, "
     "Linux builder identity evidence, builder identity SHA-256, "
+    "builder identity release/run binding, "
     "Linux builder workflow provenance binding, "
     "exact Linux builder identity fields, "
     "Linux builder/smoke source file binding, "
     "Linux builder/smoke host identity binding, Linux builder/smoke security evidence binding, "
-    "builder identity release/run binding, Linux builder source head SHA binding, "
+    "Linux builder source head SHA binding, "
     "Linux builder observed Git HEAD binding, Linux builder clean checkout binding, "
     "Linux builder/smoke runtime OS identity binding, "
     "Linux builder host identity binding when applicable, "
@@ -92,7 +96,7 @@ DEFAULT_EVIDENCE_POLICY = (
     "Linux smoke runtime architecture and userland binding, "
     "Linux smoke sanitized host identity and observed-at timestamp binding, "
     "Linux workflow dispatch inputs when applicable, XP workflow dispatch inputs when applicable, "
-    "XP evidence source file binding, XP evidence release source binding, and "
+    "XP evidence source file binding, XP evidence release source binding, "
     "XP evidence bundle SHA-256 digests, "
     "XP evidence validation command binding, XP evidence contract SHA-256, "
     "XP evidence summary binding, exact XP evidence summary fields, XP host identity SHA-256 binding, "
@@ -106,7 +110,7 @@ DEFAULT_EVIDENCE_POLICY = (
     "canonical XP smoke proof-file command binding, "
     "XP security smoke command provenance binding when applicable, "
     "canonical XP smoke evidence-file summary binding and "
-    "XP security smoke proof-line binding when applicable, and review bundle manifest, "
+    "XP security smoke proof-line binding when applicable, review bundle manifest, "
     "review bundle archive, safe relative non-symlink review bundle archive entries, and review bundle SHA-256 "
     "sidecar digests before strict promotion, and release uploads must include those review bundle "
     "files with matching size, SHA-256 and checksum-sidecar coverage plus canonical finalized "
@@ -235,7 +239,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=Path,
         help=(
             "directory populated by the staged release-upload command; defaults to "
-            "linux-evidence-upload for Linux targets or xp-evidence-upload for XP targets"
+            "platform-evidence-upload/<target>/<release-tag>"
         ),
     )
     parser.add_argument("--xp-evidence", type=Path, help="Windows XP native evidence JSON for XP targets")
@@ -1035,7 +1039,7 @@ def staged_upload_out_dir(args: argparse.Namespace) -> Path:
     override = getattr(args, "staged_upload_out_dir", None)
     if override is not None:
         return override
-    return Path("linux-evidence-upload") if str(args.target) in LINUX_TARGETS else Path("xp-evidence-upload")
+    return Path("platform-evidence-upload") / str(args.target) / str(args.release_tag)
 
 
 def xp_evidence_output_dir(args: argparse.Namespace) -> Path:

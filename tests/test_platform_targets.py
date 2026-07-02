@@ -172,6 +172,7 @@ def test_features_coverage_cli_reports_missing_platform_evidence(capsys) -> None
 
     assert "linux-i386" in output
     assert "missing evidence linux-i386" in output
+    assert "linux-i386" in output and "accepted records/release assets pending" in output
     assert "linux-armhf" in output
     assert "missing evidence linux-armhf" in output
     assert "Windows XP" in output

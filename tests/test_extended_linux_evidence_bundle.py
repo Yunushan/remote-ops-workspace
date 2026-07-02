@@ -74,9 +74,9 @@ def test_extended_linux_evidence_bundle_packages_valid_i386_evidence(
     assert data["validated_commands"] == [
         record["native_build_command"],
         record["native_smoke_command"],
+        record["artifact_validation_command"],
         record["local_evidence_preflight_command"],
         record["staged_upload_command"],
-        record["artifact_validation_command"],
         "python scripts/check_platform_verified_evidence.py",
     ]
     assert all("<" not in command and ">" not in command for command in data["validated_commands"])

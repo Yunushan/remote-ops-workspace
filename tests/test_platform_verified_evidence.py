@@ -13,9 +13,11 @@ POLICY = (
     "or Windows XP native-host readiness. Accepted records must include release asset URLs, "
     "review-bundle manifest release asset URL binding, review bundle release asset URLs, "
     "release-importable artifact source binding, "
-    "source artifact repository-id binding when exact source-run metadata exposes repository IDs, "
-    "source artifact run-start timestamp binding when exact source-run metadata exposes run start timestamps, "
-    "source artifact run-window timestamp binding when exact source-run metadata exposes run update timestamps, "
+    "source artifact repository-id binding from exact source-run metadata, "
+    "source artifact run-created timestamp binding from exact source-run metadata, "
+    "source artifact run-start timestamp binding from exact source-run metadata, "
+    "source artifact run-window timestamp binding from exact source-run metadata, "
+    "source artifact retention expiration binding from exact source artifact metadata, "
     "release source head SHA binding, "
     "release source run-attempt binding, "
     "same release source workflow run URL cannot carry conflicting run attempts, "
@@ -36,7 +38,8 @@ POLICY = (
     "exact safe checksum and native manifest file references, "
     "target architecture/format manifest binding, "
     "exact safe release asset URL filenames, "
-    "exact required check lists, exact workflow dispatch input sets, exact evidence source record fields, "
+    "exact required check lists, exact workflow dispatch input sets, "
+    "workflow dispatch release repository binding, exact evidence source record fields, "
     "exact release source and review bundle fields, "
     "Linux builder identity evidence, builder identity "
     "SHA-256, builder identity release/run binding, "
@@ -520,6 +523,20 @@ def test_platform_verified_evidence_rejects_missing_exact_workflow_input_policy(
     assert "platform verified evidence policy must require exact workflow dispatch input sets" in errors
 
 
+def test_platform_verified_evidence_rejects_missing_workflow_repository_binding_policy() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY.replace("workflow dispatch release repository binding, ", ""),
+            "accepted_evidence": [],
+        }
+    )
+
+    assert "platform verified evidence policy must require workflow dispatch release repository binding" in errors
+
+
 def test_platform_verified_evidence_rejects_missing_exact_evidence_source_record_policy() -> None:
     checker = _load_platform_verified_evidence_checker()
 
@@ -571,7 +588,7 @@ def test_platform_verified_evidence_rejects_missing_source_artifact_repository_i
         registry={
             "schema_version": 1,
             "policy": POLICY.replace(
-                "source artifact repository-id binding when exact source-run metadata exposes repository IDs, ",
+                "source artifact repository-id binding from exact source-run metadata, ",
                 "",
             ),
             "accepted_evidence": [],
@@ -583,6 +600,25 @@ def test_platform_verified_evidence_rejects_missing_source_artifact_repository_i
     ) in errors
 
 
+def test_platform_verified_evidence_rejects_missing_source_artifact_run_created_policy() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY.replace(
+                "source artifact run-created timestamp binding from exact source-run metadata, ",
+                "",
+            ),
+            "accepted_evidence": [],
+        }
+    )
+
+    assert (
+        "platform verified evidence policy must require source artifact run-created timestamp binding"
+    ) in errors
+
+
 def test_platform_verified_evidence_rejects_missing_source_artifact_run_start_policy() -> None:
     checker = _load_platform_verified_evidence_checker()
 
@@ -590,7 +626,7 @@ def test_platform_verified_evidence_rejects_missing_source_artifact_run_start_po
         registry={
             "schema_version": 1,
             "policy": POLICY.replace(
-                "source artifact run-start timestamp binding when exact source-run metadata exposes run start timestamps, ",
+                "source artifact run-start timestamp binding from exact source-run metadata, ",
                 "",
             ),
             "accepted_evidence": [],
@@ -609,7 +645,7 @@ def test_platform_verified_evidence_rejects_missing_source_artifact_run_window_p
         registry={
             "schema_version": 1,
             "policy": POLICY.replace(
-                "source artifact run-window timestamp binding when exact source-run metadata exposes run update timestamps, ",
+                "source artifact run-window timestamp binding from exact source-run metadata, ",
                 "",
             ),
             "accepted_evidence": [],
@@ -618,6 +654,25 @@ def test_platform_verified_evidence_rejects_missing_source_artifact_run_window_p
 
     assert (
         "platform verified evidence policy must require source artifact run-window timestamp binding"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_missing_source_artifact_retention_policy() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY.replace(
+                "source artifact retention expiration binding from exact source artifact metadata, ",
+                "",
+            ),
+            "accepted_evidence": [],
+        }
+    )
+
+    assert (
+        "platform verified evidence policy must require source artifact retention expiration binding"
     ) in errors
 
 
@@ -1971,6 +2026,33 @@ def test_platform_verified_evidence_rejects_finalized_record_release_asset_url_p
     ) in errors
 
 
+def test_platform_verified_evidence_binds_source_run_to_full_release_package_repository() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    record["release_asset_urls"] = []
+    record["finalized_record_release_asset_url"] = str(
+        record["finalized_record_release_asset_url"]
+    ).replace("github.com/example/remote-ops-workspace", "github.com/other/remote-ops-workspace")
+    review_bundle = record["review_bundle"]
+    assert isinstance(review_bundle, dict)
+    review_bundle["release_asset_urls"] = [
+        str(url).replace("github.com/example/remote-ops-workspace", "github.com/other/remote-ops-workspace")
+        for url in review_bundle["release_asset_urls"]
+    ]
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry, require_review_bundles=True)
+
+    assert (
+        "linux-i386 release_asset_source.workflow_run_url repository must match release asset repository "
+        "['other/remote-ops-workspace'], got example/remote-ops-workspace"
+    ) in errors
+
+
 def test_platform_verified_evidence_rejects_missing_promotion_config_hash() -> None:
     checker = _load_platform_verified_evidence_checker()
     record = _linux_record("linux-i386")
@@ -2377,7 +2459,7 @@ def test_platform_verified_evidence_rejects_linux_staged_upload_overlapping_outp
     checker = _load_platform_verified_evidence_checker()
     record = _linux_record("linux-i386")
     record["staged_upload_command"] = str(record["staged_upload_command"]).replace(
-        "--out-dir linux-evidence-upload",
+        "--out-dir platform-evidence-upload/linux-i386/v1.0.2",
         "--out-dir staged/linux-i386/v1.0.2/artifacts/linux-evidence-upload",
     )
     registry = {
@@ -2392,6 +2474,31 @@ def test_platform_verified_evidence_rejects_linux_staged_upload_overlapping_outp
         "linux-i386 staged_upload_command --out-dir must be a separate root from --source-dir"
         in errors
     )
+
+
+def test_platform_verified_evidence_rejects_linux_staged_upload_unscoped_out_dir() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    record["staged_upload_command"] = str(record["staged_upload_command"]).replace(
+        "--out-dir platform-evidence-upload/linux-i386/v1.0.2",
+        "--out-dir linux-evidence-upload",
+    )
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "linux-i386 staged_upload_command --out-dir "
+        "must include target path segment 'linux-i386', got 'linux-evidence-upload'"
+    ) in errors
+    assert (
+        "linux-i386 staged_upload_command --out-dir "
+        "must include release_tag path segment 'v1.0.2', got 'linux-evidence-upload'"
+    ) in errors
 
 
 def test_platform_verified_evidence_rejects_xp_staged_upload_missing_force() -> None:
@@ -2439,7 +2546,7 @@ def test_platform_verified_evidence_rejects_xp_staged_upload_overlapping_output_
     checker = _load_platform_verified_evidence_checker()
     record = _xp_record("windows-xp-native-x86")
     record["staged_upload_command"] = str(record["staged_upload_command"]).replace(
-        "--out-dir xp-evidence-upload",
+        "--out-dir platform-evidence-upload/windows-xp-native-x86/v1.0.2",
         "--out-dir native-dist/windows-xp/windows-xp-native-x86/v1.0.2/xp-evidence-upload",
     )
     registry = {
@@ -2460,7 +2567,7 @@ def test_platform_verified_evidence_rejects_xp_staged_upload_overlapping_evidenc
     checker = _load_platform_verified_evidence_checker()
     record = _xp_record("windows-xp-native-x64")
     record["staged_upload_command"] = str(record["staged_upload_command"]).replace(
-        "--out-dir xp-evidence-upload",
+        "--out-dir platform-evidence-upload/windows-xp-native-x64/v1.0.2",
         "--out-dir xp-evidence-output/windows-xp-native-x64/v1.0.2/upload",
     )
     registry = {
@@ -2474,6 +2581,31 @@ def test_platform_verified_evidence_rejects_xp_staged_upload_overlapping_evidenc
     assert (
         "windows-xp-native-x64 staged_upload_command --out-dir "
         "must be a separate root from --evidence-output-dir"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_xp_staged_upload_unscoped_out_dir() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _xp_record("windows-xp-native-x86")
+    record["staged_upload_command"] = str(record["staged_upload_command"]).replace(
+        "--out-dir platform-evidence-upload/windows-xp-native-x86/v1.0.2",
+        "--out-dir xp-evidence-upload",
+    )
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "windows-xp-native-x86 staged_upload_command --out-dir "
+        "must include target path segment 'windows-xp-native-x86', got 'xp-evidence-upload'"
+    ) in errors
+    assert (
+        "windows-xp-native-x86 staged_upload_command --out-dir "
+        "must include release_tag path segment 'v1.0.2', got 'xp-evidence-upload'"
     ) in errors
 
 
@@ -2633,7 +2765,7 @@ def test_platform_verified_evidence_accepts_scoped_linux_local_preflight_root() 
     record["staged_upload_command"] = (
         "python scripts/stage_extended_linux_evidence_upload.py "
         f"--target {target} --release-tag v1.0.2 --source-dir {assets_dir} "
-        "--out-dir linux-evidence-upload --force"
+        f"--out-dir platform-evidence-upload/{target}/v1.0.2 --force"
     )
     record["local_evidence_preflight_command"] = (
         "python scripts/check_platform_goal_local_evidence.py --root platform-evidence-staging "
@@ -3066,6 +3198,28 @@ def test_platform_verified_evidence_rejects_linux_workflow_input_base_url_mismat
         for error in errors
     )
     assert "linux-armhf workflow_inputs release_asset_base_url must prefix every release_asset_url" in errors
+
+
+def test_platform_verified_evidence_rejects_linux_workflow_input_repository_drift() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    record["workflow_inputs"]["release_asset_base_url"] = (
+        "https://github.com/other/remote-ops-workspace/releases/download/v1.0.2"
+    )
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "linux-i386 workflow_inputs release_asset_base_url must prefix every release_asset_url" in errors
+    assert (
+        "linux-i386 workflow_inputs release_asset_base_url repository must match "
+        "release_asset_source.workflow_run_url repository example/remote-ops-workspace, "
+        "got other/remote-ops-workspace"
+    ) in errors
 
 
 def test_platform_verified_evidence_rejects_linux_workflow_input_trailing_slash_base_url() -> None:
@@ -4031,6 +4185,30 @@ def test_platform_verified_evidence_rejects_placeholder_security_patch_provenanc
     ) in errors
 
 
+def test_platform_verified_evidence_rejects_vague_security_patch_provenance() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    record["builder_identity"]["security_patch_evidence"]["security_update_channel"] = "monthly maintenance baseline"
+    record["builder_identity"]["security_patch_evidence"]["cve_review_reference"] = "internal review 2026 06"
+    record["builder_identity_sha256"] = _json_sha256(record["builder_identity"])
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "linux-i386 builder_identity security_patch_evidence.security_update_channel "
+        "must name concrete non-placeholder provenance"
+    ) in errors
+    assert (
+        "linux-i386 builder_identity security_patch_evidence.cve_review_reference "
+        "must name concrete non-placeholder provenance"
+    ) in errors
+
+
 def test_platform_verified_evidence_rejects_missing_linux_smoke_evidence() -> None:
     checker = _load_platform_verified_evidence_checker()
     record = _linux_record("linux-i386")
@@ -4129,6 +4307,33 @@ def test_platform_verified_evidence_rejects_placeholder_linux_smoke_summary_prov
     assert isinstance(security, dict)
     security["security_update_channel"] = "test-security-update-channel"
     security["cve_review_reference"] = "<replace-with-real-cve-review>"
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "linux-i386 linux_smoke_summary security.security_update_channel "
+        "must name concrete non-placeholder provenance"
+    ) in errors
+    assert (
+        "linux-i386 linux_smoke_summary security.cve_review_reference "
+        "must name concrete non-placeholder provenance"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_vague_linux_smoke_summary_provenance() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    summary = record["linux_smoke_summary"]
+    assert isinstance(summary, dict)
+    security = summary["security"]
+    assert isinstance(security, dict)
+    security["security_update_channel"] = "monthly maintenance baseline"
+    security["cve_review_reference"] = "internal review 2026 06"
     registry = {
         "schema_version": 1,
         "policy": POLICY,
@@ -4973,7 +5178,7 @@ def _linux_record(target: str) -> dict[str, object]:
         "staged_upload_command": (
             "python scripts/stage_extended_linux_evidence_upload.py "
             f"--target {target} --release-tag v1.0.2 --source-dir {assets_dir} "
-            "--out-dir linux-evidence-upload --force"
+            f"--out-dir platform-evidence-upload/{target}/v1.0.2 --force"
         ),
         "artifact_validation_command": (
             f"python scripts/check_platform_promotion_artifacts.py --target {target} "
@@ -5064,7 +5269,7 @@ def _xp_record(target: str, *, release_tag: str = "v1.0.2") -> dict[str, object]
             "python scripts/stage_xp_native_evidence_upload.py "
             f"--target {target} --release-tag {release_tag} --assets-dir {assets_dir} "
             f"--evidence-output-dir xp-evidence-output/{target}/{release_tag} "
-            "--out-dir xp-evidence-upload --force"
+            f"--out-dir platform-evidence-upload/{target}/{release_tag} --force"
         ),
         "artifact_validation_command": (
             f"python scripts/check_platform_promotion_artifacts.py --target {target} "

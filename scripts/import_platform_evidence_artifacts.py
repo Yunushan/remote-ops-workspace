@@ -41,6 +41,7 @@ from make_platform_verified_evidence_record import sha256_file  # noqa: E402
 SOURCE_RUN_METADATA_JQ = (
     "{id: .id, htmlUrl: .html_url, attempt: .run_attempt, status: .status, "
     "conclusion: .conclusion, event: .event, headSha: .head_sha, path: .path, "
+    "runCreatedAt: .created_at, "
     "runStartedAt: .run_started_at, "
     "runUpdatedAt: .updated_at, "
     "repositoryFullName: .repository.full_name, "
@@ -50,7 +51,7 @@ SOURCE_RUN_METADATA_JQ = (
 )
 SOURCE_RUN_ARTIFACTS_PAGE_SIZE = 100
 REQUIRE_VERIFY_SOURCE_RUN_DRY_RUN_ERROR = (
-    "--dry-run for the protected platform goal requires --verify-source-run"
+    "--dry-run for protected platform evidence imports requires --verify-source-run"
 )
 
 
@@ -125,7 +126,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "inspect each recorded GitHub Actions source run and source artifact "
             "inventory during --dry-run; real imports always verify source-run "
             "metadata and artifact inventory before downloading artifacts; "
-            "required for protected-goal dry-runs"
+            "required for protected-platform evidence import dry-runs"
         ),
     )
     return parser.parse_args(argv)
@@ -137,8 +138,12 @@ def strict_import_arg_errors(args: argparse.Namespace) -> list[str]:
         return errors
     requested_targets = set(str(target) for target in args.require_target)
     protected_targets = set(PROTECTED_GOAL_TARGETS)
-    is_full_goal = args.require_goal_targets or not requested_targets or requested_targets == protected_targets
-    if is_full_goal:
+    is_protected_import = (
+        args.require_goal_targets
+        or not requested_targets
+        or bool(requested_targets & protected_targets)
+    )
+    if is_protected_import:
         errors.append(REQUIRE_VERIFY_SOURCE_RUN_DRY_RUN_ERROR)
     return errors
 
@@ -191,6 +196,7 @@ def import_platform_evidence_artifacts(
     release_head_sha: str | None = None,
 ) -> list[str]:
     errors: list[str] = []
+    errors.extend(check_import_record_targets_unique(records))
     errors.extend(ensure_output_directory(out_dir))
     if records and not dry_run:
         errors.extend(check_output_directory_empty(out_dir))
@@ -215,6 +221,18 @@ def import_platform_evidence_artifacts(
                 )
             )
     return errors
+
+
+def check_import_record_targets_unique(records: list[dict[str, Any]]) -> list[str]:
+    target_counts: dict[str, int] = {}
+    for record in records:
+        target = str(record.get("target", "")).strip()
+        if target:
+            target_counts[target] = target_counts.get(target, 0) + 1
+    duplicates = sorted(target for target, count in target_counts.items() if count > 1)
+    if duplicates:
+        return [f"release asset import accepted records must target each platform once: {', '.join(duplicates)}"]
+    return []
 
 
 def ensure_output_directory(out_dir: Path) -> list[str]:
@@ -401,6 +419,7 @@ def import_record(
                 expected_head_sha=expected_head_sha,
                 expected_repository_id=source_run_observed.get("repository_id"),
                 expected_head_repository_id=source_run_observed.get("head_repository_id"),
+                expected_run_created_at=source_run_observed.get("run_created_at"),
                 expected_run_started_at=source_run_observed.get("run_started_at"),
                 expected_run_updated_at=source_run_observed.get("run_updated_at"),
             )
@@ -427,6 +446,7 @@ def import_record(
             expected_head_sha=expected_head_sha,
             expected_repository_id=source_run_observed.get("repository_id"),
             expected_head_repository_id=source_run_observed.get("head_repository_id"),
+            expected_run_created_at=source_run_observed.get("run_created_at"),
             expected_run_started_at=source_run_observed.get("run_started_at"),
             expected_run_updated_at=source_run_observed.get("run_updated_at"),
         )
@@ -568,30 +588,52 @@ def verify_source_run(
     if observed_source_run is not None:
         repository_id = positive_int_value(data.get("repositoryId"))
         head_repository_id = positive_int_value(data.get("headRepositoryId"))
-        if repository_id is not None:
+        if repository_id is None:
+            errors.append(
+                f"{target} release_asset_source workflow run repositoryId "
+                f"must be a positive integer, got {data.get('repositoryId')!r}"
+            )
+        else:
             observed_source_run["repository_id"] = repository_id
-        if head_repository_id is not None:
+        if head_repository_id is None:
+            errors.append(
+                f"{target} release_asset_source workflow run headRepositoryId "
+                f"must be a positive integer, got {data.get('headRepositoryId')!r}"
+            )
+        else:
             observed_source_run["head_repository_id"] = head_repository_id
+        run_created_at = data.get("runCreatedAt")
         run_started_at = data.get("runStartedAt")
         run_updated_at = data.get("runUpdatedAt")
-        if run_started_at is not None:
-            if parse_github_timestamp(run_started_at) is None:
-                errors.append(
-                    f"{target} release_asset_source workflow run runStartedAt "
-                    f"must be a GitHub ISO-8601 timestamp, got {run_started_at!r}"
-                )
-            else:
-                observed_source_run["run_started_at"] = str(run_started_at).strip()
-        if run_updated_at is not None:
-            if parse_github_timestamp(run_updated_at) is None:
-                errors.append(
-                    f"{target} release_asset_source workflow run runUpdatedAt "
-                    f"must be a GitHub ISO-8601 timestamp, got {run_updated_at!r}"
-                )
-            else:
-                observed_source_run["run_updated_at"] = str(run_updated_at).strip()
+        if parse_github_timestamp(run_created_at) is None:
+            errors.append(
+                f"{target} release_asset_source workflow run runCreatedAt "
+                f"must be a GitHub ISO-8601 timestamp, got {run_created_at!r}"
+            )
+        else:
+            observed_source_run["run_created_at"] = str(run_created_at).strip()
+        if parse_github_timestamp(run_started_at) is None:
+            errors.append(
+                f"{target} release_asset_source workflow run runStartedAt "
+                f"must be a GitHub ISO-8601 timestamp, got {run_started_at!r}"
+            )
+        else:
+            observed_source_run["run_started_at"] = str(run_started_at).strip()
+        if parse_github_timestamp(run_updated_at) is None:
+            errors.append(
+                f"{target} release_asset_source workflow run runUpdatedAt "
+                f"must be a GitHub ISO-8601 timestamp, got {run_updated_at!r}"
+            )
+        else:
+            observed_source_run["run_updated_at"] = str(run_updated_at).strip()
+        created = parse_github_timestamp(run_created_at)
         start = parse_github_timestamp(run_started_at)
         updated = parse_github_timestamp(run_updated_at)
+        if created is not None and start is not None and start < created:
+            errors.append(
+                f"{target} release_asset_source workflow run runStartedAt "
+                f"must be at or after runCreatedAt {run_created_at}, got {run_started_at!r}"
+            )
         if start is not None and updated is not None and updated < start:
             errors.append(
                 f"{target} release_asset_source workflow run runUpdatedAt "
@@ -671,6 +713,7 @@ def verify_source_artifact(
     expected_head_sha: str,
     expected_repository_id: int | None = None,
     expected_head_repository_id: int | None = None,
+    expected_run_created_at: str | None = None,
     expected_run_started_at: str | None = None,
     expected_run_updated_at: str | None = None,
 ) -> list[str]:
@@ -702,13 +745,20 @@ def verify_source_artifact(
         for artifact in raw_artifacts
         if isinstance(artifact, dict) and artifact.get("name") == artifact_name
     ]
+    if len(raw_artifacts) != 1:
+        errors = [
+            f"{target} release_asset_source artifact list must contain only the "
+            f"target-scoped evidence artifact {artifact_name!r}, got {len(raw_artifacts)} artifacts"
+        ]
+    else:
+        errors = []
     if len(matches) != 1:
-        return [
+        errors.append(
             f"{target} release_asset_source artifact list must contain exactly one "
             f"{artifact_name!r}, got {len(matches)}"
-        ]
+        )
+        return errors
     artifact = matches[0]
-    errors: list[str] = []
     artifact_id = artifact.get("id")
     if not isinstance(artifact_id, int) or isinstance(artifact_id, bool) or artifact_id <= 0:
         errors.append(
@@ -740,8 +790,29 @@ def verify_source_artifact(
             target,
             artifact_name,
             artifact.get("created_at"),
+            expected_run_created_at=expected_run_created_at,
             expected_run_started_at=expected_run_started_at,
             expected_run_updated_at=expected_run_updated_at,
+        )
+    )
+    errors.extend(
+        check_source_artifact_updated_within_run_window(
+            target,
+            artifact_name,
+            artifact.get("updated_at"),
+            artifact.get("created_at"),
+            expected_run_created_at=expected_run_created_at,
+            expected_run_started_at=expected_run_started_at,
+            expected_run_updated_at=expected_run_updated_at,
+        )
+    )
+    errors.extend(
+        check_source_artifact_expiration(
+            target,
+            artifact_name,
+            artifact.get("expires_at"),
+            raw_created_at=artifact.get("created_at"),
+            raw_updated_at=artifact.get("updated_at"),
         )
     )
     workflow_run = artifact.get("workflow_run")
@@ -780,16 +851,52 @@ def verify_source_artifact(
     return errors
 
 
+def check_source_artifact_expiration(
+    target: str,
+    artifact_name: str,
+    raw_expires_at: Any,
+    *,
+    raw_created_at: Any,
+    raw_updated_at: Any,
+) -> list[str]:
+    expires_at = parse_github_timestamp(raw_expires_at)
+    if expires_at is None:
+        return [
+            f"{target} release_asset_source artifact {artifact_name} expires_at "
+            f"must be a GitHub ISO-8601 timestamp, got {raw_expires_at!r}"
+        ]
+    errors: list[str] = []
+    created_at = parse_github_timestamp(raw_created_at)
+    if created_at is not None and expires_at <= created_at:
+        errors.append(
+            f"{target} release_asset_source artifact {artifact_name} expires_at "
+            f"must be after created_at {raw_created_at}, got {raw_expires_at!r}"
+        )
+    updated_at = parse_github_timestamp(raw_updated_at)
+    if updated_at is not None and expires_at <= updated_at:
+        errors.append(
+            f"{target} release_asset_source artifact {artifact_name} expires_at "
+            f"must be after updated_at {raw_updated_at}, got {raw_expires_at!r}"
+        )
+    return errors
+
+
 def check_source_artifact_created_within_run_window(
     target: str,
     artifact_name: str,
     raw_created_at: Any,
     *,
+    expected_run_created_at: str | None,
     expected_run_started_at: str | None,
     expected_run_updated_at: str | None,
 ) -> list[str]:
-    if expected_run_started_at is None and expected_run_updated_at is None:
+    if (
+        expected_run_created_at is None
+        and expected_run_started_at is None
+        and expected_run_updated_at is None
+    ):
         return []
+    run_created_at = parse_github_timestamp(expected_run_created_at)
     run_started_at = parse_github_timestamp(expected_run_started_at)
     run_updated_at = parse_github_timestamp(expected_run_updated_at)
     created_at = parse_github_timestamp(raw_created_at)
@@ -800,6 +907,12 @@ def check_source_artifact_created_within_run_window(
             f"got {raw_created_at!r}"
         ]
     errors: list[str] = []
+    if run_created_at is not None and created_at < run_created_at:
+        errors.append(
+            f"{target} release_asset_source artifact {artifact_name} created_at "
+            f"must be at or after exact source run creation {expected_run_created_at}, "
+            f"got {raw_created_at!r}"
+        )
     if run_started_at is not None and created_at < run_started_at:
         errors.append(
             f"{target} release_asset_source artifact {artifact_name} created_at "
@@ -811,6 +924,60 @@ def check_source_artifact_created_within_run_window(
             f"{target} release_asset_source artifact {artifact_name} created_at "
             f"must be at or before exact source run update {expected_run_updated_at}, "
             f"got {raw_created_at!r}"
+        )
+    return errors
+
+
+def check_source_artifact_updated_within_run_window(
+    target: str,
+    artifact_name: str,
+    raw_updated_at: Any,
+    raw_created_at: Any,
+    *,
+    expected_run_created_at: str | None,
+    expected_run_started_at: str | None,
+    expected_run_updated_at: str | None,
+) -> list[str]:
+    if (
+        expected_run_created_at is None
+        and expected_run_started_at is None
+        and expected_run_updated_at is None
+    ):
+        return []
+    run_created_at = parse_github_timestamp(expected_run_created_at)
+    run_started_at = parse_github_timestamp(expected_run_started_at)
+    run_updated_at = parse_github_timestamp(expected_run_updated_at)
+    updated_at = parse_github_timestamp(raw_updated_at)
+    if updated_at is None:
+        return [
+            f"{target} release_asset_source artifact {artifact_name} updated_at "
+            f"must be a GitHub ISO-8601 timestamp when exact source run timestamps are known, "
+            f"got {raw_updated_at!r}"
+        ]
+    errors: list[str] = []
+    if run_created_at is not None and updated_at < run_created_at:
+        errors.append(
+            f"{target} release_asset_source artifact {artifact_name} updated_at "
+            f"must be at or after exact source run creation {expected_run_created_at}, "
+            f"got {raw_updated_at!r}"
+        )
+    if run_started_at is not None and updated_at < run_started_at:
+        errors.append(
+            f"{target} release_asset_source artifact {artifact_name} updated_at "
+            f"must be at or after exact source run start {expected_run_started_at}, "
+            f"got {raw_updated_at!r}"
+        )
+    if run_updated_at is not None and updated_at > run_updated_at:
+        errors.append(
+            f"{target} release_asset_source artifact {artifact_name} updated_at "
+            f"must be at or before exact source run update {expected_run_updated_at}, "
+            f"got {raw_updated_at!r}"
+        )
+    created_at = parse_github_timestamp(raw_created_at)
+    if created_at is not None and updated_at < created_at:
+        errors.append(
+            f"{target} release_asset_source artifact {artifact_name} updated_at "
+            f"must be at or after created_at {raw_created_at}, got {raw_updated_at!r}"
         )
     return errors
 

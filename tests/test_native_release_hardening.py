@@ -43,6 +43,48 @@ def test_native_workflow_uploads_fail_if_assets_missing() -> None:
         assert "persist-credentials: false" in block
 
 
+def test_native_workflow_rejects_checkout_credentials_outside_checkout_step() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    block = checker.workflow_job_block(workflow, "windows-native")
+    assert block
+    mutated = block.replace("          persist-credentials: false\n", "", 1).replace(
+        "      - uses: actions/setup-python@v6\n",
+        "      - name: Misleading checkout credential setting\n"
+        "        run: echo persist\n"
+        "        env:\n"
+        "          persist-credentials: false\n"
+        "      - uses: actions/setup-python@v6\n",
+        1,
+    )
+    workflow = workflow.replace(block, mutated, 1)
+
+    errors = checker.check_native_workflow_boundaries(workflow)
+
+    assert "windows-native checkout step must disable credential persistence" in errors
+
+
+def test_native_workflow_rejects_clean_setting_outside_checkout_step() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    block = checker.workflow_job_block(workflow, "linux-native")
+    assert block
+    mutated = block.replace("          clean: true\n", "", 1).replace(
+        "      - uses: actions/setup-python@v6\n",
+        "      - name: Misleading clean setting\n"
+        "        run: echo clean\n"
+        "        env:\n"
+        "          clean: true\n"
+        "      - uses: actions/setup-python@v6\n",
+        1,
+    )
+    workflow = workflow.replace(block, mutated, 1)
+
+    errors = checker.check_native_workflow_boundaries(workflow)
+
+    assert "linux-native checkout step must clean the workspace" in errors
+
+
 def test_release_macos_x64_uses_current_intel_runner() -> None:
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
 

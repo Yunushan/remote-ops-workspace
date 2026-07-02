@@ -103,8 +103,9 @@ blockers, artifact names and validation commands aligned with the promotion
 contract.
 Manual Linux i386/armhf evidence builders run through
 `.github/workflows/extended-platform-evidence.yml`; XP native evidence is
-staged and uploaded through `.github/workflows/xp-native-evidence.yml` after
-`python scripts/check_xp_native_evidence.py` validates the sanitized XP
+staged and uploaded through `.github/workflows/xp-native-evidence.yml`, which
+prints the source run metadata, waits for the collector-side staged files, and
+then runs `python scripts/check_xp_native_evidence.py` against the sanitized XP
 evidence JSON and smoke files. Accepted promotion records are stored in
 `configs/platform_verified_evidence.json` and checked by
 `python scripts/check_platform_verified_evidence.py`; until that registry has
@@ -138,11 +139,17 @@ native release bytes match in the publish-ready asset directory.
 It also exposes `record_complete` separately from `release_backed_complete`, so
 accepted records and source-run provenance cannot be mistaken for published
 release-byte proof.
+Each protected Linux i386/armhf and Windows XP readiness row also exposes
+`accepted_evidence_record_complete`, `release_asset_provenance_complete=false`,
+`release_backed_readiness_complete=false` and `static_readiness_evidence_scope`
+so row-level JSON cannot imply published asset-byte proof until the
+asset-backed protected goal gate runs with `--assets-dir`.
 Source artifact inventory checks bind `workflow_run.id`,
 `workflow_run.head_sha`, `workflow_run.repository_id` and
-`workflow_run.head_repository_id` when GitHub exposes repository IDs, reject
-artifact `created_at` values outside the exact source run start/update window
-when GitHub exposes timestamps, and compare the finalized public record asset to canonical
+`workflow_run.head_repository_id` from exact source-run metadata, reject
+artifact `created_at` values outside the exact source run creation/start/update window
+from exact source-run timestamps, require artifact `expires_at` to be present
+and later than the artifact create/update timestamps, and compare the finalized public record asset to canonical
 accepted-record JSON bytes before a published release can pass the live audit.
 The live remote audit also requires each published protected-platform release
 asset to expose a positive GitHub release asset ID and the matching GitHub API
@@ -154,7 +161,7 @@ XP evidence validators pass; package the review bundle, then use
 only after the finalized record binds the real release/run evidence, review
 bundle manifest, review bundle archive, review bundle SHA-256 sidecar and
 source artifact staged upload command. Candidate generation must pass
-`--staged-upload-out-dir <release-upload-staging-dir>`, and XP candidates must
+`--staged-upload-out-dir platform-evidence-upload/<target>/v<project.version>`, and XP candidates must
 also pass `--xp-evidence-output-dir <xp-evidence-output-dir>`.
 Linux release-source upload staging must use
 `python scripts/stage_extended_linux_evidence_upload.py`, and XP release-source
@@ -206,7 +213,11 @@ sanitized target-scoped `host_identity` block with
 concrete `rpm`/`rpmbuild` tool paths and `sudo_non_interactive=true`, plus a `builder_identity_sha256` that
 matches that JSON and security patch evidence proving TLS 1.3 preferred,
 TLS 1.2 minimum, isolated legacy compatibility and CVE patch review while
-modern Windows 10/11, Linux and macOS defaults remain hardened, a
+modern Windows 10/11, Linux and macOS defaults remain hardened. The
+`security_update_channel` and `cve_review_reference` values must name a
+concrete update/advisory namespace such as security-updates, KB, USN, RHSA,
+DSA, CVE, GHSA or an HTTPS advisory, not just a generic review label. The
+accepted record must also carry a
 `native_build_command` and `native_smoke_command` matching the promotion
 contract, where the Linux smoke command includes the target id, workflow run
 URL, workflow run attempt and source head SHA, and the captured smoke log proves
@@ -233,7 +244,8 @@ plus every required smoke evidence file path, size and SHA-256,
 binding, `xp_evidence_summary.release_source` matching `release_asset_source`
 for workflow, workflow run URL, head SHA and run attempt,
 `xp_host_identity_sha256` for the sanitized XP host identity in
-`xp_evidence_summary.host_identity`, required XP security patch evidence,
+`xp_evidence_summary.host_identity`, required XP security patch evidence with
+the same concrete update/advisory provenance rule,
 security smoke proof lines for `legacy_crypto_profile_scoped` and
 `modern_defaults_unchanged`,
 tracked `scripts/xp_smoke_runner.cmd` per-smoke command provenance in
@@ -340,9 +352,11 @@ Current readiness:
   real usernames, personal hostnames, credentials or tokens.
   Package release-importable XP evidence with
   `.github/workflows/xp-native-evidence.yml` on a modern self-hosted
-  `xp-evidence` collector with Python 3.12 and GitHub Actions support after
-  staging the native artifacts, evidence JSON and smoke files captured on the
-  real XP host; the collector workflow validates staged proof and uploads
+  `xp-evidence` collector with Python 3.12 and GitHub Actions support. Dispatch
+  the workflow first, use its printed workflow run URL, source head SHA and run
+  attempt when running `scripts/xp_smoke_runner.cmd` on the real XP host, then
+  stage the native artifacts, evidence JSON and smoke files onto the collector
+  while the workflow waits; the collector workflow validates staged proof and uploads
   `xp-native-evidence-<target>-<release_tag>` for the release importer. Its
   generated candidate record, final record and review bundle must
   stay under `xp-evidence-output/<target>/<release_tag>`. Its assets_dir,
@@ -386,6 +400,9 @@ stays the static catalog from `configs/platform_targets.json`; its
 `protected_readiness_goal` metadata repeats the protected target list, accepted
 evidence source, security boundary and asset-provenance gate, but the
 evidence-backed score still comes from `row features --coverage --json`.
+The human `row features --coverage` platform rows add a protected-row note such
+as `accepted records/release assets pending` until the accepted records and
+asset-backed release byte checks both exist.
 
 ## Windows and Windows Server
 

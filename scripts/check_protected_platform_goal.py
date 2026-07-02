@@ -279,14 +279,15 @@ def check_protected_platform_goal(
             if require_complete
             else REQUIRE_RECORDS_COMPLETE_RELEASE_TAG_ERROR
         )
-    record_complete = bool(goal.get("complete"))
-    if release_asset_validation_errors and goal.get("complete"):
+    record_complete = bool(goal.get("record_complete"))
+    if release_asset_validation_errors and record_complete:
         goal = mark_release_assets_invalid(goal, release_asset_validation_errors)
-    elif assets_dir is not None and require_complete and release_tag is not None and goal.get("complete"):
+    elif assets_dir is not None and require_complete and release_tag is not None and record_complete:
         goal = mark_release_assets_valid(goal)
-    if report_validation_errors and goal.get("complete"):
+    if report_validation_errors and record_complete:
         goal = mark_requirement_metadata_invalid(goal, report_validation_errors)
-    if require_records_gate and not goal.get("complete"):
+    records_gate_complete = record_complete and not report_validation_errors
+    if require_records_gate and not records_gate_complete:
         missing_targets = list_values(goal.get("missing_targets"))
         if missing_targets:
             missing = ", ".join(missing_targets)
@@ -327,7 +328,9 @@ def mark_release_assets_invalid(
 def mark_release_assets_valid(goal: dict[str, Any]) -> dict[str, Any]:
     proven = dict(goal)
     proven["release_asset_provenance_complete"] = True
-    proven["release_backed_complete"] = bool(proven.get("complete"))
+    proven["complete"] = bool(proven.get("record_complete"))
+    proven["status"] = "complete" if proven["complete"] else proven.get("status")
+    proven["release_backed_complete"] = proven["complete"]
     proven["completion_evidence"] = "release-assets"
     proven["release_asset_error_count"] = 0
     return proven

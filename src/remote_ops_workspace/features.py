@@ -398,6 +398,40 @@ FORBIDDEN_SECURITY_PROVENANCE_MARKERS = (
     "test-",
     "todo",
 )
+SECURITY_UPDATE_PROVENANCE_MARKERS = (
+    "security-update",
+    "security-updates",
+    "windows-update",
+    "microsoft-update",
+    "update-catalog",
+    "apt",
+    "dnf",
+    "yum",
+    "apk",
+    "patch",
+    "hotfix",
+    "kb",
+    "usn-",
+    "dsa-",
+    "rhsa-",
+    "alsa-",
+    "errata",
+)
+CVE_REVIEW_PROVENANCE_MARKERS = (
+    "cve-",
+    "ghsa-",
+    "advisory",
+    "vulnerability",
+    "security-advisory",
+    "security-tracker",
+    "release-notes",
+    "security-review",
+    "kb",
+    "usn-",
+    "dsa-",
+    "rhsa-",
+    "alsa-",
+)
 ACCEPTED_EVIDENCE_REVIEW_BUNDLE_TYPES = {
     "linux-i386": "extended-linux-native-evidence",
     "linux-armhf": "extended-linux-native-evidence",
@@ -983,10 +1017,12 @@ def _platform_verified_readiness(
         else _platform_verified_evidence_registry()
     )
     if platform_data is None and not path.exists():
+        protected_goal = _protected_platform_goal_parity(evidence_data)
         return {
             "target_percent": 100.0,
-            "overall": _platform_overall([]),
+            "overall": _with_protected_goal_summary(_platform_overall([]), protected_goal),
             "targets": [],
+            "protected_goal_parity": protected_goal,
         }
     data = platform_data or json.loads(path.read_text(encoding="utf-8"))
     rows: list[dict[str, Any]] = []
@@ -1034,7 +1070,12 @@ def _platform_verified_readiness(
         if version == "Windows XP":
             row.update(_windows_xp_evidence_status(evidence_data))
         rows.append(row)
-    denominator = _platform_denominator(rows)
+    protected_goal = _protected_platform_goal_parity(evidence_data)
+    denominator = _with_protected_goal_summary(
+        _platform_denominator(rows),
+        protected_goal,
+    )
+    overall = _with_protected_goal_summary(_platform_overall(rows), protected_goal)
     return {
         "target_percent": 100.0,
         "method": (
@@ -1045,8 +1086,8 @@ def _platform_verified_readiness(
             "release or host verification exists in configs/platform_verified_evidence.json."
         ),
         "denominator": denominator,
-        "overall": _platform_overall(rows),
-        "protected_goal_parity": _protected_platform_goal_parity(evidence_data),
+        "overall": overall,
+        "protected_goal_parity": protected_goal,
         "targets": rows,
     }
 
@@ -1251,6 +1292,13 @@ def _protected_platform_goal_parity(evidence_registry: dict[str, Any] | None) ->
         for target in present
         if target in release_source_workflows
     }
+    selected_release_scope_exclusions = _protected_platform_release_scope_exclusions(
+        entries,
+        release_tag=release_tag,
+        release_repository=release_repository,
+        release_source_head=release_source_head,
+        selected_targets=set(present),
+    )
     release_source_run_attempt_conflicts = _release_source_run_attempt_conflicts(
         release_source_run_urls,
         release_source_run_attempts,
@@ -1265,13 +1313,17 @@ def _protected_platform_goal_parity(evidence_registry: dict[str, Any] | None) ->
         for target in PROTECTED_PLATFORM_GOAL_TARGETS
     ) and not release_source_run_attempt_conflicts
     current_percent = (accepted_count / target_count * 100.0) if target_count else 0.0
-    complete = accepted_count == target_count and release_source_provenance_complete
-    record_complete = complete
+    record_complete = accepted_count == target_count and release_source_provenance_complete
+    release_asset_provenance_complete = False
+    release_backed_complete = record_complete and release_asset_provenance_complete
+    complete = release_backed_complete
     release_consistent = len(release_tags) <= 1
     release_repository_consistent = len(release_repositories) <= 1
     release_source_head_consistent = len(release_source_heads) <= 1
-    if complete:
+    if release_backed_complete:
         status = "complete"
+    elif record_complete:
+        status = "release-asset-provenance-required"
     elif accepted_count == target_count and not release_source_provenance_complete:
         status = "missing-release-source-provenance"
     elif release_repositories and not release_repository_consistent:
@@ -1328,6 +1380,7 @@ def _protected_platform_goal_parity(evidence_registry: dict[str, Any] | None) ->
         "selected_release_source_run_attempts": selected_release_source_run_attempts,
         "selected_release_source_run_urls": selected_release_source_run_urls,
         "selected_release_source_workflows": selected_release_source_workflows,
+        "selected_release_scope_exclusions": selected_release_scope_exclusions,
         "release_source_run_attempt_conflicts": release_source_run_attempt_conflicts,
         "release_source_run_attempts": {
             target: release_source_run_attempts[target]
@@ -1350,9 +1403,9 @@ def _protected_platform_goal_parity(evidence_registry: dict[str, Any] | None) ->
             "--require-complete --assets-dir <release-assets-dir>"
         ),
         "release_source_provenance_complete": release_source_provenance_complete,
-        "release_asset_provenance_complete": False,
+        "release_asset_provenance_complete": release_asset_provenance_complete,
         "record_complete": record_complete,
-        "release_backed_complete": False,
+        "release_backed_complete": release_backed_complete,
         "completion_requires_release_asset_provenance": True,
         "completion_evidence": (
             "accepted-records-only" if record_complete else "incomplete"
@@ -1459,14 +1512,14 @@ def _protected_platform_workflow_dispatch_command(target: str, release_tag: str)
     if target.startswith("linux-"):
         return (
             "gh workflow run extended-platform-evidence.yml --repo <owner>/<repo> "
-            "--ref <github-actions-head-sha-or-branch> "
+            "--ref <github-actions-head-sha> "
             f"-f target={target} "
             f"-f release_tag={release_tag} "
             "-f release_asset_base_url=<github-release-download-url>"
         )
     return (
         "gh workflow run xp-native-evidence.yml --repo <owner>/<repo> "
-        "--ref <github-actions-head-sha-or-branch> "
+        "--ref <github-actions-head-sha> "
         f"-f target={target} "
         f"-f release_tag={release_tag} "
         "-f release_asset_base_url=<github-release-download-url> "
@@ -1566,6 +1619,48 @@ def _best_protected_platform_release_group(
     return release_tag, repository, source_head, targets
 
 
+def _protected_platform_release_scope_exclusions(
+    entries: dict[str, dict[str, Any]],
+    *,
+    release_tag: str,
+    release_repository: str,
+    release_source_head: str,
+    selected_targets: set[str],
+) -> dict[str, list[str]]:
+    exclusions: dict[str, list[str]] = {}
+    for target in PROTECTED_PLATFORM_GOAL_TARGETS:
+        if target not in entries or target in selected_targets:
+            continue
+        entry = entries[target]
+        reasons: list[str] = []
+        entry_release_tag = str(entry.get("release_tag", "")).strip()
+        if not entry_release_tag:
+            reasons.append("missing-release-tag")
+        elif release_tag and entry_release_tag != release_tag:
+            reasons.append(f"release-tag:{entry_release_tag}")
+        elif not release_tag:
+            reasons.append("no-selected-release-tag")
+
+        repositories = sorted(_release_asset_repositories(entry.get("release_asset_urls")))
+        if len(repositories) != 1:
+            reasons.append("release-repository:missing" if not repositories else "release-repository:multiple")
+        elif release_repository and repositories[0] != release_repository:
+            reasons.append(f"release-repository:{repositories[0]}")
+        elif not release_repository:
+            reasons.append("no-selected-release-repository")
+
+        source_head = _release_source_head(entry)
+        if not source_head:
+            reasons.append("missing-release-source-head")
+        elif release_source_head and source_head != release_source_head:
+            reasons.append(f"release-source-head:{source_head}")
+        elif not release_source_head:
+            reasons.append("no-selected-release-source-head")
+
+        exclusions[target] = reasons or ["outside-selected-release-scope"]
+    return exclusions
+
+
 def _release_tag_version_tuple(release_tag: str) -> tuple[int, int, int]:
     match = re.fullmatch(r"v(\d+)\.(\d+)\.(\d+)", release_tag)
     if not match:
@@ -1579,7 +1674,21 @@ def _accepted_evidence_entries(evidence_registry: dict[str, Any] | None) -> list
     rows = evidence_registry.get("accepted_evidence", [])
     if not isinstance(rows, list):
         return []
-    return [item for item in rows if isinstance(item, dict) and _is_accepted_evidence_entry(item)]
+    target_counts: dict[str, int] = {}
+    for item in rows:
+        if not isinstance(item, dict):
+            continue
+        target = str(item.get("target", "")).strip()
+        if target:
+            target_counts[target] = target_counts.get(target, 0) + 1
+    duplicate_targets = {target for target, count in target_counts.items() if count > 1}
+    return [
+        item
+        for item in rows
+        if isinstance(item, dict)
+        and str(item.get("target", "")).strip() not in duplicate_targets
+        and _is_accepted_evidence_entry(item)
+    ]
 
 
 def _is_accepted_evidence_entry(item: dict[str, Any]) -> bool:
@@ -2476,7 +2585,7 @@ def _has_linux_smoke_summary_security(raw_security: Any, builder_security: dict[
         return False
     for key in ("security_update_channel", "cve_review_reference"):
         value = str(raw_security.get(key, "")).strip()
-        if not value or not _is_concrete_security_provenance(value):
+        if not value or not _is_concrete_security_provenance(value, key):
             return False
     for key in (
         "tls_minimum_modern_profiles",
@@ -2943,7 +3052,7 @@ def _has_security_patch_evidence(raw_evidence: Any) -> bool:
         raw_evidence.get(key) == expected
         for key, expected in ACCEPTED_EVIDENCE_SECURITY_PATCH_EVIDENCE.items()
     ) and all(
-        _is_concrete_security_provenance(str(raw_evidence.get(key, "")))
+        _is_concrete_security_provenance(str(raw_evidence.get(key, "")), key)
         for key in ACCEPTED_EVIDENCE_SECURITY_PATCH_PROVENANCE_FIELDS
     )
 
@@ -2956,10 +3065,18 @@ def _has_xp_security_patch_evidence(raw_evidence: Any) -> bool:
     return set(str(key) for key in raw_evidence) == XP_ACCEPTED_EVIDENCE_SECURITY_PATCH_KEYS
 
 
-def _is_concrete_security_provenance(value: str) -> bool:
+def _is_concrete_security_provenance(value: str, field: str = "") -> bool:
     stripped = value.strip()
     lowered = stripped.lower()
-    return bool(stripped) and not any(marker in lowered for marker in FORBIDDEN_SECURITY_PROVENANCE_MARKERS)
+    if not stripped or any(marker in lowered for marker in FORBIDDEN_SECURITY_PROVENANCE_MARKERS):
+        return False
+    if field == "security_update_channel":
+        return any(marker in lowered for marker in SECURITY_UPDATE_PROVENANCE_MARKERS)
+    if field == "cve_review_reference":
+        return any(marker in lowered for marker in CVE_REVIEW_PROVENANCE_MARKERS) or lowered.startswith(
+            "https://"
+        )
+    return True
 
 
 def _has_linux_security_patch_evidence(raw_evidence: Any) -> bool:
@@ -3055,6 +3172,12 @@ def _single_target_evidence_status(
         "accepted_evidence_present_targets": [target] if accepted else [],
         "accepted_evidence_missing_targets": [] if accepted else [target],
     }
+    row.update(
+        _protected_row_static_provenance(
+            required=[target],
+            present=[target] if accepted else [],
+        )
+    )
     if accepted:
         entry = entries[target]
         repositories = sorted(_release_asset_repositories(entry.get("release_asset_urls")))
@@ -3084,7 +3207,7 @@ def _windows_xp_evidence_status(evidence_registry: dict[str, Any] | None) -> dic
     accepted_targets = set(entries)
     present = [target for target in required if target in accepted_targets]
     missing = [target for target in required if target not in accepted_targets]
-    return {
+    row = {
         "accepted_evidence_required_targets": required,
         "accepted_evidence_present_targets": present,
         "accepted_evidence_missing_targets": missing,
@@ -3117,6 +3240,26 @@ def _windows_xp_evidence_status(evidence_registry: dict[str, Any] | None) -> dic
             for target in present
             if _release_source_workflow_from_entry(entries[target], target)
         },
+    }
+    row.update(_protected_row_static_provenance(required=required, present=present))
+    return row
+
+
+def _protected_row_static_provenance(
+    *,
+    required: list[str],
+    present: list[str],
+) -> dict[str, Any]:
+    record_complete = bool(required) and sorted(required) == sorted(present)
+    return {
+        "accepted_evidence_record_complete": record_complete,
+        "release_asset_provenance_complete": False,
+        "release_backed_readiness_complete": False,
+        "static_readiness_evidence_scope": (
+            "accepted-record/source-run metadata only; run "
+            "python scripts/check_protected_platform_goal.py --release-tag v<project.version> "
+            "--require-complete --assets-dir <release-assets-dir> for published release asset byte proof"
+        ),
     }
 
 
@@ -3190,6 +3333,32 @@ def _platform_overall(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "target_percent": 100.0,
         "gap_percent": round(max(100.0 - current_percent, 0.0), 1),
     }
+
+
+def _with_protected_goal_summary(
+    block: dict[str, Any],
+    protected_goal: dict[str, Any],
+) -> dict[str, Any]:
+    enriched = dict(block)
+    enriched.update(
+        {
+            "protected_goal_current_percent": round(float(protected_goal.get("current_percent", 0.0) or 0.0), 1),
+            "protected_goal_gap_percent": round(float(protected_goal.get("gap_percent", 100.0) or 0.0), 1),
+            "protected_goal_status": str(protected_goal.get("status", "")),
+            "protected_goal_complete": bool(protected_goal.get("complete")),
+            "protected_goal_release_backed_complete": bool(
+                protected_goal.get("release_backed_complete")
+            ),
+            "protected_goal_accepted_target_count": int(
+                protected_goal.get("accepted_target_count", 0) or 0
+            ),
+            "protected_goal_target_count": int(protected_goal.get("target_count", 0) or 0),
+            "protected_goal_missing_targets": [
+                str(target) for target in protected_goal.get("missing_targets", [])
+            ],
+        }
+    )
+    return enriched
 
 
 def _platform_denominator(rows: list[dict[str, Any]]) -> dict[str, Any]:

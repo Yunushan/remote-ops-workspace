@@ -45,8 +45,9 @@ Release integrity rules:
   non-empty expected source artifact whose `workflow_run.id` and
   `workflow_run.head_sha` bind it to the accepted source run, plus
   `workflow_run.repository_id` and `workflow_run.head_repository_id` binding
-  when exact source-run metadata exposes repository IDs, and artifact created_at
-  inside the exact source run start/update window when GitHub exposes timestamps,
+  from exact source-run metadata, artifact created_at
+  inside the exact source run creation/start/update window from exact source-run timestamps,
+  and artifact `expires_at` present and later than the artifact create/update timestamps,
   without copying files
   into the publish directory, and it does not stage files for upload.
 - The `accepted-platform-evidence-assets` job keeps read-only repository and
@@ -75,9 +76,10 @@ Release integrity rules:
   artifacts from verified exact evidence workflow runs whose artifact inventory
   is complete and contains exactly one non-expired, non-empty expected source
   artifact bound by `workflow_run.id`, `workflow_run.head_sha`,
-  `workflow_run.repository_id` and `workflow_run.head_repository_id` when exact
-  repository IDs are available, with artifact created_at inside the exact source
-  run start/update window when GitHub exposes timestamps, then runs
+  `workflow_run.repository_id` and `workflow_run.head_repository_id` from exact
+  source-run metadata, with artifact created_at inside the exact source
+  run start/update window from exact source-run timestamps and artifact `expires_at`
+  present and later than the artifact create/update timestamps, then runs
   `python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag <tag> --require-final-record-assets`
   against the imported review bundles and finalized public record JSON files
   before uploading the platform evidence asset set. That upload must use
@@ -107,9 +109,10 @@ Release integrity rules:
   source workflow run metadata,
   and source artifact `workflow_run.id`,
   `workflow_run.head_sha`, `workflow_run.repository_id` and
-  `workflow_run.head_repository_id` binding when GitHub exposes repository IDs,
-  plus artifact created_at inside the exact source run start/update window when
-  GitHub exposes timestamps;
+  `workflow_run.head_repository_id` binding from exact source-run metadata,
+  plus artifact created_at inside the exact source run creation/start/update window from
+  exact source-run timestamps and artifact `expires_at` present and later than
+  the artifact create/update timestamps;
   it also rejects stale protected-platform native/evidence assets that remain
   on the GitHub Release outside the audited accepted-evidence scope. Use
   `--require-mobaxterm-parity-complete` only for releases that explicitly claim
@@ -146,9 +149,10 @@ Windows XP x86/x64 remote endpoints use isolated per-profile legacy opt-ins
 instead of lowering modern TLS, SSH or RDP defaults globally.
 If those endpoints are promoted to native-host evidence, the release-importable
 source artifact must come from `.github/workflows/xp-native-evidence.yml`,
-which validates staged XP artifacts and sanitized smoke evidence on a
-self-hosted `xp-evidence` runner, stages only the expected release/evidence
-files into a plain non-symlink `xp-evidence-upload` tree, re-checks the staged
+which prints the current source workflow run metadata, waits for staged XP
+artifacts and sanitized smoke evidence on a self-hosted `xp-evidence` runner,
+stages only the expected release/evidence files into a plain non-symlink
+`platform-evidence-upload/<target>/<release_tag>` tree, re-checks the staged
 output exact root file set and pre-copy SHA-256 values, and uploads
 `xp-native-evidence-<target>-<release_tag>` with `if-no-files-found: error`,
 `include-hidden-files: false` and `retention-days: 90`; workflow-generated candidate
@@ -180,7 +184,8 @@ self-hosted collection path for that evidence; it uses `[self-hosted, linux,
 i386]` and `[self-hosted, linux, armhf]` runners and uploads evidence artifacts
 without publishing a GitHub release. Before artifact upload it runs
 `python scripts/stage_extended_linux_evidence_upload.py`, stages the exact
-release-importable file set in a plain non-symlink `linux-evidence-upload` tree,
+release-importable file set in a plain non-symlink
+`platform-evidence-upload/<target>/<release_tag>` tree,
 requires the staged source directory to include the target id and release tag as
 path segments, rejects staged source or upload paths that traverse symlinked
 parent directories, re-checks the staged output exact root file set and pre-copy
@@ -203,7 +208,7 @@ per-artifact SHA-256 digests, the Linux builder identity SHA-256 and the
 workflow dispatch inputs, `release_asset_source.workflow=.github/workflows/extended-platform-evidence.yml`,
 the source artifact staged upload command and the promotion config SHA-256 are
 derived from the same promotion contract. Linux candidate generation must pass
-`--staged-upload-out-dir <release-upload-staging-dir>` so the accepted record
+`--staged-upload-out-dir platform-evidence-upload/<target>/v<project.version>` so the accepted record
 binds the exact release upload staging root.
 Linux records must also include the builder identity JSON emitted by
 `python3 scripts/check_extended_platform_builder.py --release-tag v<project.version> --workflow-run-url <github-actions-run-url> --workflow-run-attempt <github-actions-run-attempt> --source-head-sha <github-actions-head-sha> --out ...`; its
@@ -261,8 +266,10 @@ finalized accepted evidence target is present.
 Windows XP native-host readiness can move from remote-target-only only through a
 separate XP-capable legacy toolchain with XP x86 SP3 and Windows XP
 Professional x64 Edition SP2 VM or physical-host evidence captured with
-`scripts/xp_smoke_runner.cmd`, then packaged by a modern self-hosted
-`xp-evidence` collector with Python 3.12 and GitHub Actions support, plus proof that
+`scripts/xp_smoke_runner.cmd` using the source metadata printed by the running
+`.github/workflows/xp-native-evidence.yml` job, then staged onto a modern
+self-hosted `xp-evidence` collector with Python 3.12 and GitHub Actions support
+before the bounded wait expires, plus proof that
 legacy crypto compatibility stays isolated from modern defaults. XP artifact
 directories must pass
 `python scripts/check_platform_promotion_artifacts.py --target windows-xp-native-x86 --assets-dir <artifact-dir> --tag v<project.version> --strict`
@@ -360,7 +367,7 @@ can promote to 100%. Generate each accepted-record candidate with
 with `python scripts/finalize_platform_verified_evidence_record.py` only after
 reviewing the XP VM/toolchain evidence bundle and the per-artifact SHA-256
 digests recorded for the XP native artifacts. XP candidate generation must pass
-`--staged-upload-out-dir <release-upload-staging-dir>` and
+`--staged-upload-out-dir platform-evidence-upload/<target>/v<project.version>` and
 `--xp-evidence-output-dir <xp-evidence-output-dir>` so the accepted record binds
 the staged upload command and the target/release-scoped XP evidence output root.
 The same publish-time guard rejects Windows XP native assets unless the registry

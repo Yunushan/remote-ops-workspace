@@ -77,6 +77,11 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"finalize platform evidence record: {error}", file=sys.stderr)
             return 1
         write_text_output(args.out, output)
+        output_errors = check_finalized_record_output_bytes(args.out, output)
+        if output_errors:
+            for error in output_errors:
+                print(f"finalize platform evidence record: {error}", file=sys.stderr)
+            return 1
     else:
         print(output, end="")
 
@@ -474,9 +479,9 @@ def check_manifest_validated_commands(candidate: dict[str, Any], manifest: dict[
         expected = [
             str(candidate.get("native_build_command", "")),
             str(candidate.get("native_smoke_command", "")),
+            str(candidate.get("artifact_validation_command", "")),
             str(candidate.get("local_evidence_preflight_command", "")),
             str(candidate.get("staged_upload_command", "")),
-            str(candidate.get("artifact_validation_command", "")),
             "python scripts/check_platform_verified_evidence.py",
         ]
         if commands != expected:
@@ -496,9 +501,9 @@ def check_manifest_validated_commands(candidate: dict[str, Any], manifest: dict[
             errors.extend(check_xp_manifest_evidence_validation_command(xp_commands[0]))
         expected = [
             expected_xp_command,
+            strict_artifact_validation_command(str(candidate.get("artifact_validation_command", ""))),
             str(candidate.get("local_evidence_preflight_command", "")),
             str(candidate.get("staged_upload_command", "")),
-            strict_artifact_validation_command(str(candidate.get("artifact_validation_command", ""))),
             "python scripts/check_platform_verified_evidence.py",
         ]
         if commands != expected:
@@ -1160,6 +1165,25 @@ def check_finalized_record_output_path(
                 f"output={output_parent}, review_bundle={bundle_parent}"
             )
     return errors
+
+
+def check_finalized_record_output_bytes(path: Path, expected_text: str) -> list[str]:
+    errors = check_text_output_path(path, "finalized platform evidence record output file")
+    if errors:
+        return errors
+    if not path.is_file():
+        return [f"finalized platform evidence record output file missing after write: {path}"]
+    try:
+        actual = path.read_bytes()
+    except OSError as exc:
+        return [f"finalized platform evidence record output file is not readable after write: {path}: {exc}"]
+    expected = expected_text.encode("utf-8")
+    if actual != expected:
+        return [
+            "finalized platform evidence record output file bytes must match canonical record JSON "
+            f"before registry append: {path}"
+        ]
+    return []
 
 
 def check_review_bundle_input_siblings(

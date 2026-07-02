@@ -24,6 +24,7 @@ from check_platform_verified_evidence import (  # noqa: E402
     check_linux_builder_identity,
     directory_path_has_file_suffix,
     format_values_by_target,
+    release_source_workflow,
 )
 from check_xp_native_evidence import (  # noqa: E402
     artifact_validation_asset_dirs,
@@ -270,6 +271,14 @@ def check_platform_goal_local_evidence(
     errors: list[str] = []
     if not RELEASE_TAG_RE.fullmatch(release_tag):
         errors.append(f"release_tag must look like vX.Y.Z: {release_tag}")
+    if not targets:
+        errors.append("at least one protected target is required for local evidence preflight")
+    duplicate_targets = sorted({target for target in targets if targets.count(target) > 1})
+    if duplicate_targets:
+        errors.append(
+            "local evidence preflight target list must not contain duplicates: "
+            + ", ".join(duplicate_targets)
+        )
     errors.extend(check_directory_path_hint(root, "local evidence root"))
     if errors:
         return errors
@@ -297,6 +306,24 @@ def check_platform_goal_local_evidence(
         )
     ) and len(targets) != 1:
         errors.append("explicit evidence paths require exactly one --target")
+        return errors
+    explicit_source_options = [
+        option
+        for option, value in (
+            ("--linux-workflow-run-url", linux_workflow_run_url),
+            ("--linux-source-head-sha", linux_source_head_sha),
+            ("--linux-source-run-attempt", linux_source_run_attempt),
+            ("--xp-source-workflow-run-url", xp_source_workflow_run_url),
+            ("--xp-source-head-sha", xp_source_head_sha),
+            ("--xp-source-run-attempt", xp_source_run_attempt),
+        )
+        if value is not None
+    ]
+    if explicit_source_options and len(targets) != 1:
+        errors.append(
+            "explicit source binding options require exactly one --target: "
+            + ", ".join(explicit_source_options)
+        )
         return errors
 
     promotion = read_json(PROMOTION_PATH)
@@ -799,6 +826,8 @@ def check_xp_resolved_source_bindings(
     actual_workflow_run_url = str(source.get("workflow_run_url", "")).strip().rstrip("/")
     actual_source_head_sha = str(source.get("head_sha", "")).strip()
     actual_source_run_attempt = source.get("run_attempt")
+    actual_workflow = str(source.get("workflow", "")).strip()
+    expected_workflow = release_source_workflow(target)
     expected_workflow_run_url = (
         str(workflow_run_url).strip().rstrip("/") if workflow_run_url else actual_workflow_run_url
     )
@@ -827,6 +856,11 @@ def check_xp_resolved_source_bindings(
             else "XP evidence release_source.run_attempt"
         ),
     )
+    if actual_workflow != expected_workflow:
+        errors.append(
+            f"{target} XP evidence release_source.workflow must be {expected_workflow}, "
+            f"got {actual_workflow!r}"
+        )
     if workflow_run_url and actual_workflow_run_url != expected_workflow_run_url:
         errors.append(
             f"{target} XP evidence release_source.workflow_run_url must match "

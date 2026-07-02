@@ -182,6 +182,7 @@ def check_publish_contract(
     checksum_assets = [asset for asset in expected if asset.endswith(EXPECTED_CHECKSUM_SUFFIX)]
     if len(checksum_assets) < 6:
         errors.append("release matrix must include source and per-native checksum sidecars")
+    errors.extend(check_release_job_clean_checkouts(workflow))
     errors.extend(check_platform_evidence_import_job(workflow))
     errors.extend(check_job_disallows_continue_on_error(workflow, "release-preflight"))
     publish_block = workflow_job_block(workflow, "publish")
@@ -221,6 +222,36 @@ def check_publish_contract(
     return errors
 
 
+def check_release_job_clean_checkouts(workflow: str) -> list[str]:
+    errors: list[str] = []
+    for job in (
+        "release-preflight",
+        "source-and-python",
+        "windows-native",
+        "macos-native",
+        "linux-native",
+        "accepted-platform-evidence-assets",
+        "publish",
+    ):
+        block = workflow_job_block(workflow, job)
+        if not block:
+            continue
+        errors.extend(check_checkout_step(block, job=job))
+    return errors
+
+
+def check_checkout_step(job_block: str, *, job: str) -> list[str]:
+    checkout = workflow_step_block(job_block, "uses: actions/checkout@v6")
+    if not checkout:
+        return [f"{job} job missing repository checkout: uses: actions/checkout@v6"]
+    errors: list[str] = []
+    if "persist-credentials: false" not in checkout:
+        errors.append(f"{job} job missing checkout credential isolation: persist-credentials: false")
+    if "clean: true" not in checkout:
+        errors.append(f"{job} job missing clean release checkout: clean: true")
+    return errors
+
+
 def check_platform_evidence_import_job(workflow: str) -> list[str]:
     block = workflow_job_block(workflow, "accepted-platform-evidence-assets")
     if not block:
@@ -232,6 +263,7 @@ def check_platform_evidence_import_job(workflow: str) -> list[str]:
             block,
         )
     )
+    errors.extend(check_checkout_step(block, job="accepted-platform-evidence-assets"))
     required_snippets = {
         "needs: release-preflight": "release preflight dependency",
         "timeout-minutes: 20": "bounded platform evidence import timeout",
@@ -239,6 +271,7 @@ def check_platform_evidence_import_job(workflow: str) -> list[str]:
         "contents: read": "read-only repository permission",
         "uses: actions/checkout@v6": "repository checkout",
         "persist-credentials: false": "checkout credential isolation",
+        "clean: true": "clean platform evidence import checkout",
         "uses: actions/setup-python@v6": "Python setup",
         "GH_TOKEN: ${{ github.token }}": "GitHub token for gh artifact download",
         "python scripts/import_platform_evidence_artifacts.py --release-tag": "platform evidence artifact importer",
@@ -697,18 +730,27 @@ def check_final_accepted_record_asset(
     if not path.is_file():
         return [f"{target} accepted evidence finalized record asset missing from release directory: {path.name}"]
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        raw_bytes = path.read_bytes()
+        data = json.loads(raw_bytes.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         return [f"{target} accepted evidence finalized record asset is not readable JSON: {path.name}: {exc}"]
     if not isinstance(data, dict):
         return [f"{target} accepted evidence finalized record asset must contain a JSON object: {path.name}"]
     if data != public_record(record):
         return [f"{target} accepted evidence finalized record asset must match accepted registry record: {path.name}"]
+    if raw_bytes != canonical_public_record_bytes(record):
+        return [
+            f"{target} accepted evidence finalized record asset must use canonical sorted JSON: {path.name}"
+        ]
     return []
 
 
 def public_record(record: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in record.items() if not str(key).startswith("_")}
+
+
+def canonical_public_record_bytes(record: dict[str, Any]) -> bytes:
+    return (json.dumps(public_record(record), indent=2, sort_keys=True) + "\n").encode("utf-8")
 
 
 def validate_accepted_evidence_registry(evidence_registry: dict[str, Any]) -> list[str]:
@@ -956,6 +998,12 @@ def version_from_tag(tag: str) -> str:
 def workflow_job_block(workflow: str, job: str) -> str:
     match = re.search(rf"(?ms)^  {re.escape(job)}:\n(.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)", workflow)
     return match.group(1) if match else ""
+
+
+def workflow_step_block(job_block: str, marker: str) -> str:
+    pattern = rf"(?ms)^      - {re.escape(marker)}\n(.*?)(?=^      - |\Z)"
+    match = re.search(pattern, job_block)
+    return match.group(0) if match else ""
 
 
 def sha256_file(path: Path) -> str:

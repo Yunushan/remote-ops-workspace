@@ -35,6 +35,204 @@ def test_extended_platform_evidence_rejects_write_permissions() -> None:
     assert "extended platform evidence workflow must not request write permissions" in errors
 
 
+def test_extended_platform_evidence_requires_clean_checkout() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
+        "          clean: true\n",
+        "",
+    )
+
+    errors = checker.check_extended_platform_evidence(workflow)
+
+    assert any("self-hosted checkout workspace cleanup" in error for error in errors)
+
+
+def test_extended_platform_evidence_rejects_clean_setting_outside_checkout_step() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8")
+    block = checker.workflow_job_block(workflow, "linux-i386-native-evidence")
+    assert block
+    mutated = block.replace("          clean: true\n", "", 1).replace(
+        "      - name: Validate Linux i386 evidence dispatch inputs\n",
+        "      - name: Misleading clean setting\n"
+        "        run: echo clean\n"
+        "        env:\n"
+        "          clean: true\n"
+        "      - name: Validate Linux i386 evidence dispatch inputs\n",
+        1,
+    )
+    workflow = workflow.replace(block, mutated, 1)
+
+    errors = checker.check_extended_platform_evidence(workflow)
+
+    assert "linux-i386-native-evidence checkout step missing workspace cleanup: clean: true" in errors
+
+
+def test_extended_platform_evidence_rejects_persist_credentials_outside_checkout_step() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8")
+    block = checker.workflow_job_block(workflow, "linux-armhf-native-evidence")
+    assert block
+    mutated = block.replace("          persist-credentials: false\n", "", 1).replace(
+        "      - name: Validate Linux armhf evidence dispatch inputs\n",
+        "      - name: Misleading credential setting\n"
+        "        run: echo persist\n"
+        "        env:\n"
+        "          persist-credentials: false\n"
+        "      - name: Validate Linux armhf evidence dispatch inputs\n",
+        1,
+    )
+    workflow = workflow.replace(block, mutated, 1)
+
+    errors = checker.check_extended_platform_evidence(workflow)
+
+    assert (
+        "linux-armhf-native-evidence checkout step missing credential isolation: persist-credentials: false"
+        in errors
+    )
+
+
+def test_extended_platform_evidence_forces_bash_shell_for_linux_steps() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
+        "defaults:\n  run:\n    shell: bash\n\n",
+        "",
+        1,
+    )
+
+    errors = checker.check_extended_platform_evidence(workflow)
+
+    assert "extended platform evidence workflow missing top-level Bash run default: defaults:" in errors
+
+
+def test_extended_platform_evidence_rejects_job_level_only_bash_default() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8")
+    workflow = workflow.replace("defaults:\n  run:\n    shell: bash\n\n", "", 1)
+    workflow = workflow.replace(
+        "  linux-i386-native-evidence:\n",
+        "  linux-i386-native-evidence:\n"
+        "    defaults:\n"
+        "      run:\n"
+        "        shell: bash\n",
+        1,
+    )
+
+    errors = checker.check_extended_platform_evidence(workflow)
+
+    assert "extended platform evidence workflow missing top-level Bash run default: defaults:" in errors
+
+
+def test_extended_platform_evidence_requires_strict_shell_safety() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
+        "          set -euo pipefail\n",
+        "",
+        1,
+    )
+
+    errors = checker.check_extended_platform_evidence(workflow)
+
+    assert any("run step 1 missing strict shell safety: set -euo pipefail" in error for error in errors)
+
+
+def test_extended_platform_evidence_rejects_pipefail_only_smoke_step() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
+        "      - name: Smoke Linux i386 native artifacts\n"
+        "        run: |\n"
+        "          set -euo pipefail\n",
+        "      - name: Smoke Linux i386 native artifacts\n"
+        "        run: |\n"
+        "          set -o pipefail\n",
+        1,
+    )
+
+    errors = checker.check_extended_platform_evidence(workflow)
+
+    assert any("missing strict shell safety: set -euo pipefail" in error for error in errors)
+
+
+def test_extended_platform_evidence_requires_target_release_concurrency() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
+        "group: extended-platform-evidence-${{ inputs.target }}-${{ inputs.release_tag }}",
+        "group: extended-platform-evidence",
+    )
+
+    errors = checker.check_extended_platform_evidence(workflow)
+
+    assert any("target/release-scoped concurrency group" in error for error in errors)
+
+
+def test_extended_platform_evidence_requires_concurrency_at_top_level() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8")
+    top_level_block = (
+        "concurrency:\n"
+        "  group: extended-platform-evidence-${{ inputs.target }}-${{ inputs.release_tag }}\n"
+        "  cancel-in-progress: false\n\n"
+    )
+    workflow = workflow.replace(top_level_block, "")
+    workflow = workflow.replace(
+        "  linux-i386-native-evidence:\n",
+        "  linux-i386-native-evidence:\n"
+        "    concurrency:\n"
+        "      group: extended-platform-evidence-${{ inputs.target }}-${{ inputs.release_tag }}\n"
+        "      cancel-in-progress: false\n",
+        1,
+    )
+
+    errors = checker.check_extended_platform_evidence(workflow)
+
+    assert "extended platform evidence workflow missing top-level concurrency gate: concurrency:" in errors
+
+
+def test_extended_platform_evidence_rejects_cancelling_evidence_runs() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
+        "cancel-in-progress: false",
+        "cancel-in-progress: true",
+    )
+
+    errors = checker.check_extended_platform_evidence(workflow)
+
+    assert any("non-cancelling evidence concurrency" in error for error in errors)
+
+
+def test_extended_platform_evidence_rejects_unbalanced_github_expression() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
+        "${{ inputs.release_tag }}",
+        "${{ inputs.release_tag }",
+        1,
+    )
+
+    errors = checker.check_extended_platform_evidence(workflow)
+
+    assert any("unbalanced GitHub expression delimiters" in error for error in errors)
+
+
+def test_extended_platform_evidence_requires_ordered_linux_evidence_steps() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8")
+    preflight_marker = "      - name: Preflight Linux i386 local platform goal evidence\n"
+    next_marker = "      - name: Generate Linux i386 accepted-evidence candidate\n"
+    validation_marker = "      - name: Validate Linux i386 promotion artifacts\n"
+    before_preflight, after_preflight_marker = workflow.split(preflight_marker, 1)
+    preflight_body, after_preflight = after_preflight_marker.split(next_marker, 1)
+    preflight_step = preflight_marker + preflight_body
+    workflow = before_preflight + next_marker + after_preflight
+    workflow = workflow.replace(validation_marker, preflight_step + validation_marker, 1)
+
+    errors = checker.check_extended_platform_evidence(workflow)
+
+    assert (
+        "linux-i386-native-evidence protected evidence step order is invalid: "
+        "local protected goal evidence preflight must run after strict promotion artifact validation"
+    ) in errors
+
+
 def test_extended_platform_evidence_requires_candidate_record_generation() -> None:
     checker = _load_script("check_extended_platform_evidence")
     workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8")
@@ -254,7 +452,7 @@ def test_extended_platform_evidence_rejects_old_native_dist_promotion_staging() 
 def test_extended_platform_evidence_rejects_raw_upload_wildcard() -> None:
     checker = _load_script("check_extended_platform_evidence")
     workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
-        "path: linux-evidence-upload/*",
+        "path: platform-evidence-upload/linux-i386/${{ inputs.release_tag }}/*",
         "path: native-dist/linux/*",
         1,
     )
@@ -322,6 +520,64 @@ def test_extended_platform_evidence_requires_dispatch_source_run_attempt() -> No
     errors = checker.check_extended_platform_evidence(workflow)
 
     assert any("source_head_sha and source_run_attempt" in error for error in errors)
+
+
+def test_extended_platform_evidence_rejects_untracked_script_dependency(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    scripts_dir = tmp_path / "scripts"
+    scripts_dir.mkdir()
+    dependency = scripts_dir / "stage_extended_linux_evidence_upload.py"
+    dependency.write_text("print('stage')\n", encoding="utf-8")
+    monkeypatch.setattr(checker, "ROOT", tmp_path)
+    monkeypatch.setattr(checker, "is_git_tracked", lambda relative: False)
+
+    errors = checker.check_workflow_script_dependencies(
+        (Path("scripts") / "stage_extended_linux_evidence_upload.py",)
+    )
+
+    assert (
+        "extended platform evidence workflow script dependency must be tracked by git: "
+        "scripts/stage_extended_linux_evidence_upload.py"
+    ) in errors
+
+
+def test_extended_platform_evidence_rejects_missing_script_dependency(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    monkeypatch.setattr(checker, "ROOT", tmp_path)
+
+    errors = checker.check_workflow_script_dependencies(
+        (Path("scripts") / "check_extended_platform_builder.py",)
+    )
+
+    assert (
+        "extended platform evidence workflow script dependency must exist in checkout at "
+        "scripts/check_extended_platform_builder.py"
+    ) in errors
+
+
+def test_extended_platform_evidence_discovers_new_script_references() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8")
+    workflow = workflow.replace(
+        "      - name: Validate Linux i386 evidence dispatch inputs\n",
+        "      - name: Extra local Linux proof helper\n"
+        "        run: python scripts/local_only_linux_proof.py\n\n"
+        "      - name: Validate Linux i386 evidence dispatch inputs\n",
+        1,
+    )
+
+    errors = checker.check_extended_platform_evidence(workflow)
+
+    assert (
+        "extended platform evidence workflow script dependency must exist in checkout at "
+        "scripts/local_only_linux_proof.py"
+    ) in errors
 
 
 def test_extended_platform_dispatch_input_validator_accepts_matching_inputs() -> None:

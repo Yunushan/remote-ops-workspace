@@ -70,6 +70,44 @@ FORBIDDEN_SECURITY_PROVENANCE_MARKERS = (
     "test-",
     "todo",
 )
+SECURITY_UPDATE_PROVENANCE_MARKERS = (
+    "security-update",
+    "security-updates",
+    "windows-update",
+    "microsoft-update",
+    "update-catalog",
+    "apt",
+    "dnf",
+    "yum",
+    "apk",
+    "patch",
+    "hotfix",
+    "kb",
+    "usn-",
+    "dsa-",
+    "rhsa-",
+    "alsa-",
+    "errata",
+)
+CVE_REVIEW_PROVENANCE_MARKERS = (
+    "cve-",
+    "ghsa-",
+    "advisory",
+    "vulnerability",
+    "security-advisory",
+    "security-tracker",
+    "release-notes",
+    "security-review",
+    "kb",
+    "usn-",
+    "dsa-",
+    "rhsa-",
+    "alsa-",
+)
+REQUIRED_SECURITY_PROVENANCE_NAMESPACES = {
+    "security_update_channel": set(SECURITY_UPDATE_PROVENANCE_MARKERS),
+    "cve_review_reference": {*CVE_REVIEW_PROVENANCE_MARKERS, "https://"},
+}
 FORBIDDEN_HOST_IDENTITY_FIELDS = {
     "computer_name",
     "computername",
@@ -441,6 +479,7 @@ def check_contract(contract: dict[str, Any]) -> list[str]:
         {str(item) for item in smoke_provenance_fields}
     ):
         errors.append("XP native evidence contract must require security smoke provenance fields")
+    errors.extend(check_security_provenance_namespace_contract(contract))
     forbidden_identity_fields = contract.get("forbidden_host_identity_fields")
     if not isinstance(forbidden_identity_fields, list):
         errors.append("XP native evidence contract must define forbidden_host_identity_fields")
@@ -460,6 +499,26 @@ def check_contract(contract: dict[str, Any]) -> list[str]:
             errors.append(
                 "XP native evidence contract forbidden_evidence_patterns missing required entries: "
                 f"{missing_patterns}"
+            )
+    return errors
+
+
+def check_security_provenance_namespace_contract(contract: dict[str, Any]) -> list[str]:
+    namespaces = contract.get("required_security_patch_provenance_namespaces")
+    if not isinstance(namespaces, dict):
+        return ["XP native evidence contract must require concrete security provenance namespaces"]
+    errors: list[str] = []
+    for field, required_markers in sorted(REQUIRED_SECURITY_PROVENANCE_NAMESPACES.items()):
+        actual_markers = namespaces.get(field)
+        if not isinstance(actual_markers, list):
+            errors.append(
+                f"XP native evidence contract must require concrete {field} provenance namespaces"
+            )
+            continue
+        missing = sorted(required_markers - {str(marker) for marker in actual_markers})
+        if missing:
+            errors.append(
+                f"XP native evidence contract concrete {field} provenance namespaces missing {missing}"
             )
     return errors
 
@@ -829,7 +888,7 @@ def check_security(target: str, raw_security: Any, contract: dict[str, Any]) -> 
             value = str(patch_evidence.get(key, ""))
             if not value.strip():
                 errors.append(f"{target} evidence security.patch_evidence.{key} must be set")
-            elif not is_concrete_security_provenance(value):
+            elif not is_concrete_security_provenance(value, key):
                 errors.append(
                     f"{target} evidence security.patch_evidence.{key} "
                     "must name concrete non-placeholder provenance"
@@ -837,9 +896,17 @@ def check_security(target: str, raw_security: Any, contract: dict[str, Any]) -> 
     return errors
 
 
-def is_concrete_security_provenance(value: str) -> bool:
+def is_concrete_security_provenance(value: str, field: str = "") -> bool:
     lowered = value.strip().lower()
-    return bool(lowered) and not any(marker in lowered for marker in FORBIDDEN_SECURITY_PROVENANCE_MARKERS)
+    if not lowered or any(marker in lowered for marker in FORBIDDEN_SECURITY_PROVENANCE_MARKERS):
+        return False
+    if field == "security_update_channel":
+        return any(marker in lowered for marker in SECURITY_UPDATE_PROVENANCE_MARKERS)
+    if field == "cve_review_reference":
+        return any(marker in lowered for marker in CVE_REVIEW_PROVENANCE_MARKERS) or lowered.startswith(
+            "https://"
+        )
+    return True
 
 
 def check_smoke_results(

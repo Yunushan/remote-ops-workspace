@@ -296,7 +296,7 @@ bagli artifact ve review-bundle dosyalarini, indirilen source artifact native
 artifact `workflow_run.id`, `workflow_run.head_sha`,
 `workflow_run.repository_id`, `workflow_run.head_repository_id` bagini,
 GitHub timestamp sagladiginda artifact created_at degerinin exact source run
-start/update araligi icinde kaldigini, native
+creation/start/update araligi icinde kaldigini, native
 artifact SHA-256 degerleri ve review-bundle size/SHA-256 degerleri finalized
 accepted kayitla eslestikten sonra release-assets icine alir, sonra
 `python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag <tag> --require-final-record-assets`
@@ -323,7 +323,7 @@ exact source workflow run metadata bilgisini ve GitHub repository ID saglarsa
 source artifact `workflow_run.id`, `workflow_run.head_sha`,
 `workflow_run.repository_id` ve `workflow_run.head_repository_id` bagini
 ve GitHub timestamp sagladiginda artifact created_at degerinin exact source run
-start/update araligi icinde kaldigini dogrular.
+creation/start/update araligi icinde kaldigini dogrular.
 Linux accepted evidence kayitlari builder identity SHA-256 degeri, sanitized
 target-scoped host identity, workflow dispatch input bagi ve native smoke
 release/run, runtime architecture, OpenSSL ve legacy-crypto-scope proof

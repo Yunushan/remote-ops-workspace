@@ -65,7 +65,7 @@ REQUIRED_DOC_SNIPPETS = (
     "workflow_run.repository_id",
     "workflow_run.head_repository_id",
     "artifact created_at",
-    "source run start/update window",
+    "source run creation/start/update window",
     "workflow-file, source-head and",
     "run-attempt-bound accepted Linux i386, Linux armhf and Windows XP native-host artifacts",
     "target-specific release source workflow file",
@@ -114,7 +114,7 @@ REQUIRED_TURKISH_DOC_SNIPPETS = (
     "workflow_run.repository_id",
     "workflow_run.head_repository_id",
     "artifact created_at",
-    "source run start/update",
+    "source run creation/start/update",
     "ayni tag/repository/workflow file path/source-head/run-attempt",
     "target'a ozel release source workflow file path",
     "python scripts/check_protected_platform_goal.py --release-tag <tag> --require-complete --assets-dir release-assets",
@@ -146,7 +146,7 @@ REQUIRED_README_RELEASE_SECTION_SNIPPETS = (
     "workflow_run.repository_id",
     "workflow_run.head_repository_id",
     "artifact created_at",
-    "source run start/update window",
+    "source run creation/start/update window",
     "workflow-file, source-head and",
     "run-attempt-bound accepted evidence artifacts",
     "Linux i386, Linux armhf, windows-xp-native-x86",
@@ -262,6 +262,7 @@ def check_release_preflight(workflow: str | None = None) -> list[str]:
     block = workflow_job_block(workflow_text, RELEASE_PREFLIGHT_JOB)
     if not block:
         return [*errors, "release workflow missing release-preflight job"]
+    errors.extend(check_checkout_step(block, job=RELEASE_PREFLIGHT_JOB))
     required_snippets = {
         "persist-credentials: false": "checkout credential persistence disabled",
         'python-version: "3.12"': "stable preflight Python version",
@@ -420,6 +421,24 @@ def check_release_docs() -> list[str]:
 def workflow_job_block(workflow: str, job: str) -> str:
     match = re.search(rf"(?ms)^  {re.escape(job)}:\n(.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)", workflow)
     return match.group(1) if match else ""
+
+
+def check_checkout_step(job_block: str, *, job: str) -> list[str]:
+    checkout = workflow_step_block(job_block, "uses: actions/checkout@v6")
+    if not checkout:
+        return [f"{job} missing repository checkout: uses: actions/checkout@v6"]
+    errors: list[str] = []
+    if "persist-credentials: false" not in checkout:
+        errors.append(f"{job} checkout step missing credential isolation: persist-credentials: false")
+    if "clean: true" not in checkout:
+        errors.append(f"{job} checkout step missing workspace cleanup: clean: true")
+    return errors
+
+
+def workflow_step_block(job_block: str, marker: str) -> str:
+    pattern = rf"(?ms)^      - {re.escape(marker)}\n(.*?)(?=^      - |\Z)"
+    match = re.search(pattern, job_block)
+    return match.group(0) if match else ""
 
 
 def job_depends_on(block: str, job: str) -> bool:

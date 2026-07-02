@@ -229,6 +229,7 @@ REQUIRED_DOC_SNIPPETS: dict[str, tuple[str, ...]] = {
         "Release asset provenance",
         "static platform catalog is not native-host/readiness proof",
         "row features --coverage --json",
+        "accepted records/release assets pending",
         "Windows Vista and Windows XP as remote targets only.",
         "Windows XP remote-target coverage is 100.0% for x86 and x64 endpoints",
         "i386/i686: 32-bit x86 Linux packages, script-supported only.",
@@ -250,12 +251,14 @@ REQUIRED_DOC_SNIPPETS: dict[str, tuple[str, ...]] = {
         "asset-backed protected goal",
         "`record_complete`",
         "`release_backed_complete`",
+        "`static_readiness_evidence_scope`",
+        "`release_backed_readiness_complete=false`",
         "add `--release-repository <owner>/<repo>` to that strict verifier",
         "published native/review-bundle asset bytes",
         "published final accepted-record JSON bytes",
         "`workflow_run.repository_id` and",
         "`workflow_run.head_repository_id`",
-        "artifact `created_at` values outside the exact source run start/update window",
+        "artifact `created_at` values outside the exact source run creation/start/update window",
         "canonical accepted-record JSON bytes",
         "native artifact SHA-256 plus review-bundle size/SHA-256 checks on the downloaded source artifact",
         "check_release_publish_assets.py --assets-dir <release-assets-dir> --tag v<project.version> --require-platform-goal-targets",
@@ -287,7 +290,7 @@ REQUIRED_DOC_SNIPPETS: dict[str, tuple[str, ...]] = {
         "`xp_evidence_summary.release_source` matching `release_asset_source`",
         "`xp smoke source head sha`",
         "downloaded source artifact native artifact SHA-256 values plus review-bundle size/SHA-256 values",
-        "artifact created_at inside the exact source run start/update window",
+        "artifact created_at inside the exact source run creation/start/update window",
         "check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag <tag> --require-final-record-assets",
         "release_asset_provenance_complete=false",
         "asset-backed protected goal",
@@ -302,9 +305,12 @@ REQUIRED_DOC_SNIPPETS: dict[str, tuple[str, ...]] = {
         "release_asset_provenance_complete=false",
         "record_complete",
         "release_backed_complete",
+        "static_readiness_evidence_scope",
+        "release_backed_readiness_complete=false",
         "release_asset_provenance_command",
         "Release asset provenance",
         "Asset provenance gate",
+        "accepted-record/release-asset provenance note",
         "asset-backed protected goal gate",
         "same-run-URL conflicting-attempt accepted records",
     ),
@@ -772,6 +778,7 @@ def linux_readiness_expectation(
             f"{target} evidence-backed readiness must expose accepted evidence "
             f"present={[target]!r} and missing=[]"
         )
+    errors.extend(check_static_release_asset_provenance_fields(target, row, [target], [target]))
     errors.extend(check_release_binding_fields(target, row, [target]))
     return promoted, errors
 
@@ -807,12 +814,28 @@ def xp_readiness_expectation(
                 "Windows XP native-host readiness must expose accepted evidence "
                 "for both XP x86 and XP x64 with no missing targets"
             )
+        errors.extend(
+            check_static_release_asset_provenance_fields(
+                "Windows XP",
+                row,
+                XP_PROTECTED_TARGET_ORDER,
+                XP_PROTECTED_TARGET_ORDER,
+            )
+        )
         errors.extend(check_release_binding_fields("Windows XP", row, XP_PROTECTED_TARGET_ORDER))
         return promoted, errors
 
     partial = {**expected, "status": "partial-xp-native-host-evidence"}
     errors = check_xp_partial_evidence_lists(row)
     present_targets = [target for target in XP_PROTECTED_TARGET_ORDER if target in set(present)]
+    errors.extend(
+        check_static_release_asset_provenance_fields(
+            "Windows XP",
+            row,
+            XP_PROTECTED_TARGET_ORDER,
+            present_targets,
+        )
+    )
     errors.extend(check_release_binding_fields("Windows XP", row, present_targets))
     return partial, errors
 
@@ -901,6 +924,38 @@ def check_release_binding_fields(
         if not isinstance(workflows, dict) or workflows.get(target) != expected_workflow:
             errors.append(
                 f"{row_label} accepted evidence for {target} must expose workflow {expected_workflow}"
+            )
+    return errors
+
+
+def check_static_release_asset_provenance_fields(
+    row_label: str,
+    row: dict[str, Any],
+    required_targets: list[str],
+    present_targets: list[str],
+) -> list[str]:
+    record_complete = bool(required_targets) and sorted(required_targets) == sorted(present_targets)
+    errors: list[str] = []
+    if row.get("accepted_evidence_record_complete") is not record_complete:
+        errors.append(
+            f"{row_label} protected row accepted_evidence_record_complete must match "
+            "accepted record target coverage"
+        )
+    if row.get("release_asset_provenance_complete") is not False:
+        errors.append(
+            f"{row_label} protected row must keep release_asset_provenance_complete=false "
+            "in static readiness JSON"
+        )
+    if row.get("release_backed_readiness_complete") is not False:
+        errors.append(
+            f"{row_label} protected row must keep release_backed_readiness_complete=false "
+            "in static readiness JSON"
+        )
+    scope = str(row.get("static_readiness_evidence_scope", ""))
+    for snippet in ("accepted-record/source-run metadata only", "--require-complete", "--assets-dir"):
+        if snippet not in scope:
+            errors.append(
+                f"{row_label} protected row static_readiness_evidence_scope must mention {snippet}"
             )
     return errors
 

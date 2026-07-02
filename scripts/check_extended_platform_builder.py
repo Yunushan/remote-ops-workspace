@@ -67,6 +67,40 @@ FORBIDDEN_SECURITY_PROVENANCE_MARKERS = (
     "test-",
     "todo",
 )
+SECURITY_UPDATE_PROVENANCE_MARKERS = (
+    "security-update",
+    "security-updates",
+    "windows-update",
+    "microsoft-update",
+    "update-catalog",
+    "apt",
+    "dnf",
+    "yum",
+    "apk",
+    "patch",
+    "hotfix",
+    "kb",
+    "usn-",
+    "dsa-",
+    "rhsa-",
+    "alsa-",
+    "errata",
+)
+CVE_REVIEW_PROVENANCE_MARKERS = (
+    "cve-",
+    "ghsa-",
+    "advisory",
+    "vulnerability",
+    "security-advisory",
+    "security-tracker",
+    "release-notes",
+    "security-review",
+    "kb",
+    "usn-",
+    "dsa-",
+    "rhsa-",
+    "alsa-",
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -420,14 +454,22 @@ def check_security_patch_evidence(target: str) -> list[str]:
         label = provenance_labels[key]
         if not value.strip():
             errors.append(f"{target} builder {label} evidence must be set")
-        elif not is_concrete_security_provenance(value):
+        elif not is_concrete_security_provenance(value, key):
             errors.append(f"{target} builder {label} evidence must name concrete non-placeholder provenance")
     return errors
 
 
-def is_concrete_security_provenance(value: str) -> bool:
+def is_concrete_security_provenance(value: str, field: str = "") -> bool:
     lowered = value.strip().lower()
-    return bool(lowered) and not any(marker in lowered for marker in FORBIDDEN_SECURITY_PROVENANCE_MARKERS)
+    if not lowered or any(marker in lowered for marker in FORBIDDEN_SECURITY_PROVENANCE_MARKERS):
+        return False
+    if field == "security_update_channel":
+        return any(marker in lowered for marker in SECURITY_UPDATE_PROVENANCE_MARKERS)
+    if field == "cve_review_reference":
+        return any(marker in lowered for marker in CVE_REVIEW_PROVENANCE_MARKERS) or lowered.startswith(
+            "https://"
+        )
+    return True
 
 
 def security_patch_evidence() -> dict[str, Any]:

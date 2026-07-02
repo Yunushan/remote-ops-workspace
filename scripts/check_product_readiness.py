@@ -27,11 +27,14 @@ IMPLEMENTED_STATUSES = {
 }
 LINUX_PROTECTED_SECURITY_REQUIREMENTS = (
     "security patch evidence proving TLS 1.3 preferred, TLS 1.2 minimum, "
-    "isolated legacy compatibility and CVE patch review",
+    "isolated legacy compatibility and CVE patch review with concrete "
+    "security_update_channel and cve_review_reference update/advisory provenance",
     "modern Windows 10/11, Linux, and macOS defaults must keep hardened crypto",
 )
 XP_PROTECTED_SECURITY_REQUIREMENTS = (
     "legacy TLS, SSH, and RDP compatibility must remain profile-scoped opt-in",
+    "XP security patch evidence must include concrete security_update_channel "
+    "and cve_review_reference update/advisory provenance",
     "modern Windows 10/11, Linux, and macOS defaults must keep hardened crypto",
 )
 LINUX_PROTECTED_SMOKE_EVIDENCE_REQUIREMENTS = (
@@ -262,18 +265,22 @@ def check_product_readiness() -> list[str]:
                 f"{expected_asset_command!r}"
             )
         provenance_complete = goal.get("release_source_provenance_complete") is True
-        complete = len(present) == len(required) and bool(required) and provenance_complete
-        if goal.get("record_complete") is not complete:
+        record_complete = len(present) == len(required) and bool(required) and provenance_complete
+        release_backed_complete = (
+            record_complete and goal.get("release_asset_provenance_complete") is True
+        )
+        if goal.get("record_complete") is not record_complete:
             errors.append(
                 "protected platform goal parity record_complete must match accepted records plus source provenance"
             )
-        if goal.get("complete") is not complete:
+        if goal.get("complete") is not release_backed_complete:
             errors.append(
-                "protected platform goal parity complete flag must match accepted target count "
-                "and release source provenance"
+                "protected platform goal parity complete flag must match release-backed "
+                "records plus release asset provenance"
             )
         expected_status = expected_protected_goal_status(
-            complete=complete,
+            record_complete=record_complete,
+            release_backed_complete=release_backed_complete,
             accepted_count=len(present) if isinstance(present, list) else 0,
             target_count=len(required) if isinstance(required, list) else 0,
             release_repositories=goal.get("release_repositories"),
@@ -381,6 +388,9 @@ def check_platform_denominator(
         errors.append("platform verified readiness denominator must point protected_goal_score_source at protected_goal_parity")
     if denominator.get("release_asset_provenance_in_static_score") is not False:
         errors.append("platform verified readiness denominator must keep release asset provenance outside static score")
+    goal = platform.get("protected_goal_parity", {})
+    if isinstance(goal, dict):
+        errors.extend(check_platform_protected_goal_summary(denominator, goal, "denominator"))
 
     overall = platform.get("overall", {})
     if isinstance(overall, dict):
@@ -390,15 +400,43 @@ def check_platform_denominator(
             errors.append("platform verified readiness overall excluded_targets must match denominator")
         if overall.get("denominator_scope") != denominator.get("scope"):
             errors.append("platform verified readiness overall denominator_scope must match denominator scope")
+        if isinstance(goal, dict):
+            errors.extend(check_platform_protected_goal_summary(overall, goal, "overall"))
+    return errors
+
+
+def check_platform_protected_goal_summary(
+    block: dict[str, object],
+    goal: dict[str, object],
+    label: str,
+) -> list[str]:
+    checks = {
+        "protected_goal_current_percent": goal.get("current_percent"),
+        "protected_goal_gap_percent": goal.get("gap_percent"),
+        "protected_goal_status": goal.get("status"),
+        "protected_goal_complete": goal.get("complete"),
+        "protected_goal_release_backed_complete": goal.get("release_backed_complete"),
+        "protected_goal_accepted_target_count": goal.get("accepted_target_count"),
+        "protected_goal_target_count": goal.get("target_count"),
+        "protected_goal_missing_targets": goal.get("missing_targets"),
+    }
+    errors: list[str] = []
+    for key, expected in checks.items():
+        if block.get(key) != expected:
+            errors.append(
+                f"platform verified readiness {label} {key} must match protected_goal_parity"
+            )
     return errors
 
 
 def check_accepted_evidence_row_bindings(row: dict[str, object]) -> list[str]:
     present = row.get("accepted_evidence_present_targets")
-    if not isinstance(present, list) or not present:
-        return []
     target = row.get("target")
     errors: list[str] = []
+    if str(target) in {"linux-i386", "linux-armhf", "Windows XP"}:
+        errors.extend(check_protected_row_static_provenance(row))
+    if not isinstance(present, list) or not present:
+        return errors
     for field in (
         "accepted_evidence_release_tags",
         "accepted_evidence_release_repositories",
@@ -417,6 +455,39 @@ def check_accepted_evidence_row_bindings(row: dict[str, object]) -> list[str]:
         for present_target in present:
             binding = value.get(str(present_target))
             errors.extend(check_accepted_evidence_binding_value(target, str(present_target), field, binding))
+    return errors
+
+
+def check_protected_row_static_provenance(row: dict[str, object]) -> list[str]:
+    target = row.get("target")
+    required = row.get("accepted_evidence_required_targets")
+    present = row.get("accepted_evidence_present_targets")
+    required_targets = [str(item) for item in required] if isinstance(required, list) else []
+    present_targets = [str(item) for item in present] if isinstance(present, list) else []
+    record_complete = bool(required_targets) and sorted(required_targets) == sorted(present_targets)
+    errors: list[str] = []
+    if row.get("accepted_evidence_record_complete") is not record_complete:
+        errors.append(
+            f"{target} protected platform row accepted_evidence_record_complete "
+            "must match present accepted evidence targets"
+        )
+    if row.get("release_asset_provenance_complete") is not False:
+        errors.append(
+            f"{target} protected platform row must keep release_asset_provenance_complete false "
+            "in the static readiness report"
+        )
+    if row.get("release_backed_readiness_complete") is not False:
+        errors.append(
+            f"{target} protected platform row must keep release_backed_readiness_complete false "
+            "in the static readiness report"
+        )
+    scope = str(row.get("static_readiness_evidence_scope", ""))
+    for snippet in ("accepted-record/source-run metadata only", "--require-complete", "--assets-dir"):
+        if snippet not in scope:
+            errors.append(
+                f"{target} protected platform row static_readiness_evidence_scope "
+                f"must mention {snippet}"
+            )
     return errors
 
 
@@ -617,6 +688,7 @@ def expected_linux_protected_requirement_commands(target: str) -> dict[str, str]
     candidate = f"platform-verified-evidence-{target}.json"
     bundle_stem = f"extended-linux-evidence-bundle-{target}-v<project.version>"
     final_record = f"platform-verified-evidence-{target}-final.json"
+    upload_dir = scoped_platform_evidence_upload_dir(target)
     return {
         "artifact_validation_command": (
             "python scripts/check_platform_promotion_artifacts.py "
@@ -646,7 +718,7 @@ def expected_linux_protected_requirement_commands(target: str) -> dict[str, str]
             "--builder-evidence <builder-identity.json> "
             "--linux-smoke-evidence <native-smoke-log> "
             "--local-evidence-root . "
-            "--staged-upload-out-dir <release-upload-staging-dir> "
+            f"--staged-upload-out-dir {upload_dir} "
             f"--runner-label self-hosted --runner-label linux --runner-label {arch} "
             f"--out <{candidate}>"
         ),
@@ -676,6 +748,7 @@ def expected_xp_protected_requirement_commands(target: str) -> dict[str, str]:
     bundle_stem = f"xp-native-evidence-bundle-{target}-v<project.version>"
     final_record = f"platform-verified-evidence-{target}-final.json"
     source_artifact = f"xp-native-evidence-{target}-v<project.version>"
+    upload_dir = scoped_platform_evidence_upload_dir(target)
     return {
         "artifact_validation_command": (
             "python scripts/check_platform_promotion_artifacts.py "
@@ -711,7 +784,7 @@ def expected_xp_protected_requirement_commands(target: str) -> dict[str, str]:
             "--local-evidence-root . "
             "--xp-evidence <target-release-evidence.json> "
             "--xp-evidence-dir <target-release-evidence-dir> "
-            "--staged-upload-out-dir <release-upload-staging-dir> "
+            f"--staged-upload-out-dir {upload_dir} "
             "--xp-evidence-output-dir <xp-evidence-output-dir> "
             f"--out <{candidate}>"
         ),
@@ -737,13 +810,14 @@ def expected_xp_protected_requirement_commands(target: str) -> dict[str, str]:
 
 
 def expected_staged_upload_command(target: str) -> str:
+    upload_dir = scoped_platform_evidence_upload_dir(target)
     if target in LINUX_PROTECTED_TARGETS:
         return (
             "python scripts/stage_extended_linux_evidence_upload.py "
             f"--target {target} "
             "--release-tag v<project.version> "
             "--source-dir <target-release-artifact-dir> "
-            "--out-dir <release-upload-staging-dir> "
+            f"--out-dir {upload_dir} "
             "--force"
         )
     if target in XP_PROTECTED_TARGETS:
@@ -753,10 +827,14 @@ def expected_staged_upload_command(target: str) -> str:
             "--release-tag v<project.version> "
             "--assets-dir <target-release-artifact-dir> "
             "--evidence-output-dir <xp-evidence-output-dir> "
-            "--out-dir <release-upload-staging-dir> "
+            f"--out-dir {upload_dir} "
             "--force"
         )
     return ""
+
+
+def scoped_platform_evidence_upload_dir(target: str) -> str:
+    return f"platform-evidence-upload/{target}/v<project.version>"
 
 
 def check_release_asset_source_requirement(
@@ -933,7 +1011,8 @@ def check_security_requirement_items(
 
 def expected_protected_goal_status(
     *,
-    complete: bool,
+    record_complete: bool,
+    release_backed_complete: bool,
     accepted_count: int,
     target_count: int,
     release_repositories: object,
@@ -943,8 +1022,10 @@ def expected_protected_goal_status(
     repositories = release_repositories if isinstance(release_repositories, list) else []
     tags = release_tags if isinstance(release_tags, list) else []
     source_heads = release_source_heads if isinstance(release_source_heads, list) else []
-    if complete:
+    if release_backed_complete:
         return "complete"
+    if record_complete:
+        return "release-asset-provenance-required"
     if target_count and accepted_count == target_count:
         return "missing-release-source-provenance"
     if len(repositories) > 1:
@@ -1013,6 +1094,7 @@ def check_protected_goal_release_scope(goal: dict[str, object]) -> list[str]:
     selected_release_source_run_attempts = goal.get("selected_release_source_run_attempts")
     selected_release_source_run_urls = goal.get("selected_release_source_run_urls")
     selected_release_source_workflows = goal.get("selected_release_source_workflows")
+    selected_release_scope_exclusions = goal.get("selected_release_scope_exclusions")
     release_source_run_attempts = goal.get("release_source_run_attempts")
     release_source_run_urls = goal.get("release_source_run_urls")
     reported_release_source_run_attempt_conflicts = goal.get("release_source_run_attempt_conflicts")
@@ -1035,6 +1117,9 @@ def check_protected_goal_release_scope(goal: dict[str, object]) -> list[str]:
     if not isinstance(selected_release_source_workflows, dict):
         errors.append("protected platform goal parity must expose selected_release_source_workflows")
         selected_release_source_workflows = {}
+    if not isinstance(selected_release_scope_exclusions, dict):
+        errors.append("protected platform goal parity must expose selected_release_scope_exclusions")
+        selected_release_scope_exclusions = {}
     if not isinstance(release_source_run_attempts, dict):
         errors.append("protected platform goal parity must expose release_source_run_attempts")
         release_source_run_attempts = {}
@@ -1203,6 +1288,24 @@ def check_protected_goal_release_scope(goal: dict[str, object]) -> list[str]:
                         "protected platform goal parity selected_release_source_workflows"
                         f"[{target}] must be {expected}"
                     )
+    if isinstance(accepted_targets, list) and isinstance(selected_targets, list):
+        aggregate_target_ids = {str(target) for target in accepted_targets}
+        selected_target_ids = {str(target) for target in selected_targets}
+        expected_excluded_targets = sorted(aggregate_target_ids - selected_target_ids)
+        actual_excluded_targets = sorted(str(target) for target in selected_release_scope_exclusions)
+        if actual_excluded_targets != expected_excluded_targets:
+            errors.append(
+                "protected platform goal parity selected_release_scope_exclusions "
+                f"must match aggregate accepted targets outside selected release scope: {expected_excluded_targets}"
+            )
+        for target, reasons in sorted(selected_release_scope_exclusions.items()):
+            if not isinstance(reasons, list) or not reasons or not all(
+                isinstance(reason, str) and reason.strip() for reason in reasons
+            ):
+                errors.append(
+                    "protected platform goal parity selected_release_scope_exclusions"
+                    f"[{target}] must be a non-empty list of reason strings"
+                )
     expected_conflicts = expected_release_source_run_attempt_conflicts(
         release_source_run_urls,
         release_source_run_attempts,

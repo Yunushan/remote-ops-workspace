@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -24,6 +25,19 @@ LINUX_TARGET_ARTIFACTS = {
         "remote-ops-workspace-${{ inputs.release_tag }}-linux-armhf-native-SHA256SUMS.txt",
     ),
 }
+WORKFLOW_SCRIPT_DEPENDENCIES = (
+    Path("scripts") / "check_extended_platform_dispatch_inputs.py",
+    Path("scripts") / "check_extended_platform_builder.py",
+    Path("scripts") / "make_linux_native.sh",
+    Path("scripts") / "smoke_linux_native.sh",
+    Path("scripts") / "check_platform_promotion_artifacts.py",
+    Path("scripts") / "check_platform_goal_local_evidence.py",
+    Path("scripts") / "make_platform_verified_evidence_record.py",
+    Path("scripts") / "make_extended_linux_evidence_bundle.py",
+    Path("scripts") / "finalize_platform_verified_evidence_record.py",
+    Path("scripts") / "stage_extended_linux_evidence_upload.py",
+)
+WORKFLOW_SCRIPT_REFERENCE_RE = re.compile(r"scripts/[A-Za-z0-9_./-]+\.(?:cmd|py|sh)")
 
 
 def main() -> int:
@@ -39,9 +53,22 @@ def main() -> int:
 def check_extended_platform_evidence(workflow: str | None = None) -> list[str]:
     text = workflow if workflow is not None else WORKFLOW_PATH.read_text(encoding="utf-8")
     errors: list[str] = []
+    errors.extend(check_github_expression_delimiters(text))
     errors.extend(check_top_level_policy(text))
     errors.extend(check_linux_job(text, target="linux-i386", job="linux-i386-native-evidence", runner="i386"))
     errors.extend(check_linux_job(text, target="linux-armhf", job="linux-armhf-native-evidence", runner="armhf"))
+    errors.extend(check_workflow_script_dependencies(workflow_script_dependencies(text)))
+    return errors
+
+
+def check_github_expression_delimiters(workflow: str) -> list[str]:
+    errors: list[str] = []
+    for line_number, line in enumerate(workflow.splitlines(), start=1):
+        if line.count("${{") != line.count("}}"):
+            errors.append(
+                "extended platform evidence workflow has unbalanced GitHub expression "
+                f"delimiters on line {line_number}: {line.strip()}"
+            )
     return errors
 
 
@@ -56,6 +83,14 @@ def check_top_level_policy(workflow: str) -> list[str]:
         errors.append("extended platform evidence workflow must use read-only contents permission")
     if re.search(r"(?m)^\s+[A-Za-z0-9_-]+:\s+write\s*$", workflow):
         errors.append("extended platform evidence workflow must not request write permissions")
+    errors.extend(
+        check_top_level_concurrency(
+            workflow,
+            workflow_label="extended platform evidence",
+            group="extended-platform-evidence-${{ inputs.target }}-${{ inputs.release_tag }}",
+        )
+    )
+    errors.extend(check_top_level_run_defaults(workflow, workflow_label="extended platform evidence"))
     if 'FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"' not in workflow:
         errors.append("extended platform evidence workflow must opt JavaScript actions into Node.js 24")
     if "linux-i386" not in workflow or "linux-armhf" not in workflow:
@@ -75,13 +110,14 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
     release_dir = f"platform-evidence-staging/{target}/${{{{ inputs.release_tag }}}}"
     assets_dir = f"{release_dir}/artifacts"
     evidence_dir = release_dir
+    upload_dir = f"platform-evidence-upload/{target}/${{{{ inputs.release_tag }}}}"
     source_artifact_name = f"extended-linux-evidence-{target}-${{{{ inputs.release_tag }}}}"
     stage_upload_snippet = (
         "python scripts/stage_extended_linux_evidence_upload.py \\\n"
         f"            --target {target} \\\n"
         '            --release-tag "${{ inputs.release_tag }}" \\\n'
         f"            --source-dir {assets_dir} \\\n"
-        "            --out-dir linux-evidence-upload \\\n"
+        f"            --out-dir {upload_dir} \\\n"
         "            --force"
     )
     smoke_command_snippet = (
@@ -113,6 +149,7 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
         "RELEASE_TAG: ${{ inputs.release_tag }}": "release-tag environment binding for native build script",
         "uses: actions/checkout@v6": "repository checkout",
         "persist-credentials: false": "checkout credential isolation",
+        "clean: true": "self-hosted checkout workspace cleanup",
         f"python3 scripts/check_extended_platform_dispatch_inputs.py \\\n            --target {target}": "dispatch input preflight",
         f"python3 scripts/check_extended_platform_builder.py \\\n            --target {target}": "builder identity preflight evidence",
         f"--out {evidence_dir}/{builder_identity_name}": "builder identity output",
@@ -159,7 +196,7 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
         stage_upload_snippet: "scoped Linux evidence upload staging",
         "actions/upload-artifact@v7": "evidence artifact upload",
         f"name: {source_artifact_name}": "target/release-scoped evidence artifact name",
-        "path: linux-evidence-upload/*": "scoped staged upload path",
+        f"path: {upload_dir}/*": "target/release scoped staged upload path",
         "if-no-files-found: error": "missing evidence artifact failure",
         "include-hidden-files: false": "hidden file exclusion for evidence artifact upload",
         "retention-days: 90": "evidence artifact retention window",
@@ -171,6 +208,40 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
     for snippet, label in required_snippets.items():
         if snippet not in block:
             errors.append(f"{job} missing {label}: {snippet}")
+    errors.extend(check_checkout_step(block, job=job))
+    errors.extend(check_run_shell_safety(block, job=job))
+    arch_label = target.removeprefix("linux-")
+    step_prefix = f"Linux {arch_label}"
+    errors.extend(
+        check_ordered_snippets(
+            block,
+            (
+                ("dispatch input preflight", f"      - name: Validate {step_prefix} evidence dispatch inputs"),
+                ("builder identity evidence", f"      - name: Check {step_prefix} builder identity"),
+                ("isolated release environment", "      - name: Create isolated release environment"),
+                ("native Linux artifact build", f"      - name: Build {step_prefix} native artifacts"),
+                ("native installer smoke evidence capture", f"      - name: Smoke {step_prefix} native artifacts"),
+                ("target artifact staging", f"      - name: Stage {step_prefix} target artifacts"),
+                ("strict promotion artifact validation", f"      - name: Validate {step_prefix} promotion artifacts"),
+                (
+                    "local protected goal evidence preflight",
+                    f"      - name: Preflight {step_prefix} local platform goal evidence",
+                ),
+                (
+                    "accepted-evidence candidate generation",
+                    f"      - name: Generate {step_prefix} accepted-evidence candidate",
+                ),
+                ("review evidence bundle generation", f"      - name: Package {step_prefix} review evidence bundle"),
+                (
+                    "finalized evidence record generation",
+                    f"      - name: Finalize {step_prefix} accepted-evidence candidate",
+                ),
+                ("scoped Linux evidence upload staging", f"      - name: Stage scoped {step_prefix} evidence upload"),
+                ("evidence artifact upload", "      - uses: actions/upload-artifact@v7"),
+            ),
+            job=job,
+        )
+    )
     dispatch_command = (
         "python3 scripts/check_extended_platform_dispatch_inputs.py \\\n"
         f"            --target {target} \\\n"
@@ -226,9 +297,126 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
     return errors
 
 
+def check_ordered_snippets(
+    block: str,
+    ordered_snippets: tuple[tuple[str, str], ...],
+    *,
+    job: str,
+) -> list[str]:
+    errors: list[str] = []
+    previous_index = -1
+    previous_label = ""
+    for label, snippet in ordered_snippets:
+        index = block.find(snippet)
+        if index < 0:
+            continue
+        if index < previous_index:
+            errors.append(
+                f"{job} protected evidence step order is invalid: {label} must run after {previous_label}"
+            )
+        previous_index = max(previous_index, index)
+        previous_label = label
+    return errors
+
+
+def check_run_shell_safety(block: str, *, job: str) -> list[str]:
+    errors: list[str] = []
+    run_blocks = re.finditer(r"(?m)^        run: \|\n((?:^          [^\n]*(?:\n|$))+)", block)
+    for index, match in enumerate(run_blocks, start=1):
+        script_lines = [line[10:] for line in match.group(1).splitlines() if line.startswith("          ")]
+        first_command = next((line.strip() for line in script_lines if line.strip()), "")
+        if first_command != "set -euo pipefail":
+            errors.append(
+                f"{job} run step {index} missing strict shell safety: set -euo pipefail"
+            )
+    return errors
+
+
+def check_top_level_concurrency(workflow: str, *, workflow_label: str, group: str) -> list[str]:
+    block = workflow_top_level_block(workflow, "concurrency")
+    if not block:
+        return [f"{workflow_label} workflow missing top-level concurrency gate: concurrency:"]
+    errors: list[str] = []
+    required_snippets = {
+        f"group: {group}": "target/release-scoped concurrency group",
+        "cancel-in-progress: false": "non-cancelling evidence concurrency",
+    }
+    for snippet, label in required_snippets.items():
+        if snippet not in block:
+            errors.append(f"{workflow_label} workflow missing {label}: {snippet}")
+    return errors
+
+
+def check_top_level_run_defaults(workflow: str, *, workflow_label: str) -> list[str]:
+    block = workflow_top_level_block(workflow, "defaults")
+    if not block:
+        return [f"{workflow_label} workflow missing top-level Bash run default: defaults:"]
+    if "  run:\n    shell: bash" not in block:
+        return [f"{workflow_label} workflow must force Bash for multiline Linux proof steps"]
+    return []
+
+
+def check_workflow_script_dependencies(dependencies: tuple[Path, ...] | None = None) -> list[str]:
+    dependencies = WORKFLOW_SCRIPT_DEPENDENCIES if dependencies is None else dependencies
+    label = "extended platform evidence workflow script dependency"
+    errors: list[str] = []
+    for relative_path in dependencies:
+        dependency = ROOT / relative_path
+        relative = relative_path.as_posix()
+        if not dependency.exists():
+            errors.append(f"{label} must exist in checkout at {relative}")
+            continue
+        if dependency.is_symlink():
+            errors.append(f"{label} must not be a symlink: {relative}")
+        if not dependency.is_file():
+            errors.append(f"{label} must be a file: {relative}")
+        if not is_git_tracked(relative_path):
+            errors.append(f"{label} must be tracked by git: {relative}")
+    return errors
+
+
+def workflow_script_dependencies(workflow: str) -> tuple[Path, ...]:
+    discovered = {Path(reference) for reference in WORKFLOW_SCRIPT_REFERENCE_RE.findall(workflow)}
+    required = set(WORKFLOW_SCRIPT_DEPENDENCIES)
+    return tuple(sorted(discovered | required, key=lambda path: path.as_posix()))
+
+
+def is_git_tracked(relative: Path) -> bool:
+    result = subprocess.run(
+        ["git", "ls-files", "--error-unmatch", "--", relative.as_posix()],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode == 0
+
+
+def workflow_top_level_block(workflow: str, key: str) -> str:
+    match = re.search(rf"(?ms)^{re.escape(key)}:\n(.*?)(?=^[A-Za-z0-9_-]+:|\Z)", workflow)
+    return match.group(0) if match else ""
+
+
 def workflow_job_block(workflow: str, job: str) -> str:
     match = re.search(rf"(?ms)^  {re.escape(job)}:\n(.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)", workflow)
     return match.group(1) if match else ""
+
+
+def check_checkout_step(block: str, *, job: str) -> list[str]:
+    checkout = workflow_step_block(block, "uses: actions/checkout@v6")
+    if not checkout:
+        return [f"{job} missing repository checkout: uses: actions/checkout@v6"]
+    errors: list[str] = []
+    if "persist-credentials: false" not in checkout:
+        errors.append(f"{job} checkout step missing credential isolation: persist-credentials: false")
+    if "clean: true" not in checkout:
+        errors.append(f"{job} checkout step missing workspace cleanup: clean: true")
+    return errors
+
+
+def workflow_step_block(job_block: str, marker: str) -> str:
+    pattern = rf"(?ms)^      - {re.escape(marker)}\n(.*?)(?=^      - |\Z)"
+    match = re.search(pattern, job_block)
+    return match.group(0) if match else ""
 
 
 if __name__ == "__main__":

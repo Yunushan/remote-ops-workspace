@@ -582,7 +582,7 @@ run-attempt-bound accepted evidence artifacts into the release asset directory
 after checking exact source artifact `workflow_run.id`,
 `workflow_run.head_sha`, `workflow_run.repository_id` and
 `workflow_run.head_repository_id` binding when exact repository IDs are
-available, artifact created_at inside the exact source run start/update window
+available, artifact created_at inside the exact source run creation/start/update window
 when GitHub exposes timestamps, plus downloaded source artifact native artifact SHA-256 values and
 review-bundle size/SHA-256 values against the finalized accepted record,
 then runs
@@ -622,7 +622,7 @@ exact source workflow run metadata,
 and source artifact `workflow_run.id`,
 `workflow_run.head_sha`, `workflow_run.repository_id` and
 `workflow_run.head_repository_id` binding when GitHub exposes repository IDs,
-plus artifact created_at inside the exact source run start/update window when
+plus artifact created_at inside the exact source run creation/start/update window when
 GitHub exposes timestamps.
 Python release tooling is constrained by `requirements-release.txt` and recorded
 in each release manifest through `configs/release_toolchain.json`. Native

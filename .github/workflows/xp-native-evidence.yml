@@ -34,6 +34,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: xp-native-evidence-${{ inputs.target }}-${{ inputs.release_tag }}
+  cancel-in-progress: false
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   SOURCE_DATE_EPOCH: "1704067200"
@@ -48,15 +52,23 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+          clean: true
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Record XP evidence collector boundary
-        run: python -c "print('XP evidence collector validates staged proof captured on real Windows XP hosts; run scripts/xp_smoke_runner.cmd on the XP host before dispatch.')"
+        run: python -c "print('XP evidence collector validates staged proof captured on real Windows XP hosts; run scripts/xp_smoke_runner.cmd after this workflow starts so smoke proof binds the printed source run metadata.')"
       - name: Create XP evidence output directory
         run: python -c "from pathlib import Path; Path('xp-evidence-output/${{ inputs.target }}/${{ inputs.release_tag }}').mkdir(parents=True, exist_ok=True)"
       - name: Validate XP evidence dispatch inputs
         run: python scripts/check_xp_native_evidence_dispatch_inputs.py --target "${{ inputs.target }}" --release-tag "${{ inputs.release_tag }}" --release-asset-base-url "${{ inputs.release_asset_base_url }}" --workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" --source-head-sha "${{ github.sha }}" --source-run-attempt "${{ github.run_attempt }}" --assets-dir "${{ inputs.assets_dir }}" --evidence-file "${{ inputs.evidence_file }}" --evidence-dir "${{ inputs.evidence_dir }}"
+      - name: Print XP evidence capture source metadata
+        run: |
+          echo "XP evidence source workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          echo "XP evidence source head SHA: ${{ github.sha }}"
+          echo "XP evidence source run attempt: ${{ github.run_attempt }}"
+      - name: Wait for staged XP evidence inputs
+        run: python scripts/wait_for_xp_native_evidence_inputs.py --assets-dir "${{ inputs.assets_dir }}" --evidence-file "${{ inputs.evidence_file }}" --evidence-dir "${{ inputs.evidence_dir }}" --timeout-seconds 2700 --poll-seconds 10 --stable-polls 2
       - name: Validate XP native evidence
         run: python scripts/check_xp_native_evidence.py --evidence "${{ inputs.evidence_file }}" --assets-dir "${{ inputs.assets_dir }}" --evidence-dir "${{ inputs.evidence_dir }}"
       - name: Validate XP promotion artifacts
@@ -70,11 +82,11 @@ jobs:
       - name: Finalize XP accepted-evidence candidate
         run: python scripts/finalize_platform_verified_evidence_record.py --candidate-record "xp-evidence-output/${{ inputs.target }}/${{ inputs.release_tag }}/platform-verified-evidence-${{ inputs.target }}.json" --bundle-manifest "xp-evidence-output/${{ inputs.target }}/${{ inputs.release_tag }}/xp-native-evidence-bundle-${{ inputs.target }}-${{ inputs.release_tag }}.json" --bundle-archive "xp-evidence-output/${{ inputs.target }}/${{ inputs.release_tag }}/xp-native-evidence-bundle-${{ inputs.target }}-${{ inputs.release_tag }}.zip" --bundle-sha256s "xp-evidence-output/${{ inputs.target }}/${{ inputs.release_tag }}/xp-native-evidence-bundle-${{ inputs.target }}-${{ inputs.release_tag }}-SHA256SUMS.txt" --out "xp-evidence-output/${{ inputs.target }}/${{ inputs.release_tag }}/platform-verified-evidence-${{ inputs.target }}-final.json"
       - name: Stage scoped XP evidence upload
-        run: python scripts/stage_xp_native_evidence_upload.py --target "${{ inputs.target }}" --release-tag "${{ inputs.release_tag }}" --assets-dir "${{ inputs.assets_dir }}" --evidence-output-dir "xp-evidence-output/${{ inputs.target }}/${{ inputs.release_tag }}" --out-dir xp-evidence-upload --force
+        run: python scripts/stage_xp_native_evidence_upload.py --target "${{ inputs.target }}" --release-tag "${{ inputs.release_tag }}" --assets-dir "${{ inputs.assets_dir }}" --evidence-output-dir "xp-evidence-output/${{ inputs.target }}/${{ inputs.release_tag }}" --out-dir "platform-evidence-upload/${{ inputs.target }}/${{ inputs.release_tag }}" --force
       - uses: actions/upload-artifact@v7
         with:
           name: xp-native-evidence-${{ inputs.target }}-${{ inputs.release_tag }}
-          path: xp-evidence-upload/*
+          path: platform-evidence-upload/${{ inputs.target }}/${{ inputs.release_tag }}/*
           if-no-files-found: error
           include-hidden-files: false
           retention-days: 90

@@ -13,6 +13,13 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_make_platform_verified_evidence_record_policy_matches_registry() -> None:
+    maker = _load_maker()
+    registry = json.loads((ROOT / "configs" / "platform_verified_evidence.json").read_text(encoding="utf-8"))
+
+    assert maker.DEFAULT_EVIDENCE_POLICY == registry["policy"]
+
+
 def test_make_platform_verified_evidence_record_generates_linux_record(
     tmp_path: Path,
     monkeypatch,
@@ -169,7 +176,7 @@ def test_make_platform_verified_evidence_record_generates_linux_record(
     assert record["staged_upload_command"] == (
         "python scripts/stage_extended_linux_evidence_upload.py "
         f"--target {target} --release-tag {tag} --source-dir {assets.as_posix()} "
-        "--out-dir linux-evidence-upload --force"
+        f"--out-dir platform-evidence-upload/{target}/{tag} --force"
     )
     assert record["artifact_validation_command"] == (
         f"python scripts/check_platform_promotion_artifacts.py --target {target} "
@@ -460,7 +467,7 @@ def test_make_platform_verified_evidence_record_generates_xp_record(tmp_path: Pa
         "python scripts/stage_xp_native_evidence_upload.py "
         f"--target {target} --release-tag {tag} --assets-dir {assets.as_posix()} "
         f"--evidence-output-dir xp-evidence-output/{target}/{tag} "
-        "--out-dir xp-evidence-upload --force"
+        f"--out-dir platform-evidence-upload/{target}/{tag} --force"
     )
     assert record["artifact_validation_command"] == (
         f"python scripts/check_platform_promotion_artifacts.py --target {target} "

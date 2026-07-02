@@ -316,13 +316,13 @@ def test_platform_promotion_runbook_requires_target_dispatch_commands() -> None:
     checker = _load_checker()
     linux_command = (
         "gh workflow run extended-platform-evidence.yml --repo <owner>/<repo> "
-        "--ref <github-actions-head-sha-or-branch> -f target=linux-i386 "
+        "--ref <github-actions-head-sha> -f target=linux-i386 "
         "-f release_tag=v<project.version> "
         "-f release_asset_base_url=<github-release-download-url>"
     )
     xp_command = (
         "gh workflow run xp-native-evidence.yml --repo <owner>/<repo> "
-        "--ref <github-actions-head-sha-or-branch> -f target=windows-xp-native-x86 "
+        "--ref <github-actions-head-sha> -f target=windows-xp-native-x86 "
         "-f release_tag=v<project.version> "
         "-f release_asset_base_url=<github-release-download-url> "
         "-f assets_dir=<target-release-artifact-dir> "

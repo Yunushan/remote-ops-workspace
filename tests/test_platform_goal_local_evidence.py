@@ -548,6 +548,56 @@ def test_platform_goal_local_evidence_accepts_linux_targets_with_inferred_run_bi
     assert errors == []
 
 
+def test_platform_goal_local_evidence_rejects_multi_target_explicit_source_binding_options(
+    tmp_path: Path,
+) -> None:
+    checker = _load_local_evidence_checker()
+
+    errors = checker.check_platform_goal_local_evidence(
+        root=tmp_path,
+        release_tag="v1.0.0",
+        targets=("linux-i386", "windows-xp-native-x86"),
+        linux_workflow_run_url="https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        linux_source_head_sha="a" * 40,
+        linux_source_run_attempt=1,
+        xp_source_workflow_run_url="https://github.com/example/remote-ops-workspace/actions/runs/54321",
+        xp_source_head_sha="a" * 40,
+        xp_source_run_attempt=1,
+    )
+
+    assert errors == [
+        "explicit source binding options require exactly one --target: "
+        "--linux-workflow-run-url, --linux-source-head-sha, --linux-source-run-attempt, "
+        "--xp-source-workflow-run-url, --xp-source-head-sha, --xp-source-run-attempt"
+    ]
+
+
+def test_platform_goal_local_evidence_rejects_empty_target_list(tmp_path: Path) -> None:
+    checker = _load_local_evidence_checker()
+
+    errors = checker.check_platform_goal_local_evidence(
+        root=tmp_path,
+        release_tag="v1.0.0",
+        targets=(),
+    )
+
+    assert errors == ["at least one protected target is required for local evidence preflight"]
+
+
+def test_platform_goal_local_evidence_rejects_duplicate_targets(tmp_path: Path) -> None:
+    checker = _load_local_evidence_checker()
+
+    errors = checker.check_platform_goal_local_evidence(
+        root=tmp_path,
+        release_tag="v1.0.0",
+        targets=("linux-i386", "linux-i386"),
+    )
+
+    assert errors == [
+        "local evidence preflight target list must not contain duplicates: linux-i386"
+    ]
+
+
 def test_platform_goal_local_evidence_rejects_linux_source_head_drift(
     tmp_path: Path,
 ) -> None:
@@ -1072,6 +1122,44 @@ def test_platform_goal_local_evidence_rejects_invalid_inferred_xp_source_binding
     assert f"{target} XP evidence release_source.workflow_run_url must be a GitHub Actions run URL" in errors
     assert f"{target} XP evidence release_source.head_sha must be a 40-character lowercase Git SHA" in errors
     assert f"{target} XP evidence release_source.run_attempt must be a positive integer" in errors
+
+
+def test_platform_goal_local_evidence_rejects_wrong_xp_release_source_workflow(
+    tmp_path: Path,
+) -> None:
+    checker = _load_local_evidence_checker()
+    fixtures = _load_record_fixtures()
+    artifact_checker = fixtures._load_platform_promotion_artifacts_checker()
+    target = "windows-xp-native-x86"
+    tag = f"v{artifact_checker.read_project_version()}"
+    target_root = tmp_path / target / tag
+    artifacts = target_root / "artifacts"
+    artifacts.mkdir(parents=True)
+    names = fixtures._required_names(artifact_checker, target, tag)
+    fixtures._write_artifact_set(artifacts, names)
+    evidence = fixtures._valid_xp_evidence(target, "x86", "SP3", tag, names)
+    evidence["artifact_validation"]["command"] = evidence["artifact_validation"]["command"].replace(
+        f"native-dist/windows-xp/{target}/{tag}",
+        f"{target}/{tag}/artifacts",
+    )
+    evidence["release_source"]["workflow"] = ".github/workflows/extended-platform-evidence.yml"
+    fixtures._attach_smoke_evidence_files(target_root, evidence)
+    (target_root / "xp-evidence.json").write_text(
+        json.dumps(evidence, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    errors = checker.check_platform_goal_local_evidence(
+        root=tmp_path,
+        release_tag=tag,
+        targets=(target,),
+    )
+
+    assert (
+        f"{target} XP evidence release_source.workflow must be "
+        ".github/workflows/xp-native-evidence.yml, "
+        "got '.github/workflows/extended-platform-evidence.yml'"
+    ) in errors
 
 
 def test_platform_goal_local_evidence_rejects_explicit_xp_source_binding_mismatch(

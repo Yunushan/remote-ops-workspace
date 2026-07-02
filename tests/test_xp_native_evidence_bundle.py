@@ -64,12 +64,12 @@ def test_xp_native_evidence_bundle_packages_valid_x86_evidence(tmp_path: Path) -
             f"--assets-dir {assets.relative_to(tmp_path).as_posix()} "
             f"--evidence-dir {evidence_root.relative_to(tmp_path).as_posix()}"
         ),
-        candidate_data["local_evidence_preflight_command"],
-        candidate_data["staged_upload_command"],
         (
             "python scripts/check_platform_promotion_artifacts.py "
             f"--target {target} --assets-dir {assets.relative_to(tmp_path).as_posix()} --tag {tag} --strict"
         ),
+        candidate_data["local_evidence_preflight_command"],
+        candidate_data["staged_upload_command"],
         "python scripts/check_platform_verified_evidence.py",
     ]
     assert all("<" not in command and ">" not in command for command in data["validated_commands"])

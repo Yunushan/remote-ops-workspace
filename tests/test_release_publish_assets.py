@@ -14,9 +14,11 @@ POLICY = (
     "or Windows XP native-host readiness. Accepted records must include release asset URLs, "
     "review-bundle manifest release asset URL binding, review bundle release asset URLs, "
     "release-importable artifact source binding, "
-    "source artifact repository-id binding when exact source-run metadata exposes repository IDs, "
-    "source artifact run-start timestamp binding when exact source-run metadata exposes run start timestamps, "
-    "source artifact run-window timestamp binding when exact source-run metadata exposes run update timestamps, "
+    "source artifact repository-id binding from exact source-run metadata, "
+    "source artifact run-created timestamp binding from exact source-run metadata, "
+    "source artifact run-start timestamp binding from exact source-run metadata, "
+    "source artifact run-window timestamp binding from exact source-run metadata, "
+    "source artifact retention expiration binding from exact source artifact metadata, "
     "release source head SHA binding, "
     "release source run-attempt binding, "
     "same release source workflow run URL cannot carry conflicting run attempts, "
@@ -37,7 +39,8 @@ POLICY = (
     "exact safe checksum and native manifest file references, "
     "target architecture/format manifest binding, "
     "exact safe release asset URL filenames, "
-    "exact required check lists, exact workflow dispatch input sets, exact evidence source record fields, "
+    "exact required check lists, exact workflow dispatch input sets, "
+    "workflow dispatch release repository binding, exact evidence source record fields, "
     "exact release source and review bundle fields, "
     "Linux builder identity evidence, builder identity "
     "SHA-256, builder identity release/run binding, "
@@ -417,6 +420,63 @@ def test_publish_contract_rejects_publish_continue_on_error() -> None:
     assert "publish job must not use continue-on-error: true for protected release gates" in errors
 
 
+def test_publish_contract_requires_clean_checkouts_for_release_jobs() -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    block = checker.workflow_job_block(workflow, "linux-native")
+    assert block
+    workflow = workflow.replace(block, block.replace("          clean: true\n", "", 1), 1)
+
+    errors = checker.check_publish_contract(matrix, workflow)
+
+    assert "linux-native job missing clean release checkout: clean: true" in errors
+
+
+def test_publish_contract_rejects_clean_checkout_setting_outside_checkout_step() -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    block = checker.workflow_job_block(workflow, "linux-native")
+    assert block
+    mutated = block.replace("          clean: true\n", "", 1).replace(
+        "      - uses: actions/setup-python@v6\n",
+        "      - name: Misleading clean setting\n"
+        "        run: echo clean\n"
+        "        env:\n"
+        "          clean: true\n"
+        "      - uses: actions/setup-python@v6\n",
+        1,
+    )
+    workflow = workflow.replace(block, mutated, 1)
+
+    errors = checker.check_publish_contract(matrix, workflow)
+
+    assert "linux-native job missing clean release checkout: clean: true" in errors
+
+
+def test_publish_contract_rejects_persist_credentials_outside_checkout_step() -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    block = checker.workflow_job_block(workflow, "publish")
+    assert block
+    mutated = block.replace("          persist-credentials: false\n", "", 1).replace(
+        "      - uses: actions/setup-python@v6\n",
+        "      - name: Misleading checkout credential setting\n"
+        "        run: echo persist\n"
+        "        env:\n"
+        "          persist-credentials: false\n"
+        "      - uses: actions/setup-python@v6\n",
+        1,
+    )
+    workflow = workflow.replace(block, mutated, 1)
+
+    errors = checker.check_publish_contract(matrix, workflow)
+
+    assert "publish job missing checkout credential isolation: persist-credentials: false" in errors
+
+
 def test_publish_contract_requires_platform_evidence_import_job() -> None:
     checker = _load_checker()
     matrix = _load_matrix()
@@ -490,6 +550,85 @@ def test_publish_contract_requires_platform_evidence_import_timeout() -> None:
     errors = checker.check_platform_evidence_import_job(workflow)
 
     assert any("bounded platform evidence import timeout" in error for error in errors)
+
+
+def test_publish_contract_requires_platform_evidence_import_clean_checkout() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        "  accepted-platform-evidence-assets:\n"
+        "    needs: release-preflight\n"
+        "    runs-on: ubuntu-latest\n"
+        "    timeout-minutes: 20\n"
+        "    permissions:\n"
+        "      actions: read\n"
+        "      contents: read\n"
+        "    steps:\n"
+        "      - uses: actions/checkout@v6\n"
+        "        with:\n"
+        "          persist-credentials: false\n"
+        "          clean: true\n",
+        "  accepted-platform-evidence-assets:\n"
+        "    needs: release-preflight\n"
+        "    runs-on: ubuntu-latest\n"
+        "    timeout-minutes: 20\n"
+        "    permissions:\n"
+        "      actions: read\n"
+        "      contents: read\n"
+        "    steps:\n"
+        "      - uses: actions/checkout@v6\n"
+        "        with:\n"
+        "          persist-credentials: false\n",
+        1,
+    )
+
+    errors = checker.check_platform_evidence_import_job(workflow)
+
+    assert any("clean platform evidence import checkout" in error for error in errors)
+
+
+def test_platform_evidence_import_rejects_clean_setting_outside_checkout_step() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    block = checker.workflow_job_block(workflow, "accepted-platform-evidence-assets")
+    assert block
+    mutated = block.replace("          clean: true\n", "", 1).replace(
+        "      - uses: actions/setup-python@v6\n",
+        "      - name: Misleading clean setting\n"
+        "        run: echo clean\n"
+        "        env:\n"
+        "          clean: true\n"
+        "      - uses: actions/setup-python@v6\n",
+        1,
+    )
+    workflow = workflow.replace(block, mutated, 1)
+
+    errors = checker.check_platform_evidence_import_job(workflow)
+
+    assert "accepted-platform-evidence-assets job missing clean release checkout: clean: true" in errors
+
+
+def test_platform_evidence_import_rejects_persist_credentials_outside_checkout_step() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    block = checker.workflow_job_block(workflow, "accepted-platform-evidence-assets")
+    assert block
+    mutated = block.replace("          persist-credentials: false\n", "", 1).replace(
+        "      - uses: actions/setup-python@v6\n",
+        "      - name: Misleading credential isolation setting\n"
+        "        run: echo credentials\n"
+        "        env:\n"
+        "          persist-credentials: false\n"
+        "      - uses: actions/setup-python@v6\n",
+        1,
+    )
+    workflow = workflow.replace(block, mutated, 1)
+
+    errors = checker.check_platform_evidence_import_job(workflow)
+
+    assert (
+        "accepted-platform-evidence-assets job missing checkout credential isolation: "
+        "persist-credentials: false"
+    ) in errors
 
 
 def test_publish_contract_requires_platform_evidence_import_hidden_file_exclusion() -> None:
@@ -837,6 +976,32 @@ def test_release_assets_reject_final_accepted_record_asset_drift(tmp_path: Path)
 
     assert (
         "linux-i386 accepted evidence finalized record asset must match accepted registry record: "
+        "platform-verified-evidence-linux-i386-final.json"
+    ) in errors
+
+
+def test_release_assets_reject_noncanonical_final_accepted_record_asset(
+    tmp_path: Path,
+) -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    registry = _accepted_evidence_registry("linux-i386")
+    record = registry["accepted_evidence"][0]
+    _write_synthetic_release_assets(checker, matrix, tmp_path)
+    _write_accepted_evidence_assets(record, tmp_path)
+    final_record = tmp_path / "platform-verified-evidence-linux-i386-final.json"
+    data = json.loads(final_record.read_text(encoding="utf-8"))
+    final_record.write_text(json.dumps(data, sort_keys=True) + "\n", encoding="utf-8")
+
+    errors = checker.check_release_assets(
+        tmp_path,
+        matrix,
+        tag="v1.0.2",
+        evidence_registry=registry,
+    )
+
+    assert (
+        "linux-i386 accepted evidence finalized record asset must use canonical sorted JSON: "
         "platform-verified-evidence-linux-i386-final.json"
     ) in errors
 
@@ -1358,7 +1523,7 @@ def _write_accepted_review_bundle_assets(record: dict[str, object], root: Path) 
 def _write_final_accepted_record_asset(record: dict[str, object], root: Path) -> None:
     target = str(record["target"])
     path = root / f"platform-verified-evidence-{target}-final.json"
-    path.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    path.write_bytes((json.dumps(record, indent=2, sort_keys=True) + "\n").encode("utf-8"))
 
 
 def _prefinalized_candidate(record: dict[str, object]) -> dict[str, object]:
@@ -1522,7 +1687,7 @@ def _linux_accepted_evidence(target: str) -> dict[str, object]:
         "staged_upload_command": (
             "python scripts/stage_extended_linux_evidence_upload.py "
             f"--target {target} --release-tag v1.0.2 --source-dir {assets_dir} "
-            "--out-dir linux-evidence-upload --force"
+            f"--out-dir platform-evidence-upload/{target}/v1.0.2 --force"
         ),
         "artifact_validation_command": (
             f"python scripts/check_platform_promotion_artifacts.py --target {target} "
@@ -1684,7 +1849,7 @@ def _xp_accepted_evidence(target: str) -> dict[str, object]:
             "python scripts/stage_xp_native_evidence_upload.py "
             f"--target {target} --release-tag v1.0.2 --assets-dir {assets_dir} "
             f"--evidence-output-dir xp-evidence-output/{target}/v1.0.2 "
-            "--out-dir xp-evidence-upload --force"
+            f"--out-dir platform-evidence-upload/{target}/v1.0.2 --force"
         ),
         "artifact_validation_command": (
             f"python scripts/check_platform_promotion_artifacts.py --target {target} "

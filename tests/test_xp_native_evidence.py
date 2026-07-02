@@ -53,6 +53,30 @@ def test_xp_native_evidence_contract_requires_security_smoke_provenance_fields()
     assert "XP native evidence contract must require security smoke provenance fields" in errors
 
 
+def test_xp_native_evidence_contract_requires_security_provenance_namespaces() -> None:
+    checker = _load_xp_native_evidence_checker()
+    contract = checker.read_json(Path("configs/xp_native_evidence_contract.json"))
+    del contract["required_security_patch_provenance_namespaces"]
+
+    errors = checker.check_contract(contract)
+
+    assert "XP native evidence contract must require concrete security provenance namespaces" in errors
+
+
+def test_xp_native_evidence_contract_rejects_weakened_security_provenance_namespaces() -> None:
+    checker = _load_xp_native_evidence_checker()
+    contract = checker.read_json(Path("configs/xp_native_evidence_contract.json"))
+    contract["required_security_patch_provenance_namespaces"]["cve_review_reference"] = [
+        marker
+        for marker in contract["required_security_patch_provenance_namespaces"]["cve_review_reference"]
+        if marker != "cve-"
+    ]
+
+    errors = checker.check_contract(contract)
+
+    assert "XP native evidence contract concrete cve_review_reference provenance namespaces missing ['cve-']" in errors
+
+
 def test_xp_native_evidence_contract_requires_artifact_manifest_smoke_lines() -> None:
     checker = _load_xp_native_evidence_checker()
     contract = checker.read_json(Path("configs/xp_native_evidence_contract.json"))
@@ -1278,6 +1302,27 @@ def test_xp_native_evidence_rejects_placeholder_security_patch_provenance(tmp_pa
     _attach_smoke_evidence_files(tmp_path, evidence)
     evidence["security"]["patch_evidence"]["security_update_channel"] = "test-security-update-channel"
     evidence["security"]["patch_evidence"]["cve_review_reference"] = "<replace-with-real-cve-review>"
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path)
+
+    assert (
+        "windows-xp-native-x86 evidence security.patch_evidence.security_update_channel "
+        "must name concrete non-placeholder provenance"
+    ) in errors
+    assert (
+        "windows-xp-native-x86 evidence security.patch_evidence.cve_review_reference "
+        "must name concrete non-placeholder provenance"
+    ) in errors
+
+
+def test_xp_native_evidence_rejects_vague_security_patch_provenance(tmp_path: Path) -> None:
+    checker = _load_xp_native_evidence_checker()
+    evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    evidence["security"]["patch_evidence"]["security_update_channel"] = "monthly maintenance baseline"
+    evidence["security"]["patch_evidence"]["cve_review_reference"] = "internal review 2026 06"
     path = tmp_path / "xp-evidence.json"
     path.write_text(json.dumps(evidence), encoding="utf-8")
 

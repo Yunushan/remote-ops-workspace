@@ -350,6 +350,60 @@ def test_finalize_platform_verified_evidence_record_requires_output_for_registry
     ) in captured.err
 
 
+def test_finalize_platform_verified_evidence_record_verifies_output_before_registry_append(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    finalizer = _load_finalizer()
+    helpers = _load_platform_verified_evidence_tests()
+    target = "windows-xp-native-x86"
+    release_tag = "v1.0.2"
+    candidate = helpers._xp_record(target)
+    _unfinalized_candidate(candidate)
+    candidate_path, manifest, archive, sidecar = _write_xp_candidate_and_bundle(
+        tmp_path,
+        candidate,
+        target=target,
+        release_tag=release_tag,
+    )
+    output = tmp_path / f"platform-verified-evidence-{target}-final.json"
+    registry = tmp_path / "platform_verified_evidence.json"
+
+    def tampered_write(path: Path, text: str) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('{"tampered": true}\n', encoding="utf-8", newline="\n")
+
+    monkeypatch.setattr(finalizer, "write_text_output", tampered_write)
+
+    rc = finalizer.main(
+        [
+            "--candidate-record",
+            str(candidate_path),
+            "--bundle-manifest",
+            str(manifest),
+            "--bundle-archive",
+            str(archive),
+            "--bundle-sha256s",
+            str(sidecar),
+            "--out",
+            str(output),
+            "--append-registry",
+            "--registry",
+            str(registry),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert output.read_text(encoding="utf-8") == '{"tampered": true}\n'
+    assert not registry.exists()
+    assert (
+        "finalize platform evidence record: finalized platform evidence record output file bytes "
+        "must match canonical record JSON before registry append"
+    ) in captured.err
+
+
 def test_finalize_platform_verified_evidence_record_rejects_output_outside_bundle_directory(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -1203,6 +1257,7 @@ def test_finalize_platform_verified_evidence_record_rejects_placeholder_validate
         "validated_commands": [
             candidate["native_build_command"],
             candidate["native_smoke_command"],
+            candidate["artifact_validation_command"],
             candidate["local_evidence_preflight_command"],
             candidate["staged_upload_command"],
             (
@@ -1229,8 +1284,8 @@ def test_finalize_platform_verified_evidence_record_rejects_missing_linux_local_
         "validated_commands": [
             candidate["native_build_command"],
             candidate["native_smoke_command"],
-            candidate["staged_upload_command"],
             candidate["artifact_validation_command"],
+            candidate["staged_upload_command"],
             "python scripts/check_platform_verified_evidence.py",
         ],
     }
@@ -1253,8 +1308,8 @@ def test_finalize_platform_verified_evidence_record_rejects_missing_staged_uploa
         "validated_commands": [
             candidate["native_build_command"],
             candidate["native_smoke_command"],
-            candidate["local_evidence_preflight_command"],
             candidate["artifact_validation_command"],
+            candidate["local_evidence_preflight_command"],
             "python scripts/check_platform_verified_evidence.py",
         ],
     }
@@ -1264,6 +1319,28 @@ def test_finalize_platform_verified_evidence_record_rejects_missing_staged_uploa
     assert (
         "review bundle manifest validated_commands must include exactly one staged upload command"
     ) in errors
+    assert "review bundle manifest validated_commands must match Linux candidate command provenance" in errors
+
+
+def test_finalize_platform_verified_evidence_record_rejects_staged_upload_before_artifact_validation() -> None:
+    finalizer = _load_finalizer()
+    helpers = _load_platform_verified_evidence_tests()
+    candidate = helpers._linux_record("linux-i386")
+    _unfinalized_candidate(candidate)
+    manifest = {
+        "bundle_type": "extended-linux-native-evidence",
+        "validated_commands": [
+            candidate["native_build_command"],
+            candidate["native_smoke_command"],
+            candidate["local_evidence_preflight_command"],
+            candidate["staged_upload_command"],
+            candidate["artifact_validation_command"],
+            "python scripts/check_platform_verified_evidence.py",
+        ],
+    }
+
+    errors = finalizer.check_manifest_validated_commands(candidate, manifest)
+
     assert "review bundle manifest validated_commands must match Linux candidate command provenance" in errors
 
 
@@ -1475,9 +1552,9 @@ def test_finalize_platform_verified_evidence_record_rejects_missing_xp_validatio
     manifest = {
         "bundle_type": "windows-xp-native-host-evidence",
         "validated_commands": [
+            candidate["artifact_validation_command"],
             candidate["local_evidence_preflight_command"],
             candidate["staged_upload_command"],
-            candidate["artifact_validation_command"],
             "python scripts/check_platform_verified_evidence.py",
         ],
     }
@@ -1497,8 +1574,8 @@ def test_finalize_platform_verified_evidence_record_rejects_missing_xp_local_pre
         "bundle_type": "windows-xp-native-host-evidence",
         "validated_commands": [
             candidate["native_evidence_validation_command"],
-            candidate["staged_upload_command"],
             candidate["artifact_validation_command"],
+            candidate["staged_upload_command"],
             "python scripts/check_platform_verified_evidence.py",
         ],
     }
@@ -1520,6 +1597,27 @@ def test_finalize_platform_verified_evidence_record_rejects_xp_validation_comman
         "bundle_type": "windows-xp-native-host-evidence",
         "validated_commands": [
             "python scripts/check_xp_native_evidence.py --evidence other-xp-evidence.json --assets-dir native-dist/windows-xp",
+            candidate["artifact_validation_command"],
+            candidate["local_evidence_preflight_command"],
+            candidate["staged_upload_command"],
+            "python scripts/check_platform_verified_evidence.py",
+        ],
+    }
+
+    errors = finalizer.check_manifest_validated_commands(candidate, manifest)
+
+    assert "review bundle manifest validated_commands must match XP bundle validation commands" in errors
+
+
+def test_finalize_platform_verified_evidence_record_rejects_xp_staged_upload_before_artifact_validation() -> None:
+    finalizer = _load_finalizer()
+    helpers = _load_platform_verified_evidence_tests()
+    candidate = helpers._xp_record("windows-xp-native-x86")
+    _unfinalized_candidate(candidate)
+    manifest = {
+        "bundle_type": "windows-xp-native-host-evidence",
+        "validated_commands": [
+            candidate["native_evidence_validation_command"],
             candidate["local_evidence_preflight_command"],
             candidate["staged_upload_command"],
             candidate["artifact_validation_command"],
@@ -1947,9 +2045,9 @@ def _linux_validated_commands(candidate: dict[str, object]) -> list[str]:
     return [
         str(candidate["native_build_command"]),
         str(candidate["native_smoke_command"]),
+        str(candidate["artifact_validation_command"]),
         str(candidate["local_evidence_preflight_command"]),
         str(candidate["staged_upload_command"]),
-        str(candidate["artifact_validation_command"]),
         "python scripts/check_platform_verified_evidence.py",
     ]
 
@@ -1957,9 +2055,9 @@ def _linux_validated_commands(candidate: dict[str, object]) -> list[str]:
 def _xp_validated_commands(candidate: dict[str, object]) -> list[str]:
     return [
         str(candidate["native_evidence_validation_command"]),
+        str(candidate["artifact_validation_command"]),
         str(candidate["local_evidence_preflight_command"]),
         str(candidate["staged_upload_command"]),
-        str(candidate["artifact_validation_command"]),
         "python scripts/check_platform_verified_evidence.py",
     ]
 

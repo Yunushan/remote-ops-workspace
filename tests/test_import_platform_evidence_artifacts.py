@@ -587,6 +587,32 @@ def test_import_platform_evidence_artifacts_dry_run_allows_nonempty_output_direc
     assert "gh run download 12345" in capsys.readouterr().out
 
 
+def test_import_platform_evidence_artifacts_rejects_duplicate_record_targets(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    importer = _load_importer()
+    record = importer.public_record(_record(tmp_path))
+    out_dir = tmp_path / "release-assets"
+
+    def fail_run(*_args: Any, **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+        raise AssertionError("gh should not run when accepted import records contain duplicate targets")
+
+    monkeypatch.setattr(importer.subprocess, "run", fail_run)
+
+    errors = importer.import_platform_evidence_artifacts(
+        [record, dict(record)],
+        out_dir=out_dir,
+        dry_run=True,
+        release_head_sha=HEAD_SHA,
+    )
+
+    assert errors == [
+        "release asset import accepted records must target each platform once: linux-i386"
+    ]
+    assert not out_dir.exists()
+
+
 def test_import_platform_evidence_artifacts_requires_gh_for_downloads(
     tmp_path: Path,
     monkeypatch,
@@ -1146,6 +1172,38 @@ def test_import_record_rejects_source_workflow_run_attempt_mismatch(
     )
 
 
+def test_import_record_rejects_source_workflow_run_started_before_created(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+
+    def fake_run(command: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        assert _is_metadata_command(command)
+        return _source_run_metadata(
+            command,
+            runCreatedAt="2026-06-30T12:01:00Z",
+            runStartedAt="2026-06-30T12:00:00Z",
+        )
+
+    monkeypatch.setattr(importer.subprocess, "run", fake_run)
+
+    errors = importer.import_record(
+        record,
+        out_dir=tmp_path / "release-assets",
+        download_root=tmp_path / "download",
+        dry_run=False,
+        release_head_sha=HEAD_SHA,
+    )
+
+    assert (
+        "linux-i386 release_asset_source workflow run runStartedAt "
+        "must be at or after runCreatedAt 2026-06-30T12:01:00Z, "
+        "got '2026-06-30T12:00:00Z'"
+    ) in errors
+
+
 def test_import_record_rejects_source_workflow_run_id_mismatch(
     tmp_path: Path,
     monkeypatch,
@@ -1239,6 +1297,60 @@ def test_import_record_rejects_source_workflow_run_repository_mismatch(
     ) in errors
 
 
+def test_import_record_rejects_missing_source_workflow_run_repository_id(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+
+    def fake_run(command: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        assert _is_metadata_command(command)
+        return _source_run_metadata(command, repositoryId=None)
+
+    monkeypatch.setattr(importer.subprocess, "run", fake_run)
+
+    errors = importer.import_record(
+        record,
+        out_dir=tmp_path / "release-assets",
+        download_root=tmp_path / "download",
+        dry_run=False,
+        release_head_sha=HEAD_SHA,
+    )
+
+    assert (
+        "linux-i386 release_asset_source workflow run repositoryId "
+        "must be a positive integer, got None"
+    ) in errors
+
+
+def test_import_record_rejects_missing_source_workflow_run_head_repository_id(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+
+    def fake_run(command: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        assert _is_metadata_command(command)
+        return _source_run_metadata(command, headRepositoryId="1001")
+
+    monkeypatch.setattr(importer.subprocess, "run", fake_run)
+
+    errors = importer.import_record(
+        record,
+        out_dir=tmp_path / "release-assets",
+        download_root=tmp_path / "download",
+        dry_run=False,
+        release_head_sha=HEAD_SHA,
+    )
+
+    assert (
+        "linux-i386 release_asset_source workflow run headRepositoryId "
+        "must be a positive integer, got '1001'"
+    ) in errors
+
+
 def test_import_record_rejects_release_checkout_head_sha_mismatch(tmp_path: Path, monkeypatch) -> None:
     importer = _load_importer()
     record = _record(tmp_path)
@@ -1314,10 +1426,39 @@ def test_import_platform_evidence_artifacts_cli_dry_run_checks_release_checkout_
             "--out-dir",
             str(tmp_path / "release-assets"),
             "--dry-run",
+            "--verify-source-run",
         ]
     )
 
     assert result == 1
+
+
+def test_import_platform_evidence_artifacts_cli_requires_source_run_verification_for_single_target_dry_run(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    importer = _load_importer()
+    registry = tmp_path / "platform_verified_evidence.json"
+
+    result = importer.main(
+        [
+            "--registry",
+            str(registry),
+            "--release-tag",
+            "v1.0.2",
+            "--require-target",
+            "linux-i386",
+            "--out-dir",
+            str(tmp_path / "release-assets"),
+            "--dry-run",
+        ]
+    )
+
+    assert result == 2
+    assert (
+        "platform evidence import: --dry-run for protected platform evidence imports "
+        "requires --verify-source-run"
+    ) in capsys.readouterr().err
 
 
 def test_import_platform_evidence_artifacts_cli_requires_source_run_verification_for_goal_dry_run(
@@ -1342,7 +1483,7 @@ def test_import_platform_evidence_artifacts_cli_requires_source_run_verification
 
     assert result == 2
     assert (
-        "platform evidence import: --dry-run for the protected platform goal requires --verify-source-run"
+        "platform evidence import: --dry-run for protected platform evidence imports requires --verify-source-run"
         in capsys.readouterr().err
     )
 
@@ -1369,7 +1510,7 @@ def test_import_platform_evidence_artifacts_cli_requires_source_run_verification
 
     assert result == 2
     assert (
-        "platform evidence import: --dry-run for the protected platform goal requires --verify-source-run"
+        "platform evidence import: --dry-run for protected platform evidence imports requires --verify-source-run"
         in capsys.readouterr().err
     )
 
@@ -1490,9 +1631,66 @@ def test_import_record_dry_run_rejects_missing_source_artifact(
     )
 
     assert errors == [
+        "linux-i386 release_asset_source artifact list must contain only the "
+        "target-scoped evidence artifact 'extended-linux-evidence-linux-i386-v1.0.2', "
+        "got 0 artifacts",
         "linux-i386 release_asset_source artifact list must contain exactly one "
-        "'extended-linux-evidence-linux-i386-v1.0.2', got 0"
+        "'extended-linux-evidence-linux-i386-v1.0.2', got 0",
     ]
+
+
+def test_import_record_dry_run_rejects_extra_source_artifact(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+
+    def fake_run(command: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        assert check is True
+        assert kwargs == {"capture_output": True, "text": True}
+        if _is_metadata_command(command):
+            return _successful_view(command)
+        assert _is_artifacts_command(command)
+        artifacts = json.loads(_successful_artifacts(command).stdout)["artifacts"]
+        artifacts.append(
+            {
+                "id": 98766,
+                "name": "raw-builder-output",
+                "archive_download_url": (
+                    "https://api.github.com/repos/example/remote-ops-workspace/"
+                    "actions/artifacts/98766/zip"
+                ),
+                "expired": False,
+                "size_in_bytes": 512,
+                "created_at": "2026-06-30T12:03:00Z",
+                "updated_at": "2026-06-30T12:04:00Z",
+                "workflow_run": {
+                    "id": 12345,
+                    "head_sha": HEAD_SHA,
+                    "repository_id": 1001,
+                    "head_repository_id": 1001,
+                },
+            }
+        )
+        return _successful_artifacts(command, artifacts=artifacts)
+
+    monkeypatch.setattr(importer.subprocess, "run", fake_run)
+
+    errors = importer.import_record(
+        record,
+        out_dir=tmp_path / "release-assets",
+        download_root=tmp_path / "download",
+        dry_run=True,
+        verify_source_run_metadata=True,
+        release_head_sha=HEAD_SHA,
+    )
+
+    assert (
+        "linux-i386 release_asset_source artifact list must contain only the "
+        "target-scoped evidence artifact 'extended-linux-evidence-linux-i386-v1.0.2', "
+        "got 2 artifacts"
+    ) in errors
 
 
 def test_verify_source_artifact_rejects_expired_or_empty_artifact(monkeypatch) -> None:
@@ -1538,6 +1736,65 @@ def test_verify_source_artifact_rejects_expired_or_empty_artifact(monkeypatch) -
     assert (
         "linux-i386 release_asset_source artifact extended-linux-evidence-linux-i386-v1.0.2 "
         "size_in_bytes must be positive, got 0"
+    ) in errors
+
+
+def test_verify_source_artifact_rejects_missing_expiration(monkeypatch) -> None:
+    importer = _load_importer()
+    command = _source_run_artifacts_command(importer)
+
+    def fake_run(command_arg: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        assert command_arg == command
+        assert check is True
+        assert kwargs == {"capture_output": True, "text": True}
+        artifact = json.loads(_successful_artifacts(command_arg).stdout)["artifacts"][0]
+        artifact.pop("expires_at")
+        return _successful_artifacts(command_arg, artifacts=[artifact])
+
+    monkeypatch.setattr(importer.subprocess, "run", fake_run)
+
+    errors = importer.verify_source_artifact(
+        "linux-i386",
+        command,
+        artifact_name="extended-linux-evidence-linux-i386-v1.0.2",
+        expected_repository="example/remote-ops-workspace",
+        expected_run_id="12345",
+        expected_head_sha=HEAD_SHA,
+    )
+
+    assert (
+        "linux-i386 release_asset_source artifact extended-linux-evidence-linux-i386-v1.0.2 "
+        "expires_at must be a GitHub ISO-8601 timestamp, got None"
+    ) in errors
+
+
+def test_verify_source_artifact_rejects_stale_expiration(monkeypatch) -> None:
+    importer = _load_importer()
+    command = _source_run_artifacts_command(importer)
+
+    def fake_run(command_arg: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        assert command_arg == command
+        assert check is True
+        assert kwargs == {"capture_output": True, "text": True}
+        artifact = json.loads(_successful_artifacts(command_arg).stdout)["artifacts"][0]
+        artifact["expires_at"] = "2026-06-30T12:03:30Z"
+        return _successful_artifacts(command_arg, artifacts=[artifact])
+
+    monkeypatch.setattr(importer.subprocess, "run", fake_run)
+
+    errors = importer.verify_source_artifact(
+        "linux-i386",
+        command,
+        artifact_name="extended-linux-evidence-linux-i386-v1.0.2",
+        expected_repository="example/remote-ops-workspace",
+        expected_run_id="12345",
+        expected_head_sha=HEAD_SHA,
+    )
+
+    assert (
+        "linux-i386 release_asset_source artifact extended-linux-evidence-linux-i386-v1.0.2 "
+        "expires_at must be after updated_at 2026-06-30T12:04:00Z, "
+        "got '2026-06-30T12:03:30Z'"
     ) in errors
 
 
@@ -1720,6 +1977,59 @@ def test_verify_source_artifact_rejects_artifact_created_before_exact_run_start(
     ) in errors
 
 
+def test_verify_source_artifact_rejects_artifact_created_before_exact_run_creation(monkeypatch) -> None:
+    importer = _load_importer()
+    command = _source_run_artifacts_command(importer)
+
+    def fake_run(command_arg: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        assert command_arg == command
+        assert check is True
+        assert kwargs == {"capture_output": True, "text": True}
+        return _successful_artifacts(
+            command_arg,
+            artifacts=[
+                {
+                    "id": 98765,
+                    "name": "extended-linux-evidence-linux-i386-v1.0.2",
+                    "archive_download_url": (
+                        "https://api.github.com/repos/example/remote-ops-workspace/"
+                        "actions/artifacts/98765/zip"
+                    ),
+                    "expired": False,
+                    "size_in_bytes": 4096,
+                    "created_at": "2026-06-30T11:58:59Z",
+                    "workflow_run": {
+                        "id": 12345,
+                        "head_sha": HEAD_SHA,
+                        "repository_id": 1001,
+                        "head_repository_id": 1001,
+                    },
+                }
+            ],
+        )
+
+    monkeypatch.setattr(importer.subprocess, "run", fake_run)
+
+    errors = importer.verify_source_artifact(
+        "linux-i386",
+        command,
+        artifact_name="extended-linux-evidence-linux-i386-v1.0.2",
+        expected_repository="example/remote-ops-workspace",
+        expected_run_id="12345",
+        expected_head_sha=HEAD_SHA,
+        expected_repository_id=1001,
+        expected_head_repository_id=1001,
+        expected_run_created_at="2026-06-30T11:59:00Z",
+        expected_run_started_at="2026-06-30T12:00:00Z",
+    )
+
+    assert (
+        "linux-i386 release_asset_source artifact extended-linux-evidence-linux-i386-v1.0.2 "
+        "created_at must be at or after exact source run creation 2026-06-30T11:59:00Z, "
+        "got '2026-06-30T11:58:59Z'"
+    ) in errors
+
+
 def test_verify_source_artifact_rejects_artifact_created_after_exact_run_update(monkeypatch) -> None:
     importer = _load_importer()
     command = _source_run_artifacts_command(importer)
@@ -1773,6 +2083,114 @@ def test_verify_source_artifact_rejects_artifact_created_after_exact_run_update(
     ) in errors
 
 
+def test_verify_source_artifact_rejects_artifact_updated_after_exact_run_update(monkeypatch) -> None:
+    importer = _load_importer()
+    command = _source_run_artifacts_command(importer)
+
+    def fake_run(command_arg: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        assert command_arg == command
+        assert check is True
+        assert kwargs == {"capture_output": True, "text": True}
+        return _successful_artifacts(
+            command_arg,
+            artifacts=[
+                {
+                    "id": 98765,
+                    "name": "extended-linux-evidence-linux-i386-v1.0.2",
+                    "archive_download_url": (
+                        "https://api.github.com/repos/example/remote-ops-workspace/"
+                        "actions/artifacts/98765/zip"
+                    ),
+                    "expired": False,
+                    "size_in_bytes": 4096,
+                    "created_at": "2026-06-30T12:03:00Z",
+                    "updated_at": "2026-06-30T12:05:01Z",
+                    "workflow_run": {
+                        "id": 12345,
+                        "head_sha": HEAD_SHA,
+                        "repository_id": 1001,
+                        "head_repository_id": 1001,
+                    },
+                }
+            ],
+        )
+
+    monkeypatch.setattr(importer.subprocess, "run", fake_run)
+
+    errors = importer.verify_source_artifact(
+        "linux-i386",
+        command,
+        artifact_name="extended-linux-evidence-linux-i386-v1.0.2",
+        expected_repository="example/remote-ops-workspace",
+        expected_run_id="12345",
+        expected_head_sha=HEAD_SHA,
+        expected_repository_id=1001,
+        expected_head_repository_id=1001,
+        expected_run_started_at="2026-06-30T12:00:00Z",
+        expected_run_updated_at="2026-06-30T12:05:00Z",
+    )
+
+    assert (
+        "linux-i386 release_asset_source artifact extended-linux-evidence-linux-i386-v1.0.2 "
+        "updated_at must be at or before exact source run update 2026-06-30T12:05:00Z, "
+        "got '2026-06-30T12:05:01Z'"
+    ) in errors
+
+
+def test_verify_source_artifact_rejects_artifact_updated_before_created_at(monkeypatch) -> None:
+    importer = _load_importer()
+    command = _source_run_artifacts_command(importer)
+
+    def fake_run(command_arg: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        assert command_arg == command
+        assert check is True
+        assert kwargs == {"capture_output": True, "text": True}
+        return _successful_artifacts(
+            command_arg,
+            artifacts=[
+                {
+                    "id": 98765,
+                    "name": "extended-linux-evidence-linux-i386-v1.0.2",
+                    "archive_download_url": (
+                        "https://api.github.com/repos/example/remote-ops-workspace/"
+                        "actions/artifacts/98765/zip"
+                    ),
+                    "expired": False,
+                    "size_in_bytes": 4096,
+                    "created_at": "2026-06-30T12:03:00Z",
+                    "updated_at": "2026-06-30T12:02:59Z",
+                    "workflow_run": {
+                        "id": 12345,
+                        "head_sha": HEAD_SHA,
+                        "repository_id": 1001,
+                        "head_repository_id": 1001,
+                    },
+                }
+            ],
+        )
+
+    monkeypatch.setattr(importer.subprocess, "run", fake_run)
+
+    errors = importer.verify_source_artifact(
+        "linux-i386",
+        command,
+        artifact_name="extended-linux-evidence-linux-i386-v1.0.2",
+        expected_repository="example/remote-ops-workspace",
+        expected_run_id="12345",
+        expected_head_sha=HEAD_SHA,
+        expected_repository_id=1001,
+        expected_head_repository_id=1001,
+        expected_run_started_at="2026-06-30T12:00:00Z",
+        expected_run_updated_at="2026-06-30T12:05:00Z",
+    )
+
+    assert (
+        "linux-i386 release_asset_source artifact extended-linux-evidence-linux-i386-v1.0.2 "
+        "updated_at must be at or after created_at 2026-06-30T12:03:00Z, "
+        "got '2026-06-30T12:02:59Z'"
+    ) in errors
+
+
 def test_verify_source_artifact_rejects_unbound_artifact_identity(monkeypatch) -> None:
     importer = _load_importer()
     command = _source_run_artifacts_command(importer)
@@ -1790,6 +2208,7 @@ def test_verify_source_artifact_rejects_unbound_artifact_identity(monkeypatch) -
                     "archive_download_url": "https://api.github.com/repos/other/repo/actions/artifacts/98765/zip",
                     "expired": False,
                     "size_in_bytes": 4096,
+                    "expires_at": "2026-09-28T12:04:00Z",
                     "workflow_run": {"id": 12345, "head_sha": HEAD_SHA},
                 },
                 {
@@ -1801,6 +2220,7 @@ def test_verify_source_artifact_rejects_unbound_artifact_identity(monkeypatch) -
                     ),
                     "expired": False,
                     "size_in_bytes": 4096,
+                    "expires_at": "2026-09-28T12:04:00Z",
                     "workflow_run": {"id": 12345, "head_sha": HEAD_SHA},
                 },
             ],
@@ -1818,8 +2238,11 @@ def test_verify_source_artifact_rejects_unbound_artifact_identity(monkeypatch) -
     )
 
     assert errors == [
+        "linux-i386 release_asset_source artifact list must contain only the "
+        "target-scoped evidence artifact 'extended-linux-evidence-linux-i386-v1.0.2', "
+        "got 2 artifacts",
         "linux-i386 release_asset_source artifact extended-linux-evidence-linux-i386-v1.0.2 "
-        "id must be a positive integer, got '98765'"
+        "id must be a positive integer, got '98765'",
     ]
 
 
@@ -1840,6 +2263,7 @@ def test_verify_source_artifact_rejects_archive_download_url_mismatch(monkeypatc
                     "archive_download_url": "https://api.github.com/repos/other/repo/actions/artifacts/98765/zip",
                     "expired": False,
                     "size_in_bytes": 4096,
+                    "expires_at": "2026-09-28T12:04:00Z",
                     "workflow_run": {"id": 12345, "head_sha": HEAD_SHA},
                 },
             ],
@@ -2071,6 +2495,7 @@ def _source_run_metadata(
         "headRepositoryFullName": "example/remote-ops-workspace",
         "repositoryId": 1001,
         "headRepositoryId": 1001,
+        "runCreatedAt": "2026-06-30T11:59:00Z",
         "runStartedAt": "2026-06-30T12:00:00Z",
         "runUpdatedAt": "2026-06-30T12:05:00Z",
         "attempt": 1,
@@ -2110,6 +2535,8 @@ def _successful_artifacts(
                 "expired": False,
                 "size_in_bytes": 4096,
                 "created_at": "2026-06-30T12:03:00Z",
+                "updated_at": "2026-06-30T12:04:00Z",
+                "expires_at": "2026-09-28T12:04:00Z",
                 "workflow_run": {
                     "id": 12345,
                     "head_sha": HEAD_SHA,

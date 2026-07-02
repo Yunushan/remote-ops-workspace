@@ -79,6 +79,26 @@ def test_product_readiness_rejects_platform_denominator_target_drift(monkeypatch
     assert "platform verified readiness denominator must keep release asset provenance outside static score" in errors
 
 
+def test_product_readiness_rejects_platform_protected_goal_summary_drift(monkeypatch) -> None:
+    checker = load_product_readiness_checker()
+    report = deepcopy(checker.coverage_report())
+    platform = report["platform_verified_readiness"]
+    platform["denominator"]["protected_goal_current_percent"] = 100.0
+    platform["overall"]["protected_goal_status"] = "complete"
+    monkeypatch.setattr(checker, "coverage_report", lambda: report)
+
+    errors = checker.check_product_readiness()
+
+    assert (
+        "platform verified readiness denominator protected_goal_current_percent "
+        "must match protected_goal_parity"
+    ) in errors
+    assert (
+        "platform verified readiness overall protected_goal_status "
+        "must match protected_goal_parity"
+    ) in errors
+
+
 def test_product_readiness_rejects_missing_protected_goal_release_source_run_attempts(monkeypatch) -> None:
     checker = load_product_readiness_checker()
     report = deepcopy(checker.coverage_report())
@@ -128,6 +148,20 @@ def test_product_readiness_rejects_missing_protected_goal_selected_release_sourc
     assert "protected platform goal parity must expose selected_release_source_workflows" in errors
 
 
+def test_product_readiness_rejects_missing_protected_goal_selected_release_scope_exclusions(
+    monkeypatch,
+) -> None:
+    checker = load_product_readiness_checker()
+    report = deepcopy(checker.coverage_report())
+    goal = report["platform_verified_readiness"]["protected_goal_parity"]
+    del goal["selected_release_scope_exclusions"]
+    monkeypatch.setattr(checker, "coverage_report", lambda: report)
+
+    errors = checker.check_product_readiness()
+
+    assert "protected platform goal parity must expose selected_release_scope_exclusions" in errors
+
+
 def test_product_readiness_rejects_selected_release_source_maps_outside_scope(monkeypatch) -> None:
     checker = load_product_readiness_checker()
     report = deepcopy(checker.coverage_report())
@@ -154,6 +188,37 @@ def test_product_readiness_rejects_selected_release_source_maps_outside_scope(mo
     assert (
         "protected platform goal parity selected_release_source_workflows "
         "contains targets outside selected release scope: ['linux-i386']"
+    ) in errors
+
+
+def test_product_readiness_rejects_inconsistent_selected_release_scope_exclusions(
+    monkeypatch,
+) -> None:
+    checker = load_product_readiness_checker()
+    report = deepcopy(checker.coverage_report())
+    goal = report["platform_verified_readiness"]["protected_goal_parity"]
+    goal["aggregate_accepted_targets"] = ["linux-i386"]
+    goal["aggregate_missing_targets"] = [
+        "linux-armhf",
+        "windows-xp-native-x86",
+        "windows-xp-native-x64",
+    ]
+    goal["aggregate_accepted_target_count"] = 1
+    goal["selected_release_scope_exclusions"] = {}
+    monkeypatch.setattr(checker, "coverage_report", lambda: report)
+
+    errors = checker.check_product_readiness()
+
+    assert (
+        "protected platform goal parity selected_release_scope_exclusions "
+        "must match aggregate accepted targets outside selected release scope: ['linux-i386']"
+    ) in errors
+
+    goal["selected_release_scope_exclusions"] = {"linux-i386": []}
+    errors = checker.check_product_readiness()
+    assert (
+        "protected platform goal parity selected_release_scope_exclusions[linux-i386] "
+        "must be a non-empty list of reason strings"
     ) in errors
 
 
@@ -196,6 +261,35 @@ def test_product_readiness_rejects_static_release_asset_provenance_claim(monkeyp
         "protected platform goal parity release_asset_provenance_complete must be false "
         "in the static readiness report; use the asset-backed protected goal gate"
     ) in errors
+
+
+def test_product_readiness_rejects_static_protected_row_release_asset_claim(monkeypatch) -> None:
+    checker = load_product_readiness_checker()
+    report = deepcopy(checker.coverage_report())
+    linux_i386 = next(
+        row
+        for row in report["platform_verified_readiness"]["targets"]
+        if row["target"] == "linux-i386"
+    )
+    linux_i386["release_asset_provenance_complete"] = True
+    linux_i386["release_backed_readiness_complete"] = True
+    linux_i386["static_readiness_evidence_scope"] = "accepted evidence"
+    monkeypatch.setattr(checker, "coverage_report", lambda: report)
+
+    errors = checker.check_product_readiness()
+
+    assert (
+        "linux-i386 protected platform row must keep release_asset_provenance_complete false "
+        "in the static readiness report"
+    ) in errors
+    assert (
+        "linux-i386 protected platform row must keep release_backed_readiness_complete false "
+        "in the static readiness report"
+    ) in errors
+    assert (
+        "linux-i386 protected platform row static_readiness_evidence_scope must mention --assets-dir"
+        in errors
+    )
 
 
 def test_product_readiness_rejects_missing_protected_goal_release_asset_provenance_command(monkeypatch) -> None:
@@ -583,6 +677,29 @@ def test_product_readiness_rejects_protected_goal_staged_upload_without_force(mo
     )
 
 
+def test_product_readiness_rejects_unscoped_protected_goal_staged_upload(monkeypatch) -> None:
+    checker = load_product_readiness_checker()
+    report = deepcopy(checker.coverage_report())
+    requirements = report["platform_verified_readiness"]["protected_goal_parity"][
+        "target_evidence_requirements"
+    ]
+    linux_armhf = next(item for item in requirements if item["target"] == "linux-armhf")
+    linux_armhf["required_commands"]["staged_upload_command"] = linux_armhf[
+        "required_commands"
+    ]["staged_upload_command"].replace(
+        "platform-evidence-upload/linux-armhf/v<project.version>",
+        "<release-upload-staging-dir>",
+    )
+    monkeypatch.setattr(checker, "coverage_report", lambda: report)
+
+    errors = checker.check_product_readiness()
+
+    assert any(
+        "linux-armhf protected platform requirement staged_upload_command must be" in error
+        for error in errors
+    )
+
+
 def test_product_readiness_rejects_wrong_protected_goal_command_template(monkeypatch) -> None:
     checker = load_product_readiness_checker()
     report = deepcopy(checker.coverage_report())
@@ -617,7 +734,7 @@ def test_product_readiness_rejects_unbound_candidate_upload_paths(monkeypatch) -
     linux_i386["required_commands"]["accepted_evidence_candidate_command"] = linux_i386[
         "required_commands"
     ]["accepted_evidence_candidate_command"].replace(
-        " --staged-upload-out-dir <release-upload-staging-dir>",
+        " --staged-upload-out-dir platform-evidence-upload/linux-i386/v<project.version>",
         "",
     )
     xp_x64 = next(item for item in requirements if item["target"] == "windows-xp-native-x64")
@@ -639,6 +756,30 @@ def test_product_readiness_rejects_unbound_candidate_upload_paths(monkeypatch) -
     assert any(
         "windows-xp-native-x64 protected platform requirement accepted_evidence_candidate_command must be"
         in error
+        for error in errors
+    )
+
+
+def test_product_readiness_rejects_unscoped_candidate_upload_path(monkeypatch) -> None:
+    checker = load_product_readiness_checker()
+    report = deepcopy(checker.coverage_report())
+    requirements = report["platform_verified_readiness"]["protected_goal_parity"][
+        "target_evidence_requirements"
+    ]
+    xp_x86 = next(item for item in requirements if item["target"] == "windows-xp-native-x86")
+    xp_x86["required_commands"]["accepted_evidence_candidate_command"] = xp_x86[
+        "required_commands"
+    ]["accepted_evidence_candidate_command"].replace(
+        "platform-evidence-upload/windows-xp-native-x86/v<project.version>",
+        "<release-upload-staging-dir>",
+    )
+    monkeypatch.setattr(checker, "coverage_report", lambda: report)
+
+    errors = checker.check_product_readiness()
+
+    assert any(
+        "windows-xp-native-x86 protected platform requirement "
+        "accepted_evidence_candidate_command must be" in error
         for error in errors
     )
 
@@ -830,7 +971,9 @@ def test_product_readiness_rejects_missing_linux_modern_default_security_proof(m
     ]
     linux_i386 = next(item for item in requirements if item["target"] == "linux-i386")
     linux_i386["security_requirements"] = [
-        "security patch evidence proving TLS 1.3 preferred, TLS 1.2 minimum, isolated legacy compatibility and CVE patch review",
+        "security patch evidence proving TLS 1.3 preferred, TLS 1.2 minimum, isolated legacy compatibility "
+        "and CVE patch review with concrete security_update_channel and cve_review_reference "
+        "update/advisory provenance",
     ]
     monkeypatch.setattr(checker, "coverage_report", lambda: report)
 

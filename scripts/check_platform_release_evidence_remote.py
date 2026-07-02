@@ -88,6 +88,15 @@ def main(argv: list[str] | None = None) -> int:
     registry = read_json(args.registry)
     promotion = read_json(args.promotion)
     required_targets = required_targets_from_args(args, registry)
+    registry_errors = remote_registry_preflight_errors(
+        registry,
+        release_tag=args.release_tag,
+        required_targets=required_targets,
+    )
+    if registry_errors:
+        for error in registry_errors:
+            print(f"platform release evidence remote: {error}", file=sys.stderr)
+        return 1
     release, release_errors = load_release_data(args)
     source_runs, source_run_errors = load_source_runs(args, registry, required_targets)
     workflow_runs, workflow_errors = load_workflow_runs(args, registry, required_targets)
@@ -135,6 +144,22 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     print(f"platform release evidence remote passed for {args.release_tag}")
     return 0
+
+
+def remote_registry_preflight_errors(
+    registry: dict[str, Any],
+    *,
+    release_tag: str,
+    required_targets: tuple[str, ...],
+) -> list[str]:
+    if required_targets:
+        return check_platform_verified_evidence(
+            registry=registry,
+            required_targets=required_targets,
+            required_release_tag=release_tag,
+            require_review_bundles=True,
+        )
+    return check_platform_verified_evidence(registry=registry)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -312,9 +337,26 @@ def strict_arg_errors(args: argparse.Namespace) -> list[str]:
     for raw in args.release_asset:
         if "=" not in str(raw):
             errors.append(f"--release-asset must be URL=PATH, got {raw!r}")
+    errors.extend(duplicate_run_fixture_errors(args.source_run_json, "--source-run-json"))
+    errors.extend(duplicate_run_fixture_errors(args.source_artifacts_json, "--source-artifacts-json"))
     errors.extend(duplicate_url_fixture_errors(args.final_record_json, "--final-record-json"))
     errors.extend(duplicate_url_fixture_errors(args.release_asset, "--release-asset"))
     return errors
+
+
+def duplicate_run_fixture_errors(raw_values: list[str], flag: str) -> list[str]:
+    runs: dict[str, int] = {}
+    for raw in raw_values:
+        text = str(raw)
+        if "=" not in text:
+            continue
+        run, _path = text.split("=", 1)
+        run_key = normalize_run_key(run)
+        runs[run_key] = runs.get(run_key, 0) + 1
+    duplicates = sorted(run for run, count in runs.items() if count > 1)
+    if duplicates:
+        return [f"{flag} contains duplicate run fixtures: {duplicates}"]
+    return []
 
 
 def duplicate_url_fixture_errors(raw_values: list[str], flag: str) -> list[str]:
@@ -377,6 +419,36 @@ def load_source_runs(
         source_runs[normalize_run_key(run)] = data or {}
     if not args.require_source_runs:
         return source_runs, errors
+    expected_keys = expected_source_run_fixture_keys(
+        registry,
+        release_tag=args.release_tag,
+        required_targets=required_targets,
+    )
+    unexpected_keys = sorted(set(source_runs) - expected_keys)
+    if unexpected_keys:
+        errors.append(
+            "--source-run-json contains fixtures outside required accepted "
+            f"source-run scope: {unexpected_keys}"
+        )
+    errors.extend(
+        source_run_alias_fixture_errors(
+            source_runs,
+            registry,
+            release_tag=args.release_tag,
+            required_targets=required_targets,
+            flag="--source-run-json",
+        )
+    )
+    if not args.repository:
+        errors.extend(
+            missing_source_run_fixture_errors(
+                source_runs,
+                registry,
+                release_tag=args.release_tag,
+                required_targets=required_targets,
+                flag="--source-run-json",
+            )
+        )
 
     for run_url in sorted(
         source_run_urls_for_records(
@@ -463,6 +535,36 @@ def load_source_artifacts(
         source_artifacts[normalize_run_key(run)] = data or {}
     if not args.require_source_runs:
         return source_artifacts, errors
+    expected_keys = expected_source_run_fixture_keys(
+        registry,
+        release_tag=args.release_tag,
+        required_targets=required_targets,
+    )
+    unexpected_keys = sorted(set(source_artifacts) - expected_keys)
+    if unexpected_keys:
+        errors.append(
+            "--source-artifacts-json contains fixtures outside required accepted "
+            f"source-run scope: {unexpected_keys}"
+        )
+    errors.extend(
+        source_run_alias_fixture_errors(
+            source_artifacts,
+            registry,
+            release_tag=args.release_tag,
+            required_targets=required_targets,
+            flag="--source-artifacts-json",
+        )
+    )
+    if not args.repository:
+        errors.extend(
+            missing_source_run_fixture_errors(
+                source_artifacts,
+                registry,
+                release_tag=args.release_tag,
+                required_targets=required_targets,
+                flag="--source-artifacts-json",
+            )
+        )
 
     for run_url in sorted(
         source_run_urls_for_records(
@@ -502,6 +604,24 @@ def load_final_record_bytes(
         records_by_url[url] = data or b""
     if not args.require_final_record_bytes:
         return records_by_url, errors
+    expected_urls = expected_final_record_byte_urls(
+        registry,
+        release_tag=args.release_tag,
+        required_targets=required_targets,
+    )
+    unexpected_urls = sorted(set(configured_paths) - expected_urls)
+    if unexpected_urls:
+        errors.append(
+            "--final-record-json contains fixtures outside required accepted "
+            f"final-record byte scope: {unexpected_urls}"
+        )
+    if not args.repository:
+        missing_urls = sorted(expected_urls - set(records_by_url))
+        if missing_urls:
+            errors.append(
+                "--final-record-json missing fixtures for required accepted "
+                f"final-record bytes: {missing_urls}"
+            )
 
     for target, url in sorted(
         finalized_record_urls_for_records(
@@ -550,6 +670,24 @@ def load_release_asset_bytes(
         assets_by_url[url] = data or b""
     if not args.require_release_asset_bytes:
         return assets_by_url, errors
+    expected_urls = expected_release_asset_byte_urls(
+        registry,
+        release_tag=args.release_tag,
+        required_targets=required_targets,
+    )
+    unexpected_urls = sorted(set(configured_paths) - expected_urls)
+    if unexpected_urls:
+        errors.append(
+            "--release-asset contains fixtures outside required release "
+            f"asset byte scope: {unexpected_urls}"
+        )
+    if not args.repository:
+        missing_urls = sorted(expected_urls - set(assets_by_url))
+        if missing_urls:
+            errors.append(
+                "--release-asset missing fixtures for required release asset bytes: "
+                f"{missing_urls}"
+            )
 
     for target, record in sorted(
         accepted_records_by_target(
@@ -1425,6 +1563,41 @@ def expected_release_asset_byte_sources(record: dict[str, Any]) -> list[dict[str
     return sources
 
 
+def expected_final_record_byte_urls(
+    registry: dict[str, Any],
+    *,
+    release_tag: str,
+    required_targets: tuple[str, ...],
+) -> set[str]:
+    return {
+        normalize_url_key(url)
+        for url in finalized_record_urls_for_records(
+            registry,
+            release_tag=release_tag,
+            required_targets=required_targets,
+        ).values()
+    }
+
+
+def expected_release_asset_byte_urls(
+    registry: dict[str, Any],
+    *,
+    release_tag: str,
+    required_targets: tuple[str, ...],
+) -> set[str]:
+    urls: set[str] = set()
+    for record in accepted_records_by_target(
+        registry,
+        release_tag=release_tag,
+        targets=required_targets,
+    ).values():
+        for asset in expected_release_asset_byte_sources(record):
+            url = asset.get("url")
+            if isinstance(url, str) and url.strip():
+                urls.add(normalize_url_key(url))
+    return urls
+
+
 def expected_published_assets(record: dict[str, Any]) -> dict[str, dict[str, Any]]:
     expected: dict[str, dict[str, Any]] = {}
     target = str(record.get("target", ""))
@@ -1714,6 +1887,80 @@ def source_run_urls_for_records(
     return urls
 
 
+def expected_source_run_fixture_keys(
+    registry: dict[str, Any],
+    *,
+    release_tag: str,
+    required_targets: tuple[str, ...],
+) -> set[str]:
+    keys: set[str] = set()
+    for run_url in source_run_urls_for_records(
+        registry,
+        release_tag=release_tag,
+        required_targets=required_targets,
+    ):
+        run_key = normalize_run_key(run_url)
+        if run_key:
+            keys.add(run_key)
+            keys.add(run_key.rsplit("/", 1)[-1])
+    return keys
+
+
+def source_run_alias_fixture_errors(
+    documents_by_run: dict[str, dict[str, Any]],
+    registry: dict[str, Any],
+    *,
+    release_tag: str,
+    required_targets: tuple[str, ...],
+    flag: str,
+) -> list[str]:
+    errors: list[str] = []
+    for run_url in sorted(
+        source_run_urls_for_records(
+            registry,
+            release_tag=release_tag,
+            required_targets=required_targets,
+        )
+    ):
+        run_key = normalize_run_key(run_url)
+        run_id = run_key.rsplit("/", 1)[-1] if run_key else ""
+        aliases = [alias for alias in (run_key, run_id) if alias and alias in documents_by_run]
+        if len(aliases) > 1:
+            errors.append(
+                f"{flag} contains ambiguous aliases for accepted source run "
+                f"{run_key}: {aliases}"
+            )
+    return errors
+
+
+def missing_source_run_fixture_errors(
+    documents_by_run: dict[str, dict[str, Any]],
+    registry: dict[str, Any],
+    *,
+    release_tag: str,
+    required_targets: tuple[str, ...],
+    flag: str,
+) -> list[str]:
+    missing: list[str] = []
+    for run_url in sorted(
+        source_run_urls_for_records(
+            registry,
+            release_tag=release_tag,
+            required_targets=required_targets,
+        )
+    ):
+        run_key = normalize_run_key(run_url)
+        run_id = run_key.rsplit("/", 1)[-1] if run_key else ""
+        if (run_key and run_key in documents_by_run) or (run_id and run_id in documents_by_run):
+            continue
+        missing.append(run_key)
+    if missing:
+        return [
+            f"{flag} missing fixtures for required accepted source runs: {missing}"
+        ]
+    return []
+
+
 def source_run_attempt_for_url(
     registry: dict[str, Any],
     *,
@@ -1831,6 +2078,13 @@ def check_source_run_record(
                 f"{target} source workflow run {field}.full_name must match accepted record "
                 f"{expected_repository}, got {actual_repository!r}"
             )
+        raw_record = run.get(field)
+        raw_id = raw_record.get("id") if isinstance(raw_record, dict) else None
+        if nested_positive_int(run, field, "id") is None:
+            errors.append(
+                f"{target} source workflow run {field}.id must be a positive integer, "
+                f"got {raw_id!r}"
+            )
     if run.get("status") != "completed":
         errors.append(f"{target} source workflow run status must be completed, got {run.get('status')!r}")
     if run.get("conclusion") != "success":
@@ -1913,6 +2167,13 @@ def nested_positive_int(mapping: dict[str, Any], key: str, nested_key: str) -> i
     if isinstance(raw_value, int) and not isinstance(raw_value, bool) and raw_value > 0:
         return raw_value
     return None
+
+
+def valid_source_run_created_at(run: dict[str, Any]) -> str | None:
+    raw_value = first_present(run, "created_at", "createdAt", "run_created_at", "runCreatedAt")
+    if parse_github_timestamp(raw_value) is None:
+        return None
+    return str(raw_value).strip()
 
 
 def valid_source_run_started_at(run: dict[str, Any]) -> str | None:
@@ -2006,6 +2267,11 @@ def check_record_source_artifact(
         if isinstance(source_run, dict)
         else None
     )
+    expected_run_created_at = (
+        valid_source_run_created_at(source_run)
+        if isinstance(source_run, dict)
+        else None
+    )
     expected_run_started_at = (
         valid_source_run_started_at(source_run)
         if isinstance(source_run, dict)
@@ -2023,6 +2289,7 @@ def check_record_source_artifact(
             record,
             expected_repository_id=expected_repository_id,
             expected_head_repository_id=expected_head_repository_id,
+            expected_run_created_at=expected_run_created_at,
             expected_run_started_at=expected_run_started_at,
             expected_run_updated_at=expected_run_updated_at,
         )
@@ -2037,6 +2304,7 @@ def check_source_artifact_record(
     *,
     expected_repository_id: int | None = None,
     expected_head_repository_id: int | None = None,
+    expected_run_created_at: str | None = None,
     expected_run_started_at: str | None = None,
     expected_run_updated_at: str | None = None,
 ) -> list[str]:
@@ -2079,6 +2347,7 @@ def check_source_artifact_record(
             target,
             artifact_name,
             first_present(artifact, "created_at", "createdAt"),
+            expected_run_created_at=expected_run_created_at,
             expected_run_started_at=expected_run_started_at,
             expected_run_updated_at=expected_run_updated_at,
         )
@@ -2091,6 +2360,15 @@ def check_source_artifact_record(
             first_present(artifact, "created_at", "createdAt"),
             expected_run_started_at=expected_run_started_at,
             expected_run_updated_at=expected_run_updated_at,
+        )
+    )
+    errors.extend(
+        check_source_artifact_expiration(
+            target,
+            artifact_name,
+            first_present(artifact, "expires_at", "expiresAt"),
+            raw_created_at=first_present(artifact, "created_at", "createdAt"),
+            raw_updated_at=first_present(artifact, "updated_at", "updatedAt"),
         )
     )
     workflow_run = artifact.get("workflow_run")
@@ -2127,16 +2405,52 @@ def check_source_artifact_record(
     return errors
 
 
+def check_source_artifact_expiration(
+    target: str,
+    artifact_name: str,
+    raw_expires_at: Any,
+    *,
+    raw_created_at: Any,
+    raw_updated_at: Any,
+) -> list[str]:
+    expires_at = parse_github_timestamp(raw_expires_at)
+    if expires_at is None:
+        return [
+            f"{target} source workflow artifact {artifact_name} expires_at "
+            f"must be a GitHub ISO-8601 timestamp, got {raw_expires_at!r}"
+        ]
+    errors: list[str] = []
+    created_at = parse_github_timestamp(raw_created_at)
+    if created_at is not None and expires_at <= created_at:
+        errors.append(
+            f"{target} source workflow artifact {artifact_name} expires_at "
+            f"must be after created_at {raw_created_at}, got {raw_expires_at!r}"
+        )
+    updated_at = parse_github_timestamp(raw_updated_at)
+    if updated_at is not None and expires_at <= updated_at:
+        errors.append(
+            f"{target} source workflow artifact {artifact_name} expires_at "
+            f"must be after updated_at {raw_updated_at}, got {raw_expires_at!r}"
+        )
+    return errors
+
+
 def check_source_artifact_created_within_run_window(
     target: str,
     artifact_name: str,
     raw_created_at: Any,
     *,
+    expected_run_created_at: str | None,
     expected_run_started_at: str | None,
     expected_run_updated_at: str | None,
 ) -> list[str]:
-    if expected_run_started_at is None and expected_run_updated_at is None:
+    if (
+        expected_run_created_at is None
+        and expected_run_started_at is None
+        and expected_run_updated_at is None
+    ):
         return []
+    run_created_at = parse_github_timestamp(expected_run_created_at)
     run_started_at = parse_github_timestamp(expected_run_started_at)
     run_updated_at = parse_github_timestamp(expected_run_updated_at)
     created_at = parse_github_timestamp(raw_created_at)
@@ -2147,6 +2461,12 @@ def check_source_artifact_created_within_run_window(
             f"got {raw_created_at!r}"
         ]
     errors: list[str] = []
+    if run_created_at is not None and created_at < run_created_at:
+        errors.append(
+            f"{target} source workflow artifact {artifact_name} created_at "
+            f"must be at or after exact source run creation {expected_run_created_at}, "
+            f"got {raw_created_at!r}"
+        )
     if run_started_at is not None and created_at < run_started_at:
         errors.append(
             f"{target} source workflow artifact {artifact_name} created_at "

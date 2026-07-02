@@ -132,6 +132,37 @@ def test_platform_support_truth_accepts_evidence_backed_linux_promotion() -> Non
     assert errors == []
 
 
+def test_platform_support_truth_rejects_static_protected_row_release_asset_claim() -> None:
+    checker = _load_platform_support_truth_checker()
+    targets = _load_json("configs/platform_targets.json")
+    report = deepcopy(coverage_report())
+    rows = {row["target"]: row for row in report["platform_verified_readiness"]["targets"]}
+    linux_i386 = rows["linux-i386"]
+    linux_i386["current_percent"] = 100.0
+    linux_i386["gap_percent"] = 0.0
+    linux_i386["status"] = "verified-accepted-native-evidence"
+    linux_i386["verified_readiness_scope"] = True
+    _bind_accepted_evidence_row(linux_i386, ["linux-i386"])
+    linux_i386["release_asset_provenance_complete"] = True
+    linux_i386["release_backed_readiness_complete"] = True
+    linux_i386["static_readiness_evidence_scope"] = "accepted evidence"
+
+    errors = checker.check_platform_readiness_report(targets, report)
+
+    assert (
+        "linux-i386 protected row must keep release_asset_provenance_complete=false "
+        "in static readiness JSON"
+    ) in errors
+    assert (
+        "linux-i386 protected row must keep release_backed_readiness_complete=false "
+        "in static readiness JSON"
+    ) in errors
+    assert (
+        "linux-i386 protected row static_readiness_evidence_scope must mention --assets-dir"
+        in errors
+    )
+
+
 def test_platform_support_truth_accepts_partial_xp_native_evidence() -> None:
     checker = _load_platform_support_truth_checker()
     targets = _load_json("configs/platform_targets.json")
@@ -393,7 +424,7 @@ def test_platform_support_truth_requires_published_release_audit_docs() -> None:
         )
         .replace("`workflow_run.repository_id` and\n`workflow_run.head_repository_id`", "`workflow_run.id`")
         .replace(
-            "artifact `created_at` values outside the exact source run start/update window",
+            "artifact `created_at` values outside the exact source run creation/start/update window",
             "stale artifact timestamps",
         )
         .replace("canonical\naccepted-record JSON bytes", "accepted record metadata")
@@ -423,7 +454,7 @@ def test_platform_support_truth_requires_published_release_audit_docs() -> None:
     )
     assert any(
         "docs/PLATFORM_SUPPORT.md missing platform truth snippet" in error
-        and "artifact `created_at` values outside the exact source run start/update window" in error
+        and "artifact `created_at` values outside the exact source run creation/start/update window" in error
         for error in errors
     )
     assert any(
@@ -596,6 +627,14 @@ def _bind_accepted_evidence_row(row: dict[str, Any], targets: list[str]) -> None
     row["accepted_evidence_missing_targets"] = [
         target for target in required if target not in targets
     ]
+    row["accepted_evidence_record_complete"] = sorted(required) == sorted(targets)
+    row["release_asset_provenance_complete"] = False
+    row["release_backed_readiness_complete"] = False
+    row["static_readiness_evidence_scope"] = (
+        "accepted-record/source-run metadata only; run "
+        "python scripts/check_protected_platform_goal.py --release-tag v<project.version> "
+        "--require-complete --assets-dir <release-assets-dir> for published release asset byte proof"
+    )
     row["accepted_evidence_release_tags"] = {target: "v1.0.2" for target in targets}
     row["accepted_evidence_release_repositories"] = {
         target: ["example/remote-ops-workspace"] for target in targets

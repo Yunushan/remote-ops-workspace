@@ -101,13 +101,13 @@ def test_platform_parity_promotion_rejects_unscoped_staged_upload_command() -> N
     promotion = _load_json("configs/platform_parity_promotion.json")
     linux = _promotion_entry(promotion, "linux-i386")["promotion_to_100_requires"]
     linux["staged_upload_command"] = linux["staged_upload_command"].replace(
-        "<target-release-artifact-dir>",
-        "<artifact-dir>",
+        "platform-evidence-upload/linux-i386/v<project.version>",
+        "<release-upload-staging-dir>",
     )
     xp = _promotion_entry(promotion, "windows-xp-native-x64")["promotion_to_100_requires"]
     xp["staged_upload_command"] = xp["staged_upload_command"].replace(
-        "<xp-evidence-output-dir>",
-        "<evidence-output>",
+        "platform-evidence-upload/windows-xp-native-x64/v<project.version>",
+        "<release-upload-staging-dir>",
     )
 
     errors = checker.check_platform_parity_promotion(promotion=promotion)
@@ -136,11 +136,17 @@ def test_platform_parity_promotion_requires_candidate_upload_path_bindings() -> 
     linux = _promotion_entry(promotion, "linux-i386")["promotion_to_100_requires"]
     linux["accepted_evidence_candidate_command"] = linux[
         "accepted_evidence_candidate_command"
-    ].replace(" --staged-upload-out-dir <release-upload-staging-dir>", "")
+    ].replace(
+        " --staged-upload-out-dir platform-evidence-upload/linux-i386/v<project.version>",
+        "",
+    )
     xp = _promotion_entry(promotion, "windows-xp-native-x64")["promotion_to_100_requires"]
     xp["accepted_evidence_candidate_command"] = xp[
         "accepted_evidence_candidate_command"
-    ].replace(" --staged-upload-out-dir <release-upload-staging-dir>", "")
+    ].replace(
+        " --staged-upload-out-dir platform-evidence-upload/windows-xp-native-x64/v<project.version>",
+        "",
+    )
     xp["accepted_evidence_candidate_command"] = xp[
         "accepted_evidence_candidate_command"
     ].replace(" --xp-evidence-output-dir <xp-evidence-output-dir>", "")
@@ -157,6 +163,36 @@ def test_platform_parity_promotion_requires_candidate_upload_path_bindings() -> 
     )
     assert (
         "windows-xp-native-x64 accepted_evidence_candidate_command must bind XP evidence output dir"
+        in errors
+    )
+
+
+def test_platform_parity_promotion_rejects_unscoped_candidate_upload_path() -> None:
+    checker = _load_platform_parity_promotion_checker()
+    promotion = _load_json("configs/platform_parity_promotion.json")
+    linux = _promotion_entry(promotion, "linux-armhf")["promotion_to_100_requires"]
+    linux["accepted_evidence_candidate_command"] = linux[
+        "accepted_evidence_candidate_command"
+    ].replace(
+        "platform-evidence-upload/linux-armhf/v<project.version>",
+        "<release-upload-staging-dir>",
+    )
+    xp = _promotion_entry(promotion, "windows-xp-native-x86")["promotion_to_100_requires"]
+    xp["accepted_evidence_candidate_command"] = xp[
+        "accepted_evidence_candidate_command"
+    ].replace(
+        "platform-evidence-upload/windows-xp-native-x86/v<project.version>",
+        "<release-upload-staging-dir>",
+    )
+
+    errors = checker.check_platform_parity_promotion(promotion=promotion)
+
+    assert (
+        "linux-armhf accepted_evidence_candidate_command must bind staged upload out dir"
+        in errors
+    )
+    assert (
+        "windows-xp-native-x86 accepted_evidence_candidate_command must bind staged upload out dir"
         in errors
     )
 
@@ -206,6 +242,33 @@ def test_platform_parity_promotion_requires_linux_security_boundaries() -> None:
     assert any(
         "linux-armhf security_requirements missing" in error
         and "modern Windows 10/11, Linux, and macOS defaults must keep hardened crypto" in error
+        for error in errors
+    )
+
+
+def test_platform_parity_promotion_requires_concrete_security_provenance() -> None:
+    checker = _load_platform_parity_promotion_checker()
+    promotion = _load_json("configs/platform_parity_promotion.json")
+    for target_id in ("linux-i386", "windows-xp-native-x86"):
+        requirements = _promotion_entry(promotion, target_id)["promotion_to_100_requires"]
+        requirements["security_requirements"] = [
+            item
+            for item in requirements["security_requirements"]
+            if "security_update_channel" not in item
+        ]
+
+    errors = checker.check_platform_parity_promotion(promotion=promotion)
+
+    assert any(
+        "linux-i386 security_requirements missing" in error
+        and "security_update_channel" in error
+        and "cve_review_reference" in error
+        for error in errors
+    )
+    assert any(
+        "windows-xp-native-x86 security_requirements missing" in error
+        and "security_update_channel" in error
+        and "cve_review_reference" in error
         for error in errors
     )
 

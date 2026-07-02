@@ -11,7 +11,8 @@ from remote_ops_workspace.features import (
 
 LINUX_SECURITY_REQUIREMENTS = [
     "security patch evidence proving TLS 1.3 preferred, TLS 1.2 minimum, "
-    "isolated legacy compatibility and CVE patch review",
+    "isolated legacy compatibility and CVE patch review with concrete "
+    "security_update_channel and cve_review_reference update/advisory provenance",
     "modern Windows 10/11, Linux, and macOS defaults must keep hardened crypto",
 ]
 
@@ -250,6 +251,15 @@ def test_platform_verified_readiness_tracks_partial_targets() -> None:
     assert "linux-armhf" in denominator["excluded_targets"]
     assert "Windows XP" in denominator["excluded_targets"]
     goal = platform["protected_goal_parity"]
+    for block in (platform["overall"], denominator):
+        assert block["protected_goal_current_percent"] == goal["current_percent"]
+        assert block["protected_goal_gap_percent"] == goal["gap_percent"]
+        assert block["protected_goal_status"] == goal["status"]
+        assert block["protected_goal_complete"] == goal["complete"]
+        assert block["protected_goal_release_backed_complete"] == goal["release_backed_complete"]
+        assert block["protected_goal_accepted_target_count"] == goal["accepted_target_count"]
+        assert block["protected_goal_target_count"] == goal["target_count"]
+        assert block["protected_goal_missing_targets"] == goal["missing_targets"]
     assert goal["current_percent"] == 0.0
     assert goal["gap_percent"] == 100.0
     assert goal["accepted_target_count"] == 0
@@ -300,7 +310,7 @@ def test_platform_verified_readiness_tracks_partial_targets() -> None:
     )
     assert requirements["linux-i386"]["workflow_dispatch_command"] == (
         "gh workflow run extended-platform-evidence.yml --repo <owner>/<repo> "
-        "--ref <github-actions-head-sha-or-branch> -f target=linux-i386 "
+        "--ref <github-actions-head-sha> -f target=linux-i386 "
         "-f release_tag=v<project.version> "
         "-f release_asset_base_url=<github-release-download-url>"
     )
@@ -315,7 +325,7 @@ def test_platform_verified_readiness_tracks_partial_targets() -> None:
     )
     assert requirements["windows-xp-native-x86"]["workflow_dispatch_command"] == (
         "gh workflow run xp-native-evidence.yml --repo <owner>/<repo> "
-        "--ref <github-actions-head-sha-or-branch> -f target=windows-xp-native-x86 "
+        "--ref <github-actions-head-sha> -f target=windows-xp-native-x86 "
         "-f release_tag=v<project.version> "
         "-f release_asset_base_url=<github-release-download-url> "
         "-f assets_dir=<target-release-artifact-dir> "
@@ -331,17 +341,31 @@ def test_platform_verified_readiness_tracks_partial_targets() -> None:
     xp_candidate_command = requirements["windows-xp-native-x86"]["required_commands"][
         "accepted_evidence_candidate_command"
     ]
-    assert "--staged-upload-out-dir <release-upload-staging-dir>" in linux_candidate_command
-    assert "--staged-upload-out-dir <release-upload-staging-dir>" in xp_candidate_command
+    assert (
+        "--staged-upload-out-dir platform-evidence-upload/linux-i386/v<project.version>"
+        in linux_candidate_command
+    )
+    assert (
+        "--staged-upload-out-dir platform-evidence-upload/windows-xp-native-x86/v<project.version>"
+        in xp_candidate_command
+    )
     assert "--xp-evidence-output-dir <xp-evidence-output-dir>" in xp_candidate_command
     assert "staged_upload_command" in requirements["linux-i386"]["required_commands"]
     assert (
         "stage_extended_linux_evidence_upload.py"
         in requirements["linux-i386"]["required_commands"]["staged_upload_command"]
     )
+    assert (
+        "--out-dir platform-evidence-upload/linux-i386/v<project.version>"
+        in requirements["linux-i386"]["required_commands"]["staged_upload_command"]
+    )
     assert "staged_upload_command" in requirements["windows-xp-native-x86"]["required_commands"]
     assert (
         "stage_xp_native_evidence_upload.py"
+        in requirements["windows-xp-native-x86"]["required_commands"]["staged_upload_command"]
+    )
+    assert (
+        "--out-dir platform-evidence-upload/windows-xp-native-x86/v<project.version>"
         in requirements["windows-xp-native-x86"]["required_commands"]["staged_upload_command"]
     )
     assert requirements["linux-i386"]["security_requirements"] == LINUX_SECURITY_REQUIREMENTS
@@ -356,6 +380,8 @@ def test_platform_verified_readiness_tracks_partial_targets() -> None:
     )
     assert requirements["windows-xp-native-x86"]["security_requirements"] == [
         "legacy TLS, SSH, and RDP compatibility must remain profile-scoped opt-in",
+        "XP security patch evidence must include concrete security_update_channel "
+        "and cve_review_reference update/advisory provenance",
         "modern Windows 10/11, Linux, and macOS defaults must keep hardened crypto",
     ]
     assert "XP remote-target coverage does not imply native-host readiness" in (
@@ -366,6 +392,10 @@ def test_platform_verified_readiness_tracks_partial_targets() -> None:
     assert rows["windows-x64"]["verified_readiness_scope"] is True
     assert rows["linux-i386"]["current_percent"] == 70.0
     assert rows["linux-i386"]["verified_readiness_scope"] is False
+    assert rows["linux-i386"]["accepted_evidence_record_complete"] is False
+    assert rows["linux-i386"]["release_asset_provenance_complete"] is False
+    assert rows["linux-i386"]["release_backed_readiness_complete"] is False
+    assert "--assets-dir" in rows["linux-i386"]["static_readiness_evidence_scope"]
     assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
     assert rows["android-arm64"]["current_percent"] == 100.0
     assert rows["android-arm64"]["status"] == "verified-termux-web-mobile"
@@ -378,6 +408,10 @@ def test_platform_verified_readiness_tracks_partial_targets() -> None:
     assert rows["Windows XP"]["legacy_architectures"] == ["x86", "x64"]
     assert rows["Windows XP"]["security_profile"] == "isolated-legacy-opt-in"
     assert rows["Windows XP"]["verified_readiness_scope"] is False
+    assert rows["Windows XP"]["accepted_evidence_record_complete"] is False
+    assert rows["Windows XP"]["release_asset_provenance_complete"] is False
+    assert rows["Windows XP"]["release_backed_readiness_complete"] is False
+    assert "--assets-dir" in rows["Windows XP"]["static_readiness_evidence_scope"]
     assert rows["Windows XP"]["accepted_evidence_missing_targets"] == [
         "windows-xp-native-x86",
         "windows-xp-native-x64",
@@ -398,6 +432,10 @@ def test_platform_verified_readiness_promotes_only_with_accepted_evidence() -> N
     assert rows["linux-i386"]["current_percent"] == 100.0
     assert rows["linux-i386"]["status"] == "verified-accepted-native-evidence"
     assert rows["linux-i386"]["verified_readiness_scope"] is True
+    assert rows["linux-i386"]["accepted_evidence_record_complete"] is True
+    assert rows["linux-i386"]["release_asset_provenance_complete"] is False
+    assert rows["linux-i386"]["release_backed_readiness_complete"] is False
+    assert "accepted-record/source-run metadata only" in rows["linux-i386"]["static_readiness_evidence_scope"]
     assert rows["linux-i386"]["accepted_evidence_missing_targets"] == []
     assert rows["linux-i386"]["accepted_evidence_release_tags"] == {
         "linux-i386": "v1.0.2",
@@ -422,6 +460,9 @@ def test_platform_verified_readiness_promotes_only_with_accepted_evidence() -> N
     assert rows["Windows XP"]["current_percent"] == 25.0
     assert rows["Windows XP"]["status"] == "partial-xp-native-host-evidence"
     assert rows["Windows XP"]["verified_readiness_scope"] is False
+    assert rows["Windows XP"]["accepted_evidence_record_complete"] is False
+    assert rows["Windows XP"]["release_asset_provenance_complete"] is False
+    assert rows["Windows XP"]["release_backed_readiness_complete"] is False
     assert rows["Windows XP"]["accepted_evidence_present_targets"] == ["windows-xp-native-x86"]
     assert rows["Windows XP"]["accepted_evidence_missing_targets"] == ["windows-xp-native-x64"]
     assert rows["Windows XP"]["accepted_evidence_release_source_workflows"] == {
@@ -441,6 +482,10 @@ def test_platform_verified_readiness_promotes_only_with_accepted_evidence() -> N
     assert rows["Windows XP"]["current_percent"] == 100.0
     assert rows["Windows XP"]["status"] == "verified-xp-native-host-evidence"
     assert rows["Windows XP"]["verified_readiness_scope"] is True
+    assert rows["Windows XP"]["accepted_evidence_record_complete"] is True
+    assert rows["Windows XP"]["release_asset_provenance_complete"] is False
+    assert rows["Windows XP"]["release_backed_readiness_complete"] is False
+    assert "--require-complete" in rows["Windows XP"]["static_readiness_evidence_scope"]
     assert rows["Windows XP"]["accepted_evidence_missing_targets"] == []
     assert goal["current_percent"] == 75.0
     assert goal["missing_targets"] == ["linux-armhf"]
@@ -539,14 +584,41 @@ def test_platform_verified_readiness_goal_parity_completes_with_all_accepted_evi
         "windows-xp-native-x64",
     ]
     assert goal["missing_targets"] == []
-    assert goal["complete"] is True
+    assert goal["complete"] is False
     assert denominator["included_targets"] == ["linux-i386", "linux-armhf", "Windows XP"]
     assert denominator["excluded_targets"] == []
-    assert goal["status"] == "complete"
+    assert goal["status"] == "release-asset-provenance-required"
     assert all(
         item["accepted"] is True and item["status"] == "accepted"
         for item in goal["target_evidence_requirements"]
     )
+
+
+def test_platform_verified_readiness_goal_parity_ignores_duplicate_target_records() -> None:
+    manifest = _extended_platform_manifest()
+    evidence = _accepted_evidence_registry(
+        _linux_accepted_evidence("linux-i386"),
+        _linux_accepted_evidence("linux-i386"),
+        _linux_accepted_evidence("linux-armhf"),
+        _xp_accepted_evidence("windows-xp-native-x86"),
+        _xp_accepted_evidence("windows-xp-native-x64"),
+    )
+
+    report = _platform_verified_readiness(platform_data=manifest, evidence_registry=evidence)
+    rows = {row["target"]: row for row in report["targets"]}
+    goal = report["protected_goal_parity"]
+
+    assert rows["linux-i386"]["current_percent"] == 70.0
+    assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
+    assert goal["current_percent"] == 75.0
+    assert goal["accepted_target_count"] == 3
+    assert goal["accepted_targets"] == [
+        "linux-armhf",
+        "windows-xp-native-x86",
+        "windows-xp-native-x64",
+    ]
+    assert goal["missing_targets"] == ["linux-i386"]
+    assert goal["complete"] is False
 
 
 def test_platform_verified_readiness_detects_conflicting_source_attempts() -> None:
@@ -706,6 +778,9 @@ def test_platform_verified_readiness_goal_parity_requires_one_release_tag() -> N
         "windows-xp-native-x86",
         "windows-xp-native-x64",
     ]
+    assert goal["selected_release_scope_exclusions"] == {
+        "linux-i386": ["release-tag:v1.0.2"]
+    }
     assert goal["complete"] is False
     assert goal["status"] == "mixed-release-evidence"
 
@@ -768,6 +843,9 @@ def test_platform_verified_readiness_goal_parity_requires_one_release_source_hea
         "linux-i386": 1,
         "windows-xp-native-x64": 1,
         "windows-xp-native-x86": 1,
+    }
+    assert goal["selected_release_scope_exclusions"] == {
+        "windows-xp-native-x64": [f"release-source-head:{'b' * 40}"]
     }
     assert goal["accepted_targets"] == [
         "linux-i386",
@@ -1399,7 +1477,7 @@ def test_platform_verified_readiness_ignores_missing_staged_upload_command() -> 
 def test_platform_verified_readiness_ignores_overlapping_linux_staged_upload_command() -> None:
     record = _linux_accepted_evidence("linux-i386")
     record["staged_upload_command"] = str(record["staged_upload_command"]).replace(
-        "--out-dir linux-evidence-upload",
+        "--out-dir platform-evidence-upload/linux-i386/v1.0.2",
         "--out-dir staged/linux-i386/v1.0.2/artifacts/linux-evidence-upload",
     )
 
@@ -1417,7 +1495,7 @@ def test_platform_verified_readiness_ignores_overlapping_linux_staged_upload_com
 def test_platform_verified_readiness_ignores_overlapping_xp_staged_upload_command() -> None:
     record = _xp_accepted_evidence("windows-xp-native-x64")
     record["staged_upload_command"] = str(record["staged_upload_command"]).replace(
-        "--out-dir xp-evidence-upload",
+        "--out-dir platform-evidence-upload/windows-xp-native-x64/v1.0.2",
         "--out-dir xp-evidence-output/windows-xp-native-x64/v1.0.2/upload",
     )
 
@@ -1482,7 +1560,7 @@ def test_platform_verified_readiness_accepts_scoped_linux_local_preflight_root()
     record["staged_upload_command"] = (
         "python scripts/stage_extended_linux_evidence_upload.py "
         f"--target {target} --release-tag v1.0.2 --source-dir {assets_dir} "
-        "--out-dir linux-evidence-upload --force"
+        f"--out-dir platform-evidence-upload/{target}/v1.0.2 --force"
     )
     record["local_evidence_preflight_command"] = (
         "python scripts/check_platform_goal_local_evidence.py --root platform-evidence-staging "
@@ -1701,6 +1779,23 @@ def test_platform_verified_readiness_ignores_placeholder_linux_security_patch_pr
     assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
 
 
+def test_platform_verified_readiness_ignores_vague_linux_security_patch_provenance() -> None:
+    record = _linux_accepted_evidence("linux-i386")
+    record["builder_identity"]["security_patch_evidence"]["security_update_channel"] = "monthly maintenance baseline"
+    record["builder_identity"]["security_patch_evidence"]["cve_review_reference"] = "internal review 2026 06"
+    record["builder_identity_sha256"] = _json_sha256(record["builder_identity"])
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry=_accepted_evidence_registry(record),
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["linux-i386"]["current_percent"] == 70.0
+    assert rows["linux-i386"]["status"] == "manual-script-supported"
+    assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
+
+
 def test_platform_verified_readiness_ignores_weak_linux_tool_path() -> None:
     record = _linux_accepted_evidence("linux-i386")
     record["builder_identity"]["required_tools"]["bash"] = "bash"
@@ -1790,6 +1885,29 @@ def test_platform_verified_readiness_ignores_weak_linux_smoke_summary_security()
     security = summary["security"]
     assert isinstance(security, dict)
     security["weak_crypto_global_default"] = True
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry=_accepted_evidence_registry(record),
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    goal = report["protected_goal_parity"]
+    assert rows["linux-i386"]["current_percent"] == 70.0
+    assert rows["linux-i386"]["status"] == "manual-script-supported"
+    assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
+    assert goal["current_percent"] == 0.0
+    assert goal["accepted_targets"] == []
+
+
+def test_platform_verified_readiness_ignores_vague_linux_smoke_summary_security_provenance() -> None:
+    record = _linux_accepted_evidence("linux-i386")
+    summary = record["linux_smoke_summary"]
+    assert isinstance(summary, dict)
+    security = summary["security"]
+    assert isinstance(security, dict)
+    security["security_update_channel"] = "monthly maintenance baseline"
+    security["cve_review_reference"] = "internal review 2026 06"
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
@@ -2252,6 +2370,22 @@ def test_platform_verified_readiness_ignores_placeholder_xp_security_patch_summa
     assert rows["Windows XP"]["accepted_evidence_present_targets"] == []
 
 
+def test_platform_verified_readiness_ignores_vague_xp_security_patch_summary() -> None:
+    record = _xp_accepted_evidence("windows-xp-native-x86")
+    record["xp_evidence_summary"]["security"]["patch_evidence"]["security_update_channel"] = "monthly maintenance baseline"
+    record["xp_evidence_summary"]["security"]["patch_evidence"]["cve_review_reference"] = "internal review 2026 06"
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry=_accepted_evidence_registry(record),
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["Windows XP"]["current_percent"] == 25.0
+    assert rows["Windows XP"]["status"] == "remote-target-only"
+    assert rows["Windows XP"]["accepted_evidence_present_targets"] == []
+
+
 def test_platform_verified_readiness_ignores_missing_xp_host_identity_summary() -> None:
     record = _xp_accepted_evidence("windows-xp-native-x86")
     del record["xp_evidence_summary"]["host_identity"]
@@ -2517,7 +2651,7 @@ def _linux_accepted_evidence(target: str) -> dict[str, object]:
         "staged_upload_command": (
             "python scripts/stage_extended_linux_evidence_upload.py "
             f"--target {target} --release-tag v1.0.2 --source-dir {assets_dir} "
-            "--out-dir linux-evidence-upload --force"
+            f"--out-dir platform-evidence-upload/{target}/v1.0.2 --force"
         ),
         "artifact_validation_command": (
             f"python scripts/check_platform_promotion_artifacts.py --target {target} "
@@ -2601,7 +2735,7 @@ def _xp_accepted_evidence(target: str) -> dict[str, object]:
             "python scripts/stage_xp_native_evidence_upload.py "
             f"--target {target} --release-tag v1.0.2 --assets-dir {assets_dir} "
             f"--evidence-output-dir xp-evidence-output/{target}/v1.0.2 "
-            "--out-dir xp-evidence-upload --force"
+            f"--out-dir platform-evidence-upload/{target}/v1.0.2 --force"
         ),
         "artifact_validation_command": (
             f"python scripts/check_platform_promotion_artifacts.py --target {target} "

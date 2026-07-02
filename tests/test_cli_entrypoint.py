@@ -78,6 +78,7 @@ def test_module_entrypoint_coverage_prints_protected_platform_goal(tmp_path: Pat
         "Missing protected evidence  : linux-i386, linux-armhf, "
         "windows-xp-native-x86, windows-xp-native-x64"
     ) in result.stdout
+    assert "accepted records/release assets pending" in result.stdout
 
 
 def _run_row(env: dict[str, str], *args: str) -> subprocess.CompletedProcess[str]:

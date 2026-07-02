@@ -160,6 +160,43 @@
     "security_update_channel",
     "cve_review_reference"
   ],
+  "required_security_patch_provenance_namespaces": {
+    "security_update_channel": [
+      "security-update",
+      "security-updates",
+      "windows-update",
+      "microsoft-update",
+      "update-catalog",
+      "apt",
+      "dnf",
+      "yum",
+      "apk",
+      "patch",
+      "hotfix",
+      "kb",
+      "usn-",
+      "dsa-",
+      "rhsa-",
+      "alsa-",
+      "errata"
+    ],
+    "cve_review_reference": [
+      "cve-",
+      "ghsa-",
+      "advisory",
+      "vulnerability",
+      "security-advisory",
+      "security-tracker",
+      "release-notes",
+      "security-review",
+      "kb",
+      "usn-",
+      "dsa-",
+      "rhsa-",
+      "alsa-",
+      "https://"
+    ]
+  },
   "required_security_smoke_provenance_fields": [
     "security_update_channel",
     "cve_review_reference"

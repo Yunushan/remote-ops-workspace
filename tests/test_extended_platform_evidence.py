@@ -298,10 +298,37 @@ def test_extended_platform_evidence_requires_dispatch_input_preflight() -> None:
     assert any("dispatch input preflight" in error for error in errors)
 
 
+def test_extended_platform_evidence_requires_dispatch_source_head_sha() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
+        '            --source-head-sha "${{ github.sha }}" \\\n',
+        "",
+        1,
+    )
+
+    errors = checker.check_extended_platform_evidence(workflow)
+
+    assert any("source_head_sha and source_run_attempt" in error for error in errors)
+
+
+def test_extended_platform_evidence_requires_dispatch_source_run_attempt() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
+        '            --source-run-attempt "${{ github.run_attempt }}"\n',
+        "\n",
+        1,
+    )
+
+    errors = checker.check_extended_platform_evidence(workflow)
+
+    assert any("source_head_sha and source_run_attempt" in error for error in errors)
+
+
 def test_extended_platform_dispatch_input_validator_accepts_matching_inputs() -> None:
     checker = _load_script("check_extended_platform_dispatch_inputs")
 
-    errors = checker.check_extended_platform_dispatch_inputs(
+    errors = _check_extended_dispatch_inputs(
+        checker,
         target="linux-i386",
         release_tag="v1.0.2",
         release_asset_base_url="https://github.com/example/remote-ops-workspace/releases/download/v1.0.2",
@@ -314,7 +341,8 @@ def test_extended_platform_dispatch_input_validator_accepts_matching_inputs() ->
 def test_extended_platform_dispatch_input_validator_rejects_release_tag_mismatch() -> None:
     checker = _load_script("check_extended_platform_dispatch_inputs")
 
-    errors = checker.check_extended_platform_dispatch_inputs(
+    errors = _check_extended_dispatch_inputs(
+        checker,
         target="linux-armhf",
         release_tag="v1.0.2",
         release_asset_base_url="https://github.com/example/remote-ops-workspace/releases/download/v1.0.3",
@@ -327,7 +355,8 @@ def test_extended_platform_dispatch_input_validator_rejects_release_tag_mismatch
 def test_extended_platform_dispatch_input_validator_rejects_trailing_slash_release_base() -> None:
     checker = _load_script("check_extended_platform_dispatch_inputs")
 
-    errors = checker.check_extended_platform_dispatch_inputs(
+    errors = _check_extended_dispatch_inputs(
+        checker,
         target="linux-i386",
         release_tag="v1.0.2",
         release_asset_base_url="https://github.com/example/remote-ops-workspace/releases/download/v1.0.2/",
@@ -343,7 +372,8 @@ def test_extended_platform_dispatch_input_validator_rejects_trailing_slash_relea
 def test_extended_platform_dispatch_input_validator_rejects_cross_repo_inputs() -> None:
     checker = _load_script("check_extended_platform_dispatch_inputs")
 
-    errors = checker.check_extended_platform_dispatch_inputs(
+    errors = _check_extended_dispatch_inputs(
+        checker,
         target="linux-armhf",
         release_tag="v1.0.2",
         release_asset_base_url="https://github.com/other/remote-ops-workspace/releases/download/v1.0.2",
@@ -359,7 +389,8 @@ def test_extended_platform_dispatch_input_validator_rejects_cross_repo_inputs() 
 def test_extended_platform_dispatch_input_validator_rejects_malformed_repo_slug() -> None:
     checker = _load_script("check_extended_platform_dispatch_inputs")
 
-    errors = checker.check_extended_platform_dispatch_inputs(
+    errors = _check_extended_dispatch_inputs(
+        checker,
         target="linux-i386",
         release_tag="v1.0.2",
         release_asset_base_url=(
@@ -373,6 +404,28 @@ def test_extended_platform_dispatch_input_validator_rejects_malformed_repo_slug(
         "https://github.com/<owner>/<repo>/releases/download/v1.0.2"
     ) in errors
     assert "workflow_run_url must be a GitHub Actions run URL" in errors
+
+
+def test_extended_platform_dispatch_input_validator_rejects_invalid_source_head_sha() -> None:
+    checker = _load_script("check_extended_platform_dispatch_inputs")
+
+    errors = _check_extended_dispatch_inputs(
+        checker,
+        source_head_sha="ABCDEF0123456789ABCDEF0123456789ABCDEF01",
+    )
+
+    assert (
+        "source_head_sha must be a lowercase 40-character Git SHA, "
+        "got 'ABCDEF0123456789ABCDEF0123456789ABCDEF01'"
+    ) in errors
+
+
+def test_extended_platform_dispatch_input_validator_rejects_invalid_source_run_attempt() -> None:
+    checker = _load_script("check_extended_platform_dispatch_inputs")
+
+    errors = _check_extended_dispatch_inputs(checker, source_run_attempt="0")
+
+    assert "source_run_attempt must be a positive integer, got '0'" in errors
 
 
 def test_extended_platform_builder_accepts_matching_i386(monkeypatch) -> None:
@@ -563,6 +616,20 @@ def test_extended_platform_builder_rejects_file_shaped_identity_output_parent(
     ]
 
 
+def test_extended_platform_builder_rejects_reserved_workspace_identity_output() -> None:
+    checker = _load_script("check_extended_platform_builder")
+    output_parent = Path(".github") / "linux-builder"
+    output = output_parent / "builder-identity-linux-i386.json"
+
+    errors = checker.check_builder_identity_output_path("linux-i386", output)
+
+    assert errors == [
+        "builder identity output directory must not point inside "
+        f"reserved workspace directory '.github': {output_parent}"
+    ]
+    assert not output_parent.exists()
+
+
 def test_extended_platform_builder_rejects_non_file_identity_output(tmp_path: Path) -> None:
     checker = _load_script("check_extended_platform_builder")
     output = tmp_path / "builder-identity-linux-i386.json"
@@ -619,6 +686,19 @@ def _linux_command_output(uname: str, dpkg_arch: str, bits: str):
         return ""
 
     return _output
+
+
+def _check_extended_dispatch_inputs(checker, **overrides):
+    values = {
+        "target": "linux-i386",
+        "release_tag": "v1.0.2",
+        "release_asset_base_url": "https://github.com/example/remote-ops-workspace/releases/download/v1.0.2",
+        "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        "source_head_sha": "0123456789abcdef0123456789abcdef01234567",
+        "source_run_attempt": "1",
+    }
+    values.update(overrides)
+    return checker.check_extended_platform_dispatch_inputs(**values)
 
 
 def _load_script(name: str):

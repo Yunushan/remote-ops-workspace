@@ -177,6 +177,56 @@ def test_extended_linux_evidence_bundle_rejects_unscoped_output_directory() -> N
     )
 
 
+def test_extended_linux_evidence_bundle_rejects_reserved_workspace_artifact_directory() -> None:
+    bundler = _load_script("make_extended_linux_evidence_bundle")
+    assets = Path(".github") / "linux-i386" / "v1.0.2" / "artifacts"
+
+    errors = bundler.make_extended_linux_evidence_bundle(
+        target="linux-i386",
+        release_tag="v1.0.2",
+        assets_dir=assets,
+        builder_evidence=Path("builder-identity-linux-i386.json"),
+        smoke_evidence=Path("native-smoke-linux-i386.log"),
+        candidate_record=Path("platform-verified-evidence-linux-i386.json"),
+        out_dir=Path("staged") / "linux-i386" / "v1.0.2",
+    )
+
+    assert (
+        "artifact directory must not point inside reserved workspace directory "
+        f"'.github': {assets}"
+    ) in errors
+
+
+def test_extended_linux_evidence_bundle_rejects_reserved_workspace_input_files() -> None:
+    bundler = _load_script("make_extended_linux_evidence_bundle")
+    builder = Path(".git") / "builder-identity-linux-i386.json"
+
+    errors = bundler.check_input_symlinks(
+        builder,
+        Path("native-smoke-linux-i386.log"),
+        Path("platform-verified-evidence-linux-i386.json"),
+    )
+
+    assert (
+        "builder evidence file must not point inside reserved workspace directory "
+        f"'.git': {builder}"
+    ) in errors
+
+
+def test_extended_linux_evidence_bundle_rejects_reserved_workspace_output_directory() -> None:
+    bundler = _load_script("make_extended_linux_evidence_bundle")
+    out_dir = Path(".codex") / "linux-i386" / "v1.0.2" / "bundle"
+    outputs = (out_dir / "bundle.json", out_dir / "bundle.zip", out_dir / "bundle-SHA256SUMS.txt")
+
+    errors = bundler.prepare_output_paths(out_dir=out_dir, outputs=outputs, force=True)
+
+    assert (
+        "extended Linux evidence bundle output directory must not point inside "
+        f"reserved workspace directory '.codex': {out_dir}"
+    ) in errors
+    assert not out_dir.exists()
+
+
 def test_extended_linux_evidence_bundle_rejects_artifact_hash_mismatch(
     tmp_path: Path,
     monkeypatch,

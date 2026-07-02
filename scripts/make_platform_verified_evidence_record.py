@@ -23,6 +23,7 @@ from check_platform_promotion_artifacts import (  # noqa: E402
 )
 from check_platform_verified_evidence import (  # noqa: E402
     LINUX_TARGETS,
+    RESERVED_WORKSPACE_ROOTS,
     XP_TARGETS,
     check_linux_smoke_builder_identity_binding,
     check_linux_smoke_log_text,
@@ -62,6 +63,7 @@ DEFAULT_EVIDENCE_POLICY = (
     "finalized accepted-record release asset URL binding, "
     "canonical finalized accepted-record JSON byte binding, "
     "published native and review-bundle release asset byte binding, "
+    "published release asset GitHub id/API URL binding, "
     "Linux release source artifact names must be target/release-scoped, "
     "Linux accepted evidence command paths must be target/release-scoped, "
     "XP release source artifact names must be target/release-scoped, "
@@ -325,6 +327,7 @@ def build_evidence_record(args: argparse.Namespace) -> tuple[list[str], dict[str
     if target in LINUX_TARGETS:
         errors.extend(check_linux_builder_release_source_binding(args))
     errors.extend(check_target_release_scoped_inputs(args))
+    errors.extend(check_reserved_workspace_root_inputs(args))
     if not errors:
         errors.extend(check_local_evidence_preflight(args))
     if errors:
@@ -580,6 +583,50 @@ def check_target_release_scoped_inputs(args: argparse.Namespace) -> list[str]:
                 )
             )
     return errors
+
+
+def check_reserved_workspace_root_inputs(args: argparse.Namespace) -> list[str]:
+    paths: list[tuple[Path, str]] = [
+        (args.assets_dir, "artifact directory"),
+    ]
+    local_evidence_root = getattr(args, "local_evidence_root", Path("."))
+    if isinstance(local_evidence_root, Path):
+        root = local_evidence_root
+    else:
+        root = Path(str(local_evidence_root))
+    if str(args.target) in LINUX_TARGETS:
+        if args.builder_evidence is not None:
+            paths.append((args.builder_evidence, "Linux builder evidence file"))
+        if args.linux_smoke_evidence is not None:
+            paths.append((args.linux_smoke_evidence, "Linux smoke evidence file"))
+    if str(args.target) in XP_TARGETS:
+        if args.xp_evidence is not None:
+            paths.append((args.xp_evidence, "XP evidence file"))
+        if args.xp_evidence_dir is not None:
+            paths.append((args.xp_evidence_dir, "XP evidence directory"))
+    errors: list[str] = []
+    for path, label in paths:
+        errors.extend(check_path_not_reserved_workspace_root(root, path, label))
+    return errors
+
+
+def check_path_not_reserved_workspace_root(root: Path, path: Path, label: str) -> list[str]:
+    root_resolved = root.resolve(strict=False)
+    path_resolved = path.resolve(strict=False)
+    try:
+        relative = path_resolved.relative_to(root_resolved)
+    except ValueError:
+        return []
+    parts = tuple(part for part in relative.parts if part not in ("", "."))
+    if not parts:
+        return []
+    reserved_root = parts[0]
+    if reserved_root in RESERVED_WORKSPACE_ROOTS:
+        return [
+            f"{label} must not point inside reserved workspace directory "
+            f"{reserved_root!r}: {path}"
+        ]
+    return []
 
 
 def check_target_release_path_segments(

@@ -176,10 +176,15 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
         f"            --target {target} \\\n"
         '            --release-tag "${{ inputs.release_tag }}" \\\n'
         '            --release-asset-base-url "${{ inputs.release_asset_base_url }}" \\\n'
-        '            --workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"'
+        '            --workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \\\n'
+        '            --source-head-sha "${{ github.sha }}" \\\n'
+        '            --source-run-attempt "${{ github.run_attempt }}"'
     )
     if dispatch_command not in block:
-        errors.append(f"{job} dispatch input preflight must bind target, release_tag, release URL and workflow_run_url")
+        errors.append(
+            f"{job} dispatch input preflight must bind target, release_tag, release URL, workflow_run_url, "
+            "source_head_sha and source_run_attempt"
+        )
     builder_command = (
         "python3 scripts/check_extended_platform_builder.py \\\n"
         f"            --target {target} \\\n"

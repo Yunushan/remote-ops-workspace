@@ -45,7 +45,9 @@ jobs:
             --target linux-i386 \
             --release-tag "${{ inputs.release_tag }}" \
             --release-asset-base-url "${{ inputs.release_asset_base_url }}" \
-            --workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            --workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --source-head-sha "${{ github.sha }}" \
+            --source-run-attempt "${{ github.run_attempt }}"
       - name: Check Linux i386 builder identity
         run: |
           mkdir -p native-dist/linux platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/artifacts
@@ -167,7 +169,9 @@ jobs:
             --target linux-armhf \
             --release-tag "${{ inputs.release_tag }}" \
             --release-asset-base-url "${{ inputs.release_asset_base_url }}" \
-            --workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            --workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --source-head-sha "${{ github.sha }}" \
+            --source-run-attempt "${{ github.run_attempt }}"
       - name: Check Linux armhf builder identity
         run: |
           mkdir -p native-dist/linux platform-evidence-staging/linux-armhf/${{ inputs.release_tag }}/artifacts

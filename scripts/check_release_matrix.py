@@ -49,6 +49,7 @@ def main() -> int:
         errors.extend(check_schema(matrix))
         errors.extend(check_workflow_native_jobs(matrix))
         errors.extend(check_source_and_python_assets(matrix))
+        errors.extend(check_release_asset_pattern_versions(matrix))
         errors.extend(check_platform_target_alignment(matrix, platform_targets))
         errors.extend(check_release_docs(matrix))
         errors.extend(check_release_helper_packaging())
@@ -137,6 +138,38 @@ def check_source_and_python_assets(matrix: dict[str, Any]) -> list[str]:
     return errors
 
 
+def check_release_asset_pattern_versions(matrix: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    version = read_project_version(errors)
+    if not version:
+        return errors
+    expected = f"v{version}"
+    for label, pattern in release_asset_patterns(matrix):
+        if expected not in pattern:
+            errors.append(
+                f"{label} asset pattern must use current project version {expected}: {pattern}"
+            )
+    return errors
+
+
+def release_asset_patterns(matrix: dict[str, Any]) -> list[tuple[str, str]]:
+    patterns: list[tuple[str, str]] = []
+    default = require_mapping(matrix, "default_github_release", [])
+    for raw_job in require_list(default, "native_jobs", []):
+        if not isinstance(raw_job, dict):
+            continue
+        job_name = str(raw_job.get("job", "default-native"))
+        for pattern in raw_job.get("asset_patterns", []):
+            patterns.append((job_name, str(pattern)))
+    for raw_item in require_list(matrix, "script_supported_native", []):
+        if not isinstance(raw_item, dict):
+            continue
+        target_id = str(raw_item.get("platform_target_id", "script-supported"))
+        for pattern in raw_item.get("asset_patterns", []):
+            patterns.append((target_id, str(pattern)))
+    return patterns
+
+
 def check_platform_target_alignment(matrix: dict[str, Any], platform_targets: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     rows = {
@@ -163,6 +196,32 @@ def check_platform_target_alignment(matrix: dict[str, Any], platform_targets: di
         for snippet in SCRIPT_TARGET_BUILDER_REQUIREMENT_SNIPPETS.get(target_id, ()):
             if snippet not in builder_requirement:
                 errors.append(f"{target_id} builder_requirement must mention {snippet}")
+        asset_patterns = raw_item.get("asset_patterns")
+        if not isinstance(asset_patterns, list) or not asset_patterns:
+            errors.append(f"{target_id} asset_patterns must list script-supported release artifacts")
+        else:
+            normalized_patterns = [str(pattern) for pattern in asset_patterns]
+            duplicate_patterns = sorted(
+                {
+                    pattern
+                    for pattern in normalized_patterns
+                    if normalized_patterns.count(pattern) > 1
+                }
+            )
+            if duplicate_patterns:
+                errors.append(f"{target_id} asset_patterns contains duplicates: {duplicate_patterns}")
+            if not any(pattern.endswith("-native-SHA256SUMS.txt") for pattern in normalized_patterns):
+                errors.append(f"{target_id} asset_patterns must include native SHA256SUMS sidecar")
+            catalog_row = rows.get(target_id)
+            catalog_assets = catalog_row.get("assets") if isinstance(catalog_row, dict) else None
+            if isinstance(catalog_assets, list):
+                expected_assets = {str(asset) for asset in catalog_assets}
+                actual_assets = set(normalized_patterns)
+                if actual_assets != expected_assets:
+                    errors.append(
+                        f"{target_id} asset_patterns must match platform_targets assets "
+                        f"(expected {sorted(expected_assets)}, got {sorted(actual_assets)})"
+                    )
     source_web_ids = set()
     legacy_versions = set()
     for raw_item in require_list(matrix, "source_or_remote_only", errors):
@@ -228,6 +287,7 @@ def check_release_docs(matrix: dict[str, Any]) -> list[str]:
     docs = {
         "README.md": read("README.md"),
         "README.tr.md": read("README.tr.md"),
+        "docs/PLATFORM_PROMOTION_RUNBOOK.md": read("docs/PLATFORM_PROMOTION_RUNBOOK.md"),
         "docs/PLATFORM_SUPPORT.md": read("docs/PLATFORM_SUPPORT.md"),
         "docs/RELEASE_STRATEGY.md": read("docs/RELEASE_STRATEGY.md"),
         "docs/VERIFYING.md": read("docs/VERIFYING.md"),
@@ -246,16 +306,22 @@ def check_release_docs(matrix: dict[str, Any]) -> list[str]:
     ):
         if snippet not in searchable:
             errors.append(f"release matrix docs missing required wording: {snippet}")
-    for raw_job in require_list(require_mapping(matrix, "default_github_release", errors), "native_jobs", errors):
-        if not isinstance(raw_job, dict):
-            continue
-        for pattern in raw_job.get("asset_patterns", []):
-            if str(pattern) not in combined:
-                errors.append(f"release docs missing matrix asset pattern: {pattern}")
+    version = read_project_version(errors)
+    for _, pattern in release_asset_patterns(matrix):
+        variants = release_asset_doc_variants(str(pattern), version)
+        if not any(variant in combined for variant in variants):
+            errors.append(f"release docs missing matrix asset pattern: {pattern}")
     for snippet in STALE_DEFAULT_ARTIFACT_SNIPPETS:
         if snippet in combined:
             errors.append(f"release docs still advertise stale default artifact pattern: {snippet}")
     return errors
+
+
+def release_asset_doc_variants(pattern: str, version: str) -> set[str]:
+    variants = {pattern}
+    if version:
+        variants.add(pattern.replace(f"v{version}", "v<project.version>"))
+    return variants
 
 
 def check_release_helper_packaging() -> list[str]:

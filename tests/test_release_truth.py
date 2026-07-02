@@ -128,7 +128,7 @@ def test_release_truth_checker_requires_turkish_protected_goal_gate() -> None:
         text = original_read(relative)
         if relative == "README.tr.md":
             return text.replace(
-                "python scripts/check_protected_platform_goal.py --release-tag <tag> --require-complete --show-requirements",
+                "python scripts/check_protected_platform_goal.py --release-tag <tag> --require-records-complete --show-requirements",
                 "python scripts/check_protected_platform_goal.py --release-tag <tag> --show-requirements",
             )
         return text
@@ -696,17 +696,17 @@ def test_release_truth_checker_requires_preflight_platform_requirements_report()
     assert any("protected platform readiness requirements report" in error for error in errors)
 
 
-def test_release_truth_checker_requires_hard_protected_platform_goal_gate() -> None:
+def test_release_truth_checker_requires_protected_platform_accepted_records_gate() -> None:
     checker = _load_release_truth_checker()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
-        '      - name: Require protected platform goal completion before release builds\n'
-        '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" --require-complete --show-requirements\n',
+        '      - name: Require protected platform accepted records before release builds\n'
+        '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" --require-records-complete --show-requirements\n',
         "",
     )
 
     errors = checker.check_release_preflight(workflow)
 
-    assert any("hard protected platform goal completion gate" in error for error in errors)
+    assert any("protected platform accepted records gate" in error for error in errors)
 
 
 def test_release_truth_checker_requires_publish_time_platform_goal_gate() -> None:
@@ -846,8 +846,8 @@ def test_release_truth_checker_requires_published_platform_audit_scope() -> None
         "  publish:\n"
         "    runs-on: ubuntu-latest\n"
         "    permissions:\n"
-        "      actions: read\n"
         "      contents: write\n"
+        "      actions: read\n"
     )
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
     workflow = workflow.replace(

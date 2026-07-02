@@ -10,6 +10,14 @@ import pytest
 pytestmark = pytest.mark.skipif(sys.platform != "win32", reason="xp smoke runner is a Windows cmd script")
 
 
+def _clean_github_actions_env(**overrides: str) -> dict[str, str]:
+    env = os.environ.copy()
+    for key in ("GITHUB_SHA", "GITHUB_RUN_ATTEMPT", "GITHUB_RUN_ID", "GITHUB_REPOSITORY"):
+        env.pop(key, None)
+    env.update(overrides)
+    return env
+
+
 def _run_xp_smoke_runner(tmp_path: Path, **overrides: str) -> tuple[subprocess.CompletedProcess[str], Path]:
     runner = Path("scripts/xp_smoke_runner.cmd").resolve()
     proof = tmp_path / "proof.txt"
@@ -71,6 +79,7 @@ def _run_xp_smoke_runner(tmp_path: Path, **overrides: str) -> tuple[subprocess.C
         text=True,
         capture_output=True,
         check=False,
+        env=_clean_github_actions_env(),
     )
     return result, output
 
@@ -131,6 +140,7 @@ def test_xp_smoke_runner_writes_bound_evidence_from_proof_file(tmp_path: Path) -
         text=True,
         capture_output=True,
         check=False,
+        env=_clean_github_actions_env(),
     )
 
     assert result.returncode == 0, result.stderr
@@ -201,6 +211,7 @@ def test_xp_smoke_runner_requires_existing_proof_file(tmp_path: Path) -> None:
         text=True,
         capture_output=True,
         check=False,
+        env=_clean_github_actions_env(),
     )
 
     assert result.returncode == 1
@@ -211,8 +222,7 @@ def test_xp_smoke_runner_requires_existing_proof_file(tmp_path: Path) -> None:
 def test_xp_smoke_runner_rejects_github_repository_mismatch(tmp_path: Path) -> None:
     runner = Path("scripts/xp_smoke_runner.cmd").resolve()
     output = tmp_path / "xp-smoke-evidence" / "cli_launch.txt"
-    env = os.environ.copy()
-    env["GITHUB_REPOSITORY"] = "other/remote-ops-workspace"
+    env = _clean_github_actions_env(GITHUB_REPOSITORY="other/remote-ops-workspace")
 
     result = subprocess.run(
         [
@@ -302,6 +312,7 @@ def test_xp_smoke_runner_rejects_nonnumeric_source_run_id(tmp_path: Path) -> Non
         text=True,
         capture_output=True,
         check=False,
+        env=_clean_github_actions_env(),
     )
 
     assert result.returncode == 2

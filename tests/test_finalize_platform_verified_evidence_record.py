@@ -421,6 +421,24 @@ def test_finalize_platform_verified_evidence_record_rejects_symlinked_input_pare
         ]
 
 
+def test_finalize_platform_verified_evidence_record_rejects_reserved_workspace_input_paths() -> None:
+    finalizer = _load_finalizer()
+
+    for label, filename in (
+        ("candidate evidence record", "platform-verified-evidence-linux-i386.json"),
+        ("review bundle manifest", "extended-linux-evidence-bundle-linux-i386-v1.0.2.json"),
+        ("review bundle archive", "extended-linux-evidence-bundle-linux-i386-v1.0.2.zip"),
+        ("review bundle SHA-256 sidecar", "extended-linux-evidence-bundle-linux-i386-v1.0.2-SHA256SUMS.txt"),
+    ):
+        errors: list[str] = []
+        path = Path(".github") / "release-proof" / filename
+
+        assert not finalizer.check_input_file(path, label, errors)
+        assert errors == [
+            f"{label} file must not point inside reserved workspace directory '.github': {path}"
+        ]
+
+
 def test_finalize_platform_verified_evidence_record_rejects_unsafe_output_path(
     tmp_path: Path,
     monkeypatch,
@@ -441,6 +459,21 @@ def test_finalize_platform_verified_evidence_record_rejects_unsafe_output_path(
 
     assert errors == [
         f"finalized platform evidence record output file must not be a symlink: {output}"
+    ]
+
+
+def test_finalize_platform_verified_evidence_record_rejects_reserved_workspace_output_path() -> None:
+    finalizer = _load_finalizer()
+    output = Path(".github") / "release-proof" / "platform-verified-evidence-linux-i386-final.json"
+
+    errors = finalizer.check_text_output_path(
+        output,
+        "finalized platform evidence record output file",
+    )
+
+    assert errors == [
+        "finalized platform evidence record output file must not point inside "
+        f"reserved workspace directory '.github': {output}"
     ]
 
 

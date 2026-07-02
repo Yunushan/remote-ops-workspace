@@ -1266,6 +1266,7 @@ def _protected_platform_goal_parity(evidence_registry: dict[str, Any] | None) ->
     ) and not release_source_run_attempt_conflicts
     current_percent = (accepted_count / target_count * 100.0) if target_count else 0.0
     complete = accepted_count == target_count and release_source_provenance_complete
+    record_complete = complete
     release_consistent = len(release_tags) <= 1
     release_repository_consistent = len(release_repositories) <= 1
     release_source_head_consistent = len(release_source_heads) <= 1
@@ -1350,6 +1351,12 @@ def _protected_platform_goal_parity(evidence_registry: dict[str, Any] | None) ->
         ),
         "release_source_provenance_complete": release_source_provenance_complete,
         "release_asset_provenance_complete": False,
+        "record_complete": record_complete,
+        "release_backed_complete": False,
+        "completion_requires_release_asset_provenance": True,
+        "completion_evidence": (
+            "accepted-records-only" if record_complete else "incomplete"
+        ),
         "release_consistent": release_consistent,
         "release_repository_consistent": release_repository_consistent,
         "release_source_head_consistent": release_source_head_consistent,

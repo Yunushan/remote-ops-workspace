@@ -17,6 +17,7 @@ for path in (SRC, SCRIPTS):
 from check_platform_verified_evidence import (  # noqa: E402
     EVIDENCE_PATH,
     PROTECTED_GOAL_TARGETS,
+    RESERVED_WORKSPACE_ROOTS,
     check_platform_verified_evidence,
     read_json,
 )
@@ -27,6 +28,14 @@ from remote_ops_workspace.features import _platform_verified_readiness  # noqa: 
 
 RELEASE_MATRIX_PATH = ROOT / "configs" / "release_matrix.json"
 REQUIRE_COMPLETE_RELEASE_TAG_ERROR = "--require-complete requires --release-tag vX.Y.Z"
+REQUIRE_RECORDS_COMPLETE_RELEASE_TAG_ERROR = "--require-records-complete requires --release-tag vX.Y.Z"
+REQUIRE_COMPLETE_ASSETS_DIR_ERROR = (
+    "--require-complete requires --assets-dir <release-assets-dir>; "
+    "use --require-records-complete for records-only pre-release checks"
+)
+REQUIRE_COMPLETE_MODE_CONFLICT_ERROR = (
+    "--require-complete and --require-records-complete are mutually exclusive"
+)
 REQUIRE_ASSETS_COMPLETE_ERROR = "--assets-dir requires --require-complete"
 REQUIRE_ASSETS_RELEASE_TAG_ERROR = "--assets-dir requires --release-tag vX.Y.Z"
 
@@ -43,6 +52,7 @@ def main(argv: list[str] | None = None) -> int:
         registry=registry,
         release_tag=args.release_tag,
         require_complete=args.require_complete,
+        require_records_complete=args.require_records_complete,
         assets_dir=args.assets_dir,
     )
     if args.json:
@@ -54,7 +64,7 @@ def main(argv: list[str] | None = None) -> int:
             print(scope)
         if goal["missing_targets"]:
             print(f"missing targets: {', '.join(goal['missing_targets'])}")
-        if args.require_complete or args.show_requirements:
+        if args.require_complete or args.require_records_complete or args.show_requirements:
             requirements = format_goal_requirements(goal)
             if requirements:
                 print(requirements)
@@ -86,8 +96,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--require-complete",
         action="store_true",
         help=(
-            "Fail unless all protected goal targets have accepted evidence for "
-            "--release-tag; requires --release-tag."
+            "Fail unless all protected goal targets have accepted evidence, "
+            "source-run provenance and release assets for --release-tag; "
+            "requires --release-tag and --assets-dir."
+        ),
+    )
+    parser.add_argument(
+        "--require-records-complete",
+        action="store_true",
+        help=(
+            "Fail unless all protected goal targets have accepted records and "
+            "source-run provenance for --release-tag. This is the records-only "
+            "pre-release gate; it does not prove published release assets."
         ),
     )
     parser.add_argument(
@@ -117,8 +137,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def strict_completion_arg_errors(args: argparse.Namespace) -> list[str]:
     errors: list[str] = []
+    errors.extend(check_registry_path(args.registry))
+    if args.require_complete and args.require_records_complete:
+        errors.append(REQUIRE_COMPLETE_MODE_CONFLICT_ERROR)
     if args.require_complete and not args.release_tag:
         errors.append(REQUIRE_COMPLETE_RELEASE_TAG_ERROR)
+    if args.require_records_complete and not args.release_tag:
+        errors.append(REQUIRE_RECORDS_COMPLETE_RELEASE_TAG_ERROR)
+    if args.require_complete and args.assets_dir is None:
+        errors.append(REQUIRE_COMPLETE_ASSETS_DIR_ERROR)
     if args.assets_dir is not None and not args.require_complete:
         errors.append(REQUIRE_ASSETS_COMPLETE_ERROR)
     if (
@@ -130,11 +157,56 @@ def strict_completion_arg_errors(args: argparse.Namespace) -> list[str]:
     return errors
 
 
+def check_registry_path(path: Path) -> list[str]:
+    errors = check_path_not_reserved_workspace_root(path, "accepted evidence registry")
+    if errors:
+        return errors
+    if path.is_symlink():
+        return [f"accepted evidence registry must not be a symlink: {path}"]
+    return check_path_parent_symlinks(path, "accepted evidence registry")
+
+
+def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
+    check_path = path if path.is_absolute() else Path.cwd() / path
+    for parent in reversed(check_path.parents):
+        if parent == Path("."):
+            continue
+        if parent.is_symlink():
+            return [f"{label} path must not contain symlinked directories: {parent}"]
+    return []
+
+
+def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
+    roots: list[Path] = [Path.cwd(), ROOT]
+    seen_roots: set[Path] = set()
+    for root in roots:
+        root_resolved = root.resolve(strict=False)
+        if root_resolved in seen_roots:
+            continue
+        seen_roots.add(root_resolved)
+        path_resolved = (path if path.is_absolute() else root_resolved / path).resolve(strict=False)
+        try:
+            relative = path_resolved.relative_to(root_resolved)
+        except ValueError:
+            continue
+        parts = tuple(part for part in relative.parts if part not in ("", "."))
+        if not parts:
+            continue
+        reserved_root = parts[0]
+        if reserved_root in RESERVED_WORKSPACE_ROOTS:
+            return [
+                f"{label} must not point inside reserved workspace directory "
+                f"{reserved_root!r}: {path}"
+            ]
+    return []
+
+
 def check_protected_platform_goal(
     *,
     registry: dict[str, Any],
     release_tag: str | None = None,
     require_complete: bool = False,
+    require_records_complete: bool = False,
     assets_dir: Path | None = None,
 ) -> tuple[list[str], dict[str, Any]]:
     errors: list[str] = []
@@ -143,15 +215,22 @@ def check_protected_platform_goal(
     release_asset_validation_errors: list[str] = []
     report_validation_errors: list[str] = []
     release_tag_valid = release_tag is None or re.fullmatch(r"v\d+\.\d+\.\d+", release_tag)
+    require_records_gate = require_complete or require_records_complete
     if release_tag is not None and not release_tag_valid:
         errors.append(f"release_tag must look like vX.Y.Z: {release_tag}")
+    if require_complete and require_records_complete:
+        errors.append(REQUIRE_COMPLETE_MODE_CONFLICT_ERROR)
     if require_complete and release_tag is None:
         errors.append(REQUIRE_COMPLETE_RELEASE_TAG_ERROR)
+    if require_records_complete and release_tag is None:
+        errors.append(REQUIRE_RECORDS_COMPLETE_RELEASE_TAG_ERROR)
+    if require_complete and assets_dir is None:
+        errors.append(REQUIRE_COMPLETE_ASSETS_DIR_ERROR)
     if assets_dir is not None and not require_complete:
         errors.append(REQUIRE_ASSETS_COMPLETE_ERROR)
     if assets_dir is not None and release_tag is None:
         errors.append(REQUIRE_ASSETS_RELEASE_TAG_ERROR)
-    if not (require_complete and release_tag is None):
+    if not (require_records_gate and release_tag is None):
         record_validation_errors.extend(
             check_platform_verified_evidence(
                 registry=registry,
@@ -162,7 +241,7 @@ def check_protected_platform_goal(
         validation_errors.extend(
             check_platform_verified_evidence(
                 registry=registry,
-                required_targets=PROTECTED_GOAL_TARGETS if require_complete else None,
+                required_targets=PROTECTED_GOAL_TARGETS if require_records_gate else None,
                 required_release_tag=release_tag,
                 require_review_bundles=True,
             )
@@ -180,25 +259,34 @@ def check_protected_platform_goal(
         )
         errors.extend(release_asset_validation_errors)
     goal_source_registry = invalid_evidence_goal_registry(registry) if record_validation_errors else registry
-    goal_registry = strict_goal_registry(goal_source_registry, release_tag, require_complete=require_complete)
+    goal_registry = strict_goal_registry(
+        goal_source_registry,
+        release_tag,
+        require_complete=require_records_gate,
+    )
     goal = _platform_verified_readiness(evidence_registry=goal_registry)["protected_goal_parity"]
     report_validation_errors.extend(check_goal_requirement_metadata(goal))
     errors.extend(report_validation_errors)
     if release_tag is not None:
         goal = dict(goal)
         apply_required_release_tag(goal, release_tag)
-    elif require_complete:
+    elif require_records_gate:
         goal = dict(goal)
         goal["complete"] = False
         goal["status"] = "release-tag-required"
-        goal["scope_error"] = REQUIRE_COMPLETE_RELEASE_TAG_ERROR
+        goal["scope_error"] = (
+            REQUIRE_COMPLETE_RELEASE_TAG_ERROR
+            if require_complete
+            else REQUIRE_RECORDS_COMPLETE_RELEASE_TAG_ERROR
+        )
+    record_complete = bool(goal.get("complete"))
     if release_asset_validation_errors and goal.get("complete"):
         goal = mark_release_assets_invalid(goal, release_asset_validation_errors)
     elif assets_dir is not None and require_complete and release_tag is not None and goal.get("complete"):
         goal = mark_release_assets_valid(goal)
     if report_validation_errors and goal.get("complete"):
         goal = mark_requirement_metadata_invalid(goal, report_validation_errors)
-    if require_complete and not goal.get("complete"):
+    if require_records_gate and not goal.get("complete"):
         missing_targets = list_values(goal.get("missing_targets"))
         if missing_targets:
             missing = ", ".join(missing_targets)
@@ -215,6 +303,7 @@ def check_protected_platform_goal(
         report_validation_errors=report_validation_errors,
         release_assets_dir=assets_dir,
         blocking_errors=errors,
+        record_complete=record_complete,
     )
     return errors, goal
 
@@ -227,6 +316,8 @@ def mark_release_assets_invalid(
     downgraded["complete"] = False
     downgraded["status"] = "release-assets-invalid"
     downgraded["release_asset_provenance_complete"] = False
+    downgraded["release_backed_complete"] = False
+    downgraded["completion_evidence"] = "release-assets-invalid"
     downgraded["release_asset_error_count"] = len(
         unique_messages(release_asset_validation_errors)
     )
@@ -236,6 +327,8 @@ def mark_release_assets_invalid(
 def mark_release_assets_valid(goal: dict[str, Any]) -> dict[str, Any]:
     proven = dict(goal)
     proven["release_asset_provenance_complete"] = True
+    proven["release_backed_complete"] = bool(proven.get("complete"))
+    proven["completion_evidence"] = "release-assets"
     proven["release_asset_error_count"] = 0
     return proven
 
@@ -282,8 +375,21 @@ def attach_goal_error_context(
     report_validation_errors: list[str],
     release_assets_dir: Path | None,
     blocking_errors: list[str],
+    record_complete: bool,
 ) -> dict[str, Any]:
     enriched = dict(goal)
+    enriched["record_complete"] = record_complete
+    enriched["completion_requires_release_asset_provenance"] = True
+    release_backed_complete = bool(enriched.get("complete")) and bool(
+        enriched.get("release_asset_provenance_complete")
+    )
+    enriched["release_backed_complete"] = release_backed_complete
+    if release_backed_complete:
+        enriched["completion_evidence"] = "release-assets"
+    elif record_complete and not str(enriched.get("completion_evidence", "")).strip():
+        enriched["completion_evidence"] = "accepted-records-only"
+    elif not record_complete and not str(enriched.get("completion_evidence", "")).strip():
+        enriched["completion_evidence"] = "incomplete"
     enriched["validation_errors"] = unique_messages(validation_errors)
     enriched["record_validation_errors"] = unique_messages(record_validation_errors)
     enriched["release_asset_validation_errors"] = unique_messages(release_asset_validation_errors)
@@ -349,6 +455,11 @@ def apply_required_release_tag(goal: dict[str, Any], release_tag: str) -> None:
     if "release_import_dry_run_command" in goal:
         goal["release_import_dry_run_command"] = replace_release_tag_placeholder(
             goal["release_import_dry_run_command"],
+            release_tag,
+        )
+    if "release_asset_provenance_command" in goal:
+        goal["release_asset_provenance_command"] = replace_release_tag_placeholder(
+            goal["release_asset_provenance_command"],
             release_tag,
         )
     for requirement in goal.get("target_evidence_requirements", []):
@@ -490,6 +601,12 @@ def format_goal_scope(goal: dict[str, Any]) -> str:
         lines.append("release asset provenance: complete")
     elif goal.get("release_assets_dir"):
         lines.append("release asset provenance: incomplete")
+    if goal.get("release_backed_complete") is True:
+        lines.append("release-backed completion: complete")
+    elif goal.get("record_complete") is True:
+        lines.append(
+            "release-backed completion: pending release asset validation with --assets-dir"
+        )
     if not any((release_tags, repositories, source_heads, workflows, run_urls, run_attempts)):
         lines.append("accepted release scope evidence: none")
     return "\n".join(lines)

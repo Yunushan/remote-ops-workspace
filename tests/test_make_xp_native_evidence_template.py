@@ -210,6 +210,24 @@ def test_make_xp_native_evidence_template_rejects_file_shaped_output_root(
     assert not out_dir.exists()
 
 
+def test_make_xp_native_evidence_template_rejects_reserved_workspace_output_root() -> None:
+    maker = _load_template_maker()
+    out_dir = Path(".github") / "xp-template"
+
+    errors = maker.make_xp_native_evidence_template(
+        target="windows-xp-native-x86",
+        release_tag="v1.0.2",
+        out_dir=out_dir,
+        force=True,
+    )
+
+    assert errors == [
+        "XP native evidence template output directory must not point inside "
+        f"reserved workspace directory '.github': {out_dir}"
+    ]
+    assert not out_dir.exists()
+
+
 def test_make_xp_native_evidence_template_rejects_symlinked_output_parent(
     tmp_path: Path,
     monkeypatch,

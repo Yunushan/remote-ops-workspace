@@ -30,6 +30,7 @@ GITHUB_RELEASE_RE = re.compile(
 )
 GITHUB_RUN_RE = re.compile(rf"^https://github\.com/({GITHUB_REPOSITORY_RE})/actions/runs/\d+/?$")
 RELEASE_TAG_RE = re.compile(r"^v\d+\.\d+\.\d+$")
+SOURCE_HEAD_SHA_RE = re.compile(r"^[a-f0-9]{40}$")
 PLACEHOLDER_RE = re.compile(r"<[^>]+>|TODO|placeholder|replace with real", re.IGNORECASE)
 
 
@@ -40,6 +41,8 @@ def main(argv: list[str] | None = None) -> int:
         release_tag=args.release_tag,
         release_asset_base_url=args.release_asset_base_url,
         workflow_run_url=args.workflow_run_url,
+        source_head_sha=args.source_head_sha,
+        source_run_attempt=args.source_run_attempt,
         assets_dir=args.assets_dir,
         evidence_file=args.evidence_file,
         evidence_dir=args.evidence_dir,
@@ -64,6 +67,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Exact GitHub release download base URL: https://github.com/<owner>/<repo>/releases/download/vX.Y.Z",
     )
     parser.add_argument("--workflow-run-url", required=True, help="GitHub Actions run URL for this evidence run")
+    parser.add_argument("--source-head-sha", required=True, help="Git commit SHA for this evidence workflow run")
+    parser.add_argument(
+        "--source-run-attempt",
+        required=True,
+        help="GitHub Actions run attempt number for this evidence workflow run",
+    )
     parser.add_argument(
         "--assets-dir",
         required=True,
@@ -88,6 +97,8 @@ def check_xp_native_evidence_dispatch_inputs(
     release_tag: str,
     release_asset_base_url: str,
     workflow_run_url: str,
+    source_head_sha: str,
+    source_run_attempt: object,
     assets_dir: str,
     evidence_file: str,
     evidence_dir: str,
@@ -97,6 +108,10 @@ def check_xp_native_evidence_dispatch_inputs(
         errors.append(f"target must be one of {sorted(TARGETS)}, got {target!r}")
     if not RELEASE_TAG_RE.fullmatch(release_tag):
         errors.append(f"release_tag must look like vX.Y.Z, got {release_tag!r}")
+    if not SOURCE_HEAD_SHA_RE.fullmatch(source_head_sha):
+        errors.append(f"source_head_sha must be a lowercase 40-character Git SHA, got {source_head_sha!r}")
+    if not is_positive_integer_text(source_run_attempt):
+        errors.append(f"source_run_attempt must be a positive integer, got {source_run_attempt!r}")
 
     release_match = GITHUB_RELEASE_RE.fullmatch(release_asset_base_url)
     run_match = GITHUB_RUN_RE.fullmatch(workflow_run_url.rstrip("/"))
@@ -126,6 +141,13 @@ def check_xp_native_evidence_dispatch_inputs(
     for label, raw_path in scoped_paths.items():
         errors.extend(check_target_release_scoped_path(label, raw_path, target, release_tag))
     return errors
+
+
+def is_positive_integer_text(value: object) -> bool:
+    if isinstance(value, bool):
+        return False
+    text = str(value).strip()
+    return bool(text) and text.isdigit() and int(text) > 0
 
 
 def check_workspace_relative_path(

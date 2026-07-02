@@ -92,14 +92,14 @@ remote-target-only row. Accepted evidence records live in
 `python scripts/check_platform_verified_evidence.py`; an empty registry means no
 readiness promotion, and the default registry check rejects unfinalized
 candidate records without review-bundle digests. The goal-specific gate is
-`python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-complete`
+`python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-records-complete`
 plus `python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag v<project.version>`;
 it must fail until linux-i386, linux-armhf, windows-xp-native-x86 and
 windows-xp-native-x64 all have finalized accepted records for the same release tag,
 same GitHub release repository, target-specific release source workflow file,
 same release source head SHA and a positive release source run attempt in each record. Mixed-tag,
-mixed-repository or mixed-source-head accepted records remain aggregate evidence only
-and cannot complete the protected goal parity block. The release/verifier promotion
+mixed-repository, mixed-source-head or same-run-URL conflicting-attempt accepted records
+remain aggregate evidence only and cannot complete the protected goal parity block. The release/verifier promotion
 gate is `python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> --release-assets-dir <release-assets-dir>`,
 which also runs `python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-complete --assets-dir <release-assets-dir>`
 and `python scripts/check_release_publish_assets.py --assets-dir <release-assets-dir> --tag v<project.version> --require-platform-goal-targets`
@@ -107,6 +107,9 @@ and must fail until the same four records are finalized and accepted from that s
 Static readiness JSON keeps `release_asset_provenance_complete=false`; only the
 asset-backed protected goal gate can flip that proof state after finalized
 records, review bundles and native release bytes match. Use
+The readiness JSON also separates `record_complete` from
+`release_backed_complete`, so accepted records alone cannot be mistaken for
+published release-byte proof.
 `python scripts/make_platform_verified_evidence_record.py`
 to generate a candidate accepted record from validated artifact and XP evidence
 inputs, then bind the packaged review-bundle manifest, archive and SHA-256

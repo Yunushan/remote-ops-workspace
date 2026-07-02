@@ -31,6 +31,24 @@ PROTECTED_RELEASE_SOURCE_WORKFLOWS = {
     "windows-xp-native-x86": ".github/workflows/xp-native-evidence.yml",
     "windows-xp-native-x64": ".github/workflows/xp-native-evidence.yml",
 }
+PROTECTED_LINUX_CATALOG_ASSETS = {
+    "linux-i386": {
+        "remote-ops-workspace-v1.0.2-linux-i386.deb",
+        "remote-ops-workspace-v1.0.2-linux-i686.rpm",
+        "remote-ops-workspace-v1.0.2-linux-i686.AppImage",
+        "remote-ops-workspace-v1.0.2-linux-i686-native.tar.gz",
+        "remote-ops-workspace-v1.0.2-linux-i686-native-manifest.json",
+        "remote-ops-workspace-v1.0.2-linux-i686-native-SHA256SUMS.txt",
+    },
+    "linux-armhf": {
+        "remote-ops-workspace-v1.0.2-linux-armhf.deb",
+        "remote-ops-workspace-v1.0.2-linux-armv7hl.rpm",
+        "remote-ops-workspace-v1.0.2-linux-armhf.AppImage",
+        "remote-ops-workspace-v1.0.2-linux-armhf-native.tar.gz",
+        "remote-ops-workspace-v1.0.2-linux-armhf-native-manifest.json",
+        "remote-ops-workspace-v1.0.2-linux-armhf-native-SHA256SUMS.txt",
+    },
+}
 PROTECTED_READINESS_GATE_COMMANDS = {
     "accepted_evidence_gate": (
         "python scripts/check_platform_verified_evidence.py "
@@ -38,7 +56,7 @@ PROTECTED_READINESS_GATE_COMMANDS = {
     ),
     "protected_goal_gate": (
         "python scripts/check_protected_platform_goal.py "
-        "--release-tag v<project.version> --require-complete"
+        "--release-tag v<project.version> --require-records-complete"
     ),
     "release_asset_provenance_gate": (
         "python scripts/check_protected_platform_goal.py "
@@ -230,6 +248,8 @@ REQUIRED_DOC_SNIPPETS: dict[str, tuple[str, ...]] = {
         "hash-checked as downloaded source artifacts before being copied into the release asset directory",
         "release_asset_provenance_complete=false",
         "asset-backed protected goal",
+        "`record_complete`",
+        "`release_backed_complete`",
         "add `--release-repository <owner>/<repo>` to that strict verifier",
         "published native/review-bundle asset bytes",
         "published final accepted-record JSON bytes",
@@ -271,6 +291,8 @@ REQUIRED_DOC_SNIPPETS: dict[str, tuple[str, ...]] = {
         "check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag <tag> --require-final-record-assets",
         "release_asset_provenance_complete=false",
         "asset-backed protected goal",
+        "record_complete",
+        "release_backed_complete",
         "Android remains Termux plus Web/PWA until there is a real native Android wrapper.",
         "iOS/iPadOS remains Web/PWA-only until there is a real native iOS wrapper.",
     ),
@@ -278,10 +300,13 @@ REQUIRED_DOC_SNIPPETS: dict[str, tuple[str, ...]] = {
         "Platform verified readiness",
         "Platform verified readiness remains separate",
         "release_asset_provenance_complete=false",
+        "record_complete",
+        "release_backed_complete",
         "release_asset_provenance_command",
         "Release asset provenance",
         "Asset provenance gate",
         "asset-backed protected goal gate",
+        "same-run-URL conflicting-attempt accepted records",
     ),
 }
 
@@ -360,6 +385,7 @@ def check_platform_catalog(platform_targets: dict[str, Any]) -> list[str]:
             errors.append(f"32-bit platform target {target_id} must explain 32-bit support boundaries")
         if not row.get("assets"):
             errors.append(f"platform target {target_id} must declare release assets")
+        errors.extend(check_protected_linux_catalog_assets(target_id, row))
 
     for version, expected in EXPECTED_LEGACY_WINDOWS.items():
         row = legacy_rows.get(version)
@@ -376,6 +402,22 @@ def check_platform_catalog(platform_targets: dict[str, Any]) -> list[str]:
                     errors.append(f"Windows XP remote target support must include {protocol}")
 
     return errors
+
+
+def check_protected_linux_catalog_assets(target_id: str, row: dict[str, Any]) -> list[str]:
+    expected_assets = PROTECTED_LINUX_CATALOG_ASSETS.get(target_id)
+    if expected_assets is None:
+        return []
+    raw_assets = row.get("assets")
+    if not isinstance(raw_assets, list):
+        return [f"platform target {target_id} assets must be a list"]
+    actual_assets = {str(asset) for asset in raw_assets}
+    missing = sorted(expected_assets - actual_assets)
+    if missing:
+        return [
+            f"platform target {target_id} assets must include protected promotion artifacts: {missing}"
+        ]
+    return []
 
 
 def check_protected_readiness_catalog_contract(raw_goal: Any) -> list[str]:

@@ -36,17 +36,27 @@ def test_release_matrix_declares_default_native_jobs() -> None:
 
 def test_release_matrix_separates_script_supported_linux_targets() -> None:
     matrix = load_release_matrix()
-    script_targets = {
-        item["platform_target_id"]
+    script_rows = {
+        item["platform_target_id"]: item
         for item in matrix["script_supported_native"]  # type: ignore[index]
     }
+    script_targets = set(script_rows)
     assert script_targets == {"linux-i386", "linux-armhf"}
+    assert (
+        "remote-ops-workspace-v1.0.2-linux-i686-native-SHA256SUMS.txt"
+        in script_rows["linux-i386"]["asset_patterns"]
+    )
+    assert (
+        "remote-ops-workspace-v1.0.2-linux-armhf-native-SHA256SUMS.txt"
+        in script_rows["linux-armhf"]["asset_patterns"]
+    )
 
     platform_targets = load_platform_targets()
     rows = {item["id"]: item for item in platform_targets["release_architectures"]}
     for target_id in script_targets:
         assert rows[target_id]["release_tier"] == "script-supported-native"
         assert rows[target_id]["github_release_channel"] == "manual-script-native"
+        assert set(script_rows[target_id]["asset_patterns"]) == set(rows[target_id]["assets"])
 
 
 def test_release_matrix_requires_real_32_bit_linux_builder_identity() -> None:
@@ -61,6 +71,70 @@ def test_release_matrix_requires_real_32_bit_linux_builder_identity() -> None:
     assert "linux-i386 builder_requirement must mention getconf LONG_BIT=32" in errors
     assert "linux-i386 builder_requirement must mention rpm" in errors
     assert "linux-i386 builder_requirement must mention sudo -n true" in errors
+
+
+def test_release_matrix_requires_script_supported_checksum_asset_pattern() -> None:
+    checker = load_release_matrix_checker()
+    matrix = load_release_matrix()
+    platform_targets = load_platform_targets()
+    matrix["script_supported_native"][0]["asset_patterns"].remove(
+        "remote-ops-workspace-v1.0.2-linux-i686-native-SHA256SUMS.txt"
+    )
+
+    errors = checker.check_platform_target_alignment(matrix, platform_targets)
+
+    assert "linux-i386 asset_patterns must include native SHA256SUMS sidecar" in errors
+    assert any(
+        "linux-i386 asset_patterns must match platform_targets assets" in error
+        and "remote-ops-workspace-v1.0.2-linux-i686-native-SHA256SUMS.txt" in error
+        for error in errors
+    )
+
+
+def test_release_matrix_rejects_stale_native_asset_pattern_versions() -> None:
+    checker = load_release_matrix_checker()
+    matrix = load_release_matrix()
+    matrix["default_github_release"]["native_jobs"][2]["asset_patterns"][0] = (
+        "remote-ops-workspace-v9.9.9-linux-<amd64|arm64>.deb"
+    )
+    matrix["script_supported_native"][0]["asset_patterns"][0] = (
+        "remote-ops-workspace-v9.9.9-linux-i386.deb"
+    )
+
+    errors = checker.check_release_asset_pattern_versions(matrix)
+
+    assert (
+        "linux-native asset pattern must use current project version v1.0.2: "
+        "remote-ops-workspace-v9.9.9-linux-<amd64|arm64>.deb"
+    ) in errors
+    assert (
+        "linux-i386 asset pattern must use current project version v1.0.2: "
+        "remote-ops-workspace-v9.9.9-linux-i386.deb"
+    ) in errors
+
+
+def test_release_matrix_docs_require_script_supported_asset_patterns(monkeypatch) -> None:
+    checker = load_release_matrix_checker()
+    matrix = load_release_matrix()
+    original_read = checker.read
+
+    def fake_read(relative: str) -> str:
+        text = original_read(relative)
+        if relative == "docs/PLATFORM_PROMOTION_RUNBOOK.md":
+            return text.replace(
+                "- `remote-ops-workspace-v<project.version>-linux-i686-native-SHA256SUMS.txt`\n",
+                "",
+            )
+        return text
+
+    monkeypatch.setattr(checker, "read", fake_read)
+
+    errors = checker.check_release_docs(matrix)
+
+    assert (
+        "release docs missing matrix asset pattern: "
+        "remote-ops-workspace-v1.0.2-linux-i686-native-SHA256SUMS.txt"
+    ) in errors
 
 
 def test_release_matrix_keeps_mobile_web_targets_in_source_web_group() -> None:

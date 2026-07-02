@@ -17,6 +17,7 @@ if str(SRC) not in sys.path:
 from check_platform_verified_evidence import (  # noqa: E402
     GITHUB_RELEASE_ASSET_RE,
     KNOWN_TARGETS,
+    RESERVED_WORKSPACE_ROOTS,
     REVIEW_BUNDLE_TYPES,
     accepted_record_source_file,
     check_linux_smoke_builder_identity_binding,
@@ -34,11 +35,13 @@ from make_platform_verified_evidence_record import (  # noqa: E402
     EVIDENCE_PATH,
     append_record_to_registry,
     check_path_parent_symlinks,
-    check_text_output_path,
     sha256_file,
     write_text_output,
     xp_evidence_summary,
     xp_smoke_evidence_sha256_map,
+)
+from make_platform_verified_evidence_record import (  # noqa: E402
+    check_text_output_path as check_base_text_output_path,
 )
 
 
@@ -1070,6 +1073,10 @@ def load_json(path: Path, label: str, errors: list[str]) -> dict[str, Any] | Non
 
 
 def check_input_file(path: Path, label: str, errors: list[str]) -> bool:
+    reserved_errors = check_path_not_reserved_workspace_root(path, f"{label} file")
+    if reserved_errors:
+        errors.extend(reserved_errors)
+        return False
     if path.is_symlink():
         errors.append(f"{label} file must not be a symlink: {path}")
         return False
@@ -1081,6 +1088,38 @@ def check_input_file(path: Path, label: str, errors: list[str]) -> bool:
         errors.append(f"{label} file missing: {path}")
         return False
     return True
+
+
+def check_text_output_path(path: Path, label: str) -> list[str]:
+    reserved_errors = check_path_not_reserved_workspace_root(path, label)
+    if reserved_errors:
+        return reserved_errors
+    return check_base_text_output_path(path, label)
+
+
+def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
+    roots: list[Path] = [Path.cwd(), ROOT]
+    seen_roots: set[Path] = set()
+    for root in roots:
+        root_resolved = root.resolve(strict=False)
+        if root_resolved in seen_roots:
+            continue
+        seen_roots.add(root_resolved)
+        path_resolved = (path if path.is_absolute() else root_resolved / path).resolve(strict=False)
+        try:
+            relative = path_resolved.relative_to(root_resolved)
+        except ValueError:
+            continue
+        parts = tuple(part for part in relative.parts if part not in ("", "."))
+        if not parts:
+            continue
+        reserved_root = parts[0]
+        if reserved_root in RESERVED_WORKSPACE_ROOTS:
+            return [
+                f"{label} must not point inside reserved workspace directory "
+                f"{reserved_root!r}: {path}"
+            ]
+    return []
 
 
 def check_candidate_record_file_name(candidate_record: Path, target: str) -> list[str]:

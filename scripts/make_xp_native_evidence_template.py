@@ -14,7 +14,10 @@ SCRIPTS = ROOT / "scripts"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
-from check_platform_verified_evidence import directory_path_has_file_suffix  # noqa: E402
+from check_platform_verified_evidence import (  # noqa: E402
+    RESERVED_WORKSPACE_ROOTS,
+    directory_path_has_file_suffix,
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -99,6 +102,12 @@ def check_template_output_paths(*, out_dir: Path, evidence_path: Path, smoke_ids
     hint_errors = check_directory_path_hint(out_dir, "XP native evidence template output directory")
     if hint_errors:
         return hint_errors
+    reserved_errors = check_path_not_reserved_workspace_root(
+        out_dir,
+        "XP native evidence template output directory",
+    )
+    if reserved_errors:
+        return reserved_errors
     if out_dir.is_symlink():
         return [f"XP native evidence template output directory must not be a symlink: {out_dir}"]
     parent_errors = check_path_parent_symlinks(out_dir, "XP native evidence template output directory")
@@ -139,6 +148,31 @@ def check_directory_path_hint(path: Path, label: str) -> list[str]:
     raw_path = path.as_posix()
     if directory_path_has_file_suffix(raw_path):
         return [f"{label} must be a directory path, got {raw_path!r}"]
+    return []
+
+
+def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
+    roots: list[Path] = [Path.cwd(), ROOT]
+    seen_roots: set[Path] = set()
+    for root in roots:
+        root_resolved = root.resolve(strict=False)
+        if root_resolved in seen_roots:
+            continue
+        seen_roots.add(root_resolved)
+        path_resolved = (path if path.is_absolute() else root_resolved / path).resolve(strict=False)
+        try:
+            relative = path_resolved.relative_to(root_resolved)
+        except ValueError:
+            continue
+        parts = tuple(part for part in relative.parts if part not in ("", "."))
+        if not parts:
+            continue
+        reserved_root = parts[0]
+        if reserved_root in RESERVED_WORKSPACE_ROOTS:
+            return [
+                f"{label} must not point inside reserved workspace directory "
+                f"{reserved_root!r}: {path}"
+            ]
     return []
 
 

@@ -228,10 +228,45 @@ def check_product_readiness() -> list[str]:
                 "protected platform goal parity release_asset_provenance_complete must be false "
                 "in the static readiness report; use the asset-backed protected goal gate"
             )
-        if not str(goal.get("release_asset_provenance_command", "")).strip():
+        if not isinstance(goal.get("record_complete"), bool):
+            errors.append("protected platform goal parity must expose record_complete")
+        if not isinstance(goal.get("release_backed_complete"), bool):
+            errors.append("protected platform goal parity must expose release_backed_complete")
+        elif goal.get("release_backed_complete") is True:
+            errors.append(
+                "protected platform goal parity release_backed_complete must be false "
+                "in the static readiness report; use the asset-backed protected goal gate"
+            )
+        if goal.get("completion_requires_release_asset_provenance") is not True:
+            errors.append(
+                "protected platform goal parity must require release asset provenance for release-backed completion"
+            )
+        if not str(goal.get("completion_evidence", "")).strip():
+            errors.append("protected platform goal parity must expose completion_evidence")
+        expected_import_command = expected_release_import_dry_run_command(goal)
+        import_command = goal.get("release_import_dry_run_command")
+        if not str(import_command or "").strip():
+            errors.append("protected platform goal parity must expose release_import_dry_run_command")
+        elif import_command != expected_import_command:
+            errors.append(
+                "protected platform goal parity release_import_dry_run_command must be "
+                f"{expected_import_command!r}"
+            )
+        expected_asset_command = expected_release_asset_provenance_command(goal)
+        asset_command = goal.get("release_asset_provenance_command")
+        if not str(asset_command or "").strip():
             errors.append("protected platform goal parity must expose release_asset_provenance_command")
+        elif asset_command != expected_asset_command:
+            errors.append(
+                "protected platform goal parity release_asset_provenance_command must be "
+                f"{expected_asset_command!r}"
+            )
         provenance_complete = goal.get("release_source_provenance_complete") is True
         complete = len(present) == len(required) and bool(required) and provenance_complete
+        if goal.get("record_complete") is not complete:
+            errors.append(
+                "protected platform goal parity record_complete must match accepted records plus source provenance"
+            )
         if goal.get("complete") is not complete:
             errors.append(
                 "protected platform goal parity complete flag must match accepted target count "
@@ -919,6 +954,31 @@ def expected_protected_goal_status(
     if len(source_heads) > 1:
         return "mixed-release-source-evidence"
     return "missing-accepted-evidence"
+
+
+def expected_release_import_dry_run_command(goal: dict[str, object]) -> str:
+    release_tag = expected_goal_command_release_tag(goal)
+    return (
+        "python scripts/import_platform_evidence_artifacts.py "
+        f"--release-tag {release_tag} --require-goal-targets "
+        "--out-dir <release-assets-dir> --dry-run --verify-source-run"
+    )
+
+
+def expected_release_asset_provenance_command(goal: dict[str, object]) -> str:
+    release_tag = expected_goal_command_release_tag(goal)
+    return (
+        "python scripts/check_protected_platform_goal.py "
+        f"--release-tag {release_tag} --require-complete "
+        "--assets-dir <release-assets-dir>"
+    )
+
+
+def expected_goal_command_release_tag(goal: dict[str, object]) -> str:
+    release_tag = goal.get("release_tag")
+    if isinstance(release_tag, str) and RELEASE_TAG_RE.fullmatch(release_tag):
+        return release_tag
+    return "v<project.version>"
 
 
 def expected_release_source_run_attempt_conflicts(

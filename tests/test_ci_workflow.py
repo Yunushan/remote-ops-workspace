@@ -11,16 +11,48 @@ def test_ci_workflow_checker_passes_current_tree() -> None:
     assert checker.main() == 0
 
 
-def test_ci_workflow_requires_lint_enabled_verifier() -> None:
+def test_ci_workflow_requires_single_row_policy_verifier() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
-        "python scripts/verify.py --lint",
-        "python scripts/verify.py",
+        "  repo-policy:",
+        "  repo_policy_disabled:",
     )
 
     errors = checker.check_ci_workflow(workflow)
 
-    assert "ci test job must run the lint-enabled verifier" in errors
+    assert "ci workflow missing repo-policy job for single-row repository gates" in errors
+
+
+def test_ci_workflow_requires_policy_job_lint_and_quick_verifier() -> None:
+    checker = _load_checker()
+    workflow_without_ruff = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
+        "      - name: Ruff lint\n"
+        "        run: python -m ruff check src tests scripts\n",
+        "",
+    )
+    workflow_without_quick_verify = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
+        "        run: python scripts/verify.py --quick\n",
+        "        run: python scripts/verify.py\n",
+    )
+
+    ruff_errors = checker.check_ci_workflow(workflow_without_ruff)
+    verify_errors = checker.check_ci_workflow(workflow_without_quick_verify)
+
+    assert any("ci repo-policy job missing single-row ruff lint" in error for error in ruff_errors)
+    assert any("ci repo-policy job missing single-row repository verifier" in error for error in verify_errors)
+
+
+def test_ci_workflow_test_matrix_runs_pytest_not_monolithic_verifier() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
+        "        run: python -m pytest -q\n",
+        "        run: python scripts/verify.py --lint\n",
+    )
+
+    errors = checker.check_ci_workflow(workflow)
+
+    assert "ci test job must run pytest directly" in errors
+    assert "ci test matrix must not fan out the monolithic lint verifier" in errors
 
 
 def test_ci_workflow_requires_node24_javascript_action_runtime() -> None:
@@ -131,6 +163,31 @@ def test_ci_workflow_requires_ios_simulator_web_job() -> None:
     errors = checker.check_ci_workflow(workflow)
 
     assert "ci workflow missing ios-simulator-web job for iOS Web/PWA smoke" in errors
+
+
+def test_ci_workflow_requires_ios_server_readiness_before_simulator_smoke() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    workflow_without_bind = workflow.replace(
+        "python -m http.server 8765 --directory apps/web --bind 127.0.0.1",
+        "python -m http.server 8765 --directory apps/web",
+    )
+    workflow_without_probe = workflow.replace(
+        '          with urllib.request.urlopen("http://127.0.0.1:8765/index.html", timeout=3) as response:\n',
+        "",
+    )
+    workflow_without_clear_error = workflow.replace(
+        '          raise SystemExit(f"Web/PWA server did not become reachable before iOS simulator smoke: {last_error}")\n',
+        "",
+    )
+
+    bind_errors = checker.check_ci_workflow(workflow_without_bind)
+    probe_errors = checker.check_ci_workflow(workflow_without_probe)
+    message_errors = checker.check_ci_workflow(workflow_without_clear_error)
+
+    assert any("loopback-bound local Web/PWA server" in error for error in bind_errors)
+    assert any("iOS Web/PWA server readiness probe" in error for error in probe_errors)
+    assert any("clear iOS Web/PWA server readiness failure" in error for error in message_errors)
 
 
 def test_ci_workflow_requires_all_preset_live_render_capture() -> None:

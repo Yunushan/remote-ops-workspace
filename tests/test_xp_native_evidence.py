@@ -524,6 +524,36 @@ def test_xp_native_evidence_rejects_symlinked_evidence_directory_parent(
     ]
 
 
+def test_xp_native_evidence_rejects_reserved_workspace_evidence_file() -> None:
+    checker = _load_xp_native_evidence_checker()
+    path = Path(".github") / "xp-evidence.json"
+
+    errors = checker.check_xp_native_evidence(path, evidence_dir=Path("xp-evidence"))
+
+    assert (
+        "evidence file must not point inside reserved workspace directory "
+        f"'.github': {path}"
+    ) in errors
+    assert not path.exists()
+
+
+def test_xp_native_evidence_rejects_reserved_workspace_evidence_directory() -> None:
+    checker = _load_xp_native_evidence_checker()
+    evidence_dir = Path(".git") / "xp-evidence"
+    path = evidence_dir / "xp-evidence.json"
+
+    errors = checker.check_xp_native_evidence(path, evidence_dir=evidence_dir)
+
+    assert (
+        "evidence file must not point inside reserved workspace directory "
+        f"'.git': {path}"
+    ) in errors
+    assert (
+        "evidence directory must not point inside reserved workspace directory "
+        f"'.git': {evidence_dir}"
+    ) in errors
+
+
 def test_xp_native_evidence_rejects_evidence_file_outside_evidence_directory(
     tmp_path: Path,
 ) -> None:

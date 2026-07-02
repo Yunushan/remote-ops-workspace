@@ -8,7 +8,8 @@ from pathlib import Path
 def test_xp_dispatch_inputs_accept_valid_workspace_relative_paths() -> None:
     checker = _load_checker()
 
-    errors = checker.check_xp_native_evidence_dispatch_inputs(
+    errors = _check_dispatch_inputs(
+        checker,
         target="windows-xp-native-x86",
         release_tag="v1.0.2",
         release_asset_base_url="https://github.com/example/remote-ops-workspace/releases/download/v1.0.2",
@@ -24,7 +25,8 @@ def test_xp_dispatch_inputs_accept_valid_workspace_relative_paths() -> None:
 def test_xp_dispatch_inputs_reject_unscoped_staging_paths() -> None:
     checker = _load_checker()
 
-    errors = checker.check_xp_native_evidence_dispatch_inputs(
+    errors = _check_dispatch_inputs(
+        checker,
         target="windows-xp-native-x86",
         release_tag="v1.0.2",
         release_asset_base_url="https://github.com/example/remote-ops-workspace/releases/download/v1.0.2",
@@ -46,7 +48,8 @@ def test_xp_dispatch_inputs_reject_unscoped_staging_paths() -> None:
 def test_xp_dispatch_inputs_reject_nonadjacent_target_release_paths() -> None:
     checker = _load_checker()
 
-    errors = checker.check_xp_native_evidence_dispatch_inputs(
+    errors = _check_dispatch_inputs(
+        checker,
         target="windows-xp-native-x86",
         release_tag="v1.0.2",
         release_asset_base_url="https://github.com/example/remote-ops-workspace/releases/download/v1.0.2",
@@ -76,7 +79,8 @@ def test_xp_dispatch_inputs_reject_nonadjacent_target_release_paths() -> None:
 def test_xp_dispatch_inputs_reject_release_tag_mismatch() -> None:
     checker = _load_checker()
 
-    errors = checker.check_xp_native_evidence_dispatch_inputs(
+    errors = _check_dispatch_inputs(
+        checker,
         target="windows-xp-native-x64",
         release_tag="v1.0.2",
         release_asset_base_url="https://github.com/example/remote-ops-workspace/releases/download/v1.0.3",
@@ -92,7 +96,8 @@ def test_xp_dispatch_inputs_reject_release_tag_mismatch() -> None:
 def test_xp_dispatch_inputs_reject_trailing_slash_release_base() -> None:
     checker = _load_checker()
 
-    errors = checker.check_xp_native_evidence_dispatch_inputs(
+    errors = _check_dispatch_inputs(
+        checker,
         target="windows-xp-native-x86",
         release_tag="v1.0.2",
         release_asset_base_url="https://github.com/example/remote-ops-workspace/releases/download/v1.0.2/",
@@ -111,7 +116,8 @@ def test_xp_dispatch_inputs_reject_trailing_slash_release_base() -> None:
 def test_xp_dispatch_inputs_reject_cross_repo_inputs() -> None:
     checker = _load_checker()
 
-    errors = checker.check_xp_native_evidence_dispatch_inputs(
+    errors = _check_dispatch_inputs(
+        checker,
         target="windows-xp-native-x86",
         release_tag="v1.0.2",
         release_asset_base_url="https://github.com/other/remote-ops-workspace/releases/download/v1.0.2",
@@ -130,7 +136,8 @@ def test_xp_dispatch_inputs_reject_cross_repo_inputs() -> None:
 def test_xp_dispatch_inputs_reject_malformed_repo_slug() -> None:
     checker = _load_checker()
 
-    errors = checker.check_xp_native_evidence_dispatch_inputs(
+    errors = _check_dispatch_inputs(
+        checker,
         target="windows-xp-native-x64",
         release_tag="v1.0.2",
         release_asset_base_url=(
@@ -152,7 +159,8 @@ def test_xp_dispatch_inputs_reject_malformed_repo_slug() -> None:
 def test_xp_dispatch_inputs_reject_unsafe_paths() -> None:
     checker = _load_checker()
 
-    errors = checker.check_xp_native_evidence_dispatch_inputs(
+    errors = _check_dispatch_inputs(
+        checker,
         target="windows-xp-native-x64",
         release_tag="v1.0.2",
         release_asset_base_url="https://github.com/example/remote-ops-workspace/releases/download/v1.0.2",
@@ -170,7 +178,8 @@ def test_xp_dispatch_inputs_reject_unsafe_paths() -> None:
 def test_xp_dispatch_inputs_reject_windows_drive_paths_with_forward_slashes() -> None:
     checker = _load_checker()
 
-    errors = checker.check_xp_native_evidence_dispatch_inputs(
+    errors = _check_dispatch_inputs(
+        checker,
         target="windows-xp-native-x86",
         release_tag="v1.0.2",
         release_asset_base_url="https://github.com/example/remote-ops-workspace/releases/download/v1.0.2",
@@ -197,7 +206,8 @@ def test_xp_dispatch_inputs_reject_windows_drive_paths_with_forward_slashes() ->
 def test_xp_dispatch_inputs_reject_workspace_root_and_reserved_paths() -> None:
     checker = _load_checker()
 
-    errors = checker.check_xp_native_evidence_dispatch_inputs(
+    errors = _check_dispatch_inputs(
+        checker,
         target="windows-xp-native-x86",
         release_tag="v1.0.2",
         release_asset_base_url="https://github.com/example/remote-ops-workspace/releases/download/v1.0.2",
@@ -212,6 +222,28 @@ def test_xp_dispatch_inputs_reject_workspace_root_and_reserved_paths() -> None:
     assert "evidence_dir must not contain hidden path segments: ['.private-smoke']" in errors
 
 
+def test_xp_dispatch_inputs_reject_invalid_source_head_sha() -> None:
+    checker = _load_checker()
+
+    errors = _check_dispatch_inputs(
+        checker,
+        source_head_sha="ABCDEF0123456789ABCDEF0123456789ABCDEF01",
+    )
+
+    assert (
+        "source_head_sha must be a lowercase 40-character Git SHA, "
+        "got 'ABCDEF0123456789ABCDEF0123456789ABCDEF01'"
+    ) in errors
+
+
+def test_xp_dispatch_inputs_reject_invalid_source_run_attempt() -> None:
+    checker = _load_checker()
+
+    errors = _check_dispatch_inputs(checker, source_run_attempt="0")
+
+    assert "source_run_attempt must be a positive integer, got '0'" in errors
+
+
 def test_xp_workflow_requires_dispatch_input_preflight() -> None:
     checker = _load_workflow_checker()
     workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8").replace(
@@ -222,6 +254,22 @@ def test_xp_workflow_requires_dispatch_input_preflight() -> None:
     errors = checker.check_xp_native_evidence_workflow(workflow)
 
     assert any("XP dispatch input preflight" in error for error in errors)
+
+
+def _check_dispatch_inputs(checker, **overrides):
+    values = {
+        "target": "windows-xp-native-x86",
+        "release_tag": "v1.0.2",
+        "release_asset_base_url": "https://github.com/example/remote-ops-workspace/releases/download/v1.0.2",
+        "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        "source_head_sha": "0123456789abcdef0123456789abcdef01234567",
+        "source_run_attempt": "1",
+        "assets_dir": "staged/windows-xp-native-x86/v1.0.2/artifacts",
+        "evidence_file": "staged/windows-xp-native-x86/v1.0.2/xp-evidence.json",
+        "evidence_dir": "staged/windows-xp-native-x86/v1.0.2/smoke",
+    }
+    values.update(overrides)
+    return checker.check_xp_native_evidence_dispatch_inputs(**values)
 
 
 def _load_checker():

@@ -37,6 +37,22 @@ def test_platform_support_truth_rejects_missing_protected_readiness_contract() -
     assert "platform catalog must declare protected_readiness_goal contract" in errors
 
 
+def test_platform_support_truth_rejects_missing_protected_linux_checksum_asset() -> None:
+    checker = _load_platform_support_truth_checker()
+    targets = _load_json("configs/platform_targets.json")
+    rows = {item["id"]: item for item in targets["release_architectures"]}
+    rows["linux-i386"]["assets"].remove(
+        "remote-ops-workspace-v1.0.2-linux-i686-native-SHA256SUMS.txt"
+    )
+
+    errors = checker.check_platform_catalog(targets)
+
+    assert (
+        "platform target linux-i386 assets must include protected promotion artifacts: "
+        "['remote-ops-workspace-v1.0.2-linux-i686-native-SHA256SUMS.txt']"
+    ) in errors
+
+
 def test_platform_support_truth_rejects_weak_protected_asset_gate() -> None:
     checker = _load_platform_support_truth_checker()
     targets = _load_json("configs/platform_targets.json")
@@ -229,6 +245,25 @@ def test_platform_support_truth_requires_current_protected_goal_docs() -> None:
         "README.md missing current protected platform goal snippet" in error
         and "Protected platform goal parity is **0.0%**" in error
         and "status=missing-accepted-evidence" in error
+        for error in errors
+    )
+
+
+def test_platform_support_truth_requires_full_coverage_attempt_conflict_boundary() -> None:
+    checker = _load_platform_support_truth_checker()
+    docs = _read_required_docs(checker)
+    snippet = "same-run-URL conflicting-attempt accepted records"
+    assert snippet in docs["docs/FULL_FEATURE_COVERAGE.md"]
+    docs["docs/FULL_FEATURE_COVERAGE.md"] = docs["docs/FULL_FEATURE_COVERAGE.md"].replace(
+        snippet,
+        "accepted records with varied run attempts",
+    )
+
+    errors = checker.check_platform_docs(docs, coverage_report())
+
+    assert any(
+        "docs/FULL_FEATURE_COVERAGE.md missing platform truth snippet" in error
+        and "same-run-URL conflicting-attempt accepted records" in error
         for error in errors
     )
 

@@ -14,6 +14,7 @@ GITHUB_RELEASE_DOWNLOAD_BASE_RE = re.compile(
 GITHUB_ACTIONS_RUN_RE = re.compile(
     rf"https://github\.com/({GITHUB_REPOSITORY_RE})/actions/runs/\d+/?"
 )
+SOURCE_HEAD_SHA_RE = re.compile(r"^[a-f0-9]{40}$")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -23,6 +24,8 @@ def main(argv: list[str] | None = None) -> int:
         release_tag=args.release_tag,
         release_asset_base_url=args.release_asset_base_url,
         workflow_run_url=args.workflow_run_url,
+        source_head_sha=args.source_head_sha,
+        source_run_attempt=args.source_run_attempt,
     )
     if errors:
         for error in errors:
@@ -51,6 +54,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         required=True,
         help="GitHub Actions run URL for this evidence workflow run",
     )
+    parser.add_argument("--source-head-sha", required=True, help="Git commit SHA for this evidence workflow run")
+    parser.add_argument(
+        "--source-run-attempt",
+        required=True,
+        help="GitHub Actions run attempt number for this evidence workflow run",
+    )
     return parser.parse_args(argv)
 
 
@@ -60,12 +69,18 @@ def check_extended_platform_dispatch_inputs(
     release_tag: str,
     release_asset_base_url: str,
     workflow_run_url: str,
+    source_head_sha: str,
+    source_run_attempt: object,
 ) -> list[str]:
     errors: list[str] = []
     if target not in LINUX_TARGETS:
         errors.append(f"target must be one of {sorted(LINUX_TARGETS)}, got {target!r}")
     if not RELEASE_TAG_RE.fullmatch(release_tag):
         errors.append(f"release_tag must look like vX.Y.Z: {release_tag}")
+    if not SOURCE_HEAD_SHA_RE.fullmatch(source_head_sha):
+        errors.append(f"source_head_sha must be a lowercase 40-character Git SHA, got {source_head_sha!r}")
+    if not is_positive_integer_text(source_run_attempt):
+        errors.append(f"source_run_attempt must be a positive integer, got {source_run_attempt!r}")
 
     release_match = GITHUB_RELEASE_DOWNLOAD_BASE_RE.fullmatch(release_asset_base_url)
     if not release_match:
@@ -89,6 +104,13 @@ def check_extended_platform_dispatch_inputs(
             f"{run_match.group(1)}, got {release_match.group(1)}"
         )
     return errors
+
+
+def is_positive_integer_text(value: object) -> bool:
+    if isinstance(value, bool):
+        return False
+    text = str(value).strip()
+    return bool(text) and text.isdigit() and int(text) > 0
 
 
 if __name__ == "__main__":

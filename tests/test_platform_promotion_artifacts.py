@@ -215,6 +215,24 @@ def test_platform_promotion_artifacts_reject_file_shaped_artifact_directory(
     ]
 
 
+def test_platform_promotion_artifacts_reject_reserved_workspace_artifact_directory() -> None:
+    checker = _load_platform_promotion_artifacts_checker()
+    tag = f"v{checker.read_project_version()}"
+    assets_dir = Path(".github") / "linux-i386" / tag / "artifacts"
+
+    errors = checker.check_platform_promotion_artifacts(
+        target="linux-i386",
+        assets_dir=assets_dir,
+        tag=tag,
+    )
+
+    assert errors == [
+        "linux-i386 artifact directory must not point inside "
+        f"reserved workspace directory '.github': {assets_dir}"
+    ]
+    assert not assets_dir.exists()
+
+
 def test_platform_promotion_artifacts_reject_symlinked_artifact_directory_parent(
     tmp_path: Path,
     monkeypatch,

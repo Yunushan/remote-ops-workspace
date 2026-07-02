@@ -86,6 +86,48 @@ def test_security_polish_rejects_platform_checker_security_flag_drift() -> None:
     assert any("platform verified evidence REQUIRED_XP_SECURITY_FLAGS must match" in error for error in errors)
 
 
+def test_security_polish_rejects_linux_security_smoke_line_drift() -> None:
+    checker = load_security_checker()
+
+    errors = checker.check_legacy_security_policy(
+        baseline=_security_baseline(),
+        xp_contract=_xp_contract(),
+        platform_linux_security_smoke_lines=(
+            "native installer smoke TLS minimum modern profiles: TLS 1.2",
+            "native installer smoke legacy compatibility profile: isolated-opt-in",
+            "native installer smoke legacy crypto scope: profile-only",
+            "native installer smoke weak crypto global default: false",
+            "native installer smoke modern defaults unchanged: true",
+        ),
+    )
+
+    assert any(
+        "platform verified evidence REQUIRED_LINUX_SECURITY_SMOKE_LINES must include" in error
+        and "native installer smoke TLS preferred modern profiles: TLS 1.3" in error
+        for error in errors
+    )
+
+
+def test_security_polish_rejects_linux_forbidden_security_smoke_line_drift() -> None:
+    checker = load_security_checker()
+
+    errors = checker.check_legacy_security_policy(
+        baseline=_security_baseline(),
+        xp_contract=_xp_contract(),
+        platform_forbidden_linux_security_smoke_lines=(
+            "native installer smoke TLS minimum modern profiles: TLS 1.0",
+            "native installer smoke TLS minimum modern profiles: TLS 1.1",
+            "native installer smoke weak crypto global default: true",
+        ),
+    )
+
+    assert any(
+        "platform verified evidence FORBIDDEN_LINUX_SECURITY_SMOKE_LINES must include" in error
+        and "native installer smoke modern defaults unchanged: false" in error
+        for error in errors
+    )
+
+
 def test_security_polish_rejects_xp_patch_evidence_drift() -> None:
     checker = load_security_checker()
     xp_contract = _xp_contract()

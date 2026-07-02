@@ -27,7 +27,7 @@ Release integrity rules:
   upload.
 - The `release-preflight` workflow job runs
   `python scripts/verify.py --quick --no-cli-smoke --release-tag <tag>` and
-  `python scripts/check_protected_platform_goal.py --release-tag <tag> --require-complete --show-requirements` plus
+  `python scripts/check_protected_platform_goal.py --release-tag <tag> --require-records-complete --show-requirements` plus
   `python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag <tag>`
   before any source, Python or native artifact build job can start, then
   `python scripts/check_repository_cleanup.py --require-clean`. The release tag
@@ -65,7 +65,9 @@ Release integrity rules:
   Static readiness JSON does not download release assets and therefore keeps
   `release_asset_provenance_complete=false`; only the asset-backed protected
   goal gate can flip that proof state after finalized records, review bundles
-  and native release bytes match.
+  and native release bytes match. It also keeps `record_complete` separate from
+  `release_backed_complete` so records-only proof is not treated as published
+  release-byte proof.
   The protected-platform asset job first runs
   `python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run`
   to import only same-tag, same-repository, workflow-file, source-head and
@@ -99,7 +101,8 @@ Release integrity rules:
   positive release source run attempt in each record. After upload, the remote
   evidence audit
   `python scripts/check_platform_release_evidence_remote.py --repository <owner>/<repo> --release-tag <tag> --require-goal-targets --require-source-runs --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head`
-  checks the actual GitHub Release, published asset digests, sizes and bytes, exact
+  checks the actual GitHub Release, published asset GitHub IDs/API URLs,
+  digests, sizes and bytes, exact
   published final accepted-record JSON bytes, release tag Git object/source head SHA,
   source workflow run metadata,
   and source artifact `workflow_run.id`,

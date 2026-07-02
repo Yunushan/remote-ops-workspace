@@ -158,6 +158,59 @@ def test_xp_native_evidence_bundle_rejects_unscoped_output_directory() -> None:
     )
 
 
+def test_xp_native_evidence_bundle_rejects_reserved_workspace_artifact_directory() -> None:
+    bundler = _load_bundle_script()
+    assets = Path(".github") / "windows-xp-native-x86" / "v1.0.2" / "artifacts"
+
+    errors = bundler.make_xp_native_evidence_bundle(
+        target="windows-xp-native-x86",
+        evidence=Path("xp-evidence.json"),
+        candidate_record=Path("platform-verified-evidence-windows-xp-native-x86.json"),
+        assets_dir=assets,
+        out_dir=Path("xp-evidence-output") / "windows-xp-native-x86" / "v1.0.2",
+    )
+
+    assert (
+        "XP native artifact directory must not point inside reserved workspace directory "
+        f"'.github': {assets}"
+    ) in errors
+
+
+def test_xp_native_evidence_bundle_rejects_reserved_workspace_input_paths() -> None:
+    bundler = _load_bundle_script()
+    evidence = Path(".git") / "xp-evidence.json"
+    evidence_dir = Path(".agents") / "windows-xp-native-x86" / "v1.0.2"
+
+    errors = bundler.check_input_symlinks(
+        evidence,
+        Path("platform-verified-evidence-windows-xp-native-x86.json"),
+        evidence_dir=evidence_dir,
+    )
+
+    assert (
+        "evidence must not point inside reserved workspace directory "
+        f"'.git': {evidence}"
+    ) in errors
+    assert (
+        "evidence directory must not point inside reserved workspace directory "
+        f"'.agents': {evidence_dir}"
+    ) in errors
+
+
+def test_xp_native_evidence_bundle_rejects_reserved_workspace_output_directory() -> None:
+    bundler = _load_bundle_script()
+    out_dir = Path(".codex") / "windows-xp-native-x86" / "v1.0.2" / "bundle"
+    outputs = (out_dir / "bundle.json", out_dir / "bundle.zip", out_dir / "bundle-SHA256SUMS.txt")
+
+    errors = bundler.prepare_output_paths(out_dir=out_dir, outputs=outputs, force=True)
+
+    assert (
+        "XP native evidence bundle output directory must not point inside "
+        f"reserved workspace directory '.codex': {out_dir}"
+    ) in errors
+    assert not out_dir.exists()
+
+
 def test_xp_native_evidence_bundle_rejects_target_mismatch(tmp_path: Path) -> None:
     bundler = _load_bundle_script()
     evidence = tmp_path / "xp-evidence.json"

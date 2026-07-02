@@ -280,7 +280,7 @@ blogunu tasir. Native installer smoke kapsami
 Windows, macOS ve Linux native islerinden sonra install, verify, upgrade and
 uninstall yollarini calistirir. Release workflow once `release-preflight` isinde
 `python scripts/verify.py --quick --no-cli-smoke --release-tag <tag>`,
-`python scripts/check_protected_platform_goal.py --release-tag <tag> --require-complete --show-requirements`,
+`python scripts/check_protected_platform_goal.py --release-tag <tag> --require-records-complete --show-requirements`,
 `python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag <tag>`
 ve `python scripts/check_repository_cleanup.py --require-clean` calistirir;
 source, native, accepted-platform-evidence-assets ve publish isleri bu kapiya

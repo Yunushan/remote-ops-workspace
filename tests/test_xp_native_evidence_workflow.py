@@ -122,6 +122,32 @@ def test_xp_native_evidence_workflow_requires_dispatch_input_preflight() -> None
     assert any("XP dispatch input preflight" in error for error in errors)
 
 
+def test_xp_native_evidence_workflow_requires_dispatch_source_head_sha() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8").replace(
+        ' --source-head-sha "${{ github.sha }}"',
+        "",
+        1,
+    )
+
+    errors = checker.check_xp_native_evidence_workflow(workflow)
+
+    assert any("XP dispatch source head SHA binding" in error for error in errors)
+
+
+def test_xp_native_evidence_workflow_requires_dispatch_source_run_attempt() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8").replace(
+        ' --source-run-attempt "${{ github.run_attempt }}"',
+        "",
+        1,
+    )
+
+    errors = checker.check_xp_native_evidence_workflow(workflow)
+
+    assert any("XP dispatch source run-attempt binding" in error for error in errors)
+
+
 def test_xp_native_evidence_workflow_requires_local_goal_preflight() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8").replace(
@@ -215,6 +241,8 @@ def test_xp_native_evidence_dispatch_rejects_file_shaped_directory_inputs() -> N
         release_tag="v1.0.2",
         release_asset_base_url="https://github.com/example/remote-ops-workspace/releases/download/v1.0.2",
         workflow_run_url="https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        source_head_sha="0123456789abcdef0123456789abcdef01234567",
+        source_run_attempt="1",
         assets_dir="native-dist/windows-xp/windows-xp-native-x86/v1.0.2/artifacts.zip",
         evidence_file="evidence/windows-xp-native-x86/v1.0.2/xp-evidence.json",
         evidence_dir="evidence/windows-xp-native-x86/v1.0.2/proof.log",

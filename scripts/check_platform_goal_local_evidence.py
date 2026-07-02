@@ -19,6 +19,7 @@ from check_platform_promotion_artifacts import (  # noqa: E402
 from check_platform_verified_evidence import (  # noqa: E402
     LINUX_TARGETS,
     PROTECTED_GOAL_TARGETS,
+    RESERVED_WORKSPACE_ROOTS,
     XP_TARGETS,
     check_linux_builder_identity,
     directory_path_has_file_suffix,
@@ -341,8 +342,10 @@ def check_platform_goal_local_evidence(
                 targets=targets,
                 linux_workflow_run_url=linux_workflow_run_url,
                 linux_source_head_sha=linux_source_head_sha,
+                linux_source_run_attempt=linux_source_run_attempt,
                 xp_source_workflow_run_url=xp_source_workflow_run_url,
                 xp_source_head_sha=xp_source_head_sha,
+                xp_source_run_attempt=xp_source_run_attempt,
             )
         )
     return errors
@@ -355,8 +358,10 @@ def check_multi_target_release_source_scope(
     targets: tuple[str, ...],
     linux_workflow_run_url: str | None,
     linux_source_head_sha: str | None,
+    linux_source_run_attempt: int | None,
     xp_source_workflow_run_url: str | None,
     xp_source_head_sha: str | None,
+    xp_source_run_attempt: int | None,
 ) -> list[str]:
     if len(targets) < 2:
         return []
@@ -366,8 +371,10 @@ def check_multi_target_release_source_scope(
         targets=targets,
         linux_workflow_run_url=linux_workflow_run_url,
         linux_source_head_sha=linux_source_head_sha,
+        linux_source_run_attempt=linux_source_run_attempt,
         xp_source_workflow_run_url=xp_source_workflow_run_url,
         xp_source_head_sha=xp_source_head_sha,
+        xp_source_run_attempt=xp_source_run_attempt,
     )
     errors: list[str] = []
     heads_by_target = {
@@ -390,6 +397,22 @@ def check_multi_target_release_source_scope(
             "local protected platform evidence must use one GitHub repository "
             f"before promotion, got {format_values_by_target(repositories_by_target)}"
         )
+    workflow_run_urls = {
+        target: binding["workflow_run_url"]
+        for target, binding in bindings.items()
+        if binding.get("workflow_run_url") and binding.get("run_attempt")
+    }
+    for workflow_run_url in sorted(set(workflow_run_urls.values())):
+        attempts_by_target = {
+            target: bindings[target]["run_attempt"]
+            for target, target_workflow_run_url in workflow_run_urls.items()
+            if target_workflow_run_url == workflow_run_url
+        }
+        if len(attempts_by_target) > 1 and len(set(attempts_by_target.values())) != 1:
+            errors.append(
+                "local protected platform evidence must use one source run attempt per workflow run URL "
+                f"before promotion: {workflow_run_url} got {format_values_by_target(attempts_by_target)}"
+            )
     return errors
 
 
@@ -400,8 +423,10 @@ def local_release_source_bindings(
     targets: tuple[str, ...],
     linux_workflow_run_url: str | None,
     linux_source_head_sha: str | None,
+    linux_source_run_attempt: int | None,
     xp_source_workflow_run_url: str | None,
     xp_source_head_sha: str | None,
+    xp_source_run_attempt: int | None,
 ) -> dict[str, dict[str, str]]:
     bindings: dict[str, dict[str, str]] = {}
     for target in targets:
@@ -409,18 +434,24 @@ def local_release_source_bindings(
             builder = read_json(root / target / release_tag / f"builder-identity-{target}.json")
             workflow_run_url = str(linux_workflow_run_url or builder.get("workflow_run_url", "")).rstrip("/")
             head_sha = str(linux_source_head_sha or builder.get("source_head_sha", "")).strip()
+            run_attempt = linux_source_run_attempt if linux_source_run_attempt is not None else builder.get(
+                "workflow_run_attempt",
+                "",
+            )
         elif target in XP_TARGETS:
             evidence = read_json(root / target / release_tag / "xp-evidence.json")
             source = evidence.get("release_source") if isinstance(evidence, dict) else {}
             source = source if isinstance(source, dict) else {}
             workflow_run_url = str(xp_source_workflow_run_url or source.get("workflow_run_url", "")).rstrip("/")
             head_sha = str(xp_source_head_sha or source.get("head_sha", "")).strip()
+            run_attempt = xp_source_run_attempt if xp_source_run_attempt is not None else source.get("run_attempt", "")
         else:
             continue
         bindings[target] = {
             "workflow_run_url": workflow_run_url,
             "repository": repository_from_workflow_run_url(workflow_run_url),
             "head_sha": head_sha,
+            "run_attempt": str(run_attempt).strip(),
         }
     return bindings
 
@@ -463,6 +494,9 @@ def check_linux_local_evidence(
     errors.extend(check_path_inside_root(root, artifacts_dir, f"{target} artifact directory"))
     errors.extend(check_path_inside_root(root, builder_evidence, f"{target} builder identity evidence"))
     errors.extend(check_path_inside_root(root, smoke_evidence, f"{target} native smoke evidence"))
+    errors.extend(check_path_not_reserved_workspace_root(root, artifacts_dir, f"{target} artifact directory"))
+    errors.extend(check_path_not_reserved_workspace_root(root, builder_evidence, f"{target} builder identity evidence"))
+    errors.extend(check_path_not_reserved_workspace_root(root, smoke_evidence, f"{target} native smoke evidence"))
     errors.extend(check_path_inside_target_root(target_root, artifacts_dir, f"{target} artifact directory"))
     errors.extend(check_path_inside_target_root(target_root, builder_evidence, f"{target} builder identity evidence"))
     errors.extend(check_path_inside_target_root(target_root, smoke_evidence, f"{target} native smoke evidence"))
@@ -653,6 +687,9 @@ def check_xp_local_evidence(
     errors.extend(check_path_inside_root(root, artifacts_dir, f"{target} artifact directory"))
     errors.extend(check_path_inside_root(root, evidence_file, f"{target} XP evidence file"))
     errors.extend(check_path_inside_root(root, evidence_dir, f"{target} XP evidence directory"))
+    errors.extend(check_path_not_reserved_workspace_root(root, artifacts_dir, f"{target} artifact directory"))
+    errors.extend(check_path_not_reserved_workspace_root(root, evidence_file, f"{target} XP evidence file"))
+    errors.extend(check_path_not_reserved_workspace_root(root, evidence_dir, f"{target} XP evidence directory"))
     if errors:
         return errors
     if evidence_file.is_symlink():
@@ -847,6 +884,25 @@ def check_path_inside_target_root(target_root: Path, path: Path, label: str) -> 
         return [
             f"{label} must include target/release path segment "
             f"{target}/{release_tag} under local evidence root: {path}"
+        ]
+    return []
+
+
+def check_path_not_reserved_workspace_root(root: Path, path: Path, label: str) -> list[str]:
+    root_resolved = root.resolve(strict=False)
+    path_resolved = path.resolve(strict=False)
+    try:
+        relative = path_resolved.relative_to(root_resolved)
+    except ValueError:
+        return []
+    parts = tuple(part for part in relative.parts if part not in ("", "."))
+    if not parts:
+        return []
+    reserved_root = parts[0]
+    if reserved_root in RESERVED_WORKSPACE_ROOTS:
+        return [
+            f"{label} must not point inside reserved workspace directory "
+            f"{reserved_root!r}: {path}"
         ]
     return []
 

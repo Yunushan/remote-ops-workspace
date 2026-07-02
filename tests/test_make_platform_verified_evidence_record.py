@@ -761,6 +761,68 @@ def test_make_platform_verified_evidence_record_rejects_symlinked_linux_evidence
     assert record == {}
 
 
+def test_make_platform_verified_evidence_record_rejects_linux_inputs_inside_reserved_workspace_root(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    maker = _load_maker()
+    artifact_checker = _load_platform_promotion_artifacts_checker()
+    target = "linux-i386"
+    tag = f"v{artifact_checker.read_project_version()}"
+    monkeypatch.chdir(tmp_path)
+    embedded = Path(".git") / target / tag
+    assets = embedded / "artifacts"
+    assets.mkdir(parents=True)
+    builder_evidence = embedded / f"builder-identity-{target}.json"
+    builder_evidence.write_text("{}\n", encoding="utf-8")
+    smoke_evidence = embedded / f"native-smoke-{target}.log"
+    smoke_evidence.write_text("linux smoke placeholder\n", encoding="utf-8")
+
+    errors, record = maker.build_evidence_record(
+        maker.parse_args(
+            [
+                "--target",
+                target,
+                "--release-tag",
+                tag,
+                "--assets-dir",
+                str(assets),
+                "--release-asset-base-url",
+                f"https://github.com/example/remote-ops-workspace/releases/download/{tag}",
+                "--workflow-run-url",
+                "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+                "--release-source-head-sha",
+                "a" * 40,
+                "--release-source-run-attempt",
+                "1",
+                "--builder-evidence",
+                str(builder_evidence),
+                "--linux-smoke-evidence",
+                str(smoke_evidence),
+                "--runner-label",
+                "self-hosted",
+                "--runner-label",
+                "linux",
+                "--runner-label",
+                "i386",
+            ]
+        )
+    )
+
+    assert (
+        f"artifact directory must not point inside reserved workspace directory '.git': {assets}"
+    ) in errors
+    assert (
+        "Linux builder evidence file must not point inside reserved workspace directory "
+        f"'.git': {builder_evidence}"
+    ) in errors
+    assert (
+        "Linux smoke evidence file must not point inside reserved workspace directory "
+        f"'.git': {smoke_evidence}"
+    ) in errors
+    assert record == {}
+
+
 def test_make_platform_verified_evidence_record_rejects_symlinked_xp_evidence_inputs(
     tmp_path: Path,
     monkeypatch,
@@ -864,6 +926,63 @@ def test_make_platform_verified_evidence_record_rejects_symlinked_xp_evidence_pa
 
     assert f"XP evidence file path must not contain symlinked directories: {evidence_parent}" in errors
     assert f"XP evidence directory path must not contain symlinked directories: {evidence_parent}" in errors
+    assert record == {}
+
+
+def test_make_platform_verified_evidence_record_rejects_xp_inputs_inside_reserved_workspace_root(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    maker = _load_maker()
+    artifact_checker = _load_platform_promotion_artifacts_checker()
+    target = "windows-xp-native-x86"
+    tag = f"v{artifact_checker.read_project_version()}"
+    monkeypatch.chdir(tmp_path)
+    embedded = Path(".github") / target / tag
+    assets = embedded / "artifacts"
+    assets.mkdir(parents=True)
+    evidence_dir = embedded / "evidence"
+    evidence_dir.mkdir(parents=True)
+    evidence = evidence_dir / "xp-evidence.json"
+    evidence.write_text("{}\n", encoding="utf-8")
+
+    errors, record = maker.build_evidence_record(
+        maker.parse_args(
+            [
+                "--target",
+                target,
+                "--release-tag",
+                tag,
+                "--assets-dir",
+                str(assets),
+                "--release-asset-base-url",
+                f"https://github.com/example/remote-ops-workspace/releases/download/{tag}",
+                "--release-source-workflow-run-url",
+                "https://github.com/example/remote-ops-workspace/actions/runs/54321",
+                "--release-source-artifact-name",
+                f"xp-native-evidence-{target}-{tag}",
+                "--release-source-head-sha",
+                "a" * 40,
+                "--release-source-run-attempt",
+                "1",
+                "--xp-evidence",
+                str(evidence),
+                "--xp-evidence-dir",
+                str(evidence_dir),
+            ]
+        )
+    )
+
+    assert (
+        f"artifact directory must not point inside reserved workspace directory '.github': {assets}"
+    ) in errors
+    assert (
+        f"XP evidence file must not point inside reserved workspace directory '.github': {evidence}"
+    ) in errors
+    assert (
+        "XP evidence directory must not point inside reserved workspace directory "
+        f"'.github': {evidence_dir}"
+    ) in errors
     assert record == {}
 
 

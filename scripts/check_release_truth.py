@@ -102,7 +102,7 @@ REQUIRED_DOC_SNIPPETS = (
 REQUIRED_TURKISH_DOC_SNIPPETS = (
     "![release](https://img.shields.io/badge/release-v1.0.2-blue)",
     "configs/platform_verified_evidence.json",
-    "python scripts/check_protected_platform_goal.py --release-tag <tag> --require-complete --show-requirements",
+    "python scripts/check_protected_platform_goal.py --release-tag <tag> --require-records-complete --show-requirements",
     "python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag <tag>",
     "python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run",
     "python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag <tag> --require-final-record-assets",
@@ -133,7 +133,7 @@ REQUIRED_TURKISH_DOC_SNIPPETS = (
 
 REQUIRED_README_RELEASE_SECTION_SNIPPETS = (
     "python scripts/verify.py --quick --no-cli-smoke --release-tag <tag>",
-    "python scripts/check_protected_platform_goal.py --release-tag <tag> --require-complete --show-requirements",
+    "python scripts/check_protected_platform_goal.py --release-tag <tag> --require-records-complete --show-requirements",
     "python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag <tag>",
     "accepted-platform-evidence-assets",
     "python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run",
@@ -171,6 +171,8 @@ REQUIRED_RELEASE_STRATEGY_SNIPPETS = (
     "pre-release protected-platform import dry-run",
     "does not stage files for upload",
     "release_asset_provenance_complete=false",
+    "record_complete",
+    "release_backed_complete",
     "asset-backed protected goal gate",
 )
 
@@ -270,8 +272,8 @@ def check_release_preflight(workflow: str | None = None) -> list[str]:
         ),
         (
             'python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" '
-            "--require-complete --show-requirements"
-        ): "hard protected platform goal completion gate",
+            "--require-records-complete --show-requirements"
+        ): "protected platform accepted records gate",
         'python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag "${{ github.ref_name }}"': (
             "strict accepted evidence registry gate"
         ),

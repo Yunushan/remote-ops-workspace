@@ -291,6 +291,23 @@ def test_stage_extended_linux_evidence_upload_rejects_file_shaped_source_directo
     ) in errors
 
 
+def test_stage_extended_linux_evidence_upload_rejects_reserved_workspace_source_directory() -> None:
+    stager = _load_stager()
+    source = Path(".github") / "linux-i386" / "v1.0.2" / "artifacts"
+
+    errors = stager.stage_extended_linux_evidence_upload(
+        target="linux-i386",
+        release_tag="v1.0.2",
+        source_dir=source,
+        out_dir=Path("linux-evidence-upload"),
+    )
+
+    assert (
+        "extended Linux evidence source directory must not point inside "
+        f"reserved workspace directory '.github': {source}"
+    ) in errors
+
+
 def test_stage_extended_linux_evidence_upload_rejects_symlinked_source(monkeypatch) -> None:
     stager = _load_stager()
     sources = {
@@ -340,6 +357,21 @@ def test_stage_extended_linux_evidence_upload_rejects_symlinked_source_parent(
     ) in errors
 
 
+def test_stage_extended_linux_evidence_upload_rejects_reserved_workspace_source_file() -> None:
+    stager = _load_stager()
+    source = Path(".git") / "expected.deb"
+    sources = {
+        "expected.deb": source,
+    }
+
+    errors = stager.check_source_paths("linux-i386", sources)
+
+    assert (
+        "linux-i386 staged upload source expected.deb must not point inside "
+        f"reserved workspace directory '.git': {source}"
+    ) in errors
+
+
 def test_stage_extended_linux_evidence_upload_rejects_symlinked_output_directory(
     tmp_path: Path,
     monkeypatch,
@@ -370,6 +402,19 @@ def test_stage_extended_linux_evidence_upload_rejects_file_shaped_output_directo
 
     assert errors == [
         f"linux-i386 staged upload output directory must be a directory path, got {out_dir.as_posix()!r}"
+    ]
+    assert not out_dir.exists()
+
+
+def test_stage_extended_linux_evidence_upload_rejects_reserved_workspace_output_directory() -> None:
+    stager = _load_stager()
+    out_dir = Path(".codex") / "linux-evidence-upload"
+
+    errors = stager.prepare_output_directory("linux-i386", out_dir=out_dir, force=True)
+
+    assert errors == [
+        "linux-i386 staged upload output directory must not point inside "
+        f"reserved workspace directory '.codex': {out_dir}"
     ]
     assert not out_dir.exists()
 

@@ -6,6 +6,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 POLICY = (
     "Only accepted evidence records in this file can promote Linux i386, Linux armhf, "
     "or Windows XP native-host readiness. Accepted records must include release asset URLs, "
@@ -25,6 +27,7 @@ POLICY = (
     "finalized accepted-record release asset URL binding, "
     "canonical finalized accepted-record JSON byte binding, "
     "published native and review-bundle release asset byte binding, "
+    "published release asset GitHub id/API URL binding, "
     "Linux release source artifact names must be target/release-scoped, "
     "Linux accepted evidence command paths must be target/release-scoped, "
     "XP release source artifact names must be target/release-scoped, "
@@ -1059,6 +1062,22 @@ def test_platform_verified_evidence_rejects_missing_published_release_asset_byte
     ) in errors
 
 
+def test_platform_verified_evidence_rejects_missing_published_release_asset_identity_policy() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY.replace("published release asset GitHub id/API URL binding, ", ""),
+            "accepted_evidence": [],
+        }
+    )
+
+    assert (
+        "platform verified evidence policy must require published release asset GitHub id/API URL binding"
+    ) in errors
+
+
 def test_platform_verified_evidence_rejects_missing_exact_top_level_field_policy() -> None:
     checker = _load_platform_verified_evidence_checker()
 
@@ -1216,6 +1235,72 @@ def test_platform_verified_evidence_cli_requires_finalized_review_bundle(tmp_pat
         assert checker.main(["--allow-unfinalized-candidates"]) == 2
     finally:
         checker.EVIDENCE_PATH = original_path
+
+
+def test_platform_verified_evidence_read_json_rejects_reserved_workspace_root() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    registry = Path(".github") / "platform_verified_evidence.json"
+
+    with pytest.raises(ValueError) as exc_info:
+        checker.read_json(registry)
+
+    assert str(exc_info.value) == (
+        "JSON evidence source must not point inside reserved workspace directory "
+        f"'.github': {registry}"
+    )
+
+
+def test_platform_verified_evidence_cli_reports_unsafe_registry_path(capsys) -> None:
+    checker = _load_platform_verified_evidence_checker()
+    original_path = checker.EVIDENCE_PATH
+    registry = Path(".github") / "platform_verified_evidence.json"
+    checker.EVIDENCE_PATH = registry
+    try:
+        result = checker.main()
+    finally:
+        checker.EVIDENCE_PATH = original_path
+
+    assert result == 1
+    assert (
+        "platform verified evidence: JSON evidence source must not point inside "
+        f"reserved workspace directory '.github': {registry}"
+    ) in capsys.readouterr().err
+
+
+def test_platform_verified_evidence_read_json_rejects_symlinked_file(tmp_path: Path) -> None:
+    checker = _load_platform_verified_evidence_checker()
+    registry = tmp_path / "platform_verified_evidence.json"
+    registry.write_text("{}\n", encoding="utf-8")
+    linked_registry = tmp_path / "linked-registry.json"
+    try:
+        linked_registry.symlink_to(registry)
+    except OSError as exc:
+        pytest.skip(f"file symlinks unavailable on this platform: {exc}")
+
+    with pytest.raises(ValueError) as exc_info:
+        checker.read_json(linked_registry)
+
+    assert str(exc_info.value) == f"JSON evidence source must not be a symlink: {linked_registry}"
+
+
+def test_platform_verified_evidence_read_json_rejects_symlinked_parent(tmp_path: Path) -> None:
+    checker = _load_platform_verified_evidence_checker()
+    registry_dir = tmp_path / "registry-dir"
+    registry_dir.mkdir()
+    registry = registry_dir / "platform_verified_evidence.json"
+    registry.write_text("{}\n", encoding="utf-8")
+    linked_dir = tmp_path / "linked-registry-dir"
+    try:
+        linked_dir.symlink_to(registry_dir, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"directory symlinks unavailable on this platform: {exc}")
+
+    with pytest.raises(ValueError) as exc_info:
+        checker.read_json(linked_dir / "platform_verified_evidence.json")
+
+    assert str(exc_info.value) == (
+        f"JSON evidence source path must not contain symlinked directories: {linked_dir}"
+    )
 
 
 def test_platform_verified_evidence_goal_required_targets_fail_empty_registry() -> None:
@@ -1436,6 +1521,38 @@ def test_platform_verified_evidence_goal_required_targets_reject_mixed_release_s
         f"'linux-i386': '{'b' * 40}', "
         f"'windows-xp-native-x64': '{'a' * 40}', "
         f"'windows-xp-native-x86': '{'a' * 40}'}}"
+    ) in errors
+
+
+def test_platform_verified_evidence_goal_required_targets_reject_conflicting_source_run_attempts() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    xp_x86 = _xp_record("windows-xp-native-x86")
+    _replace_release_source_run_attempt(xp_x86, 2)
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [
+            _linux_record("linux-i386"),
+            _linux_record("linux-armhf"),
+            xp_x86,
+            _xp_record("windows-xp-native-x64"),
+        ],
+    }
+
+    errors = checker.check_platform_verified_evidence(
+        registry=registry,
+        required_targets=checker.PROTECTED_GOAL_TARGETS,
+        required_release_tag="v1.0.2",
+        require_review_bundles=True,
+    )
+
+    assert not any("missing required accepted evidence targets" in error for error in errors)
+    assert (
+        "protected platform goal evidence for release_tag v1.0.2 must not reuse one "
+        "release source workflow run URL with conflicting run attempts, got "
+        "https://github.com/example/remote-ops-workspace/actions/runs/12345: "
+        "{'linux-armhf': 1, 'linux-i386': 1, "
+        "'windows-xp-native-x64': 1, 'windows-xp-native-x86': 2}"
     ) in errors
 
 
@@ -5180,6 +5297,52 @@ def _replace_release_source_head(record: dict[str, object], head_sha: str) -> No
     for field in ("native_smoke_command", "local_evidence_preflight_command"):
         if isinstance(record.get(field), str) and old_head:
             record[field] = str(record[field]).replace(old_head, head_sha)
+
+
+def _replace_release_source_run_attempt(record: dict[str, object], run_attempt: int) -> None:
+    source = record.get("release_asset_source")
+    old_attempt = ""
+    if isinstance(source, dict):
+        old_attempt = str(source.get("run_attempt", ""))
+        source["run_attempt"] = run_attempt
+    if isinstance(record.get("local_evidence_preflight_command"), str) and old_attempt:
+        record["local_evidence_preflight_command"] = str(
+            record["local_evidence_preflight_command"]
+        ).replace(f"-source-run-attempt {old_attempt}", f"-source-run-attempt {run_attempt}")
+    xp_summary = record.get("xp_evidence_summary")
+    if isinstance(xp_summary, dict):
+        xp_source = xp_summary.get("release_source")
+        if isinstance(xp_source, dict):
+            xp_source["run_attempt"] = run_attempt
+        smoke_commands = xp_summary.get("smoke_commands")
+        if isinstance(smoke_commands, dict) and old_attempt:
+            for smoke_id, command in smoke_commands.items():
+                smoke_commands[smoke_id] = str(command).replace(
+                    f"--source-run-attempt {old_attempt}",
+                    f"--source-run-attempt {run_attempt}",
+                )
+    if not str(record.get("target", "")).startswith("linux-"):
+        return
+    builder_identity = record.get("builder_identity")
+    if isinstance(builder_identity, dict):
+        builder_identity["workflow_run_attempt"] = run_attempt
+        host_identity = builder_identity.get("host_identity")
+        if isinstance(host_identity, dict):
+            host_identity["workflow_run_attempt"] = run_attempt
+        builder_identity_sha = _json_sha256(builder_identity)
+        record["builder_identity_sha256"] = builder_identity_sha
+        linux_sources = record.get("linux_evidence_sources")
+        if isinstance(linux_sources, dict) and isinstance(linux_sources.get("builder_identity"), dict):
+            linux_sources["builder_identity"]["sha256"] = builder_identity_sha
+    linux_smoke_summary = record.get("linux_smoke_summary")
+    if isinstance(linux_smoke_summary, dict):
+        linux_smoke_summary["workflow_run_attempt"] = run_attempt
+    for field in ("native_smoke_command", "local_evidence_preflight_command"):
+        if isinstance(record.get(field), str) and old_attempt:
+            record[field] = str(record[field]).replace(
+                f"run-attempt {old_attempt}",
+                f"run-attempt {run_attempt}",
+            )
 
 
 def _xp_evidence_summary(target: str, release_tag: str = "v1.0.2") -> dict[str, object]:

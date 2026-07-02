@@ -101,6 +101,7 @@ def check_docs_and_verifier() -> list[str]:
         "allow_legacy_rdp_security=true",
         "generic XP labels such as `xp`, `winxp` and `windows-xp`",
         "`legacy_platform` alias key",
+        "Linux i386/armhf security smoke proof lines",
     ):
         if snippet not in docs:
             errors.append(f"security docs missing required snippet: {snippet}")
@@ -114,6 +115,8 @@ def check_legacy_security_policy(
     platform_required_flags: dict[str, bool] | None = None,
     platform_required_patch_evidence: dict[str, Any] | None = None,
     platform_required_patch_provenance_fields: tuple[str, ...] | None = None,
+    platform_linux_security_smoke_lines: tuple[str, ...] | None = None,
+    platform_forbidden_linux_security_smoke_lines: tuple[str, ...] | None = None,
 ) -> list[str]:
     errors: list[str] = []
     baseline = baseline or json.loads(read("configs/security_baseline.json"))
@@ -124,6 +127,10 @@ def check_legacy_security_policy(
     )
     if platform_required_patch_provenance_fields is None:
         platform_required_patch_provenance_fields = load_platform_required_security_patch_provenance_fields()
+    if platform_linux_security_smoke_lines is None:
+        platform_linux_security_smoke_lines = load_platform_linux_security_smoke_lines()
+    if platform_forbidden_linux_security_smoke_lines is None:
+        platform_forbidden_linux_security_smoke_lines = load_platform_forbidden_linux_security_smoke_lines()
     modern = baseline.get("modern_defaults", {})
     if modern.get("preferred_tls") != "TLS 1.3":
         errors.append("security_baseline preferred_tls must stay TLS 1.3")
@@ -196,6 +203,36 @@ def check_legacy_security_policy(
         errors.append(
             "platform verified evidence REQUIRED_SECURITY_PATCH_PROVENANCE_FIELDS must match "
             f"{list(expected_patch_provenance_fields)}, got {list(platform_required_patch_provenance_fields)}"
+        )
+    expected_linux_security_lines = {
+        f"native installer smoke TLS minimum modern profiles: {modern.get('minimum_tls')}",
+        f"native installer smoke TLS preferred modern profiles: {modern.get('preferred_tls')}",
+        "native installer smoke legacy compatibility profile: isolated-opt-in",
+        "native installer smoke legacy crypto scope: profile-only",
+        "native installer smoke weak crypto global default: false",
+        "native installer smoke modern defaults unchanged: true",
+    }
+    linux_security_lines = set(platform_linux_security_smoke_lines)
+    missing_linux_security_lines = sorted(expected_linux_security_lines - linux_security_lines)
+    if missing_linux_security_lines:
+        errors.append(
+            "platform verified evidence REQUIRED_LINUX_SECURITY_SMOKE_LINES must include "
+            f"{missing_linux_security_lines}"
+        )
+    expected_forbidden_linux_security_lines = {
+        "native installer smoke TLS minimum modern profiles: TLS 1.0",
+        "native installer smoke TLS minimum modern profiles: TLS 1.1",
+        "native installer smoke weak crypto global default: true",
+        "native installer smoke modern defaults unchanged: false",
+    }
+    forbidden_linux_security_lines = set(platform_forbidden_linux_security_smoke_lines)
+    missing_forbidden_linux_security_lines = sorted(
+        expected_forbidden_linux_security_lines - forbidden_linux_security_lines
+    )
+    if missing_forbidden_linux_security_lines:
+        errors.append(
+            "platform verified evidence FORBIDDEN_LINUX_SECURITY_SMOKE_LINES must include "
+            f"{missing_forbidden_linux_security_lines}"
         )
     smoke_ids = set(str(item) for item in xp_contract.get("required_smoke_ids", []))
     for smoke_id in ("legacy_crypto_profile_scoped", "modern_defaults_unchanged"):
@@ -368,6 +405,34 @@ def load_platform_required_security_patch_provenance_fields() -> tuple[str, ...]
     if not isinstance(fields, (list, tuple, set)):
         return ()
     return tuple(str(field) for field in fields)
+
+
+def load_platform_linux_security_smoke_lines() -> tuple[str, ...]:
+    path = ROOT / "scripts" / "check_platform_verified_evidence.py"
+    spec = importlib.util.spec_from_file_location("check_platform_verified_evidence_linux_security", path)
+    if spec is None or spec.loader is None:
+        return ()
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    lines = getattr(module, "REQUIRED_LINUX_SECURITY_SMOKE_LINES", ())
+    if not isinstance(lines, (list, tuple, set)):
+        return ()
+    return tuple(str(line) for line in lines)
+
+
+def load_platform_forbidden_linux_security_smoke_lines() -> tuple[str, ...]:
+    path = ROOT / "scripts" / "check_platform_verified_evidence.py"
+    spec = importlib.util.spec_from_file_location("check_platform_verified_evidence_linux_forbidden_security", path)
+    if spec is None or spec.loader is None:
+        return ()
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    lines = getattr(module, "FORBIDDEN_LINUX_SECURITY_SMOKE_LINES", ())
+    if not isinstance(lines, (list, tuple, set)):
+        return ()
+    return tuple(str(line) for line in lines)
 
 
 def read(relative: str) -> str:

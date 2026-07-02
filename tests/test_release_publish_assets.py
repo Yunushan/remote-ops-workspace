@@ -28,6 +28,7 @@ POLICY = (
     "finalized accepted-record release asset URL binding, "
     "canonical finalized accepted-record JSON byte binding, "
     "published native and review-bundle release asset byte binding, "
+    "published release asset GitHub id/API URL binding, "
     "Linux release source artifact names must be target/release-scoped, "
     "Linux accepted evidence command paths must be target/release-scoped, "
     "XP release source artifact names must be target/release-scoped, "
@@ -384,6 +385,38 @@ def test_publish_contract_requires_remote_evidence_audit_token_and_actions_read(
     assert any("GitHub token for published evidence audit" in error for error in errors)
 
 
+def test_publish_contract_rejects_release_preflight_continue_on_error() -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        '      - name: Require protected platform accepted records before release builds\n'
+        '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" --require-records-complete --show-requirements\n',
+        '      - name: Require protected platform accepted records before release builds\n'
+        '        continue-on-error: true\n'
+        '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" --require-records-complete --show-requirements\n',
+    )
+
+    errors = checker.check_publish_contract(matrix, workflow)
+
+    assert "release-preflight job must not use continue-on-error: true for protected release gates" in errors
+
+
+def test_publish_contract_rejects_publish_continue_on_error() -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        '      - name: Require protected platform release assets\n'
+        '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" --require-complete --assets-dir release-assets\n',
+        '      - name: Require protected platform release assets\n'
+        '        continue-on-error: true\n'
+        '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" --require-complete --assets-dir release-assets\n',
+    )
+
+    errors = checker.check_publish_contract(matrix, workflow)
+
+    assert "publish job must not use continue-on-error: true for protected release gates" in errors
+
+
 def test_publish_contract_requires_platform_evidence_import_job() -> None:
     checker = _load_checker()
     matrix = _load_matrix()
@@ -408,6 +441,29 @@ def test_publish_contract_rejects_platform_evidence_import_write_permissions() -
     errors = checker.check_publish_contract(matrix, workflow)
 
     assert "accepted-platform-evidence-assets job must not request write permissions" in errors
+
+
+def test_publish_contract_rejects_platform_evidence_import_continue_on_error() -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        '      - name: Import accepted protected platform evidence artifacts\n'
+        '        env:\n'
+        '          GH_TOKEN: ${{ github.token }}\n'
+        '        run: python scripts/import_platform_evidence_artifacts.py --release-tag "${{ github.ref_name }}" --require-goal-targets --out-dir release-assets --verify-source-run\n',
+        '      - name: Import accepted protected platform evidence artifacts\n'
+        '        continue-on-error: true\n'
+        '        env:\n'
+        '          GH_TOKEN: ${{ github.token }}\n'
+        '        run: python scripts/import_platform_evidence_artifacts.py --release-tag "${{ github.ref_name }}" --require-goal-targets --out-dir release-assets --verify-source-run\n',
+    )
+
+    errors = checker.check_publish_contract(matrix, workflow)
+
+    assert (
+        "accepted-platform-evidence-assets job must not use continue-on-error: true "
+        "for protected release gates"
+    ) in errors
 
 
 def test_publish_contract_rejects_platform_evidence_import_nonstandard_write_permissions() -> None:
@@ -1053,6 +1109,20 @@ def test_release_assets_reject_file_shaped_asset_directory(tmp_path: Path) -> No
 
     assert errors == [
         f"release asset directory must be a directory path, got {assets_dir.as_posix()!r}"
+    ]
+    assert not assets_dir.exists()
+
+
+def test_release_assets_reject_reserved_workspace_asset_directory() -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    assets_dir = Path(".github") / "release-assets"
+
+    errors = checker.check_release_assets(assets_dir, matrix, tag="v1.0.2")
+
+    assert errors == [
+        "release asset directory must not point inside "
+        f"reserved workspace directory '.github': {assets_dir}"
     ]
     assert not assets_dir.exists()
 

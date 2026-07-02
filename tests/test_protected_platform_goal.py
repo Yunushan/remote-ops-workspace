@@ -6,6 +6,8 @@ import sys
 from copy import deepcopy
 from pathlib import Path
 
+import pytest
+
 LINUX_SECURITY_REQUIREMENTS = [
     "security patch evidence proving TLS 1.3 preferred, TLS 1.2 minimum, "
     "isolated legacy compatibility and CVE patch review",
@@ -38,7 +40,7 @@ def test_protected_platform_goal_strict_gate_fails_empty_registry() -> None:
     errors, goal = checker.check_protected_platform_goal(
         registry=_empty_registry(),
         release_tag="v1.0.2",
-        require_complete=True,
+        require_records_complete=True,
     )
 
     assert goal["release_tag"] == "v1.0.2"
@@ -80,6 +82,10 @@ def test_protected_platform_goal_strict_gate_fails_empty_registry() -> None:
         "python scripts/import_platform_evidence_artifacts.py "
         "--release-tag v1.0.2 --require-goal-targets "
         "--out-dir <release-assets-dir> --dry-run --verify-source-run"
+    )
+    assert goal["release_asset_provenance_command"] == (
+        "python scripts/check_protected_platform_goal.py "
+        "--release-tag v1.0.2 --require-complete --assets-dir <release-assets-dir>"
     )
     assert requirements["linux-i386"]["security_requirements"] == LINUX_SECURITY_REQUIREMENTS
     assert requirements["linux-armhf"]["security_requirements"] == LINUX_SECURITY_REQUIREMENTS
@@ -175,20 +181,24 @@ def test_protected_platform_goal_strict_gate_fails_empty_registry() -> None:
     assert goal["blocking_errors"] == errors
 
 
-def test_protected_platform_goal_strict_gate_requires_release_tag() -> None:
+def test_protected_platform_goal_records_gate_requires_release_tag() -> None:
     checker = _load_protected_goal_checker()
 
     errors, goal = checker.check_protected_platform_goal(
         registry=_complete_registry(),
-        require_complete=True,
+        require_records_complete=True,
     )
 
-    assert checker.REQUIRE_COMPLETE_RELEASE_TAG_ERROR in errors
+    assert checker.REQUIRE_RECORDS_COMPLETE_RELEASE_TAG_ERROR in errors
     assert goal["current_percent"] == 0.0
     assert goal["accepted_target_count"] == 0
     assert goal["complete"] is False
+    assert goal["record_complete"] is False
+    assert goal["release_backed_complete"] is False
+    assert goal["completion_requires_release_asset_provenance"] is True
+    assert goal["completion_evidence"] == "incomplete"
     assert goal["status"] == "release-tag-required"
-    assert goal["scope_error"] == checker.REQUIRE_COMPLETE_RELEASE_TAG_ERROR
+    assert goal["scope_error"] == checker.REQUIRE_RECORDS_COMPLETE_RELEASE_TAG_ERROR
     assert goal["validation_errors"] == []
     assert goal["record_validation_errors"] == []
     assert goal["blocking_errors"] == errors
@@ -224,7 +234,7 @@ def test_protected_platform_goal_rejects_drifted_requirement_command_metadata(
     errors, goal = checker.check_protected_platform_goal(
         registry=_complete_registry(),
         release_tag="v1.0.2",
-        require_complete=True,
+        require_records_complete=True,
     )
 
     assert any(
@@ -264,6 +274,31 @@ def test_protected_platform_goal_assets_dir_requires_strict_completion(tmp_path:
     assert checker.strict_completion_arg_errors(args) == [
         checker.REQUIRE_ASSETS_COMPLETE_ERROR
     ]
+
+
+def test_protected_platform_goal_complete_gate_requires_assets_dir() -> None:
+    checker = _load_protected_goal_checker()
+    args = checker.parse_args(["--release-tag", "v1.0.2", "--require-complete"])
+
+    assert checker.strict_completion_arg_errors(args) == [
+        checker.REQUIRE_COMPLETE_ASSETS_DIR_ERROR
+    ]
+
+
+def test_protected_platform_goal_completion_modes_are_mutually_exclusive(tmp_path: Path) -> None:
+    checker = _load_protected_goal_checker()
+    args = checker.parse_args(
+        [
+            "--release-tag",
+            "v1.0.2",
+            "--require-complete",
+            "--require-records-complete",
+            "--assets-dir",
+            str(tmp_path),
+        ]
+    )
+
+    assert checker.REQUIRE_COMPLETE_MODE_CONFLICT_ERROR in checker.strict_completion_arg_errors(args)
 
 
 def test_protected_platform_goal_assets_dir_validation_blocks_completion(
@@ -315,6 +350,9 @@ def test_protected_platform_goal_assets_dir_validation_blocks_completion(
     ]
     assert errors == ["release asset sentinel failure"]
     assert goal["complete"] is False
+    assert goal["record_complete"] is True
+    assert goal["release_backed_complete"] is False
+    assert goal["completion_evidence"] == "release-assets-invalid"
     assert goal["status"] == "release-assets-invalid"
     assert goal["release_asset_provenance_complete"] is False
     assert goal["release_asset_error_count"] == 1
@@ -372,6 +410,9 @@ def test_protected_platform_goal_assets_dir_success_marks_release_asset_provenan
         }
     ]
     assert goal["complete"] is True
+    assert goal["record_complete"] is True
+    assert goal["release_backed_complete"] is True
+    assert goal["completion_evidence"] == "release-assets"
     assert goal["status"] == "complete"
     assert goal["release_asset_provenance_complete"] is True
     assert goal["release_asset_error_count"] == 0
@@ -386,7 +427,7 @@ def test_protected_platform_goal_reports_release_scoped_completion() -> None:
     errors, goal = checker.check_protected_platform_goal(
         registry=_complete_registry(),
         release_tag="v1.0.2",
-        require_complete=True,
+        require_records_complete=True,
     )
 
     assert errors == []
@@ -395,6 +436,10 @@ def test_protected_platform_goal_reports_release_scoped_completion() -> None:
     assert goal["accepted_target_count"] == 4
     assert goal["missing_targets"] == []
     assert goal["complete"] is True
+    assert goal["record_complete"] is True
+    assert goal["release_backed_complete"] is False
+    assert goal["completion_requires_release_asset_provenance"] is True
+    assert goal["completion_evidence"] == "accepted-records-only"
     assert goal["status"] == "complete"
     assert goal["release_asset_provenance_complete"] is False
     assert goal["release_asset_validation_errors"] == []
@@ -425,6 +470,9 @@ def test_protected_platform_goal_reports_release_scoped_completion() -> None:
         "release asset provenance gate: python scripts/check_protected_platform_goal.py "
         "--release-tag v1.0.2 --require-complete --assets-dir <release-assets-dir>"
     ) in human_scope
+    assert (
+        "release-backed completion: pending release asset validation with --assets-dir"
+    ) in human_scope
 
 
 def test_protected_platform_goal_strict_gate_does_not_count_malformed_accepted_record() -> None:
@@ -439,7 +487,7 @@ def test_protected_platform_goal_strict_gate_does_not_count_malformed_accepted_r
     errors, goal = checker.check_protected_platform_goal(
         registry=registry,
         release_tag="v1.0.2",
-        require_complete=True,
+        require_records_complete=True,
     )
 
     assert any("linux-i386 review_bundle must be an object" in error for error in errors)
@@ -513,7 +561,7 @@ def test_protected_platform_goal_human_scope_reports_mixed_release_source_heads(
     errors, goal = checker.check_protected_platform_goal(
         registry=registry,
         release_tag="v1.0.2",
-        require_complete=True,
+        require_records_complete=True,
     )
 
     assert goal["status"] == "mixed-release-source-evidence"
@@ -594,6 +642,63 @@ def test_protected_platform_goal_cli_requires_release_tag_for_completion(tmp_pat
     registry.write_text(json.dumps(_empty_registry()), encoding="utf-8")
 
     assert checker.main(["--registry", str(registry), "--require-complete"]) == 2
+
+
+def test_protected_platform_goal_rejects_reserved_registry_path() -> None:
+    checker = _load_protected_goal_checker()
+    registry = Path(".github") / "platform_verified_evidence.json"
+    args = checker.parse_args(
+        [
+            "--registry",
+            str(registry),
+            "--release-tag",
+            "v1.0.2",
+        ]
+    )
+
+    errors = checker.strict_completion_arg_errors(args)
+
+    assert errors == [
+        "accepted evidence registry must not point inside reserved workspace directory "
+        f"'.github': {registry}"
+    ]
+
+
+def test_protected_platform_goal_rejects_symlinked_registry_file(tmp_path: Path) -> None:
+    checker = _load_protected_goal_checker()
+    registry = tmp_path / "platform_verified_evidence.json"
+    registry.write_text(json.dumps(_empty_registry()), encoding="utf-8")
+    linked_registry = tmp_path / "linked-registry.json"
+    try:
+        linked_registry.symlink_to(registry)
+    except OSError as exc:
+        pytest.skip(f"file symlinks unavailable on this platform: {exc}")
+    args = checker.parse_args(["--registry", str(linked_registry)])
+
+    errors = checker.strict_completion_arg_errors(args)
+
+    assert errors == [f"accepted evidence registry must not be a symlink: {linked_registry}"]
+
+
+def test_protected_platform_goal_rejects_registry_parent_symlink(tmp_path: Path) -> None:
+    checker = _load_protected_goal_checker()
+    registry_dir = tmp_path / "registry-dir"
+    registry_dir.mkdir()
+    registry = registry_dir / "platform_verified_evidence.json"
+    registry.write_text(json.dumps(_empty_registry()), encoding="utf-8")
+    linked_dir = tmp_path / "linked-registry-dir"
+    try:
+        linked_dir.symlink_to(registry_dir, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"directory symlinks unavailable on this platform: {exc}")
+    linked_registry = linked_dir / "platform_verified_evidence.json"
+    args = checker.parse_args(["--registry", str(linked_registry)])
+
+    errors = checker.strict_completion_arg_errors(args)
+
+    assert errors == [
+        f"accepted evidence registry path must not contain symlinked directories: {linked_dir}"
+    ]
 
 
 def _empty_registry() -> dict[str, object]:

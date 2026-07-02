@@ -565,7 +565,7 @@ Release manifests include `size_bytes` and `sha256` for each artifact, and CI
 build jobs run with read-only checkout credentials until the final publish step.
 The release workflow also starts with a `release-preflight` job that runs
 `python scripts/verify.py --quick --no-cli-smoke --release-tag <tag>`,
-`python scripts/check_protected_platform_goal.py --release-tag <tag> --require-complete --show-requirements`,
+`python scripts/check_protected_platform_goal.py --release-tag <tag> --require-records-complete --show-requirements`,
 `python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag <tag>`
 and `python scripts/check_repository_cleanup.py --require-clean`; source, native
 `accepted-platform-evidence-assets` and publish jobs all depend on that gate.

@@ -343,6 +343,29 @@ def test_stage_xp_native_evidence_upload_rejects_file_shaped_source_directories(
     ) in errors
 
 
+def test_stage_xp_native_evidence_upload_rejects_reserved_workspace_source_directories() -> None:
+    stager = _load_stager()
+    assets = Path(".github") / "windows-xp-native-x86" / "v1.0.2" / "artifacts"
+    evidence_output = Path(".agents") / "windows-xp-native-x86" / "v1.0.2" / "evidence"
+
+    errors = stager.stage_xp_native_evidence_upload(
+        target="windows-xp-native-x86",
+        release_tag="v1.0.2",
+        assets_dir=assets,
+        evidence_output_dir=evidence_output,
+        out_dir=Path("xp-evidence-upload"),
+    )
+
+    assert (
+        "XP native asset directory must not point inside "
+        f"reserved workspace directory '.github': {assets}"
+    ) in errors
+    assert (
+        "XP evidence output directory must not point inside "
+        f"reserved workspace directory '.agents': {evidence_output}"
+    ) in errors
+
+
 def test_stage_xp_native_evidence_upload_rejects_symlinked_source(monkeypatch) -> None:
     stager = _load_stager()
     sources = {
@@ -396,6 +419,21 @@ def test_stage_xp_native_evidence_upload_rejects_symlinked_source_parent(
     ) in errors
 
 
+def test_stage_xp_native_evidence_upload_rejects_reserved_workspace_source_file() -> None:
+    stager = _load_stager()
+    source = Path(".git") / "expected.zip"
+    sources = {
+        "expected.zip": source,
+    }
+
+    errors = stager.check_source_paths("windows-xp-native-x86", sources)
+
+    assert (
+        "windows-xp-native-x86 staged upload source expected.zip must not point inside "
+        f"reserved workspace directory '.git': {source}"
+    ) in errors
+
+
 def test_stage_xp_native_evidence_upload_rejects_symlinked_output_directory(
     tmp_path: Path,
     monkeypatch,
@@ -435,6 +473,23 @@ def test_stage_xp_native_evidence_upload_rejects_file_shaped_output_directory(
     assert errors == [
         "windows-xp-native-x86 staged upload output directory "
         f"must be a directory path, got {out_dir.as_posix()!r}"
+    ]
+    assert not out_dir.exists()
+
+
+def test_stage_xp_native_evidence_upload_rejects_reserved_workspace_output_directory() -> None:
+    stager = _load_stager()
+    out_dir = Path(".codex") / "xp-evidence-upload"
+
+    errors = stager.prepare_output_directory(
+        "windows-xp-native-x86",
+        out_dir=out_dir,
+        force=True,
+    )
+
+    assert errors == [
+        "windows-xp-native-x86 staged upload output directory must not point inside "
+        f"reserved workspace directory '.codex': {out_dir}"
     ]
     assert not out_dir.exists()
 

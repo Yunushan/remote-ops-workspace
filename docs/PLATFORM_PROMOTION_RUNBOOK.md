@@ -5,19 +5,24 @@ Linux i386, Linux armhf and Windows XP native-host targets. It does not promote
 any target by itself. Promotion happens only when accepted evidence records are
 added to `configs/platform_verified_evidence.json` and all verification gates
 pass.
+The default-versus-script-supported release boundary comes from
+`configs/release_matrix.json` and is checked by
+`python scripts/check_release_matrix.py`; this runbook carries the protected
+script-supported artifact names that must stay aligned with that matrix.
 
 Start with the shared gates:
 
 ```bash
 python scripts/check_platform_parity_promotion.py
 python scripts/check_platform_verified_evidence.py
-python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-complete
+python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-records-complete
 python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag v<project.version>
 python scripts/check_release_publish_assets.py
 python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-complete --assets-dir <release-assets-dir>
 python scripts/check_release_publish_assets.py --assets-dir <release-assets-dir> --tag v<project.version> --require-platform-goal-targets
 python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> --release-assets-dir <release-assets-dir>
 python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> --release-assets-dir <release-assets-dir> --release-repository <owner>/<repo>
+python scripts/check_platform_release_evidence_remote.py --repository <owner>/<repo> --release-tag v<project.version> --require-goal-targets --require-source-runs --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head
 ```
 
 Accepted records must start as candidates generated with
@@ -39,9 +44,14 @@ Finalization reruns strict accepted-evidence validation on the unfinalized
 candidate before attaching review-bundle fields, so a hand-edited candidate
 cannot rely on finalization to hide missing command, evidence, source-run or
 local-preflight bindings.
-The strict `--require-goal-targets` and `--require-platform-goal-targets`
+The strict `--require-records-complete`, `--require-goal-targets` and
+`--require-platform-goal-targets`
 commands must fail until linux-i386, linux-armhf, windows-xp-native-x86 and
 windows-xp-native-x64 all have finalized accepted evidence records.
+The protected-goal report exposes this as `record_complete`; that is only an
+accepted-record/source-run state. `release_backed_complete` remains false until
+the asset-backed `--assets-dir` gate below validates the actual final records,
+review bundles and native release files.
 When a release tag is supplied, all four accepted records must match that exact
 tag, one GitHub release repository, the target-specific release source workflow
 file and one release source head SHA, and each record must bind a positive
@@ -63,11 +73,14 @@ bundles or native artifacts are missing from the actual publish-ready release
 asset directory. The static readiness report still keeps
 `release_asset_provenance_complete=false`; only this asset-backed protected goal
 gate can flip the proof state after finalized records, review bundles and
-native release bytes match. When `--release-repository <owner>/<repo>` is supplied, the
-same strict verifier also runs the published-release evidence auditor against
-the actual GitHub release, published native/review-bundle asset bytes,
-published final accepted-record JSON bytes and exact accepted source workflow
-run attempts.
+native release bytes match. When `--release-repository <owner>/<repo>` is
+supplied, the same strict verifier also runs
+`python scripts/check_platform_release_evidence_remote.py --repository <owner>/<repo> --release-tag v<project.version> --require-goal-targets --require-source-runs --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head`
+against the actual GitHub release, published native/review-bundle asset bytes,
+published final accepted-record JSON bytes, exact accepted source workflow run
+attempts and the published tag's source head. The remote auditor's
+`--require-goal-targets` mode refuses weaker published-release audits unless
+all four strict proof flags are present.
 Every accepted release asset URL must use the same `/releases/download/<tag>/`
 segment as the record's `release_tag`.
 All release asset URLs in one accepted record must come from the same GitHub
@@ -124,7 +137,9 @@ paths must resolve inside the declared `--root` and include the target/release
 path segment under that root; proof outside that staging root must be restaged
 before it can satisfy the preflight. Add `--json` when checking all four targets
 to get a target-by-target local parity report, for example `0/4`, `2/4` or
-`4/4`, before any candidate record is generated or appended.
+`4/4`, before any candidate record is generated or appended. The all-target
+local preflight also requires one release source head SHA and one GitHub
+repository across the staged proof, and the same workflow run URL cannot carry conflicting local run attempts across protected targets.
 `python scripts/make_platform_verified_evidence_record.py` reruns the same
 local preflight with the recorded paths and release-source binding before it
 emits a candidate record.
@@ -214,7 +229,8 @@ entry, use canonical LF-terminated sorted JSON bytes, and bind its
 size and SHA-256 recorded in `configs/platform_verified_evidence.json`, and
 checksum sidecars must collectively cover every expected non-sidecar release
 file except the final accepted-record JSON, which is verified by content. The
-post-upload remote release audit also checks the published final-record asset
+post-upload remote release audit also checks each published asset's positive
+GitHub release asset ID and API URL, checks the published final-record asset
 size and SHA-256 digest against that canonical public record, hashes the
 downloaded published native and review-bundle asset bytes against accepted
 evidence, and rejects stale protected-platform native/evidence assets that

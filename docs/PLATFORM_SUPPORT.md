@@ -110,7 +110,7 @@ evidence JSON and smoke files. Accepted promotion records are stored in
 `python scripts/check_platform_verified_evidence.py`; until that registry has
 accepted records, the generated readiness report must keep the current partial
 rows. The strict promotion path is
-`python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-complete`,
+`python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-records-complete`,
 `python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag v<project.version>`
 and `python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> --release-assets-dir <release-assets-dir>`;
 add `--release-repository <owner>/<repo>` to that strict verifier when the
@@ -135,12 +135,18 @@ The generated static readiness report keeps
 `release_asset_provenance_complete=false`; only the asset-backed protected goal
 gate can flip that proof state after finalized records, review bundles and
 native release bytes match in the publish-ready asset directory.
+It also exposes `record_complete` separately from `release_backed_complete`, so
+accepted records and source-run provenance cannot be mistaken for published
+release-byte proof.
 Source artifact inventory checks bind `workflow_run.id`,
 `workflow_run.head_sha`, `workflow_run.repository_id` and
 `workflow_run.head_repository_id` when GitHub exposes repository IDs, reject
 artifact `created_at` values outside the exact source run start/update window
 when GitHub exposes timestamps, and compare the finalized public record asset to canonical
 accepted-record JSON bytes before a published release can pass the live audit.
+The live remote audit also requires each published protected-platform release
+asset to expose a positive GitHub release asset ID and the matching GitHub API
+asset URL for the release repository.
 Generate candidate accepted records with
 `python scripts/make_platform_verified_evidence_record.py` after artifact and
 XP evidence validators pass; package the review bundle, then use

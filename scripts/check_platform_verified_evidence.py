@@ -472,11 +472,15 @@ def main(argv: list[str] | None = None) -> int:
             print(f"platform verified evidence: {error}", file=sys.stderr)
         return 2
     required_targets = required_targets_from_args(args)
-    errors = check_platform_verified_evidence(
-        required_targets=required_targets,
-        required_release_tag=args.release_tag,
-        require_review_bundles=True,
-    )
+    try:
+        errors = check_platform_verified_evidence(
+            required_targets=required_targets,
+            required_release_tag=args.release_tag,
+            require_review_bundles=True,
+        )
+    except ValueError as exc:
+        print(f"platform verified evidence: {exc}", file=sys.stderr)
+        return 1
     if errors:
         for error in errors:
             print(f"platform verified evidence: {error}", file=sys.stderr)
@@ -694,6 +698,13 @@ def check_protected_goal_release_consistency(
             f"for release_tag {release_tag} must use one release source head SHA, "
             f"got {format_values_by_target(heads_by_target)}"
         )
+    for run_url, attempts_by_target in sorted(release_source_run_attempt_conflicts(entries).items()):
+        formatted = {target: attempts_by_target[target] for target in sorted(attempts_by_target)}
+        errors.append(
+            "protected platform goal evidence "
+            f"for release_tag {release_tag} must not reuse one release source workflow run URL "
+            f"with conflicting run attempts, got {run_url}: {formatted}"
+        )
     return errors
 
 
@@ -875,6 +886,10 @@ def check_schema(registry: dict[str, Any]) -> list[str]:
     if "published native and review-bundle release asset byte binding" not in policy:
         errors.append(
             "platform verified evidence policy must require published native and review-bundle release asset byte binding"
+        )
+    if "published release asset GitHub id/API URL binding" not in policy:
+        errors.append(
+            "platform verified evidence policy must require published release asset GitHub id/API URL binding"
         )
     if "Linux release source artifact names must be target/release-scoped" not in policy:
         errors.append(
@@ -4095,6 +4110,18 @@ def check_partial_protected_goal_release_scope(entries: dict[str, dict[str, Any]
             "partial protected platform goal evidence must use one release source head SHA before promotion, "
             f"got {format_values_by_target(heads_by_target)}"
         )
+    for run_url, attempts_by_target in sorted(release_source_run_attempt_conflicts(entries).items()):
+        formatted = {target: attempts_by_target[target] for target in sorted(attempts_by_target)}
+        errors.append(
+            "partial protected platform goal evidence must not reuse one release source workflow run URL "
+            f"with conflicting run attempts before promotion, got {run_url}: {formatted}"
+        )
+    return errors
+
+
+def release_source_run_attempt_conflicts(
+    entries: dict[str, dict[str, Any]],
+) -> dict[str, dict[str, int]]:
     run_attempts_by_url: dict[str, dict[str, int]] = {}
     for target, entry in sorted(entries.items()):
         source = entry.get("release_asset_source")
@@ -4110,15 +4137,11 @@ def check_partial_protected_goal_release_scope(entries: dict[str, dict[str, Any]
         ):
             continue
         run_attempts_by_url.setdefault(run_url, {})[target] = run_attempt
-    for run_url, attempts_by_target in sorted(run_attempts_by_url.items()):
-        if len(set(attempts_by_target.values())) == 1:
-            continue
-        formatted = {target: attempts_by_target[target] for target in sorted(attempts_by_target)}
-        errors.append(
-            "partial protected platform goal evidence must not reuse one release source workflow run URL "
-            f"with conflicting run attempts before promotion, got {run_url}: {formatted}"
-        )
-    return errors
+    return {
+        run_url: attempts_by_target
+        for run_url, attempts_by_target in sorted(run_attempts_by_url.items())
+        if len(set(attempts_by_target.values())) != 1
+    }
 
 
 def format_repositories_by_target(repositories_by_target: dict[str, set[str]]) -> dict[str, list[str]]:
@@ -4184,7 +4207,54 @@ def json_sha256(data: dict[str, Any]) -> str:
 
 
 def read_json(path: Path) -> dict[str, Any]:
+    path_errors = check_json_input_path(path, "JSON evidence source")
+    if path_errors:
+        raise ValueError(path_errors[0])
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def check_json_input_path(path: Path, label: str) -> list[str]:
+    errors = check_path_not_reserved_workspace_root(path, label)
+    if errors:
+        return errors
+    if path.is_symlink():
+        return [f"{label} must not be a symlink: {path}"]
+    return check_path_parent_symlinks(path, label)
+
+
+def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
+    check_path = path if path.is_absolute() else Path.cwd() / path
+    for parent in reversed(check_path.parents):
+        if parent == Path("."):
+            continue
+        if parent.is_symlink():
+            return [f"{label} path must not contain symlinked directories: {parent}"]
+    return []
+
+
+def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
+    roots: list[Path] = [Path.cwd(), ROOT]
+    seen_roots: set[Path] = set()
+    for root in roots:
+        root_resolved = root.resolve(strict=False)
+        if root_resolved in seen_roots:
+            continue
+        seen_roots.add(root_resolved)
+        path_resolved = (path if path.is_absolute() else root_resolved / path).resolve(strict=False)
+        try:
+            relative = path_resolved.relative_to(root_resolved)
+        except ValueError:
+            continue
+        parts = tuple(part for part in relative.parts if part not in ("", "."))
+        if not parts:
+            continue
+        reserved_root = parts[0]
+        if reserved_root in RESERVED_WORKSPACE_ROOTS:
+            return [
+                f"{label} must not point inside reserved workspace directory "
+                f"{reserved_root!r}: {path}"
+            ]
+    return []
 
 
 if __name__ == "__main__":

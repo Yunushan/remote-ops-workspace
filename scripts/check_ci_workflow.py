@@ -22,6 +22,7 @@ def check_ci_workflow(workflow: str | None = None) -> list[str]:
     text = workflow if workflow is not None else CI_WORKFLOW.read_text(encoding="utf-8")
     errors: list[str] = []
     errors.extend(check_top_level_policy(text))
+    errors.extend(check_repo_policy_job(text))
     errors.extend(check_test_job(text))
     errors.extend(check_mobile_web_job(text))
     errors.extend(check_android_emulator_web_job(text))
@@ -50,6 +51,26 @@ def check_top_level_policy(workflow: str) -> list[str]:
     return errors
 
 
+def check_repo_policy_job(workflow: str) -> list[str]:
+    errors: list[str] = []
+    block = workflow_job_block(workflow, "repo-policy")
+    if not block:
+        return ["ci workflow missing repo-policy job for single-row repository gates"]
+    required_snippets = {
+        "name: Repository policy and lint": "clear policy job label",
+        "runs-on: ubuntu-latest": "stable policy runner",
+        "timeout-minutes: 15": "bounded policy job timeout",
+        'python-version: "3.12"': "stable policy Python version",
+        'python -m pip install -e ".[security,dev]"': "policy dependency installation",
+        "python scripts/verify.py --quick": "single-row repository verifier",
+        "python -m ruff check src tests scripts": "single-row ruff lint",
+    }
+    for snippet, label in required_snippets.items():
+        if snippet not in block:
+            errors.append(f"ci repo-policy job missing {label}: {snippet}")
+    return errors
+
+
 def check_test_job(workflow: str) -> list[str]:
     errors: list[str] = []
     block = workflow_job_block(workflow, "test")
@@ -75,8 +96,10 @@ def check_test_job(workflow: str) -> list[str]:
                 errors.append(f"ci test matrix missing macOS smoke row: {os_name} Python {version}")
     if '".[security,dev]"' not in block:
         errors.append("ci test job must install security and dev extras")
-    if "python scripts/verify.py --lint" not in block:
-        errors.append("ci test job must run the lint-enabled verifier")
+    if "python -m pytest -q" not in block:
+        errors.append("ci test job must run pytest directly")
+    if "python scripts/verify.py --lint" in block:
+        errors.append("ci test matrix must not fan out the monolithic lint verifier")
     return errors
 
 
@@ -180,7 +203,15 @@ def check_ios_simulator_web_job(workflow: str) -> list[str]:
         'python-version: "3.12"': "stable iOS smoke Python version",
         'python -m pip install -e ".[dev]"': "dev dependency installation",
         "tests/test_mobile_support.py": "mobile support contract tests",
-        "python -m http.server 8765 --directory apps/web": "local Web/PWA server",
+        "python -m http.server 8765 --directory apps/web --bind 127.0.0.1": (
+            "loopback-bound local Web/PWA server"
+        ),
+        'urllib.request.urlopen("http://127.0.0.1:8765/index.html", timeout=3)': (
+            "iOS Web/PWA server readiness probe"
+        ),
+        "Web/PWA server did not become reachable before iOS simulator smoke": (
+            "clear iOS Web/PWA server readiness failure"
+        ),
         "scripts/check_mobile_emulator_smoke.py --platform ios": "iOS simulator smoke helper",
         "--ios-open-url-attempts 3": "iOS simulator openurl retry budget",
         "http://127.0.0.1:8765/index.html": "iOS simulator host loopback URL",

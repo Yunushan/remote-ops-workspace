@@ -481,6 +481,41 @@ def test_import_platform_evidence_artifacts_rejects_file_shaped_output_directory
     assert not out_dir.exists()
 
 
+def test_import_platform_evidence_artifacts_rejects_reserved_workspace_output_directory() -> None:
+    importer = _load_importer()
+    out_dir = Path(".github") / "release-assets"
+
+    errors = importer.import_platform_evidence_artifacts([], out_dir=out_dir, dry_run=True)
+
+    assert errors == [
+        "release asset import output directory must not point inside "
+        f"reserved workspace directory '.github': {out_dir}"
+    ]
+    assert not out_dir.exists()
+
+
+def test_import_platform_evidence_artifacts_rejects_reserved_registry_path(tmp_path: Path) -> None:
+    importer = _load_importer()
+    registry = Path(".github") / "platform_verified_evidence.json"
+    args = importer.parse_args(
+        [
+            "--registry",
+            str(registry),
+            "--release-tag",
+            "v1.0.2",
+            "--out-dir",
+            str(tmp_path / "release-assets"),
+        ]
+    )
+
+    errors = importer.strict_import_arg_errors(args)
+
+    assert errors == [
+        "accepted evidence registry must not point inside reserved workspace directory "
+        f"'.github': {registry}"
+    ]
+
+
 def test_import_platform_evidence_artifacts_rejects_symlinked_output_parent(
     tmp_path: Path,
     monkeypatch,

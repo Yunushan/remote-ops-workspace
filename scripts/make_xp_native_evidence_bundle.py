@@ -18,6 +18,7 @@ from check_platform_promotion_artifacts import (  # noqa: E402
     check_platform_promotion_artifacts,
 )
 from check_platform_verified_evidence import (  # noqa: E402
+    RESERVED_WORKSPACE_ROOTS,
     check_platform_verified_evidence,
     command_argument_values,
     directory_path_has_file_suffix,
@@ -91,6 +92,8 @@ def make_xp_native_evidence_bundle(
     evidence_root = evidence_dir or evidence.parent
     errors.extend(check_directory_path_hint(assets_dir, "XP native artifact directory"))
     errors.extend(check_directory_path_hint(evidence_root, "XP evidence directory"))
+    errors.extend(check_path_not_reserved_workspace_root(assets_dir, "XP native artifact directory"))
+    errors.extend(check_path_not_reserved_workspace_root(evidence_root, "XP evidence directory"))
     if errors:
         return errors
     errors.extend(check_input_symlinks(evidence, candidate_record, evidence_dir=evidence_dir))
@@ -214,6 +217,7 @@ def check_input_symlinks(
         inputs["evidence directory"] = evidence_dir
     errors: list[str] = []
     for label, path in inputs.items():
+        errors.extend(check_path_not_reserved_workspace_root(path, label))
         if path.is_symlink():
             errors.append(f"{label} must not be a symlink: {path}")
         errors.extend(check_path_parent_symlinks(path, label))
@@ -275,6 +279,9 @@ def prepare_output_paths(*, out_dir: Path, outputs: tuple[Path, ...], force: boo
     hint_errors = check_directory_path_hint(out_dir, "XP native evidence bundle output directory")
     if hint_errors:
         return hint_errors
+    reserved_errors = check_path_not_reserved_workspace_root(out_dir, "XP native evidence bundle output directory")
+    if reserved_errors:
+        return reserved_errors
     if out_dir.is_symlink():
         return [f"XP native evidence bundle output directory must not be a symlink: {out_dir}"]
     parent_errors = check_path_parent_symlinks(out_dir, "XP native evidence bundle output directory")
@@ -312,6 +319,31 @@ def check_directory_path_hint(path: Path, label: str) -> list[str]:
     raw_path = path.as_posix()
     if directory_path_has_file_suffix(raw_path):
         return [f"{label} must be a directory path, got {raw_path!r}"]
+    return []
+
+
+def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
+    roots: list[Path] = [Path.cwd(), ROOT]
+    seen_roots: set[Path] = set()
+    for root in roots:
+        root_resolved = root.resolve(strict=False)
+        if root_resolved in seen_roots:
+            continue
+        seen_roots.add(root_resolved)
+        path_resolved = (path if path.is_absolute() else root_resolved / path).resolve(strict=False)
+        try:
+            relative = path_resolved.relative_to(root_resolved)
+        except ValueError:
+            continue
+        parts = tuple(part for part in relative.parts if part not in ("", "."))
+        if not parts:
+            continue
+        reserved_root = parts[0]
+        if reserved_root in RESERVED_WORKSPACE_ROOTS:
+            return [
+                f"{label} must not point inside reserved workspace directory "
+                f"{reserved_root!r}: {path}"
+            ]
     return []
 
 

@@ -25,6 +25,7 @@ from check_platform_verified_evidence import (  # noqa: E402
     GITHUB_RELEASE_ASSET_RE,
     PROTECTED_GOAL_TARGETS,
     RELEASE_SOURCE_HEAD_SHA_RE,
+    RESERVED_WORKSPACE_ROOTS,
     accepted_record_source_file,
     check_platform_verified_evidence,
     directory_path_has_file_suffix,
@@ -131,14 +132,24 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def strict_import_arg_errors(args: argparse.Namespace) -> list[str]:
+    errors = check_registry_path(args.registry)
     if not args.dry_run or args.verify_source_run:
-        return []
+        return errors
     requested_targets = set(str(target) for target in args.require_target)
     protected_targets = set(PROTECTED_GOAL_TARGETS)
     is_full_goal = args.require_goal_targets or not requested_targets or requested_targets == protected_targets
     if is_full_goal:
-        return [REQUIRE_VERIFY_SOURCE_RUN_DRY_RUN_ERROR]
-    return []
+        errors.append(REQUIRE_VERIFY_SOURCE_RUN_DRY_RUN_ERROR)
+    return errors
+
+
+def check_registry_path(path: Path) -> list[str]:
+    errors = check_path_not_reserved_workspace_root(path, "accepted evidence registry")
+    if errors:
+        return errors
+    if path.is_symlink():
+        return [f"accepted evidence registry must not be a symlink: {path}"]
+    return check_path_parent_symlinks(path, "accepted evidence registry")
 
 
 def required_targets_from_args(args: argparse.Namespace) -> tuple[str, ...]:
@@ -210,6 +221,12 @@ def ensure_output_directory(out_dir: Path) -> list[str]:
     hint_errors = check_directory_path_hint(out_dir, "release asset import output directory")
     if hint_errors:
         return hint_errors
+    reserved_errors = check_path_not_reserved_workspace_root(
+        out_dir,
+        "release asset import output directory",
+    )
+    if reserved_errors:
+        return reserved_errors
     if out_dir.is_symlink():
         return [f"release asset import output directory must not be a symlink: {out_dir}"]
     parent_errors = check_path_parent_symlinks(out_dir, "release asset import output directory")
@@ -245,6 +262,31 @@ def check_directory_path_hint(path: Path, label: str) -> list[str]:
     raw_path = path.as_posix()
     if directory_path_has_file_suffix(raw_path):
         return [f"{label} must be a directory path, got {raw_path!r}"]
+    return []
+
+
+def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
+    roots: list[Path] = [Path.cwd(), ROOT]
+    seen_roots: set[Path] = set()
+    for root in roots:
+        root_resolved = root.resolve(strict=False)
+        if root_resolved in seen_roots:
+            continue
+        seen_roots.add(root_resolved)
+        path_resolved = (path if path.is_absolute() else root_resolved / path).resolve(strict=False)
+        try:
+            relative = path_resolved.relative_to(root_resolved)
+        except ValueError:
+            continue
+        parts = tuple(part for part in relative.parts if part not in ("", "."))
+        if not parts:
+            continue
+        reserved_root = parts[0]
+        if reserved_root in RESERVED_WORKSPACE_ROOTS:
+            return [
+                f"{label} must not point inside reserved workspace directory "
+                f"{reserved_root!r}: {path}"
+            ]
     return []
 
 

@@ -375,6 +375,46 @@ def test_platform_goal_local_evidence_rejects_linux_inputs_outside_target_releas
     ) in errors
 
 
+def test_platform_goal_local_evidence_rejects_linux_inputs_inside_reserved_workspace_root(
+    tmp_path: Path,
+) -> None:
+    checker = _load_local_evidence_checker()
+    target = "linux-i386"
+    tag = "v1.0.2"
+    embedded = tmp_path / ".git" / target / tag
+    artifacts = embedded / "artifacts"
+    artifacts.mkdir(parents=True)
+    builder = embedded / f"builder-identity-{target}.json"
+    smoke = embedded / f"native-smoke-{target}.log"
+    builder.write_text("{}\n", encoding="utf-8")
+    smoke.write_text("linux smoke placeholder\n", encoding="utf-8")
+
+    errors = checker.check_platform_goal_local_evidence(
+        root=tmp_path,
+        release_tag=tag,
+        targets=(target,),
+        linux_workflow_run_url="https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        linux_source_head_sha="a" * 40,
+        linux_source_run_attempt=1,
+        assets_dir=artifacts,
+        linux_builder_evidence=builder,
+        linux_smoke_evidence=smoke,
+    )
+
+    assert (
+        f"{target} artifact directory must not point inside reserved workspace directory "
+        f"'.git': {artifacts}"
+    ) in errors
+    assert (
+        f"{target} builder identity evidence must not point inside reserved workspace directory "
+        f"'.git': {builder}"
+    ) in errors
+    assert (
+        f"{target} native smoke evidence must not point inside reserved workspace directory "
+        f"'.git': {smoke}"
+    ) in errors
+
+
 def test_platform_goal_local_evidence_accepts_linux_explicit_target_release_scoped_paths(tmp_path: Path) -> None:
     checker = _load_local_evidence_checker()
     fixtures = _load_record_fixtures()
@@ -558,6 +598,60 @@ def test_platform_goal_local_evidence_rejects_linux_source_head_drift(
     )
     assert "'linux-i386': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'" in errors[0]
     assert "'linux-armhf': 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'" in errors[0]
+
+
+def test_platform_goal_local_evidence_rejects_linux_source_run_attempt_conflict(
+    tmp_path: Path,
+) -> None:
+    checker = _load_local_evidence_checker()
+    fixtures = _load_record_fixtures()
+    artifact_checker = fixtures._load_platform_promotion_artifacts_checker()
+    tag = f"v{artifact_checker.read_project_version()}"
+    workflow_run_url = "https://github.com/example/remote-ops-workspace/actions/runs/12345"
+    source_head_sha = "a" * 40
+    run_attempts = {
+        "linux-i386": 1,
+        "linux-armhf": 2,
+    }
+    for target, workflow_run_attempt in run_attempts.items():
+        target_root = tmp_path / target / tag
+        artifacts = target_root / "artifacts"
+        artifacts.mkdir(parents=True)
+        names = fixtures._required_names(artifact_checker, target, tag)
+        fixtures._write_artifact_set(artifacts, names)
+        builder = target_root / f"builder-identity-{target}.json"
+        fixtures._write_builder_evidence(
+            builder,
+            target,
+            release_tag=tag,
+            workflow_run_url=workflow_run_url,
+            workflow_run_attempt=workflow_run_attempt,
+            source_head_sha=source_head_sha,
+        )
+        smoke = target_root / f"native-smoke-{target}.log"
+        fixtures._write_linux_smoke_evidence(
+            smoke,
+            target,
+            fixtures._smoke_artifact_hashes(artifacts, names),
+            workflow_run_url=workflow_run_url,
+            workflow_run_attempt=workflow_run_attempt,
+            source_head_sha=source_head_sha,
+        )
+
+    errors = checker.check_platform_goal_local_evidence(
+        root=tmp_path,
+        release_tag=tag,
+        targets=("linux-i386", "linux-armhf"),
+    )
+
+    assert any(
+        "local protected platform evidence must use one source run attempt per workflow run URL"
+        in error
+        for error in errors
+    )
+    joined = "\n".join(errors)
+    assert "'linux-i386': '1'" in joined
+    assert "'linux-armhf': '2'" in joined
 
 
 def test_platform_goal_local_evidence_rejects_misnamed_linux_proof_inputs(tmp_path: Path) -> None:
@@ -878,6 +972,72 @@ def test_platform_goal_local_evidence_rejects_xp_source_head_drift(
     assert "'windows-xp-native-x64': 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'" in errors[0]
 
 
+def test_platform_goal_local_evidence_rejects_xp_source_run_attempt_conflict(
+    tmp_path: Path,
+) -> None:
+    checker = _load_local_evidence_checker()
+    fixtures = _load_record_fixtures()
+    artifact_checker = fixtures._load_platform_promotion_artifacts_checker()
+    tag = f"v{artifact_checker.read_project_version()}"
+    workflow_run_url = "https://github.com/example/remote-ops-workspace/actions/runs/11111"
+    source_head_sha = "a" * 40
+    staged_sources = {
+        "windows-xp-native-x86": {
+            "arch": "x86",
+            "service_pack": "SP3",
+            "run_attempt": 1,
+        },
+        "windows-xp-native-x64": {
+            "arch": "x64",
+            "service_pack": "SP2",
+            "run_attempt": 2,
+        },
+    }
+    for target, source in staged_sources.items():
+        target_root = tmp_path / target / tag
+        artifacts = target_root / "artifacts"
+        artifacts.mkdir(parents=True)
+        names = fixtures._required_names(artifact_checker, target, tag)
+        fixtures._write_artifact_set(artifacts, names)
+        evidence = fixtures._valid_xp_evidence(
+            target,
+            str(source["arch"]),
+            str(source["service_pack"]),
+            tag,
+            names,
+        )
+        evidence["artifact_validation"]["command"] = evidence["artifact_validation"]["command"].replace(
+            f"native-dist/windows-xp/{target}/{tag}",
+            f"{target}/{tag}/artifacts",
+        )
+        _set_xp_release_source(
+            evidence,
+            workflow_run_url=workflow_run_url,
+            head_sha=source_head_sha,
+            run_attempt=int(source["run_attempt"]),
+        )
+        fixtures._attach_smoke_evidence_files(target_root, evidence)
+        (target_root / "xp-evidence.json").write_text(
+            json.dumps(evidence, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+    errors = checker.check_platform_goal_local_evidence(
+        root=tmp_path,
+        release_tag=tag,
+        targets=tuple(staged_sources),
+    )
+
+    assert any(
+        "local protected platform evidence must use one source run attempt per workflow run URL"
+        in error
+        for error in errors
+    )
+    joined = "\n".join(errors)
+    assert "'windows-xp-native-x86': '1'" in joined
+    assert "'windows-xp-native-x64': '2'" in joined
+
+
 def test_platform_goal_local_evidence_rejects_invalid_inferred_xp_source_bindings(
     tmp_path: Path,
 ) -> None:
@@ -1147,6 +1307,42 @@ def test_platform_goal_local_evidence_rejects_xp_inputs_outside_target_release_s
     assert (
         f"{target} XP evidence directory must include target/release path segment "
         f"{expected_scope} under local evidence root: {evidence_dir}"
+    ) in errors
+
+
+def test_platform_goal_local_evidence_rejects_xp_inputs_inside_reserved_workspace_root(
+    tmp_path: Path,
+) -> None:
+    checker = _load_local_evidence_checker()
+    target = "windows-xp-native-x86"
+    tag = "v1.0.2"
+    embedded = tmp_path / ".github" / target / tag
+    artifacts = embedded / "artifacts"
+    evidence_dir = embedded / "evidence"
+    evidence_dir.mkdir(parents=True)
+    evidence_file = evidence_dir / "xp-evidence.json"
+    evidence_file.write_text("{}\n", encoding="utf-8")
+
+    errors = checker.check_platform_goal_local_evidence(
+        root=tmp_path,
+        release_tag=tag,
+        targets=(target,),
+        assets_dir=artifacts,
+        xp_evidence=evidence_file,
+        xp_evidence_dir=evidence_dir,
+    )
+
+    assert (
+        f"{target} artifact directory must not point inside reserved workspace directory "
+        f"'.github': {artifacts}"
+    ) in errors
+    assert (
+        f"{target} XP evidence file must not point inside reserved workspace directory "
+        f"'.github': {evidence_file}"
+    ) in errors
+    assert (
+        f"{target} XP evidence directory must not point inside reserved workspace directory "
+        f"'.github': {evidence_dir}"
     ) in errors
 
 

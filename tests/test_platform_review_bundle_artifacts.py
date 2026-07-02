@@ -169,6 +169,26 @@ def test_platform_review_bundle_artifacts_goal_cli_requires_release_tag(tmp_path
     assert validator.main(["--bundle-dir", str(tmp_path), "--require-goal-targets"]) == 2
 
 
+def test_platform_review_bundle_artifacts_rejects_reserved_registry_path(tmp_path: Path) -> None:
+    validator = _load_script("check_platform_review_bundle_artifacts")
+    registry = Path(".github") / "platform_verified_evidence.json"
+    args = validator.parse_args(
+        [
+            "--registry",
+            str(registry),
+            "--bundle-dir",
+            str(tmp_path),
+        ]
+    )
+
+    errors = validator.strict_platform_goal_arg_errors(args)
+
+    assert errors == [
+        "accepted evidence registry must not point inside reserved workspace directory "
+        f"'.github': {registry}"
+    ]
+
+
 def test_platform_review_bundle_artifacts_rejects_required_release_tag_mismatch(tmp_path: Path) -> None:
     validator = _load_script("check_platform_review_bundle_artifacts")
     record = _finalized_xp_record(tmp_path)
@@ -263,6 +283,26 @@ def test_platform_review_bundle_artifacts_rejects_file_shaped_bundle_directory(
     )
 
     assert f"review bundle directory must be a directory path, got {bundle_dir.as_posix()!r}" in errors
+    assert not bundle_dir.exists()
+
+
+def test_platform_review_bundle_artifacts_rejects_reserved_workspace_bundle_directory(
+    tmp_path: Path,
+) -> None:
+    validator = _load_script("check_platform_review_bundle_artifacts")
+    record = _finalized_xp_record(tmp_path)
+    registry = _registry_with(record)
+    bundle_dir = Path(".github") / "release-assets"
+
+    errors = validator.check_platform_review_bundle_artifacts(
+        registry=registry,
+        bundle_dir=bundle_dir,
+    )
+
+    assert (
+        "review bundle directory must not point inside reserved workspace directory "
+        f"'.github': {bundle_dir}"
+    ) in errors
     assert not bundle_dir.exists()
 
 

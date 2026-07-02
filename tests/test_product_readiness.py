@@ -211,6 +211,63 @@ def test_product_readiness_rejects_missing_protected_goal_release_asset_provenan
     assert "protected platform goal parity must expose release_asset_provenance_command" in errors
 
 
+def test_product_readiness_rejects_missing_protected_goal_release_import_dry_run_command(monkeypatch) -> None:
+    checker = load_product_readiness_checker()
+    report = deepcopy(checker.coverage_report())
+    del report["platform_verified_readiness"]["protected_goal_parity"][
+        "release_import_dry_run_command"
+    ]
+    monkeypatch.setattr(checker, "coverage_report", lambda: report)
+
+    errors = checker.check_product_readiness()
+
+    assert "protected platform goal parity must expose release_import_dry_run_command" in errors
+
+
+def test_product_readiness_rejects_weak_protected_goal_release_import_dry_run_command(monkeypatch) -> None:
+    checker = load_product_readiness_checker()
+    report = deepcopy(checker.coverage_report())
+    goal = report["platform_verified_readiness"]["protected_goal_parity"]
+    goal["release_import_dry_run_command"] = (
+        "python scripts/import_platform_evidence_artifacts.py --help"
+    )
+    monkeypatch.setattr(checker, "coverage_report", lambda: report)
+
+    errors = checker.check_product_readiness()
+
+    assert any(
+        error.startswith(
+            "protected platform goal parity release_import_dry_run_command must be"
+        )
+        and "--require-goal-targets" in error
+        and "--dry-run" in error
+        and "--verify-source-run" in error
+        for error in errors
+    )
+
+
+def test_product_readiness_rejects_weak_protected_goal_release_asset_provenance_command(monkeypatch) -> None:
+    checker = load_product_readiness_checker()
+    report = deepcopy(checker.coverage_report())
+    goal = report["platform_verified_readiness"]["protected_goal_parity"]
+    goal["release_asset_provenance_command"] = (
+        "python scripts/check_protected_platform_goal.py --require-complete"
+    )
+    monkeypatch.setattr(checker, "coverage_report", lambda: report)
+
+    errors = checker.check_product_readiness()
+
+    assert any(
+        error.startswith(
+            "protected platform goal parity release_asset_provenance_command must be"
+        )
+        and "--release-tag v<project.version>" in error
+        and "--require-complete" in error
+        and "--assets-dir <release-assets-dir>" in error
+        for error in errors
+    )
+
+
 def test_product_readiness_rejects_inconsistent_protected_goal_release_source_provenance_flag(monkeypatch) -> None:
     checker = load_product_readiness_checker()
     report = deepcopy(checker.coverage_report())

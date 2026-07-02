@@ -474,6 +474,8 @@ def check_xp_native_evidence(
     contract_data = contract or read_json(CONTRACT_PATH)
     errors: list[str] = []
     evidence_root_input = evidence_dir or evidence_path.parent
+    errors.extend(check_path_not_reserved_workspace_root(evidence_path, "evidence file"))
+    errors.extend(check_path_not_reserved_workspace_root(evidence_root_input, "evidence directory"))
     if evidence_path.is_symlink():
         errors.append(f"evidence file must not be a symlink: {evidence_path}")
     if evidence_root_input.is_symlink():
@@ -1120,6 +1122,31 @@ def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
             continue
         if parent.is_symlink():
             return [f"{label} path must not contain symlinked directories: {parent}"]
+    return []
+
+
+def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
+    roots: list[Path] = [Path.cwd(), ROOT]
+    seen_roots: set[Path] = set()
+    for root in roots:
+        root_resolved = root.resolve(strict=False)
+        if root_resolved in seen_roots:
+            continue
+        seen_roots.add(root_resolved)
+        path_resolved = (path if path.is_absolute() else root_resolved / path).resolve(strict=False)
+        try:
+            relative = path_resolved.relative_to(root_resolved)
+        except ValueError:
+            continue
+        parts = tuple(part for part in relative.parts if part not in ("", "."))
+        if not parts:
+            continue
+        reserved_root = parts[0]
+        if reserved_root in RESERVED_WORKSPACE_ROOTS:
+            return [
+                f"{label} must not point inside reserved workspace directory "
+                f"{reserved_root!r}: {path}"
+            ]
     return []
 
 

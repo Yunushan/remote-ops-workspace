@@ -521,6 +521,10 @@ def test_platform_verified_readiness_goal_parity_completes_with_all_accepted_evi
     assert goal["release_source_run_attempt_conflicts"] == {}
     assert goal["release_source_provenance_complete"] is True
     assert goal["release_asset_provenance_complete"] is False
+    assert goal["record_complete"] is True
+    assert goal["release_backed_complete"] is False
+    assert goal["completion_requires_release_asset_provenance"] is True
+    assert goal["completion_evidence"] == "accepted-records-only"
     assert goal["release_asset_provenance_command"] == (
         "python scripts/check_protected_platform_goal.py "
         "--release-tag v1.0.2 --require-complete --assets-dir <release-assets-dir>"

@@ -97,6 +97,62 @@ def test_platform_promotion_runbook_requires_strict_verify_import_dry_run() -> N
     assert any("--verify-source-run" in error for error in errors)
 
 
+def test_platform_promotion_runbook_requires_live_release_repository_verify() -> None:
+    checker = _load_checker()
+    command = (
+        "python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets "
+        "--release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> "
+        "--release-assets-dir <release-assets-dir> --release-repository <owner>/<repo>"
+    )
+    text = Path("docs/PLATFORM_PROMOTION_RUNBOOK.md").read_text(encoding="utf-8").replace(
+        command,
+        "python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets "
+        "--release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> "
+        "--release-assets-dir <release-assets-dir>",
+    )
+
+    errors = checker.check_platform_promotion_runbook(runbook_text=text)
+
+    assert any("--release-repository <owner>/<repo>" in error for error in errors)
+
+
+def test_platform_promotion_runbook_requires_published_release_audit_command() -> None:
+    checker = _load_checker()
+    command = (
+        "python scripts/check_platform_release_evidence_remote.py --repository <owner>/<repo> "
+        "--release-tag v<project.version> --require-goal-targets --require-source-runs "
+        "--require-final-record-bytes --require-release-asset-bytes --require-tag-source-head"
+    )
+    text = Path("docs/PLATFORM_PROMOTION_RUNBOOK.md").read_text(encoding="utf-8").replace(
+        command,
+        "python scripts/check_platform_release_evidence_remote.py --repository <owner>/<repo>",
+    )
+
+    errors = checker.check_platform_promotion_runbook(runbook_text=text)
+
+    assert any("--release-tag v<project.version>" in error for error in errors)
+    assert any("--require-source-runs" in error for error in errors)
+    assert any("--require-final-record-bytes" in error for error in errors)
+    assert any("--require-release-asset-bytes" in error for error in errors)
+    assert any("--require-tag-source-head" in error for error in errors)
+
+
+def test_platform_promotion_runbook_requires_remote_audit_fail_closed_note() -> None:
+    checker = _load_checker()
+    snippet = (
+        "remote auditor's\n"
+        "`--require-goal-targets` mode refuses weaker published-release audits"
+    )
+    text = Path("docs/PLATFORM_PROMOTION_RUNBOOK.md").read_text(encoding="utf-8").replace(
+        snippet,
+        "`--require-goal-targets` mode checks release assets",
+    )
+
+    errors = checker.check_platform_promotion_runbook(runbook_text=text)
+
+    assert any("weaker published-release audits" in error for error in errors)
+
+
 def test_platform_promotion_runbook_requires_staged_upload_hash_binding() -> None:
     checker = _load_checker()
     snippet = "staged native artifacts and review-bundle files must match the finalized accepted record hashes"
@@ -190,6 +246,21 @@ def test_platform_promotion_runbook_requires_local_goal_preflight() -> None:
     errors = checker.check_platform_promotion_runbook(runbook_text=text)
 
     assert any("check_platform_goal_local_evidence.py" in error for error in errors)
+
+
+def test_platform_promotion_runbook_requires_local_preflight_attempt_conflict_boundary() -> None:
+    checker = _load_checker()
+    snippet = "same workflow run URL cannot carry conflicting local run attempts"
+    text = Path("docs/PLATFORM_PROMOTION_RUNBOOK.md").read_text(encoding="utf-8")
+    assert snippet in text
+    text = text.replace(
+        snippet,
+        "same workflow run URL can carry separate local run attempts",
+    )
+
+    errors = checker.check_platform_promotion_runbook(runbook_text=text)
+
+    assert any("conflicting local run attempts" in error for error in errors)
 
 
 def test_platform_promotion_runbook_requires_xp_x64_edition_evidence() -> None:

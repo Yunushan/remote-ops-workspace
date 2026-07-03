@@ -17,6 +17,7 @@ if str(SCRIPTS) not in sys.path:
 
 from check_platform_verified_evidence import (  # noqa: E402
     RESERVED_WORKSPACE_ROOTS,
+    case_insensitive_name_collisions,
     directory_path_has_file_suffix,
 )
 
@@ -162,12 +163,22 @@ def check_platform_promotion_artifacts(
     root = assets_dir.resolve()
     if not root.is_dir():
         return [f"artifact directory missing: {assets_dir}"]
-    symlinks = sorted(path.name for path in root.iterdir() if path.is_symlink())
+    entries_in_root = list(root.iterdir())
+    entry_name_collisions = case_insensitive_name_collisions({path.name for path in entries_in_root})
+    if entry_name_collisions:
+        errors.append(
+            f"{target} artifact directory entries must not collide on "
+            f"case-insensitive filesystems: {entry_name_collisions}"
+        )
+    symlinks = sorted(path.name for path in entries_in_root if path.is_symlink())
     if symlinks:
         errors.append(f"{target} artifacts must not contain symlinks: {symlinks}")
+    non_files = sorted(path.name for path in entries_in_root if not path.is_file() and not path.is_symlink())
+    if non_files:
+        errors.append(f"{target} artifacts must contain only regular files: {non_files}")
 
     expected = {expand_version(str(item), version) for item in required_artifacts(entry)}
-    actual = {path.name for path in root.iterdir() if path.is_file()}
+    actual = {path.name for path in entries_in_root if path.is_file()}
     missing = sorted(expected - actual)
     if missing:
         errors.append(f"{target} artifacts missing expected files: {missing}")
@@ -263,12 +274,21 @@ def zip_entry_is_symlink(info: zipfile.ZipInfo) -> bool:
     return file_type == 0o120000
 
 
+def is_allowed_platform_parent_symlink(parent: Path) -> bool:
+    if sys.platform != "darwin" or parent.as_posix() != "/var":
+        return False
+    try:
+        return parent.resolve(strict=False).as_posix() == "/private/var"
+    except OSError:
+        return False
+
+
 def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
     check_path = path if path.is_absolute() else Path.cwd() / path
     for parent in reversed(check_path.parents):
         if parent == Path("."):
             continue
-        if parent.is_symlink():
+        if parent.is_symlink() and not is_allowed_platform_parent_symlink(parent):
             return [f"{label} path must not contain symlinked directories: {parent}"]
     return []
 
@@ -432,6 +452,12 @@ def check_native_manifest(target: str, root: Path, expected: set[str]) -> list[s
     duplicate_records = sorted(name for name, count in record_counts.items() if count > 1)
     if duplicate_records:
         errors.append(f"{target} native manifest contains duplicate payload records: {duplicate_records}")
+    case_collisions = case_insensitive_name_collisions(set(record_counts))
+    if case_collisions:
+        errors.append(
+            f"{target} native manifest payload records must not collide on "
+            f"case-insensitive filesystems: {case_collisions}"
+        )
 
     for filename in sorted(payload_expected & set(by_name)):
         record = by_name[filename]
@@ -439,7 +465,7 @@ def check_native_manifest(target: str, root: Path, expected: set[str]) -> list[s
         if not path.is_file():
             continue
         size = record.get("size_bytes")
-        if not isinstance(size, int) or size <= 0:
+        if not isinstance(size, int) or isinstance(size, bool) or size <= 0:
             errors.append(f"{target} native manifest record {filename} missing positive size_bytes")
         elif size != path.stat().st_size:
             errors.append(f"{target} native manifest size mismatch for {filename}")

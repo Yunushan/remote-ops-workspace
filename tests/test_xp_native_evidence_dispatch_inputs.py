@@ -244,6 +244,17 @@ def test_xp_dispatch_inputs_reject_invalid_source_run_attempt() -> None:
     assert "source_run_attempt must be a positive integer, got '0'" in errors
 
 
+def test_xp_dispatch_inputs_reject_release_tag_ref_mismatch() -> None:
+    checker = _load_checker()
+
+    errors = _check_dispatch_inputs(checker, workflow_ref_name="main")
+
+    assert (
+        "workflow_ref_name must match release_tag so evidence is dispatched from "
+        "the release tag ref, got 'main'"
+    ) in errors
+
+
 def test_xp_workflow_requires_dispatch_input_preflight() -> None:
     checker = _load_workflow_checker()
     workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8").replace(
@@ -262,6 +273,7 @@ def _check_dispatch_inputs(checker, **overrides):
         "release_tag": "v1.0.2",
         "release_asset_base_url": "https://github.com/example/remote-ops-workspace/releases/download/v1.0.2",
         "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        "workflow_ref_name": "v1.0.2",
         "source_head_sha": "0123456789abcdef0123456789abcdef01234567",
         "source_run_attempt": "1",
         "assets_dir": "staged/windows-xp-native-x86/v1.0.2/artifacts",

@@ -121,7 +121,8 @@ def test_platform_promotion_runbook_requires_published_release_audit_command() -
     command = (
         "python scripts/check_platform_release_evidence_remote.py --repository <owner>/<repo> "
         "--release-tag v<project.version> --require-goal-targets --require-source-runs "
-        "--require-final-record-bytes --require-release-asset-bytes --require-tag-source-head"
+        "--require-source-artifact-bytes --require-final-record-bytes "
+        "--require-release-asset-bytes --require-tag-source-head"
     )
     text = Path("docs/PLATFORM_PROMOTION_RUNBOOK.md").read_text(encoding="utf-8").replace(
         command,
@@ -132,6 +133,7 @@ def test_platform_promotion_runbook_requires_published_release_audit_command() -
 
     assert any("--release-tag v<project.version>" in error for error in errors)
     assert any("--require-source-runs" in error for error in errors)
+    assert any("--require-source-artifact-bytes" in error for error in errors)
     assert any("--require-final-record-bytes" in error for error in errors)
     assert any("--require-release-asset-bytes" in error for error in errors)
     assert any("--require-tag-source-head" in error for error in errors)
@@ -316,13 +318,13 @@ def test_platform_promotion_runbook_requires_target_dispatch_commands() -> None:
     checker = _load_checker()
     linux_command = (
         "gh workflow run extended-platform-evidence.yml --repo <owner>/<repo> "
-        "--ref <github-actions-head-sha> -f target=linux-i386 "
+        "--ref v<project.version> -f target=linux-i386 "
         "-f release_tag=v<project.version> "
         "-f release_asset_base_url=<github-release-download-url>"
     )
     xp_command = (
         "gh workflow run xp-native-evidence.yml --repo <owner>/<repo> "
-        "--ref <github-actions-head-sha> -f target=windows-xp-native-x86 "
+        "--ref v<project.version> -f target=windows-xp-native-x86 "
         "-f release_tag=v<project.version> "
         "-f release_asset_base_url=<github-release-download-url> "
         "-f assets_dir=<target-release-artifact-dir> "

@@ -175,6 +175,68 @@ def test_platform_promotion_artifacts_reject_symlinked_artifact(
     assert f"linux-i386 artifacts must not contain symlinks: ['{symlink_name}']" in errors
 
 
+def test_platform_promotion_artifacts_reject_non_file_artifact_entries(tmp_path: Path) -> None:
+    checker = _load_platform_promotion_artifacts_checker()
+    tag = f"v{checker.read_project_version()}"
+    names = _required_names(checker, "linux-i386", tag)
+    _write_artifact_set(tmp_path, names)
+    (tmp_path / "nested").mkdir()
+
+    errors = checker.check_platform_promotion_artifacts(
+        target="linux-i386",
+        assets_dir=tmp_path,
+        tag=tag,
+    )
+
+    assert "linux-i386 artifacts must contain only regular files: ['nested']" in errors
+
+
+def test_platform_promotion_artifacts_reject_case_colliding_entries(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    checker = _load_platform_promotion_artifacts_checker()
+    tag = f"v{checker.read_project_version()}"
+    names = _required_names(checker, "linux-i386", tag)
+    _write_artifact_set(tmp_path, names)
+    original_name = next(name for name in names if name.endswith(".deb"))
+    colliding_name = original_name.upper()
+    root = tmp_path.resolve()
+    colliding_path = root / colliding_name
+    path_type = type(tmp_path)
+    original_iterdir = path_type.iterdir
+    original_is_file = path_type.is_file
+
+    def fake_iterdir(self: Path):
+        entries = list(original_iterdir(self))
+        if self == root:
+            entries.append(colliding_path)
+        return iter(entries)
+
+    def fake_is_file(self: Path) -> bool:
+        if self == colliding_path:
+            return True
+        return original_is_file(self)
+
+    monkeypatch.setattr(path_type, "iterdir", fake_iterdir)
+    monkeypatch.setattr(path_type, "is_file", fake_is_file)
+
+    errors = checker.check_platform_promotion_artifacts(
+        target="linux-i386",
+        assets_dir=tmp_path,
+        tag=tag,
+    )
+
+    case_errors = [
+        error
+        for error in errors
+        if error.startswith("linux-i386 artifact directory entries must not collide")
+    ]
+    assert case_errors
+    assert original_name in case_errors[0]
+    assert colliding_name in case_errors[0]
+
+
 def test_platform_promotion_artifacts_reject_symlinked_artifact_directory(
     tmp_path: Path,
     monkeypatch,
@@ -294,6 +356,70 @@ def test_platform_promotion_artifacts_reject_duplicate_manifest_record(tmp_path:
     )
 
     assert any("linux-armhf native manifest contains duplicate payload records" in error for error in errors)
+
+
+def test_platform_promotion_artifacts_reject_case_colliding_manifest_record(tmp_path: Path) -> None:
+    checker = _load_platform_promotion_artifacts_checker()
+    tag = f"v{checker.read_project_version()}"
+    names = _required_names(checker, "linux-armhf", tag)
+    _write_artifact_set(tmp_path, names)
+    manifest = next(tmp_path.glob("*manifest.json"))
+    records = json.loads(manifest.read_text(encoding="utf-8"))
+    first_record = dict(records[0])
+    first_name = str(first_record["file"])
+    first_record["file"] = first_name.upper()
+    records.append(first_record)
+    manifest.write_text(json.dumps(records, indent=2) + "\n", encoding="utf-8")
+
+    errors = checker.check_platform_promotion_artifacts(
+        target="linux-armhf",
+        assets_dir=tmp_path,
+        tag=tag,
+    )
+
+    assert any(
+        "linux-armhf native manifest payload records must not collide on "
+        "case-insensitive filesystems" in error
+        and first_name in error
+        and first_name.upper() in error
+        for error in errors
+    )
+
+
+def test_platform_promotion_artifacts_reject_boolean_manifest_size_bytes(
+    tmp_path: Path,
+) -> None:
+    checker = _load_platform_promotion_artifacts_checker()
+    payload = tmp_path / "remote-ops-workspace-v1.0.2-linux-i386.deb"
+    payload.write_bytes(b"x")
+    manifest = tmp_path / "remote-ops-workspace-v1.0.2-linux-i386-manifest.json"
+    manifest.write_text(
+        json.dumps(
+            [
+                {
+                    "file": payload.name,
+                    "architecture": "i386",
+                    "format": "deb",
+                    "size_bytes": True,
+                    "sha256": _sha256(payload),
+                }
+            ],
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    errors = checker.check_native_manifest(
+        "linux-i386",
+        tmp_path,
+        {payload.name, manifest.name},
+    )
+
+    assert (
+        "linux-i386 native manifest record "
+        "remote-ops-workspace-v1.0.2-linux-i386.deb missing positive size_bytes"
+    ) in errors
 
 
 def test_platform_promotion_artifacts_reject_manifest_architecture_drift(tmp_path: Path) -> None:

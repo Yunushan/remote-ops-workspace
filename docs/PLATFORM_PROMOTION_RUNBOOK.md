@@ -22,7 +22,7 @@ python scripts/check_protected_platform_goal.py --release-tag v<project.version>
 python scripts/check_release_publish_assets.py --assets-dir <release-assets-dir> --tag v<project.version> --require-platform-goal-targets
 python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> --release-assets-dir <release-assets-dir>
 python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> --release-assets-dir <release-assets-dir> --release-repository <owner>/<repo>
-python scripts/check_platform_release_evidence_remote.py --repository <owner>/<repo> --release-tag v<project.version> --require-goal-targets --require-source-runs --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head
+python scripts/check_platform_release_evidence_remote.py --repository <owner>/<repo> --release-tag v<project.version> --require-goal-targets --require-source-runs --require-source-artifact-bytes --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head
 ```
 
 Accepted records must start as candidates generated with
@@ -75,7 +75,7 @@ asset directory. The static readiness report still keeps
 gate can flip the proof state after finalized records, review bundles and
 native release bytes match. When `--release-repository <owner>/<repo>` is
 supplied, the same strict verifier also runs
-`python scripts/check_platform_release_evidence_remote.py --repository <owner>/<repo> --release-tag v<project.version> --require-goal-targets --require-source-runs --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head`
+`python scripts/check_platform_release_evidence_remote.py --repository <owner>/<repo> --release-tag v<project.version> --require-goal-targets --require-source-runs --require-source-artifact-bytes --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head`
 against the actual GitHub release, published native/review-bundle asset bytes,
 published final accepted-record JSON bytes, exact accepted source workflow run
 attempts and the published tag's source head. The remote auditor's
@@ -351,7 +351,7 @@ Current blockers:
 Required real evidence:
 
 - Run `.github/workflows/extended-platform-evidence.yml` with `target=linux-i386`.
-- Dispatch it with `gh workflow run extended-platform-evidence.yml --repo <owner>/<repo> --ref <github-actions-head-sha> -f target=linux-i386 -f release_tag=v<project.version> -f release_asset_base_url=<github-release-download-url>`.
+- Dispatch it with `gh workflow run extended-platform-evidence.yml --repo <owner>/<repo> --ref v<project.version> -f target=linux-i386 -f release_tag=v<project.version> -f release_asset_base_url=<github-release-download-url>`.
 - Provide `release_tag` and an exact `release_asset_base_url` of
   `https://github.com/<owner>/<repo>/releases/download/vX.Y.Z`.
 - Required runner evidence: matching self-hosted i386/i686 Linux runner or equivalent real i386 builder.
@@ -412,7 +412,7 @@ Current blockers:
 Required real evidence:
 
 - Run `.github/workflows/extended-platform-evidence.yml` with `target=linux-armhf`.
-- Dispatch it with `gh workflow run extended-platform-evidence.yml --repo <owner>/<repo> --ref <github-actions-head-sha> -f target=linux-armhf -f release_tag=v<project.version> -f release_asset_base_url=<github-release-download-url>`.
+- Dispatch it with `gh workflow run extended-platform-evidence.yml --repo <owner>/<repo> --ref v<project.version> -f target=linux-armhf -f release_tag=v<project.version> -f release_asset_base_url=<github-release-download-url>`.
 - Provide `release_tag` and an exact `release_asset_base_url` of
   `https://github.com/<owner>/<repo>/releases/download/vX.Y.Z`.
 - Required runner evidence: matching self-hosted armv7l/armhf Linux runner or equivalent real armhf builder.
@@ -477,7 +477,7 @@ Required real evidence:
 - Use a separate XP-capable legacy toolchain.
 - XP host requirement: Windows XP SP3 32-bit VM or physical host running scripts/xp_smoke_runner.cmd and artifact validation.
 - Dispatch `.github/workflows/xp-native-evidence.yml` with `target=windows-xp-native-x86` so the self-hosted `xp-evidence` collector prints the source workflow run URL, head SHA and run attempt, then waits for a non-empty and stable staged XP x86 native artifact/evidence file set including `xp-evidence.json` and smoke evidence files.
-- Dispatch it with `gh workflow run xp-native-evidence.yml --repo <owner>/<repo> --ref <github-actions-head-sha> -f target=windows-xp-native-x86 -f release_tag=v<project.version> -f release_asset_base_url=<github-release-download-url> -f assets_dir=<target-release-artifact-dir> -f evidence_file=<target-release-evidence.json> -f evidence_dir=<target-release-evidence-dir>`.
+- Dispatch it with `gh workflow run xp-native-evidence.yml --repo <owner>/<repo> --ref v<project.version> -f target=windows-xp-native-x86 -f release_tag=v<project.version> -f release_asset_base_url=<github-release-download-url> -f assets_dir=<target-release-artifact-dir> -f evidence_file=<target-release-evidence.json> -f evidence_dir=<target-release-evidence-dir>`.
 - Run `scripts/xp_smoke_runner.cmd` and artifact validation on that Windows XP host using the printed source workflow run URL, head SHA and run attempt, then stage the proof onto the modern self-hosted `xp-evidence` collector with Python 3.12 and GitHub Actions support before the bounded wait expires.
 - The accepted evidence record must include `workflow=.github/workflows/xp-native-evidence.yml`, `release_asset_source.workflow=.github/workflows/xp-native-evidence.yml`, positive `release_asset_source.run_attempt` and `workflow_inputs` matching the dispatch `target`, `release_tag`, `release_asset_base_url`, `assets_dir`, `evidence_file` and `evidence_dir`; the three path inputs must match `native_evidence_validation_command`.
 - Start a non-promoting evidence skeleton with `python scripts/make_xp_native_evidence_template.py --target windows-xp-native-x86 --release-tag v<project.version> --out-dir <evidence-dir>`.
@@ -549,7 +549,7 @@ Required real evidence:
 - Use a separate XP-capable legacy toolchain.
 - XP host requirement: Windows XP Professional x64 Edition SP2 VM or physical host running scripts/xp_smoke_runner.cmd and artifact validation.
 - Dispatch `.github/workflows/xp-native-evidence.yml` with `target=windows-xp-native-x64` so the self-hosted `xp-evidence` collector prints the source workflow run URL, head SHA and run attempt, then waits for a non-empty and stable staged XP x64 native artifact/evidence file set including `xp-evidence.json` and smoke evidence files.
-- Dispatch it with `gh workflow run xp-native-evidence.yml --repo <owner>/<repo> --ref <github-actions-head-sha> -f target=windows-xp-native-x64 -f release_tag=v<project.version> -f release_asset_base_url=<github-release-download-url> -f assets_dir=<target-release-artifact-dir> -f evidence_file=<target-release-evidence.json> -f evidence_dir=<target-release-evidence-dir>`.
+- Dispatch it with `gh workflow run xp-native-evidence.yml --repo <owner>/<repo> --ref v<project.version> -f target=windows-xp-native-x64 -f release_tag=v<project.version> -f release_asset_base_url=<github-release-download-url> -f assets_dir=<target-release-artifact-dir> -f evidence_file=<target-release-evidence.json> -f evidence_dir=<target-release-evidence-dir>`.
 - Run `scripts/xp_smoke_runner.cmd` and artifact validation on that Windows XP host using the printed source workflow run URL, head SHA and run attempt, then stage the proof onto the modern self-hosted `xp-evidence` collector with Python 3.12 and GitHub Actions support before the bounded wait expires.
 - The accepted evidence record must include `workflow=.github/workflows/xp-native-evidence.yml`, `release_asset_source.workflow=.github/workflows/xp-native-evidence.yml`, positive `release_asset_source.run_attempt` and `workflow_inputs` matching the dispatch `target`, `release_tag`, `release_asset_base_url`, `assets_dir`, `evidence_file` and `evidence_dir`; the three path inputs must match `native_evidence_validation_command`.
 - Start a non-promoting evidence skeleton with `python scripts/make_xp_native_evidence_template.py --target windows-xp-native-x64 --release-tag v<project.version> --out-dir <evidence-dir>`.

@@ -252,11 +252,28 @@ def check_candidate_release_asset_source_files(
     raw_files = source.get("contains_files")
     if not isinstance(raw_files, list) or not raw_files:
         return ["candidate release_asset_source.contains_files must be a non-empty list before finalization"]
-    files = [str(filename) for filename in raw_files]
+    files = [filename for filename in raw_files if isinstance(filename, str)]
     duplicate_files = sorted({filename for filename in files if files.count(filename) > 1})
-    unsafe_files = sorted(filename for filename in files if not concrete_file_name(filename))
+    unsafe_files = sorted(
+        {
+            filename if isinstance(filename, str) else repr(filename)
+            for filename in raw_files
+            if not isinstance(filename, str) or not concrete_file_name(filename)
+        }
+    )
     artifact_hashes = candidate.get("artifact_sha256")
-    artifact_files = set(str(filename) for filename in artifact_hashes) if isinstance(artifact_hashes, dict) else set()
+    unsafe_artifact_files = sorted(
+        {
+            filename if isinstance(filename, str) else repr(filename)
+            for filename in artifact_hashes
+            if not isinstance(filename, str) or not concrete_file_name(filename)
+        }
+    ) if isinstance(artifact_hashes, dict) else []
+    artifact_files = (
+        {filename for filename in artifact_hashes if isinstance(filename, str) and concrete_file_name(filename)}
+        if isinstance(artifact_hashes, dict)
+        else set()
+    )
     actual_files = set(files)
     missing_artifacts = sorted(artifact_files - actual_files)
     finalization_only_files = set(review_bundle_files.values())
@@ -268,6 +285,8 @@ def check_candidate_release_asset_source_files(
         errors.append(f"candidate release_asset_source.contains_files has duplicate files: {duplicate_files}")
     if unsafe_files:
         errors.append(f"candidate release_asset_source.contains_files has unsafe file names: {unsafe_files}")
+    if unsafe_artifact_files:
+        errors.append(f"candidate artifact_sha256 keys must be safe file names: {unsafe_artifact_files}")
     if missing_artifacts:
         errors.append(f"candidate release_asset_source.contains_files missing native artifacts: {missing_artifacts}")
     if unexpected_files:
@@ -287,7 +306,19 @@ def check_candidate_release_asset_source_files(
 
 
 def concrete_file_name(filename: str) -> bool:
-    return bool(filename) and "<" not in filename and ">" not in filename and Path(filename).name == filename
+    if (
+        not filename
+        or filename.strip() != filename
+        or filename in (".", "..")
+        or "<" in filename
+        or ">" in filename
+        or "/" in filename
+        or "\\" in filename
+    ):
+        return False
+    windows_path = PureWindowsPath(filename)
+    posix_path = PurePosixPath(filename)
+    return not windows_path.drive and not windows_path.is_absolute() and not posix_path.is_absolute()
 
 
 def review_bundle_release_asset_urls(
@@ -617,7 +648,8 @@ def check_manifest_file_record(
         errors.append(f"review bundle manifest {label}.file must be {expected_file}")
     if raw_record.get("sha256") != expected_sha256:
         errors.append(f"review bundle manifest {label}.sha256 must match {expected_file}")
-    if raw_record.get("size_bytes") != expected_size:
+    raw_size = raw_record.get("size_bytes")
+    if not isinstance(raw_size, int) or isinstance(raw_size, bool) or raw_size != expected_size:
         errors.append(f"review bundle manifest {label}.size_bytes must match {expected_file}")
     return errors
 
@@ -749,25 +781,80 @@ def check_bundle_archive(
 
 
 def check_archive_entry_safety(infos: list[zipfile.ZipInfo]) -> list[str]:
+    directory_entries: list[str] = []
     symlink_entries: list[str] = []
+    non_regular_entries: list[str] = []
     unsafe_entries: list[str] = []
     for info in infos:
         name = info.filename
+        if info.is_dir():
+            directory_entries.append(name)
         if archive_entry_is_symlink(info):
             symlink_entries.append(name)
+        if archive_entry_declares_non_regular_file(info):
+            non_regular_entries.append(name)
         if not archive_entry_name_is_safe(name):
             unsafe_entries.append(name)
     errors: list[str] = []
+    if directory_entries:
+        errors.append(f"review bundle archive entries must be regular files only: {sorted(directory_entries)}")
     if symlink_entries:
         errors.append(f"review bundle archive entries must not be symlinks: {sorted(symlink_entries)}")
+    if non_regular_entries:
+        errors.append(
+            f"review bundle archive entries must be regular files: {sorted(non_regular_entries)}"
+        )
     if unsafe_entries:
         errors.append(f"review bundle archive entries must use safe relative paths: {sorted(unsafe_entries)}")
+    errors.extend(check_archive_entry_name_ambiguity(info.filename for info in infos if not info.is_dir()))
     return errors
 
 
 def archive_entry_is_symlink(info: zipfile.ZipInfo) -> bool:
     file_type = (info.external_attr >> 16) & 0o170000
     return file_type == 0o120000
+
+
+def archive_entry_declares_non_regular_file(info: zipfile.ZipInfo) -> bool:
+    file_type = (info.external_attr >> 16) & 0o170000
+    if file_type == 0:
+        return False
+    if info.is_dir():
+        return False
+    return file_type != 0o100000
+
+
+def check_archive_entry_name_ambiguity(entry_names: Any) -> list[str]:
+    names = [str(name).rstrip("/") for name in entry_names if str(name).rstrip("/")]
+    errors: list[str] = []
+    case_groups: dict[str, set[str]] = {}
+    for name in names:
+        case_groups.setdefault(name.casefold(), set()).add(name)
+    case_collisions = sorted(
+        {
+            name
+            for group in case_groups.values()
+            if len(group) > 1
+            for name in group
+        }
+    )
+    if case_collisions:
+        errors.append(
+            f"review bundle archive entries must not collide on case-insensitive filesystems: {case_collisions}"
+        )
+    unique_names = sorted(set(names))
+    path_prefix_collisions = sorted(
+        f"{parent} -> {child}"
+        for parent in unique_names
+        for child in unique_names
+        if parent != child and child.startswith(f"{parent}/")
+    )
+    if path_prefix_collisions:
+        errors.append(
+            f"review bundle archive entries must not contain file/path-prefix collisions: "
+            f"{path_prefix_collisions}"
+        )
+    return errors
 
 
 def archive_entry_name_is_safe(name: str) -> bool:
@@ -817,7 +904,7 @@ def check_archive_record_hashes(
         except KeyError:
             continue
         expected_size = record.get("size_bytes")
-        if not isinstance(expected_size, int) or expected_size <= 0:
+        if not isinstance(expected_size, int) or isinstance(expected_size, bool) or expected_size <= 0:
             errors.append(f"review bundle manifest record {name} size_bytes must be positive")
         elif len(data) != expected_size:
             errors.append(f"review bundle archive entry size mismatch: {name}")

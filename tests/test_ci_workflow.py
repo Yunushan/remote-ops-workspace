@@ -169,25 +169,49 @@ def test_ci_workflow_requires_ios_server_readiness_before_simulator_smoke() -> N
     checker = _load_checker()
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     workflow_without_bind = workflow.replace(
-        "python -m http.server 8765 --directory apps/web --bind 127.0.0.1",
-        "python -m http.server 8765 --directory apps/web",
+        'python -m http.server "$WEB_PWA_PORT" --directory apps/web --bind 127.0.0.1',
+        'python -m http.server "$WEB_PWA_PORT" --directory apps/web',
+    )
+    workflow_without_dynamic_port = workflow.replace(
+        '          sock.bind(("127.0.0.1", 0))\n',
+        "",
+    )
+    workflow_without_url_export = workflow.replace(
+        '          export WEB_PWA_URL="http://127.0.0.1:${WEB_PWA_PORT}/index.html"\n',
+        "",
     )
     workflow_without_probe = workflow.replace(
-        '          with urllib.request.urlopen("http://127.0.0.1:8765/index.html", timeout=3) as response:\n',
+        '          with urllib.request.urlopen(os.environ["WEB_PWA_URL"], timeout=3) as response:\n',
         "",
     )
+    workflow_without_timeout_budget = workflow.replace(
+        "          deadline = time.monotonic() + 90\n",
+        "          deadline = time.monotonic() + 30\n",
+    )
     workflow_without_clear_error = workflow.replace(
-        '          raise SystemExit(f"Web/PWA server did not become reachable before iOS simulator smoke: {last_error}")\n',
+        '              "Web/PWA server did not become reachable before iOS simulator smoke: "\n',
         "",
+    )
+    workflow_without_smoke_url = workflow.replace(
+        '--url "$WEB_PWA_URL"',
+        "--url http://127.0.0.1:8765/index.html",
     )
 
     bind_errors = checker.check_ci_workflow(workflow_without_bind)
+    dynamic_port_errors = checker.check_ci_workflow(workflow_without_dynamic_port)
+    url_export_errors = checker.check_ci_workflow(workflow_without_url_export)
     probe_errors = checker.check_ci_workflow(workflow_without_probe)
+    timeout_budget_errors = checker.check_ci_workflow(workflow_without_timeout_budget)
     message_errors = checker.check_ci_workflow(workflow_without_clear_error)
+    smoke_url_errors = checker.check_ci_workflow(workflow_without_smoke_url)
 
-    assert any("loopback-bound local Web/PWA server" in error for error in bind_errors)
+    assert any("loopback-bound dynamic local Web/PWA server" in error for error in bind_errors)
+    assert any("dynamic loopback Web/PWA server port" in error for error in dynamic_port_errors)
+    assert any("exported iOS Web/PWA server URL" in error for error in url_export_errors)
     assert any("iOS Web/PWA server readiness probe" in error for error in probe_errors)
+    assert any("iOS Web/PWA server readiness timeout budget" in error for error in timeout_budget_errors)
     assert any("clear iOS Web/PWA server readiness failure" in error for error in message_errors)
+    assert any("iOS simulator host loopback URL" in error for error in smoke_url_errors)
 
 
 def test_ci_workflow_requires_all_preset_live_render_capture() -> None:

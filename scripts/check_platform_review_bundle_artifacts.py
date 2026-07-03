@@ -304,7 +304,11 @@ def prefinalized_candidate_record(record: dict[str, Any]) -> dict[str, Any]:
     artifact_hashes = candidate.get("artifact_sha256")
     if isinstance(source, dict) and isinstance(artifact_hashes, dict):
         source_data = dict(source)
-        source_data["contains_files"] = sorted(str(name) for name in artifact_hashes)
+        source_data["contains_files"] = sorted(
+            name
+            for name in artifact_hashes
+            if isinstance(name, str) and exact_safe_file_name(name)
+        )
         candidate["release_asset_source"] = source_data
     return candidate
 
@@ -316,7 +320,7 @@ def check_file_record(target: str, key: str, path: Path, raw_record: dict[str, A
     if not path.is_file():
         return [f"{target} review_bundle {key} file missing: {path.name}"]
     expected_size = raw_record.get("size_bytes")
-    if expected_size != path.stat().st_size:
+    if not isinstance(expected_size, int) or isinstance(expected_size, bool) or expected_size != path.stat().st_size:
         errors.append(f"{target} review_bundle {key}.size_bytes does not match file {path.name}")
     expected_sha = str(raw_record.get("sha256", ""))
     if expected_sha != sha256_file(path):
@@ -392,12 +396,21 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def is_allowed_platform_parent_symlink(parent: Path) -> bool:
+    if sys.platform != "darwin" or parent.as_posix() != "/var":
+        return False
+    try:
+        return parent.resolve(strict=False).as_posix() == "/private/var"
+    except OSError:
+        return False
+
+
 def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
     check_path = path if path.is_absolute() else Path.cwd() / path
     for parent in reversed(check_path.parents):
         if parent == Path("."):
             continue
-        if parent.is_symlink():
+        if parent.is_symlink() and not is_allowed_platform_parent_symlink(parent):
             return [f"{label} path must not contain symlinked directories: {parent}"]
     return []
 

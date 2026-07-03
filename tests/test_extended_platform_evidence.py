@@ -213,6 +213,17 @@ def test_extended_platform_evidence_rejects_unbalanced_github_expression() -> No
     assert any("unbalanced GitHub expression delimiters" in error for error in errors)
 
 
+def test_extended_platform_evidence_rejects_out_of_order_github_expression_delimiters() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8") + (
+        "\n# malformed but count-balanced expression }} before ${{ inputs.release_tag\n"
+    )
+
+    errors = checker.check_extended_platform_evidence(workflow)
+
+    assert any("unbalanced GitHub expression delimiters" in error for error in errors)
+
+
 def test_extended_platform_evidence_requires_ordered_linux_evidence_steps() -> None:
     checker = _load_script("check_extended_platform_evidence")
     workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8")
@@ -407,6 +418,19 @@ def test_extended_platform_evidence_requires_candidate_local_evidence_root_bindi
     assert any("local evidence preflight root binding" in error for error in errors)
 
 
+def test_extended_platform_evidence_requires_candidate_staged_upload_out_dir() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
+        "            --staged-upload-out-dir platform-evidence-upload/linux-i386/${{ inputs.release_tag }} \\\n",
+        "",
+        1,
+    )
+
+    errors = checker.check_extended_platform_evidence(workflow)
+
+    assert any("candidate staged upload output binding" in error for error in errors)
+
+
 def test_extended_platform_evidence_requires_scoped_upload_staging() -> None:
     checker = _load_script("check_extended_platform_evidence")
     workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
@@ -496,6 +520,19 @@ def test_extended_platform_evidence_requires_dispatch_input_preflight() -> None:
     assert any("dispatch input preflight" in error for error in errors)
 
 
+def test_extended_platform_evidence_requires_dispatch_release_tag_ref_binding() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
+        '            --workflow-ref-name "${{ github.ref_name }}" \\\n',
+        "",
+        1,
+    )
+
+    errors = checker.check_extended_platform_evidence(workflow)
+
+    assert any("release-tag workflow ref binding" in error for error in errors)
+
+
 def test_extended_platform_evidence_requires_dispatch_source_head_sha() -> None:
     checker = _load_script("check_extended_platform_evidence")
     workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
@@ -506,7 +543,7 @@ def test_extended_platform_evidence_requires_dispatch_source_head_sha() -> None:
 
     errors = checker.check_extended_platform_evidence(workflow)
 
-    assert any("source_head_sha and source_run_attempt" in error for error in errors)
+    assert any("workflow_ref_name, source_head_sha and source_run_attempt" in error for error in errors)
 
 
 def test_extended_platform_evidence_requires_dispatch_source_run_attempt() -> None:
@@ -519,7 +556,7 @@ def test_extended_platform_evidence_requires_dispatch_source_run_attempt() -> No
 
     errors = checker.check_extended_platform_evidence(workflow)
 
-    assert any("source_head_sha and source_run_attempt" in error for error in errors)
+    assert any("workflow_ref_name, source_head_sha and source_run_attempt" in error for error in errors)
 
 
 def test_extended_platform_evidence_rejects_untracked_script_dependency(
@@ -682,6 +719,17 @@ def test_extended_platform_dispatch_input_validator_rejects_invalid_source_run_a
     errors = _check_extended_dispatch_inputs(checker, source_run_attempt="0")
 
     assert "source_run_attempt must be a positive integer, got '0'" in errors
+
+
+def test_extended_platform_dispatch_input_validator_rejects_release_tag_ref_mismatch() -> None:
+    checker = _load_script("check_extended_platform_dispatch_inputs")
+
+    errors = _check_extended_dispatch_inputs(checker, workflow_ref_name="main")
+
+    assert (
+        "workflow_ref_name must match release_tag so evidence is dispatched from "
+        "the release tag ref, got 'main'"
+    ) in errors
 
 
 def test_extended_platform_builder_accepts_matching_i386(monkeypatch) -> None:
@@ -950,6 +998,7 @@ def _check_extended_dispatch_inputs(checker, **overrides):
         "release_tag": "v1.0.2",
         "release_asset_base_url": "https://github.com/example/remote-ops-workspace/releases/download/v1.0.2",
         "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        "workflow_ref_name": "v1.0.2",
         "source_head_sha": "0123456789abcdef0123456789abcdef01234567",
         "source_run_attempt": "1",
     }

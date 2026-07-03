@@ -829,6 +829,32 @@ def test_platform_goal_local_evidence_rejects_invalid_linux_run_bindings(tmp_pat
     assert f"{target} --linux-source-head-sha must be a 40-character lowercase Git SHA" in errors
 
 
+def test_platform_goal_local_evidence_rejects_invalid_linux_source_run_attempt_types(
+    tmp_path: Path,
+) -> None:
+    checker = _load_local_evidence_checker()
+    target = "linux-i386"
+    tag = "v1.0.2"
+    target_root = tmp_path / target / tag
+    artifacts = target_root / "artifacts"
+    artifacts.mkdir(parents=True)
+
+    for source_run_attempt in ("first", True):
+        errors = checker.check_platform_goal_local_evidence(
+            root=tmp_path,
+            release_tag=tag,
+            targets=(target,),
+            linux_workflow_run_url="https://github.com/example/remote-ops-workspace/actions/runs/12345",
+            linux_source_head_sha="a" * 40,
+            linux_source_run_attempt=source_run_attempt,
+            assets_dir=artifacts,
+            linux_builder_evidence=target_root / f"builder-identity-{target}.json",
+            linux_smoke_evidence=target_root / f"native-smoke-{target}.log",
+        )
+
+        assert f"{target} --linux-source-run-attempt must be a positive integer" in errors
+
+
 def test_platform_goal_local_evidence_requires_xp_source_bindings(tmp_path: Path) -> None:
     checker = _load_local_evidence_checker()
     target = "windows-xp-native-x86"

@@ -475,6 +475,31 @@ def test_finalize_platform_verified_evidence_record_rejects_symlinked_input_pare
         ]
 
 
+def test_finalize_platform_verified_evidence_record_allows_macos_var_temp_alias(monkeypatch) -> None:
+    finalizer = _load_finalizer()
+    original_resolve = Path.resolve
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self.as_posix() == "/var"
+
+    def fake_resolve(self: Path, strict: bool = False) -> Path:
+        if self.as_posix() == "/var":
+            return Path("/private/var")
+        return original_resolve(self, strict=strict)
+
+    monkeypatch.setattr(finalizer.sys, "platform", "darwin")
+    monkeypatch.setattr(Path, "is_symlink", fake_is_symlink)
+    monkeypatch.setattr(Path, "resolve", fake_resolve)
+
+    assert (
+        finalizer.check_path_parent_symlinks(
+            Path("/var/folders/pytest/platform-verified-evidence-linux-i386.json"),
+            "candidate evidence record file",
+        )
+        == []
+    )
+
+
 def test_finalize_platform_verified_evidence_record_rejects_reserved_workspace_input_paths() -> None:
     finalizer = _load_finalizer()
 
@@ -660,6 +685,92 @@ def test_finalize_platform_verified_evidence_record_rejects_unsafe_archive_entry
         "review bundle archive entries must use safe relative paths: "
         "['../escape.txt', '/absolute.txt', 'C:/escape.txt', 'nested\\\\escape.txt']"
     ) in errors
+
+
+def test_finalize_platform_verified_evidence_record_rejects_nonregular_archive_entries() -> None:
+    finalizer = _load_finalizer()
+    directory = zipfile.ZipInfo("nested/")
+    fifo = zipfile.ZipInfo("fifo.txt")
+    fifo.external_attr = (0o010000 | 0o644) << 16
+
+    errors = finalizer.check_archive_entry_safety([directory, fifo])
+
+    assert "review bundle archive entries must be regular files only: ['nested/']" in errors
+    assert "review bundle archive entries must be regular files: ['fifo.txt']" in errors
+
+
+def test_finalize_platform_verified_evidence_record_rejects_ambiguous_archive_entry_names() -> None:
+    finalizer = _load_finalizer()
+
+    errors = finalizer.check_archive_entry_safety(
+        [
+            zipfile.ZipInfo("Readme.txt"),
+            zipfile.ZipInfo("readme.txt"),
+            zipfile.ZipInfo("nested"),
+            zipfile.ZipInfo("nested/file.txt"),
+        ]
+    )
+
+    assert (
+        "review bundle archive entries must not collide on case-insensitive filesystems: "
+        "['Readme.txt', 'readme.txt']"
+    ) in errors
+    assert (
+        "review bundle archive entries must not contain file/path-prefix collisions: "
+        "['nested -> nested/file.txt']"
+    ) in errors
+
+
+def test_concrete_file_name_rejects_cross_platform_path_forms() -> None:
+    finalizer = _load_finalizer()
+
+    assert finalizer.concrete_file_name("remote-ops-workspace-v1.0.2-linux-i386.deb")
+    assert not finalizer.concrete_file_name("../remote-ops-workspace-v1.0.2-linux-i386.deb")
+    assert not finalizer.concrete_file_name("nested/remote-ops-workspace-v1.0.2-linux-i386.deb")
+    assert not finalizer.concrete_file_name("nested\\remote-ops-workspace-v1.0.2-linux-i386.deb")
+    assert not finalizer.concrete_file_name("C:\\remote-ops-workspace-v1.0.2-linux-i386.deb")
+    assert not finalizer.concrete_file_name(" remote-ops-workspace-v1.0.2-linux-i386.deb")
+    assert not finalizer.concrete_file_name("remote-ops-workspace-v1.0.2-linux-i386.deb ")
+
+
+def test_finalize_platform_verified_evidence_record_rejects_boolean_manifest_file_size() -> None:
+    finalizer = _load_finalizer()
+
+    errors = finalizer.check_manifest_file_record(
+        "candidate_record",
+        {"file": "one-byte.json", "size_bytes": True, "sha256": "1" * 64},
+        expected_file="one-byte.json",
+        expected_sha256="1" * 64,
+        expected_size=1,
+    )
+
+    assert "review bundle manifest candidate_record.size_bytes must match one-byte.json" in errors
+
+
+def test_finalize_platform_verified_evidence_record_rejects_boolean_archive_record_size(
+    tmp_path: Path,
+) -> None:
+    finalizer = _load_finalizer()
+    manifest = tmp_path / "extended-linux-evidence-bundle-linux-i386-v1.0.2.json"
+    archive = tmp_path / "extended-linux-evidence-bundle-linux-i386-v1.0.2.zip"
+    payload = b"x"
+    manifest_data = {
+        "bundle_type": "extended-linux-native-evidence",
+        "candidate_record": {
+            "file": "one-byte.txt",
+            "size_bytes": True,
+            "sha256": hashlib.sha256(payload).hexdigest(),
+        },
+    }
+    manifest.write_text(json.dumps(manifest_data, indent=2) + "\n", encoding="utf-8")
+    with zipfile.ZipFile(archive, mode="w", compression=zipfile.ZIP_DEFLATED) as zipped:
+        zipped.write(manifest, arcname=manifest.name)
+        zipped.writestr("one-byte.txt", payload)
+
+    with zipfile.ZipFile(archive) as zipped:
+        errors = finalizer.check_archive_record_hashes(zipped, manifest, manifest_data)
+
+    assert "review bundle manifest record one-byte.txt size_bytes must be positive" in errors
 
 
 def test_finalize_platform_verified_evidence_record_rejects_weak_linux_smoke_log(tmp_path: Path) -> None:
@@ -1441,6 +1552,44 @@ def test_finalize_platform_verified_evidence_record_rejects_candidate_release_so
         "candidate release_asset_source.contains_files has files outside native artifacts: "
         "['operator-notes.txt']"
     ) in errors
+
+
+def test_finalize_platform_verified_evidence_record_rejects_non_string_candidate_release_source_file() -> None:
+    finalizer = _load_finalizer()
+    candidate = {
+        "target": "linux-i386",
+        "artifact_sha256": {"remote-ops-workspace-v1.0.2-linux-i386.deb": "a" * 64},
+        "release_asset_source": {
+            "contains_files": [
+                "remote-ops-workspace-v1.0.2-linux-i386.deb",
+                True,
+            ],
+        },
+    }
+
+    errors = finalizer.check_candidate_release_asset_source_files(candidate, {})
+
+    assert "candidate release_asset_source.contains_files has unsafe file names: ['True']" in errors
+
+
+def test_finalize_platform_verified_evidence_record_rejects_non_string_candidate_artifact_hash_key() -> None:
+    finalizer = _load_finalizer()
+    candidate = {
+        "target": "linux-i386",
+        "artifact_sha256": {
+            "remote-ops-workspace-v1.0.2-linux-i386.deb": "a" * 64,
+            True: "b" * 64,
+        },
+        "release_asset_source": {
+            "contains_files": [
+                "remote-ops-workspace-v1.0.2-linux-i386.deb",
+            ],
+        },
+    }
+
+    errors = finalizer.check_candidate_release_asset_source_files(candidate, {})
+
+    assert "candidate artifact_sha256 keys must be safe file names: ['True']" in errors
 
 
 def test_finalize_platform_verified_evidence_record_rejects_candidate_release_source_finalization_only_files(

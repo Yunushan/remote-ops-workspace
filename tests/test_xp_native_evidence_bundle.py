@@ -89,8 +89,75 @@ def test_xp_native_evidence_bundle_packages_valid_x86_evidence(tmp_path: Path) -
         assert manifest.name in names_in_archive
         assert "xp-smoke-evidence/cli_launch.txt" in names_in_archive
         assert set(names).issubset(names_in_archive)
+        assert_zip_entries_are_regular_files(zipped)
     assert f"{_sha256(manifest)}  {manifest.name}" in sidecar.read_text(encoding="utf-8")
     assert f"{_sha256(archive)}  {archive.name}" in sidecar.read_text(encoding="utf-8")
+
+
+def test_xp_native_evidence_bundle_rejects_ambiguous_archive_entry_names() -> None:
+    bundler = _load_bundle_script()
+
+    errors = bundler.check_bundle_archive_entry_names(
+        [
+            "xp-evidence.json",
+            "xp-evidence.json",
+            "Readme.txt",
+            "readme.txt",
+            "xp-smoke-evidence",
+            "xp-smoke-evidence/cli_launch.txt",
+            "../escape.txt",
+        ],
+        label="XP archive",
+    )
+
+    assert "XP archive entries must be unique; duplicate entries: ['xp-evidence.json']" in errors
+    assert "XP archive entries must use safe relative paths: ['../escape.txt']" in errors
+    assert (
+        "XP archive entries must not collide on case-insensitive filesystems: "
+        "['Readme.txt', 'readme.txt']"
+    ) in errors
+    assert (
+        "XP archive entries must not contain file/path-prefix collisions: "
+        "['xp-smoke-evidence -> xp-smoke-evidence/cli_launch.txt']"
+    ) in errors
+
+
+def test_xp_native_evidence_bundle_rejects_duplicate_final_archive_entry(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bundler = _load_bundle_script()
+    artifact_checker = _load_platform_promotion_artifacts_checker()
+    tag = f"v{artifact_checker.read_project_version()}"
+    target = "windows-xp-native-x86"
+    assets = tmp_path / "native-dist" / "windows-xp" / target / tag
+    assets.mkdir(parents=True)
+    names = _required_artifact_names(artifact_checker, target, tag)
+    _write_artifact_set(assets, names)
+    evidence_data = _valid_evidence(target, "x86", "SP3", tag, names)
+    evidence_root = tmp_path / "evidence" / target / tag
+    _attach_smoke_evidence_files(evidence_root, evidence_data)
+    evidence = evidence_root / "xp-evidence.json"
+    evidence.write_text(json.dumps(evidence_data, indent=2) + "\n", encoding="utf-8")
+    candidate = tmp_path / f"platform-verified-evidence-{target}.json"
+    _write_candidate_record(candidate, target, tag, evidence, evidence_data, assets, work_root=tmp_path)
+    out_dir = tmp_path / "xp-evidence-output" / target / tag
+    monkeypatch.setattr(bundler, "artifact_records", lambda _assets_dir: [{"file": "xp-evidence.json"}])
+
+    with _pushd(tmp_path):
+        errors = bundler.make_xp_native_evidence_bundle(
+            target=target,
+            evidence=evidence.relative_to(tmp_path),
+            candidate_record=candidate.relative_to(tmp_path),
+            assets_dir=assets.relative_to(tmp_path),
+            evidence_dir=evidence_root.relative_to(tmp_path),
+            out_dir=out_dir.relative_to(tmp_path),
+        )
+
+    assert errors == [
+        "XP native evidence bundle archive entries must be unique; "
+        "duplicate entries: ['xp-evidence.json']"
+    ]
 
 
 def test_xp_native_evidence_bundle_reruns_local_protected_goal_preflight(
@@ -974,6 +1041,12 @@ def _sha256(path: Path) -> str:
 def _json_sha256(data: dict[str, object]) -> str:
     payload = json.dumps(data, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(payload).hexdigest()
+
+
+def assert_zip_entries_are_regular_files(archive: zipfile.ZipFile) -> None:
+    for info in archive.infolist():
+        assert ((info.external_attr >> 16) & 0o170000) == 0o100000
+        assert ((info.external_attr >> 16) & 0o777) == 0o644
 
 
 def _load_bundle_script():

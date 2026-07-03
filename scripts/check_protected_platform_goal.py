@@ -38,6 +38,24 @@ REQUIRE_COMPLETE_MODE_CONFLICT_ERROR = (
 )
 REQUIRE_ASSETS_COMPLETE_ERROR = "--assets-dir requires --require-complete"
 REQUIRE_ASSETS_RELEASE_TAG_ERROR = "--assets-dir requires --release-tag vX.Y.Z"
+GOAL_STRING_LIST_FIELDS = {
+    "missing_targets",
+    "accepted_targets",
+    "release_tags",
+    "release_repositories",
+    "release_source_heads",
+}
+GOAL_STRING_KEY_MAP_FIELDS = {
+    "release_source_workflows",
+    "selected_release_source_workflows",
+    "release_source_run_urls",
+    "selected_release_source_run_urls",
+    "release_source_run_attempts",
+    "selected_release_source_run_attempts",
+}
+GOAL_NESTED_STRING_KEY_MAP_FIELDS = {
+    "release_source_run_attempt_conflicts",
+}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -166,12 +184,21 @@ def check_registry_path(path: Path) -> list[str]:
     return check_path_parent_symlinks(path, "accepted evidence registry")
 
 
+def is_allowed_platform_parent_symlink(parent: Path) -> bool:
+    if sys.platform != "darwin" or parent.as_posix() != "/var":
+        return False
+    try:
+        return parent.resolve(strict=False).as_posix() == "/private/var"
+    except OSError:
+        return False
+
+
 def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
     check_path = path if path.is_absolute() else Path.cwd() / path
     for parent in reversed(check_path.parents):
         if parent == Path("."):
             continue
-        if parent.is_symlink():
+        if parent.is_symlink() and not is_allowed_platform_parent_symlink(parent):
             return [f"{label} path must not contain symlinked directories: {parent}"]
     return []
 
@@ -355,6 +382,7 @@ def check_goal_requirement_metadata(goal: dict[str, Any]) -> list[str]:
     if not isinstance(requirements, list):
         return ["protected platform goal parity must expose target_evidence_requirements"]
     errors: list[str] = []
+    errors.extend(check_goal_release_scope_metadata(goal))
     for item in requirements:
         if not isinstance(item, dict):
             errors.append("protected platform goal parity requirement entries must be objects")
@@ -365,6 +393,85 @@ def check_goal_requirement_metadata(goal: dict[str, Any]) -> list[str]:
                 target,
                 item.get("required_commands"),
             )
+        )
+    return errors
+
+
+def check_goal_release_scope_metadata(goal: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    for field in sorted(GOAL_STRING_LIST_FIELDS):
+        errors.extend(check_goal_string_list_field(goal, field))
+    for field in sorted(GOAL_STRING_KEY_MAP_FIELDS):
+        errors.extend(check_goal_string_key_map_field(goal, field))
+    for field in sorted(GOAL_NESTED_STRING_KEY_MAP_FIELDS):
+        raw = goal.get(field)
+        if raw is None:
+            continue
+        if not isinstance(raw, dict):
+            errors.append(f"protected platform goal parity {field} must be a map")
+            continue
+        errors.extend(check_string_key_mapping(raw, field))
+        for key, value in raw.items():
+            if not isinstance(key, str):
+                continue
+            if not isinstance(value, dict):
+                errors.append(f"protected platform goal parity {field}.{key} must be a map")
+                continue
+            errors.extend(check_string_key_mapping(value, f"{field}.{key}"))
+    return errors
+
+
+def check_goal_string_list_field(goal: dict[str, Any], field: str) -> list[str]:
+    raw = goal.get(field)
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        return [f"protected platform goal parity {field} must be a list"]
+    errors: list[str] = []
+    values: list[str] = []
+    for value in raw:
+        if not isinstance(value, str) or not value.strip():
+            errors.append(
+                f"protected platform goal parity {field} entries must be non-empty strings, got {value!r}"
+            )
+            continue
+        values.append(value)
+    duplicates = duplicate_names(values)
+    if duplicates:
+        errors.append(f"protected platform goal parity {field} contains duplicates: {duplicates}")
+    case_collisions = case_insensitive_name_collisions(set(values))
+    if case_collisions:
+        errors.append(
+            f"protected platform goal parity {field} must not collide on "
+            f"case-insensitive filesystems: {case_collisions}"
+        )
+    return errors
+
+
+def check_goal_string_key_map_field(goal: dict[str, Any], field: str) -> list[str]:
+    raw = goal.get(field)
+    if raw is None:
+        return []
+    if not isinstance(raw, dict):
+        return [f"protected platform goal parity {field} must be a map"]
+    return check_string_key_mapping(raw, field)
+
+
+def check_string_key_mapping(raw: dict[Any, Any], field: str) -> list[str]:
+    errors: list[str] = []
+    keys: list[str] = []
+    for key in raw:
+        if not isinstance(key, str) or not key.strip():
+            errors.append(
+                f"protected platform goal parity {field} keys must be non-empty strings, got {key!r}"
+            )
+            continue
+        keys.append(key)
+    case_collisions = case_insensitive_name_collisions(set(keys))
+    if case_collisions:
+        errors.append(
+            f"protected platform goal parity {field} keys must not collide on "
+            f"case-insensitive filesystems: {case_collisions}"
         )
     return errors
 
@@ -688,13 +795,32 @@ def format_goal_requirements(goal: dict[str, Any]) -> str:
 def list_values(raw: Any) -> list[str]:
     if not isinstance(raw, list):
         return []
-    return [str(value) for value in raw if str(value)]
+    return [value for value in raw if isinstance(value, str) and value.strip()]
 
 
 def dict_values(raw: Any) -> dict[str, Any]:
     if not isinstance(raw, dict):
         return {}
-    return {str(key): value for key, value in raw.items()}
+    return {key: value for key, value in raw.items() if isinstance(key, str) and key.strip()}
+
+
+def duplicate_names(names: list[str]) -> list[str]:
+    counts: dict[str, int] = {}
+    for name in names:
+        counts[name] = counts.get(name, 0) + 1
+    return sorted(name for name, count in counts.items() if count > 1)
+
+
+def case_insensitive_name_collisions(names: set[str]) -> list[str]:
+    names_by_folded: dict[str, list[str]] = {}
+    for name in names:
+        names_by_folded.setdefault(name.casefold(), []).append(name)
+    return sorted(
+        name
+        for folded_names in names_by_folded.values()
+        if len(folded_names) > 1
+        for name in sorted(folded_names)
+    )
 
 
 if __name__ == "__main__":

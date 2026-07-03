@@ -203,18 +203,24 @@ def check_ios_simulator_web_job(workflow: str) -> list[str]:
         'python-version: "3.12"': "stable iOS smoke Python version",
         'python -m pip install -e ".[dev]"': "dev dependency installation",
         "tests/test_mobile_support.py": "mobile support contract tests",
-        "python -m http.server 8765 --directory apps/web --bind 127.0.0.1": (
-            "loopback-bound local Web/PWA server"
+        'sock.bind(("127.0.0.1", 0))': "dynamic loopback Web/PWA server port",
+        'export WEB_PWA_URL="http://127.0.0.1:${WEB_PWA_PORT}/index.html"': (
+            "exported iOS Web/PWA server URL"
         ),
-        'urllib.request.urlopen("http://127.0.0.1:8765/index.html", timeout=3)': (
+        'python -m http.server "$WEB_PWA_PORT" --directory apps/web --bind 127.0.0.1': (
+            "loopback-bound dynamic local Web/PWA server"
+        ),
+        'urllib.request.urlopen(os.environ["WEB_PWA_URL"], timeout=3)': (
             "iOS Web/PWA server readiness probe"
         ),
+        "deadline = time.monotonic() + 90": "iOS Web/PWA server readiness timeout budget",
+        "web-server.log": "server log diagnostics for iOS Web/PWA readiness failures",
         "Web/PWA server did not become reachable before iOS simulator smoke": (
             "clear iOS Web/PWA server readiness failure"
         ),
         "scripts/check_mobile_emulator_smoke.py --platform ios": "iOS simulator smoke helper",
         "--ios-open-url-attempts 3": "iOS simulator openurl retry budget",
-        "http://127.0.0.1:8765/index.html": "iOS simulator host loopback URL",
+        '--url "$WEB_PWA_URL"': "iOS simulator host loopback URL",
         "actions/upload-artifact@v7": "iOS smoke screenshot upload",
         "if-no-files-found: error": "artifact upload failure on missing iOS screenshots",
     }

@@ -316,14 +316,15 @@ bu proof state ancak `--assets-dir` ile calisan asset-backed protected goal
 gate finalized record, review bundle ve native release byte degerlerini
 dogruladiginda true olur.
 Upload sonrasinda publish isi
-`python scripts/check_platform_release_evidence_remote.py --repository <owner>/<repo> --release-tag <tag> --require-goal-targets --require-source-runs --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head`
+`python scripts/check_platform_release_evidence_remote.py --repository <owner>/<repo> --release-tag <tag> --require-goal-targets --require-source-runs --require-source-artifact-bytes --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head`
 ile gercek GitHub Release uzerindeki published asset digest/size/byte degerlerini,
 published final accepted-record JSON bytes degerlerini, release tag Git object/source head SHA bagini,
 exact source workflow run metadata bilgisini ve GitHub repository ID saglarsa
 source artifact `workflow_run.id`, `workflow_run.head_sha`,
 `workflow_run.repository_id` ve `workflow_run.head_repository_id` bagini
 ve GitHub timestamp sagladiginda artifact created_at degerinin exact source run
-creation/start/update araligi icinde kaldigini dogrular.
+creation/start/update araligi icinde kaldigini, ayrica source artifact ZIP
+iceriginin `release_asset_source.contains_files` ile ayni oldugunu dogrular.
 Linux accepted evidence kayitlari builder identity SHA-256 degeri, sanitized
 target-scoped host identity, workflow dispatch input bagi ve native smoke
 release/run, runtime architecture, OpenSSL ve legacy-crypto-scope proof

@@ -300,6 +300,7 @@ def build_steps(
                         release_tag,
                         "--require-goal-targets",
                         "--require-source-runs",
+                        "--require-source-artifact-bytes",
                         "--require-final-record-bytes",
                         "--require-release-asset-bytes",
                         "--require-tag-source-head",

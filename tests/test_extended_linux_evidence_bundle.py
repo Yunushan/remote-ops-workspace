@@ -95,9 +95,90 @@ def test_extended_linux_evidence_bundle_packages_valid_i386_evidence(
         assert smoke.name in names_in_archive
         assert candidate.name in names_in_archive
         assert set(names).issubset(names_in_archive)
+        assert_zip_entries_are_regular_files(zipped)
     sidecar_text = sidecar.read_text(encoding="utf-8")
     assert f"{_sha256(manifest)}  {manifest.name}" in sidecar_text
     assert f"{_sha256(archive)}  {archive.name}" in sidecar_text
+
+
+def test_extended_linux_evidence_bundle_rejects_ambiguous_archive_entry_names() -> None:
+    bundler = _load_script("make_extended_linux_evidence_bundle")
+
+    errors = bundler.check_bundle_archive_entry_names(
+        [
+            "manifest.json",
+            "manifest.json",
+            "Readme.txt",
+            "readme.txt",
+            "nested",
+            "nested/file.txt",
+            "../escape.txt",
+        ],
+        label="bundle archive",
+    )
+
+    assert "bundle archive entries must be unique; duplicate entries: ['manifest.json']" in errors
+    assert "bundle archive entries must use safe relative paths: ['../escape.txt']" in errors
+    assert (
+        "bundle archive entries must not collide on case-insensitive filesystems: "
+        "['Readme.txt', 'readme.txt']"
+    ) in errors
+    assert (
+        "bundle archive entries must not contain file/path-prefix collisions: "
+        "['nested -> nested/file.txt']"
+    ) in errors
+
+
+def test_extended_linux_evidence_bundle_rejects_duplicate_final_archive_entry(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bundler = _load_script("make_extended_linux_evidence_bundle")
+    generator = _load_script("make_platform_verified_evidence_record")
+    artifact_checker = _load_script("check_platform_promotion_artifacts")
+    target = "linux-i386"
+    tag = f"v{artifact_checker.read_project_version()}"
+    names = _required_artifact_names(artifact_checker, target, tag)
+    monkeypatch.chdir(tmp_path)
+    assets, builder, smoke = _stage_valid_linux_evidence_inputs(target, tag, names)
+    candidate = Path(target) / tag / "platform-verified-evidence-linux-i386.json"
+    errors, record = generator.build_evidence_record(
+        SimpleNamespace(
+            target=target,
+            release_tag=tag,
+            assets_dir=assets,
+            release_asset_base_url=(
+                f"https://github.com/example/remote-ops-workspace/releases/download/{tag}"
+            ),
+            workflow_run_url="https://github.com/example/remote-ops-workspace/actions/runs/12345",
+            release_source_head_sha="a" * 40,
+            release_source_run_attempt=1,
+            runner_label=["self-hosted", "linux", "i386"],
+            builder_evidence=builder,
+            linux_smoke_evidence=smoke,
+            xp_evidence=None,
+            xp_evidence_dir=None,
+        )
+    )
+    assert errors == []
+    candidate.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    duplicate_name = f"extended-linux-evidence-bundle-{target}-{tag}.json"
+    monkeypatch.setattr(bundler, "expected_artifact_names", lambda *_args: [duplicate_name])
+
+    errors = bundler.make_extended_linux_evidence_bundle(
+        target=target,
+        release_tag=tag,
+        assets_dir=assets,
+        builder_evidence=builder,
+        smoke_evidence=smoke,
+        candidate_record=candidate,
+        out_dir=assets,
+    )
+
+    assert errors == [
+        "extended Linux evidence bundle archive entries must be unique; "
+        f"duplicate entries: ['{duplicate_name}']"
+    ]
 
 
 def test_extended_linux_evidence_bundle_reruns_local_protected_goal_preflight(
@@ -1148,6 +1229,12 @@ def _sync_linux_source_record(
 
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def assert_zip_entries_are_regular_files(archive: zipfile.ZipFile) -> None:
+    for info in archive.infolist():
+        assert ((info.external_attr >> 16) & 0o170000) == 0o100000
+        assert ((info.external_attr >> 16) & 0o777) == 0o644
 
 
 def _load_script(name: str):

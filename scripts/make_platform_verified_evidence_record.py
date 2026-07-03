@@ -385,7 +385,11 @@ def validate_common_args(args: argparse.Namespace) -> list[str]:
         errors.append("--release-source-head-sha must be a 40-character lowercase Git SHA")
     if args.release_source_run_attempt is None:
         errors.append("--release-source-run-attempt is required")
-    elif args.release_source_run_attempt < 1:
+    elif (
+        not isinstance(args.release_source_run_attempt, int)
+        or isinstance(args.release_source_run_attempt, bool)
+        or args.release_source_run_attempt < 1
+    ):
         errors.append("--release-source-run-attempt must be a positive integer")
     return errors
 
@@ -522,12 +526,21 @@ def check_workflow_run_repository(
     return []
 
 
+def is_allowed_platform_parent_symlink(parent: Path) -> bool:
+    if sys.platform != "darwin" or parent.as_posix() != "/var":
+        return False
+    try:
+        return parent.resolve(strict=False).as_posix() == "/private/var"
+    except OSError:
+        return False
+
+
 def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
     check_path = path if path.is_absolute() else Path.cwd() / path
     for parent in reversed(check_path.parents):
         if parent == Path("."):
             continue
-        if parent.is_symlink():
+        if parent.is_symlink() and not is_allowed_platform_parent_symlink(parent):
             return [f"{label} path must not contain symlinked directories: {parent}"]
     return []
 
@@ -547,6 +560,14 @@ def check_target_release_scoped_inputs(args: argparse.Namespace) -> list[str]:
         release_tag,
         args.assets_dir,
         label="artifact directory",
+    )
+    errors.extend(
+        check_target_release_path_segments(
+            target,
+            release_tag,
+            staged_upload_out_dir(args),
+            label="staged upload output directory",
+        )
     )
     if target in LINUX_TARGETS:
         if args.builder_evidence is not None:
@@ -586,12 +607,21 @@ def check_target_release_scoped_inputs(args: argparse.Namespace) -> list[str]:
                     label="XP evidence directory",
                 )
             )
+        errors.extend(
+            check_target_release_path_segments(
+                target,
+                release_tag,
+                xp_evidence_output_dir(args),
+                label="XP evidence output directory",
+            )
+        )
     return errors
 
 
 def check_reserved_workspace_root_inputs(args: argparse.Namespace) -> list[str]:
     paths: list[tuple[Path, str]] = [
         (args.assets_dir, "artifact directory"),
+        (staged_upload_out_dir(args), "staged upload output directory"),
     ]
     local_evidence_root = getattr(args, "local_evidence_root", Path("."))
     if isinstance(local_evidence_root, Path):
@@ -608,6 +638,7 @@ def check_reserved_workspace_root_inputs(args: argparse.Namespace) -> list[str]:
             paths.append((args.xp_evidence, "XP evidence file"))
         if args.xp_evidence_dir is not None:
             paths.append((args.xp_evidence_dir, "XP evidence directory"))
+        paths.append((xp_evidence_output_dir(args), "XP evidence output directory"))
     errors: list[str] = []
     for path, label in paths:
         errors.extend(check_path_not_reserved_workspace_root(root, path, label))

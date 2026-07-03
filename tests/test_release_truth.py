@@ -212,7 +212,8 @@ def test_release_truth_checker_requires_published_remote_audit_docs() -> None:
     command = (
         "python scripts/check_platform_release_evidence_remote.py --repository <owner>/<repo> "
         "--release-tag <tag> --require-goal-targets --require-source-runs "
-        "--require-final-record-bytes --require-release-asset-bytes --require-tag-source-head"
+        "--require-source-artifact-bytes --require-final-record-bytes "
+        "--require-release-asset-bytes --require-tag-source-head"
     )
 
     def fake_read(relative: str) -> str:
@@ -847,7 +848,7 @@ def test_release_truth_checker_requires_published_platform_evidence_audit() -> N
         '      - name: Audit published protected platform evidence\n'
         '        env:\n'
         '          GH_TOKEN: ${{ github.token }}\n'
-        '        run: python scripts/check_platform_release_evidence_remote.py --repository "${{ github.repository }}" --release-tag "${{ github.ref_name }}" --require-goal-targets --require-source-runs --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head\n'
+        '        run: python scripts/check_platform_release_evidence_remote.py --repository "${{ github.repository }}" --release-tag "${{ github.ref_name }}" --require-goal-targets --require-source-runs --require-source-artifact-bytes --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head\n'
     )
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
         audit_step,
@@ -866,7 +867,7 @@ def test_release_truth_checker_requires_published_platform_audit_after_release_u
         '      - name: Audit published protected platform evidence\n'
         '        env:\n'
         '          GH_TOKEN: ${{ github.token }}\n'
-        '        run: python scripts/check_platform_release_evidence_remote.py --repository "${{ github.repository }}" --release-tag "${{ github.ref_name }}" --require-goal-targets --require-source-runs --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head\n'
+        '        run: python scripts/check_platform_release_evidence_remote.py --repository "${{ github.repository }}" --release-tag "${{ github.ref_name }}" --require-goal-targets --require-source-runs --require-source-artifact-bytes --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head\n'
     )
     upload_step = (
         "      - name: Upload release assets\n"
@@ -885,7 +886,7 @@ def test_release_truth_checker_requires_published_platform_audit_scope() -> None
         '      - name: Audit published protected platform evidence\n'
         '        env:\n'
         '          GH_TOKEN: ${{ github.token }}\n'
-        '        run: python scripts/check_platform_release_evidence_remote.py --repository "${{ github.repository }}" --release-tag "${{ github.ref_name }}" --require-goal-targets --require-source-runs --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head\n'
+        '        run: python scripts/check_platform_release_evidence_remote.py --repository "${{ github.repository }}" --release-tag "${{ github.ref_name }}" --require-goal-targets --require-source-runs --require-source-artifact-bytes --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head\n'
     )
     publish_permissions = (
         "  publish:\n"
@@ -908,6 +909,84 @@ def test_release_truth_checker_requires_published_platform_audit_scope() -> None
 
     assert "publish job missing Actions read permission for published protected platform evidence audit" in errors
     assert "publish job missing GitHub token for published protected platform evidence audit" in errors
+
+
+def test_release_truth_checker_rejects_published_platform_audit_token_in_wrong_step() -> None:
+    checker = _load_release_truth_checker()
+    audit_env = (
+        '      - name: Audit published protected platform evidence\n'
+        '        env:\n'
+        '          GH_TOKEN: ${{ github.token }}\n'
+    )
+    publish_gate = (
+        '      - name: Validate release publish assets\n'
+        '        run: python scripts/check_release_publish_assets.py --assets-dir release-assets --tag "${{ github.ref_name }}" --require-platform-goal-targets\n'
+    )
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    workflow = workflow.replace(
+        audit_env,
+        '      - name: Audit published protected platform evidence\n'
+        '        env:\n',
+    )
+    workflow = workflow.replace(
+        publish_gate,
+        '      - name: Validate release publish assets\n'
+        '        env:\n'
+        '          GH_TOKEN: ${{ github.token }}\n'
+        '        run: python scripts/check_release_publish_assets.py --assets-dir release-assets --tag "${{ github.ref_name }}" --require-platform-goal-targets\n',
+    )
+
+    errors = checker.check_release_preflight(workflow)
+
+    assert "publish job missing GitHub token for published protected platform evidence audit" in errors
+
+
+def test_release_truth_checker_requires_publish_actions_permission_at_job_scope() -> None:
+    checker = _load_release_truth_checker()
+    publish_permissions = (
+        "  publish:\n"
+        "    runs-on: ubuntu-latest\n"
+        "    permissions:\n"
+        "      contents: write\n"
+        "      actions: read\n"
+    )
+    audit_env = (
+        '      - name: Audit published protected platform evidence\n'
+        '        env:\n'
+        '          GH_TOKEN: ${{ github.token }}\n'
+    )
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    workflow = workflow.replace(
+        publish_permissions,
+        publish_permissions.replace("      actions: read\n", ""),
+    )
+    workflow = workflow.replace(
+        audit_env,
+        audit_env + '          ACTIONS_READ_NOTE: "actions: read"\n',
+    )
+
+    errors = checker.check_release_preflight(workflow)
+
+    assert "publish job missing Actions read permission for published protected platform evidence audit" in errors
+
+
+def test_release_truth_checker_requires_publish_contents_write_permission() -> None:
+    checker = _load_release_truth_checker()
+    publish_permissions = (
+        "  publish:\n"
+        "    runs-on: ubuntu-latest\n"
+        "    permissions:\n"
+        "      contents: write\n"
+        "      actions: read\n"
+    )
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        publish_permissions,
+        publish_permissions.replace("      contents: write\n", "      contents: read\n"),
+    )
+
+    errors = checker.check_release_preflight(workflow)
+
+    assert "publish job missing contents write permission for GitHub release upload" in errors
 
 
 def test_release_truth_checker_requires_platform_evidence_import_command() -> None:

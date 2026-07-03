@@ -375,6 +375,44 @@ def test_make_platform_verified_evidence_record_rejects_file_shaped_linux_direct
     assert record == {}
 
 
+def test_make_platform_verified_evidence_record_rejects_invalid_release_source_run_attempt_types(
+    tmp_path: Path,
+) -> None:
+    maker = _load_maker()
+    assets = tmp_path / "artifacts"
+    assets.mkdir()
+    args = maker.parse_args(
+        [
+            "--target",
+            "linux-i386",
+            "--release-tag",
+            "v1.0.2",
+            "--assets-dir",
+            str(assets),
+            "--release-asset-base-url",
+            "https://github.com/example/remote-ops-workspace/releases/download/v1.0.2",
+            "--workflow-run-url",
+            "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+            "--release-source-head-sha",
+            "a" * 40,
+            "--release-source-run-attempt",
+            "1",
+            "--runner-label",
+            "self-hosted",
+            "--runner-label",
+            "linux",
+            "--runner-label",
+            "i386",
+        ]
+    )
+
+    for source_run_attempt in ("first", True):
+        args.release_source_run_attempt = source_run_attempt
+        errors = maker.validate_common_args(args)
+
+        assert "--release-source-run-attempt must be a positive integer" in errors
+
+
 def test_make_platform_verified_evidence_record_generates_xp_record(tmp_path: Path, monkeypatch) -> None:
     maker = _load_maker()
     artifact_checker = _load_platform_promotion_artifacts_checker()
@@ -784,6 +822,7 @@ def test_make_platform_verified_evidence_record_rejects_linux_inputs_inside_rese
     builder_evidence.write_text("{}\n", encoding="utf-8")
     smoke_evidence = embedded / f"native-smoke-{target}.log"
     smoke_evidence.write_text("linux smoke placeholder\n", encoding="utf-8")
+    staged_upload = embedded / "upload"
 
     errors, record = maker.build_evidence_record(
         maker.parse_args(
@@ -812,6 +851,8 @@ def test_make_platform_verified_evidence_record_rejects_linux_inputs_inside_rese
                 "linux",
                 "--runner-label",
                 "i386",
+                "--staged-upload-out-dir",
+                str(staged_upload),
             ]
         )
     )
@@ -826,6 +867,10 @@ def test_make_platform_verified_evidence_record_rejects_linux_inputs_inside_rese
     assert (
         "Linux smoke evidence file must not point inside reserved workspace directory "
         f"'.git': {smoke_evidence}"
+    ) in errors
+    assert (
+        "staged upload output directory must not point inside reserved workspace directory "
+        f"'.git': {staged_upload}"
     ) in errors
     assert record == {}
 
@@ -952,6 +997,8 @@ def test_make_platform_verified_evidence_record_rejects_xp_inputs_inside_reserve
     evidence_dir.mkdir(parents=True)
     evidence = evidence_dir / "xp-evidence.json"
     evidence.write_text("{}\n", encoding="utf-8")
+    staged_upload = embedded / "upload"
+    evidence_output = embedded / "output"
 
     errors, record = maker.build_evidence_record(
         maker.parse_args(
@@ -976,6 +1023,10 @@ def test_make_platform_verified_evidence_record_rejects_xp_inputs_inside_reserve
                 str(evidence),
                 "--xp-evidence-dir",
                 str(evidence_dir),
+                "--staged-upload-out-dir",
+                str(staged_upload),
+                "--xp-evidence-output-dir",
+                str(evidence_output),
             ]
         )
     )
@@ -989,6 +1040,14 @@ def test_make_platform_verified_evidence_record_rejects_xp_inputs_inside_reserve
     assert (
         "XP evidence directory must not point inside reserved workspace directory "
         f"'.github': {evidence_dir}"
+    ) in errors
+    assert (
+        "staged upload output directory must not point inside reserved workspace directory "
+        f"'.github': {staged_upload}"
+    ) in errors
+    assert (
+        "XP evidence output directory must not point inside reserved workspace directory "
+        f"'.github': {evidence_output}"
     ) in errors
     assert record == {}
 
@@ -1501,6 +1560,7 @@ def test_make_platform_verified_evidence_record_rejects_unscoped_linux_generator
         target,
         _smoke_artifact_hashes(assets, names),
     )
+    staged_upload = tmp_path / "upload"
 
     errors, record = maker.build_evidence_record(
         maker.parse_args(
@@ -1529,6 +1589,8 @@ def test_make_platform_verified_evidence_record_rejects_unscoped_linux_generator
                 "linux",
                 "--runner-label",
                 "i386",
+                "--staged-upload-out-dir",
+                str(staged_upload),
             ]
         )
     )
@@ -1538,6 +1600,11 @@ def test_make_platform_verified_evidence_record_rejects_unscoped_linux_generator
     assert any("artifact directory must include release_tag path segment" in error for error in errors)
     assert any("Linux builder evidence file must include target path segment 'linux-i386'" in error for error in errors)
     assert any("Linux smoke evidence file must include release_tag path segment" in error for error in errors)
+    assert any(
+        "staged upload output directory must include target path segment 'linux-i386'" in error
+        for error in errors
+    )
+    assert any("staged upload output directory must include release_tag path segment" in error for error in errors)
 
 
 def test_make_platform_verified_evidence_record_rejects_wrong_xp_release_source_artifact_name(
@@ -1607,6 +1674,8 @@ def test_make_platform_verified_evidence_record_rejects_unscoped_xp_generator_in
     )
     _attach_smoke_evidence_files(evidence_dir, data)
     evidence.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    staged_upload = tmp_path / "upload"
+    evidence_output = tmp_path / "output"
 
     errors, record = maker.build_evidence_record(
         maker.parse_args(
@@ -1631,6 +1700,10 @@ def test_make_platform_verified_evidence_record_rejects_unscoped_xp_generator_in
                 str(evidence),
                 "--xp-evidence-dir",
                 str(evidence_dir),
+                "--staged-upload-out-dir",
+                str(staged_upload),
+                "--xp-evidence-output-dir",
+                str(evidence_output),
             ]
         )
     )
@@ -1642,6 +1715,11 @@ def test_make_platform_verified_evidence_record_rejects_unscoped_xp_generator_in
     )
     assert any("XP evidence file must include release_tag path segment" in error for error in errors)
     assert any("XP evidence directory must include target path segment 'windows-xp-native-x86'" in error for error in errors)
+    assert any(
+        "staged upload output directory must include target path segment 'windows-xp-native-x86'" in error
+        for error in errors
+    )
+    assert any("XP evidence output directory must include release_tag path segment" in error for error in errors)
 
 
 def test_make_platform_verified_evidence_record_rejects_xp_evidence_target_mismatch(

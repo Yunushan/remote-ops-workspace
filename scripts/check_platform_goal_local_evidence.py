@@ -549,7 +549,11 @@ def check_linux_local_evidence(
         errors.append(f"{target} --linux-source-head-sha must be a 40-character lowercase Git SHA")
     if source_run_attempt is None and not infer_linux_bindings:
         errors.append(f"{target} --linux-source-run-attempt is required for local Linux evidence preflight")
-    elif source_run_attempt is not None and source_run_attempt < 1:
+    elif source_run_attempt is not None and (
+        not isinstance(source_run_attempt, int)
+        or isinstance(source_run_attempt, bool)
+        or source_run_attempt < 1
+    ):
         errors.append(f"{target} --linux-source-run-attempt must be a positive integer")
     if builder_evidence.is_symlink():
         errors.append(f"{target} builder identity evidence must not be a symlink: {builder_evidence}")
@@ -941,12 +945,21 @@ def check_path_not_reserved_workspace_root(root: Path, path: Path, label: str) -
     return []
 
 
+def is_allowed_platform_parent_symlink(parent: Path) -> bool:
+    if sys.platform != "darwin" or parent.as_posix() != "/var":
+        return False
+    try:
+        return parent.resolve(strict=False).as_posix() == "/private/var"
+    except OSError:
+        return False
+
+
 def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
     check_path = path if path.is_absolute() else Path.cwd() / path
     for parent in reversed(check_path.parents):
         if parent == Path("."):
             continue
-        if parent.is_symlink():
+        if parent.is_symlink() and not is_allowed_platform_parent_symlink(parent):
             return [f"{label} path must not contain symlinked directories: {parent}"]
     return []
 

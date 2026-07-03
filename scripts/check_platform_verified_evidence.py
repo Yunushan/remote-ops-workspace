@@ -47,6 +47,11 @@ XP_WORKFLOW_INPUT_KEYS = {
     "evidence_file",
     "evidence_dir",
 }
+XP_NATIVE_EVIDENCE_VALIDATION_COMMAND_FLAGS = {
+    "--evidence",
+    "--assets-dir",
+    "--evidence-dir",
+}
 LINUX_WORKFLOW_INPUT_KEYS = {
     "target",
     "release_tag",
@@ -714,7 +719,15 @@ def check_protected_goal_release_consistency(
         for target, entry in entries.items()
         if target in PROTECTED_GOAL_TARGETS
     }
-    if all(len(repositories) == 1 for repositories in repositories_by_target.values()):
+    repository_scope_errors = release_repository_scope_errors(
+        repositories_by_target,
+        (
+            "protected platform goal evidence "
+            f"for release_tag {release_tag} must derive exactly one safe GitHub release repository"
+        ),
+    )
+    errors.extend(repository_scope_errors)
+    if not repository_scope_errors:
         repositories = {
             next(iter(repositories))
             for repositories in repositories_by_target.values()
@@ -744,7 +757,7 @@ def check_protected_goal_release_consistency(
 
 def check_schema(registry: dict[str, Any]) -> list[str]:
     errors: list[str] = []
-    if registry.get("schema_version") != 1:
+    if registry.get("schema_version") != 1 or isinstance(registry.get("schema_version"), bool):
         errors.append("configs/platform_verified_evidence.json schema_version must be 1")
     policy = str(registry.get("policy", ""))
     if "Only accepted evidence records" not in policy:
@@ -1138,7 +1151,17 @@ def check_linux_workflow_inputs(target: str, entry: dict[str, Any]) -> list[str]
     if not isinstance(raw_inputs, dict):
         return [f"{target} evidence must include workflow_inputs object"]
     errors: list[str] = []
-    input_keys = {str(key) for key in raw_inputs}
+    input_keys: set[str] = set()
+    for key in raw_inputs:
+        if not isinstance(key, str):
+            errors.append(f"{target} workflow_inputs keys must be strings, got {key!r}")
+            continue
+        input_keys.add(key)
+    case_collisions = case_insensitive_name_collisions(input_keys)
+    if case_collisions:
+        errors.append(
+            f"{target} workflow_inputs keys must not collide on case-insensitive filesystems: {case_collisions}"
+        )
     missing_keys = sorted(LINUX_WORKFLOW_INPUT_KEYS - input_keys)
     unexpected_keys = sorted(input_keys - LINUX_WORKFLOW_INPUT_KEYS)
     if missing_keys:
@@ -1186,6 +1209,9 @@ def check_linux_builder_identity_sha256(target: str, entry: dict[str, Any]) -> l
         return errors
     if not isinstance(raw_identity, dict):
         return errors
+    if contains_non_string_json_object_key(raw_identity):
+        errors.append(f"{target} builder_identity JSON object keys must be strings for SHA-256 verification")
+        return errors
     if digest != json_sha256(raw_identity):
         errors.append(f"{target} builder_identity_sha256 must match builder_identity JSON SHA-256")
     return errors
@@ -1197,7 +1223,18 @@ def check_linux_evidence_sources(target: str, entry: dict[str, Any]) -> list[str
         return [f"{target} linux_evidence_sources must be an object"]
     errors: list[str] = []
     expected_keys = {"builder_identity", "native_smoke"}
-    keys = {str(key) for key in raw_sources}
+    keys: set[str] = set()
+    for key in raw_sources:
+        if not isinstance(key, str):
+            errors.append(f"{target} linux_evidence_sources keys must be strings, got {key!r}")
+            continue
+        keys.add(key)
+    case_collisions = case_insensitive_name_collisions(keys)
+    if case_collisions:
+        errors.append(
+            f"{target} linux_evidence_sources keys must not collide on "
+            f"case-insensitive filesystems: {case_collisions}"
+        )
     missing_keys = sorted(expected_keys - keys)
     unexpected_keys = sorted(keys - expected_keys)
     if missing_keys:
@@ -1237,7 +1274,7 @@ def check_linux_evidence_sources(target: str, entry: dict[str, Any]) -> list[str
         if record.get("sha256") != expected["sha256"]:
             errors.append(f"{target} linux_evidence_sources.{key}.sha256 must match {key} evidence SHA-256")
         size = record.get("size_bytes")
-        if not isinstance(size, int) or size <= 0:
+        if not isinstance(size, int) or isinstance(size, bool) or size <= 0:
             errors.append(f"{target} linux_evidence_sources.{key}.size_bytes must be a positive integer")
     return errors
 
@@ -1248,10 +1285,20 @@ def check_exact_object_keys(
     raw_object: dict[str, Any],
     allowed_keys: set[str],
 ) -> list[str]:
-    keys = {str(key) for key in raw_object}
+    errors: list[str] = []
+    keys: set[str] = set()
+    for key in raw_object:
+        if not isinstance(key, str):
+            errors.append(f"{target} {label} keys must be strings, got {key!r}")
+            continue
+        keys.add(key)
+    case_collisions = case_insensitive_name_collisions(keys)
     missing = sorted(allowed_keys - keys)
     unexpected = sorted(keys - allowed_keys)
-    errors: list[str] = []
+    if case_collisions:
+        errors.append(
+            f"{target} {label} keys must not collide on case-insensitive filesystems: {case_collisions}"
+        )
     if missing:
         errors.append(f"{target} {label} missing fields: {missing}")
     if unexpected:
@@ -1499,7 +1546,7 @@ def check_linux_builder_identity(
         return [f"{target} evidence must include builder_identity object"]
     errors: list[str] = []
     errors.extend(check_exact_object_keys(target, "builder_identity", raw_identity, LINUX_BUILDER_IDENTITY_KEYS))
-    if raw_identity.get("schema_version") != 1:
+    if raw_identity.get("schema_version") != 1 or isinstance(raw_identity.get("schema_version"), bool):
         errors.append(f"{target} builder_identity schema_version must be 1")
     if raw_identity.get("target") != target:
         errors.append(f"{target} builder_identity target must be {target}")
@@ -1610,7 +1657,7 @@ def check_linux_builder_host_identity(
             LINUX_BUILDER_HOST_IDENTITY_KEYS,
         )
     )
-    if raw_identity.get("schema_version") != 1:
+    if raw_identity.get("schema_version") != 1 or isinstance(raw_identity.get("schema_version"), bool):
         errors.append(f"{target} builder_identity host_identity.schema_version must be 1")
     if raw_identity.get("target") != target:
         errors.append(f"{target} builder_identity host_identity.target must be {target}")
@@ -1730,7 +1777,18 @@ def check_xp_evidence_sources(target: str, entry: dict[str, Any]) -> list[str]:
         return [f"{target} xp_evidence_sources must be an object"]
     errors: list[str] = []
     expected_keys = {"evidence", "smoke_evidence"}
-    keys = {str(key) for key in raw_sources}
+    keys: set[str] = set()
+    for key in raw_sources:
+        if not isinstance(key, str):
+            errors.append(f"{target} xp_evidence_sources keys must be strings, got {key!r}")
+            continue
+        keys.add(key)
+    case_collisions = case_insensitive_name_collisions(keys)
+    if case_collisions:
+        errors.append(
+            f"{target} xp_evidence_sources keys must not collide on "
+            f"case-insensitive filesystems: {case_collisions}"
+        )
     missing_keys = sorted(expected_keys - keys)
     unexpected_keys = sorted(keys - expected_keys)
     if missing_keys:
@@ -1759,7 +1817,7 @@ def check_xp_evidence_sources(target: str, entry: dict[str, Any]) -> list[str]:
         if evidence_record.get("sha256") != entry.get("xp_evidence_sha256"):
             errors.append(f"{target} xp_evidence_sources.evidence.sha256 must match xp_evidence_sha256")
         size = evidence_record.get("size_bytes")
-        if not isinstance(size, int) or size <= 0:
+        if not isinstance(size, int) or isinstance(size, bool) or size <= 0:
             errors.append(f"{target} xp_evidence_sources.evidence.size_bytes must be a positive integer")
 
     raw_summary = entry.get("xp_evidence_summary")
@@ -1772,7 +1830,18 @@ def check_xp_evidence_sources(target: str, entry: dict[str, Any]) -> list[str]:
     if not isinstance(raw_smoke_sources, dict):
         errors.append(f"{target} xp_evidence_sources.smoke_evidence must be an object")
         return errors
-    smoke_source_keys = {str(key) for key in raw_smoke_sources}
+    smoke_source_keys: set[str] = set()
+    for key in raw_smoke_sources:
+        if not isinstance(key, str):
+            errors.append(f"{target} xp_evidence_sources.smoke_evidence smoke ids must be strings, got {key!r}")
+            continue
+        smoke_source_keys.add(key)
+    case_collisions = case_insensitive_name_collisions(smoke_source_keys)
+    if case_collisions:
+        errors.append(
+            f"{target} xp_evidence_sources.smoke_evidence smoke ids must not collide on "
+            f"case-insensitive filesystems: {case_collisions}"
+        )
     missing_smoke_keys = sorted(REQUIRED_XP_SMOKE_IDS - smoke_source_keys)
     unexpected_smoke_keys = sorted(smoke_source_keys - REQUIRED_XP_SMOKE_IDS)
     if missing_smoke_keys:
@@ -1803,7 +1872,7 @@ def check_xp_evidence_sources(target: str, entry: dict[str, Any]) -> list[str]:
                 "must match xp_smoke_evidence_sha256"
             )
         size = record.get("size_bytes")
-        if not isinstance(size, int) or size <= 0:
+        if not isinstance(size, int) or isinstance(size, bool) or size <= 0:
             errors.append(
                 f"{target} xp_evidence_sources.smoke_evidence.{smoke_id}.size_bytes "
                 "must be a positive integer"
@@ -1830,7 +1899,17 @@ def check_xp_workflow_inputs(
         errors.append(f"{target} evidence must include workflow_inputs object")
         return errors
 
-    input_keys = {str(key) for key in raw_inputs}
+    input_keys: set[str] = set()
+    for key in raw_inputs:
+        if not isinstance(key, str):
+            errors.append(f"{target} workflow_inputs keys must be strings, got {key!r}")
+            continue
+        input_keys.add(key)
+    case_collisions = case_insensitive_name_collisions(input_keys)
+    if case_collisions:
+        errors.append(
+            f"{target} workflow_inputs keys must not collide on case-insensitive filesystems: {case_collisions}"
+        )
     missing_keys = sorted(XP_WORKFLOW_INPUT_KEYS - input_keys)
     unexpected_keys = sorted(input_keys - XP_WORKFLOW_INPUT_KEYS)
     if missing_keys:
@@ -1915,6 +1994,14 @@ def check_xp_native_evidence_validation_command(target: str, release_tag: str, c
     errors: list[str] = []
     if not command.startswith(expected_prefix):
         errors.append(f"{target} native_evidence_validation_command must start with {expected_prefix!r}")
+    errors.extend(
+        check_no_unexpected_command_flags(
+            target,
+            "native_evidence_validation_command",
+            command,
+            XP_NATIVE_EVIDENCE_VALIDATION_COMMAND_FLAGS,
+        )
+    )
     evidence_paths = re.findall(r"(?:^|\s)--evidence\s+(\S+)(?=\s|$)", command)
     if len(evidence_paths) != 1:
         errors.append(
@@ -2144,7 +2231,22 @@ def check_xp_evidence_summary(target: str, release_tag: str, raw_summary: Any) -
     if not isinstance(smoke_ids, list):
         errors.append(f"{target} xp_evidence_summary smoke_ids must be a list")
     else:
-        actual = {str(smoke_id) for smoke_id in smoke_ids}
+        actual_list: list[str] = []
+        for smoke_id in smoke_ids:
+            if not isinstance(smoke_id, str):
+                errors.append(f"{target} xp_evidence_summary smoke_ids entries must be strings, got {smoke_id!r}")
+                continue
+            actual_list.append(smoke_id)
+        actual = set(actual_list)
+        duplicate_smoke_ids = sorted(smoke_id for smoke_id in actual if actual_list.count(smoke_id) > 1)
+        if duplicate_smoke_ids:
+            errors.append(f"{target} xp_evidence_summary smoke_ids contains duplicates: {duplicate_smoke_ids}")
+        case_collisions = case_insensitive_name_collisions(actual)
+        if case_collisions:
+            errors.append(
+                f"{target} xp_evidence_summary smoke_ids must not collide on "
+                f"case-insensitive filesystems: {case_collisions}"
+            )
         missing = sorted(REQUIRED_XP_SMOKE_IDS - actual)
         unexpected = sorted(actual - REQUIRED_XP_SMOKE_IDS)
         if missing:
@@ -2203,6 +2305,11 @@ def check_xp_host_identity_sha256(target: str, raw_digest: Any, raw_identity: An
     digest = str(raw_digest)
     if not re.fullmatch(r"[0-9a-f]{64}", digest):
         return [f"{target} xp_host_identity_sha256 must be a SHA-256 hex digest"]
+    if isinstance(raw_identity, dict) and contains_non_string_json_object_key(raw_identity):
+        return [
+            f"{target} xp_evidence_summary host_identity JSON object keys must be strings "
+            "for SHA-256 verification"
+        ]
     if isinstance(raw_identity, dict) and digest != json_sha256(raw_identity):
         return [f"{target} xp_host_identity_sha256 must match xp_evidence_summary host_identity"]
     return []
@@ -2220,7 +2327,7 @@ def check_xp_host_identity_summary(target: str, release_tag: str, raw_identity: 
             XP_HOST_IDENTITY_KEYS,
         )
     )
-    if raw_identity.get("schema_version") != 1:
+    if raw_identity.get("schema_version") != 1 or isinstance(raw_identity.get("schema_version"), bool):
         errors.append(f"{target} xp_evidence_summary host_identity.schema_version must be 1")
     if raw_identity.get("target") != target:
         errors.append(f"{target} xp_evidence_summary host_identity.target must be {target}")
@@ -2369,7 +2476,26 @@ def check_xp_smoke_evidence_files(target: str, raw_files: Any) -> list[str]:
     if not isinstance(raw_files, dict):
         return [f"{target} xp_evidence_summary smoke_evidence_files must be an object"]
     errors: list[str] = []
-    files = {str(name): str(value).strip() for name, value in raw_files.items()}
+    files: dict[str, str] = {}
+    for name, value in raw_files.items():
+        if not isinstance(name, str):
+            errors.append(
+                f"{target} xp_evidence_summary smoke_evidence_files smoke ids must be strings, got {name!r}"
+            )
+            continue
+        if not isinstance(value, str):
+            errors.append(
+                f"{target} xp_evidence_summary smoke_evidence_files {name} "
+                f"must be a string path, got {value!r}"
+            )
+            continue
+        files[name] = value.strip()
+    case_collisions = case_insensitive_name_collisions(set(files))
+    if case_collisions:
+        errors.append(
+            f"{target} xp_evidence_summary smoke_evidence_files smoke ids must not collide on "
+            f"case-insensitive filesystems: {case_collisions}"
+        )
     missing = sorted(REQUIRED_XP_SMOKE_IDS - set(files))
     if missing:
         errors.append(f"{target} xp_evidence_summary smoke_evidence_files missing smoke ids: {missing}")
@@ -2422,9 +2548,25 @@ def check_xp_smoke_commands(
     if not isinstance(raw_commands, dict):
         return [f"{target} xp_evidence_summary smoke_commands must be an object"]
     errors: list[str] = []
-    commands = {str(name): str(value).strip() for name, value in raw_commands.items()}
+    commands: dict[str, str] = {}
+    for name, value in raw_commands.items():
+        if not isinstance(name, str):
+            errors.append(f"{target} xp_evidence_summary smoke_commands smoke ids must be strings, got {name!r}")
+            continue
+        if not isinstance(value, str):
+            errors.append(
+                f"{target} xp_evidence_summary smoke_commands {name} must be a string command, got {value!r}"
+            )
+            continue
+        commands[name] = value.strip()
+    case_collisions = case_insensitive_name_collisions(set(commands))
+    if case_collisions:
+        errors.append(
+            f"{target} xp_evidence_summary smoke_commands smoke ids must not collide on "
+            f"case-insensitive filesystems: {case_collisions}"
+        )
     evidence_files = (
-        {str(name): str(value).strip() for name, value in raw_files.items()}
+        {name: value.strip() for name, value in raw_files.items() if isinstance(name, str) and isinstance(value, str)}
         if isinstance(raw_files, dict)
         else {}
     )
@@ -2595,7 +2737,18 @@ def check_xp_smoke_evidence_hashes(target: str, raw_hashes: Any) -> list[str]:
     if not isinstance(raw_hashes, dict):
         return [f"{target} xp_smoke_evidence_sha256 must be an object"]
     errors: list[str] = []
-    hashes = {str(name): str(value) for name, value in raw_hashes.items()}
+    hashes: dict[str, str] = {}
+    for name, value in raw_hashes.items():
+        if not isinstance(name, str):
+            errors.append(f"{target} xp_smoke_evidence_sha256 smoke ids must be strings, got {name!r}")
+            continue
+        hashes[name] = str(value)
+    case_collisions = case_insensitive_name_collisions(set(hashes))
+    if case_collisions:
+        errors.append(
+            f"{target} xp_smoke_evidence_sha256 smoke ids must not collide on "
+            f"case-insensitive filesystems: {case_collisions}"
+        )
     missing = sorted(REQUIRED_XP_SMOKE_IDS - set(hashes))
     if missing:
         errors.append(f"{target} xp_smoke_evidence_sha256 missing smoke ids: {missing}")
@@ -2612,7 +2765,18 @@ def check_linux_smoke_evidence_hashes(target: str, raw_hashes: Any) -> list[str]
     if not isinstance(raw_hashes, dict):
         return [f"{target} linux_smoke_evidence_sha256 must be an object"]
     errors: list[str] = []
-    hashes = {str(name): str(value) for name, value in raw_hashes.items()}
+    hashes: dict[str, str] = {}
+    for name, value in raw_hashes.items():
+        if not isinstance(name, str):
+            errors.append(f"{target} linux_smoke_evidence_sha256 smoke ids must be strings, got {name!r}")
+            continue
+        hashes[name] = str(value)
+    case_collisions = case_insensitive_name_collisions(set(hashes))
+    if case_collisions:
+        errors.append(
+            f"{target} linux_smoke_evidence_sha256 smoke ids must not collide on "
+            f"case-insensitive filesystems: {case_collisions}"
+        )
     missing = sorted(REQUIRED_LINUX_SMOKE_IDS - set(hashes))
     if missing:
         errors.append(f"{target} linux_smoke_evidence_sha256 missing smoke ids: {missing}")
@@ -3064,7 +3228,10 @@ def check_common_evidence(
         asset_name_counts: dict[str, int] = {}
         release_repositories: set[str] = set()
         for url in release_assets:
-            url_text = str(url)
+            if not isinstance(url, str):
+                errors.append(f"{target} release asset URL entries must be strings, got {url!r}")
+                continue
+            url_text = url
             match = GITHUB_RELEASE_ASSET_RE.fullmatch(url_text)
             if not match:
                 errors.append(f"{target} release asset URL is not a GitHub release asset URL: {url_text}")
@@ -3091,6 +3258,12 @@ def check_common_evidence(
         duplicate_assets = sorted(name for name, count in asset_name_counts.items() if count > 1)
         if duplicate_assets:
             errors.append(f"{target} release asset URLs contain duplicate files: {duplicate_assets}")
+        case_collisions = case_insensitive_name_collisions(actual_names)
+        if case_collisions:
+            errors.append(
+                f"{target} release asset URL file names must not collide on case-insensitive filesystems: "
+                f"{case_collisions}"
+            )
         unexpected_assets = sorted(actual_names - expected_artifact_names)
         if unexpected_assets:
             errors.append(f"{target} release asset URLs reference unexpected files: {unexpected_assets}")
@@ -3133,12 +3306,22 @@ def check_evidence_checks(
 ) -> list[str]:
     if not isinstance(raw_checks, list):
         return [f"{target} evidence checks must be a list"]
-    checks = [str(check) for check in raw_checks]
+    errors: list[str] = []
+    checks: list[str] = []
+    for check in raw_checks:
+        if not isinstance(check, str):
+            errors.append(f"{target} evidence checks entries must be strings, got {check!r}")
+            continue
+        checks.append(check)
     check_counts: dict[str, int] = {}
     for check in checks:
         check_counts[check] = check_counts.get(check, 0) + 1
     actual = set(checks)
-    errors: list[str] = []
+    case_collisions = case_insensitive_name_collisions(actual)
+    if case_collisions:
+        errors.append(
+            f"{target} evidence checks must not collide on case-insensitive filesystems: {case_collisions}"
+        )
     missing_checks = sorted(required_checks - actual)
     if missing_checks:
         errors.append(f"{target} evidence missing required checks: {missing_checks}")
@@ -3157,19 +3340,31 @@ def check_evidence_record_keys(
     *,
     require_review_bundle: bool,
 ) -> list[str]:
+    errors: list[str] = []
+    keys: set[str] = set()
+    for key in entry:
+        if not isinstance(key, str):
+            errors.append(f"{target} accepted evidence top-level keys must be strings, got {key!r}")
+            continue
+        keys.add(key)
+    case_collisions = case_insensitive_name_collisions(keys)
+    if case_collisions:
+        errors.append(
+            f"{target} accepted evidence top-level keys must not collide on "
+            f"case-insensitive filesystems: {case_collisions}"
+        )
     if target in LINUX_TARGETS:
         allowed = set(LINUX_EVIDENCE_KEYS)
     elif target in XP_TARGETS:
         allowed = set(XP_EVIDENCE_KEYS)
     else:
-        return []
-    if require_review_bundle or FINALIZED_EVIDENCE_KEYS & set(entry):
+        return errors
+    if require_review_bundle or FINALIZED_EVIDENCE_KEYS & keys:
         allowed.update(FINALIZED_EVIDENCE_KEYS)
-    keys = {str(key) for key in entry}
     unexpected = sorted(keys - allowed)
     if unexpected:
-        return [f"{target} accepted evidence has unexpected top-level fields: {unexpected}"]
-    return []
+        errors.append(f"{target} accepted evidence has unexpected top-level fields: {unexpected}")
+    return errors
 
 
 def check_finalized_record_release_asset_url(
@@ -3177,7 +3372,15 @@ def check_finalized_record_release_asset_url(
     release_tag: str,
     entry: dict[str, Any],
 ) -> list[str]:
-    raw_url = str(entry.get("finalized_record_release_asset_url", "")).strip()
+    if "finalized_record_release_asset_url" not in entry:
+        return [f"{target} finalized_record_release_asset_url must be set"]
+    raw_value = entry.get("finalized_record_release_asset_url")
+    if not isinstance(raw_value, str):
+        return [
+            f"{target} finalized_record_release_asset_url must be a string GitHub release asset URL, "
+            f"got {raw_value!r}"
+        ]
+    raw_url = raw_value.strip()
     if not raw_url:
         return [f"{target} finalized_record_release_asset_url must be set"]
     match = GITHUB_RELEASE_ASSET_RE.fullmatch(raw_url)
@@ -3213,12 +3416,12 @@ def release_package_asset_urls(entry: dict[str, Any]) -> list[str]:
     urls: list[str] = []
     raw_release_assets = entry.get("release_asset_urls")
     if isinstance(raw_release_assets, list):
-        urls.extend(str(url) for url in raw_release_assets)
+        urls.extend(url for url in raw_release_assets if isinstance(url, str))
     review_bundle = entry.get("review_bundle")
     if isinstance(review_bundle, dict):
         raw_review_assets = review_bundle.get("release_asset_urls")
         if isinstance(raw_review_assets, list):
-            urls.extend(str(url) for url in raw_review_assets)
+            urls.extend(url for url in raw_review_assets if isinstance(url, str))
     finalized_url = entry.get("finalized_record_release_asset_url")
     if isinstance(finalized_url, str):
         urls.append(finalized_url)
@@ -3298,9 +3501,15 @@ def check_release_asset_source(
     if not isinstance(raw_files, list) or not raw_files:
         errors.append(f"{target} release_asset_source.contains_files must be a non-empty list")
         return errors
-    files = [str(item) for item in raw_files]
+    files = [item for item in raw_files if isinstance(item, str)]
     file_counts: dict[str, int] = {}
     actual_files: set[str] = set()
+    for item in raw_files:
+        if not isinstance(item, str):
+            errors.append(
+                f"{target} release_asset_source.contains_files entries must be concrete file names, "
+                f"got {item!r}"
+            )
     for filename in files:
         file_counts[filename] = file_counts.get(filename, 0) + 1
         actual_files.add(filename)
@@ -3312,6 +3521,12 @@ def check_release_asset_source(
     duplicate_files = sorted(name for name, count in file_counts.items() if count > 1)
     if duplicate_files:
         errors.append(f"{target} release_asset_source.contains_files contains duplicates: {duplicate_files}")
+    case_collisions = case_insensitive_name_collisions(actual_files)
+    if case_collisions:
+        errors.append(
+            f"{target} release_asset_source.contains_files must not collide on "
+            f"case-insensitive filesystems: {case_collisions}"
+        )
     missing_files = sorted(expected_files - actual_files)
     if missing_files:
         errors.append(f"{target} release_asset_source.contains_files missing files: {missing_files}")
@@ -3362,7 +3577,7 @@ def check_review_bundle(
         if not re.fullmatch(r"[0-9a-f]{64}", digest):
             errors.append(f"{target} review_bundle {key}.sha256 must be a SHA-256 hex digest")
         size = raw_record.get("size_bytes")
-        if not isinstance(size, int) or size <= 0:
+        if not isinstance(size, int) or isinstance(size, bool) or size <= 0:
             errors.append(f"{target} review_bundle {key}.size_bytes must be a positive integer")
     errors.extend(
         check_review_bundle_release_asset_urls(
@@ -3391,7 +3606,12 @@ def check_review_bundle_release_asset_urls(
     file_counts: dict[str, int] = {}
     bundle_repositories: set[str] = set()
     for url in raw_urls:
-        url_text = str(url)
+        if not isinstance(url, str):
+            errors.append(
+                f"{target} review_bundle release asset URL entries must be strings, got {url!r}"
+            )
+            continue
+        url_text = url
         match = GITHUB_RELEASE_ASSET_RE.fullmatch(url_text)
         if not match:
             errors.append(f"{target} review_bundle release asset URL is not a GitHub release asset URL: {url_text}")
@@ -3421,6 +3641,12 @@ def check_review_bundle_release_asset_urls(
     duplicate_files = sorted(name for name, count in file_counts.items() if count > 1)
     if duplicate_files:
         errors.append(f"{target} review_bundle release_asset_urls contain duplicate files: {duplicate_files}")
+    case_collisions = case_insensitive_name_collisions(actual_files)
+    if case_collisions:
+        errors.append(
+            f"{target} review_bundle release asset URL file names must not collide on "
+            f"case-insensitive filesystems: {case_collisions}"
+        )
     unexpected_files = sorted(actual_files - expected_files)
     if unexpected_files:
         errors.append(f"{target} review_bundle release_asset_urls reference unexpected files: {unexpected_files}")
@@ -3450,7 +3676,12 @@ def release_asset_repositories(raw_assets: Any) -> set[str]:
         return set()
     repositories: set[str] = set()
     for url in raw_assets:
-        match = GITHUB_RELEASE_ASSET_RE.fullmatch(str(url))
+        if not isinstance(url, str):
+            continue
+        text = url
+        if not release_asset_url_filename(text):
+            continue
+        match = GITHUB_RELEASE_ASSET_RE.fullmatch(text)
         if match:
             repositories.add(match.group(1))
     return repositories
@@ -3470,6 +3701,18 @@ def release_asset_url_filename(url: str) -> str:
         return ""
     filename = unquote(path_segments[-1])
     return filename if exact_safe_file_name(filename) else ""
+
+
+def case_insensitive_name_collisions(names: set[str]) -> list[str]:
+    names_by_folded: dict[str, list[str]] = {}
+    for name in names:
+        names_by_folded.setdefault(name.casefold(), []).append(name)
+    return sorted(
+        name
+        for folded_names in names_by_folded.values()
+        if len(folded_names) > 1
+        for name in sorted(folded_names)
+    )
 
 
 def exact_safe_file_name(filename: str) -> bool:
@@ -4047,7 +4290,18 @@ def check_artifact_sha256(target: str, raw_hashes: Any, expected_artifact_names:
     if not isinstance(raw_hashes, dict):
         return [f"{target} evidence must include artifact_sha256 map"]
     errors: list[str] = []
-    hashes = {str(name): str(value) for name, value in raw_hashes.items()}
+    hashes: dict[str, str] = {}
+    for name, value in raw_hashes.items():
+        if not isinstance(name, str) or not exact_safe_file_name(name):
+            errors.append(f"{target} artifact_sha256 keys must be exact safe file names, got {name!r}")
+            continue
+        hashes[name] = str(value)
+    case_collisions = case_insensitive_name_collisions(set(hashes))
+    if case_collisions:
+        errors.append(
+            f"{target} artifact_sha256 keys must not collide on case-insensitive filesystems: "
+            f"{case_collisions}"
+        )
     missing_hashes = sorted(expected_artifact_names - set(hashes))
     if missing_hashes:
         errors.append(f"{target} artifact_sha256 missing entries for: {missing_hashes}")
@@ -4136,7 +4390,12 @@ def check_registry_consistency(registry: dict[str, Any]) -> list[str]:
             target: release_asset_repositories(entry.get("release_asset_urls"))
             for target, entry in xp_entries.items()
         }
-        if all(len(repositories) == 1 for repositories in repositories_by_target.values()):
+        repository_scope_errors = release_repository_scope_errors(
+            repositories_by_target,
+            "Windows XP native evidence pair must derive exactly one safe GitHub release repository",
+        )
+        errors.extend(repository_scope_errors)
+        if not repository_scope_errors:
             repositories = {
                 next(iter(repositories))
                 for repositories in repositories_by_target.values()
@@ -4173,7 +4432,12 @@ def check_partial_protected_goal_release_scope(entries: dict[str, dict[str, Any]
         target: release_asset_repositories(entry.get("release_asset_urls"))
         for target, entry in entries.items()
     }
-    if all(len(repositories) == 1 for repositories in repositories_by_target.values()):
+    repository_scope_errors = release_repository_scope_errors(
+        repositories_by_target,
+        "partial protected platform goal evidence must derive exactly one safe GitHub release repository before promotion",
+    )
+    errors.extend(repository_scope_errors)
+    if not repository_scope_errors:
         repositories = {
             next(iter(repositories))
             for repositories in repositories_by_target.values()
@@ -4196,6 +4460,20 @@ def check_partial_protected_goal_release_scope(entries: dict[str, dict[str, Any]
             f"with conflicting run attempts before promotion, got {run_url}: {formatted}"
         )
     return errors
+
+
+def release_repository_scope_errors(
+    repositories_by_target: dict[str, set[str]],
+    label: str,
+) -> list[str]:
+    ambiguous = {
+        target: sorted(repositories)
+        for target, repositories in sorted(repositories_by_target.items())
+        if len(repositories) != 1
+    }
+    if not ambiguous:
+        return []
+    return [f"{label}, got {ambiguous}"]
 
 
 def release_source_run_attempt_conflicts(
@@ -4280,6 +4558,17 @@ def xp_target_contract(target: str) -> dict[str, Any]:
     return target_contract if isinstance(target_contract, dict) else {}
 
 
+def contains_non_string_json_object_key(value: Any) -> bool:
+    if isinstance(value, dict):
+        return any(
+            not isinstance(key, str) or contains_non_string_json_object_key(child)
+            for key, child in value.items()
+        )
+    if isinstance(value, list):
+        return any(contains_non_string_json_object_key(child) for child in value)
+    return False
+
+
 def json_sha256(data: dict[str, Any]) -> str:
     payload = json.dumps(data, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(payload).hexdigest()
@@ -4301,12 +4590,21 @@ def check_json_input_path(path: Path, label: str) -> list[str]:
     return check_path_parent_symlinks(path, label)
 
 
+def is_allowed_platform_parent_symlink(parent: Path) -> bool:
+    if sys.platform != "darwin" or parent.as_posix() != "/var":
+        return False
+    try:
+        return parent.resolve(strict=False).as_posix() == "/private/var"
+    except OSError:
+        return False
+
+
 def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
     check_path = path if path.is_absolute() else Path.cwd() / path
     for parent in reversed(check_path.parents):
         if parent == Path("."):
             continue
-        if parent.is_symlink():
+        if parent.is_symlink() and not is_allowed_platform_parent_symlink(parent):
             return [f"{label} path must not contain symlinked directories: {parent}"]
     return []
 

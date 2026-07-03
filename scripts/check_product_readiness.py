@@ -316,6 +316,7 @@ def check_product_readiness() -> list[str]:
                 else:
                     errors.extend(check_required_accepted_evidence_record(target, accepted_record))
                 errors.extend(check_protected_requirement_commands(target, item.get("required_commands")))
+                errors.extend(check_required_artifact_files(target, item.get("required_artifacts")))
                 errors.extend(
                     check_required_review_bundle_files(
                         target,
@@ -627,9 +628,15 @@ def check_smoke_evidence_requirements(target: object, raw_smoke: object) -> list
         return []
     if not isinstance(raw_smoke, list) or not raw_smoke:
         return [f"{target_text} protected platform requirement missing smoke_evidence"]
-    values = [str(item) for item in raw_smoke]
+    values = [item for item in raw_smoke if isinstance(item, str)]
     expected = set(expected_values)
     errors: list[str] = []
+    for item in raw_smoke:
+        if not isinstance(item, str):
+            errors.append(
+                f"{target_text} protected platform requirement smoke_evidence entries "
+                f"must be strings, got {item!r}"
+            )
     duplicate_values = sorted({value for value in values if values.count(value) > 1})
     if duplicate_values:
         errors.append(
@@ -895,7 +902,12 @@ def check_release_asset_source_requirement(
             "must be a non-empty list"
         )
         return errors
-    files = [str(filename) for filename in raw_files]
+    files, file_errors = checked_requirement_file_names(
+        target_text,
+        "release_asset_source_required.contains_files",
+        raw_files,
+    )
+    errors.extend(file_errors)
     duplicate_files = sorted({filename for filename in files if files.count(filename) > 1})
     if duplicate_files:
         errors.append(
@@ -962,7 +974,42 @@ def expected_release_asset_source_files(target: str, item: dict[str, object]) ->
 def requirement_string_set(raw_value: object) -> set[str]:
     if not isinstance(raw_value, list):
         return set()
-    return {str(item) for item in raw_value if str(item)}
+    return {
+        item
+        for item in raw_value
+        if isinstance(item, str) and platform_evidence_checker.exact_safe_file_name(item)
+    }
+
+
+def checked_requirement_file_names(
+    target_text: str,
+    label: str,
+    raw_files: list[object],
+) -> tuple[list[str], list[str]]:
+    files: list[str] = []
+    errors: list[str] = []
+    for filename in raw_files:
+        if not isinstance(filename, str) or not platform_evidence_checker.exact_safe_file_name(filename):
+            errors.append(
+                f"{target_text} protected platform requirement {label} entries "
+                f"must be plain file names, got {filename!r}"
+            )
+            continue
+        files.append(filename)
+    return files, errors
+
+
+def check_required_artifact_files(target: object, raw_files: object) -> list[str]:
+    target_text = str(target)
+    if not isinstance(raw_files, list) or not raw_files:
+        return [f"{target_text} protected platform requirement missing required artifacts"]
+    files, errors = checked_requirement_file_names(target_text, "required artifacts", raw_files)
+    duplicate_files = sorted({filename for filename in files if files.count(filename) > 1})
+    if duplicate_files:
+        errors.append(
+            f"{target_text} protected platform requirement required artifacts contain duplicates: {duplicate_files}"
+        )
+    return errors
 
 
 def check_required_review_bundle_files(
@@ -973,9 +1020,13 @@ def check_required_review_bundle_files(
     target_text = str(target)
     if not isinstance(raw_files, list) or not raw_files:
         return [f"{target_text} protected platform requirement missing review bundle files"]
-    files = [str(filename) for filename in raw_files]
+    files, file_errors = checked_requirement_file_names(
+        target_text,
+        "review bundle files",
+        raw_files,
+    )
     expected = expected_review_bundle_files(target_text, release_tag)
-    errors: list[str] = []
+    errors: list[str] = list(file_errors)
     duplicate_files = sorted({filename for filename in files if files.count(filename) > 1})
     if duplicate_files:
         errors.append(
@@ -1002,11 +1053,15 @@ def check_security_requirement_items(
 ) -> list[str]:
     if not isinstance(raw_security, list):
         return [f"{target} {label} missing security_requirements"]
-    actual = {str(item) for item in raw_security}
+    errors: list[str] = []
+    for item in raw_security:
+        if not isinstance(item, str):
+            errors.append(f"{target} {label} security_requirements entries must be strings, got {item!r}")
+    actual = {item for item in raw_security if isinstance(item, str)}
     missing = [item for item in required_items if item not in actual]
     if missing:
-        return [f"{target} {label} missing security proof: {missing}"]
-    return []
+        errors.append(f"{target} {label} missing security proof: {missing}")
+    return errors
 
 
 def expected_protected_goal_status(

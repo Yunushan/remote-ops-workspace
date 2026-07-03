@@ -5,7 +5,6 @@ import sys
 import time
 from pathlib import Path
 
-
 DEFAULT_TIMEOUT_SECONDS = 2700
 DEFAULT_POLL_SECONDS = 10.0
 DEFAULT_STABLE_POLLS = 2
@@ -171,9 +170,18 @@ def check_parent_directories_not_symlinked(label: str, path: Path) -> list[str]:
         except OSError as exc:
             errors.append(f"{label} parent directory could not be checked: {parent}: {exc}")
             continue
-        if is_symlink:
+        if is_symlink and not is_allowed_platform_parent_symlink(parent):
             errors.append(f"{label} path must not contain symlinked parent directory: {parent}")
     return errors
+
+
+def is_allowed_platform_parent_symlink(parent: Path) -> bool:
+    if sys.platform != "darwin" or parent.as_posix() != "/var":
+        return False
+    try:
+        return parent.resolve(strict=False).as_posix() == "/private/var"
+    except OSError:
+        return False
 
 
 def staged_tree_symlink_errors(label: str, root: Path) -> list[str]:

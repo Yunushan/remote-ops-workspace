@@ -53,12 +53,29 @@ def check_xp_native_evidence_workflow(workflow: str | None = None) -> list[str]:
 def check_github_expression_delimiters(workflow: str) -> list[str]:
     errors: list[str] = []
     for line_number, line in enumerate(workflow.splitlines(), start=1):
-        if line.count("${{") != line.count("}}"):
+        if github_expression_delimiters_unbalanced(line):
             errors.append(
                 "XP native evidence workflow has unbalanced GitHub expression "
                 f"delimiters on line {line_number}: {line.strip()}"
             )
     return errors
+
+
+def github_expression_delimiters_unbalanced(line: str) -> bool:
+    index = 0
+    while index < len(line):
+        next_open = line.find("${{", index)
+        next_close = line.find("}}", index)
+        if next_close != -1 and (next_open == -1 or next_close < next_open):
+            return True
+        if next_open == -1:
+            return False
+        close = line.find("}}", next_open + 3)
+        nested_open = line.find("${{", next_open + 3)
+        if close == -1 or (nested_open != -1 and nested_open < close):
+            return True
+        index = close + 2
+    return False
 
 
 def check_top_level_policy(workflow: str) -> list[str]:
@@ -105,7 +122,7 @@ def check_xp_job(workflow: str) -> list[str]:
         'python-version: "3.12"': "Python version pin",
         "XP evidence collector validates staged proof captured on real Windows XP hosts; run scripts/xp_smoke_runner.cmd after this workflow starts so smoke proof binds the printed source run metadata.": "XP host versus collector boundary",
         f"Path('{XP_EVIDENCE_OUTPUT_DIR}').mkdir(parents=True, exist_ok=True)": "target/release scoped XP evidence output directory creation",
-        'python scripts/check_xp_native_evidence_dispatch_inputs.py --target "${{ inputs.target }}" --release-tag "${{ inputs.release_tag }}" --release-asset-base-url "${{ inputs.release_asset_base_url }}" --workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" --source-head-sha "${{ github.sha }}" --source-run-attempt "${{ github.run_attempt }}" --assets-dir "${{ inputs.assets_dir }}" --evidence-file "${{ inputs.evidence_file }}" --evidence-dir "${{ inputs.evidence_dir }}"': "XP dispatch input preflight",
+        'python scripts/check_xp_native_evidence_dispatch_inputs.py --target "${{ inputs.target }}" --release-tag "${{ inputs.release_tag }}" --release-asset-base-url "${{ inputs.release_asset_base_url }}" --workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" --workflow-ref-name "${{ github.ref_name }}" --source-head-sha "${{ github.sha }}" --source-run-attempt "${{ github.run_attempt }}" --assets-dir "${{ inputs.assets_dir }}" --evidence-file "${{ inputs.evidence_file }}" --evidence-dir "${{ inputs.evidence_dir }}"': "XP dispatch input preflight",
         "XP evidence source workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}": "printed XP source workflow run metadata",
         "XP evidence source head SHA: ${{ github.sha }}": "printed XP source head SHA metadata",
         "XP evidence source run attempt: ${{ github.run_attempt }}": "printed XP source run-attempt metadata",
@@ -123,8 +140,10 @@ def check_xp_job(workflow: str) -> list[str]:
         '--xp-source-run-attempt "${{ github.run_attempt }}"': "XP local source run-attempt binding",
         '--release-source-run-attempt "${{ github.run_attempt }}"': "release source run-attempt binding",
         "--local-evidence-root .": "candidate local evidence root binding",
+        f'--staged-upload-out-dir "{XP_EVIDENCE_UPLOAD_DIR}"': "candidate staged upload output binding",
         '--xp-evidence "${{ inputs.evidence_file }}"': "XP evidence input binding",
         '--xp-evidence-dir "${{ inputs.evidence_dir }}"': "XP evidence directory binding",
+        f'--xp-evidence-output-dir "{XP_EVIDENCE_OUTPUT_DIR}"': "candidate XP evidence output binding",
         f'--out "{XP_EVIDENCE_OUTPUT_DIR}/platform-verified-evidence-{GHA_TARGET}.json"': "target/release scoped candidate evidence output",
         'python scripts/make_xp_native_evidence_bundle.py --target "${{ inputs.target }}"': "review evidence bundle generation",
         f'--candidate-record "{XP_EVIDENCE_OUTPUT_DIR}/platform-verified-evidence-{GHA_TARGET}.json"': "target/release scoped candidate record bundle input",

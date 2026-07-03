@@ -22,7 +22,7 @@ COMMON_SNIPPETS = (
     "python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> --release-assets-dir <release-assets-dir> --release-repository <owner>/<repo>",
     "python scripts/check_platform_review_bundle_artifacts.py --bundle-dir <bundle-dir> --require-goal-targets --release-tag v<project.version> --require-final-record-assets",
     "python scripts/import_platform_evidence_artifacts.py --release-tag v<project.version> --require-goal-targets --out-dir <release-assets-dir> --dry-run --verify-source-run",
-    "python scripts/check_platform_release_evidence_remote.py --repository <owner>/<repo> --release-tag v<project.version> --require-goal-targets --require-source-runs --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head",
+    "python scripts/check_platform_release_evidence_remote.py --repository <owner>/<repo> --release-tag v<project.version> --require-goal-targets --require-source-runs --require-source-artifact-bytes --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head",
     "remote auditor's\n`--require-goal-targets` mode refuses weaker published-release audits",
     "release_asset_provenance_complete=false",
     "record_complete",
@@ -348,7 +348,7 @@ def read_json(path: Path) -> dict[str, Any]:
 def linux_dispatch_command(target_id: str) -> str:
     return (
         "gh workflow run extended-platform-evidence.yml --repo <owner>/<repo> "
-        "--ref <github-actions-head-sha> "
+        "--ref v<project.version> "
         f"-f target={target_id} "
         "-f release_tag=v<project.version> "
         "-f release_asset_base_url=<github-release-download-url>"
@@ -358,7 +358,7 @@ def linux_dispatch_command(target_id: str) -> str:
 def xp_dispatch_command(target_id: str) -> str:
     return (
         "gh workflow run xp-native-evidence.yml --repo <owner>/<repo> "
-        "--ref <github-actions-head-sha> "
+        "--ref v<project.version> "
         f"-f target={target_id} "
         "-f release_tag=v<project.version> "
         "-f release_asset_base_url=<github-release-download-url> "

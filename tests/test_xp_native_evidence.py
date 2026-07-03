@@ -16,6 +16,16 @@ def test_xp_native_evidence_contract_passes_current_tree() -> None:
     assert checker.main(["--contract"]) == 0
 
 
+def test_xp_native_evidence_contract_rejects_boolean_schema_version() -> None:
+    checker = _load_xp_native_evidence_checker()
+    contract = checker.read_json(Path("configs/xp_native_evidence_contract.json"))
+    contract["schema_version"] = True
+
+    errors = checker.check_contract(contract)
+
+    assert "configs/xp_native_evidence_contract.json schema_version must be 1" in errors
+
+
 def test_xp_native_evidence_contract_requires_proof_file_binding() -> None:
     checker = _load_xp_native_evidence_checker()
     contract = checker.read_json(Path("configs/xp_native_evidence_contract.json"))
@@ -188,6 +198,21 @@ def test_xp_native_evidence_accepts_x86_bundle(tmp_path: Path) -> None:
     errors = checker.check_xp_native_evidence(evidence, assets_dir=assets)
 
     assert errors == []
+
+
+def test_xp_native_evidence_rejects_boolean_schema_versions(tmp_path: Path) -> None:
+    checker = _load_xp_native_evidence_checker()
+    evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    evidence["schema_version"] = True
+    evidence["host_identity"]["schema_version"] = True
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path)
+
+    assert "XP native evidence schema_version must be 1" in errors
+    assert "windows-xp-native-x86 evidence host_identity.schema_version must be 1" in errors
 
 
 def test_xp_native_evidence_rejects_extra_asset_file(tmp_path: Path) -> None:

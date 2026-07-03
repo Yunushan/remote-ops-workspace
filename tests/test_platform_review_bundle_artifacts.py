@@ -224,6 +224,23 @@ def test_platform_review_bundle_artifacts_rejects_review_bundle_hash_mismatch(tm
     ) in errors
 
 
+def test_platform_review_bundle_artifacts_rejects_boolean_review_bundle_size(
+    tmp_path: Path,
+) -> None:
+    validator = _load_script("check_platform_review_bundle_artifacts")
+    bundle = tmp_path / "one-byte-review-bundle.zip"
+    bundle.write_bytes(b"x")
+
+    errors = validator.check_file_record(
+        "linux-i386",
+        "archive",
+        bundle,
+        {"file": bundle.name, "size_bytes": True, "sha256": validator.sha256_file(bundle)},
+    )
+
+    assert "linux-i386 review_bundle archive.size_bytes does not match file one-byte-review-bundle.zip" in errors
+
+
 def test_platform_review_bundle_artifacts_rejects_symlinked_bundle_file(
     tmp_path: Path, monkeypatch
 ) -> None:

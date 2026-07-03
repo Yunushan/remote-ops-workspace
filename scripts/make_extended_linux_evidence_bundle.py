@@ -14,6 +14,7 @@ if str(SRC) not in sys.path:
 
 from check_platform_goal_local_evidence import check_platform_goal_local_evidence  # noqa: E402
 from check_platform_promotion_artifacts import (  # noqa: E402
+    archive_entry_name_is_safe,
     check_platform_promotion_artifacts,
 )
 from check_platform_verified_evidence import (  # noqa: E402
@@ -181,12 +182,27 @@ def make_extended_linux_evidence_bundle(
     archive_path = out_dir / f"{stem}.zip"
     sha_path = out_dir / f"{stem}-SHA256SUMS.txt"
     outputs = (manifest_path, archive_path, sha_path)
+    artifact_names = expected_artifact_names(target, release_tag, promotion)
     errors.extend(
         check_target_release_path_segments(
             target,
             release_tag,
             out_dir,
             label="extended Linux evidence bundle output directory",
+        )
+    )
+    if errors:
+        return errors
+    errors.extend(
+        check_bundle_archive_entry_names(
+            extended_linux_bundle_archive_entry_names(
+                manifest_path=manifest_path,
+                builder_evidence=builder_evidence,
+                smoke_evidence=smoke_evidence,
+                candidate_record=candidate_record,
+                artifact_names=artifact_names,
+            ),
+            label="extended Linux evidence bundle archive",
         )
     )
     if errors:
@@ -213,7 +229,7 @@ def make_extended_linux_evidence_bundle(
         smoke_evidence=smoke_evidence,
         candidate_record=candidate_record,
         assets_dir=assets_dir,
-        artifact_names=expected_artifact_names(target, release_tag, promotion),
+        artifact_names=artifact_names,
     )
     sha_path.write_text(
         f"{sha256_file(manifest_path)}  {manifest_path.name}\n"
@@ -326,12 +342,21 @@ def prepare_output_paths(*, out_dir: Path, outputs: tuple[Path, ...], force: boo
     return []
 
 
+def is_allowed_platform_parent_symlink(parent: Path) -> bool:
+    if sys.platform != "darwin" or parent.as_posix() != "/var":
+        return False
+    try:
+        return parent.resolve(strict=False).as_posix() == "/private/var"
+    except OSError:
+        return False
+
+
 def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
     check_path = path if path.is_absolute() else Path.cwd() / path
     for parent in reversed(check_path.parents):
         if parent == Path("."):
             continue
-        if parent.is_symlink():
+        if parent.is_symlink() and not is_allowed_platform_parent_symlink(parent):
             return [f"{label} path must not contain symlinked directories: {parent}"]
     return []
 
@@ -514,6 +539,53 @@ def artifact_records(
     ]
 
 
+def extended_linux_bundle_archive_entry_names(
+    *,
+    manifest_path: Path,
+    builder_evidence: Path,
+    smoke_evidence: Path,
+    candidate_record: Path,
+    artifact_names: list[str],
+) -> list[str]:
+    return [
+        manifest_path.name,
+        builder_evidence.name,
+        smoke_evidence.name,
+        candidate_record.name,
+        *artifact_names,
+    ]
+
+
+def check_bundle_archive_entry_names(entry_names: list[str], *, label: str) -> list[str]:
+    errors: list[str] = []
+    duplicates = sorted({name for name in entry_names if entry_names.count(name) > 1})
+    if duplicates:
+        errors.append(f"{label} entries must be unique; duplicate entries: {duplicates}")
+    unsafe = sorted({name for name in entry_names if not archive_entry_name_is_safe(name)})
+    if unsafe:
+        errors.append(f"{label} entries must use safe relative paths: {unsafe}")
+    case_groups: dict[str, set[str]] = {}
+    for name in entry_names:
+        case_groups.setdefault(name.casefold(), set()).add(name)
+    case_collisions = sorted({name for names in case_groups.values() if len(names) > 1 for name in names})
+    if case_collisions:
+        errors.append(
+            f"{label} entries must not collide on case-insensitive filesystems: {case_collisions}"
+        )
+    unique_names = sorted(set(entry_names))
+    path_prefix_collisions = sorted(
+        f"{parent} -> {child}"
+        for parent in unique_names
+        for child in unique_names
+        if parent != child and child.startswith(f"{parent}/")
+    )
+    if path_prefix_collisions:
+        errors.append(
+            f"{label} entries must not contain file/path-prefix collisions: {path_prefix_collisions}"
+        )
+    return errors
+
+
 def file_record(name: str, path: Path) -> dict[str, Any]:
     return source_file_record(name, path, sha256=sha256_file(path))
 
@@ -537,12 +609,20 @@ def write_bundle_archive(
     artifact_names: list[str],
 ) -> None:
     with zipfile.ZipFile(archive_path, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
-        archive.write(manifest_path, arcname=manifest_path.name)
-        archive.write(builder_evidence, arcname=builder_evidence.name)
-        archive.write(smoke_evidence, arcname=smoke_evidence.name)
-        archive.write(candidate_record, arcname=candidate_record.name)
+        write_regular_file_to_zip(archive, manifest_path, manifest_path.name)
+        write_regular_file_to_zip(archive, builder_evidence, builder_evidence.name)
+        write_regular_file_to_zip(archive, smoke_evidence, smoke_evidence.name)
+        write_regular_file_to_zip(archive, candidate_record, candidate_record.name)
         for name in artifact_names:
-            archive.write(assets_dir / name, arcname=name)
+            write_regular_file_to_zip(archive, assets_dir / name, name)
+
+
+def write_regular_file_to_zip(archive: zipfile.ZipFile, path: Path, arcname: str) -> None:
+    info = zipfile.ZipInfo(arcname)
+    info.compress_type = zipfile.ZIP_DEFLATED
+    info.create_system = 3
+    info.external_attr = 0o100644 << 16
+    archive.writestr(info, path.read_bytes())
 
 
 def platform_evidence_policy() -> str:

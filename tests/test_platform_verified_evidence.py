@@ -100,6 +100,20 @@ def test_platform_verified_evidence_checker_passes_empty_registry() -> None:
     assert checker.main() == 0
 
 
+def test_platform_verified_evidence_rejects_boolean_registry_schema_version() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": True,
+            "policy": POLICY,
+            "accepted_evidence": [],
+        }
+    )
+
+    assert "configs/platform_verified_evidence.json schema_version must be 1" in errors
+
+
 def test_platform_verified_evidence_rejects_missing_xp_validation_policy() -> None:
     checker = _load_platform_verified_evidence_checker()
 
@@ -1514,6 +1528,61 @@ def test_platform_verified_evidence_rejects_xp_unexpected_top_level_fields() -> 
     ) in errors
 
 
+def test_platform_verified_evidence_rejects_ambiguous_top_level_keys() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    record["TARGET"] = record["target"]
+    record[True] = "manual scratch"
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(
+        registry=registry,
+        require_review_bundles=True,
+    )
+
+    assert "linux-i386 accepted evidence top-level keys must be strings, got True" in errors
+    assert (
+        "linux-i386 accepted evidence top-level keys must not collide on "
+        "case-insensitive filesystems: ['TARGET', 'target']"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_boolean_linux_identity_schema_versions() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    record["builder_identity"]["schema_version"] = True
+    record["builder_identity"]["host_identity"]["schema_version"] = True
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "linux-i386 builder_identity schema_version must be 1" in errors
+    assert "linux-i386 builder_identity host_identity.schema_version must be 1" in errors
+
+
+def test_platform_verified_evidence_rejects_boolean_xp_host_identity_schema_version() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _xp_record("windows-xp-native-x86")
+    record["xp_evidence_summary"]["host_identity"]["schema_version"] = True
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "windows-xp-native-x86 xp_evidence_summary host_identity.schema_version must be 1" in errors
+
+
 def test_platform_verified_evidence_goal_required_targets_reject_mixed_release_repositories() -> None:
     checker = _load_platform_verified_evidence_checker()
     xp_x64 = _xp_record("windows-xp-native-x64")
@@ -1658,6 +1727,51 @@ def test_platform_verified_evidence_rejects_partial_protected_goal_mixed_reposit
     ) in errors
 
 
+def test_release_asset_repositories_ignores_unsafe_release_asset_urls() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    repositories = checker.release_asset_repositories(
+        [
+            "https://github.com/example/remote-ops-workspace/releases/download/v1.0.2/"
+            "remote-ops-workspace-v1.0.2-linux-i386.deb",
+            "https://github.com/other/remote-ops-workspace/releases/download/v1.0.2/nested/"
+            "remote-ops-workspace-v1.0.2-linux-i386.deb",
+            "https://github.com/third/remote-ops-workspace/releases/download/v1.0.2/"
+            "remote-ops-workspace-v1.0.2-linux-i386.deb?download=1",
+            "not-a-release-url",
+        ]
+    )
+
+    assert repositories == {"example/remote-ops-workspace"}
+
+
+def test_platform_verified_evidence_rejects_partial_goal_without_safe_release_repository() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    xp_x86 = _xp_record("windows-xp-native-x86")
+    xp_x86["release_asset_urls"] = [
+        str(url).replace("/releases/download/v1.0.2/", "/releases/download/v1.0.2/nested/")
+        for url in xp_x86["release_asset_urls"]
+    ]
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [
+            _linux_record("linux-i386"),
+            xp_x86,
+        ],
+    }
+
+    errors = checker.check_platform_verified_evidence(
+        registry=registry,
+        require_review_bundles=True,
+    )
+
+    assert (
+        "partial protected platform goal evidence must derive exactly one safe "
+        "GitHub release repository before promotion, got {'windows-xp-native-x86': []}"
+    ) in errors
+
+
 def test_platform_verified_evidence_rejects_partial_protected_goal_mixed_source_heads() -> None:
     checker = _load_platform_verified_evidence_checker()
     linux_i386 = _linux_record("linux-i386")
@@ -1732,6 +1846,33 @@ def test_platform_verified_evidence_rejects_xp_pair_mixed_release_repositories()
         "Windows XP native evidence pair must use one GitHub release repository, "
         "got {'windows-xp-native-x64': ['other/remote-ops-workspace'], "
         "'windows-xp-native-x86': ['example/remote-ops-workspace']}"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_xp_pair_without_safe_release_repository() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    xp_x64 = _xp_record("windows-xp-native-x64")
+    xp_x64["release_asset_urls"] = [
+        str(url).replace("/releases/download/v1.0.2/", "/releases/download/v1.0.2/nested/")
+        for url in xp_x64["release_asset_urls"]
+    ]
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [
+            _xp_record("windows-xp-native-x86"),
+            xp_x64,
+        ],
+    }
+
+    errors = checker.check_platform_verified_evidence(
+        registry=registry,
+        require_review_bundles=True,
+    )
+
+    assert (
+        "Windows XP native evidence pair must derive exactly one safe "
+        "GitHub release repository, got {'windows-xp-native-x64': []}"
     ) in errors
 
 
@@ -1954,6 +2095,46 @@ def test_platform_verified_evidence_rejects_review_bundle_release_asset_url_path
     )
 
 
+def test_platform_verified_evidence_rejects_case_colliding_review_bundle_release_asset_url() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _xp_record("windows-xp-native-x64")
+    first_url = record["review_bundle"]["release_asset_urls"][0]
+    prefix, filename = first_url.rsplit("/", 1)
+    record["review_bundle"]["release_asset_urls"].append(f"{prefix}/{filename.upper()}")
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry, require_review_bundles=True)
+
+    assert any(
+        "windows-xp-native-x64 review_bundle release asset URL file names must not collide on "
+        "case-insensitive filesystems" in error
+        and filename in error
+        and filename.upper() in error
+        for error in errors
+    )
+
+
+def test_platform_verified_evidence_rejects_non_string_review_bundle_release_asset_url_entries() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _xp_record("windows-xp-native-x64")
+    record["review_bundle"]["release_asset_urls"][0] = True
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry, require_review_bundles=True)
+
+    assert (
+        "windows-xp-native-x64 review_bundle release asset URL entries must be strings, got True"
+    ) in errors
+
+
 def test_platform_verified_evidence_rejects_missing_finalized_record_release_asset_url() -> None:
     checker = _load_platform_verified_evidence_checker()
     record = _linux_record("linux-i386")
@@ -1967,6 +2148,23 @@ def test_platform_verified_evidence_rejects_missing_finalized_record_release_ass
     errors = checker.check_platform_verified_evidence(registry=registry, require_review_bundles=True)
 
     assert "linux-i386 finalized_record_release_asset_url must be set" in errors
+
+
+def test_platform_verified_evidence_rejects_non_string_finalized_record_release_asset_url() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    record["finalized_record_release_asset_url"] = True
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry, require_review_bundles=True)
+
+    assert (
+        "linux-i386 finalized_record_release_asset_url must be a string GitHub release asset URL, got True"
+    ) in errors
 
 
 def test_platform_verified_evidence_rejects_finalized_record_release_asset_url_file_drift() -> None:
@@ -2113,6 +2311,44 @@ def test_platform_verified_evidence_rejects_missing_artifact_sha256() -> None:
     assert "linux-armhf evidence must include artifact_sha256 map" in errors
 
 
+def test_platform_verified_evidence_rejects_unsafe_artifact_sha256_keys() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-armhf")
+    record["artifact_sha256"]["nested/file.bin"] = "a" * 64
+    record["artifact_sha256"][True] = "b" * 64
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "linux-armhf artifact_sha256 keys must be exact safe file names, got 'nested/file.bin'" in errors
+    assert "linux-armhf artifact_sha256 keys must be exact safe file names, got True" in errors
+
+
+def test_platform_verified_evidence_rejects_case_colliding_artifact_sha256_keys() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    first_file = next(iter(record["artifact_sha256"]))
+    record["artifact_sha256"][first_file.upper()] = "c" * 64
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert any(
+        "linux-i386 artifact_sha256 keys must not collide on case-insensitive filesystems" in error
+        and first_file in error
+        and first_file.upper() in error
+        for error in errors
+    )
+
+
 def test_platform_verified_evidence_rejects_release_asset_url_tag_mismatch() -> None:
     checker = _load_platform_verified_evidence_checker()
     record = _linux_record("linux-i386")
@@ -2147,6 +2383,21 @@ def test_platform_verified_evidence_rejects_release_asset_url_query_string() -> 
         "linux-i386 release asset URL file name must be an exact safe file name" in error
         for error in errors
     )
+
+
+def test_platform_verified_evidence_rejects_non_string_release_asset_url_entries() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    record["release_asset_urls"][0] = True
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "linux-i386 release asset URL entries must be strings, got True" in errors
 
 
 def test_platform_verified_evidence_rejects_malformed_release_asset_repository_slug() -> None:
@@ -2242,6 +2493,28 @@ def test_platform_verified_evidence_rejects_duplicate_release_asset_url() -> Non
     assert any("linux-i386 release asset URLs contain duplicate files" in error for error in errors)
 
 
+def test_platform_verified_evidence_rejects_case_colliding_release_asset_url() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    first_url = record["release_asset_urls"][0]
+    prefix, filename = first_url.rsplit("/", 1)
+    record["release_asset_urls"].append(f"{prefix}/{filename.upper()}")
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert any(
+        "linux-i386 release asset URL file names must not collide on case-insensitive filesystems" in error
+        and filename in error
+        and filename.upper() in error
+        for error in errors
+    )
+
+
 def test_platform_verified_evidence_rejects_linux_workflow_repository_mismatch() -> None:
     checker = _load_platform_verified_evidence_checker()
     record = _linux_record("linux-i386")
@@ -2324,6 +2597,26 @@ def test_platform_verified_evidence_rejects_unexpected_linux_workflow_input_keys
     assert "linux-i386 workflow_inputs unexpected keys: ['allow_extra_artifacts']" in errors
 
 
+def test_platform_verified_evidence_rejects_ambiguous_linux_workflow_input_keys() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    record["workflow_inputs"]["TARGET"] = record["workflow_inputs"]["target"]
+    record["workflow_inputs"][False] = "manual scratch"
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "linux-i386 workflow_inputs keys must be strings, got False" in errors
+    assert (
+        "linux-i386 workflow_inputs keys must not collide on case-insensitive filesystems: "
+        "['TARGET', 'target']"
+    ) in errors
+
+
 def test_platform_verified_evidence_rejects_missing_release_asset_source() -> None:
     checker = _load_platform_verified_evidence_checker()
     record = _linux_record("linux-i386")
@@ -2399,6 +2692,59 @@ def test_platform_verified_evidence_rejects_invalid_release_source_run_attempt()
     errors = checker.check_platform_verified_evidence(registry=registry)
 
     assert "linux-i386 release_asset_source.run_attempt must be a positive integer" in errors
+
+
+def test_platform_verified_evidence_rejects_boolean_linux_evidence_source_size() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    record["linux_evidence_sources"]["builder_identity"]["size_bytes"] = True
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "linux-i386 linux_evidence_sources.builder_identity.size_bytes must be a positive integer" in errors
+
+
+def test_platform_verified_evidence_rejects_boolean_xp_evidence_source_sizes() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _xp_record("windows-xp-native-x86")
+    record["xp_evidence_sources"]["evidence"]["size_bytes"] = True
+    record["xp_evidence_sources"]["smoke_evidence"]["cli_launch"]["size_bytes"] = True
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "windows-xp-native-x86 xp_evidence_sources.evidence.size_bytes must be a positive integer" in errors
+    assert (
+        "windows-xp-native-x86 xp_evidence_sources.smoke_evidence.cli_launch.size_bytes "
+        "must be a positive integer"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_boolean_review_bundle_size() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-armhf")
+    record["review_bundle"]["manifest"]["size_bytes"] = True
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(
+        registry=registry,
+        require_review_bundles=True,
+    )
+
+    assert "linux-armhf review_bundle manifest.size_bytes must be a positive integer" in errors
 
 
 def test_platform_verified_evidence_rejects_missing_local_evidence_preflight_command() -> None:
@@ -3023,6 +3369,7 @@ def test_platform_verified_evidence_rejects_os_specific_release_source_file_path
         *record["release_asset_source"]["contains_files"],
         r"nested\remote-ops-workspace-v1.0.2-linux-i386.deb",
         r"C:\release\remote-ops-workspace-v1.0.2-linux-i686.rpm",
+        True,
     ]
     registry = {
         "schema_version": 1,
@@ -3040,6 +3387,32 @@ def test_platform_verified_evidence_rejects_os_specific_release_source_file_path
         r"linux-i386 release_asset_source.contains_files entries must be concrete file names, "
         r"got 'C:\\release\\remote-ops-workspace-v1.0.2-linux-i686.rpm'"
     ) in errors
+    assert (
+        "linux-i386 release_asset_source.contains_files entries must be concrete file names, "
+        "got True"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_case_colliding_release_source_files() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    first_file = record["release_asset_source"]["contains_files"][0]
+    record["release_asset_source"]["contains_files"].append(first_file.upper())
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry, require_review_bundles=True)
+
+    assert any(
+        "linux-i386 release_asset_source.contains_files must not collide on "
+        "case-insensitive filesystems" in error
+        and first_file in error
+        and first_file.upper() in error
+        for error in errors
+    )
 
 
 def test_platform_verified_evidence_rejects_unfinalized_source_finalization_files() -> None:
@@ -3562,6 +3935,29 @@ def test_platform_verified_evidence_rejects_placeholder_xp_native_validation_pat
     ) in errors
 
 
+def test_platform_verified_evidence_rejects_xp_native_validation_contract_flag() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _xp_record("windows-xp-native-x86")
+    record["native_evidence_validation_command"] = (
+        f"{record['native_evidence_validation_command']} --contract"
+    )
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(
+        registry=registry,
+        require_review_bundles=True,
+    )
+
+    assert (
+        "windows-xp-native-x86 native_evidence_validation_command "
+        "has unexpected flags: ['--contract']"
+    ) in errors
+
+
 def test_platform_verified_evidence_rejects_unsafe_xp_native_validation_paths() -> None:
     checker = _load_platform_verified_evidence_checker()
     record = _xp_record("windows-xp-native-x86")
@@ -3677,6 +4073,26 @@ def test_platform_verified_evidence_rejects_missing_xp_workflow_inputs() -> None
     assert "windows-xp-native-x64 evidence must include workflow_inputs object" in errors
 
 
+def test_platform_verified_evidence_rejects_ambiguous_xp_workflow_input_keys() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _xp_record("windows-xp-native-x86")
+    record["workflow_inputs"]["TARGET"] = record["workflow_inputs"]["target"]
+    record["workflow_inputs"][True] = "manual scratch"
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "windows-xp-native-x86 workflow_inputs keys must be strings, got True" in errors
+    assert (
+        "windows-xp-native-x86 workflow_inputs keys must not collide on case-insensitive "
+        "filesystems: ['TARGET', 'target']"
+    ) in errors
+
+
 def test_platform_verified_evidence_rejects_xp_workflow_input_path_drift() -> None:
     checker = _load_platform_verified_evidence_checker()
     record = _xp_record("windows-xp-native-x86")
@@ -3752,6 +4168,57 @@ def test_platform_verified_evidence_rejects_missing_xp_evidence_sources() -> Non
     errors = checker.check_platform_verified_evidence(registry=registry)
 
     assert "windows-xp-native-x86 xp_evidence_sources must be an object" in errors
+
+
+def test_platform_verified_evidence_rejects_ambiguous_xp_evidence_source_keys() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _xp_record("windows-xp-native-x86")
+    sources = record["xp_evidence_sources"]
+    sources["SMOKE_EVIDENCE"] = sources["smoke_evidence"]
+    sources[True] = sources["evidence"]
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "windows-xp-native-x86 xp_evidence_sources keys must be strings, got True" in errors
+    assert any(
+        "windows-xp-native-x86 xp_evidence_sources keys must not collide on "
+        "case-insensitive filesystems" in error
+        and "smoke_evidence" in error
+        and "SMOKE_EVIDENCE" in error
+        for error in errors
+    )
+
+
+def test_platform_verified_evidence_rejects_ambiguous_xp_smoke_evidence_source_keys() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _xp_record("windows-xp-native-x86")
+    smoke_sources = record["xp_evidence_sources"]["smoke_evidence"]
+    smoke_sources["CLI_LAUNCH"] = smoke_sources["cli_launch"]
+    smoke_sources[False] = smoke_sources["artifact_manifest_validation"]
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "windows-xp-native-x86 xp_evidence_sources.smoke_evidence smoke ids must be strings, "
+        "got False"
+    ) in errors
+    assert any(
+        "windows-xp-native-x86 xp_evidence_sources.smoke_evidence smoke ids must not collide on "
+        "case-insensitive filesystems" in error
+        and "cli_launch" in error
+        and "CLI_LAUNCH" in error
+        for error in errors
+    )
 
 
 def test_platform_verified_evidence_rejects_xp_evidence_source_hash_drift() -> None:
@@ -4005,6 +4472,31 @@ def test_platform_verified_evidence_rejects_unexpected_linux_builder_identity_fi
     ) in errors
 
 
+def test_platform_verified_evidence_rejects_ambiguous_linux_builder_host_identity_keys() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    host_identity = record["builder_identity"]["host_identity"]
+    assert isinstance(host_identity, dict)
+    host_identity["TARGET"] = host_identity["target"]
+    host_identity[True] = "manual"
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "linux-i386 builder_identity host_identity keys must be strings, got True" in errors
+    assert (
+        "linux-i386 builder_identity host_identity keys must not collide on case-insensitive "
+        "filesystems: ['TARGET', 'target']"
+    ) in errors
+    assert (
+        "linux-i386 builder_identity JSON object keys must be strings for SHA-256 verification"
+    ) in errors
+
+
 def test_platform_verified_evidence_rejects_private_linux_builder_host_identity_fields() -> None:
     checker = _load_platform_verified_evidence_checker()
     record = _linux_record("linux-armhf")
@@ -4239,6 +4731,43 @@ def test_platform_verified_evidence_rejects_wrong_linux_smoke_evidence() -> None
     assert "linux-armhf linux_smoke_evidence_sha256 for native_smoke must be a SHA-256 hex digest" in errors
 
 
+def test_platform_verified_evidence_rejects_non_string_linux_smoke_evidence_key() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    record["linux_smoke_evidence_sha256"][True] = "0" * 64
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "linux-i386 linux_smoke_evidence_sha256 smoke ids must be strings, got True" in errors
+
+
+def test_platform_verified_evidence_rejects_case_colliding_linux_smoke_evidence_key() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    smoke_id = next(iter(record["linux_smoke_evidence_sha256"]))
+    record["linux_smoke_evidence_sha256"][smoke_id.upper()] = "0" * 64
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert any(
+        "linux-i386 linux_smoke_evidence_sha256 smoke ids must not collide on "
+        "case-insensitive filesystems" in error
+        and smoke_id in error
+        and smoke_id.upper() in error
+        for error in errors
+    )
+
+
 def test_platform_verified_evidence_rejects_missing_linux_smoke_summary() -> None:
     checker = _load_platform_verified_evidence_checker()
     record = _linux_record("linux-i386")
@@ -4367,6 +4896,30 @@ def test_platform_verified_evidence_rejects_missing_linux_evidence_sources() -> 
     assert "linux-i386 linux_evidence_sources must be an object" in errors
 
 
+def test_platform_verified_evidence_rejects_ambiguous_linux_evidence_source_keys() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    sources = record["linux_evidence_sources"]
+    sources["NATIVE_SMOKE"] = sources["native_smoke"]
+    sources[True] = sources["builder_identity"]
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "linux-i386 linux_evidence_sources keys must be strings, got True" in errors
+    assert any(
+        "linux-i386 linux_evidence_sources keys must not collide on "
+        "case-insensitive filesystems" in error
+        and "native_smoke" in error
+        and "NATIVE_SMOKE" in error
+        for error in errors
+    )
+
+
 def test_platform_verified_evidence_rejects_linux_evidence_source_hash_mismatch() -> None:
     checker = _load_platform_verified_evidence_checker()
     record = _linux_record("linux-armhf")
@@ -4491,6 +5044,39 @@ def test_platform_verified_evidence_rejects_duplicate_checks() -> None:
     errors = checker.check_platform_verified_evidence(registry=registry)
 
     assert "windows-xp-native-x64 evidence has duplicate checks: ['artifact_validation']" in errors
+
+
+def test_platform_verified_evidence_rejects_non_string_checks() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    record["checks"] = [*record["checks"], True]
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "linux-i386 evidence checks entries must be strings, got True" in errors
+
+
+def test_platform_verified_evidence_rejects_case_colliding_checks() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _xp_record("windows-xp-native-x64")
+    record["checks"] = [*record["checks"], "ARTIFACT_VALIDATION"]
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "windows-xp-native-x64 evidence checks must not collide on case-insensitive "
+        "filesystems: ['ARTIFACT_VALIDATION', 'artifact_validation']"
+    ) in errors
 
 
 def test_platform_verified_evidence_rejects_missing_xp_evidence_digest() -> None:
@@ -4626,6 +5212,34 @@ def test_platform_verified_evidence_rejects_private_xp_host_identity_fields() ->
     ) in errors
 
 
+def test_platform_verified_evidence_rejects_ambiguous_xp_host_identity_keys() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _xp_record("windows-xp-native-x86")
+    host_identity = record["xp_evidence_summary"]["host_identity"]
+    assert isinstance(host_identity, dict)
+    host_identity["TARGET"] = host_identity["target"]
+    host_identity[False] = "manual"
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "windows-xp-native-x86 xp_evidence_summary host_identity keys must be strings, got False"
+    ) in errors
+    assert (
+        "windows-xp-native-x86 xp_evidence_summary host_identity keys must not collide on "
+        "case-insensitive filesystems: ['TARGET', 'target']"
+    ) in errors
+    assert (
+        "windows-xp-native-x86 xp_evidence_summary host_identity JSON object keys must be strings "
+        "for SHA-256 verification"
+    ) in errors
+
+
 def test_platform_verified_evidence_rejects_xp_run_id_not_bound_to_observed_at() -> None:
     checker = _load_platform_verified_evidence_checker()
     record = _xp_record("windows-xp-native-x64")
@@ -4662,6 +5276,43 @@ def test_platform_verified_evidence_rejects_missing_xp_smoke_digest() -> None:
     assert any("windows-xp-native-x64 xp_smoke_evidence_sha256 missing smoke ids" in error for error in errors)
 
 
+def test_platform_verified_evidence_rejects_non_string_xp_smoke_digest_key() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _xp_record("windows-xp-native-x64")
+    record["xp_smoke_evidence_sha256"][True] = "0" * 64
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "windows-xp-native-x64 xp_smoke_evidence_sha256 smoke ids must be strings, got True" in errors
+
+
+def test_platform_verified_evidence_rejects_case_colliding_xp_smoke_digest_key() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _xp_record("windows-xp-native-x64")
+    smoke_id = next(iter(record["xp_smoke_evidence_sha256"]))
+    record["xp_smoke_evidence_sha256"][smoke_id.upper()] = "0" * 64
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert any(
+        "windows-xp-native-x64 xp_smoke_evidence_sha256 smoke ids must not collide on "
+        "case-insensitive filesystems" in error
+        and smoke_id in error
+        and smoke_id.upper() in error
+        for error in errors
+    )
+
+
 def test_platform_verified_evidence_rejects_missing_xp_evidence_summary() -> None:
     checker = _load_platform_verified_evidence_checker()
     record = _xp_record("windows-xp-native-x86")
@@ -4675,6 +5326,30 @@ def test_platform_verified_evidence_rejects_missing_xp_evidence_summary() -> Non
     errors = checker.check_platform_verified_evidence(registry=registry)
 
     assert "windows-xp-native-x86 xp_evidence_summary must be an object" in errors
+
+
+def test_platform_verified_evidence_rejects_ambiguous_xp_summary_smoke_ids() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _xp_record("windows-xp-native-x86")
+    smoke_id = record["xp_evidence_summary"]["smoke_ids"][0]
+    record["xp_evidence_summary"]["smoke_ids"].extend([smoke_id, smoke_id.upper(), True])
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "windows-xp-native-x86 xp_evidence_summary smoke_ids entries must be strings, got True" in errors
+    assert f"windows-xp-native-x86 xp_evidence_summary smoke_ids contains duplicates: ['{smoke_id}']" in errors
+    assert any(
+        "windows-xp-native-x86 xp_evidence_summary smoke_ids must not collide on "
+        "case-insensitive filesystems" in error
+        and smoke_id in error
+        and smoke_id.upper() in error
+        for error in errors
+    )
 
 
 def test_platform_verified_evidence_rejects_xp_evidence_summary_target_mismatch() -> None:
@@ -4790,6 +5465,39 @@ def test_platform_verified_evidence_rejects_missing_xp_smoke_evidence_files() ->
     assert "windows-xp-native-x86 xp_evidence_summary smoke_evidence_files must be an object" in errors
 
 
+def test_platform_verified_evidence_rejects_ambiguous_xp_smoke_evidence_file_keys() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _xp_record("windows-xp-native-x86")
+    files = record["xp_evidence_summary"]["smoke_evidence_files"]
+    smoke_id = "cli_launch"
+    files[smoke_id.upper()] = files[smoke_id]
+    files[True] = "xp-smoke-evidence/true.txt"
+    files["artifact_manifest_validation"] = True
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "windows-xp-native-x86 xp_evidence_summary smoke_evidence_files smoke ids must be strings, "
+        "got True"
+    ) in errors
+    assert (
+        "windows-xp-native-x86 xp_evidence_summary smoke_evidence_files artifact_manifest_validation "
+        "must be a string path, got True"
+    ) in errors
+    assert any(
+        "windows-xp-native-x86 xp_evidence_summary smoke_evidence_files smoke ids must not collide on "
+        "case-insensitive filesystems" in error
+        and smoke_id in error
+        and smoke_id.upper() in error
+        for error in errors
+    )
+
+
 def test_platform_verified_evidence_rejects_noncanonical_xp_smoke_evidence_file() -> None:
     checker = _load_platform_verified_evidence_checker()
     record = _xp_record("windows-xp-native-x86")
@@ -4827,6 +5535,36 @@ def test_platform_verified_evidence_rejects_placeholder_xp_smoke_command() -> No
     assert (
         "windows-xp-native-x86 xp_evidence_summary smoke_commands cli_launch must be concrete, got '<command>'"
         in errors
+    )
+
+
+def test_platform_verified_evidence_rejects_ambiguous_xp_smoke_command_keys() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _xp_record("windows-xp-native-x86")
+    commands = record["xp_evidence_summary"]["smoke_commands"]
+    smoke_id = "cli_launch"
+    commands[smoke_id.upper()] = commands[smoke_id]
+    commands[True] = "python scripts/check_xp_native_evidence.py --smoke-id true"
+    commands["artifact_manifest_validation"] = True
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "windows-xp-native-x86 xp_evidence_summary smoke_commands smoke ids must be strings, got True" in errors
+    assert (
+        "windows-xp-native-x86 xp_evidence_summary smoke_commands artifact_manifest_validation "
+        "must be a string command, got True"
+    ) in errors
+    assert any(
+        "windows-xp-native-x86 xp_evidence_summary smoke_commands smoke ids must not collide on "
+        "case-insensitive filesystems" in error
+        and smoke_id in error
+        and smoke_id.upper() in error
+        for error in errors
     )
 
 

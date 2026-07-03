@@ -963,6 +963,44 @@ def test_product_readiness_rejects_weak_protected_goal_release_asset_source(monk
     )
 
 
+def test_product_readiness_rejects_non_string_protected_goal_requirement_entries(monkeypatch) -> None:
+    checker = load_product_readiness_checker()
+    report = deepcopy(checker.coverage_report())
+    requirements = report["platform_verified_readiness"]["protected_goal_parity"][
+        "target_evidence_requirements"
+    ]
+    linux_i386 = next(item for item in requirements if item["target"] == "linux-i386")
+    linux_i386["required_artifacts"].append(True)
+    linux_i386["required_review_bundle_files"].append(True)
+    linux_i386["release_asset_source_required"]["contains_files"].append(True)
+    linux_i386["smoke_evidence"].append(True)
+    linux_i386["security_requirements"].append(True)
+    monkeypatch.setattr(checker, "coverage_report", lambda: report)
+
+    errors = checker.check_product_readiness()
+
+    assert (
+        "linux-i386 protected platform requirement required artifacts entries "
+        "must be plain file names, got True"
+    ) in errors
+    assert (
+        "linux-i386 protected platform requirement review bundle files entries "
+        "must be plain file names, got True"
+    ) in errors
+    assert (
+        "linux-i386 protected platform requirement "
+        "release_asset_source_required.contains_files entries must be plain file names, got True"
+    ) in errors
+    assert (
+        "linux-i386 protected platform requirement smoke_evidence entries must be strings, got True"
+        in errors
+    )
+    assert (
+        "linux-i386 Linux protected platform requirement "
+        "security_requirements entries must be strings, got True"
+    ) in errors
+
+
 def test_product_readiness_rejects_missing_linux_modern_default_security_proof(monkeypatch) -> None:
     checker = load_product_readiness_checker()
     report = deepcopy(checker.coverage_report())

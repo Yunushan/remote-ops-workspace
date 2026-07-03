@@ -41,6 +41,7 @@ def main(argv: list[str] | None = None) -> int:
         release_tag=args.release_tag,
         release_asset_base_url=args.release_asset_base_url,
         workflow_run_url=args.workflow_run_url,
+        workflow_ref_name=args.workflow_ref_name,
         source_head_sha=args.source_head_sha,
         source_run_attempt=args.source_run_attempt,
         assets_dir=args.assets_dir,
@@ -67,6 +68,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Exact GitHub release download base URL: https://github.com/<owner>/<repo>/releases/download/vX.Y.Z",
     )
     parser.add_argument("--workflow-run-url", required=True, help="GitHub Actions run URL for this evidence run")
+    parser.add_argument(
+        "--workflow-ref-name",
+        required=True,
+        help="GitHub Actions ref name for this evidence workflow run; must equal --release-tag",
+    )
     parser.add_argument("--source-head-sha", required=True, help="Git commit SHA for this evidence workflow run")
     parser.add_argument(
         "--source-run-attempt",
@@ -97,6 +103,7 @@ def check_xp_native_evidence_dispatch_inputs(
     release_tag: str,
     release_asset_base_url: str,
     workflow_run_url: str,
+    workflow_ref_name: str,
     source_head_sha: str,
     source_run_attempt: object,
     assets_dir: str,
@@ -112,6 +119,11 @@ def check_xp_native_evidence_dispatch_inputs(
         errors.append(f"source_head_sha must be a lowercase 40-character Git SHA, got {source_head_sha!r}")
     if not is_positive_integer_text(source_run_attempt):
         errors.append(f"source_run_attempt must be a positive integer, got {source_run_attempt!r}")
+    if workflow_ref_name != release_tag:
+        errors.append(
+            "workflow_ref_name must match release_tag so evidence is dispatched from "
+            f"the release tag ref, got {workflow_ref_name!r}"
+        )
 
     release_match = GITHUB_RELEASE_RE.fullmatch(release_asset_base_url)
     run_match = GITHUB_RUN_RE.fullmatch(workflow_run_url.rstrip("/"))

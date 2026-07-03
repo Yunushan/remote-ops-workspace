@@ -310,7 +310,7 @@ def test_platform_verified_readiness_tracks_partial_targets() -> None:
     )
     assert requirements["linux-i386"]["workflow_dispatch_command"] == (
         "gh workflow run extended-platform-evidence.yml --repo <owner>/<repo> "
-        "--ref <github-actions-head-sha> -f target=linux-i386 "
+        "--ref v<project.version> -f target=linux-i386 "
         "-f release_tag=v<project.version> "
         "-f release_asset_base_url=<github-release-download-url>"
     )
@@ -325,7 +325,7 @@ def test_platform_verified_readiness_tracks_partial_targets() -> None:
     )
     assert requirements["windows-xp-native-x86"]["workflow_dispatch_command"] == (
         "gh workflow run xp-native-evidence.yml --repo <owner>/<repo> "
-        "--ref <github-actions-head-sha> -f target=windows-xp-native-x86 "
+        "--ref v<project.version> -f target=windows-xp-native-x86 "
         "-f release_tag=v<project.version> "
         "-f release_asset_base_url=<github-release-download-url> "
         "-f assets_dir=<target-release-artifact-dir> "
@@ -894,6 +894,24 @@ def test_platform_verified_readiness_ignores_malformed_release_asset_repository_
     assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
 
 
+def test_platform_verified_readiness_ignores_nested_release_asset_url_filename() -> None:
+    record = _linux_accepted_evidence("linux-i386")
+    record["release_asset_urls"][0] = str(record["release_asset_urls"][0]).replace(
+        "/releases/download/v1.0.2/",
+        "/releases/download/v1.0.2/nested/",
+    )
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry=_accepted_evidence_registry(record),
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["linux-i386"]["current_percent"] == 70.0
+    assert rows["linux-i386"]["status"] == "manual-script-supported"
+    assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
+
+
 def test_platform_verified_readiness_ignores_unfinalized_platform_candidate() -> None:
     manifest = _extended_platform_manifest()
     record = _linux_accepted_evidence("linux-i386")
@@ -1044,6 +1062,41 @@ def test_platform_verified_readiness_ignores_missing_review_bundle_release_asset
     assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
 
 
+def test_platform_verified_readiness_ignores_nested_review_bundle_release_asset_url() -> None:
+    record = _linux_accepted_evidence("linux-armhf")
+    record["review_bundle"]["release_asset_urls"][0] = str(
+        record["review_bundle"]["release_asset_urls"][0]
+    ).replace(
+        "/releases/download/v1.0.2/",
+        "/releases/download/v1.0.2/nested/",
+    )
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry=_accepted_evidence_registry(record),
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["linux-armhf"]["current_percent"] == 70.0
+    assert rows["linux-armhf"]["status"] == "manual-script-supported"
+    assert rows["linux-armhf"]["accepted_evidence_missing_targets"] == ["linux-armhf"]
+
+
+def test_platform_verified_readiness_ignores_boolean_review_bundle_size() -> None:
+    record = _linux_accepted_evidence("linux-i386")
+    record["review_bundle"]["manifest"]["size_bytes"] = True
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry=_accepted_evidence_registry(record),
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["linux-i386"]["current_percent"] == 70.0
+    assert rows["linux-i386"]["status"] == "manual-script-supported"
+    assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
+
+
 def test_platform_verified_readiness_ignores_missing_final_record_release_asset_url() -> None:
     record = _linux_accepted_evidence("linux-i386")
     del record["finalized_record_release_asset_url"]
@@ -1057,6 +1110,26 @@ def test_platform_verified_readiness_ignores_missing_final_record_release_asset_
     assert rows["linux-i386"]["current_percent"] == 70.0
     assert rows["linux-i386"]["status"] == "manual-script-supported"
     assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
+
+
+def test_platform_verified_readiness_ignores_nested_final_record_release_asset_url() -> None:
+    record = _xp_accepted_evidence("windows-xp-native-x86")
+    record["finalized_record_release_asset_url"] = str(
+        record["finalized_record_release_asset_url"]
+    ).replace(
+        "/releases/download/v1.0.2/",
+        "/releases/download/v1.0.2/nested/",
+    )
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry=_accepted_evidence_registry(record),
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["Windows XP"]["current_percent"] == 25.0
+    assert rows["Windows XP"]["status"] == "remote-target-only"
+    assert rows["Windows XP"]["accepted_evidence_present_targets"] == []
 
 
 def test_platform_verified_readiness_ignores_missing_release_asset_source() -> None:
@@ -1408,6 +1481,21 @@ def test_platform_verified_readiness_ignores_missing_artifact_validation_strict(
     assert rows["Windows XP"]["accepted_evidence_present_targets"] == []
 
 
+def test_platform_verified_readiness_ignores_unexpected_artifact_validation_flag() -> None:
+    record = _xp_accepted_evidence("windows-xp-native-x64")
+    record["artifact_validation_command"] = f"{record['artifact_validation_command']} --dry-run"
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry=_accepted_evidence_registry(record),
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["Windows XP"]["current_percent"] == 25.0
+    assert rows["Windows XP"]["status"] == "remote-target-only"
+    assert rows["Windows XP"]["accepted_evidence_present_targets"] == []
+
+
 def test_platform_verified_readiness_ignores_placeholder_artifact_validation_assets_dir() -> None:
     record = _xp_accepted_evidence("windows-xp-native-x86")
     record["artifact_validation_command"] = (
@@ -1492,11 +1580,50 @@ def test_platform_verified_readiness_ignores_overlapping_linux_staged_upload_com
     assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
 
 
+def test_platform_verified_readiness_ignores_unscoped_linux_staged_upload_out_dir() -> None:
+    record = _linux_accepted_evidence("linux-i386")
+    record["staged_upload_command"] = str(record["staged_upload_command"]).replace(
+        "--out-dir platform-evidence-upload/linux-i386/v1.0.2",
+        "--out-dir platform-evidence-upload/linux-i386",
+    )
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry=_accepted_evidence_registry(record),
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["linux-i386"]["current_percent"] == 70.0
+    assert rows["linux-i386"]["status"] == "manual-script-supported"
+    assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
+
+
 def test_platform_verified_readiness_ignores_overlapping_xp_staged_upload_command() -> None:
     record = _xp_accepted_evidence("windows-xp-native-x64")
     record["staged_upload_command"] = str(record["staged_upload_command"]).replace(
         "--out-dir platform-evidence-upload/windows-xp-native-x64/v1.0.2",
         "--out-dir xp-evidence-output/windows-xp-native-x64/v1.0.2/upload",
+    )
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry=_accepted_evidence_registry(record),
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["Windows XP"]["current_percent"] == 25.0
+    assert rows["Windows XP"]["status"] == "remote-target-only"
+    assert rows["Windows XP"]["accepted_evidence_missing_targets"] == [
+        "windows-xp-native-x86",
+        "windows-xp-native-x64",
+    ]
+
+
+def test_platform_verified_readiness_ignores_unscoped_xp_staged_upload_out_dir() -> None:
+    record = _xp_accepted_evidence("windows-xp-native-x86")
+    record["staged_upload_command"] = str(record["staged_upload_command"]).replace(
+        "--out-dir platform-evidence-upload/windows-xp-native-x86/v1.0.2",
+        "--out-dir platform-evidence-upload/v1.0.2",
     )
 
     report = _platform_verified_readiness(
@@ -1545,6 +1672,23 @@ def test_platform_verified_readiness_ignores_linux_local_preflight_allow_extra_a
     assert rows["linux-i386"]["current_percent"] == 70.0
     assert rows["linux-i386"]["status"] == "manual-script-supported"
     assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
+
+
+def test_platform_verified_readiness_ignores_unexpected_linux_local_preflight_flag() -> None:
+    record = _linux_accepted_evidence("linux-armhf")
+    record["local_evidence_preflight_command"] = (
+        f"{record['local_evidence_preflight_command']} --dry-run"
+    )
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry=_accepted_evidence_registry(record),
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["linux-armhf"]["current_percent"] == 70.0
+    assert rows["linux-armhf"]["status"] == "manual-script-supported"
+    assert rows["linux-armhf"]["accepted_evidence_missing_targets"] == ["linux-armhf"]
 
 
 def test_platform_verified_readiness_accepts_scoped_linux_local_preflight_root() -> None:
@@ -1715,6 +1859,23 @@ def test_platform_verified_readiness_ignores_xp_local_preflight_source_sha_drift
     assert rows["Windows XP"]["accepted_evidence_present_targets"] == []
 
 
+def test_platform_verified_readiness_ignores_unexpected_xp_local_preflight_flag() -> None:
+    record = _xp_accepted_evidence("windows-xp-native-x64")
+    record["local_evidence_preflight_command"] = (
+        f"{record['local_evidence_preflight_command']} --dry-run"
+    )
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry=_accepted_evidence_registry(record),
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["Windows XP"]["current_percent"] == 25.0
+    assert rows["Windows XP"]["status"] == "remote-target-only"
+    assert rows["Windows XP"]["accepted_evidence_present_targets"] == []
+
+
 def test_platform_verified_readiness_ignores_wrong_linux_artifact_name() -> None:
     record = _linux_accepted_evidence("linux-armhf")
     record["artifact_name"] = "extended-linux-evidence-linux-i386-v1.0.2"
@@ -1749,6 +1910,23 @@ def test_platform_verified_readiness_ignores_missing_linux_command_provenance() 
 def test_platform_verified_readiness_ignores_missing_linux_security_patch_evidence() -> None:
     record = _linux_accepted_evidence("linux-i386")
     del record["builder_identity"]["security_patch_evidence"]
+    record["builder_identity_sha256"] = _json_sha256(record["builder_identity"])
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry=_accepted_evidence_registry(record),
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["linux-i386"]["current_percent"] == 70.0
+    assert rows["linux-i386"]["status"] == "manual-script-supported"
+    assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
+
+
+def test_platform_verified_readiness_ignores_boolean_linux_builder_schema_versions() -> None:
+    record = _linux_accepted_evidence("linux-i386")
+    record["builder_identity"]["schema_version"] = True
+    record["builder_identity"]["host_identity"]["schema_version"] = True
     record["builder_identity_sha256"] = _json_sha256(record["builder_identity"])
 
     report = _platform_verified_readiness(
@@ -1845,6 +2023,23 @@ def test_platform_verified_readiness_ignores_builder_identity_release_context_mi
     assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
 
 
+def test_platform_verified_readiness_ignores_boolean_linux_builder_run_attempts() -> None:
+    record = _linux_accepted_evidence("linux-armhf")
+    record["builder_identity"]["workflow_run_attempt"] = True
+    record["builder_identity"]["host_identity"]["workflow_run_attempt"] = True
+    record["builder_identity_sha256"] = _json_sha256(record["builder_identity"])
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry=_accepted_evidence_registry(record),
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["linux-armhf"]["current_percent"] == 70.0
+    assert rows["linux-armhf"]["status"] == "manual-script-supported"
+    assert rows["linux-armhf"]["accepted_evidence_missing_targets"] == ["linux-armhf"]
+
+
 def test_platform_verified_readiness_ignores_missing_linux_smoke_evidence() -> None:
     record = _linux_accepted_evidence("linux-i386")
     del record["linux_smoke_evidence_sha256"]
@@ -1900,6 +2095,24 @@ def test_platform_verified_readiness_ignores_weak_linux_smoke_summary_security()
     assert goal["accepted_targets"] == []
 
 
+def test_platform_verified_readiness_ignores_boolean_linux_smoke_summary_run_attempt() -> None:
+    record = _linux_accepted_evidence("linux-i386")
+    record["linux_smoke_summary"]["workflow_run_attempt"] = True
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry=_accepted_evidence_registry(record),
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    goal = report["protected_goal_parity"]
+    assert rows["linux-i386"]["current_percent"] == 70.0
+    assert rows["linux-i386"]["status"] == "manual-script-supported"
+    assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
+    assert goal["current_percent"] == 0.0
+    assert goal["accepted_targets"] == []
+
+
 def test_platform_verified_readiness_ignores_vague_linux_smoke_summary_security_provenance() -> None:
     record = _linux_accepted_evidence("linux-i386")
     summary = record["linux_smoke_summary"]
@@ -1938,9 +2151,41 @@ def test_platform_verified_readiness_ignores_missing_linux_evidence_sources() ->
     assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
 
 
+def test_platform_verified_readiness_ignores_boolean_linux_evidence_source_size() -> None:
+    record = _linux_accepted_evidence("linux-armhf")
+    record["linux_evidence_sources"]["builder_identity"]["size_bytes"] = True
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry=_accepted_evidence_registry(record),
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["linux-armhf"]["current_percent"] == 70.0
+    assert rows["linux-armhf"]["status"] == "manual-script-supported"
+    assert rows["linux-armhf"]["accepted_evidence_missing_targets"] == ["linux-armhf"]
+
+
 def test_platform_verified_readiness_ignores_wrong_xp_native_validation_command() -> None:
     record = _xp_accepted_evidence("windows-xp-native-x86")
     record["native_evidence_validation_command"] = "python scripts/check_xp_native_evidence.py --help"
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry=_accepted_evidence_registry(record),
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["Windows XP"]["current_percent"] == 25.0
+    assert rows["Windows XP"]["status"] == "remote-target-only"
+    assert rows["Windows XP"]["accepted_evidence_present_targets"] == []
+
+
+def test_platform_verified_readiness_ignores_xp_native_validation_contract_flag() -> None:
+    record = _xp_accepted_evidence("windows-xp-native-x64")
+    record["native_evidence_validation_command"] = (
+        f"{record['native_evidence_validation_command']} --contract"
+    )
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),
@@ -2068,6 +2313,22 @@ def test_platform_verified_readiness_ignores_xp_evidence_source_hash_drift() -> 
     assert rows["Windows XP"]["accepted_evidence_present_targets"] == []
 
 
+def test_platform_verified_readiness_ignores_boolean_xp_evidence_source_sizes() -> None:
+    record = _xp_accepted_evidence("windows-xp-native-x64")
+    record["xp_evidence_sources"]["evidence"]["size_bytes"] = True
+    record["xp_evidence_sources"]["smoke_evidence"]["cli_launch"]["size_bytes"] = True
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry=_accepted_evidence_registry(record),
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["Windows XP"]["current_percent"] == 25.0
+    assert rows["Windows XP"]["status"] == "remote-target-only"
+    assert rows["Windows XP"]["accepted_evidence_present_targets"] == []
+
+
 def test_platform_verified_readiness_ignores_stale_xp_evidence_contract_hash() -> None:
     record = _xp_accepted_evidence("windows-xp-native-x86")
     record["xp_evidence_contract_sha256"] = "0" * 64
@@ -2126,6 +2387,23 @@ def test_platform_verified_readiness_ignores_unexpected_xp_evidence_summary_fiel
     summary["host_identity"]["os"]["hostname"] = "private-xp-host"
     summary["host_identity"]["toolchain"]["builder_user"] = "private-user"
     record["xp_host_identity_sha256"] = _json_sha256(summary["host_identity"])
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry=_accepted_evidence_registry(record),
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["Windows XP"]["current_percent"] == 25.0
+    assert rows["Windows XP"]["status"] == "remote-target-only"
+    assert rows["Windows XP"]["accepted_evidence_present_targets"] == []
+
+
+def test_platform_verified_readiness_ignores_boolean_xp_host_identity_schema_version() -> None:
+    record = _xp_accepted_evidence("windows-xp-native-x64")
+    host_identity = record["xp_evidence_summary"]["host_identity"]
+    host_identity["schema_version"] = True
+    record["xp_host_identity_sha256"] = _json_sha256(host_identity)
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),

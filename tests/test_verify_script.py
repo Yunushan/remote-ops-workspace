@@ -260,6 +260,7 @@ def test_verify_can_require_platform_goal_targets(tmp_path: Path) -> None:
         "v1.0.3",
         "--require-goal-targets",
         "--require-source-runs",
+        "--require-source-artifact-bytes",
         "--require-final-record-bytes",
         "--require-release-asset-bytes",
         "--require-tag-source-head",

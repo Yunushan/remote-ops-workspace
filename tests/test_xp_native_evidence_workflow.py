@@ -340,6 +340,32 @@ def test_xp_native_evidence_workflow_requires_candidate_local_evidence_root() ->
     assert any("candidate local evidence root binding" in error for error in errors)
 
 
+def test_xp_native_evidence_workflow_requires_candidate_staged_upload_out_dir() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8").replace(
+        ' --staged-upload-out-dir "platform-evidence-upload/${{ inputs.target }}/${{ inputs.release_tag }}"',
+        "",
+        1,
+    )
+
+    errors = checker.check_xp_native_evidence_workflow(workflow)
+
+    assert any("candidate staged upload output binding" in error for error in errors)
+
+
+def test_xp_native_evidence_workflow_requires_candidate_xp_evidence_output_dir() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8").replace(
+        ' --xp-evidence-output-dir "xp-evidence-output/${{ inputs.target }}/${{ inputs.release_tag }}"',
+        "",
+        1,
+    )
+
+    errors = checker.check_xp_native_evidence_workflow(workflow)
+
+    assert any("candidate XP evidence output binding" in error for error in errors)
+
+
 def test_xp_native_evidence_workflow_requires_local_source_run_attempt() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8").replace(
@@ -376,6 +402,19 @@ def test_xp_native_evidence_workflow_requires_dispatch_source_head_sha() -> None
     errors = checker.check_xp_native_evidence_workflow(workflow)
 
     assert any("XP dispatch source head SHA binding" in error for error in errors)
+
+
+def test_xp_native_evidence_workflow_requires_dispatch_release_tag_ref_binding() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8").replace(
+        ' --workflow-ref-name "${{ github.ref_name }}"',
+        "",
+        1,
+    )
+
+    errors = checker.check_xp_native_evidence_workflow(workflow)
+
+    assert any("XP dispatch input preflight" in error for error in errors)
 
 
 def test_xp_native_evidence_workflow_requires_dispatch_source_run_attempt() -> None:
@@ -421,6 +460,17 @@ def test_xp_native_evidence_workflow_rejects_unbalanced_github_expression() -> N
         '${{ inputs.release_tag }}',
         '${{ inputs.release_tag }',
         1,
+    )
+
+    errors = checker.check_xp_native_evidence_workflow(workflow)
+
+    assert any("unbalanced GitHub expression delimiters" in error for error in errors)
+
+
+def test_xp_native_evidence_workflow_rejects_out_of_order_github_expression_delimiters() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8") + (
+        "\n# malformed but count-balanced expression }} before ${{ inputs.release_tag\n"
     )
 
     errors = checker.check_xp_native_evidence_workflow(workflow)
@@ -497,6 +547,7 @@ def test_xp_native_evidence_dispatch_rejects_file_shaped_directory_inputs() -> N
         release_tag="v1.0.2",
         release_asset_base_url="https://github.com/example/remote-ops-workspace/releases/download/v1.0.2",
         workflow_run_url="https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        workflow_ref_name="v1.0.2",
         source_head_sha="0123456789abcdef0123456789abcdef01234567",
         source_run_attempt="1",
         assets_dir="native-dist/windows-xp/windows-xp-native-x86/v1.0.2/artifacts.zip",
@@ -506,6 +557,28 @@ def test_xp_native_evidence_dispatch_rejects_file_shaped_directory_inputs() -> N
 
     assert "assets_dir must be a directory path, got 'native-dist/windows-xp/windows-xp-native-x86/v1.0.2/artifacts.zip'" in errors
     assert "evidence_dir must be a directory path, got 'evidence/windows-xp-native-x86/v1.0.2/proof.log'" in errors
+
+
+def test_xp_native_evidence_dispatch_rejects_release_tag_ref_mismatch() -> None:
+    checker = _load_dispatch_checker()
+
+    errors = checker.check_xp_native_evidence_dispatch_inputs(
+        target="windows-xp-native-x64",
+        release_tag="v1.0.2",
+        release_asset_base_url="https://github.com/example/remote-ops-workspace/releases/download/v1.0.2",
+        workflow_run_url="https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        workflow_ref_name="main",
+        source_head_sha="0123456789abcdef0123456789abcdef01234567",
+        source_run_attempt="1",
+        assets_dir="native-dist/windows-xp/windows-xp-native-x64/v1.0.2",
+        evidence_file="evidence/windows-xp-native-x64/v1.0.2/xp-evidence.json",
+        evidence_dir="evidence/windows-xp-native-x64/v1.0.2/xp-smoke-evidence",
+    )
+
+    assert (
+        "workflow_ref_name must match release_tag so evidence is dispatched from "
+        "the release tag ref, got 'main'"
+    ) in errors
 
 
 def test_wait_for_xp_native_evidence_inputs_accepts_present_paths(tmp_path: Path) -> None:
@@ -680,6 +753,31 @@ def test_wait_for_xp_native_evidence_inputs_rejects_symlinked_parent_directory(t
     assert f"assets_dir path must not contain symlinked parent directory: {parent_link}" in errors
     assert f"evidence_file path must not contain symlinked parent directory: {parent_link}" in errors
     assert f"evidence_dir path must not contain symlinked parent directory: {parent_link}" in errors
+
+
+def test_wait_for_xp_native_evidence_inputs_allows_macos_var_temp_alias(monkeypatch) -> None:
+    waiter = _load_waiter()
+    original_resolve = Path.resolve
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self.as_posix() == "/var"
+
+    def fake_resolve(self: Path, strict: bool = False) -> Path:
+        if self.as_posix() == "/var":
+            return Path("/private/var")
+        return original_resolve(self, strict=strict)
+
+    monkeypatch.setattr(waiter.sys, "platform", "darwin")
+    monkeypatch.setattr(Path, "is_symlink", fake_is_symlink)
+    monkeypatch.setattr(Path, "resolve", fake_resolve)
+
+    assert (
+        waiter.check_parent_directories_not_symlinked(
+            "assets_dir",
+            Path("/var/folders/pytest/xp-staged/assets"),
+        )
+        == []
+    )
 
 
 def test_wait_for_xp_native_evidence_inputs_rejects_symlinked_staged_directories(tmp_path: Path) -> None:

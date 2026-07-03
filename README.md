@@ -342,11 +342,12 @@ XP-capable legacy toolchain, x86/x64 XP host smoke evidence captured with
 collector packaging, and a passing `python scripts/check_xp_native_evidence.py --evidence <evidence.json> --assets-dir <artifact-dir>` bundle exist; XP remote-target coverage stays 100.0% through isolated legacy-profile opt-ins.
 After a release is published, audit the actual GitHub release and evidence
 workflow runs with
-`python scripts/check_platform_release_evidence_remote.py --repository <owner>/<repo> --release-tag v<project.version> --require-goal-targets --require-source-runs --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head`;
+`python scripts/check_platform_release_evidence_remote.py --repository <owner>/<repo> --release-tag v<project.version> --require-goal-targets --require-source-runs --require-source-artifact-bytes --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head`;
 it must still fail if finalized accepted records, protected evidence release
 assets, published asset digests, sizes and bytes, published final accepted-record JSON bytes,
 release tag Git object/source head SHA, exact successful source workflow run
-metadata, or non-expired source workflow artifacts bound to those runs are
+metadata, non-expired source workflow artifacts bound to those runs, or source artifact ZIP
+contents matching `release_asset_source.contains_files` are
 missing, or if stale protected-platform native/evidence assets remain on the
 release outside the audited accepted-evidence scope. The release workflow runs that audit after
 `softprops/action-gh-release` uploads the assets, using read-only Actions
@@ -615,7 +616,7 @@ and the accepted review-bundle hashes; the same check validates
 `--require-mobaxterm-parity-complete` is the hard gate for releases that claim
 complete strict MobaXterm Home/Professional product-depth parity.
 After upload, the publish job runs
-`python scripts/check_platform_release_evidence_remote.py --repository <owner>/<repo> --release-tag <tag> --require-goal-targets --require-source-runs --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head`
+`python scripts/check_platform_release_evidence_remote.py --repository <owner>/<repo> --release-tag <tag> --require-goal-targets --require-source-runs --require-source-artifact-bytes --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head`
 against the actual GitHub release, requiring published asset digests, sizes and bytes,
 published final accepted-record JSON bytes, release tag Git object/source head SHA,
 exact source workflow run metadata,
@@ -623,7 +624,8 @@ and source artifact `workflow_run.id`,
 `workflow_run.head_sha`, `workflow_run.repository_id` and
 `workflow_run.head_repository_id` binding when GitHub exposes repository IDs,
 plus artifact created_at inside the exact source run creation/start/update window when
-GitHub exposes timestamps.
+GitHub exposes timestamps, and source artifact ZIP contents matching
+`release_asset_source.contains_files`.
 Python release tooling is constrained by `requirements-release.txt` and recorded
 in each release manifest through `configs/release_toolchain.json`. Native
 Windows, macOS and Linux jobs also emit per-platform `native-SHA256SUMS.txt`

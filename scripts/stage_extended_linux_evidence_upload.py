@@ -26,6 +26,7 @@ from check_platform_verified_evidence import (  # noqa: E402
     accepted_record_source_file,
     check_platform_verified_evidence,
     directory_path_has_file_suffix,
+    exact_safe_file_name,
     promotion_entries_by_id,
     read_json,
     review_bundle_expected_files,
@@ -77,12 +78,20 @@ def stage_extended_linux_evidence_upload(
         errors.append(f"unknown extended Linux target: {target}")
     promotion = read_json(PROMOTION_PATH)
     promotion_entries = promotion_entries_by_id(promotion, errors)
-    expected_files = accepted_artifact_names(target, release_tag, promotion_entries)
-    expected_files.update(review_bundle_expected_files(target, release_tag).values())
+    expected_artifacts = accepted_artifact_names(target, release_tag, promotion_entries)
+    expected_evidence = set(review_bundle_expected_files(target, release_tag).values())
     final_record_name = accepted_record_source_file(target)
-    expected_files.add(final_record_name)
+    expected_upload_names = [
+        *sorted(expected_artifacts),
+        *sorted(expected_evidence),
+        final_record_name,
+    ]
+    errors.extend(check_staged_upload_file_names(target, expected_upload_names))
+    expected_files = set(expected_upload_names)
     if not expected_files:
         errors.append(f"{target} has no expected Linux evidence upload files for {release_tag}")
+    if errors:
+        return errors
     errors.extend(check_directory_path_hint(source_dir, "extended Linux evidence source directory"))
     errors.extend(check_path_not_reserved_workspace_root(source_dir, "extended Linux evidence source directory"))
     if source_dir.is_symlink():
@@ -180,10 +189,26 @@ def check_source_hashes(target: str, record: dict[str, Any], sources: dict[str, 
     errors: list[str] = []
     artifact_hashes = record.get("artifact_sha256")
     if isinstance(artifact_hashes, dict):
-        for filename, expected_sha in sorted(artifact_hashes.items()):
-            path = sources.get(str(filename))
+        for filename, expected_sha in sorted(
+            (
+                (name, digest)
+                for name, digest in artifact_hashes.items()
+                if isinstance(name, str) and exact_safe_file_name(name)
+            ),
+            key=lambda item: item[0],
+        ):
+            path = sources.get(filename)
             if path is not None and path.is_file() and sha256_file(path) != str(expected_sha):
                 errors.append(f"{target} staged upload native artifact SHA-256 mismatch: {filename}")
+        unsafe_artifacts = sorted(
+            {
+                name if isinstance(name, str) else repr(name)
+                for name in artifact_hashes
+                if not isinstance(name, str) or not exact_safe_file_name(name)
+            }
+        )
+        if unsafe_artifacts:
+            errors.append(f"{target} staged upload artifact_sha256 keys must be exact safe file names: {unsafe_artifacts}")
     review_bundle = record.get("review_bundle")
     if isinstance(review_bundle, dict):
         for key in ("manifest", "archive", "sha256s"):
@@ -194,7 +219,8 @@ def check_source_hashes(target: str, record: dict[str, Any], sources: dict[str, 
             path = sources.get(filename)
             if path is None or not path.is_file():
                 continue
-            if raw_record.get("size_bytes") != path.stat().st_size:
+            expected_size = raw_record.get("size_bytes")
+            if not isinstance(expected_size, int) or isinstance(expected_size, bool) or expected_size != path.stat().st_size:
                 errors.append(f"{target} staged upload review_bundle {key}.size_bytes mismatch: {filename}")
             if str(raw_record.get("sha256", "")) != sha256_file(path):
                 errors.append(f"{target} staged upload review_bundle {key}.sha256 mismatch: {filename}")
@@ -221,6 +247,35 @@ def check_review_bundle_artifacts(
     ]
 
 
+def check_staged_upload_file_names(target: str, filenames: list[str]) -> list[str]:
+    errors: list[str] = []
+    unsafe = sorted({filename for filename in filenames if not exact_safe_file_name(filename)})
+    if unsafe:
+        errors.append(f"{target} staged upload file names must be exact safe file names: {unsafe}")
+    duplicates = sorted({filename for filename in filenames if filenames.count(filename) > 1})
+    if duplicates:
+        errors.append(
+            f"{target} staged upload file names must be unique across artifacts and evidence outputs: {duplicates}"
+        )
+    case_groups: dict[str, set[str]] = {}
+    for filename in filenames:
+        case_groups.setdefault(filename.casefold(), set()).add(filename)
+    case_collisions = sorted(
+        {
+            filename
+            for group in case_groups.values()
+            if len(group) > 1
+            for filename in group
+        }
+    )
+    if case_collisions:
+        errors.append(
+            f"{target} staged upload file names must not collide on case-insensitive filesystems: "
+            f"{case_collisions}"
+        )
+    return errors
+
+
 def check_release_source_file_set(
     target: str,
     record: dict[str, Any],
@@ -232,9 +287,30 @@ def check_release_source_file_set(
     raw_files = source.get("contains_files")
     if not isinstance(raw_files, list) or not raw_files:
         return [f"{target} finalized accepted record release_asset_source.contains_files must be a non-empty list"]
-    expected = {str(filename) for filename in raw_files}
-    actual = {str(filename) for filename in sources}
     errors: list[str] = []
+    unsafe = sorted(
+        {
+            filename if isinstance(filename, str) else repr(filename)
+            for filename in raw_files
+            if not isinstance(filename, str) or not exact_safe_file_name(filename)
+        }
+    )
+    if unsafe:
+        errors.append(
+            f"{target} finalized accepted record release_asset_source.contains_files "
+            f"entries must be exact safe file names: {unsafe}"
+        )
+    files = [filename for filename in raw_files if isinstance(filename, str)]
+    duplicates = sorted({filename for filename in files if files.count(filename) > 1})
+    if duplicates:
+        errors.append(
+            f"{target} finalized accepted record release_asset_source.contains_files "
+            f"contains duplicate files: {duplicates}"
+        )
+    if errors:
+        return errors
+    expected = set(files)
+    actual = set(sources)
     missing = sorted(expected - actual)
     unexpected = sorted(actual - expected)
     if missing:
@@ -434,12 +510,21 @@ def check_staged_output(
     return errors
 
 
+def is_allowed_platform_parent_symlink(parent: Path) -> bool:
+    if sys.platform != "darwin" or parent.as_posix() != "/var":
+        return False
+    try:
+        return parent.resolve(strict=False).as_posix() == "/private/var"
+    except OSError:
+        return False
+
+
 def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
     check_path = path if path.is_absolute() else Path.cwd() / path
     for parent in reversed(check_path.parents):
         if parent == Path("."):
             continue
-        if parent.is_symlink():
+        if parent.is_symlink() and not is_allowed_platform_parent_symlink(parent):
             return [f"{label} path must not contain symlinked directories: {parent}"]
     return []
 
@@ -526,7 +611,7 @@ def finalized_record_registry(record: dict[str, Any]) -> dict[str, Any]:
 def source_map(root: Path, filenames: set[str]) -> dict[str, Path]:
     files: dict[str, Path] = {}
     for filename in sorted(filenames):
-        if Path(filename).name != filename or "/" in filename or "\\" in filename:
+        if not exact_safe_file_name(filename):
             files[filename] = Path("__invalid__")
             continue
         path = root / filename

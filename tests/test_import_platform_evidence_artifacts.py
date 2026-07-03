@@ -269,15 +269,36 @@ def test_validate_source_artifact_rejects_unsafe_release_source_file_entries(tmp
         first_file,
         "../operator-private.log",
         "nested/raw-smoke.log",
+        True,
     ]
 
     errors = importer.validate_source_artifact(record, source_root=tmp_path / "downloaded")
 
-    assert (
-        "linux-i386 release_asset_source.contains_files entries must be exact safe file names: "
-        "['../operator-private.log', 'nested/raw-smoke.log']"
-    ) in errors
+    assert any(
+        "linux-i386 release_asset_source.contains_files entries must be exact safe file names" in error
+        and "'../operator-private.log'" in error
+        and "'nested/raw-smoke.log'" in error
+        and "True" in error
+        for error in errors
+    )
     assert f"linux-i386 release_asset_source.contains_files contains duplicates: ['{first_file}']" in errors
+
+
+def test_validate_source_artifact_rejects_case_colliding_release_source_file_entries(tmp_path: Path) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+    first_file = str(record["release_asset_source"]["contains_files"][0])
+    record["release_asset_source"]["contains_files"].append(first_file.upper())
+
+    errors = importer.validate_source_artifact(record, source_root=tmp_path / "downloaded")
+
+    assert any(
+        "linux-i386 release_asset_source.contains_files must not collide on case-insensitive filesystems"
+        in error
+        and first_file in error
+        and first_file.upper() in error
+        for error in errors
+    )
 
 
 def test_validate_source_artifact_rejects_missing_declared_expected_file(tmp_path: Path) -> None:
@@ -341,6 +362,24 @@ def test_validate_source_artifact_rejects_downloaded_review_bundle_hash_mismatch
     assert (
         "linux-i386 downloaded source artifact review bundle manifest SHA-256 mismatch: "
         f"{manifest_name}"
+    ) in errors
+
+
+def test_validate_source_artifact_rejects_downloaded_boolean_review_bundle_size(
+    tmp_path: Path,
+) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+    source_root = tmp_path / "downloaded"
+    _write_source_files(record, source_root)
+    manifest = record["review_bundle"]["manifest"]
+    manifest["size_bytes"] = True
+
+    errors = importer.validate_source_artifact(record, source_root=source_root)
+
+    assert (
+        "linux-i386 downloaded source artifact review bundle manifest size_bytes mismatch: "
+        f"{manifest['file']}"
     ) in errors
 
 
@@ -613,6 +652,161 @@ def test_import_platform_evidence_artifacts_rejects_duplicate_record_targets(
     assert not out_dir.exists()
 
 
+def test_import_platform_evidence_artifacts_rejects_non_string_public_record_keys(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+    record[True] = "manual scratch"
+    out_dir = tmp_path / "release-assets"
+
+    def fail_run(*_args: Any, **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+        raise AssertionError("gh should not run when accepted import record keys are malformed")
+
+    monkeypatch.setattr(importer.subprocess, "run", fail_run)
+
+    errors = importer.import_platform_evidence_artifacts(
+        [record],
+        out_dir=out_dir,
+        dry_run=True,
+        release_head_sha=HEAD_SHA,
+    )
+
+    assert errors == [
+        "linux-i386 accepted evidence public record keys must be strings, got True"
+    ]
+    assert True not in importer.public_record(record)
+    assert "_source_files" not in importer.public_record(record)
+    assert not out_dir.exists()
+
+
+def test_import_platform_evidence_artifacts_rejects_case_colliding_public_record_keys(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+    record["TARGET"] = record["target"]
+    out_dir = tmp_path / "release-assets"
+
+    def fail_run(*_args: Any, **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+        raise AssertionError("gh should not run when accepted import record keys collide")
+
+    monkeypatch.setattr(importer.subprocess, "run", fail_run)
+
+    errors = importer.import_platform_evidence_artifacts(
+        [record],
+        out_dir=out_dir,
+        dry_run=True,
+        release_head_sha=HEAD_SHA,
+    )
+
+    assert errors == [
+        "linux-i386 accepted evidence public record keys must not collide on "
+        "case-insensitive filesystems: ['TARGET', 'target']"
+    ]
+    assert not out_dir.exists()
+
+
+def test_import_platform_evidence_artifacts_rejects_non_string_expected_output_file_names(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+    record["artifact_sha256"][True] = "0" * 64
+    record["review_bundle"]["manifest"]["file"] = False
+    out_dir = tmp_path / "release-assets"
+
+    def fail_run(*_args: Any, **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+        raise AssertionError("gh should not run when import output file names are malformed")
+
+    monkeypatch.setattr(importer.subprocess, "run", fail_run)
+
+    errors = importer.import_platform_evidence_artifacts(
+        [record],
+        out_dir=out_dir,
+        dry_run=True,
+        release_head_sha=HEAD_SHA,
+    )
+
+    assert errors == [
+        "linux-i386 release asset import artifact_sha256 keys must be strings, got True",
+        "linux-i386 release asset import review_bundle manifest.file must be a string, got False",
+    ]
+    assert not out_dir.exists()
+
+
+def test_import_platform_evidence_artifacts_rejects_ambiguous_output_file_names() -> None:
+    importer = _load_importer()
+
+    errors = importer.check_import_release_file_names(
+        [
+            {
+                "target": "linux-i386",
+                "artifact_sha256": {
+                    "remote-ops-workspace-v1.0.2-linux-i386.deb": "a" * 64,
+                    "Readme.txt": "b" * 64,
+                    "nested/escape.deb": "c" * 64,
+                },
+            },
+            {
+                "target": "linux-armhf",
+                "artifact_sha256": {
+                    "remote-ops-workspace-v1.0.2-linux-i386.deb": "d" * 64,
+                    "readme.txt": "e" * 64,
+                },
+            },
+        ]
+    )
+
+    assert (
+        "release asset import expected output file names must be exact safe file names: "
+        "['linux-i386:nested/escape.deb']"
+    ) in errors
+    assert (
+        "release asset import expected output file names must be unique across accepted records: "
+        "['remote-ops-workspace-v1.0.2-linux-i386.deb']"
+    ) in errors
+    assert (
+        "release asset import expected output file names must not collide on case-insensitive filesystems: "
+        "['Readme.txt', 'readme.txt']"
+    ) in errors
+
+
+def test_import_platform_evidence_artifacts_rejects_output_name_collision_before_gh(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    importer = _load_importer()
+    record = importer.public_record(_record(tmp_path))
+    duplicate_name = sorted(importer.expected_release_files(record))[0]
+    colliding_record = {
+        "target": "linux-armhf",
+        "artifact_sha256": {duplicate_name: "0" * 64},
+    }
+    out_dir = tmp_path / "release-assets"
+
+    def fail_run(*_args: Any, **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+        raise AssertionError("gh should not run when accepted import records collide on output names")
+
+    monkeypatch.setattr(importer.subprocess, "run", fail_run)
+
+    errors = importer.import_platform_evidence_artifacts(
+        [record, colliding_record],
+        out_dir=out_dir,
+        dry_run=True,
+        release_head_sha=HEAD_SHA,
+    )
+
+    assert errors == [
+        "release asset import expected output file names must be unique across accepted records: "
+        f"['{duplicate_name}']"
+    ]
+    assert not out_dir.exists()
+
+
 def test_import_platform_evidence_artifacts_requires_gh_for_downloads(
     tmp_path: Path,
     monkeypatch,
@@ -832,6 +1026,7 @@ def test_import_record_rejects_failed_source_workflow_run(tmp_path: Path, monkey
                     "conclusion": "failure",
                     "event": "workflow_dispatch",
                     "headSha": HEAD_SHA,
+                    "headBranch": "v1.0.2",
                     "path": ".github/workflows/extended-platform-evidence.yml",
                 }
             ),
@@ -937,6 +1132,63 @@ def test_import_record_rejects_release_asset_url_tag_mismatch(
     )
 
 
+def test_import_record_rejects_path_qualified_release_asset_url(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+    record["release_asset_urls"][0] = str(record["release_asset_urls"][0]).replace(
+        "/releases/download/v1.0.2/",
+        "/releases/download/v1.0.2/nested/",
+    )
+
+    def fail_run(*_args: Any, **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+        raise AssertionError("gh should not run when release asset URL file name is unsafe")
+
+    monkeypatch.setattr(importer.subprocess, "run", fail_run)
+
+    errors = importer.import_record(
+        record,
+        out_dir=tmp_path / "release-assets",
+        download_root=tmp_path / "download",
+        dry_run=False,
+        release_head_sha=HEAD_SHA,
+    )
+
+    assert any(
+        "linux-i386 release_asset_urls file name must be an exact safe file name" in error
+        and "/releases/download/v1.0.2/nested/" in error
+        for error in errors
+    )
+
+
+def test_import_record_rejects_non_string_release_asset_url_entries(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+    record["release_asset_urls"].append(True)
+    record["review_bundle"]["release_asset_urls"].append(False)
+
+    def fail_run(*_args: Any, **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+        raise AssertionError("gh should not run when release asset URL entries are malformed")
+
+    monkeypatch.setattr(importer.subprocess, "run", fail_run)
+
+    errors = importer.import_record(
+        record,
+        out_dir=tmp_path / "release-assets",
+        download_root=tmp_path / "download",
+        dry_run=False,
+        release_head_sha=HEAD_SHA,
+    )
+
+    assert "linux-i386 release_asset_urls entries must be strings, got True" in errors
+    assert "linux-i386 review_bundle release_asset_urls entries must be strings, got False" in errors
+
+
 def test_import_record_rejects_source_workflow_repository_mismatch(
     tmp_path: Path,
     monkeypatch,
@@ -984,6 +1236,7 @@ def test_import_record_rejects_incomplete_or_non_dispatch_source_workflow_run(
                     "conclusion": None,
                     "event": "push",
                     "headSha": HEAD_SHA,
+                    "headBranch": "v1.0.2",
                     "path": ".github/workflows/other-workflow.yml",
                 }
             ),
@@ -1034,6 +1287,7 @@ def test_import_record_rejects_source_workflow_path_mismatch(tmp_path: Path, mon
                     "conclusion": "success",
                     "event": "workflow_dispatch",
                     "headSha": HEAD_SHA,
+                    "headBranch": "v1.0.2",
                     "path": ".github/workflows/ci.yml",
                 }
             ),
@@ -1074,6 +1328,7 @@ def test_import_record_rejects_xp_source_workflow_path_mismatch(tmp_path: Path, 
                     "conclusion": "success",
                     "event": "workflow_dispatch",
                     "headSha": HEAD_SHA,
+                    "headBranch": "v1.0.2",
                     "path": ".github/workflows/extended-platform-evidence.yml",
                 }
             ),
@@ -1111,6 +1366,7 @@ def test_import_record_rejects_source_workflow_head_sha_mismatch(tmp_path: Path,
                     "conclusion": "success",
                     "event": "workflow_dispatch",
                     "headSha": "b" * 40,
+                    "headBranch": "v1.0.2",
                     "path": ".github/workflows/extended-platform-evidence.yml",
                 }
             ),
@@ -1151,6 +1407,7 @@ def test_import_record_rejects_source_workflow_run_attempt_mismatch(
                     "conclusion": "success",
                     "event": "workflow_dispatch",
                     "headSha": HEAD_SHA,
+                    "headBranch": "v1.0.2",
                     "path": ".github/workflows/extended-platform-evidence.yml",
                 }
             ),
@@ -1170,6 +1427,33 @@ def test_import_record_rejects_source_workflow_run_attempt_mismatch(
         "linux-i386 release_asset_source workflow run attempt must match accepted record 1, got 2"
         in errors
     )
+
+
+def test_import_record_rejects_source_workflow_run_release_tag_ref_mismatch(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+
+    def fake_run(command: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        assert _is_metadata_command(command)
+        return _source_run_metadata(command, headBranch="main")
+
+    monkeypatch.setattr(importer.subprocess, "run", fake_run)
+
+    errors = importer.import_record(
+        record,
+        out_dir=tmp_path / "release-assets",
+        download_root=tmp_path / "download",
+        dry_run=False,
+        release_head_sha=HEAD_SHA,
+    )
+
+    assert (
+        "linux-i386 release_asset_source workflow run headBranch must match release_tag "
+        "v1.0.2, got 'main'"
+    ) in errors
 
 
 def test_import_record_rejects_source_workflow_run_started_before_created(
@@ -1231,6 +1515,56 @@ def test_import_record_rejects_source_workflow_run_id_mismatch(
     )
 
 
+def test_import_record_rejects_source_workflow_run_identity_fields(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+
+    def fake_run(command: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        assert _is_metadata_command(command)
+        return _source_run_metadata(
+            command,
+            id="12345",
+            nodeId="",
+            runNumber=0,
+            workflowId="445566",
+            checkSuiteId=False,
+        )
+
+    monkeypatch.setattr(importer.subprocess, "run", fake_run)
+
+    errors = importer.import_record(
+        record,
+        out_dir=tmp_path / "release-assets",
+        download_root=tmp_path / "download",
+        dry_run=False,
+        release_head_sha=HEAD_SHA,
+    )
+
+    assert (
+        "linux-i386 release_asset_source workflow run id must be a positive integer, got '12345'"
+        in errors
+    )
+    assert (
+        "linux-i386 release_asset_source workflow run nodeId must be a non-empty string, got ''"
+        in errors
+    )
+    assert (
+        "linux-i386 release_asset_source workflow run runNumber must be a positive integer, got 0"
+        in errors
+    )
+    assert (
+        "linux-i386 release_asset_source workflow run workflowId must be a positive integer, got '445566'"
+        in errors
+    )
+    assert (
+        "linux-i386 release_asset_source workflow run checkSuiteId must be a positive integer, got False"
+        in errors
+    )
+
+
 def test_import_record_rejects_source_workflow_run_url_mismatch(
     tmp_path: Path,
     monkeypatch,
@@ -1259,6 +1593,70 @@ def test_import_record_rejects_source_workflow_run_url_mismatch(
         "linux-i386 release_asset_source workflow run htmlUrl must match accepted record "
         "https://github.com/example/remote-ops-workspace/actions/runs/12345, "
         "got 'https://github.com/example/remote-ops-workspace/actions/runs/99999'"
+    ) in errors
+
+
+def test_import_record_rejects_source_workflow_run_endpoint_metadata(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+
+    def fake_run(command: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        assert _is_metadata_command(command)
+        return _source_run_metadata(
+            command,
+            url="https://api.github.com/repos/example/remote-ops-workspace/actions/runs/99999",
+            workflowUrl="https://api.github.com/repos/example/remote-ops-workspace/actions/workflows/999",
+            jobsUrl="https://api.github.com/repos/example/remote-ops-workspace/actions/runs/99999/jobs",
+            logsUrl="https://api.github.com/repos/example/remote-ops-workspace/actions/runs/99999/logs",
+            artifactsUrl=(
+                "https://api.github.com/repos/example/remote-ops-workspace/"
+                "actions/runs/99999/artifacts"
+            ),
+            checkSuiteUrl="https://api.github.com/repos/example/remote-ops-workspace/check-suites/1",
+        )
+
+    monkeypatch.setattr(importer.subprocess, "run", fake_run)
+
+    errors = importer.import_record(
+        record,
+        out_dir=tmp_path / "release-assets",
+        download_root=tmp_path / "download",
+        dry_run=False,
+        release_head_sha=HEAD_SHA,
+    )
+
+    assert (
+        "linux-i386 release_asset_source workflow run url must be "
+        "'https://api.github.com/repos/example/remote-ops-workspace/actions/runs/12345', "
+        "got 'https://api.github.com/repos/example/remote-ops-workspace/actions/runs/99999'"
+    ) in errors
+    assert (
+        "linux-i386 release_asset_source workflow run workflowUrl must be "
+        "'https://api.github.com/repos/example/remote-ops-workspace/actions/workflows/445566', "
+        "got 'https://api.github.com/repos/example/remote-ops-workspace/actions/workflows/999'"
+    ) in errors
+    assert (
+        "linux-i386 release_asset_source workflow run jobsUrl must be "
+        "'https://api.github.com/repos/example/remote-ops-workspace/actions/runs/12345/jobs', "
+        "got 'https://api.github.com/repos/example/remote-ops-workspace/actions/runs/99999/jobs'"
+    ) in errors
+    assert (
+        "linux-i386 release_asset_source workflow run logsUrl must be "
+        "'https://api.github.com/repos/example/remote-ops-workspace/actions/runs/12345/logs', "
+        "got 'https://api.github.com/repos/example/remote-ops-workspace/actions/runs/99999/logs'"
+    ) in errors
+    assert (
+        "linux-i386 release_asset_source workflow run artifactsUrl must be "
+        "'https://api.github.com/repos/example/remote-ops-workspace/actions/runs/12345/artifacts', "
+        "got 'https://api.github.com/repos/example/remote-ops-workspace/actions/runs/99999/artifacts'"
+    ) in errors
+    assert (
+        "linux-i386 release_asset_source workflow run checkSuiteUrl must be "
+        "'https://api.github.com/repos/example/remote-ops-workspace/check-suites/998877', "
+        "got 'https://api.github.com/repos/example/remote-ops-workspace/check-suites/1'"
     ) in errors
 
 
@@ -2243,6 +2641,12 @@ def test_verify_source_artifact_rejects_unbound_artifact_identity(monkeypatch) -
         "got 2 artifacts",
         "linux-i386 release_asset_source artifact extended-linux-evidence-linux-i386-v1.0.2 "
         "id must be a positive integer, got '98765'",
+        "linux-i386 release_asset_source artifact extended-linux-evidence-linux-i386-v1.0.2 "
+        "node_id must be a non-empty string, got None",
+        "linux-i386 release_asset_source artifact extended-linux-evidence-linux-i386-v1.0.2 "
+        "workflow_run.repository_id must be a positive integer, got None",
+        "linux-i386 release_asset_source artifact extended-linux-evidence-linux-i386-v1.0.2 "
+        "workflow_run.head_repository_id must be a positive integer, got None",
     ]
 
 
@@ -2259,12 +2663,22 @@ def test_verify_source_artifact_rejects_archive_download_url_mismatch(monkeypatc
             artifacts=[
                 {
                     "id": 98765,
+                    "node_id": "MDEyOkFydGlmYWN0OTg3NjU=",
                     "name": "extended-linux-evidence-linux-i386-v1.0.2",
+                    "url": (
+                        "https://api.github.com/repos/example/remote-ops-workspace/"
+                        "actions/artifacts/98765"
+                    ),
                     "archive_download_url": "https://api.github.com/repos/other/repo/actions/artifacts/98765/zip",
                     "expired": False,
                     "size_in_bytes": 4096,
                     "expires_at": "2026-09-28T12:04:00Z",
-                    "workflow_run": {"id": 12345, "head_sha": HEAD_SHA},
+                    "workflow_run": {
+                        "id": 12345,
+                        "head_sha": HEAD_SHA,
+                        "repository_id": 1001,
+                        "head_repository_id": 1001,
+                    },
                 },
             ],
         )
@@ -2306,6 +2720,7 @@ def test_import_record_dry_run_reports_verified_source_run_mismatch(
                     "conclusion": "failure",
                     "event": "workflow_dispatch",
                     "headSha": HEAD_SHA,
+                    "headBranch": "v1.0.2",
                     "path": ".github/workflows/extended-platform-evidence.yml",
                 }
             ),
@@ -2354,6 +2769,63 @@ def test_check_imported_hashes_rejects_review_bundle_size_mismatch(tmp_path: Pat
         "linux-i386 imported review bundle manifest size_bytes mismatch: "
         f"{manifest['file']}"
     ) in errors
+
+
+def test_check_imported_hashes_rejects_boolean_review_bundle_size(tmp_path: Path) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+    manifest = record["review_bundle"]["manifest"]
+    manifest["size_bytes"] = True
+
+    errors = importer.check_imported_hashes(record, out_dir=tmp_path)
+
+    assert (
+        "linux-i386 imported review bundle manifest size_bytes mismatch: "
+        f"{manifest['file']}"
+    ) in errors
+
+
+def test_check_imported_hashes_rejects_non_string_artifact_hash_key(tmp_path: Path) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+    record["artifact_sha256"][True] = "0" * 64
+
+    downloaded_errors = importer.check_downloaded_source_hashes(record, source_root=tmp_path)
+    imported_errors = importer.check_imported_hashes(record, out_dir=tmp_path)
+
+    assert (
+        "linux-i386 downloaded source artifact artifact_sha256 keys "
+        "must be exact safe file names, got True"
+    ) in downloaded_errors
+    assert (
+        "linux-i386 imported native artifact artifact_sha256 keys "
+        "must be exact safe file names, got True"
+    ) in imported_errors
+
+
+def test_check_imported_hashes_rejects_case_colliding_artifact_hash_keys(tmp_path: Path) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+    first_artifact = next(iter(record["artifact_sha256"]))
+    record["artifact_sha256"][first_artifact.upper()] = "0" * 64
+
+    downloaded_errors = importer.check_downloaded_source_hashes(record, source_root=tmp_path)
+    imported_errors = importer.check_imported_hashes(record, out_dir=tmp_path)
+
+    assert any(
+        "linux-i386 downloaded source artifact artifact_sha256 keys must not collide on "
+        "case-insensitive filesystems" in error
+        and first_artifact in error
+        and first_artifact.upper() in error
+        for error in downloaded_errors
+    )
+    assert any(
+        "linux-i386 imported native artifact artifact_sha256 keys must not collide on "
+        "case-insensitive filesystems" in error
+        and first_artifact in error
+        and first_artifact.upper() in error
+        for error in imported_errors
+    )
 
 
 def test_check_imported_hashes_rejects_missing_imported_files(tmp_path: Path) -> None:
@@ -2490,7 +2962,21 @@ def _source_run_metadata(
 ) -> subprocess.CompletedProcess[str]:
     data = {
         "id": 12345,
+        "nodeId": "WFR_kwLO12345",
+        "url": "https://api.github.com/repos/example/remote-ops-workspace/actions/runs/12345",
         "htmlUrl": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        "runNumber": 77,
+        "workflowId": 445566,
+        "workflowUrl": (
+            "https://api.github.com/repos/example/remote-ops-workspace/actions/workflows/445566"
+        ),
+        "jobsUrl": "https://api.github.com/repos/example/remote-ops-workspace/actions/runs/12345/jobs",
+        "logsUrl": "https://api.github.com/repos/example/remote-ops-workspace/actions/runs/12345/logs",
+        "artifactsUrl": (
+            "https://api.github.com/repos/example/remote-ops-workspace/actions/runs/12345/artifacts"
+        ),
+        "checkSuiteId": 998877,
+        "checkSuiteUrl": "https://api.github.com/repos/example/remote-ops-workspace/check-suites/998877",
         "repositoryFullName": "example/remote-ops-workspace",
         "headRepositoryFullName": "example/remote-ops-workspace",
         "repositoryId": 1001,
@@ -2503,6 +2989,7 @@ def _source_run_metadata(
         "conclusion": "success",
         "event": "workflow_dispatch",
         "headSha": HEAD_SHA,
+        "headBranch": "v1.0.2",
         "path": ".github/workflows/extended-platform-evidence.yml",
     }
     data.update(overrides)
@@ -2527,7 +3014,12 @@ def _successful_artifacts(
         artifacts = [
             {
                 "id": 98765,
+                "node_id": "MDEyOkFydGlmYWN0OTg3NjU=",
                 "name": "extended-linux-evidence-linux-i386-v1.0.2",
+                "url": (
+                    "https://api.github.com/repos/example/remote-ops-workspace/"
+                    "actions/artifacts/98765"
+                ),
                 "archive_download_url": (
                     "https://api.github.com/repos/example/remote-ops-workspace/"
                     "actions/artifacts/98765/zip"

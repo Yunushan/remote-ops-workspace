@@ -15,6 +15,7 @@ if str(SRC) not in sys.path:
 
 from check_platform_goal_local_evidence import check_platform_goal_local_evidence  # noqa: E402
 from check_platform_promotion_artifacts import (  # noqa: E402
+    archive_entry_name_is_safe,
     check_platform_promotion_artifacts,
 )
 from check_platform_verified_evidence import (  # noqa: E402
@@ -171,6 +172,20 @@ def make_xp_native_evidence_bundle(
     )
     if errors:
         return errors
+    errors.extend(
+        check_bundle_archive_entry_names(
+            xp_bundle_archive_entry_names(
+                manifest_path=manifest_path,
+                candidate_record=candidate_record,
+                evidence_data=evidence_data,
+                evidence_root=evidence_root,
+                assets_dir=assets_dir,
+            ),
+            label="XP native evidence bundle archive",
+        )
+    )
+    if errors:
+        return errors
     errors.extend(prepare_output_paths(out_dir=out_dir, outputs=outputs, force=force))
     if errors:
         return errors
@@ -305,12 +320,21 @@ def prepare_output_paths(*, out_dir: Path, outputs: tuple[Path, ...], force: boo
     return []
 
 
+def is_allowed_platform_parent_symlink(parent: Path) -> bool:
+    if sys.platform != "darwin" or parent.as_posix() != "/var":
+        return False
+    try:
+        return parent.resolve(strict=False).as_posix() == "/private/var"
+    except OSError:
+        return False
+
+
 def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
     check_path = path if path.is_absolute() else Path.cwd() / path
     for parent in reversed(check_path.parents):
         if parent == Path("."):
             continue
-        if parent.is_symlink():
+        if parent.is_symlink() and not is_allowed_platform_parent_symlink(parent):
             return [f"{label} path must not contain symlinked directories: {parent}"]
     return []
 
@@ -555,6 +579,53 @@ def artifact_records(assets_dir: Path) -> list[dict[str, Any]]:
     ]
 
 
+def xp_bundle_archive_entry_names(
+    *,
+    manifest_path: Path,
+    candidate_record: Path,
+    evidence_data: dict[str, Any],
+    evidence_root: Path,
+    assets_dir: Path,
+) -> list[str]:
+    return [
+        manifest_path.name,
+        "xp-evidence.json",
+        candidate_record.name,
+        *(str(record["file"]) for record in smoke_records(evidence_data, evidence_root)),
+        *(str(record["file"]) for record in artifact_records(assets_dir)),
+    ]
+
+
+def check_bundle_archive_entry_names(entry_names: list[str], *, label: str) -> list[str]:
+    errors: list[str] = []
+    duplicates = sorted({name for name in entry_names if entry_names.count(name) > 1})
+    if duplicates:
+        errors.append(f"{label} entries must be unique; duplicate entries: {duplicates}")
+    unsafe = sorted({name for name in entry_names if not archive_entry_name_is_safe(name)})
+    if unsafe:
+        errors.append(f"{label} entries must use safe relative paths: {unsafe}")
+    case_groups: dict[str, set[str]] = {}
+    for name in entry_names:
+        case_groups.setdefault(name.casefold(), set()).add(name)
+    case_collisions = sorted({name for names in case_groups.values() if len(names) > 1 for name in names})
+    if case_collisions:
+        errors.append(
+            f"{label} entries must not collide on case-insensitive filesystems: {case_collisions}"
+        )
+    unique_names = sorted(set(entry_names))
+    path_prefix_collisions = sorted(
+        f"{parent} -> {child}"
+        for parent in unique_names
+        for child in unique_names
+        if parent != child and child.startswith(f"{parent}/")
+    )
+    if path_prefix_collisions:
+        errors.append(
+            f"{label} entries must not contain file/path-prefix collisions: {path_prefix_collisions}"
+        )
+    return errors
+
+
 def file_record(name: str, path: Path) -> dict[str, Any]:
     return {
         "file": name,
@@ -574,15 +645,23 @@ def write_bundle_archive(
     assets_dir: Path,
 ) -> None:
     with zipfile.ZipFile(archive_path, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
-        archive.write(manifest_path, arcname=manifest_path.name)
-        archive.write(evidence, arcname="xp-evidence.json")
-        archive.write(candidate_record, arcname=candidate_record.name)
+        write_regular_file_to_zip(archive, manifest_path, manifest_path.name)
+        write_regular_file_to_zip(archive, evidence, "xp-evidence.json")
+        write_regular_file_to_zip(archive, candidate_record, candidate_record.name)
         for record in smoke_records(evidence_data, evidence_root):
             raw_file = str(record["file"])
-            archive.write(evidence_root / raw_file, arcname=raw_file)
+            write_regular_file_to_zip(archive, evidence_root / raw_file, raw_file)
         for record in artifact_records(assets_dir):
             raw_file = str(record["file"])
-            archive.write(assets_dir / raw_file, arcname=raw_file)
+            write_regular_file_to_zip(archive, assets_dir / raw_file, raw_file)
+
+
+def write_regular_file_to_zip(archive: zipfile.ZipFile, path: Path, arcname: str) -> None:
+    info = zipfile.ZipInfo(arcname)
+    info.compress_type = zipfile.ZIP_DEFLATED
+    info.create_system = 3
+    info.external_attr = 0o100644 << 16
+    archive.writestr(info, path.read_bytes())
 
 
 def platform_evidence_policy() -> str:

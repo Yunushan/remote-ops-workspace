@@ -5,6 +5,7 @@ import json
 import re
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
+from urllib.parse import unquote, urlsplit
 
 from .paths import repo_root
 
@@ -301,6 +302,39 @@ XP_ACCEPTED_EVIDENCE_KEYS = COMMON_ACCEPTED_EVIDENCE_KEYS | {
     "xp_evidence_summary",
     "xp_host_identity_sha256",
     "xp_smoke_evidence_sha256",
+}
+XP_NATIVE_EVIDENCE_VALIDATION_COMMAND_FLAGS = {
+    "--evidence",
+    "--assets-dir",
+    "--evidence-dir",
+}
+ARTIFACT_VALIDATION_COMMAND_FLAGS = {
+    "--target",
+    "--assets-dir",
+    "--tag",
+    "--strict",
+}
+COMMON_LOCAL_EVIDENCE_PREFLIGHT_FLAGS = {
+    "--root",
+    "--release-tag",
+    "--target",
+    "--assets-dir",
+}
+LINUX_LOCAL_EVIDENCE_PREFLIGHT_FLAGS = {
+    *COMMON_LOCAL_EVIDENCE_PREFLIGHT_FLAGS,
+    "--linux-builder-evidence",
+    "--linux-smoke-evidence",
+    "--linux-workflow-run-url",
+    "--linux-source-head-sha",
+    "--linux-source-run-attempt",
+}
+XP_LOCAL_EVIDENCE_PREFLIGHT_FLAGS = {
+    *COMMON_LOCAL_EVIDENCE_PREFLIGHT_FLAGS,
+    "--xp-evidence",
+    "--xp-evidence-dir",
+    "--xp-source-workflow-run-url",
+    "--xp-source-head-sha",
+    "--xp-source-run-attempt",
 }
 LINUX_STAGED_UPLOAD_COMMAND_FLAGS = {
     "--target",
@@ -1512,14 +1546,14 @@ def _protected_platform_workflow_dispatch_command(target: str, release_tag: str)
     if target.startswith("linux-"):
         return (
             "gh workflow run extended-platform-evidence.yml --repo <owner>/<repo> "
-            "--ref <github-actions-head-sha> "
+            f"--ref {release_tag} "
             f"-f target={target} "
             f"-f release_tag={release_tag} "
             "-f release_asset_base_url=<github-release-download-url>"
         )
     return (
         "gh workflow run xp-native-evidence.yml --repo <owner>/<repo> "
-        "--ref <github-actions-head-sha> "
+        f"--ref {release_tag} "
         f"-f target={target} "
         f"-f release_tag={release_tag} "
         "-f release_asset_base_url=<github-release-download-url> "
@@ -1576,10 +1610,10 @@ def _protected_platform_builder_or_host_evidence(
     return host or collector
 
 
-def _requirement_list(value: Any) -> list[str]:
+def _requirement_list(value: Any) -> list[Any]:
     if not isinstance(value, list):
         return []
-    return [str(item) for item in value]
+    return list(value)
 
 
 def _protected_platform_required_commands(requirements: dict[str, Any]) -> dict[str, str]:
@@ -1745,6 +1779,8 @@ def _has_artifact_validation_command(item: dict[str, Any], target: str) -> bool:
     expected_prefix = f"python scripts/check_platform_promotion_artifacts.py --target {target} "
     if not command.startswith(expected_prefix):
         return False
+    if set(_command_flags(command)) - ARTIFACT_VALIDATION_COMMAND_FLAGS:
+        return False
     asset_dirs = re.findall(r"(?:^|\s)--assets-dir\s+(\S+)(?=\s|$)", command)
     if len(asset_dirs) != 1 or "<" in asset_dirs[0] or ">" in asset_dirs[0]:
         return False
@@ -1767,6 +1803,8 @@ def _has_local_evidence_preflight_command(item: dict[str, Any], target: str) -> 
     release_tag = str(item.get("release_tag", ""))
     command = str(item.get("local_evidence_preflight_command", ""))
     if not command.startswith("python scripts/check_platform_goal_local_evidence.py "):
+        return False
+    if set(_command_flags(command)) - _local_evidence_preflight_allowed_flags(target):
         return False
     roots = _command_values(command, "--root")
     if len(roots) != 1 or not _is_safe_local_evidence_root(roots[0]):
@@ -1813,7 +1851,13 @@ def _has_staged_upload_command(item: dict[str, Any], target: str) -> bool:
     if _command_values(command, "--release-tag") != [release_tag]:
         return False
     out_dirs = _command_values(command, "--out-dir")
-    if len(out_dirs) != 1 or not _is_safe_xp_validation_path(out_dirs[0], require_directory_hint=True):
+    if len(out_dirs) != 1 or not _is_safe_xp_validation_path(
+        out_dirs[0],
+        target=target,
+        release_tag=release_tag,
+        require_directory_hint=True,
+        require_target_release_scope=True,
+    ):
         return False
     if _command_flag_count(command, "--force") != 1:
         return False
@@ -1858,6 +1902,14 @@ def _has_staged_upload_command(item: dict[str, Any], target: str) -> bool:
             require_target_release_scope=True,
         )
     )
+
+
+def _local_evidence_preflight_allowed_flags(target: str) -> set[str]:
+    if target in LINUX_ACCEPTED_EVIDENCE_MACHINES:
+        return LINUX_LOCAL_EVIDENCE_PREFLIGHT_FLAGS
+    if target in XP_ACCEPTED_EVIDENCE_ARCHITECTURES:
+        return XP_LOCAL_EVIDENCE_PREFLIGHT_FLAGS
+    return COMMON_LOCAL_EVIDENCE_PREFLIGHT_FLAGS
 
 
 def _is_safe_local_evidence_root(raw_root: str) -> bool:
@@ -2031,11 +2083,15 @@ def _has_release_assets_and_hashes(item: dict[str, Any], target: str) -> bool:
     repositories: set[str] = set()
     asset_names: list[str] = []
     for url in release_assets:
-        match = GITHUB_RELEASE_ASSET_RE.fullmatch(str(url))
+        url_text = str(url)
+        match = GITHUB_RELEASE_ASSET_RE.fullmatch(url_text)
+        filename = _release_asset_url_filename(url_text)
         if not match or match.group(2) != release_tag:
             return False
+        if not filename:
+            return False
         repositories.add(match.group(1))
-        asset_names.append(Path(str(url)).name)
+        asset_names.append(filename)
     if len(repositories) != 1:
         return False
     if len(asset_names) != len(set(asset_names)):
@@ -2074,7 +2130,9 @@ def _has_release_asset_source_binding(item: dict[str, Any], target: str) -> bool
     raw_files = source.get("contains_files")
     if not isinstance(raw_files, list) or not raw_files:
         return False
-    files = [str(filename) for filename in raw_files]
+    if any(not isinstance(filename, str) for filename in raw_files):
+        return False
+    files = list(raw_files)
     if len(files) != len(set(files)):
         return False
     if any(not _is_concrete_filename(filename) for filename in files):
@@ -2119,7 +2177,19 @@ def _review_bundle_expected_files(target: str, release_tag: str) -> dict[str, st
 
 
 def _is_concrete_filename(filename: str) -> bool:
-    return bool(filename) and "<" not in filename and ">" not in filename and Path(filename).name == filename
+    if (
+        not filename
+        or filename.strip() != filename
+        or "<" in filename
+        or ">" in filename
+        or "/" in filename
+        or "\\" in filename
+        or filename in (".", "..")
+    ):
+        return False
+    windows_path = PureWindowsPath(filename)
+    posix_path = PurePosixPath(filename)
+    return not windows_path.drive and not windows_path.is_absolute() and not posix_path.is_absolute()
 
 
 def _has_review_bundle_binding(item: dict[str, Any], target: str) -> bool:
@@ -2142,7 +2212,7 @@ def _has_review_bundle_binding(item: dict[str, Any], target: str) -> bool:
         if not re.fullmatch(r"[0-9a-f]{64}", str(raw_record.get("sha256", ""))):
             return False
         size = raw_record.get("size_bytes")
-        if not isinstance(size, int) or size <= 0:
+        if not _is_positive_int(size):
             return False
     return _has_review_bundle_release_asset_urls(
         raw_bundle.get("release_asset_urls"),
@@ -2167,13 +2237,15 @@ def _has_review_bundle_release_asset_urls(
     bundle_repositories: set[str] = set()
     filenames: list[str] = []
     for url in raw_urls:
-        match = GITHUB_RELEASE_ASSET_RE.fullmatch(str(url))
-        if not match:
+        url_text = str(url)
+        match = GITHUB_RELEASE_ASSET_RE.fullmatch(url_text)
+        filename = _release_asset_url_filename(url_text)
+        if not match or not filename:
             return False
         if match.group(2) != release_tag:
             return False
         bundle_repositories.add(match.group(1))
-        filenames.append(Path(str(url)).name)
+        filenames.append(filename)
     if bundle_repositories != native_repositories:
         return False
     if len(filenames) != len(set(filenames)):
@@ -2187,7 +2259,8 @@ def _has_finalized_record_release_asset_url(item: dict[str, Any], target: str) -
     match = GITHUB_RELEASE_ASSET_FILE_RE.fullmatch(raw_url)
     if not match or match.group(2) != release_tag:
         return False
-    if Path(match.group(3)).name != f"platform-verified-evidence-{target}-final.json":
+    filename = _release_asset_url_filename(raw_url)
+    if filename != f"platform-verified-evidence-{target}-final.json":
         return False
     repositories = _release_asset_repositories(item.get("release_asset_urls"))
     raw_bundle = item.get("review_bundle")
@@ -2343,10 +2416,33 @@ def _release_asset_repositories(raw_assets: Any) -> set[str]:
         return set()
     repositories: set[str] = set()
     for url in raw_assets:
-        match = GITHUB_RELEASE_ASSET_RE.fullmatch(str(url))
+        url_text = str(url)
+        if not _release_asset_url_filename(url_text):
+            continue
+        match = GITHUB_RELEASE_ASSET_RE.fullmatch(url_text)
         if match:
             repositories.add(match.group(1))
     return repositories
+
+
+def _release_asset_url_filename(url: str) -> str:
+    parts = urlsplit(url)
+    if parts.query or parts.fragment:
+        return ""
+    path_segments = parts.path.split("/")
+    if (
+        len(path_segments) != 7
+        or path_segments[0] != ""
+        or path_segments[3:5] != ["releases", "download"]
+        or not path_segments[-1]
+    ):
+        return ""
+    filename = unquote(path_segments[-1])
+    return filename if _is_concrete_filename(filename) else ""
+
+
+def _is_positive_int(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
 
 
 def _has_linux_builder_identity(raw_identity: Any, target: str) -> bool:
@@ -2355,7 +2451,8 @@ def _has_linux_builder_identity(raw_identity: Any, target: str) -> bool:
     if set(str(key) for key in raw_identity) != LINUX_ACCEPTED_EVIDENCE_BUILDER_IDENTITY_KEYS:
         return False
     expected_machines = LINUX_ACCEPTED_EVIDENCE_MACHINES[target]
-    if raw_identity.get("schema_version") != 1 or raw_identity.get("target") != target:
+    schema_version = raw_identity.get("schema_version")
+    if schema_version != 1 or isinstance(schema_version, bool) or raw_identity.get("target") != target:
         return False
     if not str(raw_identity.get("sys_platform", "")).startswith("linux"):
         return False
@@ -2413,12 +2510,19 @@ def _has_linux_builder_identity_binding(item: dict[str, Any], target: str) -> bo
         return False
     if raw_identity.get("git_worktree_clean") is not True:
         return False
-    if raw_identity.get("workflow_run_attempt") != source.get("run_attempt"):
+    workflow_run_attempt = raw_identity.get("workflow_run_attempt")
+    if not _is_positive_int(workflow_run_attempt) or workflow_run_attempt != source.get("run_attempt"):
         return False
     host_identity = raw_identity.get("host_identity")
-    if not isinstance(host_identity, dict) or host_identity.get("workflow_run_attempt") != source.get("run_attempt"):
+    if not isinstance(host_identity, dict):
+        return False
+    host_workflow_run_attempt = host_identity.get("workflow_run_attempt")
+    if not _is_positive_int(host_workflow_run_attempt) or host_workflow_run_attempt != source.get("run_attempt"):
         return False
     if set(str(key) for key in host_identity) != LINUX_ACCEPTED_EVIDENCE_BUILDER_HOST_IDENTITY_KEYS:
+        return False
+    host_schema_version = host_identity.get("schema_version")
+    if host_schema_version != 1 or isinstance(host_schema_version, bool):
         return False
     return digest == _json_sha256(raw_identity) and _has_linux_builder_identity(raw_identity, target)
 
@@ -2454,7 +2558,7 @@ def _has_linux_evidence_sources(item: dict[str, Any], target: str) -> bool:
         if record.get("sha256") != expected_values["sha256"]:
             return False
         size = record.get("size_bytes")
-        if not isinstance(size, int) or size <= 0:
+        if not _is_positive_int(size):
             return False
     return True
 
@@ -2484,7 +2588,8 @@ def _has_linux_smoke_summary(item: dict[str, Any], target: str) -> bool:
         return False
     if summary.get("workflow_run_url") != item.get("workflow_run_url"):
         return False
-    if summary.get("workflow_run_attempt") != source.get("run_attempt"):
+    workflow_run_attempt = summary.get("workflow_run_attempt")
+    if not _is_positive_int(workflow_run_attempt) or workflow_run_attempt != source.get("run_attempt"):
         return False
     if summary.get("source_head_sha") != source_head or summary.get("git_head_sha") != source_head:
         return False
@@ -2641,6 +2746,8 @@ def _has_xp_native_evidence_validation_command(item: dict[str, Any]) -> bool:
     release_tag = str(item.get("release_tag", ""))
     if not command.startswith("python scripts/check_xp_native_evidence.py "):
         return False
+    if set(_command_flags(command)) - XP_NATIVE_EVIDENCE_VALIDATION_COMMAND_FLAGS:
+        return False
     evidence_paths = re.findall(r"(?:^|\s)--evidence\s+(\S+)(?=\s|$)", command)
     if len(evidence_paths) != 1 or not _is_safe_xp_validation_path(
         evidence_paths[0],
@@ -2733,7 +2840,7 @@ def _has_xp_evidence_sources(item: dict[str, Any], target: str) -> bool:
         return False
     if evidence.get("sha256") != item.get("xp_evidence_sha256"):
         return False
-    if not isinstance(evidence.get("size_bytes"), int) or evidence.get("size_bytes") <= 0:
+    if not _is_positive_int(evidence.get("size_bytes")):
         return False
     summary = item.get("xp_evidence_summary")
     if not isinstance(summary, dict):
@@ -2756,7 +2863,7 @@ def _has_xp_evidence_sources(item: dict[str, Any], target: str) -> bool:
         if record.get("sha256") != smoke_hashes.get(smoke_id):
             return False
         size = record.get("size_bytes")
-        if not isinstance(size, int) or size <= 0:
+        if not _is_positive_int(size):
             return False
     return True
 
@@ -2904,7 +3011,8 @@ def _has_xp_host_identity(raw_identity: Any, target: str, release_tag: str) -> b
         return False
     if set(str(key) for key in raw_identity) != XP_ACCEPTED_EVIDENCE_HOST_IDENTITY_KEYS:
         return False
-    if raw_identity.get("schema_version") != 1:
+    schema_version = raw_identity.get("schema_version")
+    if schema_version != 1 or isinstance(schema_version, bool):
         return False
     if raw_identity.get("target") != target or raw_identity.get("release_tag") != release_tag:
         return False

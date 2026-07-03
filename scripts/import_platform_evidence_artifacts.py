@@ -27,20 +27,27 @@ from check_platform_verified_evidence import (  # noqa: E402
     RELEASE_SOURCE_HEAD_SHA_RE,
     RESERVED_WORKSPACE_ROOTS,
     accepted_record_source_file,
+    case_insensitive_name_collisions,
     check_platform_verified_evidence,
     directory_path_has_file_suffix,
     exact_safe_file_name,
     linux_release_source_artifact_name,
     read_json,
     release_asset_repositories,
+    release_asset_url_filename,
     release_source_workflow,
     xp_release_source_artifact_name,
 )
 from make_platform_verified_evidence_record import sha256_file  # noqa: E402
 
 SOURCE_RUN_METADATA_JQ = (
-    "{id: .id, htmlUrl: .html_url, attempt: .run_attempt, status: .status, "
-    "conclusion: .conclusion, event: .event, headSha: .head_sha, path: .path, "
+    "{id: .id, nodeId: .node_id, url: .url, htmlUrl: .html_url, "
+    "runNumber: .run_number, workflowId: .workflow_id, workflowUrl: .workflow_url, "
+    "jobsUrl: .jobs_url, logsUrl: .logs_url, artifactsUrl: .artifacts_url, "
+    "checkSuiteId: .check_suite_id, checkSuiteUrl: .check_suite_url, "
+    "attempt: .run_attempt, status: .status, "
+    "conclusion: .conclusion, event: .event, headSha: .head_sha, "
+    "headBranch: .head_branch, path: .path, "
     "runCreatedAt: .created_at, "
     "runStartedAt: .run_started_at, "
     "runUpdatedAt: .updated_at, "
@@ -197,6 +204,12 @@ def import_platform_evidence_artifacts(
 ) -> list[str]:
     errors: list[str] = []
     errors.extend(check_import_record_targets_unique(records))
+    if errors:
+        return errors
+    errors.extend(check_public_record_keys(records))
+    if errors:
+        return errors
+    errors.extend(check_import_release_file_names(records))
     errors.extend(ensure_output_directory(out_dir))
     if records and not dry_run:
         errors.extend(check_output_directory_empty(out_dir))
@@ -233,6 +246,77 @@ def check_import_record_targets_unique(records: list[dict[str, Any]]) -> list[st
     if duplicates:
         return [f"release asset import accepted records must target each platform once: {', '.join(duplicates)}"]
     return []
+
+
+def check_public_record_keys(records: list[dict[str, Any]]) -> list[str]:
+    errors: list[str] = []
+    for record in records:
+        errors.extend(public_record_key_errors(record))
+    return errors
+
+
+def public_record_key_errors(record: dict[str, Any]) -> list[str]:
+    target = str(record.get("target", "")).strip() or "<unknown>"
+    errors: list[str] = []
+    public_keys: set[str] = set()
+    for key in record:
+        if not isinstance(key, str):
+            errors.append(f"{target} accepted evidence public record keys must be strings, got {key!r}")
+            continue
+        if not key.startswith("_"):
+            public_keys.add(key)
+    case_collisions = case_insensitive_name_collisions(public_keys)
+    if case_collisions:
+        errors.append(
+            f"{target} accepted evidence public record keys must not collide on "
+            f"case-insensitive filesystems: {case_collisions}"
+        )
+    return errors
+
+
+def check_import_release_file_names(records: list[dict[str, Any]]) -> list[str]:
+    labels: list[tuple[str, str]] = []
+    errors: list[str] = []
+    for record in records:
+        target = str(record.get("target", "")).strip() or "<unknown>"
+        file_errors, filenames = expected_release_file_name_entries(record)
+        errors.extend(file_errors)
+        labels.extend((target, filename) for filename in filenames)
+    unsafe = sorted(
+        {
+            f"{target}:{filename}"
+            for target, filename in labels
+            if not exact_safe_file_name(filename)
+        }
+    )
+    if unsafe:
+        errors.append(f"release asset import expected output file names must be exact safe file names: {unsafe}")
+    counts: dict[str, int] = {}
+    for _target, filename in labels:
+        counts[filename] = counts.get(filename, 0) + 1
+    duplicate_names = sorted(filename for filename, count in counts.items() if count > 1)
+    if duplicate_names:
+        errors.append(
+            "release asset import expected output file names must be unique across accepted records: "
+            f"{duplicate_names}"
+        )
+    case_groups: dict[str, set[str]] = {}
+    for _target, filename in labels:
+        case_groups.setdefault(filename.casefold(), set()).add(filename)
+    case_collisions = sorted(
+        {
+            filename
+            for group in case_groups.values()
+            if len(group) > 1
+            for filename in group
+        }
+    )
+    if case_collisions:
+        errors.append(
+            "release asset import expected output file names must not collide on case-insensitive filesystems: "
+            f"{case_collisions}"
+        )
+    return errors
 
 
 def ensure_output_directory(out_dir: Path) -> list[str]:
@@ -403,6 +487,7 @@ def import_record(
                 metadata_command,
                 expected_run_id=run_id,
                 expected_workflow_run_url=run_url,
+                expected_release_tag=release_tag,
                 expected_head_sha=expected_head_sha,
                 expected_run_attempt=expected_run_attempt,
                 release_head_sha=release_head_sha,
@@ -430,6 +515,7 @@ def import_record(
             metadata_command,
             expected_run_id=run_id,
             expected_workflow_run_url=run_url,
+            expected_release_tag=release_tag,
             expected_head_sha=expected_head_sha,
             expected_run_attempt=expected_run_attempt,
             release_head_sha=release_head_sha,
@@ -476,25 +562,31 @@ def check_import_release_url_tags(record: dict[str, Any], release_tag: str) -> l
     target = str(record.get("target", ""))
     errors: list[str] = []
     for label, url in import_release_asset_urls(record):
+        if not isinstance(url, str):
+            errors.append(f"{target} {label} entries must be strings, got {url!r}")
+            continue
         match = GITHUB_RELEASE_ASSET_RE.fullmatch(url)
         if not match:
             errors.append(f"{target} {label} must be a GitHub release asset URL: {url}")
             continue
         if match.group(2) != release_tag:
             errors.append(f"{target} {label} tag must match release_tag {release_tag}: {url}")
+            continue
+        if not release_asset_url_filename(url):
+            errors.append(f"{target} {label} file name must be an exact safe file name: {url}")
     return errors
 
 
-def import_release_asset_urls(record: dict[str, Any]) -> list[tuple[str, str]]:
-    urls: list[tuple[str, str]] = []
+def import_release_asset_urls(record: dict[str, Any]) -> list[tuple[str, Any]]:
+    urls: list[tuple[str, Any]] = []
     raw_release_urls = record.get("release_asset_urls")
     if isinstance(raw_release_urls, list):
-        urls.extend(("release_asset_urls", str(url)) for url in raw_release_urls)
+        urls.extend(("release_asset_urls", url) for url in raw_release_urls)
     review_bundle = record.get("review_bundle")
     if isinstance(review_bundle, dict):
         raw_bundle_urls = review_bundle.get("release_asset_urls")
         if isinstance(raw_bundle_urls, list):
-            urls.extend(("review_bundle release_asset_urls", str(url)) for url in raw_bundle_urls)
+            urls.extend(("review_bundle release_asset_urls", url) for url in raw_bundle_urls)
     finalized_url = record.get("finalized_record_release_asset_url")
     if isinstance(finalized_url, str):
         urls.append(("finalized_record_release_asset_url", finalized_url))
@@ -542,12 +634,33 @@ def source_run_artifacts_command(run_id: str, repository: str) -> list[str]:
     ]
 
 
+def source_run_api_url(repository: str, run_id: str | int) -> str:
+    return f"https://api.github.com/repos/{repository}/actions/runs/{run_id}"
+
+
+def source_run_child_api_url(repository: str, run_id: str | int, endpoint: str) -> str:
+    return f"{source_run_api_url(repository, run_id)}/{endpoint}"
+
+
+def source_workflow_api_url(repository: str, workflow_id: str | int) -> str:
+    return f"https://api.github.com/repos/{repository}/actions/workflows/{workflow_id}"
+
+
+def check_suite_api_url(repository: str, check_suite_id: str | int) -> str:
+    return f"https://api.github.com/repos/{repository}/check-suites/{check_suite_id}"
+
+
+def source_artifact_api_url(repository: str, artifact_id: str | int) -> str:
+    return f"https://api.github.com/repos/{repository}/actions/artifacts/{artifact_id}"
+
+
 def verify_source_run(
     target: str,
     command: list[str],
     *,
     expected_run_id: str,
     expected_workflow_run_url: str,
+    expected_release_tag: str,
     expected_head_sha: str,
     expected_run_attempt: int,
     release_head_sha: str | None = None,
@@ -564,10 +677,17 @@ def verify_source_run(
     if not isinstance(data, dict):
         return [f"{target} release_asset_source workflow run metadata must be a JSON object"]
     errors: list[str] = []
-    if str(data.get("id", "")) != expected_run_id:
+    expected_run_id_int = int(expected_run_id) if expected_run_id.isdecimal() else None
+    run_id = positive_int_value(data.get("id"))
+    if run_id is None:
+        errors.append(
+            f"{target} release_asset_source workflow run id must be a positive integer, "
+            f"got {data.get('id')!r}"
+        )
+    elif expected_run_id_int is not None and run_id != expected_run_id_int:
         errors.append(
             f"{target} release_asset_source workflow run id must match accepted record "
-            f"{expected_run_id}, got {data.get('id')!r}"
+            f"{expected_run_id}, got {run_id!r}"
         )
     if str(data.get("htmlUrl", "")).rstrip("/") != expected_workflow_run_url.rstrip("/"):
         errors.append(
@@ -575,6 +695,67 @@ def verify_source_run(
             f"{expected_workflow_run_url}, got {data.get('htmlUrl')!r}"
         )
     expected_repository = repository_from_workflow_run_url(expected_workflow_run_url)
+    if expected_run_id_int is not None:
+        expected_api_url = source_run_api_url(expected_repository, expected_run_id_int)
+        if data.get("url") != expected_api_url:
+            errors.append(
+                f"{target} release_asset_source workflow run url must be {expected_api_url!r}, "
+                f"got {data.get('url')!r}"
+            )
+    node_id = data.get("nodeId")
+    if not isinstance(node_id, str) or not node_id.strip():
+        errors.append(
+            f"{target} release_asset_source workflow run nodeId must be a non-empty string, "
+            f"got {node_id!r}"
+        )
+    run_number = positive_int_value(data.get("runNumber"))
+    if run_number is None:
+        errors.append(
+            f"{target} release_asset_source workflow run runNumber must be a positive integer, "
+            f"got {data.get('runNumber')!r}"
+        )
+    workflow_id = positive_int_value(data.get("workflowId"))
+    if workflow_id is None:
+        errors.append(
+            f"{target} release_asset_source workflow run workflowId must be a positive integer, "
+            f"got {data.get('workflowId')!r}"
+        )
+    else:
+        expected_workflow_url = source_workflow_api_url(expected_repository, workflow_id)
+        if data.get("workflowUrl") != expected_workflow_url:
+            errors.append(
+                f"{target} release_asset_source workflow run workflowUrl must be "
+                f"{expected_workflow_url!r}, got {data.get('workflowUrl')!r}"
+            )
+    if expected_run_id_int is not None:
+        for field, endpoint in (
+            ("jobsUrl", "jobs"),
+            ("logsUrl", "logs"),
+            ("artifactsUrl", "artifacts"),
+        ):
+            expected_endpoint_url = source_run_child_api_url(
+                expected_repository,
+                expected_run_id_int,
+                endpoint,
+            )
+            if data.get(field) != expected_endpoint_url:
+                errors.append(
+                    f"{target} release_asset_source workflow run {field} must be "
+                    f"{expected_endpoint_url!r}, got {data.get(field)!r}"
+                )
+    check_suite_id = positive_int_value(data.get("checkSuiteId"))
+    if check_suite_id is None:
+        errors.append(
+            f"{target} release_asset_source workflow run checkSuiteId must be a positive integer, "
+            f"got {data.get('checkSuiteId')!r}"
+        )
+    else:
+        expected_check_suite_url = check_suite_api_url(expected_repository, check_suite_id)
+        if data.get("checkSuiteUrl") != expected_check_suite_url:
+            errors.append(
+                f"{target} release_asset_source workflow run checkSuiteUrl must be "
+                f"{expected_check_suite_url!r}, got {data.get('checkSuiteUrl')!r}"
+            )
     if data.get("repositoryFullName") != expected_repository:
         errors.append(
             f"{target} release_asset_source workflow run repositoryFullName must match accepted record "
@@ -661,6 +842,11 @@ def verify_source_run(
         errors.append(
             f"{target} release_asset_source workflow run headSha must match accepted record "
             f"{expected_head_sha}, got {data.get('headSha')!r}"
+        )
+    if data.get("headBranch") != expected_release_tag:
+        errors.append(
+            f"{target} release_asset_source workflow run headBranch must match release_tag "
+            f"{expected_release_tag}, got {data.get('headBranch')!r}"
         )
     if data.get("attempt") != expected_run_attempt:
         errors.append(
@@ -766,14 +952,24 @@ def verify_source_artifact(
             f"got {artifact_id!r}"
         )
     else:
-        expected_archive_url = (
-            f"https://api.github.com/repos/{expected_repository}/actions/artifacts/{artifact_id}/zip"
-        )
+        expected_url = source_artifact_api_url(expected_repository, artifact_id)
+        if artifact.get("url") != expected_url:
+            errors.append(
+                f"{target} release_asset_source artifact {artifact_name} url "
+                f"must be {expected_url!r}, got {artifact.get('url')!r}"
+            )
+        expected_archive_url = f"{source_artifact_api_url(expected_repository, artifact_id)}/zip"
         if artifact.get("archive_download_url") != expected_archive_url:
             errors.append(
                 f"{target} release_asset_source artifact {artifact_name} archive_download_url "
                 f"must be {expected_archive_url!r}, got {artifact.get('archive_download_url')!r}"
             )
+    node_id = artifact.get("node_id")
+    if not isinstance(node_id, str) or not node_id.strip():
+        errors.append(
+            f"{target} release_asset_source artifact {artifact_name} node_id "
+            f"must be a non-empty string, got {node_id!r}"
+        )
     if artifact.get("expired") is not False:
         errors.append(
             f"{target} release_asset_source artifact {artifact_name} must not be expired, "
@@ -822,7 +1018,13 @@ def verify_source_artifact(
         )
     else:
         artifact_run_id = workflow_run.get("id")
-        if str(artifact_run_id) != expected_run_id:
+        expected_run_id_int = int(expected_run_id) if expected_run_id.isdecimal() else None
+        if not isinstance(artifact_run_id, int) or isinstance(artifact_run_id, bool) or artifact_run_id <= 0:
+            errors.append(
+                f"{target} release_asset_source artifact {artifact_name} workflow_run.id "
+                f"must be a positive integer, got {artifact_run_id!r}"
+            )
+        elif expected_run_id_int is not None and artifact_run_id != expected_run_id_int:
             errors.append(
                 f"{target} release_asset_source artifact {artifact_name} workflow_run.id must match "
                 f"run {expected_run_id}, got {artifact_run_id!r}"
@@ -833,20 +1035,40 @@ def verify_source_artifact(
                 f"{target} release_asset_source artifact {artifact_name} workflow_run.head_sha must match "
                 f"accepted record {expected_head_sha}, got {artifact_head_sha!r}"
             )
-        if expected_repository_id is not None and workflow_run.get("repository_id") != expected_repository_id:
+        artifact_repository_id = workflow_run.get("repository_id")
+        if (
+            not isinstance(artifact_repository_id, int)
+            or isinstance(artifact_repository_id, bool)
+            or artifact_repository_id <= 0
+        ):
+            errors.append(
+                f"{target} release_asset_source artifact {artifact_name} workflow_run.repository_id "
+                f"must be a positive integer, got {artifact_repository_id!r}"
+            )
+        elif expected_repository_id is not None and artifact_repository_id != expected_repository_id:
             errors.append(
                 f"{target} release_asset_source artifact {artifact_name} workflow_run.repository_id "
                 f"must match exact source run repository id {expected_repository_id}, "
-                f"got {workflow_run.get('repository_id')!r}"
+                f"got {artifact_repository_id!r}"
             )
+        artifact_head_repository_id = workflow_run.get("head_repository_id")
         if (
+            not isinstance(artifact_head_repository_id, int)
+            or isinstance(artifact_head_repository_id, bool)
+            or artifact_head_repository_id <= 0
+        ):
+            errors.append(
+                f"{target} release_asset_source artifact {artifact_name} workflow_run.head_repository_id "
+                f"must be a positive integer, got {artifact_head_repository_id!r}"
+            )
+        elif (
             expected_head_repository_id is not None
-            and workflow_run.get("head_repository_id") != expected_head_repository_id
+            and artifact_head_repository_id != expected_head_repository_id
         ):
             errors.append(
                 f"{target} release_asset_source artifact {artifact_name} workflow_run.head_repository_id "
                 f"must match exact source run head repository id {expected_head_repository_id}, "
-                f"got {workflow_run.get('head_repository_id')!r}"
+                f"got {artifact_head_repository_id!r}"
             )
     return errors
 
@@ -1132,18 +1354,37 @@ def validate_downloaded_source_file_set(
     return errors
 
 
+def checked_artifact_hash_items(record: dict[str, Any], *, label: str) -> tuple[list[tuple[str, Any]], list[str]]:
+    target = str(record.get("target", ""))
+    artifact_hashes = record.get("artifact_sha256")
+    if not isinstance(artifact_hashes, dict):
+        return [], []
+    items: list[tuple[str, Any]] = []
+    errors: list[str] = []
+    for filename, digest in artifact_hashes.items():
+        if not isinstance(filename, str) or not exact_safe_file_name(filename):
+            errors.append(f"{target} {label} artifact_sha256 keys must be exact safe file names, got {filename!r}")
+            continue
+        items.append((filename, digest))
+    case_collisions = case_insensitive_name_collisions({filename for filename, _digest in items})
+    if case_collisions:
+        errors.append(
+            f"{target} {label} artifact_sha256 keys must not collide on "
+            f"case-insensitive filesystems: {case_collisions}"
+        )
+    return sorted(items, key=lambda item: item[0]), errors
+
+
 def check_downloaded_source_hashes(record: dict[str, Any], *, source_root: Path) -> list[str]:
     target = str(record.get("target", ""))
-    errors: list[str] = []
-    artifact_hashes = record.get("artifact_sha256")
-    if isinstance(artifact_hashes, dict):
-        for filename, digest in sorted(artifact_hashes.items()):
-            path = source_root / str(filename)
-            if not path.is_file():
-                errors.append(f"{target} downloaded source artifact missing native artifact: {filename}")
-                continue
-            if sha256_file(path) != str(digest):
-                errors.append(f"{target} downloaded source artifact native artifact SHA-256 mismatch: {filename}")
+    artifact_items, errors = checked_artifact_hash_items(record, label="downloaded source artifact")
+    for filename, digest in artifact_items:
+        path = source_root / filename
+        if not path.is_file():
+            errors.append(f"{target} downloaded source artifact missing native artifact: {filename}")
+            continue
+        if sha256_file(path) != str(digest):
+            errors.append(f"{target} downloaded source artifact native artifact SHA-256 mismatch: {filename}")
     review_bundle = record.get("review_bundle")
     if isinstance(review_bundle, dict):
         for key in ("manifest", "archive", "sha256s"):
@@ -1155,7 +1396,8 @@ def check_downloaded_source_hashes(record: dict[str, Any], *, source_root: Path)
             if not path.is_file():
                 errors.append(f"{target} downloaded source artifact missing review bundle {key}: {filename}")
                 continue
-            if bundle_record.get("size_bytes") != path.stat().st_size:
+            expected_size = bundle_record.get("size_bytes")
+            if not isinstance(expected_size, int) or isinstance(expected_size, bool) or expected_size != path.stat().st_size:
                 errors.append(
                     f"{target} downloaded source artifact review bundle {key} size_bytes mismatch: {filename}"
                 )
@@ -1168,16 +1410,14 @@ def check_downloaded_source_hashes(record: dict[str, Any], *, source_root: Path)
 
 def check_imported_hashes(record: dict[str, Any], *, out_dir: Path) -> list[str]:
     target = str(record.get("target", ""))
-    errors: list[str] = []
-    artifact_hashes = record.get("artifact_sha256")
-    if isinstance(artifact_hashes, dict):
-        for filename, digest in sorted(artifact_hashes.items()):
-            path = out_dir / str(filename)
-            if not path.is_file():
-                errors.append(f"{target} imported native artifact missing: {filename}")
-                continue
-            if sha256_file(path) != str(digest):
-                errors.append(f"{target} imported native artifact SHA-256 mismatch: {filename}")
+    artifact_items, errors = checked_artifact_hash_items(record, label="imported native artifact")
+    for filename, digest in artifact_items:
+        path = out_dir / filename
+        if not path.is_file():
+            errors.append(f"{target} imported native artifact missing: {filename}")
+            continue
+        if sha256_file(path) != str(digest):
+            errors.append(f"{target} imported native artifact SHA-256 mismatch: {filename}")
     review_bundle = record.get("review_bundle")
     if isinstance(review_bundle, dict):
         for key in ("manifest", "archive", "sha256s"):
@@ -1189,7 +1429,8 @@ def check_imported_hashes(record: dict[str, Any], *, out_dir: Path) -> list[str]
             if not path.is_file():
                 errors.append(f"{target} imported review bundle {key} missing: {filename}")
                 continue
-            if bundle_record.get("size_bytes") != path.stat().st_size:
+            expected_size = bundle_record.get("size_bytes")
+            if not isinstance(expected_size, int) or isinstance(expected_size, bool) or expected_size != path.stat().st_size:
                 errors.append(f"{target} imported review bundle {key} size_bytes mismatch: {filename}")
             if sha256_file(path) != str(bundle_record.get("sha256", "")):
                 errors.append(f"{target} imported review bundle {key} SHA-256 mismatch: {filename}")
@@ -1197,6 +1438,9 @@ def check_imported_hashes(record: dict[str, Any], *, out_dir: Path) -> list[str]
 
 
 def check_imported_review_bundle(record: dict[str, Any], *, out_dir: Path) -> list[str]:
+    public_errors = public_record_key_errors(record)
+    if public_errors:
+        return public_errors
     registry = read_json(EVIDENCE_PATH)
     target = str(record.get("target", "")).strip()
     release_tag = str(record.get("release_tag", "")).strip()
@@ -1210,23 +1454,45 @@ def check_imported_review_bundle(record: dict[str, Any], *, out_dir: Path) -> li
     return [f"{target} imported review bundle validation failed: {error}" for error in errors]
 
 
-def expected_release_files(record: dict[str, Any]) -> set[str]:
-    files: set[str] = set()
+def expected_release_file_names(record: dict[str, Any]) -> list[str]:
+    _errors, files = expected_release_file_name_entries(record)
+    return files
+
+
+def expected_release_file_name_entries(record: dict[str, Any]) -> tuple[list[str], list[str]]:
+    errors: list[str] = []
+    files: list[str] = []
     target = str(record.get("target", ""))
     artifact_hashes = record.get("artifact_sha256")
     if isinstance(artifact_hashes, dict):
-        files.update(str(name) for name in artifact_hashes)
+        for name in artifact_hashes:
+            if not isinstance(name, str):
+                errors.append(
+                    f"{target} release asset import artifact_sha256 keys must be strings, got {name!r}"
+                )
+                continue
+            files.append(name)
     review_bundle = record.get("review_bundle")
     if isinstance(review_bundle, dict):
         for key in ("manifest", "archive", "sha256s"):
             bundle_record = review_bundle.get(key)
             if isinstance(bundle_record, dict):
-                filename = str(bundle_record.get("file", ""))
+                filename = bundle_record.get("file", "")
+                if not isinstance(filename, str):
+                    errors.append(
+                        f"{target} release asset import review_bundle {key}.file "
+                        f"must be a string, got {filename!r}"
+                    )
+                    continue
                 if filename:
-                    files.add(filename)
+                    files.append(filename)
     if target in PROTECTED_GOAL_TARGETS:
-        files.add(accepted_record_source_file(target))
-    return files
+        files.append(accepted_record_source_file(target))
+    return errors, files
+
+
+def expected_release_files(record: dict[str, Any]) -> set[str]:
+    return set(expected_release_file_names(record))
 
 
 def expected_source_files(record: dict[str, Any]) -> set[str]:
@@ -1244,14 +1510,26 @@ def release_source_contains_files(record: dict[str, Any]) -> tuple[list[str], se
     raw_files = source.get("contains_files")
     if not isinstance(raw_files, list) or not raw_files:
         return [f"{target} release_asset_source.contains_files must be a non-empty list"], set()
-    files = [str(name) for name in raw_files]
-    unsafe = sorted({name for name in files if not exact_safe_file_name(name)})
+    files = [name for name in raw_files if isinstance(name, str)]
+    unsafe = sorted(
+        {
+            name if isinstance(name, str) else repr(name)
+            for name in raw_files
+            if not isinstance(name, str) or not exact_safe_file_name(name)
+        }
+    )
     errors: list[str] = []
     if unsafe:
         errors.append(f"{target} release_asset_source.contains_files entries must be exact safe file names: {unsafe}")
     duplicates = sorted({name for name in files if files.count(name) > 1})
     if duplicates:
         errors.append(f"{target} release_asset_source.contains_files contains duplicates: {duplicates}")
+    case_collisions = case_insensitive_name_collisions(set(files))
+    if case_collisions:
+        errors.append(
+            f"{target} release_asset_source.contains_files must not collide on "
+            f"case-insensitive filesystems: {case_collisions}"
+        )
     return errors, set(files)
 
 
@@ -1273,6 +1551,9 @@ def validate_downloaded_final_record(record: dict[str, Any], *, source_root: Pat
         return [f"{target} finalized accepted record source file is not readable JSON: {filename}: {exc}"]
     if not isinstance(data, dict):
         return [f"{target} finalized accepted record source file must contain a JSON object: {filename}"]
+    public_errors = public_record_key_errors(record)
+    if public_errors:
+        return public_errors
     if data != public_record(record):
         return [f"{target} finalized accepted record source file must match accepted registry record: {filename}"]
     if raw_bytes != canonical_public_record_bytes(record):
@@ -1281,7 +1562,16 @@ def validate_downloaded_final_record(record: dict[str, Any], *, source_root: Pat
 
 
 def public_record(record: dict[str, Any]) -> dict[str, Any]:
-    return {key: value for key, value in record.items() if not str(key).startswith("_")}
+    return {key: value for key, value in record.items() if isinstance(key, str) and not key.startswith("_")}
+
+
+def is_allowed_platform_parent_symlink(parent: Path) -> bool:
+    if sys.platform != "darwin" or parent.as_posix() != "/var":
+        return False
+    try:
+        return parent.resolve(strict=False).as_posix() == "/private/var"
+    except OSError:
+        return False
 
 
 def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
@@ -1289,7 +1579,7 @@ def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
     for parent in reversed(check_path.parents):
         if parent == Path("."):
             continue
-        if parent.is_symlink():
+        if parent.is_symlink() and not is_allowed_platform_parent_symlink(parent):
             return [f"{label} path must not contain symlinked directories: {parent}"]
     return []
 

@@ -102,7 +102,7 @@ Release integrity rules:
   target-specific release source workflow file, release source head SHA and a
   positive release source run attempt in each record. After upload, the remote
   evidence audit
-  `python scripts/check_platform_release_evidence_remote.py --repository <owner>/<repo> --release-tag <tag> --require-goal-targets --require-source-runs --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head`
+  `python scripts/check_platform_release_evidence_remote.py --repository <owner>/<repo> --release-tag <tag> --require-goal-targets --require-source-runs --require-source-artifact-bytes --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head`
   checks the actual GitHub Release, published asset GitHub IDs/API URLs,
   digests, sizes and bytes, exact
   published final accepted-record JSON bytes, release tag Git object/source head SHA,

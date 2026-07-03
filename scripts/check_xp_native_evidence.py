@@ -214,7 +214,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def check_contract(contract: dict[str, Any]) -> list[str]:
     errors: list[str] = []
-    if contract.get("schema_version") != 1:
+    if contract.get("schema_version") != 1 or isinstance(contract.get("schema_version"), bool):
         errors.append("configs/xp_native_evidence_contract.json schema_version must be 1")
     targets = contract.get("targets")
     if not isinstance(targets, dict):
@@ -563,7 +563,7 @@ def check_xp_native_evidence(
     if target_contract is None:
         return errors
     errors.extend(check_unexpected_fields(f"{target} evidence", evidence, XP_EVIDENCE_FIELDS))
-    if evidence.get("schema_version") != 1:
+    if evidence.get("schema_version") != 1 or isinstance(evidence.get("schema_version"), bool):
         errors.append("XP native evidence schema_version must be 1")
     release_tag = str(evidence.get("release_tag", ""))
     if not re.fullmatch(r"v\d+\.\d+\.\d+", release_tag):
@@ -752,7 +752,7 @@ def check_host_identity(
     )
     if forbidden_fields:
         errors.append(f"{target} evidence host_identity contains forbidden private fields: {forbidden_fields}")
-    if raw_identity.get("schema_version") != 1:
+    if raw_identity.get("schema_version") != 1 or isinstance(raw_identity.get("schema_version"), bool):
         errors.append(f"{target} evidence host_identity.schema_version must be 1")
     if raw_identity.get("target") != target:
         errors.append(f"{target} evidence host_identity.target must be {target}")
@@ -1182,12 +1182,21 @@ def first_symlink_in_relative_path(root: Path, relative_path: Path) -> Path | No
     return None
 
 
+def is_allowed_platform_parent_symlink(parent: Path) -> bool:
+    if sys.platform != "darwin" or parent.as_posix() != "/var":
+        return False
+    try:
+        return parent.resolve(strict=False).as_posix() == "/private/var"
+    except OSError:
+        return False
+
+
 def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
     check_path = path if path.is_absolute() else Path.cwd() / path
     for parent in reversed(check_path.parents):
         if parent == Path("."):
             continue
-        if parent.is_symlink():
+        if parent.is_symlink() and not is_allowed_platform_parent_symlink(parent):
             return [f"{label} path must not contain symlinked directories: {parent}"]
     return []
 

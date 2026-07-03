@@ -61,7 +61,7 @@ def test_protected_platform_goal_strict_gate_fails_empty_registry() -> None:
     assert "platform-verified-evidence-linux-i386-final.json" in linux_source["contains_files"]
     assert requirements["linux-i386"]["workflow_dispatch_command"] == (
         "gh workflow run extended-platform-evidence.yml --repo <owner>/<repo> "
-        "--ref <github-actions-head-sha> -f target=linux-i386 "
+        "--ref v1.0.2 -f target=linux-i386 "
         "-f release_tag=v1.0.2 "
         "-f release_asset_base_url=<github-release-download-url>"
     )
@@ -72,7 +72,7 @@ def test_protected_platform_goal_strict_gate_fails_empty_registry() -> None:
     assert "platform-verified-evidence-windows-xp-native-x64-final.json" in xp_source["contains_files"]
     assert requirements["windows-xp-native-x64"]["workflow_dispatch_command"] == (
         "gh workflow run xp-native-evidence.yml --repo <owner>/<repo> "
-        "--ref <github-actions-head-sha> -f target=windows-xp-native-x64 "
+        "--ref v1.0.2 -f target=windows-xp-native-x64 "
         "-f release_tag=v1.0.2 "
         "-f release_asset_base_url=<github-release-download-url> "
         "-f assets_dir=<target-release-artifact-dir> "
@@ -121,13 +121,13 @@ def test_protected_platform_goal_strict_gate_fails_empty_registry() -> None:
     ) in human_requirements
     assert (
         "dispatch command: gh workflow run extended-platform-evidence.yml "
-        "--repo <owner>/<repo> --ref <github-actions-head-sha> "
+        "--repo <owner>/<repo> --ref v1.0.2 "
         "-f target=linux-i386 -f release_tag=v1.0.2 "
         "-f release_asset_base_url=<github-release-download-url>"
     ) in human_requirements
     assert (
         "dispatch command: gh workflow run xp-native-evidence.yml "
-        "--repo <owner>/<repo> --ref <github-actions-head-sha> "
+        "--repo <owner>/<repo> --ref v1.0.2 "
         "-f target=windows-xp-native-x64 -f release_tag=v1.0.2 "
         "-f release_asset_base_url=<github-release-download-url> "
         "-f assets_dir=<target-release-artifact-dir> "
@@ -252,6 +252,69 @@ def test_protected_platform_goal_rejects_drifted_requirement_command_metadata(
     assert goal["report_validation_errors"] == [
         error for error in errors if "staged_upload_command must be" in error
     ]
+    assert "protected platform goal is incomplete: status=requirement-metadata-invalid" in errors
+
+
+def test_protected_platform_goal_rejects_malformed_release_scope_metadata(
+    monkeypatch,
+) -> None:
+    checker = _load_protected_goal_checker()
+    original_readiness = checker._platform_verified_readiness
+    conflict_url = "https://github.com/example/remote-ops-workspace/actions/runs/12345"
+
+    def fake_platform_verified_readiness(*args, **kwargs):
+        report = original_readiness(*args, **kwargs)
+        drifted = deepcopy(report)
+        goal = drifted["protected_goal_parity"]
+        goal["release_tags"].append(True)
+        goal["release_repositories"].append("EXAMPLE/REMOTE-OPS-WORKSPACE")
+        goal["release_source_workflows"]["LINUX-I386"] = goal["release_source_workflows"]["linux-i386"]
+        goal["release_source_run_attempts"][False] = 1
+        goal["release_source_run_attempt_conflicts"] = {
+            False: {"linux-i386": 1},
+            conflict_url: {"linux-i386": 1, True: 2},
+        }
+        return drifted
+
+    monkeypatch.setattr(checker, "_platform_verified_readiness", fake_platform_verified_readiness)
+
+    errors, goal = checker.check_protected_platform_goal(
+        registry=_complete_registry(),
+        release_tag="v1.0.2",
+        require_records_complete=True,
+    )
+
+    assert "protected platform goal parity release_tags entries must be non-empty strings, got True" in errors
+    assert any(
+        "protected platform goal parity release_repositories must not collide on "
+        "case-insensitive filesystems" in error
+        and "example/remote-ops-workspace" in error
+        and "EXAMPLE/REMOTE-OPS-WORKSPACE" in error
+        for error in errors
+    )
+    assert any(
+        "protected platform goal parity release_source_workflows keys must not collide on "
+        "case-insensitive filesystems" in error
+        and "linux-i386" in error
+        and "LINUX-I386" in error
+        for error in errors
+    )
+    assert (
+        "protected platform goal parity release_source_run_attempts keys must be "
+        "non-empty strings, got False"
+    ) in errors
+    assert (
+        "protected platform goal parity release_source_run_attempt_conflicts keys must be "
+        "non-empty strings, got False"
+    ) in errors
+    assert (
+        "protected platform goal parity "
+        f"release_source_run_attempt_conflicts.{conflict_url} keys must be "
+        "non-empty strings, got True"
+    ) in errors
+    assert goal["complete"] is False
+    assert goal["status"] == "requirement-metadata-invalid"
+    assert goal["requirement_metadata_error_count"] >= 6
     assert "protected platform goal is incomplete: status=requirement-metadata-invalid" in errors
 
 

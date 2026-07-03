@@ -40,7 +40,8 @@ PUBLISH_PLATFORM_GOAL_COMMAND = (
 PUBLISH_REMOTE_PLATFORM_EVIDENCE_AUDIT_COMMAND = (
     'python scripts/check_platform_release_evidence_remote.py --repository "${{ github.repository }}" '
     '--release-tag "${{ github.ref_name }}" --require-goal-targets --require-source-runs '
-    "--require-final-record-bytes --require-release-asset-bytes --require-tag-source-head"
+    "--require-source-artifact-bytes --require-final-record-bytes "
+    "--require-release-asset-bytes --require-tag-source-head"
 )
 
 REQUIRED_DOC_SNIPPETS = (
@@ -57,7 +58,7 @@ REQUIRED_DOC_SNIPPETS = (
     "check_release_publish_assets.py --assets-dir release-assets --tag <tag> --require-platform-goal-targets",
     "import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run",
     "check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag <tag> --require-final-record-assets",
-    "check_platform_release_evidence_remote.py --repository <owner>/<repo> --release-tag <tag> --require-goal-targets --require-source-runs --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head",
+    "check_platform_release_evidence_remote.py --repository <owner>/<repo> --release-tag <tag> --require-goal-targets --require-source-runs --require-source-artifact-bytes --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head",
     "downloaded source artifact native artifact SHA-256 values plus review-bundle size/SHA-256 values",
     "published asset digests, sizes and bytes",
     "published final accepted-record JSON bytes",
@@ -65,6 +66,7 @@ REQUIRED_DOC_SNIPPETS = (
     "workflow_run.repository_id",
     "workflow_run.head_repository_id",
     "artifact created_at",
+    "source artifact ZIP",
     "source run creation/start/update window",
     "workflow-file, source-head and",
     "run-attempt-bound accepted Linux i386, Linux armhf and Windows XP native-host artifacts",
@@ -106,7 +108,7 @@ REQUIRED_TURKISH_DOC_SNIPPETS = (
     "python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag <tag>",
     "python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run",
     "python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag <tag> --require-final-record-assets",
-    "python scripts/check_platform_release_evidence_remote.py --repository <owner>/<repo> --release-tag <tag> --require-goal-targets --require-source-runs --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head",
+    "python scripts/check_platform_release_evidence_remote.py --repository <owner>/<repo> --release-tag <tag> --require-goal-targets --require-source-runs --require-source-artifact-bytes --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head",
     "indirilen source artifact native",
     "published asset digest/size/byte",
     "published final accepted-record JSON bytes",
@@ -114,6 +116,7 @@ REQUIRED_TURKISH_DOC_SNIPPETS = (
     "workflow_run.repository_id",
     "workflow_run.head_repository_id",
     "artifact created_at",
+    "source artifact ZIP",
     "source run creation/start/update",
     "ayni tag/repository/workflow file path/source-head/run-attempt",
     "target'a ozel release source workflow file path",
@@ -138,7 +141,7 @@ REQUIRED_README_RELEASE_SECTION_SNIPPETS = (
     "accepted-platform-evidence-assets",
     "python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run",
     "python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag <tag> --require-final-record-assets",
-    "python scripts/check_platform_release_evidence_remote.py --repository <owner>/<repo> --release-tag <tag> --require-goal-targets --require-source-runs --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head",
+    "python scripts/check_platform_release_evidence_remote.py --repository <owner>/<repo> --release-tag <tag> --require-goal-targets --require-source-runs --require-source-artifact-bytes --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head",
     "downloaded source artifact native artifact SHA-256 values",
     "published asset digests, sizes and bytes",
     "published final accepted-record JSON bytes",
@@ -146,6 +149,7 @@ REQUIRED_README_RELEASE_SECTION_SNIPPETS = (
     "workflow_run.repository_id",
     "workflow_run.head_repository_id",
     "artifact created_at",
+    "source artifact ZIP",
     "source run creation/start/update window",
     "workflow-file, source-head and",
     "run-attempt-bound accepted evidence artifacts",
@@ -342,10 +346,12 @@ def check_publish_platform_evidence_dependency(workflow: str) -> list[str]:
     errors: list[str] = []
     if not job_depends_on(block, "accepted-platform-evidence-assets"):
         errors.append("publish job must depend on accepted-platform-evidence-assets")
+    release_upload_step = workflow_step_block(block, "name: Upload release assets")
+    remote_audit_step = workflow_step_block(block, "name: Audit published protected platform evidence")
     protected_asset_gate_index = block.find(PUBLISH_PROTECTED_PLATFORM_ASSET_COMMAND)
     gate_index = block.find(PUBLISH_PLATFORM_GOAL_COMMAND)
-    upload_index = block.find("softprops/action-gh-release")
-    remote_audit_index = block.find(PUBLISH_REMOTE_PLATFORM_EVIDENCE_AUDIT_COMMAND)
+    upload_index = block.find(release_upload_step) if release_upload_step else block.find("softprops/action-gh-release")
+    remote_audit_index = block.find(remote_audit_step) if remote_audit_step else -1
     if protected_asset_gate_index < 0:
         errors.append(
             "publish job missing protected platform release asset gate: "
@@ -353,14 +359,18 @@ def check_publish_platform_evidence_dependency(workflow: str) -> list[str]:
         )
     if gate_index < 0:
         errors.append(f"publish job missing publish-time protected platform goal gate: {PUBLISH_PLATFORM_GOAL_COMMAND}")
-    if remote_audit_index < 0:
+    if not release_upload_step or "uses: softprops/action-gh-release@v3" not in release_upload_step:
+        errors.append("publish job missing GitHub release upload step: uses: softprops/action-gh-release@v3")
+    if not remote_audit_step or PUBLISH_REMOTE_PLATFORM_EVIDENCE_AUDIT_COMMAND not in remote_audit_step:
         errors.append(
             "publish job missing published protected platform evidence audit: "
             f"{PUBLISH_REMOTE_PLATFORM_EVIDENCE_AUDIT_COMMAND}"
         )
-    if "actions: read" not in block:
+    if not job_permission_is(block, "actions", "read"):
         errors.append("publish job missing Actions read permission for published protected platform evidence audit")
-    if "GH_TOKEN: ${{ github.token }}" not in block:
+    if not job_permission_is(block, "contents", "write"):
+        errors.append("publish job missing contents write permission for GitHub release upload")
+    if not remote_audit_step or "GH_TOKEN: ${{ github.token }}" not in remote_audit_step:
         errors.append("publish job missing GitHub token for published protected platform evidence audit")
     if (
         protected_asset_gate_index >= 0
@@ -463,6 +473,21 @@ def job_needs(block: str) -> set[str]:
                 needs.add(item_match.group(1))
         return needs
     return set()
+
+
+def job_permission_is(block: str, permission: str, expected: str) -> bool:
+    lines = block.splitlines()
+    for index, line in enumerate(lines):
+        if not re.fullmatch(r"    permissions:\s*", line):
+            continue
+        for item in lines[index + 1 :]:
+            if re.fullmatch(r"    [A-Za-z0-9_-]+:.*", item):
+                break
+            match = re.fullmatch(r"\s{6}([A-Za-z0-9_-]+):\s*([A-Za-z]+)\s*", item)
+            if match and match.group(1) == permission:
+                return match.group(2) == expected
+        return False
+    return False
 
 
 def parse_inline_needs(raw: str) -> set[str]:

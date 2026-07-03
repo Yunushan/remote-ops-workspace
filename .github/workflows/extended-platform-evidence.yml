@@ -56,6 +56,7 @@ jobs:
             --release-tag "${{ inputs.release_tag }}" \
             --release-asset-base-url "${{ inputs.release_asset_base_url }}" \
             --workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --workflow-ref-name "${{ github.ref_name }}" \
             --source-head-sha "${{ github.sha }}" \
             --source-run-attempt "${{ github.run_attempt }}"
       - name: Check Linux i386 builder identity
@@ -129,6 +130,7 @@ jobs:
             --builder-evidence platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/builder-identity-linux-i386.json \
             --linux-smoke-evidence platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/native-smoke-linux-i386.log \
             --local-evidence-root platform-evidence-staging \
+            --staged-upload-out-dir platform-evidence-upload/linux-i386/${{ inputs.release_tag }} \
             --runner-label self-hosted \
             --runner-label linux \
             --runner-label i386 \
@@ -192,6 +194,7 @@ jobs:
             --release-tag "${{ inputs.release_tag }}" \
             --release-asset-base-url "${{ inputs.release_asset_base_url }}" \
             --workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --workflow-ref-name "${{ github.ref_name }}" \
             --source-head-sha "${{ github.sha }}" \
             --source-run-attempt "${{ github.run_attempt }}"
       - name: Check Linux armhf builder identity
@@ -265,6 +268,7 @@ jobs:
             --builder-evidence platform-evidence-staging/linux-armhf/${{ inputs.release_tag }}/builder-identity-linux-armhf.json \
             --linux-smoke-evidence platform-evidence-staging/linux-armhf/${{ inputs.release_tag }}/native-smoke-linux-armhf.log \
             --local-evidence-root platform-evidence-staging \
+            --staged-upload-out-dir platform-evidence-upload/linux-armhf/${{ inputs.release_tag }} \
             --runner-label self-hosted \
             --runner-label linux \
             --runner-label armhf \

@@ -181,27 +181,46 @@ jobs:
         run: python -m pytest tests/test_web_hardening.py tests/test_mobile_support.py
       - name: Start Web/PWA server
         run: |
-          python -m http.server 8765 --directory apps/web --bind 127.0.0.1 > web-server.log 2>&1 &
+          WEB_PWA_PORT="$(python - <<'PY'
+          import socket
+
+          with socket.socket() as sock:
+              sock.bind(("127.0.0.1", 0))
+              print(sock.getsockname()[1])
+          PY
+          )"
+          export WEB_PWA_URL="http://127.0.0.1:${WEB_PWA_PORT}/index.html"
+          echo "WEB_PWA_URL=$WEB_PWA_URL" >> "$GITHUB_ENV"
+          python -m http.server "$WEB_PWA_PORT" --directory apps/web --bind 127.0.0.1 > web-server.log 2>&1 &
           echo $! > web-server.pid
           python - <<'PY'
+          import os
           import time
+          from pathlib import Path
           import urllib.request
 
-          deadline = time.monotonic() + 30
+          deadline = time.monotonic() + 90
           last_error = ""
           while time.monotonic() < deadline:
               try:
-                  with urllib.request.urlopen("http://127.0.0.1:8765/index.html", timeout=3) as response:
+                  with urllib.request.urlopen(os.environ["WEB_PWA_URL"], timeout=3) as response:
                       if response.status < 500:
                           raise SystemExit(0)
                       last_error = f"HTTP {response.status}"
               except Exception as exc:
                   last_error = str(exc)
               time.sleep(1)
-          raise SystemExit(f"Web/PWA server did not become reachable before iOS simulator smoke: {last_error}")
+          try:
+              log_tail = Path("web-server.log").read_text(encoding="utf-8", errors="replace")[-4000:]
+          except OSError as exc:
+              log_tail = f"<could not read web-server.log: {exc}>"
+          raise SystemExit(
+              "Web/PWA server did not become reachable before iOS simulator smoke: "
+              f"{last_error}\nweb-server.log:\n{log_tail}"
+          )
           PY
       - name: iOS Web/PWA simulator smoke
-        run: python scripts/check_mobile_emulator_smoke.py --platform ios --url http://127.0.0.1:8765/index.html --ios-open-url-attempts 3 --out-dir artifacts/mobile
+        run: python scripts/check_mobile_emulator_smoke.py --platform ios --url "$WEB_PWA_URL" --ios-open-url-attempts 3 --out-dir artifacts/mobile
       - uses: actions/upload-artifact@v7
         with:
           name: ios-web-pwa-simulator

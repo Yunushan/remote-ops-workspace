@@ -64,12 +64,29 @@ def check_extended_platform_evidence(workflow: str | None = None) -> list[str]:
 def check_github_expression_delimiters(workflow: str) -> list[str]:
     errors: list[str] = []
     for line_number, line in enumerate(workflow.splitlines(), start=1):
-        if line.count("${{") != line.count("}}"):
+        if github_expression_delimiters_unbalanced(line):
             errors.append(
                 "extended platform evidence workflow has unbalanced GitHub expression "
                 f"delimiters on line {line_number}: {line.strip()}"
             )
     return errors
+
+
+def github_expression_delimiters_unbalanced(line: str) -> bool:
+    index = 0
+    while index < len(line):
+        next_open = line.find("${{", index)
+        next_close = line.find("}}", index)
+        if next_close != -1 and (next_open == -1 or next_close < next_open):
+            return True
+        if next_open == -1:
+            return False
+        close = line.find("}}", next_open + 3)
+        nested_open = line.find("${{", next_open + 3)
+        if close == -1 or (nested_open != -1 and nested_open < close):
+            return True
+        index = close + 2
+    return False
 
 
 def check_top_level_policy(workflow: str) -> list[str]:
@@ -173,6 +190,7 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
         f"--assets-dir {assets_dir}": "target-scoped accepted-evidence artifact path",
         '--release-asset-base-url "${{ inputs.release_asset_base_url }}"': "release asset URL evidence input",
         '--workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"': "workflow run URL evidence",
+        '--workflow-ref-name "${{ github.ref_name }}"': "release-tag workflow ref binding",
         f"--release-source-artifact-name {source_artifact_name}": "release source artifact name binding",
         '--release-source-head-sha "${{ github.sha }}"': "release source head SHA evidence",
         '--linux-source-run-attempt "${{ github.run_attempt }}"': "local evidence source run-attempt binding",
@@ -180,6 +198,7 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
         f"--builder-evidence {evidence_dir}/{builder_identity_name}": "builder identity evidence input",
         f"--linux-smoke-evidence {evidence_dir}/{smoke_name}": "native smoke evidence input",
         "--local-evidence-root platform-evidence-staging": "local evidence preflight root binding",
+        f"--staged-upload-out-dir {upload_dir}": "candidate staged upload output binding",
         "--runner-label self-hosted": "self-hosted runner-label evidence",
         "--runner-label linux": "linux runner-label evidence",
         f"--runner-label {runner}": "architecture runner-label evidence",
@@ -248,13 +267,14 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
         '            --release-tag "${{ inputs.release_tag }}" \\\n'
         '            --release-asset-base-url "${{ inputs.release_asset_base_url }}" \\\n'
         '            --workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \\\n'
+        '            --workflow-ref-name "${{ github.ref_name }}" \\\n'
         '            --source-head-sha "${{ github.sha }}" \\\n'
         '            --source-run-attempt "${{ github.run_attempt }}"'
     )
     if dispatch_command not in block:
         errors.append(
             f"{job} dispatch input preflight must bind target, release_tag, release URL, workflow_run_url, "
-            "source_head_sha and source_run_attempt"
+            "workflow_ref_name, source_head_sha and source_run_attempt"
         )
     builder_command = (
         "python3 scripts/check_extended_platform_builder.py \\\n"

@@ -42,6 +42,55 @@ def test_stage_extended_linux_evidence_upload_copies_only_expected_files(tmp_pat
     )
 
 
+def test_stage_extended_linux_evidence_upload_rejects_ambiguous_upload_file_names() -> None:
+    stager = _load_stager()
+
+    errors = stager.check_staged_upload_file_names(
+        "linux-i386",
+        [
+            "expected.deb",
+            "expected.deb",
+            "Readme.txt",
+            "readme.txt",
+            "nested/expected.deb",
+        ],
+    )
+
+    assert "linux-i386 staged upload file names must be exact safe file names: ['nested/expected.deb']" in errors
+    assert (
+        "linux-i386 staged upload file names must be unique across artifacts and evidence outputs: "
+        "['expected.deb']"
+    ) in errors
+    assert (
+        "linux-i386 staged upload file names must not collide on case-insensitive filesystems: "
+        "['Readme.txt', 'readme.txt']"
+    ) in errors
+
+
+def test_stage_extended_linux_evidence_upload_rejects_computed_upload_name_collision(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    stager = _load_stager()
+    checker = _load_platform_promotion_artifacts_checker()
+    target = "linux-i386"
+    tag = f"v{checker.read_project_version()}"
+    duplicate = f"extended-linux-evidence-bundle-{target}-{tag}.json"
+    monkeypatch.setattr(stager, "accepted_artifact_names", lambda *_args: {duplicate})
+
+    errors = stager.stage_extended_linux_evidence_upload(
+        target=target,
+        release_tag=tag,
+        source_dir=tmp_path / target / tag,
+        out_dir=tmp_path / "linux-evidence-upload",
+    )
+
+    assert errors == [
+        "linux-i386 staged upload file names must be unique across artifacts and evidence outputs: "
+        f"['{duplicate}']"
+    ]
+
+
 def test_stage_extended_linux_evidence_upload_rejects_extra_source_entries(tmp_path: Path) -> None:
     stager = _load_stager()
     checker = _load_platform_promotion_artifacts_checker()
@@ -114,6 +163,42 @@ def test_stage_extended_linux_evidence_upload_rejects_hash_mismatch(tmp_path: Pa
 
     assert any("staged upload native artifact SHA-256 mismatch" in error for error in errors)
     assert any("staged upload review_bundle archive.sha256 mismatch" in error for error in errors)
+
+
+def test_stage_extended_linux_evidence_upload_rejects_boolean_review_bundle_size(
+    tmp_path: Path,
+) -> None:
+    stager = _load_stager()
+    bundle = tmp_path / "extended-linux-evidence-bundle-linux-i386-v1.0.2.zip"
+    bundle.write_bytes(b"x")
+    record = {
+        "review_bundle": {
+            "archive": {
+                "file": bundle.name,
+                "size_bytes": True,
+                "sha256": _sha256(bundle),
+            },
+        },
+    }
+
+    errors = stager.check_source_hashes("linux-i386", record, {bundle.name: bundle})
+
+    assert (
+        "linux-i386 staged upload review_bundle archive.size_bytes mismatch: "
+        "extended-linux-evidence-bundle-linux-i386-v1.0.2.zip"
+    ) in errors
+
+
+def test_stage_extended_linux_evidence_upload_rejects_non_string_artifact_hash_key() -> None:
+    stager = _load_stager()
+    record = {"artifact_sha256": {True: "0" * 64}}
+
+    errors = stager.check_source_hashes("linux-i386", record, {})
+
+    assert (
+        "linux-i386 staged upload artifact_sha256 keys must be exact safe file names: ['True']"
+        in errors
+    )
 
 
 def test_stage_extended_linux_evidence_upload_rejects_review_bundle_content_mismatch(
@@ -247,6 +332,59 @@ def test_stage_extended_linux_evidence_upload_rejects_release_source_file_set_dr
         "['platform-verified-evidence-linux-i386-final.json']"
     ) in errors
     assert "linux-i386 staged upload has files outside release_asset_source: ['unexpected.zip']" in errors
+
+
+def test_stage_extended_linux_evidence_upload_rejects_unsafe_release_source_file_names() -> None:
+    stager = _load_stager()
+    record = {
+        "release_asset_source": {
+            "contains_files": [
+                "expected.deb",
+                "expected.deb",
+                "nested/expected.deb",
+                "C:expected.deb",
+                r"C:\expected.deb",
+                True,
+            ],
+        },
+    }
+    sources = {"expected.deb": Path("expected.deb")}
+
+    errors = stager.check_release_source_file_set("linux-i386", record, sources)
+
+    assert any(
+        "linux-i386 finalized accepted record release_asset_source.contains_files "
+        "entries must be exact safe file names" in error
+        and "'nested/expected.deb'" in error
+        and "'C:expected.deb'" in error
+        and "'C:\\\\expected.deb'" in error
+        and "True" in error
+        for error in errors
+    )
+    assert (
+        "linux-i386 finalized accepted record release_asset_source.contains_files "
+        "contains duplicate files: ['expected.deb']"
+    ) in errors
+
+
+def test_stage_extended_linux_evidence_upload_source_map_rejects_cross_platform_paths(
+    tmp_path: Path,
+) -> None:
+    stager = _load_stager()
+    files = stager.source_map(
+        tmp_path,
+        {
+            "expected.deb",
+            "nested/expected.deb",
+            "C:expected.deb",
+            r"C:\expected.deb",
+        },
+    )
+
+    assert files["expected.deb"] == tmp_path / "expected.deb"
+    assert files["nested/expected.deb"] == Path("__invalid__")
+    assert files["C:expected.deb"] == Path("__invalid__")
+    assert files[r"C:\expected.deb"] == Path("__invalid__")
 
 
 def test_stage_extended_linux_evidence_upload_rejects_symlinked_source_directory(

@@ -335,7 +335,7 @@ def test_publish_contract_requires_remote_evidence_audit_after_upload() -> None:
         '      - name: Audit published protected platform evidence\n'
         '        env:\n'
         '          GH_TOKEN: ${{ github.token }}\n'
-        '        run: python scripts/check_platform_release_evidence_remote.py --repository "${{ github.repository }}" --release-tag "${{ github.ref_name }}" --require-goal-targets --require-source-runs --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head\n'
+        '        run: python scripts/check_platform_release_evidence_remote.py --repository "${{ github.repository }}" --release-tag "${{ github.ref_name }}" --require-goal-targets --require-source-runs --require-source-artifact-bytes --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head\n'
     )
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
         audit_step,
@@ -355,7 +355,7 @@ def test_publish_contract_rejects_remote_evidence_audit_before_upload() -> None:
         '      - name: Audit published protected platform evidence\n'
         '        env:\n'
         '          GH_TOKEN: ${{ github.token }}\n'
-        '        run: python scripts/check_platform_release_evidence_remote.py --repository "${{ github.repository }}" --release-tag "${{ github.ref_name }}" --require-goal-targets --require-source-runs --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head\n'
+        '        run: python scripts/check_platform_release_evidence_remote.py --repository "${{ github.repository }}" --release-tag "${{ github.ref_name }}" --require-goal-targets --require-source-runs --require-source-artifact-bytes --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head\n'
     )
     upload_step = (
         '      - name: Upload release assets\n'
@@ -1058,6 +1058,113 @@ def test_release_asset_hashes_reject_unsafe_review_bundle_file_name(
     ) in errors
 
 
+def test_release_asset_hashes_reject_non_string_accepted_evidence_release_asset_url(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    registry = _accepted_evidence_registry("linux-i386")
+    record = registry["accepted_evidence"][0]
+    _write_synthetic_release_assets(checker, matrix, tmp_path)
+    _write_accepted_evidence_assets(record, tmp_path)
+    _sync_evidence_artifact_hashes(record, tmp_path)
+    record["release_asset_urls"][0] = True
+    monkeypatch.setattr(checker, "validate_accepted_evidence_registry", lambda _registry: [])
+    assets = {path.name for path in tmp_path.iterdir() if path.is_file()}
+
+    errors = checker.check_platform_evidence_asset_hashes(
+        tmp_path,
+        assets,
+        tag="v1.0.2",
+        evidence_registry=registry,
+    )
+
+    assert "linux-i386 accepted evidence release_asset_urls entries must be strings, got True" in errors
+
+
+def test_release_asset_hashes_reject_non_string_accepted_evidence_artifact_key(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    registry = _accepted_evidence_registry("linux-i386")
+    record = registry["accepted_evidence"][0]
+    _write_synthetic_release_assets(checker, matrix, tmp_path)
+    _write_accepted_evidence_assets(record, tmp_path)
+    _sync_evidence_artifact_hashes(record, tmp_path)
+    record["artifact_sha256"][True] = "0" * 64
+    monkeypatch.setattr(checker, "validate_accepted_evidence_registry", lambda _registry: [])
+    assets = {path.name for path in tmp_path.iterdir() if path.is_file()}
+
+    errors = checker.check_platform_evidence_asset_hashes(
+        tmp_path,
+        assets,
+        tag="v1.0.2",
+        evidence_registry=registry,
+    )
+
+    assert "linux-i386 accepted evidence artifact_sha256 keys must be exact safe file names, got True" in errors
+
+
+def test_release_asset_hashes_reject_non_string_review_bundle_file_name(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    registry = _accepted_evidence_registry("linux-i386")
+    record = registry["accepted_evidence"][0]
+    _write_synthetic_release_assets(checker, matrix, tmp_path)
+    _write_accepted_evidence_assets(record, tmp_path)
+    _sync_evidence_artifact_hashes(record, tmp_path)
+    record["review_bundle"]["manifest"]["file"] = True
+    monkeypatch.setattr(checker, "validate_accepted_evidence_registry", lambda _registry: [])
+    assets = {path.name for path in tmp_path.iterdir() if path.is_file()}
+
+    errors = checker.check_platform_evidence_asset_hashes(
+        tmp_path,
+        assets,
+        tag="v1.0.2",
+        evidence_registry=registry,
+    )
+
+    assert "linux-i386 accepted evidence review_bundle manifest.file must be an exact safe file name: True" in errors
+
+
+def test_release_asset_hashes_reject_boolean_review_bundle_size(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    registry = _accepted_evidence_registry("linux-i386")
+    record = registry["accepted_evidence"][0]
+    _write_synthetic_release_assets(checker, matrix, tmp_path)
+    _write_accepted_evidence_assets(record, tmp_path)
+    _sync_evidence_artifact_hashes(record, tmp_path)
+    archive_record = record["review_bundle"]["archive"]
+    archive_path = tmp_path / str(archive_record["file"])
+    archive_path.write_bytes(b"x")
+    archive_record["size_bytes"] = True
+    archive_record["sha256"] = _sha256(archive_path)
+    monkeypatch.setattr(checker, "validate_accepted_evidence_registry", lambda _registry: [])
+    assets = {path.name for path in tmp_path.iterdir() if path.is_file()}
+
+    errors = checker.check_platform_evidence_asset_hashes(
+        tmp_path,
+        assets,
+        tag="v1.0.2",
+        evidence_registry=registry,
+    )
+
+    assert (
+        "release review bundle asset extended-linux-evidence-bundle-linux-i386-v1.0.2.zip "
+        "size does not match accepted evidence for linux-i386"
+    ) in errors
+
+
 def test_release_assets_reject_accepted_evidence_review_bundle_hash_mismatch(tmp_path: Path) -> None:
     checker = _load_checker()
     matrix = _load_matrix()
@@ -1251,6 +1358,91 @@ def test_release_assets_accept_complete_synthetic_directory(tmp_path: Path) -> N
     assert errors == []
 
 
+def test_release_assets_reject_release_manifest_boolean_size_bytes(tmp_path: Path) -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    _write_synthetic_release_assets(checker, matrix, tmp_path)
+    manifest = tmp_path / "remote-ops-workspace-v1.0.2-release-manifest.json"
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    first_artifact = data["artifacts"][0]
+    first_artifact["size_bytes"] = True
+    manifest.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    filename = Path(str(first_artifact["file"])).name
+
+    errors = checker.check_release_assets(tmp_path, matrix, tag="v1.0.2")
+
+    assert f"{manifest.name} artifact {filename} missing positive size_bytes" in errors
+
+
+def test_release_manifest_rejects_artifact_size_drift(tmp_path: Path) -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    _write_synthetic_release_assets(checker, matrix, tmp_path)
+    manifest = tmp_path / "remote-ops-workspace-v1.0.2-release-manifest.json"
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    first_artifact = data["artifacts"][0]
+    filename = Path(str(first_artifact["file"])).name
+    first_artifact["size_bytes"] = (tmp_path / filename).stat().st_size + 1
+    manifest.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+    errors = checker.check_release_manifest(tmp_path, matrix, tag="v1.0.2")
+
+    assert f"{manifest.name} artifact {filename} size_bytes does not match release asset" in errors
+
+
+def test_release_manifest_rejects_artifact_sha256_drift(tmp_path: Path) -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    _write_synthetic_release_assets(checker, matrix, tmp_path)
+    manifest = tmp_path / "remote-ops-workspace-v1.0.2-release-manifest.json"
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    first_artifact = data["artifacts"][0]
+    filename = Path(str(first_artifact["file"])).name
+    first_artifact["sha256"] = "0" * 64
+    manifest.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+    errors = checker.check_release_manifest(tmp_path, matrix, tag="v1.0.2")
+
+    assert f"{manifest.name} artifact {filename} sha256 does not match release asset" in errors
+
+
+def test_release_manifest_accepts_exact_artifact_file_reference(tmp_path: Path) -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    _write_synthetic_release_assets(checker, matrix, tmp_path)
+    manifest = tmp_path / "remote-ops-workspace-v1.0.2-release-manifest.json"
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    first_artifact = data["artifacts"][0]
+    first_artifact["file"] = Path(str(first_artifact["file"])).name
+    manifest.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+    errors = checker.check_release_manifest(tmp_path, matrix, tag="v1.0.2")
+
+    assert errors == []
+
+
+def test_release_manifest_rejects_path_qualified_artifact_file_reference(tmp_path: Path) -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    _write_synthetic_release_assets(checker, matrix, tmp_path)
+    manifest = tmp_path / "remote-ops-workspace-v1.0.2-release-manifest.json"
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    first_artifact = data["artifacts"][0]
+    filename = Path(str(first_artifact["file"])).name
+    first_artifact["file"] = f"../{filename}"
+    manifest.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+    errors = checker.check_release_manifest(tmp_path, matrix, tag="v1.0.2")
+
+    assert (
+        f"{manifest.name} artifact file must be an exact release file name or dist/<file>: '../{filename}'" in errors
+    )
+    assert any(
+        error.startswith(f"{manifest.name} missing source/Python artifact records: ") and filename in error
+        for error in errors
+    )
+
+
 def test_release_assets_reject_symlinked_asset_directory(tmp_path: Path, monkeypatch) -> None:
     checker = _load_checker()
     matrix = _load_matrix()
@@ -1327,6 +1519,30 @@ def test_release_assets_reject_symlinked_release_asset(tmp_path: Path, monkeypat
     errors = checker.check_release_assets(tmp_path, matrix, tag="v1.0.2")
 
     assert f"release assets must not contain symlinks: ['{symlink_name}']" in errors
+
+
+def test_release_asset_file_names_reject_ambiguous_names() -> None:
+    checker = _load_checker()
+
+    errors = checker.check_release_asset_file_names(
+        [
+            "remote-ops-workspace-v1.0.2-linux-amd64.deb",
+            "remote-ops-workspace-v1.0.2-linux-amd64.deb",
+            "Readme.txt",
+            "readme.txt",
+            "nested/asset.whl",
+        ]
+    )
+
+    assert "release asset file names must be exact safe file names: ['nested/asset.whl']" in errors
+    assert (
+        "release asset file names must be unique: "
+        "['remote-ops-workspace-v1.0.2-linux-amd64.deb']"
+    ) in errors
+    assert (
+        "release asset file names must not collide on case-insensitive filesystems: "
+        "['Readme.txt', 'readme.txt']"
+    ) in errors
 
 
 def test_release_assets_reject_nested_release_asset_directory(tmp_path: Path) -> None:

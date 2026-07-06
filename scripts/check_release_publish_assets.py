@@ -157,16 +157,17 @@ def check_publish_contract(
     errors: list[str] = []
     release_tag = tag or matrix_tag(matrix)
     expected = expected_release_assets(matrix, tag=release_tag)
+    platform_registry = evidence_registry_or_default(evidence_registry)
     errors.extend(
         validate_mobaxterm_parity_registry(
-            mobaxterm_parity_registry or read_mobaxterm_evidence_registry(),
+            mobaxterm_parity_registry_or_default(mobaxterm_parity_registry),
             require_complete=require_mobaxterm_parity_complete,
         )
     )
     if require_platform_goal_targets:
         errors.extend(
             validate_platform_goal_evidence_registry(
-                evidence_registry or read_evidence_registry(),
+                platform_registry,
                 release_tag=tag or matrix_tag(matrix),
             )
         )
@@ -342,19 +343,19 @@ def check_release_assets(
         return [f"release asset directory missing: {assets_dir}"]
     errors.extend(
         validate_mobaxterm_parity_registry(
-            mobaxterm_parity_registry or read_mobaxterm_evidence_registry(),
+            mobaxterm_parity_registry_or_default(mobaxterm_parity_registry),
             require_complete=require_mobaxterm_parity_complete,
         )
     )
+    registry = evidence_registry_or_default(evidence_registry)
     if require_platform_goal_targets:
         errors.extend(
             validate_platform_goal_evidence_registry(
-                evidence_registry or read_evidence_registry(),
+                registry,
                 release_tag=tag or matrix_tag(matrix),
             )
         )
     release_tag = tag or matrix_tag(matrix)
-    registry = evidence_registry or read_evidence_registry()
     expected = expected_release_assets(matrix, tag=release_tag) | accepted_platform_release_assets(
         registry,
         tag=release_tag,
@@ -525,7 +526,7 @@ def check_gated_native_assets_have_evidence(
     label: str,
 ) -> list[str]:
     accepted = accepted_evidence_targets(
-        evidence_registry or read_evidence_registry(),
+        evidence_registry_or_default(evidence_registry),
         release_tag=tag,
     )
     errors: list[str] = []
@@ -547,6 +548,18 @@ def check_gated_native_assets_have_evidence(
                     f"without accepted platform evidence for release_tag {tag}"
                 )
     return errors
+
+
+def evidence_registry_or_default(evidence_registry: dict[str, Any] | None) -> dict[str, Any]:
+    if evidence_registry is None:
+        return read_evidence_registry()
+    return evidence_registry
+
+
+def mobaxterm_parity_registry_or_default(registry: dict[str, Any] | None) -> dict[str, Any]:
+    if registry is None:
+        return read_mobaxterm_evidence_registry()
+    return registry
 
 
 def gated_native_targets_for_asset(filename: str) -> set[str]:
@@ -642,6 +655,12 @@ def check_platform_evidence_asset_hashes(
             if not isinstance(asset, str):
                 continue
             asset_name = asset
+            if not lowercase_sha256_hex(expected_sha):
+                errors.append(
+                    f"{target} accepted evidence artifact_sha256.{asset_name} "
+                    "must be a lowercase SHA-256 hex digest"
+                )
+                continue
             if asset_name not in assets:
                 errors.append(
                     f"{target} accepted evidence release asset missing from release directory: "
@@ -649,7 +668,7 @@ def check_platform_evidence_asset_hashes(
                 )
                 continue
             actual_sha = sha256_file(root / asset_name)
-            if actual_sha != str(expected_sha):
+            if actual_sha != expected_sha:
                 errors.append(
                     f"release asset {asset_name} SHA-256 does not match accepted evidence for {target}"
                 )
@@ -695,7 +714,13 @@ def check_platform_evidence_asset_hashes(
                 errors.append(
                     f"release review bundle asset {bundle_name} size does not match accepted evidence for {target}"
                 )
-            expected_sha = str(bundle_record.get("sha256", ""))
+            expected_sha = bundle_record.get("sha256", "")
+            if not lowercase_sha256_hex(expected_sha):
+                errors.append(
+                    f"{target} accepted evidence review_bundle {bundle_key}.sha256 "
+                    "must be a lowercase SHA-256 hex digest"
+                )
+                continue
             if bundle_path.is_file() and sha256_file(bundle_path) != expected_sha:
                 errors.append(
                     f"release review bundle asset {bundle_name} SHA-256 does not match accepted evidence for {target}"
@@ -723,11 +748,17 @@ def check_platform_evidence_asset_hashes(
             if not isinstance(hashes, dict):
                 errors.append(f"{target} accepted evidence artifact_sha256 must be an object")
                 continue
-            expected_sha = str(hashes.get(asset, ""))
-            if not expected_sha:
+            expected_sha = hashes.get(asset, "")
+            if expected_sha == "":
                 errors.append(
                     f"release asset {asset} is gated for {target} but accepted evidence "
                     "artifact_sha256 has no entry"
+                )
+                continue
+            if not lowercase_sha256_hex(expected_sha):
+                errors.append(
+                    f"{target} accepted evidence artifact_sha256.{asset} "
+                    "must be a lowercase SHA-256 hex digest"
                 )
                 continue
             actual_sha = sha256_file(root / asset)
@@ -773,6 +804,10 @@ def accepted_platform_release_assets(evidence_registry: dict[str, Any], *, tag: 
         if target in PLATFORM_GOAL_TARGETS:
             assets.add(accepted_record_source_file(target))
     return assets
+
+
+def lowercase_sha256_hex(value: Any) -> bool:
+    return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None
 
 
 def accepted_record_source_file(target: str) -> str:

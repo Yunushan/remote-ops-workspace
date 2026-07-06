@@ -76,6 +76,8 @@ def check_test_job(workflow: str) -> list[str]:
     block = workflow_job_block(workflow, "test")
     if not block:
         return ["ci workflow missing test job"]
+    if "timeout-minutes: 30" not in block:
+        errors.append("ci test matrix must have a bounded 30 minute job timeout")
     for os_name in (
         "ubuntu-latest",
         "windows-2025-vs2026",
@@ -179,7 +181,19 @@ def check_android_emulator_web_job(workflow: str) -> list[str]:
         "GITHUB_PATH": "Android SDK executable PATH export",
         "sdkmanager": "Android SDK package installation",
         "avdmanager create avd": "Android virtual device creation",
-        "adb wait-for-device": "Android emulator boot wait",
+        "Boot Android emulator": "Android emulator boot step",
+        "timeout-minutes: 8": "bounded Android emulator boot timeout",
+        "emulator.pid": "Android emulator process tracking",
+        "Android emulator process exited before adb connection": "Android emulator early-exit diagnostic",
+        "Android emulator did not appear in adb devices within 180 seconds": (
+            "Android emulator adb connection timeout diagnostic"
+        ),
+        "Android emulator did not complete boot within 180 seconds": (
+            "Android emulator boot-completion timeout diagnostic"
+        ),
+        "adb devices -l": "Android emulator device-list diagnostics",
+        "tail -200 emulator.log": "Android emulator log diagnostics",
+        "sys.boot_completed": "Android emulator boot-completion check",
         "scripts/check_mobile_emulator_smoke.py --platform android": "Android emulator smoke helper",
         "--android-api ${{ matrix.api-level }}": "Android API assertion",
         "http://10.0.2.2:8765/index.html": "Android emulator host loopback URL",

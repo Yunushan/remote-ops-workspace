@@ -238,6 +238,43 @@ def test_extended_linux_evidence_bundle_reruns_local_protected_goal_preflight(
     assert not (assets / f"extended-linux-evidence-bundle-{target}-{tag}.json").exists()
 
 
+def test_extended_linux_evidence_bundle_preflight_rejects_malformed_candidate_source_fields() -> None:
+    bundler = _load_script("make_extended_linux_evidence_bundle")
+    target = "linux-i386"
+    candidate = {
+        "local_evidence_preflight_command": "python scripts/check_platform_goal_local_evidence.py --root .",
+        "workflow_run_url": True,
+        "release_asset_source": {
+            "workflow_run_url": False,
+            "head_sha": ["a" * 40],
+            "run_attempt": 0,
+        },
+    }
+
+    errors = bundler.check_local_protected_goal_preflight(
+        target=target,
+        release_tag="v1.0.2",
+        assets_dir=Path("native-dist/linux/linux-i386/v1.0.2"),
+        builder_evidence=Path("builder-identity-linux-i386.json"),
+        smoke_evidence=Path("native-smoke-linux-i386.log"),
+        candidate=candidate,
+    )
+
+    assert f"local protected-goal preflight failed: {target} candidate workflow_run_url must be a string" in errors
+    assert (
+        f"local protected-goal preflight failed: {target} candidate "
+        "release_asset_source.workflow_run_url must be a string"
+    ) in errors
+    assert (
+        f"local protected-goal preflight failed: {target} candidate "
+        "release_asset_source.head_sha must be a string"
+    ) in errors
+    assert (
+        f"local protected-goal preflight failed: {target} candidate "
+        "release_asset_source.run_attempt must be a positive integer"
+    ) in errors
+
+
 def test_extended_linux_evidence_bundle_rejects_unscoped_output_directory() -> None:
     bundler = _load_script("make_extended_linux_evidence_bundle")
 
@@ -354,6 +391,63 @@ def test_extended_linux_evidence_bundle_rejects_artifact_hash_mismatch(
     )
 
     assert "candidate artifact_sha256 must match current artifact files" in errors
+
+
+def test_extended_linux_evidence_bundle_rejects_stale_staged_upload_source_dir(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bundler = _load_script("make_extended_linux_evidence_bundle")
+    generator = _load_script("make_platform_verified_evidence_record")
+    artifact_checker = _load_script("check_platform_promotion_artifacts")
+    target = "linux-i386"
+    tag = f"v{artifact_checker.read_project_version()}"
+    names = _required_artifact_names(artifact_checker, target, tag)
+    monkeypatch.chdir(tmp_path)
+    assets, builder, smoke = _stage_valid_linux_evidence_inputs(target, tag, names)
+    errors, record = generator.build_evidence_record(
+        SimpleNamespace(
+            target=target,
+            release_tag=tag,
+            assets_dir=assets,
+            release_asset_base_url=(
+                f"https://github.com/example/remote-ops-workspace/releases/download/{tag}"
+            ),
+            workflow_run_url="https://github.com/example/remote-ops-workspace/actions/runs/12345",
+            release_source_head_sha="a" * 40,
+            release_source_run_attempt=1,
+            runner_label=["self-hosted", "linux", "i386"],
+            builder_evidence=builder,
+            linux_smoke_evidence=smoke,
+            xp_evidence=None,
+            xp_evidence_dir=None,
+        )
+    )
+    assert errors == []
+    stale_assets = Path("stale") / target / tag / "artifacts"
+    for field in (
+        "artifact_validation_command",
+        "local_evidence_preflight_command",
+        "staged_upload_command",
+    ):
+        record[field] = str(record[field]).replace(assets.as_posix(), stale_assets.as_posix())
+    candidate = Path(target) / tag / "platform-verified-evidence-linux-i386.json"
+    candidate.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+
+    errors = bundler.make_extended_linux_evidence_bundle(
+        target=target,
+        release_tag=tag,
+        assets_dir=assets,
+        builder_evidence=builder,
+        smoke_evidence=smoke,
+        candidate_record=candidate,
+        out_dir=assets,
+    )
+
+    assert errors == [
+        f"{target} candidate staged_upload_command --source-dir must match "
+        f"bundled artifact directory {assets.as_posix()!r}, got [{stale_assets.as_posix()!r}]"
+    ]
 
 
 def test_extended_linux_evidence_bundle_rejects_extra_artifact_file(
@@ -495,6 +589,67 @@ def test_extended_linux_evidence_bundle_rejects_symlinked_inputs(
     assert f"candidate evidence record file must not be a symlink: {candidate}" in errors
 
 
+def test_extended_linux_evidence_bundle_rechecks_artifact_sources_before_writing(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bundler = _load_script("make_extended_linux_evidence_bundle")
+    generator = _load_script("make_platform_verified_evidence_record")
+    artifact_checker = _load_script("check_platform_promotion_artifacts")
+    target = "linux-i386"
+    tag = f"v{artifact_checker.read_project_version()}"
+    names = _required_artifact_names(artifact_checker, target, tag)
+    monkeypatch.chdir(tmp_path)
+    assets, builder, smoke = _stage_valid_linux_evidence_inputs(target, tag, names)
+    candidate = Path(target) / tag / f"platform-verified-evidence-{target}.json"
+    errors, record = generator.build_evidence_record(
+        SimpleNamespace(
+            target=target,
+            release_tag=tag,
+            assets_dir=assets,
+            release_asset_base_url=(
+                f"https://github.com/example/remote-ops-workspace/releases/download/{tag}"
+            ),
+            workflow_run_url="https://github.com/example/remote-ops-workspace/actions/runs/12345",
+            release_source_head_sha="a" * 40,
+            release_source_run_attempt=1,
+            runner_label=["self-hosted", "linux", "i386"],
+            builder_evidence=builder,
+            linux_smoke_evidence=smoke,
+            xp_evidence=None,
+            xp_evidence_dir=None,
+        )
+    )
+    assert errors == []
+    candidate.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    symlinked_artifact = assets / next(
+        name
+        for name in names
+        if not name.endswith(("SHA256SUMS.txt", "manifest.json"))
+    )
+    original_is_symlink = type(tmp_path).is_symlink
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self == symlinked_artifact or original_is_symlink(self)
+
+    monkeypatch.setattr(type(tmp_path), "is_symlink", fake_is_symlink)
+    monkeypatch.setattr(bundler, "check_platform_promotion_artifacts", lambda **_kwargs: [])
+    monkeypatch.setattr(bundler, "check_local_protected_goal_preflight", lambda **_kwargs: [])
+
+    errors = bundler.make_extended_linux_evidence_bundle(
+        target=target,
+        release_tag=tag,
+        assets_dir=assets,
+        builder_evidence=builder,
+        smoke_evidence=smoke,
+        candidate_record=candidate,
+        out_dir=assets,
+    )
+
+    assert f"{target} artifact source file must not be a symlink: {symlinked_artifact}" in errors
+    assert not (assets / f"extended-linux-evidence-bundle-{target}-{tag}.json").exists()
+
+
 def test_extended_linux_evidence_bundle_rejects_symlinked_input_parent(
     tmp_path: Path,
     monkeypatch,
@@ -571,6 +726,29 @@ def test_extended_linux_evidence_bundle_rejects_finalized_candidate_record(
         "candidate evidence record must be unfinalized before bundling; "
         "remove fields: ['finalized_record_release_asset_url', 'review_bundle']"
     ]
+
+
+def test_extended_linux_evidence_bundle_reports_json_read_os_errors(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bundler = _load_script("make_extended_linux_evidence_bundle")
+    builder = tmp_path / "builder-identity-linux-i386.json"
+    builder.write_text("{}\n", encoding="utf-8")
+    original_read_text = Path.read_text
+
+    def fake_read_text(self: Path, *args: Any, **kwargs: Any) -> str:
+        if self == builder:
+            raise OSError("permission denied")
+        return original_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", fake_read_text)
+    errors: list[str] = []
+
+    data = bundler.load_json(builder, "builder evidence", errors)
+
+    assert data is None
+    assert errors == [f"builder evidence file is not readable JSON: {builder}: permission denied"]
 
 
 def test_extended_linux_evidence_bundle_rejects_missing_artifact_directory_before_hashing(

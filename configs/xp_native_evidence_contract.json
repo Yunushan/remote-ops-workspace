@@ -193,8 +193,7 @@
       "usn-",
       "dsa-",
       "rhsa-",
-      "alsa-",
-      "https://"
+      "alsa-"
     ]
   },
   "required_security_smoke_provenance_fields": [

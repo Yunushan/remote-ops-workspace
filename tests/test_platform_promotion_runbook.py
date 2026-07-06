@@ -12,6 +12,15 @@ def test_platform_promotion_runbook_passes_current_tree() -> None:
     assert checker.main() == 0
 
 
+def test_platform_promotion_runbook_uses_explicit_empty_promotion() -> None:
+    checker = _load_checker()
+    text = Path("docs/PLATFORM_PROMOTION_RUNBOOK.md").read_text(encoding="utf-8")
+
+    errors = checker.check_platform_promotion_runbook(runbook_text=text, promotion={})
+
+    assert "configs/platform_parity_promotion.json protected_targets must be a non-empty list" in errors
+
+
 def test_platform_promotion_runbook_rejects_missing_target_id() -> None:
     checker = _load_checker()
     text = Path("docs/PLATFORM_PROMOTION_RUNBOOK.md").read_text(encoding="utf-8")

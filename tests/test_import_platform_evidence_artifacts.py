@@ -113,6 +113,52 @@ def test_import_record_rejects_missing_final_record_source_file(tmp_path: Path, 
     ) in errors
 
 
+def test_validate_downloaded_final_record_rejects_symlinked_source_file(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+    filename = "platform-verified-evidence-linux-i386-final.json"
+    final_record = tmp_path / filename
+    final_record.write_bytes(importer.canonical_public_record_bytes(record))
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self == final_record
+
+    monkeypatch.setattr(type(tmp_path), "is_symlink", fake_is_symlink)
+
+    errors = importer.validate_downloaded_final_record(record, source_root=tmp_path)
+
+    assert errors == [
+        f"linux-i386 finalized accepted record source file must not be a symlink: {filename}"
+    ]
+
+
+def test_validate_downloaded_final_record_rejects_symlinked_source_parent(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+    source_parent = tmp_path / "linked-downloads"
+    source_root = source_parent / "download"
+    source_root.mkdir(parents=True)
+    filename = "platform-verified-evidence-linux-i386-final.json"
+    (source_root / filename).write_bytes(importer.canonical_public_record_bytes(record))
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self == source_parent
+
+    monkeypatch.setattr(type(source_root), "is_symlink", fake_is_symlink)
+
+    errors = importer.validate_downloaded_final_record(record, source_root=source_root)
+
+    assert errors == [
+        f"linux-i386 finalized accepted record source file path must not contain symlinked directories: {source_parent}"
+    ]
+
+
 def test_import_record_rejects_final_record_source_file_drift(tmp_path: Path, monkeypatch) -> None:
     importer = _load_importer()
     record = _record(tmp_path)
@@ -316,6 +362,55 @@ def test_validate_source_artifact_rejects_missing_declared_expected_file(tmp_pat
         "linux-i386 release_asset_source.contains_files missing expected files: "
         "['platform-verified-evidence-linux-i386-final.json']"
     ) in errors
+
+
+def test_validate_source_artifact_rejects_malformed_expected_file_metadata(
+    tmp_path: Path,
+) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+    record["artifact_sha256"][True] = "0" * 64
+    record["review_bundle"]["archive"]["file"] = False
+
+    errors = importer.validate_source_artifact(record, source_root=tmp_path / "downloaded")
+
+    assert errors == [
+        "linux-i386 release asset import artifact_sha256 keys must be strings, got True",
+        "linux-i386 release asset import review_bundle archive.file must be a string, got False",
+    ]
+
+
+def test_validate_source_artifact_rejects_ambiguous_expected_file_metadata(
+    tmp_path: Path,
+) -> None:
+    importer = _load_importer()
+    duplicate_record = _record(tmp_path)
+    duplicate_file = duplicate_record["review_bundle"]["manifest"]["file"]
+    duplicate_record["review_bundle"]["archive"]["file"] = duplicate_file
+    collision_record = _record(tmp_path)
+    collision_file = str(collision_record["review_bundle"]["manifest"]["file"])
+    collision_record["review_bundle"]["sha256s"]["file"] = collision_file.upper()
+
+    duplicate_errors = importer.validate_source_artifact(
+        duplicate_record,
+        source_root=tmp_path / "downloaded",
+    )
+    collision_errors = importer.validate_source_artifact(
+        collision_record,
+        source_root=tmp_path / "downloaded",
+    )
+
+    assert (
+        "linux-i386 release asset import expected files must not contain duplicates: "
+        f"['{duplicate_file}']"
+    ) in duplicate_errors
+    assert any(
+        "linux-i386 release asset import expected files must not collide on "
+        "case-insensitive filesystems" in error
+        and collision_file in error
+        and collision_file.upper() in error
+        for error in collision_errors
+    )
 
 
 def test_validate_source_artifact_rejects_extra_declared_file(tmp_path: Path) -> None:
@@ -945,6 +1040,42 @@ def test_copy_expected_files_rejects_unsafe_expected_file_name(tmp_path: Path) -
     ) in errors
 
 
+def test_copy_expected_files_rejects_malformed_expected_file_metadata(tmp_path: Path) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+    record["artifact_sha256"][True] = "0" * 64
+    record["review_bundle"]["manifest"]["file"] = False
+
+    errors = importer.copy_expected_files(
+        record,
+        source_root=tmp_path / "download",
+        out_dir=tmp_path / "release-assets",
+    )
+
+    assert errors == [
+        "linux-i386 release asset import artifact_sha256 keys must be strings, got True",
+        "linux-i386 release asset import review_bundle manifest.file must be a string, got False",
+    ]
+
+
+def test_copy_expected_files_rejects_ambiguous_expected_file_metadata(tmp_path: Path) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+    duplicate_file = record["review_bundle"]["manifest"]["file"]
+    record["review_bundle"]["archive"]["file"] = duplicate_file
+
+    errors = importer.copy_expected_files(
+        record,
+        source_root=tmp_path / "download",
+        out_dir=tmp_path / "release-assets",
+    )
+
+    assert errors == [
+        "linux-i386 release asset import expected files must not contain duplicates: "
+        f"['{duplicate_file}']"
+    ]
+
+
 def test_import_record_rejects_overwrite_with_different_file(tmp_path: Path, monkeypatch) -> None:
     importer = _load_importer()
     record = _record(tmp_path)
@@ -1099,6 +1230,43 @@ def test_import_record_rejects_source_artifact_name_mismatch(
         "linux-i386 release_asset_source.artifact_name must be "
         "extended-linux-evidence-linux-i386-v1.0.2"
     ) in errors
+
+
+def test_import_record_rejects_non_string_release_source_provenance_fields(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+    source = record["release_asset_source"]
+    record["release_tag"] = True
+    source["workflow_run_url"] = False
+    source["workflow"] = 123
+    source["artifact_name"] = ["extended-linux-evidence-linux-i386-v1.0.2"]
+    source["head_sha"] = {"sha": HEAD_SHA}
+
+    def fail_run(*_args: Any, **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+        raise AssertionError("gh should not run when release source provenance fields are malformed")
+
+    monkeypatch.setattr(importer.subprocess, "run", fail_run)
+
+    errors = importer.import_record(
+        record,
+        out_dir=tmp_path / "release-assets",
+        download_root=tmp_path / "download",
+        dry_run=False,
+        release_head_sha=HEAD_SHA,
+    )
+
+    assert errors == [
+        "linux-i386 release_asset_source.workflow_run_url must be a string, got False",
+        "linux-i386 release_asset_source.artifact_name must be a string, "
+        "got ['extended-linux-evidence-linux-i386-v1.0.2']",
+        "linux-i386 release_tag must be a string, got True",
+        "linux-i386 release_asset_source.head_sha must be a string, got {'sha': "
+        f"'{HEAD_SHA}'" + "}",
+        "linux-i386 release_asset_source.workflow must be a string, got 123",
+    ]
 
 
 def test_import_record_rejects_release_asset_url_tag_mismatch(
@@ -1594,6 +1762,30 @@ def test_import_record_rejects_source_workflow_run_url_mismatch(
         "https://github.com/example/remote-ops-workspace/actions/runs/12345, "
         "got 'https://github.com/example/remote-ops-workspace/actions/runs/99999'"
     ) in errors
+
+
+def test_import_record_rejects_non_string_source_workflow_run_html_url(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+
+    def fake_run(command: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        assert _is_metadata_command(command)
+        return _source_run_metadata(command, htmlUrl=True)
+
+    monkeypatch.setattr(importer.subprocess, "run", fake_run)
+
+    errors = importer.import_record(
+        record,
+        out_dir=tmp_path / "release-assets",
+        download_root=tmp_path / "download",
+        dry_run=False,
+        release_head_sha=HEAD_SHA,
+    )
+
+    assert "linux-i386 release_asset_source workflow run htmlUrl must be a string, got True" in errors
 
 
 def test_import_record_rejects_source_workflow_run_endpoint_metadata(
@@ -2270,6 +2462,48 @@ def test_verify_source_artifact_rejects_wrong_workflow_run_binding(monkeypatch) 
     ) in errors
 
 
+def test_verify_source_artifact_rejects_non_string_workflow_run_head_sha(monkeypatch) -> None:
+    importer = _load_importer()
+    command = _source_run_artifacts_command(importer)
+
+    def fake_run(command_arg: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        assert command_arg == command
+        assert check is True
+        assert kwargs == {"capture_output": True, "text": True}
+        return _successful_artifacts(
+            command_arg,
+            artifacts=[
+                {
+                    "id": 98765,
+                    "name": "extended-linux-evidence-linux-i386-v1.0.2",
+                    "archive_download_url": (
+                        "https://api.github.com/repos/example/remote-ops-workspace/"
+                        "actions/artifacts/98765/zip"
+                    ),
+                    "expired": False,
+                    "size_in_bytes": 4096,
+                    "workflow_run": {"id": 12345, "head_sha": True},
+                }
+            ],
+        )
+
+    monkeypatch.setattr(importer.subprocess, "run", fake_run)
+
+    errors = importer.verify_source_artifact(
+        "linux-i386",
+        command,
+        artifact_name="extended-linux-evidence-linux-i386-v1.0.2",
+        expected_repository="example/remote-ops-workspace",
+        expected_run_id="12345",
+        expected_head_sha=HEAD_SHA,
+    )
+
+    assert (
+        "linux-i386 release_asset_source artifact extended-linux-evidence-linux-i386-v1.0.2 "
+        "workflow_run.head_sha must be a string, got True"
+    ) in errors
+
+
 def test_verify_source_artifact_rejects_wrong_workflow_run_repository_ids(monkeypatch) -> None:
     importer = _load_importer()
     command = _source_run_artifacts_command(importer)
@@ -2785,6 +3019,152 @@ def test_check_imported_hashes_rejects_boolean_review_bundle_size(tmp_path: Path
     ) in errors
 
 
+def test_check_imported_hashes_rejects_malformed_review_bundle_metadata(tmp_path: Path) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+    record["review_bundle"]["manifest"]["file"] = True
+    record["review_bundle"]["archive"]["size_bytes"] = 0
+    record["review_bundle"]["archive"]["sha256"] = True
+    record["review_bundle"]["sha256s"]["sha256"] = "A" * 64
+
+    downloaded_errors = importer.check_downloaded_source_hashes(record, source_root=tmp_path)
+    imported_errors = importer.check_imported_hashes(record, out_dir=tmp_path)
+
+    assert (
+        "linux-i386 downloaded source artifact review_bundle manifest.file "
+        "must be an exact safe file name, got True"
+    ) in downloaded_errors
+    assert (
+        "linux-i386 downloaded source artifact review_bundle archive.size_bytes "
+        "must be a positive integer"
+    ) in downloaded_errors
+    assert (
+        "linux-i386 downloaded source artifact review_bundle archive.sha256 "
+        "must be a lowercase SHA-256 hex digest"
+    ) in downloaded_errors
+    assert (
+        "linux-i386 downloaded source artifact review_bundle sha256s.sha256 "
+        "must be a lowercase SHA-256 hex digest"
+    ) in downloaded_errors
+    assert not any("review bundle archive SHA-256 mismatch" in error for error in downloaded_errors)
+    assert not any("review bundle sha256s SHA-256 mismatch" in error for error in downloaded_errors)
+    assert (
+        "linux-i386 imported review_bundle manifest.file must be an exact safe file name, got True"
+        in imported_errors
+    )
+    assert (
+        "linux-i386 imported review_bundle archive.size_bytes must be a positive integer"
+        in imported_errors
+    )
+    assert (
+        "linux-i386 imported review_bundle archive.sha256 must be a lowercase SHA-256 hex digest"
+        in imported_errors
+    )
+    assert (
+        "linux-i386 imported review_bundle sha256s.sha256 "
+        "must be a lowercase SHA-256 hex digest"
+    ) in imported_errors
+    assert not any("review bundle archive SHA-256 mismatch" in error for error in imported_errors)
+    assert not any("review bundle sha256s SHA-256 mismatch" in error for error in imported_errors)
+
+
+def test_check_imported_hashes_rejects_ambiguous_review_bundle_files(tmp_path: Path) -> None:
+    importer = _load_importer()
+    duplicate_record = _record(tmp_path)
+    duplicate_file = duplicate_record["review_bundle"]["manifest"]["file"]
+    duplicate_record["review_bundle"]["archive"]["file"] = duplicate_file
+    collision_record = _record(tmp_path)
+    collision_file = str(collision_record["review_bundle"]["manifest"]["file"])
+    collision_record["review_bundle"]["sha256s"]["file"] = collision_file.upper()
+
+    duplicate_downloaded_errors = importer.check_downloaded_source_hashes(
+        duplicate_record,
+        source_root=tmp_path,
+    )
+    duplicate_imported_errors = importer.check_imported_hashes(duplicate_record, out_dir=tmp_path)
+    collision_downloaded_errors = importer.check_downloaded_source_hashes(
+        collision_record,
+        source_root=tmp_path,
+    )
+    collision_imported_errors = importer.check_imported_hashes(collision_record, out_dir=tmp_path)
+
+    assert (
+        "linux-i386 downloaded source artifact review_bundle files must not contain duplicates: "
+        f"['{duplicate_file}']"
+    ) in duplicate_downloaded_errors
+    assert (
+        "linux-i386 imported review_bundle files must not contain duplicates: "
+        f"['{duplicate_file}']"
+    ) in duplicate_imported_errors
+    assert any(
+        "linux-i386 downloaded source artifact review_bundle files must not collide on "
+        "case-insensitive filesystems" in error
+        and collision_file in error
+        and collision_file.upper() in error
+        for error in collision_downloaded_errors
+    )
+    assert any(
+        "linux-i386 imported review_bundle files must not collide on "
+        "case-insensitive filesystems" in error
+        and collision_file in error
+        and collision_file.upper() in error
+        for error in collision_imported_errors
+    )
+
+
+def test_check_downloaded_source_hashes_rejects_symlinked_native_and_review_bundle_files(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+    first_artifact = next(iter(record["artifact_sha256"]))
+    manifest = record["review_bundle"]["manifest"]
+    artifact_path = tmp_path / str(first_artifact)
+    manifest_path = tmp_path / str(manifest["file"])
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self in {artifact_path, manifest_path}
+
+    monkeypatch.setattr(type(tmp_path), "is_symlink", fake_is_symlink)
+
+    errors = importer.check_downloaded_source_hashes(record, source_root=tmp_path)
+
+    assert (
+        "linux-i386 downloaded source artifact native artifact must not be a symlink: "
+        f"{first_artifact}"
+    ) in errors
+    assert (
+        "linux-i386 downloaded source artifact review bundle manifest "
+        f"must not be a symlink: {manifest['file']}"
+    ) in errors
+
+
+def test_check_imported_hashes_rejects_symlinked_native_and_review_bundle_files(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+    first_artifact = next(iter(record["artifact_sha256"]))
+    manifest = record["review_bundle"]["manifest"]
+    artifact_path = tmp_path / str(first_artifact)
+    manifest_path = tmp_path / str(manifest["file"])
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self in {artifact_path, manifest_path}
+
+    monkeypatch.setattr(type(tmp_path), "is_symlink", fake_is_symlink)
+
+    errors = importer.check_imported_hashes(record, out_dir=tmp_path)
+
+    assert f"linux-i386 imported native artifact must not be a symlink: {first_artifact}" in errors
+    assert (
+        f"linux-i386 imported review bundle manifest must not be a symlink: {manifest['file']}"
+        in errors
+    )
+
+
 def test_check_imported_hashes_rejects_non_string_artifact_hash_key(tmp_path: Path) -> None:
     importer = _load_importer()
     record = _record(tmp_path)
@@ -2801,6 +3181,37 @@ def test_check_imported_hashes_rejects_non_string_artifact_hash_key(tmp_path: Pa
         "linux-i386 imported native artifact artifact_sha256 keys "
         "must be exact safe file names, got True"
     ) in imported_errors
+
+
+def test_check_imported_hashes_rejects_malformed_artifact_hash_digest(tmp_path: Path) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+    first_artifact = next(iter(record["artifact_sha256"]))
+    record["artifact_sha256"][first_artifact] = True
+    second_artifact = next(name for name in record["artifact_sha256"] if name != first_artifact)
+    record["artifact_sha256"][second_artifact] = "A" * 64
+
+    downloaded_errors = importer.check_downloaded_source_hashes(record, source_root=tmp_path)
+    imported_errors = importer.check_imported_hashes(record, out_dir=tmp_path)
+
+    assert (
+        f"linux-i386 downloaded source artifact artifact_sha256.{first_artifact} "
+        "must be a lowercase SHA-256 hex digest"
+    ) in downloaded_errors
+    assert (
+        f"linux-i386 downloaded source artifact artifact_sha256.{second_artifact} "
+        "must be a lowercase SHA-256 hex digest"
+    ) in downloaded_errors
+    assert (
+        f"linux-i386 imported native artifact artifact_sha256.{first_artifact} "
+        "must be a lowercase SHA-256 hex digest"
+    ) in imported_errors
+    assert (
+        f"linux-i386 imported native artifact artifact_sha256.{second_artifact} "
+        "must be a lowercase SHA-256 hex digest"
+    ) in imported_errors
+    assert not any("native artifact SHA-256 mismatch" in error for error in downloaded_errors)
+    assert not any("native artifact SHA-256 mismatch" in error for error in imported_errors)
 
 
 def test_check_imported_hashes_rejects_case_colliding_artifact_hash_keys(tmp_path: Path) -> None:

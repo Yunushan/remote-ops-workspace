@@ -7,6 +7,7 @@ import re
 import sys
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
+from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "scripts"
@@ -70,6 +71,9 @@ FORBIDDEN_SECURITY_PROVENANCE_MARKERS = (
     "test-",
     "todo",
 )
+SECURITY_PROVENANCE_URL_RE = re.compile(r"https?://[^\s\"'<>]+", re.IGNORECASE)
+RESERVED_SECURITY_PROVENANCE_URL_HOSTS = {"example.com", "example.org", "example.net"}
+RESERVED_SECURITY_PROVENANCE_URL_SUFFIXES = (".example", ".invalid", ".test")
 SECURITY_UPDATE_PROVENANCE_MARKERS = (
     "security-update",
     "security-updates",
@@ -106,7 +110,7 @@ CVE_REVIEW_PROVENANCE_MARKERS = (
 )
 REQUIRED_SECURITY_PROVENANCE_NAMESPACES = {
     "security_update_channel": set(SECURITY_UPDATE_PROVENANCE_MARKERS),
-    "cve_review_reference": {*CVE_REVIEW_PROVENANCE_MARKERS, "https://"},
+    "cve_review_reference": set(CVE_REVIEW_PROVENANCE_MARKERS),
 }
 FORBIDDEN_HOST_IDENTITY_FIELDS = {
     "computer_name",
@@ -530,7 +534,7 @@ def check_xp_native_evidence(
     evidence_dir: Path | None = None,
     contract: dict[str, Any] | None = None,
 ) -> list[str]:
-    contract_data = contract or read_json(CONTRACT_PATH)
+    contract_data = read_json(CONTRACT_PATH) if contract is None else contract
     errors: list[str] = []
     evidence_root_input = evidence_dir or evidence_path.parent
     errors.extend(check_path_not_reserved_workspace_root(evidence_path, "evidence file"))
@@ -550,6 +554,8 @@ def check_xp_native_evidence(
     try:
         raw_text = evidence_path.read_text(encoding="utf-8")
         evidence = json.loads(raw_text)
+    except OSError as exc:
+        return [f"evidence file is not readable JSON: {evidence_path}: {exc}"]
     except UnicodeDecodeError:
         return [f"evidence file must be UTF-8 JSON: {evidence_path}"]
     except json.JSONDecodeError as exc:
@@ -653,14 +659,20 @@ def check_release_source(target: str, raw_source: Any) -> list[str]:
         errors.append(f"{target} evidence release_source missing required fields: {missing}")
     if unexpected:
         errors.append(f"{target} evidence release_source has unexpected fields: {unexpected}")
-    workflow = str(raw_source.get("workflow", "")).strip()
-    if workflow != XP_RELEASE_SOURCE_WORKFLOW:
+    workflow = raw_source.get("workflow")
+    if not isinstance(workflow, str):
+        errors.append(f"{target} evidence release_source.workflow must be a string")
+    elif workflow.strip() != XP_RELEASE_SOURCE_WORKFLOW:
         errors.append(f"{target} evidence release_source.workflow must be {XP_RELEASE_SOURCE_WORKFLOW}")
-    workflow_run_url = str(raw_source.get("workflow_run_url", "")).strip().rstrip("/")
-    if not GITHUB_ACTIONS_RUN_RE.fullmatch(workflow_run_url):
+    workflow_run_url = raw_source.get("workflow_run_url")
+    if not isinstance(workflow_run_url, str):
+        errors.append(f"{target} evidence release_source.workflow_run_url must be a string")
+    elif not GITHUB_ACTIONS_RUN_RE.fullmatch(workflow_run_url.strip().rstrip("/")):
         errors.append(f"{target} evidence release_source.workflow_run_url must be a GitHub Actions run URL")
-    head_sha = str(raw_source.get("head_sha", "")).strip()
-    if not RELEASE_SOURCE_HEAD_SHA_RE.fullmatch(head_sha):
+    head_sha = raw_source.get("head_sha")
+    if not isinstance(head_sha, str):
+        errors.append(f"{target} evidence release_source.head_sha must be a string")
+    elif not RELEASE_SOURCE_HEAD_SHA_RE.fullmatch(head_sha.strip()):
         errors.append(f"{target} evidence release_source.head_sha must be a 40-character lowercase Git SHA")
     run_attempt = raw_source.get("run_attempt")
     if not isinstance(run_attempt, int) or isinstance(run_attempt, bool) or run_attempt < 1:
@@ -885,8 +897,10 @@ def check_security(target: str, raw_security: Any, contract: dict[str, Any]) -> 
     required_patch_provenance = contract.get("required_security_patch_provenance_fields", [])
     if isinstance(required_patch_provenance, list):
         for key in sorted(str(item) for item in required_patch_provenance):
-            value = str(patch_evidence.get(key, ""))
-            if not value.strip():
+            value = patch_evidence.get(key, "")
+            if not isinstance(value, str):
+                errors.append(f"{target} evidence security.patch_evidence.{key} must be a string")
+            elif not value.strip():
                 errors.append(f"{target} evidence security.patch_evidence.{key} must be set")
             elif not is_concrete_security_provenance(value, key):
                 errors.append(
@@ -896,17 +910,41 @@ def check_security(target: str, raw_security: Any, contract: dict[str, Any]) -> 
     return errors
 
 
+def security_patch_provenance_value(patch_evidence: dict[str, Any], field: str) -> str:
+    value = patch_evidence.get(field, "")
+    return value.strip() if isinstance(value, str) else ""
+
+
 def is_concrete_security_provenance(value: str, field: str = "") -> bool:
     lowered = value.strip().lower()
-    if not lowered or any(marker in lowered for marker in FORBIDDEN_SECURITY_PROVENANCE_MARKERS):
+    if (
+        not lowered
+        or any(marker in lowered for marker in FORBIDDEN_SECURITY_PROVENANCE_MARKERS)
+        or has_reserved_security_provenance_url(value)
+    ):
         return False
     if field == "security_update_channel":
         return any(marker in lowered for marker in SECURITY_UPDATE_PROVENANCE_MARKERS)
     if field == "cve_review_reference":
-        return any(marker in lowered for marker in CVE_REVIEW_PROVENANCE_MARKERS) or lowered.startswith(
-            "https://"
-        )
+        return any(marker in lowered for marker in CVE_REVIEW_PROVENANCE_MARKERS)
     return True
+
+
+def has_reserved_security_provenance_url(value: str) -> bool:
+    for match in SECURITY_PROVENANCE_URL_RE.finditer(value):
+        raw_url = match.group(0).rstrip(".,);]}")
+        try:
+            parsed = urlsplit(raw_url)
+        except ValueError:
+            return True
+        host = (parsed.hostname or "").casefold().rstrip(".")
+        if parsed.scheme.casefold() != "https":
+            return True
+        if host in RESERVED_SECURITY_PROVENANCE_URL_HOSTS:
+            return True
+        if any(host.endswith(suffix) for suffix in RESERVED_SECURITY_PROVENANCE_URL_SUFFIXES):
+            return True
+    return False
 
 
 def check_smoke_results(
@@ -964,9 +1002,12 @@ def check_smoke_results(
         item = by_id[smoke_id]
         if item.get("passed") is not True:
             errors.append(f"{target} smoke result {smoke_id} must have passed=true")
-        evidence_sha = str(item.get("evidence_sha256", ""))
-        if not re.fullmatch(r"[0-9a-f]{64}", evidence_sha):
-            errors.append(f"{target} smoke result {smoke_id} missing evidence_sha256")
+        evidence_sha = item.get("evidence_sha256", "")
+        if not lowercase_sha256_hex(evidence_sha):
+            errors.append(
+                f"{target} smoke result {smoke_id} evidence_sha256 "
+                "must be a lowercase SHA-256 hex digest"
+            )
         errors.extend(
             check_smoke_command(
                 target,
@@ -1093,7 +1134,7 @@ def check_smoke_command_binding(
                 "--cve-review-reference": "cve_review_reference",
             }
             for flag, field in security_command_flags.items():
-                expected = str(patch_evidence.get(field, "")).strip()
+                expected = security_patch_provenance_value(patch_evidence, field)
                 if expected:
                     values = command_flag_values(command, flag)
                     if values != [expected]:
@@ -1151,10 +1192,10 @@ def check_smoke_evidence_file(
     data = resolved.read_bytes()
     if not data:
         return [f"{target} smoke result {smoke_id} evidence_file must not be empty: {raw_file}"]
-    expected_sha = str(item.get("evidence_sha256", ""))
+    expected_sha = item.get("evidence_sha256", "")
     actual_sha = hashlib.sha256(data).hexdigest()
     errors: list[str] = []
-    if re.fullmatch(r"[0-9a-f]{64}", expected_sha) and actual_sha != expected_sha:
+    if lowercase_sha256_hex(expected_sha) and actual_sha != expected_sha:
         errors.append(f"{target} smoke result {smoke_id} evidence_file SHA-256 mismatch: {raw_file}")
     errors.extend(check_forbidden_patterns_bytes(data, contract, label=f"{smoke_id} evidence_file"))
     errors.extend(
@@ -1576,7 +1617,7 @@ def check_security_smoke_provenance_lines(
     }
     errors: list[str] = []
     for field in sorted(str(item) for item in fields):
-        expected_value = str(patch_evidence.get(field, "")).strip()
+        expected_value = security_patch_provenance_value(patch_evidence, field)
         if not expected_value:
             continue
         label = labels.get(field, field.replace("_", " "))
@@ -1863,6 +1904,10 @@ def target_contract_for(
 
 def read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def lowercase_sha256_hex(value: Any) -> bool:
+    return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None
 
 
 if __name__ == "__main__":

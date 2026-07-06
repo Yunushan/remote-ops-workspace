@@ -131,7 +131,10 @@ def test_xp_native_evidence_template_does_not_validate_as_real_evidence(tmp_path
     assert any("cli_launch evidence_file contains forbidden sensitive pattern: template evidence" in error for error in errors)
     assert any("artifact_validation.passed must be true" in error for error in errors)
     assert any("smoke result cli_launch must have passed=true" in error for error in errors)
-    assert any("smoke result cli_launch missing evidence_sha256" in error for error in errors)
+    assert any(
+        "smoke result cli_launch evidence_sha256 must be a lowercase SHA-256 hex digest" in error
+        for error in errors
+    )
     assert any("security.weak_crypto_global_default must be False" in error for error in errors)
     assert any("security.patch_evidence.tls_minimum_modern_profiles must be 'TLS 1.2'" in error for error in errors)
     assert any("security.patch_evidence.cve_patch_reviewed must be True" in error for error in errors)

@@ -160,6 +160,24 @@ def test_publish_contract_rejects_gated_default_asset_without_evidence() -> None
     assert any("gated native asset remote-ops-workspace-v1.0.2-linux-i386.deb" in error for error in errors)
 
 
+def test_publish_contract_uses_explicit_empty_platform_registry(monkeypatch) -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    linux_job = next(job for job in matrix["default_github_release"]["native_jobs"] if job["job"] == "linux-native")
+    linux_job["asset_patterns"].append("remote-ops-workspace-v1.0.2-linux-i386.deb")
+    monkeypatch.setattr(checker, "read_evidence_registry", lambda: _accepted_evidence_registry("linux-i386"))
+
+    errors = checker.check_publish_contract(matrix, workflow, evidence_registry={})
+
+    assert any(
+        "default release matrix includes gated native asset remote-ops-workspace-v1.0.2-linux-i386.deb "
+        "for linux-i386 without accepted platform evidence for release_tag v1.0.2"
+        in error
+        for error in errors
+    )
+
+
 def test_publish_contract_allows_gated_default_asset_with_accepted_evidence() -> None:
     checker = _load_checker()
     matrix = _load_matrix()
@@ -893,6 +911,28 @@ def test_release_assets_report_gated_extra_files(tmp_path: Path) -> None:
     assert any("gated native asset remote-ops-workspace-v1.0.2-linux-armhf.deb" in error for error in errors)
 
 
+def test_release_assets_use_explicit_empty_platform_registry(tmp_path: Path, monkeypatch) -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    _write_synthetic_release_assets(checker, matrix, tmp_path)
+    (tmp_path / "remote-ops-workspace-v1.0.2-linux-i386.deb").write_text("native\n", encoding="utf-8")
+    monkeypatch.setattr(checker, "read_evidence_registry", lambda: _accepted_evidence_registry("linux-i386"))
+
+    errors = checker.check_release_assets(
+        tmp_path,
+        matrix,
+        tag="v1.0.2",
+        evidence_registry={},
+    )
+
+    assert any(
+        "release asset directory includes gated native asset remote-ops-workspace-v1.0.2-linux-i386.deb "
+        "for linux-i386 without accepted platform evidence for release_tag v1.0.2"
+        in error
+        for error in errors
+    )
+
+
 def test_release_assets_reject_accepted_evidence_hash_mismatch(tmp_path: Path) -> None:
     checker = _load_checker()
     matrix = _load_matrix()
@@ -1108,6 +1148,36 @@ def test_release_asset_hashes_reject_non_string_accepted_evidence_artifact_key(
     assert "linux-i386 accepted evidence artifact_sha256 keys must be exact safe file names, got True" in errors
 
 
+def test_release_asset_hashes_reject_non_string_accepted_evidence_artifact_digest(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    registry = _accepted_evidence_registry("linux-i386")
+    record = registry["accepted_evidence"][0]
+    _write_synthetic_release_assets(checker, matrix, tmp_path)
+    _write_accepted_evidence_assets(record, tmp_path)
+    _sync_evidence_artifact_hashes(record, tmp_path)
+    asset_name = next(iter(record["artifact_sha256"]))
+    record["artifact_sha256"][asset_name] = True
+    monkeypatch.setattr(checker, "validate_accepted_evidence_registry", lambda _registry: [])
+    assets = {path.name for path in tmp_path.iterdir() if path.is_file()}
+
+    errors = checker.check_platform_evidence_asset_hashes(
+        tmp_path,
+        assets,
+        tag="v1.0.2",
+        evidence_registry=registry,
+    )
+
+    assert (
+        f"linux-i386 accepted evidence artifact_sha256.{asset_name} "
+        "must be a lowercase SHA-256 hex digest"
+    ) in errors
+    assert not any(f"release asset {asset_name} SHA-256 does not match" in error for error in errors)
+
+
 def test_release_asset_hashes_reject_non_string_review_bundle_file_name(
     tmp_path: Path,
     monkeypatch,
@@ -1131,6 +1201,40 @@ def test_release_asset_hashes_reject_non_string_review_bundle_file_name(
     )
 
     assert "linux-i386 accepted evidence review_bundle manifest.file must be an exact safe file name: True" in errors
+
+
+def test_release_asset_hashes_reject_non_string_review_bundle_digest(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    registry = _accepted_evidence_registry("linux-i386")
+    record = registry["accepted_evidence"][0]
+    _write_synthetic_release_assets(checker, matrix, tmp_path)
+    _write_accepted_evidence_assets(record, tmp_path)
+    _sync_evidence_artifact_hashes(record, tmp_path)
+    archive_record = record["review_bundle"]["archive"]
+    bundle_name = str(archive_record["file"])
+    archive_record["sha256"] = True
+    monkeypatch.setattr(checker, "validate_accepted_evidence_registry", lambda _registry: [])
+    assets = {path.name for path in tmp_path.iterdir() if path.is_file()}
+
+    errors = checker.check_platform_evidence_asset_hashes(
+        tmp_path,
+        assets,
+        tag="v1.0.2",
+        evidence_registry=registry,
+    )
+
+    assert (
+        "linux-i386 accepted evidence review_bundle archive.sha256 "
+        "must be a lowercase SHA-256 hex digest"
+    ) in errors
+    assert not any(
+        f"release review bundle asset {bundle_name} SHA-256 does not match" in error
+        for error in errors
+    )
 
 
 def test_release_asset_hashes_reject_boolean_review_bundle_size(

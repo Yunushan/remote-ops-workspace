@@ -113,6 +113,7 @@ def check_legacy_security_policy(
     *,
     baseline: dict[str, Any] | None = None,
     xp_contract: dict[str, Any] | None = None,
+    platform_targets: dict[str, Any] | None = None,
     platform_required_flags: dict[str, bool] | None = None,
     platform_required_patch_evidence: dict[str, Any] | None = None,
     platform_required_patch_provenance_fields: tuple[str, ...] | None = None,
@@ -123,11 +124,16 @@ def check_legacy_security_policy(
     platform_forbidden_linux_security_smoke_lines: tuple[str, ...] | None = None,
 ) -> list[str]:
     errors: list[str] = []
-    baseline = baseline or json.loads(read("configs/security_baseline.json"))
-    xp_contract = xp_contract or json.loads(read("configs/xp_native_evidence_contract.json"))
-    platform_required_flags = platform_required_flags or load_platform_required_xp_security_flags()
+    baseline = json.loads(read("configs/security_baseline.json")) if baseline is None else baseline
+    xp_contract = json.loads(read("configs/xp_native_evidence_contract.json")) if xp_contract is None else xp_contract
+    if platform_targets is None:
+        platform_targets = json.loads(read("configs/platform_targets.json"))
+    if platform_required_flags is None:
+        platform_required_flags = load_platform_required_xp_security_flags()
     platform_required_patch_evidence = (
-        platform_required_patch_evidence or load_platform_required_security_patch_evidence()
+        load_platform_required_security_patch_evidence()
+        if platform_required_patch_evidence is None
+        else platform_required_patch_evidence
     )
     if platform_required_patch_provenance_fields is None:
         platform_required_patch_provenance_fields = load_platform_required_security_patch_provenance_fields()
@@ -293,6 +299,7 @@ def check_legacy_security_policy(
     ):
         if snippet not in required_profile_options:
             errors.append(f"Windows XP security baseline missing required profile option: {snippet}")
+    errors.extend(check_platform_target_security_boundary(platform_targets, baseline))
 
     launcher = read("src/remote_ops_workspace/launcher.py")
     for snippet in (
@@ -305,6 +312,61 @@ def check_legacy_security_policy(
         if snippet not in launcher:
             errors.append(f"launcher missing legacy security enforcement snippet: {snippet}")
     errors.extend(check_legacy_launcher_behavior())
+    return errors
+
+
+def check_platform_target_security_boundary(
+    platform_targets: dict[str, Any],
+    baseline: dict[str, Any],
+) -> list[str]:
+    errors: list[str] = []
+    modern = baseline.get("modern_defaults", {})
+    protected_goal = platform_targets.get("protected_readiness_goal", {})
+    if not isinstance(protected_goal, dict):
+        return ["platform_targets protected_readiness_goal must be an object"]
+    security_boundary = protected_goal.get("security_boundary", {})
+    expected_security_boundary = {
+        "legacy_compatibility_profile": "isolated-opt-in",
+        "legacy_crypto_scope": "profile-only",
+        "weak_crypto_global_default": False,
+        "modern_defaults_unchanged": True,
+        "modern_tls_minimum": modern.get("minimum_tls"),
+        "modern_tls_preferred": modern.get("preferred_tls"),
+    }
+    if security_boundary != expected_security_boundary:
+        errors.append(
+            "platform_targets protected_readiness_goal.security_boundary must match "
+            f"{expected_security_boundary}, got {security_boundary}"
+        )
+
+    xp_rows = [
+        item
+        for item in platform_targets.get("windows_legacy_targets", [])
+        if isinstance(item, dict) and item.get("version") == "Windows XP"
+    ]
+    if len(xp_rows) != 1:
+        errors.append(f"platform_targets must define exactly one Windows XP legacy row, got {len(xp_rows)}")
+        return errors
+    xp_row = xp_rows[0]
+    expected_xp_values = {
+        "host_tier": "remote-target-only",
+        "remote_target_tier": "supported",
+        "remote_target_coverage_percent": 100.0,
+        "architectures": ["x86", "x64"],
+        "security_profile": "isolated-legacy-opt-in",
+    }
+    for key, expected in expected_xp_values.items():
+        if xp_row.get(key) != expected:
+            errors.append(f"platform_targets Windows XP {key} must be {expected!r}, got {xp_row.get(key)!r}")
+    required_note_snippets = (
+        "Legacy SSH/RDP crypto is blocked globally",
+        "per-profile legacy_target plus explicit opt-in flags",
+        "Modern native Python/PyQt release artifacts do not target XP.",
+    )
+    notes = "\n".join(str(item) for item in xp_row.get("notes", []))
+    for snippet in required_note_snippets:
+        if snippet not in notes:
+            errors.append(f"platform_targets Windows XP notes must include: {snippet}")
     return errors
 
 
@@ -490,7 +552,7 @@ def load_platform_security_provenance_namespaces() -> dict[str, tuple[str, ...]]
         return {}
     return {
         "security_update_channel": tuple(str(marker) for marker in update_markers),
-        "cve_review_reference": tuple(str(marker) for marker in cve_markers) + ("https://",),
+        "cve_review_reference": tuple(str(marker) for marker in cve_markers),
     }
 
 
@@ -502,7 +564,7 @@ def load_feature_security_provenance_namespaces() -> dict[str, tuple[str, ...]]:
         return {}
     return {
         "security_update_channel": tuple(str(marker) for marker in update_markers),
-        "cve_review_reference": tuple(str(marker) for marker in cve_markers) + ("https://",),
+        "cve_review_reference": tuple(str(marker) for marker in cve_markers),
     }
 
 
@@ -520,7 +582,7 @@ def load_builder_security_provenance_namespaces() -> dict[str, tuple[str, ...]]:
         return {}
     return {
         "security_update_channel": tuple(str(marker) for marker in update_markers),
-        "cve_review_reference": tuple(str(marker) for marker in cve_markers) + ("https://",),
+        "cve_review_reference": tuple(str(marker) for marker in cve_markers),
     }
 
 

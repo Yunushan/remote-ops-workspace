@@ -219,7 +219,11 @@ def check_record_review_bundle_artifacts(
         if not isinstance(raw_record, dict):
             errors.append(f"{target} review_bundle {key} must be an object")
             continue
-        filename = str(raw_record.get("file", ""))
+        raw_filename = raw_record.get("file", "")
+        if not isinstance(raw_filename, str):
+            errors.append(f"{target} review_bundle {key}.file must be a string, got {raw_filename!r}")
+            continue
+        filename = raw_filename
         if not exact_safe_file_name(filename):
             errors.append(
                 f"{target} review_bundle {key}.file must be an exact safe file name: {filename!r}"
@@ -270,6 +274,9 @@ def check_final_record_asset(record: dict[str, Any], bundle_root: Path) -> list[
     target = str(record.get("target", ""))
     filename = accepted_record_source_file(target)
     path = bundle_root / filename
+    parent_errors = check_path_parent_symlinks(path, f"{target} finalized accepted-record asset")
+    if parent_errors:
+        return parent_errors
     if path.is_symlink():
         return [f"{target} finalized accepted-record asset must not be a symlink: {filename}"]
     if not path.is_file():
@@ -322,8 +329,13 @@ def check_file_record(target: str, key: str, path: Path, raw_record: dict[str, A
     expected_size = raw_record.get("size_bytes")
     if not isinstance(expected_size, int) or isinstance(expected_size, bool) or expected_size != path.stat().st_size:
         errors.append(f"{target} review_bundle {key}.size_bytes does not match file {path.name}")
-    expected_sha = str(raw_record.get("sha256", ""))
-    if expected_sha != sha256_file(path):
+    expected_sha = raw_record.get("sha256", "")
+    if not isinstance(expected_sha, str):
+        errors.append(
+            f"{target} review_bundle {key}.sha256 must be a string SHA-256 hex digest, "
+            f"got {expected_sha!r}"
+        )
+    elif expected_sha != sha256_file(path):
         errors.append(f"{target} review_bundle {key}.sha256 does not match file {path.name}")
     return errors
 
@@ -333,7 +345,14 @@ def candidate_record_name(target: str, manifest: dict[str, Any], errors: list[st
     if not isinstance(raw_record, dict):
         errors.append(f"{target} review bundle manifest candidate_record must be an object")
         return ""
-    filename = str(raw_record.get("file", ""))
+    raw_filename = raw_record.get("file", "")
+    if not isinstance(raw_filename, str):
+        errors.append(
+            f"{target} review bundle manifest candidate_record.file must be a string, "
+            f"got {raw_filename!r}"
+        )
+        return ""
+    filename = raw_filename
     if not exact_safe_file_name(filename):
         errors.append(
             f"{target} review bundle manifest candidate_record.file must be an exact safe file name: {filename!r}"
@@ -358,6 +377,9 @@ def read_archive_file(
                 return archive.read(filename)
             except KeyError:
                 errors.append(f"{target} review bundle archive missing candidate_record: {filename}")
+                return None
+            except (RuntimeError, NotImplementedError, OSError, zipfile.BadZipFile) as exc:
+                errors.append(f"{target} review bundle archive candidate_record is not readable: {filename}: {exc}")
                 return None
     except (OSError, zipfile.BadZipFile) as exc:
         errors.append(f"{target} review bundle archive is not a readable ZIP: {archive_path.name}: {exc}")

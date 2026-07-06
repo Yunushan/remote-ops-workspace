@@ -10,6 +10,8 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 
 def test_platform_promotion_artifact_contract_passes_current_tree() -> None:
     checker = _load_platform_promotion_artifacts_checker()
@@ -45,6 +47,19 @@ def test_platform_promotion_artifacts_accept_windows_xp_x64_evidence(tmp_path: P
     )
 
     assert errors == []
+
+
+def test_platform_promotion_artifacts_use_explicit_empty_promotion(tmp_path: Path) -> None:
+    checker = _load_platform_promotion_artifacts_checker()
+
+    errors = checker.check_platform_promotion_artifacts(
+        target="linux-i386",
+        assets_dir=tmp_path,
+        tag=f"v{checker.read_project_version()}",
+        promotion={},
+    )
+
+    assert "configs/platform_parity_promotion.json protected_targets must be a list" in errors
 
 
 def test_platform_promotion_artifacts_reject_checksum_mismatch(tmp_path: Path) -> None:
@@ -422,6 +437,52 @@ def test_platform_promotion_artifacts_reject_boolean_manifest_size_bytes(
     ) in errors
 
 
+def test_platform_promotion_artifacts_reject_malformed_manifest_hash_and_bindings(
+    tmp_path: Path,
+) -> None:
+    checker = _load_platform_promotion_artifacts_checker()
+    payload = tmp_path / "remote-ops-workspace-v1.0.2-linux-i386.deb"
+    payload.write_bytes(b"x")
+    manifest = tmp_path / "remote-ops-workspace-v1.0.2-linux-i386-manifest.json"
+    manifest.write_text(
+        json.dumps(
+            [
+                {
+                    "file": payload.name,
+                    "architecture": True,
+                    "format": False,
+                    "size_bytes": payload.stat().st_size,
+                    "sha256": True,
+                }
+            ],
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    errors = checker.check_native_manifest(
+        "linux-i386",
+        tmp_path,
+        {payload.name, manifest.name},
+    )
+
+    assert (
+        "linux-i386 native manifest record "
+        "remote-ops-workspace-v1.0.2-linux-i386.deb sha256 "
+        "must be a lowercase SHA-256 hex digest"
+    ) in errors
+    assert (
+        "linux-i386 native manifest record "
+        "remote-ops-workspace-v1.0.2-linux-i386.deb architecture must be a string, got True"
+    ) in errors
+    assert (
+        "linux-i386 native manifest record "
+        "remote-ops-workspace-v1.0.2-linux-i386.deb format must be a string, got False"
+    ) in errors
+    assert all("native manifest checksum mismatch" not in error for error in errors)
+
+
 def test_platform_promotion_artifacts_reject_manifest_architecture_drift(tmp_path: Path) -> None:
     checker = _load_platform_promotion_artifacts_checker()
     tag = f"v{checker.read_project_version()}"
@@ -569,6 +630,127 @@ def test_platform_promotion_artifacts_reject_zip_symlink_entry(tmp_path: Path) -
     ) in errors
 
 
+def test_platform_promotion_artifacts_reject_zip_encrypted_entry(tmp_path: Path) -> None:
+    checker = _load_platform_promotion_artifacts_checker()
+    tag = f"v{checker.read_project_version()}"
+    names = _required_names(checker, "windows-xp-native-x64", tag)
+    _write_artifact_set(tmp_path, names)
+    zip_path = next(tmp_path.glob("*.zip"))
+    _write_zip_with_encrypted_entry(zip_path, "payload/proof.txt")
+    _rewrite_manifest_and_sidecar(tmp_path, names)
+
+    errors = checker.check_platform_promotion_artifacts(
+        target="windows-xp-native-x64",
+        assets_dir=tmp_path,
+        tag=tag,
+    )
+
+    assert (
+        f"windows-xp-native-x64 ZIP artifact {zip_path.name} entries must not be encrypted: "
+        "['payload/proof.txt']"
+    ) in errors
+
+
+def test_platform_promotion_artifacts_reject_zip_special_file_entry(tmp_path: Path) -> None:
+    checker = _load_platform_promotion_artifacts_checker()
+    tag = f"v{checker.read_project_version()}"
+    names = _required_names(checker, "windows-xp-native-x86", tag)
+    _write_artifact_set(tmp_path, names)
+    zip_path = next(tmp_path.glob("*.zip"))
+    _write_zip_with_mode_entry(zip_path, "payload/device", 0o020666)
+    _rewrite_manifest_and_sidecar(tmp_path, names)
+
+    errors = checker.check_platform_promotion_artifacts(
+        target="windows-xp-native-x86",
+        assets_dir=tmp_path,
+        tag=tag,
+    )
+
+    assert (
+        f"windows-xp-native-x86 ZIP artifact {zip_path.name} entries must be regular files or directories: "
+        "['payload/device']"
+    ) in errors
+
+
+def test_platform_promotion_artifacts_reject_duplicate_zip_entries(tmp_path: Path) -> None:
+    checker = _load_platform_promotion_artifacts_checker()
+    tag = f"v{checker.read_project_version()}"
+    names = _required_names(checker, "windows-xp-native-x86", tag)
+    _write_artifact_set(tmp_path, names)
+    zip_path = next(tmp_path.glob("*.zip"))
+    with pytest.warns(UserWarning, match="Duplicate name"):
+        _write_zip_with_duplicate_entries(zip_path, "payload/readme.txt")
+    _rewrite_manifest_and_sidecar(tmp_path, names)
+
+    errors = checker.check_platform_promotion_artifacts(
+        target="windows-xp-native-x86",
+        assets_dir=tmp_path,
+        tag=tag,
+    )
+
+    assert (
+        f"windows-xp-native-x86 ZIP artifact {zip_path.name} entries must not contain duplicates: "
+        "['payload/readme.txt']"
+    ) in errors
+
+
+def test_platform_promotion_artifacts_reject_zip_case_collisions(tmp_path: Path) -> None:
+    checker = _load_platform_promotion_artifacts_checker()
+    tag = f"v{checker.read_project_version()}"
+    names = _required_names(checker, "windows-xp-native-x64", tag)
+    _write_artifact_set(tmp_path, names)
+    zip_path = next(tmp_path.glob("*.zip"))
+    _write_zip_with_entries(
+        zip_path,
+        {
+            "payload/readme.txt": b"ok\n",
+            "PAYLOAD/README.TXT": b"other\n",
+        },
+    )
+    _rewrite_manifest_and_sidecar(tmp_path, names)
+
+    errors = checker.check_platform_promotion_artifacts(
+        target="windows-xp-native-x64",
+        assets_dir=tmp_path,
+        tag=tag,
+    )
+
+    assert any(
+        f"windows-xp-native-x64 ZIP artifact {zip_path.name} entries must not collide on "
+        "case-insensitive filesystems" in error
+        and "payload/readme.txt" in error
+        and "PAYLOAD/README.TXT" in error
+        for error in errors
+    )
+
+
+def test_platform_promotion_artifacts_reject_zip_file_prefix_collision(tmp_path: Path) -> None:
+    checker = _load_platform_promotion_artifacts_checker()
+    tag = f"v{checker.read_project_version()}"
+    names = _required_names(checker, "windows-xp-native-x86", tag)
+    _write_artifact_set(tmp_path, names)
+    zip_path = next(tmp_path.glob("*.zip"))
+    _write_zip_with_entries(
+        zip_path,
+        {
+            "payload": b"file\n",
+            "payload/readme.txt": b"nested\n",
+        },
+    )
+    _rewrite_manifest_and_sidecar(tmp_path, names)
+
+    errors = checker.check_platform_promotion_artifacts(
+        target="windows-xp-native-x86",
+        assets_dir=tmp_path,
+        tag=tag,
+    )
+
+    assert (
+        f"windows-xp-native-x86 ZIP artifact {zip_path.name} entries must not contain "
+        "file/path-prefix collisions: ['payload -> payload/readme.txt']"
+    ) in errors
+
+
 def test_platform_promotion_artifacts_reject_tar_symlink_entry(tmp_path: Path) -> None:
     checker = _load_platform_promotion_artifacts_checker()
     tag = f"v{checker.read_project_version()}"
@@ -587,6 +769,90 @@ def test_platform_promotion_artifacts_reject_tar_symlink_entry(tmp_path: Path) -
     assert (
         f"linux-armhf tar.gz artifact {tarball.name} entries must be regular files or directories: "
         "['payload/link.txt']"
+    ) in errors
+
+
+def test_platform_promotion_artifacts_reject_duplicate_tar_entries(tmp_path: Path) -> None:
+    checker = _load_platform_promotion_artifacts_checker()
+    tag = f"v{checker.read_project_version()}"
+    names = _required_names(checker, "linux-i386", tag)
+    _write_artifact_set(tmp_path, names)
+    tarball = next(tmp_path.glob("*.tar.gz"))
+    _write_tar_with_entries(
+        tarball,
+        [
+            ("payload/readme.txt", b"first\n"),
+            ("payload/readme.txt", b"second\n"),
+        ],
+    )
+    _rewrite_manifest_and_sidecar(tmp_path, names)
+
+    errors = checker.check_platform_promotion_artifacts(
+        target="linux-i386",
+        assets_dir=tmp_path,
+        tag=tag,
+    )
+
+    assert (
+        f"linux-i386 tar.gz artifact {tarball.name} entries must not contain duplicates: "
+        "['payload/readme.txt']"
+    ) in errors
+
+
+def test_platform_promotion_artifacts_reject_tar_case_collisions(tmp_path: Path) -> None:
+    checker = _load_platform_promotion_artifacts_checker()
+    tag = f"v{checker.read_project_version()}"
+    names = _required_names(checker, "linux-armhf", tag)
+    _write_artifact_set(tmp_path, names)
+    tarball = next(tmp_path.glob("*.tar.gz"))
+    _write_tar_with_entries(
+        tarball,
+        [
+            ("payload/readme.txt", b"ok\n"),
+            ("PAYLOAD/README.TXT", b"other\n"),
+        ],
+    )
+    _rewrite_manifest_and_sidecar(tmp_path, names)
+
+    errors = checker.check_platform_promotion_artifacts(
+        target="linux-armhf",
+        assets_dir=tmp_path,
+        tag=tag,
+    )
+
+    assert any(
+        f"linux-armhf tar.gz artifact {tarball.name} entries must not collide on "
+        "case-insensitive filesystems" in error
+        and "payload/readme.txt" in error
+        and "PAYLOAD/README.TXT" in error
+        for error in errors
+    )
+
+
+def test_platform_promotion_artifacts_reject_tar_file_prefix_collision(tmp_path: Path) -> None:
+    checker = _load_platform_promotion_artifacts_checker()
+    tag = f"v{checker.read_project_version()}"
+    names = _required_names(checker, "linux-i386", tag)
+    _write_artifact_set(tmp_path, names)
+    tarball = next(tmp_path.glob("*.tar.gz"))
+    _write_tar_with_entries(
+        tarball,
+        [
+            ("payload", b"file\n"),
+            ("payload/readme.txt", b"nested\n"),
+        ],
+    )
+    _rewrite_manifest_and_sidecar(tmp_path, names)
+
+    errors = checker.check_platform_promotion_artifacts(
+        target="linux-i386",
+        assets_dir=tmp_path,
+        tag=tag,
+    )
+
+    assert (
+        f"linux-i386 tar.gz artifact {tarball.name} entries must not contain "
+        "file/path-prefix collisions: ['payload -> payload/readme.txt']"
     ) in errors
 
 
@@ -723,12 +989,56 @@ def _write_zip_with_entries(path: Path, entries: dict[str, bytes]) -> None:
             archive.writestr(name, payload)
 
 
+def _write_zip_with_duplicate_entries(path: Path, entry_name: str) -> None:
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr(entry_name, b"first\n")
+        archive.writestr(entry_name, b"second\n")
+
+
 def _write_zip_with_symlink_entry(path: Path, entry_name: str) -> None:
+    _write_zip_with_mode_entry(path, entry_name, 0o120777)
+
+
+def _write_zip_with_encrypted_entry(path: Path, entry_name: str) -> None:
+    _write_zip_with_mode_entry(path, entry_name, 0o100644)
+    path.write_bytes(_set_zip_entry_flag_bits(path.read_bytes(), entry_name, 0x1))
+
+
+def _write_zip_with_mode_entry(path: Path, entry_name: str, mode: int) -> None:
     with zipfile.ZipFile(path, "w") as archive:
         archive.writestr("payload/readme.txt", b"ok\n")
         info = zipfile.ZipInfo(entry_name)
-        info.external_attr = 0o120777 << 16
+        info.external_attr = mode << 16
         archive.writestr(info, b"target.txt")
+
+
+def _set_zip_entry_flag_bits(raw_bytes: bytes, entry_name: str, flag_bits: int) -> bytes:
+    data = bytearray(raw_bytes)
+    wanted = entry_name.encode("utf-8")
+    index = 0
+    while index < len(data) - 4:
+        signature = bytes(data[index:index + 4])
+        if signature == b"PK\x03\x04":
+            name_length = int.from_bytes(data[index + 26:index + 28], "little")
+            extra_length = int.from_bytes(data[index + 28:index + 30], "little")
+            name_start = index + 30
+            name_end = name_start + name_length
+            if bytes(data[name_start:name_end]) == wanted:
+                data[index + 6:index + 8] = flag_bits.to_bytes(2, "little")
+            index = name_end + extra_length
+            continue
+        if signature == b"PK\x01\x02":
+            name_length = int.from_bytes(data[index + 28:index + 30], "little")
+            extra_length = int.from_bytes(data[index + 30:index + 32], "little")
+            comment_length = int.from_bytes(data[index + 32:index + 34], "little")
+            name_start = index + 46
+            name_end = name_start + name_length
+            if bytes(data[name_start:name_end]) == wanted:
+                data[index + 8:index + 10] = flag_bits.to_bytes(2, "little")
+            index = name_end + extra_length + comment_length
+            continue
+        index += 1
+    return bytes(data)
 
 
 def _write_tar_with_symlink_entry(path: Path, entry_name: str) -> None:
@@ -741,6 +1051,14 @@ def _write_tar_with_symlink_entry(path: Path, entry_name: str) -> None:
         link.type = tarfile.SYMTYPE
         link.linkname = "../target.txt"
         archive.addfile(link)
+
+
+def _write_tar_with_entries(path: Path, entries: list[tuple[str, bytes]]) -> None:
+    with tarfile.open(path, mode="w:gz") as archive:
+        for name, payload in entries:
+            info = tarfile.TarInfo(name=name)
+            info.size = len(payload)
+            archive.addfile(info, io.BytesIO(payload))
 
 
 def _sha256(path: Path) -> str:

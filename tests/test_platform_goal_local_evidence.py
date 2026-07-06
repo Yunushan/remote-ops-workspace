@@ -53,6 +53,38 @@ def test_platform_goal_local_evidence_rejects_file_shaped_root(tmp_path: Path) -
     assert not root.exists()
 
 
+def test_platform_goal_local_evidence_rejects_reserved_workspace_root() -> None:
+    checker = _load_local_evidence_checker()
+    root = Path(".git") / "platform-evidence"
+
+    errors = checker.check_platform_goal_local_evidence(
+        root=root,
+        release_tag="v1.0.2",
+    )
+
+    assert errors == [
+        "local evidence root must not point inside reserved workspace directory "
+        f"'.git': {root}"
+    ]
+
+
+def test_platform_goal_local_evidence_rejects_nested_reserved_workspace_root(
+    tmp_path: Path,
+) -> None:
+    checker = _load_local_evidence_checker()
+    root = tmp_path / ".github" / "platform-evidence"
+
+    errors = checker.check_platform_goal_local_evidence(
+        root=root,
+        release_tag="v1.0.2",
+    )
+
+    assert errors == [
+        "local evidence root must not point inside reserved workspace directory "
+        f"'.github': {root}"
+    ]
+
+
 def test_platform_goal_local_evidence_requires_strict_artifacts_for_full_goal(tmp_path: Path) -> None:
     checker = _load_local_evidence_checker()
 
@@ -548,6 +580,49 @@ def test_platform_goal_local_evidence_accepts_linux_targets_with_inferred_run_bi
     assert errors == []
 
 
+def test_platform_goal_local_evidence_rejects_non_string_inferred_linux_source_bindings(
+    tmp_path: Path,
+) -> None:
+    checker = _load_local_evidence_checker()
+    fixtures = _load_record_fixtures()
+    artifact_checker = fixtures._load_platform_promotion_artifacts_checker()
+    target = "linux-i386"
+    tag = f"v{artifact_checker.read_project_version()}"
+    target_root = tmp_path / target / tag
+    artifacts = target_root / "artifacts"
+    artifacts.mkdir(parents=True)
+    names = fixtures._required_names(artifact_checker, target, tag)
+    fixtures._write_artifact_set(artifacts, names)
+    builder = target_root / f"builder-identity-{target}.json"
+    fixtures._write_builder_evidence(
+        builder,
+        target,
+        release_tag=tag,
+        workflow_run_url="https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        source_head_sha="a" * 40,
+    )
+    builder_data = json.loads(builder.read_text(encoding="utf-8"))
+    builder_data["workflow_run_url"] = True
+    builder_data["source_head_sha"] = 12345
+    builder.write_text(json.dumps(builder_data, indent=2) + "\n", encoding="utf-8")
+    smoke = target_root / f"native-smoke-{target}.log"
+    fixtures._write_linux_smoke_evidence(
+        smoke,
+        target,
+        fixtures._smoke_artifact_hashes(artifacts, names),
+        workflow_run_url="https://github.com/example/remote-ops-workspace/actions/runs/12345",
+    )
+
+    errors = checker.check_platform_goal_local_evidence(
+        root=tmp_path,
+        release_tag=tag,
+        targets=(target,),
+    )
+
+    assert f"{target} builder_identity.workflow_run_url must be a string" in errors
+    assert f"{target} builder_identity.source_head_sha must be a string" in errors
+
+
 def test_platform_goal_local_evidence_rejects_multi_target_explicit_source_binding_options(
     tmp_path: Path,
 ) -> None:
@@ -704,6 +779,68 @@ def test_platform_goal_local_evidence_rejects_linux_source_run_attempt_conflict(
     assert "'linux-armhf': '2'" in joined
 
 
+def test_platform_goal_local_release_source_bindings_ignore_malformed_provenance(
+    tmp_path: Path,
+) -> None:
+    checker = _load_local_evidence_checker()
+    tag = "v1.0.2"
+    linux_root = tmp_path / "linux-i386" / tag
+    linux_root.mkdir(parents=True)
+    (linux_root / "builder-identity-linux-i386.json").write_text(
+        json.dumps(
+            {
+                "workflow_run_url": True,
+                "source_head_sha": 12345,
+                "workflow_run_attempt": "1",
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    xp_root = tmp_path / "windows-xp-native-x86" / tag
+    xp_root.mkdir(parents=True)
+    (xp_root / "xp-evidence.json").write_text(
+        json.dumps(
+            {
+                "release_source": {
+                    "workflow_run_url": 12345,
+                    "head_sha": True,
+                    "run_attempt": "2",
+                }
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    bindings = checker.local_release_source_bindings(
+        root=tmp_path,
+        release_tag=tag,
+        targets=("linux-i386", "windows-xp-native-x86"),
+        linux_workflow_run_url=None,
+        linux_source_head_sha=None,
+        linux_source_run_attempt=None,
+        xp_source_workflow_run_url=None,
+        xp_source_head_sha=None,
+        xp_source_run_attempt=None,
+    )
+
+    assert bindings["linux-i386"] == {
+        "workflow_run_url": "",
+        "repository": "",
+        "head_sha": "",
+        "run_attempt": "",
+    }
+    assert bindings["windows-xp-native-x86"] == {
+        "workflow_run_url": "",
+        "repository": "",
+        "head_sha": "",
+        "run_attempt": "",
+    }
+
+
 def test_platform_goal_local_evidence_rejects_misnamed_linux_proof_inputs(tmp_path: Path) -> None:
     checker = _load_local_evidence_checker()
     fixtures = _load_record_fixtures()
@@ -796,6 +933,63 @@ def test_platform_goal_local_evidence_rejects_invalid_inferred_linux_run_binding
     assert (
         f"{target} builder_identity.source_head_sha must be a 40-character lowercase Git SHA"
     ) in errors
+
+
+def test_platform_goal_local_evidence_rejects_malformed_linux_builder_json(
+    tmp_path: Path,
+) -> None:
+    checker = _load_local_evidence_checker()
+    fixtures = _load_record_fixtures()
+    artifact_checker = fixtures._load_platform_promotion_artifacts_checker()
+    target = "linux-i386"
+    tag = f"v{artifact_checker.read_project_version()}"
+    target_root = tmp_path / target / tag
+    artifacts = target_root / "artifacts"
+    artifacts.mkdir(parents=True)
+    names = fixtures._required_names(artifact_checker, target, tag)
+    fixtures._write_artifact_set(artifacts, names)
+    builder = target_root / f"builder-identity-{target}.json"
+    builder.write_text("{not valid json\n", encoding="utf-8")
+    smoke = target_root / f"native-smoke-{target}.log"
+    smoke.write_text("linux smoke placeholder\n", encoding="utf-8")
+
+    errors = checker.check_platform_goal_local_evidence(
+        root=tmp_path,
+        release_tag=tag,
+        targets=(target,),
+    )
+
+    assert any(
+        f"{target} builder identity evidence is not valid JSON: {builder}" in error
+        for error in errors
+    )
+
+
+def test_platform_goal_local_evidence_rejects_non_object_linux_builder_json(
+    tmp_path: Path,
+) -> None:
+    checker = _load_local_evidence_checker()
+    fixtures = _load_record_fixtures()
+    artifact_checker = fixtures._load_platform_promotion_artifacts_checker()
+    target = "linux-armhf"
+    tag = f"v{artifact_checker.read_project_version()}"
+    target_root = tmp_path / target / tag
+    artifacts = target_root / "artifacts"
+    artifacts.mkdir(parents=True)
+    names = fixtures._required_names(artifact_checker, target, tag)
+    fixtures._write_artifact_set(artifacts, names)
+    builder = target_root / f"builder-identity-{target}.json"
+    builder.write_text("[]\n", encoding="utf-8")
+    smoke = target_root / f"native-smoke-{target}.log"
+    smoke.write_text("linux smoke placeholder\n", encoding="utf-8")
+
+    errors = checker.check_platform_goal_local_evidence(
+        root=tmp_path,
+        release_tag=tag,
+        targets=(target,),
+    )
+
+    assert f"{target} builder identity evidence must contain a JSON object: {builder}" in errors
 
 
 def test_platform_goal_local_evidence_requires_linux_run_bindings(tmp_path: Path) -> None:
@@ -919,6 +1113,81 @@ def test_platform_goal_local_evidence_accepts_xp_x86_staged_proof(tmp_path: Path
     )
 
     assert errors == []
+
+
+def test_platform_goal_local_evidence_rejects_malformed_xp_evidence_json(tmp_path: Path) -> None:
+    checker = _load_local_evidence_checker()
+    fixtures = _load_record_fixtures()
+    artifact_checker = fixtures._load_platform_promotion_artifacts_checker()
+    target = "windows-xp-native-x86"
+    tag = f"v{artifact_checker.read_project_version()}"
+    target_root = tmp_path / target / tag
+    artifacts = target_root / "artifacts"
+    artifacts.mkdir(parents=True)
+    names = fixtures._required_names(artifact_checker, target, tag)
+    fixtures._write_artifact_set(artifacts, names)
+    evidence_file = target_root / "xp-evidence.json"
+    evidence_file.write_text("{not valid json\n", encoding="utf-8")
+
+    errors = checker.check_platform_goal_local_evidence(
+        root=tmp_path,
+        release_tag=tag,
+        targets=(target,),
+    )
+
+    assert any(
+        f"{target} XP evidence is not valid JSON: {evidence_file}" in error
+        for error in errors
+    )
+
+
+def test_platform_goal_local_evidence_read_json_object_rejects_unreadable_file(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    checker = _load_local_evidence_checker()
+    path = tmp_path / "xp-evidence.json"
+    path.write_text("{}", encoding="utf-8")
+    original_read_text = Path.read_text
+
+    def fake_read_text(self: Path, *args, **kwargs):
+        if self == path:
+            raise OSError("locked local evidence")
+        return original_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", fake_read_text)
+
+    data, errors = checker.read_json_object(path, "windows-xp-native-x86 XP evidence")
+
+    assert data == {}
+    assert any(
+        f"windows-xp-native-x86 XP evidence is not readable JSON: {path}: locked local evidence"
+        in error
+        for error in errors
+    )
+
+
+def test_platform_goal_local_evidence_rejects_non_object_xp_evidence_json(tmp_path: Path) -> None:
+    checker = _load_local_evidence_checker()
+    fixtures = _load_record_fixtures()
+    artifact_checker = fixtures._load_platform_promotion_artifacts_checker()
+    target = "windows-xp-native-x64"
+    tag = f"v{artifact_checker.read_project_version()}"
+    target_root = tmp_path / target / tag
+    artifacts = target_root / "artifacts"
+    artifacts.mkdir(parents=True)
+    names = fixtures._required_names(artifact_checker, target, tag)
+    fixtures._write_artifact_set(artifacts, names)
+    evidence_file = target_root / "xp-evidence.json"
+    evidence_file.write_text("[]\n", encoding="utf-8")
+
+    errors = checker.check_platform_goal_local_evidence(
+        root=tmp_path,
+        release_tag=tag,
+        targets=(target,),
+    )
+
+    assert f"{target} XP evidence must contain a JSON object: {evidence_file}" in errors
 
 
 def test_platform_goal_local_evidence_accepts_xp_targets_with_inferred_source_bindings(
@@ -1147,6 +1416,46 @@ def test_platform_goal_local_evidence_rejects_invalid_inferred_xp_source_binding
 
     assert f"{target} XP evidence release_source.workflow_run_url must be a GitHub Actions run URL" in errors
     assert f"{target} XP evidence release_source.head_sha must be a 40-character lowercase Git SHA" in errors
+    assert f"{target} XP evidence release_source.run_attempt must be a positive integer" in errors
+
+
+def test_platform_goal_local_evidence_rejects_non_string_xp_release_source_fields(
+    tmp_path: Path,
+) -> None:
+    checker = _load_local_evidence_checker()
+    fixtures = _load_record_fixtures()
+    artifact_checker = fixtures._load_platform_promotion_artifacts_checker()
+    target = "windows-xp-native-x64"
+    tag = f"v{artifact_checker.read_project_version()}"
+    target_root = tmp_path / target / tag
+    artifacts = target_root / "artifacts"
+    artifacts.mkdir(parents=True)
+    names = fixtures._required_names(artifact_checker, target, tag)
+    fixtures._write_artifact_set(artifacts, names)
+    evidence = fixtures._valid_xp_evidence(target, "x64", "SP2", tag, names)
+    evidence["artifact_validation"]["command"] = evidence["artifact_validation"]["command"].replace(
+        f"native-dist/windows-xp/{target}/{tag}",
+        f"{target}/{tag}/artifacts",
+    )
+    fixtures._attach_smoke_evidence_files(target_root, evidence)
+    evidence["release_source"]["workflow"] = True
+    evidence["release_source"]["workflow_run_url"] = 12345
+    evidence["release_source"]["head_sha"] = False
+    evidence["release_source"]["run_attempt"] = "1"
+    (target_root / "xp-evidence.json").write_text(
+        json.dumps(evidence, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    errors = checker.check_platform_goal_local_evidence(
+        root=tmp_path,
+        release_tag=tag,
+        targets=(target,),
+    )
+
+    assert f"{target} XP evidence release_source.workflow must be a string" in errors
+    assert f"{target} XP evidence release_source.workflow_run_url must be a string" in errors
+    assert f"{target} XP evidence release_source.head_sha must be a string" in errors
     assert f"{target} XP evidence release_source.run_attempt must be a positive integer" in errors
 
 

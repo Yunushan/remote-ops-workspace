@@ -12,6 +12,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "scripts"
@@ -67,6 +68,9 @@ FORBIDDEN_SECURITY_PROVENANCE_MARKERS = (
     "test-",
     "todo",
 )
+SECURITY_PROVENANCE_URL_RE = re.compile(r"https?://[^\s\"'<>]+", re.IGNORECASE)
+RESERVED_SECURITY_PROVENANCE_URL_HOSTS = {"example.com", "example.org", "example.net"}
+RESERVED_SECURITY_PROVENANCE_URL_SUFFIXES = (".example", ".invalid", ".test")
 SECURITY_UPDATE_PROVENANCE_MARKERS = (
     "security-update",
     "security-updates",
@@ -206,7 +210,7 @@ def check_builder_identity_context(
         errors.append(f"{target} builder identity --workflow-run-url must be a GitHub Actions run URL")
     if workflow_run_attempt is None:
         errors.append(f"{target} builder identity output requires --workflow-run-attempt")
-    elif workflow_run_attempt < 1:
+    elif not is_positive_int(workflow_run_attempt):
         errors.append(f"{target} builder identity --workflow-run-attempt must be a positive integer")
     if not source_head_sha:
         errors.append(f"{target} builder identity output requires --source-head-sha")
@@ -235,6 +239,10 @@ def check_builder_identity_context(
             )
         )
     return errors
+
+
+def is_positive_int(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
 
 
 def check_github_actions_context(
@@ -459,8 +467,11 @@ def check_security_patch_evidence(target: str) -> list[str]:
         "cve_review_reference": "CVE review reference",
     }
     for key in REQUIRED_SECURITY_PATCH_PROVENANCE_FIELDS:
-        value = str(evidence.get(key, ""))
         label = provenance_labels[key]
+        value = evidence.get(key, "")
+        if not isinstance(value, str):
+            errors.append(f"{target} builder {label} evidence must be a string")
+            continue
         if not value.strip():
             errors.append(f"{target} builder {label} evidence must be set")
         elif not is_concrete_security_provenance(value, key):
@@ -470,15 +481,34 @@ def check_security_patch_evidence(target: str) -> list[str]:
 
 def is_concrete_security_provenance(value: str, field: str = "") -> bool:
     lowered = value.strip().lower()
-    if not lowered or any(marker in lowered for marker in FORBIDDEN_SECURITY_PROVENANCE_MARKERS):
+    if (
+        not lowered
+        or any(marker in lowered for marker in FORBIDDEN_SECURITY_PROVENANCE_MARKERS)
+        or has_reserved_security_provenance_url(value)
+    ):
         return False
     if field == "security_update_channel":
         return any(marker in lowered for marker in SECURITY_UPDATE_PROVENANCE_MARKERS)
     if field == "cve_review_reference":
-        return any(marker in lowered for marker in CVE_REVIEW_PROVENANCE_MARKERS) or lowered.startswith(
-            "https://"
-        )
+        return any(marker in lowered for marker in CVE_REVIEW_PROVENANCE_MARKERS)
     return True
+
+
+def has_reserved_security_provenance_url(value: str) -> bool:
+    for match in SECURITY_PROVENANCE_URL_RE.finditer(value):
+        raw_url = match.group(0).rstrip(".,);]}")
+        try:
+            parsed = urlsplit(raw_url)
+        except ValueError:
+            return True
+        host = (parsed.hostname or "").casefold().rstrip(".")
+        if parsed.scheme.casefold() != "https":
+            return True
+        if host in RESERVED_SECURITY_PROVENANCE_URL_HOSTS:
+            return True
+        if any(host.endswith(suffix) for suffix in RESERVED_SECURITY_PROVENANCE_URL_SUFFIXES):
+            return True
+    return False
 
 
 def security_patch_evidence() -> dict[str, Any]:

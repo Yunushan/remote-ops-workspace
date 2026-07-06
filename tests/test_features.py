@@ -1062,6 +1062,51 @@ def test_platform_verified_readiness_ignores_missing_review_bundle_release_asset
     assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
 
 
+def test_platform_verified_readiness_ignores_extra_review_bundle_metadata() -> None:
+    record = _linux_accepted_evidence("linux-i386")
+    record["review_bundle"]["notes"] = "manual copy"
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry=_accepted_evidence_registry(record),
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["linux-i386"]["current_percent"] == 70.0
+    assert rows["linux-i386"]["status"] == "manual-script-supported"
+    assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
+
+
+def test_platform_verified_readiness_ignores_extra_review_bundle_file_metadata() -> None:
+    record = _linux_accepted_evidence("linux-armhf")
+    record["review_bundle"]["manifest"]["path"] = "review/manifest.json"
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry=_accepted_evidence_registry(record),
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["linux-armhf"]["current_percent"] == 70.0
+    assert rows["linux-armhf"]["status"] == "manual-script-supported"
+    assert rows["linux-armhf"]["accepted_evidence_missing_targets"] == ["linux-armhf"]
+
+
+def test_platform_verified_readiness_ignores_extra_xp_review_bundle_file_metadata() -> None:
+    record = _xp_accepted_evidence("windows-xp-native-x86")
+    record["review_bundle"]["archive"]["path"] = "review/archive.zip"
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry=_accepted_evidence_registry(record),
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["Windows XP"]["current_percent"] == 25.0
+    assert rows["Windows XP"]["status"] == "remote-target-only"
+    assert rows["Windows XP"]["accepted_evidence_present_targets"] == []
+
+
 def test_platform_verified_readiness_ignores_nested_review_bundle_release_asset_url() -> None:
     record = _linux_accepted_evidence("linux-armhf")
     record["review_bundle"]["release_asset_urls"][0] = str(
@@ -1974,6 +2019,49 @@ def test_platform_verified_readiness_ignores_vague_linux_security_patch_provenan
     assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
 
 
+def test_platform_verified_readiness_ignores_reserved_https_linux_security_patch_provenance() -> None:
+    record = _linux_accepted_evidence("linux-i386")
+    record["builder_identity"]["security_patch_evidence"][
+        "security_update_channel"
+    ] = "https://example.com/security-updates/linux-i386"
+    record["builder_identity"]["security_patch_evidence"][
+        "cve_review_reference"
+    ] = "https://example.com/security-advisory/CVE-2026-0001"
+    record["builder_identity_sha256"] = _json_sha256(record["builder_identity"])
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry=_accepted_evidence_registry(record),
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["linux-i386"]["current_percent"] == 70.0
+    assert rows["linux-i386"]["status"] == "manual-script-supported"
+    assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
+
+
+def test_platform_verified_readiness_ignores_generic_https_linux_security_patch_cve_reference() -> None:
+    record = _linux_accepted_evidence("linux-i386")
+    cve_review_reference = "https://security.vendor.com/releases/2026-07"
+    record["builder_identity"]["security_patch_evidence"]["cve_review_reference"] = cve_review_reference
+    summary = record["linux_smoke_summary"]
+    assert isinstance(summary, dict)
+    security = summary["security"]
+    assert isinstance(security, dict)
+    security["cve_review_reference"] = cve_review_reference
+    record["builder_identity_sha256"] = _json_sha256(record["builder_identity"])
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry=_accepted_evidence_registry(record),
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["linux-i386"]["current_percent"] == 70.0
+    assert rows["linux-i386"]["status"] == "manual-script-supported"
+    assert rows["linux-i386"]["accepted_evidence_missing_targets"] == ["linux-i386"]
+
+
 def test_platform_verified_readiness_ignores_weak_linux_tool_path() -> None:
     record = _linux_accepted_evidence("linux-i386")
     record["builder_identity"]["required_tools"]["bash"] = "bash"
@@ -2652,6 +2740,43 @@ def test_platform_verified_readiness_ignores_vague_xp_security_patch_summary() -
     record = _xp_accepted_evidence("windows-xp-native-x86")
     record["xp_evidence_summary"]["security"]["patch_evidence"]["security_update_channel"] = "monthly maintenance baseline"
     record["xp_evidence_summary"]["security"]["patch_evidence"]["cve_review_reference"] = "internal review 2026 06"
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry=_accepted_evidence_registry(record),
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["Windows XP"]["current_percent"] == 25.0
+    assert rows["Windows XP"]["status"] == "remote-target-only"
+    assert rows["Windows XP"]["accepted_evidence_present_targets"] == []
+
+
+def test_platform_verified_readiness_ignores_reserved_https_xp_security_patch_summary() -> None:
+    record = _xp_accepted_evidence("windows-xp-native-x86")
+    record["xp_evidence_summary"]["security"]["patch_evidence"][
+        "security_update_channel"
+    ] = "https://example.com/security-updates/windows-xp"
+    record["xp_evidence_summary"]["security"]["patch_evidence"][
+        "cve_review_reference"
+    ] = "https://example.com/security-advisory/CVE-2026-0001"
+
+    report = _platform_verified_readiness(
+        platform_data=_extended_platform_manifest(),
+        evidence_registry=_accepted_evidence_registry(record),
+    )
+
+    rows = {row["target"]: row for row in report["targets"]}
+    assert rows["Windows XP"]["current_percent"] == 25.0
+    assert rows["Windows XP"]["status"] == "remote-target-only"
+    assert rows["Windows XP"]["accepted_evidence_present_targets"] == []
+
+
+def test_platform_verified_readiness_ignores_generic_https_xp_security_patch_cve_reference() -> None:
+    record = _xp_accepted_evidence("windows-xp-native-x86")
+    record["xp_evidence_summary"]["security"]["patch_evidence"][
+        "cve_review_reference"
+    ] = "https://security.vendor.com/releases/2026-07"
 
     report = _platform_verified_readiness(
         platform_data=_extended_platform_manifest(),

@@ -22,6 +22,23 @@ def test_builder_identity_context_accepts_release_run_and_source_sha(monkeypatch
     assert errors == []
 
 
+def test_builder_identity_context_rejects_boolean_workflow_run_attempt(monkeypatch) -> None:
+    builder = _load_builder()
+    _clear_github_env(monkeypatch)
+    monkeypatch.setattr(builder, "git_head_sha", lambda: "a" * 40)
+    monkeypatch.setattr(builder, "git_status_porcelain", lambda: "")
+
+    errors = builder.check_builder_identity_context(
+        "linux-i386",
+        "v1.0.2",
+        "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        True,
+        "a" * 40,
+    )
+
+    assert "linux-i386 builder identity --workflow-run-attempt must be a positive integer" in errors
+
+
 def test_builder_identity_context_accepts_github_workflow_provenance(monkeypatch) -> None:
     builder = _load_builder()
     monkeypatch.setenv("GITHUB_ACTIONS", "true")
@@ -261,6 +278,49 @@ def test_builder_security_patch_evidence_rejects_vague_provenance(monkeypatch) -
         in errors
     )
     assert "linux-armhf builder CVE review reference evidence must name concrete non-placeholder provenance" in errors
+
+
+def test_builder_security_patch_evidence_rejects_non_string_provenance(monkeypatch) -> None:
+    builder = _load_builder()
+    evidence = builder.security_patch_evidence()
+    evidence["security_update_channel"] = True
+    evidence["cve_review_reference"] = ["vendor-cve-advisory-review-2026-07"]
+    monkeypatch.setattr(builder, "security_patch_evidence", lambda: evidence)
+
+    errors = builder.check_security_patch_evidence("linux-i386")
+
+    assert "linux-i386 builder security update channel evidence must be a string" in errors
+    assert "linux-i386 builder CVE review reference evidence must be a string" in errors
+    assert not any("True" in error for error in errors)
+    assert not any("['vendor-cve-advisory-review-2026-07']" in error for error in errors)
+
+
+def test_builder_security_patch_evidence_rejects_reserved_https_provenance(monkeypatch) -> None:
+    builder = _load_builder()
+    evidence = builder.security_patch_evidence()
+    evidence["security_update_channel"] = "https://example.com/security-updates/linux-i386"
+    evidence["cve_review_reference"] = "https://example.com/security-advisory/CVE-2026-0001"
+    monkeypatch.setattr(builder, "security_patch_evidence", lambda: evidence)
+
+    errors = builder.check_security_patch_evidence("linux-i386")
+
+    assert (
+        "linux-i386 builder security update channel evidence must name concrete non-placeholder provenance"
+        in errors
+    )
+    assert "linux-i386 builder CVE review reference evidence must name concrete non-placeholder provenance" in errors
+
+
+def test_builder_security_patch_evidence_rejects_generic_https_cve_reference(monkeypatch) -> None:
+    builder = _load_builder()
+    evidence = builder.security_patch_evidence()
+    evidence["security_update_channel"] = "vendor-security-updates-2026-07"
+    evidence["cve_review_reference"] = "https://security.vendor.com/releases/2026-07"
+    monkeypatch.setattr(builder, "security_patch_evidence", lambda: evidence)
+
+    errors = builder.check_security_patch_evidence("linux-i386")
+
+    assert "linux-i386 builder CVE review reference evidence must name concrete non-placeholder provenance" in errors
 
 
 def test_builder_security_patch_evidence_accepts_update_and_advisory_namespaces(monkeypatch) -> None:

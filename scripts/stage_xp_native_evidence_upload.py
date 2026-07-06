@@ -32,6 +32,8 @@ from check_platform_verified_evidence import (  # noqa: E402
     review_bundle_expected_files,
 )
 
+SHA256_HEX_CHARS = set("0123456789abcdef")
+
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
@@ -170,10 +172,12 @@ def stage_xp_native_evidence_upload(
                 label="XP native asset directory",
             )
         )
-        allowed_workspace_files = review_bundle_workspace_files(
+        allowed_workspace_files, manifest_errors = review_bundle_workspace_files_with_errors(
+            target,
             final_record,
             bundle_dir=evidence_output_dir,
         )
+        errors.extend(manifest_errors)
         errors.extend(
             check_source_directory_entries(
                 target,
@@ -211,6 +215,11 @@ def stage_xp_native_evidence_upload(
 
 
 def check_final_record(target: str, release_tag: str, final_record: Path) -> tuple[list[str], dict[str, Any] | None]:
+    if final_record.is_symlink():
+        return [f"{target} finalized accepted record must not be a symlink: {final_record.name}"], None
+    parent_errors = check_path_parent_symlinks(final_record, f"{target} finalized accepted record")
+    if parent_errors:
+        return parent_errors, None
     try:
         raw_bytes = final_record.read_bytes()
         record = json.loads(raw_bytes.decode("utf-8"))
@@ -242,8 +251,19 @@ def check_source_hashes(target: str, record: dict[str, Any], sources: dict[str, 
             ),
             key=lambda item: item[0],
         ):
+            if not lowercase_sha256_hex(expected_sha):
+                errors.append(
+                    f"{target} staged upload artifact_sha256.{filename} "
+                    "must be a lowercase SHA-256 hex digest"
+                )
+                continue
             path = sources.get(filename)
-            if path is not None and path.is_file() and sha256_file(path) != str(expected_sha):
+            if path is None:
+                continue
+            if path.is_symlink():
+                errors.append(f"{target} staged upload native artifact must not be a symlink: {filename}")
+                continue
+            if path.is_file() and sha256_file(path) != expected_sha:
                 errors.append(f"{target} staged upload native artifact SHA-256 mismatch: {filename}")
         unsafe_artifacts = sorted(
             {
@@ -256,19 +276,60 @@ def check_source_hashes(target: str, record: dict[str, Any], sources: dict[str, 
             errors.append(f"{target} staged upload artifact_sha256 keys must be exact safe file names: {unsafe_artifacts}")
     review_bundle = record.get("review_bundle")
     if isinstance(review_bundle, dict):
+        review_bundle_files: list[str] = []
         for key in ("manifest", "archive", "sha256s"):
             raw_record = review_bundle.get(key)
             if not isinstance(raw_record, dict):
                 continue
-            filename = str(raw_record.get("file", ""))
+            raw_filename = raw_record.get("file", "")
+            if not isinstance(raw_filename, str) or not exact_safe_file_name(raw_filename):
+                errors.append(
+                    f"{target} staged upload review_bundle {key}.file "
+                    f"must be an exact safe file name, got {raw_filename!r}"
+                )
+                continue
+            filename = raw_filename
+            review_bundle_files.append(filename)
             path = sources.get(filename)
-            if path is None or not path.is_file():
+            if path is None:
+                continue
+            if path.is_symlink():
+                errors.append(f"{target} staged upload review_bundle {key} must not be a symlink: {filename}")
+                continue
+            if not path.is_file():
                 continue
             expected_size = raw_record.get("size_bytes")
             if not isinstance(expected_size, int) or isinstance(expected_size, bool) or expected_size != path.stat().st_size:
                 errors.append(f"{target} staged upload review_bundle {key}.size_bytes mismatch: {filename}")
-            if str(raw_record.get("sha256", "")) != sha256_file(path):
+            expected_sha256 = raw_record.get("sha256", "")
+            if not lowercase_sha256_hex(expected_sha256):
+                errors.append(
+                    f"{target} staged upload review_bundle {key}.sha256 "
+                    f"must be a lowercase SHA-256 hex digest: {filename}"
+                )
+            elif expected_sha256 != sha256_file(path):
                 errors.append(f"{target} staged upload review_bundle {key}.sha256 mismatch: {filename}")
+        duplicate_files = sorted(
+            {filename for filename in review_bundle_files if review_bundle_files.count(filename) > 1}
+        )
+        if duplicate_files:
+            errors.append(f"{target} staged upload review_bundle files must not contain duplicates: {duplicate_files}")
+        case_groups: dict[str, set[str]] = {}
+        for filename in review_bundle_files:
+            case_groups.setdefault(filename.casefold(), set()).add(filename)
+        case_collisions = sorted(
+            {
+                filename
+                for group in case_groups.values()
+                if len(group) > 1
+                for filename in group
+            }
+        )
+        if case_collisions:
+            errors.append(
+                f"{target} staged upload review_bundle files must not collide on "
+                f"case-insensitive filesystems: {case_collisions}"
+            )
     return errors
 
 
@@ -413,9 +474,27 @@ def check_source_directory_entries(
 
 
 def review_bundle_workspace_files(record: dict[str, Any], *, bundle_dir: Path) -> set[str]:
-    manifest = read_review_bundle_manifest(record, bundle_dir=bundle_dir)
-    if not manifest:
-        return set()
+    files, _ = review_bundle_workspace_files_with_errors(
+        "platform",
+        record,
+        bundle_dir=bundle_dir,
+    )
+    return files
+
+
+def review_bundle_workspace_files_with_errors(
+    target: str,
+    record: dict[str, Any],
+    *,
+    bundle_dir: Path,
+) -> tuple[set[str], list[str]]:
+    manifest, errors = read_review_bundle_manifest_with_errors(
+        target,
+        record,
+        bundle_dir=bundle_dir,
+    )
+    if manifest is None:
+        return set(), errors
     files: set[str] = set()
     for raw_record in review_bundle_manifest_file_records(manifest):
         if not isinstance(raw_record, dict):
@@ -423,25 +502,51 @@ def review_bundle_workspace_files(record: dict[str, Any], *, bundle_dir: Path) -
         filename = str(raw_record.get("file", ""))
         if safe_relative_path(filename):
             files.add(filename)
-    return files
+    return files, errors
 
 
 def read_review_bundle_manifest(record: dict[str, Any], *, bundle_dir: Path) -> dict[str, Any] | None:
+    manifest, _ = read_review_bundle_manifest_with_errors(
+        "platform",
+        record,
+        bundle_dir=bundle_dir,
+    )
+    return manifest
+
+
+def read_review_bundle_manifest_with_errors(
+    target: str,
+    record: dict[str, Any],
+    *,
+    bundle_dir: Path,
+) -> tuple[dict[str, Any] | None, list[str]]:
     review_bundle = record.get("review_bundle")
     if not isinstance(review_bundle, dict):
-        return None
+        return None, []
     manifest_record = review_bundle.get("manifest")
     if not isinstance(manifest_record, dict):
-        return None
-    filename = str(manifest_record.get("file", ""))
-    if not safe_relative_path(filename):
-        return None
+        return None, []
+    raw_filename = manifest_record.get("file", "")
+    if not isinstance(raw_filename, str) or not exact_safe_file_name(raw_filename):
+        return None, [
+            f"{target} staged upload review_bundle manifest.file "
+            f"must be an exact safe file name, got {raw_filename!r}"
+        ]
+    filename = raw_filename
     manifest_path = bundle_dir / filename
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-        return None
-    return manifest if isinstance(manifest, dict) else None
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return None, [
+            f"{target} staged upload review_bundle manifest is not readable JSON: "
+            f"{filename}: {exc}"
+        ]
+    if not isinstance(manifest, dict):
+        return None, [
+            f"{target} staged upload review_bundle manifest must be a JSON object: "
+            f"{filename}"
+        ]
+    return manifest, []
 
 
 def review_bundle_manifest_file_records(manifest: dict[str, Any]) -> list[Any]:
@@ -646,6 +751,10 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def lowercase_sha256_hex(value: Any) -> bool:
+    return isinstance(value, str) and len(value) == 64 and set(value) <= SHA256_HEX_CHARS
 
 
 def finalized_record_registry(record: dict[str, Any]) -> dict[str, Any]:

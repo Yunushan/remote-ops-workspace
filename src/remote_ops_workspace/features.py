@@ -432,6 +432,9 @@ FORBIDDEN_SECURITY_PROVENANCE_MARKERS = (
     "test-",
     "todo",
 )
+SECURITY_PROVENANCE_URL_RE = re.compile(r"https?://[^\s\"'<>]+", re.IGNORECASE)
+RESERVED_SECURITY_PROVENANCE_URL_HOSTS = {"example.com", "example.org", "example.net"}
+RESERVED_SECURITY_PROVENANCE_URL_SUFFIXES = (".example", ".invalid", ".test")
 SECURITY_UPDATE_PROVENANCE_MARKERS = (
     "security-update",
     "security-updates",
@@ -472,6 +475,14 @@ ACCEPTED_EVIDENCE_REVIEW_BUNDLE_TYPES = {
     "windows-xp-native-x86": "windows-xp-native-host-evidence",
     "windows-xp-native-x64": "windows-xp-native-host-evidence",
 }
+ACCEPTED_EVIDENCE_REVIEW_BUNDLE_KEYS = {
+    "archive",
+    "bundle_type",
+    "manifest",
+    "release_asset_urls",
+    "sha256s",
+}
+ACCEPTED_EVIDENCE_REVIEW_BUNDLE_RECORD_KEYS = {"file", "sha256", "size_bytes"}
 PROTECTED_PLATFORM_GOAL_TARGETS = (
     "linux-i386",
     "linux-armhf",
@@ -2197,6 +2208,8 @@ def _has_review_bundle_binding(item: dict[str, Any], target: str) -> bool:
     raw_bundle = item.get("review_bundle")
     if not isinstance(raw_bundle, dict):
         return False
+    if set(str(key) for key in raw_bundle) != ACCEPTED_EVIDENCE_REVIEW_BUNDLE_KEYS:
+        return False
     if raw_bundle.get("bundle_type") != ACCEPTED_EVIDENCE_REVIEW_BUNDLE_TYPES.get(target):
         return False
     stem = _review_bundle_stem(target, release_tag)
@@ -2206,6 +2219,8 @@ def _has_review_bundle_binding(item: dict[str, Any], target: str) -> bool:
     for key, expected_file in expected_files.items():
         raw_record = raw_bundle.get(key)
         if not isinstance(raw_record, dict):
+            return False
+        if set(str(record_key) for record_key in raw_record) != ACCEPTED_EVIDENCE_REVIEW_BUNDLE_RECORD_KEYS:
             return False
         if raw_record.get("file") != expected_file:
             return False
@@ -3176,15 +3191,34 @@ def _has_xp_security_patch_evidence(raw_evidence: Any) -> bool:
 def _is_concrete_security_provenance(value: str, field: str = "") -> bool:
     stripped = value.strip()
     lowered = stripped.lower()
-    if not stripped or any(marker in lowered for marker in FORBIDDEN_SECURITY_PROVENANCE_MARKERS):
+    if (
+        not stripped
+        or any(marker in lowered for marker in FORBIDDEN_SECURITY_PROVENANCE_MARKERS)
+        or _has_reserved_security_provenance_url(stripped)
+    ):
         return False
     if field == "security_update_channel":
         return any(marker in lowered for marker in SECURITY_UPDATE_PROVENANCE_MARKERS)
     if field == "cve_review_reference":
-        return any(marker in lowered for marker in CVE_REVIEW_PROVENANCE_MARKERS) or lowered.startswith(
-            "https://"
-        )
+        return any(marker in lowered for marker in CVE_REVIEW_PROVENANCE_MARKERS)
     return True
+
+
+def _has_reserved_security_provenance_url(value: str) -> bool:
+    for match in SECURITY_PROVENANCE_URL_RE.finditer(value):
+        raw_url = match.group(0).rstrip(".,);]}")
+        try:
+            parsed = urlsplit(raw_url)
+        except ValueError:
+            return True
+        host = (parsed.hostname or "").casefold().rstrip(".")
+        if parsed.scheme.casefold() != "https":
+            return True
+        if host in RESERVED_SECURITY_PROVENANCE_URL_HOSTS:
+            return True
+        if any(host.endswith(suffix) for suffix in RESERVED_SECURITY_PROVENANCE_URL_SUFFIXES):
+            return True
+    return False
 
 
 def _has_linux_security_patch_evidence(raw_evidence: Any) -> bool:

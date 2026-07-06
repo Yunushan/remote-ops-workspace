@@ -355,10 +355,10 @@ def check_platform_support_truth(
     report: dict[str, Any] | None = None,
     docs: dict[str, str] | None = None,
 ) -> list[str]:
-    platform_data = platform_targets or read_json(PLATFORM_TARGETS_PATH)
-    matrix = release_matrix or read_json(RELEASE_MATRIX_PATH)
-    coverage = report or coverage_report()
-    doc_text = docs or read_docs(REQUIRED_DOC_SNIPPETS)
+    platform_data = read_json(PLATFORM_TARGETS_PATH) if platform_targets is None else platform_targets
+    matrix = read_json(RELEASE_MATRIX_PATH) if release_matrix is None else release_matrix
+    coverage = coverage_report() if report is None else report
+    doc_text = read_docs(REQUIRED_DOC_SNIPPETS) if docs is None else docs
 
     errors: list[str] = []
     errors.extend(check_platform_catalog(platform_data))

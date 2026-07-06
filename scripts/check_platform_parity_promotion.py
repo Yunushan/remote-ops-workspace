@@ -208,12 +208,12 @@ def check_platform_parity_promotion(
     report: dict[str, Any] | None = None,
     docs: dict[str, str] | None = None,
 ) -> list[str]:
-    promotion_data = promotion or read_json(PROMOTION_PATH)
-    platform_data = platform_targets or read_json(PLATFORM_TARGETS_PATH)
-    matrix = release_matrix or read_json(RELEASE_MATRIX_PATH)
+    promotion_data = read_json(PROMOTION_PATH) if promotion is None else promotion
+    platform_data = read_json(PLATFORM_TARGETS_PATH) if platform_targets is None else platform_targets
+    matrix = read_json(RELEASE_MATRIX_PATH) if release_matrix is None else release_matrix
     workflow_text = workflow if workflow is not None else RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8")
-    coverage = report or coverage_report()
-    doc_text = docs or read_docs(REQUIRED_DOC_SNIPPETS)
+    coverage = coverage_report() if report is None else report
+    doc_text = read_docs(REQUIRED_DOC_SNIPPETS) if docs is None else docs
 
     errors: list[str] = []
     errors.extend(check_schema(promotion_data))

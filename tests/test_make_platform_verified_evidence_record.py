@@ -640,6 +640,68 @@ def test_make_platform_verified_evidence_record_rejects_xp_evidence_release_sour
     ) in errors
 
 
+def test_make_platform_verified_evidence_record_rejects_malformed_xp_release_source_fields(
+    tmp_path: Path,
+) -> None:
+    maker = _load_maker()
+    target = "windows-xp-native-x86"
+    tag = "v1.0.2"
+    evidence = tmp_path / "xp-evidence.json"
+    data = _valid_xp_evidence(target, "x86", "SP3", tag, [])
+    data["release_source"] = {
+        "workflow": True,
+        "workflow_run_url": False,
+        "head_sha": ["a" * 40],
+        "run_attempt": True,
+    }
+    evidence.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+    args = maker.argparse.Namespace(
+        xp_evidence=evidence,
+        target=target,
+        release_tag=tag,
+        assets_dir=Path(f"native-dist/windows-xp/{target}/{tag}"),
+        release_source_workflow_run_url=(
+            "https://github.com/example/remote-ops-workspace/actions/runs/54321"
+        ),
+        release_source_head_sha="a" * 40,
+        release_source_run_attempt=1,
+    )
+
+    errors = maker.check_xp_evidence_record_binding(args)
+
+    assert f"{target} XP evidence release_source.workflow must be a string" in errors
+    assert f"{target} XP evidence release_source.workflow_run_url must be a string" in errors
+    assert f"{target} XP evidence release_source.head_sha must be a string" in errors
+    assert (
+        f"{target} XP evidence release_source.run_attempt must be a positive integer"
+    ) in errors
+
+
+def test_make_platform_verified_evidence_record_ignores_malformed_xp_summary_hash_fields() -> None:
+    maker = _load_maker()
+    evidence = {
+        "release_source": {
+            "workflow": True,
+            "workflow_run_url": False,
+            "head_sha": ["a" * 40],
+            "run_attempt": True,
+        },
+        "smoke_results": [
+            {"id": "cli_launch", "evidence_sha256": True},
+            {"id": False, "evidence_sha256": "a" * 64},
+        ],
+    }
+
+    assert maker.xp_release_source_summary(evidence["release_source"]) == {
+        "workflow": "",
+        "workflow_run_url": "",
+        "head_sha": "",
+        "run_attempt": None,
+    }
+    assert maker.xp_smoke_evidence_sha256_map(evidence) == {}
+
+
 def test_make_platform_verified_evidence_record_rejects_file_shaped_xp_evidence_directory(
     tmp_path: Path,
     monkeypatch,
@@ -1221,6 +1283,45 @@ def test_make_platform_verified_evidence_record_rejects_malformed_linux_workflow
 
     assert "--workflow-run-url must be a GitHub Actions run URL" in errors
     assert "--release-source-workflow-run-url must be a GitHub Actions run URL" in errors
+
+
+def test_make_platform_verified_evidence_record_rejects_empty_linux_release_source_inputs(
+    tmp_path: Path,
+) -> None:
+    maker = _load_maker()
+    artifact_checker = _load_platform_promotion_artifacts_checker()
+    target = "linux-i386"
+    tag = f"v{artifact_checker.read_project_version()}"
+    args = maker.parse_args(
+        [
+            "--target",
+            target,
+            "--release-tag",
+            tag,
+            "--assets-dir",
+            str(tmp_path / target / tag / "artifacts"),
+            "--release-asset-base-url",
+            f"https://github.com/example/remote-ops-workspace/releases/download/{tag}",
+            "--workflow-run-url",
+            "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+            "--release-source-workflow-run-url",
+            "",
+            "--release-source-artifact-name",
+            "",
+            "--release-source-head-sha",
+            "a" * 40,
+            "--release-source-run-attempt",
+            "1",
+        ]
+    )
+
+    errors = maker.validate_linux_args(args)
+
+    assert "--release-source-workflow-run-url must be a GitHub Actions run URL" in errors
+    assert (
+        f"--release-source-artifact-name must be extended-linux-evidence-{target}-{tag} "
+        f"for {target} Linux evidence"
+    ) in errors
 
 
 def test_make_platform_verified_evidence_record_rejects_malformed_xp_release_source_workflow_run_url(
@@ -2633,6 +2734,37 @@ def test_make_platform_verified_evidence_record_rejects_builder_observed_git_hea
     ) in errors
 
 
+def test_make_platform_verified_evidence_record_rejects_malformed_builder_release_source_fields(
+    tmp_path: Path,
+) -> None:
+    maker = _load_maker()
+    target = "linux-i386"
+    builder_evidence = tmp_path / "builder-identity-linux-i386.json"
+    builder_evidence.write_text("{}\n", encoding="utf-8")
+    args = maker.argparse.Namespace(
+        builder_evidence=builder_evidence,
+        target=target,
+        release_source_head_sha="a" * 40,
+        release_source_run_attempt=1,
+    )
+
+    errors = maker.check_linux_builder_release_source_binding(
+        args,
+        builder_identity={
+            "source_head_sha": True,
+            "observed_git_head_sha": ["a" * 40],
+            "git_worktree_clean": True,
+            "workflow_run_attempt": True,
+        },
+    )
+
+    assert f"{target} builder evidence source_head_sha must be a string" in errors
+    assert f"{target} builder evidence observed_git_head_sha must be a string" in errors
+    assert (
+        f"{target} builder evidence workflow_run_attempt must be a positive integer"
+    ) in errors
+
+
 def test_make_platform_verified_evidence_record_rejects_dirty_builder_git_worktree(
     tmp_path: Path,
 ) -> None:
@@ -2944,6 +3076,95 @@ def test_append_platform_verified_evidence_record_rejects_duplicate_target(tmp_p
     assert errors == [
         "linux-i386 already has accepted evidence; remove or replace the existing record deliberately before appending"
     ]
+
+
+def test_make_platform_verified_evidence_record_read_json_rejects_non_utf8_input(tmp_path: Path) -> None:
+    maker = _load_maker()
+    evidence = tmp_path / "builder-identity-linux-i386.json"
+    evidence.write_bytes(b"\xff\xfe\x00")
+
+    data = maker.read_json(evidence)
+
+    assert data["schema_version"] == 0
+    assert str(data["error"]).startswith("invalid JSON:")
+    assert "codec can't decode byte" in str(data["error"])
+
+
+def test_make_platform_verified_evidence_record_registry_rejects_non_utf8_json(tmp_path: Path) -> None:
+    maker = _load_maker()
+    registry = tmp_path / "platform_verified_evidence.json"
+    registry.write_bytes(b"\xff\xfe\x00")
+
+    data = maker.read_evidence_registry(registry)
+
+    assert data["schema_version"] == 0
+    assert data["accepted_evidence"] is None
+    assert str(data["policy"]).startswith("Invalid evidence registry JSON:")
+    assert "codec can't decode byte" in str(data["policy"])
+
+
+def test_make_platform_verified_evidence_record_rejects_non_utf8_linux_builder_evidence(
+    tmp_path: Path,
+) -> None:
+    maker = _load_maker()
+    artifact_checker = _load_platform_promotion_artifacts_checker()
+    target = "linux-i386"
+    tag = f"v{artifact_checker.read_project_version()}"
+    names = _required_names(artifact_checker, target, tag)
+    assets = tmp_path / "native-dist" / "linux" / target / tag / "artifacts"
+    assets.mkdir(parents=True)
+    _write_artifact_set(assets, names)
+    target_root = tmp_path / "evidence" / target / tag
+    target_root.mkdir(parents=True)
+    builder_evidence = target_root / f"builder-identity-{target}.json"
+    builder_evidence.write_bytes(b"\xff\xfe\x00")
+    smoke_evidence = target_root / f"native-smoke-{target}.log"
+    _write_linux_smoke_evidence(
+        smoke_evidence,
+        target,
+        _smoke_artifact_hashes(assets, names),
+        builder_evidence=builder_evidence,
+    )
+
+    errors, record = maker.build_evidence_record(
+        maker.parse_args(
+            [
+                "--target",
+                target,
+                "--release-tag",
+                tag,
+                "--assets-dir",
+                str(assets),
+                "--release-asset-base-url",
+                f"https://github.com/example/remote-ops-workspace/releases/download/{tag}",
+                "--workflow-run-url",
+                "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+                "--release-source-head-sha",
+                "a" * 40,
+                "--release-source-run-attempt",
+                "1",
+                "--builder-evidence",
+                str(builder_evidence),
+                "--linux-smoke-evidence",
+                str(smoke_evidence),
+                "--runner-label",
+                "self-hosted",
+                "--runner-label",
+                "linux",
+                "--runner-label",
+                "i386",
+            ]
+        )
+    )
+
+    assert record == {}
+    assert any(
+        error.startswith(
+            f"Linux builder evidence file is not readable JSON: {builder_evidence}: invalid JSON:"
+        )
+        for error in errors
+    )
+    assert not any("builder evidence source_head_sha must match" in error for error in errors)
 
 
 def test_make_platform_verified_evidence_record_rejects_unsafe_output_path(

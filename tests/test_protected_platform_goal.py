@@ -269,10 +269,16 @@ def test_protected_platform_goal_rejects_malformed_release_scope_metadata(
         goal["release_tags"].append(True)
         goal["release_repositories"].append("EXAMPLE/REMOTE-OPS-WORKSPACE")
         goal["release_source_workflows"]["LINUX-I386"] = goal["release_source_workflows"]["linux-i386"]
+        goal["release_source_workflows"]["linux-armhf"] = False
+        goal["selected_release_source_workflows"] = {"linux-i386": ""}
+        goal["release_source_run_urls"]["windows-xp-native-x86"] = []
+        goal["selected_release_source_run_urls"] = {"linux-i386": True}
         goal["release_source_run_attempts"][False] = 1
+        goal["release_source_run_attempts"]["linux-armhf"] = 0
+        goal["selected_release_source_run_attempts"] = {"linux-i386": True}
         goal["release_source_run_attempt_conflicts"] = {
             False: {"linux-i386": 1},
-            conflict_url: {"linux-i386": 1, True: 2},
+            conflict_url: {"linux-i386": 1, "linux-armhf": False, True: 2},
         }
         return drifted
 
@@ -304,6 +310,30 @@ def test_protected_platform_goal_rejects_malformed_release_scope_metadata(
         "non-empty strings, got False"
     ) in errors
     assert (
+        "protected platform goal parity release_source_workflows.linux-armhf "
+        "must be a non-empty string, got False"
+    ) in errors
+    assert (
+        "protected platform goal parity selected_release_source_workflows.linux-i386 "
+        "must be a non-empty string, got ''"
+    ) in errors
+    assert (
+        "protected platform goal parity release_source_run_urls.windows-xp-native-x86 "
+        "must be a non-empty string, got []"
+    ) in errors
+    assert (
+        "protected platform goal parity selected_release_source_run_urls.linux-i386 "
+        "must be a non-empty string, got True"
+    ) in errors
+    assert (
+        "protected platform goal parity release_source_run_attempts.linux-armhf "
+        "must be a positive integer, got 0"
+    ) in errors
+    assert (
+        "protected platform goal parity selected_release_source_run_attempts.linux-i386 "
+        "must be a positive integer, got True"
+    ) in errors
+    assert (
         "protected platform goal parity release_source_run_attempt_conflicts keys must be "
         "non-empty strings, got False"
     ) in errors
@@ -312,9 +342,14 @@ def test_protected_platform_goal_rejects_malformed_release_scope_metadata(
         f"release_source_run_attempt_conflicts.{conflict_url} keys must be "
         "non-empty strings, got True"
     ) in errors
+    assert (
+        "protected platform goal parity "
+        f"release_source_run_attempt_conflicts.{conflict_url}.linux-armhf "
+        "must be a positive integer, got False"
+    ) in errors
     assert goal["complete"] is False
     assert goal["status"] == "requirement-metadata-invalid"
-    assert goal["requirement_metadata_error_count"] >= 6
+    assert goal["requirement_metadata_error_count"] >= 13
     assert "protected platform goal is incomplete: status=requirement-metadata-invalid" in errors
 
 
@@ -572,6 +607,40 @@ def test_protected_platform_goal_strict_gate_does_not_count_malformed_accepted_r
         "linux-i386 review_bundle must be an object" in error
         for error in goal["record_validation_errors"]
     )
+    assert goal["blocking_errors"] == errors
+
+
+def test_protected_platform_goal_strict_gate_does_not_count_duplicate_target_records() -> None:
+    checker = _load_protected_goal_checker()
+    registry = _complete_registry()
+    records = registry["accepted_evidence"]
+    assert isinstance(records, list)
+    first_record = records[0]
+    assert isinstance(first_record, dict)
+    records.append(deepcopy(first_record))
+
+    errors, goal = checker.check_protected_platform_goal(
+        registry=registry,
+        release_tag="v1.0.2",
+        require_records_complete=True,
+    )
+
+    assert "accepted_evidence target must be unique: linux-i386" in errors
+    assert any("protected platform goal is incomplete" in error for error in errors)
+    assert goal["release_tag"] == "v1.0.2"
+    assert goal["current_percent"] == 0.0
+    assert goal["accepted_target_count"] == 0
+    assert goal["accepted_targets"] == []
+    assert goal["missing_targets"] == [
+        "linux-i386",
+        "linux-armhf",
+        "windows-xp-native-x86",
+        "windows-xp-native-x64",
+    ]
+    assert goal["complete"] is False
+    assert goal["status"] == "missing-accepted-evidence"
+    assert "accepted_evidence target must be unique: linux-i386" in goal["validation_errors"]
+    assert "accepted_evidence target must be unique: linux-i386" in goal["record_validation_errors"]
     assert goal["blocking_errors"] == errors
 
 

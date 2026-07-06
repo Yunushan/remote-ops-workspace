@@ -1115,6 +1115,31 @@ def test_remote_release_audit_rejects_published_release_asset_byte_drift(
     )
 
 
+def test_remote_release_audit_rejects_malformed_published_release_asset_digest() -> None:
+    checker = _load_checker()
+    helpers = _load_platform_verified_evidence_helpers()
+    record = helpers._linux_record("linux-i386")
+    release_asset_bytes = _bind_release_asset_bytes(checker, record)
+    asset_name = "remote-ops-workspace-v1.0.2-linux-i386.deb"
+    record["artifact_sha256"][asset_name] = True
+
+    errors = checker.check_published_release_asset_bytes(
+        "linux-i386",
+        record,
+        release_asset_bytes_by_url=release_asset_bytes,
+    )
+
+    assert (
+        f"linux-i386 published release asset {asset_name} accepted evidence sha256 "
+        "must be a lowercase SHA-256 hex digest"
+    ) in errors
+    assert all(
+        f"published release asset {asset_name} bytes SHA-256 must match accepted evidence"
+        not in error
+        for error in errors
+    )
+
+
 def test_remote_release_audit_rejects_nonpositive_release_asset_metadata_size(
     tmp_path: Path,
 ) -> None:
@@ -1962,6 +1987,40 @@ def test_remote_release_audit_rejects_source_artifact_zip_byte_drift(tmp_path: P
     )
 
 
+def test_remote_release_audit_rejects_malformed_source_artifact_digest() -> None:
+    checker = _load_checker()
+    helpers = _load_platform_verified_evidence_helpers()
+    record = helpers._linux_record("linux-i386")
+    source_file_bytes = _source_artifact_zip_file_bytes(checker, record)
+    target = str(record["target"])
+    target_file = "remote-ops-workspace-v1.0.2-linux-i386.deb"
+    record["artifact_sha256"][target_file] = True
+    source_file_bytes[checker.accepted_record_source_file(target)] = (
+        checker.canonical_public_record_bytes(record)
+    )
+    source = record["release_asset_source"]
+    assert isinstance(source, dict)
+
+    errors = checker.check_record_source_artifact_zip_bytes(
+        target,
+        record,
+        source_artifacts_by_run=_source_artifacts_for(record),
+        source_artifact_bytes_by_run={
+            str(source["workflow_run_url"]): _zip_named_bytes(source_file_bytes),
+        },
+    )
+
+    assert (
+        "linux-i386 source workflow artifact extended-linux-evidence-linux-i386-v1.0.2 "
+        f"ZIP file {target_file} accepted SHA-256 expectation must be a lowercase "
+        "SHA-256 hex digest"
+    ) in errors
+    assert all(
+        f"ZIP file {target_file} bytes SHA-256 must match accepted evidence" not in error
+        for error in errors
+    )
+
+
 def test_remote_release_audit_rejects_nested_source_artifact_zip_entries(tmp_path: Path) -> None:
     checker = _load_checker()
     helpers = _load_platform_verified_evidence_helpers()
@@ -1996,6 +2055,49 @@ def test_remote_release_audit_rejects_nested_source_artifact_zip_entries(tmp_pat
     assert (
         "linux-i386 source workflow artifact extended-linux-evidence-linux-i386-v1.0.2 "
         "ZIP is invalid: contains non-root or unsafe file name 'nested/proof.txt'"
+    ) in errors
+
+
+def test_remote_release_audit_rejects_source_artifact_zip_directory_entries(
+    tmp_path: Path,
+) -> None:
+    checker = _load_checker()
+    helpers = _load_platform_verified_evidence_helpers()
+    record = helpers._linux_record("linux-i386")
+    registry = _registry_with(record)
+    promotion = checker.read_json(checker.PROMOTION_PATH)
+    required_assets = checker.required_release_assets_by_target(
+        promotion,
+        release_tag="v1.0.2",
+        targets=("linux-i386",),
+    )
+    release = _release_with_record_assets(
+        checker,
+        record,
+        sorted(required_assets["linux-i386"]),
+    )
+    source = record["release_asset_source"]
+    assert isinstance(source, dict)
+
+    errors = checker.check_remote_platform_release_evidence(
+        registry=registry,
+        promotion=promotion,
+        release=release,
+        source_runs_by_run=_source_runs_for(record),
+        workflow_runs_by_workflow={},
+        source_artifacts_by_run=_source_artifacts_for(record),
+        source_artifact_bytes_by_run={
+            str(source["workflow_run_url"]): _zip_with_directory_entry("nested/"),
+        },
+        release_tag="v1.0.2",
+        required_targets=("linux-i386",),
+        require_source_runs=True,
+        require_source_artifact_bytes=True,
+    )
+
+    assert (
+        "linux-i386 source workflow artifact extended-linux-evidence-linux-i386-v1.0.2 "
+        "ZIP is invalid: contains directory entry 'nested/'"
     ) in errors
 
 
@@ -2036,6 +2138,45 @@ def test_remote_release_audit_rejects_source_artifact_zip_symlink_entries(tmp_pa
     ) in errors
 
 
+def test_remote_release_audit_rejects_source_artifact_zip_encrypted_entries(
+    tmp_path: Path,
+) -> None:
+    checker = _load_checker()
+    helpers = _load_platform_verified_evidence_helpers()
+    record = helpers._linux_record("linux-i386")
+    registry = _registry_with(record)
+    promotion = checker.read_json(checker.PROMOTION_PATH)
+    required_assets = checker.required_release_assets_by_target(
+        promotion,
+        release_tag="v1.0.2",
+        targets=("linux-i386",),
+    )
+    release = _release_with_record_assets(checker, record, sorted(required_assets["linux-i386"]))
+    source = record["release_asset_source"]
+    assert isinstance(source, dict)
+
+    errors = checker.check_remote_platform_release_evidence(
+        registry=registry,
+        promotion=promotion,
+        release=release,
+        source_runs_by_run=_source_runs_for(record),
+        workflow_runs_by_workflow={},
+        source_artifacts_by_run=_source_artifacts_for(record),
+        source_artifact_bytes_by_run={
+            str(source["workflow_run_url"]): _zip_with_encrypted_entry("proof.txt"),
+        },
+        release_tag="v1.0.2",
+        required_targets=("linux-i386",),
+        require_source_runs=True,
+        require_source_artifact_bytes=True,
+    )
+
+    assert (
+        "linux-i386 source workflow artifact extended-linux-evidence-linux-i386-v1.0.2 "
+        "ZIP is invalid: contains encrypted entry 'proof.txt'"
+    ) in errors
+
+
 def test_remote_release_audit_rejects_source_artifact_zip_special_file_entries(
     tmp_path: Path,
 ) -> None:
@@ -2072,6 +2213,45 @@ def test_remote_release_audit_rejects_source_artifact_zip_special_file_entries(
     assert (
         "linux-i386 source workflow artifact extended-linux-evidence-linux-i386-v1.0.2 "
         "ZIP is invalid: contains non-regular file entry 'proof.txt'"
+    ) in errors
+
+
+def test_remote_release_audit_rejects_source_artifact_zip_executable_file_entries(
+    tmp_path: Path,
+) -> None:
+    checker = _load_checker()
+    helpers = _load_platform_verified_evidence_helpers()
+    record = helpers._linux_record("linux-i386")
+    registry = _registry_with(record)
+    promotion = checker.read_json(checker.PROMOTION_PATH)
+    required_assets = checker.required_release_assets_by_target(
+        promotion,
+        release_tag="v1.0.2",
+        targets=("linux-i386",),
+    )
+    release = _release_with_record_assets(checker, record, sorted(required_assets["linux-i386"]))
+    source = record["release_asset_source"]
+    assert isinstance(source, dict)
+
+    errors = checker.check_remote_platform_release_evidence(
+        registry=registry,
+        promotion=promotion,
+        release=release,
+        source_runs_by_run=_source_runs_for(record),
+        workflow_runs_by_workflow={},
+        source_artifacts_by_run=_source_artifacts_for(record),
+        source_artifact_bytes_by_run={
+            str(source["workflow_run_url"]): _zip_with_mode_entry("proof.txt", 0o100755),
+        },
+        release_tag="v1.0.2",
+        required_targets=("linux-i386",),
+        require_source_runs=True,
+        require_source_artifact_bytes=True,
+    )
+
+    assert (
+        "linux-i386 source workflow artifact extended-linux-evidence-linux-i386-v1.0.2 "
+        "ZIP is invalid: contains regular file entry with non-0644 permissions 'proof.txt'"
     ) in errors
 
 
@@ -2705,6 +2885,60 @@ def test_offline_require_source_artifact_bytes_requires_zip_fixture(tmp_path: Pa
     assert "--require-source-artifact-bytes without --repository requires --source-artifact-zip" in errors
 
 
+def test_offline_workflow_runs_fixture_rejects_duplicate_workflow_bindings(
+    tmp_path: Path,
+) -> None:
+    checker = _load_checker()
+    workflow = ".github/workflows/extended-platform-evidence.yml"
+    args = checker.parse_args(
+        [
+            "--release-tag",
+            "v1.0.2",
+            "--require-source-runs",
+            "--workflow-runs-json",
+            f"{workflow}={tmp_path / 'first-runs.json'}",
+            "--workflow-runs-json",
+            f"{workflow} ={tmp_path / 'second-runs.json'}",
+        ]
+    )
+
+    errors = checker.strict_arg_errors(args)
+
+    assert f"--workflow-runs-json contains duplicate workflow fixtures: ['{workflow}']" in errors
+
+
+def test_offline_workflow_runs_fixture_rejects_offscope_workflow(
+    tmp_path: Path,
+) -> None:
+    checker = _load_checker()
+    helpers = _load_platform_verified_evidence_helpers()
+    record = helpers._linux_record("linux-i386")
+    fixture = tmp_path / "ci-runs.json"
+    fixture.write_text('{"workflow_runs":[]}', encoding="utf-8")
+    workflow = ".github/workflows/ci.yml"
+    args = checker.parse_args(
+        [
+            "--release-tag",
+            "v1.0.2",
+            "--require-source-runs",
+            "--workflow-runs-json",
+            f"{workflow}={fixture}",
+        ]
+    )
+
+    workflow_runs, errors = checker.load_workflow_runs(
+        args,
+        _registry_with(record),
+        ("linux-i386",),
+    )
+
+    assert workflow_runs == {workflow: {"workflow_runs": []}}
+    assert (
+        "--workflow-runs-json contains fixtures outside required accepted "
+        f"workflow scope: ['{workflow}']"
+    ) in errors
+
+
 def test_offline_source_run_fixture_rejects_duplicate_run_bindings(tmp_path: Path) -> None:
     checker = _load_checker()
     run = "https://github.com/example/remote-ops-workspace/actions/runs/12345"
@@ -3177,6 +3411,45 @@ def test_expected_release_asset_helpers_ignore_non_string_artifact_keys() -> Non
 
     assert all(asset["filename"] != "True" for asset in sources)
     assert "True" not in published
+
+
+def test_expected_release_asset_helpers_do_not_coerce_non_string_digests() -> None:
+    checker = _load_checker()
+    helpers = _load_platform_verified_evidence_helpers()
+    record = helpers._linux_record("linux-i386")
+    first_artifact = next(iter(record["artifact_sha256"]))
+    record["artifact_sha256"][first_artifact] = True
+    record["review_bundle"]["sha256s"]["sha256"] = True
+    record.pop("finalized_record_release_asset_url", None)
+
+    sources = checker.expected_release_asset_byte_sources(record)
+    published = checker.expected_published_assets(record)
+    by_filename = {str(asset["filename"]): asset for asset in sources}
+    sha256s_file = str(record["review_bundle"]["sha256s"]["file"])
+
+    assert by_filename[str(first_artifact)]["sha256"] == ""
+    assert by_filename[sha256s_file]["sha256"] == ""
+    assert published[str(first_artifact)]["sha256"] == ""
+    assert published[sha256s_file]["sha256"] == ""
+    assert all(asset.get("sha256") != "True" for asset in sources)
+    assert all(metadata.get("sha256") != "True" for metadata in published.values())
+
+
+def test_expected_release_asset_helpers_ignore_malformed_review_bundle_files() -> None:
+    checker = _load_checker()
+    helpers = _load_platform_verified_evidence_helpers()
+    record = helpers._linux_record("linux-i386")
+    record["review_bundle"]["manifest"]["file"] = True
+    record["review_bundle"]["archive"]["file"] = "../review-bundle.zip"
+    record.pop("finalized_record_release_asset_url", None)
+
+    sources = checker.expected_release_asset_byte_sources(record)
+    published = checker.expected_published_assets(record)
+
+    assert all(asset["filename"] != "True" for asset in sources)
+    assert all(asset["filename"] != "../review-bundle.zip" for asset in sources)
+    assert "True" not in published
+    assert "../review-bundle.zip" not in published
 
 
 def test_expected_release_asset_helpers_ignore_non_string_release_asset_urls() -> None:
@@ -3766,8 +4039,20 @@ def _zip_bytes(filenames: list[str]) -> bytes:
     return buffer.getvalue()
 
 
+def _zip_with_directory_entry(filename: str) -> bytes:
+    buffer = io.BytesIO()
+    info = zipfile.ZipInfo(filename)
+    with zipfile.ZipFile(buffer, mode="w") as archive:
+        archive.writestr(info, b"")
+    return buffer.getvalue()
+
+
 def _zip_with_symlink_entry(filename: str) -> bytes:
     return _zip_with_mode_entry(filename, 0o120777)
+
+
+def _zip_with_encrypted_entry(filename: str) -> bytes:
+    return _set_zip_entry_flag_bits(_zip_with_mode_entry(filename, 0o100644), filename, 0x1)
 
 
 def _zip_with_mode_entry(filename: str, mode: int) -> bytes:
@@ -3777,6 +4062,35 @@ def _zip_with_mode_entry(filename: str, mode: int) -> bytes:
     with zipfile.ZipFile(buffer, mode="w") as archive:
         archive.writestr(info, b"link-target")
     return buffer.getvalue()
+
+
+def _set_zip_entry_flag_bits(raw_bytes: bytes, entry_name: str, flag_bits: int) -> bytes:
+    data = bytearray(raw_bytes)
+    wanted = entry_name.encode("utf-8")
+    index = 0
+    while index < len(data) - 4:
+        signature = bytes(data[index:index + 4])
+        if signature == b"PK\x03\x04":
+            name_length = int.from_bytes(data[index + 26:index + 28], "little")
+            extra_length = int.from_bytes(data[index + 28:index + 30], "little")
+            name_start = index + 30
+            name_end = name_start + name_length
+            if bytes(data[name_start:name_end]) == wanted:
+                data[index + 6:index + 8] = flag_bits.to_bytes(2, "little")
+            index = name_end + extra_length
+            continue
+        if signature == b"PK\x01\x02":
+            name_length = int.from_bytes(data[index + 28:index + 30], "little")
+            extra_length = int.from_bytes(data[index + 30:index + 32], "little")
+            comment_length = int.from_bytes(data[index + 32:index + 34], "little")
+            name_start = index + 46
+            name_end = name_start + name_length
+            if bytes(data[name_start:name_end]) == wanted:
+                data[index + 8:index + 10] = flag_bits.to_bytes(2, "little")
+            index = name_end + extra_length + comment_length
+            continue
+        index += 1
+    return bytes(data)
 
 
 def _registry_with(record: dict[str, Any]) -> dict[str, Any]:

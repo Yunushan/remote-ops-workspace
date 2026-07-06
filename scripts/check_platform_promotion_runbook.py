@@ -154,7 +154,7 @@ def check_platform_promotion_runbook(
     promotion: dict[str, Any] | None = None,
 ) -> list[str]:
     text = runbook_text if runbook_text is not None else RUNBOOK_PATH.read_text(encoding="utf-8")
-    promotion_data = promotion or read_json(PROMOTION_PATH)
+    promotion_data = read_json(PROMOTION_PATH) if promotion is None else promotion
     errors: list[str] = []
     if "# Platform Promotion Runbook" not in text:
         errors.append("docs/PLATFORM_PROMOTION_RUNBOOK.md must have a platform promotion title")

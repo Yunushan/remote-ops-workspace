@@ -51,6 +51,111 @@ def test_security_polish_checker_passes() -> None:
     assert checker.main() == 0
 
 
+def test_security_polish_rejects_protected_goal_security_boundary_drift() -> None:
+    checker = load_security_checker()
+    platform_targets = _platform_targets()
+    platform_targets["protected_readiness_goal"]["security_boundary"]["modern_tls_minimum"] = "TLS 1.0"
+
+    errors = checker.check_legacy_security_policy(
+        baseline=_security_baseline(),
+        xp_contract=_xp_contract(),
+        platform_targets=platform_targets,
+    )
+
+    assert any(
+        "platform_targets protected_readiness_goal.security_boundary must match" in error
+        and "TLS 1.2" in error
+        for error in errors
+    )
+
+
+def test_security_polish_uses_explicit_empty_security_baseline() -> None:
+    checker = load_security_checker()
+
+    errors = checker.check_legacy_security_policy(
+        baseline={},
+        xp_contract=_xp_contract(),
+    )
+
+    assert "security_baseline preferred_tls must stay TLS 1.3" in errors
+    assert "Windows XP security policy must not claim native operator-host support" in errors
+
+
+def test_security_polish_uses_explicit_empty_xp_contract() -> None:
+    checker = load_security_checker()
+
+    errors = checker.check_legacy_security_policy(
+        baseline=_security_baseline(),
+        xp_contract={},
+    )
+
+    assert any("XP native evidence contract required_security_flags must match" in error for error in errors)
+    assert (
+        "XP native evidence contract required_security_patch_provenance_namespaces "
+        "must define cve_review_reference"
+    ) in errors
+    assert (
+        "XP native evidence contract required_security_patch_provenance_namespaces "
+        "must define security_update_channel"
+    ) in errors
+
+
+def test_security_polish_uses_explicit_empty_platform_security_constants() -> None:
+    checker = load_security_checker()
+
+    errors = checker.check_legacy_security_policy(
+        baseline=_security_baseline(),
+        xp_contract=_xp_contract(),
+        platform_required_flags={},
+        platform_required_patch_evidence={},
+    )
+
+    assert any("platform verified evidence REQUIRED_XP_SECURITY_FLAGS must match" in error for error in errors)
+    assert any("platform verified evidence REQUIRED_SECURITY_PATCH_EVIDENCE must match" in error for error in errors)
+
+
+def test_security_polish_rejects_xp_platform_target_native_host_drift() -> None:
+    checker = load_security_checker()
+    platform_targets = _platform_targets()
+    xp_row = next(
+        item
+        for item in platform_targets["windows_legacy_targets"]
+        if item["version"] == "Windows XP"
+    )
+    xp_row["host_tier"] = "native-host-supported"
+
+    errors = checker.check_legacy_security_policy(
+        baseline=_security_baseline(),
+        xp_contract=_xp_contract(),
+        platform_targets=platform_targets,
+    )
+
+    assert "platform_targets Windows XP host_tier must be 'remote-target-only', got 'native-host-supported'" in errors
+
+
+def test_security_polish_rejects_xp_platform_target_weak_crypto_note_drift() -> None:
+    checker = load_security_checker()
+    platform_targets = _platform_targets()
+    xp_row = next(
+        item
+        for item in platform_targets["windows_legacy_targets"]
+        if item["version"] == "Windows XP"
+    )
+    xp_row["notes"] = [
+        note
+        for note in xp_row["notes"]
+        if "Legacy SSH/RDP crypto is blocked globally" not in note
+    ]
+
+    errors = checker.check_legacy_security_policy(
+        baseline=_security_baseline(),
+        xp_contract=_xp_contract(),
+        platform_targets=platform_targets,
+    )
+
+    assert "platform_targets Windows XP notes must include: Legacy SSH/RDP crypto is blocked globally" in errors
+
+
 def test_security_polish_rejects_xp_contract_security_flag_drift() -> None:
     checker = load_security_checker()
     baseline = _security_baseline()
@@ -208,7 +313,7 @@ def test_security_polish_rejects_platform_provenance_namespace_drift() -> None:
         },
         platform_security_provenance_namespaces={
             "security_update_channel": ("security-update",),
-            "cve_review_reference": ("cve-", "https://"),
+            "cve_review_reference": ("cve-",),
         },
     )
 
@@ -233,7 +338,7 @@ def test_security_polish_rejects_runtime_feature_provenance_namespace_drift() ->
         },
         feature_security_provenance_namespaces={
             "security_update_channel": ("security-update",),
-            "cve_review_reference": ("cve-", "https://"),
+            "cve_review_reference": ("cve-",),
         },
     )
 
@@ -258,7 +363,7 @@ def test_security_polish_rejects_builder_provenance_namespace_drift() -> None:
         },
         builder_security_provenance_namespaces={
             "security_update_channel": ("security-update",),
-            "cve_review_reference": ("cve-", "https://"),
+            "cve_review_reference": ("cve-",),
         },
     )
 
@@ -319,3 +424,7 @@ def _security_baseline() -> dict[str, object]:
 
 def _xp_contract() -> dict[str, object]:
     return json.loads(Path("configs/xp_native_evidence_contract.json").read_text(encoding="utf-8"))
+
+
+def _platform_targets() -> dict[str, object]:
+    return json.loads(Path("configs/platform_targets.json").read_text(encoding="utf-8"))

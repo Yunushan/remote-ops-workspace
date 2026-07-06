@@ -337,6 +337,9 @@ FORBIDDEN_SECURITY_PROVENANCE_MARKERS = (
     "test-",
     "todo",
 )
+SECURITY_PROVENANCE_URL_RE = re.compile(r"https?://[^\s\"'<>]+", re.IGNORECASE)
+RESERVED_SECURITY_PROVENANCE_URL_HOSTS = {"example.com", "example.org", "example.net"}
+RESERVED_SECURITY_PROVENANCE_URL_SUFFIXES = (".example", ".invalid", ".test")
 SECURITY_UPDATE_PROVENANCE_MARKERS = (
     "security-update",
     "security-updates",
@@ -604,8 +607,8 @@ def check_platform_verified_evidence(
     require_review_bundles: bool = False,
     check_consistency: bool = True,
 ) -> list[str]:
-    registry_data = registry or read_json(EVIDENCE_PATH)
-    promotion_data = promotion or read_json(PROMOTION_PATH)
+    registry_data = read_json(EVIDENCE_PATH) if registry is None else registry
+    promotion_data = read_json(PROMOTION_PATH) if promotion is None else promotion
     errors: list[str] = []
     errors.extend(check_schema(registry_data))
     if errors:
@@ -617,9 +620,12 @@ def check_platform_verified_evidence(
         if not isinstance(entry, dict):
             errors.append("accepted_evidence entries must be objects")
             continue
-        target = str(entry.get("target", ""))
+        raw_target = entry.get("target", "")
+        target = accepted_evidence_target(entry)
         entry_errors: list[str] = []
-        if target in LINUX_TARGETS:
+        if not isinstance(raw_target, str):
+            entry_errors.append(f"accepted_evidence target must be a string, got {raw_target!r}")
+        elif target in LINUX_TARGETS:
             entry_errors.extend(
                 check_linux_evidence(
                     entry,
@@ -675,15 +681,19 @@ def check_required_targets(
     rows = registry.get("accepted_evidence", [])
     if not isinstance(rows, list):
         return []
-    accepted_targets = {
-        str(entry.get("target", ""))
-        for entry in rows
-        if isinstance(entry, dict)
-        and entry.get("status") == "accepted"
-        and entry.get("readiness_percent") == 100.0
-        and (required_release_tag is None or entry.get("release_tag") == required_release_tag)
-        and str(entry.get("target", "")) not in invalid
-    }
+    accepted_targets: set[str] = set()
+    for entry in rows:
+        if not isinstance(entry, dict):
+            continue
+        target = accepted_evidence_target(entry)
+        if (
+            target
+            and entry.get("status") == "accepted"
+            and entry.get("readiness_percent") == 100.0
+            and (required_release_tag is None or entry.get("release_tag") == required_release_tag)
+            and target not in invalid
+        ):
+            accepted_targets.add(target)
     missing = sorted(requested - accepted_targets)
     if required_release_tag is not None:
         if missing:
@@ -691,15 +701,18 @@ def check_required_targets(
                 f"missing required accepted evidence targets for release_tag {required_release_tag}: {missing}"
             ]
         if set(PROTECTED_GOAL_TARGETS).issubset(requested):
-            entries = {
-                str(entry.get("target", "")): entry
-                for entry in rows
-                if isinstance(entry, dict)
-                and str(entry.get("target", "")) in PROTECTED_GOAL_TARGETS
-                and entry.get("status") == "accepted"
-                and entry.get("release_tag") == required_release_tag
-                and str(entry.get("target", "")) not in invalid
-            }
+            entries: dict[str, dict[str, Any]] = {}
+            for entry in rows:
+                if not isinstance(entry, dict):
+                    continue
+                target = accepted_evidence_target(entry)
+                if (
+                    target in PROTECTED_GOAL_TARGETS
+                    and entry.get("status") == "accepted"
+                    and entry.get("release_tag") == required_release_tag
+                    and target not in invalid
+                ):
+                    entries[target] = entry
             consistency_errors = check_protected_goal_release_consistency(entries, required_release_tag)
             if consistency_errors:
                 return consistency_errors
@@ -707,6 +720,11 @@ def check_required_targets(
     if missing:
         return [f"missing required accepted evidence targets: {missing}"]
     return []
+
+
+def accepted_evidence_target(entry: dict[str, Any]) -> str:
+    target = entry.get("target", "")
+    return target if isinstance(target, str) else ""
 
 
 def check_protected_goal_release_consistency(
@@ -1036,7 +1054,7 @@ def check_linux_evidence(
     *,
     require_review_bundle: bool = False,
 ) -> list[str]:
-    target = str(entry.get("target", ""))
+    target = accepted_evidence_target(entry)
     expected = LINUX_TARGETS[target]
     errors = check_common_evidence(
         entry,
@@ -1052,10 +1070,15 @@ def check_linux_evidence(
         errors.append(f"{target} workflow must be {expected['workflow']}")
     errors.extend(check_linux_command_provenance(target, entry, promotion_entries.get(target, {})))
     errors.extend(check_linux_workflow_inputs(target, entry))
-    release_tag = str(entry.get("release_tag", ""))
+    raw_release_tag = entry.get("release_tag", "")
+    release_tag = raw_release_tag if isinstance(raw_release_tag, str) else ""
     expected_artifact_name = linux_release_source_artifact_name(target, release_tag)
-    workflow_match = GITHUB_ACTIONS_RUN_RE.fullmatch(str(entry.get("workflow_run_url", "")))
-    if not workflow_match:
+    raw_workflow_run_url = entry.get("workflow_run_url", "")
+    workflow_run_url = raw_workflow_run_url.strip().rstrip("/") if isinstance(raw_workflow_run_url, str) else ""
+    workflow_match = GITHUB_ACTIONS_RUN_RE.fullmatch(workflow_run_url)
+    if not isinstance(raw_workflow_run_url, str):
+        errors.append(f"{target} workflow_run_url must be a string GitHub Actions run URL")
+    elif not workflow_match:
         errors.append(f"{target} workflow_run_url must be a GitHub Actions run URL")
     else:
         release_repositories = release_asset_repositories(entry.get("release_asset_urls"))
@@ -1071,22 +1094,21 @@ def check_linux_evidence(
     source_head_sha = ""
     source_run_attempt = None
     if isinstance(source, dict):
-        source_head_sha = str(source.get("head_sha", "")).strip()
+        raw_source_head_sha = source.get("head_sha", "")
+        source_head_sha = raw_source_head_sha.strip() if isinstance(raw_source_head_sha, str) else ""
         source_run_attempt = source.get("run_attempt")
         if source.get("workflow_run_url") != entry.get("workflow_run_url"):
             errors.append(f"{target} release_asset_source.workflow_run_url must match workflow_run_url")
         if source.get("artifact_name") != expected_artifact_name:
             errors.append(f"{target} release_asset_source.artifact_name must be {expected_artifact_name}")
-    labels = set(str(label) for label in entry.get("runner_labels", []))
-    if not expected["runner_labels"].issubset(labels):
-        errors.append(f"{target} runner_labels must include {sorted(expected['runner_labels'])}")
+    errors.extend(check_linux_runner_labels(target, entry.get("runner_labels"), expected["runner_labels"]))
     errors.extend(
         check_linux_builder_identity(
             target,
             entry.get("builder_identity"),
             expected["machine_names"],
-            release_tag=str(entry.get("release_tag", "")),
-            workflow_run_url=str(entry.get("workflow_run_url", "")),
+            release_tag=release_tag,
+            workflow_run_url=workflow_run_url,
             workflow_run_attempt=source_run_attempt,
             source_head_sha=source_head_sha,
         )
@@ -1098,7 +1120,7 @@ def check_linux_evidence(
             target,
             entry.get("linux_smoke_summary"),
             release_tag=release_tag,
-            workflow_run_url=str(entry.get("workflow_run_url", "")),
+            workflow_run_url=workflow_run_url,
             workflow_run_attempt=source_run_attempt,
             source_head_sha=source_head_sha,
             expected_machines=expected["machine_names"],
@@ -1106,6 +1128,33 @@ def check_linux_evidence(
         )
     )
     errors.extend(check_linux_evidence_sources(target, entry))
+    return errors
+
+
+def check_linux_runner_labels(target: str, raw_labels: Any, expected_labels: set[str]) -> list[str]:
+    if not isinstance(raw_labels, list):
+        return [f"{target} runner_labels must be a list"]
+    errors: list[str] = []
+    labels: list[str] = []
+    for label in raw_labels:
+        if not isinstance(label, str):
+            errors.append(f"{target} runner_labels entries must be strings, got {label!r}")
+            continue
+        labels.append(label)
+    label_counts: dict[str, int] = {}
+    for label in labels:
+        label_counts[label] = label_counts.get(label, 0) + 1
+    actual = set(labels)
+    case_collisions = case_insensitive_name_collisions(actual)
+    if case_collisions:
+        errors.append(
+            f"{target} runner_labels must not collide on case-insensitive filesystems: {case_collisions}"
+        )
+    if not expected_labels.issubset(actual):
+        errors.append(f"{target} runner_labels must include {sorted(expected_labels)}")
+    duplicate_labels = sorted(label for label, count in label_counts.items() if count > 1)
+    if duplicate_labels:
+        errors.append(f"{target} runner_labels must not contain duplicates: {duplicate_labels}")
     return errors
 
 
@@ -1121,11 +1170,14 @@ def check_linux_command_provenance(
     build_script = str(requirements.get("build_script", ""))
     smoke_script = str(requirements.get("smoke_script", ""))
     expected_build = f"TARGET_ARCH={arch} PYTHON_BIN=.venv-native/bin/python bash {build_script}"
-    workflow_run_url = str(entry.get("workflow_run_url", ""))
+    raw_workflow_run_url = entry.get("workflow_run_url", "")
+    workflow_run_url = raw_workflow_run_url.strip().rstrip("/") if isinstance(raw_workflow_run_url, str) else ""
     source = entry.get("release_asset_source")
-    source_head_sha = str(source.get("head_sha", "")).strip() if isinstance(source, dict) else ""
+    raw_source_head_sha = source.get("head_sha", "") if isinstance(source, dict) else ""
+    source_head_sha = raw_source_head_sha.strip() if isinstance(raw_source_head_sha, str) else ""
     source_run_attempt = source.get("run_attempt") if isinstance(source, dict) else ""
-    preflight_command = str(entry.get("local_evidence_preflight_command", ""))
+    raw_preflight_command = entry.get("local_evidence_preflight_command", "")
+    preflight_command = raw_preflight_command if isinstance(raw_preflight_command, str) else ""
     builder_evidence_paths = command_argument_values(preflight_command, "--linux-builder-evidence")
     builder_evidence_path = builder_evidence_paths[0] if len(builder_evidence_paths) == 1 else "<builder-evidence>"
     expected_smoke = (
@@ -1168,7 +1220,8 @@ def check_linux_workflow_inputs(target: str, entry: dict[str, Any]) -> list[str]
         errors.append(f"{target} workflow_inputs missing keys: {missing_keys}")
     if unexpected_keys:
         errors.append(f"{target} workflow_inputs unexpected keys: {unexpected_keys}")
-    release_tag = str(entry.get("release_tag", ""))
+    raw_release_tag = entry.get("release_tag", "")
+    release_tag = raw_release_tag if isinstance(raw_release_tag, str) else ""
     if raw_inputs.get("target") != target:
         errors.append(f"{target} workflow_inputs target must be {target}")
     if raw_inputs.get("release_tag") != release_tag:
@@ -1185,9 +1238,10 @@ def check_linux_workflow_inputs(target: str, entry: dict[str, Any]) -> list[str]
         if any(not str(url).startswith(f"{base_url}/") for url in release_assets):
             errors.append(f"{target} workflow_inputs release_asset_base_url must prefix every release_asset_url")
     source = entry.get("release_asset_source")
+    raw_source_workflow_run_url = source.get("workflow_run_url", "") if isinstance(source, dict) else ""
     source_workflow_run_url = (
-        str(source.get("workflow_run_url", "")).rstrip("/")
-        if isinstance(source, dict)
+        raw_source_workflow_run_url.strip().rstrip("/")
+        if isinstance(raw_source_workflow_run_url, str)
         else ""
     )
     source_match = GITHUB_ACTIONS_RUN_RE.fullmatch(source_workflow_run_url)
@@ -1202,8 +1256,12 @@ def check_linux_workflow_inputs(target: str, entry: dict[str, Any]) -> list[str]
 
 def check_linux_builder_identity_sha256(target: str, entry: dict[str, Any]) -> list[str]:
     raw_identity = entry.get("builder_identity")
-    digest = str(entry.get("builder_identity_sha256", ""))
+    raw_digest = entry.get("builder_identity_sha256", "")
     errors: list[str] = []
+    if not isinstance(raw_digest, str):
+        errors.append(f"{target} builder_identity_sha256 must be a string SHA-256 hex digest")
+        return errors
+    digest = raw_digest
     if not re.fullmatch(r"[0-9a-f]{64}", digest):
         errors.append(f"{target} builder_identity_sha256 must be a SHA-256 hex digest")
         return errors
@@ -1306,6 +1364,22 @@ def check_exact_object_keys(
     return errors
 
 
+def required_string_field(
+    target: str,
+    label: str,
+    key: str,
+    raw_object: dict[str, Any],
+    errors: list[str],
+    *,
+    display_key: str | None = None,
+) -> tuple[str, bool]:
+    raw_value = raw_object.get(key, "")
+    if not isinstance(raw_value, str):
+        errors.append(f"{target} {label} {display_key or key} must be a string")
+        return "", False
+    return raw_value.strip(), True
+
+
 def check_linux_smoke_summary(
     target: str,
     raw_summary: Any,
@@ -1335,46 +1409,86 @@ def check_linux_smoke_summary(
     elif summary_attempt != workflow_run_attempt:
         errors.append(f"{target} linux_smoke_summary workflow_run_attempt must match release_asset_source.run_attempt")
 
-    summary_source_head = str(raw_summary.get("source_head_sha", "")).strip()
-    if not RELEASE_SOURCE_HEAD_SHA_RE.fullmatch(summary_source_head):
+    summary_source_head, summary_source_head_is_string = required_string_field(
+        target,
+        "linux_smoke_summary",
+        "source_head_sha",
+        raw_summary,
+        errors,
+    )
+    if summary_source_head_is_string and not RELEASE_SOURCE_HEAD_SHA_RE.fullmatch(summary_source_head):
         errors.append(f"{target} linux_smoke_summary source_head_sha must be a 40-character lowercase Git SHA")
-    elif summary_source_head != source_head_sha:
+    elif summary_source_head_is_string and summary_source_head != source_head_sha:
         errors.append(f"{target} linux_smoke_summary source_head_sha must match release_asset_source.head_sha")
 
-    summary_git_head = str(raw_summary.get("git_head_sha", "")).strip()
-    if not RELEASE_SOURCE_HEAD_SHA_RE.fullmatch(summary_git_head):
+    summary_git_head, summary_git_head_is_string = required_string_field(
+        target,
+        "linux_smoke_summary",
+        "git_head_sha",
+        raw_summary,
+        errors,
+    )
+    if summary_git_head_is_string and not RELEASE_SOURCE_HEAD_SHA_RE.fullmatch(summary_git_head):
         errors.append(f"{target} linux_smoke_summary git_head_sha must be a 40-character lowercase Git SHA")
-    elif summary_git_head != source_head_sha:
+    elif summary_git_head_is_string and summary_git_head != source_head_sha:
         errors.append(f"{target} linux_smoke_summary git_head_sha must match release_asset_source.head_sha")
 
     expected_arch = REQUIRED_LINUX_SMOKE_ARCHES[target]
     if raw_summary.get("target_arch") != expected_arch:
         errors.append(f"{target} linux_smoke_summary target_arch must be {expected_arch!r}")
 
-    uname_machine = str(raw_summary.get("uname_machine", "")).strip().lower()
-    if uname_machine not in expected_machines:
+    raw_uname_machine, uname_machine_is_string = required_string_field(
+        target,
+        "linux_smoke_summary",
+        "uname_machine",
+        raw_summary,
+        errors,
+    )
+    uname_machine = raw_uname_machine.lower()
+    if uname_machine_is_string and uname_machine not in expected_machines:
         errors.append(
             f"{target} linux_smoke_summary uname_machine must be one of {sorted(expected_machines)}, "
             f"got {uname_machine!r}"
         )
-    dpkg_architecture = str(raw_summary.get("dpkg_architecture", "")).strip().lower()
+    raw_dpkg_architecture, dpkg_architecture_is_string = required_string_field(
+        target,
+        "linux_smoke_summary",
+        "dpkg_architecture",
+        raw_summary,
+        errors,
+    )
+    dpkg_architecture = raw_dpkg_architecture.lower()
     expected_dpkg_arches = REQUIRED_LINUX_DPKG_ARCHES[target]
-    if dpkg_architecture not in expected_dpkg_arches:
+    if dpkg_architecture_is_string and dpkg_architecture not in expected_dpkg_arches:
         errors.append(
             f"{target} linux_smoke_summary dpkg_architecture must be one of "
             f"{sorted(expected_dpkg_arches)}, got {dpkg_architecture!r}"
         )
     expected_bits = REQUIRED_LINUX_USERLAND_BITS[target]
-    userland_bits = str(raw_summary.get("userland_bits", "")).strip()
-    if userland_bits != expected_bits:
+    userland_bits, userland_bits_is_string = required_string_field(
+        target,
+        "linux_smoke_summary",
+        "userland_bits",
+        raw_summary,
+        errors,
+    )
+    if userland_bits_is_string and userland_bits != expected_bits:
         errors.append(f"{target} linux_smoke_summary userland_bits must be {expected_bits!r}, got {userland_bits!r}")
 
     builder = builder_identity if isinstance(builder_identity, dict) else {}
     builder_host = builder.get("host_identity") if isinstance(builder.get("host_identity"), dict) else {}
-    host_label = str(raw_summary.get("host_label", "")).strip()
-    if not HOST_IDENTITY_LABEL_RE.fullmatch(host_label) or not host_label.startswith(f"{target}-"):
+    host_label, host_label_is_string = required_string_field(
+        target,
+        "linux_smoke_summary",
+        "host_label",
+        raw_summary,
+        errors,
+    )
+    if host_label_is_string and (
+        not HOST_IDENTITY_LABEL_RE.fullmatch(host_label) or not host_label.startswith(f"{target}-")
+    ):
         errors.append(f"{target} linux_smoke_summary host_label must be a sanitized target-scoped label, got {host_label!r}")
-    elif builder_host:
+    elif host_label_is_string and builder_host:
         expected_host_label = str(builder_host.get("host_label", "")).strip()
         if expected_host_label and host_label != expected_host_label:
             errors.append(
@@ -1382,13 +1496,21 @@ def check_linux_smoke_summary(
                 f"builder_identity.host_identity.host_label {expected_host_label!r}, got {host_label!r}"
             )
 
-    evidence_run_id = str(raw_summary.get("evidence_run_id", "")).strip()
-    if not HOST_IDENTITY_RUN_RE.fullmatch(evidence_run_id) or not evidence_run_id.startswith(f"{target}-"):
+    evidence_run_id, evidence_run_id_is_string = required_string_field(
+        target,
+        "linux_smoke_summary",
+        "evidence_run_id",
+        raw_summary,
+        errors,
+    )
+    if evidence_run_id_is_string and (
+        not HOST_IDENTITY_RUN_RE.fullmatch(evidence_run_id) or not evidence_run_id.startswith(f"{target}-")
+    ):
         errors.append(
             f"{target} linux_smoke_summary evidence_run_id must be a sanitized target-scoped run id, "
             f"got {evidence_run_id!r}"
         )
-    elif builder_host:
+    elif evidence_run_id_is_string and builder_host:
         expected_run_id = str(builder_host.get("evidence_run_id", "")).strip()
         if expected_run_id and evidence_run_id != expected_run_id:
             errors.append(
@@ -1396,14 +1518,20 @@ def check_linux_smoke_summary(
                 f"builder_identity.host_identity.evidence_run_id {expected_run_id!r}, got {evidence_run_id!r}"
             )
 
-    observed_at_value = str(raw_summary.get("observed_at_utc", "")).strip()
+    observed_at_value, observed_at_is_string = required_string_field(
+        target,
+        "linux_smoke_summary",
+        "observed_at_utc",
+        raw_summary,
+        errors,
+    )
     observed_at = observed_at_utc_datetime(observed_at_value)
-    if observed_at is None:
+    if observed_at_is_string and observed_at is None:
         errors.append(
             f"{target} linux_smoke_summary observed_at_utc must be UTC ISO-8601 seconds ending in Z, "
             f"got {observed_at_value!r}"
         )
-    elif builder_host:
+    elif observed_at_is_string and builder_host:
         builder_observed_at_value = str(builder_host.get("observed_at_utc", "")).strip()
         builder_observed_at = observed_at_utc_datetime(builder_observed_at_value)
         if builder_observed_at is not None and observed_at < builder_observed_at:
@@ -1419,7 +1547,15 @@ def check_linux_smoke_summary(
         "glibc_version": "glibc_version",
     }
     for summary_key, builder_key in runtime_bindings.items():
-        value = str(raw_summary.get(summary_key, "")).strip()
+        value, value_is_string = required_string_field(
+            target,
+            "linux_smoke_summary",
+            summary_key,
+            raw_summary,
+            errors,
+        )
+        if not value_is_string:
+            continue
         if not value:
             errors.append(f"{target} linux_smoke_summary {summary_key} must be set")
             continue
@@ -1435,7 +1571,15 @@ def check_linux_smoke_summary(
         ("python_ssl_openssl", "python_ssl_openssl"),
         ("openssl_cli_version", "openssl_cli_version"),
     ):
-        value = str(raw_summary.get(summary_key, "")).strip()
+        value, value_is_string = required_string_field(
+            target,
+            "linux_smoke_summary",
+            summary_key,
+            raw_summary,
+            errors,
+        )
+        if not value_is_string:
+            continue
         if not value:
             errors.append(f"{target} linux_smoke_summary {summary_key} must be set")
             continue
@@ -1482,7 +1626,16 @@ def check_linux_smoke_summary_security(
             errors.append(f"{target} linux_smoke_summary security.{key} must be {expected!r}")
 
     for key in ("security_update_channel", "cve_review_reference"):
-        value = str(raw_security.get(key, "")).strip()
+        value, value_is_string = required_string_field(
+            target,
+            "linux_smoke_summary",
+            key,
+            raw_security,
+            errors,
+            display_key=f"security.{key}",
+        )
+        if not value_is_string:
+            continue
         if not value:
             errors.append(f"{target} linux_smoke_summary security.{key} must be set")
         elif not is_concrete_security_provenance(value, key):
@@ -1712,8 +1865,11 @@ def python_version_tuple(version: str) -> tuple[int, int]:
 def check_linux_runtime_identity(target: str, raw_identity: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     for key in ("os_release", "kernel_release", "glibc_version"):
-        value = str(raw_identity.get(key, "")).strip()
-        if not value:
+        raw_value = raw_identity.get(key, "")
+        value = raw_value.strip() if isinstance(raw_value, str) else ""
+        if not isinstance(raw_value, str):
+            errors.append(f"{target} builder_identity {key} must be a string")
+        elif not value:
             errors.append(f"{target} builder_identity {key} must be set")
     return errors
 
@@ -1725,7 +1881,7 @@ def check_xp_evidence(
     *,
     require_review_bundle: bool = False,
 ) -> list[str]:
-    target = str(entry.get("target", ""))
+    target = accepted_evidence_target(entry)
     expected = XP_TARGETS[target]
     errors = check_common_evidence(
         entry,
@@ -1739,24 +1895,34 @@ def check_xp_evidence(
         errors.append(f"{target} evidence_type must be windows-xp-native-host")
     if entry.get("architecture") != expected["architecture"]:
         errors.append(f"{target} architecture must be {expected['architecture']}")
-    release_tag = str(entry.get("release_tag", ""))
-    command = str(entry.get("native_evidence_validation_command", ""))
+    raw_release_tag = entry.get("release_tag", "")
+    release_tag = raw_release_tag if isinstance(raw_release_tag, str) else ""
+    raw_command = entry.get("native_evidence_validation_command", "")
+    command = raw_command if isinstance(raw_command, str) else ""
+    if not isinstance(raw_command, str):
+        errors.append(f"{target} native_evidence_validation_command must be a string command, got {raw_command!r}")
     errors.extend(check_xp_native_evidence_validation_command(target, release_tag, command))
     errors.extend(check_xp_workflow_inputs(target, entry, promotion_entries.get(target, {})))
     if entry.get("separate_legacy_toolchain") is not True:
         errors.append(f"{target} separate_legacy_toolchain must be true")
     if entry.get("current_python_pyqt6_stack") is not False:
         errors.append(f"{target} current_python_pyqt6_stack must be false")
-    evidence_sha = str(entry.get("xp_evidence_sha256", ""))
-    if not re.fullmatch(r"[0-9a-f]{64}", evidence_sha):
+    raw_evidence_sha = entry.get("xp_evidence_sha256", "")
+    evidence_sha = raw_evidence_sha if isinstance(raw_evidence_sha, str) else ""
+    if not isinstance(raw_evidence_sha, str):
+        errors.append(f"{target} xp_evidence_sha256 must be a string SHA-256 hex digest")
+    elif not re.fullmatch(r"[0-9a-f]{64}", evidence_sha):
         errors.append(f"{target} xp_evidence_sha256 must be a SHA-256 hex digest")
-    contract_sha = str(entry.get("xp_evidence_contract_sha256", ""))
-    if not re.fullmatch(r"[0-9a-f]{64}", contract_sha):
+    raw_contract_sha = entry.get("xp_evidence_contract_sha256", "")
+    contract_sha = raw_contract_sha if isinstance(raw_contract_sha, str) else ""
+    if not isinstance(raw_contract_sha, str):
+        errors.append(f"{target} xp_evidence_contract_sha256 must be a string SHA-256 hex digest")
+    elif not re.fullmatch(r"[0-9a-f]{64}", contract_sha):
         errors.append(f"{target} xp_evidence_contract_sha256 must be a SHA-256 hex digest")
     elif contract_sha != xp_native_evidence_contract_sha256():
         errors.append(f"{target} xp_evidence_contract_sha256 must match current XP evidence contract SHA-256")
     raw_summary = entry.get("xp_evidence_summary")
-    errors.extend(check_xp_evidence_summary(target, str(entry.get("release_tag", "")), raw_summary))
+    errors.extend(check_xp_evidence_summary(target, release_tag, raw_summary))
     errors.extend(
         check_xp_evidence_summary_release_source(
             target,
@@ -1765,7 +1931,7 @@ def check_xp_evidence(
         )
     )
     host_identity = raw_summary.get("host_identity") if isinstance(raw_summary, dict) else None
-    errors.extend(check_xp_host_identity_sha256(target, entry.get("xp_host_identity_sha256"), host_identity))
+    errors.extend(check_xp_host_identity_sha256(target, entry.get("xp_host_identity_sha256", ""), host_identity))
     errors.extend(check_xp_smoke_evidence_hashes(target, entry.get("xp_smoke_evidence_sha256")))
     errors.extend(check_xp_evidence_sources(target, entry))
     return errors
@@ -1917,7 +2083,8 @@ def check_xp_workflow_inputs(
     if unexpected_keys:
         errors.append(f"{target} workflow_inputs unexpected keys: {unexpected_keys}")
 
-    release_tag = str(entry.get("release_tag", ""))
+    raw_release_tag = entry.get("release_tag", "")
+    release_tag = raw_release_tag if isinstance(raw_release_tag, str) else ""
     if raw_inputs.get("target") != target:
         errors.append(f"{target} workflow_inputs target must be {target}")
     if raw_inputs.get("release_tag") != release_tag:
@@ -1936,9 +2103,10 @@ def check_xp_workflow_inputs(
             errors.append(f"{target} workflow_inputs release_asset_base_url must prefix every release_asset_url")
 
     source = entry.get("release_asset_source")
+    raw_source_workflow_run_url = source.get("workflow_run_url", "") if isinstance(source, dict) else ""
     source_workflow_run_url = (
-        str(source.get("workflow_run_url", "")).rstrip("/")
-        if isinstance(source, dict)
+        raw_source_workflow_run_url.strip().rstrip("/")
+        if isinstance(raw_source_workflow_run_url, str)
         else ""
     )
     source_match = GITHUB_ACTIONS_RUN_RE.fullmatch(source_workflow_run_url)
@@ -1949,7 +2117,8 @@ def check_xp_workflow_inputs(
             f"got {release_match.group(1)}"
         )
 
-    command = str(entry.get("native_evidence_validation_command", ""))
+    raw_command = entry.get("native_evidence_validation_command", "")
+    command = raw_command if isinstance(raw_command, str) else ""
     command_paths = xp_native_evidence_validation_command_paths(command)
     path_bindings = {
         "evidence_file": ("--evidence", command_paths["evidence_file"], True, False),
@@ -2287,12 +2456,22 @@ def check_xp_evidence_summary_release_source(
     )
     if not isinstance(raw_release_asset_source, dict):
         return errors
+    for field in ("workflow", "workflow_run_url", "head_sha"):
+        if not isinstance(raw_summary_source.get(field), str):
+            errors.append(f"{target} xp_evidence_summary release_source.{field} must be a string")
+    summary_run_attempt = raw_summary_source.get("run_attempt")
+    if (
+        not isinstance(summary_run_attempt, int)
+        or isinstance(summary_run_attempt, bool)
+        or summary_run_attempt < 1
+    ):
+        errors.append(f"{target} xp_evidence_summary release_source.run_attempt must be a positive integer")
     for field in ("workflow", "workflow_run_url", "head_sha", "run_attempt"):
         summary_value = raw_summary_source.get(field)
         release_value = raw_release_asset_source.get(field)
         if field == "workflow_run_url":
-            summary_value = str(summary_value).rstrip("/")
-            release_value = str(release_value).rstrip("/")
+            summary_value = summary_value.rstrip("/") if isinstance(summary_value, str) else summary_value
+            release_value = release_value.rstrip("/") if isinstance(release_value, str) else release_value
         if summary_value != release_value:
             errors.append(
                 f"{target} xp_evidence_summary release_source.{field} must match "
@@ -2302,7 +2481,9 @@ def check_xp_evidence_summary_release_source(
 
 
 def check_xp_host_identity_sha256(target: str, raw_digest: Any, raw_identity: Any) -> list[str]:
-    digest = str(raw_digest)
+    if not isinstance(raw_digest, str):
+        return [f"{target} xp_host_identity_sha256 must be a string SHA-256 hex digest"]
+    digest = raw_digest
     if not re.fullmatch(r"[0-9a-f]{64}", digest):
         return [f"{target} xp_host_identity_sha256 must be a SHA-256 hex digest"]
     if isinstance(raw_identity, dict) and contains_non_string_json_object_key(raw_identity):
@@ -2632,8 +2813,14 @@ def check_xp_smoke_command_binding(
         expected_values["--evidence-run-id"] = str(host_identity.get("evidence_run_id", ""))
         expected_values["--observed-at-utc"] = str(host_identity.get("observed_at_utc", ""))
     if isinstance(release_source, dict):
-        expected_values["--source-workflow-run-url"] = str(release_source.get("workflow_run_url", "")).rstrip("/")
-        expected_values["--source-head-sha"] = str(release_source.get("head_sha", ""))
+        raw_workflow_run_url = release_source.get("workflow_run_url", "")
+        expected_values["--source-workflow-run-url"] = (
+            raw_workflow_run_url.strip().rstrip("/")
+            if isinstance(raw_workflow_run_url, str)
+            else ""
+        )
+        raw_head_sha = release_source.get("head_sha", "")
+        expected_values["--source-head-sha"] = raw_head_sha if isinstance(raw_head_sha, str) else ""
         expected_values["--source-run-attempt"] = str(release_source.get("run_attempt", ""))
     if isinstance(os_identity, dict):
         expected_values["--os-name"] = str(os_identity.get("name", ""))
@@ -2704,15 +2891,34 @@ def check_security_patch_evidence(
 
 def is_concrete_security_provenance(value: str, field: str = "") -> bool:
     lowered = value.strip().lower()
-    if not lowered or any(marker in lowered for marker in FORBIDDEN_SECURITY_PROVENANCE_MARKERS):
+    if (
+        not lowered
+        or any(marker in lowered for marker in FORBIDDEN_SECURITY_PROVENANCE_MARKERS)
+        or has_reserved_security_provenance_url(value)
+    ):
         return False
     if field == "security_update_channel":
         return any(marker in lowered for marker in SECURITY_UPDATE_PROVENANCE_MARKERS)
     if field == "cve_review_reference":
-        return any(marker in lowered for marker in CVE_REVIEW_PROVENANCE_MARKERS) or lowered.startswith(
-            "https://"
-        )
+        return any(marker in lowered for marker in CVE_REVIEW_PROVENANCE_MARKERS)
     return True
+
+
+def has_reserved_security_provenance_url(value: str) -> bool:
+    for match in SECURITY_PROVENANCE_URL_RE.finditer(value):
+        raw_url = match.group(0).rstrip(".,);]}")
+        try:
+            parsed = urlsplit(raw_url)
+        except ValueError:
+            return True
+        host = (parsed.hostname or "").casefold().rstrip(".")
+        if parsed.scheme.casefold() != "https":
+            return True
+        if host in RESERVED_SECURITY_PROVENANCE_URL_HOSTS:
+            return True
+        if any(host.endswith(suffix) for suffix in RESERVED_SECURITY_PROVENANCE_URL_SUFFIXES):
+            return True
+    return False
 
 
 def check_linux_security_patch_evidence(target: str, raw_evidence: Any) -> list[str]:
@@ -2742,6 +2948,9 @@ def check_xp_smoke_evidence_hashes(target: str, raw_hashes: Any) -> list[str]:
         if not isinstance(name, str):
             errors.append(f"{target} xp_smoke_evidence_sha256 smoke ids must be strings, got {name!r}")
             continue
+        if not isinstance(value, str):
+            errors.append(f"{target} xp_smoke_evidence_sha256 for {name} must be a string SHA-256 hex digest")
+            continue
         hashes[name] = str(value)
     case_collisions = case_insensitive_name_collisions(set(hashes))
     if case_collisions:
@@ -2769,6 +2978,9 @@ def check_linux_smoke_evidence_hashes(target: str, raw_hashes: Any) -> list[str]
     for name, value in raw_hashes.items():
         if not isinstance(name, str):
             errors.append(f"{target} linux_smoke_evidence_sha256 smoke ids must be strings, got {name!r}")
+            continue
+        if not isinstance(value, str):
+            errors.append(f"{target} linux_smoke_evidence_sha256 for {name} must be a string SHA-256 hex digest")
             continue
         hashes[name] = str(value)
     case_collisions = case_insensitive_name_collisions(set(hashes))
@@ -3153,11 +3365,20 @@ def check_linux_smoke_artifact_sha256_lines(
     if not isinstance(raw_artifact_sha256, dict):
         return [f"{target} {label} artifact SHA-256 binding requires artifact_sha256 map"]
     expected_names = linux_smoke_artifact_names(target, release_tag)
-    expected_hashes = {
-        name: str(raw_artifact_sha256.get(name, ""))
-        for name in expected_names
-    }
     errors: list[str] = []
+    expected_hashes: dict[str, str] = {}
+    for name in expected_names:
+        raw_digest = raw_artifact_sha256.get(name)
+        if raw_digest is None:
+            errors.append(f"{target} {label} artifact_sha256 for smoke-tested artifact {name} must be set")
+            continue
+        if not isinstance(raw_digest, str):
+            errors.append(
+                f"{target} {label} artifact_sha256 for smoke-tested artifact {name} "
+                "must be a string SHA-256 hex digest"
+            )
+            continue
+        expected_hashes[name] = raw_digest
     observed: dict[str, list[str]] = {}
     prefix = "native installer smoke artifact sha256: "
     for line in text.splitlines():
@@ -3177,7 +3398,10 @@ def check_linux_smoke_artifact_sha256_lines(
         errors.append(f"{target} {label} has duplicate artifact SHA-256 lines: {duplicates}")
     for filename, digest in sorted(expected_hashes.items()):
         if not re.fullmatch(r"[0-9a-f]{64}", digest):
-            errors.append(f"{target} {label} artifact_sha256 for smoke-tested artifact {filename} must be set")
+            errors.append(
+                f"{target} {label} artifact_sha256 for smoke-tested artifact {filename} "
+                "must be a SHA-256 hex digest"
+            )
             continue
         expected_line = f"{prefix}{filename} {digest}"
         if expected_line not in text:
@@ -3205,16 +3429,25 @@ def check_common_evidence(
         errors.append(f"{target} evidence status must be accepted")
     if entry.get("readiness_percent") != 100.0:
         errors.append(f"{target} evidence readiness_percent must be 100.0")
-    release_tag = str(entry.get("release_tag", ""))
-    if not re.fullmatch(r"v\d+\.\d+\.\d+", release_tag):
+    raw_release_tag = entry.get("release_tag", "")
+    release_tag = raw_release_tag if isinstance(raw_release_tag, str) else ""
+    if not isinstance(raw_release_tag, str):
+        errors.append(f"{target} release_tag must be a string")
+    elif not re.fullmatch(r"v\d+\.\d+\.\d+", release_tag):
         errors.append(f"{target} release_tag must look like vX.Y.Z")
     errors.extend(check_evidence_checks(target, entry.get("checks"), required_checks))
-    command = str(entry.get("artifact_validation_command", ""))
+    raw_command = entry.get("artifact_validation_command", "")
+    command = raw_command if isinstance(raw_command, str) else ""
+    if not isinstance(raw_command, str):
+        errors.append(f"{target} artifact_validation_command must be a string command, got {raw_command!r}")
     errors.extend(check_artifact_validation_command(target, release_tag, command))
     errors.extend(check_local_evidence_preflight_command(target, release_tag, entry))
     errors.extend(check_staged_upload_command(target, release_tag, entry))
-    promotion_config_sha = str(entry.get("promotion_config_sha256", ""))
-    if not re.fullmatch(r"[0-9a-f]{64}", promotion_config_sha):
+    raw_promotion_config_sha = entry.get("promotion_config_sha256", "")
+    promotion_config_sha = raw_promotion_config_sha if isinstance(raw_promotion_config_sha, str) else ""
+    if not isinstance(raw_promotion_config_sha, str):
+        errors.append(f"{target} promotion_config_sha256 must be a string SHA-256 hex digest")
+    elif not re.fullmatch(r"[0-9a-f]{64}", promotion_config_sha):
         errors.append(f"{target} promotion_config_sha256 must be a SHA-256 hex digest")
     elif promotion_config_sha != promotion_hash:
         errors.append(f"{target} promotion_config_sha256 must match current promotion config SHA-256")
@@ -3448,17 +3681,26 @@ def check_release_asset_source(
             RELEASE_ASSET_SOURCE_KEYS,
         )
     )
-    source_type = str(raw_source.get("type", ""))
-    if source_type not in RELEASE_ASSET_SOURCE_TYPES:
-        errors.append(
-            f"{target} release_asset_source.type must be one of "
-            f"{sorted(RELEASE_ASSET_SOURCE_TYPES)}, got {source_type!r}"
-        )
-    workflow_run_url = str(raw_source.get("workflow_run_url", "")).rstrip("/")
-    workflow_match = GITHUB_ACTIONS_RUN_RE.fullmatch(workflow_run_url)
-    if not workflow_match:
-        errors.append(f"{target} release_asset_source.workflow_run_url must be a GitHub Actions run URL")
+    raw_source_type = raw_source.get("type", "")
+    if not isinstance(raw_source_type, str):
+        errors.append(f"{target} release_asset_source.type must be a string")
     else:
+        source_type = raw_source_type.strip()
+        if source_type not in RELEASE_ASSET_SOURCE_TYPES:
+            errors.append(
+                f"{target} release_asset_source.type must be one of "
+                f"{sorted(RELEASE_ASSET_SOURCE_TYPES)}, got {source_type!r}"
+            )
+    raw_workflow_run_url = raw_source.get("workflow_run_url", "")
+    workflow_match = None
+    if not isinstance(raw_workflow_run_url, str):
+        errors.append(f"{target} release_asset_source.workflow_run_url must be a string")
+    else:
+        workflow_run_url = raw_workflow_run_url.strip().rstrip("/")
+        workflow_match = GITHUB_ACTIONS_RUN_RE.fullmatch(workflow_run_url)
+    if raw_workflow_run_url == "" or (isinstance(raw_workflow_run_url, str) and not workflow_match):
+        errors.append(f"{target} release_asset_source.workflow_run_url must be a GitHub Actions run URL")
+    elif workflow_match:
         release_repositories = release_asset_repositories(native_release_assets)
         workflow_repository = workflow_match.group(1)
         if release_repositories and release_repositories != {workflow_repository}:
@@ -3466,33 +3708,41 @@ def check_release_asset_source(
                 f"{target} release_asset_source.workflow_run_url repository must match release asset repository "
                 f"{sorted(release_repositories)}, got {workflow_repository}"
             )
-    workflow = str(raw_source.get("workflow", "")).strip()
     expected_workflow = release_source_workflow(target)
-    if workflow != expected_workflow:
+    raw_workflow = raw_source.get("workflow", "")
+    if not isinstance(raw_workflow, str):
+        errors.append(f"{target} release_asset_source.workflow must be a string")
+    elif raw_workflow.strip() != expected_workflow:
         errors.append(f"{target} release_asset_source.workflow must be {expected_workflow}")
-    artifact_name = str(raw_source.get("artifact_name", "")).strip()
-    if (
-        not artifact_name
-        or "<" in artifact_name
-        or ">" in artifact_name
-        or "/" in artifact_name
-        or "\\" in artifact_name
-    ):
-        errors.append(f"{target} release_asset_source.artifact_name must be a concrete artifact name")
-    elif target in LINUX_TARGETS:
-        expected_artifact_name = linux_release_source_artifact_name(target, release_tag)
-        if artifact_name != expected_artifact_name:
-            errors.append(
-                f"{target} release_asset_source.artifact_name must be {expected_artifact_name}"
-            )
-    elif target in XP_TARGETS:
-        expected_artifact_name = xp_release_source_artifact_name(target, release_tag)
-        if artifact_name != expected_artifact_name:
-            errors.append(
-                f"{target} release_asset_source.artifact_name must be {expected_artifact_name}"
-            )
-    head_sha = str(raw_source.get("head_sha", "")).strip()
-    if not RELEASE_SOURCE_HEAD_SHA_RE.fullmatch(head_sha):
+    raw_artifact_name = raw_source.get("artifact_name", "")
+    if not isinstance(raw_artifact_name, str):
+        errors.append(f"{target} release_asset_source.artifact_name must be a string")
+    else:
+        artifact_name = raw_artifact_name.strip()
+        if (
+            not artifact_name
+            or "<" in artifact_name
+            or ">" in artifact_name
+            or "/" in artifact_name
+            or "\\" in artifact_name
+        ):
+            errors.append(f"{target} release_asset_source.artifact_name must be a concrete artifact name")
+        elif target in LINUX_TARGETS:
+            expected_artifact_name = linux_release_source_artifact_name(target, release_tag)
+            if artifact_name != expected_artifact_name:
+                errors.append(
+                    f"{target} release_asset_source.artifact_name must be {expected_artifact_name}"
+                )
+        elif target in XP_TARGETS:
+            expected_artifact_name = xp_release_source_artifact_name(target, release_tag)
+            if artifact_name != expected_artifact_name:
+                errors.append(
+                    f"{target} release_asset_source.artifact_name must be {expected_artifact_name}"
+                )
+    raw_head_sha = raw_source.get("head_sha", "")
+    if not isinstance(raw_head_sha, str):
+        errors.append(f"{target} release_asset_source.head_sha must be a string")
+    elif not RELEASE_SOURCE_HEAD_SHA_RE.fullmatch(raw_head_sha.strip()):
         errors.append(f"{target} release_asset_source.head_sha must be a 40-character lowercase Git SHA")
     run_attempt = raw_source.get("run_attempt")
     if not isinstance(run_attempt, int) or isinstance(run_attempt, bool) or run_attempt < 1:
@@ -3570,11 +3820,18 @@ def check_review_bundle(
                 REVIEW_BUNDLE_RECORD_KEYS,
             )
         )
-        actual_file = str(raw_record.get("file", ""))
-        if actual_file != expected_file:
+        raw_file = raw_record.get("file", "")
+        if not isinstance(raw_file, str):
+            errors.append(f"{target} review_bundle {key}.file must be a string, got {raw_file!r}")
+        elif raw_file != expected_file:
             errors.append(f"{target} review_bundle {key}.file must be {expected_file}")
-        digest = str(raw_record.get("sha256", ""))
-        if not re.fullmatch(r"[0-9a-f]{64}", digest):
+        raw_digest = raw_record.get("sha256", "")
+        if not isinstance(raw_digest, str):
+            errors.append(
+                f"{target} review_bundle {key}.sha256 must be a string SHA-256 hex digest, "
+                f"got {raw_digest!r}"
+            )
+        elif not re.fullmatch(r"[0-9a-f]{64}", raw_digest):
             errors.append(f"{target} review_bundle {key}.sha256 must be a SHA-256 hex digest")
         size = raw_record.get("size_bytes")
         if not isinstance(size, int) or isinstance(size, bool) or size <= 0:
@@ -3771,9 +4028,14 @@ def check_local_evidence_preflight_command(
     release_tag: str,
     entry: dict[str, Any],
 ) -> list[str]:
-    command = str(entry.get("local_evidence_preflight_command", ""))
+    raw_command = entry.get("local_evidence_preflight_command", "")
+    command = raw_command if isinstance(raw_command, str) else ""
     expected_prefix = "python scripts/check_platform_goal_local_evidence.py "
     errors: list[str] = []
+    if not isinstance(raw_command, str):
+        errors.append(
+            f"{target} local_evidence_preflight_command must be a string command, got {raw_command!r}"
+        )
     if not command.startswith(expected_prefix):
         errors.append(
             f"{target} local_evidence_preflight_command must start with {expected_prefix!r}"
@@ -3814,7 +4076,9 @@ def check_local_evidence_preflight_command(
         errors.append(
             f"{target} local_evidence_preflight_command --assets-dir must be concrete, got {asset_dirs[0]!r}"
         )
-    artifact_asset_dirs = command_argument_values(str(entry.get("artifact_validation_command", "")), "--assets-dir")
+    raw_artifact_command = entry.get("artifact_validation_command", "")
+    artifact_command = raw_artifact_command if isinstance(raw_artifact_command, str) else ""
+    artifact_asset_dirs = command_argument_values(artifact_command, "--assets-dir")
     if len(asset_dirs) == 1 and len(artifact_asset_dirs) == 1 and asset_dirs != artifact_asset_dirs:
         errors.append(
             f"{target} local_evidence_preflight_command --assets-dir must match artifact_validation_command "
@@ -3938,13 +4202,15 @@ def check_linux_local_evidence_preflight_command(
             )
         )
     workflow_urls = command_argument_values(command, "--linux-workflow-run-url")
-    expected_workflow_url = str(entry.get("workflow_run_url", "")).rstrip("/")
+    raw_workflow_url = entry.get("workflow_run_url", "")
+    expected_workflow_url = raw_workflow_url.strip().rstrip("/") if isinstance(raw_workflow_url, str) else ""
     if workflow_urls != [expected_workflow_url]:
         errors.append(
             f"{target} local_evidence_preflight_command --linux-workflow-run-url must match workflow_run_url"
         )
     source = entry.get("release_asset_source")
-    expected_head_sha = str(source.get("head_sha", "")).strip() if isinstance(source, dict) else ""
+    raw_head_sha = source.get("head_sha", "") if isinstance(source, dict) else ""
+    expected_head_sha = raw_head_sha.strip() if isinstance(raw_head_sha, str) else ""
     source_head_shas = command_argument_values(command, "--linux-source-head-sha")
     if source_head_shas != [expected_head_sha]:
         errors.append(
@@ -3986,18 +4252,16 @@ def check_xp_local_evidence_preflight_command(
         errors.append(f"{target} local_evidence_preflight_command must not include --allow-extra-artifacts")
 
     source = entry.get("release_asset_source")
-    expected_workflow_url = (
-        str(source.get("workflow_run_url", "")).rstrip("/")
-        if isinstance(source, dict)
-        else ""
-    )
+    raw_workflow_url = source.get("workflow_run_url", "") if isinstance(source, dict) else ""
+    expected_workflow_url = raw_workflow_url.strip().rstrip("/") if isinstance(raw_workflow_url, str) else ""
     workflow_urls = command_argument_values(command, "--xp-source-workflow-run-url")
     if workflow_urls != [expected_workflow_url]:
         errors.append(
             f"{target} local_evidence_preflight_command --xp-source-workflow-run-url must match "
             "release_asset_source.workflow_run_url"
         )
-    expected_head_sha = str(source.get("head_sha", "")).strip() if isinstance(source, dict) else ""
+    raw_head_sha = source.get("head_sha", "") if isinstance(source, dict) else ""
+    expected_head_sha = raw_head_sha.strip() if isinstance(raw_head_sha, str) else ""
     source_head_shas = command_argument_values(command, "--xp-source-head-sha")
     if source_head_shas != [expected_head_sha]:
         errors.append(
@@ -4012,9 +4276,9 @@ def check_xp_local_evidence_preflight_command(
             "release_asset_source.run_attempt"
         )
 
-    native_paths = xp_native_evidence_validation_command_paths(
-        str(entry.get("native_evidence_validation_command", ""))
-    )
+    raw_native_command = entry.get("native_evidence_validation_command", "")
+    native_command = raw_native_command if isinstance(raw_native_command, str) else ""
+    native_paths = xp_native_evidence_validation_command_paths(native_command)
     path_bindings = {
         "--xp-evidence": ("--evidence", native_paths["evidence_file"], True, False),
         "--assets-dir": ("--assets-dir", native_paths["assets_dir"], False, True),
@@ -4053,13 +4317,16 @@ def check_staged_upload_command(
     release_tag: str,
     entry: dict[str, Any],
 ) -> list[str]:
-    command = str(entry.get("staged_upload_command", ""))
+    raw_command = entry.get("staged_upload_command", "")
+    command = raw_command if isinstance(raw_command, str) else ""
     expected_prefix = (
         "python scripts/stage_extended_linux_evidence_upload.py "
         if target in LINUX_TARGETS
         else "python scripts/stage_xp_native_evidence_upload.py "
     )
     errors: list[str] = []
+    if not isinstance(raw_command, str):
+        errors.append(f"{target} staged_upload_command must be a string command, got {raw_command!r}")
     if not command.startswith(expected_prefix):
         errors.append(f"{target} staged_upload_command must start with {expected_prefix!r}")
     errors.extend(
@@ -4125,7 +4392,9 @@ def check_linux_staged_upload_command(
     if not concrete_path_value(source_dir):
         errors.append(f"{target} staged_upload_command --source-dir must be concrete, got {source_dir!r}")
         return errors
-    artifact_asset_dirs = command_argument_values(str(entry.get("artifact_validation_command", "")), "--assets-dir")
+    raw_artifact_command = entry.get("artifact_validation_command", "")
+    artifact_command = raw_artifact_command if isinstance(raw_artifact_command, str) else ""
+    artifact_asset_dirs = command_argument_values(artifact_command, "--assets-dir")
     if len(artifact_asset_dirs) == 1 and source_dirs != artifact_asset_dirs:
         errors.append(
             f"{target} staged_upload_command --source-dir must match artifact_validation_command --assets-dir"
@@ -4165,10 +4434,9 @@ def check_xp_staged_upload_command(
         if not concrete_path_value(assets_dir):
             errors.append(f"{target} staged_upload_command --assets-dir must be concrete, got {assets_dir!r}")
         else:
-            artifact_asset_dirs = command_argument_values(
-                str(entry.get("artifact_validation_command", "")),
-                "--assets-dir",
-            )
+            raw_artifact_command = entry.get("artifact_validation_command", "")
+            artifact_command = raw_artifact_command if isinstance(raw_artifact_command, str) else ""
+            artifact_asset_dirs = command_argument_values(artifact_command, "--assets-dir")
             if len(artifact_asset_dirs) == 1 and asset_dirs != artifact_asset_dirs:
                 errors.append(
                     f"{target} staged_upload_command --assets-dir must match "
@@ -4295,6 +4563,9 @@ def check_artifact_sha256(target: str, raw_hashes: Any, expected_artifact_names:
         if not isinstance(name, str) or not exact_safe_file_name(name):
             errors.append(f"{target} artifact_sha256 keys must be exact safe file names, got {name!r}")
             continue
+        if not isinstance(value, str):
+            errors.append(f"{target} artifact_sha256 for {name} must be a string SHA-256 hex digest")
+            continue
         hashes[name] = str(value)
     case_collisions = case_insensitive_name_collisions(set(hashes))
     if case_collisions:
@@ -4360,7 +4631,7 @@ def check_registry_consistency(registry: dict[str, Any]) -> list[str]:
     for item in rows:
         if not isinstance(item, dict):
             continue
-        target = str(item.get("target", ""))
+        target = accepted_evidence_target(item)
         if target:
             by_target.setdefault(target, []).append(item)
     for target, entries in sorted(by_target.items()):

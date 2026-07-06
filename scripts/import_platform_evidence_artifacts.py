@@ -60,6 +60,7 @@ SOURCE_RUN_ARTIFACTS_PAGE_SIZE = 100
 REQUIRE_VERIFY_SOURCE_RUN_DRY_RUN_ERROR = (
     "--dry-run for protected platform evidence imports requires --verify-source-run"
 )
+SHA256_HEX_CHARS = set("0123456789abcdef")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -405,14 +406,50 @@ def import_record(
     source = record.get("release_asset_source")
     if not isinstance(source, dict):
         return [f"{target} release_asset_source must be an object"]
-    run_url = str(source.get("workflow_run_url", "")).rstrip("/")
-    run_match = GITHUB_ACTIONS_RUN_RE.fullmatch(run_url)
-    artifact_name = str(source.get("artifact_name", "")).strip()
-    release_tag = str(record.get("release_tag", "")).strip()
-    expected_head_sha = str(source.get("head_sha", "")).strip()
-    expected_run_attempt = source.get("run_attempt")
+    field_errors: list[str] = []
+    raw_run_url = source.get("workflow_run_url", "")
+    if isinstance(raw_run_url, str):
+        run_url = raw_run_url.rstrip("/")
+    else:
+        run_url = ""
+        field_errors.append(
+            f"{target} release_asset_source.workflow_run_url must be a string, got {raw_run_url!r}"
+        )
+    raw_artifact_name = source.get("artifact_name", "")
+    if isinstance(raw_artifact_name, str):
+        artifact_name = raw_artifact_name.strip()
+    else:
+        artifact_name = ""
+        field_errors.append(
+            f"{target} release_asset_source.artifact_name must be a string, got {raw_artifact_name!r}"
+        )
+    raw_release_tag = record.get("release_tag", "")
+    if isinstance(raw_release_tag, str):
+        release_tag = raw_release_tag.strip()
+    else:
+        release_tag = ""
+        field_errors.append(f"{target} release_tag must be a string, got {raw_release_tag!r}")
+    raw_head_sha = source.get("head_sha", "")
+    if isinstance(raw_head_sha, str):
+        expected_head_sha = raw_head_sha.strip()
+    else:
+        expected_head_sha = ""
+        field_errors.append(
+            f"{target} release_asset_source.head_sha must be a string, got {raw_head_sha!r}"
+        )
     expected_workflow = release_source_workflow(target)
-    workflow = str(source.get("workflow", "")).strip()
+    raw_workflow = source.get("workflow", "")
+    if isinstance(raw_workflow, str):
+        workflow = raw_workflow.strip()
+    else:
+        workflow = ""
+        field_errors.append(
+            f"{target} release_asset_source.workflow must be a string, got {raw_workflow!r}"
+        )
+    if field_errors:
+        return field_errors
+    run_match = GITHUB_ACTIONS_RUN_RE.fullmatch(run_url)
+    expected_run_attempt = source.get("run_attempt")
     if not run_match:
         return [f"{target} release_asset_source.workflow_run_url must be a GitHub Actions run URL"]
     if workflow != expected_workflow:
@@ -689,10 +726,16 @@ def verify_source_run(
             f"{target} release_asset_source workflow run id must match accepted record "
             f"{expected_run_id}, got {run_id!r}"
         )
-    if str(data.get("htmlUrl", "")).rstrip("/") != expected_workflow_run_url.rstrip("/"):
+    html_url = data.get("htmlUrl", "")
+    if not isinstance(html_url, str):
+        errors.append(
+            f"{target} release_asset_source workflow run htmlUrl must be a string, "
+            f"got {html_url!r}"
+        )
+    elif html_url.rstrip("/") != expected_workflow_run_url.rstrip("/"):
         errors.append(
             f"{target} release_asset_source workflow run htmlUrl must match accepted record "
-            f"{expected_workflow_run_url}, got {data.get('htmlUrl')!r}"
+            f"{expected_workflow_run_url}, got {html_url!r}"
         )
     expected_repository = repository_from_workflow_run_url(expected_workflow_run_url)
     if expected_run_id_int is not None:
@@ -1029,8 +1072,14 @@ def verify_source_artifact(
                 f"{target} release_asset_source artifact {artifact_name} workflow_run.id must match "
                 f"run {expected_run_id}, got {artifact_run_id!r}"
             )
-        artifact_head_sha = str(workflow_run.get("head_sha", "")).strip()
-        if artifact_head_sha != expected_head_sha:
+        raw_artifact_head_sha = workflow_run.get("head_sha", "")
+        artifact_head_sha = raw_artifact_head_sha.strip() if isinstance(raw_artifact_head_sha, str) else ""
+        if not isinstance(raw_artifact_head_sha, str):
+            errors.append(
+                f"{target} release_asset_source artifact {artifact_name} workflow_run.head_sha "
+                f"must be a string, got {raw_artifact_head_sha!r}"
+            )
+        elif artifact_head_sha != expected_head_sha:
             errors.append(
                 f"{target} release_asset_source artifact {artifact_name} workflow_run.head_sha must match "
                 f"accepted record {expected_head_sha}, got {artifact_head_sha!r}"
@@ -1231,7 +1280,10 @@ def current_checkout_head_sha() -> str:
 def copy_expected_files(record: dict[str, Any], *, source_root: Path, out_dir: Path) -> list[str]:
     target = str(record.get("target", ""))
     errors: list[str] = []
-    expected_files = expected_release_files(record)
+    expected_file_errors, expected_file_names = expected_release_file_name_entries(record)
+    if expected_file_errors:
+        return expected_file_errors
+    expected_files = set(expected_file_names)
     unsafe_files = sorted(filename for filename in expected_files if not exact_safe_file_name(filename))
     if unsafe_files:
         return [f"{target} release asset import expected files must be exact safe file names: {unsafe_files}"]
@@ -1293,10 +1345,13 @@ def check_release_source_declared_files_for_record(record: dict[str, Any]) -> li
     source_errors, declared_files = release_source_contains_files(record)
     if source_errors:
         return source_errors
+    expected_file_errors, expected_file_names = expected_release_file_name_entries(record)
+    if expected_file_errors:
+        return expected_file_errors
     return check_release_source_declared_files(
         target,
         declared_files=declared_files,
-        expected_files=expected_release_files(record),
+        expected_files=set(expected_file_names),
     )
 
 
@@ -1365,6 +1420,12 @@ def checked_artifact_hash_items(record: dict[str, Any], *, label: str) -> tuple[
         if not isinstance(filename, str) or not exact_safe_file_name(filename):
             errors.append(f"{target} {label} artifact_sha256 keys must be exact safe file names, got {filename!r}")
             continue
+        if not lowercase_sha256_hex(digest):
+            errors.append(
+                f"{target} {label} artifact_sha256.{filename} "
+                "must be a lowercase SHA-256 hex digest"
+            )
+            continue
         items.append((filename, digest))
     case_collisions = case_insensitive_name_collisions({filename for filename, _digest in items})
     if case_collisions:
@@ -1375,36 +1436,99 @@ def checked_artifact_hash_items(record: dict[str, Any], *, label: str) -> tuple[
     return sorted(items, key=lambda item: item[0]), errors
 
 
+def checked_review_bundle_records(
+    record: dict[str, Any],
+    *,
+    label: str,
+) -> tuple[list[tuple[str, str, Any, str]], list[str]]:
+    target = str(record.get("target", ""))
+    review_bundle = record.get("review_bundle")
+    if not isinstance(review_bundle, dict):
+        return [], []
+    records: list[tuple[str, str, Any, str]] = []
+    errors: list[str] = []
+    for key in ("manifest", "archive", "sha256s"):
+        bundle_record = review_bundle.get(key)
+        if not isinstance(bundle_record, dict):
+            continue
+        raw_filename = bundle_record.get("file", "")
+        if not isinstance(raw_filename, str) or not exact_safe_file_name(raw_filename):
+            errors.append(
+                f"{target} {label} review_bundle {key}.file must be an exact safe file name, "
+                f"got {raw_filename!r}"
+            )
+            continue
+        raw_size = bundle_record.get("size_bytes")
+        if not isinstance(raw_size, int) or isinstance(raw_size, bool) or raw_size <= 0:
+            errors.append(f"{target} {label} review_bundle {key}.size_bytes must be a positive integer")
+        raw_sha256 = bundle_record.get("sha256", "")
+        if not lowercase_sha256_hex(raw_sha256):
+            errors.append(
+                f"{target} {label} review_bundle {key}.sha256 must be a lowercase SHA-256 hex digest"
+            )
+            continue
+        records.append((key, raw_filename, raw_size, raw_sha256))
+    filename_counts: dict[str, int] = {}
+    for _key, filename, _size, _sha256 in records:
+        filename_counts[filename] = filename_counts.get(filename, 0) + 1
+    duplicate_files = sorted(filename for filename, count in filename_counts.items() if count > 1)
+    if duplicate_files:
+        errors.append(
+            f"{target} {label} review_bundle files must not contain duplicates: "
+            f"{duplicate_files}"
+        )
+    case_collisions = case_insensitive_name_collisions({filename for _key, filename, _size, _sha256 in records})
+    if case_collisions:
+        errors.append(
+            f"{target} {label} review_bundle files must not collide on "
+            f"case-insensitive filesystems: {case_collisions}"
+        )
+    return records, errors
+
+
+def lowercase_sha256_hex(value: Any) -> bool:
+    return isinstance(value, str) and len(value) == 64 and set(value) <= SHA256_HEX_CHARS
+
+
 def check_downloaded_source_hashes(record: dict[str, Any], *, source_root: Path) -> list[str]:
     target = str(record.get("target", ""))
     artifact_items, errors = checked_artifact_hash_items(record, label="downloaded source artifact")
     for filename, digest in artifact_items:
         path = source_root / filename
+        if path.is_symlink():
+            errors.append(
+                f"{target} downloaded source artifact native artifact must not be a symlink: {filename}"
+            )
+            continue
         if not path.is_file():
             errors.append(f"{target} downloaded source artifact missing native artifact: {filename}")
             continue
-        if sha256_file(path) != str(digest):
+        if sha256_file(path) != digest:
             errors.append(f"{target} downloaded source artifact native artifact SHA-256 mismatch: {filename}")
-    review_bundle = record.get("review_bundle")
-    if isinstance(review_bundle, dict):
-        for key in ("manifest", "archive", "sha256s"):
-            bundle_record = review_bundle.get(key)
-            if not isinstance(bundle_record, dict):
-                continue
-            filename = str(bundle_record.get("file", ""))
-            path = source_root / filename
-            if not path.is_file():
-                errors.append(f"{target} downloaded source artifact missing review bundle {key}: {filename}")
-                continue
-            expected_size = bundle_record.get("size_bytes")
-            if not isinstance(expected_size, int) or isinstance(expected_size, bool) or expected_size != path.stat().st_size:
-                errors.append(
-                    f"{target} downloaded source artifact review bundle {key} size_bytes mismatch: {filename}"
-                )
-            if sha256_file(path) != str(bundle_record.get("sha256", "")):
-                errors.append(
-                    f"{target} downloaded source artifact review bundle {key} SHA-256 mismatch: {filename}"
-                )
+    bundle_records, bundle_errors = checked_review_bundle_records(
+        record,
+        label="downloaded source artifact",
+    )
+    errors.extend(bundle_errors)
+    for key, filename, expected_size, expected_sha256 in bundle_records:
+        path = source_root / filename
+        if path.is_symlink():
+            errors.append(
+                f"{target} downloaded source artifact review bundle {key} "
+                f"must not be a symlink: {filename}"
+            )
+            continue
+        if not path.is_file():
+            errors.append(f"{target} downloaded source artifact missing review bundle {key}: {filename}")
+            continue
+        if not isinstance(expected_size, int) or isinstance(expected_size, bool) or expected_size != path.stat().st_size:
+            errors.append(
+                f"{target} downloaded source artifact review bundle {key} size_bytes mismatch: {filename}"
+            )
+        if sha256_file(path) != expected_sha256:
+            errors.append(
+                f"{target} downloaded source artifact review bundle {key} SHA-256 mismatch: {filename}"
+            )
     return errors
 
 
@@ -1413,27 +1537,31 @@ def check_imported_hashes(record: dict[str, Any], *, out_dir: Path) -> list[str]
     artifact_items, errors = checked_artifact_hash_items(record, label="imported native artifact")
     for filename, digest in artifact_items:
         path = out_dir / filename
+        if path.is_symlink():
+            errors.append(f"{target} imported native artifact must not be a symlink: {filename}")
+            continue
         if not path.is_file():
             errors.append(f"{target} imported native artifact missing: {filename}")
             continue
-        if sha256_file(path) != str(digest):
+        if sha256_file(path) != digest:
             errors.append(f"{target} imported native artifact SHA-256 mismatch: {filename}")
-    review_bundle = record.get("review_bundle")
-    if isinstance(review_bundle, dict):
-        for key in ("manifest", "archive", "sha256s"):
-            bundle_record = review_bundle.get(key)
-            if not isinstance(bundle_record, dict):
-                continue
-            filename = str(bundle_record.get("file", ""))
-            path = out_dir / filename
-            if not path.is_file():
-                errors.append(f"{target} imported review bundle {key} missing: {filename}")
-                continue
-            expected_size = bundle_record.get("size_bytes")
-            if not isinstance(expected_size, int) or isinstance(expected_size, bool) or expected_size != path.stat().st_size:
-                errors.append(f"{target} imported review bundle {key} size_bytes mismatch: {filename}")
-            if sha256_file(path) != str(bundle_record.get("sha256", "")):
-                errors.append(f"{target} imported review bundle {key} SHA-256 mismatch: {filename}")
+    bundle_records, bundle_errors = checked_review_bundle_records(
+        record,
+        label="imported",
+    )
+    errors.extend(bundle_errors)
+    for key, filename, expected_size, expected_sha256 in bundle_records:
+        path = out_dir / filename
+        if path.is_symlink():
+            errors.append(f"{target} imported review bundle {key} must not be a symlink: {filename}")
+            continue
+        if not path.is_file():
+            errors.append(f"{target} imported review bundle {key} missing: {filename}")
+            continue
+        if not isinstance(expected_size, int) or isinstance(expected_size, bool) or expected_size != path.stat().st_size:
+            errors.append(f"{target} imported review bundle {key} size_bytes mismatch: {filename}")
+        if sha256_file(path) != expected_sha256:
+            errors.append(f"{target} imported review bundle {key} SHA-256 mismatch: {filename}")
     return errors
 
 
@@ -1488,6 +1616,21 @@ def expected_release_file_name_entries(record: dict[str, Any]) -> tuple[list[str
                     files.append(filename)
     if target in PROTECTED_GOAL_TARGETS:
         files.append(accepted_record_source_file(target))
+    file_counts: dict[str, int] = {}
+    for filename in files:
+        file_counts[filename] = file_counts.get(filename, 0) + 1
+    duplicate_files = sorted(filename for filename, count in file_counts.items() if count > 1)
+    if duplicate_files:
+        errors.append(
+            f"{target} release asset import expected files must not contain duplicates: "
+            f"{duplicate_files}"
+        )
+    case_collisions = case_insensitive_name_collisions(set(files))
+    if case_collisions:
+        errors.append(
+            f"{target} release asset import expected files must not collide on "
+            f"case-insensitive filesystems: {case_collisions}"
+        )
     return errors, files
 
 
@@ -1539,6 +1682,11 @@ def validate_downloaded_final_record(record: dict[str, Any], *, source_root: Pat
         return []
     filename = accepted_record_source_file(target)
     path = source_root / filename
+    parent_errors = check_path_parent_symlinks(path, f"{target} finalized accepted record source file")
+    if parent_errors:
+        return parent_errors
+    if path.is_symlink():
+        return [f"{target} finalized accepted record source file must not be a symlink: {filename}"]
     if not path.is_file():
         return [f"{target} downloaded artifact missing finalized accepted record: {filename}"]
     try:

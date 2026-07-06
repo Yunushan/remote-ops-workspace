@@ -113,6 +113,26 @@ def test_platform_review_bundle_artifacts_rejects_noncanonical_final_record_asse
     ) in errors
 
 
+def test_platform_review_bundle_artifacts_rejects_symlinked_final_record_asset_parent(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    validator = _load_script("check_platform_review_bundle_artifacts")
+    record = _finalized_linux_record(tmp_path)
+    _write_final_record_asset(record, tmp_path)
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self == tmp_path
+
+    monkeypatch.setattr(type(tmp_path), "is_symlink", fake_is_symlink)
+
+    errors = validator.check_final_record_asset(record, tmp_path)
+
+    assert errors == [
+        f"linux-i386 finalized accepted-record asset path must not contain symlinked directories: {tmp_path}"
+    ]
+
+
 def test_platform_review_bundle_artifacts_scopes_final_record_assets_to_required_targets(
     tmp_path: Path,
 ) -> None:
@@ -241,6 +261,26 @@ def test_platform_review_bundle_artifacts_rejects_boolean_review_bundle_size(
     assert "linux-i386 review_bundle archive.size_bytes does not match file one-byte-review-bundle.zip" in errors
 
 
+def test_platform_review_bundle_artifacts_rejects_non_string_review_bundle_sha(
+    tmp_path: Path,
+) -> None:
+    validator = _load_script("check_platform_review_bundle_artifacts")
+    bundle = tmp_path / "one-byte-review-bundle.zip"
+    bundle.write_bytes(b"x")
+
+    errors = validator.check_file_record(
+        "linux-i386",
+        "archive",
+        bundle,
+        {"file": bundle.name, "size_bytes": bundle.stat().st_size, "sha256": True},
+    )
+
+    assert (
+        "linux-i386 review_bundle archive.sha256 must be a string SHA-256 hex digest, "
+        "got True"
+    ) in errors
+
+
 def test_platform_review_bundle_artifacts_rejects_symlinked_bundle_file(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -364,6 +404,18 @@ def test_check_record_review_bundle_artifacts_rejects_unsafe_bundle_file_name(
     ) in errors
 
 
+def test_check_record_review_bundle_artifacts_rejects_non_string_bundle_file_name(
+    tmp_path: Path,
+) -> None:
+    validator = _load_script("check_platform_review_bundle_artifacts")
+    record = _finalized_xp_record(tmp_path)
+    record["review_bundle"]["manifest"]["file"] = True
+
+    errors = validator.check_record_review_bundle_artifacts(record, tmp_path)
+
+    assert "windows-xp-native-x86 review_bundle manifest.file must be a string, got True" in errors
+
+
 def test_platform_review_bundle_artifacts_rejects_unsafe_manifest_candidate_file(
     tmp_path: Path,
 ) -> None:
@@ -391,6 +443,32 @@ def test_platform_review_bundle_artifacts_rejects_unsafe_manifest_candidate_file
     ) in errors
 
 
+def test_platform_review_bundle_artifacts_rejects_non_string_manifest_candidate_file(
+    tmp_path: Path,
+) -> None:
+    validator = _load_script("check_platform_review_bundle_artifacts")
+    bundle_helpers = _load_finalize_tests()
+    record = _finalized_xp_record(tmp_path)
+    review_bundle = record["review_bundle"]
+    manifest = tmp_path / str(review_bundle["manifest"]["file"])
+    archive = tmp_path / str(review_bundle["archive"]["file"])
+    sidecar = tmp_path / str(review_bundle["sha256s"]["file"])
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    data["candidate_record"]["file"] = True
+    manifest.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    _refresh_review_bundle_record_hashes(record, bundle_helpers, manifest, archive, sidecar)
+
+    errors = validator.check_platform_review_bundle_artifacts(
+        registry=_registry_with(record),
+        bundle_dir=tmp_path,
+    )
+
+    assert (
+        "windows-xp-native-x86 review bundle manifest candidate_record.file "
+        "must be a string, got True"
+    ) in errors
+
+
 def test_platform_review_bundle_artifacts_rejects_symlinked_archive_entry(tmp_path: Path) -> None:
     validator = _load_script("check_platform_review_bundle_artifacts")
     bundle_helpers = _load_finalize_tests()
@@ -412,6 +490,47 @@ def test_platform_review_bundle_artifacts_rejects_symlinked_archive_entry(tmp_pa
     assert (
         "windows-xp-native-x86 review bundle archive entries must not be symlinks: "
         "['xp-evidence.json']"
+    ) in errors
+
+
+def test_platform_review_bundle_artifacts_reports_unreadable_candidate_entry(
+    monkeypatch,
+) -> None:
+    validator = _load_script("check_platform_review_bundle_artifacts")
+    candidate_name = "platform-verified-evidence-linux-i386.json"
+
+    class UnreadableZipFile:
+        def __init__(self, _path: Path) -> None:
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args: object) -> bool:
+            return False
+
+        def infolist(self) -> list[Any]:
+            info = validator.zipfile.ZipInfo(candidate_name)
+            info.external_attr = 0o100644 << 16
+            return [info]
+
+        def read(self, _filename: str) -> bytes:
+            raise NotImplementedError("unsupported compression method")
+
+    monkeypatch.setattr(validator.zipfile, "ZipFile", UnreadableZipFile)
+    errors: list[str] = []
+
+    result = validator.read_archive_file(
+        Path("review-bundle.zip"),
+        candidate_name,
+        errors,
+        "linux-i386",
+    )
+
+    assert result is None
+    assert (
+        "linux-i386 review bundle archive candidate_record is not readable: "
+        "platform-verified-evidence-linux-i386.json: unsupported compression method"
     ) in errors
 
 

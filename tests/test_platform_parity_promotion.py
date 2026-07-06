@@ -14,6 +14,22 @@ def test_platform_parity_promotion_checker_passes_current_tree() -> None:
     assert checker.main() == 0
 
 
+def test_platform_parity_promotion_uses_explicit_empty_promotion() -> None:
+    checker = _load_platform_parity_promotion_checker()
+
+    errors = checker.check_platform_parity_promotion(promotion={})
+
+    assert "configs/platform_parity_promotion.json schema_version must be 1" in errors
+
+
+def test_platform_parity_promotion_uses_explicit_empty_report() -> None:
+    checker = _load_platform_parity_promotion_checker()
+
+    errors = checker.check_platform_parity_promotion(report={})
+
+    assert "linux-i386 references missing platform readiness row linux-i386" in errors
+
+
 def test_platform_parity_promotion_rejects_fake_linux_100() -> None:
     checker = _load_platform_parity_promotion_checker()
     promotion = _load_json("configs/platform_parity_promotion.json")

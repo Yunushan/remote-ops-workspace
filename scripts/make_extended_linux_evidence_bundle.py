@@ -174,6 +174,14 @@ def make_extended_linux_evidence_bundle(
                 candidate=candidate,
             )
         )
+    if not errors:
+        errors.extend(
+            check_candidate_staged_upload_command(
+                target=target,
+                assets_dir=assets_dir,
+                candidate=candidate,
+            )
+        )
     if errors:
         return errors
 
@@ -203,6 +211,18 @@ def make_extended_linux_evidence_bundle(
                 artifact_names=artifact_names,
             ),
             label="extended Linux evidence bundle archive",
+        )
+    )
+    if errors:
+        return errors
+    errors.extend(
+        check_bundle_source_files(
+            target=target,
+            builder_evidence=builder_evidence,
+            smoke_evidence=smoke_evidence,
+            candidate_record=candidate_record,
+            assets_dir=assets_dir,
+            artifact_names=artifact_names,
         )
     )
     if errors:
@@ -282,7 +302,11 @@ def check_local_protected_goal_preflight(
     candidate: dict[str, Any],
 ) -> list[str]:
     errors: list[str] = []
-    roots = command_argument_values(str(candidate.get("local_evidence_preflight_command", "")), "--root")
+    command = candidate.get("local_evidence_preflight_command")
+    if not isinstance(command, str):
+        errors.append(f"{target} candidate local_evidence_preflight_command must be a string")
+        return [f"local protected-goal preflight failed: {error}" for error in errors]
+    roots = command_argument_values(command, "--root")
     if len(roots) != 1:
         errors.append(f"{target} candidate local evidence preflight command must include exactly one --root")
         return [f"local protected-goal preflight failed: {error}" for error in errors]
@@ -290,16 +314,26 @@ def check_local_protected_goal_preflight(
     if not isinstance(source, dict):
         errors.append(f"{target} candidate release_asset_source must be an object")
         return [f"local protected-goal preflight failed: {error}" for error in errors]
+    workflow_run_url = candidate.get("workflow_run_url")
+    source_workflow_run_url = source.get("workflow_run_url")
+    source_head_sha = source.get("head_sha")
     source_run_attempt = source.get("run_attempt")
-    if not isinstance(source_run_attempt, int) or isinstance(source_run_attempt, bool):
-        errors.append(f"{target} candidate release_asset_source.run_attempt must be an integer")
+    if not isinstance(workflow_run_url, str):
+        errors.append(f"{target} candidate workflow_run_url must be a string")
+    if not isinstance(source_workflow_run_url, str):
+        errors.append(f"{target} candidate release_asset_source.workflow_run_url must be a string")
+    if not isinstance(source_head_sha, str):
+        errors.append(f"{target} candidate release_asset_source.head_sha must be a string")
+    if not is_positive_int(source_run_attempt):
+        errors.append(f"{target} candidate release_asset_source.run_attempt must be a positive integer")
+    if errors:
         return [f"local protected-goal preflight failed: {error}" for error in errors]
     preflight_errors = check_platform_goal_local_evidence(
         root=Path(roots[0]),
         release_tag=release_tag,
         targets=(target,),
-        linux_workflow_run_url=str(candidate.get("workflow_run_url", "")),
-        linux_source_head_sha=str(source.get("head_sha", "")),
+        linux_workflow_run_url=workflow_run_url,
+        linux_source_head_sha=source_head_sha,
         linux_source_run_attempt=source_run_attempt,
         strict_artifacts=True,
         assets_dir=assets_dir,
@@ -307,6 +341,27 @@ def check_local_protected_goal_preflight(
         linux_smoke_evidence=smoke_evidence,
     )
     return [f"local protected-goal preflight failed: {error}" for error in preflight_errors]
+
+
+def is_positive_int(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
+def check_candidate_staged_upload_command(
+    *,
+    target: str,
+    assets_dir: Path,
+    candidate: dict[str, Any],
+) -> list[str]:
+    command = str(candidate.get("staged_upload_command", ""))
+    source_dirs = command_argument_values(command, "--source-dir")
+    expected_source_dir = assets_dir.as_posix()
+    if source_dirs != [expected_source_dir]:
+        return [
+            f"{target} candidate staged_upload_command --source-dir must match "
+            f"bundled artifact directory {expected_source_dir!r}, got {source_dirs}"
+        ]
+    return []
 
 
 def prepare_output_paths(*, out_dir: Path, outputs: tuple[Path, ...], force: bool) -> list[str]:
@@ -416,7 +471,7 @@ def load_json(path: Path, label: str, errors: list[str]) -> dict[str, Any] | Non
         return None
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         errors.append(f"{label} file is not readable JSON: {path}: {exc}")
         return None
     if not isinstance(data, dict):
@@ -446,6 +501,40 @@ def check_linux_evidence_file_names(
         for label, expected_name in expected.items()
         if actual[label] != expected_name
     ]
+
+
+def check_bundle_source_files(
+    *,
+    target: str,
+    builder_evidence: Path,
+    smoke_evidence: Path,
+    candidate_record: Path,
+    assets_dir: Path,
+    artifact_names: list[str],
+) -> list[str]:
+    sources = [
+        ("builder evidence source file", builder_evidence),
+        ("smoke evidence source file", smoke_evidence),
+        ("candidate evidence record source file", candidate_record),
+        *[
+            (f"{target} artifact source file", assets_dir / name)
+            for name in artifact_names
+        ],
+    ]
+    errors: list[str] = []
+    for label, path in sources:
+        errors.extend(check_bundle_source_file(path, label))
+    return errors
+
+
+def check_bundle_source_file(path: Path, label: str) -> list[str]:
+    errors: list[str] = []
+    if path.is_symlink():
+        errors.append(f"{label} must not be a symlink: {path}")
+    errors.extend(check_path_parent_symlinks(path, label))
+    if not path.is_file():
+        errors.append(f"{label} must be a regular file: {path}")
+    return errors
 
 
 def check_linux_smoke_evidence_file(

@@ -5,9 +5,13 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from remote_ops_workspace.features import coverage_report
-
 ROOT = Path(__file__).resolve().parents[1]
+SRC = ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
+
+from remote_ops_workspace.features import coverage_report  # noqa: E402
+
 MOBILE_MATRIX_PATH = ROOT / "configs" / "mobile_test_matrix.json"
 PLATFORM_TARGETS_PATH = ROOT / "configs" / "platform_targets.json"
 CI_WORKFLOW_PATH = ROOT / ".github" / "workflows" / "ci.yml"

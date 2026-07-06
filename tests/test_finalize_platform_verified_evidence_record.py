@@ -518,6 +518,31 @@ def test_finalize_platform_verified_evidence_record_rejects_reserved_workspace_i
         ]
 
 
+def test_finalize_platform_verified_evidence_record_reports_json_read_os_errors(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    finalizer = _load_finalizer()
+    candidate = tmp_path / "platform-verified-evidence-linux-i386.json"
+    candidate.write_text("{}\n", encoding="utf-8")
+    original_read_text = Path.read_text
+
+    def fake_read_text(self: Path, *args: Any, **kwargs: Any) -> str:
+        if self == candidate:
+            raise OSError("permission denied")
+        return original_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", fake_read_text)
+    errors: list[str] = []
+
+    data = finalizer.load_json(candidate, "candidate evidence record", errors)
+
+    assert data is None
+    assert errors == [
+        f"candidate evidence record file is not readable JSON: {candidate}: permission denied"
+    ]
+
+
 def test_finalize_platform_verified_evidence_record_rejects_unsafe_output_path(
     tmp_path: Path,
     monkeypatch,
@@ -697,6 +722,31 @@ def test_finalize_platform_verified_evidence_record_rejects_nonregular_archive_e
 
     assert "review bundle archive entries must be regular files only: ['nested/']" in errors
     assert "review bundle archive entries must be regular files: ['fifo.txt']" in errors
+
+
+def test_finalize_platform_verified_evidence_record_rejects_encrypted_archive_entries() -> None:
+    finalizer = _load_finalizer()
+    encrypted = zipfile.ZipInfo("proof.txt")
+    encrypted.flag_bits = 0x1
+
+    errors = finalizer.check_archive_entry_safety([encrypted])
+
+    assert "review bundle archive entries must not be encrypted: ['proof.txt']" in errors
+
+
+def test_finalize_platform_verified_evidence_record_rejects_executable_archive_permissions() -> None:
+    finalizer = _load_finalizer()
+    neutral = zipfile.ZipInfo("neutral.txt")
+    regular = zipfile.ZipInfo("regular.txt")
+    regular.external_attr = 0o100644 << 16
+    executable = zipfile.ZipInfo("executable.txt")
+    executable.external_attr = 0o100755 << 16
+
+    errors = finalizer.check_archive_entry_safety([neutral, regular, executable])
+
+    assert (
+        "review bundle archive regular file entries must use 0644 permissions: ['executable.txt']"
+    ) in errors
 
 
 def test_finalize_platform_verified_evidence_record_rejects_ambiguous_archive_entry_names() -> None:
@@ -1693,6 +1743,29 @@ def test_finalize_platform_verified_evidence_record_rejects_path_qualified_candi
     assert any("candidate release_asset_url file name must be an exact safe file name" in error for error in final_errors)
 
 
+def test_finalize_platform_verified_evidence_record_rejects_non_string_candidate_release_url() -> None:
+    finalizer = _load_finalizer()
+    helpers = _load_platform_verified_evidence_tests()
+    candidate = helpers._linux_record("linux-i386")
+    _unfinalized_candidate(candidate)
+    candidate["release_asset_urls"][0] = True
+    expected_files = {
+        "manifest": "extended-linux-evidence-bundle-linux-i386-v1.0.2.json",
+        "archive": "extended-linux-evidence-bundle-linux-i386-v1.0.2.zip",
+        "sha256s": "extended-linux-evidence-bundle-linux-i386-v1.0.2-SHA256SUMS.txt",
+    }
+
+    bundle_errors, bundle_urls = finalizer.review_bundle_release_asset_urls(candidate, expected_files)
+    final_errors, final_url = finalizer.finalized_record_release_asset_url(candidate)
+
+    assert bundle_urls == []
+    assert final_url == ""
+    assert "candidate release_asset_url must be a string, got True" in bundle_errors
+    assert "candidate release_asset_url must be a string, got True" in final_errors
+    assert not any("GitHub release asset URL: True" in error for error in bundle_errors)
+    assert not any("GitHub release asset URL: True" in error for error in final_errors)
+
+
 def test_finalize_platform_verified_evidence_record_rejects_missing_xp_validation_command() -> None:
     finalizer = _load_finalizer()
     helpers = _load_platform_verified_evidence_tests()
@@ -1830,6 +1903,31 @@ def test_finalize_platform_verified_evidence_record_rejects_sidecar_extra_and_du
     assert f"review bundle SHA-256 sidecar contains duplicate entries: ['{expected_manifest}']" in errors
 
 
+def test_finalize_platform_verified_evidence_record_reports_sidecar_read_os_errors(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    finalizer = _load_finalizer()
+    manifest = tmp_path / "review-bundle.json"
+    archive = tmp_path / "review-bundle.zip"
+    sidecar = tmp_path / "review-bundle-SHA256SUMS.txt"
+    manifest.write_text("{}\n", encoding="utf-8")
+    archive.write_bytes(b"bundle archive bytes")
+    sidecar.write_text("placeholder\n", encoding="utf-8")
+    original_read_text = Path.read_text
+
+    def fake_read_text(self: Path, *args: Any, **kwargs: Any) -> str:
+        if self == sidecar:
+            raise OSError("permission denied")
+        return original_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", fake_read_text)
+
+    errors = finalizer.check_bundle_sidecar(sidecar, manifest, archive)
+
+    assert errors == ["review bundle SHA-256 sidecar is not readable UTF-8: permission denied"]
+
+
 def test_finalize_platform_verified_evidence_record_rejects_duplicate_archive_entries(
     tmp_path: Path,
 ) -> None:
@@ -1839,12 +1937,35 @@ def test_finalize_platform_verified_evidence_record_rejects_duplicate_archive_en
     manifest.write_text(json.dumps({"bundle_type": "unknown"}) + "\n", encoding="utf-8")
     with pytest.warns(UserWarning, match="Duplicate name"):
         with zipfile.ZipFile(archive, mode="w", compression=zipfile.ZIP_DEFLATED) as zipped:
-            zipped.write(manifest, arcname=manifest.name)
-            zipped.write(manifest, arcname=manifest.name)
+            zipped.writestr(_review_bundle_archive_info(manifest.name), manifest.read_bytes())
+            zipped.writestr(_review_bundle_archive_info(manifest.name), manifest.read_bytes())
 
     errors = finalizer.check_bundle_archive(archive, manifest, {"bundle_type": "unknown"}, {})
 
     assert f"review bundle archive contains duplicate entries: ['{manifest.name}']" in errors
+
+
+def test_finalize_platform_verified_evidence_record_reports_unreadable_archive_entry(
+    tmp_path: Path,
+) -> None:
+    finalizer = _load_finalizer()
+    manifest = tmp_path / "review-bundle.json"
+    manifest.write_text("{}\n", encoding="utf-8")
+
+    class UnreadableArchive:
+        def read(self, _name: str) -> bytes:
+            raise RuntimeError("unsupported compression method")
+
+    errors = finalizer.check_archive_record_hashes(
+        UnreadableArchive(),
+        manifest,
+        {"bundle_type": "unknown"},
+    )
+
+    assert (
+        f"review bundle archive entry is not readable: {manifest.name}: "
+        "unsupported compression method"
+    ) in errors
 
 
 def test_finalize_platform_verified_evidence_record_rejects_duplicate_manifest_bundle_records(
@@ -1896,6 +2017,56 @@ def test_finalize_platform_verified_evidence_record_rejects_duplicate_manifest_a
     ) in errors
 
 
+def test_finalize_platform_verified_evidence_record_rejects_malformed_manifest_artifact_files() -> None:
+    finalizer = _load_finalizer()
+    candidate = {
+        "artifact_sha256": {
+            "remote-ops-workspace-v1.0.2-linux-i386.deb": "1" * 64,
+        }
+    }
+    manifest = {
+        "artifacts": [
+            {"file": True, "sha256": "1" * 64},
+            {"file": "nested/artifact.deb", "sha256": "1" * 64},
+        ]
+    }
+
+    errors = finalizer.check_manifest_artifacts_match_candidate(candidate, manifest)
+
+    assert "review bundle manifest artifact entry file must be a string, got True" in errors
+    assert (
+        "review bundle manifest artifact file must be an exact safe file name: "
+        "'nested/artifact.deb'"
+    ) in errors
+
+
+def test_finalize_platform_verified_evidence_record_rejects_malformed_artifact_hash_bindings() -> None:
+    finalizer = _load_finalizer()
+    candidate = {
+        "artifact_sha256": {
+            "remote-ops-workspace-v1.0.2-linux-i386.deb": True,
+            False: "1" * 64,
+        }
+    }
+    manifest = {
+        "artifacts": [
+            {
+                "file": "remote-ops-workspace-v1.0.2-linux-i386.deb",
+                "sha256": True,
+            },
+        ]
+    }
+
+    errors = finalizer.check_manifest_artifacts_match_candidate(candidate, manifest)
+
+    assert "review bundle manifest artifact entry sha256 must be a string, got True" in errors
+    assert "candidate artifact_sha256 key must be a string, got False" in errors
+    assert (
+        "candidate artifact_sha256 for remote-ops-workspace-v1.0.2-linux-i386.deb "
+        "must be a string SHA-256 hex digest"
+    ) in errors
+
+
 def test_finalize_platform_verified_evidence_record_rejects_duplicate_manifest_smoke_ids() -> None:
     finalizer = _load_finalizer()
     candidate = {
@@ -1917,6 +2088,236 @@ def test_finalize_platform_verified_evidence_record_rejects_duplicate_manifest_s
     )
 
     assert "review bundle manifest smoke_evidence entries contain duplicate ids: ['native_smoke']" in errors
+
+
+def test_finalize_platform_verified_evidence_record_rejects_malformed_manifest_smoke_files() -> None:
+    finalizer = _load_finalizer()
+    candidate = {
+        "linux_smoke_evidence_sha256": {
+            "native_smoke": "1" * 64,
+        }
+    }
+    manifest = {
+        "smoke_evidence": [
+            {"id": True, "file": "native-smoke-linux-i386.log", "sha256": "1" * 64},
+            {"id": "native_smoke", "file": "../native-smoke.log", "sha256": "1" * 64},
+        ]
+    }
+
+    errors = finalizer.check_manifest_smoke_hashes_match_candidate(
+        candidate,
+        manifest,
+        candidate_field="linux_smoke_evidence_sha256",
+    )
+
+    assert "review bundle manifest smoke_evidence id must be a string, got True" in errors
+    assert (
+        "review bundle manifest smoke_evidence file must be a safe relative path, "
+        "got '../native-smoke.log'"
+    ) in errors
+
+
+def test_finalize_platform_verified_evidence_record_rejects_malformed_smoke_hash_bindings() -> None:
+    finalizer = _load_finalizer()
+    candidate = {
+        "linux_smoke_evidence_sha256": {
+            "native_smoke": True,
+            False: "1" * 64,
+        }
+    }
+    manifest = {
+        "smoke_evidence": [
+            {
+                "id": "native_smoke",
+                "file": "native-smoke-linux-i386.log",
+                "sha256": True,
+            },
+        ]
+    }
+
+    errors = finalizer.check_manifest_smoke_hashes_match_candidate(
+        candidate,
+        manifest,
+        candidate_field="linux_smoke_evidence_sha256",
+    )
+
+    assert "review bundle manifest smoke_evidence sha256 must be a string, got True" in errors
+    assert "candidate linux_smoke_evidence_sha256 key must be a string, got False" in errors
+    assert (
+        "candidate linux_smoke_evidence_sha256 for native_smoke "
+        "must be a string SHA-256 hex digest"
+    ) in errors
+
+
+def test_finalize_platform_verified_evidence_record_rejects_malformed_bundle_file_records() -> None:
+    finalizer = _load_finalizer()
+    manifest = {
+        "bundle_type": "extended-linux-native-evidence",
+        "builder_evidence": {
+            "file": True,
+            "size_bytes": 128,
+            "sha256": "1" * 64,
+        },
+        "candidate_record": {
+            "file": "nested/platform-verified-evidence-linux-i386.json",
+            "size_bytes": 256,
+            "sha256": "2" * 64,
+        },
+        "smoke_evidence": [
+            {
+                "id": "native_smoke",
+                "file": "../native-smoke-linux-i386.log",
+                "size_bytes": True,
+                "sha256": "3" * 64,
+            }
+        ],
+        "artifacts": [
+            {
+                "file": "remote-ops-workspace-v1.0.2-linux-i386.deb",
+                "size_bytes": 1024,
+                "sha256": "A" * 64,
+            }
+        ],
+    }
+
+    errors = finalizer.check_bundle_manifest_records(manifest)
+
+    assert "review bundle manifest builder_evidence.file must be a string, got True" in errors
+    assert (
+        "review bundle manifest candidate_record.file must be an exact safe file name: "
+        "'nested/platform-verified-evidence-linux-i386.json'"
+    ) in errors
+    assert (
+        "review bundle manifest smoke_evidence[0].file must be a safe relative archive path: "
+        "'../native-smoke-linux-i386.log'"
+    ) in errors
+    assert "review bundle manifest smoke_evidence[0].size_bytes must be a positive integer" in errors
+    assert "review bundle manifest artifacts[0].sha256 must be a lowercase SHA-256 hex digest" in errors
+
+
+def test_finalize_platform_verified_evidence_record_rejects_extra_manifest_top_level_metadata() -> None:
+    finalizer = _load_finalizer()
+    manifest = _minimal_linux_bundle_manifest()
+    manifest["operator_notes"] = "manual handoff"
+
+    errors = finalizer.check_bundle_manifest_records(manifest)
+
+    assert "review bundle manifest has unexpected fields: ['operator_notes']" in errors
+
+
+def test_finalize_platform_verified_evidence_record_rejects_missing_manifest_top_level_metadata() -> None:
+    finalizer = _load_finalizer()
+    manifest = _minimal_xp_bundle_manifest()
+    del manifest["candidate_summary"]
+
+    errors = finalizer.check_bundle_manifest_records(manifest)
+
+    assert "review bundle manifest missing fields: ['candidate_summary']" in errors
+
+
+def test_finalize_platform_verified_evidence_record_rejects_unknown_manifest_bundle_type() -> None:
+    finalizer = _load_finalizer()
+
+    errors = finalizer.check_bundle_manifest_records({"bundle_type": "side-channel-evidence"})
+
+    assert (
+        "review bundle manifest bundle_type must be one of "
+        "['extended-linux-native-evidence', 'windows-xp-native-host-evidence'], "
+        "got 'side-channel-evidence'"
+    ) in errors
+
+
+def test_finalize_platform_verified_evidence_record_rejects_boolean_manifest_schema_version() -> None:
+    finalizer = _load_finalizer()
+    manifest = _minimal_linux_bundle_manifest()
+    manifest["schema_version"] = True
+
+    errors = finalizer.check_bundle_manifest_records(manifest)
+
+    assert "review bundle manifest schema_version must be 1" in errors
+
+
+def test_finalize_platform_verified_evidence_record_rejects_extra_manifest_file_record_metadata() -> None:
+    finalizer = _load_finalizer()
+    manifest = {
+        "bundle_type": "extended-linux-native-evidence",
+        "builder_evidence": {
+            "file": "builder-identity-linux-i386.json",
+            "path": "evidence/builder-identity-linux-i386.json",
+            "size_bytes": 128,
+            "sha256": "1" * 64,
+        },
+        "candidate_record": {
+            "file": "platform-verified-evidence-linux-i386.json",
+            "size_bytes": 256,
+            "sha256": "2" * 64,
+        },
+        "smoke_evidence": [
+            {
+                "id": "native_smoke",
+                "file": "native-smoke-linux-i386.log",
+                "size_bytes": 512,
+                "sha256": "3" * 64,
+            }
+        ],
+        "artifacts": [
+            {
+                "file": "remote-ops-workspace-v1.0.2-linux-i386.deb",
+                "path": "artifacts/remote-ops-workspace-v1.0.2-linux-i386.deb",
+                "size_bytes": 1024,
+                "sha256": "4" * 64,
+            }
+        ],
+    }
+
+    errors = finalizer.check_bundle_manifest_records(manifest)
+
+    assert "review bundle manifest builder_evidence has unexpected fields: ['path']" in errors
+    assert "review bundle manifest artifacts[0] has unexpected fields: ['path']" in errors
+
+
+def test_finalize_platform_verified_evidence_record_requires_manifest_smoke_id() -> None:
+    finalizer = _load_finalizer()
+    manifest = {
+        "bundle_type": "extended-linux-native-evidence",
+        "builder_evidence": {
+            "file": "builder-identity-linux-i386.json",
+            "size_bytes": 128,
+            "sha256": "1" * 64,
+        },
+        "candidate_record": {
+            "file": "platform-verified-evidence-linux-i386.json",
+            "size_bytes": 256,
+            "sha256": "2" * 64,
+        },
+        "smoke_evidence": [
+            {
+                "file": "native-smoke-linux-i386.log",
+                "size_bytes": 512,
+                "sha256": "3" * 64,
+            }
+        ],
+        "artifacts": [
+            {
+                "file": "remote-ops-workspace-v1.0.2-linux-i386.deb",
+                "size_bytes": 1024,
+                "sha256": "4" * 64,
+            }
+        ],
+    }
+
+    errors = finalizer.check_bundle_manifest_records(manifest)
+
+    assert "review bundle manifest smoke_evidence[0] missing fields: ['id']" in errors
+
+
+def test_finalize_platform_verified_evidence_record_accepts_xp_nested_smoke_file_records() -> None:
+    finalizer = _load_finalizer()
+    manifest = _minimal_xp_bundle_manifest()
+
+    errors = finalizer.check_bundle_manifest_records(manifest)
+
+    assert errors == []
 
 
 def test_finalize_platform_verified_evidence_record_rejects_linux_manifest_evidence_name_drift(
@@ -1963,6 +2364,98 @@ def test_finalize_platform_verified_evidence_record_rejects_linux_manifest_evide
     assert "review bundle manifest native_smoke file must be native-smoke-linux-i386.log" in errors
 
 
+def _minimal_linux_bundle_manifest() -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "bundle_type": "extended-linux-native-evidence",
+        "target": "linux-i386",
+        "release_tag": "v1.0.2",
+        "validated_commands": ["python scripts/check_platform_verified_evidence.py"],
+        "release_asset_urls": [],
+        "release_asset_source": {},
+        "promotion_config_sha256": "1" * 64,
+        "workflow": ".github/workflows/extended-platform-evidence.yml",
+        "workflow_inputs": {},
+        "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        "runner_labels": ["self-hosted", "linux", "i386"],
+        "security_patch_evidence": {},
+        "builder_evidence": {
+            "file": "builder-identity-linux-i386.json",
+            "size_bytes": 128,
+            "sha256": "1" * 64,
+        },
+        "smoke_evidence": [
+            {
+                "id": "native_smoke",
+                "file": "native-smoke-linux-i386.log",
+                "size_bytes": 512,
+                "sha256": "2" * 64,
+            }
+        ],
+        "candidate_record": {
+            "file": "platform-verified-evidence-linux-i386.json",
+            "size_bytes": 256,
+            "sha256": "3" * 64,
+        },
+        "artifacts": [
+            {
+                "file": "remote-ops-workspace-v1.0.2-linux-i386.deb",
+                "size_bytes": 1024,
+                "sha256": "4" * 64,
+            }
+        ],
+    }
+
+
+def _minimal_xp_bundle_manifest() -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "bundle_type": "windows-xp-native-host-evidence",
+        "target": "windows-xp-native-x86",
+        "release_tag": "v1.0.2",
+        "validated_commands": ["python scripts/check_platform_verified_evidence.py"],
+        "workflow": ".github/workflows/xp-native-evidence.yml",
+        "workflow_inputs": {},
+        "release_asset_source": {},
+        "xp_evidence_sources": {},
+        "release_asset_urls": [],
+        "xp_evidence_contract_sha256": "1" * 64,
+        "promotion_config_sha256": "2" * 64,
+        "evidence": {
+            "file": "xp-evidence.json",
+            "size_bytes": 256,
+            "sha256": "3" * 64,
+        },
+        "candidate_record": {
+            "file": "platform-verified-evidence-windows-xp-native-x86.json",
+            "size_bytes": 128,
+            "sha256": "4" * 64,
+        },
+        "smoke_evidence": [
+            {
+                "id": "legacy_crypto_profile_scoped",
+                "file": "xp-smoke-evidence/legacy_crypto_profile_scoped.txt",
+                "size_bytes": 512,
+                "sha256": "5" * 64,
+            }
+        ],
+        "artifacts": [
+            {
+                "file": "remote-ops-workspace-v1.0.2-windows-xp-x86-native.zip",
+                "size_bytes": 1024,
+                "sha256": "6" * 64,
+            }
+        ],
+        "candidate_summary": {
+            "readiness_percent": 100.0,
+            "checks": ["xp_native_evidence_validation"],
+        },
+        "host_identity": {},
+        "toolchain": {},
+        "security": {},
+    }
+
+
 def _unfinalized_candidate(candidate: dict[str, object]) -> None:
     candidate.pop("review_bundle", None)
     candidate.pop("finalized_record_release_asset_url", None)
@@ -1996,9 +2489,9 @@ def _write_bundle_files(
     }
     manifest.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     with zipfile.ZipFile(archive, mode="w", compression=zipfile.ZIP_DEFLATED) as zipped:
-        zipped.write(manifest, arcname=manifest.name)
+        zipped.writestr(_review_bundle_archive_info(manifest.name), manifest.read_bytes())
         for name, payload in archive_files.items():
-            zipped.writestr(name, payload)
+            zipped.writestr(_review_bundle_archive_info(name), payload)
     sidecar.write_text(
         f"{_sha256(manifest)}  {manifest.name}\n{_sha256(archive)}  {archive.name}\n",
         encoding="utf-8",
@@ -2011,6 +2504,13 @@ def _rewrite_sidecar(sidecar: Path, *, manifest: Path, archive: Path) -> None:
         f"{_sha256(manifest)}  {manifest.name}\n{_sha256(archive)}  {archive.name}\n",
         encoding="utf-8",
     )
+
+
+def _review_bundle_archive_info(name: str) -> zipfile.ZipInfo:
+    info = zipfile.ZipInfo(name)
+    info.compress_type = zipfile.ZIP_DEFLATED
+    info.external_attr = 0o100644 << 16
+    return info
 
 
 def _rewrite_archive_entry_as_symlink(archive: Path, entry_name: str) -> None:
@@ -2143,6 +2643,10 @@ def _write_xp_candidate_and_bundle(
             "evidence": _file_record(xp_evidence, name="xp-evidence.json"),
             "smoke_evidence": smoke_records,
             "artifacts": _artifact_records(candidate),
+            "candidate_summary": {
+                "readiness_percent": candidate.get("readiness_percent"),
+                "checks": candidate.get("checks", []),
+            },
         },
         archive_files={**archive_files, candidate_path.name: candidate_path.read_bytes()},
     )

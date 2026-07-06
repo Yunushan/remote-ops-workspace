@@ -200,6 +200,39 @@ def test_xp_native_evidence_accepts_x86_bundle(tmp_path: Path) -> None:
     assert errors == []
 
 
+def test_xp_native_evidence_uses_explicit_empty_contract(tmp_path: Path) -> None:
+    checker = _load_xp_native_evidence_checker()
+    evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence, indent=2) + "\n", encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path, contract={})
+
+    assert "XP native evidence contract targets must be an object" in errors
+
+
+def test_xp_native_evidence_rejects_unreadable_json(tmp_path: Path, monkeypatch) -> None:
+    checker = _load_xp_native_evidence_checker()
+    path = tmp_path / "xp-evidence.json"
+    path.write_text("{}", encoding="utf-8")
+    original_read_text = Path.read_text
+
+    def fake_read_text(self: Path, *args, **kwargs):
+        if self == path:
+            raise OSError("locked evidence file")
+        return original_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", fake_read_text)
+
+    errors = checker.check_xp_native_evidence(path)
+
+    assert any(
+        f"evidence file is not readable JSON: {path}: locked evidence file" in error
+        for error in errors
+    )
+
+
 def test_xp_native_evidence_rejects_boolean_schema_versions(tmp_path: Path) -> None:
     checker = _load_xp_native_evidence_checker()
     evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
@@ -288,6 +321,25 @@ def test_xp_native_evidence_rejects_malformed_release_source(tmp_path: Path) -> 
 
     assert "windows-xp-native-x64 evidence release_source.workflow_run_url must be a GitHub Actions run URL" in errors
     assert "windows-xp-native-x64 evidence release_source.head_sha must be a 40-character lowercase Git SHA" in errors
+
+
+def test_xp_native_evidence_rejects_non_string_release_source_fields(tmp_path: Path) -> None:
+    checker = _load_xp_native_evidence_checker()
+    evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    evidence["release_source"]["workflow"] = True
+    evidence["release_source"]["workflow_run_url"] = 12345
+    evidence["release_source"]["head_sha"] = False
+    evidence["release_source"]["run_attempt"] = "1"
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path)
+
+    assert "windows-xp-native-x86 evidence release_source.workflow must be a string" in errors
+    assert "windows-xp-native-x86 evidence release_source.workflow_run_url must be a string" in errors
+    assert "windows-xp-native-x86 evidence release_source.head_sha must be a string" in errors
+    assert "windows-xp-native-x86 evidence release_source.run_attempt must be a positive integer" in errors
 
 
 def test_xp_native_evidence_rejects_host_identity_target_mismatch(tmp_path: Path) -> None:
@@ -1321,6 +1373,36 @@ def test_xp_native_evidence_rejects_missing_security_patch_provenance(tmp_path: 
     assert "windows-xp-native-x86 evidence security.patch_evidence.security_update_channel must be set" in errors
 
 
+def test_xp_native_evidence_rejects_non_string_security_patch_provenance(
+    tmp_path: Path,
+) -> None:
+    checker = _load_xp_native_evidence_checker()
+    evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    evidence["security"]["patch_evidence"]["security_update_channel"] = True
+    evidence["security"]["patch_evidence"]["cve_review_reference"] = [
+        "vendor-cve-advisory-review-2026-06"
+    ]
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path)
+
+    assert (
+        "windows-xp-native-x86 evidence security.patch_evidence.cve_review_reference "
+        "must be a string"
+    ) in errors
+    assert (
+        "windows-xp-native-x86 evidence security.patch_evidence.security_update_channel "
+        "must be a string"
+    ) in errors
+    assert not any(
+        "--security-update-channel True" in error
+        or "--cve-review-reference ['vendor-cve-advisory-review-2026-06']" in error
+        for error in errors
+    )
+
+
 def test_xp_native_evidence_rejects_placeholder_security_patch_provenance(tmp_path: Path) -> None:
     checker = _load_xp_native_evidence_checker()
     evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
@@ -1363,6 +1445,48 @@ def test_xp_native_evidence_rejects_vague_security_patch_provenance(tmp_path: Pa
     ) in errors
 
 
+def test_xp_native_evidence_rejects_reserved_https_security_patch_provenance(tmp_path: Path) -> None:
+    checker = _load_xp_native_evidence_checker()
+    evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    evidence["security"]["patch_evidence"][
+        "security_update_channel"
+    ] = "https://example.com/security-updates/windows-xp"
+    evidence["security"]["patch_evidence"][
+        "cve_review_reference"
+    ] = "https://example.com/security-advisory/CVE-2026-0001"
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path)
+
+    assert (
+        "windows-xp-native-x86 evidence security.patch_evidence.security_update_channel "
+        "must name concrete non-placeholder provenance"
+    ) in errors
+    assert (
+        "windows-xp-native-x86 evidence security.patch_evidence.cve_review_reference "
+        "must name concrete non-placeholder provenance"
+    ) in errors
+
+
+def test_xp_native_evidence_rejects_generic_https_cve_review_reference(tmp_path: Path) -> None:
+    checker = _load_xp_native_evidence_checker()
+    evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    evidence["security"]["patch_evidence"]["security_update_channel"] = "vendor-security-updates-2026-07"
+    evidence["security"]["patch_evidence"]["cve_review_reference"] = "https://security.vendor.com/releases/2026-07"
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path)
+
+    assert (
+        "windows-xp-native-x86 evidence security.patch_evidence.cve_review_reference "
+        "must name concrete non-placeholder provenance"
+    ) in errors
+
+
 def test_xp_native_evidence_rejects_smoke_evidence_hash_mismatch(tmp_path: Path) -> None:
     checker = _load_xp_native_evidence_checker()
     evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
@@ -1374,6 +1498,26 @@ def test_xp_native_evidence_rejects_smoke_evidence_hash_mismatch(tmp_path: Path)
     errors = checker.check_xp_native_evidence(path)
 
     assert any("smoke result cli_launch evidence_file SHA-256 mismatch" in error for error in errors)
+
+
+def test_xp_native_evidence_rejects_malformed_smoke_evidence_hash(tmp_path: Path) -> None:
+    checker = _load_xp_native_evidence_checker()
+    evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    evidence["smoke_results"][0]["evidence_sha256"] = True
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path)
+
+    assert (
+        "windows-xp-native-x86 smoke result cli_launch evidence_sha256 "
+        "must be a lowercase SHA-256 hex digest"
+    ) in errors
+    assert all(
+        "smoke result cli_launch evidence_file SHA-256 mismatch" not in error
+        for error in errors
+    )
 
 
 def test_xp_native_evidence_rejects_missing_artifact_manifest_smoke_proof(

@@ -379,12 +379,28 @@ def strict_arg_errors(args: argparse.Namespace) -> list[str]:
     for raw in args.release_asset:
         if "=" not in str(raw):
             errors.append(f"--release-asset must be URL=PATH, got {raw!r}")
+    errors.extend(duplicate_workflow_fixture_errors(args.workflow_runs_json, "--workflow-runs-json"))
     errors.extend(duplicate_run_fixture_errors(args.source_run_json, "--source-run-json"))
     errors.extend(duplicate_run_fixture_errors(args.source_artifacts_json, "--source-artifacts-json"))
     errors.extend(duplicate_run_fixture_errors(args.source_artifact_zip, "--source-artifact-zip"))
     errors.extend(duplicate_url_fixture_errors(args.final_record_json, "--final-record-json"))
     errors.extend(duplicate_url_fixture_errors(args.release_asset, "--release-asset"))
     return errors
+
+
+def duplicate_workflow_fixture_errors(raw_values: list[str], flag: str) -> list[str]:
+    workflows: dict[str, int] = {}
+    for raw in raw_values:
+        text = str(raw)
+        if "=" not in text:
+            continue
+        workflow, _path = text.split("=", 1)
+        workflow_key = normalize_workflow_key(workflow)
+        workflows[workflow_key] = workflows.get(workflow_key, 0) + 1
+    duplicates = sorted(workflow for workflow, count in workflows.items() if count > 1)
+    if duplicates:
+        return [f"{flag} contains duplicate workflow fixtures: {duplicates}"]
+    return []
 
 
 def duplicate_run_fixture_errors(raw_values: list[str], flag: str) -> list[str]:
@@ -547,6 +563,12 @@ def load_workflow_runs(
     )
     if args.require_goal_targets:
         needed_workflows.update(release_source_workflow(target) for target in PROTECTED_GOAL_TARGETS)
+    unexpected_workflows = sorted(set(configured_paths) - needed_workflows)
+    if unexpected_workflows:
+        errors.append(
+            "--workflow-runs-json contains fixtures outside required accepted "
+            f"workflow scope: {unexpected_workflows}"
+        )
     for workflow in sorted(needed_workflows - set(workflow_runs)):
         if not args.repository:
             continue
@@ -888,7 +910,7 @@ def workflow_run_json_paths(args: argparse.Namespace) -> dict[str, Path]:
         if "=" not in text:
             continue
         workflow, path = text.split("=", 1)
-        paths[workflow] = Path(path)
+        paths[normalize_workflow_key(workflow)] = Path(path)
     return paths
 
 
@@ -949,6 +971,10 @@ def release_asset_paths(args: argparse.Namespace) -> dict[str, Path]:
 
 def normalize_run_key(run: str) -> str:
     return str(run).strip().rstrip("/")
+
+
+def normalize_workflow_key(workflow: str) -> str:
+    return str(workflow).strip()
 
 
 def normalize_url_key(url: str) -> str:
@@ -1107,6 +1133,14 @@ def github_api_headers() -> dict[str, str]:
 
 def is_lower_git_sha(value: Any) -> bool:
     return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{40}", value.strip()) is not None
+
+
+def lowercase_sha256_hex(value: Any) -> bool:
+    return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None
+
+
+def positive_int(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
 
 
 def check_remote_platform_release_evidence(
@@ -1617,9 +1651,14 @@ def check_published_release_asset_bytes(
         if published_bytes is None:
             errors.append(f"{target} published release asset bytes missing for {filename} at {url_key}")
             continue
-        expected_sha = str(asset.get("sha256", ""))
+        expected_sha = asset.get("sha256", "")
         actual_sha = hashlib.sha256(published_bytes).hexdigest()
-        if actual_sha != expected_sha:
+        if not lowercase_sha256_hex(expected_sha):
+            errors.append(
+                f"{target} published release asset {filename} accepted evidence sha256 "
+                "must be a lowercase SHA-256 hex digest"
+            )
+        elif actual_sha != expected_sha:
             errors.append(
                 f"{target} published release asset {filename} bytes SHA-256 must match "
                 f"accepted evidence {expected_sha}, got {actual_sha}"
@@ -1632,11 +1671,17 @@ def check_published_release_asset_bytes(
                 f"remote release metadata {metadata_size}, got {len(published_bytes)}"
             )
         expected_size = asset.get("size")
-        if expected_size is not None and len(published_bytes) != expected_size:
-            errors.append(
-                f"{target} published release asset {filename} byte size must match "
-                f"accepted evidence {expected_size}, got {len(published_bytes)}"
-            )
+        if expected_size is not None:
+            if not positive_int(expected_size):
+                errors.append(
+                    f"{target} published release asset {filename} accepted evidence size "
+                    "must be a positive integer"
+                )
+            elif len(published_bytes) != expected_size:
+                errors.append(
+                    f"{target} published release asset {filename} byte size must match "
+                    f"accepted evidence {expected_size}, got {len(published_bytes)}"
+                )
     return errors
 
 
@@ -1773,7 +1818,7 @@ def expected_release_asset_byte_sources(record: dict[str, Any]) -> list[dict[str
                 {
                     "filename": name,
                     "url": release_urls.get(name),
-                    "sha256": str(digest),
+                    "sha256": digest if isinstance(digest, str) else "",
                 }
             )
     review_bundle = record.get("review_bundle")
@@ -1783,14 +1828,16 @@ def expected_release_asset_byte_sources(record: dict[str, Any]) -> list[dict[str
             bundle_record = review_bundle.get(key)
             if not isinstance(bundle_record, dict):
                 continue
-            filename = str(bundle_record.get("file", ""))
-            if not filename:
+            filename = bundle_record.get("file", "")
+            if not isinstance(filename, str) or not exact_safe_file_name(filename):
                 continue
             sources.append(
                 {
                     "filename": filename,
                     "url": review_urls.get(filename),
-                    "sha256": str(bundle_record.get("sha256", "")),
+                    "sha256": bundle_record.get("sha256", "")
+                    if isinstance(bundle_record.get("sha256", ""), str)
+                    else "",
                     "size": bundle_record.get("size_bytes"),
                 }
             )
@@ -1848,7 +1895,7 @@ def expected_published_assets(record: dict[str, Any]) -> dict[str, dict[str, Any
         ):
             expected[name] = {
                 "browser_download_url": release_urls.get(name),
-                "sha256": str(digest),
+                "sha256": digest if isinstance(digest, str) else "",
             }
     review_bundle = record.get("review_bundle")
     if isinstance(review_bundle, dict):
@@ -1857,12 +1904,14 @@ def expected_published_assets(record: dict[str, Any]) -> dict[str, dict[str, Any
             bundle_record = review_bundle.get(key)
             if not isinstance(bundle_record, dict):
                 continue
-            filename = str(bundle_record.get("file", ""))
-            if not filename:
+            filename = bundle_record.get("file", "")
+            if not isinstance(filename, str) or not exact_safe_file_name(filename):
                 continue
             expected[filename] = {
                 "browser_download_url": review_urls.get(filename),
-                "sha256": str(bundle_record.get("sha256", "")),
+                "sha256": bundle_record.get("sha256", "")
+                if isinstance(bundle_record.get("sha256", ""), str)
+                else "",
                 "size": bundle_record.get("size_bytes"),
             }
     finalized_url = record.get("finalized_record_release_asset_url")
@@ -2740,12 +2789,12 @@ def check_record_source_artifact_zip_bytes(
             errors.append(
                 f"{target} source workflow artifact {artifact_name} ZIP file {filename} must not be empty"
             )
-        expected_sha = str(expected.get("sha256", "")).strip()
+        expected_sha = expected.get("sha256", "")
         actual_sha = hashlib.sha256(actual_bytes).hexdigest()
-        if not re.fullmatch(r"[0-9a-f]{64}", expected_sha):
+        if not lowercase_sha256_hex(expected_sha):
             errors.append(
                 f"{target} source workflow artifact {artifact_name} ZIP file {filename} "
-                "accepted SHA-256 expectation must be set"
+                "accepted SHA-256 expectation must be a lowercase SHA-256 hex digest"
             )
         elif actual_sha != expected_sha:
             errors.append(
@@ -2753,11 +2802,17 @@ def check_record_source_artifact_zip_bytes(
                 f"bytes SHA-256 must match accepted evidence {expected_sha}, got {actual_sha}"
             )
         expected_size = expected.get("size")
-        if expected_size is not None and len(actual_bytes) != expected_size:
-            errors.append(
-                f"{target} source workflow artifact {artifact_name} ZIP file {filename} "
-                f"byte size must match accepted evidence {expected_size}, got {len(actual_bytes)}"
-            )
+        if expected_size is not None:
+            if not positive_int(expected_size):
+                errors.append(
+                    f"{target} source workflow artifact {artifact_name} ZIP file {filename} "
+                    "accepted byte size expectation must be a positive integer"
+                )
+            elif len(actual_bytes) != expected_size:
+                errors.append(
+                    f"{target} source workflow artifact {artifact_name} ZIP file {filename} "
+                    f"byte size must match accepted evidence {expected_size}, got {len(actual_bytes)}"
+                )
     return errors
 
 
@@ -2783,14 +2838,23 @@ def source_artifact_zip_file_bytes(archive_bytes: bytes) -> dict[str, bytes] | s
             duplicates: list[str] = []
             for info in archive.infolist():
                 name = info.filename.replace("\\", "/")
-                if not name or name.endswith("/"):
+                if not name:
                     continue
+                if name.endswith("/"):
+                    return f"contains directory entry {info.filename!r}"
                 if "/" in name or not exact_safe_file_name(name):
                     return f"contains non-root or unsafe file name {info.filename!r}"
+                if zip_info_is_encrypted(info):
+                    return f"contains encrypted entry {info.filename!r}"
                 if zip_info_is_symlink(info):
                     return f"contains symlink entry {info.filename!r}"
                 if zip_info_declares_non_regular_file(info):
                     return f"contains non-regular file entry {info.filename!r}"
+                if zip_info_declares_unexpected_regular_file_permissions(info):
+                    return (
+                        "contains regular file entry with non-0644 permissions "
+                        f"{info.filename!r}"
+                    )
                 if name in entries:
                     duplicates.append(name)
                     continue
@@ -2805,8 +2869,14 @@ def source_artifact_zip_file_bytes(archive_bytes: bytes) -> dict[str, bytes] | s
             return entries
     except zipfile.BadZipFile as exc:
         return str(exc)
+    except RuntimeError as exc:
+        return str(exc)
     except OSError as exc:
         return str(exc)
+
+
+def zip_info_is_encrypted(info: zipfile.ZipInfo) -> bool:
+    return bool(info.flag_bits & 0x1)
 
 
 def zip_info_is_symlink(info: zipfile.ZipInfo) -> bool:
@@ -2816,6 +2886,15 @@ def zip_info_is_symlink(info: zipfile.ZipInfo) -> bool:
 def zip_info_declares_non_regular_file(info: zipfile.ZipInfo) -> bool:
     file_type = (info.external_attr >> 16) & 0o170000
     return file_type not in (0, 0o100000)
+
+
+def zip_info_declares_unexpected_regular_file_permissions(info: zipfile.ZipInfo) -> bool:
+    unix_mode = (info.external_attr >> 16) & 0o177777
+    file_type = unix_mode & 0o170000
+    if file_type != 0o100000:
+        return False
+    permissions = unix_mode & 0o7777
+    return permissions != 0o644
 
 
 def check_source_artifact_record(

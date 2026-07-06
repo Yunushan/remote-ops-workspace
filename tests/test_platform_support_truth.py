@@ -16,6 +16,24 @@ def test_platform_support_truth_checker_passes_current_tree() -> None:
     assert checker.main() == 0
 
 
+def test_platform_support_truth_uses_explicit_empty_platform_targets() -> None:
+    checker = _load_platform_support_truth_checker()
+
+    errors = checker.check_platform_support_truth(platform_targets={})
+
+    assert "platform catalog must declare protected_readiness_goal contract" in errors
+    assert "missing platform architecture target: linux-i386" in errors
+
+
+def test_platform_support_truth_uses_explicit_empty_report() -> None:
+    checker = _load_platform_support_truth_checker()
+
+    errors = checker.check_platform_support_truth(report={})
+
+    assert any("platform readiness targets must match platform catalog" in error for error in errors)
+    assert any("protected platform goal report required_targets must match" in error for error in errors)
+
+
 def test_platform_support_truth_rejects_fake_bit_width() -> None:
     checker = _load_platform_support_truth_checker()
     targets = _load_json("configs/platform_targets.json")

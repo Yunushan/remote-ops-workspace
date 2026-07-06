@@ -297,7 +297,14 @@ def build_evidence_record(args: argparse.Namespace) -> tuple[list[str], dict[str
         if target in LINUX_TARGETS and not artifact_errors
         else None
     )
-    builder_identity = read_json(args.builder_evidence) if target in LINUX_TARGETS else None
+    builder_identity: dict[str, Any] | None = None
+    builder_identity_errors: list[str] = []
+    if target in LINUX_TARGETS:
+        builder_identity, builder_identity_errors = read_json_object(
+            args.builder_evidence,
+            "Linux builder evidence",
+        )
+        errors.extend(builder_identity_errors)
     if target in LINUX_TARGETS:
         errors.extend(
             check_linux_smoke_evidence_file(
@@ -316,7 +323,7 @@ def build_evidence_record(args: argparse.Namespace) -> tuple[list[str], dict[str
                 args.linux_smoke_evidence,
                 source_head_sha=str(args.release_source_head_sha),
                 artifact_sha256=artifact_hashes,
-                builder_identity=builder_identity,
+                builder_identity=None if builder_identity_errors else builder_identity,
             )
         )
     if target in XP_TARGETS:
@@ -328,8 +335,13 @@ def build_evidence_record(args: argparse.Namespace) -> tuple[list[str], dict[str
             )
         )
         errors.extend(check_xp_evidence_record_binding(args))
-    if target in LINUX_TARGETS:
-        errors.extend(check_linux_builder_release_source_binding(args))
+    if target in LINUX_TARGETS and not builder_identity_errors:
+        errors.extend(
+            check_linux_builder_release_source_binding(
+                args,
+                builder_identity=builder_identity,
+            )
+        )
     errors.extend(check_target_release_scoped_inputs(args))
     errors.extend(check_reserved_workspace_root_inputs(args))
     if not errors:
@@ -432,7 +444,7 @@ def validate_linux_args(args: argparse.Namespace) -> list[str]:
     if args.xp_evidence_dir is not None:
         errors.append("--xp-evidence-dir is only valid for Windows XP evidence")
     release_source_workflow_run_url = getattr(args, "release_source_workflow_run_url", None)
-    if release_source_workflow_run_url:
+    if release_source_workflow_run_url is not None:
         if not GITHUB_ACTIONS_RUN_RE.fullmatch(str(release_source_workflow_run_url).rstrip("/")):
             errors.append("--release-source-workflow-run-url must be a GitHub Actions run URL")
         else:
@@ -447,7 +459,7 @@ def validate_linux_args(args: argparse.Namespace) -> list[str]:
             errors.append("--release-source-workflow-run-url must match --workflow-run-url for Linux evidence")
     release_source_artifact_name = getattr(args, "release_source_artifact_name", None)
     expected_artifact_name = linux_release_source_artifact_name(target, str(args.release_tag))
-    if release_source_artifact_name and release_source_artifact_name != expected_artifact_name:
+    if release_source_artifact_name is not None and release_source_artifact_name != expected_artifact_name:
         errors.append(
             f"--release-source-artifact-name must be {expected_artifact_name} for {target} Linux evidence"
         )
@@ -719,30 +731,46 @@ def check_linux_smoke_evidence_file(
     return errors
 
 
-def check_linux_builder_release_source_binding(args: argparse.Namespace) -> list[str]:
+def check_linux_builder_release_source_binding(
+    args: argparse.Namespace,
+    *,
+    builder_identity: dict[str, Any] | None = None,
+) -> list[str]:
     if args.builder_evidence is None or not args.builder_evidence.is_file():
         return []
-    builder_identity = read_json(args.builder_evidence)
+    if builder_identity is None:
+        builder_identity, json_errors = read_json_object(
+            args.builder_evidence,
+            "Linux builder evidence",
+        )
+        if json_errors:
+            return json_errors
     target = str(args.target)
     expected_head_sha = str(args.release_source_head_sha or "").strip()
-    actual_head_sha = str(builder_identity.get("source_head_sha", "")).strip()
+    actual_head_sha = builder_identity.get("source_head_sha")
     errors: list[str] = []
-    if actual_head_sha != expected_head_sha:
+    if not isinstance(actual_head_sha, str):
+        errors.append(f"{target} builder evidence source_head_sha must be a string")
+    elif actual_head_sha.strip() != expected_head_sha:
         errors.append(
             f"{target} builder evidence source_head_sha must match --release-source-head-sha "
-            f"{expected_head_sha}, got {actual_head_sha!r}"
+            f"{expected_head_sha}, got {actual_head_sha.strip()!r}"
         )
-    actual_observed_head_sha = str(builder_identity.get("observed_git_head_sha", "")).strip()
-    if actual_observed_head_sha != expected_head_sha:
+    actual_observed_head_sha = builder_identity.get("observed_git_head_sha")
+    if not isinstance(actual_observed_head_sha, str):
+        errors.append(f"{target} builder evidence observed_git_head_sha must be a string")
+    elif actual_observed_head_sha.strip() != expected_head_sha:
         errors.append(
             f"{target} builder evidence observed_git_head_sha must match --release-source-head-sha "
-            f"{expected_head_sha}, got {actual_observed_head_sha!r}"
+            f"{expected_head_sha}, got {actual_observed_head_sha.strip()!r}"
         )
     if builder_identity.get("git_worktree_clean") is not True:
         errors.append(f"{target} builder evidence git_worktree_clean must be true")
     expected_attempt = args.release_source_run_attempt
     actual_attempt = builder_identity.get("workflow_run_attempt")
-    if actual_attempt != expected_attempt:
+    if not isinstance(actual_attempt, int) or isinstance(actual_attempt, bool) or actual_attempt < 1:
+        errors.append(f"{target} builder evidence workflow_run_attempt must be a positive integer")
+    elif actual_attempt != expected_attempt:
         errors.append(
             f"{target} builder evidence workflow_run_attempt must match "
             f"--release-source-run-attempt {expected_attempt}, got {actual_attempt!r}"
@@ -782,25 +810,39 @@ def check_xp_evidence_record_binding(args: argparse.Namespace) -> list[str]:
         errors.append(f"{target} XP evidence release_source must be an object")
         return errors
     expected_workflow = release_source_workflow(target)
-    if source.get("workflow") != expected_workflow:
+    actual_workflow = source.get("workflow")
+    if not isinstance(actual_workflow, str):
+        errors.append(f"{target} XP evidence release_source.workflow must be a string")
+    elif actual_workflow != expected_workflow:
         errors.append(f"{target} XP evidence release_source.workflow must be {expected_workflow}")
     expected_workflow_run_url = str(args.release_source_workflow_run_url or "").rstrip("/")
-    actual_workflow_run_url = str(source.get("workflow_run_url", "")).rstrip("/")
-    if actual_workflow_run_url != expected_workflow_run_url:
+    actual_workflow_run_url = source.get("workflow_run_url")
+    if not isinstance(actual_workflow_run_url, str):
+        errors.append(f"{target} XP evidence release_source.workflow_run_url must be a string")
+    elif actual_workflow_run_url.rstrip("/") != expected_workflow_run_url:
         errors.append(
             f"{target} XP evidence release_source.workflow_run_url must match "
-            f"--release-source-workflow-run-url {expected_workflow_run_url}, got {actual_workflow_run_url!r}"
+            f"--release-source-workflow-run-url {expected_workflow_run_url}, "
+            f"got {actual_workflow_run_url.rstrip('/')!r}"
         )
     expected_head_sha = str(args.release_source_head_sha or "")
-    actual_head_sha = str(source.get("head_sha", "")).strip()
-    if actual_head_sha != expected_head_sha:
+    actual_head_sha = source.get("head_sha")
+    if not isinstance(actual_head_sha, str):
+        errors.append(f"{target} XP evidence release_source.head_sha must be a string")
+    elif actual_head_sha.strip() != expected_head_sha:
         errors.append(
             f"{target} XP evidence release_source.head_sha must match "
-            f"--release-source-head-sha {expected_head_sha}, got {actual_head_sha!r}"
+            f"--release-source-head-sha {expected_head_sha}, got {actual_head_sha.strip()!r}"
         )
     expected_run_attempt = args.release_source_run_attempt
     actual_run_attempt = source.get("run_attempt")
-    if actual_run_attempt != expected_run_attempt:
+    if (
+        not isinstance(actual_run_attempt, int)
+        or isinstance(actual_run_attempt, bool)
+        or actual_run_attempt < 1
+    ):
+        errors.append(f"{target} XP evidence release_source.run_attempt must be a positive integer")
+    elif actual_run_attempt != expected_run_attempt:
         errors.append(
             f"{target} XP evidence release_source.run_attempt must match "
             f"--release-source-run-attempt {expected_run_attempt}, got {actual_run_attempt!r}"
@@ -938,10 +980,13 @@ def linux_native_smoke_command(
 
 def release_asset_source(args: argparse.Namespace, target: str, promotion: dict[str, Any]) -> dict[str, Any]:
     if target in LINUX_TARGETS:
-        workflow_run_url = str(getattr(args, "release_source_workflow_run_url", None) or args.workflow_run_url)
+        raw_workflow_run_url = getattr(args, "release_source_workflow_run_url", None)
+        workflow_run_url = str(args.workflow_run_url if raw_workflow_run_url is None else raw_workflow_run_url)
+        raw_artifact_name = getattr(args, "release_source_artifact_name", None)
         artifact_name = str(
-            getattr(args, "release_source_artifact_name", None)
-            or linux_release_source_artifact_name(target, str(args.release_tag))
+            linux_release_source_artifact_name(target, str(args.release_tag))
+            if raw_artifact_name is None
+            else raw_artifact_name
         )
     else:
         workflow_run_url = str(getattr(args, "release_source_workflow_run_url", ""))
@@ -1239,11 +1284,19 @@ def xp_evidence_summary(target: str, release_tag: str, evidence: dict[str, Any])
 def xp_release_source_summary(raw_source: Any) -> dict[str, Any]:
     if not isinstance(raw_source, dict):
         return {}
+    workflow = raw_source.get("workflow")
+    workflow_run_url = raw_source.get("workflow_run_url")
+    head_sha = raw_source.get("head_sha")
+    run_attempt = raw_source.get("run_attempt")
     return {
-        "workflow": str(raw_source.get("workflow", "")),
-        "workflow_run_url": str(raw_source.get("workflow_run_url", "")).rstrip("/"),
-        "head_sha": str(raw_source.get("head_sha", "")),
-        "run_attempt": raw_source.get("run_attempt"),
+        "workflow": workflow if isinstance(workflow, str) else "",
+        "workflow_run_url": workflow_run_url.rstrip("/") if isinstance(workflow_run_url, str) else "",
+        "head_sha": head_sha if isinstance(head_sha, str) else "",
+        "run_attempt": (
+            run_attempt
+            if isinstance(run_attempt, int) and not isinstance(run_attempt, bool) and run_attempt > 0
+            else None
+        ),
     }
 
 
@@ -1285,9 +1338,9 @@ def xp_smoke_evidence_sha256_map(evidence: dict[str, Any]) -> dict[str, str]:
     for item in results:
         if not isinstance(item, dict):
             continue
-        smoke_id = str(item.get("id", ""))
-        evidence_sha = str(item.get("evidence_sha256", ""))
-        if smoke_id:
+        smoke_id = item.get("id")
+        evidence_sha = item.get("evidence_sha256")
+        if isinstance(smoke_id, str) and smoke_id and isinstance(evidence_sha, str):
             hashes[smoke_id] = evidence_sha
     return hashes
 
@@ -1418,7 +1471,7 @@ def read_evidence_registry(path: Path) -> dict[str, Any]:
         }
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         return {
             "schema_version": 0,
             "policy": f"Invalid evidence registry JSON: {exc}",
@@ -1430,9 +1483,19 @@ def read_evidence_registry(path: Path) -> dict[str, Any]:
 def read_json(path: Path) -> dict[str, Any]:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         return {"schema_version": 0, "error": f"invalid JSON: {exc}"}
     return data if isinstance(data, dict) else {"schema_version": 0, "error": "JSON root must be an object"}
+
+
+def read_json_object(path: Path, label: str) -> tuple[dict[str, Any], list[str]]:
+    data = read_json(path)
+    error = str(data.get("error", ""))
+    if data.get("schema_version") == 0 and error:
+        if error == "JSON root must be an object":
+            return data, [f"{label} file must contain a JSON object: {path}"]
+        return data, [f"{label} file is not readable JSON: {path}: {error}"]
+    return data, []
 
 
 if __name__ == "__main__":

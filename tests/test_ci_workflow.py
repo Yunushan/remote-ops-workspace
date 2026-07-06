@@ -55,6 +55,18 @@ def test_ci_workflow_test_matrix_runs_pytest_not_monolithic_verifier() -> None:
     assert "ci test matrix must not fan out the monolithic lint verifier" in errors
 
 
+def test_ci_workflow_requires_bounded_test_matrix_timeout() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
+        "    timeout-minutes: 30\n",
+        "",
+    )
+
+    errors = checker.check_ci_workflow(workflow)
+
+    assert "ci test matrix must have a bounded 30 minute job timeout" in errors
+
+
 def test_ci_workflow_requires_node24_javascript_action_runtime() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
@@ -151,6 +163,37 @@ def test_ci_workflow_requires_android_sdk_path_setup() -> None:
     errors = checker.check_ci_workflow(workflow)
 
     assert any("Android SDK command-line tools PATH setup" in error for error in errors)
+
+
+def test_ci_workflow_requires_bounded_android_emulator_boot_diagnostics() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    workflow_without_step_timeout = workflow.replace("        timeout-minutes: 8\n", "", 1)
+    workflow_without_pid_tracking = workflow.replace('          echo "$emulator_pid" > emulator.pid\n', "")
+    workflow_without_connection_diagnostic = workflow.replace(
+        '              echo "::error::Android emulator did not appear in adb devices within 180 seconds"\n',
+        "",
+    )
+    workflow_without_boot_diagnostic = workflow.replace(
+        '            echo "::error::Android emulator did not complete boot within 180 seconds"\n',
+        "",
+    )
+    workflow_without_log_tail = workflow.replace("              tail -200 emulator.log || true\n", "").replace(
+        "            tail -200 emulator.log || true\n",
+        "",
+    )
+
+    step_timeout_errors = checker.check_ci_workflow(workflow_without_step_timeout)
+    pid_tracking_errors = checker.check_ci_workflow(workflow_without_pid_tracking)
+    connection_diagnostic_errors = checker.check_ci_workflow(workflow_without_connection_diagnostic)
+    boot_diagnostic_errors = checker.check_ci_workflow(workflow_without_boot_diagnostic)
+    log_tail_errors = checker.check_ci_workflow(workflow_without_log_tail)
+
+    assert any("bounded Android emulator boot timeout" in error for error in step_timeout_errors)
+    assert any("Android emulator process tracking" in error for error in pid_tracking_errors)
+    assert any("Android emulator adb connection timeout diagnostic" in error for error in connection_diagnostic_errors)
+    assert any("Android emulator boot-completion timeout diagnostic" in error for error in boot_diagnostic_errors)
+    assert any("Android emulator log diagnostics" in error for error in log_tail_errors)
 
 
 def test_ci_workflow_requires_ios_simulator_web_job() -> None:

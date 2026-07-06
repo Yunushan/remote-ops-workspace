@@ -45,11 +45,13 @@ GOAL_STRING_LIST_FIELDS = {
     "release_repositories",
     "release_source_heads",
 }
-GOAL_STRING_KEY_MAP_FIELDS = {
+GOAL_STRING_VALUE_MAP_FIELDS = {
     "release_source_workflows",
     "selected_release_source_workflows",
     "release_source_run_urls",
     "selected_release_source_run_urls",
+}
+GOAL_POSITIVE_INT_VALUE_MAP_FIELDS = {
     "release_source_run_attempts",
     "selected_release_source_run_attempts",
 }
@@ -265,6 +267,7 @@ def check_protected_platform_goal(
                 check_consistency=False,
             )
         )
+        record_validation_errors.extend(check_duplicate_accepted_evidence_targets(registry))
         validation_errors.extend(
             check_platform_verified_evidence(
                 registry=registry,
@@ -401,8 +404,10 @@ def check_goal_release_scope_metadata(goal: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     for field in sorted(GOAL_STRING_LIST_FIELDS):
         errors.extend(check_goal_string_list_field(goal, field))
-    for field in sorted(GOAL_STRING_KEY_MAP_FIELDS):
-        errors.extend(check_goal_string_key_map_field(goal, field))
+    for field in sorted(GOAL_STRING_VALUE_MAP_FIELDS):
+        errors.extend(check_goal_string_value_map_field(goal, field))
+    for field in sorted(GOAL_POSITIVE_INT_VALUE_MAP_FIELDS):
+        errors.extend(check_goal_positive_int_value_map_field(goal, field))
     for field in sorted(GOAL_NESTED_STRING_KEY_MAP_FIELDS):
         raw = goal.get(field)
         if raw is None:
@@ -417,7 +422,7 @@ def check_goal_release_scope_metadata(goal: dict[str, Any]) -> list[str]:
             if not isinstance(value, dict):
                 errors.append(f"protected platform goal parity {field}.{key} must be a map")
                 continue
-            errors.extend(check_string_key_mapping(value, f"{field}.{key}"))
+            errors.extend(check_positive_int_value_mapping(value, f"{field}.{key}"))
     return errors
 
 
@@ -448,13 +453,22 @@ def check_goal_string_list_field(goal: dict[str, Any], field: str) -> list[str]:
     return errors
 
 
-def check_goal_string_key_map_field(goal: dict[str, Any], field: str) -> list[str]:
+def check_goal_string_value_map_field(goal: dict[str, Any], field: str) -> list[str]:
     raw = goal.get(field)
     if raw is None:
         return []
     if not isinstance(raw, dict):
         return [f"protected platform goal parity {field} must be a map"]
-    return check_string_key_mapping(raw, field)
+    return check_string_value_mapping(raw, field)
+
+
+def check_goal_positive_int_value_map_field(goal: dict[str, Any], field: str) -> list[str]:
+    raw = goal.get(field)
+    if raw is None:
+        return []
+    if not isinstance(raw, dict):
+        return [f"protected platform goal parity {field} must be a map"]
+    return check_positive_int_value_mapping(raw, field)
 
 
 def check_string_key_mapping(raw: dict[Any, Any], field: str) -> list[str]:
@@ -473,6 +487,32 @@ def check_string_key_mapping(raw: dict[Any, Any], field: str) -> list[str]:
             f"protected platform goal parity {field} keys must not collide on "
             f"case-insensitive filesystems: {case_collisions}"
         )
+    return errors
+
+
+def check_string_value_mapping(raw: dict[Any, Any], field: str) -> list[str]:
+    errors = check_string_key_mapping(raw, field)
+    for key, value in raw.items():
+        if not isinstance(key, str) or not key.strip():
+            continue
+        if not isinstance(value, str) or not value.strip():
+            errors.append(
+                f"protected platform goal parity {field}.{key} "
+                f"must be a non-empty string, got {value!r}"
+            )
+    return errors
+
+
+def check_positive_int_value_mapping(raw: dict[Any, Any], field: str) -> list[str]:
+    errors = check_string_key_mapping(raw, field)
+    for key, value in raw.items():
+        if not isinstance(key, str) or not key.strip():
+            continue
+        if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+            errors.append(
+                f"protected platform goal parity {field}.{key} "
+                f"must be a positive integer, got {value!r}"
+            )
     return errors
 
 
@@ -528,6 +568,24 @@ def invalid_evidence_goal_registry(registry: dict[str, Any]) -> dict[str, Any]:
     filtered = dict(registry)
     filtered["accepted_evidence"] = []
     return filtered
+
+
+def check_duplicate_accepted_evidence_targets(registry: dict[str, Any]) -> list[str]:
+    records = registry.get("accepted_evidence", [])
+    if not isinstance(records, list):
+        return []
+    counts: dict[str, int] = {}
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        target = str(record.get("target", "")).strip()
+        if target:
+            counts[target] = counts.get(target, 0) + 1
+    return [
+        f"accepted_evidence target must be unique: {target}"
+        for target, count in sorted(counts.items())
+        if count > 1
+    ]
 
 
 def strict_goal_registry(

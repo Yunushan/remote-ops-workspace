@@ -189,6 +189,195 @@ def test_stage_extended_linux_evidence_upload_rejects_boolean_review_bundle_size
     ) in errors
 
 
+def test_stage_extended_linux_evidence_upload_rejects_malformed_hash_digests(
+    tmp_path: Path,
+) -> None:
+    stager = _load_stager()
+    artifact = tmp_path / "remote-ops-workspace-v1.0.2-linux-i686-native.tar.gz"
+    bundle = tmp_path / "extended-linux-evidence-bundle-linux-i386-v1.0.2.zip"
+    artifact.write_bytes(b"native artifact\n")
+    bundle.write_bytes(b"review bundle\n")
+    record = {
+        "artifact_sha256": {artifact.name: True},
+        "review_bundle": {
+            "archive": {
+                "file": bundle.name,
+                "size_bytes": bundle.stat().st_size,
+                "sha256": "A" * 64,
+            },
+        },
+    }
+
+    errors = stager.check_source_hashes(
+        "linux-i386",
+        record,
+        {
+            artifact.name: artifact,
+            bundle.name: bundle,
+        },
+    )
+
+    assert (
+        "linux-i386 staged upload artifact_sha256."
+        "remote-ops-workspace-v1.0.2-linux-i686-native.tar.gz "
+        "must be a lowercase SHA-256 hex digest"
+    ) in errors
+    assert (
+        "linux-i386 staged upload review_bundle archive.sha256 "
+        "must be a lowercase SHA-256 hex digest: "
+        "extended-linux-evidence-bundle-linux-i386-v1.0.2.zip"
+    ) in errors
+    assert not any("native artifact SHA-256 mismatch" in error for error in errors)
+    assert not any("review_bundle archive.sha256 mismatch" in error for error in errors)
+
+
+def test_stage_extended_linux_evidence_upload_rejects_symlinked_source_hashes(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    stager = _load_stager()
+    artifact = tmp_path / "remote-ops-workspace-v1.0.2-linux-i686-native.tar.gz"
+    bundle = tmp_path / "extended-linux-evidence-bundle-linux-i386-v1.0.2.zip"
+    artifact.write_bytes(b"native artifact\n")
+    bundle.write_bytes(b"review bundle\n")
+    record = {
+        "artifact_sha256": {artifact.name: _sha256(artifact)},
+        "review_bundle": {
+            "archive": {
+                "file": bundle.name,
+                "size_bytes": bundle.stat().st_size,
+                "sha256": _sha256(bundle),
+            },
+        },
+    }
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self in {artifact, bundle}
+
+    monkeypatch.setattr(Path, "is_symlink", fake_is_symlink)
+
+    errors = stager.check_source_hashes(
+        "linux-i386",
+        record,
+        {
+            artifact.name: artifact,
+            bundle.name: bundle,
+        },
+    )
+
+    assert (
+        "linux-i386 staged upload native artifact must not be a symlink: "
+        "remote-ops-workspace-v1.0.2-linux-i686-native.tar.gz"
+    ) in errors
+    assert (
+        "linux-i386 staged upload review_bundle archive must not be a symlink: "
+        "extended-linux-evidence-bundle-linux-i386-v1.0.2.zip"
+    ) in errors
+
+
+def test_stage_extended_linux_evidence_upload_rejects_ambiguous_review_bundle_files(
+    tmp_path: Path,
+) -> None:
+    stager = _load_stager()
+    bundle = tmp_path / "extended-linux-evidence-bundle-linux-i386-v1.0.2.json"
+    bundle.write_bytes(b"bundle\n")
+    collision_file = bundle.name
+    record = {
+        "review_bundle": {
+            "manifest": {
+                "file": bundle.name,
+                "size_bytes": bundle.stat().st_size,
+                "sha256": _sha256(bundle),
+            },
+            "archive": {
+                "file": bundle.name,
+                "size_bytes": bundle.stat().st_size,
+                "sha256": _sha256(bundle),
+            },
+            "sha256s": {
+                "file": collision_file.upper(),
+                "size_bytes": 1,
+                "sha256": "0" * 64,
+            },
+        }
+    }
+
+    errors = stager.check_source_hashes("linux-i386", record, {bundle.name: bundle})
+
+    assert (
+        "linux-i386 staged upload review_bundle files must not contain duplicates: "
+        f"['{bundle.name}']"
+    ) in errors
+    assert any(
+        "linux-i386 staged upload review_bundle files must not collide on "
+        "case-insensitive filesystems" in error
+        and collision_file in error
+        and collision_file.upper() in error
+        for error in errors
+    )
+
+
+def test_stage_extended_linux_evidence_upload_rejects_malformed_review_bundle_file() -> None:
+    stager = _load_stager()
+    record = {"review_bundle": {"manifest": {"file": True}}}
+
+    errors = stager.check_source_hashes("linux-i386", record, {})
+
+    assert (
+        "linux-i386 staged upload review_bundle manifest.file "
+        "must be an exact safe file name, got True"
+    ) in errors
+
+
+def test_stage_extended_linux_evidence_upload_reports_bad_review_bundle_manifest(
+    tmp_path: Path,
+) -> None:
+    stager = _load_stager()
+
+    files, errors = stager.review_bundle_workspace_files_with_errors(
+        "linux-i386",
+        {"review_bundle": {"manifest": {"file": "../bundle.json"}}},
+        bundle_dir=tmp_path,
+    )
+
+    assert files == set()
+    assert errors == [
+        "linux-i386 staged upload review_bundle manifest.file "
+        "must be an exact safe file name, got '../bundle.json'"
+    ]
+
+    manifest = tmp_path / "bundle-manifest.json"
+    record = {"review_bundle": {"manifest": {"file": manifest.name}}}
+    manifest.write_bytes(b"\xff\xfe")
+
+    files, errors = stager.review_bundle_workspace_files_with_errors(
+        "linux-i386",
+        record,
+        bundle_dir=tmp_path,
+    )
+
+    assert files == set()
+    assert any(
+        "linux-i386 staged upload review_bundle manifest is not readable JSON: "
+        "bundle-manifest.json" in error
+        for error in errors
+    )
+
+    manifest.write_text("[]\n", encoding="utf-8")
+
+    files, errors = stager.review_bundle_workspace_files_with_errors(
+        "linux-i386",
+        record,
+        bundle_dir=tmp_path,
+    )
+
+    assert files == set()
+    assert errors == [
+        "linux-i386 staged upload review_bundle manifest must be a JSON object: "
+        "bundle-manifest.json"
+    ]
+
+
 def test_stage_extended_linux_evidence_upload_rejects_non_string_artifact_hash_key() -> None:
     stager = _load_stager()
     record = {"artifact_sha256": {True: "0" * 64}}
@@ -308,6 +497,31 @@ def test_stage_extended_linux_evidence_upload_rejects_noncanonical_final_record(
         f"{target} finalized accepted record must use canonical sorted JSON: "
         f"platform-verified-evidence-{target}-final.json"
     ) in errors
+
+
+def test_stage_extended_linux_check_final_record_rejects_symlinked_parent(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    stager = _load_stager()
+    target = "linux-i386"
+    source_parent = tmp_path / "linked-source"
+    source = source_parent / "source"
+    source.mkdir(parents=True)
+    final_record = source / f"platform-verified-evidence-{target}-final.json"
+    final_record.write_text("{}", encoding="utf-8")
+
+    def fake_is_symlink(self: Path) -> bool:
+        return self == source_parent
+
+    monkeypatch.setattr(type(source), "is_symlink", fake_is_symlink)
+
+    errors, record = stager.check_final_record(target, "v1.0.2", final_record)
+
+    assert record is None
+    assert errors == [
+        f"{target} finalized accepted record path must not contain symlinked directories: {source_parent}"
+    ]
 
 
 def test_stage_extended_linux_evidence_upload_rejects_release_source_file_set_drift() -> None:

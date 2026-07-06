@@ -140,7 +140,7 @@ def check_platform_promotion_artifacts(
     strict: bool = False,
     promotion: dict[str, Any] | None = None,
 ) -> list[str]:
-    promotion_data = promotion or read_json(PROMOTION_PATH)
+    promotion_data = read_json(PROMOTION_PATH) if promotion is None else promotion
     errors: list[str] = []
     entries = promotion_entries(promotion_data, errors)
     entry = entries.get(target)
@@ -255,23 +255,82 @@ def check_tar_gz_structure(target: str, path: Path) -> list[str]:
 
 
 def check_zip_entry_safety(target: str, archive_name: str, infos: list[zipfile.ZipInfo]) -> list[str]:
+    encrypted_entries = sorted(info.filename for info in infos if zip_entry_is_encrypted(info))
     symlink_entries = sorted(info.filename for info in infos if zip_entry_is_symlink(info))
+    non_regular_entries = sorted(
+        info.filename for info in infos if zip_entry_declares_non_regular_file(info)
+    )
+    entry_names = [zip_entry_safety_name(info) for info in infos]
+    entry_counts: dict[str, int] = {}
+    for name in entry_names:
+        entry_counts[name] = entry_counts.get(name, 0) + 1
+    duplicate_entries = sorted(name for name, count in entry_counts.items() if count > 1)
+    case_collisions = case_insensitive_name_collisions(set(entry_names))
+    file_prefix_collisions = zip_file_prefix_collisions(infos)
     unsafe_entries = sorted(
         info.filename
         for info in infos
-        if not archive_entry_name_is_safe(info.filename.rstrip("/") if info.is_dir() else info.filename)
+        if not archive_entry_name_is_safe(zip_entry_safety_name(info))
     )
     errors: list[str] = []
+    if encrypted_entries:
+        errors.append(f"{target} ZIP artifact {archive_name} entries must not be encrypted: {encrypted_entries}")
     if symlink_entries:
         errors.append(f"{target} ZIP artifact {archive_name} entries must not be symlinks: {symlink_entries}")
+    if non_regular_entries:
+        errors.append(
+            f"{target} ZIP artifact {archive_name} entries must be regular files or directories: "
+            f"{non_regular_entries}"
+        )
+    if duplicate_entries:
+        errors.append(
+            f"{target} ZIP artifact {archive_name} entries must not contain duplicates: "
+            f"{duplicate_entries}"
+        )
+    if case_collisions:
+        errors.append(
+            f"{target} ZIP artifact {archive_name} entries must not collide on "
+            f"case-insensitive filesystems: {case_collisions}"
+        )
+    if file_prefix_collisions:
+        errors.append(
+            f"{target} ZIP artifact {archive_name} entries must not contain file/path-prefix "
+            f"collisions: {file_prefix_collisions}"
+        )
     if unsafe_entries:
         errors.append(f"{target} ZIP artifact {archive_name} entries must use safe relative paths: {unsafe_entries}")
     return errors
 
 
+def zip_entry_safety_name(info: zipfile.ZipInfo) -> str:
+    return info.filename.rstrip("/") if info.is_dir() else info.filename
+
+
+def zip_file_prefix_collisions(infos: list[zipfile.ZipInfo]) -> list[str]:
+    names = sorted({zip_entry_safety_name(info) for info in infos})
+    file_names = sorted({info.filename for info in infos if not info.is_dir()})
+    return sorted(
+        f"{parent} -> {child}"
+        for parent in file_names
+        for child in names
+        if parent != child and child.startswith(f"{parent}/")
+    )
+
+
+def zip_entry_is_encrypted(info: zipfile.ZipInfo) -> bool:
+    return bool(info.flag_bits & 0x1)
+
+
 def zip_entry_is_symlink(info: zipfile.ZipInfo) -> bool:
     file_type = (info.external_attr >> 16) & 0o170000
     return file_type == 0o120000
+
+
+def zip_entry_declares_non_regular_file(info: zipfile.ZipInfo) -> bool:
+    file_type = (info.external_attr >> 16) & 0o170000
+    if file_type in (0, 0o100000, 0o120000) or info.is_dir():
+        return False
+    return True
 
 
 def is_allowed_platform_parent_symlink(parent: Path) -> bool:
@@ -328,6 +387,13 @@ def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
 def check_tar_entry_safety(target: str, archive_name: str, members: list[tarfile.TarInfo]) -> list[str]:
     unsafe_entries = sorted(member.name for member in members if not archive_entry_name_is_safe(member.name))
     unsafe_types = sorted(member.name for member in members if not member.isfile() and not member.isdir())
+    entry_names = [tar_entry_safety_name(member) for member in members]
+    entry_counts: dict[str, int] = {}
+    for name in entry_names:
+        entry_counts[name] = entry_counts.get(name, 0) + 1
+    duplicate_entries = sorted(name for name, count in entry_counts.items() if count > 1)
+    case_collisions = case_insensitive_name_collisions(set(entry_names))
+    file_prefix_collisions = tar_file_prefix_collisions(members)
     errors: list[str] = []
     if unsafe_entries:
         errors.append(f"{target} tar.gz artifact {archive_name} entries must use safe relative paths: {unsafe_entries}")
@@ -335,7 +401,37 @@ def check_tar_entry_safety(target: str, archive_name: str, members: list[tarfile
         errors.append(
             f"{target} tar.gz artifact {archive_name} entries must be regular files or directories: {unsafe_types}"
         )
+    if duplicate_entries:
+        errors.append(
+            f"{target} tar.gz artifact {archive_name} entries must not contain duplicates: "
+            f"{duplicate_entries}"
+        )
+    if case_collisions:
+        errors.append(
+            f"{target} tar.gz artifact {archive_name} entries must not collide on "
+            f"case-insensitive filesystems: {case_collisions}"
+        )
+    if file_prefix_collisions:
+        errors.append(
+            f"{target} tar.gz artifact {archive_name} entries must not contain file/path-prefix "
+            f"collisions: {file_prefix_collisions}"
+        )
     return errors
+
+
+def tar_entry_safety_name(member: tarfile.TarInfo) -> str:
+    return member.name.rstrip("/") if member.isdir() else member.name
+
+
+def tar_file_prefix_collisions(members: list[tarfile.TarInfo]) -> list[str]:
+    names = sorted({tar_entry_safety_name(member) for member in members})
+    file_names = sorted({member.name for member in members if member.isfile()})
+    return sorted(
+        f"{parent} -> {child}"
+        for parent in file_names
+        for child in names
+        if parent != child and child.startswith(f"{parent}/")
+    )
 
 
 def archive_entry_name_is_safe(name: str) -> bool:
@@ -469,9 +565,12 @@ def check_native_manifest(target: str, root: Path, expected: set[str]) -> list[s
             errors.append(f"{target} native manifest record {filename} missing positive size_bytes")
         elif size != path.stat().st_size:
             errors.append(f"{target} native manifest size mismatch for {filename}")
-        checksum = str(record.get("sha256", ""))
-        if not re.fullmatch(r"[0-9a-f]{64}", checksum):
-            errors.append(f"{target} native manifest record {filename} missing sha256")
+        checksum = record.get("sha256", "")
+        if not lowercase_sha256_hex(checksum):
+            errors.append(
+                f"{target} native manifest record {filename} "
+                "sha256 must be a lowercase SHA-256 hex digest"
+            )
         elif checksum != sha256_file(path):
             errors.append(f"{target} native manifest checksum mismatch for {filename}")
         errors.extend(check_native_manifest_target_binding(target, filename, record))
@@ -486,16 +585,26 @@ def check_native_manifest_target_binding(
     errors: list[str] = []
     expected_architecture = expected_manifest_architecture(target, filename)
     if expected_architecture:
-        architecture = str(record.get("architecture", "")).strip()
-        if architecture != expected_architecture:
+        raw_architecture = record.get("architecture", "")
+        if not isinstance(raw_architecture, str):
+            errors.append(
+                f"{target} native manifest record {filename} architecture "
+                f"must be a string, got {raw_architecture!r}"
+            )
+        elif raw_architecture.strip() != expected_architecture:
             errors.append(
                 f"{target} native manifest record {filename} architecture must be "
                 f"{expected_architecture!r}, got {record.get('architecture')!r}"
             )
     expected_format = expected_manifest_format(filename)
     if expected_format:
-        actual_format = str(record.get("format", "")).strip()
-        if actual_format != expected_format:
+        raw_format = record.get("format", "")
+        if not isinstance(raw_format, str):
+            errors.append(
+                f"{target} native manifest record {filename} format "
+                f"must be a string, got {raw_format!r}"
+            )
+        elif raw_format.strip() != expected_format:
             errors.append(
                 f"{target} native manifest record {filename} format must be "
                 f"{expected_format!r}, got {record.get('format')!r}"
@@ -618,6 +727,10 @@ def read_project_version() -> str:
 
 def read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def lowercase_sha256_hex(value: Any) -> bool:
+    return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None
 
 
 def sha256_file(path: Path) -> str:

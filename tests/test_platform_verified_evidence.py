@@ -100,6 +100,29 @@ def test_platform_verified_evidence_checker_passes_empty_registry() -> None:
     assert checker.main() == 0
 
 
+def test_platform_verified_evidence_uses_explicit_empty_registry() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(registry={})
+
+    assert "configs/platform_verified_evidence.json schema_version must be 1" in errors
+
+
+def test_platform_verified_evidence_uses_explicit_empty_promotion() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY,
+            "accepted_evidence": [],
+        },
+        promotion={},
+    )
+
+    assert any("promotion config missing protected target entries" in error for error in errors)
+
+
 def test_platform_verified_evidence_rejects_boolean_registry_schema_version() -> None:
     checker = _load_platform_verified_evidence_checker()
 
@@ -1551,6 +1574,40 @@ def test_platform_verified_evidence_rejects_ambiguous_top_level_keys() -> None:
     ) in errors
 
 
+def test_platform_verified_evidence_rejects_non_string_target() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    record["target"] = True
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "accepted_evidence target must be a string, got True" in errors
+
+
+def test_platform_verified_evidence_non_string_target_cannot_satisfy_required_target() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    record["target"] = True
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(
+        registry=registry,
+        required_targets=("linux-i386",),
+    )
+
+    assert "accepted_evidence target must be a string, got True" in errors
+    assert "missing required accepted evidence targets: ['linux-i386']" in errors
+
+
 def test_platform_verified_evidence_rejects_boolean_linux_identity_schema_versions() -> None:
     checker = _load_platform_verified_evidence_checker()
     record = _linux_record("linux-i386")
@@ -2015,6 +2072,29 @@ def test_platform_verified_evidence_rejects_review_bundle_unexpected_fields() ->
     assert "linux-i386 review_bundle manifest unexpected fields: ['path']" in errors
 
 
+def test_platform_verified_evidence_rejects_non_string_review_bundle_metadata() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    record["review_bundle"]["manifest"]["file"] = True
+    record["review_bundle"]["archive"]["sha256"] = True
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(
+        registry=registry,
+        require_review_bundles=True,
+    )
+
+    assert "linux-i386 review_bundle manifest.file must be a string, got True" in errors
+    assert (
+        "linux-i386 review_bundle archive.sha256 must be a string SHA-256 hex digest, "
+        "got True"
+    ) in errors
+
+
 def test_platform_verified_evidence_rejects_review_bundle_missing_release_asset_urls() -> None:
     checker = _load_platform_verified_evidence_checker()
     record = _linux_record("linux-i386")
@@ -2266,6 +2346,23 @@ def test_platform_verified_evidence_rejects_missing_promotion_config_hash() -> N
     assert "linux-i386 promotion_config_sha256 must be a SHA-256 hex digest" in errors
 
 
+def test_platform_verified_evidence_rejects_non_string_release_tag_and_promotion_hash() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    record["release_tag"] = True
+    record["promotion_config_sha256"] = True
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "linux-i386 release_tag must be a string" in errors
+    assert "linux-i386 promotion_config_sha256 must be a string SHA-256 hex digest" in errors
+
+
 def test_platform_verified_evidence_rejects_stale_promotion_config_hash() -> None:
     checker = _load_platform_verified_evidence_checker()
     record = _xp_record("windows-xp-native-x86")
@@ -2326,6 +2423,56 @@ def test_platform_verified_evidence_rejects_unsafe_artifact_sha256_keys() -> Non
 
     assert "linux-armhf artifact_sha256 keys must be exact safe file names, got 'nested/file.bin'" in errors
     assert "linux-armhf artifact_sha256 keys must be exact safe file names, got True" in errors
+
+
+def test_platform_verified_evidence_rejects_non_string_artifact_sha256_values() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-armhf")
+    artifact_name = next(iter(record["artifact_sha256"]))
+    record["artifact_sha256"][artifact_name] = True
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        f"linux-armhf artifact_sha256 for {artifact_name} must be a string SHA-256 hex digest"
+        in errors
+    )
+
+
+def test_platform_verified_evidence_rejects_non_string_linux_smoke_artifact_binding_values() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    target = "linux-i386"
+    release_tag = "v1.0.2"
+    artifact_hashes = {
+        name: "1" * 64
+        for name in checker.linux_smoke_artifact_names(target, release_tag)
+    }
+    artifact_name = sorted(artifact_hashes)[0]
+    artifact_hashes[artifact_name] = True
+    smoke_text = "\n".join(
+        f"native installer smoke artifact sha256: {name} {digest}"
+        for name, digest in sorted(artifact_hashes.items())
+        if isinstance(digest, str)
+    )
+
+    errors = checker.check_linux_smoke_artifact_sha256_lines(
+        target,
+        release_tag,
+        smoke_text,
+        artifact_hashes,
+        label="linux_smoke_evidence",
+    )
+
+    assert (
+        f"{target} linux_smoke_evidence artifact_sha256 for smoke-tested artifact "
+        f"{artifact_name} must be a string SHA-256 hex digest"
+    ) in errors
+    assert not any("True" in error for error in errors)
 
 
 def test_platform_verified_evidence_rejects_case_colliding_artifact_sha256_keys() -> None:
@@ -2530,6 +2677,21 @@ def test_platform_verified_evidence_rejects_linux_workflow_repository_mismatch()
     assert any("linux-i386 workflow_run_url repository must match release asset repository" in error for error in errors)
 
 
+def test_platform_verified_evidence_rejects_non_string_linux_workflow_run_url() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    record["workflow_run_url"] = True
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "linux-i386 workflow_run_url must be a string GitHub Actions run URL" in errors
+
+
 def test_platform_verified_evidence_rejects_linux_smoke_run_context_mismatch() -> None:
     checker = _load_platform_verified_evidence_checker()
     record = _linux_record("linux-i386")
@@ -2565,6 +2727,42 @@ def test_platform_verified_evidence_rejects_missing_linux_workflow_inputs() -> N
     errors = checker.check_platform_verified_evidence(registry=registry)
 
     assert "linux-i386 evidence must include workflow_inputs object" in errors
+
+
+def test_platform_verified_evidence_rejects_missing_linux_runner_labels() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    del record["runner_labels"]
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "linux-i386 runner_labels must be a list" in errors
+
+
+def test_platform_verified_evidence_rejects_ambiguous_linux_runner_labels() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    record["runner_labels"] = ["self-hosted", "linux", "LINUX", "linux", True]
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "linux-i386 runner_labels entries must be strings, got True" in errors
+    assert (
+        "linux-i386 runner_labels must not collide on case-insensitive "
+        "filesystems: ['LINUX', 'linux']"
+    ) in errors
+    assert "linux-i386 runner_labels must not contain duplicates: ['linux']" in errors
+    assert "linux-i386 runner_labels must include ['i386', 'linux', 'self-hosted']" in errors
 
 
 def test_platform_verified_evidence_rejects_missing_linux_workflow_input_keys() -> None:
@@ -2647,6 +2845,31 @@ def test_platform_verified_evidence_rejects_release_asset_source_unexpected_fiel
     errors = checker.check_platform_verified_evidence(registry=registry)
 
     assert "linux-armhf release_asset_source unexpected fields: ['download_url']" in errors
+
+
+def test_platform_verified_evidence_rejects_non_string_release_asset_source_metadata() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    source = record["release_asset_source"]
+    assert isinstance(source, dict)
+    source["type"] = True
+    source["workflow"] = False
+    source["workflow_run_url"] = 12345
+    source["artifact_name"] = False
+    source["head_sha"] = 42
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "linux-i386 release_asset_source.type must be a string" in errors
+    assert "linux-i386 release_asset_source.workflow must be a string" in errors
+    assert "linux-i386 release_asset_source.workflow_run_url must be a string" in errors
+    assert "linux-i386 release_asset_source.artifact_name must be a string" in errors
+    assert "linux-i386 release_asset_source.head_sha must be a string" in errors
 
 
 def test_platform_verified_evidence_rejects_missing_release_source_head_sha() -> None:
@@ -2765,6 +2988,24 @@ def test_platform_verified_evidence_rejects_missing_local_evidence_preflight_com
     )
 
 
+def test_platform_verified_evidence_rejects_non_string_local_evidence_preflight_command() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    record["local_evidence_preflight_command"] = True
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "linux-i386 local_evidence_preflight_command must be a string command, got True"
+        in errors
+    )
+
+
 def test_platform_verified_evidence_rejects_missing_staged_upload_command() -> None:
     checker = _load_platform_verified_evidence_checker()
     record = _linux_record("linux-i386")
@@ -2778,6 +3019,21 @@ def test_platform_verified_evidence_rejects_missing_staged_upload_command() -> N
     errors = checker.check_platform_verified_evidence(registry=registry)
 
     assert any("linux-i386 staged_upload_command must start with" in error for error in errors)
+
+
+def test_platform_verified_evidence_rejects_non_string_staged_upload_command() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    record["staged_upload_command"] = True
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "linux-i386 staged_upload_command must be a string command, got True" in errors
 
 
 def test_platform_verified_evidence_rejects_linux_staged_upload_source_drift() -> None:
@@ -3633,6 +3889,21 @@ def test_platform_verified_evidence_rejects_artifact_validation_command_tag_mism
     assert "linux-armhf artifact_validation_command must include exactly one --tag v1.0.2, got ['v9.9.9']" in errors
 
 
+def test_platform_verified_evidence_rejects_non_string_artifact_validation_command() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    record["artifact_validation_command"] = True
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "linux-i386 artifact_validation_command must be a string command, got True" in errors
+
+
 def test_platform_verified_evidence_rejects_duplicate_artifact_validation_command_tag() -> None:
     checker = _load_platform_verified_evidence_checker()
     record = _linux_record("linux-i386")
@@ -3904,6 +4175,24 @@ def test_platform_verified_evidence_rejects_missing_xp_native_validation_evidenc
         "windows-xp-native-x86 native_evidence_validation_command must include exactly one --evidence, "
         "got []"
     ) in errors
+
+
+def test_platform_verified_evidence_rejects_non_string_xp_native_validation_command() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _xp_record("windows-xp-native-x86")
+    record["native_evidence_validation_command"] = True
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "windows-xp-native-x86 native_evidence_validation_command must be a string command, got True"
+        in errors
+    )
 
 
 def test_platform_verified_evidence_rejects_placeholder_xp_native_validation_paths() -> None:
@@ -4318,6 +4607,21 @@ def test_platform_verified_evidence_rejects_missing_builder_identity_digest() ->
     assert "linux-i386 builder_identity_sha256 must be a SHA-256 hex digest" in errors
 
 
+def test_platform_verified_evidence_rejects_non_string_builder_identity_digest() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    record["builder_identity_sha256"] = True
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "linux-i386 builder_identity_sha256 must be a string SHA-256 hex digest" in errors
+
+
 def test_platform_verified_evidence_rejects_stale_builder_identity_digest() -> None:
     checker = _load_platform_verified_evidence_checker()
     record = _linux_record("linux-armhf")
@@ -4585,6 +4889,26 @@ def test_platform_verified_evidence_rejects_missing_linux_runtime_identity() -> 
     assert "linux-i386 builder_identity kernel_release must be set" in errors
 
 
+def test_platform_verified_evidence_rejects_non_string_linux_runtime_identity() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    record["builder_identity"]["os_release"] = True
+    record["builder_identity"]["kernel_release"] = 610
+    record["builder_identity"]["glibc_version"] = None
+    record["builder_identity_sha256"] = _json_sha256(record["builder_identity"])
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "linux-i386 builder_identity os_release must be a string" in errors
+    assert "linux-i386 builder_identity kernel_release must be a string" in errors
+    assert "linux-i386 builder_identity glibc_version must be a string" in errors
+
+
 def test_platform_verified_evidence_rejects_weak_linux_tool_paths() -> None:
     checker = _load_platform_verified_evidence_checker()
     record = _linux_record("linux-i386")
@@ -4701,6 +5025,66 @@ def test_platform_verified_evidence_rejects_vague_security_patch_provenance() ->
     ) in errors
 
 
+def test_platform_verified_evidence_rejects_reserved_https_security_patch_provenance() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    record["builder_identity"]["security_patch_evidence"][
+        "security_update_channel"
+    ] = "https://example.com/security-updates/linux-i386"
+    record["builder_identity"]["security_patch_evidence"][
+        "cve_review_reference"
+    ] = "https://example.com/security-advisory/CVE-2026-0001"
+    record["builder_identity_sha256"] = _json_sha256(record["builder_identity"])
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "linux-i386 builder_identity security_patch_evidence.security_update_channel "
+        "must name concrete non-placeholder provenance"
+    ) in errors
+    assert (
+        "linux-i386 builder_identity security_patch_evidence.cve_review_reference "
+        "must name concrete non-placeholder provenance"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_generic_https_security_patch_cve_reference() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    security = record["builder_identity"]["security_patch_evidence"]
+    assert isinstance(security, dict)
+    security["security_update_channel"] = "vendor-security-updates-2026-07"
+    security["cve_review_reference"] = "https://security.vendor.com/releases/2026-07"
+    summary = record["linux_smoke_summary"]
+    assert isinstance(summary, dict)
+    summary_security = summary["security"]
+    assert isinstance(summary_security, dict)
+    summary_security["security_update_channel"] = security["security_update_channel"]
+    summary_security["cve_review_reference"] = security["cve_review_reference"]
+    record["builder_identity_sha256"] = _json_sha256(record["builder_identity"])
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "linux-i386 builder_identity security_patch_evidence.cve_review_reference "
+        "must name concrete non-placeholder provenance"
+    ) in errors
+    assert (
+        "linux-i386 linux_smoke_summary security.cve_review_reference "
+        "must name concrete non-placeholder provenance"
+    ) in errors
+
+
 def test_platform_verified_evidence_rejects_missing_linux_smoke_evidence() -> None:
     checker = _load_platform_verified_evidence_checker()
     record = _linux_record("linux-i386")
@@ -4729,6 +5113,24 @@ def test_platform_verified_evidence_rejects_wrong_linux_smoke_evidence() -> None
     errors = checker.check_platform_verified_evidence(registry=registry)
 
     assert "linux-armhf linux_smoke_evidence_sha256 for native_smoke must be a SHA-256 hex digest" in errors
+
+
+def test_platform_verified_evidence_rejects_non_string_linux_smoke_digest() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-armhf")
+    record["linux_smoke_evidence_sha256"]["native_smoke"] = True
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "linux-armhf linux_smoke_evidence_sha256 for native_smoke must be "
+        "a string SHA-256 hex digest"
+    ) in errors
 
 
 def test_platform_verified_evidence_rejects_non_string_linux_smoke_evidence_key() -> None:
@@ -4825,6 +5227,53 @@ def test_platform_verified_evidence_rejects_wrong_linux_smoke_summary_runtime() 
     assert any("linux-armhf linux_smoke_summary uname_machine must be one of" in error for error in errors)
     assert "linux-armhf linux_smoke_summary dpkg_architecture must be one of ['armhf'], got 'arm64'" in errors
     assert "linux-armhf linux_smoke_summary userland_bits must be '32', got '64'" in errors
+
+
+def test_platform_verified_evidence_rejects_non_string_linux_smoke_summary_metadata() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    summary = record["linux_smoke_summary"]
+    assert isinstance(summary, dict)
+    summary["source_head_sha"] = True
+    summary["git_head_sha"] = 12345
+    summary["uname_machine"] = 686
+    summary["dpkg_architecture"] = False
+    summary["userland_bits"] = 32
+    summary["host_label"] = None
+    summary["evidence_run_id"] = 12345
+    summary["observed_at_utc"] = True
+    summary["os_release"] = 12
+    summary["kernel_release"] = False
+    summary["glibc_version"] = None
+    summary["python_ssl_openssl"] = 3
+    summary["openssl_cli_version"] = False
+    security = summary["security"]
+    assert isinstance(security, dict)
+    security["security_update_channel"] = True
+    security["cve_review_reference"] = False
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "linux-i386 linux_smoke_summary source_head_sha must be a string" in errors
+    assert "linux-i386 linux_smoke_summary git_head_sha must be a string" in errors
+    assert "linux-i386 linux_smoke_summary uname_machine must be a string" in errors
+    assert "linux-i386 linux_smoke_summary dpkg_architecture must be a string" in errors
+    assert "linux-i386 linux_smoke_summary userland_bits must be a string" in errors
+    assert "linux-i386 linux_smoke_summary host_label must be a string" in errors
+    assert "linux-i386 linux_smoke_summary evidence_run_id must be a string" in errors
+    assert "linux-i386 linux_smoke_summary observed_at_utc must be a string" in errors
+    assert "linux-i386 linux_smoke_summary os_release must be a string" in errors
+    assert "linux-i386 linux_smoke_summary kernel_release must be a string" in errors
+    assert "linux-i386 linux_smoke_summary glibc_version must be a string" in errors
+    assert "linux-i386 linux_smoke_summary python_ssl_openssl must be a string" in errors
+    assert "linux-i386 linux_smoke_summary openssl_cli_version must be a string" in errors
+    assert "linux-i386 linux_smoke_summary security.security_update_channel must be a string" in errors
+    assert "linux-i386 linux_smoke_summary security.cve_review_reference must be a string" in errors
 
 
 def test_platform_verified_evidence_rejects_placeholder_linux_smoke_summary_provenance() -> None:
@@ -5094,6 +5543,21 @@ def test_platform_verified_evidence_rejects_missing_xp_evidence_digest() -> None
     assert "windows-xp-native-x86 xp_evidence_sha256 must be a SHA-256 hex digest" in errors
 
 
+def test_platform_verified_evidence_rejects_non_string_xp_evidence_digest() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _xp_record("windows-xp-native-x86")
+    record["xp_evidence_sha256"] = True
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "windows-xp-native-x86 xp_evidence_sha256 must be a string SHA-256 hex digest" in errors
+
+
 def test_platform_verified_evidence_rejects_missing_xp_contract_digest() -> None:
     checker = _load_platform_verified_evidence_checker()
     record = _xp_record("windows-xp-native-x86")
@@ -5107,6 +5571,24 @@ def test_platform_verified_evidence_rejects_missing_xp_contract_digest() -> None
     errors = checker.check_platform_verified_evidence(registry=registry)
 
     assert "windows-xp-native-x86 xp_evidence_contract_sha256 must be a SHA-256 hex digest" in errors
+
+
+def test_platform_verified_evidence_rejects_non_string_xp_contract_digest() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _xp_record("windows-xp-native-x86")
+    record["xp_evidence_contract_sha256"] = True
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "windows-xp-native-x86 xp_evidence_contract_sha256 must be a string SHA-256 hex digest"
+        in errors
+    )
 
 
 def test_platform_verified_evidence_rejects_stale_xp_contract_digest() -> None:
@@ -5140,6 +5622,24 @@ def test_platform_verified_evidence_rejects_missing_xp_host_identity_digest() ->
     errors = checker.check_platform_verified_evidence(registry=registry)
 
     assert "windows-xp-native-x86 xp_host_identity_sha256 must be a SHA-256 hex digest" in errors
+
+
+def test_platform_verified_evidence_rejects_non_string_xp_host_identity_digest() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _xp_record("windows-xp-native-x86")
+    record["xp_host_identity_sha256"] = True
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "windows-xp-native-x86 xp_host_identity_sha256 must be a string SHA-256 hex digest"
+        in errors
+    )
 
 
 def test_platform_verified_evidence_rejects_xp_host_identity_digest_mismatch() -> None:
@@ -5291,6 +5791,24 @@ def test_platform_verified_evidence_rejects_non_string_xp_smoke_digest_key() -> 
     assert "windows-xp-native-x64 xp_smoke_evidence_sha256 smoke ids must be strings, got True" in errors
 
 
+def test_platform_verified_evidence_rejects_non_string_xp_smoke_digest_value() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _xp_record("windows-xp-native-x64")
+    record["xp_smoke_evidence_sha256"]["cli_launch"] = True
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "windows-xp-native-x64 xp_smoke_evidence_sha256 for cli_launch must be "
+        "a string SHA-256 hex digest"
+    ) in errors
+
+
 def test_platform_verified_evidence_rejects_case_colliding_xp_smoke_digest_key() -> None:
     checker = _load_platform_verified_evidence_checker()
     record = _xp_record("windows-xp-native-x64")
@@ -5433,6 +5951,34 @@ def test_platform_verified_evidence_rejects_xp_evidence_summary_release_source_m
         "windows-xp-native-x86 xp_evidence_summary release_source.head_sha must match "
         "release_asset_source.head_sha"
     ) in errors
+
+
+def test_platform_verified_evidence_rejects_non_string_xp_evidence_summary_release_source() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _xp_record("windows-xp-native-x86")
+    source = record["xp_evidence_summary"]["release_source"]
+    source["workflow"] = True
+    source["workflow_run_url"] = 12345
+    source["head_sha"] = False
+    source["run_attempt"] = "1"
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "windows-xp-native-x86 xp_evidence_summary release_source.workflow must be a string" in errors
+    assert (
+        "windows-xp-native-x86 xp_evidence_summary release_source.workflow_run_url must be a string"
+        in errors
+    )
+    assert "windows-xp-native-x86 xp_evidence_summary release_source.head_sha must be a string" in errors
+    assert (
+        "windows-xp-native-x86 xp_evidence_summary release_source.run_attempt must be a positive integer"
+        in errors
+    )
 
 
 def test_platform_verified_evidence_rejects_missing_xp_smoke_commands() -> None:
@@ -5815,6 +6361,54 @@ def test_platform_verified_evidence_rejects_placeholder_xp_security_patch_summar
         "windows-xp-native-x86 xp_evidence_summary security.patch_evidence.security_update_channel "
         "must name concrete non-placeholder provenance"
     ) in errors
+    assert (
+        "windows-xp-native-x86 xp_evidence_summary security.patch_evidence.cve_review_reference "
+        "must name concrete non-placeholder provenance"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_reserved_https_xp_security_patch_summary() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _xp_record("windows-xp-native-x86")
+    record["xp_evidence_summary"]["security"]["patch_evidence"][
+        "security_update_channel"
+    ] = "https://example.com/security-updates/windows-xp"
+    record["xp_evidence_summary"]["security"]["patch_evidence"][
+        "cve_review_reference"
+    ] = "https://example.com/security-advisory/CVE-2026-0001"
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "windows-xp-native-x86 xp_evidence_summary security.patch_evidence.security_update_channel "
+        "must name concrete non-placeholder provenance"
+    ) in errors
+    assert (
+        "windows-xp-native-x86 xp_evidence_summary security.patch_evidence.cve_review_reference "
+        "must name concrete non-placeholder provenance"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_generic_https_xp_security_patch_cve_reference() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _xp_record("windows-xp-native-x86")
+    patch_evidence = record["xp_evidence_summary"]["security"]["patch_evidence"]
+    assert isinstance(patch_evidence, dict)
+    patch_evidence["security_update_channel"] = "vendor-security-updates-2026-07"
+    patch_evidence["cve_review_reference"] = "https://security.vendor.com/releases/2026-07"
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
     assert (
         "windows-xp-native-x86 xp_evidence_summary security.patch_evidence.cve_review_reference "
         "must name concrete non-placeholder provenance"

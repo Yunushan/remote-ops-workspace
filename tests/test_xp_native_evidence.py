@@ -342,6 +342,59 @@ def test_xp_native_evidence_rejects_non_string_release_source_fields(tmp_path: P
     assert "windows-xp-native-x86 evidence release_source.run_attempt must be a positive integer" in errors
 
 
+def test_xp_native_evidence_rejects_non_string_os_and_toolchain_identity_fields(
+    tmp_path: Path,
+) -> None:
+    checker = _load_xp_native_evidence_checker()
+    evidence = _valid_evidence("windows-xp-native-x64", "x64", "SP2", "v1.0.2", [])
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    evidence["os"]["name"] = True
+    evidence["os"]["architecture"] = ["x64"]
+    evidence["os"]["service_pack"] = ["SP2"]
+    evidence["os"]["edition"] = False
+    evidence["toolchain"]["description"] = True
+    evidence["host_identity"]["os"]["name"] = True
+    evidence["host_identity"]["os"]["architecture"] = ["x64"]
+    evidence["host_identity"]["os"]["service_pack"] = ["SP2"]
+    evidence["host_identity"]["os"]["edition"] = False
+    evidence["host_identity"]["toolchain"]["description"] = False
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path)
+
+    assert "windows-xp-native-x64 evidence os.name must be a string" in errors
+    assert "windows-xp-native-x64 evidence os.architecture must be a string" in errors
+    assert "windows-xp-native-x64 evidence os.service_pack must be a string" in errors
+    assert "windows-xp-native-x64 evidence os.edition must be a string" in errors
+    assert "windows-xp-native-x64 evidence toolchain.description must be a string" in errors
+    assert "windows-xp-native-x64 evidence host_identity.os.name must be a string" in errors
+    assert "windows-xp-native-x64 evidence host_identity.os.architecture must be a string" in errors
+    assert "windows-xp-native-x64 evidence host_identity.os.service_pack must be a string" in errors
+    assert "windows-xp-native-x64 evidence host_identity.os.edition must be a string" in errors
+    assert "windows-xp-native-x64 evidence host_identity.toolchain.description must be a string" in errors
+
+
+def test_xp_native_evidence_rejects_non_string_host_identity_run_fields(
+    tmp_path: Path,
+) -> None:
+    checker = _load_xp_native_evidence_checker()
+    evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    evidence["host_identity"]["host_label"] = True
+    evidence["host_identity"]["evidence_run_id"] = ["xp-x86-1-0-2-20260620t120000z"]
+    evidence["host_identity"]["observed_at_utc"] = 123
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path)
+
+    assert "windows-xp-native-x86 evidence host_identity.host_label must be a string" in errors
+    assert "windows-xp-native-x86 evidence host_identity.evidence_run_id must be a string" in errors
+    assert "windows-xp-native-x86 evidence host_identity.observed_at_utc must be a string" in errors
+    assert all("got 'True'" not in error for error in errors)
+
+
 def test_xp_native_evidence_rejects_host_identity_target_mismatch(tmp_path: Path) -> None:
     checker = _load_xp_native_evidence_checker()
     evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
@@ -1520,6 +1573,54 @@ def test_xp_native_evidence_rejects_malformed_smoke_evidence_hash(tmp_path: Path
     )
 
 
+def test_xp_native_evidence_rejects_malformed_smoke_result_binding_fields(
+    tmp_path: Path,
+) -> None:
+    checker = _load_xp_native_evidence_checker()
+    evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    evidence["smoke_results"][0]["id"] = True
+    evidence["smoke_results"][1]["command"] = ["scripts/xp_smoke_runner.cmd"]
+    evidence["smoke_results"][2]["evidence_file"] = True
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path)
+
+    assert "windows-xp-native-x86 smoke result entry id must be a string" in errors
+    assert (
+        "windows-xp-native-x86 smoke result gui_or_legacy_host_ui_launch "
+        "command must be a string"
+    ) in errors
+    assert (
+        "windows-xp-native-x86 smoke result loopback_profile_dry_run "
+        "evidence_file must be a string"
+    ) in errors
+    assert all("--evidence-file True" not in error for error in errors)
+
+
+def test_xp_native_evidence_rejects_malformed_artifact_command_and_names(
+    tmp_path: Path,
+) -> None:
+    checker = _load_xp_native_evidence_checker()
+    artifact_checker = _load_platform_promotion_artifacts_checker()
+    tag = f"v{artifact_checker.read_project_version()}"
+    target = "windows-xp-native-x64"
+    names = _required_artifact_names(artifact_checker, target, tag)
+    evidence = _valid_evidence(target, "x64", "SP2", tag, list(names))
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    evidence["artifact_validation"]["command"] = True
+    evidence["artifacts"][0] = {"name": names[0]}
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path)
+
+    assert f"{target} evidence artifact_validation.command must be a string" in errors
+    assert f"{target} evidence artifact name entries must be strings" in errors
+    assert all("{'name':" not in error for error in errors)
+
+
 def test_xp_native_evidence_rejects_missing_artifact_manifest_smoke_proof(
     tmp_path: Path,
 ) -> None:
@@ -1649,10 +1750,7 @@ def test_xp_native_evidence_rejects_x64_without_sp2_and_edition(tmp_path: Path) 
     errors = checker.check_xp_native_evidence(path)
 
     assert "windows-xp-native-x64 evidence os.service_pack must include 'SP2', got 'x64'" in errors
-    assert (
-        "windows-xp-native-x64 evidence os.edition must be "
-        "'Professional x64 Edition', got None"
-    ) in errors
+    assert "windows-xp-native-x64 evidence os.edition must be a string" in errors
 
 
 def test_xp_native_evidence_rejects_duplicate_artifact_validation_tag(tmp_path: Path) -> None:

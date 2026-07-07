@@ -443,13 +443,13 @@ def required_targets_from_args(
     if not isinstance(rows, list):
         return ()
     targets = {
-        str(row.get("target", ""))
+        accepted_record_target(row)
         for row in rows
         if isinstance(row, dict)
         and row.get("status") == "accepted"
         and row.get("readiness_percent") == 100.0
         and row.get("release_tag") == args.release_tag
-        and str(row.get("target", "")) in PROTECTED_GOAL_TARGETS
+        and accepted_record_target(row) in PROTECTED_GOAL_TARGETS
     }
     return tuple(target for target in PROTECTED_GOAL_TARGETS if target in targets)
 
@@ -706,8 +706,12 @@ def load_source_artifact_bytes(
         ).items()
     ):
         source = record.get("release_asset_source")
-        source = source if isinstance(source, dict) else {}
-        run_url = str(source.get("workflow_run_url", "")).rstrip("/")
+        if not isinstance(source, dict):
+            continue
+        source_values, source_errors = source_artifact_expected_values(target, source)
+        if source_errors:
+            continue
+        run_url = source_values["workflow_run_url"]
         run_key = normalize_run_key(run_url)
         if not run_key or run_key in artifact_bytes:
             continue
@@ -716,9 +720,13 @@ def load_source_artifact_bytes(
         artifact = source_artifact_record_for_run(target, record, source_artifacts_by_run)
         if not artifact:
             continue
-        archive_url = str(artifact.get("archive_download_url", "")).strip()
-        if not archive_url:
-            errors.append(f"{target} source workflow artifact archive_download_url must be set before byte fetch")
+        archive_errors, archive_url = source_artifact_archive_download_url_for_fetch(
+            target,
+            artifact,
+            repository=args.repository,
+        )
+        if archive_errors:
+            errors.extend(archive_errors)
             continue
         data, fetch_errors = fetch_bytes(archive_url, timeout=args.timeout)
         if fetch_errors:
@@ -1779,25 +1787,32 @@ def check_published_native_manifest_bytes(
                 f"{target} published native manifest record {filename} size_bytes must match "
                 f"published asset bytes, got {expected_size} vs {len(published_bytes)}"
             )
-        expected_sha = str(raw_record.get("sha256", ""))
-        if not re.fullmatch(r"[0-9a-f]{64}", expected_sha):
-            errors.append(f"{target} published native manifest record {filename} missing sha256")
+        expected_sha = raw_record.get("sha256")
+        if not isinstance(expected_sha, str) or not re.fullmatch(r"[0-9a-f]{64}", expected_sha):
+            errors.append(
+                f"{target} published native manifest record {filename} "
+                "sha256 must be a lowercase SHA-256 hex digest"
+            )
         elif hashlib.sha256(published_bytes).hexdigest() != expected_sha:
             errors.append(
                 f"{target} published native manifest record {filename} sha256 must match published asset bytes"
             )
         expected_architecture = expected_manifest_architecture(target, filename)
-        if expected_architecture and str(raw_record.get("architecture", "")).strip() != expected_architecture:
-            errors.append(
-                f"{target} published native manifest record {filename} architecture must be "
-                f"{expected_architecture!r}, got {raw_record.get('architecture')!r}"
-            )
+        if expected_architecture:
+            raw_architecture = raw_record.get("architecture")
+            if not isinstance(raw_architecture, str) or raw_architecture.strip() != expected_architecture:
+                errors.append(
+                    f"{target} published native manifest record {filename} architecture must be "
+                    f"{expected_architecture!r}, got {raw_architecture!r}"
+                )
         expected_format = expected_manifest_format(filename)
-        if expected_format and str(raw_record.get("format", "")).strip() != expected_format:
-            errors.append(
-                f"{target} published native manifest record {filename} format must be "
-                f"{expected_format!r}, got {raw_record.get('format')!r}"
-            )
+        if expected_format:
+            raw_format = raw_record.get("format")
+            if not isinstance(raw_format, str) or raw_format.strip() != expected_format:
+                errors.append(
+                    f"{target} published native manifest record {filename} format must be "
+                    f"{expected_format!r}, got {raw_format!r}"
+                )
     return errors
 
 
@@ -1881,7 +1896,7 @@ def expected_release_asset_byte_urls(
 
 def expected_published_assets(record: dict[str, Any]) -> dict[str, dict[str, Any]]:
     expected: dict[str, dict[str, Any]] = {}
-    target = str(record.get("target", ""))
+    target = accepted_record_target(record)
     artifact_hashes = record.get("artifact_sha256")
     release_urls = release_urls_by_filename(record.get("release_asset_urls"))
     if isinstance(artifact_hashes, dict):
@@ -1972,9 +1987,11 @@ def promotion_entries_by_id(promotion: dict[str, Any]) -> dict[str, dict[str, An
     if not isinstance(rows, list):
         return {}
     return {
-        str(row.get("id", "")): row
+        target_id.strip(): row
         for row in rows
-        if isinstance(row, dict) and row.get("id")
+        if isinstance(row, dict)
+        and isinstance(target_id := row.get("id"), str)
+        and target_id.strip()
     }
 
 
@@ -1989,14 +2006,19 @@ def accepted_records_by_target(
     if not isinstance(rows, list):
         return {}
     return {
-        str(row.get("target", "")): row
+        target: row
         for row in rows
         if isinstance(row, dict)
+        and (target := accepted_record_target(row)) in target_set
         and row.get("status") == "accepted"
         and row.get("readiness_percent") == 100.0
         and row.get("release_tag") == release_tag
-        and str(row.get("target", "")) in target_set
     }
+
+
+def accepted_record_target(record: dict[str, Any]) -> str:
+    target = record.get("target")
+    return target.strip() if isinstance(target, str) else ""
 
 
 def check_release_tag_source_head(
@@ -2043,14 +2065,14 @@ def accepted_release_source_heads(
         if not isinstance(source, dict):
             errors.append(f"{target} release_asset_source must be an object for release tag audit")
             continue
-        head_sha = str(source.get("head_sha", "")).strip()
-        if not is_lower_git_sha(head_sha):
+        head_sha = source.get("head_sha")
+        if not isinstance(head_sha, str) or not is_lower_git_sha(head_sha.strip()):
             errors.append(
                 f"{target} release_asset_source.head_sha must be a 40-character "
                 "lowercase Git SHA for release tag audit"
             )
             continue
-        heads.add(head_sha)
+        heads.add(head_sha.strip())
     return sorted(heads), errors
 
 
@@ -2131,7 +2153,7 @@ def finalized_record_urls_for_records(
         release_tag=release_tag,
         targets=required_targets,
     ).values():
-        target = str(record.get("target", ""))
+        target = accepted_record_target(record)
         url = record.get("finalized_record_release_asset_url")
         if target and isinstance(url, str) and url.strip():
             urls[target] = url.strip()
@@ -2152,8 +2174,9 @@ def source_workflows_for_records(
     ).values():
         source = record.get("release_asset_source")
         if isinstance(source, dict):
-            workflow = str(source.get("workflow", "")).strip()
-            if workflow:
+            workflow = source.get("workflow")
+            if isinstance(workflow, str) and workflow.strip():
+                workflow = workflow.strip()
                 workflows.add(workflow)
     return workflows
 
@@ -2172,8 +2195,9 @@ def source_run_urls_for_records(
     ).values():
         source = record.get("release_asset_source")
         if isinstance(source, dict):
-            run_url = str(source.get("workflow_run_url", "")).strip().rstrip("/")
-            if run_url:
+            run_url = source.get("workflow_run_url")
+            if isinstance(run_url, str) and run_url.strip():
+                run_url = run_url.strip().rstrip("/")
                 urls.add(run_url)
     return urls
 
@@ -2268,7 +2292,10 @@ def source_run_attempt_for_url(
         source = record.get("release_asset_source")
         if not isinstance(source, dict):
             continue
-        source_run_url = normalize_run_key(str(source.get("workflow_run_url", "")))
+        source_run_url_raw = source.get("workflow_run_url")
+        if not isinstance(source_run_url_raw, str):
+            continue
+        source_run_url = normalize_run_key(source_run_url_raw)
         if source_run_url != normalized:
             continue
         attempt = source.get("run_attempt")
@@ -2323,8 +2350,11 @@ def check_record_source_run(
     source = record.get("release_asset_source")
     if not isinstance(source, dict):
         return [f"{target} release_asset_source must be an object"]
-    workflow = str(source.get("workflow", "")).strip()
-    run_url = str(source.get("workflow_run_url", "")).rstrip("/")
+    source_values, source_errors = source_run_expected_values(target, source)
+    if source_errors:
+        return source_errors
+    workflow = source_values["workflow"]
+    run_url = source_values["workflow_run_url"]
     run_id = run_url.rsplit("/", 1)[-1] if run_url else ""
     exact_run = exact_source_run_document(run_url, source_runs_by_run or {})
     if isinstance(exact_run, dict):
@@ -2375,9 +2405,10 @@ def check_source_run_record(
     record: dict[str, Any],
 ) -> list[str]:
     source = record.get("release_asset_source")
-    source = source if isinstance(source, dict) else {}
-    errors: list[str] = []
-    expected_run_url = str(source.get("workflow_run_url", "")).rstrip("/")
+    if not isinstance(source, dict):
+        return [f"{target} release_asset_source must be an object"]
+    source_values, errors = source_run_expected_values(target, source)
+    expected_run_url = source_values.get("workflow_run_url", "")
     expected_run_id = expected_run_url.rsplit("/", 1)[-1] if expected_run_url else ""
     expected_run_id_int = int(expected_run_id) if expected_run_id.isdecimal() else None
     run_id = run.get("id")
@@ -2483,7 +2514,7 @@ def check_source_run_record(
             f"{target} source workflow run head_branch must match release_tag "
             f"{expected_release_tag}, got {actual_head_branch!r}"
         )
-    expected_head = str(source.get("head_sha", ""))
+    expected_head = source_values.get("head_sha", "")
     actual_head = first_present(run, "head_sha", "headSha")
     if actual_head != expected_head:
         errors.append(
@@ -2497,7 +2528,7 @@ def check_source_run_record(
             f"{target} source workflow run run_attempt must match accepted record "
             f"{expected_attempt}, got {actual_attempt!r}"
         )
-    expected_path = str(source.get("workflow", ""))
+    expected_path = source_values.get("workflow", "")
     actual_path = run.get("path")
     if actual_path != expected_path:
         errors.append(
@@ -2535,6 +2566,43 @@ def check_source_run_record(
             f"{run_started_at}, got {run_updated_at!r}"
         )
     return errors
+
+
+def source_run_expected_values(target: str, source: dict[str, Any]) -> tuple[dict[str, str], list[str]]:
+    errors: list[str] = []
+    values: dict[str, str] = {}
+    workflow = source.get("workflow")
+    if not isinstance(workflow, str) or not workflow.strip():
+        errors.append(f"{target} release_asset_source.workflow must be a non-empty string for source run audit")
+    else:
+        values["workflow"] = workflow.strip()
+    run_url = source.get("workflow_run_url")
+    if not isinstance(run_url, str) or not run_url.strip():
+        errors.append(
+            f"{target} release_asset_source.workflow_run_url must be a non-empty string for source run audit"
+        )
+    else:
+        values["workflow_run_url"] = run_url.strip().rstrip("/")
+    head_sha = source.get("head_sha")
+    if not isinstance(head_sha, str) or not is_lower_git_sha(head_sha.strip()):
+        errors.append(
+            f"{target} release_asset_source.head_sha must be a 40-character lowercase Git SHA for source run audit"
+        )
+    else:
+        values["head_sha"] = head_sha.strip()
+    return values, errors
+
+
+def source_artifact_expected_values(target: str, source: dict[str, Any]) -> tuple[dict[str, str], list[str]]:
+    values, errors = source_run_expected_values(target, source)
+    artifact_name = source.get("artifact_name")
+    if not isinstance(artifact_name, str) or not artifact_name.strip():
+        errors.append(
+            f"{target} release_asset_source.artifact_name must be a non-empty string for source artifact audit"
+        )
+    else:
+        values["artifact_name"] = artifact_name.strip()
+    return values, errors
 
 
 def first_present(mapping: dict[str, Any], *keys: str) -> Any:
@@ -2607,9 +2675,12 @@ def check_record_source_artifact(
     source = record.get("release_asset_source")
     if not isinstance(source, dict):
         return [f"{target} release_asset_source must be an object"]
-    run_url = str(source.get("workflow_run_url", "")).rstrip("/")
+    source_values, source_errors = source_artifact_expected_values(target, source)
+    if source_errors:
+        return source_errors
+    run_url = source_values["workflow_run_url"]
     run_id = run_url.rsplit("/", 1)[-1] if run_url else ""
-    artifact_name = str(source.get("artifact_name", "")).strip()
+    artifact_name = source_values["artifact_name"]
     run_key = normalize_run_key(run_url)
     document = (
         source_artifacts_by_run[run_key]
@@ -2695,9 +2766,13 @@ def source_artifact_record_for_run(
     source_artifacts_by_run: dict[str, dict[str, Any]],
 ) -> dict[str, Any] | None:
     source = record.get("release_asset_source")
-    source = source if isinstance(source, dict) else {}
-    artifact_name = str(source.get("artifact_name", "")).strip()
-    run_url = str(source.get("workflow_run_url", "")).rstrip("/")
+    if not isinstance(source, dict):
+        return None
+    source_values, source_errors = source_artifact_expected_values(target, source)
+    if source_errors:
+        return None
+    artifact_name = source_values["artifact_name"]
+    run_url = source_values["workflow_run_url"]
     run_key = normalize_run_key(run_url)
     run_id = run_key.rsplit("/", 1)[-1] if run_key else ""
     document = (
@@ -2720,6 +2795,45 @@ def source_artifact_record_for_run(
     return matches[0]
 
 
+def source_artifact_archive_download_url_for_fetch(
+    target: str,
+    artifact: dict[str, Any],
+    *,
+    repository: str,
+) -> tuple[list[str], str]:
+    artifact_name = artifact.get("name")
+    label = (
+        artifact_name
+        if isinstance(artifact_name, str) and artifact_name.strip()
+        else "source workflow artifact"
+    )
+    artifact_id = artifact.get("id")
+    errors: list[str] = []
+    if not isinstance(artifact_id, int) or isinstance(artifact_id, bool) or artifact_id <= 0:
+        errors.append(
+            f"{target} source workflow artifact {label} id must be a positive integer "
+            f"before byte fetch, got {artifact_id!r}"
+        )
+    raw_archive_url = artifact.get("archive_download_url")
+    if not isinstance(raw_archive_url, str) or not raw_archive_url.strip():
+        errors.append(
+            f"{target} source workflow artifact {label} archive_download_url must be "
+            f"a non-empty string before byte fetch, got {raw_archive_url!r}"
+        )
+        return errors, ""
+    archive_url = raw_archive_url.strip()
+    if isinstance(artifact_id, int) and not isinstance(artifact_id, bool) and artifact_id > 0:
+        expected_url = f"{source_artifact_api_url(repository, artifact_id)}/zip"
+        if archive_url != expected_url:
+            errors.append(
+                f"{target} source workflow artifact {label} archive_download_url must be "
+                f"{expected_url!r} before byte fetch, got {archive_url!r}"
+            )
+    if errors:
+        return errors, ""
+    return [], archive_url
+
+
 def check_record_source_artifact_zip_bytes(
     target: str,
     record: dict[str, Any],
@@ -2728,9 +2842,13 @@ def check_record_source_artifact_zip_bytes(
     source_artifact_bytes_by_run: dict[str, bytes],
 ) -> list[str]:
     source = record.get("release_asset_source")
-    source = source if isinstance(source, dict) else {}
-    artifact_name = str(source.get("artifact_name", "")).strip()
-    run_url = str(source.get("workflow_run_url", "")).rstrip("/")
+    if not isinstance(source, dict):
+        return [f"{target} release_asset_source must be an object"]
+    source_values, source_errors = source_artifact_expected_values(target, source)
+    if source_errors:
+        return source_errors
+    artifact_name = source_values["artifact_name"]
+    run_url = source_values["workflow_run_url"]
     run_key = normalize_run_key(run_url)
     run_id = run_key.rsplit("/", 1)[-1] if run_key else ""
     archive_bytes = (
@@ -2909,12 +3027,16 @@ def check_source_artifact_record(
     expected_run_updated_at: str | None = None,
 ) -> list[str]:
     source = record.get("release_asset_source")
-    source = source if isinstance(source, dict) else {}
-    artifact_name = str(source.get("artifact_name", "")).strip()
-    run_url = str(source.get("workflow_run_url", "")).rstrip("/")
+    if not isinstance(source, dict):
+        return [f"{target} release_asset_source must be an object"]
+    source_values, source_errors = source_artifact_expected_values(target, source)
+    if source_errors:
+        return source_errors
+    artifact_name = source_values["artifact_name"]
+    run_url = source_values["workflow_run_url"]
     run_id = run_url.rsplit("/", 1)[-1] if run_url else ""
     repository = repository_from_run_url(run_url)
-    expected_head = str(source.get("head_sha", "")).strip()
+    expected_head = source_values["head_sha"]
     errors: list[str] = []
     artifact_id = artifact.get("id")
     if not isinstance(artifact_id, int) or isinstance(artifact_id, bool) or artifact_id <= 0:
@@ -2999,11 +3121,16 @@ def check_source_artifact_record(
                 f"{target} source workflow artifact {artifact_name} workflow_run.id must match "
                 f"run {run_id}, got {artifact_run_id!r}"
             )
-        artifact_head = str(workflow_run.get("head_sha", "")).strip()
-        if artifact_head != expected_head:
+        artifact_head = workflow_run.get("head_sha")
+        if not isinstance(artifact_head, str) or not is_lower_git_sha(artifact_head.strip()):
+            errors.append(
+                f"{target} source workflow artifact {artifact_name} workflow_run.head_sha "
+                f"must be a 40-character lowercase Git SHA, got {artifact_head!r}"
+            )
+        elif artifact_head.strip() != expected_head:
             errors.append(
                 f"{target} source workflow artifact {artifact_name} workflow_run.head_sha must match "
-                f"accepted record {expected_head}, got {artifact_head!r}"
+                f"accepted record {expected_head}, got {artifact_head.strip()!r}"
             )
         artifact_repository_id = workflow_run.get("repository_id")
         if (

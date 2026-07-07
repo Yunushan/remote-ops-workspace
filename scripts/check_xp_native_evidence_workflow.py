@@ -169,6 +169,10 @@ def check_xp_job(workflow: str) -> list[str]:
             block,
             (
                 ("dispatch input preflight", "      - name: Validate XP evidence dispatch inputs"),
+                (
+                    "target/release scoped XP evidence output directory creation",
+                    "      - name: Create XP evidence output directory",
+                ),
                 ("source metadata print", "      - name: Print XP evidence capture source metadata"),
                 ("staged input wait", "      - name: Wait for staged XP evidence inputs"),
                 ("XP native evidence validation", "      - name: Validate XP native evidence"),

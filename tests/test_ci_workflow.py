@@ -151,8 +151,11 @@ def test_ci_workflow_requires_android_sdk_path_setup() -> None:
         '            find "$sdk_root" -maxdepth 4 -type f \\( -name sdkmanager -o -name avdmanager \\) -print || true\n'
         "            exit 1\n"
         "          fi\n"
+        '          avd_home="${RUNNER_TEMP:-$HOME}/android-avd"\n'
+        '          mkdir -p "$avd_home"\n'
         '          echo "ANDROID_HOME=$sdk_root" >> "$GITHUB_ENV"\n'
         '          echo "ANDROID_SDK_ROOT=$sdk_root" >> "$GITHUB_ENV"\n'
+        '          echo "ANDROID_AVD_HOME=$avd_home" >> "$GITHUB_ENV"\n'
         '          echo "$sdk_tools" >> "$GITHUB_PATH"\n'
         '          echo "$sdk_root/emulator" >> "$GITHUB_PATH"\n'
         '          echo "$sdk_root/platform-tools" >> "$GITHUB_PATH"\n'
@@ -165,10 +168,37 @@ def test_ci_workflow_requires_android_sdk_path_setup() -> None:
     assert any("Android SDK command-line tools PATH setup" in error for error in errors)
 
 
+def test_ci_workflow_requires_durable_android_avd_home_and_creation_assertion() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    workflow_without_avd_home = workflow.replace(
+        '          echo "ANDROID_AVD_HOME=$avd_home" >> "$GITHUB_ENV"\n',
+        "",
+    )
+    workflow_without_creation_listing = workflow.replace("          avdmanager list avd\n", "")
+    workflow_without_creation_assertion = workflow.replace(
+        '            echo "::error::Android AVD row-api-${{ matrix.api-level }} was not created under ANDROID_AVD_HOME=$ANDROID_AVD_HOME"\n',
+        "",
+    )
+
+    avd_home_errors = checker.check_ci_workflow(workflow_without_avd_home)
+    creation_listing_errors = checker.check_ci_workflow(workflow_without_creation_listing)
+    creation_assertion_errors = checker.check_ci_workflow(workflow_without_creation_assertion)
+
+    assert any("durable Android AVD home export" in error for error in avd_home_errors)
+    assert any("Android virtual device creation diagnostics" in error for error in creation_listing_errors)
+    assert any("Android virtual device creation assertion" in error for error in creation_assertion_errors)
+
+
 def test_ci_workflow_requires_bounded_android_emulator_boot_diagnostics() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     workflow_without_step_timeout = workflow.replace("        timeout-minutes: 8\n", "", 1)
+    workflow_without_avd_listing = workflow.replace("          emulator -list-avds\n", "")
+    workflow_without_preboot_assertion = workflow.replace(
+        '            echo "::error::Android AVD row-api-${{ matrix.api-level }} missing before emulator boot; ANDROID_AVD_HOME=$ANDROID_AVD_HOME"\n',
+        "",
+    )
     workflow_without_pid_tracking = workflow.replace('          echo "$emulator_pid" > emulator.pid\n', "")
     workflow_without_connection_diagnostic = workflow.replace(
         '              echo "::error::Android emulator did not appear in adb devices within 180 seconds"\n',
@@ -184,12 +214,16 @@ def test_ci_workflow_requires_bounded_android_emulator_boot_diagnostics() -> Non
     )
 
     step_timeout_errors = checker.check_ci_workflow(workflow_without_step_timeout)
+    avd_listing_errors = checker.check_ci_workflow(workflow_without_avd_listing)
+    preboot_assertion_errors = checker.check_ci_workflow(workflow_without_preboot_assertion)
     pid_tracking_errors = checker.check_ci_workflow(workflow_without_pid_tracking)
     connection_diagnostic_errors = checker.check_ci_workflow(workflow_without_connection_diagnostic)
     boot_diagnostic_errors = checker.check_ci_workflow(workflow_without_boot_diagnostic)
     log_tail_errors = checker.check_ci_workflow(workflow_without_log_tail)
 
     assert any("bounded Android emulator boot timeout" in error for error in step_timeout_errors)
+    assert any("Android emulator AVD visibility diagnostics" in error for error in avd_listing_errors)
+    assert any("Android emulator pre-boot AVD assertion" in error for error in preboot_assertion_errors)
     assert any("Android emulator process tracking" in error for error in pid_tracking_errors)
     assert any("Android emulator adb connection timeout diagnostic" in error for error in connection_diagnostic_errors)
     assert any("Android emulator boot-completion timeout diagnostic" in error for error in boot_diagnostic_errors)

@@ -275,6 +275,118 @@ def test_extended_linux_evidence_bundle_preflight_rejects_malformed_candidate_so
     ) in errors
 
 
+def test_extended_linux_evidence_bundle_rejects_malformed_release_tag_before_artifacts(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bundler = _load_script("make_extended_linux_evidence_bundle")
+    target = "linux-i386"
+    assets = tmp_path / "native-dist" / "linux" / target / "v1.0.2"
+    assets.mkdir(parents=True)
+    builder = tmp_path / "builder-identity-linux-i386.json"
+    builder.write_text("{}\n", encoding="utf-8")
+    smoke = tmp_path / "native-smoke-linux-i386.log"
+    smoke.write_text("", encoding="utf-8")
+    candidate = tmp_path / "platform-verified-evidence-linux-i386.json"
+    candidate.write_text("{}\n", encoding="utf-8")
+
+    def fail_artifact_validation(*_args: Any, **_kwargs: Any) -> list[str]:
+        raise AssertionError("artifact validation should not run for malformed release_tag")
+
+    monkeypatch.setattr(bundler, "check_platform_promotion_artifacts", fail_artifact_validation)
+
+    errors = bundler.make_extended_linux_evidence_bundle(
+        target=target,
+        release_tag=True,
+        assets_dir=assets,
+        builder_evidence=builder,
+        smoke_evidence=smoke,
+        candidate_record=candidate,
+        out_dir=tmp_path / "bundle" / target / "v1.0.2",
+    )
+
+    assert errors == ["extended Linux evidence release_tag must be a non-empty string, got True"]
+
+
+def test_extended_linux_evidence_bundle_does_not_coerce_malformed_source_fields_for_smoke_check(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bundler = _load_script("make_extended_linux_evidence_bundle")
+    generator = _load_script("make_platform_verified_evidence_record")
+    artifact_checker = _load_script("check_platform_promotion_artifacts")
+    target = "linux-i386"
+    tag = f"v{artifact_checker.read_project_version()}"
+    names = _required_artifact_names(artifact_checker, target, tag)
+    monkeypatch.chdir(tmp_path)
+    assets, builder, smoke = _stage_valid_linux_evidence_inputs(target, tag, names)
+    candidate = Path(target) / tag / "platform-verified-evidence-linux-i386.json"
+    errors, record = generator.build_evidence_record(
+        SimpleNamespace(
+            target=target,
+            release_tag=tag,
+            assets_dir=assets,
+            release_asset_base_url=(
+                f"https://github.com/example/remote-ops-workspace/releases/download/{tag}"
+            ),
+            workflow_run_url="https://github.com/example/remote-ops-workspace/actions/runs/12345",
+            release_source_head_sha="a" * 40,
+            release_source_run_attempt=1,
+            runner_label=["self-hosted", "linux", "i386"],
+            builder_evidence=builder,
+            linux_smoke_evidence=smoke,
+            xp_evidence=None,
+            xp_evidence_dir=None,
+        )
+    )
+    assert errors == []
+    record["workflow_run_url"] = True
+    record["release_asset_source"]["head_sha"] = ["a" * 40]
+    record["release_asset_source"]["run_attempt"] = False
+    candidate.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    captured: dict[str, Any] = {}
+
+    def capture_smoke_check(
+        _target: str,
+        _release_tag: str,
+        _native_smoke_command: str,
+        workflow_run_url: str,
+        workflow_run_attempt: int,
+        _smoke_evidence: Path,
+        *,
+        source_head_sha: str,
+        artifact_sha256: Any | None = None,
+        builder_identity: Any | None = None,
+    ) -> list[str]:
+        captured.update(
+            {
+                "workflow_run_url": workflow_run_url,
+                "workflow_run_attempt": workflow_run_attempt,
+                "source_head_sha": source_head_sha,
+                "artifact_sha256": artifact_sha256,
+                "builder_identity": builder_identity,
+            }
+        )
+        return ["sentinel smoke check"]
+
+    monkeypatch.setattr(bundler, "check_linux_smoke_evidence_file", capture_smoke_check)
+
+    errors = bundler.make_extended_linux_evidence_bundle(
+        target=target,
+        release_tag=tag,
+        assets_dir=assets,
+        builder_evidence=builder,
+        smoke_evidence=smoke,
+        candidate_record=candidate,
+        out_dir=assets,
+    )
+
+    assert captured["workflow_run_url"] == ""
+    assert captured["workflow_run_attempt"] == 0
+    assert captured["source_head_sha"] == ""
+    assert "sentinel smoke check" in errors
+
+
 def test_extended_linux_evidence_bundle_rejects_unscoped_output_directory() -> None:
     bundler = _load_script("make_extended_linux_evidence_bundle")
 

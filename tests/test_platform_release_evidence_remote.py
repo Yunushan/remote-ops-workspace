@@ -311,6 +311,216 @@ def test_remote_release_audit_accepts_exact_source_run_metadata(tmp_path: Path) 
     assert errors == []
 
 
+def test_remote_release_audit_rejects_malformed_source_run_record_fields() -> None:
+    checker = _load_checker()
+    helpers = _load_platform_verified_evidence_helpers()
+    record = helpers._linux_record("linux-i386")
+    source = record["release_asset_source"]
+    source["workflow"] = True
+    source["workflow_run_url"] = ["https://github.com/example/remote-ops-workspace/actions/runs/12345"]
+    source["head_sha"] = True
+
+    errors = checker.check_record_source_run(
+        "linux-i386",
+        record,
+        workflow_runs_by_workflow={},
+        source_runs_by_run={},
+    )
+
+    assert "linux-i386 release_asset_source.workflow must be a non-empty string for source run audit" in errors
+    assert (
+        "linux-i386 release_asset_source.workflow_run_url must be a non-empty string for source run audit"
+        in errors
+    )
+    assert (
+        "linux-i386 release_asset_source.head_sha must be a 40-character lowercase Git SHA "
+        "for source run audit"
+    ) in errors
+
+
+def test_remote_release_audit_rejects_malformed_source_run_record_fields_direct() -> None:
+    checker = _load_checker()
+    helpers = _load_platform_verified_evidence_helpers()
+    record = helpers._linux_record("linux-i386")
+    run = next(iter(_source_runs_for(record).values()))
+    source = record["release_asset_source"]
+    source["workflow"] = True
+    source["workflow_run_url"] = {"url": "https://github.com/example/remote-ops-workspace/actions/runs/12345"}
+    source["head_sha"] = True
+
+    errors = checker.check_source_run_record("linux-i386", run, record)
+
+    assert "linux-i386 release_asset_source.workflow must be a non-empty string for source run audit" in errors
+    assert (
+        "linux-i386 release_asset_source.workflow_run_url must be a non-empty string for source run audit"
+        in errors
+    )
+    assert (
+        "linux-i386 release_asset_source.head_sha must be a 40-character lowercase Git SHA "
+        "for source run audit"
+    ) in errors
+
+
+def test_remote_release_audit_rejects_malformed_source_artifact_record_fields() -> None:
+    checker = _load_checker()
+    helpers = _load_platform_verified_evidence_helpers()
+    record = helpers._linux_record("linux-i386")
+    source = record["release_asset_source"]
+    source["workflow_run_url"] = ["https://github.com/example/remote-ops-workspace/actions/runs/12345"]
+    source["head_sha"] = True
+    source["artifact_name"] = {"name": "extended-linux-evidence-linux-i386-v1.0.2"}
+
+    errors = checker.check_record_source_artifact(
+        "linux-i386",
+        record,
+        source_artifacts_by_run={},
+    )
+
+    assert (
+        "linux-i386 release_asset_source.workflow_run_url must be a non-empty string for source run audit"
+        in errors
+    )
+    assert (
+        "linux-i386 release_asset_source.head_sha must be a 40-character lowercase Git SHA "
+        "for source run audit"
+    ) in errors
+    assert (
+        "linux-i386 release_asset_source.artifact_name must be a non-empty string for source artifact audit"
+        in errors
+    )
+    assert not any("source workflow artifacts missing" in error for error in errors)
+
+
+def test_remote_release_audit_rejects_malformed_source_artifact_zip_source_fields() -> None:
+    checker = _load_checker()
+    helpers = _load_platform_verified_evidence_helpers()
+    record = helpers._linux_record("linux-i386")
+    source = record["release_asset_source"]
+    source["workflow_run_url"] = {"url": "https://github.com/example/remote-ops-workspace/actions/runs/12345"}
+    source["head_sha"] = True
+    source["artifact_name"] = True
+
+    errors = checker.check_record_source_artifact_zip_bytes(
+        "linux-i386",
+        record,
+        source_artifacts_by_run={},
+        source_artifact_bytes_by_run={},
+    )
+
+    assert (
+        "linux-i386 release_asset_source.workflow_run_url must be a non-empty string for source run audit"
+        in errors
+    )
+    assert (
+        "linux-i386 release_asset_source.head_sha must be a 40-character lowercase Git SHA "
+        "for source run audit"
+    ) in errors
+    assert (
+        "linux-i386 release_asset_source.artifact_name must be a non-empty string for source artifact audit"
+        in errors
+    )
+    assert not any("source workflow artifact ZIP bytes missing" in error for error in errors)
+
+
+def test_remote_release_audit_rejects_malformed_source_artifact_workflow_head() -> None:
+    checker = _load_checker()
+    helpers = _load_platform_verified_evidence_helpers()
+    record = helpers._linux_record("linux-i386")
+    source = record["release_asset_source"]
+    artifact = _source_artifacts_for(record)[str(source["workflow_run_url"])]["artifacts"][0]
+    artifact["workflow_run"]["head_sha"] = True
+
+    errors = checker.check_source_artifact_record("linux-i386", artifact, record)
+
+    assert (
+        "linux-i386 source workflow artifact extended-linux-evidence-linux-i386-v1.0.2 "
+        "workflow_run.head_sha must be a 40-character lowercase Git SHA, got True"
+    ) in errors
+    assert not any("workflow_run.head_sha must match accepted record" in error for error in errors)
+
+
+def test_remote_release_audit_fixture_helpers_do_not_coerce_malformed_source_fields() -> None:
+    checker = _load_checker()
+    helpers = _load_platform_verified_evidence_helpers()
+    record = helpers._linux_record("linux-i386")
+    source = record["release_asset_source"]
+    source["workflow"] = True
+    source["workflow_run_url"] = True
+    registry = _registry_with(record)
+
+    workflows = checker.source_workflows_for_records(
+        registry,
+        release_tag="v1.0.2",
+        required_targets=("linux-i386",),
+    )
+    run_urls = checker.source_run_urls_for_records(
+        registry,
+        release_tag="v1.0.2",
+        required_targets=("linux-i386",),
+    )
+    fixture_keys = checker.expected_source_run_fixture_keys(
+        registry,
+        release_tag="v1.0.2",
+        required_targets=("linux-i386",),
+    )
+    attempt = checker.source_run_attempt_for_url(
+        registry,
+        release_tag="v1.0.2",
+        required_targets=("linux-i386",),
+        run_url="True",
+    )
+
+    assert workflows == set()
+    assert run_urls == set()
+    assert fixture_keys == set()
+    assert attempt is None
+
+
+def test_remote_release_audit_record_selectors_do_not_stringify_malformed_targets() -> None:
+    checker = _load_checker()
+    helpers = _load_platform_verified_evidence_helpers()
+    record = helpers._linux_record("linux-i386")
+    record["target"] = True
+    registry = _registry_with(record)
+
+    records = checker.accepted_records_by_target(
+        registry,
+        release_tag="v1.0.2",
+        targets=("True",),
+    )
+    urls = checker.finalized_record_urls_for_records(
+        registry,
+        release_tag="v1.0.2",
+        required_targets=("True",),
+    )
+
+    assert records == {}
+    assert urls == {}
+
+
+def test_remote_release_audit_promotion_entries_do_not_stringify_malformed_ids() -> None:
+    checker = _load_checker()
+
+    entries = checker.promotion_entries_by_id({"protected_targets": [{"id": True}]})
+
+    assert entries == {}
+
+
+def test_remote_release_audit_rejects_non_string_release_tag_source_head() -> None:
+    checker = _load_checker()
+    helpers = _load_platform_verified_evidence_helpers()
+    record = helpers._linux_record("linux-i386")
+    record["release_asset_source"]["head_sha"] = True
+
+    heads, errors = checker.accepted_release_source_heads({"linux-i386": record})
+
+    assert heads == []
+    assert (
+        "linux-i386 release_asset_source.head_sha must be a 40-character lowercase Git SHA "
+        "for release tag audit"
+    ) in errors
+
+
 def test_remote_release_audit_accepts_release_tag_source_head(tmp_path: Path) -> None:
     checker = _load_checker()
     helpers = _load_platform_verified_evidence_helpers()
@@ -1307,6 +1517,48 @@ def test_remote_release_audit_rejects_published_native_manifest_size_drift(
         in error
         for error in errors
     )
+
+
+def test_remote_release_audit_rejects_malformed_published_native_manifest_fields() -> None:
+    checker = _load_checker()
+    helpers = _load_platform_verified_evidence_helpers()
+    target = "linux-i386"
+    record = helpers._linux_record(target)
+    release_asset_bytes = _bind_release_asset_bytes(checker, record)
+    manifest_asset = "remote-ops-workspace-v1.0.2-linux-i686-native-manifest.json"
+    manifest_url = next(
+        str(asset["url"])
+        for asset in checker.expected_release_asset_byte_sources(record)
+        if asset["filename"] == manifest_asset
+    )
+    manifest = json.loads(release_asset_bytes[manifest_url].decode("utf-8"))
+    first_record = manifest["artifacts"][0]
+    filename = str(first_record["file"])
+    first_record["sha256"] = True
+    first_record["architecture"] = True
+    first_record["format"] = True
+    release_asset_bytes[manifest_url] = (
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n"
+    ).encode("utf-8")
+
+    errors = checker.check_published_native_manifest_bytes(
+        target,
+        record,
+        release_asset_bytes_by_url=release_asset_bytes,
+    )
+
+    assert (
+        f"{target} published native manifest record {filename} "
+        "sha256 must be a lowercase SHA-256 hex digest"
+    ) in errors
+    assert (
+        f"{target} published native manifest record {filename} architecture must be "
+        f"{checker.expected_manifest_architecture(target, filename)!r}, got True"
+    ) in errors
+    assert (
+        f"{target} published native manifest record {filename} format must be "
+        f"{checker.expected_manifest_format(filename)!r}, got True"
+    ) in errors
 
 
 def test_remote_release_audit_rejects_published_native_manifest_case_colliding_records(
@@ -3721,6 +3973,51 @@ def test_live_release_asset_byte_loader_rejects_unscoped_url_before_fetch(
         in error
         for error in errors
     )
+
+
+def test_live_source_artifact_byte_loader_rejects_malformed_archive_url_before_fetch() -> None:
+    checker = _load_checker()
+    helpers = _load_platform_verified_evidence_helpers()
+    record = helpers._linux_record("linux-i386")
+    registry = _registry_with(record)
+    source_artifacts = _source_artifacts_for(record)
+    run_url = str(record["release_asset_source"]["workflow_run_url"])
+    artifact = source_artifacts[run_url]["artifacts"][0]
+    artifact["archive_download_url"] = True
+    args = checker.parse_args(
+        [
+            "--repository",
+            "example/remote-ops-workspace",
+            "--release-tag",
+            "v1.0.2",
+            "--require-source-artifact-bytes",
+        ]
+    )
+    called = False
+    original_fetch_bytes = checker.fetch_bytes
+
+    def fake_fetch_bytes(url: str, *, timeout: float) -> tuple[bytes | None, list[str]]:
+        nonlocal called
+        called = True
+        return b"{}", []
+
+    checker.fetch_bytes = fake_fetch_bytes
+    try:
+        artifact_bytes, errors = checker.load_source_artifact_bytes(
+            args,
+            registry,
+            ("linux-i386",),
+            source_artifacts,
+        )
+    finally:
+        checker.fetch_bytes = original_fetch_bytes
+
+    assert artifact_bytes == {}
+    assert called is False
+    assert (
+        "linux-i386 source workflow artifact extended-linux-evidence-linux-i386-v1.0.2 "
+        "archive_download_url must be a non-empty string before byte fetch, got True"
+    ) in errors
 
 
 def test_github_api_headers_use_environment_token() -> None:

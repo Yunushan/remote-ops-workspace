@@ -368,29 +368,74 @@ def check_generator_append_registry_usage(record: dict[str, Any]) -> list[str]:
     ]
 
 
+def release_tag_arg_value(args: argparse.Namespace) -> tuple[list[str], str]:
+    raw_release_tag = getattr(args, "release_tag", "")
+    if not isinstance(raw_release_tag, str) or not raw_release_tag:
+        return [f"--release-tag must be a non-empty string, got {raw_release_tag!r}"], ""
+    version_errors: list[str] = []
+    version_from_tag(raw_release_tag, version_errors)
+    return version_errors, raw_release_tag
+
+
+def release_asset_base_url_arg_value(args: argparse.Namespace) -> tuple[list[str], str]:
+    raw_base_url = getattr(args, "release_asset_base_url", "")
+    if not isinstance(raw_base_url, str) or not raw_base_url:
+        return [f"--release-asset-base-url must be a non-empty string, got {raw_base_url!r}"], ""
+    return [], raw_base_url
+
+
+def path_arg_value(raw_path: object, label: str) -> tuple[list[str], Path | None]:
+    if not isinstance(raw_path, Path):
+        return [f"{label} must be a pathlib.Path, got {raw_path!r}"], None
+    return [], raw_path
+
+
+def optional_path_arg_value(raw_path: object | None, label: str) -> tuple[list[str], Path | None]:
+    if raw_path is None:
+        return [], None
+    return path_arg_value(raw_path, label)
+
+
 def validate_common_args(args: argparse.Namespace) -> list[str]:
     errors: list[str] = []
-    version_errors: list[str] = []
-    version_from_tag(str(args.release_tag), version_errors)
-    errors.extend(version_errors)
-    errors.extend(check_directory_path_hint(args.assets_dir, "artifact directory"))
-    local_evidence_root = getattr(args, "local_evidence_root", Path("."))
-    errors.extend(check_directory_path_hint(local_evidence_root, "local evidence root"))
-    if not args.assets_dir.is_dir():
-        errors.append(f"artifact directory missing: {args.assets_dir}")
-    errors.extend(check_path_parent_symlinks(args.assets_dir, "artifact directory"))
-    base_url = str(args.release_asset_base_url)
-    match = GITHUB_RELEASE_BASE_RE.fullmatch(base_url)
-    if not match:
-        errors.append(
-            "--release-asset-base-url must be exactly "
-            f"https://github.com/<owner>/<repo>/releases/download/{args.release_tag}"
-        )
-    elif match.group(2) != str(args.release_tag):
-        errors.append(
-            "--release-asset-base-url release tag must match --release-tag "
-            f"{args.release_tag}"
-        )
+    release_tag_errors, release_tag = release_tag_arg_value(args)
+    errors.extend(release_tag_errors)
+    assets_dir_errors, assets_dir = path_arg_value(getattr(args, "assets_dir", None), "artifact directory")
+    errors.extend(assets_dir_errors)
+    local_evidence_root_errors, local_evidence_root = path_arg_value(
+        getattr(args, "local_evidence_root", Path(".")),
+        "local evidence root",
+    )
+    errors.extend(local_evidence_root_errors)
+    staged_upload_errors, staged_upload = optional_path_arg_value(
+        getattr(args, "staged_upload_out_dir", None),
+        "staged upload output directory",
+    )
+    errors.extend(staged_upload_errors)
+    if assets_dir is not None:
+        errors.extend(check_directory_path_hint(assets_dir, "artifact directory"))
+        if not assets_dir.is_dir():
+            errors.append(f"artifact directory missing: {assets_dir}")
+        errors.extend(check_path_parent_symlinks(assets_dir, "artifact directory"))
+    if local_evidence_root is not None:
+        errors.extend(check_directory_path_hint(local_evidence_root, "local evidence root"))
+    if staged_upload is not None:
+        errors.extend(check_directory_path_hint(staged_upload, "staged upload output directory"))
+    base_url_errors, base_url = release_asset_base_url_arg_value(args)
+    errors.extend(base_url_errors)
+    if not base_url_errors:
+        match = GITHUB_RELEASE_BASE_RE.fullmatch(base_url)
+        if not match:
+            expected_tag = release_tag or "<release-tag>"
+            errors.append(
+                "--release-asset-base-url must be exactly "
+                f"https://github.com/<owner>/<repo>/releases/download/{expected_tag}"
+            )
+        elif release_tag and match.group(2) != release_tag:
+            errors.append(
+                "--release-asset-base-url release tag must match --release-tag "
+                f"{release_tag}"
+            )
     if not args.release_source_head_sha:
         errors.append("--release-source-head-sha is required")
     elif not GITHUB_HEAD_SHA_RE.fullmatch(str(args.release_source_head_sha)):
@@ -415,26 +460,42 @@ def validate_linux_args(args: argparse.Namespace) -> list[str]:
         errors.append("--workflow-run-url must be a GitHub Actions run URL")
     else:
         errors.extend(check_workflow_run_repository(args, str(args.workflow_run_url), "--workflow-run-url"))
-    if args.builder_evidence is None:
+    raw_builder_evidence = getattr(args, "builder_evidence", None)
+    if raw_builder_evidence is None:
         errors.append("--builder-evidence is required for Linux evidence")
-    elif not args.builder_evidence.is_file():
-        errors.append(f"Linux builder evidence file missing: {args.builder_evidence}")
-    elif args.builder_evidence.is_symlink():
-        errors.append(f"Linux builder evidence file must not be a symlink: {args.builder_evidence}")
     else:
-        errors.extend(check_path_parent_symlinks(args.builder_evidence, "Linux builder evidence file"))
-    if args.builder_evidence is not None and args.builder_evidence.name != f"builder-identity-{target}.json":
-        errors.append(f"--builder-evidence file name must be builder-identity-{target}.json")
-    if args.linux_smoke_evidence is None:
+        builder_evidence_errors, builder_evidence = path_arg_value(
+            raw_builder_evidence,
+            "Linux builder evidence file",
+        )
+        errors.extend(builder_evidence_errors)
+        if builder_evidence is not None:
+            if not builder_evidence.is_file():
+                errors.append(f"Linux builder evidence file missing: {builder_evidence}")
+            elif builder_evidence.is_symlink():
+                errors.append(f"Linux builder evidence file must not be a symlink: {builder_evidence}")
+            else:
+                errors.extend(check_path_parent_symlinks(builder_evidence, "Linux builder evidence file"))
+            if builder_evidence.name != f"builder-identity-{target}.json":
+                errors.append(f"--builder-evidence file name must be builder-identity-{target}.json")
+    raw_smoke_evidence = getattr(args, "linux_smoke_evidence", None)
+    if raw_smoke_evidence is None:
         errors.append("--linux-smoke-evidence is required for Linux evidence")
-    elif not args.linux_smoke_evidence.is_file():
-        errors.append(f"Linux smoke evidence file missing: {args.linux_smoke_evidence}")
-    elif args.linux_smoke_evidence.is_symlink():
-        errors.append(f"Linux smoke evidence file must not be a symlink: {args.linux_smoke_evidence}")
     else:
-        errors.extend(check_path_parent_symlinks(args.linux_smoke_evidence, "Linux smoke evidence file"))
-    if args.linux_smoke_evidence is not None and args.linux_smoke_evidence.name != f"native-smoke-{target}.log":
-        errors.append(f"--linux-smoke-evidence file name must be native-smoke-{target}.log")
+        smoke_evidence_errors, smoke_evidence = path_arg_value(
+            raw_smoke_evidence,
+            "Linux smoke evidence file",
+        )
+        errors.extend(smoke_evidence_errors)
+        if smoke_evidence is not None:
+            if not smoke_evidence.is_file():
+                errors.append(f"Linux smoke evidence file missing: {smoke_evidence}")
+            elif smoke_evidence.is_symlink():
+                errors.append(f"Linux smoke evidence file must not be a symlink: {smoke_evidence}")
+            else:
+                errors.extend(check_path_parent_symlinks(smoke_evidence, "Linux smoke evidence file"))
+            if smoke_evidence.name != f"native-smoke-{target}.log":
+                errors.append(f"--linux-smoke-evidence file name must be native-smoke-{target}.log")
     required_labels = LINUX_TARGETS[target]["runner_labels"]
     labels = set(str(label) for label in args.runner_label)
     if not required_labels.issubset(labels):
@@ -472,24 +533,43 @@ def validate_xp_args(args: argparse.Namespace) -> list[str]:
         errors.append("--builder-evidence is only valid for Linux evidence")
     if args.linux_smoke_evidence is not None:
         errors.append("--linux-smoke-evidence is only valid for Linux evidence")
-    if args.xp_evidence is None:
+    raw_xp_evidence = getattr(args, "xp_evidence", None)
+    if raw_xp_evidence is None:
         errors.append("--xp-evidence is required for Windows XP evidence")
-    elif not args.xp_evidence.is_file():
-        errors.append(f"XP evidence file missing: {args.xp_evidence}")
-    elif args.xp_evidence.is_symlink():
-        errors.append(f"XP evidence file must not be a symlink: {args.xp_evidence}")
     else:
-        errors.extend(check_path_parent_symlinks(args.xp_evidence, "XP evidence file"))
-    if args.xp_evidence_dir is None:
+        xp_evidence_errors, xp_evidence = path_arg_value(raw_xp_evidence, "XP evidence file")
+        errors.extend(xp_evidence_errors)
+        if xp_evidence is not None:
+            if not xp_evidence.is_file():
+                errors.append(f"XP evidence file missing: {xp_evidence}")
+            elif xp_evidence.is_symlink():
+                errors.append(f"XP evidence file must not be a symlink: {xp_evidence}")
+            else:
+                errors.extend(check_path_parent_symlinks(xp_evidence, "XP evidence file"))
+    raw_xp_evidence_dir = getattr(args, "xp_evidence_dir", None)
+    if raw_xp_evidence_dir is None:
         errors.append("--xp-evidence-dir is required for Windows XP evidence")
     else:
-        errors.extend(check_directory_path_hint(args.xp_evidence_dir, "XP evidence directory"))
-        if not args.xp_evidence_dir.is_dir():
-            errors.append(f"XP evidence directory missing: {args.xp_evidence_dir}")
-        elif args.xp_evidence_dir.is_symlink():
-            errors.append(f"XP evidence directory must not be a symlink: {args.xp_evidence_dir}")
-        else:
-            errors.extend(check_path_parent_symlinks(args.xp_evidence_dir, "XP evidence directory"))
+        xp_evidence_dir_errors, xp_evidence_dir = path_arg_value(
+            raw_xp_evidence_dir,
+            "XP evidence directory",
+        )
+        errors.extend(xp_evidence_dir_errors)
+        if xp_evidence_dir is not None:
+            errors.extend(check_directory_path_hint(xp_evidence_dir, "XP evidence directory"))
+            if not xp_evidence_dir.is_dir():
+                errors.append(f"XP evidence directory missing: {xp_evidence_dir}")
+            elif xp_evidence_dir.is_symlink():
+                errors.append(f"XP evidence directory must not be a symlink: {xp_evidence_dir}")
+            else:
+                errors.extend(check_path_parent_symlinks(xp_evidence_dir, "XP evidence directory"))
+    xp_output_errors, xp_output_dir = optional_path_arg_value(
+        getattr(args, "xp_evidence_output_dir", None),
+        "XP evidence output directory",
+    )
+    errors.extend(xp_output_errors)
+    if xp_output_dir is not None:
+        errors.extend(check_directory_path_hint(xp_output_dir, "XP evidence output directory"))
     if args.workflow_run_url:
         errors.append("--workflow-run-url is only valid for Linux evidence")
     if args.runner_label:
@@ -524,7 +604,10 @@ def check_workflow_run_repository(
     workflow_run_url: str,
     flag: str,
 ) -> list[str]:
-    release_match = GITHUB_RELEASE_BASE_RE.fullmatch(str(args.release_asset_base_url))
+    base_url_errors, base_url = release_asset_base_url_arg_value(args)
+    if base_url_errors:
+        return []
+    release_match = GITHUB_RELEASE_BASE_RE.fullmatch(base_url)
     workflow_match = GITHUB_ACTIONS_RUN_RE.fullmatch(workflow_run_url.rstrip("/"))
     if not release_match or not workflow_match:
         return []
@@ -1152,11 +1235,15 @@ def xp_evidence_sources(
     raw_files = evidence_summary.get("smoke_evidence_files", {})
     if isinstance(raw_files, dict):
         for smoke_id, raw_file in sorted(raw_files.items()):
-            smoke_path = evidence_dir / str(raw_file)
-            smoke_sources[str(smoke_id)] = {
-                "file": str(raw_file).replace("\\", "/"),
+            if not isinstance(smoke_id, str) or not isinstance(raw_file, str):
+                continue
+            smoke_path = evidence_dir / raw_file
+            if not smoke_path.is_file():
+                continue
+            smoke_sources[smoke_id] = {
+                "file": raw_file.replace("\\", "/"),
                 "size_bytes": smoke_path.stat().st_size,
-                "sha256": str(smoke_hashes.get(str(smoke_id), "")),
+                "sha256": smoke_hashes.get(smoke_id, ""),
             }
 
     return {
@@ -1235,23 +1322,30 @@ def xp_evidence_summary(target: str, release_tag: str, evidence: dict[str, Any])
         security = {}
     if not isinstance(smoke_results, list):
         smoke_results = []
-    smoke_commands = {
-        str(item.get("id", "")): str(item.get("command", ""))
-        for item in smoke_results
-        if isinstance(item, dict) and str(item.get("id", ""))
-    }
-    smoke_evidence_files = {
-        str(item.get("id", "")): str(item.get("evidence_file", ""))
-        for item in smoke_results
-        if isinstance(item, dict) and str(item.get("id", ""))
-    }
+    smoke_ids: list[str] = []
+    smoke_commands: dict[str, str] = {}
+    smoke_evidence_files: dict[str, str] = {}
+    for item in smoke_results:
+        if not isinstance(item, dict):
+            continue
+        smoke_id = item.get("id")
+        if not isinstance(smoke_id, str) or not smoke_id:
+            continue
+        smoke_ids.append(smoke_id)
+        command = item.get("command")
+        if isinstance(command, str):
+            smoke_commands[smoke_id] = command
+        evidence_file = item.get("evidence_file")
+        if isinstance(evidence_file, str):
+            smoke_evidence_files[smoke_id] = evidence_file
     os_summary = {
-        "name": str(os_data.get("name", "")),
-        "architecture": str(os_data.get("architecture", "")),
-        "service_pack": str(os_data.get("service_pack", "")),
+        "name": summary_string(os_data.get("name")),
+        "architecture": summary_string(os_data.get("architecture")),
+        "service_pack": summary_string(os_data.get("service_pack")),
     }
-    if str(os_data.get("edition", "")).strip():
-        os_summary["edition"] = str(os_data.get("edition", ""))
+    edition = summary_string(os_data.get("edition"))
+    if edition.strip():
+        os_summary["edition"] = edition
     return {
         "target": target,
         "release_tag": release_tag,
@@ -1268,17 +1362,17 @@ def xp_evidence_summary(target: str, release_tag: str, evidence: dict[str, Any])
             "weak_crypto_global_default": security.get("weak_crypto_global_default") is True,
             "patch_evidence": security.get("patch_evidence", {}),
         },
-        "smoke_ids": sorted(
-            str(item.get("id", ""))
-            for item in smoke_results
-            if isinstance(item, dict) and str(item.get("id", ""))
-        ),
+        "smoke_ids": sorted(smoke_ids),
         "smoke_evidence_files": {
             smoke_id: smoke_evidence_files[smoke_id]
             for smoke_id in sorted(smoke_evidence_files)
         },
         "smoke_commands": {smoke_id: smoke_commands[smoke_id] for smoke_id in sorted(smoke_commands)},
     }
+
+
+def summary_string(value: Any) -> str:
+    return value if isinstance(value, str) else ""
 
 
 def xp_release_source_summary(raw_source: Any) -> dict[str, Any]:
@@ -1310,21 +1404,21 @@ def xp_host_identity_summary(evidence: dict[str, Any]) -> dict[str, Any]:
     toolchain = raw_toolchain if isinstance(raw_toolchain, dict) else {}
     host_identity = {
         "schema_version": raw_identity.get("schema_version"),
-        "target": str(raw_identity.get("target", "")),
-        "release_tag": str(raw_identity.get("release_tag", "")),
-        "host_label": str(raw_identity.get("host_label", "")),
-        "evidence_run_id": str(raw_identity.get("evidence_run_id", "")),
-        "observed_at_utc": str(raw_identity.get("observed_at_utc", "")),
+        "target": summary_string(raw_identity.get("target")),
+        "release_tag": summary_string(raw_identity.get("release_tag")),
+        "host_label": summary_string(raw_identity.get("host_label")),
+        "evidence_run_id": summary_string(raw_identity.get("evidence_run_id")),
+        "observed_at_utc": summary_string(raw_identity.get("observed_at_utc")),
         "operator_private_data_redacted": raw_identity.get("operator_private_data_redacted") is True,
         "os": {
-            key: str(os_data.get(key, ""))
+            key: summary_string(os_data.get(key))
             for key in ("name", "architecture", "service_pack", "edition")
-            if str(os_data.get(key, "")).strip()
+            if summary_string(os_data.get(key)).strip()
         },
         "toolchain": {
             "separate_legacy_toolchain": toolchain.get("separate_legacy_toolchain") is True,
             "current_python_pyqt6_stack": toolchain.get("current_python_pyqt6_stack") is True,
-            "description": str(toolchain.get("description", "")),
+            "description": summary_string(toolchain.get("description")),
         },
     }
     return host_identity
@@ -1401,11 +1495,16 @@ def append_record_to_registry(record: dict[str, Any], *, registry_path: Path = E
     if not isinstance(accepted, list):
         return ["platform verified evidence accepted_evidence must be a list"]
 
-    target = str(record.get("target", ""))
+    target = accepted_record_target(record)
+    if not target:
+        return [
+            "platform verified evidence record target must be a non-empty string, "
+            f"got {record.get('target', '')!r}"
+        ]
     duplicate_targets = [
         entry
         for entry in accepted
-        if isinstance(entry, dict) and str(entry.get("target", "")) == target
+        if isinstance(entry, dict) and accepted_record_target(entry) == target
     ]
     if duplicate_targets:
         return [
@@ -1443,7 +1542,12 @@ def check_text_output_path(path: Path, label: str) -> list[str]:
 
 
 def check_generated_record_output_path(path: Path, record: dict[str, Any]) -> list[str]:
-    target = str(record.get("target", ""))
+    target = accepted_record_target(record)
+    if not target:
+        return [
+            "platform verified evidence record target must be a non-empty string, "
+            f"got {record.get('target', '')!r}"
+        ]
     expected_name = generated_record_file_name(target)
     if path.name != expected_name:
         return [
@@ -1455,6 +1559,13 @@ def check_generated_record_output_path(path: Path, record: dict[str, Any]) -> li
 
 def generated_record_file_name(target: str) -> str:
     return f"platform-verified-evidence-{target}.json"
+
+
+def accepted_record_target(record: dict[str, Any]) -> str:
+    target = record.get("target", "")
+    if not isinstance(target, str):
+        return ""
+    return target.strip()
 
 
 def write_text_output(path: Path, text: str) -> None:

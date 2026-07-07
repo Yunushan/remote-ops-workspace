@@ -123,6 +123,27 @@ def test_platform_verified_evidence_uses_explicit_empty_promotion() -> None:
     assert any("promotion config missing protected target entries" in error for error in errors)
 
 
+def test_platform_verified_evidence_rejects_non_string_promotion_target_id() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    promotion = checker.read_json(checker.PROMOTION_PATH)
+    linux_i386 = next(
+        item for item in promotion["protected_targets"] if item["id"] == "linux-i386"
+    )
+    linux_i386["id"] = True
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY,
+            "accepted_evidence": [],
+        },
+        promotion=promotion,
+    )
+
+    assert "promotion protected target id must be a non-empty string, got True" in errors
+    assert not any("promotion config missing protected target entries: ['True']" in error for error in errors)
+
+
 def test_platform_verified_evidence_rejects_boolean_registry_schema_version() -> None:
     checker = _load_platform_verified_evidence_checker()
 
@@ -1431,6 +1452,55 @@ def test_platform_verified_evidence_goal_required_targets_fail_empty_registry_wi
     ]
 
 
+def test_platform_verified_evidence_rejects_malformed_required_targets_without_stringifying() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [_linux_record("linux-i386")],
+    }
+
+    errors = checker.check_platform_verified_evidence(
+        registry=registry,
+        required_targets=(True, "linux-i386"),
+    )
+
+    assert errors == [
+        "required platform evidence target must be a non-empty string, got True"
+    ]
+    assert not any("['True']" in error for error in errors)
+
+
+def test_platform_verified_evidence_arg_targets_do_not_stringify_malformed_values() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    args = checker.parse_args(["--require-target", "linux-i386"])
+    args.require_target = [True, "linux-i386"]
+
+    errors = checker.strict_platform_goal_arg_errors(args)
+    required_targets = checker.required_targets_from_args(args)
+
+    assert errors == ["platform verified evidence required target must be a non-empty string, got True"]
+    assert required_targets == ("linux-i386",)
+    assert "True" not in required_targets
+
+
+def test_platform_verified_evidence_rejects_malformed_required_release_tag_without_crashing() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [_linux_record("linux-i386")],
+    }
+
+    errors = checker.check_platform_verified_evidence(
+        registry=registry,
+        required_targets=("linux-i386",),
+        required_release_tag=True,
+    )
+
+    assert errors == ["required_release_tag must be a string, got True"]
+
+
 def test_platform_verified_evidence_goal_required_targets_pass_with_all_records() -> None:
     checker = _load_platform_verified_evidence_checker()
     registry = {
@@ -1759,6 +1829,32 @@ def test_platform_verified_evidence_rejects_partial_protected_goal_mixed_release
     ) in errors
 
 
+def test_platform_verified_evidence_partial_goal_does_not_stringify_malformed_release_tag() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    linux_i386 = _linux_record("linux-i386")
+    linux_i386["release_tag"] = True
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [
+            linux_i386,
+            _xp_record("windows-xp-native-x86"),
+        ],
+    }
+
+    errors = checker.check_platform_verified_evidence(
+        registry=registry,
+        require_review_bundles=True,
+    )
+
+    assert "linux-i386 release_tag must be a string" in errors
+    assert not any(
+        "partial protected platform goal evidence must use one release_tag" in error
+        and "True" in error
+        for error in errors
+    )
+
+
 def test_platform_verified_evidence_rejects_partial_protected_goal_mixed_repositories() -> None:
     checker = _load_platform_verified_evidence_checker()
     xp_x86 = _xp_record("windows-xp-native-x86")
@@ -1904,6 +2000,32 @@ def test_platform_verified_evidence_rejects_xp_pair_mixed_release_repositories()
         "got {'windows-xp-native-x64': ['other/remote-ops-workspace'], "
         "'windows-xp-native-x86': ['example/remote-ops-workspace']}"
     ) in errors
+
+
+def test_platform_verified_evidence_xp_pair_does_not_stringify_malformed_release_tag() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    xp_x86 = _xp_record("windows-xp-native-x86")
+    xp_x86["release_tag"] = True
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [
+            xp_x86,
+            _xp_record("windows-xp-native-x64"),
+        ],
+    }
+
+    errors = checker.check_platform_verified_evidence(
+        registry=registry,
+        require_review_bundles=True,
+    )
+
+    assert "windows-xp-native-x86 release_tag must be a string" in errors
+    assert not any(
+        "Windows XP native evidence pair must use one release_tag" in error
+        and "True" in error
+        for error in errors
+    )
 
 
 def test_platform_verified_evidence_rejects_xp_pair_without_safe_release_repository() -> None:
@@ -2915,6 +3037,77 @@ def test_platform_verified_evidence_rejects_invalid_release_source_run_attempt()
     errors = checker.check_platform_verified_evidence(registry=registry)
 
     assert "linux-i386 release_asset_source.run_attempt must be a positive integer" in errors
+
+
+def test_platform_verified_evidence_rejects_malformed_linux_source_attempt_command_binding() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    record["release_asset_source"]["run_attempt"] = True
+    record["local_evidence_preflight_command"] = str(record["local_evidence_preflight_command"]).replace(
+        "--linux-source-run-attempt 1",
+        "--linux-source-run-attempt True",
+    )
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "linux-i386 release_asset_source.run_attempt must be a positive integer" in errors
+    assert (
+        "linux-i386 local_evidence_preflight_command --linux-source-run-attempt must match "
+        "release_asset_source.run_attempt"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_malformed_xp_source_attempt_command_binding() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _xp_record("windows-xp-native-x86")
+    record["release_asset_source"]["run_attempt"] = True
+    record["local_evidence_preflight_command"] = str(record["local_evidence_preflight_command"]).replace(
+        "--xp-source-run-attempt 1",
+        "--xp-source-run-attempt True",
+    )
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "windows-xp-native-x86 release_asset_source.run_attempt must be a positive integer" in errors
+    assert (
+        "windows-xp-native-x86 local_evidence_preflight_command --xp-source-run-attempt must match "
+        "release_asset_source.run_attempt"
+    ) in errors
+
+
+def test_platform_verified_evidence_source_scope_helpers_ignore_malformed_source_values() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    records = {
+        "linux-i386": {
+            "release_asset_source": {
+                "workflow_run_url": True,
+                "head_sha": True,
+                "run_attempt": 1,
+            }
+        },
+        "linux-armhf": {
+            "release_asset_source": {
+                "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+                "head_sha": "a" * 40,
+                "run_attempt": True,
+            }
+        },
+    }
+
+    assert checker.release_source_run_attempt_conflicts(records) == {}
+    assert checker.release_source_heads_by_target(records) == {"linux-armhf": "a" * 40}
+    assert checker.valid_release_source_workflow_run_url(records["linux-i386"]["release_asset_source"]) == ""
+    assert checker.valid_release_source_run_attempt_text(records["linux-armhf"]["release_asset_source"]) == ""
 
 
 def test_platform_verified_evidence_rejects_boolean_linux_evidence_source_size() -> None:

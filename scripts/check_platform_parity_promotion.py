@@ -228,6 +228,7 @@ def check_platform_parity_promotion(
         "target",
         errors,
     )
+    errors.extend(check_release_matrix_target_ids(matrix))
 
     for target_id in sorted(LINUX_PROMOTION_IDS):
         entry = entries.get(target_id)
@@ -254,7 +255,8 @@ def check_schema(promotion: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     if promotion.get("schema_version") != 1:
         errors.append("configs/platform_parity_promotion.json schema_version must be 1")
-    if "100% real parity" not in str(promotion.get("goal", "")):
+    goal = promotion.get("goal", "")
+    if not isinstance(goal, str) or "100% real parity" not in goal:
         errors.append("platform parity promotion goal must explicitly describe 100% real parity")
 
     raw_entries = promotion.get("protected_targets")
@@ -291,10 +293,15 @@ def check_linux_promotion_entry(
     matrix: dict[str, Any],
     workflow: str,
 ) -> list[str]:
-    target_id = str(entry.get("platform_target_id", ""))
+    raw_target_id = entry.get("platform_target_id", "")
+    if not isinstance(raw_target_id, str) or not raw_target_id:
+        label = entry.get("id", "linux promotion target")
+        return [f"{label} platform_target_id must be a non-empty string, got {raw_target_id!r}"]
+    target_id = raw_target_id
     row = release_rows.get(target_id)
     readiness = readiness_rows.get(target_id)
-    label = str(entry.get("id", target_id))
+    raw_label = entry.get("id", target_id)
+    label = raw_label if isinstance(raw_label, str) and raw_label else target_id
     errors: list[str] = []
     if row is None:
         return [f"{label} references missing platform target {target_id}"]
@@ -357,7 +364,12 @@ def check_linux_promotion_entry(
         errors.append(f"{label} must list required 100% release artifacts")
     else:
         for artifact in artifacts:
-            if "<project.version>" not in str(artifact):
+            if not isinstance(artifact, str) or not artifact:
+                errors.append(
+                    f"{label} required_artifacts entries must be non-empty strings, got {artifact!r}"
+                )
+                continue
+            if "<project.version>" not in artifact:
                 errors.append(f"{label} artifact must use <project.version> placeholder: {artifact}")
     errors.extend(check_security_requirements(label, requirements, LINUX_SECURITY_REQUIREMENTS))
     return errors
@@ -402,10 +414,15 @@ def check_xp_promotion_entry(
     legacy_rows: dict[str, dict[str, Any]],
     readiness_rows: dict[str, dict[str, Any]],
 ) -> list[str]:
-    version = str(entry.get("legacy_windows_version", ""))
+    raw_version = entry.get("legacy_windows_version", "")
+    if not isinstance(raw_version, str) or not raw_version:
+        label = entry.get("id", "windows XP promotion target")
+        return [f"{label} legacy_windows_version must be a non-empty string, got {raw_version!r}"]
+    version = raw_version
     row = legacy_rows.get(version)
     readiness = readiness_rows.get(version)
-    label = str(entry.get("id", version))
+    raw_label = entry.get("id", version)
+    label = raw_label if isinstance(raw_label, str) and raw_label else version
     errors: list[str] = []
     if row is None:
         return [f"{label} references missing legacy Windows target {version}"]
@@ -461,7 +478,12 @@ def check_xp_promotion_entry(
         errors.append(f"{label} must list XP native artifact requirements")
     else:
         for artifact in artifacts:
-            artifact_text = str(artifact)
+            if not isinstance(artifact, str) or not artifact:
+                errors.append(
+                    f"{label} native_artifacts entries must be non-empty strings, got {artifact!r}"
+                )
+                continue
+            artifact_text = artifact
             if expected_arch not in artifact_text:
                 errors.append(f"{label} artifact must include architecture {expected_arch}: {artifact}")
             if "<project.version>" not in artifact_text:
@@ -484,11 +506,19 @@ def check_security_requirements(
     raw_requirements = requirements.get("security_requirements")
     if not isinstance(raw_requirements, list) or not raw_requirements:
         return [f"{label} promotion requires non-empty security_requirements"]
-    actual = {str(item) for item in raw_requirements}
+    actual: set[str] = set()
+    errors: list[str] = []
+    for index, item in enumerate(raw_requirements):
+        if not isinstance(item, str) or not item:
+            errors.append(
+                f"{label} security_requirements[{index}] must be a non-empty string, got {item!r}"
+            )
+            continue
+        actual.add(item)
     missing = [item for item in required_items if item not in actual]
     if missing:
-        return [f"{label} security_requirements missing: {missing}"]
-    return []
+        errors.append(f"{label} security_requirements missing: {missing}")
+    return errors
 
 
 def check_linux_smoke_evidence_requirements(
@@ -498,9 +528,16 @@ def check_linux_smoke_evidence_requirements(
     raw_requirements = requirements.get("smoke_evidence")
     if not isinstance(raw_requirements, list) or not raw_requirements:
         return [f"{label} promotion requires non-empty smoke_evidence"]
-    values = [str(item) for item in raw_requirements]
+    values: list[str] = []
     expected = set(LINUX_SMOKE_EVIDENCE_REQUIREMENTS)
     errors: list[str] = []
+    for index, item in enumerate(raw_requirements):
+        if not isinstance(item, str) or not item:
+            errors.append(
+                f"{label} smoke_evidence[{index}] must be a non-empty string, got {item!r}"
+            )
+            continue
+        values.append(item)
     duplicate_values = sorted({value for value in values if values.count(value) > 1})
     if duplicate_values:
         errors.append(f"{label} smoke_evidence contains duplicates: {duplicate_values}")
@@ -520,9 +557,16 @@ def check_xp_smoke_evidence_requirements(
     raw_requirements = requirements.get("smoke_evidence")
     if not isinstance(raw_requirements, list) or not raw_requirements:
         return [f"{label} promotion requires non-empty smoke_evidence"]
-    values = [str(item) for item in raw_requirements]
+    values: list[str] = []
     expected = set(XP_SMOKE_EVIDENCE_REQUIREMENTS)
     errors: list[str] = []
+    for index, item in enumerate(raw_requirements):
+        if not isinstance(item, str) or not item:
+            errors.append(
+                f"{label} smoke_evidence[{index}] must be a non-empty string, got {item!r}"
+            )
+            continue
+        values.append(item)
     duplicate_values = sorted({value for value in values if values.count(value) > 1})
     if duplicate_values:
         errors.append(f"{label} smoke_evidence contains duplicates: {duplicate_values}")
@@ -684,7 +728,10 @@ def check_finalized_evidence_requirements(
     kind: str,
 ) -> list[str]:
     errors: list[str] = []
-    candidate = str(requirements.get("accepted_evidence_candidate_command", ""))
+    candidate = requirements.get("accepted_evidence_candidate_command", "")
+    if not isinstance(candidate, str) or not candidate:
+        errors.append(f"{label} promotion requires accepted_evidence_candidate_command")
+        candidate = ""
     if not candidate.startswith(f"python scripts/make_platform_verified_evidence_record.py --target {label} "):
         errors.append(f"{label} accepted_evidence_candidate_command must generate a candidate for {label}")
     if "--append-registry" in candidate:
@@ -734,7 +781,10 @@ def check_finalized_evidence_requirements(
     if not (ROOT / "scripts" / "make_platform_verified_evidence_record.py").is_file():
         errors.append(f"{label} accepted evidence record generator is missing")
 
-    review = str(requirements.get("review_bundle_command", ""))
+    review = requirements.get("review_bundle_command", "")
+    if not isinstance(review, str) or not review:
+        errors.append(f"{label} promotion requires review_bundle_command")
+        review = ""
     expected_review_script = (
         "make_extended_linux_evidence_bundle.py"
         if kind == "linux"
@@ -752,7 +802,10 @@ def check_finalized_evidence_requirements(
     if not (ROOT / "scripts" / expected_review_script).is_file():
         errors.append(f"{label} review bundle script is missing")
 
-    final = str(requirements.get("finalized_evidence_record_command", ""))
+    final = requirements.get("finalized_evidence_record_command", "")
+    if not isinstance(final, str) or not final:
+        errors.append(f"{label} promotion requires finalized_evidence_record_command")
+        final = ""
     if not final.startswith("python scripts/finalize_platform_verified_evidence_record.py "):
         errors.append(f"{label} finalized_evidence_record_command must use the platform evidence finalizer")
     for required_arg in (
@@ -782,7 +835,14 @@ def check_finalized_evidence_requirements(
         f"{stem}.zip",
         f"{stem}-SHA256SUMS.txt",
     }
-    actual_files = {str(item) for item in bundle_files}
+    actual_files: set[str] = set()
+    for index, item in enumerate(bundle_files):
+        if not isinstance(item, str) or not item:
+            errors.append(
+                f"{label} review_bundle_files[{index}] must be a non-empty string, got {item!r}"
+            )
+            continue
+        actual_files.add(item)
     if actual_files != expected_files:
         errors.append(f"{label} review_bundle_files must be {sorted(expected_files)}")
     for filename in expected_files:
@@ -802,23 +862,90 @@ def default_native_target_ids(matrix: dict[str, Any]) -> set[str]:
     target_ids: set[str] = set()
     for job in matrix.get("default_github_release", {}).get("native_jobs", []):
         if isinstance(job, dict):
-            target_ids.update(str(item) for item in job.get("platform_target_ids", []))
+            target_ids.update(non_empty_string_values(job.get("platform_target_ids", [])))
     return target_ids
 
 
 def default_native_job_arches(matrix: dict[str, Any], job_name: str) -> set[str]:
     for job in matrix.get("default_github_release", {}).get("native_jobs", []):
         if isinstance(job, dict) and job.get("job") == job_name:
-            return {str(arch) for arch in job.get("arches", [])}
+            return non_empty_string_values(job.get("arches", []))
     return set()
 
 
 def script_supported_target_ids(matrix: dict[str, Any]) -> set[str]:
     return {
-        str(item.get("platform_target_id"))
+        item["platform_target_id"]
         for item in matrix.get("script_supported_native", [])
         if isinstance(item, dict)
+        and isinstance(item.get("platform_target_id"), str)
+        and item["platform_target_id"]
     }
+
+
+def non_empty_string_values(raw_values: Any) -> set[str]:
+    if not isinstance(raw_values, list):
+        return set()
+    return {item for item in raw_values if isinstance(item, str) and item}
+
+
+def check_release_matrix_target_ids(matrix: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    default_release = matrix.get("default_github_release", {})
+    native_jobs = (
+        default_release.get("native_jobs", [])
+        if isinstance(default_release, dict)
+        else []
+    )
+    if not isinstance(native_jobs, list):
+        errors.append("release_matrix default_github_release.native_jobs must be a list")
+    else:
+        for index, job in enumerate(native_jobs):
+            if not isinstance(job, dict):
+                errors.append(
+                    f"release_matrix default_github_release.native_jobs[{index}] must be an object"
+                )
+                continue
+            raw_job_name = job.get("job")
+            job_name = (
+                raw_job_name
+                if isinstance(raw_job_name, str) and raw_job_name
+                else f"default_github_release.native_jobs[{index}]"
+            )
+            errors.extend(
+                check_release_matrix_string_list(
+                    job.get("platform_target_ids"),
+                    f"release_matrix {job_name} platform_target_ids",
+                )
+            )
+
+    script_supported = matrix.get("script_supported_native", [])
+    if not isinstance(script_supported, list):
+        errors.append("release_matrix script_supported_native must be a list")
+    else:
+        for index, item in enumerate(script_supported):
+            if not isinstance(item, dict):
+                errors.append(
+                    f"release_matrix script_supported_native[{index}] must be an object"
+                )
+                continue
+            raw_target_id = item.get("platform_target_id")
+            if not isinstance(raw_target_id, str) or not raw_target_id:
+                errors.append(
+                    f"release_matrix script_supported_native[{index}].platform_target_id "
+                    f"must be a non-empty string, got {raw_target_id!r}"
+                )
+    return errors
+
+
+def check_release_matrix_string_list(raw_values: Any, label: str) -> list[str]:
+    if not isinstance(raw_values, list) or not raw_values:
+        return [f"{label} must be a non-empty list"]
+    errors: list[str] = []
+    for index, item in enumerate(raw_values):
+        if not isinstance(item, str) or not item:
+            errors.append(f"{label}[{index}] must be a non-empty string, got {item!r}")
+    return errors
 
 
 def rows_by_key(raw_rows: Any, key: str, errors: list[str]) -> dict[str, dict[str, Any]]:
@@ -830,9 +957,12 @@ def rows_by_key(raw_rows: Any, key: str, errors: list[str]) -> dict[str, dict[st
         if not isinstance(item, dict):
             errors.append(f"platform parity promotion row for {key} must be an object")
             continue
-        row_key = str(item.get(key, ""))
-        if not row_key:
-            errors.append(f"platform parity promotion row missing key: {key}")
+        row_key = item.get(key, "")
+        if not isinstance(row_key, str) or not row_key:
+            errors.append(
+                f"platform parity promotion row key {key} "
+                f"must be a non-empty string, got {row_key!r}"
+            )
             continue
         if row_key in rows:
             errors.append(f"duplicate platform parity promotion row: {row_key}")

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import zipfile
 from pathlib import Path
@@ -35,6 +36,8 @@ from make_platform_verified_evidence_record import (  # noqa: E402
     linux_smoke_evidence_sha256_map,
     sha256_file,
 )
+
+RELEASE_TAG_RE = re.compile(r"^v\d+\.\d+\.\d+$")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -94,6 +97,10 @@ def make_extended_linux_evidence_bundle(
     errors.extend(check_input_symlinks(builder_evidence, smoke_evidence, candidate_record))
     if errors:
         return errors
+    release_tag_errors, release_tag = extended_linux_release_tag_value(release_tag)
+    errors.extend(release_tag_errors)
+    if errors:
+        return errors
     builder_identity = load_json(builder_evidence, "builder evidence", errors)
     candidate = load_json(candidate_record, "candidate evidence record", errors)
     if builder_identity is None or candidate is None:
@@ -144,15 +151,15 @@ def make_extended_linux_evidence_bundle(
     if candidate.get("linux_evidence_sources") != expected_sources:
         errors.append("candidate linux_evidence_sources must match builder and smoke evidence files")
     source = candidate.get("release_asset_source")
-    source_head_sha = str(source.get("head_sha", "")).strip() if isinstance(source, dict) else ""
+    source_head_sha = source_string_field(source, "head_sha")
     source_run_attempt = source.get("run_attempt") if isinstance(source, dict) else 0
     if smoke_evidence.is_file():
         errors.extend(
             check_linux_smoke_evidence_file(
                 target,
                 release_tag,
-                str(candidate.get("native_smoke_command", "")),
-                str(candidate.get("workflow_run_url", "")),
+                string_field(candidate.get("native_smoke_command")),
+                string_field(candidate.get("workflow_run_url")),
                 source_run_attempt if isinstance(source_run_attempt, int) and not isinstance(source_run_attempt, bool) else 0,
                 smoke_evidence,
                 source_head_sha=source_head_sha,
@@ -292,6 +299,14 @@ def check_candidate_is_unfinalized(candidate: dict[str, Any]) -> list[str]:
     return []
 
 
+def extended_linux_release_tag_value(release_tag: object) -> tuple[list[str], str]:
+    if not isinstance(release_tag, str) or not release_tag:
+        return [f"extended Linux evidence release_tag must be a non-empty string, got {release_tag!r}"], ""
+    if release_tag.strip() != release_tag or not RELEASE_TAG_RE.fullmatch(release_tag):
+        return [f"extended Linux evidence release_tag must look like vX.Y.Z, got {release_tag!r}"], ""
+    return [], release_tag
+
+
 def check_local_protected_goal_preflight(
     *,
     target: str,
@@ -345,6 +360,16 @@ def check_local_protected_goal_preflight(
 
 def is_positive_int(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
+def string_field(value: Any) -> str:
+    return value.strip() if isinstance(value, str) else ""
+
+
+def source_string_field(source: Any, field: str) -> str:
+    if not isinstance(source, dict):
+        return ""
+    return string_field(source.get(field))
 
 
 def check_candidate_staged_upload_command(

@@ -30,6 +30,105 @@ def test_platform_parity_promotion_uses_explicit_empty_report() -> None:
     assert "linux-i386 references missing platform readiness row linux-i386" in errors
 
 
+def test_platform_parity_promotion_rejects_non_string_goal() -> None:
+    checker = _load_platform_parity_promotion_checker()
+    promotion = _load_json("configs/platform_parity_promotion.json")
+    promotion["goal"] = ["100% real parity"]
+
+    errors = checker.check_platform_parity_promotion(promotion=promotion)
+
+    assert "platform parity promotion goal must explicitly describe 100% real parity" in errors
+
+
+def test_platform_parity_promotion_rejects_non_string_protected_target_id() -> None:
+    checker = _load_platform_parity_promotion_checker()
+    promotion = _load_json("configs/platform_parity_promotion.json")
+    _promotion_entry(promotion, "linux-i386")["id"] = True
+
+    errors = checker.check_platform_parity_promotion(promotion=promotion)
+
+    assert (
+        "platform parity promotion row key id must be a non-empty string, got True"
+    ) in errors
+
+
+def test_platform_parity_promotion_rejects_non_string_release_matrix_target_ids() -> None:
+    checker = _load_platform_parity_promotion_checker()
+    release_matrix = _load_json("configs/release_matrix.json")
+    release_matrix["default_github_release"]["native_jobs"][2]["platform_target_ids"].append(True)
+    release_matrix["script_supported_native"][0]["platform_target_id"] = False
+
+    errors = checker.check_platform_parity_promotion(release_matrix=release_matrix)
+
+    assert (
+        "release_matrix linux-native platform_target_ids[2] "
+        "must be a non-empty string, got True"
+    ) in errors
+    assert (
+        "release_matrix script_supported_native[0].platform_target_id "
+        "must be a non-empty string, got False"
+    ) in errors
+    assert "True" not in checker.default_native_target_ids(release_matrix)
+    assert "False" not in checker.script_supported_target_ids(release_matrix)
+
+
+def test_platform_parity_promotion_rejects_non_string_artifact_requirements() -> None:
+    checker = _load_platform_parity_promotion_checker()
+    promotion = _load_json("configs/platform_parity_promotion.json")
+    linux = _promotion_entry(promotion, "linux-i386")["promotion_to_100_requires"]
+    linux["required_artifacts"].append(True)
+    xp = _promotion_entry(promotion, "windows-xp-native-x64")["promotion_to_100_requires"]
+    xp["native_artifacts"].append(False)
+
+    errors = checker.check_platform_parity_promotion(promotion=promotion)
+
+    assert (
+        "linux-i386 required_artifacts entries must be non-empty strings, got True"
+    ) in errors
+    assert (
+        "windows-xp-native-x64 native_artifacts entries must be non-empty strings, got False"
+    ) in errors
+
+
+def test_platform_parity_promotion_rejects_non_string_requirement_lists() -> None:
+    checker = _load_platform_parity_promotion_checker()
+    promotion = _load_json("configs/platform_parity_promotion.json")
+    linux = _promotion_entry(promotion, "linux-armhf")["promotion_to_100_requires"]
+    linux["smoke_evidence"].append(True)
+    xp = _promotion_entry(promotion, "windows-xp-native-x86")["promotion_to_100_requires"]
+    xp["security_requirements"].append(False)
+
+    errors = checker.check_platform_parity_promotion(promotion=promotion)
+
+    assert any(
+        error.startswith("linux-armhf smoke_evidence[")
+        and "must be a non-empty string, got True" in error
+        for error in errors
+    )
+    assert any(
+        error.startswith("windows-xp-native-x86 security_requirements[")
+        and "must be a non-empty string, got False" in error
+        for error in errors
+    )
+
+
+def test_platform_parity_promotion_rejects_non_string_evidence_commands_and_bundle_files() -> None:
+    checker = _load_platform_parity_promotion_checker()
+    promotion = _load_json("configs/platform_parity_promotion.json")
+    linux = _promotion_entry(promotion, "linux-i386")["promotion_to_100_requires"]
+    linux["accepted_evidence_candidate_command"] = True
+    xp = _promotion_entry(promotion, "windows-xp-native-x64")["promotion_to_100_requires"]
+    xp["review_bundle_files"][0] = False
+
+    errors = checker.check_platform_parity_promotion(promotion=promotion)
+
+    assert "linux-i386 promotion requires accepted_evidence_candidate_command" in errors
+    assert (
+        "windows-xp-native-x64 review_bundle_files[0] "
+        "must be a non-empty string, got False"
+    ) in errors
+
+
 def test_platform_parity_promotion_rejects_fake_linux_100() -> None:
     checker = _load_platform_parity_promotion_checker()
     promotion = _load_json("configs/platform_parity_promotion.json")

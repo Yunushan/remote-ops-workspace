@@ -195,28 +195,45 @@ def check_product_readiness() -> list[str]:
         aggregate_present = goal.get("aggregate_accepted_targets", [])
         aggregate_missing = goal.get("aggregate_missing_targets", [])
         aggregate_count = goal.get("aggregate_accepted_target_count")
-        if required != [
+        required_targets = goal_target_list_values(required, "required_targets", errors)
+        present_targets = goal_target_list_values(present, "accepted_targets", errors)
+        missing_targets = goal_target_list_values(missing, "missing_targets", errors)
+        aggregate_present_targets = goal_target_list_values(
+            aggregate_present,
+            "aggregate_accepted_targets",
+            errors,
+        )
+        aggregate_missing_targets = goal_target_list_values(
+            aggregate_missing,
+            "aggregate_missing_targets",
+            errors,
+        )
+        if required_targets != [
             "linux-i386",
             "linux-armhf",
             "windows-xp-native-x86",
             "windows-xp-native-x64",
         ]:
             errors.append("protected platform goal parity must list the four protected targets")
-        if goal.get("target_count") != (len(required) if isinstance(required, list) else 0):
+        if goal.get("target_count") != len(required_targets):
             errors.append("protected platform goal parity target_count must match required_targets")
         if not isinstance(present, list) or not isinstance(missing, list):
             errors.append("protected platform goal parity must expose accepted and missing target lists")
-        elif sorted(present + missing) != sorted(required):
+        elif sorted(present_targets + missing_targets) != sorted(required_targets):
             errors.append("protected platform goal parity accepted/missing targets must partition required targets")
-        if accepted_count != len(present):
+        if accepted_count != len(present_targets):
             errors.append("protected platform goal parity accepted_target_count must match accepted_targets")
         if not isinstance(aggregate_present, list) or not isinstance(aggregate_missing, list):
             errors.append("protected platform goal parity must expose aggregate accepted and missing target lists")
-        elif sorted(aggregate_present + aggregate_missing) != sorted(required):
+        elif sorted(aggregate_present_targets + aggregate_missing_targets) != sorted(required_targets):
             errors.append("protected platform goal parity aggregate accepted/missing targets must partition required targets")
-        if aggregate_count != len(aggregate_present):
+        if aggregate_count != len(aggregate_present_targets):
             errors.append("protected platform goal parity aggregate_accepted_target_count must match aggregate_accepted_targets")
-        expected_percent = round((len(present) / len(required) * 100.0), 1) if required else 0.0
+        expected_percent = (
+            round((len(present_targets) / len(required_targets) * 100.0), 1)
+            if required_targets
+            else 0.0
+        )
         if goal.get("current_percent") != expected_percent:
             errors.append("protected platform goal parity current_percent must match accepted target count")
         expected_gap = round(max(100.0 - expected_percent, 0.0), 1)
@@ -265,7 +282,11 @@ def check_product_readiness() -> list[str]:
                 f"{expected_asset_command!r}"
             )
         provenance_complete = goal.get("release_source_provenance_complete") is True
-        record_complete = len(present) == len(required) and bool(required) and provenance_complete
+        record_complete = (
+            len(present_targets) == len(required_targets)
+            and bool(required_targets)
+            and provenance_complete
+        )
         release_backed_complete = (
             record_complete and goal.get("release_asset_provenance_complete") is True
         )
@@ -281,8 +302,8 @@ def check_product_readiness() -> list[str]:
         expected_status = expected_protected_goal_status(
             record_complete=record_complete,
             release_backed_complete=release_backed_complete,
-            accepted_count=len(present) if isinstance(present, list) else 0,
-            target_count=len(required) if isinstance(required, list) else 0,
+            accepted_count=len(present_targets),
+            target_count=len(required_targets),
             release_repositories=goal.get("release_repositories"),
             release_tags=goal.get("release_tags"),
             release_source_heads=goal.get("release_source_heads"),
@@ -298,15 +319,23 @@ def check_product_readiness() -> list[str]:
             errors.append("protected platform goal parity must expose target_evidence_requirements")
         else:
             requirement_targets = [
-                item.get("target") for item in requirements if isinstance(item, dict)
+                item.get("target")
+                for item in requirements
+                if isinstance(item, dict) and isinstance(item.get("target"), str)
             ]
-            if sorted(requirement_targets) != sorted(required):
+            if sorted(requirement_targets) != sorted(required_targets):
                 errors.append("protected platform goal parity requirements must cover every protected target")
             for item in requirements:
                 if not isinstance(item, dict):
                     errors.append("protected platform goal parity requirement entries must be objects")
                     continue
                 target = item.get("target")
+                if not isinstance(target, str) or not target.strip():
+                    errors.append(
+                        "protected platform goal parity requirement target "
+                        f"must be a non-empty string, got {target!r}"
+                    )
+                    continue
                 errors.extend(check_protected_requirement_boundary(target, item.get("support_boundary")))
                 errors.extend(check_builder_or_host_evidence(target, item.get("builder_or_host_evidence")))
                 errors.extend(check_smoke_evidence_requirements(target, item.get("smoke_evidence")))
@@ -430,6 +459,46 @@ def check_platform_protected_goal_summary(
     return errors
 
 
+def goal_target_list_values(
+    raw: object,
+    field: str,
+    errors: list[str] | None = None,
+    *,
+    prefix: str = "protected platform goal parity",
+) -> list[str]:
+    if not isinstance(raw, list):
+        return []
+    values: list[str] = []
+    for item in raw:
+        if not isinstance(item, str) or not item.strip():
+            if errors is not None:
+                errors.append(
+                    f"{prefix} {field} entries must be "
+                    f"non-empty strings, got {item!r}"
+                )
+            continue
+        values.append(item.strip())
+    return values
+
+
+def goal_target_map_keys(
+    raw: dict[object, object],
+    row_target: object,
+    field: str,
+    errors: list[str],
+) -> list[str]:
+    keys: list[str] = []
+    for key in raw:
+        if not isinstance(key, str) or not key.strip():
+            errors.append(
+                f"{row_target} accepted evidence {field} keys must be "
+                f"non-empty strings, got {key!r}"
+            )
+            continue
+        keys.append(key.strip())
+    return keys
+
+
 def check_accepted_evidence_row_bindings(row: dict[str, object]) -> list[str]:
     present = row.get("accepted_evidence_present_targets")
     target = row.get("target")
@@ -438,6 +507,12 @@ def check_accepted_evidence_row_bindings(row: dict[str, object]) -> list[str]:
         errors.extend(check_protected_row_static_provenance(row))
     if not isinstance(present, list) or not present:
         return errors
+    present_targets = goal_target_list_values(
+        present,
+        f"{target} accepted_evidence_present_targets",
+        errors,
+        prefix="accepted evidence row",
+    )
     for field in (
         "accepted_evidence_release_tags",
         "accepted_evidence_release_repositories",
@@ -450,12 +525,13 @@ def check_accepted_evidence_row_bindings(row: dict[str, object]) -> list[str]:
         if not isinstance(value, dict):
             errors.append(f"{target} accepted evidence row must expose {field}")
             continue
-        if sorted(str(key) for key in value) != sorted(str(item) for item in present):
+        binding_targets = goal_target_map_keys(value, target, field, errors)
+        if sorted(binding_targets) != sorted(present_targets):
             errors.append(f"{target} accepted evidence {field} must cover present accepted targets")
             continue
-        for present_target in present:
-            binding = value.get(str(present_target))
-            errors.extend(check_accepted_evidence_binding_value(target, str(present_target), field, binding))
+        for present_target in present_targets:
+            binding = value.get(present_target)
+            errors.extend(check_accepted_evidence_binding_value(target, present_target, field, binding))
     return errors
 
 
@@ -463,10 +539,20 @@ def check_protected_row_static_provenance(row: dict[str, object]) -> list[str]:
     target = row.get("target")
     required = row.get("accepted_evidence_required_targets")
     present = row.get("accepted_evidence_present_targets")
-    required_targets = [str(item) for item in required] if isinstance(required, list) else []
-    present_targets = [str(item) for item in present] if isinstance(present, list) else []
-    record_complete = bool(required_targets) and sorted(required_targets) == sorted(present_targets)
     errors: list[str] = []
+    required_targets = goal_target_list_values(
+        required,
+        f"{target} accepted_evidence_required_targets",
+        errors,
+        prefix="protected platform row",
+    )
+    present_targets = goal_target_list_values(
+        present,
+        f"{target} accepted_evidence_present_targets",
+        errors,
+        prefix="protected platform row",
+    )
+    record_complete = bool(required_targets) and sorted(required_targets) == sorted(present_targets)
     if row.get("accepted_evidence_record_complete") is not record_complete:
         errors.append(
             f"{target} protected platform row accepted_evidence_record_complete "
@@ -655,15 +741,28 @@ def check_protected_requirement_commands(
     target: object,
     raw_commands: object,
 ) -> list[str]:
-    target_text = str(target)
+    if not isinstance(target, str) or not target.strip():
+        return [
+            "protected platform requirement command target must be a non-empty "
+            f"string, got {target!r}"
+        ]
+    target_text = target
     if not isinstance(raw_commands, dict):
         return [f"{target_text} protected platform requirement missing required_commands"]
-    command_keys = {str(key) for key in raw_commands}
+    command_keys = {key for key in raw_commands if isinstance(key, str) and key.strip()}
     expected_commands = expected_protected_requirement_commands(target_text)
     if not expected_commands:
         return [f"{target_text} protected platform requirement uses an unknown command target"]
     expected_keys = set(expected_commands)
     errors: list[str] = []
+    malformed_keys = [
+        key for key in raw_commands if not isinstance(key, str) or not key.strip()
+    ]
+    if malformed_keys:
+        errors.append(
+            f"{target_text} protected platform requirement required_commands keys "
+            f"must be non-empty strings, got {malformed_keys}"
+        )
     missing = sorted(expected_keys - command_keys)
     if missing:
         errors.append(f"{target_text} protected platform requirement required_commands missing: {missing}")
@@ -1207,11 +1306,14 @@ def check_protected_goal_release_scope(goal: dict[str, object]) -> list[str]:
             "protected platform goal parity release_source_head_consistent must match release_source_heads"
         )
     accepted_targets = goal.get("aggregate_accepted_targets", goal.get("accepted_targets", []))
+    accepted_target_ids = goal_target_list_values(accepted_targets, "aggregate_accepted_targets")
+    selected_target_ids = goal_target_list_values(selected_targets, "accepted_targets")
+    required_target_ids = goal_target_list_values(required_targets, "required_targets")
     if isinstance(accepted_targets, list) and isinstance(release_source_run_attempts, dict):
         missing_attempts = sorted(
-            str(target)
-            for target in accepted_targets
-            if str(target) not in release_source_run_attempts
+            target
+            for target in accepted_target_ids
+            if target not in release_source_run_attempts
         )
         if missing_attempts:
             errors.append(
@@ -1226,9 +1328,9 @@ def check_protected_goal_release_scope(goal: dict[str, object]) -> list[str]:
                 )
     if isinstance(accepted_targets, list) and isinstance(release_source_run_urls, dict):
         missing_run_urls = sorted(
-            str(target)
-            for target in accepted_targets
-            if str(target) not in release_source_run_urls
+            target
+            for target in accepted_target_ids
+            if target not in release_source_run_urls
         )
         if missing_run_urls:
             errors.append(
@@ -1243,9 +1345,9 @@ def check_protected_goal_release_scope(goal: dict[str, object]) -> list[str]:
                 )
     if isinstance(accepted_targets, list) and isinstance(release_source_workflows, dict):
         missing_workflows = sorted(
-            str(target)
-            for target in accepted_targets
-            if str(target) not in release_source_workflows
+            target
+            for target in accepted_target_ids
+            if target not in release_source_workflows
         )
         if missing_workflows:
             errors.append(
@@ -1260,7 +1362,7 @@ def check_protected_goal_release_scope(goal: dict[str, object]) -> list[str]:
                     f"[{target}] must be {expected}"
                 )
     if isinstance(selected_targets, list):
-        selected_target_ids = {str(target) for target in selected_targets}
+        selected_target_set = set(selected_target_ids)
         if isinstance(selected_release_source_run_attempts, dict):
             missing_selected_attempts = sorted(
                 target
@@ -1275,7 +1377,7 @@ def check_protected_goal_release_scope(goal: dict[str, object]) -> list[str]:
             unexpected_selected_attempts = sorted(
                 str(target)
                 for target in selected_release_source_run_attempts
-                if str(target) not in selected_target_ids
+                if str(target) not in selected_target_set
             )
             if unexpected_selected_attempts:
                 errors.append(
@@ -1302,7 +1404,7 @@ def check_protected_goal_release_scope(goal: dict[str, object]) -> list[str]:
             unexpected_selected_run_urls = sorted(
                 str(target)
                 for target in selected_release_source_run_urls
-                if str(target) not in selected_target_ids
+                if str(target) not in selected_target_set
             )
             if unexpected_selected_run_urls:
                 errors.append(
@@ -1329,7 +1431,7 @@ def check_protected_goal_release_scope(goal: dict[str, object]) -> list[str]:
             unexpected_selected_workflows = sorted(
                 str(target)
                 for target in selected_release_source_workflows
-                if str(target) not in selected_target_ids
+                if str(target) not in selected_target_set
             )
             if unexpected_selected_workflows:
                 errors.append(
@@ -1344,9 +1446,9 @@ def check_protected_goal_release_scope(goal: dict[str, object]) -> list[str]:
                         f"[{target}] must be {expected}"
                     )
     if isinstance(accepted_targets, list) and isinstance(selected_targets, list):
-        aggregate_target_ids = {str(target) for target in accepted_targets}
-        selected_target_ids = {str(target) for target in selected_targets}
-        expected_excluded_targets = sorted(aggregate_target_ids - selected_target_ids)
+        aggregate_target_set = set(accepted_target_ids)
+        selected_target_set = set(selected_target_ids)
+        expected_excluded_targets = sorted(aggregate_target_set - selected_target_set)
         actual_excluded_targets = sorted(str(target) for target in selected_release_scope_exclusions)
         if actual_excluded_targets != expected_excluded_targets:
             errors.append(
@@ -1379,12 +1481,11 @@ def check_protected_goal_release_scope(goal: dict[str, object]) -> list[str]:
         and isinstance(provenance_complete, bool)
     ):
         expected_provenance_complete = (
-            bool(required_targets)
-            and sorted(str(target) for target in selected_targets)
-            == sorted(str(target) for target in required_targets)
-            and all(str(target) in selected_release_source_run_attempts for target in required_targets)
-            and all(str(target) in selected_release_source_run_urls for target in required_targets)
-            and all(str(target) in selected_release_source_workflows for target in required_targets)
+            bool(required_target_ids)
+            and sorted(selected_target_ids) == sorted(required_target_ids)
+            and all(target in selected_release_source_run_attempts for target in required_target_ids)
+            and all(target in selected_release_source_run_urls for target in required_target_ids)
+            and all(target in selected_release_source_workflows for target in required_target_ids)
             and not expected_conflicts
         )
         if provenance_complete is not expected_provenance_complete:

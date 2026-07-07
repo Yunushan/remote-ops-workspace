@@ -413,6 +413,166 @@ def test_make_platform_verified_evidence_record_rejects_invalid_release_source_r
         assert "--release-source-run-attempt must be a positive integer" in errors
 
 
+def test_make_platform_verified_evidence_record_rejects_non_string_release_metadata(
+    tmp_path: Path,
+) -> None:
+    maker = _load_maker()
+    assets = tmp_path / "artifacts"
+    assets.mkdir()
+    args = maker.parse_args(
+        [
+            "--target",
+            "linux-i386",
+            "--release-tag",
+            "v1.0.2",
+            "--assets-dir",
+            str(assets),
+            "--release-asset-base-url",
+            "https://github.com/example/remote-ops-workspace/releases/download/v1.0.2",
+            "--workflow-run-url",
+            "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+            "--release-source-head-sha",
+            "a" * 40,
+            "--release-source-run-attempt",
+            "1",
+            "--runner-label",
+            "self-hosted",
+            "--runner-label",
+            "linux",
+            "--runner-label",
+            "i386",
+        ]
+    )
+    args.release_tag = True
+    args.release_asset_base_url = False
+
+    errors = maker.validate_common_args(args)
+
+    assert "--release-tag must be a non-empty string, got True" in errors
+    assert "--release-asset-base-url must be a non-empty string, got False" in errors
+    assert "release tag must look like vX.Y.Z: True" not in errors
+
+
+def test_make_platform_verified_evidence_record_rejects_non_path_common_inputs(
+    tmp_path: Path,
+) -> None:
+    maker = _load_maker()
+    assets = tmp_path / "artifacts"
+    assets.mkdir()
+    args = maker.parse_args(
+        [
+            "--target",
+            "linux-i386",
+            "--release-tag",
+            "v1.0.2",
+            "--assets-dir",
+            str(assets),
+            "--release-asset-base-url",
+            "https://github.com/example/remote-ops-workspace/releases/download/v1.0.2",
+            "--workflow-run-url",
+            "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+            "--release-source-head-sha",
+            "a" * 40,
+            "--release-source-run-attempt",
+            "1",
+            "--runner-label",
+            "self-hosted",
+            "--runner-label",
+            "linux",
+            "--runner-label",
+            "i386",
+        ]
+    )
+    args.assets_dir = True
+    args.local_evidence_root = ["evidence-root"]
+    args.staged_upload_out_dir = False
+
+    errors = maker.validate_common_args(args)
+
+    assert "artifact directory must be a pathlib.Path, got True" in errors
+    assert "local evidence root must be a pathlib.Path, got ['evidence-root']" in errors
+    assert "staged upload output directory must be a pathlib.Path, got False" in errors
+
+
+def test_make_platform_verified_evidence_record_rejects_non_path_linux_evidence_inputs(
+    tmp_path: Path,
+) -> None:
+    maker = _load_maker()
+    assets = tmp_path / "artifacts"
+    assets.mkdir()
+    args = maker.parse_args(
+        [
+            "--target",
+            "linux-i386",
+            "--release-tag",
+            "v1.0.2",
+            "--assets-dir",
+            str(assets),
+            "--release-asset-base-url",
+            "https://github.com/example/remote-ops-workspace/releases/download/v1.0.2",
+            "--workflow-run-url",
+            "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+            "--release-source-head-sha",
+            "a" * 40,
+            "--release-source-run-attempt",
+            "1",
+            "--runner-label",
+            "self-hosted",
+            "--runner-label",
+            "linux",
+            "--runner-label",
+            "i386",
+        ]
+    )
+    args.builder_evidence = True
+    args.linux_smoke_evidence = ["native-smoke-linux-i386.log"]
+
+    errors = maker.validate_linux_args(args)
+
+    assert "Linux builder evidence file must be a pathlib.Path, got True" in errors
+    assert (
+        "Linux smoke evidence file must be a pathlib.Path, got ['native-smoke-linux-i386.log']"
+        in errors
+    )
+
+
+def test_make_platform_verified_evidence_record_rejects_non_path_xp_evidence_inputs(
+    tmp_path: Path,
+) -> None:
+    maker = _load_maker()
+    assets = tmp_path / "artifacts"
+    assets.mkdir()
+    args = maker.parse_args(
+        [
+            "--target",
+            "windows-xp-native-x86",
+            "--release-tag",
+            "v1.0.2",
+            "--assets-dir",
+            str(assets),
+            "--release-asset-base-url",
+            "https://github.com/example/remote-ops-workspace/releases/download/v1.0.2",
+            "--release-source-workflow-run-url",
+            "https://github.com/example/remote-ops-workspace/actions/runs/54321",
+            "--release-source-artifact-name",
+            "xp-native-evidence-windows-xp-native-x86-v1.0.2",
+            "--release-source-head-sha",
+            "a" * 40,
+            "--release-source-run-attempt",
+            "1",
+        ]
+    )
+    args.xp_evidence = True
+    args.xp_evidence_dir = ["xp-evidence"]
+    args.xp_evidence_output_dir = False
+
+    errors = maker.validate_xp_args(args)
+
+    assert "XP evidence file must be a pathlib.Path, got True" in errors
+    assert "XP evidence directory must be a pathlib.Path, got ['xp-evidence']" in errors
+    assert "XP evidence output directory must be a pathlib.Path, got False" in errors
+
+
 def test_make_platform_verified_evidence_record_generates_xp_record(tmp_path: Path, monkeypatch) -> None:
     maker = _load_maker()
     artifact_checker = _load_platform_promotion_artifacts_checker()
@@ -700,6 +860,80 @@ def test_make_platform_verified_evidence_record_ignores_malformed_xp_summary_has
         "run_attempt": None,
     }
     assert maker.xp_smoke_evidence_sha256_map(evidence) == {}
+
+
+def test_make_platform_verified_evidence_record_does_not_coerce_malformed_xp_summary_fields() -> None:
+    maker = _load_maker()
+    evidence = {
+        "os": {
+            "name": True,
+            "architecture": ["x86"],
+            "service_pack": None,
+            "edition": False,
+        },
+        "toolchain": {
+            "separate_legacy_toolchain": True,
+            "current_python_pyqt6_stack": False,
+            "description": ["legacy toolchain"],
+        },
+        "host_identity": {
+            "schema_version": 1,
+            "target": True,
+            "release_tag": ["v1.0.2"],
+            "host_label": False,
+            "evidence_run_id": 123,
+            "observed_at_utc": None,
+            "operator_private_data_redacted": True,
+            "os": {
+                "name": True,
+                "architecture": ["x86"],
+                "service_pack": None,
+            },
+            "toolchain": {"description": ["legacy toolchain"]},
+        },
+        "smoke_results": [
+            {
+                "id": True,
+                "command": "scripts/xp_smoke_runner.cmd",
+                "evidence_file": "xp-smoke-evidence/coerced-id.txt",
+            },
+            {
+                "id": "cli_launch",
+                "command": True,
+                "evidence_file": ["xp-smoke-evidence/cli_launch.txt"],
+            },
+            {
+                "id": "loopback_profile_dry_run",
+                "command": "scripts/xp_smoke_runner.cmd --smoke-id loopback_profile_dry_run",
+                "evidence_file": "xp-smoke-evidence/loopback_profile_dry_run.txt",
+            },
+        ],
+    }
+
+    summary = maker.xp_evidence_summary(
+        "windows-xp-native-x86",
+        "v1.0.2",
+        evidence,
+    )
+    host_identity = maker.xp_host_identity_summary(evidence)
+
+    assert summary["os"] == {"name": "", "architecture": "", "service_pack": ""}
+    assert summary["smoke_ids"] == ["cli_launch", "loopback_profile_dry_run"]
+    assert summary["smoke_commands"] == {
+        "loopback_profile_dry_run": "scripts/xp_smoke_runner.cmd --smoke-id loopback_profile_dry_run"
+    }
+    assert summary["smoke_evidence_files"] == {
+        "loopback_profile_dry_run": "xp-smoke-evidence/loopback_profile_dry_run.txt"
+    }
+    assert host_identity["target"] == ""
+    assert host_identity["release_tag"] == ""
+    assert host_identity["host_label"] == ""
+    assert host_identity["evidence_run_id"] == ""
+    assert host_identity["observed_at_utc"] == ""
+    assert host_identity["os"] == {}
+    assert host_identity["toolchain"]["description"] == ""
+    assert "True" not in json.dumps(summary)
+    assert "['" not in json.dumps(summary)
 
 
 def test_make_platform_verified_evidence_record_rejects_file_shaped_xp_evidence_directory(
@@ -3075,6 +3309,37 @@ def test_append_platform_verified_evidence_record_rejects_duplicate_target(tmp_p
 
     assert errors == [
         "linux-i386 already has accepted evidence; remove or replace the existing record deliberately before appending"
+    ]
+
+
+def test_append_platform_verified_evidence_record_rejects_non_string_target(tmp_path: Path) -> None:
+    maker = _load_maker()
+    record = {
+        "target": True,
+        "status": "accepted",
+        "readiness_percent": 100.0,
+    }
+    registry = tmp_path / "platform_verified_evidence.json"
+    registry.write_text(json.dumps(_empty_registry(), indent=2) + "\n", encoding="utf-8")
+
+    errors = maker.append_record_to_registry(record, registry_path=registry)
+
+    assert errors == [
+        "platform verified evidence record target must be a non-empty string, got True"
+    ]
+    assert json.loads(registry.read_text(encoding="utf-8"))["accepted_evidence"] == []
+
+
+def test_generated_record_output_path_rejects_non_string_target(tmp_path: Path) -> None:
+    maker = _load_maker()
+
+    errors = maker.check_generated_record_output_path(
+        tmp_path / "platform-verified-evidence-True.json",
+        {"target": True},
+    )
+
+    assert errors == [
+        "platform verified evidence record target must be a non-empty string, got True"
     ]
 
 

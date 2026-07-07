@@ -113,6 +113,65 @@ def test_platform_review_bundle_artifacts_rejects_noncanonical_final_record_asse
     ) in errors
 
 
+def test_platform_review_bundle_artifacts_final_asset_helper_rejects_malformed_target(
+    tmp_path: Path,
+) -> None:
+    validator = _load_script("check_platform_review_bundle_artifacts")
+
+    errors = validator.check_final_record_asset({"target": True}, tmp_path)
+
+    assert errors == ["finalized accepted-record asset target must be a string, got True"]
+    assert not (tmp_path / "platform-verified-evidence-True-final.json").exists()
+
+
+def test_platform_review_bundle_artifacts_final_asset_helper_rejects_non_string_record_keys(
+    tmp_path: Path,
+) -> None:
+    validator = _load_script("check_platform_review_bundle_artifacts")
+    record = _finalized_linux_record(tmp_path)
+    record[True] = "coerced-private-field"
+    final_record = tmp_path / "platform-verified-evidence-linux-i386-final.json"
+    final_record.write_text("{}\n", encoding="utf-8")
+
+    errors = validator.check_final_record_asset(record, tmp_path)
+
+    assert errors == [
+        "linux-i386 finalized accepted-record registry keys must be strings, got True"
+    ]
+
+
+def test_platform_review_bundle_artifacts_public_record_does_not_stringify_keys(
+    tmp_path: Path,
+) -> None:
+    validator = _load_script("check_platform_review_bundle_artifacts")
+    record = _finalized_linux_record(tmp_path)
+    record["_scratch"] = "private"
+    record[True] = "coerced"
+
+    public = validator.public_record(record)
+
+    assert "_scratch" not in public
+    assert True not in public
+    assert "True" not in public
+    assert public["target"] == "linux-i386"
+
+
+def test_platform_review_bundle_artifacts_target_filter_does_not_stringify_targets() -> None:
+    validator = _load_script("check_platform_review_bundle_artifacts")
+    rows = [
+        {"target": "True", "release_tag": "v1.0.2"},
+        {"target": "linux-i386", "release_tag": "v1.0.2"},
+    ]
+
+    records = validator.records_for_artifact_validation(
+        rows,
+        required_targets=(True,),
+        required_release_tag="v1.0.2",
+    )
+
+    assert records == []
+
+
 def test_platform_review_bundle_artifacts_rejects_symlinked_final_record_asset_parent(
     tmp_path: Path,
     monkeypatch,

@@ -391,10 +391,27 @@ def check_goal_requirement_metadata(goal: dict[str, Any]) -> list[str]:
             errors.append("protected platform goal parity requirement entries must be objects")
             continue
         target = item.get("target")
+        if not isinstance(target, str) or not target.strip():
+            errors.append(
+                "protected platform goal parity requirement target "
+                f"must be a non-empty string, got {target!r}"
+            )
+            continue
+        raw_commands = item.get("required_commands")
+        if isinstance(raw_commands, dict):
+            malformed_keys = [
+                key for key in raw_commands if not isinstance(key, str) or not key.strip()
+            ]
+            if malformed_keys:
+                errors.append(
+                    f"{target} protected platform requirement required_commands keys "
+                    f"must be non-empty strings, got {malformed_keys}"
+                )
+                continue
         errors.extend(
             check_protected_requirement_commands(
                 target,
-                item.get("required_commands"),
+                raw_commands,
             )
         )
     return errors
@@ -536,9 +553,13 @@ def attach_goal_error_context(
     enriched["release_backed_complete"] = release_backed_complete
     if release_backed_complete:
         enriched["completion_evidence"] = "release-assets"
-    elif record_complete and not str(enriched.get("completion_evidence", "")).strip():
+    completion_evidence = enriched.get("completion_evidence")
+    completion_evidence_text = (
+        completion_evidence.strip() if isinstance(completion_evidence, str) else ""
+    )
+    if record_complete and not completion_evidence_text:
         enriched["completion_evidence"] = "accepted-records-only"
-    elif not record_complete and not str(enriched.get("completion_evidence", "")).strip():
+    elif not record_complete and not completion_evidence_text:
         enriched["completion_evidence"] = "incomplete"
     enriched["validation_errors"] = unique_messages(validation_errors)
     enriched["record_validation_errors"] = unique_messages(record_validation_errors)
@@ -570,6 +591,11 @@ def invalid_evidence_goal_registry(registry: dict[str, Any]) -> dict[str, Any]:
     return filtered
 
 
+def accepted_record_target(record: dict[str, Any]) -> str:
+    target = record.get("target")
+    return target.strip() if isinstance(target, str) else ""
+
+
 def check_duplicate_accepted_evidence_targets(registry: dict[str, Any]) -> list[str]:
     records = registry.get("accepted_evidence", [])
     if not isinstance(records, list):
@@ -578,7 +604,7 @@ def check_duplicate_accepted_evidence_targets(registry: dict[str, Any]) -> list[
     for record in records:
         if not isinstance(record, dict):
             continue
-        target = str(record.get("target", "")).strip()
+        target = accepted_record_target(record)
         if target:
             counts[target] = counts.get(target, 0) + 1
     return [
@@ -784,28 +810,40 @@ def format_goal_requirements(goal: dict[str, Any]) -> str:
     requirements = goal.get("target_evidence_requirements", [])
     if not isinstance(requirements, list):
         return ""
-    missing = set(str(target) for target in goal.get("missing_targets", []))
+    missing = set(list_values(goal.get("missing_targets")))
     rows = [item for item in requirements if isinstance(item, dict)]
     if missing:
-        rows = [item for item in rows if str(item.get("target", "")) in missing]
+        rows = [item for item in rows if string_value(item.get("target")) in missing]
     if not rows:
         return ""
     lines = ["required proof for missing targets:" if missing else "required proof for protected targets:"]
     for item in rows:
-        target = str(item.get("target", ""))
+        target = string_value(item.get("target"))
+        if not target:
+            continue
         accepted = "accepted" if item.get("accepted") else "missing"
         lines.append(f"  {target}: {accepted}")
-        boundary = str(item.get("support_boundary", ""))
+        boundary = string_value(item.get("support_boundary"))
         if boundary:
             lines.append(f"    boundary: {boundary}")
         accepted_record = item.get("accepted_evidence_record", {})
         if isinstance(accepted_record, dict):
+            registry = string_value(
+                accepted_record.get("registry"),
+                default="configs/platform_verified_evidence.json",
+            )
+            accepted_target = string_value(accepted_record.get("target"), default=target)
+            accepted_release_tag = string_value(
+                accepted_record.get("release_tag"),
+                default=string_value(goal.get("release_tag"), default="v<project.version>"),
+            )
+            status = string_value(accepted_record.get("status"), default="accepted")
             lines.append(
                 "    accepted record: "
-                f"{accepted_record.get('registry', 'configs/platform_verified_evidence.json')} "
-                f"target={accepted_record.get('target', target)} "
-                f"release_tag={accepted_record.get('release_tag', goal.get('release_tag', 'v<project.version>'))} "
-                f"status={accepted_record.get('status', 'accepted')} "
+                f"{registry} "
+                f"target={accepted_target} "
+                f"release_tag={accepted_release_tag} "
+                f"status={status} "
                 f"readiness={accepted_record.get('readiness_percent', 100.0)}"
             )
         artifacts = item.get("required_artifacts", [])
@@ -818,36 +856,51 @@ def format_goal_requirements(goal: dict[str, Any]) -> str:
             )
         source = item.get("release_asset_source_required", {})
         if isinstance(source, dict):
-            workflow = str(source.get("workflow", ""))
-            artifact_name = str(source.get("artifact_name", ""))
+            workflow = string_value(source.get("workflow"))
+            artifact_name = string_value(source.get("artifact_name"))
             if workflow or artifact_name:
                 lines.append(
                     "    source workflow: "
                     f"{workflow or '<missing>'}; artifact={artifact_name or '<missing>'}"
                 )
-        dispatch_command = str(item.get("workflow_dispatch_command", "")).strip()
+        dispatch_command = string_value(item.get("workflow_dispatch_command"))
         if dispatch_command:
             lines.append(f"    dispatch command: {dispatch_command}")
         commands = item.get("required_commands", {})
         if isinstance(commands, dict) and commands:
-            lines.append(f"    commands: {', '.join(sorted(str(key) for key in commands))}")
+            command_names = sorted(
+                key for key in commands if isinstance(key, str) and key.strip()
+            )
+            if not command_names:
+                continue
+            lines.append(f"    commands: {', '.join(command_names)}")
             lines.append("    command templates:")
-            for key in sorted(str(name) for name in commands):
+            for key in command_names:
                 value = commands.get(key)
                 if isinstance(value, str) and value.strip():
                     lines.append(f"      {key}: {value}")
-        builder_or_host = str(item.get("builder_or_host_evidence", ""))
+        builder_or_host = string_value(item.get("builder_or_host_evidence"))
         if builder_or_host:
             lines.append(f"    builder/host: {builder_or_host}")
         smoke_evidence = item.get("smoke_evidence", [])
         if isinstance(smoke_evidence, list) and smoke_evidence:
-            lines.append("    smoke evidence:")
-            for value in smoke_evidence:
+            smoke_values = [value for value in smoke_evidence if isinstance(value, str) and value.strip()]
+            if smoke_values:
+                lines.append("    smoke evidence:")
+            for value in smoke_values:
                 lines.append(f"      - {value}")
         security = item.get("security_requirements", [])
         if isinstance(security, list) and security:
-            lines.append(f"    security: {'; '.join(str(value) for value in security)}")
+            security_values = [value for value in security if isinstance(value, str) and value.strip()]
+            if security_values:
+                lines.append(f"    security: {'; '.join(security_values)}")
     return "\n".join(lines)
+
+
+def string_value(raw: Any, *, default: str = "") -> str:
+    if isinstance(raw, str) and raw.strip():
+        return raw.strip()
+    return default
 
 
 def list_values(raw: Any) -> list[str]:

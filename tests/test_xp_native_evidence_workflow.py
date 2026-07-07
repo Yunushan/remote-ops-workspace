@@ -203,6 +203,34 @@ def test_xp_native_evidence_workflow_requires_ordered_evidence_steps() -> None:
     ) in errors
 
 
+def test_xp_native_evidence_workflow_validates_dispatch_before_output_directory_creation() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8")
+    create_step = (
+        '      - name: Create XP evidence output directory\n'
+        '        run: python -c "from pathlib import Path; '
+        "Path('xp-evidence-output/${{ inputs.target }}/${{ inputs.release_tag }}').mkdir(parents=True, "
+        'exist_ok=True)"\n'
+    )
+    validate_step = (
+        '      - name: Validate XP evidence dispatch inputs\n'
+        '        run: python scripts/check_xp_native_evidence_dispatch_inputs.py --target "${{ inputs.target }}" '
+        '--release-tag "${{ inputs.release_tag }}" --release-asset-base-url "${{ inputs.release_asset_base_url }}" '
+        '--workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" '
+        '--workflow-ref-name "${{ github.ref_name }}" --source-head-sha "${{ github.sha }}" '
+        '--source-run-attempt "${{ github.run_attempt }}" --assets-dir "${{ inputs.assets_dir }}" '
+        '--evidence-file "${{ inputs.evidence_file }}" --evidence-dir "${{ inputs.evidence_dir }}"\n'
+    )
+    workflow = workflow.replace(create_step, "", 1).replace(validate_step, create_step + validate_step, 1)
+
+    errors = checker.check_xp_native_evidence_workflow(workflow)
+
+    assert (
+        "xp-native-evidence job protected evidence step order is invalid: "
+        "target/release scoped XP evidence output directory creation must run after dispatch input preflight"
+    ) in errors
+
+
 def test_xp_native_evidence_workflow_requires_wait_helper_file(monkeypatch, tmp_path: Path) -> None:
     checker = _load_checker()
     missing = tmp_path / "missing-helper.py"

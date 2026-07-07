@@ -52,6 +52,40 @@ def test_stage_xp_native_evidence_upload_copies_only_expected_files(tmp_path: Pa
     )
 
 
+def test_stage_xp_native_evidence_upload_rejects_malformed_release_tag_before_file_set(
+    tmp_path: Path,
+) -> None:
+    stager = _load_stager()
+
+    errors = stager.stage_xp_native_evidence_upload(
+        target="windows-xp-native-x86",
+        release_tag=True,
+        assets_dir=tmp_path / "missing-assets",
+        evidence_output_dir=tmp_path / "missing-evidence",
+        out_dir=tmp_path / "xp-evidence-upload",
+    )
+
+    assert errors == ["XP staged upload release_tag must be a non-empty string, got True"]
+
+
+def test_stage_xp_native_evidence_upload_rejects_non_path_inputs() -> None:
+    stager = _load_stager()
+
+    errors = stager.stage_xp_native_evidence_upload(
+        target="windows-xp-native-x86",
+        release_tag="v1.0.2",
+        assets_dir=True,
+        evidence_output_dir=["xp-evidence-output"],
+        out_dir=False,
+    )
+
+    assert errors == [
+        "XP native asset directory must be a pathlib.Path, got True",
+        "XP evidence output directory must be a pathlib.Path, got ['xp-evidence-output']",
+        "windows-xp-native-x86 staged upload output directory must be a pathlib.Path, got False",
+    ]
+
+
 def test_stage_xp_native_evidence_upload_rejects_ambiguous_upload_file_names() -> None:
     stager = _load_stager()
 
@@ -421,7 +455,36 @@ def test_stage_xp_native_evidence_upload_rejects_non_string_artifact_hash_key() 
 
     assert (
         "windows-xp-native-x86 staged upload artifact_sha256 keys "
-        "must be exact safe file names: ['True']"
+        "must be strings, got True"
+    ) in errors
+
+
+def test_stage_xp_native_evidence_upload_rejects_non_string_manifest_file_entry(
+    tmp_path: Path,
+) -> None:
+    stager = _load_stager()
+    manifest = tmp_path / "bundle-manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "bundle_type": "windows-xp-native-host-evidence",
+                "artifacts": [{"file": True}],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    files, errors = stager.review_bundle_workspace_files_with_errors(
+        "windows-xp-native-x86",
+        {"review_bundle": {"manifest": {"file": manifest.name}}},
+        bundle_dir=tmp_path,
+    )
+
+    assert files == set()
+    assert (
+        "windows-xp-native-x86 staged upload review_bundle manifest file entries "
+        "must be strings, got True"
     ) in errors
 
 
@@ -831,6 +894,20 @@ def test_stage_xp_native_evidence_upload_rejects_file_shaped_output_directory(
         f"must be a directory path, got {out_dir.as_posix()!r}"
     ]
     assert not out_dir.exists()
+
+
+def test_stage_xp_native_evidence_upload_rejects_non_path_output_directory() -> None:
+    stager = _load_stager()
+
+    errors = stager.prepare_output_directory(
+        "windows-xp-native-x86",
+        out_dir=True,
+        force=False,
+    )
+
+    assert errors == [
+        "windows-xp-native-x86 staged upload output directory must be a pathlib.Path, got True"
+    ]
 
 
 def test_stage_xp_native_evidence_upload_rejects_reserved_workspace_output_directory() -> None:

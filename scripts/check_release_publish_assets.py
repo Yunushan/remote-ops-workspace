@@ -20,6 +20,7 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 from check_platform_verified_evidence import (  # noqa: E402
+    GITHUB_RELEASE_ASSET_RE,
     RESERVED_WORKSPACE_ROOTS,
     directory_path_has_file_suffix,
 )
@@ -581,12 +582,13 @@ def accepted_evidence_targets(
     if not isinstance(rows, list):
         return set()
     return {
-        str(item.get("target", ""))
+        accepted_record_target(item)
         for item in rows
         if isinstance(item, dict)
         and item.get("status") == "accepted"
         and item.get("readiness_percent") == 100.0
         and (release_tag is None or item.get("release_tag") == release_tag)
+        and accepted_record_target(item)
     }
 
 
@@ -604,12 +606,13 @@ def check_platform_evidence_asset_hashes(
     if not isinstance(rows, list):
         return ["platform verified evidence accepted_evidence must be a list"]
     accepted = {
-        str(item.get("target", "")): item
+        accepted_record_target(item): item
         for item in rows
         if isinstance(item, dict)
         and item.get("status") == "accepted"
         and item.get("readiness_percent") == 100.0
         and item.get("release_tag") == tag
+        and accepted_record_target(item)
     }
     errors: list[str] = []
     for target, record in sorted(accepted.items()):
@@ -630,6 +633,10 @@ def check_platform_evidence_asset_hashes(
                     f"{target} accepted evidence release_asset_urls entries must be strings, "
                     f"got {url!r}"
                 )
+                continue
+            release_url_errors = check_accepted_release_asset_url_scope(target, url, tag)
+            if release_url_errors:
+                errors.extend(release_url_errors)
                 continue
             filename = release_asset_url_filename(url)
             if not filename:
@@ -769,6 +776,21 @@ def check_platform_evidence_asset_hashes(
     return errors
 
 
+def check_accepted_release_asset_url_scope(target: str, url: str, tag: str) -> list[str]:
+    match = GITHUB_RELEASE_ASSET_RE.fullmatch(url)
+    if not match:
+        return [
+            f"{target} accepted evidence release_asset_urls entries must be "
+            f"GitHub release asset URLs: {url}"
+        ]
+    if match.group(2) != tag:
+        return [
+            f"{target} accepted evidence release_asset_urls tag must match "
+            f"release tag {tag}: {url}"
+        ]
+    return []
+
+
 def accepted_platform_release_assets(evidence_registry: dict[str, Any], *, tag: str) -> set[str]:
     if validate_accepted_evidence_registry(evidence_registry):
         return set()
@@ -800,10 +822,15 @@ def accepted_platform_release_assets(evidence_registry: dict[str, Any], *, tag: 
                     filename = bundle_record.get("file")
                     if isinstance(filename, str) and checksum_reference_name_is_safe(filename):
                         assets.add(filename)
-        target = str(row.get("target", ""))
+        target = accepted_record_target(row)
         if target in PLATFORM_GOAL_TARGETS:
             assets.add(accepted_record_source_file(target))
     return assets
+
+
+def accepted_record_target(record: dict[str, Any]) -> str:
+    target = record.get("target")
+    return target if isinstance(target, str) else ""
 
 
 def lowercase_sha256_hex(value: Any) -> bool:
@@ -831,6 +858,9 @@ def check_final_accepted_record_asset(
         return [f"{target} accepted evidence finalized record asset is not readable JSON: {path.name}: {exc}"]
     if not isinstance(data, dict):
         return [f"{target} accepted evidence finalized record asset must contain a JSON object: {path.name}"]
+    key_errors = public_record_key_errors(target, record)
+    if key_errors:
+        return key_errors
     if data != public_record(record):
         return [f"{target} accepted evidence finalized record asset must match accepted registry record: {path.name}"]
     if raw_bytes != canonical_public_record_bytes(record):
@@ -840,8 +870,22 @@ def check_final_accepted_record_asset(
     return []
 
 
+def public_record_key_errors(target: str, record: dict[str, Any]) -> list[str]:
+    invalid = [key for key in record if not isinstance(key, str)]
+    if invalid:
+        return [
+            f"{target} accepted evidence finalized registry record keys must be strings, "
+            f"got {invalid[0]!r}"
+        ]
+    return []
+
+
 def public_record(record: dict[str, Any]) -> dict[str, Any]:
-    return {key: value for key, value in record.items() if not str(key).startswith("_")}
+    return {
+        key: value
+        for key, value in record.items()
+        if isinstance(key, str) and not key.startswith("_")
+    }
 
 
 def canonical_public_record_bytes(record: dict[str, Any]) -> bytes:
@@ -1037,9 +1081,12 @@ def check_release_manifest(root: Path, matrix: dict[str, Any], *, tag: str | Non
         manifest = json.loads(manifests[0].read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         return [f"{manifest_name} is not valid JSON: {exc}"]
+    raw_artifacts = manifest.get("artifacts")
+    if not isinstance(raw_artifacts, list):
+        return [f"{manifest_name} artifacts must be a list"]
     artifact_files = {
         filename
-        for item in manifest.get("artifacts", [])
+        for item in raw_artifacts
         if isinstance(item, dict)
         for filename in [release_manifest_artifact_filename(item.get("file"))]
         if filename
@@ -1048,7 +1095,7 @@ def check_release_manifest(root: Path, matrix: dict[str, Any], *, tag: str | Non
     missing = sorted(source_expected - artifact_files)
     if missing:
         errors.append(f"{manifest_name} missing source/Python artifact records: {missing}")
-    for item in manifest.get("artifacts", []):
+    for item in raw_artifacts:
         if not isinstance(item, dict):
             errors.append(f"{manifest_name} artifact entries must be objects")
             continue
@@ -1064,9 +1111,10 @@ def check_release_manifest(root: Path, matrix: dict[str, Any], *, tag: str | Non
         size_bytes = item.get("size_bytes")
         if not isinstance(size_bytes, int) or isinstance(size_bytes, bool) or size_bytes <= 0:
             errors.append(f"{manifest_name} artifact {filename} missing positive size_bytes")
-        digest = str(item.get("sha256", ""))
-        if not re.fullmatch(r"[0-9a-f]{64}", digest):
-            errors.append(f"{manifest_name} artifact {filename} missing sha256")
+        digest = item.get("sha256")
+        digest_is_valid = isinstance(digest, str) and re.fullmatch(r"[0-9a-f]{64}", digest)
+        if not digest_is_valid:
+            errors.append(f"{manifest_name} artifact {filename} sha256 must be a lowercase SHA-256 hex digest")
         if filename in source_expected:
             artifact_path = root / filename
             if not artifact_path.is_file():
@@ -1074,7 +1122,7 @@ def check_release_manifest(root: Path, matrix: dict[str, Any], *, tag: str | Non
                 continue
             if isinstance(size_bytes, int) and not isinstance(size_bytes, bool) and size_bytes != artifact_path.stat().st_size:
                 errors.append(f"{manifest_name} artifact {filename} size_bytes does not match release asset")
-            if re.fullmatch(r"[0-9a-f]{64}", digest) and digest != sha256_file(artifact_path):
+            if digest_is_valid and digest != sha256_file(artifact_path):
                 errors.append(f"{manifest_name} artifact {filename} sha256 does not match release asset")
     return errors
 

@@ -1046,6 +1046,66 @@ def test_release_assets_reject_noncanonical_final_accepted_record_asset(
     ) in errors
 
 
+def test_release_assets_final_record_helper_rejects_non_string_registry_keys(
+    tmp_path: Path,
+) -> None:
+    checker = _load_checker()
+    record = _accepted_evidence_record("linux-i386")
+    record[True] = "coerced-private-field"
+    final_record = tmp_path / "platform-verified-evidence-linux-i386-final.json"
+    final_record.write_text("{}\n", encoding="utf-8")
+
+    errors = checker.check_final_accepted_record_asset(
+        final_record,
+        target="linux-i386",
+        record=record,
+    )
+
+    assert errors == [
+        "linux-i386 accepted evidence finalized registry record keys must be strings, got True"
+    ]
+
+
+def test_release_assets_public_record_does_not_stringify_keys() -> None:
+    checker = _load_checker()
+    record = _accepted_evidence_record("linux-i386")
+    record["_scratch"] = "private"
+    record[True] = "coerced"
+
+    public = checker.public_record(record)
+
+    assert "_scratch" not in public
+    assert True not in public
+    assert "True" not in public
+    assert public["target"] == "linux-i386"
+
+
+def test_accepted_platform_release_assets_ignores_malformed_target(
+    monkeypatch,
+) -> None:
+    checker = _load_checker()
+    monkeypatch.setattr(checker, "validate_accepted_evidence_registry", lambda _registry: [])
+    registry = {
+        "schema_version": 1,
+        "policy": "test",
+        "accepted_evidence": [
+            {
+                "target": True,
+                "status": "accepted",
+                "readiness_percent": 100.0,
+                "release_tag": "v1.0.2",
+                "release_asset_urls": [],
+                "artifact_sha256": {},
+            }
+        ],
+    }
+
+    assets = checker.accepted_platform_release_assets(registry, tag="v1.0.2")
+
+    assert assets == set()
+    assert "platform-verified-evidence-True-final.json" not in assets
+
+
 def test_release_assets_reject_accepted_evidence_missing_review_bundle(tmp_path: Path) -> None:
     checker = _load_checker()
     matrix = _load_matrix()
@@ -1121,6 +1181,41 @@ def test_release_asset_hashes_reject_non_string_accepted_evidence_release_asset_
     )
 
     assert "linux-i386 accepted evidence release_asset_urls entries must be strings, got True" in errors
+
+
+def test_release_asset_hashes_reject_out_of_scope_accepted_evidence_release_asset_urls(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    registry = _accepted_evidence_registry("linux-i386")
+    record = registry["accepted_evidence"][0]
+    _write_synthetic_release_assets(checker, matrix, tmp_path)
+    _write_accepted_evidence_assets(record, tmp_path)
+    _sync_evidence_artifact_hashes(record, tmp_path)
+    first_url = str(record["release_asset_urls"][0])
+    second_url = str(record["release_asset_urls"][1])
+    record["release_asset_urls"][0] = first_url.replace("https://github.com/", "https://example.com/")
+    record["release_asset_urls"][1] = second_url.replace("/releases/download/v1.0.2/", "/releases/download/v1.0.1/")
+    monkeypatch.setattr(checker, "validate_accepted_evidence_registry", lambda _registry: [])
+    assets = {path.name for path in tmp_path.iterdir() if path.is_file()}
+
+    errors = checker.check_platform_evidence_asset_hashes(
+        tmp_path,
+        assets,
+        tag="v1.0.2",
+        evidence_registry=registry,
+    )
+
+    assert (
+        "linux-i386 accepted evidence release_asset_urls entries must be "
+        f"GitHub release asset URLs: {record['release_asset_urls'][0]}"
+    ) in errors
+    assert (
+        "linux-i386 accepted evidence release_asset_urls tag must match "
+        f"release tag v1.0.2: {record['release_asset_urls'][1]}"
+    ) in errors
 
 
 def test_release_asset_hashes_reject_non_string_accepted_evidence_artifact_key(
@@ -1476,6 +1571,40 @@ def test_release_assets_reject_release_manifest_boolean_size_bytes(tmp_path: Pat
     errors = checker.check_release_assets(tmp_path, matrix, tag="v1.0.2")
 
     assert f"{manifest.name} artifact {filename} missing positive size_bytes" in errors
+
+
+def test_release_manifest_rejects_non_list_artifacts(tmp_path: Path) -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    _write_synthetic_release_assets(checker, matrix, tmp_path)
+    manifest = tmp_path / "remote-ops-workspace-v1.0.2-release-manifest.json"
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    data["artifacts"] = {"file": "remote-ops-workspace-v1.0.2.tar.gz"}
+    manifest.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+    errors = checker.check_release_manifest(tmp_path, matrix, tag="v1.0.2")
+
+    assert errors == [f"{manifest.name} artifacts must be a list"]
+
+
+def test_release_manifest_rejects_malformed_artifact_sha256(tmp_path: Path) -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    _write_synthetic_release_assets(checker, matrix, tmp_path)
+    manifest = tmp_path / "remote-ops-workspace-v1.0.2-release-manifest.json"
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    first_artifact = data["artifacts"][0]
+    filename = Path(str(first_artifact["file"])).name
+    first_artifact["sha256"] = True
+    manifest.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+    errors = checker.check_release_manifest(tmp_path, matrix, tag="v1.0.2")
+
+    assert (
+        f"{manifest.name} artifact {filename} "
+        "sha256 must be a lowercase SHA-256 hex digest"
+    ) in errors
+    assert f"{manifest.name} artifact {filename} sha256 does not match release asset" not in errors
 
 
 def test_release_manifest_rejects_artifact_size_drift(tmp_path: Path) -> None:

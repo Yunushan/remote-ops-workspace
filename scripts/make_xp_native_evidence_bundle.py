@@ -37,6 +37,7 @@ from make_platform_verified_evidence_record import (  # noqa: E402
 )
 
 TARGETS = ("windows-xp-native-x86", "windows-xp-native-x64")
+RELEASE_TAG_RE = re.compile(r"^v\d+\.\d+\.\d+$")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -111,16 +112,16 @@ def make_xp_native_evidence_bundle(
         return errors
     if evidence_data.get("target") != target:
         errors.append(f"bundle target {target} must match evidence target {evidence_data.get('target')!r}")
-    release_tag = str(evidence_data.get("release_tag", ""))
-    if release_tag:
-        artifact_errors = check_platform_promotion_artifacts(
-            target=target,
-            assets_dir=assets_dir,
-            tag=release_tag,
-            strict=True,
-        )
-    else:
-        artifact_errors = ["XP evidence release_tag must be set before bundle artifact validation"]
+    release_tag_errors, release_tag = xp_evidence_release_tag_value(evidence_data)
+    errors.extend(release_tag_errors)
+    if errors:
+        return errors
+    artifact_errors = check_platform_promotion_artifacts(
+        target=target,
+        assets_dir=assets_dir,
+        tag=release_tag,
+        strict=True,
+    )
     errors.extend(artifact_errors)
     if artifact_errors:
         return errors
@@ -272,6 +273,15 @@ def check_candidate_is_unfinalized(candidate: dict[str, Any]) -> list[str]:
             f"remove fields: {finalized_fields}"
         ]
     return []
+
+
+def xp_evidence_release_tag_value(evidence: dict[str, Any]) -> tuple[list[str], str]:
+    raw_release_tag = evidence.get("release_tag", "")
+    if not isinstance(raw_release_tag, str) or not raw_release_tag:
+        return [f"XP evidence release_tag must be a non-empty string, got {raw_release_tag!r}"], ""
+    if raw_release_tag.strip() != raw_release_tag or not RELEASE_TAG_RE.fullmatch(raw_release_tag):
+        return [f"XP evidence release_tag must look like vX.Y.Z, got {raw_release_tag!r}"], ""
+    return [], raw_release_tag
 
 
 def check_local_protected_goal_preflight(
@@ -617,12 +627,8 @@ def check_bundle_source_files(
         ("XP evidence source file", evidence),
         ("candidate evidence record source file", candidate_record),
     ]
-    for item in evidence_data.get("smoke_results", []):
-        if not isinstance(item, dict):
-            continue
-        raw_file = str(item.get("evidence_file", ""))
-        if raw_file:
-            sources.append((f"{target} smoke evidence source file", evidence_root / raw_file))
+    for _smoke_id, raw_file in smoke_result_refs(evidence_data):
+        sources.append((f"{target} smoke evidence source file", evidence_root / raw_file))
     sources.extend(
         (f"{target} artifact source file", path)
         for path in sorted(assets_dir.iterdir(), key=lambda item: item.name)
@@ -645,20 +651,39 @@ def check_bundle_source_file(path: Path, label: str) -> list[str]:
 
 def smoke_records(evidence_data: dict[str, Any], evidence_root: Path) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
-    for item in evidence_data.get("smoke_results", []):
-        if not isinstance(item, dict):
-            continue
-        raw_file = str(item.get("evidence_file", ""))
+    for smoke_id, raw_file in smoke_result_refs(evidence_data):
         path = evidence_root / raw_file
+        if not path.is_file():
+            continue
         records.append(
             {
-                "id": str(item.get("id", "")),
+                "id": smoke_id,
                 "file": raw_file,
                 "size_bytes": path.stat().st_size,
                 "sha256": sha256_file(path),
             }
         )
     return records
+
+
+def smoke_result_refs(evidence_data: dict[str, Any]) -> list[tuple[str, str]]:
+    refs: list[tuple[str, str]] = []
+    raw_results = evidence_data.get("smoke_results", [])
+    if not isinstance(raw_results, list):
+        return refs
+    for item in raw_results:
+        if not isinstance(item, dict):
+            continue
+        smoke_id = item.get("id")
+        raw_file = item.get("evidence_file")
+        if (
+            isinstance(smoke_id, str)
+            and smoke_id
+            and isinstance(raw_file, str)
+            and raw_file
+        ):
+            refs.append((smoke_id, raw_file))
+    return refs
 
 
 def xp_evidence_sources(

@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import shutil
 import sys
 from pathlib import Path, PurePosixPath, PureWindowsPath
@@ -33,6 +34,7 @@ from check_platform_verified_evidence import (  # noqa: E402
 )
 
 SHA256_HEX_CHARS = set("0123456789abcdef")
+RELEASE_TAG_RE = re.compile(r"^v\d+\.\d+\.\d+$")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -73,14 +75,38 @@ def stage_xp_native_evidence_upload(
     *,
     target: str,
     release_tag: str,
-    assets_dir: Path,
-    evidence_output_dir: Path,
-    out_dir: Path,
+    assets_dir: object,
+    evidence_output_dir: object,
+    out_dir: object,
     force: bool = False,
 ) -> list[str]:
     errors: list[str] = []
     if target not in XP_TARGETS:
         errors.append(f"unknown XP native target: {target}")
+    release_tag_errors, release_tag = release_tag_value(release_tag)
+    errors.extend(release_tag_errors)
+    if errors:
+        return errors
+    assets_dir_errors, assets_dir_path = path_arg_value(
+        assets_dir,
+        "XP native asset directory",
+    )
+    evidence_output_dir_errors, evidence_output_dir_path = path_arg_value(
+        evidence_output_dir,
+        "XP evidence output directory",
+    )
+    out_dir_errors, out_dir_path = path_arg_value(
+        out_dir,
+        f"{target} staged upload output directory",
+    )
+    errors.extend(assets_dir_errors)
+    errors.extend(evidence_output_dir_errors)
+    errors.extend(out_dir_errors)
+    if errors:
+        return errors
+    assert assets_dir_path is not None
+    assert evidence_output_dir_path is not None
+    assert out_dir_path is not None
     promotion = read_json(PROMOTION_PATH)
     promotion_entries = promotion_entries_by_id(promotion, errors)
     expected_assets = accepted_artifact_names(target, release_tag, promotion_entries)
@@ -98,26 +124,26 @@ def stage_xp_native_evidence_upload(
         errors.append(f"{target} has no expected XP evidence bundle outputs for {release_tag}")
     if errors:
         return errors
-    errors.extend(check_directory_path_hint(assets_dir, "XP native asset directory"))
-    errors.extend(check_path_not_reserved_workspace_root(assets_dir, "XP native asset directory"))
-    if assets_dir.is_symlink():
-        errors.append(f"XP native asset directory must not be a symlink: {assets_dir}")
-    elif not assets_dir.is_dir():
-        errors.append(f"XP native asset directory missing: {assets_dir}")
-    errors.extend(check_directory_path_hint(evidence_output_dir, "XP evidence output directory"))
-    errors.extend(check_path_not_reserved_workspace_root(evidence_output_dir, "XP evidence output directory"))
-    if evidence_output_dir.is_symlink():
-        errors.append(f"XP evidence output directory must not be a symlink: {evidence_output_dir}")
-    elif not evidence_output_dir.is_dir():
-        errors.append(f"XP evidence output directory missing: {evidence_output_dir}")
+    errors.extend(check_directory_path_hint(assets_dir_path, "XP native asset directory"))
+    errors.extend(check_path_not_reserved_workspace_root(assets_dir_path, "XP native asset directory"))
+    if assets_dir_path.is_symlink():
+        errors.append(f"XP native asset directory must not be a symlink: {assets_dir_path}")
+    elif not assets_dir_path.is_dir():
+        errors.append(f"XP native asset directory missing: {assets_dir_path}")
+    errors.extend(check_directory_path_hint(evidence_output_dir_path, "XP evidence output directory"))
+    errors.extend(check_path_not_reserved_workspace_root(evidence_output_dir_path, "XP evidence output directory"))
+    if evidence_output_dir_path.is_symlink():
+        errors.append(f"XP evidence output directory must not be a symlink: {evidence_output_dir_path}")
+    elif not evidence_output_dir_path.is_dir():
+        errors.append(f"XP evidence output directory missing: {evidence_output_dir_path}")
     if errors:
         return errors
     errors.extend(
         check_staging_path_separation(
             target,
-            assets_dir=assets_dir,
-            evidence_output_dir=evidence_output_dir,
-            out_dir=out_dir,
+            assets_dir=assets_dir_path,
+            evidence_output_dir=evidence_output_dir_path,
+            out_dir=out_dir_path,
         )
     )
     if errors:
@@ -126,7 +152,7 @@ def stage_xp_native_evidence_upload(
         check_target_release_path_segments(
             target,
             release_tag,
-            assets_dir,
+            assets_dir_path,
             label="XP native asset directory",
         )
     )
@@ -134,7 +160,7 @@ def stage_xp_native_evidence_upload(
         check_target_release_path_segments(
             target,
             release_tag,
-            evidence_output_dir,
+            evidence_output_dir_path,
             label="XP evidence output directory",
         )
     )
@@ -143,11 +169,11 @@ def stage_xp_native_evidence_upload(
 
     source_files = {
         **source_map(
-            assets_dir,
+            assets_dir_path,
             expected_assets,
         ),
         **source_map(
-            evidence_output_dir,
+            evidence_output_dir_path,
             expected_evidence,
         ),
     }
@@ -167,7 +193,7 @@ def stage_xp_native_evidence_upload(
         errors.extend(
             check_source_directory_entries(
                 target,
-                assets_dir,
+                assets_dir_path,
                 expected_assets,
                 label="XP native asset directory",
             )
@@ -175,13 +201,13 @@ def stage_xp_native_evidence_upload(
         allowed_workspace_files, manifest_errors = review_bundle_workspace_files_with_errors(
             target,
             final_record,
-            bundle_dir=evidence_output_dir,
+            bundle_dir=evidence_output_dir_path,
         )
         errors.extend(manifest_errors)
         errors.extend(
             check_source_directory_entries(
                 target,
-                evidence_output_dir,
+                evidence_output_dir_path,
                 expected_evidence | allowed_workspace_files,
                 label="XP evidence output directory",
             )
@@ -193,24 +219,24 @@ def stage_xp_native_evidence_upload(
                 target,
                 release_tag,
                 final_record,
-                bundle_dir=evidence_output_dir,
+                bundle_dir=evidence_output_dir_path,
             )
         )
     if errors:
         return errors
-    errors.extend(prepare_output_directory(target, out_dir=out_dir, force=force))
+    errors.extend(prepare_output_directory(target, out_dir=out_dir_path, force=force))
     if errors:
         return errors
     source_hashes = {name: sha256_file(source) for name, source in sorted(source_files.items())}
     for name, source in sorted(source_files.items()):
-        destination = out_dir / name
+        destination = out_dir_path / name
         errors.extend(check_destination_path(target, destination, name))
         if errors:
             return errors
         if destination.exists() and not force:
             return [f"refusing to overwrite staged XP upload file: {destination}"]
         shutil.copy2(source, destination)
-    errors.extend(check_staged_output(target, out_dir=out_dir, expected_hashes=source_hashes))
+    errors.extend(check_staged_output(target, out_dir=out_dir_path, expected_hashes=source_hashes))
     return []
 
 
@@ -243,14 +269,17 @@ def check_source_hashes(target: str, record: dict[str, Any], sources: dict[str, 
     errors: list[str] = []
     artifact_hashes = record.get("artifact_sha256")
     if isinstance(artifact_hashes, dict):
-        for filename, expected_sha in sorted(
-            (
-                (name, digest)
-                for name, digest in artifact_hashes.items()
-                if isinstance(name, str) and exact_safe_file_name(name)
-            ),
-            key=lambda item: item[0],
-        ):
+        artifact_items: list[tuple[str, Any]] = []
+        unsafe_artifacts: list[str] = []
+        for name, digest in artifact_hashes.items():
+            if not isinstance(name, str):
+                errors.append(f"{target} staged upload artifact_sha256 keys must be strings, got {name!r}")
+                continue
+            if not exact_safe_file_name(name):
+                unsafe_artifacts.append(name)
+                continue
+            artifact_items.append((name, digest))
+        for filename, expected_sha in sorted(artifact_items, key=lambda item: item[0]):
             if not lowercase_sha256_hex(expected_sha):
                 errors.append(
                     f"{target} staged upload artifact_sha256.{filename} "
@@ -265,15 +294,11 @@ def check_source_hashes(target: str, record: dict[str, Any], sources: dict[str, 
                 continue
             if path.is_file() and sha256_file(path) != expected_sha:
                 errors.append(f"{target} staged upload native artifact SHA-256 mismatch: {filename}")
-        unsafe_artifacts = sorted(
-            {
-                name if isinstance(name, str) else repr(name)
-                for name in artifact_hashes
-                if not isinstance(name, str) or not exact_safe_file_name(name)
-            }
-        )
         if unsafe_artifacts:
-            errors.append(f"{target} staged upload artifact_sha256 keys must be exact safe file names: {unsafe_artifacts}")
+            errors.append(
+                f"{target} staged upload artifact_sha256 keys must be exact safe file names: "
+                f"{sorted(unsafe_artifacts)}"
+            )
     review_bundle = record.get("review_bundle")
     if isinstance(review_bundle, dict):
         review_bundle_files: list[str] = []
@@ -380,6 +405,20 @@ def check_staged_upload_file_names(target: str, filenames: list[str]) -> list[st
             f"{case_collisions}"
         )
     return errors
+
+
+def release_tag_value(release_tag: object) -> tuple[list[str], str]:
+    if not isinstance(release_tag, str) or not release_tag:
+        return [f"XP staged upload release_tag must be a non-empty string, got {release_tag!r}"], ""
+    if release_tag.strip() != release_tag or not RELEASE_TAG_RE.fullmatch(release_tag):
+        return [f"XP staged upload release_tag must look like vX.Y.Z, got {release_tag!r}"], ""
+    return [], release_tag
+
+
+def path_arg_value(raw_path: object, label: str) -> tuple[list[str], Path | None]:
+    if not isinstance(raw_path, Path):
+        return [f"{label} must be a pathlib.Path, got {raw_path!r}"], None
+    return [], raw_path
 
 
 def check_release_source_file_set(
@@ -499,7 +538,14 @@ def review_bundle_workspace_files_with_errors(
     for raw_record in review_bundle_manifest_file_records(manifest):
         if not isinstance(raw_record, dict):
             continue
-        filename = str(raw_record.get("file", ""))
+        raw_filename = raw_record.get("file", "")
+        if not isinstance(raw_filename, str):
+            errors.append(
+                f"{target} staged upload review_bundle manifest file entries "
+                f"must be strings, got {raw_filename!r}"
+            )
+            continue
+        filename = raw_filename
         if safe_relative_path(filename):
             files.add(filename)
     return files, errors
@@ -551,7 +597,8 @@ def read_review_bundle_manifest_with_errors(
 
 def review_bundle_manifest_file_records(manifest: dict[str, Any]) -> list[Any]:
     records: list[Any] = []
-    bundle_type = str(manifest.get("bundle_type", ""))
+    raw_bundle_type = manifest.get("bundle_type", "")
+    bundle_type = raw_bundle_type if isinstance(raw_bundle_type, str) else ""
     if bundle_type == "extended-linux-native-evidence":
         records.extend([manifest.get("builder_evidence"), manifest.get("candidate_record")])
         records.extend(manifest.get("smoke_evidence", []))
@@ -579,27 +626,34 @@ def parent_directories(filename: str) -> set[str]:
     return {"/".join(parts[:index]) for index in range(1, len(parts) + 1)}
 
 
-def prepare_output_directory(target: str, *, out_dir: Path, force: bool) -> list[str]:
-    hint_errors = check_directory_path_hint(out_dir, f"{target} staged upload output directory")
+def prepare_output_directory(target: str, *, out_dir: object, force: bool) -> list[str]:
+    out_dir_errors, out_dir_path = path_arg_value(
+        out_dir,
+        f"{target} staged upload output directory",
+    )
+    if out_dir_errors:
+        return out_dir_errors
+    assert out_dir_path is not None
+    hint_errors = check_directory_path_hint(out_dir_path, f"{target} staged upload output directory")
     if hint_errors:
         return hint_errors
     reserved_errors = check_path_not_reserved_workspace_root(
-        out_dir,
+        out_dir_path,
         f"{target} staged upload output directory",
     )
     if reserved_errors:
         return reserved_errors
-    if out_dir.is_symlink():
-        return [f"{target} staged upload output directory must not be a symlink: {out_dir}"]
-    parent_errors = check_path_parent_symlinks(out_dir, f"{target} staged upload output directory")
+    if out_dir_path.is_symlink():
+        return [f"{target} staged upload output directory must not be a symlink: {out_dir_path}"]
+    parent_errors = check_path_parent_symlinks(out_dir_path, f"{target} staged upload output directory")
     if parent_errors:
         return parent_errors
-    if out_dir.exists():
+    if out_dir_path.exists():
         if not force:
-            return [f"refusing to overwrite existing XP staged upload directory: {out_dir}"]
-        if not out_dir.is_dir():
-            return [f"XP staged upload output exists and is not a directory: {out_dir}"]
-        for child in out_dir.iterdir():
+            return [f"refusing to overwrite existing XP staged upload directory: {out_dir_path}"]
+        if not out_dir_path.is_dir():
+            return [f"XP staged upload output exists and is not a directory: {out_dir_path}"]
+        for child in out_dir_path.iterdir():
             if child.is_symlink():
                 return [f"{target} staged upload output must not contain symlinks: {child.name}"]
             if child.is_dir():
@@ -609,7 +663,7 @@ def prepare_output_directory(target: str, *, out_dir: Path, force: bool) -> list
             if not child.is_file():
                 return [f"{target} staged upload output must contain regular files only: {child.name}"]
             child.unlink()
-    out_dir.mkdir(parents=True, exist_ok=True)
+    out_dir_path.mkdir(parents=True, exist_ok=True)
     return []
 
 

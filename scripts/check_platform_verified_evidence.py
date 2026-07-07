@@ -578,6 +578,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def strict_platform_goal_arg_errors(args: argparse.Namespace) -> list[str]:
     errors: list[str] = []
+    _targets, target_errors = required_target_values(args.require_target)
+    errors.extend(target_errors)
     if args.allow_unfinalized_candidates:
         errors.append(
             "--allow-unfinalized-candidates cannot be used with "
@@ -589,8 +591,27 @@ def strict_platform_goal_arg_errors(args: argparse.Namespace) -> list[str]:
     return errors
 
 
+def required_target_values(raw_targets: object) -> tuple[set[str], list[str]]:
+    if raw_targets is None:
+        return set(), []
+    if isinstance(raw_targets, str):
+        raw_targets = (raw_targets,)
+    try:
+        target_values = iter(raw_targets)
+    except TypeError:
+        return set(), [f"platform verified evidence required targets must be iterable, got {raw_targets!r}"]
+    targets: set[str] = set()
+    errors: list[str] = []
+    for target in target_values:
+        if not isinstance(target, str) or not target.strip():
+            errors.append(f"platform verified evidence required target must be a non-empty string, got {target!r}")
+            continue
+        targets.add(target.strip())
+    return targets, errors
+
+
 def required_targets_from_args(args: argparse.Namespace) -> tuple[str, ...]:
-    targets = set(str(target) for target in args.require_target)
+    targets, _errors = required_target_values(args.require_target)
     if args.require_goal_targets:
         targets.update(PROTECTED_GOAL_TARGETS)
     return tuple(target for target in PROTECTED_GOAL_TARGETS if target in targets) + tuple(
@@ -669,13 +690,20 @@ def check_required_targets(
     required_release_tag: str | None = None,
     invalid_targets: set[str] | None = None,
 ) -> list[str]:
-    requested = {str(target) for target in required_targets}
-    invalid = {str(target) for target in (invalid_targets or set())}
+    requested, target_errors = required_target_set(required_targets)
+    invalid, invalid_target_errors = required_target_set(invalid_targets or set())
+    if target_errors or invalid_target_errors:
+        return target_errors + [
+            error.replace("required platform evidence target", "invalid platform evidence target")
+            for error in invalid_target_errors
+        ]
     unknown = sorted(requested - KNOWN_TARGETS)
     if unknown:
         return [f"required platform evidence targets are not protected: {unknown}"]
     if set(PROTECTED_GOAL_TARGETS).issubset(requested) and required_release_tag is None:
         return ["protected platform goal required targets require --release-tag vX.Y.Z"]
+    if required_release_tag is not None and not isinstance(required_release_tag, str):
+        return [f"required_release_tag must be a string, got {required_release_tag!r}"]
     if required_release_tag is not None and not re.fullmatch(r"v\d+\.\d+\.\d+", required_release_tag):
         return [f"required_release_tag must look like vX.Y.Z: {required_release_tag}"]
     rows = registry.get("accepted_evidence", [])
@@ -722,9 +750,28 @@ def check_required_targets(
     return []
 
 
+def required_target_set(raw_targets: Any) -> tuple[set[str], list[str]]:
+    targets: set[str] = set()
+    errors: list[str] = []
+    for target in raw_targets:
+        if not isinstance(target, str) or not target.strip():
+            errors.append(
+                "required platform evidence target must be a non-empty string, "
+                f"got {target!r}"
+            )
+            continue
+        targets.add(target.strip())
+    return targets, errors
+
+
 def accepted_evidence_target(entry: dict[str, Any]) -> str:
     target = entry.get("target", "")
     return target if isinstance(target, str) else ""
+
+
+def accepted_evidence_release_tag(entry: dict[str, Any]) -> str:
+    release_tag = entry.get("release_tag", "")
+    return release_tag.strip() if isinstance(release_tag, str) else ""
 
 
 def check_protected_goal_release_consistency(
@@ -4209,15 +4256,14 @@ def check_linux_local_evidence_preflight_command(
             f"{target} local_evidence_preflight_command --linux-workflow-run-url must match workflow_run_url"
         )
     source = entry.get("release_asset_source")
-    raw_head_sha = source.get("head_sha", "") if isinstance(source, dict) else ""
-    expected_head_sha = raw_head_sha.strip() if isinstance(raw_head_sha, str) else ""
+    expected_head_sha = valid_release_source_head_sha(source)
     source_head_shas = command_argument_values(command, "--linux-source-head-sha")
     if source_head_shas != [expected_head_sha]:
         errors.append(
             f"{target} local_evidence_preflight_command --linux-source-head-sha must match "
             "release_asset_source.head_sha"
         )
-    expected_run_attempt = str(source.get("run_attempt", "")) if isinstance(source, dict) else ""
+    expected_run_attempt = valid_release_source_run_attempt_text(source)
     source_run_attempts = command_argument_values(command, "--linux-source-run-attempt")
     if source_run_attempts != [expected_run_attempt]:
         errors.append(
@@ -4252,23 +4298,21 @@ def check_xp_local_evidence_preflight_command(
         errors.append(f"{target} local_evidence_preflight_command must not include --allow-extra-artifacts")
 
     source = entry.get("release_asset_source")
-    raw_workflow_url = source.get("workflow_run_url", "") if isinstance(source, dict) else ""
-    expected_workflow_url = raw_workflow_url.strip().rstrip("/") if isinstance(raw_workflow_url, str) else ""
+    expected_workflow_url = valid_release_source_workflow_run_url(source)
     workflow_urls = command_argument_values(command, "--xp-source-workflow-run-url")
     if workflow_urls != [expected_workflow_url]:
         errors.append(
             f"{target} local_evidence_preflight_command --xp-source-workflow-run-url must match "
             "release_asset_source.workflow_run_url"
         )
-    raw_head_sha = source.get("head_sha", "") if isinstance(source, dict) else ""
-    expected_head_sha = raw_head_sha.strip() if isinstance(raw_head_sha, str) else ""
+    expected_head_sha = valid_release_source_head_sha(source)
     source_head_shas = command_argument_values(command, "--xp-source-head-sha")
     if source_head_shas != [expected_head_sha]:
         errors.append(
             f"{target} local_evidence_preflight_command --xp-source-head-sha must match "
             "release_asset_source.head_sha"
         )
-    expected_run_attempt = str(source.get("run_attempt", "")) if isinstance(source, dict) else ""
+    expected_run_attempt = valid_release_source_run_attempt_text(source)
     source_run_attempts = command_argument_values(command, "--xp-source-run-attempt")
     if source_run_attempts != [expected_run_attempt]:
         errors.append(
@@ -4651,7 +4695,11 @@ def check_registry_consistency(registry: dict[str, Any]) -> list[str]:
         if target in XP_TARGETS and len(entries) == 1
     }
     if set(XP_TARGETS).issubset(xp_entries):
-        release_tags = {str(entry.get("release_tag", "")) for entry in xp_entries.values()}
+        release_tags = {
+            release_tag
+            for entry in xp_entries.values()
+            if (release_tag := accepted_evidence_release_tag(entry))
+        }
         if len(release_tags) != 1:
             errors.append(
                 "Windows XP native evidence pair must use one release_tag, "
@@ -4690,9 +4738,9 @@ def check_partial_protected_goal_release_scope(entries: dict[str, dict[str, Any]
         return []
     errors: list[str] = []
     release_tags_by_target = {
-        target: str(entry.get("release_tag", ""))
+        target: release_tag
         for target, entry in entries.items()
-        if str(entry.get("release_tag", ""))
+        if (release_tag := accepted_evidence_release_tag(entry))
     }
     if len(release_tags_by_target) == len(entries) and len(set(release_tags_by_target.values())) != 1:
         errors.append(
@@ -4753,10 +4801,8 @@ def release_source_run_attempt_conflicts(
     run_attempts_by_url: dict[str, dict[str, int]] = {}
     for target, entry in sorted(entries.items()):
         source = entry.get("release_asset_source")
-        if not isinstance(source, dict):
-            continue
-        run_url = str(source.get("workflow_run_url", "")).strip().rstrip("/")
-        run_attempt = source.get("run_attempt")
+        run_url = valid_release_source_workflow_run_url(source)
+        run_attempt = source.get("run_attempt") if isinstance(source, dict) else None
         if (
             not run_url
             or not isinstance(run_attempt, int)
@@ -4783,12 +4829,43 @@ def release_source_heads_by_target(entries: dict[str, dict[str, Any]]) -> dict[s
     heads: dict[str, str] = {}
     for target, entry in sorted(entries.items()):
         source = entry.get("release_asset_source")
-        if not isinstance(source, dict):
-            continue
-        head_sha = str(source.get("head_sha", "")).strip()
-        if RELEASE_SOURCE_HEAD_SHA_RE.fullmatch(head_sha):
+        head_sha = valid_release_source_head_sha(source)
+        if head_sha:
             heads[target] = head_sha
     return heads
+
+
+def valid_release_source_workflow_run_url(source: Any) -> str:
+    if not isinstance(source, dict):
+        return ""
+    raw_url = source.get("workflow_run_url")
+    if not isinstance(raw_url, str):
+        return ""
+    workflow_run_url = raw_url.strip().rstrip("/")
+    if not GITHUB_ACTIONS_RUN_RE.fullmatch(workflow_run_url):
+        return ""
+    return workflow_run_url
+
+
+def valid_release_source_head_sha(source: Any) -> str:
+    if not isinstance(source, dict):
+        return ""
+    raw_head_sha = source.get("head_sha")
+    if not isinstance(raw_head_sha, str):
+        return ""
+    head_sha = raw_head_sha.strip()
+    if not RELEASE_SOURCE_HEAD_SHA_RE.fullmatch(head_sha):
+        return ""
+    return head_sha
+
+
+def valid_release_source_run_attempt_text(source: Any) -> str:
+    if not isinstance(source, dict):
+        return ""
+    run_attempt = source.get("run_attempt")
+    if not isinstance(run_attempt, int) or isinstance(run_attempt, bool) or run_attempt < 1:
+        return ""
+    return str(run_attempt)
 
 
 def format_values_by_target(values_by_target: dict[str, str]) -> dict[str, str]:
@@ -4804,9 +4881,14 @@ def promotion_entries_by_id(
         if not isinstance(item, dict):
             errors.append("promotion protected target entries must be objects")
             continue
-        target = str(item.get("id", ""))
-        if target:
-            entries[target] = item
+        raw_target = item.get("id", "")
+        if not isinstance(raw_target, str) or not raw_target.strip():
+            errors.append(
+                "promotion protected target id must be a non-empty string, "
+                f"got {raw_target!r}"
+            )
+            continue
+        entries[raw_target.strip()] = item
     missing = sorted(KNOWN_TARGETS - set(entries))
     if missing:
         errors.append(f"promotion config missing protected target entries: {missing}")

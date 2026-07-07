@@ -115,8 +115,21 @@ def check_registry_path(path: Path) -> list[str]:
     return check_path_parent_symlinks(path, "accepted evidence registry")
 
 
+def required_target_filter(raw_targets: object) -> tuple[set[str], bool]:
+    if raw_targets is None:
+        return set(), False
+    if isinstance(raw_targets, str):
+        raw_targets = (raw_targets,)
+    try:
+        target_values = tuple(raw_targets)
+    except TypeError:
+        return set(), True
+    targets = {target.strip() for target in target_values if isinstance(target, str) and target.strip()}
+    return targets, bool(target_values)
+
+
 def required_targets_from_args(args: argparse.Namespace) -> tuple[str, ...]:
-    targets = set(str(target) for target in args.require_target)
+    targets, _has_required_targets = required_target_filter(args.require_target)
     if args.require_goal_targets:
         targets.update(PROTECTED_GOAL_TARGETS)
     return tuple(target for target in PROTECTED_GOAL_TARGETS if target in targets) + tuple(
@@ -180,12 +193,13 @@ def records_for_artifact_validation(
     required_targets: tuple[str, ...] | list[str] | set[str] | None = None,
     required_release_tag: str | None = None,
 ) -> list[dict[str, Any]]:
-    target_filter = set(str(target) for target in (required_targets or ()))
+    target_filter, has_target_filter = required_target_filter(required_targets)
     records: list[dict[str, Any]] = []
     for record in rows:
         if not isinstance(record, dict):
             continue
-        if target_filter and str(record.get("target", "")) not in target_filter:
+        target = accepted_record_target(record)
+        if has_target_filter and target not in target_filter:
             continue
         if required_release_tag and record.get("release_tag") != required_release_tag:
             continue
@@ -195,9 +209,9 @@ def records_for_artifact_validation(
 
 def has_record_scoped_validation_errors(errors: list[str], rows: list[Any]) -> bool:
     targets = {
-        str(record.get("target", ""))
+        accepted_record_target(record)
         for record in rows
-        if isinstance(record, dict) and str(record.get("target", ""))
+        if isinstance(record, dict) and accepted_record_target(record)
     }
     return any(error.startswith(f"{target} ") for error in errors for target in targets)
 
@@ -208,7 +222,9 @@ def check_record_review_bundle_artifacts(
     *,
     require_final_record_asset: bool = False,
 ) -> list[str]:
-    target = str(record.get("target", ""))
+    target = accepted_record_target(record)
+    if not target:
+        return [f"review bundle accepted evidence target must be a string, got {record.get('target')!r}"]
     review_bundle = record.get("review_bundle")
     if not isinstance(review_bundle, dict):
         return [f"{target} review_bundle must be an object"]
@@ -271,7 +287,9 @@ def check_record_review_bundle_artifacts(
 
 
 def check_final_record_asset(record: dict[str, Any], bundle_root: Path) -> list[str]:
-    target = str(record.get("target", ""))
+    target = accepted_record_target(record)
+    if not target:
+        return [f"finalized accepted-record asset target must be a string, got {record.get('target')!r}"]
     filename = accepted_record_source_file(target)
     path = bundle_root / filename
     parent_errors = check_path_parent_symlinks(path, f"{target} finalized accepted-record asset")
@@ -288,6 +306,9 @@ def check_final_record_asset(record: dict[str, Any], bundle_root: Path) -> list[
         return [f"{target} finalized accepted-record asset is not readable JSON: {filename}: {exc}"]
     if not isinstance(data, dict):
         return [f"{target} finalized accepted-record asset must contain a JSON object: {filename}"]
+    key_errors = public_record_key_errors(target, record)
+    if key_errors:
+        return key_errors
     if data != public_record(record):
         return [f"{target} finalized accepted-record asset must match accepted registry record: {filename}"]
     if raw_bytes != canonical_public_record_bytes(record):
@@ -295,8 +316,27 @@ def check_final_record_asset(record: dict[str, Any], bundle_root: Path) -> list[
     return []
 
 
+def accepted_record_target(record: dict[str, Any]) -> str:
+    target = record.get("target")
+    return target if isinstance(target, str) else ""
+
+
+def public_record_key_errors(target: str, record: dict[str, Any]) -> list[str]:
+    invalid = [key for key in record if not isinstance(key, str)]
+    if invalid:
+        return [
+            f"{target} finalized accepted-record registry keys must be strings, "
+            f"got {invalid[0]!r}"
+        ]
+    return []
+
+
 def public_record(record: dict[str, Any]) -> dict[str, Any]:
-    return {key: value for key, value in record.items() if not str(key).startswith("_")}
+    return {
+        key: value
+        for key, value in record.items()
+        if isinstance(key, str) and not key.startswith("_")
+    }
 
 
 def canonical_public_record_bytes(record: dict[str, Any]) -> bytes:

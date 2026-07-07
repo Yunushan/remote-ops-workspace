@@ -353,6 +353,45 @@ def test_protected_platform_goal_rejects_malformed_release_scope_metadata(
     assert "protected platform goal is incomplete: status=requirement-metadata-invalid" in errors
 
 
+def test_protected_platform_goal_rejects_malformed_requirement_target_without_stringifying(
+    monkeypatch,
+) -> None:
+    checker = _load_protected_goal_checker()
+    original_readiness = checker._platform_verified_readiness
+
+    def fake_platform_verified_readiness(*args, **kwargs):
+        report = original_readiness(*args, **kwargs)
+        drifted = deepcopy(report)
+        requirements = drifted["protected_goal_parity"]["target_evidence_requirements"]
+        linux_i386 = next(item for item in requirements if item["target"] == "linux-i386")
+        linux_i386["target"] = True
+        linux_armhf = next(item for item in requirements if item["target"] == "linux-armhf")
+        linux_armhf["required_commands"][False] = "python scripts/fake.py"
+        return drifted
+
+    monkeypatch.setattr(checker, "_platform_verified_readiness", fake_platform_verified_readiness)
+
+    errors, goal = checker.check_protected_platform_goal(
+        registry=_complete_registry(),
+        release_tag="v1.0.2",
+        require_records_complete=True,
+    )
+
+    assert (
+        "protected platform goal parity requirement target must be a non-empty string, "
+        "got True"
+    ) in errors
+    assert (
+        "linux-armhf protected platform requirement required_commands keys "
+        "must be non-empty strings, got [False]"
+    ) in errors
+    assert not any("True protected platform requirement" in error for error in errors)
+    assert not any("required_commands has unexpected keys: ['False']" in error for error in errors)
+    assert goal["complete"] is False
+    assert goal["status"] == "requirement-metadata-invalid"
+    assert "protected platform goal is incomplete: status=requirement-metadata-invalid" in errors
+
+
 def test_protected_platform_goal_rejects_malformed_release_tag() -> None:
     checker = _load_protected_goal_checker()
 
@@ -642,6 +681,37 @@ def test_protected_platform_goal_strict_gate_does_not_count_duplicate_target_rec
     assert "accepted_evidence target must be unique: linux-i386" in goal["validation_errors"]
     assert "accepted_evidence target must be unique: linux-i386" in goal["record_validation_errors"]
     assert goal["blocking_errors"] == errors
+
+
+def test_protected_platform_goal_duplicate_check_ignores_non_string_targets() -> None:
+    checker = _load_protected_goal_checker()
+    registry = _complete_registry()
+    records = registry["accepted_evidence"]
+    assert isinstance(records, list)
+    malformed_record = {
+        "target": True,
+        "status": "accepted",
+        "readiness_percent": 100.0,
+        "release_tag": "v1.0.2",
+    }
+    records.append(deepcopy(malformed_record))
+    records.append(deepcopy(malformed_record))
+
+    errors, goal = checker.check_protected_platform_goal(
+        registry=registry,
+        release_tag="v1.0.2",
+        require_records_complete=True,
+    )
+
+    assert any("accepted_evidence target must be a string, got True" in error for error in errors)
+    assert not any("accepted_evidence target must be unique: True" in error for error in errors)
+    assert not any(
+        "accepted_evidence target must be unique: True" in error
+        for error in goal["record_validation_errors"]
+    )
+    assert goal["current_percent"] == 0.0
+    assert goal["accepted_targets"] == []
+    assert goal["status"] == "missing-accepted-evidence"
 
 
 def test_protected_platform_goal_report_does_not_count_unfinalized_candidate() -> None:

@@ -239,6 +239,38 @@ def test_xp_native_evidence_bundle_preflight_rejects_malformed_candidate_source_
     ) in errors
 
 
+def test_xp_native_evidence_bundle_rejects_malformed_evidence_release_tag_before_artifacts(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    bundler = _load_bundle_script()
+    target = "windows-xp-native-x86"
+    assets = tmp_path / "native-dist" / "windows-xp" / target / "v1.0.2"
+    assets.mkdir(parents=True)
+    evidence_root = tmp_path / "evidence" / target / "v1.0.2"
+    evidence_root.mkdir(parents=True)
+    evidence = evidence_root / "xp-evidence.json"
+    evidence.write_text(json.dumps({"target": target, "release_tag": True}) + "\n", encoding="utf-8")
+    candidate = tmp_path / "platform-verified-evidence-windows-xp-native-x86.json"
+    candidate.write_text("{}\n", encoding="utf-8")
+
+    def fail_artifact_validation(*_args: Any, **_kwargs: Any) -> list[str]:
+        raise AssertionError("artifact validation should not run for malformed evidence release_tag")
+
+    monkeypatch.setattr(bundler, "check_platform_promotion_artifacts", fail_artifact_validation)
+
+    errors = bundler.make_xp_native_evidence_bundle(
+        target=target,
+        evidence=evidence,
+        candidate_record=candidate,
+        assets_dir=assets,
+        evidence_dir=evidence_root,
+        out_dir=tmp_path / "bundle" / target / "v1.0.2",
+    )
+
+    assert errors == ["XP evidence release_tag must be a non-empty string, got True"]
+
+
 def test_xp_native_evidence_bundle_rejects_unscoped_output_directory() -> None:
     bundler = _load_bundle_script()
 
@@ -432,6 +464,50 @@ def test_xp_native_evidence_bundle_rechecks_smoke_sources_before_writing(
 
     assert f"{target} smoke evidence source file must not be a symlink: {symlinked_smoke}" in errors
     assert not (out_dir / f"xp-native-evidence-bundle-{target}-{tag}.json").exists()
+
+
+def test_xp_native_evidence_bundle_source_maps_do_not_coerce_malformed_smoke_fields(
+    tmp_path: Path,
+) -> None:
+    bundler = _load_bundle_script()
+    evidence = tmp_path / "xp-evidence.json"
+    evidence.write_text("{}\n", encoding="utf-8")
+    smoke_dir = tmp_path / "xp-smoke-evidence"
+    smoke_dir.mkdir()
+    smoke_file = smoke_dir / "cli_launch.txt"
+    smoke_file.write_text("cli smoke proof\n", encoding="utf-8")
+    evidence_data = {
+        "smoke_results": [
+            {"id": True, "evidence_file": "xp-smoke-evidence/coerced-id.txt"},
+            {"id": "coerced_file", "evidence_file": True},
+            {"id": "missing_file", "evidence_file": "xp-smoke-evidence/missing.txt"},
+            {"id": "cli_launch", "evidence_file": "xp-smoke-evidence/cli_launch.txt"},
+        ]
+    }
+
+    records = bundler.smoke_records(evidence_data, tmp_path)
+    sources = bundler.xp_evidence_sources(
+        evidence=evidence,
+        evidence_data=evidence_data,
+        evidence_root=tmp_path,
+    )
+
+    assert records == [
+        {
+            "id": "cli_launch",
+            "file": "xp-smoke-evidence/cli_launch.txt",
+            "size_bytes": smoke_file.stat().st_size,
+            "sha256": _sha256(smoke_file),
+        }
+    ]
+    assert sources["smoke_evidence"] == {
+        "cli_launch": {
+            "file": "xp-smoke-evidence/cli_launch.txt",
+            "size_bytes": smoke_file.stat().st_size,
+            "sha256": _sha256(smoke_file),
+        }
+    }
+    assert "True" not in json.dumps(sources)
 
 
 def test_xp_native_evidence_bundle_rejects_symlinked_input_parent(

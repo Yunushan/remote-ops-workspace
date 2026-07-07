@@ -178,11 +178,20 @@ def check_android_emulator_web_job(workflow: str) -> list[str]:
         "Configure Android SDK command-line tools": "Android SDK command-line tools PATH setup",
         "cmdline-tools/latest/bin": "Android SDK command-line tools discovery path",
         "ANDROID_HOME=$sdk_root": "Android SDK home export",
+        "ANDROID_AVD_HOME=$avd_home": "durable Android AVD home export",
         "GITHUB_PATH": "Android SDK executable PATH export",
         "sdkmanager": "Android SDK package installation",
         "avdmanager create avd": "Android virtual device creation",
+        "avdmanager list avd": "Android virtual device creation diagnostics",
+        "Android AVD row-api-${{ matrix.api-level }} was not created": (
+            "Android virtual device creation assertion"
+        ),
         "Boot Android emulator": "Android emulator boot step",
         "timeout-minutes: 8": "bounded Android emulator boot timeout",
+        "          emulator -list-avds": "Android emulator AVD visibility diagnostics",
+        "Android AVD row-api-${{ matrix.api-level }} missing before emulator boot": (
+            "Android emulator pre-boot AVD assertion"
+        ),
         "emulator.pid": "Android emulator process tracking",
         "Android emulator process exited before adb connection": "Android emulator early-exit diagnostic",
         "Android emulator did not appear in adb devices within 180 seconds": (

@@ -142,9 +142,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def strict_import_arg_errors(args: argparse.Namespace) -> list[str]:
     errors = check_registry_path(args.registry)
+    out_dir_errors, _out_dir = path_arg_value(
+        getattr(args, "out_dir", None),
+        "release asset import output directory",
+    )
+    errors.extend(out_dir_errors)
+    requested_targets, target_errors = required_target_values(args.require_target)
+    errors.extend(target_errors)
     if not args.dry_run or args.verify_source_run:
         return errors
-    requested_targets = set(str(target) for target in args.require_target)
     protected_targets = set(PROTECTED_GOAL_TARGETS)
     is_protected_import = (
         args.require_goal_targets
@@ -156,17 +162,40 @@ def strict_import_arg_errors(args: argparse.Namespace) -> list[str]:
     return errors
 
 
-def check_registry_path(path: Path) -> list[str]:
-    errors = check_path_not_reserved_workspace_root(path, "accepted evidence registry")
+def required_target_values(raw_targets: object) -> tuple[set[str], list[str]]:
+    if raw_targets is None:
+        return set(), []
+    if isinstance(raw_targets, str):
+        raw_targets = (raw_targets,)
+    try:
+        target_values = iter(raw_targets)
+    except TypeError:
+        return set(), [f"platform evidence import required targets must be iterable, got {raw_targets!r}"]
+    targets: set[str] = set()
+    errors: list[str] = []
+    for target in target_values:
+        if not isinstance(target, str) or not target.strip():
+            errors.append(f"platform evidence import required target must be a non-empty string, got {target!r}")
+            continue
+        targets.add(target.strip())
+    return targets, errors
+
+
+def check_registry_path(path: object) -> list[str]:
+    path_errors, registry_path = path_arg_value(path, "accepted evidence registry")
+    if path_errors:
+        return path_errors
+    assert registry_path is not None
+    errors = check_path_not_reserved_workspace_root(registry_path, "accepted evidence registry")
     if errors:
         return errors
-    if path.is_symlink():
-        return [f"accepted evidence registry must not be a symlink: {path}"]
-    return check_path_parent_symlinks(path, "accepted evidence registry")
+    if registry_path.is_symlink():
+        return [f"accepted evidence registry must not be a symlink: {registry_path}"]
+    return check_path_parent_symlinks(registry_path, "accepted evidence registry")
 
 
 def required_targets_from_args(args: argparse.Namespace) -> tuple[str, ...]:
-    targets = set(str(target) for target in args.require_target)
+    targets, _errors = required_target_values(args.require_target)
     if args.require_goal_targets:
         targets.update(PROTECTED_GOAL_TARGETS)
     if not targets:
@@ -191,19 +220,24 @@ def accepted_records(
         and row.get("status") == "accepted"
         and row.get("readiness_percent") == 100.0
         and row.get("release_tag") == release_tag
-        and str(row.get("target", "")) in target_set
+        and accepted_import_target(row) in target_set
     ]
 
 
 def import_platform_evidence_artifacts(
     records: list[dict[str, Any]],
     *,
-    out_dir: Path,
+    out_dir: object,
     dry_run: bool = False,
     verify_source_run_metadata: bool = False,
     release_head_sha: str | None = None,
 ) -> list[str]:
     errors: list[str] = []
+    out_dir_errors, out_dir_path = path_arg_value(out_dir, "release asset import output directory")
+    errors.extend(out_dir_errors)
+    if errors:
+        return errors
+    assert out_dir_path is not None
     errors.extend(check_import_record_targets_unique(records))
     if errors:
         return errors
@@ -211,23 +245,23 @@ def import_platform_evidence_artifacts(
     if errors:
         return errors
     errors.extend(check_import_release_file_names(records))
-    errors.extend(ensure_output_directory(out_dir))
+    errors.extend(ensure_output_directory(out_dir_path))
     if records and not dry_run:
-        errors.extend(check_output_directory_empty(out_dir))
+        errors.extend(check_output_directory_empty(out_dir_path))
     if errors:
         return errors
     if records and (not dry_run or verify_source_run_metadata):
         errors.extend(check_github_cli_available())
     if errors:
         return errors
-    out_dir.mkdir(parents=True, exist_ok=True)
+    out_dir_path.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="platform-evidence-import-") as tmp:
         download_root = Path(tmp)
         for record in records:
             errors.extend(
                 import_record(
                     record,
-                    out_dir=out_dir,
+                    out_dir=out_dir_path,
                     download_root=download_root,
                     dry_run=dry_run,
                     verify_source_run_metadata=verify_source_run_metadata,
@@ -239,14 +273,22 @@ def import_platform_evidence_artifacts(
 
 def check_import_record_targets_unique(records: list[dict[str, Any]]) -> list[str]:
     target_counts: dict[str, int] = {}
+    errors: list[str] = []
     for record in records:
-        target = str(record.get("target", "")).strip()
-        if target:
-            target_counts[target] = target_counts.get(target, 0) + 1
+        target = accepted_import_target(record)
+        if not target:
+            errors.append(
+                "release asset import accepted record target must be a non-empty string, "
+                f"got {record.get('target', '')!r}"
+            )
+            continue
+        target_counts[target] = target_counts.get(target, 0) + 1
     duplicates = sorted(target for target, count in target_counts.items() if count > 1)
     if duplicates:
-        return [f"release asset import accepted records must target each platform once: {', '.join(duplicates)}"]
-    return []
+        errors.append(
+            f"release asset import accepted records must target each platform once: {', '.join(duplicates)}"
+        )
+    return errors
 
 
 def check_public_record_keys(records: list[dict[str, Any]]) -> list[str]:
@@ -257,7 +299,7 @@ def check_public_record_keys(records: list[dict[str, Any]]) -> list[str]:
 
 
 def public_record_key_errors(record: dict[str, Any]) -> list[str]:
-    target = str(record.get("target", "")).strip() or "<unknown>"
+    target = import_record_target_label(record)
     errors: list[str] = []
     public_keys: set[str] = set()
     for key in record:
@@ -279,7 +321,7 @@ def check_import_release_file_names(records: list[dict[str, Any]]) -> list[str]:
     labels: list[tuple[str, str]] = []
     errors: list[str] = []
     for record in records:
-        target = str(record.get("target", "")).strip() or "<unknown>"
+        target = import_record_target_label(record)
         file_errors, filenames = expected_release_file_name_entries(record)
         errors.extend(file_errors)
         labels.extend((target, filename) for filename in filenames)
@@ -320,24 +362,34 @@ def check_import_release_file_names(records: list[dict[str, Any]]) -> list[str]:
     return errors
 
 
-def ensure_output_directory(out_dir: Path) -> list[str]:
-    hint_errors = check_directory_path_hint(out_dir, "release asset import output directory")
+def ensure_output_directory(out_dir: object) -> list[str]:
+    out_dir_errors, out_dir_path = path_arg_value(out_dir, "release asset import output directory")
+    if out_dir_errors:
+        return out_dir_errors
+    assert out_dir_path is not None
+    hint_errors = check_directory_path_hint(out_dir_path, "release asset import output directory")
     if hint_errors:
         return hint_errors
     reserved_errors = check_path_not_reserved_workspace_root(
-        out_dir,
+        out_dir_path,
         "release asset import output directory",
     )
     if reserved_errors:
         return reserved_errors
-    if out_dir.is_symlink():
-        return [f"release asset import output directory must not be a symlink: {out_dir}"]
-    parent_errors = check_path_parent_symlinks(out_dir, "release asset import output directory")
+    if out_dir_path.is_symlink():
+        return [f"release asset import output directory must not be a symlink: {out_dir_path}"]
+    parent_errors = check_path_parent_symlinks(out_dir_path, "release asset import output directory")
     if parent_errors:
         return parent_errors
-    if out_dir.exists() and not out_dir.is_dir():
-        return [f"release asset import output path must be a directory: {out_dir}"]
+    if out_dir_path.exists() and not out_dir_path.is_dir():
+        return [f"release asset import output path must be a directory: {out_dir_path}"]
     return []
+
+
+def path_arg_value(raw_path: object, label: str) -> tuple[list[str], Path | None]:
+    if not isinstance(raw_path, Path):
+        return [f"{label} must be a pathlib.Path, got {raw_path!r}"], None
+    return [], raw_path
 
 
 def check_output_directory_empty(out_dir: Path) -> list[str]:
@@ -402,7 +454,7 @@ def import_record(
     verify_source_run_metadata: bool = False,
     release_head_sha: str | None = None,
 ) -> list[str]:
-    target = str(record.get("target", ""))
+    target = import_record_target_label(record)
     source = record.get("release_asset_source")
     if not isinstance(source, dict):
         return [f"{target} release_asset_source must be an object"]
@@ -596,9 +648,11 @@ def import_record(
 
 
 def check_import_release_url_tags(record: dict[str, Any], release_tag: str) -> list[str]:
-    target = str(record.get("target", ""))
+    target = import_record_target_label(record)
     errors: list[str] = []
-    for label, url in import_release_asset_urls(record):
+    urls, url_shape_errors = import_release_asset_urls(record)
+    errors.extend(f"{target} {error}" for error in url_shape_errors)
+    for label, url in urls:
         if not isinstance(url, str):
             errors.append(f"{target} {label} entries must be strings, got {url!r}")
             continue
@@ -614,20 +668,27 @@ def check_import_release_url_tags(record: dict[str, Any], release_tag: str) -> l
     return errors
 
 
-def import_release_asset_urls(record: dict[str, Any]) -> list[tuple[str, Any]]:
+def import_release_asset_urls(record: dict[str, Any]) -> tuple[list[tuple[str, Any]], list[str]]:
     urls: list[tuple[str, Any]] = []
+    errors: list[str] = []
     raw_release_urls = record.get("release_asset_urls")
     if isinstance(raw_release_urls, list):
         urls.extend(("release_asset_urls", url) for url in raw_release_urls)
+    elif raw_release_urls is not None:
+        errors.append(f"release_asset_urls must be a list, got {raw_release_urls!r}")
     review_bundle = record.get("review_bundle")
     if isinstance(review_bundle, dict):
         raw_bundle_urls = review_bundle.get("release_asset_urls")
         if isinstance(raw_bundle_urls, list):
             urls.extend(("review_bundle release_asset_urls", url) for url in raw_bundle_urls)
+        elif raw_bundle_urls is not None:
+            errors.append(f"review_bundle release_asset_urls must be a list, got {raw_bundle_urls!r}")
     finalized_url = record.get("finalized_record_release_asset_url")
     if isinstance(finalized_url, str):
         urls.append(("finalized_record_release_asset_url", finalized_url))
-    return urls
+    elif finalized_url is not None:
+        errors.append(f"finalized_record_release_asset_url must be a string, got {finalized_url!r}")
+    return urls, errors
 
 
 def expected_release_source_artifact_name(target: str, release_tag: str) -> str:
@@ -1278,7 +1339,7 @@ def current_checkout_head_sha() -> str:
 
 
 def copy_expected_files(record: dict[str, Any], *, source_root: Path, out_dir: Path) -> list[str]:
-    target = str(record.get("target", ""))
+    target = import_record_target_label(record)
     errors: list[str] = []
     expected_file_errors, expected_file_names = expected_release_file_name_entries(record)
     if expected_file_errors:
@@ -1320,7 +1381,7 @@ def copy_expected_files(record: dict[str, Any], *, source_root: Path, out_dir: P
 
 
 def validate_source_artifact(record: dict[str, Any], *, source_root: Path) -> list[str]:
-    target = str(record.get("target", ""))
+    target = import_record_target_label(record)
     source_errors, expected_files = release_source_contains_files(record)
     if source_errors:
         return source_errors
@@ -1341,7 +1402,7 @@ def validate_source_artifact(record: dict[str, Any], *, source_root: Path) -> li
 
 
 def check_release_source_declared_files_for_record(record: dict[str, Any]) -> list[str]:
-    target = str(record.get("target", ""))
+    target = import_record_target_label(record)
     source_errors, declared_files = release_source_contains_files(record)
     if source_errors:
         return source_errors
@@ -1410,7 +1471,7 @@ def validate_downloaded_source_file_set(
 
 
 def checked_artifact_hash_items(record: dict[str, Any], *, label: str) -> tuple[list[tuple[str, Any]], list[str]]:
-    target = str(record.get("target", ""))
+    target = import_record_target_label(record)
     artifact_hashes = record.get("artifact_sha256")
     if not isinstance(artifact_hashes, dict):
         return [], []
@@ -1441,7 +1502,7 @@ def checked_review_bundle_records(
     *,
     label: str,
 ) -> tuple[list[tuple[str, str, Any, str]], list[str]]:
-    target = str(record.get("target", ""))
+    target = import_record_target_label(record)
     review_bundle = record.get("review_bundle")
     if not isinstance(review_bundle, dict):
         return [], []
@@ -1491,7 +1552,7 @@ def lowercase_sha256_hex(value: Any) -> bool:
 
 
 def check_downloaded_source_hashes(record: dict[str, Any], *, source_root: Path) -> list[str]:
-    target = str(record.get("target", ""))
+    target = import_record_target_label(record)
     artifact_items, errors = checked_artifact_hash_items(record, label="downloaded source artifact")
     for filename, digest in artifact_items:
         path = source_root / filename
@@ -1533,7 +1594,7 @@ def check_downloaded_source_hashes(record: dict[str, Any], *, source_root: Path)
 
 
 def check_imported_hashes(record: dict[str, Any], *, out_dir: Path) -> list[str]:
-    target = str(record.get("target", ""))
+    target = import_record_target_label(record)
     artifact_items, errors = checked_artifact_hash_items(record, label="imported native artifact")
     for filename, digest in artifact_items:
         path = out_dir / filename
@@ -1570,8 +1631,10 @@ def check_imported_review_bundle(record: dict[str, Any], *, out_dir: Path) -> li
     if public_errors:
         return public_errors
     registry = read_json(EVIDENCE_PATH)
-    target = str(record.get("target", "")).strip()
-    release_tag = str(record.get("release_tag", "")).strip()
+    target = accepted_import_target(record)
+    release_tag = record.get("release_tag", "")
+    if not isinstance(release_tag, str):
+        release_tag = ""
     errors = check_platform_review_bundle_artifacts(
         registry={**registry, "accepted_evidence": [public_record(record)]},
         bundle_dir=out_dir,
@@ -1590,7 +1653,7 @@ def expected_release_file_names(record: dict[str, Any]) -> list[str]:
 def expected_release_file_name_entries(record: dict[str, Any]) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     files: list[str] = []
-    target = str(record.get("target", ""))
+    target = import_record_target_label(record)
     artifact_hashes = record.get("artifact_sha256")
     if isinstance(artifact_hashes, dict):
         for name in artifact_hashes:
@@ -1614,8 +1677,9 @@ def expected_release_file_name_entries(record: dict[str, Any]) -> tuple[list[str
                     continue
                 if filename:
                     files.append(filename)
-    if target in PROTECTED_GOAL_TARGETS:
-        files.append(accepted_record_source_file(target))
+    accepted_target = accepted_import_target(record)
+    if accepted_target in PROTECTED_GOAL_TARGETS:
+        files.append(accepted_record_source_file(accepted_target))
     file_counts: dict[str, int] = {}
     for filename in files:
         file_counts[filename] = file_counts.get(filename, 0) + 1
@@ -1646,7 +1710,7 @@ def expected_source_files(record: dict[str, Any]) -> set[str]:
 
 
 def release_source_contains_files(record: dict[str, Any]) -> tuple[list[str], set[str]]:
-    target = str(record.get("target", ""))
+    target = import_record_target_label(record)
     source = record.get("release_asset_source")
     if not isinstance(source, dict):
         return [f"{target} release_asset_source must be an object"], set()
@@ -1677,7 +1741,7 @@ def release_source_contains_files(record: dict[str, Any]) -> tuple[list[str], se
 
 
 def validate_downloaded_final_record(record: dict[str, Any], *, source_root: Path) -> list[str]:
-    target = str(record.get("target", ""))
+    target = accepted_import_target(record)
     if target not in PROTECTED_GOAL_TARGETS:
         return []
     filename = accepted_record_source_file(target)
@@ -1711,6 +1775,17 @@ def validate_downloaded_final_record(record: dict[str, Any], *, source_root: Pat
 
 def public_record(record: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in record.items() if isinstance(key, str) and not key.startswith("_")}
+
+
+def accepted_import_target(record: dict[str, Any]) -> str:
+    target = record.get("target", "")
+    if not isinstance(target, str):
+        return ""
+    return target.strip()
+
+
+def import_record_target_label(record: dict[str, Any]) -> str:
+    return accepted_import_target(record) or "<unknown>"
 
 
 def is_allowed_platform_parent_symlink(parent: Path) -> bool:

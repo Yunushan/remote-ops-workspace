@@ -238,8 +238,12 @@ def check_contract(contract: dict[str, Any]) -> list[str]:
         if not isinstance(x64, dict) or x64.get("required_edition") != "Professional x64 Edition":
             errors.append("XP x64 native evidence contract must require Professional x64 Edition")
     smoke_ids = contract.get("required_smoke_ids")
-    if not isinstance(smoke_ids, list) or len(smoke_ids) < 6:
-        errors.append("XP native evidence contract must list required_smoke_ids")
+    if (
+        not isinstance(smoke_ids, list)
+        or len(smoke_ids) < 6
+        or any(not isinstance(item, str) or not item for item in smoke_ids)
+    ):
+        errors.append("XP native evidence contract must list string required_smoke_ids")
     if contract.get("evidence_plain_file_required") is not True:
         errors.append("XP native evidence contract must require a plain non-symlink evidence JSON file")
     if contract.get("evidence_directory_plain_path_required") is not True:
@@ -250,16 +254,20 @@ def check_contract(contract: dict[str, Any]) -> list[str]:
         errors.append("XP native evidence contract must require plain non-symlink smoke evidence files")
     smoke_fields = contract.get("required_smoke_result_fields")
     required_smoke_fields = {"id", "passed", "command", "evidence_file", "evidence_sha256"}
-    if not isinstance(smoke_fields, list) or not required_smoke_fields.issubset(
-        {str(item) for item in smoke_fields}
+    if (
+        not isinstance(smoke_fields, list)
+        or any(not isinstance(item, str) for item in smoke_fields)
+        or not required_smoke_fields.issubset(set(smoke_fields))
     ):
         errors.append(
             "XP native evidence contract must require smoke result id, passed, command, "
             "evidence_file, and evidence_sha256 fields"
         )
     release_source_fields = contract.get("required_release_source_fields")
-    if not isinstance(release_source_fields, list) or not REQUIRED_RELEASE_SOURCE_FIELDS.issubset(
-        {str(item) for item in release_source_fields}
+    if (
+        not isinstance(release_source_fields, list)
+        or any(not isinstance(item, str) for item in release_source_fields)
+        or not REQUIRED_RELEASE_SOURCE_FIELDS.issubset(set(release_source_fields))
     ):
         errors.append("XP native evidence contract must require release_source workflow, URL, head SHA and run attempt")
     command_bindings = contract.get("required_smoke_command_bindings")
@@ -704,16 +712,24 @@ def check_os(
     errors.extend(check_unexpected_fields(label, raw_os, allowed_fields))
     for key in ("name", "architecture"):
         expected = target_contract.get(key if key != "name" else "os_name")
-        if raw_os.get(key) != expected:
+        actual = raw_os.get(key)
+        if not isinstance(actual, str):
+            errors.append(f"{label}.{key} must be a string")
+        elif actual != expected:
             errors.append(f"{label}.{key} must be {expected!r}, got {raw_os.get(key)!r}")
     expected_edition = str(target_contract.get("required_edition", ""))
-    if expected_edition and raw_os.get("edition") != expected_edition:
+    raw_edition = raw_os.get("edition")
+    if expected_edition and not isinstance(raw_edition, str):
+        errors.append(f"{label}.edition must be a string")
+    elif expected_edition and raw_edition != expected_edition:
         errors.append(f"{label}.edition must be {expected_edition!r}, got {raw_os.get('edition')!r}")
-    service_pack = str(raw_os.get("service_pack", ""))
+    raw_service_pack = raw_os.get("service_pack")
     expected_service_pack = str(target_contract.get("minimum_service_pack", ""))
-    if expected_service_pack and expected_service_pack not in service_pack:
+    if not isinstance(raw_service_pack, str):
+        errors.append(f"{label}.service_pack must be a string")
+    elif expected_service_pack and expected_service_pack not in raw_service_pack:
         errors.append(
-            f"{label}.service_pack must include {expected_service_pack!r}, got {service_pack!r}"
+            f"{label}.service_pack must include {expected_service_pack!r}, got {raw_service_pack!r}"
         )
     return errors
 
@@ -734,8 +750,10 @@ def check_toolchain(
     for key, expected in required_flags.items():
         if raw_toolchain.get(key) is not expected:
             errors.append(f"{label}.{key} must be {expected!r}")
-    description = str(raw_toolchain.get("description", ""))
-    if len(description.strip()) < 12:
+    description = raw_toolchain.get("description")
+    if not isinstance(description, str):
+        errors.append(f"{label}.description must be a string")
+    elif len(description.strip()) < 12:
         errors.append(f"{label}.description must describe the XP-capable toolchain")
     return errors
 
@@ -771,26 +789,47 @@ def check_host_identity(
     if raw_identity.get("release_tag") != release_tag:
         errors.append(f"{target} evidence host_identity.release_tag must match evidence release_tag {release_tag}")
 
-    host_label = str(raw_identity.get("host_label", "")).strip()
+    raw_host_label = raw_identity.get("host_label")
     host_prefix = xp_host_identity_prefix(target)
-    if not HOST_IDENTITY_LABEL_RE.fullmatch(host_label) or not host_label.startswith(host_prefix):
-        errors.append(
-            f"{target} evidence host_identity.host_label must be a sanitized target-scoped lab label, "
-            f"got {host_label!r}"
-        )
-    evidence_run_id = str(raw_identity.get("evidence_run_id", "")).strip()
-    if not HOST_IDENTITY_RUN_RE.fullmatch(evidence_run_id) or not evidence_run_id.startswith(host_prefix):
-        errors.append(
-            f"{target} evidence host_identity.evidence_run_id must be a sanitized target-scoped run id, "
-            f"got {evidence_run_id!r}"
-        )
-    observed_at = str(raw_identity.get("observed_at_utc", "")).strip()
-    if not OBSERVED_AT_UTC_RE.fullmatch(observed_at):
-        errors.append(
-            f"{target} evidence host_identity.observed_at_utc must be UTC ISO-8601 seconds ending in Z, "
-            f"got {observed_at!r}"
-        )
+    if not isinstance(raw_host_label, str):
+        errors.append(f"{target} evidence host_identity.host_label must be a string")
+        host_label = ""
+        host_label_valid = False
     else:
+        host_label = raw_host_label.strip()
+        host_label_valid = bool(HOST_IDENTITY_LABEL_RE.fullmatch(host_label)) and host_label.startswith(host_prefix)
+        if not host_label_valid:
+            errors.append(
+                f"{target} evidence host_identity.host_label must be a sanitized target-scoped lab label, "
+                f"got {host_label!r}"
+            )
+    raw_evidence_run_id = raw_identity.get("evidence_run_id")
+    if not isinstance(raw_evidence_run_id, str):
+        errors.append(f"{target} evidence host_identity.evidence_run_id must be a string")
+        evidence_run_id = ""
+        evidence_run_id_valid = False
+    else:
+        evidence_run_id = raw_evidence_run_id.strip()
+        evidence_run_id_valid = bool(HOST_IDENTITY_RUN_RE.fullmatch(evidence_run_id)) and evidence_run_id.startswith(host_prefix)
+        if not evidence_run_id_valid:
+            errors.append(
+                f"{target} evidence host_identity.evidence_run_id must be a sanitized target-scoped run id, "
+                f"got {evidence_run_id!r}"
+            )
+    raw_observed_at = raw_identity.get("observed_at_utc")
+    if not isinstance(raw_observed_at, str):
+        errors.append(f"{target} evidence host_identity.observed_at_utc must be a string")
+        observed_at = ""
+        observed_at_valid = False
+    else:
+        observed_at = raw_observed_at.strip()
+        observed_at_valid = bool(OBSERVED_AT_UTC_RE.fullmatch(observed_at))
+        if not observed_at_valid:
+            errors.append(
+                f"{target} evidence host_identity.observed_at_utc must be UTC ISO-8601 seconds ending in Z, "
+                f"got {observed_at!r}"
+            )
+    if observed_at_valid and evidence_run_id_valid:
         expected_run_marker = xp_host_identity_run_marker(release_tag, observed_at)
         if expected_run_marker not in evidence_run_id:
             errors.append(
@@ -968,10 +1007,11 @@ def check_smoke_results(
         if not isinstance(item, dict):
             errors.append(f"{target} smoke result entries must be objects")
             continue
-        smoke_id = str(item.get("id", ""))
+        raw_smoke_id = item.get("id")
+        smoke_id = raw_smoke_id if isinstance(raw_smoke_id, str) else ""
         expected_fields = contract.get("required_smoke_result_fields")
         allowed_fields = (
-            {str(field) for field in expected_fields}
+            {field for field in expected_fields if isinstance(field, str)}
             if isinstance(expected_fields, list)
             else XP_SMOKE_RESULT_FIELDS
         )
@@ -982,12 +1022,19 @@ def check_smoke_results(
                 allowed_fields,
             )
         )
+        if not isinstance(raw_smoke_id, str):
+            errors.append(f"{target} smoke result entry id must be a string")
+            continue
         if not smoke_id:
             errors.append(f"{target} smoke result entry missing id")
             continue
         smoke_ids.append(smoke_id)
         by_id[smoke_id] = item
-    required = {str(item) for item in contract.get("required_smoke_ids", [])}
+    required = {
+        item
+        for item in contract.get("required_smoke_ids", [])
+        if isinstance(item, str) and item
+    }
     actual = set(smoke_ids)
     missing = sorted(required - set(by_id))
     if missing:
@@ -1050,7 +1097,12 @@ def check_smoke_command(
     release_source: Any,
     security: Any,
 ) -> list[str]:
-    command = str(item.get("command", "")).strip()
+    raw_command = item.get("command")
+    if raw_command is None:
+        return [f"{target} smoke result {smoke_id} missing command provenance"]
+    if not isinstance(raw_command, str):
+        return [f"{target} smoke result {smoke_id} command must be a string"]
+    command = raw_command.strip()
     if not command:
         return [f"{target} smoke result {smoke_id} missing command provenance"]
     if "<" in command or ">" in command:
@@ -1061,7 +1113,15 @@ def check_smoke_command(
         errors.append(
             f"{target} smoke result {smoke_id} command must start with {command_prefix!r}, got {command!r}"
         )
-    evidence_file = str(item.get("evidence_file", "")).strip()
+    raw_evidence_file = item.get("evidence_file")
+    evidence_file: str | None
+    if raw_evidence_file is None:
+        evidence_file = ""
+    elif not isinstance(raw_evidence_file, str):
+        errors.append(f"{target} smoke result {smoke_id} evidence_file must be a string")
+        evidence_file = None
+    else:
+        evidence_file = raw_evidence_file.strip()
     errors.extend(
         check_smoke_command_binding(
             target,
@@ -1167,7 +1227,9 @@ def check_smoke_evidence_file(
 ) -> list[str]:
     if contract.get("required_smoke_evidence_file") is not True:
         return []
-    raw_file = str(item.get("evidence_file", ""))
+    raw_file = item.get("evidence_file")
+    if not isinstance(raw_file, str):
+        return [f"{target} smoke result {smoke_id} evidence_file must be a string"]
     if not raw_file:
         return [f"{target} smoke result {smoke_id} missing evidence_file"]
     expected_file = f"xp-smoke-evidence/{smoke_id}.txt"
@@ -1683,7 +1745,11 @@ def check_artifact_validation_record(target: str, raw_record: Any, release_tag: 
     )
     if raw_record.get("passed") is not True:
         errors.append(f"{target} evidence artifact_validation.passed must be true")
-    command = str(raw_record.get("command", ""))
+    raw_command = raw_record.get("command")
+    if not isinstance(raw_command, str):
+        errors.append(f"{target} evidence artifact_validation.command must be a string")
+        return errors
+    command = raw_command
     expected = f"python scripts/check_platform_promotion_artifacts.py --target {target} "
     if not command.startswith(expected):
         errors.append(f"{target} evidence artifact_validation.command must start with {expected!r}")
@@ -1790,7 +1856,9 @@ def artifact_validation_asset_dirs(evidence: dict[str, Any]) -> list[str]:
     raw_record = evidence.get("artifact_validation")
     if not isinstance(raw_record, dict):
         return []
-    command = str(raw_record.get("command", ""))
+    command = raw_record.get("command")
+    if not isinstance(command, str):
+        return []
     return re.findall(r"(?:^|\s)--assets-dir\s+(\S+)(?=\s|$)", command)
 
 
@@ -1806,8 +1874,11 @@ def check_artifact_names(
     errors: list[str] = []
     artifact_names: list[str] = []
     for artifact in raw_artifacts:
-        artifact_name = str(artifact)
-        artifact_names.append(artifact_name.strip())
+        if not isinstance(artifact, str):
+            errors.append(f"{target} evidence artifact name entries must be strings")
+            continue
+        artifact_name = artifact.strip()
+        artifact_names.append(artifact_name)
         errors.extend(check_artifact_name_shape(target, artifact_name))
         if required_target not in artifact_name:
             errors.append(f"{target} evidence artifact name must include {required_target}: {artifact_name}")

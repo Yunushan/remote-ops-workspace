@@ -650,6 +650,67 @@ def test_import_platform_evidence_artifacts_rejects_reserved_registry_path(tmp_p
     ]
 
 
+def test_import_platform_evidence_artifacts_rejects_non_path_registry_and_output_args(
+    tmp_path: Path,
+) -> None:
+    importer = _load_importer()
+    args = importer.parse_args(
+        [
+            "--release-tag",
+            "v1.0.2",
+            "--out-dir",
+            str(tmp_path / "release-assets"),
+            "--verify-source-run",
+        ]
+    )
+    args.registry = True
+    args.out_dir = ["release-assets"]
+
+    errors = importer.strict_import_arg_errors(args)
+
+    assert "accepted evidence registry must be a pathlib.Path, got True" in errors
+    assert (
+        "release asset import output directory must be a pathlib.Path, got ['release-assets']"
+        in errors
+    )
+
+
+def test_import_platform_evidence_artifacts_rejects_non_path_output_directory() -> None:
+    importer = _load_importer()
+
+    errors = importer.import_platform_evidence_artifacts(
+        [],
+        out_dir=True,
+        dry_run=True,
+    )
+
+    assert errors == ["release asset import output directory must be a pathlib.Path, got True"]
+
+
+def test_import_platform_evidence_artifacts_rejects_non_string_required_target(
+    tmp_path: Path,
+) -> None:
+    importer = _load_importer()
+    args = importer.parse_args(
+        [
+            "--registry",
+            str(tmp_path / "platform_verified_evidence.json"),
+            "--release-tag",
+            "v1.0.2",
+            "--out-dir",
+            str(tmp_path / "release-assets"),
+            "--dry-run",
+        ]
+    )
+    args.require_target = [True]
+
+    errors = importer.strict_import_arg_errors(args)
+
+    assert "platform evidence import required target must be a non-empty string, got True" in errors
+    assert importer.REQUIRE_VERIFY_SOURCE_RUN_DRY_RUN_ERROR in errors
+    assert importer.required_targets_from_args(args) == tuple(importer.PROTECTED_GOAL_TARGETS)
+
+
 def test_import_platform_evidence_artifacts_rejects_symlinked_output_parent(
     tmp_path: Path,
     monkeypatch,
@@ -745,6 +806,55 @@ def test_import_platform_evidence_artifacts_rejects_duplicate_record_targets(
         "release asset import accepted records must target each platform once: linux-i386"
     ]
     assert not out_dir.exists()
+
+
+def test_import_platform_evidence_artifacts_rejects_non_string_record_target(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    importer = _load_importer()
+    record = importer.public_record(_record(tmp_path))
+    record["target"] = True
+    out_dir = tmp_path / "release-assets"
+
+    def fail_run(*_args: Any, **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+        raise AssertionError("gh should not run when accepted import record target is malformed")
+
+    monkeypatch.setattr(importer.subprocess, "run", fail_run)
+
+    errors = importer.import_platform_evidence_artifacts(
+        [record],
+        out_dir=out_dir,
+        dry_run=True,
+        release_head_sha=HEAD_SHA,
+    )
+
+    assert errors == [
+        "release asset import accepted record target must be a non-empty string, got True"
+    ]
+    assert not out_dir.exists()
+
+
+def test_accepted_records_does_not_stringify_malformed_target() -> None:
+    importer = _load_importer()
+    registry = {
+        "accepted_evidence": [
+            {
+                "status": "accepted",
+                "readiness_percent": 100.0,
+                "release_tag": "v1.0.2",
+                "target": True,
+            }
+        ]
+    }
+
+    records = importer.accepted_records(
+        registry,
+        release_tag="v1.0.2",
+        targets=("True",),
+    )
+
+    assert records == []
 
 
 def test_import_platform_evidence_artifacts_rejects_non_string_public_record_keys(
@@ -1355,6 +1465,34 @@ def test_import_record_rejects_non_string_release_asset_url_entries(
 
     assert "linux-i386 release_asset_urls entries must be strings, got True" in errors
     assert "linux-i386 review_bundle release_asset_urls entries must be strings, got False" in errors
+
+
+def test_import_record_rejects_malformed_release_asset_url_fields(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+    record["release_asset_urls"] = True
+    record["review_bundle"]["release_asset_urls"] = False
+    record["finalized_record_release_asset_url"] = True
+
+    def fail_run(*_args: Any, **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+        raise AssertionError("gh should not run when release asset URL fields are malformed")
+
+    monkeypatch.setattr(importer.subprocess, "run", fail_run)
+
+    errors = importer.import_record(
+        record,
+        out_dir=tmp_path / "release-assets",
+        download_root=tmp_path / "download",
+        dry_run=False,
+        release_head_sha=HEAD_SHA,
+    )
+
+    assert "linux-i386 release_asset_urls must be a list, got True" in errors
+    assert "linux-i386 review_bundle release_asset_urls must be a list, got False" in errors
+    assert "linux-i386 finalized_record_release_asset_url must be a string, got True" in errors
 
 
 def test_import_record_rejects_source_workflow_repository_mismatch(

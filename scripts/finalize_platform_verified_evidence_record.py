@@ -45,6 +45,8 @@ from make_platform_verified_evidence_record import (  # noqa: E402
 )
 
 SHA256_HEX_RE = re.compile(r"[0-9a-f]{64}")
+GIT_SHA_RE = re.compile(r"[0-9a-f]{40}")
+RELEASE_TAG_RE = re.compile(r"v\d+\.\d+\.\d+")
 MANIFEST_FILE_RECORD_KEYS = {"file", "sha256", "size_bytes"}
 MANIFEST_SMOKE_RECORD_KEYS = MANIFEST_FILE_RECORD_KEYS | {"id"}
 LINUX_BUNDLE_MANIFEST_KEYS = {
@@ -163,32 +165,66 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def finalize_platform_verified_evidence_record(
     *,
-    candidate_record: Path,
-    bundle_manifest: Path,
-    bundle_archive: Path,
-    bundle_sha256s: Path,
+    candidate_record: object,
+    bundle_manifest: object,
+    bundle_archive: object,
+    bundle_sha256s: object,
 ) -> tuple[list[str], dict[str, Any]]:
     errors: list[str] = []
-    candidate = load_json(candidate_record, "candidate evidence record", errors)
-    manifest = load_json(bundle_manifest, "review bundle manifest", errors)
+    candidate_record_errors, candidate_record_path = path_arg_value(
+        candidate_record,
+        "candidate evidence record",
+    )
+    manifest_errors, bundle_manifest_path = path_arg_value(
+        bundle_manifest,
+        "review bundle manifest",
+    )
+    archive_errors, bundle_archive_path = path_arg_value(
+        bundle_archive,
+        "review bundle archive",
+    )
+    sidecar_errors, bundle_sha256s_path = path_arg_value(
+        bundle_sha256s,
+        "review bundle SHA-256 sidecar",
+    )
+    errors.extend(candidate_record_errors)
+    errors.extend(manifest_errors)
+    errors.extend(archive_errors)
+    errors.extend(sidecar_errors)
+    if errors:
+        return errors, {}
+
+    assert candidate_record_path is not None
+    assert bundle_manifest_path is not None
+    assert bundle_archive_path is not None
+    assert bundle_sha256s_path is not None
+
+    candidate = load_json(candidate_record_path, "candidate evidence record", errors)
+    manifest = load_json(bundle_manifest_path, "review bundle manifest", errors)
     for label, path in (
-        ("review bundle archive", bundle_archive),
-        ("review bundle SHA-256 sidecar", bundle_sha256s),
+        ("review bundle archive", bundle_archive_path),
+        ("review bundle SHA-256 sidecar", bundle_sha256s_path),
     ):
         check_input_file(path, label, errors)
-    errors.extend(check_review_bundle_input_siblings(bundle_manifest, bundle_archive, bundle_sha256s))
+    errors.extend(
+        check_review_bundle_input_siblings(
+            bundle_manifest_path,
+            bundle_archive_path,
+            bundle_sha256s_path,
+        )
+    )
     if candidate is None or manifest is None or errors:
         return errors, {}
 
-    target = str(candidate.get("target", ""))
-    release_tag = str(candidate.get("release_tag", ""))
-    if target not in KNOWN_TARGETS:
-        errors.append(f"candidate target is not protected: {target}")
-    else:
-        errors.extend(check_candidate_record_file_name(candidate_record, target))
-    if manifest.get("target") != target:
+    target_errors, target = candidate_target_value(candidate)
+    release_tag_errors, release_tag = candidate_release_tag_value(candidate)
+    errors.extend(target_errors)
+    errors.extend(release_tag_errors)
+    if target in KNOWN_TARGETS:
+        errors.extend(check_candidate_record_file_name(candidate_record_path, target))
+    if target and manifest.get("target") != target:
         errors.append(f"review bundle manifest target must match candidate target {target}")
-    if manifest.get("release_tag") != release_tag:
+    if release_tag and manifest.get("release_tag") != release_tag:
         errors.append(f"review bundle manifest release_tag must match candidate release_tag {release_tag}")
     expected_bundle_type = REVIEW_BUNDLE_TYPES.get(target)
     if expected_bundle_type and manifest.get("bundle_type") != expected_bundle_type:
@@ -198,23 +234,23 @@ def finalize_platform_verified_evidence_record(
     if not candidate_finalization_errors:
         errors.extend(check_unfinalized_candidate_record(candidate))
     errors.extend(check_bundle_manifest_records(manifest))
-    errors.extend(check_candidate_manifest_binding(candidate_record, candidate, manifest))
+    errors.extend(check_candidate_manifest_binding(candidate_record_path, candidate, manifest))
 
     expected_files: dict[str, str] = {}
     if target in KNOWN_TARGETS:
         expected_files = review_bundle_expected_files(target, release_tag)
         actual_files = {
-            "manifest": bundle_manifest.name,
-            "archive": bundle_archive.name,
-            "sha256s": bundle_sha256s.name,
+            "manifest": bundle_manifest_path.name,
+            "archive": bundle_archive_path.name,
+            "sha256s": bundle_sha256s_path.name,
         }
         for key, expected_file in expected_files.items():
             if actual_files[key] != expected_file:
                 errors.append(f"review bundle {key} file must be {expected_file}, got {actual_files[key]}")
         errors.extend(check_candidate_release_asset_source_files(candidate, expected_files))
 
-    errors.extend(check_bundle_sidecar(bundle_sha256s, bundle_manifest, bundle_archive))
-    errors.extend(check_bundle_archive(bundle_archive, bundle_manifest, manifest, candidate))
+    errors.extend(check_bundle_sidecar(bundle_sha256s_path, bundle_manifest_path, bundle_archive_path))
+    errors.extend(check_bundle_archive(bundle_archive_path, bundle_manifest_path, manifest, candidate))
     bundle_url_errors, review_bundle_urls = review_bundle_release_asset_urls(candidate, expected_files)
     errors.extend(bundle_url_errors)
     final_url_errors, finalized_record_url = finalized_record_release_asset_url(candidate)
@@ -226,9 +262,9 @@ def finalize_platform_verified_evidence_record(
     record["finalized_record_release_asset_url"] = finalized_record_url
     record["review_bundle"] = {
         "bundle_type": str(manifest.get("bundle_type", "")),
-        "manifest": file_record(bundle_manifest),
-        "archive": file_record(bundle_archive),
-        "sha256s": file_record(bundle_sha256s),
+        "manifest": file_record(bundle_manifest_path),
+        "archive": file_record(bundle_archive_path),
+        "sha256s": file_record(bundle_sha256s_path),
         "release_asset_urls": review_bundle_urls,
     }
     record["release_asset_source"] = finalized_release_asset_source(record, expected_files)
@@ -241,6 +277,12 @@ def finalize_platform_verified_evidence_record(
     if errors:
         return errors, {}
     return [], record
+
+
+def path_arg_value(raw_path: object, label: str) -> tuple[list[str], Path | None]:
+    if not isinstance(raw_path, Path):
+        return [f"{label} path must be a pathlib.Path, got {raw_path!r}"], None
+    return [], raw_path
 
 
 def finalized_release_asset_source(
@@ -273,6 +315,24 @@ def check_candidate_is_unfinalized(candidate: dict[str, Any]) -> list[str]:
             f"remove fields: {finalized_fields}"
         ]
     return []
+
+
+def candidate_target_value(candidate: dict[str, Any]) -> tuple[list[str], str]:
+    raw_target = candidate.get("target", "")
+    if not isinstance(raw_target, str) or not raw_target:
+        return [f"candidate target must be a non-empty string, got {raw_target!r}"], ""
+    if raw_target not in KNOWN_TARGETS:
+        return [f"candidate target is not protected: {raw_target}"], raw_target
+    return [], raw_target
+
+
+def candidate_release_tag_value(candidate: dict[str, Any]) -> tuple[list[str], str]:
+    raw_release_tag = candidate.get("release_tag", "")
+    if not isinstance(raw_release_tag, str) or not raw_release_tag:
+        return [f"candidate release_tag must be a non-empty string, got {raw_release_tag!r}"], ""
+    if not RELEASE_TAG_RE.fullmatch(raw_release_tag):
+        return [f"candidate release_tag must look like vX.Y.Z, got {raw_release_tag!r}"], raw_release_tag
+    return [], raw_release_tag
 
 
 def check_unfinalized_candidate_record(candidate: dict[str, Any]) -> list[str]:
@@ -376,7 +436,9 @@ def review_bundle_release_asset_urls(
 ) -> tuple[list[str], list[str]]:
     if not expected_files:
         return ["review bundle expected files could not be derived"], []
-    release_tag = str(candidate.get("release_tag", ""))
+    release_tag_errors, release_tag = candidate_release_tag_value(candidate)
+    if release_tag_errors:
+        return release_tag_errors, []
     raw_urls = candidate.get("release_asset_urls")
     if not isinstance(raw_urls, list) or not raw_urls:
         return ["candidate release_asset_urls must be a non-empty list before deriving review bundle URLs"], []
@@ -390,8 +452,10 @@ def review_bundle_release_asset_urls(
 
 
 def finalized_record_release_asset_url(candidate: dict[str, Any]) -> tuple[list[str], str]:
-    target = str(candidate.get("target", ""))
-    release_tag = str(candidate.get("release_tag", ""))
+    target_errors, target = candidate_target_value(candidate)
+    release_tag_errors, release_tag = candidate_release_tag_value(candidate)
+    if target_errors or release_tag_errors:
+        return [*target_errors, *release_tag_errors], ""
     raw_urls = candidate.get("release_asset_urls")
     if not isinstance(raw_urls, list) or not raw_urls:
         return ["candidate release_asset_urls must be a non-empty list before deriving final record URL"], ""
@@ -810,7 +874,7 @@ def check_linux_manifest_evidence_file_names(target: str, manifest: dict[str, An
         native_records = [
             item
             for item in smoke_records
-            if isinstance(item, dict) and str(item.get("id", "")) == "native_smoke"
+            if isinstance(item, dict) and item.get("id") == "native_smoke"
         ]
         if len(native_records) == 1 and native_records[0].get("file") != expected_smoke:
             errors.append(f"review bundle manifest native_smoke file must be {expected_smoke}")
@@ -1197,9 +1261,11 @@ def check_archive_record_hashes(
             errors.append(f"review bundle manifest record {name} size_bytes must be positive")
         elif len(data) != expected_size:
             errors.append(f"review bundle archive entry size mismatch: {name}")
-        expected_sha = str(record.get("sha256", ""))
-        if not expected_sha:
-            errors.append(f"review bundle manifest record {name} missing sha256")
+        expected_sha = record.get("sha256", "")
+        if not isinstance(expected_sha, str) or not SHA256_HEX_RE.fullmatch(expected_sha):
+            errors.append(
+                f"review bundle manifest record {name} sha256 must be a lowercase SHA-256 hex digest"
+            )
         elif sha256_bytes(data) != expected_sha:
             errors.append(f"review bundle archive entry SHA-256 mismatch: {name}")
     return errors
@@ -1248,14 +1314,15 @@ def check_linux_archive_smoke_log(
     if not isinstance(smoke_records, list):
         return []
     record = next(
-        (item for item in smoke_records if isinstance(item, dict) and str(item.get("id", "")) == "native_smoke"),
+        (item for item in smoke_records if isinstance(item, dict) and item.get("id") == "native_smoke"),
         None,
     )
     if not isinstance(record, dict):
         return ["review bundle manifest smoke_evidence must include native_smoke"]
-    filename = str(record.get("file", ""))
-    if not filename:
+    raw_filename = record.get("file")
+    if not isinstance(raw_filename, str) or not raw_filename:
         return ["review bundle manifest native_smoke file must be set"]
+    filename = raw_filename
     read_errors: list[str] = []
     data = read_archive_entry_bytes(
         archive,
@@ -1272,7 +1339,15 @@ def check_linux_archive_smoke_log(
         return [f"review bundle archive native_smoke evidence is not UTF-8: {exc}"]
     source = candidate.get("release_asset_source")
     target = str(candidate.get("target", ""))
-    source_head_sha = str(source.get("head_sha", "")).strip() if isinstance(source, dict) else ""
+    if not isinstance(source, dict):
+        return ["candidate release_asset_source must be an object for archived native_smoke evidence"]
+    raw_source_head_sha = source.get("head_sha")
+    if not isinstance(raw_source_head_sha, str) or not GIT_SHA_RE.fullmatch(raw_source_head_sha.strip()):
+        return [
+            "candidate release_asset_source.head_sha must be a 40-character "
+            "lowercase Git SHA for archived native_smoke evidence"
+        ]
+    source_head_sha = raw_source_head_sha.strip()
     source_run_attempt = source.get("run_attempt") if isinstance(source, dict) else 0
     errors = check_linux_smoke_log_text(
         target,
@@ -1306,16 +1381,45 @@ def check_xp_archive_smoke_manifest_matches_evidence(
     smoke_manifest = manifest.get("smoke_evidence")
     if not isinstance(smoke_results, list) or not isinstance(smoke_manifest, list):
         return []
-    evidence_files = {
-        str(item.get("id", "")): str(item.get("evidence_file", ""))
-        for item in smoke_results
-        if isinstance(item, dict) and str(item.get("id", ""))
-    }
-    manifest_files = {
-        str(item.get("id", "")): str(item.get("file", ""))
-        for item in smoke_manifest
-        if isinstance(item, dict) and str(item.get("id", ""))
-    }
+    errors: list[str] = []
+    evidence_files: dict[str, str] = {}
+    for item in smoke_results:
+        if not isinstance(item, dict):
+            continue
+        smoke_id = item.get("id")
+        if not isinstance(smoke_id, str) or not smoke_id:
+            errors.append(
+                f"review bundle archive XP smoke result id must be a non-empty string, got {smoke_id!r}"
+            )
+            continue
+        evidence_file = item.get("evidence_file")
+        if not isinstance(evidence_file, str) or not evidence_file:
+            errors.append(
+                f"review bundle archive XP smoke result {smoke_id} "
+                f"evidence_file must be a non-empty string, got {evidence_file!r}"
+            )
+            continue
+        evidence_files[smoke_id] = evidence_file
+    manifest_files: dict[str, str] = {}
+    for item in smoke_manifest:
+        if not isinstance(item, dict):
+            continue
+        smoke_id = item.get("id")
+        if not isinstance(smoke_id, str) or not smoke_id:
+            errors.append(
+                f"review bundle manifest smoke_evidence id must be a non-empty string, got {smoke_id!r}"
+            )
+            continue
+        smoke_file = item.get("file")
+        if not isinstance(smoke_file, str) or not smoke_file:
+            errors.append(
+                f"review bundle manifest smoke_evidence {smoke_id} "
+                f"file must be a non-empty string, got {smoke_file!r}"
+            )
+            continue
+        manifest_files[smoke_id] = smoke_file
+    if errors:
+        return errors
     if evidence_files != manifest_files:
         return ["review bundle manifest smoke_evidence files must match archived XP evidence smoke_results"]
     return []
@@ -1338,10 +1442,26 @@ def check_xp_archive_smoke_files(
         if not isinstance(result, dict):
             errors.append("review bundle archive XP evidence smoke_results entries must be objects")
             continue
-        smoke_id = str(result.get("id", ""))
-        filename = str(result.get("evidence_file", ""))
-        if not smoke_id or not filename:
-            errors.append("review bundle archive XP smoke result must include id and evidence_file")
+        raw_smoke_id = result.get("id")
+        if not isinstance(raw_smoke_id, str) or not raw_smoke_id:
+            errors.append(
+                f"review bundle archive XP smoke result id must be a non-empty string, got {raw_smoke_id!r}"
+            )
+            continue
+        smoke_id = raw_smoke_id
+        raw_filename = result.get("evidence_file")
+        if not isinstance(raw_filename, str) or not raw_filename:
+            errors.append(
+                f"review bundle archive XP smoke result {smoke_id} "
+                f"evidence_file must be a non-empty string, got {raw_filename!r}"
+            )
+            continue
+        filename = raw_filename
+        if not archive_entry_name_is_safe(filename):
+            errors.append(
+                f"review bundle archive XP smoke result {smoke_id} "
+                f"evidence_file must be a safe relative archive path, got {filename!r}"
+            )
             continue
         data = read_archive_entry_bytes(
             archive,
@@ -1352,8 +1472,13 @@ def check_xp_archive_smoke_files(
         )
         if data is None:
             continue
-        expected_sha = str(result.get("evidence_sha256", ""))
-        if expected_sha and sha256_bytes(data) != expected_sha:
+        expected_sha = result.get("evidence_sha256", "")
+        if not isinstance(expected_sha, str) or not SHA256_HEX_RE.fullmatch(expected_sha):
+            errors.append(
+                f"review bundle archive XP smoke result {smoke_id} "
+                "evidence_sha256 must be a lowercase SHA-256 hex digest"
+            )
+        elif sha256_bytes(data) != expected_sha:
             errors.append(f"review bundle archive XP smoke evidence SHA-256 mismatch: {filename}")
         errors.extend(
             check_smoke_evidence_binding(

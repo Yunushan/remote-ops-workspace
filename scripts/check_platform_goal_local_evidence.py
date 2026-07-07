@@ -177,14 +177,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def platform_goal_local_evidence_report(
     *,
-    targets: tuple[str, ...],
+    targets: tuple[object, ...],
     errors: list[str],
 ) -> dict[str, Any]:
-    target_errors = {target: [] for target in targets}
-    global_errors: list[str] = []
+    validated_targets, target_validation_errors = local_evidence_target_values(targets)
+    target_errors = {target: [] for target in validated_targets}
+    global_errors: list[str] = list(target_validation_errors)
     for error in errors:
         matched = False
-        for target in targets:
+        for target in validated_targets:
             if local_evidence_error_matches_target(error, target):
                 target_errors[target].append(error)
                 matched = True
@@ -196,7 +197,7 @@ def platform_goal_local_evidence_report(
     target_results: list[dict[str, Any]] = []
     passed_targets: list[str] = []
     failed_targets: list[str] = []
-    for target in targets:
+    for target in validated_targets:
         errors_for_target = target_errors[target]
         if blocked_by_global_errors and not errors_for_target:
             status = "blocked-by-global-error"
@@ -215,7 +216,7 @@ def platform_goal_local_evidence_report(
             }
         )
 
-    target_count = len(targets)
+    target_count = len(validated_targets)
     passed_target_count = len(passed_targets)
     current_percent = (passed_target_count / target_count * 100.0) if target_count else 0.0
     return {
@@ -236,7 +237,13 @@ def platform_goal_local_evidence_report(
 
 
 def format_platform_goal_local_evidence_summary(report: dict[str, Any]) -> str:
-    targets = ", ".join(str(target) for target in report.get("passed_targets", []))
+    passed_targets, target_errors = local_evidence_report_target_values(
+        report.get("passed_targets", []),
+        "passed_targets",
+    )
+    if target_errors:
+        raise ValueError("; ".join(target_errors))
+    targets = ", ".join(passed_targets)
     return (
         "platform goal local evidence preflight: "
         f"{report.get('passed_target_count', 0)}/{report.get('target_count', 0)} passed "
@@ -250,64 +257,150 @@ def local_evidence_error_matches_target(error: str, target: str) -> bool:
     return re.search(rf"(?<![A-Za-z0-9_.-]){re.escape(target)}(?![A-Za-z0-9_.-])", normalized) is not None
 
 
-def check_platform_goal_local_evidence(
-    *,
-    root: Path,
-    release_tag: str,
-    targets: tuple[str, ...] = PROTECTED_GOAL_TARGETS,
-    linux_workflow_run_url: str | None = None,
-    linux_source_head_sha: str | None = None,
-    linux_source_run_attempt: int | None = None,
-    strict_artifacts: bool = True,
-    assets_dir: Path | None = None,
-    linux_builder_evidence: Path | None = None,
-    linux_smoke_evidence: Path | None = None,
-    xp_evidence: Path | None = None,
-    xp_evidence_dir: Path | None = None,
-    xp_source_workflow_run_url: str | None = None,
-    xp_source_head_sha: str | None = None,
-    xp_source_run_attempt: int | None = None,
-) -> list[str]:
+def local_evidence_target_values(raw_targets: tuple[object, ...]) -> tuple[list[str], list[str]]:
+    targets: list[str] = []
     errors: list[str] = []
-    if not RELEASE_TAG_RE.fullmatch(release_tag):
-        errors.append(f"release_tag must look like vX.Y.Z: {release_tag}")
-    if not targets:
-        errors.append("at least one protected target is required for local evidence preflight")
+    for raw_target in raw_targets:
+        if not isinstance(raw_target, str) or not raw_target.strip():
+            errors.append(
+                "local evidence preflight target must be a non-empty string, "
+                f"got {raw_target!r}"
+            )
+            continue
+        target = raw_target.strip()
+        if target not in PROTECTED_GOAL_TARGETS:
+            errors.append(f"unknown protected target: {target}")
+            continue
+        targets.append(target)
     duplicate_targets = sorted({target for target in targets if targets.count(target) > 1})
     if duplicate_targets:
         errors.append(
             "local evidence preflight target list must not contain duplicates: "
             + ", ".join(duplicate_targets)
         )
-    errors.extend(check_directory_path_hint(root, "local evidence root"))
+    return targets, errors
+
+
+def local_evidence_report_target_values(
+    raw_targets: object,
+    field_name: str,
+) -> tuple[list[str], list[str]]:
+    if not isinstance(raw_targets, list):
+        return [], [
+            f"platform goal local evidence report {field_name} must be a list of target strings"
+        ]
+    targets, errors = local_evidence_target_values(tuple(raw_targets))
+    return targets, [
+        error.replace(
+            "local evidence preflight target",
+            f"platform goal local evidence report {field_name} entry",
+            1,
+        )
+        for error in errors
+    ]
+
+
+def local_evidence_release_tag_value(raw_release_tag: object) -> tuple[list[str], str]:
+    if not isinstance(raw_release_tag, str) or not raw_release_tag:
+        return [f"release_tag must be a non-empty string, got {raw_release_tag!r}"], ""
+    if not RELEASE_TAG_RE.fullmatch(raw_release_tag):
+        return [f"release_tag must look like vX.Y.Z: {raw_release_tag}"], ""
+    return [], raw_release_tag
+
+
+def local_evidence_required_path_value(raw_path: object, label: str) -> tuple[list[str], Path]:
+    if not isinstance(raw_path, Path):
+        return [f"{label} must be a pathlib.Path, got {raw_path!r}"], Path()
+    return [], raw_path
+
+
+def local_evidence_optional_path_value(raw_path: object | None, label: str) -> tuple[list[str], Path | None]:
+    if raw_path is None:
+        return [], None
+    if not isinstance(raw_path, Path):
+        return [f"{label} must be a pathlib.Path, got {raw_path!r}"], None
+    return [], raw_path
+
+
+def check_platform_goal_local_evidence(
+    *,
+    root: object,
+    release_tag: object,
+    targets: tuple[object, ...] = PROTECTED_GOAL_TARGETS,
+    linux_workflow_run_url: str | None = None,
+    linux_source_head_sha: str | None = None,
+    linux_source_run_attempt: int | None = None,
+    strict_artifacts: bool = True,
+    assets_dir: object | None = None,
+    linux_builder_evidence: object | None = None,
+    linux_smoke_evidence: object | None = None,
+    xp_evidence: object | None = None,
+    xp_evidence_dir: object | None = None,
+    xp_source_workflow_run_url: str | None = None,
+    xp_source_head_sha: str | None = None,
+    xp_source_run_attempt: int | None = None,
+) -> list[str]:
+    errors: list[str] = []
+    release_tag_errors, release_tag_value = local_evidence_release_tag_value(release_tag)
+    errors.extend(release_tag_errors)
+    validated_targets, target_validation_errors = local_evidence_target_values(targets)
+    errors.extend(target_validation_errors)
+    if not validated_targets and not target_validation_errors:
+        errors.append("at least one protected target is required for local evidence preflight")
+    root_errors, root_path = local_evidence_required_path_value(root, "local evidence root")
+    errors.extend(root_errors)
+    assets_dir_errors, assets_dir_path = local_evidence_optional_path_value(assets_dir, "explicit artifact directory")
+    errors.extend(assets_dir_errors)
+    builder_errors, linux_builder_evidence_path = local_evidence_optional_path_value(
+        linux_builder_evidence,
+        "explicit Linux builder evidence",
+    )
+    errors.extend(builder_errors)
+    smoke_errors, linux_smoke_evidence_path = local_evidence_optional_path_value(
+        linux_smoke_evidence,
+        "explicit Linux smoke evidence",
+    )
+    errors.extend(smoke_errors)
+    xp_evidence_errors, xp_evidence_path = local_evidence_optional_path_value(
+        xp_evidence,
+        "explicit XP evidence file",
+    )
+    errors.extend(xp_evidence_errors)
+    xp_evidence_dir_errors, xp_evidence_dir_path = local_evidence_optional_path_value(
+        xp_evidence_dir,
+        "explicit XP evidence directory",
+    )
+    errors.extend(xp_evidence_dir_errors)
+    if not root_errors:
+        errors.extend(check_directory_path_hint(root_path, "local evidence root"))
     if errors:
         return errors
-    errors.extend(check_path_not_reserved_workspace_path(root, "local evidence root"))
+    errors.extend(check_path_not_reserved_workspace_path(root_path, "local evidence root"))
     if errors:
         return errors
-    if root.is_symlink():
-        errors.append(f"local evidence root must not be a symlink: {root}")
+    if root_path.is_symlink():
+        errors.append(f"local evidence root must not be a symlink: {root_path}")
         return errors
-    root_parent_errors = check_path_parent_symlinks(root, "local evidence root")
+    root_parent_errors = check_path_parent_symlinks(root_path, "local evidence root")
     if root_parent_errors:
         errors.extend(root_parent_errors)
         return errors
-    if not root.is_dir():
-        errors.append(f"local evidence root missing: {root}")
+    if not root_path.is_dir():
+        errors.append(f"local evidence root missing: {root_path}")
         return errors
-    if not strict_artifacts and len(targets) != 1:
+    if not strict_artifacts and len(validated_targets) != 1:
         errors.append(FULL_GOAL_STRICT_ARTIFACTS_ERROR)
         return errors
     if any(
         path is not None
         for path in (
-            assets_dir,
-            linux_builder_evidence,
-            linux_smoke_evidence,
-            xp_evidence,
-            xp_evidence_dir,
+            assets_dir_path,
+            linux_builder_evidence_path,
+            linux_smoke_evidence_path,
+            xp_evidence_path,
+            xp_evidence_dir_path,
         )
-    ) and len(targets) != 1:
+    ) and len(validated_targets) != 1:
         errors.append("explicit evidence paths require exactly one --target")
         return errors
     explicit_source_options = [
@@ -322,7 +415,7 @@ def check_platform_goal_local_evidence(
         )
         if value is not None
     ]
-    if explicit_source_options and len(targets) != 1:
+    if explicit_source_options and len(validated_targets) != 1:
         errors.append(
             "explicit source binding options require exactly one --target: "
             + ", ".join(explicit_source_options)
@@ -330,33 +423,33 @@ def check_platform_goal_local_evidence(
         return errors
 
     promotion = read_json(PROMOTION_PATH)
-    for target in targets:
+    for target in validated_targets:
         if target in LINUX_TARGETS:
             errors.extend(
                 check_linux_local_evidence(
-                    root=root,
-                    release_tag=release_tag,
+                    root=root_path,
+                    release_tag=release_tag_value,
                     target=target,
                     promotion=promotion,
                     workflow_run_url=linux_workflow_run_url,
                     source_head_sha=linux_source_head_sha,
                     source_run_attempt=linux_source_run_attempt,
                     strict_artifacts=strict_artifacts,
-                    assets_dir=assets_dir,
-                    builder_evidence=linux_builder_evidence,
-                    smoke_evidence=linux_smoke_evidence,
+                    assets_dir=assets_dir_path,
+                    builder_evidence=linux_builder_evidence_path,
+                    smoke_evidence=linux_smoke_evidence_path,
                 )
             )
         elif target in XP_TARGETS:
             errors.extend(
                 check_xp_local_evidence(
-                    root=root,
-                    release_tag=release_tag,
+                    root=root_path,
+                    release_tag=release_tag_value,
                     target=target,
                     strict_artifacts=strict_artifacts,
-                    assets_dir=assets_dir,
-                    evidence_file=xp_evidence,
-                    evidence_dir=xp_evidence_dir,
+                    assets_dir=assets_dir_path,
+                    evidence_file=xp_evidence_path,
+                    evidence_dir=xp_evidence_dir_path,
                     source_workflow_run_url=xp_source_workflow_run_url,
                     source_head_sha=xp_source_head_sha,
                     source_run_attempt=xp_source_run_attempt,
@@ -367,9 +460,9 @@ def check_platform_goal_local_evidence(
     if not errors:
         errors.extend(
             check_multi_target_release_source_scope(
-                root=root,
-                release_tag=release_tag,
-                targets=targets,
+                root=root_path,
+                release_tag=release_tag_value,
+                targets=tuple(validated_targets),
                 linux_workflow_run_url=linux_workflow_run_url,
                 linux_source_head_sha=linux_source_head_sha,
                 linux_source_run_attempt=linux_source_run_attempt,
@@ -901,10 +994,16 @@ def check_xp_resolved_source_bindings(
     actual_source_head_sha = raw_source_head_sha.strip() if isinstance(raw_source_head_sha, str) else raw_source_head_sha
     actual_workflow = raw_workflow.strip() if isinstance(raw_workflow, str) else raw_workflow
     expected_workflow = release_source_workflow(target)
-    expected_workflow_run_url = (
-        str(workflow_run_url).strip().rstrip("/") if workflow_run_url else actual_workflow_run_url
-    )
-    expected_source_head_sha = str(source_head_sha).strip() if source_head_sha else actual_source_head_sha
+    explicit_workflow_run_url = workflow_run_url is not None and workflow_run_url != ""
+    explicit_source_head_sha = source_head_sha is not None and source_head_sha != ""
+    expected_workflow_run_url = actual_workflow_run_url
+    if explicit_workflow_run_url:
+        expected_workflow_run_url = (
+            workflow_run_url.strip().rstrip("/") if isinstance(workflow_run_url, str) else workflow_run_url
+        )
+    expected_source_head_sha = actual_source_head_sha
+    if explicit_source_head_sha:
+        expected_source_head_sha = source_head_sha.strip() if isinstance(source_head_sha, str) else source_head_sha
     expected_source_run_attempt: object = (
         source_run_attempt if source_run_attempt is not None else actual_source_run_attempt
     )
@@ -915,12 +1014,12 @@ def check_xp_resolved_source_bindings(
         source_run_attempt=expected_source_run_attempt,
         workflow_label=(
             "--xp-source-workflow-run-url"
-            if workflow_run_url
+            if explicit_workflow_run_url
             else "XP evidence release_source.workflow_run_url"
         ),
         source_label=(
             "--xp-source-head-sha"
-            if source_head_sha
+            if explicit_source_head_sha
             else "XP evidence release_source.head_sha"
         ),
         attempt_label=(
@@ -936,12 +1035,20 @@ def check_xp_resolved_source_bindings(
             f"{target} XP evidence release_source.workflow must be {expected_workflow}, "
             f"got {actual_workflow!r}"
         )
-    if workflow_run_url and actual_workflow_run_url != expected_workflow_run_url:
+    if (
+        explicit_workflow_run_url
+        and isinstance(expected_workflow_run_url, str)
+        and actual_workflow_run_url != expected_workflow_run_url
+    ):
         errors.append(
             f"{target} XP evidence release_source.workflow_run_url must match "
             f"--xp-source-workflow-run-url {expected_workflow_run_url}, got {actual_workflow_run_url!r}"
         )
-    if source_head_sha and actual_source_head_sha != expected_source_head_sha:
+    if (
+        explicit_source_head_sha
+        and isinstance(expected_source_head_sha, str)
+        and actual_source_head_sha != expected_source_head_sha
+    ):
         errors.append(
             f"{target} XP evidence release_source.head_sha must match "
             f"--xp-source-head-sha {expected_source_head_sha}, got {actual_source_head_sha!r}"

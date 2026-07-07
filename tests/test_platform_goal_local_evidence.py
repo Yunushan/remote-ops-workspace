@@ -53,6 +53,28 @@ def test_platform_goal_local_evidence_rejects_file_shaped_root(tmp_path: Path) -
     assert not root.exists()
 
 
+def test_platform_goal_local_evidence_rejects_non_path_root() -> None:
+    checker = _load_local_evidence_checker()
+
+    errors = checker.check_platform_goal_local_evidence(
+        root=True,
+        release_tag="v1.0.2",
+    )
+
+    assert errors == ["local evidence root must be a pathlib.Path, got True"]
+
+
+def test_platform_goal_local_evidence_rejects_non_string_release_tag(tmp_path: Path) -> None:
+    checker = _load_local_evidence_checker()
+
+    errors = checker.check_platform_goal_local_evidence(
+        root=tmp_path,
+        release_tag=True,
+    )
+
+    assert errors == ["release_tag must be a non-empty string, got True"]
+
+
 def test_platform_goal_local_evidence_rejects_reserved_workspace_root() -> None:
     checker = _load_local_evidence_checker()
     root = Path(".git") / "platform-evidence"
@@ -135,6 +157,45 @@ def test_platform_goal_local_evidence_report_blocks_targets_on_global_failure() 
     assert report["global_errors"] == ["release_tag must look like vX.Y.Z: latest"]
     assert report["target_results"][0]["status"] == "blocked-by-global-error"
     assert report["target_results"][1]["status"] == "blocked-by-global-error"
+
+
+def test_platform_goal_local_evidence_report_rejects_malformed_targets_without_stringifying() -> None:
+    checker = _load_local_evidence_checker()
+
+    report = checker.platform_goal_local_evidence_report(
+        targets=(True, "linux-i386"),
+        errors=[],
+    )
+
+    assert report["passed_targets"] == []
+    assert report["failed_targets"] == ["linux-i386"]
+    assert report["current_percent"] == 0.0
+    assert report["global_errors"] == [
+        "local evidence preflight target must be a non-empty string, got True"
+    ]
+    assert not any("unknown protected target: True" in error for error in report["global_errors"])
+
+
+def test_platform_goal_local_evidence_summary_rejects_malformed_passed_targets() -> None:
+    checker = _load_local_evidence_checker()
+
+    try:
+        checker.format_platform_goal_local_evidence_summary(
+            {
+                "target_count": 1,
+                "passed_target_count": 1,
+                "current_percent": 100.0,
+                "status": "local-preflight-passed",
+                "passed_targets": [True],
+            }
+        )
+    except ValueError as exc:
+        assert (
+            "platform goal local evidence report passed_targets entry must be a "
+            "non-empty string, got True"
+        ) in str(exc)
+    else:
+        raise AssertionError("expected malformed passed_targets to be rejected")
 
 
 def test_platform_goal_local_evidence_rejects_symlinked_root_parent(
@@ -342,6 +403,27 @@ def test_platform_goal_local_evidence_rejects_linux_inputs_outside_root(tmp_path
     assert f"{target} artifact directory must stay inside local evidence root: {artifacts}" in errors
     assert f"{target} builder identity evidence must stay inside local evidence root: {builder}" in errors
     assert f"{target} native smoke evidence must stay inside local evidence root: {smoke}" in errors
+
+
+def test_platform_goal_local_evidence_rejects_non_path_linux_explicit_proof_inputs(
+    tmp_path: Path,
+) -> None:
+    checker = _load_local_evidence_checker()
+
+    errors = checker.check_platform_goal_local_evidence(
+        root=tmp_path,
+        release_tag="v1.0.2",
+        targets=("linux-i386",),
+        assets_dir=True,
+        linux_builder_evidence=False,
+        linux_smoke_evidence=["native-smoke-linux-i386.log"],
+    )
+
+    assert errors == [
+        "explicit artifact directory must be a pathlib.Path, got True",
+        "explicit Linux builder evidence must be a pathlib.Path, got False",
+        "explicit Linux smoke evidence must be a pathlib.Path, got ['native-smoke-linux-i386.log']",
+    ]
 
 
 def test_platform_goal_local_evidence_rejects_file_shaped_linux_artifact_directory(
@@ -671,6 +753,21 @@ def test_platform_goal_local_evidence_rejects_duplicate_targets(tmp_path: Path) 
     assert errors == [
         "local evidence preflight target list must not contain duplicates: linux-i386"
     ]
+
+
+def test_platform_goal_local_evidence_rejects_malformed_target_values_without_stringifying(
+    tmp_path: Path,
+) -> None:
+    checker = _load_local_evidence_checker()
+
+    errors = checker.check_platform_goal_local_evidence(
+        root=tmp_path,
+        release_tag="v1.0.0",
+        targets=(True, "linux-i386"),
+    )
+
+    assert errors == ["local evidence preflight target must be a non-empty string, got True"]
+    assert not any("unknown protected target: True" in error for error in errors)
 
 
 def test_platform_goal_local_evidence_rejects_linux_source_head_drift(
@@ -1079,6 +1176,28 @@ def test_platform_goal_local_evidence_rejects_invalid_xp_source_bindings(tmp_pat
 
     assert f"{target} --xp-source-workflow-run-url must be a GitHub Actions run URL" in errors
     assert f"{target} --xp-source-head-sha must be a 40-character lowercase Git SHA" in errors
+
+
+def test_platform_goal_local_evidence_rejects_non_string_xp_source_bindings(
+    tmp_path: Path,
+) -> None:
+    checker = _load_local_evidence_checker()
+    target = "windows-xp-native-x64"
+    (tmp_path / target / "v1.0.2").mkdir(parents=True)
+
+    errors = checker.check_platform_goal_local_evidence(
+        root=tmp_path,
+        release_tag="v1.0.2",
+        targets=(target,),
+        xp_source_workflow_run_url=True,
+        xp_source_head_sha=12345,
+        xp_source_run_attempt=1,
+    )
+
+    assert f"{target} --xp-source-workflow-run-url must be a string" in errors
+    assert f"{target} --xp-source-head-sha must be a string" in errors
+    assert not any("--xp-source-workflow-run-url must be a GitHub Actions run URL" in error for error in errors)
+    assert not any("--xp-source-head-sha must be a 40-character lowercase Git SHA" in error for error in errors)
 
 
 def test_platform_goal_local_evidence_accepts_xp_x86_staged_proof(tmp_path: Path) -> None:
@@ -1670,6 +1789,27 @@ def test_platform_goal_local_evidence_rejects_xp_inputs_outside_root(tmp_path: P
     assert f"{target} artifact directory must stay inside local evidence root: {artifacts}" in errors
     assert f"{target} XP evidence file must stay inside local evidence root: {evidence_file}" in errors
     assert f"{target} XP evidence directory must stay inside local evidence root: {evidence_dir}" in errors
+
+
+def test_platform_goal_local_evidence_rejects_non_path_xp_explicit_proof_inputs(
+    tmp_path: Path,
+) -> None:
+    checker = _load_local_evidence_checker()
+
+    errors = checker.check_platform_goal_local_evidence(
+        root=tmp_path,
+        release_tag="v1.0.2",
+        targets=("windows-xp-native-x86",),
+        assets_dir=True,
+        xp_evidence=False,
+        xp_evidence_dir=["xp-evidence"],
+    )
+
+    assert errors == [
+        "explicit artifact directory must be a pathlib.Path, got True",
+        "explicit XP evidence file must be a pathlib.Path, got False",
+        "explicit XP evidence directory must be a pathlib.Path, got ['xp-evidence']",
+    ]
 
 
 def test_platform_goal_local_evidence_rejects_file_shaped_xp_directories(

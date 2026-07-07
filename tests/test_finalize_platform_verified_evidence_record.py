@@ -128,6 +128,25 @@ def test_finalize_platform_verified_evidence_record_rejects_symlinked_candidate_
     assert f"candidate evidence record file must not be a symlink: {candidate_path}" in errors
 
 
+def test_finalize_platform_verified_evidence_record_rejects_non_path_inputs() -> None:
+    finalizer = _load_finalizer()
+
+    errors, record = finalizer.finalize_platform_verified_evidence_record(
+        candidate_record=True,
+        bundle_manifest=["bundle.json"],
+        bundle_archive=False,
+        bundle_sha256s={"sha256s": "bundle-SHA256SUMS.txt"},
+    )
+
+    assert record == {}
+    assert errors == [
+        "candidate evidence record path must be a pathlib.Path, got True",
+        "review bundle manifest path must be a pathlib.Path, got ['bundle.json']",
+        "review bundle archive path must be a pathlib.Path, got False",
+        "review bundle SHA-256 sidecar path must be a pathlib.Path, got {'sha256s': 'bundle-SHA256SUMS.txt'}",
+    ]
+
+
 def test_finalize_platform_verified_evidence_record_rejects_already_finalized_candidate(
     tmp_path: Path,
 ) -> None:
@@ -155,6 +174,38 @@ def test_finalize_platform_verified_evidence_record_rejects_already_finalized_ca
         "candidate evidence record must be unfinalized before finalization; "
         "remove fields: ['finalized_record_release_asset_url', 'review_bundle']"
     ) in errors
+
+
+def test_finalize_platform_verified_evidence_record_rejects_non_string_candidate_target_release_fields(
+    tmp_path: Path,
+) -> None:
+    finalizer = _load_finalizer()
+    helpers = _load_platform_verified_evidence_tests()
+    target = "windows-xp-native-x86"
+    release_tag = "v1.0.2"
+    candidate = helpers._xp_record(target)
+    _unfinalized_candidate(candidate)
+    candidate["target"] = True
+    candidate["release_tag"] = False
+    candidate_path, manifest, archive, sidecar = _write_xp_candidate_and_bundle(
+        tmp_path,
+        candidate,
+        target=target,
+        release_tag=release_tag,
+    )
+
+    errors, record = finalizer.finalize_platform_verified_evidence_record(
+        candidate_record=candidate_path,
+        bundle_manifest=manifest,
+        bundle_archive=archive,
+        bundle_sha256s=sidecar,
+    )
+
+    assert record == {}
+    assert "candidate target must be a non-empty string, got True" in errors
+    assert "candidate release_tag must be a non-empty string, got False" in errors
+    assert not any("candidate target is not protected: True" in error for error in errors)
+    assert not any("release_tag False" in error for error in errors)
 
 
 def test_finalize_platform_verified_evidence_record_requires_strict_candidate_validation(
@@ -823,6 +874,35 @@ def test_finalize_platform_verified_evidence_record_rejects_boolean_archive_reco
     assert "review bundle manifest record one-byte.txt size_bytes must be positive" in errors
 
 
+def test_finalize_platform_verified_evidence_record_rejects_malformed_archive_record_hash(
+    tmp_path: Path,
+) -> None:
+    finalizer = _load_finalizer()
+    manifest = tmp_path / "extended-linux-evidence-bundle-linux-i386-v1.0.2.json"
+    archive = tmp_path / "extended-linux-evidence-bundle-linux-i386-v1.0.2.zip"
+    payload = b"x"
+    manifest_data = {
+        "bundle_type": "extended-linux-native-evidence",
+        "candidate_record": {
+            "file": "one-byte.txt",
+            "size_bytes": len(payload),
+            "sha256": True,
+        },
+    }
+    manifest.write_text(json.dumps(manifest_data, indent=2) + "\n", encoding="utf-8")
+    with zipfile.ZipFile(archive, mode="w", compression=zipfile.ZIP_DEFLATED) as zipped:
+        zipped.write(manifest, arcname=manifest.name)
+        zipped.writestr("one-byte.txt", payload)
+
+    with zipfile.ZipFile(archive) as zipped:
+        errors = finalizer.check_archive_record_hashes(zipped, manifest, manifest_data)
+
+    assert (
+        "review bundle manifest record one-byte.txt sha256 must be a lowercase SHA-256 hex digest"
+        in errors
+    )
+
+
 def test_finalize_platform_verified_evidence_record_rejects_weak_linux_smoke_log(tmp_path: Path) -> None:
     finalizer = _load_finalizer()
     helpers = _load_platform_verified_evidence_tests()
@@ -886,6 +966,106 @@ def test_finalize_platform_verified_evidence_record_rejects_weak_linux_smoke_log
         in error
         for error in errors
     )
+
+
+def test_finalize_platform_verified_evidence_record_rejects_malformed_linux_archive_source_head(
+    tmp_path: Path,
+) -> None:
+    finalizer = _load_finalizer()
+    helpers = _load_platform_verified_evidence_tests()
+    target = "linux-i386"
+    release_tag = "v1.0.2"
+    candidate = helpers._linux_record(target)
+    smoke_path = tmp_path / "native-smoke-linux-i386.log"
+    _write_linux_smoke_evidence(
+        smoke_path,
+        target,
+        candidate["artifact_sha256"],
+        builder_evidence=_candidate_builder_evidence_path(target, release_tag),
+    )
+    candidate["release_asset_source"]["head_sha"] = True
+    manifest = {
+        "smoke_evidence": [
+            _smoke_file_record(smoke_path, smoke_id="native_smoke", name=smoke_path.name)
+        ]
+    }
+    archive_path = tmp_path / "extended-linux-evidence-bundle-linux-i386-v1.0.2.zip"
+    with zipfile.ZipFile(archive_path, mode="w", compression=zipfile.ZIP_DEFLATED) as zipped:
+        zipped.write(smoke_path, arcname=smoke_path.name)
+
+    with zipfile.ZipFile(archive_path) as zipped:
+        errors = finalizer.check_linux_archive_smoke_log(zipped, manifest, candidate)
+
+    assert (
+        "candidate release_asset_source.head_sha must be a 40-character "
+        "lowercase Git SHA for archived native_smoke evidence"
+    ) in errors
+    assert not any("source-head-sha True" in error for error in errors)
+
+
+def test_finalize_platform_verified_evidence_record_rejects_malformed_xp_smoke_manifest_fields() -> None:
+    finalizer = _load_finalizer()
+    archived_evidence = {
+        "smoke_results": [
+            {"id": True, "evidence_file": "xp-smoke-evidence/True.txt"},
+            {"id": "modern_defaults_unchanged", "evidence_file": True},
+        ]
+    }
+    manifest = {
+        "smoke_evidence": [
+            {"id": True, "file": "xp-smoke-evidence/True.txt"},
+            {"id": "modern_defaults_unchanged", "file": True},
+        ]
+    }
+
+    errors = finalizer.check_xp_archive_smoke_manifest_matches_evidence(
+        archived_evidence,
+        manifest,
+    )
+
+    assert "review bundle archive XP smoke result id must be a non-empty string, got True" in errors
+    assert (
+        "review bundle archive XP smoke result modern_defaults_unchanged "
+        "evidence_file must be a non-empty string, got True"
+    ) in errors
+    assert "review bundle manifest smoke_evidence id must be a non-empty string, got True" in errors
+    assert (
+        "review bundle manifest smoke_evidence modern_defaults_unchanged "
+        "file must be a non-empty string, got True"
+    ) in errors
+    assert "review bundle manifest smoke_evidence files must match archived XP evidence smoke_results" not in errors
+
+
+def test_finalize_platform_verified_evidence_record_rejects_malformed_xp_archive_smoke_file_fields(
+    tmp_path: Path,
+) -> None:
+    finalizer = _load_finalizer()
+    archive_path = tmp_path / "xp-native-evidence-bundle-windows-xp-native-x86-v1.0.2.zip"
+    with zipfile.ZipFile(archive_path, mode="w", compression=zipfile.ZIP_DEFLATED):
+        pass
+    archived_evidence = {
+        "target": "windows-xp-native-x86",
+        "release_tag": "v1.0.2",
+        "smoke_results": [
+            {"id": True, "evidence_file": "xp-smoke-evidence/True.txt"},
+            {"id": "legacy_crypto_profile_scoped", "evidence_file": True},
+            {"id": "modern_defaults_unchanged", "evidence_file": "../escape.txt"},
+        ],
+    }
+
+    with zipfile.ZipFile(archive_path) as zipped:
+        errors = finalizer.check_xp_archive_smoke_files(zipped, archived_evidence)
+
+    assert "review bundle archive XP smoke result id must be a non-empty string, got True" in errors
+    assert (
+        "review bundle archive XP smoke result legacy_crypto_profile_scoped "
+        "evidence_file must be a non-empty string, got True"
+    ) in errors
+    assert (
+        "review bundle archive XP smoke result modern_defaults_unchanged "
+        "evidence_file must be a safe relative archive path, got '../escape.txt'"
+    ) in errors
+    assert not any("missing XP smoke evidence file: True" in error for error in errors)
 
 
 def test_finalize_platform_verified_evidence_record_rejects_linux_builder_smoke_identity_drift(
@@ -1097,6 +1277,43 @@ def test_finalize_platform_verified_evidence_record_rejects_xp_smoke_hash_mismat
         "review bundle archive XP smoke evidence hashes must match candidate xp_smoke_evidence_sha256"
         in errors
     )
+
+
+def test_finalize_platform_verified_evidence_record_rejects_malformed_xp_archived_smoke_hash(
+    tmp_path: Path,
+) -> None:
+    finalizer = _load_finalizer()
+    archive = tmp_path / "xp-native-evidence-bundle-windows-xp-native-x86-v1.0.2.zip"
+    smoke_file = "xp-smoke-evidence/cli_launch.txt"
+    smoke_text = (
+        "xp smoke target: windows-xp-native-x86\n"
+        "xp smoke release: v1.0.2\n"
+        "xp smoke id: cli_launch\n"
+    )
+    archived_evidence = {
+        "target": "windows-xp-native-x86",
+        "release_tag": "v1.0.2",
+        "host_identity": {},
+        "os": {},
+        "release_source": {},
+        "smoke_results": [
+            {
+                "id": "cli_launch",
+                "evidence_file": smoke_file,
+                "evidence_sha256": True,
+            }
+        ],
+    }
+    with zipfile.ZipFile(archive, mode="w", compression=zipfile.ZIP_DEFLATED) as zipped:
+        zipped.writestr(smoke_file, smoke_text)
+
+    with zipfile.ZipFile(archive) as zipped:
+        errors = finalizer.check_xp_archive_smoke_files(zipped, archived_evidence)
+
+    assert (
+        "review bundle archive XP smoke result cli_launch "
+        "evidence_sha256 must be a lowercase SHA-256 hex digest"
+    ) in errors
 
 
 def test_finalize_platform_verified_evidence_record_rejects_xp_archived_smoke_binding_mismatch(
@@ -1764,6 +1981,32 @@ def test_finalize_platform_verified_evidence_record_rejects_non_string_candidate
     assert "candidate release_asset_url must be a string, got True" in final_errors
     assert not any("GitHub release asset URL: True" in error for error in bundle_errors)
     assert not any("GitHub release asset URL: True" in error for error in final_errors)
+
+
+def test_finalize_platform_verified_evidence_record_url_helpers_reject_non_string_candidate_fields() -> None:
+    finalizer = _load_finalizer()
+    helpers = _load_platform_verified_evidence_tests()
+    candidate = helpers._linux_record("linux-i386")
+    _unfinalized_candidate(candidate)
+    candidate["target"] = True
+    candidate["release_tag"] = False
+    expected_files = {
+        "manifest": "extended-linux-evidence-bundle-linux-i386-v1.0.2.json",
+        "archive": "extended-linux-evidence-bundle-linux-i386-v1.0.2.zip",
+        "sha256s": "extended-linux-evidence-bundle-linux-i386-v1.0.2-SHA256SUMS.txt",
+    }
+
+    bundle_errors, bundle_urls = finalizer.review_bundle_release_asset_urls(candidate, expected_files)
+    final_errors, final_url = finalizer.finalized_record_release_asset_url(candidate)
+
+    assert bundle_urls == []
+    assert final_url == ""
+    assert bundle_errors == ["candidate release_tag must be a non-empty string, got False"]
+    assert final_errors == [
+        "candidate target must be a non-empty string, got True",
+        "candidate release_tag must be a non-empty string, got False",
+    ]
+    assert not any("release_tag False" in error for error in bundle_errors + final_errors)
 
 
 def test_finalize_platform_verified_evidence_record_rejects_missing_xp_validation_command() -> None:

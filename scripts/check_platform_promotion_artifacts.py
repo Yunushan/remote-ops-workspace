@@ -113,7 +113,7 @@ def check_contract(promotion: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     entries = promotion_entries(promotion, errors)
     for target_id, entry in entries.items():
-        command = artifact_validation_command(entry)
+        command = artifact_validation_command(entry, target_id, errors)
         artifact_dir = "<target-release-artifact-dir>"
         expected = (
             "python scripts/check_platform_promotion_artifacts.py "
@@ -121,13 +121,13 @@ def check_contract(promotion: dict[str, Any]) -> list[str]:
         )
         if command != expected:
             errors.append(f"{target_id} artifact_validation_command must be: {expected}")
-        required = required_artifacts(entry)
+        required = required_artifacts(entry, target_id, errors)
         if not required:
             errors.append(f"{target_id} must declare required promotion artifacts")
             continue
-        if not any(str(item).endswith(CHECKSUM_SUFFIX) for item in required):
+        if not any(item.endswith(CHECKSUM_SUFFIX) for item in required):
             errors.append(f"{target_id} must require a {CHECKSUM_SUFFIX} sidecar")
-        if not any(str(item).endswith(MANIFEST_SUFFIX) for item in required):
+        if not any(item.endswith(MANIFEST_SUFFIX) for item in required):
             errors.append(f"{target_id} must require a native {MANIFEST_SUFFIX}")
     return errors
 
@@ -177,7 +177,7 @@ def check_platform_promotion_artifacts(
     if non_files:
         errors.append(f"{target} artifacts must contain only regular files: {non_files}")
 
-    expected = {expand_version(str(item), version) for item in required_artifacts(entry)}
+    expected = {expand_version(item, version) for item in required_artifacts(entry, target, errors)}
     actual = {path.name for path in entries_in_root if path.is_file()}
     missing = sorted(expected - actual)
     if missing:
@@ -670,9 +670,12 @@ def promotion_entries(promotion: dict[str, Any], errors: list[str]) -> dict[str,
         if not isinstance(item, dict):
             errors.append("platform promotion protected target entries must be objects")
             continue
-        target_id = str(item.get("id", ""))
-        if not target_id:
-            errors.append("platform promotion protected target entry missing id")
+        target_id = item.get("id")
+        if not isinstance(target_id, str) or not target_id:
+            errors.append(
+                "platform promotion protected target entry id "
+                f"must be a non-empty string, got {target_id!r}"
+            )
             continue
         if target_id in entries:
             errors.append(f"duplicate platform promotion target id: {target_id}")
@@ -683,27 +686,60 @@ def promotion_entries(promotion: dict[str, Any], errors: list[str]) -> dict[str,
 
 def expected_target_ids(promotion: dict[str, Any]) -> set[str]:
     return {
-        str(item.get("id"))
+        item.get("id")
         for item in promotion.get("protected_targets", [])
-        if isinstance(item, dict) and item.get("id")
+        if isinstance(item, dict) and isinstance(item.get("id"), str) and item.get("id")
     }
 
 
-def required_artifacts(entry: dict[str, Any]) -> list[str]:
+def required_artifacts(
+    entry: dict[str, Any],
+    target: str = "platform promotion target",
+    errors: list[str] | None = None,
+) -> list[str]:
     requirements = entry.get("promotion_to_100_requires", {})
     if not isinstance(requirements, dict):
+        if errors is not None:
+            errors.append(f"{target} promotion_to_100_requires must be an object")
         return []
-    raw_artifacts = requirements.get("required_artifacts", requirements.get("native_artifacts", []))
+    artifact_key = "required_artifacts" if "required_artifacts" in requirements else "native_artifacts"
+    raw_artifacts = requirements.get(artifact_key, [])
     if not isinstance(raw_artifacts, list):
+        if errors is not None:
+            errors.append(f"{target} {artifact_key} must be a list")
         return []
-    return [str(item) for item in raw_artifacts]
+    artifacts: list[str] = []
+    for index, item in enumerate(raw_artifacts):
+        if not isinstance(item, str) or not item:
+            if errors is not None:
+                errors.append(
+                    f"{target} {artifact_key}[{index}] "
+                    f"must be a non-empty string, got {item!r}"
+                )
+            continue
+        artifacts.append(item)
+    return artifacts
 
 
-def artifact_validation_command(entry: dict[str, Any]) -> str:
+def artifact_validation_command(
+    entry: dict[str, Any],
+    target: str = "platform promotion target",
+    errors: list[str] | None = None,
+) -> str:
     requirements = entry.get("promotion_to_100_requires", {})
     if not isinstance(requirements, dict):
+        if errors is not None:
+            errors.append(f"{target} promotion_to_100_requires must be an object")
         return ""
-    return str(requirements.get("artifact_validation_command", ""))
+    command = requirements.get("artifact_validation_command", "")
+    if not isinstance(command, str):
+        if errors is not None:
+            errors.append(
+                f"{target} artifact_validation_command "
+                f"must be a string, got {command!r}"
+            )
+        return ""
+    return command
 
 
 def expand_version(value: str, version: str) -> str:

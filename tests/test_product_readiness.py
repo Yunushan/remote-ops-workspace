@@ -191,6 +191,52 @@ def test_product_readiness_rejects_selected_release_source_maps_outside_scope(mo
     ) in errors
 
 
+def test_product_readiness_rejects_malformed_goal_target_lists_without_stringifying(
+    monkeypatch,
+) -> None:
+    checker = load_product_readiness_checker()
+    report = deepcopy(checker.coverage_report())
+    goal = report["platform_verified_readiness"]["protected_goal_parity"]
+    required = list(goal["required_targets"])
+    goal["accepted_targets"] = [True]
+    goal["missing_targets"] = required
+    goal["accepted_target_count"] = 1
+    goal["aggregate_accepted_targets"] = [True]
+    goal["aggregate_missing_targets"] = required
+    goal["aggregate_accepted_target_count"] = 1
+    goal["selected_release_source_run_attempts"] = {"True": 1}
+    goal["selected_release_source_run_urls"] = {
+        "True": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+    }
+    goal["selected_release_source_workflows"] = {
+        "True": ".github/workflows/extended-platform-evidence.yml",
+    }
+    monkeypatch.setattr(checker, "coverage_report", lambda: report)
+
+    errors = checker.check_product_readiness()
+
+    assert (
+        "protected platform goal parity accepted_targets entries must be "
+        "non-empty strings, got True"
+    ) in errors
+    assert (
+        "protected platform goal parity aggregate_accepted_targets entries must be "
+        "non-empty strings, got True"
+    ) in errors
+    assert (
+        "protected platform goal parity selected_release_source_run_attempts "
+        "contains targets outside selected release scope: ['True']"
+    ) in errors
+    assert (
+        "protected platform goal parity selected_release_source_run_urls "
+        "contains targets outside selected release scope: ['True']"
+    ) in errors
+    assert (
+        "protected platform goal parity selected_release_source_workflows "
+        "contains targets outside selected release scope: ['True']"
+    ) in errors
+
+
 def test_product_readiness_rejects_inconsistent_selected_release_scope_exclusions(
     monkeypatch,
 ) -> None:
@@ -618,6 +664,35 @@ def test_product_readiness_rejects_weak_xp_smoke_evidence_requirements(monkeypat
     ) in errors
 
 
+def test_product_readiness_rejects_malformed_protected_goal_requirement_metadata(
+    monkeypatch,
+) -> None:
+    checker = load_product_readiness_checker()
+    report = deepcopy(checker.coverage_report())
+    requirements = report["platform_verified_readiness"]["protected_goal_parity"][
+        "target_evidence_requirements"
+    ]
+    linux_i386 = next(item for item in requirements if item["target"] == "linux-i386")
+    linux_i386["target"] = True
+    linux_armhf = next(item for item in requirements if item["target"] == "linux-armhf")
+    linux_armhf["required_commands"][False] = "python scripts/fake.py"
+    monkeypatch.setattr(checker, "coverage_report", lambda: report)
+
+    errors = checker.check_product_readiness()
+
+    assert "protected platform goal parity requirements must cover every protected target" in errors
+    assert (
+        "protected platform goal parity requirement target must be a non-empty string, "
+        "got True"
+    ) in errors
+    assert (
+        "linux-armhf protected platform requirement required_commands keys "
+        "must be non-empty strings, got [False]"
+    ) in errors
+    assert not any("True protected platform requirement" in error for error in errors)
+    assert not any("required_commands has unexpected keys: ['False']" in error for error in errors)
+
+
 def test_product_readiness_rejects_missing_protected_goal_staged_upload_command(monkeypatch) -> None:
     checker = load_product_readiness_checker()
     report = deepcopy(checker.coverage_report())
@@ -1039,6 +1114,54 @@ def test_product_readiness_requires_accepted_row_release_bindings(monkeypatch) -
     errors = checker.check_product_readiness()
 
     assert "linux-i386 accepted evidence row must expose accepted_evidence_release_tags" in errors
+
+
+def test_product_readiness_rejects_malformed_accepted_row_target_lists_without_stringifying(
+    monkeypatch,
+) -> None:
+    checker = load_product_readiness_checker()
+    report = deepcopy(checker.coverage_report())
+    linux_i386 = next(
+        row
+        for row in report["platform_verified_readiness"]["targets"]
+        if row["target"] == "linux-i386"
+    )
+    linux_i386["accepted_evidence_required_targets"] = [True]
+    linux_i386["accepted_evidence_present_targets"] = [True]
+    for field, value in {
+        "accepted_evidence_release_tags": "v1.0.2",
+        "accepted_evidence_release_repositories": ["example/remote-ops-workspace"],
+        "accepted_evidence_release_source_heads": "a" * 40,
+        "accepted_evidence_release_source_run_attempts": 1,
+        "accepted_evidence_release_source_run_urls": (
+            "https://github.com/example/remote-ops-workspace/actions/runs/12345"
+        ),
+        "accepted_evidence_release_source_workflows": (
+            ".github/workflows/extended-platform-evidence.yml"
+        ),
+    }.items():
+        linux_i386[field] = {True: value}
+    monkeypatch.setattr(checker, "coverage_report", lambda: report)
+
+    errors = checker.check_product_readiness()
+
+    assert (
+        "protected platform row linux-i386 accepted_evidence_required_targets "
+        "entries must be non-empty strings, got True"
+    ) in errors
+    assert (
+        "protected platform row linux-i386 accepted_evidence_present_targets "
+        "entries must be non-empty strings, got True"
+    ) in errors
+    assert (
+        "accepted evidence row linux-i386 accepted_evidence_present_targets "
+        "entries must be non-empty strings, got True"
+    ) in errors
+    assert (
+        "linux-i386 accepted evidence accepted_evidence_release_tags keys "
+        "must be non-empty strings, got True"
+    ) in errors
+    assert not any("accepted_evidence_release_tags[True]" in error for error in errors)
 
 
 def test_product_readiness_rejects_missing_accepted_row_release_source_run_attempts(monkeypatch) -> None:

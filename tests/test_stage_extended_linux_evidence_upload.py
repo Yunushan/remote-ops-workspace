@@ -42,6 +42,37 @@ def test_stage_extended_linux_evidence_upload_copies_only_expected_files(tmp_pat
     )
 
 
+def test_stage_extended_linux_evidence_upload_rejects_malformed_release_tag_before_file_set(
+    tmp_path: Path,
+) -> None:
+    stager = _load_stager()
+
+    errors = stager.stage_extended_linux_evidence_upload(
+        target="linux-i386",
+        release_tag=True,
+        source_dir=tmp_path / "missing-source",
+        out_dir=tmp_path / "linux-evidence-upload",
+    )
+
+    assert errors == ["extended Linux staged upload release_tag must be a non-empty string, got True"]
+
+
+def test_stage_extended_linux_evidence_upload_rejects_non_path_inputs() -> None:
+    stager = _load_stager()
+
+    errors = stager.stage_extended_linux_evidence_upload(
+        target="linux-i386",
+        release_tag="v1.0.2",
+        source_dir=True,
+        out_dir=["linux-evidence-upload"],
+    )
+
+    assert errors == [
+        "extended Linux evidence source directory must be a pathlib.Path, got True",
+        "linux-i386 staged upload output directory must be a pathlib.Path, got ['linux-evidence-upload']",
+    ]
+
+
 def test_stage_extended_linux_evidence_upload_rejects_ambiguous_upload_file_names() -> None:
     stager = _load_stager()
 
@@ -385,9 +416,38 @@ def test_stage_extended_linux_evidence_upload_rejects_non_string_artifact_hash_k
     errors = stager.check_source_hashes("linux-i386", record, {})
 
     assert (
-        "linux-i386 staged upload artifact_sha256 keys must be exact safe file names: ['True']"
+        "linux-i386 staged upload artifact_sha256 keys must be strings, got True"
         in errors
     )
+
+
+def test_stage_extended_linux_evidence_upload_rejects_non_string_manifest_file_entry(
+    tmp_path: Path,
+) -> None:
+    stager = _load_stager()
+    manifest = tmp_path / "bundle-manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "bundle_type": "extended-linux-native-evidence",
+                "artifacts": [{"file": True}],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    files, errors = stager.review_bundle_workspace_files_with_errors(
+        "linux-i386",
+        {"review_bundle": {"manifest": {"file": manifest.name}}},
+        bundle_dir=tmp_path,
+    )
+
+    assert files == set()
+    assert (
+        "linux-i386 staged upload review_bundle manifest file entries "
+        "must be strings, got True"
+    ) in errors
 
 
 def test_stage_extended_linux_evidence_upload_rejects_review_bundle_content_mismatch(
@@ -756,6 +816,14 @@ def test_stage_extended_linux_evidence_upload_rejects_file_shaped_output_directo
         f"linux-i386 staged upload output directory must be a directory path, got {out_dir.as_posix()!r}"
     ]
     assert not out_dir.exists()
+
+
+def test_stage_extended_linux_evidence_upload_rejects_non_path_output_directory() -> None:
+    stager = _load_stager()
+
+    errors = stager.prepare_output_directory("linux-i386", out_dir=True, force=False)
+
+    assert errors == ["linux-i386 staged upload output directory must be a pathlib.Path, got True"]
 
 
 def test_stage_extended_linux_evidence_upload_rejects_reserved_workspace_output_directory() -> None:

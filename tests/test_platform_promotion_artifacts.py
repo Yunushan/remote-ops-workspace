@@ -62,6 +62,72 @@ def test_platform_promotion_artifacts_use_explicit_empty_promotion(tmp_path: Pat
     assert "configs/platform_parity_promotion.json protected_targets must be a list" in errors
 
 
+def test_platform_promotion_artifact_contract_rejects_non_string_target_id() -> None:
+    checker = _load_platform_promotion_artifacts_checker()
+    promotion = {"protected_targets": [{"id": True, "promotion_to_100_requires": {}}]}
+
+    errors = checker.check_contract(promotion)
+
+    assert (
+        "platform promotion protected target entry id "
+        "must be a non-empty string, got True"
+    ) in errors
+
+
+def test_platform_promotion_artifact_contract_rejects_non_string_required_artifact() -> None:
+    checker = _load_platform_promotion_artifacts_checker()
+    promotion = json.loads(json.dumps(checker.read_json(Path("configs/platform_parity_promotion.json"))))
+    target = next(item for item in promotion["protected_targets"] if item["id"] == "linux-i386")
+    target["promotion_to_100_requires"]["required_artifacts"].append(True)
+
+    errors = checker.check_contract(promotion)
+
+    assert any(
+        "linux-i386 required_artifacts[" in error
+        and "must be a non-empty string, got True" in error
+        for error in errors
+    )
+
+
+def test_platform_promotion_artifact_contract_rejects_non_string_validation_command() -> None:
+    checker = _load_platform_promotion_artifacts_checker()
+    promotion = json.loads(json.dumps(checker.read_json(Path("configs/platform_parity_promotion.json"))))
+    target = next(item for item in promotion["protected_targets"] if item["id"] == "linux-i386")
+    target["promotion_to_100_requires"]["artifact_validation_command"] = True
+
+    errors = checker.check_contract(promotion)
+
+    assert (
+        "linux-i386 artifact_validation_command must be a string, got True"
+    ) in errors
+
+
+def test_platform_promotion_artifacts_reject_non_string_required_artifact(
+    tmp_path: Path,
+) -> None:
+    checker = _load_platform_promotion_artifacts_checker()
+    tag = f"v{checker.read_project_version()}"
+    names = _required_names(checker, "linux-i386", tag)
+    _write_artifact_set(tmp_path, names)
+    promotion = json.loads(json.dumps(checker.read_json(Path("configs/platform_parity_promotion.json"))))
+    target = next(item for item in promotion["protected_targets"] if item["id"] == "linux-i386")
+    target["promotion_to_100_requires"]["required_artifacts"].append(True)
+
+    errors = checker.check_platform_promotion_artifacts(
+        target="linux-i386",
+        assets_dir=tmp_path,
+        tag=tag,
+        promotion=promotion,
+    )
+
+    assert any(
+        "linux-i386 required_artifacts[" in error
+        and "must be a non-empty string, got True" in error
+        for error in errors
+    )
+    assert not any("artifacts missing expected files: ['True']" in error for error in errors)
+
+
 def test_platform_promotion_artifacts_reject_checksum_mismatch(tmp_path: Path) -> None:
     checker = _load_platform_promotion_artifacts_checker()
     tag = f"v{checker.read_project_version()}"

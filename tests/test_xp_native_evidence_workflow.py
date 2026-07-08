@@ -470,6 +470,19 @@ def test_xp_native_evidence_workflow_requires_local_goal_preflight() -> None:
     assert any("XP local protected goal evidence preflight" in error for error in errors)
 
 
+def test_xp_native_evidence_workflow_requires_local_goal_preflight_repository() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8").replace(
+        ' --repository "${{ github.repository }}"',
+        "",
+        1,
+    )
+
+    errors = checker.check_xp_native_evidence_workflow(workflow)
+
+    assert any("XP local protected goal evidence preflight" in error for error in errors)
+
+
 def test_xp_native_evidence_workflow_requires_scoped_upload_staging() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8").replace(

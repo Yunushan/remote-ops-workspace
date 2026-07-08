@@ -218,6 +218,8 @@ def build_steps(
                         str(release_assets_dir),
                         "--dry-run",
                         "--verify-source-run",
+                        "--repository",
+                        release_repository,
                     ],
                     env=_source_env(),
                 )
@@ -254,6 +256,8 @@ def build_steps(
                         "--require-complete",
                         *(["--release-tag", release_tag] if release_tag else []),
                         *(["--assets-dir", str(release_assets_dir)] if release_assets_dir is not None else []),
+                        "--repository",
+                        release_repository,
                     ],
                     env=_source_env(),
                 )
@@ -283,6 +287,7 @@ def build_steps(
                 "scripts/check_release_publish_assets.py",
                 *(["--assets-dir", str(release_assets_dir)] if release_assets_dir is not None else []),
                 *(["--tag", release_tag] if release_tag else []),
+                *(["--repository", release_repository] if release_repository else []),
                 *(["--require-platform-goal-targets"] if require_platform_goal_targets else []),
             ],
             env=_source_env(),
@@ -525,6 +530,8 @@ def strict_platform_goal_arg_errors(args: argparse.Namespace) -> list[str]:
         return errors
     if not args.release_tag:
         errors.append("--require-platform-goal-targets requires --release-tag vX.Y.Z")
+    if not args.release_repository:
+        errors.append("--require-platform-goal-targets requires --release-repository <owner>/<repo>")
     if args.platform_review_bundle_dir is None:
         errors.append("--require-platform-goal-targets requires --platform-review-bundle-dir")
     if args.release_assets_dir is None:

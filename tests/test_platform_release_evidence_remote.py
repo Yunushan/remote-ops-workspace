@@ -9,6 +9,7 @@ import sys
 import zipfile
 from pathlib import Path
 from typing import Any
+from urllib.error import HTTPError
 
 import pytest
 
@@ -311,6 +312,28 @@ def test_remote_release_audit_accepts_exact_source_run_metadata(tmp_path: Path) 
     assert errors == []
 
 
+def test_remote_release_audit_rejects_source_run_metadata_alias_ambiguity() -> None:
+    checker = _load_checker()
+    helpers = _load_platform_verified_evidence_helpers()
+    record = helpers._linux_record("linux-i386")
+    run_url = str(record["release_asset_source"]["workflow_run_url"])
+    run_id = run_url.rsplit("/", 1)[-1]
+    source_runs = _source_runs_for(record)
+    source_runs[run_id] = source_runs[run_url]
+
+    errors = checker.check_record_source_run(
+        "linux-i386",
+        record,
+        workflow_runs_by_workflow={},
+        source_runs_by_run=source_runs,
+    )
+
+    assert errors == [
+        "linux-i386 exact source workflow run metadata contains ambiguous aliases for "
+        f"accepted source run {run_url}: ['{run_url}', '{run_id}']"
+    ]
+
+
 def test_remote_release_audit_rejects_malformed_source_run_record_fields() -> None:
     checker = _load_checker()
     helpers = _load_platform_verified_evidence_helpers()
@@ -355,6 +378,31 @@ def test_remote_release_audit_rejects_malformed_source_run_record_fields_direct(
         "linux-i386 release_asset_source.workflow_run_url must be a non-empty string for source run audit"
         in errors
     )
+    assert (
+        "linux-i386 release_asset_source.head_sha must be a 40-character lowercase Git SHA "
+        "for source run audit"
+    ) in errors
+
+
+def test_remote_release_audit_rejects_noncanonical_source_run_record_fields() -> None:
+    checker = _load_checker()
+    helpers = _load_platform_verified_evidence_helpers()
+    record = helpers._linux_record("linux-i386")
+    source = record["release_asset_source"]
+    source["workflow_run_url"] = "https://github.com/example/remote-ops-workspace/actions/runs/12345/"
+    source["head_sha"] = f" {'a' * 40}"
+
+    errors = checker.check_record_source_run(
+        "linux-i386",
+        record,
+        workflow_runs_by_workflow={},
+        source_runs_by_run={},
+    )
+
+    assert (
+        "linux-i386 release_asset_source.workflow_run_url must be canonical without "
+        "surrounding whitespace or trailing slash for source run audit"
+    ) in errors
     assert (
         "linux-i386 release_asset_source.head_sha must be a 40-character lowercase Git SHA "
         "for source run audit"
@@ -439,6 +487,22 @@ def test_remote_release_audit_rejects_malformed_source_artifact_workflow_head() 
     assert not any("workflow_run.head_sha must match accepted record" in error for error in errors)
 
 
+def test_remote_release_audit_rejects_source_artifact_name_drift_direct() -> None:
+    checker = _load_checker()
+    helpers = _load_platform_verified_evidence_helpers()
+    record = helpers._linux_record("linux-i386")
+    source = record["release_asset_source"]
+    artifact = _source_artifacts_for(record)[str(source["workflow_run_url"])]["artifacts"][0]
+    artifact["name"] = "unrelated-evidence"
+
+    errors = checker.check_source_artifact_record("linux-i386", artifact, record)
+
+    assert (
+        "linux-i386 source workflow artifact name must match accepted record "
+        "'extended-linux-evidence-linux-i386-v1.0.2', got 'unrelated-evidence'"
+    ) in errors
+
+
 def test_remote_release_audit_fixture_helpers_do_not_coerce_malformed_source_fields() -> None:
     checker = _load_checker()
     helpers = _load_platform_verified_evidence_helpers()
@@ -471,6 +535,37 @@ def test_remote_release_audit_fixture_helpers_do_not_coerce_malformed_source_fie
     )
 
     assert workflows == set()
+    assert run_urls == set()
+    assert fixture_keys == set()
+    assert attempt is None
+
+
+def test_remote_release_audit_fixture_helpers_do_not_normalize_source_run_urls() -> None:
+    checker = _load_checker()
+    helpers = _load_platform_verified_evidence_helpers()
+    record = helpers._linux_record("linux-i386")
+    source = record["release_asset_source"]
+    canonical_url = str(source["workflow_run_url"])
+    source["workflow_run_url"] = f"{canonical_url}/"
+    registry = _registry_with(record)
+
+    run_urls = checker.source_run_urls_for_records(
+        registry,
+        release_tag="v1.0.2",
+        required_targets=("linux-i386",),
+    )
+    fixture_keys = checker.expected_source_run_fixture_keys(
+        registry,
+        release_tag="v1.0.2",
+        required_targets=("linux-i386",),
+    )
+    attempt = checker.source_run_attempt_for_url(
+        registry,
+        release_tag="v1.0.2",
+        required_targets=("linux-i386",),
+        run_url=canonical_url,
+    )
+
     assert run_urls == set()
     assert fixture_keys == set()
     assert attempt is None
@@ -1350,6 +1445,33 @@ def test_remote_release_audit_rejects_malformed_published_release_asset_digest()
     )
 
 
+def test_remote_release_audit_rejects_noncanonical_published_release_asset_url() -> None:
+    checker = _load_checker()
+    helpers = _load_platform_verified_evidence_helpers()
+    record = helpers._linux_record("linux-i386")
+    asset_name = "remote-ops-workspace-v1.0.2-linux-i386.deb"
+    bad_url = next(
+        str(url).replace("https://github.com/", "https://example.com/")
+        for url in record["release_asset_urls"]
+        if str(url).endswith(f"/{asset_name}")
+    )
+    record["release_asset_urls"] = [
+        bad_url if str(url).endswith(f"/{asset_name}") else url
+        for url in record["release_asset_urls"]
+    ]
+
+    errors = checker.check_published_release_asset_bytes(
+        "linux-i386",
+        record,
+        release_asset_bytes_by_url={bad_url: b"asset bytes\n"},
+    )
+
+    assert (
+        f"linux-i386 release asset {asset_name} URL must be a canonical GitHub release asset URL "
+        f"before byte verification, got {bad_url!r}"
+    ) in errors
+
+
 def test_remote_release_audit_rejects_nonpositive_release_asset_metadata_size(
     tmp_path: Path,
 ) -> None:
@@ -1685,6 +1807,28 @@ def test_remote_release_audit_rejects_final_record_asset_byte_drift(tmp_path: Pa
     ) in errors
 
 
+def test_remote_release_audit_rejects_noncanonical_final_record_byte_url() -> None:
+    checker = _load_checker()
+    helpers = _load_platform_verified_evidence_helpers()
+    record = helpers._linux_record("linux-i386")
+    bad_url = str(record["finalized_record_release_asset_url"]).replace(
+        "https://github.com/",
+        "https://example.com/",
+    )
+    record["finalized_record_release_asset_url"] = bad_url
+
+    errors = checker.check_published_final_record_bytes(
+        "linux-i386",
+        record,
+        final_record_bytes_by_url={bad_url: b"{}\n"},
+    )
+
+    assert errors == [
+        "linux-i386 finalized accepted-record release asset URL must be a canonical GitHub "
+        f"release asset URL before byte verification, got {bad_url!r}"
+    ]
+
+
 def test_remote_release_audit_requires_exact_source_run_metadata(tmp_path: Path) -> None:
     checker = _load_checker()
     helpers = _load_platform_verified_evidence_helpers()
@@ -1738,11 +1882,91 @@ def test_remote_release_audit_requires_exact_source_run_metadata(tmp_path: Path)
         "https://github.com/example/remote-ops-workspace/actions/runs/12345, "
         "got 'https://github.com/example/remote-ops-workspace/actions/runs/99999'"
     ) in errors
-    assert "linux-i386 source workflow run run_attempt must match accepted record 1, got None" in errors
+    assert "linux-i386 source workflow run run_attempt must be a positive integer, got None" in errors
     assert (
         "linux-i386 source workflow run path must be "
         "'.github/workflows/extended-platform-evidence.yml', got None"
     ) in errors
+
+
+def test_remote_release_audit_requires_exact_source_run_html_url(tmp_path: Path) -> None:
+    checker = _load_checker()
+    helpers = _load_platform_verified_evidence_helpers()
+    record = helpers._linux_record("linux-i386")
+    registry = _registry_with(record)
+    promotion = checker.read_json(checker.PROMOTION_PATH)
+    required_assets = checker.required_release_assets_by_target(
+        promotion,
+        release_tag="v1.0.2",
+        targets=("linux-i386",),
+    )
+    release = _release_with_record_assets(checker, record, sorted(required_assets["linux-i386"]))
+    source_runs = _source_runs_for(record)
+    run_url = str(record["release_asset_source"]["workflow_run_url"])
+    source_runs[run_url]["htmlUrl"] = f"{run_url}/"
+
+    errors = checker.check_remote_platform_release_evidence(
+        registry=registry,
+        promotion=promotion,
+        release=release,
+        source_runs_by_run=source_runs,
+        workflow_runs_by_workflow={},
+        source_artifacts_by_run=_source_artifacts_for(record),
+        release_tag="v1.0.2",
+        required_targets=("linux-i386",),
+        require_source_runs=True,
+    )
+
+    assert (
+        "linux-i386 source workflow run html_url must match accepted record "
+        f"{run_url}, got '{run_url}/'"
+    ) in errors
+
+
+def test_remote_release_audit_rejects_boolean_source_run_attempts(tmp_path: Path) -> None:
+    checker = _load_checker()
+    helpers = _load_platform_verified_evidence_helpers()
+    record = helpers._linux_record("linux-i386")
+    registry = _registry_with(record)
+    promotion = checker.read_json(checker.PROMOTION_PATH)
+    required_assets = checker.required_release_assets_by_target(
+        promotion,
+        release_tag="v1.0.2",
+        targets=("linux-i386",),
+    )
+    release = _release_with_record_assets(checker, record, sorted(required_assets["linux-i386"]))
+    workflow_runs = _workflow_runs_for(record)
+    workflow = str(record["release_asset_source"]["workflow"])
+    workflow_runs[workflow]["workflow_runs"][0]["run_attempt"] = True
+
+    workflow_errors = checker.check_remote_platform_release_evidence(
+        registry=registry,
+        promotion=promotion,
+        release=release,
+        workflow_runs_by_workflow=workflow_runs,
+        source_artifacts_by_run=_source_artifacts_for(record),
+        release_tag="v1.0.2",
+        required_targets=("linux-i386",),
+        require_source_runs=True,
+    )
+
+    source_runs = _source_runs_for(record)
+    next(iter(source_runs.values()))["attempt"] = True
+    exact_errors = checker.check_remote_platform_release_evidence(
+        registry=registry,
+        promotion=promotion,
+        release=release,
+        source_runs_by_run=source_runs,
+        workflow_runs_by_workflow={},
+        source_artifacts_by_run=_source_artifacts_for(record),
+        release_tag="v1.0.2",
+        required_targets=("linux-i386",),
+        require_source_runs=True,
+    )
+
+    expected = "linux-i386 source workflow run run_attempt must be a positive integer, got True"
+    assert expected in workflow_errors
+    assert expected in exact_errors
 
 
 def test_remote_release_audit_rejects_source_run_release_tag_ref_mismatch(
@@ -1945,6 +2169,27 @@ def test_remote_release_audit_requires_source_artifact_inventory(tmp_path: Path)
     ) in errors
 
 
+def test_remote_release_audit_rejects_source_artifact_inventory_alias_ambiguity() -> None:
+    checker = _load_checker()
+    helpers = _load_platform_verified_evidence_helpers()
+    record = helpers._linux_record("linux-i386")
+    run_url = str(record["release_asset_source"]["workflow_run_url"])
+    run_id = run_url.rsplit("/", 1)[-1]
+    source_artifacts = _source_artifacts_for(record)
+    source_artifacts[run_id] = source_artifacts[run_url]
+
+    errors = checker.check_record_source_artifact(
+        "linux-i386",
+        record,
+        source_artifacts,
+    )
+
+    assert errors == [
+        "linux-i386 source workflow artifacts contain ambiguous aliases for accepted "
+        f"source run {run_url}: ['{run_url}', '{run_id}']"
+    ]
+
+
 def test_remote_release_audit_rejects_extra_source_artifacts(tmp_path: Path) -> None:
     checker = _load_checker()
     helpers = _load_platform_verified_evidence_helpers()
@@ -2102,6 +2347,28 @@ def test_remote_release_audit_requires_source_artifact_zip_bytes(tmp_path: Path)
         "linux-i386 source workflow artifact ZIP bytes missing for "
         "https://github.com/example/remote-ops-workspace/actions/runs/12345"
     ) in errors
+
+
+def test_remote_release_audit_rejects_source_artifact_zip_byte_alias_ambiguity() -> None:
+    checker = _load_checker()
+    helpers = _load_platform_verified_evidence_helpers()
+    record = helpers._linux_record("linux-i386")
+    source_artifact_zip = _source_artifact_zip_for(checker, record)
+    run_url = str(record["release_asset_source"]["workflow_run_url"])
+    run_id = run_url.rsplit("/", 1)[-1]
+    source_artifact_zip[run_id] = source_artifact_zip[run_url]
+
+    errors = checker.check_record_source_artifact_zip_bytes(
+        "linux-i386",
+        record,
+        source_artifacts_by_run=_source_artifacts_for(record),
+        source_artifact_bytes_by_run=source_artifact_zip,
+    )
+
+    assert errors == [
+        "linux-i386 source workflow artifact ZIP bytes contain ambiguous aliases for "
+        f"accepted source run {run_url}: ['{run_url}', '{run_id}']"
+    ]
 
 
 def test_remote_release_audit_rejects_source_artifact_zip_content_drift(tmp_path: Path) -> None:
@@ -3008,6 +3275,65 @@ def test_require_goal_targets_accepts_full_published_release_proof_flags() -> No
     assert errors == []
 
 
+def test_remote_release_audit_rejects_malformed_repository_arg() -> None:
+    checker = _load_checker()
+    args = checker.parse_args(
+        [
+            "--repository",
+            "https://github.com/example/remote-ops-workspace",
+            "--release-tag",
+            "v1.0.2",
+        ]
+    )
+
+    errors = checker.strict_arg_errors(args)
+
+    assert (
+        "--repository must be a GitHub owner/name value, "
+        "got 'https://github.com/example/remote-ops-workspace'"
+    ) in errors
+
+
+def test_remote_release_audit_rejects_non_string_repository_arg() -> None:
+    checker = _load_checker()
+    args = checker.parse_args(
+        [
+            "--repository",
+            "example/remote-ops-workspace",
+            "--release-tag",
+            "v1.0.2",
+        ]
+    )
+    args.repository = True
+
+    errors = checker.strict_arg_errors(args)
+
+    assert "--repository must be a string GitHub owner/name value, got True" in errors
+
+
+def test_remote_release_audit_normalizes_repository_arg() -> None:
+    checker = _load_checker()
+    args = checker.parse_args(
+        [
+            "--repository",
+            " /example/remote-ops-workspace/ ",
+            "--release-tag",
+            "v1.0.2",
+            "--require-goal-targets",
+            "--require-source-runs",
+            "--require-source-artifact-bytes",
+            "--require-final-record-bytes",
+            "--require-release-asset-bytes",
+            "--require-tag-source-head",
+        ]
+    )
+
+    errors = checker.strict_arg_errors(args)
+
+    assert errors == []
+    assert args.repository == "example/remote-ops-workspace"
+
+
 def test_require_source_artifact_bytes_requires_source_runs() -> None:
     checker = _load_checker()
     args = checker.parse_args(
@@ -3230,6 +3556,60 @@ def test_offline_source_artifact_fixture_rejects_duplicate_run_bindings(tmp_path
     assert "--source-artifacts-json contains duplicate run fixtures: ['12345']" in errors
 
 
+def test_offline_source_artifact_zip_fixture_rejects_duplicate_run_bindings(tmp_path: Path) -> None:
+    checker = _load_checker()
+    args = checker.parse_args(
+        [
+            "--release-tag",
+            "v1.0.2",
+            "--require-source-runs",
+            "--require-source-artifact-bytes",
+            "--source-artifact-zip",
+            f"12345={tmp_path / 'first-artifact.zip'}",
+            "--source-artifact-zip",
+            f"12345 ={tmp_path / 'second-artifact.zip'}",
+        ]
+    )
+
+    errors = checker.strict_arg_errors(args)
+
+    assert "--source-artifact-zip contains duplicate run fixtures: ['12345']" in errors
+
+
+def test_offline_source_run_fixtures_reject_noncanonical_run_keys(tmp_path: Path) -> None:
+    checker = _load_checker()
+    run_url = "https://github.com/example/remote-ops-workspace/actions/runs/12345"
+    args = checker.parse_args(
+        [
+            "--release-tag",
+            "v1.0.2",
+            "--require-source-runs",
+            "--require-source-artifact-bytes",
+            "--source-run-json",
+            f"{run_url}/={tmp_path / 'run.json'}",
+            "--source-artifacts-json",
+            f" 12345={tmp_path / 'artifacts.json'}",
+            "--source-artifact-zip",
+            f"not-a-run={tmp_path / 'artifact.zip'}",
+        ]
+    )
+
+    errors = checker.strict_arg_errors(args)
+
+    assert (
+        "--source-run-json RUN must be a bare run id or canonical GitHub Actions run URL "
+        f"without surrounding whitespace or trailing slash, got '{run_url}/'"
+    ) in errors
+    assert (
+        "--source-artifacts-json RUN must be a bare run id or canonical GitHub Actions run URL "
+        "without surrounding whitespace or trailing slash, got ' 12345'"
+    ) in errors
+    assert (
+        "--source-artifact-zip RUN must be a bare run id or canonical GitHub Actions run URL "
+        "without surrounding whitespace or trailing slash, got 'not-a-run'"
+    ) in errors
+
+
 def test_offline_source_run_fixture_rejects_full_url_and_id_aliases(
     tmp_path: Path,
 ) -> None:
@@ -3298,6 +3678,44 @@ def test_offline_source_artifact_fixture_rejects_full_url_and_id_aliases(
 
     assert (
         "--source-artifacts-json contains ambiguous aliases for accepted source run "
+        f"{run_url}: ['{run_url}', '{run_id}']"
+    ) in errors
+
+
+def test_offline_source_artifact_zip_fixture_rejects_full_url_and_id_aliases(
+    tmp_path: Path,
+) -> None:
+    checker = _load_checker()
+    helpers = _load_platform_verified_evidence_helpers()
+    record = helpers._linux_record("linux-i386")
+    run_url = str(record["release_asset_source"]["workflow_run_url"])
+    run_id = run_url.rsplit("/", 1)[-1]
+    first_fixture = tmp_path / "artifact-url.zip"
+    second_fixture = tmp_path / "artifact-id.zip"
+    first_fixture.write_bytes(b"url zip bytes")
+    second_fixture.write_bytes(b"id zip bytes")
+    args = checker.parse_args(
+        [
+            "--release-tag",
+            "v1.0.2",
+            "--require-source-runs",
+            "--require-source-artifact-bytes",
+            "--source-artifact-zip",
+            f"{run_url}={first_fixture}",
+            "--source-artifact-zip",
+            f"{run_id}={second_fixture}",
+        ]
+    )
+
+    _source_artifact_bytes, errors = checker.load_source_artifact_bytes(
+        args,
+        _registry_with(record),
+        ("linux-i386",),
+        source_artifacts_by_run={},
+    )
+
+    assert (
+        "--source-artifact-zip contains ambiguous aliases for accepted source run "
         f"{run_url}: ['{run_url}', '{run_id}']"
     ) in errors
 
@@ -3469,6 +3887,41 @@ def test_offline_final_record_fixture_rejects_duplicate_url_bindings(tmp_path: P
     errors = checker.strict_arg_errors(args)
 
     assert f"--final-record-json contains duplicate URL fixtures: ['{url}']" in errors
+
+
+def test_offline_release_byte_fixtures_reject_noncanonical_urls(tmp_path: Path) -> None:
+    checker = _load_checker()
+    final_record_url = (
+        "https://github.com/example/remote-ops-workspace/releases/download/v1.0.2/"
+        "platform-verified-evidence-linux-i386-final.json"
+    )
+    release_asset_url = (
+        "https://github.com/example/remote-ops-workspace/releases/download/v1.0.2/"
+        "remote-ops-workspace-v1.0.2-linux-i386.deb"
+    )
+    args = checker.parse_args(
+        [
+            "--release-tag",
+            "v1.0.2",
+            "--release-json",
+            str(tmp_path / "release.json"),
+            "--final-record-json",
+            f" {final_record_url}={tmp_path / 'record.json'}",
+            "--release-asset",
+            f"{release_asset_url}?download={tmp_path / 'asset.deb'}",
+        ]
+    )
+
+    errors = checker.strict_arg_errors(args)
+
+    assert (
+        "--final-record-json URL must be a canonical GitHub release asset URL without "
+        f"surrounding whitespace, query, fragment, or unsafe filename, got ' {final_record_url}'"
+    ) in errors
+    assert (
+        "--release-asset URL must be a canonical GitHub release asset URL without "
+        f"surrounding whitespace, query, fragment, or unsafe filename, got '{release_asset_url}?download'"
+    ) in errors
 
 
 def test_offline_final_record_fixture_rejects_offscope_url(
@@ -3824,6 +4277,38 @@ def test_offline_release_asset_fixture_rejects_reserved_workspace_root() -> None
     assert "--release-asset fixture must not point inside reserved workspace directory '.github'" in errors[0]
 
 
+def test_offline_json_fixture_rejects_non_path_value() -> None:
+    checker = _load_checker()
+
+    data, error = checker.read_json_file("release.json", "--release-json fixture")
+
+    assert data is None
+    assert error == "--release-json fixture path must be a pathlib.Path, got 'release.json'"
+
+
+def test_offline_byte_fixture_rejects_non_path_value() -> None:
+    checker = _load_checker()
+
+    data, error = checker.read_bytes_file(True, "--release-asset fixture")
+
+    assert data is None
+    assert error == "--release-asset fixture path must be a pathlib.Path, got True"
+
+
+def test_offline_fixture_path_helpers_reject_non_path_values() -> None:
+    checker = _load_checker()
+
+    assert checker.check_local_fixture_path("release.json", "--release-json fixture") == [
+        "--release-json fixture path must be a pathlib.Path, got 'release.json'"
+    ]
+    assert checker.check_path_parent_symlinks("release.json", "--release-json fixture") == [
+        "--release-json fixture path must be a pathlib.Path, got 'release.json'"
+    ]
+    assert checker.check_path_not_reserved_workspace_root("release.json", "--release-json fixture") == [
+        "--release-json fixture path must be a pathlib.Path, got 'release.json'"
+    ]
+
+
 def test_offline_json_fixture_rejects_parent_symlink(tmp_path: Path) -> None:
     checker = _load_checker()
     fixture_dir = tmp_path / "fixtures"
@@ -4035,6 +4520,58 @@ def test_github_api_headers_use_environment_token() -> None:
 
     assert headers["Authorization"] == "Bearer secret-token"
     assert headers["X-GitHub-Api-Version"] == "2022-11-28"
+
+
+def test_fetch_json_rate_limit_error_mentions_authenticated_live_audit(monkeypatch) -> None:
+    checker = _load_checker()
+
+    def fake_urlopen(*_args: Any, **_kwargs: Any) -> Any:
+        raise HTTPError(
+            "https://api.github.com/repos/example/remote-ops-workspace/releases/tags/v1.0.2",
+            403,
+            "rate limit exceeded",
+            {},
+            None,
+        )
+
+    monkeypatch.setattr(checker, "urlopen", fake_urlopen)
+
+    data, errors = checker.fetch_json(
+        "https://api.github.com/repos/example/remote-ops-workspace/releases/tags/v1.0.2",
+        timeout=1.0,
+    )
+
+    assert data is None
+    assert len(errors) == 1
+    assert "GitHub API rate limit exceeded during live release evidence audit" in errors[0]
+    assert "GH_TOKEN or GITHUB_TOKEN" in errors[0]
+    assert "contents:read and actions:read" in errors[0]
+
+
+def test_fetch_bytes_rate_limit_error_mentions_authenticated_live_audit(monkeypatch) -> None:
+    checker = _load_checker()
+
+    def fake_urlopen(*_args: Any, **_kwargs: Any) -> Any:
+        raise HTTPError(
+            "https://api.github.com/repos/example/remote-ops-workspace/actions/artifacts/1/zip",
+            403,
+            "Forbidden",
+            {"x-ratelimit-remaining": "0"},
+            None,
+        )
+
+    monkeypatch.setattr(checker, "urlopen", fake_urlopen)
+
+    data, errors = checker.fetch_bytes(
+        "https://api.github.com/repos/example/remote-ops-workspace/actions/artifacts/1/zip",
+        timeout=1.0,
+    )
+
+    assert data is None
+    assert len(errors) == 1
+    assert "GitHub API rate limit exceeded during live release evidence audit" in errors[0]
+    assert "GH_TOKEN or GITHUB_TOKEN" in errors[0]
+    assert "contents:read and actions:read" in errors[0]
 
 
 def _restore_env(name: str, value: str | None) -> None:

@@ -22,7 +22,10 @@ from check_platform_verified_evidence import (  # noqa: E402
     read_json,
 )
 from check_product_readiness import check_protected_requirement_commands  # noqa: E402
-from check_release_publish_assets import check_release_assets  # noqa: E402
+from check_release_publish_assets import (  # noqa: E402
+    check_release_assets,
+    normalize_expected_repository,
+)
 
 from remote_ops_workspace.features import _platform_verified_readiness  # noqa: E402
 
@@ -33,11 +36,13 @@ REQUIRE_COMPLETE_ASSETS_DIR_ERROR = (
     "--require-complete requires --assets-dir <release-assets-dir>; "
     "use --require-records-complete for records-only pre-release checks"
 )
+REQUIRE_COMPLETE_REPOSITORY_ERROR = "--require-complete requires --repository <owner>/<repo>"
 REQUIRE_COMPLETE_MODE_CONFLICT_ERROR = (
     "--require-complete and --require-records-complete are mutually exclusive"
 )
 REQUIRE_ASSETS_COMPLETE_ERROR = "--assets-dir requires --require-complete"
 REQUIRE_ASSETS_RELEASE_TAG_ERROR = "--assets-dir requires --release-tag vX.Y.Z"
+REPOSITORY_COMPLETE_ERROR = "--repository requires --require-complete"
 GOAL_STRING_LIST_FIELDS = {
     "missing_targets",
     "accepted_targets",
@@ -74,6 +79,7 @@ def main(argv: list[str] | None = None) -> int:
         require_complete=args.require_complete,
         require_records_complete=args.require_records_complete,
         assets_dir=args.assets_dir,
+        repository=args.repository,
     )
     if args.json:
         print(json.dumps(goal, indent=2, sort_keys=True))
@@ -140,6 +146,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--repository",
+        help=(
+            "Expected GitHub release repository in owner/name form. Required with "
+            "--require-complete so accepted evidence release URLs cannot point at "
+            "another repository."
+        ),
+    )
+    parser.add_argument(
         "--json",
         action="store_true",
         help="Print the protected goal parity block as JSON.",
@@ -158,6 +172,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def strict_completion_arg_errors(args: argparse.Namespace) -> list[str]:
     errors: list[str] = []
     errors.extend(check_registry_path(args.registry))
+    errors.extend(check_assets_dir_path(args.assets_dir))
     if args.require_complete and args.require_records_complete:
         errors.append(REQUIRE_COMPLETE_MODE_CONFLICT_ERROR)
     if args.require_complete and not args.release_tag:
@@ -166,8 +181,15 @@ def strict_completion_arg_errors(args: argparse.Namespace) -> list[str]:
         errors.append(REQUIRE_RECORDS_COMPLETE_RELEASE_TAG_ERROR)
     if args.require_complete and args.assets_dir is None:
         errors.append(REQUIRE_COMPLETE_ASSETS_DIR_ERROR)
+    if args.require_complete and not args.repository:
+        errors.append(REQUIRE_COMPLETE_REPOSITORY_ERROR)
     if args.assets_dir is not None and not args.require_complete:
         errors.append(REQUIRE_ASSETS_COMPLETE_ERROR)
+    if args.repository is not None and not args.require_complete:
+        errors.append(REPOSITORY_COMPLETE_ERROR)
+    if args.repository is not None:
+        repository_errors, _repository = normalize_expected_repository(args.repository)
+        errors.extend(repository_errors)
     if (
         args.assets_dir is not None
         and not args.release_tag
@@ -177,13 +199,24 @@ def strict_completion_arg_errors(args: argparse.Namespace) -> list[str]:
     return errors
 
 
-def check_registry_path(path: Path) -> list[str]:
-    errors = check_path_not_reserved_workspace_root(path, "accepted evidence registry")
+def check_registry_path(path: object) -> list[str]:
+    path_errors, path_value = path_arg_value(path, "accepted evidence registry")
+    if path_errors:
+        return path_errors
+    assert path_value is not None
+    errors = check_path_not_reserved_workspace_root(path_value, "accepted evidence registry")
     if errors:
         return errors
-    if path.is_symlink():
-        return [f"accepted evidence registry must not be a symlink: {path}"]
-    return check_path_parent_symlinks(path, "accepted evidence registry")
+    if path_value.is_symlink():
+        return [f"accepted evidence registry must not be a symlink: {path_value}"]
+    return check_path_parent_symlinks(path_value, "accepted evidence registry")
+
+
+def check_assets_dir_path(path: object | None) -> list[str]:
+    if path is None:
+        return []
+    path_errors, _path_value = path_arg_value(path, "release assets directory")
+    return path_errors
 
 
 def is_allowed_platform_parent_symlink(parent: Path) -> bool:
@@ -195,8 +228,18 @@ def is_allowed_platform_parent_symlink(parent: Path) -> bool:
         return False
 
 
-def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
-    check_path = path if path.is_absolute() else Path.cwd() / path
+def path_arg_value(raw_path: object, label: str) -> tuple[list[str], Path | None]:
+    if not isinstance(raw_path, Path):
+        return [f"{label} path must be a pathlib.Path, got {raw_path!r}"], None
+    return [], raw_path
+
+
+def check_path_parent_symlinks(path: object, label: str) -> list[str]:
+    path_errors, path_value = path_arg_value(path, label)
+    if path_errors:
+        return path_errors
+    assert path_value is not None
+    check_path = path_value if path_value.is_absolute() else Path.cwd() / path_value
     for parent in reversed(check_path.parents):
         if parent == Path("."):
             continue
@@ -205,7 +248,11 @@ def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
     return []
 
 
-def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
+def check_path_not_reserved_workspace_root(path: object, label: str) -> list[str]:
+    path_errors, path_value = path_arg_value(path, label)
+    if path_errors:
+        return path_errors
+    assert path_value is not None
     roots: list[Path] = [Path.cwd(), ROOT]
     seen_roots: set[Path] = set()
     for root in roots:
@@ -213,7 +260,9 @@ def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
         if root_resolved in seen_roots:
             continue
         seen_roots.add(root_resolved)
-        path_resolved = (path if path.is_absolute() else root_resolved / path).resolve(strict=False)
+        path_resolved = (
+            path_value if path_value.is_absolute() else root_resolved / path_value
+        ).resolve(strict=False)
         try:
             relative = path_resolved.relative_to(root_resolved)
         except ValueError:
@@ -225,7 +274,7 @@ def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
         if reserved_root in RESERVED_WORKSPACE_ROOTS:
             return [
                 f"{label} must not point inside reserved workspace directory "
-                f"{reserved_root!r}: {path}"
+                f"{reserved_root!r}: {path_value}"
             ]
     return []
 
@@ -233,19 +282,32 @@ def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
 def check_protected_platform_goal(
     *,
     registry: dict[str, Any],
-    release_tag: str | None = None,
+    release_tag: object | None = None,
     require_complete: bool = False,
     require_records_complete: bool = False,
-    assets_dir: Path | None = None,
+    assets_dir: object | None = None,
+    repository: object | None = None,
 ) -> tuple[list[str], dict[str, Any]]:
     errors: list[str] = []
     validation_errors: list[str] = []
     record_validation_errors: list[str] = []
     release_asset_validation_errors: list[str] = []
     report_validation_errors: list[str] = []
-    release_tag_valid = release_tag is None or re.fullmatch(r"v\d+\.\d+\.\d+", release_tag)
+    assets_dir_path = assets_dir if isinstance(assets_dir, Path) else None
+    assets_dir_errors = check_assets_dir_path(assets_dir)
+    errors.extend(assets_dir_errors)
+    release_asset_validation_errors.extend(assets_dir_errors)
+    repository_errors, expected_repository = normalize_expected_repository(repository)
+    if repository is not None:
+        errors.extend(repository_errors)
+        release_asset_validation_errors.extend(repository_errors)
+    release_tag_is_string = isinstance(release_tag, str)
+    release_tag_for_filter = release_tag if release_tag_is_string else ""
+    release_tag_valid = release_tag_is_string and re.fullmatch(r"v\d+\.\d+\.\d+", release_tag) is not None
     require_records_gate = require_complete or require_records_complete
-    if release_tag is not None and not release_tag_valid:
+    if release_tag is not None and not release_tag_is_string:
+        errors.append(f"release_tag must be a string, got {release_tag!r}")
+    elif release_tag is not None and not release_tag_valid:
         errors.append(f"release_tag must look like vX.Y.Z: {release_tag}")
     if require_complete and require_records_complete:
         errors.append(REQUIRE_COMPLETE_MODE_CONFLICT_ERROR)
@@ -255,8 +317,12 @@ def check_protected_platform_goal(
         errors.append(REQUIRE_RECORDS_COMPLETE_RELEASE_TAG_ERROR)
     if require_complete and assets_dir is None:
         errors.append(REQUIRE_COMPLETE_ASSETS_DIR_ERROR)
+    if require_complete and not repository:
+        errors.append(REQUIRE_COMPLETE_REPOSITORY_ERROR)
     if assets_dir is not None and not require_complete:
         errors.append(REQUIRE_ASSETS_COMPLETE_ERROR)
+    if repository is not None and not require_complete:
+        errors.append(REPOSITORY_COMPLETE_ERROR)
     if assets_dir is not None and release_tag is None:
         errors.append(REQUIRE_ASSETS_RELEASE_TAG_ERROR)
     if not (require_records_gate and release_tag is None):
@@ -277,12 +343,19 @@ def check_protected_platform_goal(
             )
         )
         errors.extend(validation_errors)
-    if assets_dir is not None and require_complete and release_tag is not None and release_tag_valid:
+    if (
+        assets_dir_path is not None
+        and require_complete
+        and release_tag is not None
+        and release_tag_valid
+        and expected_repository is not None
+    ):
         release_asset_validation_errors.extend(
             check_release_assets(
-                assets_dir,
+                assets_dir_path,
                 read_release_matrix(),
                 tag=release_tag,
+                repository=expected_repository,
                 evidence_registry=registry,
                 require_platform_goal_targets=True,
             )
@@ -291,28 +364,32 @@ def check_protected_platform_goal(
     goal_source_registry = invalid_evidence_goal_registry(registry) if record_validation_errors else registry
     goal_registry = strict_goal_registry(
         goal_source_registry,
-        release_tag,
+        release_tag_for_filter if release_tag is not None else None,
         require_complete=require_records_gate,
     )
     goal = _platform_verified_readiness(evidence_registry=goal_registry)["protected_goal_parity"]
     report_validation_errors.extend(check_goal_requirement_metadata(goal))
     errors.extend(report_validation_errors)
-    if release_tag is not None:
+    if release_tag_is_string:
         goal = dict(goal)
         apply_required_release_tag(goal, release_tag)
     elif require_records_gate:
         goal = dict(goal)
         goal["complete"] = False
-        goal["status"] = "release-tag-required"
-        goal["scope_error"] = (
-            REQUIRE_COMPLETE_RELEASE_TAG_ERROR
-            if require_complete
-            else REQUIRE_RECORDS_COMPLETE_RELEASE_TAG_ERROR
-        )
+        if release_tag is None:
+            goal["status"] = "release-tag-required"
+            goal["scope_error"] = (
+                REQUIRE_COMPLETE_RELEASE_TAG_ERROR
+                if require_complete
+                else REQUIRE_RECORDS_COMPLETE_RELEASE_TAG_ERROR
+            )
+        else:
+            goal["status"] = "release-tag-invalid"
+            goal["scope_error"] = f"release_tag must be a string, got {release_tag!r}"
     record_complete = bool(goal.get("record_complete"))
     if release_asset_validation_errors and record_complete:
         goal = mark_release_assets_invalid(goal, release_asset_validation_errors)
-    elif assets_dir is not None and require_complete and release_tag is not None and record_complete:
+    elif assets_dir_path is not None and require_complete and release_tag_valid and record_complete:
         goal = mark_release_assets_valid(goal)
     if report_validation_errors and record_complete:
         goal = mark_requirement_metadata_invalid(goal, report_validation_errors)
@@ -332,7 +409,7 @@ def check_protected_platform_goal(
         record_validation_errors=record_validation_errors,
         release_asset_validation_errors=release_asset_validation_errors,
         report_validation_errors=report_validation_errors,
-        release_assets_dir=assets_dir,
+        release_assets_dir=assets_dir_path,
         blocking_errors=errors,
         record_complete=record_complete,
     )
@@ -385,7 +462,9 @@ def check_goal_requirement_metadata(goal: dict[str, Any]) -> list[str]:
     if not isinstance(requirements, list):
         return ["protected platform goal parity must expose target_evidence_requirements"]
     errors: list[str] = []
+    errors.extend(check_goal_parity_arithmetic(goal))
     errors.extend(check_goal_release_scope_metadata(goal))
+    errors.extend(check_goal_requirement_target_set(requirements, goal))
     for item in requirements:
         if not isinstance(item, dict):
             errors.append("protected platform goal parity requirement entries must be objects")
@@ -415,6 +494,181 @@ def check_goal_requirement_metadata(goal: dict[str, Any]) -> list[str]:
             )
         )
     return errors
+
+
+def check_goal_parity_arithmetic(goal: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    required_targets = list(PROTECTED_GOAL_TARGETS)
+    target_count = goal.get("target_count")
+    accepted_count = goal.get("accepted_target_count")
+    aggregate_count = goal.get("aggregate_accepted_target_count")
+    current_percent = goal.get("current_percent")
+    target_percent = goal.get("target_percent")
+    gap_percent = goal.get("gap_percent")
+    if goal.get("metric") != "protected_platform_goal_parity":
+        errors.append(
+            "protected platform goal parity metric must be "
+            f"'protected_platform_goal_parity', got {goal.get('metric')!r}"
+        )
+    if goal.get("required_targets") != required_targets:
+        errors.append(
+            "protected platform goal parity required_targets must be "
+            f"{required_targets}, got {goal.get('required_targets')!r}"
+        )
+    if not non_negative_int(target_count):
+        errors.append(
+            "protected platform goal parity target_count must be a non-negative integer, "
+            f"got {target_count!r}"
+        )
+        return errors
+    if target_count != len(required_targets):
+        errors.append(
+            "protected platform goal parity target_count must match required target count "
+            f"{len(required_targets)}, got {target_count!r}"
+        )
+    accepted_targets = list_values(goal.get("accepted_targets"))
+    missing_targets = list_values(goal.get("missing_targets"))
+    aggregate_targets = list_values(goal.get("aggregate_accepted_targets"))
+    aggregate_missing_targets = list_values(goal.get("aggregate_missing_targets"))
+    if not non_negative_int(accepted_count):
+        errors.append(
+            "protected platform goal parity accepted_target_count must be a non-negative integer, "
+            f"got {accepted_count!r}"
+        )
+    elif accepted_count != len(accepted_targets):
+        errors.append(
+            "protected platform goal parity accepted_target_count must match accepted_targets length "
+            f"{len(accepted_targets)}, got {accepted_count!r}"
+        )
+    if not non_negative_int(aggregate_count):
+        errors.append(
+            "protected platform goal parity aggregate_accepted_target_count must be a non-negative integer, "
+            f"got {aggregate_count!r}"
+        )
+    elif aggregate_count != len(aggregate_targets):
+        errors.append(
+            "protected platform goal parity aggregate_accepted_target_count must match "
+            f"aggregate_accepted_targets length {len(aggregate_targets)}, got {aggregate_count!r}"
+        )
+    errors.extend(check_goal_target_partition("accepted_targets", accepted_targets, "missing_targets", missing_targets))
+    errors.extend(
+        check_goal_target_partition(
+            "aggregate_accepted_targets",
+            aggregate_targets,
+            "aggregate_missing_targets",
+            aggregate_missing_targets,
+        )
+    )
+    if non_negative_int(accepted_count) and non_negative_int(target_count) and target_count:
+        expected_percent = round(accepted_count / target_count * 100.0, 1)
+        if not number_matches(current_percent, expected_percent):
+            errors.append(
+                "protected platform goal parity current_percent must match "
+                f"{accepted_count}/{target_count} accepted targets ({expected_percent:.1f}), "
+                f"got {current_percent!r}"
+            )
+    if not number_matches(target_percent, 100.0):
+        errors.append(
+            "protected platform goal parity target_percent must be 100.0, "
+            f"got {target_percent!r}"
+        )
+    if isinstance(current_percent, int | float) and not isinstance(current_percent, bool):
+        expected_gap = round(max(100.0 - float(current_percent), 0.0), 1)
+        if not number_matches(gap_percent, expected_gap):
+            errors.append(
+                "protected platform goal parity gap_percent must equal 100.0-current_percent "
+                f"({expected_gap:.1f}), got {gap_percent!r}"
+            )
+    return errors
+
+
+def check_goal_target_partition(
+    present_label: str,
+    present_targets: list[str],
+    missing_label: str,
+    missing_targets: list[str],
+) -> list[str]:
+    required_targets = set(PROTECTED_GOAL_TARGETS)
+    errors: list[str] = []
+    present = set(present_targets)
+    missing = set(missing_targets)
+    extra = sorted((present | missing) - required_targets)
+    if extra:
+        errors.append(
+            f"protected platform goal parity {present_label}/{missing_label} "
+            f"must not include non-goal targets: {extra}"
+        )
+    overlap = sorted(present & missing)
+    if overlap:
+        errors.append(
+            f"protected platform goal parity {present_label} and {missing_label} overlap: {overlap}"
+        )
+    omitted = sorted(required_targets - present - missing)
+    if omitted:
+        errors.append(
+            f"protected platform goal parity {present_label}/{missing_label} omitted targets: {omitted}"
+        )
+    return errors
+
+
+def check_goal_requirement_target_set(
+    requirements: list[Any],
+    goal: dict[str, Any],
+) -> list[str]:
+    errors: list[str] = []
+    targets = [
+        item.get("target")
+        for item in requirements
+        if isinstance(item, dict) and isinstance(item.get("target"), str) and item.get("target", "").strip()
+    ]
+    duplicates = duplicate_names(targets)
+    if duplicates:
+        errors.append(
+            f"protected platform goal parity requirement targets contain duplicates: {duplicates}"
+        )
+    case_collisions = case_insensitive_name_collisions(set(targets))
+    if case_collisions:
+        errors.append(
+            "protected platform goal parity requirement targets must not collide on "
+            f"case-insensitive filesystems: {case_collisions}"
+        )
+    required = set(PROTECTED_GOAL_TARGETS)
+    actual = set(targets)
+    missing = sorted(required - actual)
+    extra = sorted(actual - required)
+    if missing:
+        errors.append(f"protected platform goal parity requirement targets missing: {missing}")
+    if extra:
+        errors.append(f"protected platform goal parity requirement targets are not protected: {extra}")
+    accepted_targets = set(list_values(goal.get("accepted_targets")))
+    for item in requirements:
+        if not isinstance(item, dict):
+            continue
+        target = item.get("target")
+        if not isinstance(target, str) or not target.strip():
+            continue
+        accepted = item.get("accepted")
+        if not isinstance(accepted, bool):
+            errors.append(
+                f"{target} protected platform requirement accepted must be a boolean, "
+                f"got {accepted!r}"
+            )
+            continue
+        if accepted != (target in accepted_targets):
+            errors.append(
+                f"{target} protected platform requirement accepted must match accepted_targets"
+            )
+    return errors
+
+
+def non_negative_int(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def number_matches(value: Any, expected: float) -> bool:
+    if not isinstance(value, int | float) or isinstance(value, bool):
+        return False
+    return round(float(value), 1) == round(expected, 1)
 
 
 def check_goal_release_scope_metadata(goal: dict[str, Any]) -> list[str]:
@@ -651,6 +905,11 @@ def apply_required_release_tag(goal: dict[str, Any], release_tag: str) -> None:
             goal["release_import_dry_run_command"],
             release_tag,
         )
+    if "remote_release_evidence_audit_command" in goal:
+        goal["remote_release_evidence_audit_command"] = replace_release_tag_placeholder(
+            goal["remote_release_evidence_audit_command"],
+            release_tag,
+        )
     if "release_asset_provenance_command" in goal:
         goal["release_asset_provenance_command"] = replace_release_tag_placeholder(
             goal["release_asset_provenance_command"],
@@ -788,6 +1047,9 @@ def format_goal_scope(goal: dict[str, Any]) -> str:
     import_command = str(goal.get("release_import_dry_run_command", "")).strip()
     if import_command:
         lines.append(f"pre-release import dry-run: {import_command}")
+    remote_audit_command = str(goal.get("remote_release_evidence_audit_command", "")).strip()
+    if remote_audit_command:
+        lines.append(f"published release evidence audit: {remote_audit_command}")
     asset_command = str(goal.get("release_asset_provenance_command", "")).strip()
     if asset_command:
         lines.append(f"release asset provenance gate: {asset_command}")

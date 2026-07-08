@@ -317,6 +317,25 @@ def test_platform_support_truth_requires_full_coverage_attempt_conflict_boundary
     )
 
 
+def test_platform_support_truth_requires_full_coverage_remote_release_audit_boundary() -> None:
+    checker = _load_platform_support_truth_checker()
+    docs = _read_required_docs(checker)
+    snippet = "Remote evidence audit"
+    assert snippet in docs["docs/FULL_FEATURE_COVERAGE.md"]
+    docs["docs/FULL_FEATURE_COVERAGE.md"] = docs["docs/FULL_FEATURE_COVERAGE.md"].replace(
+        snippet,
+        "Release evidence note",
+    )
+
+    errors = checker.check_platform_docs(docs, coverage_report())
+
+    assert any(
+        "docs/FULL_FEATURE_COVERAGE.md missing platform truth snippet" in error
+        and "Remote evidence audit" in error
+        for error in errors
+    )
+
+
 def test_platform_support_truth_requires_platforms_cli_evidence_boundary_docs() -> None:
     checker = _load_platform_support_truth_checker()
     docs = _read_required_docs(checker)
@@ -381,14 +400,15 @@ def test_platform_support_truth_requires_tagged_strict_platform_publish_docs() -
     docs["README.md"] = docs["README.md"].replace(
         (
             "check_release_publish_assets.py --assets-dir <release-assets-dir> "
-            "--tag v<project.version> --require-platform-goal-targets"
+            "--tag v<project.version> --repository <owner>/<repo> --require-platform-goal-targets"
         ),
         "check_release_publish_assets.py --assets-dir <release-assets-dir> --require-platform-goal-targets",
     )
     docs["docs/PLATFORM_SUPPORT.md"] = docs["docs/PLATFORM_SUPPORT.md"].replace(
         (
             "python scripts/import_platform_evidence_artifacts.py --release-tag v<project.version> "
-            "--require-goal-targets --out-dir <release-assets-dir> --dry-run --verify-source-run"
+            "--require-goal-targets --out-dir <release-assets-dir> --dry-run --verify-source-run "
+            "--repository <owner>/<repo>"
         ),
         "python scripts/import_platform_evidence_artifacts.py --dry-run",
     )
@@ -435,7 +455,10 @@ def test_platform_support_truth_requires_published_release_audit_docs() -> None:
     docs = _read_required_docs(checker)
     docs["docs/PLATFORM_SUPPORT.md"] = (
         docs["docs/PLATFORM_SUPPORT.md"]
-        .replace("add `--release-repository <owner>/<repo>` to that strict verifier", "use the strict verifier")
+        .replace(
+            "that strict verifier audits the intended already-published GitHub release",
+            "use the strict verifier",
+        )
         .replace(
             "published native/review-bundle asset bytes and published final\naccepted-record JSON bytes",
             "published evidence files",
@@ -452,7 +475,7 @@ def test_platform_support_truth_requires_published_release_audit_docs() -> None:
 
     assert any(
         "docs/PLATFORM_SUPPORT.md missing platform truth snippet" in error
-        and "--release-repository <owner>/<repo>" in error
+        and "that strict verifier audits the intended already-published GitHub release" in error
         for error in errors
     )
     assert any(
@@ -651,7 +674,8 @@ def _bind_accepted_evidence_row(row: dict[str, Any], targets: list[str]) -> None
     row["static_readiness_evidence_scope"] = (
         "accepted-record/source-run metadata only; run "
         "python scripts/check_protected_platform_goal.py --release-tag v<project.version> "
-        "--require-complete --assets-dir <release-assets-dir> for published release asset byte proof"
+        "--require-complete --assets-dir <release-assets-dir> --repository <owner>/<repo> "
+        "for published release asset byte proof"
     )
     row["accepted_evidence_release_tags"] = {target: "v1.0.2" for target in targets}
     row["accepted_evidence_release_repositories"] = {

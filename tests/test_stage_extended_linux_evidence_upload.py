@@ -450,6 +450,35 @@ def test_stage_extended_linux_evidence_upload_rejects_non_string_manifest_file_e
     ) in errors
 
 
+def test_stage_extended_linux_evidence_upload_rejects_unsafe_manifest_file_entry(
+    tmp_path: Path,
+) -> None:
+    stager = _load_stager()
+    manifest = tmp_path / "bundle-manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "bundle_type": "extended-linux-native-evidence",
+                "smoke_evidence": [{"file": "../native-smoke.log"}],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    files, errors = stager.review_bundle_workspace_files_with_errors(
+        "linux-i386",
+        {"review_bundle": {"manifest": {"file": manifest.name}}},
+        bundle_dir=tmp_path,
+    )
+
+    assert files == set()
+    assert (
+        "linux-i386 staged upload review_bundle manifest file entries "
+        "must be safe relative paths, got '../native-smoke.log'"
+    ) in errors
+
+
 def test_stage_extended_linux_evidence_upload_rejects_review_bundle_content_mismatch(
     tmp_path: Path,
 ) -> None:
@@ -740,6 +769,22 @@ def test_stage_extended_linux_evidence_upload_rejects_symlinked_source(monkeypat
     ) in errors
 
 
+def test_stage_extended_linux_evidence_upload_rejects_non_path_source_value() -> None:
+    stager = _load_stager()
+    sources = {
+        "expected.deb": Path("expected.deb"),
+        "platform-verified-evidence-linux-i386-final.json": True,
+    }
+
+    errors = stager.check_source_paths("linux-i386", sources)
+
+    assert (
+        "linux-i386 staged upload source platform-verified-evidence-linux-i386-final.json "
+        "path must be a pathlib.Path, got True"
+    ) in errors
+    assert not any("reserved workspace" in error and "True" in error for error in errors)
+
+
 def test_stage_extended_linux_evidence_upload_rejects_symlinked_source_parent(
     tmp_path: Path,
     monkeypatch,
@@ -824,6 +869,33 @@ def test_stage_extended_linux_evidence_upload_rejects_non_path_output_directory(
     errors = stager.prepare_output_directory("linux-i386", out_dir=True, force=False)
 
     assert errors == ["linux-i386 staged upload output directory must be a pathlib.Path, got True"]
+
+
+def test_stage_extended_linux_evidence_upload_path_helpers_reject_non_path_values() -> None:
+    stager = _load_stager()
+
+    assert stager.check_destination_path("linux-i386", True, "expected.deb") == [
+        "linux-i386 staged upload destination expected.deb must be a pathlib.Path, got True"
+    ]
+    assert stager.check_path_parent_symlinks(False, "extended Linux evidence source directory") == [
+        "extended Linux evidence source directory must be a pathlib.Path, got False"
+    ]
+    assert stager.check_directory_path_hint("upload", "staged upload output directory") == [
+        "staged upload output directory must be a pathlib.Path, got 'upload'"
+    ]
+    assert stager.check_path_not_reserved_workspace_root(0, "staged upload output directory") == [
+        "staged upload output directory must be a pathlib.Path, got 0"
+    ]
+    assert stager.check_staging_path_separation(
+        "linux-i386",
+        source_dir=True,
+        out_dir="upload",
+    ) == [
+        "linux-i386 extended Linux evidence source directory must be a pathlib.Path, got True",
+        "linux-i386 staged upload output directory must be a pathlib.Path, got 'upload'",
+    ]
+    assert stager.paths_overlap(True, Path("upload")) is True
+    assert stager.path_contains(True, Path("upload")) is False
 
 
 def test_stage_extended_linux_evidence_upload_rejects_reserved_workspace_output_directory() -> None:

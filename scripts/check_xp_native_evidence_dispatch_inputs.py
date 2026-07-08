@@ -99,42 +99,84 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def check_xp_native_evidence_dispatch_inputs(
     *,
-    target: str,
-    release_tag: str,
-    release_asset_base_url: str,
-    workflow_run_url: str,
-    workflow_ref_name: str,
-    source_head_sha: str,
+    target: object,
+    release_tag: object,
+    release_asset_base_url: object,
+    workflow_run_url: object,
+    workflow_ref_name: object,
+    source_head_sha: object,
     source_run_attempt: object,
-    assets_dir: str,
-    evidence_file: str,
-    evidence_dir: str,
+    assets_dir: object,
+    evidence_file: object,
+    evidence_dir: object,
 ) -> list[str]:
     errors: list[str] = []
-    if target not in TARGETS:
-        errors.append(f"target must be one of {sorted(TARGETS)}, got {target!r}")
-    if not RELEASE_TAG_RE.fullmatch(release_tag):
-        errors.append(f"release_tag must look like vX.Y.Z, got {release_tag!r}")
-    if not SOURCE_HEAD_SHA_RE.fullmatch(source_head_sha):
-        errors.append(f"source_head_sha must be a lowercase 40-character Git SHA, got {source_head_sha!r}")
+    target_value, type_errors = dispatch_string_value("target", target)
+    errors.extend(type_errors)
+    release_tag_value, type_errors = dispatch_string_value("release_tag", release_tag)
+    errors.extend(type_errors)
+    release_asset_base_url_value, type_errors = dispatch_string_value(
+        "release_asset_base_url",
+        release_asset_base_url,
+    )
+    errors.extend(type_errors)
+    workflow_run_url_value, type_errors = dispatch_string_value("workflow_run_url", workflow_run_url)
+    errors.extend(type_errors)
+    workflow_ref_name_value, type_errors = dispatch_string_value("workflow_ref_name", workflow_ref_name)
+    errors.extend(type_errors)
+    source_head_sha_value, type_errors = dispatch_string_value("source_head_sha", source_head_sha)
+    errors.extend(type_errors)
+    assets_dir_value, type_errors = dispatch_string_value("assets_dir", assets_dir)
+    errors.extend(type_errors)
+    evidence_file_value, type_errors = dispatch_string_value("evidence_file", evidence_file)
+    errors.extend(type_errors)
+    evidence_dir_value, type_errors = dispatch_string_value("evidence_dir", evidence_dir)
+    errors.extend(type_errors)
+
+    if isinstance(target, str) and target_value not in TARGETS:
+        errors.append(f"target must be one of {sorted(TARGETS)}, got {target_value!r}")
+    if isinstance(release_tag, str) and not RELEASE_TAG_RE.fullmatch(release_tag_value):
+        errors.append(f"release_tag must look like vX.Y.Z, got {release_tag_value!r}")
+    if isinstance(source_head_sha, str) and not SOURCE_HEAD_SHA_RE.fullmatch(source_head_sha_value):
+        errors.append(f"source_head_sha must be a lowercase 40-character Git SHA, got {source_head_sha_value!r}")
     if not is_positive_integer_text(source_run_attempt):
         errors.append(f"source_run_attempt must be a positive integer, got {source_run_attempt!r}")
-    if workflow_ref_name != release_tag:
+    if (
+        isinstance(workflow_ref_name, str)
+        and isinstance(release_tag, str)
+        and workflow_ref_name_value != release_tag_value
+    ):
         errors.append(
             "workflow_ref_name must match release_tag so evidence is dispatched from "
-            f"the release tag ref, got {workflow_ref_name!r}"
+            f"the release tag ref, got {workflow_ref_name_value!r}"
         )
 
-    release_match = GITHUB_RELEASE_RE.fullmatch(release_asset_base_url)
-    run_match = GITHUB_RUN_RE.fullmatch(workflow_run_url.rstrip("/"))
-    if not release_match:
-        errors.append(
-            "--release-asset-base-url must be exactly "
-            f"https://github.com/<owner>/<repo>/releases/download/{release_tag}"
-        )
-    elif release_match.group(2) != release_tag:
-        errors.append(f"release_asset_base_url tag must match release_tag {release_tag}, got {release_match.group(2)}")
-    if not run_match:
+    release_match = None
+    if isinstance(release_asset_base_url, str):
+        release_match = GITHUB_RELEASE_RE.fullmatch(release_asset_base_url_value)
+    run_match = None
+    if isinstance(workflow_run_url, str):
+        if (
+            workflow_run_url_value != workflow_run_url_value.strip()
+            or workflow_run_url_value != workflow_run_url_value.rstrip("/")
+        ):
+            errors.append(
+                "--workflow-run-url must be canonical without surrounding whitespace or trailing slash"
+            )
+        else:
+            run_match = GITHUB_RUN_RE.fullmatch(workflow_run_url_value)
+    if isinstance(release_asset_base_url, str):
+        if not release_match:
+            errors.append(
+                "--release-asset-base-url must be exactly "
+                f"https://github.com/<owner>/<repo>/releases/download/{release_tag_value or '<release-tag>'}"
+            )
+        elif release_match.group(2) != release_tag_value:
+            errors.append(
+                f"release_asset_base_url tag must match release_tag {release_tag_value}, "
+                f"got {release_match.group(2)}"
+            )
+    if isinstance(workflow_run_url, str) and not run_match:
         errors.append("--workflow-run-url must be a GitHub Actions run URL")
     if release_match and run_match and release_match.group(1) != run_match.group(1):
         errors.append(
@@ -143,22 +185,34 @@ def check_xp_native_evidence_dispatch_inputs(
         )
 
     scoped_paths = {
-        "assets_dir": assets_dir,
-        "evidence_file": evidence_file,
-        "evidence_dir": evidence_dir,
+        "assets_dir": (assets_dir, assets_dir_value),
+        "evidence_file": (evidence_file, evidence_file_value),
+        "evidence_dir": (evidence_dir, evidence_dir_value),
     }
-    errors.extend(check_workspace_relative_path("assets_dir", assets_dir, require_directory_hint=True))
-    errors.extend(check_workspace_relative_path("evidence_file", evidence_file, require_json_hint=True))
-    errors.extend(check_workspace_relative_path("evidence_dir", evidence_dir, require_directory_hint=True))
-    for label, raw_path in scoped_paths.items():
-        errors.extend(check_target_release_scoped_path(label, raw_path, target, release_tag))
+    if isinstance(assets_dir, str):
+        errors.extend(check_workspace_relative_path("assets_dir", assets_dir_value, require_directory_hint=True))
+    if isinstance(evidence_file, str):
+        errors.extend(check_workspace_relative_path("evidence_file", evidence_file_value, require_json_hint=True))
+    if isinstance(evidence_dir, str):
+        errors.extend(check_workspace_relative_path("evidence_dir", evidence_dir_value, require_directory_hint=True))
+    for label, (raw_path, path_value) in scoped_paths.items():
+        if isinstance(raw_path, str) and isinstance(target, str) and isinstance(release_tag, str):
+            errors.extend(check_target_release_scoped_path(label, path_value, target_value, release_tag_value))
     return errors
+
+
+def dispatch_string_value(label: str, value: object) -> tuple[str, list[str]]:
+    if not isinstance(value, str):
+        return "", [f"{label} must be a string, got {value!r}"]
+    return value, []
 
 
 def is_positive_integer_text(value: object) -> bool:
     if isinstance(value, bool):
         return False
-    text = str(value).strip()
+    text = str(value)
+    if text != text.strip():
+        return False
     return bool(text) and text.isdigit() and int(text) > 0
 
 
@@ -173,6 +227,8 @@ def check_workspace_relative_path(
     errors: list[str] = []
     if not path:
         return [f"{label} must be set"]
+    if raw_path != path:
+        errors.append(f"{label} must not include surrounding whitespace")
     if PLACEHOLDER_RE.search(path):
         errors.append(f"{label} must be concrete, got {raw_path!r}")
     if any(char in path for char in "*?"):

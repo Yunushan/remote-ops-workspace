@@ -88,7 +88,8 @@ def test_platform_targets_declare_protected_readiness_goal_boundary() -> None:
     )
     assert goal["release_asset_provenance_gate"] == (
         "python scripts/check_protected_platform_goal.py "
-        "--release-tag v<project.version> --require-complete --assets-dir <release-assets-dir>"
+        "--release-tag v<project.version> --require-complete "
+        "--assets-dir <release-assets-dir> --repository <owner>/<repo>"
     )
     assert goal["published_release_audit_gate"] == (
         "python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets "
@@ -157,7 +158,8 @@ def test_platforms_cli_json_exposes_protected_readiness_boundary(capsys) -> None
     assert goal["security_boundary"]["weak_crypto_global_default"] is False
     assert goal["release_asset_provenance_gate"] == (
         "python scripts/check_protected_platform_goal.py "
-        "--release-tag v<project.version> --require-complete --assets-dir <release-assets-dir>"
+        "--release-tag v<project.version> --require-complete "
+        "--assets-dir <release-assets-dir> --repository <owner>/<repo>"
     )
     assert goal["published_release_audit_gate"] == (
         "python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets "
@@ -180,5 +182,6 @@ def test_features_coverage_cli_reports_missing_platform_evidence(capsys) -> None
     assert "Release asset provenance : not checked by static report" in output
     assert (
         "Asset provenance gate    : python scripts/check_protected_platform_goal.py "
-        "--release-tag v<project.version> --require-complete --assets-dir <release-assets-dir>"
+        "--release-tag v<project.version> --require-complete "
+        "--assets-dir <release-assets-dir> --repository <owner>/<repo>"
     ) in output

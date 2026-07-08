@@ -147,6 +147,84 @@ def test_finalize_platform_verified_evidence_record_rejects_non_path_inputs() ->
     ]
 
 
+def test_finalize_platform_verified_evidence_record_helpers_reject_non_path_args() -> None:
+    finalizer = _load_finalizer()
+    json_errors: list[str] = []
+    input_errors: list[str] = []
+
+    assert finalizer.load_json(True, "candidate evidence record", json_errors) is None
+    assert json_errors == [
+        "candidate evidence record file path must be a pathlib.Path, got True"
+    ]
+    assert not finalizer.check_input_file(
+        ["platform-verified-evidence-linux-i386.json"],
+        "candidate evidence record",
+        input_errors,
+    )
+    assert input_errors == [
+        "candidate evidence record file path must be a pathlib.Path, "
+        "got ['platform-verified-evidence-linux-i386.json']"
+    ]
+    assert finalizer.check_path_not_reserved_workspace_root(
+        "release-proof",
+        "candidate evidence record file",
+    ) == [
+        "candidate evidence record file path must be a pathlib.Path, got 'release-proof'"
+    ]
+    assert finalizer.check_candidate_record_file_name(
+        False,
+        "linux-i386",
+    ) == [
+        "candidate evidence record path must be a pathlib.Path, got False"
+    ]
+    assert finalizer.check_text_output_path(
+        "platform-verified-evidence-linux-i386-final.json",
+        "finalized platform evidence record output file",
+    ) == [
+        "finalized platform evidence record output file path must be a pathlib.Path, "
+        "got 'platform-verified-evidence-linux-i386-final.json'"
+    ]
+    assert finalizer.check_finalized_record_output_path(
+        True,
+        {"target": "linux-i386"},
+    ) == [
+        "finalized platform evidence record output file path must be a pathlib.Path, got True"
+    ]
+    assert finalizer.check_finalized_record_output_path(
+        Path("platform-verified-evidence-linux-i386-final.json"),
+        {"target": "linux-i386"},
+        bundle_manifest=["bundle.json"],
+    ) == [
+        "review bundle manifest path must be a pathlib.Path, got ['bundle.json']"
+    ]
+    assert finalizer.check_finalized_record_output_bytes(
+        {"output": "platform-verified-evidence-linux-i386-final.json"},
+        "{}\n",
+    ) == [
+        "finalized platform evidence record output file path must be a pathlib.Path, "
+        "got {'output': 'platform-verified-evidence-linux-i386-final.json'}"
+    ]
+    assert finalizer.check_review_bundle_input_siblings(
+        "bundle.json",
+        "bundle.zip",
+        "bundle-SHA256SUMS.txt",
+    ) == [
+        "review bundle manifest path must be a pathlib.Path, got 'bundle.json'",
+        "review bundle archive path must be a pathlib.Path, got 'bundle.zip'",
+        "review bundle SHA-256 sidecar path must be a pathlib.Path, "
+        "got 'bundle-SHA256SUMS.txt'",
+    ]
+    assert finalizer.check_bundle_sidecar(
+        "bundle-SHA256SUMS.txt",
+        ["bundle-manifest.json"],
+        False,
+    ) == [
+        "review bundle SHA-256 sidecar path must be a pathlib.Path, got 'bundle-SHA256SUMS.txt'",
+        "review bundle manifest path must be a pathlib.Path, got ['bundle-manifest.json']",
+        "review bundle archive path must be a pathlib.Path, got False",
+    ]
+
+
 def test_finalize_platform_verified_evidence_record_rejects_already_finalized_candidate(
     tmp_path: Path,
 ) -> None:

@@ -488,6 +488,35 @@ def test_stage_xp_native_evidence_upload_rejects_non_string_manifest_file_entry(
     ) in errors
 
 
+def test_stage_xp_native_evidence_upload_rejects_unsafe_manifest_file_entry(
+    tmp_path: Path,
+) -> None:
+    stager = _load_stager()
+    manifest = tmp_path / "bundle-manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "bundle_type": "windows-xp-native-host-evidence",
+                "smoke_evidence": [{"file": "../xp-smoke.log"}],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    files, errors = stager.review_bundle_workspace_files_with_errors(
+        "windows-xp-native-x86",
+        {"review_bundle": {"manifest": {"file": manifest.name}}},
+        bundle_dir=tmp_path,
+    )
+
+    assert files == set()
+    assert (
+        "windows-xp-native-x86 staged upload review_bundle manifest file entries "
+        "must be safe relative paths, got '../xp-smoke.log'"
+    ) in errors
+
+
 def test_stage_xp_native_evidence_upload_rejects_review_bundle_content_mismatch(
     tmp_path: Path,
 ) -> None:
@@ -807,6 +836,23 @@ def test_stage_xp_native_evidence_upload_rejects_symlinked_source(monkeypatch) -
     ) in errors
 
 
+def test_stage_xp_native_evidence_upload_rejects_non_path_source_value() -> None:
+    stager = _load_stager()
+    sources = {
+        "expected.zip": Path("expected.zip"),
+        "platform-verified-evidence-windows-xp-native-x86-final.json": True,
+    }
+
+    errors = stager.check_source_paths("windows-xp-native-x86", sources)
+
+    assert (
+        "windows-xp-native-x86 staged upload source "
+        "platform-verified-evidence-windows-xp-native-x86-final.json "
+        "path must be a pathlib.Path, got True"
+    ) in errors
+    assert not any("reserved workspace" in error and "True" in error for error in errors)
+
+
 def test_stage_xp_native_evidence_upload_rejects_symlinked_source_parent(
     tmp_path: Path,
     monkeypatch,
@@ -908,6 +954,39 @@ def test_stage_xp_native_evidence_upload_rejects_non_path_output_directory() -> 
     assert errors == [
         "windows-xp-native-x86 staged upload output directory must be a pathlib.Path, got True"
     ]
+
+
+def test_stage_xp_native_evidence_upload_path_helpers_reject_non_path_values() -> None:
+    stager = _load_stager()
+
+    assert stager.check_destination_path(
+        "windows-xp-native-x86",
+        True,
+        "expected.zip",
+    ) == [
+        "windows-xp-native-x86 staged upload destination expected.zip must be a pathlib.Path, got True"
+    ]
+    assert stager.check_path_parent_symlinks(False, "XP native asset directory") == [
+        "XP native asset directory must be a pathlib.Path, got False"
+    ]
+    assert stager.check_directory_path_hint("upload", "staged upload output directory") == [
+        "staged upload output directory must be a pathlib.Path, got 'upload'"
+    ]
+    assert stager.check_path_not_reserved_workspace_root(0, "staged upload output directory") == [
+        "staged upload output directory must be a pathlib.Path, got 0"
+    ]
+    assert stager.check_staging_path_separation(
+        "windows-xp-native-x86",
+        assets_dir=True,
+        evidence_output_dir="evidence",
+        out_dir=False,
+    ) == [
+        "windows-xp-native-x86 XP native asset directory must be a pathlib.Path, got True",
+        "windows-xp-native-x86 XP evidence output directory must be a pathlib.Path, got 'evidence'",
+        "windows-xp-native-x86 staged upload output directory must be a pathlib.Path, got False",
+    ]
+    assert stager.paths_overlap(True, Path("upload")) is True
+    assert stager.path_contains(True, Path("upload")) is False
 
 
 def test_stage_xp_native_evidence_upload_rejects_reserved_workspace_output_directory() -> None:

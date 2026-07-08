@@ -106,13 +106,23 @@ def strict_platform_goal_arg_errors(args: argparse.Namespace) -> list[str]:
     return errors
 
 
-def check_registry_path(path: Path) -> list[str]:
-    errors = check_path_not_reserved_workspace_root(path, "accepted evidence registry")
+def check_registry_path(path: object) -> list[str]:
+    path_errors, path_value = path_arg_value(path, "accepted evidence registry")
+    if path_errors:
+        return path_errors
+    assert path_value is not None
+    errors = check_path_not_reserved_workspace_root(path_value, "accepted evidence registry")
     if errors:
         return errors
-    if path.is_symlink():
-        return [f"accepted evidence registry must not be a symlink: {path}"]
-    return check_path_parent_symlinks(path, "accepted evidence registry")
+    if path_value.is_symlink():
+        return [f"accepted evidence registry must not be a symlink: {path_value}"]
+    return check_path_parent_symlinks(path_value, "accepted evidence registry")
+
+
+def path_arg_value(raw_path: object, label: str) -> tuple[list[str], Path | None]:
+    if not isinstance(raw_path, Path):
+        return [f"{label} path must be a pathlib.Path, got {raw_path!r}"], None
+    return [], raw_path
 
 
 def required_target_filter(raw_targets: object) -> tuple[set[str], bool]:
@@ -140,7 +150,7 @@ def required_targets_from_args(args: argparse.Namespace) -> tuple[str, ...]:
 def check_platform_review_bundle_artifacts(
     *,
     registry: dict[str, Any],
-    bundle_dir: Path,
+    bundle_dir: object,
     required_targets: tuple[str, ...] | list[str] | set[str] | None = None,
     required_release_tag: str | None = None,
     require_final_record_assets: bool = False,
@@ -156,20 +166,24 @@ def check_platform_review_bundle_artifacts(
         return validation_errors or ["accepted_evidence must be a list"]
     if validation_errors and not has_record_scoped_validation_errors(validation_errors, rows):
         return validation_errors
-    hint_errors = check_directory_path_hint(bundle_dir, "review bundle directory")
+    path_errors, bundle_dir_path = path_arg_value(bundle_dir, "review bundle directory")
+    if path_errors:
+        return [*validation_errors, *path_errors]
+    assert bundle_dir_path is not None
+    hint_errors = check_directory_path_hint(bundle_dir_path, "review bundle directory")
     if hint_errors:
         return [*validation_errors, *hint_errors]
-    reserved_errors = check_path_not_reserved_workspace_root(bundle_dir, "review bundle directory")
+    reserved_errors = check_path_not_reserved_workspace_root(bundle_dir_path, "review bundle directory")
     if reserved_errors:
         return [*validation_errors, *reserved_errors]
-    if bundle_dir.is_symlink():
-        return [*validation_errors, f"review bundle directory must not be a symlink: {bundle_dir}"]
-    parent_errors = check_path_parent_symlinks(bundle_dir, "review bundle directory")
+    if bundle_dir_path.is_symlink():
+        return [*validation_errors, f"review bundle directory must not be a symlink: {bundle_dir_path}"]
+    parent_errors = check_path_parent_symlinks(bundle_dir_path, "review bundle directory")
     if parent_errors:
         return [*validation_errors, *parent_errors]
-    bundle_root = bundle_dir.resolve()
+    bundle_root = bundle_dir_path.resolve()
     if not bundle_root.is_dir():
-        return [*validation_errors, f"review bundle directory missing: {bundle_dir}"]
+        return [*validation_errors, f"review bundle directory missing: {bundle_dir_path}"]
     artifact_errors: list[str] = []
     for record in records_for_artifact_validation(
         rows,
@@ -218,7 +232,7 @@ def has_record_scoped_validation_errors(errors: list[str], rows: list[Any]) -> b
 
 def check_record_review_bundle_artifacts(
     record: dict[str, Any],
-    bundle_root: Path,
+    bundle_root: object,
     *,
     require_final_record_asset: bool = False,
 ) -> list[str]:
@@ -228,6 +242,10 @@ def check_record_review_bundle_artifacts(
     review_bundle = record.get("review_bundle")
     if not isinstance(review_bundle, dict):
         return [f"{target} review_bundle must be an object"]
+    path_errors, bundle_root_path = path_arg_value(bundle_root, "review bundle directory")
+    if path_errors:
+        return path_errors
+    assert bundle_root_path is not None
     errors: list[str] = []
     paths: dict[str, Path] = {}
     for key in ("manifest", "archive", "sha256s"):
@@ -245,7 +263,7 @@ def check_record_review_bundle_artifacts(
                 f"{target} review_bundle {key}.file must be an exact safe file name: {filename!r}"
             )
             continue
-        path = bundle_root / filename
+        path = bundle_root_path / filename
         paths[key] = path
         errors.extend(check_file_record(target, key, path, raw_record))
     if errors:
@@ -282,16 +300,20 @@ def check_record_review_bundle_artifacts(
     if not finalizer_errors and finalized != record:
         errors.append(f"{target} finalized review bundle record must match accepted evidence registry entry")
     if require_final_record_asset:
-        errors.extend(check_final_record_asset(record, bundle_root))
+        errors.extend(check_final_record_asset(record, bundle_root_path))
     return errors
 
 
-def check_final_record_asset(record: dict[str, Any], bundle_root: Path) -> list[str]:
+def check_final_record_asset(record: dict[str, Any], bundle_root: object) -> list[str]:
     target = accepted_record_target(record)
     if not target:
         return [f"finalized accepted-record asset target must be a string, got {record.get('target')!r}"]
+    path_errors, bundle_root_path = path_arg_value(bundle_root, f"{target} finalized accepted-record asset directory")
+    if path_errors:
+        return path_errors
+    assert bundle_root_path is not None
     filename = accepted_record_source_file(target)
-    path = bundle_root / filename
+    path = bundle_root_path / filename
     parent_errors = check_path_parent_symlinks(path, f"{target} finalized accepted-record asset")
     if parent_errors:
         return parent_errors
@@ -360,23 +382,31 @@ def prefinalized_candidate_record(record: dict[str, Any]) -> dict[str, Any]:
     return candidate
 
 
-def check_file_record(target: str, key: str, path: Path, raw_record: dict[str, Any]) -> list[str]:
+def check_file_record(target: str, key: str, path: object, raw_record: dict[str, Any]) -> list[str]:
+    path_errors, path_value = path_arg_value(path, f"{target} review_bundle {key} file")
+    if path_errors:
+        return path_errors
+    assert path_value is not None
     errors: list[str] = []
-    if path.is_symlink():
-        return [f"{target} review_bundle {key} file must not be a symlink: {path.name}"]
-    if not path.is_file():
-        return [f"{target} review_bundle {key} file missing: {path.name}"]
+    if path_value.is_symlink():
+        return [f"{target} review_bundle {key} file must not be a symlink: {path_value.name}"]
+    if not path_value.is_file():
+        return [f"{target} review_bundle {key} file missing: {path_value.name}"]
     expected_size = raw_record.get("size_bytes")
-    if not isinstance(expected_size, int) or isinstance(expected_size, bool) or expected_size != path.stat().st_size:
-        errors.append(f"{target} review_bundle {key}.size_bytes does not match file {path.name}")
+    if (
+        not isinstance(expected_size, int)
+        or isinstance(expected_size, bool)
+        or expected_size != path_value.stat().st_size
+    ):
+        errors.append(f"{target} review_bundle {key}.size_bytes does not match file {path_value.name}")
     expected_sha = raw_record.get("sha256", "")
     if not isinstance(expected_sha, str):
         errors.append(
             f"{target} review_bundle {key}.sha256 must be a string SHA-256 hex digest, "
             f"got {expected_sha!r}"
         )
-    elif expected_sha != sha256_file(path):
-        errors.append(f"{target} review_bundle {key}.sha256 does not match file {path.name}")
+    elif expected_sha != sha256_file(path_value):
+        errors.append(f"{target} review_bundle {key}.sha256 does not match file {path_value.name}")
     return errors
 
 
@@ -402,13 +432,18 @@ def candidate_record_name(target: str, manifest: dict[str, Any], errors: list[st
 
 
 def read_archive_file(
-    archive_path: Path,
+    archive_path: object,
     filename: str,
     errors: list[str],
     target: str,
 ) -> bytes | None:
+    path_errors, archive_path_value = path_arg_value(archive_path, f"{target} review bundle archive")
+    if path_errors:
+        errors.extend(path_errors)
+        return None
+    assert archive_path_value is not None
     try:
-        with zipfile.ZipFile(archive_path) as archive:
+        with zipfile.ZipFile(archive_path_value) as archive:
             archive_safety_errors = check_archive_entry_safety(archive.infolist())
             if archive_safety_errors:
                 errors.extend(f"{target} {error}" for error in archive_safety_errors)
@@ -422,7 +457,7 @@ def read_archive_file(
                 errors.append(f"{target} review bundle archive candidate_record is not readable: {filename}: {exc}")
                 return None
     except (OSError, zipfile.BadZipFile) as exc:
-        errors.append(f"{target} review bundle archive is not a readable ZIP: {archive_path.name}: {exc}")
+        errors.append(f"{target} review bundle archive is not a readable ZIP: {archive_path_value.name}: {exc}")
         return None
 
 
@@ -438,9 +473,14 @@ def parse_json_bytes(raw_data: bytes, label: str, errors: list[str]) -> dict[str
     return data
 
 
-def load_json(path: Path, label: str, errors: list[str]) -> dict[str, Any] | None:
+def load_json(path: object, label: str, errors: list[str]) -> dict[str, Any] | None:
+    path_errors, path_value = path_arg_value(path, label)
+    if path_errors:
+        errors.extend(path_errors)
+        return None
+    assert path_value is not None
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path_value.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         errors.append(f"{label} is not readable JSON: {exc}")
         return None
@@ -467,8 +507,12 @@ def is_allowed_platform_parent_symlink(parent: Path) -> bool:
         return False
 
 
-def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
-    check_path = path if path.is_absolute() else Path.cwd() / path
+def check_path_parent_symlinks(path: object, label: str) -> list[str]:
+    path_errors, path_value = path_arg_value(path, label)
+    if path_errors:
+        return path_errors
+    assert path_value is not None
+    check_path = path_value if path_value.is_absolute() else Path.cwd() / path_value
     for parent in reversed(check_path.parents):
         if parent == Path("."):
             continue
@@ -477,14 +521,22 @@ def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
     return []
 
 
-def check_directory_path_hint(path: Path, label: str) -> list[str]:
-    raw_path = path.as_posix()
+def check_directory_path_hint(path: object, label: str) -> list[str]:
+    path_errors, path_value = path_arg_value(path, label)
+    if path_errors:
+        return path_errors
+    assert path_value is not None
+    raw_path = path_value.as_posix()
     if directory_path_has_file_suffix(raw_path):
         return [f"{label} must be a directory path, got {raw_path!r}"]
     return []
 
 
-def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
+def check_path_not_reserved_workspace_root(path: object, label: str) -> list[str]:
+    path_errors, path_value = path_arg_value(path, label)
+    if path_errors:
+        return path_errors
+    assert path_value is not None
     roots: list[Path] = [Path.cwd(), ROOT]
     seen_roots: set[Path] = set()
     for root in roots:
@@ -492,7 +544,9 @@ def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
         if root_resolved in seen_roots:
             continue
         seen_roots.add(root_resolved)
-        path_resolved = (path if path.is_absolute() else root_resolved / path).resolve(strict=False)
+        path_resolved = (
+            path_value if path_value.is_absolute() else root_resolved / path_value
+        ).resolve(strict=False)
         try:
             relative = path_resolved.relative_to(root_resolved)
         except ValueError:
@@ -504,7 +558,7 @@ def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
         if reserved_root in RESERVED_WORKSPACE_ROOTS:
             return [
                 f"{label} must not point inside reserved workspace directory "
-                f"{reserved_root!r}: {path}"
+                f"{reserved_root!r}: {path_value}"
             ]
     return []
 

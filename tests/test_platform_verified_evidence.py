@@ -1363,6 +1363,39 @@ def test_platform_verified_evidence_read_json_rejects_reserved_workspace_root() 
     )
 
 
+def test_platform_verified_evidence_path_helpers_reject_non_path_args() -> None:
+    checker = _load_platform_verified_evidence_checker()
+
+    with pytest.raises(ValueError) as exc_info:
+        checker.read_json("configs/platform_verified_evidence.json")
+
+    assert str(exc_info.value) == (
+        "JSON evidence source path must be a pathlib.Path, "
+        "got 'configs/platform_verified_evidence.json'"
+    )
+    assert checker.check_json_input_path(
+        "configs/platform_verified_evidence.json",
+        "JSON evidence source",
+    ) == [
+        "JSON evidence source path must be a pathlib.Path, "
+        "got 'configs/platform_verified_evidence.json'"
+    ]
+    assert checker.check_path_parent_symlinks(
+        "configs/platform_verified_evidence.json",
+        "JSON evidence source",
+    ) == [
+        "JSON evidence source path must be a pathlib.Path, "
+        "got 'configs/platform_verified_evidence.json'"
+    ]
+    assert checker.check_path_not_reserved_workspace_root(
+        "configs/platform_verified_evidence.json",
+        "JSON evidence source",
+    ) == [
+        "JSON evidence source path must be a pathlib.Path, "
+        "got 'configs/platform_verified_evidence.json'"
+    ]
+
+
 def test_platform_verified_evidence_cli_reports_unsafe_registry_path(capsys) -> None:
     checker = _load_platform_verified_evidence_checker()
     original_path = checker.EVIDENCE_PATH
@@ -2814,6 +2847,24 @@ def test_platform_verified_evidence_rejects_non_string_linux_workflow_run_url() 
     assert "linux-i386 workflow_run_url must be a string GitHub Actions run URL" in errors
 
 
+def test_platform_verified_evidence_rejects_noncanonical_linux_workflow_run_url() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    record["workflow_run_url"] = "https://github.com/example/remote-ops-workspace/actions/runs/12345/"
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "linux-i386 workflow_run_url must be canonical without surrounding whitespace or trailing slash"
+        in errors
+    )
+
+
 def test_platform_verified_evidence_rejects_linux_smoke_run_context_mismatch() -> None:
     checker = _load_platform_verified_evidence_checker()
     record = _linux_record("linux-i386")
@@ -2994,6 +3045,36 @@ def test_platform_verified_evidence_rejects_non_string_release_asset_source_meta
     assert "linux-i386 release_asset_source.head_sha must be a string" in errors
 
 
+def test_platform_verified_evidence_rejects_noncanonical_release_asset_source_metadata() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    source = record["release_asset_source"]
+    assert isinstance(source, dict)
+    source["type"] = " github-actions-artifact "
+    source["workflow"] = " .github/workflows/extended-platform-evidence.yml "
+    source["workflow_run_url"] = "https://github.com/example/remote-ops-workspace/actions/runs/12345/"
+    source["artifact_name"] = " extended-linux-evidence-linux-i386-v1.0.2 "
+    source["head_sha"] = f" {'a' * 40} "
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "linux-i386 release_asset_source.type must not include surrounding whitespace" in errors
+    assert "linux-i386 release_asset_source.workflow must not include surrounding whitespace" in errors
+    assert (
+        "linux-i386 release_asset_source.workflow_run_url must be canonical without "
+        "surrounding whitespace or trailing slash"
+    ) in errors
+    assert (
+        "linux-i386 release_asset_source.artifact_name must not include surrounding whitespace"
+    ) in errors
+    assert "linux-i386 release_asset_source.head_sha must not include surrounding whitespace" in errors
+
+
 def test_platform_verified_evidence_rejects_missing_release_source_head_sha() -> None:
     checker = _load_platform_verified_evidence_checker()
     record = _linux_record("linux-i386")
@@ -3108,6 +3189,31 @@ def test_platform_verified_evidence_source_scope_helpers_ignore_malformed_source
     assert checker.release_source_heads_by_target(records) == {"linux-armhf": "a" * 40}
     assert checker.valid_release_source_workflow_run_url(records["linux-i386"]["release_asset_source"]) == ""
     assert checker.valid_release_source_run_attempt_text(records["linux-armhf"]["release_asset_source"]) == ""
+
+
+def test_platform_verified_evidence_source_scope_helpers_reject_noncanonical_source_values() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    canonical_url = "https://github.com/example/remote-ops-workspace/actions/runs/12345"
+    source = {
+        "workflow_run_url": f"{canonical_url}/",
+        "head_sha": f" {'a' * 40}",
+        "run_attempt": 1,
+    }
+    records = {
+        "linux-i386": {"release_asset_source": source},
+        "linux-armhf": {
+            "release_asset_source": {
+                "workflow_run_url": canonical_url,
+                "head_sha": "a" * 40,
+                "run_attempt": 2,
+            }
+        },
+    }
+
+    assert checker.valid_release_source_workflow_run_url(source) == ""
+    assert checker.valid_release_source_head_sha(source) == ""
+    assert checker.release_source_run_attempt_conflicts(records) == {}
+    assert checker.release_source_heads_by_target(records) == {"linux-armhf": "a" * 40}
 
 
 def test_platform_verified_evidence_rejects_boolean_linux_evidence_source_size() -> None:
@@ -3445,6 +3551,48 @@ def test_platform_verified_evidence_rejects_linux_local_preflight_source_sha_mis
     ) in errors
 
 
+def test_platform_verified_evidence_rejects_missing_local_preflight_repository() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    record["local_evidence_preflight_command"] = str(record["local_evidence_preflight_command"]).replace(
+        "--repository example/remote-ops-workspace ",
+        "",
+    )
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "linux-i386 local_evidence_preflight_command --repository must match "
+        "release asset repository example/remote-ops-workspace, got []"
+    ) in errors
+
+
+def test_platform_verified_evidence_rejects_local_preflight_repository_mismatch() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _xp_record("windows-xp-native-x86")
+    record["local_evidence_preflight_command"] = str(record["local_evidence_preflight_command"]).replace(
+        "--repository example/remote-ops-workspace",
+        "--repository other/remote-ops-workspace",
+    )
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "windows-xp-native-x86 local_evidence_preflight_command --repository must match "
+        "release asset repository example/remote-ops-workspace, got ['other/remote-ops-workspace']"
+    ) in errors
+
+
 def test_platform_verified_evidence_rejects_linux_local_preflight_allow_extra_artifacts() -> None:
     checker = _load_platform_verified_evidence_checker()
     record = _linux_record("linux-i386")
@@ -3489,6 +3637,7 @@ def test_platform_verified_evidence_rejects_unsafe_linux_local_preflight_paths()
         "python scripts/check_platform_goal_local_evidence.py --root . "
         "--release-tag v1.0.2 --target linux-i386 "
         "--assets-dir staged/linux-i386/v1.0.2/artifacts "
+        "--repository example/remote-ops-workspace "
         "--linux-builder-evidence .github/builder-identity-linux-i386.json "
         "--linux-smoke-evidence evidence/.private/native-smoke-linux-i386.log "
         "--linux-workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
@@ -3565,6 +3714,7 @@ def test_platform_verified_evidence_accepts_scoped_linux_local_preflight_root() 
     record["local_evidence_preflight_command"] = (
         "python scripts/check_platform_goal_local_evidence.py --root platform-evidence-staging "
         f"--release-tag v1.0.2 --target {target} --assets-dir {assets_dir} "
+        "--repository example/remote-ops-workspace "
         f"--linux-builder-evidence {builder} "
         f"--linux-smoke-evidence {smoke} "
         "--linux-workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
@@ -6146,6 +6296,25 @@ def test_platform_verified_evidence_rejects_xp_evidence_summary_release_source_m
     ) in errors
 
 
+def test_platform_verified_evidence_rejects_xp_evidence_summary_release_source_url_trailing_slash() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _xp_record("windows-xp-native-x86")
+    summary_source = record["xp_evidence_summary"]["release_source"]
+    summary_source["workflow_run_url"] = f"{summary_source['workflow_run_url']}/"
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "windows-xp-native-x86 xp_evidence_summary release_source.workflow_run_url must match "
+        "release_asset_source.workflow_run_url"
+    ) in errors
+
+
 def test_platform_verified_evidence_rejects_non_string_xp_evidence_summary_release_source() -> None:
     checker = _load_platform_verified_evidence_checker()
     record = _xp_record("windows-xp-native-x86")
@@ -6694,6 +6863,7 @@ def _linux_record(target: str) -> dict[str, object]:
         "local_evidence_preflight_command": (
             "python scripts/check_platform_goal_local_evidence.py --root . "
             f"--release-tag v1.0.2 --target {target} --assets-dir {assets_dir} "
+            "--repository example/remote-ops-workspace "
             f"--linux-builder-evidence evidence/{target}/v1.0.2/builder-identity-{target}.json "
             f"--linux-smoke-evidence evidence/{target}/v1.0.2/native-smoke-{target}.log "
             "--linux-workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
@@ -6785,6 +6955,7 @@ def _xp_record(target: str, *, release_tag: str = "v1.0.2") -> dict[str, object]
         "local_evidence_preflight_command": (
             "python scripts/check_platform_goal_local_evidence.py --root . "
             f"--release-tag {release_tag} --target {target} --assets-dir {assets_dir} "
+            "--repository example/remote-ops-workspace "
             f"--xp-evidence {evidence_file} --xp-evidence-dir {evidence_dir} "
             "--xp-source-workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
             f"--xp-source-head-sha {'a' * 40} "

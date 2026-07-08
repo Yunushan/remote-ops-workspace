@@ -127,7 +127,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"extended platform builder: {error}", file=sys.stderr)
         return 1
     if args.out:
-        write_builder_identity_output(
+        write_errors = write_builder_identity_output(
             args.out,
             builder_identity(
                 args.target,
@@ -137,6 +137,10 @@ def main(argv: list[str] | None = None) -> int:
                 source_head_sha=str(args.source_head_sha),
             ),
         )
+        if write_errors:
+            for error in write_errors:
+                print(f"extended platform builder: {error}", file=sys.stderr)
+            return 1
     print(f"extended platform builder checks passed for {args.target}")
     return 0
 
@@ -194,33 +198,52 @@ def is_concrete_linux_tool_path(value: str) -> bool:
 
 def check_builder_identity_context(
     target: str,
-    release_tag: str | None,
-    workflow_run_url: str | None,
+    release_tag: object,
+    workflow_run_url: object,
     workflow_run_attempt: int | None,
-    source_head_sha: str | None,
+    source_head_sha: object,
 ) -> list[str]:
     errors: list[str] = []
-    if not release_tag:
+    if release_tag is None or release_tag == "":
         errors.append(f"{target} builder identity output requires --release-tag")
-    elif not RELEASE_TAG_RE.fullmatch(str(release_tag)):
+    elif not isinstance(release_tag, str):
+        errors.append(f"{target} builder identity --release-tag must be a string, got {release_tag!r}")
+    elif release_tag != release_tag.strip():
+        errors.append(f"{target} builder identity --release-tag must not include surrounding whitespace")
+    elif not RELEASE_TAG_RE.fullmatch(release_tag):
         errors.append(f"{target} builder identity --release-tag must look like vX.Y.Z")
-    if not workflow_run_url:
+    if workflow_run_url is None or workflow_run_url == "":
         errors.append(f"{target} builder identity output requires --workflow-run-url")
-    elif not GITHUB_ACTIONS_RUN_RE.fullmatch(str(workflow_run_url)):
+    elif not isinstance(workflow_run_url, str):
+        errors.append(
+            f"{target} builder identity --workflow-run-url must be a string, got {workflow_run_url!r}"
+        )
+    elif workflow_run_url != workflow_run_url.strip() or workflow_run_url != workflow_run_url.rstrip("/"):
+        errors.append(
+            f"{target} builder identity --workflow-run-url must be canonical without "
+            "surrounding whitespace or trailing slash"
+        )
+    elif not GITHUB_ACTIONS_RUN_RE.fullmatch(workflow_run_url):
         errors.append(f"{target} builder identity --workflow-run-url must be a GitHub Actions run URL")
     if workflow_run_attempt is None:
         errors.append(f"{target} builder identity output requires --workflow-run-attempt")
     elif not is_positive_int(workflow_run_attempt):
         errors.append(f"{target} builder identity --workflow-run-attempt must be a positive integer")
-    if not source_head_sha:
+    if source_head_sha is None or source_head_sha == "":
         errors.append(f"{target} builder identity output requires --source-head-sha")
-    elif not GITHUB_HEAD_SHA_RE.fullmatch(str(source_head_sha)):
+    elif not isinstance(source_head_sha, str):
+        errors.append(
+            f"{target} builder identity --source-head-sha must be a string, got {source_head_sha!r}"
+        )
+    elif source_head_sha != source_head_sha.strip():
+        errors.append(f"{target} builder identity --source-head-sha must not include surrounding whitespace")
+    elif not GITHUB_HEAD_SHA_RE.fullmatch(source_head_sha):
         errors.append(f"{target} builder identity --source-head-sha must be a 40-character lowercase Git SHA")
     else:
         observed_git_head = git_head_sha()
         if not observed_git_head:
             errors.append(f"{target} builder identity requires git rev-parse HEAD for source head binding")
-        elif observed_git_head != str(source_head_sha):
+        elif observed_git_head != source_head_sha:
             errors.append(
                 f"{target} builder identity observed git HEAD {observed_git_head} "
                 f"must match --source-head-sha {source_head_sha}"
@@ -233,9 +256,9 @@ def check_builder_identity_context(
         errors.extend(
             check_github_actions_context(
                 target,
-                str(workflow_run_url or ""),
+                workflow_run_url if isinstance(workflow_run_url, str) else "",
                 workflow_run_attempt,
-                str(source_head_sha),
+                source_head_sha,
             )
         )
     return errors
@@ -252,6 +275,10 @@ def check_github_actions_context(
     source_head_sha: str,
 ) -> list[str]:
     errors: list[str] = []
+    if workflow_run_url != workflow_run_url.strip() or workflow_run_url != workflow_run_url.rstrip("/"):
+        errors.append(
+            f"{target} --workflow-run-url must be canonical without surrounding whitespace or trailing slash"
+        )
     github_sha = os.environ.get("GITHUB_SHA", "").strip().lower()
     if github_sha and github_sha != source_head_sha:
         errors.append(f"{target} GITHUB_SHA {github_sha} must match --source-head-sha {source_head_sha}")
@@ -296,14 +323,18 @@ def check_github_actions_context(
     return errors
 
 
-def check_builder_identity_output_path(target: str, path: Path) -> list[str]:
+def check_builder_identity_output_path(target: str, path: object) -> list[str]:
+    path_errors, path_value = path_arg_value(path, "builder identity output file")
+    if path_errors:
+        return path_errors
+    assert path_value is not None
     errors: list[str] = []
     expected_name = f"builder-identity-{target}.json"
-    if path.name != expected_name:
+    if path_value.name != expected_name:
         errors.append(
-            f"{target} builder identity output file name must be {expected_name}, got {path.name!r}"
+            f"{target} builder identity output file name must be {expected_name}, got {path_value.name!r}"
         )
-    parent = path.parent
+    parent = path_value.parent
     errors.extend(check_directory_path_hint(parent, "builder identity output directory"))
     errors.extend(check_path_not_reserved_workspace_root(parent, "builder identity output directory"))
     if errors:
@@ -317,16 +348,21 @@ def check_builder_identity_output_path(target: str, path: Path) -> list[str]:
         return errors
     if parent.exists() and not parent.is_dir():
         errors.append(f"builder identity output directory must be a directory: {parent}")
-    if path.is_symlink():
-        errors.append(f"builder identity output file must not be a symlink: {path}")
-    if path.exists() and not path.is_file():
-        errors.append(f"builder identity output file must be a regular file: {path}")
+    if path_value.is_symlink():
+        errors.append(f"builder identity output file must not be a symlink: {path_value}")
+    if path_value.exists() and not path_value.is_file():
+        errors.append(f"builder identity output file must be a regular file: {path_value}")
     return errors
 
 
-def write_builder_identity_output(path: Path, data: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+def write_builder_identity_output(path: object, data: dict[str, Any]) -> list[str]:
+    path_errors, path_value = path_arg_value(path, "builder identity output file")
+    if path_errors:
+        return path_errors
+    assert path_value is not None
+    path_value.parent.mkdir(parents=True, exist_ok=True)
+    path_value.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    return []
 
 
 def is_allowed_platform_parent_symlink(parent: Path) -> bool:
@@ -338,8 +374,18 @@ def is_allowed_platform_parent_symlink(parent: Path) -> bool:
         return False
 
 
-def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
-    check_path = path if path.is_absolute() else Path.cwd() / path
+def path_arg_value(raw_path: object, label: str) -> tuple[list[str], Path | None]:
+    if not isinstance(raw_path, Path):
+        return [f"{label} path must be a pathlib.Path, got {raw_path!r}"], None
+    return [], raw_path
+
+
+def check_path_parent_symlinks(path: object, label: str) -> list[str]:
+    path_errors, path_value = path_arg_value(path, label)
+    if path_errors:
+        return path_errors
+    assert path_value is not None
+    check_path = path_value if path_value.is_absolute() else Path.cwd() / path_value
     for parent in reversed(check_path.parents):
         if parent == Path("."):
             continue
@@ -348,14 +394,22 @@ def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
     return []
 
 
-def check_directory_path_hint(path: Path, label: str) -> list[str]:
-    raw_path = path.as_posix()
+def check_directory_path_hint(path: object, label: str) -> list[str]:
+    path_errors, path_value = path_arg_value(path, label)
+    if path_errors:
+        return path_errors
+    assert path_value is not None
+    raw_path = path_value.as_posix()
     if directory_path_has_file_suffix(raw_path):
         return [f"{label} must be a directory path, got {raw_path!r}"]
     return []
 
 
-def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
+def check_path_not_reserved_workspace_root(path: object, label: str) -> list[str]:
+    path_errors, path_value = path_arg_value(path, label)
+    if path_errors:
+        return path_errors
+    assert path_value is not None
     roots: list[Path] = [Path.cwd(), ROOT]
     seen_roots: set[Path] = set()
     for root in roots:
@@ -363,7 +417,9 @@ def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
         if root_resolved in seen_roots:
             continue
         seen_roots.add(root_resolved)
-        path_resolved = (path if path.is_absolute() else root_resolved / path).resolve(strict=False)
+        path_resolved = (
+            path_value if path_value.is_absolute() else root_resolved / path_value
+        ).resolve(strict=False)
         try:
             relative = path_resolved.relative_to(root_resolved)
         except ValueError:
@@ -375,7 +431,7 @@ def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
         if reserved_root in RESERVED_WORKSPACE_ROOTS:
             return [
                 f"{label} must not point inside reserved workspace directory "
-                f"{reserved_root!r}: {path}"
+                f"{reserved_root!r}: {path_value}"
             ]
     return []
 

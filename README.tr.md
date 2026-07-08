@@ -290,7 +290,7 @@ tag, ayni GitHub release repository, target'a ozel release source workflow file
 path, ayni release source head SHA ve her kaydin pozitif release source run
 attempt degeri ile finalized accepted evidence
 olarak bulunmalidir. Protected evidence asset isi
-`python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run`
+`python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run --repository <owner>/<repo>`
 ile sadece accepted kayitlarda ayni tag/repository/workflow file path/source-head/run-attempt
 bagli artifact ve review-bundle dosyalarini, indirilen source artifact native
 artifact `workflow_run.id`, `workflow_run.head_sha`,
@@ -305,9 +305,9 @@ dosyalarini upload oncesi yeniden dogrular. Import edilen platform evidence
 artifact upload'i bosken fail eder, hidden dosyalari haric tutar ve 90 gun
 retention kullanir. Publish isi upload
 oncesinde
-`python scripts/check_protected_platform_goal.py --release-tag <tag> --require-complete --assets-dir release-assets`
+`python scripts/check_protected_platform_goal.py --release-tag <tag> --require-complete --assets-dir release-assets --repository <owner>/<repo>`
 ve
-`python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --require-platform-goal-targets`
+`python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --repository <owner>/<repo> --require-platform-goal-targets`
 calistirip publish-ready release-assets dizinindeki finalized record, review
 bundle, native artifact, checksum yan dosyasi, release manifesti ve accepted
 platform evidence hashlerini karsilastirir.
@@ -325,6 +325,10 @@ source artifact `workflow_run.id`, `workflow_run.head_sha`,
 ve GitHub timestamp sagladiginda artifact created_at degerinin exact source run
 creation/start/update araligi icinde kaldigini, ayrica source artifact ZIP
 iceriginin `release_asset_source.contains_files` ile ayni oldugunu dogrular.
+Local live audit calistirirken `GH_TOKEN` veya `GITHUB_TOKEN` degerini
+`contents:read` ve `actions:read` erisimiyle ayarlayin; boylece GitHub API
+rate limitleri veya artifact authorization durumu gercek evidence state'ini
+gizleyemez.
 Linux accepted evidence kayitlari builder identity SHA-256 degeri, sanitized
 target-scoped host identity, workflow dispatch input bagi ve native smoke
 release/run, runtime architecture, OpenSSL ve legacy-crypto-scope proof

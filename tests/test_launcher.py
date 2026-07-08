@@ -1,3 +1,4 @@
+import remote_ops_workspace.launcher as launcher_module
 from remote_ops_workspace.launcher import LauncherError, build_launch_plan
 from remote_ops_workspace.models import Profile, Tunnel
 
@@ -163,6 +164,84 @@ def test_rdp_command_builder_is_safe_list() -> None:
     plan = build_launch_plan(profile)
     assert isinstance(plan.command, list)
     assert any("192.0.2.20" in part for part in plan.command)
+
+
+def test_rdp_native_security_requires_isolated_legacy_target() -> None:
+    profile = Profile(
+        name="xp-rdp",
+        protocol="rdp",
+        host="192.0.2.20",
+        options={"security": "rdp", "allow_legacy_rdp_security": "true"},
+    )
+
+    try:
+        build_launch_plan(profile)
+    except LauncherError as exc:
+        assert "legacy_target=windows-xp-32/windows-xp-64" in str(exc)
+        assert "allow_legacy_rdp_security=true" in str(exc)
+    else:
+        raise AssertionError("RDP native security should require an isolated XP legacy target")
+
+
+def test_rdp_native_security_rejects_generic_xp_legacy_target_aliases() -> None:
+    for legacy_target in ("xp", "winxp", "windows-xp", "windows-xp-x86", "windows-xp-x64"):
+        profile = Profile(
+            name="xp-rdp",
+            protocol="rdp",
+            host="192.0.2.20",
+            options={
+                "security": "rdp",
+                "legacy_target": legacy_target,
+                "allow_legacy_rdp_security": "true",
+            },
+        )
+
+        try:
+            build_launch_plan(profile)
+        except LauncherError as exc:
+            assert "legacy_target=windows-xp-32/windows-xp-64" in str(exc)
+        else:
+            raise AssertionError(f"generic XP legacy target alias {legacy_target!r} should be rejected")
+
+
+def test_rdp_native_security_requires_legacy_target_key() -> None:
+    profile = Profile(
+        name="xp-rdp",
+        protocol="rdp",
+        host="192.0.2.20",
+        options={
+            "security": "rdp",
+            "legacy_platform": "windows-xp-32",
+            "allow_legacy_rdp_security": "true",
+        },
+    )
+
+    try:
+        build_launch_plan(profile)
+    except LauncherError as exc:
+        assert "legacy_target=windows-xp-32/windows-xp-64" in str(exc)
+    else:
+        raise AssertionError("legacy_platform must not unlock RDP native security")
+
+
+def test_rdp_native_security_uses_explicit_freerdp_security_mode(monkeypatch) -> None:
+    monkeypatch.setattr(launcher_module, "_is_windows", lambda: False)
+    monkeypatch.setattr(launcher_module, "_first_available", lambda _executables: "xfreerdp")
+    profile = Profile(
+        name="xp-rdp",
+        protocol="rdp",
+        host="192.0.2.20",
+        options={
+            "security": "rdp",
+            "legacy_target": "windows-xp-32",
+            "allow_legacy_rdp_security": "true",
+        },
+    )
+
+    plan = launcher_module.build_launch_plan(profile)
+
+    assert "/sec:rdp" in plan.command
+    assert any("isolated XP remote targets" in note for note in plan.notes)
 
 
 def test_https_command_builder() -> None:

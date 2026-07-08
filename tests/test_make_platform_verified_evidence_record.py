@@ -167,6 +167,7 @@ def test_make_platform_verified_evidence_record_generates_linux_record(
     assert record["local_evidence_preflight_command"] == (
         "python scripts/check_platform_goal_local_evidence.py --root . "
         f"--release-tag {tag} --target {target} --assets-dir {assets.as_posix()} "
+        "--repository example/remote-ops-workspace "
         f"--linux-builder-evidence {builder_evidence.as_posix()} "
         f"--linux-smoke-evidence {smoke_evidence.as_posix()} "
         "--linux-workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
@@ -494,6 +495,77 @@ def test_make_platform_verified_evidence_record_rejects_non_path_common_inputs(
     assert "staged upload output directory must be a pathlib.Path, got False" in errors
 
 
+def test_make_platform_verified_evidence_record_path_helpers_reject_non_path_args() -> None:
+    maker = _load_maker()
+
+    data, read_errors = maker.read_json_object(True, "Linux builder evidence")
+
+    assert data == {
+        "schema_version": 0,
+        "error": "Linux builder evidence file must be a pathlib.Path, got True",
+    }
+    assert read_errors == [
+        "Linux builder evidence file must be a pathlib.Path, got True"
+    ]
+    assert maker.read_json(["builder.json"]) == {
+        "schema_version": 0,
+        "error": "JSON file must be a pathlib.Path, got ['builder.json']",
+    }
+    assert maker.read_evidence_registry("configs/platform_verified_evidence.json") == {
+        "schema_version": 0,
+        "policy": "platform verified evidence registry must be a pathlib.Path, "
+        "got 'configs/platform_verified_evidence.json'",
+        "accepted_evidence": None,
+    }
+    assert maker.check_path_parent_symlinks(
+        {"path": "artifacts"},
+        "artifact directory",
+    ) == [
+        "artifact directory must be a pathlib.Path, got {'path': 'artifacts'}"
+    ]
+    assert maker.check_directory_path_hint(
+        ["artifacts"],
+        "artifact directory",
+    ) == [
+        "artifact directory must be a pathlib.Path, got ['artifacts']"
+    ]
+    assert maker.check_path_not_reserved_workspace_root(
+        "root",
+        "artifacts",
+        "artifact directory",
+    ) == [
+        "local evidence root must be a pathlib.Path, got 'root'",
+        "artifact directory must be a pathlib.Path, got 'artifacts'",
+    ]
+    assert maker.check_target_release_path_segments(
+        "linux-i386",
+        "v1.0.2",
+        "artifacts",
+        label="artifact directory",
+    ) == [
+        "artifact directory must be a pathlib.Path, got 'artifacts'"
+    ]
+    assert maker.check_text_output_path(
+        "platform-verified-evidence-linux-i386.json",
+        "platform verified evidence record output file",
+    ) == [
+        "platform verified evidence record output file must be a pathlib.Path, "
+        "got 'platform-verified-evidence-linux-i386.json'"
+    ]
+    assert maker.check_generated_record_output_path(
+        True,
+        {"target": "linux-i386"},
+    ) == [
+        "platform verified evidence record output file must be a pathlib.Path, got True"
+    ]
+    assert maker.append_record_to_registry(
+        {"target": "linux-i386"},
+        registry_path=False,
+    ) == [
+        "platform verified evidence registry must be a pathlib.Path, got False"
+    ]
+
+
 def test_make_platform_verified_evidence_record_rejects_non_path_linux_evidence_inputs(
     tmp_path: Path,
 ) -> None:
@@ -656,6 +728,7 @@ def test_make_platform_verified_evidence_record_generates_xp_record(tmp_path: Pa
     assert record["local_evidence_preflight_command"] == (
         "python scripts/check_platform_goal_local_evidence.py --root . "
         f"--release-tag {tag} --target {target} --assets-dir {assets.as_posix()} "
+        "--repository example/remote-ops-workspace "
         f"--xp-evidence {evidence.as_posix()} --xp-evidence-dir {evidence.parent.as_posix()} "
         "--xp-source-workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/54321 "
         f"--xp-source-head-sha {'a' * 40} "
@@ -850,6 +923,16 @@ def test_make_platform_verified_evidence_record_ignores_malformed_xp_summary_has
         "smoke_results": [
             {"id": "cli_launch", "evidence_sha256": True},
             {"id": False, "evidence_sha256": "a" * 64},
+            {
+                "id": "escape_file",
+                "evidence_file": "../escape.txt",
+                "evidence_sha256": "b" * 64,
+            },
+            {
+                "id": "malformed_hash",
+                "evidence_file": "xp-smoke-evidence/malformed_hash.txt",
+                "evidence_sha256": "not-a-sha256",
+            },
         ],
     }
 
@@ -903,6 +986,10 @@ def test_make_platform_verified_evidence_record_does_not_coerce_malformed_xp_sum
                 "evidence_file": ["xp-smoke-evidence/cli_launch.txt"],
             },
             {
+                "id": "escape_file",
+                "evidence_file": "../escape.txt",
+            },
+            {
                 "id": "loopback_profile_dry_run",
                 "command": "scripts/xp_smoke_runner.cmd --smoke-id loopback_profile_dry_run",
                 "evidence_file": "xp-smoke-evidence/loopback_profile_dry_run.txt",
@@ -918,7 +1005,7 @@ def test_make_platform_verified_evidence_record_does_not_coerce_malformed_xp_sum
     host_identity = maker.xp_host_identity_summary(evidence)
 
     assert summary["os"] == {"name": "", "architecture": "", "service_pack": ""}
-    assert summary["smoke_ids"] == ["cli_launch", "loopback_profile_dry_run"]
+    assert summary["smoke_ids"] == ["cli_launch", "escape_file", "loopback_profile_dry_run"]
     assert summary["smoke_commands"] == {
         "loopback_profile_dry_run": "scripts/xp_smoke_runner.cmd --smoke-id loopback_profile_dry_run"
     }
@@ -934,6 +1021,59 @@ def test_make_platform_verified_evidence_record_does_not_coerce_malformed_xp_sum
     assert host_identity["toolchain"]["description"] == ""
     assert "True" not in json.dumps(summary)
     assert "['" not in json.dumps(summary)
+    assert "../escape.txt" not in json.dumps(summary)
+
+
+def test_make_platform_verified_evidence_record_xp_sources_ignore_unsafe_smoke_files(
+    tmp_path: Path,
+) -> None:
+    maker = _load_maker()
+    evidence = tmp_path / "xp-evidence.json"
+    evidence.write_text("{}\n", encoding="utf-8")
+    evidence_dir = tmp_path / "evidence"
+    smoke_dir = evidence_dir / "xp-smoke-evidence"
+    smoke_dir.mkdir(parents=True)
+    smoke_file = smoke_dir / "cli_launch.txt"
+    smoke_file.write_text("cli smoke proof\n", encoding="utf-8")
+    missing_hash_file = smoke_dir / "missing_hash.txt"
+    missing_hash_file.write_text("missing hash smoke proof\n", encoding="utf-8")
+    malformed_hash_file = smoke_dir / "malformed_hash.txt"
+    malformed_hash_file.write_text("malformed hash smoke proof\n", encoding="utf-8")
+    escaped_smoke_file = tmp_path / "escape.txt"
+    escaped_smoke_file.write_text("escaped smoke proof\n", encoding="utf-8")
+    args = maker.argparse.Namespace(xp_evidence=evidence, xp_evidence_dir=evidence_dir)
+
+    sources = maker.xp_evidence_sources(
+        args,
+        {
+            "smoke_evidence_files": {
+                "backslash_file": "xp-smoke-evidence\\bad.txt",
+                "cli_launch": "xp-smoke-evidence/cli_launch.txt",
+                "escape_file": "../escape.txt",
+                "malformed_hash": "xp-smoke-evidence/malformed_hash.txt",
+                "missing_hash": "xp-smoke-evidence/missing_hash.txt",
+            }
+        },
+        {
+            "backslash_file": "c" * 64,
+            "cli_launch": "a" * 64,
+            "escape_file": "b" * 64,
+            "malformed_hash": "not-a-sha256",
+        },
+    )
+
+    assert sources["smoke_evidence"] == {
+        "cli_launch": {
+            "file": "xp-smoke-evidence/cli_launch.txt",
+            "size_bytes": smoke_file.stat().st_size,
+            "sha256": "a" * 64,
+        }
+    }
+    serialized = json.dumps(sources)
+    assert "../escape.txt" not in serialized
+    assert "bad.txt" not in serialized
+    assert "malformed_hash.txt" not in serialized
+    assert "missing_hash.txt" not in serialized
 
 
 def test_make_platform_verified_evidence_record_rejects_file_shaped_xp_evidence_directory(
@@ -1519,6 +1659,39 @@ def test_make_platform_verified_evidence_record_rejects_malformed_linux_workflow
     assert "--release-source-workflow-run-url must be a GitHub Actions run URL" in errors
 
 
+def test_make_platform_verified_evidence_record_rejects_noncanonical_linux_workflow_run_urls(
+    tmp_path: Path,
+) -> None:
+    maker = _load_maker()
+    artifact_checker = _load_platform_promotion_artifacts_checker()
+    tag = f"v{artifact_checker.read_project_version()}"
+    args = maker.parse_args(
+        [
+            "--target",
+            "linux-i386",
+            "--release-tag",
+            tag,
+            "--assets-dir",
+            str(tmp_path / "linux"),
+            "--release-asset-base-url",
+            f"https://github.com/example/remote-ops-workspace/releases/download/{tag}",
+            "--workflow-run-url",
+            "https://github.com/example/remote-ops-workspace/actions/runs/12345/",
+            "--release-source-workflow-run-url",
+            "https://github.com/example/remote-ops-workspace/actions/runs/12345/",
+            "--release-source-head-sha",
+            "a" * 40,
+            "--release-source-run-attempt",
+            "1",
+        ]
+    )
+
+    errors = maker.validate_linux_args(args)
+
+    assert "--workflow-run-url must be a GitHub Actions run URL" in errors
+    assert "--release-source-workflow-run-url must be a GitHub Actions run URL" in errors
+
+
 def test_make_platform_verified_evidence_record_rejects_empty_linux_release_source_inputs(
     tmp_path: Path,
 ) -> None:
@@ -1589,6 +1762,54 @@ def test_make_platform_verified_evidence_record_rejects_malformed_xp_release_sou
     errors = maker.validate_xp_args(args)
 
     assert "--release-source-workflow-run-url must be a GitHub Actions run URL" in errors
+
+
+def test_make_platform_verified_evidence_record_rejects_noncanonical_xp_release_source_workflow_run_url(
+    tmp_path: Path,
+) -> None:
+    maker = _load_maker()
+    artifact_checker = _load_platform_promotion_artifacts_checker()
+    target = "windows-xp-native-x86"
+    tag = f"v{artifact_checker.read_project_version()}"
+    args = maker.parse_args(
+        [
+            "--target",
+            target,
+            "--release-tag",
+            tag,
+            "--assets-dir",
+            str(tmp_path / "xp"),
+            "--release-asset-base-url",
+            f"https://github.com/example/remote-ops-workspace/releases/download/{tag}",
+            "--release-source-workflow-run-url",
+            "https://github.com/example/remote-ops-workspace/actions/runs/54321/",
+            "--release-source-artifact-name",
+            f"xp-native-evidence-{target}-{tag}",
+            "--release-source-head-sha",
+            "a" * 40,
+            "--release-source-run-attempt",
+            "1",
+        ]
+    )
+
+    errors = maker.validate_xp_args(args)
+
+    assert "--release-source-workflow-run-url must be a GitHub Actions run URL" in errors
+
+
+def test_make_platform_verified_evidence_record_xp_release_source_summary_preserves_workflow_run_url() -> None:
+    maker = _load_maker()
+
+    summary = maker.xp_release_source_summary(
+        {
+            "workflow": ".github/workflows/xp-native-evidence.yml",
+            "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/54321/",
+            "head_sha": "a" * 40,
+            "run_attempt": 1,
+        }
+    )
+
+    assert summary["workflow_run_url"] == "https://github.com/example/remote-ops-workspace/actions/runs/54321/"
 
 
 def test_make_platform_verified_evidence_record_rejects_linux_workflow_run_repository_mismatch(

@@ -319,6 +319,7 @@ COMMON_LOCAL_EVIDENCE_PREFLIGHT_FLAGS = {
     "--release-tag",
     "--target",
     "--assets-dir",
+    "--repository",
 }
 LINUX_LOCAL_EVIDENCE_PREFLIGHT_FLAGS = {
     *COMMON_LOCAL_EVIDENCE_PREFLIGHT_FLAGS,
@@ -1442,10 +1443,15 @@ def _protected_platform_goal_parity(evidence_registry: dict[str, Any] | None) ->
         "release_import_dry_run_command": _protected_platform_release_import_dry_run_command(
             release_tag or "v<project.version>"
         ),
+        "remote_release_evidence_audit_command": _protected_platform_remote_release_audit_command(
+            release_tag or "v<project.version>",
+            release_repository or "<owner>/<repo>",
+        ),
         "release_asset_provenance_command": (
             "python scripts/check_protected_platform_goal.py "
             f"--release-tag {release_tag or 'v<project.version>'} "
-            "--require-complete --assets-dir <release-assets-dir>"
+            "--require-complete --assets-dir <release-assets-dir> "
+            f"--repository {release_repository or '<owner>/<repo>'}"
         ),
         "release_source_provenance_complete": release_source_provenance_complete,
         "release_asset_provenance_complete": release_asset_provenance_complete,
@@ -1581,7 +1587,22 @@ def _protected_platform_release_import_dry_run_command(release_tag: str) -> str:
         "--require-goal-targets "
         "--out-dir <release-assets-dir> "
         "--dry-run "
-        "--verify-source-run"
+        "--verify-source-run "
+        "--repository <owner>/<repo>"
+    )
+
+
+def _protected_platform_remote_release_audit_command(release_tag: str, repository: str) -> str:
+    return (
+        "python scripts/check_platform_release_evidence_remote.py "
+        f"--repository {repository} "
+        f"--release-tag {release_tag} "
+        "--require-goal-targets "
+        "--require-source-runs "
+        "--require-source-artifact-bytes "
+        "--require-final-record-bytes "
+        "--require-release-asset-bytes "
+        "--require-tag-source-head"
     )
 
 
@@ -1823,6 +1844,11 @@ def _has_local_evidence_preflight_command(item: dict[str, Any], target: str) -> 
     if _command_values(command, "--release-tag") != [release_tag]:
         return False
     if _command_values(command, "--target") != [target]:
+        return False
+    release_repositories = sorted(_release_asset_repositories(item.get("release_asset_urls")))
+    if len(release_repositories) != 1:
+        return False
+    if _command_values(command, "--repository") != [release_repositories[0]]:
         return False
     asset_dirs = _command_values(command, "--assets-dir")
     artifact_asset_dirs = _command_values(str(item.get("artifact_validation_command", "")), "--assets-dir")
@@ -3400,7 +3426,8 @@ def _protected_row_static_provenance(
         "static_readiness_evidence_scope": (
             "accepted-record/source-run metadata only; run "
             "python scripts/check_protected_platform_goal.py --release-tag v<project.version> "
-            "--require-complete --assets-dir <release-assets-dir> for published release asset byte proof"
+            "--require-complete --assets-dir <release-assets-dir> --repository <owner>/<repo> "
+            "for published release asset byte proof"
         ),
     }
 

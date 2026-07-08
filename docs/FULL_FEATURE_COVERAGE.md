@@ -100,9 +100,9 @@ same GitHub release repository, target-specific release source workflow file,
 same release source head SHA and a positive release source run attempt in each record. Mixed-tag,
 mixed-repository, mixed-source-head or same-run-URL conflicting-attempt accepted records
 remain aggregate evidence only and cannot complete the protected goal parity block. The release/verifier promotion
-gate is `python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> --release-assets-dir <release-assets-dir>`,
-which also runs `python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-complete --assets-dir <release-assets-dir>`
-and `python scripts/check_release_publish_assets.py --assets-dir <release-assets-dir> --tag v<project.version> --require-platform-goal-targets`
+gate is `python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> --release-assets-dir <release-assets-dir> --release-repository <owner>/<repo>`,
+which also runs `python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-complete --assets-dir <release-assets-dir> --repository <owner>/<repo>`
+and `python scripts/check_release_publish_assets.py --assets-dir <release-assets-dir> --tag v<project.version> --repository <owner>/<repo> --require-platform-goal-targets`
 and must fail until the same four records are finalized and accepted from that same release source.
 Static readiness JSON keeps `release_asset_provenance_complete=false`; only the
 asset-backed protected goal gate can flip that proof state after finalized
@@ -155,16 +155,19 @@ The human `row features --coverage` output prints a `Protected platform goal`
 line with the four-target accepted-evidence percentage, a `Release asset
 provenance` line that stays `not checked by static report` until the
 asset-backed protected goal gate runs, the exact `Asset provenance gate`
-command, and missing targets. It also includes missing accepted evidence next to
-Linux i386, Linux armhf and Windows XP rows plus a row-level
-accepted-record/release-asset provenance note. The JSON output keeps the same row data under
-`accepted_evidence_missing_targets` and exposes the four-target goal status under
-`platform_verified_readiness.protected_goal_parity`, including
+command, the exact `Remote evidence audit` command for the live published
+release/source-run/source-artifact/final-record/release-asset/tag audit
+(`python scripts/check_platform_release_evidence_remote.py ...`), and missing
+targets. It also includes missing accepted evidence next to Linux i386,
+Linux armhf and Windows XP rows plus a row-level accepted-record/release-asset
+provenance note. The JSON output keeps the same row data under
+`accepted_evidence_missing_targets` and exposes the four-target goal status
+under `platform_verified_readiness.protected_goal_parity`, including
 `release_asset_provenance_complete=false`,
-`release_asset_provenance_command` and `target_evidence_requirements` entries
-that list the required accepted registry record, release artifacts,
-review-bundle files, validation/finalization commands and XP security/smoke
-requirements for each protected target.
+`release_asset_provenance_command`, `remote_release_evidence_audit_command` and
+`target_evidence_requirements` entries that list the required accepted registry
+record, release artifacts, review-bundle files, validation/finalization
+commands and XP security/smoke requirements for each protected target.
 Protected platform goal parity is **0.0%** for the current accepted-evidence
 registry (status=missing-accepted-evidence); the 100.0% overall verified
 readiness row does not include Linux i386, Linux armhf or Windows XP

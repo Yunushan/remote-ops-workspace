@@ -204,7 +204,7 @@ jobs:
       - name: Import accepted protected platform evidence artifacts
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python scripts/import_platform_evidence_artifacts.py --release-tag "${{ github.ref_name }}" --require-goal-targets --out-dir release-assets --verify-source-run
+        run: python scripts/import_platform_evidence_artifacts.py --release-tag "${{ github.ref_name }}" --require-goal-targets --out-dir release-assets --verify-source-run --repository "${{ github.repository }}"
       - name: Validate imported protected platform review bundles
         run: python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag "${{ github.ref_name }}" --require-final-record-assets
       - uses: actions/upload-artifact@v7
@@ -240,9 +240,9 @@ jobs:
           path: release-assets
           merge-multiple: true
       - name: Require protected platform release assets
-        run: python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" --require-complete --assets-dir release-assets
+        run: python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" --require-complete --assets-dir release-assets --repository "${{ github.repository }}"
       - name: Validate release publish assets
-        run: python scripts/check_release_publish_assets.py --assets-dir release-assets --tag "${{ github.ref_name }}" --require-platform-goal-targets
+        run: python scripts/check_release_publish_assets.py --assets-dir release-assets --tag "${{ github.ref_name }}" --repository "${{ github.repository }}" --require-platform-goal-targets
       - name: Upload release assets
         uses: softprops/action-gh-release@v3
         with:

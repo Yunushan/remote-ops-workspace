@@ -152,6 +152,7 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
         '            --release-tag "${{ inputs.release_tag }}" \\\n'
         f"            --target {target} \\\n"
         f"            --assets-dir {assets_dir} \\\n"
+        '            --repository "${{ github.repository }}" \\\n'
         f"            --linux-builder-evidence {evidence_dir}/{builder_identity_name} \\\n"
         f"            --linux-smoke-evidence {evidence_dir}/{smoke_name} \\\n"
         '            --linux-workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \\\n'

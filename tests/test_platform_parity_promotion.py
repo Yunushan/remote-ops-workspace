@@ -197,6 +197,42 @@ def test_platform_parity_promotion_requires_local_evidence_preflight() -> None:
     assert "linux-i386 promotion_to_100_requires missing keys: ['local_evidence_preflight_command']" in errors
 
 
+def test_platform_parity_promotion_requires_workflow_dispatch_command() -> None:
+    checker = _load_platform_parity_promotion_checker()
+    promotion = _load_json("configs/platform_parity_promotion.json")
+    linux = _promotion_entry(promotion, "linux-i386")
+    xp = _promotion_entry(promotion, "windows-xp-native-x86")
+    del linux["promotion_to_100_requires"]["workflow_dispatch_command"]
+    del xp["promotion_to_100_requires"]["workflow_dispatch_command"]
+
+    errors = checker.check_platform_parity_promotion(promotion=promotion)
+
+    assert "linux-i386 promotion_to_100_requires missing keys: ['workflow_dispatch_command']" in errors
+    assert (
+        "windows-xp-native-x86 promotion_to_100_requires missing keys: ['workflow_dispatch_command']"
+    ) in errors
+
+
+def test_platform_parity_promotion_rejects_unbound_workflow_dispatch_command() -> None:
+    checker = _load_platform_parity_promotion_checker()
+    promotion = _load_json("configs/platform_parity_promotion.json")
+    linux = _promotion_entry(promotion, "linux-armhf")["promotion_to_100_requires"]
+    xp = _promotion_entry(promotion, "windows-xp-native-x64")["promotion_to_100_requires"]
+    linux["workflow_dispatch_command"] = linux["workflow_dispatch_command"].replace(
+        "--repo <owner>/<repo> ",
+        "",
+    )
+    xp["workflow_dispatch_command"] = xp["workflow_dispatch_command"].replace(
+        "-f evidence_dir=<target-release-evidence-dir>",
+        "-f evidence_dir=<evidence-dir>",
+    )
+
+    errors = checker.check_platform_parity_promotion(promotion=promotion)
+
+    assert any("linux-armhf workflow_dispatch_command must be" in error for error in errors)
+    assert any("windows-xp-native-x64 workflow_dispatch_command must be" in error for error in errors)
+
+
 def test_platform_parity_promotion_requires_staged_upload_command() -> None:
     checker = _load_platform_parity_promotion_checker()
     promotion = _load_json("configs/platform_parity_promotion.json")
@@ -613,6 +649,25 @@ def test_linux_blockers_describe_evidence_activated_publish_contracts() -> None:
             "No accepted evidence record is present yet to activate publish-time requirements "
             f"for {target_id} checksum, manifest and review-bundle assets."
         ) in blockers
+
+
+def test_platform_parity_promotion_requires_remote_release_audit_in_full_coverage_doc() -> None:
+    checker = _load_platform_parity_promotion_checker()
+    docs = {
+        path: Path(path).read_text(encoding="utf-8")
+        for path in checker.REQUIRED_DOC_SNIPPETS
+    }
+    docs["docs/FULL_FEATURE_COVERAGE.md"] = docs["docs/FULL_FEATURE_COVERAGE.md"].replace(
+        "python scripts/check_platform_release_evidence_remote.py",
+        "python scripts/remote_release_evidence_audit_omitted.py",
+    )
+
+    errors = checker.check_platform_parity_promotion(docs=docs)
+
+    assert (
+        "docs/FULL_FEATURE_COVERAGE.md missing platform parity promotion snippet: "
+        "python scripts/check_platform_release_evidence_remote.py"
+    ) in errors
 
 
 def test_platform_parity_promotion_requires_review_bundle_candidate_record() -> None:

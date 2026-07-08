@@ -113,6 +113,19 @@ def test_xp_dispatch_inputs_reject_trailing_slash_release_base() -> None:
     ) in errors
 
 
+def test_xp_dispatch_inputs_reject_noncanonical_workflow_run_url() -> None:
+    checker = _load_checker()
+
+    errors = _check_dispatch_inputs(
+        checker,
+        workflow_run_url="https://github.com/example/remote-ops-workspace/actions/runs/12345/",
+    )
+
+    assert (
+        "--workflow-run-url must be canonical without surrounding whitespace or trailing slash"
+    ) in errors
+
+
 def test_xp_dispatch_inputs_reject_cross_repo_inputs() -> None:
     checker = _load_checker()
 
@@ -156,6 +169,41 @@ def test_xp_dispatch_inputs_reject_malformed_repo_slug() -> None:
     assert "--workflow-run-url must be a GitHub Actions run URL" in errors
 
 
+def test_xp_dispatch_inputs_reject_non_string_inputs() -> None:
+    checker = _load_checker()
+
+    errors = _check_dispatch_inputs(
+        checker,
+        target=True,
+        release_tag=False,
+        release_asset_base_url=12345,
+        workflow_run_url=["https://github.com/example/remote-ops-workspace/actions/runs/12345"],
+        workflow_ref_name={"ref": "v1.0.2"},
+        source_head_sha=None,
+        source_run_attempt=True,
+        assets_dir=["staged/windows-xp-native-x64/v1.0.2/artifacts"],
+        evidence_file={"path": "staged/windows-xp-native-x64/v1.0.2/xp-evidence.json"},
+        evidence_dir=False,
+    )
+
+    assert "target must be a string, got True" in errors
+    assert "release_tag must be a string, got False" in errors
+    assert "release_asset_base_url must be a string, got 12345" in errors
+    assert (
+        "workflow_run_url must be a string, got "
+        "['https://github.com/example/remote-ops-workspace/actions/runs/12345']"
+    ) in errors
+    assert "workflow_ref_name must be a string, got {'ref': 'v1.0.2'}" in errors
+    assert "source_head_sha must be a string, got None" in errors
+    assert "source_run_attempt must be a positive integer, got True" in errors
+    assert "assets_dir must be a string, got ['staged/windows-xp-native-x64/v1.0.2/artifacts']" in errors
+    assert (
+        "evidence_file must be a string, got "
+        "{'path': 'staged/windows-xp-native-x64/v1.0.2/xp-evidence.json'}"
+    ) in errors
+    assert "evidence_dir must be a string, got False" in errors
+
+
 def test_xp_dispatch_inputs_reject_unsafe_paths() -> None:
     checker = _load_checker()
 
@@ -173,6 +221,23 @@ def test_xp_dispatch_inputs_reject_unsafe_paths() -> None:
     assert "assets_dir must be workspace-relative, got '/tmp/xp-artifacts'" in errors
     assert "evidence_file must not traverse outside the workspace, got '..\\\\secrets\\\\xp-evidence.json'" in errors
     assert "evidence_dir must be concrete, got '<evidence-dir>'" in errors
+
+
+def test_xp_dispatch_inputs_reject_padded_workspace_paths() -> None:
+    checker = _load_checker()
+
+    errors = _check_dispatch_inputs(
+        checker,
+        target="windows-xp-native-x64",
+        release_tag="v1.0.2",
+        assets_dir=" staged/windows-xp-native-x64/v1.0.2/artifacts",
+        evidence_file="staged/windows-xp-native-x64/v1.0.2/xp-evidence.json ",
+        evidence_dir=" staged/windows-xp-native-x64/v1.0.2/smoke ",
+    )
+
+    assert "assets_dir must not include surrounding whitespace" in errors
+    assert "evidence_file must not include surrounding whitespace" in errors
+    assert "evidence_dir must not include surrounding whitespace" in errors
 
 
 def test_xp_dispatch_inputs_reject_windows_drive_paths_with_forward_slashes() -> None:
@@ -242,6 +307,14 @@ def test_xp_dispatch_inputs_reject_invalid_source_run_attempt() -> None:
     errors = _check_dispatch_inputs(checker, source_run_attempt="0")
 
     assert "source_run_attempt must be a positive integer, got '0'" in errors
+
+
+def test_xp_dispatch_inputs_reject_padded_source_run_attempt() -> None:
+    checker = _load_checker()
+
+    errors = _check_dispatch_inputs(checker, source_run_attempt=" 1 ")
+
+    assert "source_run_attempt must be a positive integer, got ' 1 '" in errors
 
 
 def test_xp_dispatch_inputs_reject_release_tag_ref_mismatch() -> None:

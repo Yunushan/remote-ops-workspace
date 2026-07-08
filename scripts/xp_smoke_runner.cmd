@@ -232,6 +232,14 @@ if /I not "%SOURCE_WORKFLOW_RUN_URL:~0,19%"=="https://github.com/" (
   echo --source-workflow-run-url must be a GitHub Actions run URL. 1>&2
   exit /b 2
 )
+if "%SOURCE_WORKFLOW_RUN_URL:~-1%"=="/" (
+  echo --source-workflow-run-url must be canonical without trailing slash. 1>&2
+  exit /b 2
+)
+if not "%SOURCE_WORKFLOW_RUN_URL%"=="%SOURCE_WORKFLOW_RUN_URL: =%" (
+  echo --source-workflow-run-url must be canonical without whitespace. 1>&2
+  exit /b 2
+)
 if "%SOURCE_WORKFLOW_RUN_URL:/actions/runs/=%"=="%SOURCE_WORKFLOW_RUN_URL%" (
   echo --source-workflow-run-url must be a GitHub Actions run URL. 1>&2
   exit /b 2

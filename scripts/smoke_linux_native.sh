@@ -100,13 +100,18 @@ if [[ -n "$WORKFLOW_RUN_ATTEMPT" && ! "$WORKFLOW_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]
   exit 2
 fi
 
-if [[ -n "$WORKFLOW_RUN_URL" && ! "$WORKFLOW_RUN_URL" =~ ^https://github\.com/[^/]+/[^/]+/actions/runs/[0-9]+/?$ ]]; then
+if [[ -n "$WORKFLOW_RUN_URL" && ( "$WORKFLOW_RUN_URL" =~ [[:space:]] || "$WORKFLOW_RUN_URL" == */ ) ]]; then
+  echo "--workflow-run-url must be canonical without surrounding whitespace or trailing slash" >&2
+  exit 2
+fi
+
+if [[ -n "$WORKFLOW_RUN_URL" && ! "$WORKFLOW_RUN_URL" =~ ^https://github\.com/[^/[:space:]]+/[^/[:space:]]+/actions/runs/[0-9]+$ ]]; then
   echo "--workflow-run-url must be a GitHub Actions run URL" >&2
   exit 2
 fi
 
 if [[ -n "$TARGET" ]]; then
-  REQUESTED_WORKFLOW_RUN_ID="${WORKFLOW_RUN_URL%/}"
+  REQUESTED_WORKFLOW_RUN_ID="$WORKFLOW_RUN_URL"
   REQUESTED_WORKFLOW_RUN_ID="${REQUESTED_WORKFLOW_RUN_ID##*/}"
   REQUESTED_WORKFLOW_REPOSITORY="${WORKFLOW_RUN_URL#https://github.com/}"
   REQUESTED_WORKFLOW_REPOSITORY="${REQUESTED_WORKFLOW_REPOSITORY%/actions/runs/*}"

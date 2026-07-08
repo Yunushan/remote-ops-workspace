@@ -339,6 +339,12 @@ def check_product_readiness() -> list[str]:
                 errors.extend(check_protected_requirement_boundary(target, item.get("support_boundary")))
                 errors.extend(check_builder_or_host_evidence(target, item.get("builder_or_host_evidence")))
                 errors.extend(check_smoke_evidence_requirements(target, item.get("smoke_evidence")))
+                errors.extend(
+                    check_protected_requirement_workflow_dispatch_command(
+                        target,
+                        item.get("workflow_dispatch_command"),
+                    )
+                )
                 accepted_record = item.get("accepted_evidence_record")
                 if not isinstance(accepted_record, dict):
                     errors.append(f"{target} protected platform requirement missing accepted_evidence_record")
@@ -788,6 +794,54 @@ def expected_protected_requirement_commands(target: str) -> dict[str, str]:
     return {}
 
 
+def check_protected_requirement_workflow_dispatch_command(
+    target: object,
+    command: object,
+) -> list[str]:
+    if not isinstance(target, str) or not target.strip():
+        return [
+            "protected platform requirement workflow dispatch target must be a non-empty "
+            f"string, got {target!r}"
+        ]
+    target_text = target
+    expected = expected_workflow_dispatch_command(target_text)
+    if not expected:
+        return [f"{target_text} protected platform requirement uses an unknown workflow dispatch target"]
+    if not isinstance(command, str) or not command.strip():
+        return [f"{target_text} protected platform requirement missing workflow_dispatch_command"]
+    if command != expected:
+        return [
+            f"{target_text} protected platform requirement workflow_dispatch_command "
+            f"must be {expected!r}"
+        ]
+    return []
+
+
+def expected_workflow_dispatch_command(target: str) -> str:
+    if target in LINUX_PROTECTED_TARGETS:
+        return (
+            "gh workflow run extended-platform-evidence.yml "
+            "--repo <owner>/<repo> "
+            "--ref v<project.version> "
+            f"-f target={target} "
+            "-f release_tag=v<project.version> "
+            "-f release_asset_base_url=<github-release-download-url>"
+        )
+    if target in XP_PROTECTED_TARGETS:
+        return (
+            "gh workflow run xp-native-evidence.yml "
+            "--repo <owner>/<repo> "
+            "--ref v<project.version> "
+            f"-f target={target} "
+            "-f release_tag=v<project.version> "
+            "-f release_asset_base_url=<github-release-download-url> "
+            "-f assets_dir=<target-release-artifact-dir> "
+            "-f evidence_file=<target-release-evidence.json> "
+            "-f evidence_dir=<target-release-evidence-dir>"
+        )
+    return ""
+
+
 def expected_linux_protected_requirement_commands(target: str) -> dict[str, str]:
     arch = "i386" if target == "linux-i386" else "armhf"
     source_artifact = f"extended-linux-evidence-{target}-v<project.version>"
@@ -806,6 +860,7 @@ def expected_linux_protected_requirement_commands(target: str) -> dict[str, str]
             "--root . --release-tag v<project.version> "
             f"--target {target} "
             "--assets-dir <target-release-artifact-dir> "
+            "--repository <owner>/<repo> "
             "--linux-builder-evidence <builder-identity.json> "
             "--linux-smoke-evidence <native-smoke-log> "
             "--linux-workflow-run-url <github-actions-run-url> "
@@ -872,6 +927,7 @@ def expected_xp_protected_requirement_commands(target: str) -> dict[str, str]:
             "--root . --release-tag v<project.version> "
             f"--target {target} "
             "--assets-dir <target-release-artifact-dir> "
+            "--repository <owner>/<repo> "
             "--xp-evidence <target-release-evidence.json> "
             "--xp-evidence-dir <target-release-evidence-dir> "
             "--xp-source-workflow-run-url <github-actions-run-url> "
@@ -1196,7 +1252,8 @@ def expected_release_import_dry_run_command(goal: dict[str, object]) -> str:
     return (
         "python scripts/import_platform_evidence_artifacts.py "
         f"--release-tag {release_tag} --require-goal-targets "
-        "--out-dir <release-assets-dir> --dry-run --verify-source-run"
+        "--out-dir <release-assets-dir> --dry-run --verify-source-run "
+        "--repository <owner>/<repo>"
     )
 
 
@@ -1205,7 +1262,7 @@ def expected_release_asset_provenance_command(goal: dict[str, object]) -> str:
     return (
         "python scripts/check_protected_platform_goal.py "
         f"--release-tag {release_tag} --require-complete "
-        "--assets-dir <release-assets-dir>"
+        "--assets-dir <release-assets-dir> --repository <owner>/<repo>"
     )
 
 
@@ -1225,9 +1282,11 @@ def expected_release_source_run_attempt_conflicts(
         attempt = attempts_by_target.get(target)
         if not isinstance(run_url, str) or not isinstance(attempt, int) or isinstance(attempt, bool):
             continue
+        if not GITHUB_ACTIONS_RUN_RE.fullmatch(run_url):
+            continue
         if attempt <= 0:
             continue
-        attempts_by_url.setdefault(run_url.rstrip("/"), {})[str(target)] = attempt
+        attempts_by_url.setdefault(run_url, {})[str(target)] = attempt
     return {
         run_url: {
             target: attempts_by_target[target]

@@ -382,6 +382,7 @@ def test_product_readiness_rejects_weak_protected_goal_release_import_dry_run_co
         and "--require-goal-targets" in error
         and "--dry-run" in error
         and "--verify-source-run" in error
+        and "--repository" in error
         for error in errors
     )
 
@@ -404,6 +405,7 @@ def test_product_readiness_rejects_weak_protected_goal_release_asset_provenance_
         and "--release-tag v<project.version>" in error
         and "--require-complete" in error
         and "--assets-dir <release-assets-dir>" in error
+        and "--repository <owner>/<repo>" in error
         for error in errors
     )
 
@@ -440,6 +442,41 @@ def test_product_readiness_rejects_inconsistent_source_run_attempt_conflict_map(
 
     errors = checker.check_product_readiness()
 
+    assert (
+        "protected platform goal parity release_source_run_attempt_conflicts must match "
+        "release source run URLs and attempts"
+    ) in errors
+
+
+def test_product_readiness_rejects_normalized_source_run_attempt_conflict_map(monkeypatch) -> None:
+    checker = load_product_readiness_checker()
+    report = deepcopy(checker.coverage_report())
+    goal = report["platform_verified_readiness"]["protected_goal_parity"]
+    run_url = "https://github.com/example/remote-ops-workspace/actions/runs/12345"
+    goal["aggregate_accepted_targets"] = ["linux-i386", "windows-xp-native-x86"]
+    goal["accepted_targets"] = ["linux-i386", "windows-xp-native-x86"]
+    goal["release_source_run_urls"] = {
+        "linux-i386": run_url,
+        "windows-xp-native-x86": f"{run_url}/",
+    }
+    goal["release_source_run_attempts"] = {
+        "linux-i386": 1,
+        "windows-xp-native-x86": 2,
+    }
+    goal["release_source_run_attempt_conflicts"] = {
+        run_url: {
+            "linux-i386": 1,
+            "windows-xp-native-x86": 2,
+        }
+    }
+    monkeypatch.setattr(checker, "coverage_report", lambda: report)
+
+    errors = checker.check_product_readiness()
+
+    assert (
+        "protected platform goal parity release_source_run_urls"
+        "[windows-xp-native-x86] must be a GitHub Actions run URL"
+    ) in errors
     assert (
         "protected platform goal parity release_source_run_attempt_conflicts must match "
         "release source run URLs and attempts"
@@ -691,6 +728,50 @@ def test_product_readiness_rejects_malformed_protected_goal_requirement_metadata
     ) in errors
     assert not any("True protected platform requirement" in error for error in errors)
     assert not any("required_commands has unexpected keys: ['False']" in error for error in errors)
+
+
+def test_product_readiness_rejects_missing_protected_goal_workflow_dispatch_command(
+    monkeypatch,
+) -> None:
+    checker = load_product_readiness_checker()
+    report = deepcopy(checker.coverage_report())
+    requirements = report["platform_verified_readiness"]["protected_goal_parity"][
+        "target_evidence_requirements"
+    ]
+    linux_i386 = next(item for item in requirements if item["target"] == "linux-i386")
+    linux_i386.pop("workflow_dispatch_command")
+    monkeypatch.setattr(checker, "coverage_report", lambda: report)
+
+    errors = checker.check_product_readiness()
+
+    assert (
+        "linux-i386 protected platform requirement missing workflow_dispatch_command"
+        in errors
+    )
+
+
+def test_product_readiness_rejects_weak_protected_goal_workflow_dispatch_command(
+    monkeypatch,
+) -> None:
+    checker = load_product_readiness_checker()
+    report = deepcopy(checker.coverage_report())
+    requirements = report["platform_verified_readiness"]["protected_goal_parity"][
+        "target_evidence_requirements"
+    ]
+    xp_x64 = next(item for item in requirements if item["target"] == "windows-xp-native-x64")
+    xp_x64["workflow_dispatch_command"] = xp_x64["workflow_dispatch_command"].replace(
+        "--repo <owner>/<repo> ",
+        "",
+    )
+    monkeypatch.setattr(checker, "coverage_report", lambda: report)
+
+    errors = checker.check_product_readiness()
+
+    assert any(
+        "windows-xp-native-x64 protected platform requirement workflow_dispatch_command "
+        "must be" in error
+        for error in errors
+    )
 
 
 def test_product_readiness_rejects_missing_protected_goal_staged_upload_command(monkeypatch) -> None:

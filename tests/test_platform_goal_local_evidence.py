@@ -64,6 +64,60 @@ def test_platform_goal_local_evidence_rejects_non_path_root() -> None:
     assert errors == ["local evidence root must be a pathlib.Path, got True"]
 
 
+def test_platform_goal_local_evidence_path_helpers_reject_non_path_args() -> None:
+    checker = _load_local_evidence_checker()
+
+    data, read_errors = checker.read_json_object(True, "linux-i386 builder identity evidence")
+
+    assert data == {}
+    assert read_errors == [
+        "linux-i386 builder identity evidence must be a pathlib.Path, got True"
+    ]
+    assert checker.check_directory_path_hint(
+        ["artifacts"],
+        "linux-i386 artifact directory",
+    ) == [
+        "linux-i386 artifact directory must be a pathlib.Path, got ['artifacts']"
+    ]
+    assert checker.check_path_parent_symlinks(
+        {"path": "native-smoke-linux-i386.log"},
+        "linux-i386 native smoke evidence",
+    ) == [
+        "linux-i386 native smoke evidence must be a pathlib.Path, "
+        "got {'path': 'native-smoke-linux-i386.log'}"
+    ]
+    assert checker.check_path_inside_root(
+        "root",
+        "artifacts",
+        "linux-i386 artifact directory",
+    ) == [
+        "local evidence root must be a pathlib.Path, got 'root'",
+        "linux-i386 artifact directory must be a pathlib.Path, got 'artifacts'",
+    ]
+    assert checker.check_path_inside_target_root(
+        "target-root",
+        "artifacts",
+        "linux-i386 artifact directory",
+    ) == [
+        "target release directory must be a pathlib.Path, got 'target-root'",
+        "linux-i386 artifact directory must be a pathlib.Path, got 'artifacts'",
+    ]
+    assert checker.check_path_not_reserved_workspace_root(
+        "root",
+        "artifacts",
+        "linux-i386 artifact directory",
+    ) == [
+        "local evidence root must be a pathlib.Path, got 'root'",
+        "linux-i386 artifact directory must be a pathlib.Path, got 'artifacts'",
+    ]
+    assert checker.check_path_not_reserved_workspace_path(
+        {"root": ".github"},
+        "local evidence root",
+    ) == [
+        "local evidence root must be a pathlib.Path, got {'root': '.github'}"
+    ]
+
+
 def test_platform_goal_local_evidence_rejects_non_string_release_tag(tmp_path: Path) -> None:
     checker = _load_local_evidence_checker()
 
@@ -256,9 +310,23 @@ def test_platform_goal_local_evidence_accepts_linux_i386_staged_proof(tmp_path: 
         targets=(target,),
         linux_workflow_run_url=workflow_run_url,
         linux_source_head_sha=source_head_sha,
+        repository="example/remote-ops-workspace",
     )
 
     assert errors == []
+    repository_errors = checker.check_platform_goal_local_evidence(
+        root=tmp_path,
+        release_tag=tag,
+        targets=(target,),
+        linux_workflow_run_url=workflow_run_url,
+        linux_source_head_sha=source_head_sha,
+        repository="other/remote-ops-workspace",
+    )
+
+    assert (
+        "local protected platform evidence source repository must match "
+        "--repository other/remote-ops-workspace, got {'linux-i386': 'example/remote-ops-workspace'}"
+    ) in repository_errors
 
 
 def test_platform_goal_local_evidence_rejects_symlinked_linux_target_roots(
@@ -423,6 +491,32 @@ def test_platform_goal_local_evidence_rejects_non_path_linux_explicit_proof_inpu
         "explicit artifact directory must be a pathlib.Path, got True",
         "explicit Linux builder evidence must be a pathlib.Path, got False",
         "explicit Linux smoke evidence must be a pathlib.Path, got ['native-smoke-linux-i386.log']",
+    ]
+
+
+def test_linux_local_evidence_helper_rejects_non_path_direct_inputs() -> None:
+    checker = _load_local_evidence_checker()
+
+    errors = checker.check_linux_local_evidence(
+        root=True,
+        release_tag="v1.0.2",
+        target="linux-i386",
+        promotion={},
+        workflow_run_url=None,
+        source_head_sha=None,
+        source_run_attempt=None,
+        strict_artifacts=True,
+        assets_dir="artifacts",
+        builder_evidence=False,
+        smoke_evidence=["native-smoke-linux-i386.log"],
+    )
+
+    assert errors == [
+        "local evidence root must be a pathlib.Path, got True",
+        "linux-i386 artifact directory must be a pathlib.Path, got 'artifacts'",
+        "linux-i386 builder identity evidence must be a pathlib.Path, got False",
+        "linux-i386 native smoke evidence must be a pathlib.Path, "
+        "got ['native-smoke-linux-i386.log']",
     ]
 
 
@@ -938,6 +1032,75 @@ def test_platform_goal_local_release_source_bindings_ignore_malformed_provenance
     }
 
 
+def test_platform_goal_local_release_source_bindings_preserve_noncanonical_urls(
+    tmp_path: Path,
+) -> None:
+    checker = _load_local_evidence_checker()
+    tag = "v1.0.2"
+    canonical_url = "https://github.com/example/remote-ops-workspace/actions/runs/12345"
+    source_head_sha = "a" * 40
+
+    linux_root = tmp_path / "linux-i386" / tag
+    linux_root.mkdir(parents=True)
+    (linux_root / "builder-identity-linux-i386.json").write_text(
+        json.dumps(
+            {
+                "workflow_run_url": f"{canonical_url}/",
+                "source_head_sha": source_head_sha,
+                "workflow_run_attempt": 1,
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    xp_root = tmp_path / "windows-xp-native-x86" / tag
+    xp_root.mkdir(parents=True)
+    (xp_root / "xp-evidence.json").write_text(
+        json.dumps(
+            {
+                "release_source": {
+                    "workflow_run_url": f" {canonical_url}",
+                    "head_sha": source_head_sha,
+                    "run_attempt": 1,
+                }
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    bindings = checker.local_release_source_bindings(
+        root=tmp_path,
+        release_tag=tag,
+        targets=("linux-i386", "windows-xp-native-x86"),
+        linux_workflow_run_url=None,
+        linux_source_head_sha=None,
+        linux_source_run_attempt=None,
+        xp_source_workflow_run_url=None,
+        xp_source_head_sha=None,
+        xp_source_run_attempt=None,
+    )
+
+    assert bindings["linux-i386"]["workflow_run_url"] == f"{canonical_url}/"
+    assert bindings["linux-i386"]["repository"] == ""
+    assert bindings["windows-xp-native-x86"]["workflow_run_url"] == f" {canonical_url}"
+    assert bindings["windows-xp-native-x86"]["repository"] == ""
+
+
+def test_local_repository_from_workflow_run_url_rejects_noncanonical_run_url() -> None:
+    checker = _load_local_evidence_checker()
+    canonical_url = "https://github.com/example/remote-ops-workspace/actions/runs/12345"
+
+    assert (
+        checker.repository_from_workflow_run_url(canonical_url)
+        == "example/remote-ops-workspace"
+    )
+    assert checker.repository_from_workflow_run_url(f"{canonical_url}/") == ""
+    assert checker.repository_from_workflow_run_url(f"{canonical_url} ") == ""
+
+
 def test_platform_goal_local_evidence_rejects_misnamed_linux_proof_inputs(tmp_path: Path) -> None:
     checker = _load_local_evidence_checker()
     fixtures = _load_record_fixtures()
@@ -1032,6 +1195,47 @@ def test_platform_goal_local_evidence_rejects_invalid_inferred_linux_run_binding
     ) in errors
 
 
+def test_platform_goal_local_evidence_rejects_noncanonical_inferred_linux_run_bindings(
+    tmp_path: Path,
+) -> None:
+    checker = _load_local_evidence_checker()
+    fixtures = _load_record_fixtures()
+    artifact_checker = fixtures._load_platform_promotion_artifacts_checker()
+    target = "linux-i386"
+    tag = f"v{artifact_checker.read_project_version()}"
+    target_root = tmp_path / target / tag
+    artifacts = target_root / "artifacts"
+    artifacts.mkdir(parents=True)
+    names = fixtures._required_names(artifact_checker, target, tag)
+    fixtures._write_artifact_set(artifacts, names)
+    builder = target_root / f"builder-identity-{target}.json"
+    fixtures._write_builder_evidence(
+        builder,
+        target,
+        release_tag=tag,
+        workflow_run_url="https://github.com/example/remote-ops-workspace/actions/runs/12345",
+        source_head_sha="a" * 40,
+    )
+    builder_data = json.loads(builder.read_text(encoding="utf-8"))
+    builder_data["workflow_run_url"] = "https://github.com/example/remote-ops-workspace/actions/runs/12345/"
+    builder_data["source_head_sha"] = f" {'a' * 40} "
+    builder.write_text(json.dumps(builder_data, indent=2) + "\n", encoding="utf-8")
+    smoke = target_root / f"native-smoke-{target}.log"
+    smoke.write_text("not reached after source binding validation\n", encoding="utf-8")
+
+    errors = checker.check_platform_goal_local_evidence(
+        root=tmp_path,
+        release_tag=tag,
+        targets=(target,),
+    )
+
+    assert (
+        f"{target} builder_identity.workflow_run_url must be canonical without "
+        "surrounding whitespace or trailing slash"
+    ) in errors
+    assert f"{target} builder_identity.source_head_sha must not include surrounding whitespace" in errors
+
+
 def test_platform_goal_local_evidence_rejects_malformed_linux_builder_json(
     tmp_path: Path,
 ) -> None:
@@ -1120,6 +1324,27 @@ def test_platform_goal_local_evidence_rejects_invalid_linux_run_bindings(tmp_pat
     assert f"{target} --linux-source-head-sha must be a 40-character lowercase Git SHA" in errors
 
 
+def test_platform_goal_local_evidence_rejects_noncanonical_linux_run_bindings(tmp_path: Path) -> None:
+    checker = _load_local_evidence_checker()
+    target = "linux-i386"
+    (tmp_path / target).mkdir()
+
+    errors = checker.check_platform_goal_local_evidence(
+        root=tmp_path,
+        release_tag="v1.0.2",
+        targets=(target,),
+        linux_workflow_run_url="https://github.com/example/remote-ops-workspace/actions/runs/12345/",
+        linux_source_head_sha=f" {'a' * 40} ",
+        linux_source_run_attempt=1,
+    )
+
+    assert (
+        f"{target} --linux-workflow-run-url must be canonical without "
+        "surrounding whitespace or trailing slash"
+    ) in errors
+    assert f"{target} --linux-source-head-sha must not include surrounding whitespace" in errors
+
+
 def test_platform_goal_local_evidence_rejects_invalid_linux_source_run_attempt_types(
     tmp_path: Path,
 ) -> None:
@@ -1176,6 +1401,27 @@ def test_platform_goal_local_evidence_rejects_invalid_xp_source_bindings(tmp_pat
 
     assert f"{target} --xp-source-workflow-run-url must be a GitHub Actions run URL" in errors
     assert f"{target} --xp-source-head-sha must be a 40-character lowercase Git SHA" in errors
+
+
+def test_platform_goal_local_evidence_rejects_noncanonical_xp_source_bindings(tmp_path: Path) -> None:
+    checker = _load_local_evidence_checker()
+    target = "windows-xp-native-x64"
+    (tmp_path / target / "v1.0.2").mkdir(parents=True)
+
+    errors = checker.check_platform_goal_local_evidence(
+        root=tmp_path,
+        release_tag="v1.0.2",
+        targets=(target,),
+        xp_source_workflow_run_url="https://github.com/example/remote-ops-workspace/actions/runs/12345/",
+        xp_source_head_sha=f" {'a' * 40} ",
+        xp_source_run_attempt=1,
+    )
+
+    assert (
+        f"{target} --xp-source-workflow-run-url must be canonical without "
+        "surrounding whitespace or trailing slash"
+    ) in errors
+    assert f"{target} --xp-source-head-sha must not include surrounding whitespace" in errors
 
 
 def test_platform_goal_local_evidence_rejects_non_string_xp_source_bindings(
@@ -1809,6 +2055,28 @@ def test_platform_goal_local_evidence_rejects_non_path_xp_explicit_proof_inputs(
         "explicit artifact directory must be a pathlib.Path, got True",
         "explicit XP evidence file must be a pathlib.Path, got False",
         "explicit XP evidence directory must be a pathlib.Path, got ['xp-evidence']",
+    ]
+
+
+def test_xp_local_evidence_helper_rejects_non_path_direct_inputs() -> None:
+    checker = _load_local_evidence_checker()
+
+    errors = checker.check_xp_local_evidence(
+        root=True,
+        release_tag="v1.0.2",
+        target="windows-xp-native-x86",
+        strict_artifacts=True,
+        assets_dir="artifacts",
+        evidence_file=False,
+        evidence_dir=["xp-evidence"],
+    )
+
+    assert errors == [
+        "local evidence root must be a pathlib.Path, got True",
+        "windows-xp-native-x86 artifact directory must be a pathlib.Path, got 'artifacts'",
+        "windows-xp-native-x86 XP evidence file must be a pathlib.Path, got False",
+        "windows-xp-native-x86 XP evidence directory must be a pathlib.Path, "
+        "got ['xp-evidence']",
     ]
 
 

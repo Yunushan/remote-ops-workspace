@@ -52,7 +52,7 @@ def test_release_truth_checker_requires_release_strategy_import_dry_run_docs() -
 
     assert (
         "python scripts/import_platform_evidence_artifacts.py --release-tag <tag> "
-        "--require-goal-targets --out-dir <release-assets-dir> --dry-run --verify-source-run"
+        "--require-goal-targets --out-dir <release-assets-dir> --dry-run --verify-source-run --repository <owner>/<repo>"
     ) in checker.REQUIRED_RELEASE_STRATEGY_SNIPPETS
     assert "pre-release protected-platform import dry-run" in checker.REQUIRED_RELEASE_STRATEGY_SNIPPETS
     assert "does not stage files for upload" in checker.REQUIRED_RELEASE_STRATEGY_SNIPPETS
@@ -154,7 +154,7 @@ def test_release_truth_checker_requires_readme_release_section_strict_platform_p
         text = original_read(relative)
         if relative == "README.md":
             return text.replace(
-                "`python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --require-platform-goal-targets`\n"
+                "`python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --repository <owner>/<repo> --require-platform-goal-targets`\n"
                 "to verify",
                 "`python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag>`\n"
                 "to verify",
@@ -452,7 +452,7 @@ def test_release_truth_checker_requires_release_strategy_import_dry_run_proof() 
         if relative == "docs/RELEASE_STRATEGY.md":
             return text.replace(
                 "python scripts/import_platform_evidence_artifacts.py --release-tag <tag> "
-                "--require-goal-targets --out-dir <release-assets-dir> --dry-run --verify-source-run",
+                "--require-goal-targets --out-dir <release-assets-dir> --dry-run --verify-source-run --repository <owner>/<repo>",
                 "python scripts/import_platform_evidence_artifacts.py --help",
             )
         return text
@@ -783,7 +783,7 @@ def test_release_truth_checker_requires_protected_platform_release_asset_gate() 
     checker = _load_release_truth_checker()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
         '      - name: Require protected platform release assets\n'
-        '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" --require-complete --assets-dir release-assets\n',
+        '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" --require-complete --assets-dir release-assets --repository "${{ github.repository }}"\n',
         "",
     )
 
@@ -797,11 +797,11 @@ def test_release_truth_checker_requires_protected_asset_gate_before_publish_asse
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
     protected_gate = (
         '      - name: Require protected platform release assets\n'
-        '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" --require-complete --assets-dir release-assets\n'
+        '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" --require-complete --assets-dir release-assets --repository "${{ github.repository }}"\n'
     )
     publish_gate = (
         '      - name: Validate release publish assets\n'
-        '        run: python scripts/check_release_publish_assets.py --assets-dir release-assets --tag "${{ github.ref_name }}" --require-platform-goal-targets\n'
+        '        run: python scripts/check_release_publish_assets.py --assets-dir release-assets --tag "${{ github.ref_name }}" --repository "${{ github.repository }}" --require-platform-goal-targets\n'
     )
     workflow = workflow.replace(protected_gate, "").replace(publish_gate, publish_gate + protected_gate)
 
@@ -815,7 +815,7 @@ def test_release_truth_checker_requires_protected_asset_gate_before_release_uplo
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
     protected_gate = (
         '      - name: Require protected platform release assets\n'
-        '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" --require-complete --assets-dir release-assets\n'
+        '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" --require-complete --assets-dir release-assets --repository "${{ github.repository }}"\n'
     )
     workflow = workflow.replace(protected_gate, "") + protected_gate
 
@@ -829,7 +829,7 @@ def test_release_truth_checker_requires_publish_gate_before_release_upload() -> 
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
     gate = (
         '      - name: Validate release publish assets\n'
-        '        run: python scripts/check_release_publish_assets.py --assets-dir release-assets --tag "${{ github.ref_name }}" --require-platform-goal-targets\n'
+        '        run: python scripts/check_release_publish_assets.py --assets-dir release-assets --tag "${{ github.ref_name }}" --repository "${{ github.repository }}" --require-platform-goal-targets\n'
     )
     upload = (
         "      - name: Upload release assets\n"
@@ -920,7 +920,7 @@ def test_release_truth_checker_rejects_published_platform_audit_token_in_wrong_s
     )
     publish_gate = (
         '      - name: Validate release publish assets\n'
-        '        run: python scripts/check_release_publish_assets.py --assets-dir release-assets --tag "${{ github.ref_name }}" --require-platform-goal-targets\n'
+        '        run: python scripts/check_release_publish_assets.py --assets-dir release-assets --tag "${{ github.ref_name }}" --repository "${{ github.repository }}" --require-platform-goal-targets\n'
     )
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
     workflow = workflow.replace(
@@ -933,7 +933,7 @@ def test_release_truth_checker_rejects_published_platform_audit_token_in_wrong_s
         '      - name: Validate release publish assets\n'
         '        env:\n'
         '          GH_TOKEN: ${{ github.token }}\n'
-        '        run: python scripts/check_release_publish_assets.py --assets-dir release-assets --tag "${{ github.ref_name }}" --require-platform-goal-targets\n',
+        '        run: python scripts/check_release_publish_assets.py --assets-dir release-assets --tag "${{ github.ref_name }}" --repository "${{ github.repository }}" --require-platform-goal-targets\n',
     )
 
     errors = checker.check_release_preflight(workflow)
@@ -993,7 +993,7 @@ def test_release_truth_checker_requires_platform_evidence_import_command() -> No
     checker = _load_release_truth_checker()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
         'python scripts/import_platform_evidence_artifacts.py --release-tag "${{ github.ref_name }}" '
-        "--require-goal-targets --out-dir release-assets --verify-source-run",
+        '--require-goal-targets --out-dir release-assets --verify-source-run --repository "${{ github.repository }}"',
         "python scripts/import_platform_evidence_artifacts.py --help",
     )
 

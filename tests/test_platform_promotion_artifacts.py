@@ -358,6 +358,49 @@ def test_platform_promotion_artifacts_reject_file_shaped_artifact_directory(
     ]
 
 
+def test_platform_promotion_artifact_path_helpers_reject_non_path_args() -> None:
+    checker = _load_platform_promotion_artifacts_checker()
+    tag = f"v{checker.read_project_version()}"
+
+    assert checker.check_platform_promotion_artifacts(
+        target="linux-i386",
+        assets_dir="artifacts",
+        tag=tag,
+    ) == ["linux-i386 artifact directory path must be a pathlib.Path, got 'artifacts'"]
+    assert checker.check_artifact_format("linux-i386", "artifact.zip") == [
+        "linux-i386 artifact path must be a pathlib.Path, got 'artifact.zip'"
+    ]
+    assert checker.check_archive_structure("linux-i386", "artifact.zip") == [
+        "linux-i386 archive artifact path must be a pathlib.Path, got 'artifact.zip'"
+    ]
+    assert checker.check_zip_structure("linux-i386", "artifact.zip") == [
+        "linux-i386 ZIP artifact path must be a pathlib.Path, got 'artifact.zip'"
+    ]
+    assert checker.check_tar_gz_structure("linux-i386", "artifact.tar.gz") == [
+        "linux-i386 tar.gz artifact path must be a pathlib.Path, got 'artifact.tar.gz'"
+    ]
+    assert checker.check_checksum_sidecar(
+        "linux-i386",
+        "artifacts",
+        {"remote-ops-workspace-v1.0.2-linux-i386-SHA256SUMS.txt"},
+    ) == ["linux-i386 artifact directory path must be a pathlib.Path, got 'artifacts'"]
+    assert checker.check_native_manifest(
+        "linux-i386",
+        "artifacts",
+        {"remote-ops-workspace-v1.0.2-linux-i686-native-manifest.json"},
+    ) == ["linux-i386 artifact directory path must be a pathlib.Path, got 'artifacts'"]
+    assert checker.check_path_parent_symlinks("artifacts", "linux-i386 artifact directory") == [
+        "linux-i386 artifact directory path must be a pathlib.Path, got 'artifacts'"
+    ]
+    assert checker.check_directory_path_hint("artifacts", "linux-i386 artifact directory") == [
+        "linux-i386 artifact directory path must be a pathlib.Path, got 'artifacts'"
+    ]
+    assert checker.check_path_not_reserved_workspace_root(
+        "artifacts",
+        "linux-i386 artifact directory",
+    ) == ["linux-i386 artifact directory path must be a pathlib.Path, got 'artifacts'"]
+
+
 def test_platform_promotion_artifacts_reject_reserved_workspace_artifact_directory() -> None:
     checker = _load_platform_promotion_artifacts_checker()
     tag = f"v{checker.read_project_version()}"

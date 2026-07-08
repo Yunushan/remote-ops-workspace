@@ -68,6 +68,7 @@ COMMON_LOCAL_EVIDENCE_PREFLIGHT_FLAGS = {
     "--release-tag",
     "--target",
     "--assets-dir",
+    "--repository",
 }
 LINUX_LOCAL_EVIDENCE_PREFLIGHT_FLAGS = {
     *COMMON_LOCAL_EVIDENCE_PREFLIGHT_FLAGS,
@@ -1121,13 +1122,27 @@ def check_linux_evidence(
     release_tag = raw_release_tag if isinstance(raw_release_tag, str) else ""
     expected_artifact_name = linux_release_source_artifact_name(target, release_tag)
     raw_workflow_run_url = entry.get("workflow_run_url", "")
-    workflow_run_url = raw_workflow_run_url.strip().rstrip("/") if isinstance(raw_workflow_run_url, str) else ""
-    workflow_match = GITHUB_ACTIONS_RUN_RE.fullmatch(workflow_run_url)
+    workflow_run_url = raw_workflow_run_url if isinstance(raw_workflow_run_url, str) else ""
+    workflow_match = None
     if not isinstance(raw_workflow_run_url, str):
         errors.append(f"{target} workflow_run_url must be a string GitHub Actions run URL")
-    elif not workflow_match:
+    elif raw_workflow_run_url == "":
         errors.append(f"{target} workflow_run_url must be a GitHub Actions run URL")
+    elif raw_workflow_run_url != raw_workflow_run_url.strip() or raw_workflow_run_url != raw_workflow_run_url.rstrip("/"):
+        errors.append(
+            f"{target} workflow_run_url must be canonical without surrounding whitespace or trailing slash"
+        )
     else:
+        workflow_match = GITHUB_ACTIONS_RUN_RE.fullmatch(workflow_run_url)
+    if (
+        isinstance(raw_workflow_run_url, str)
+        and raw_workflow_run_url
+        and raw_workflow_run_url == raw_workflow_run_url.strip()
+        and raw_workflow_run_url == raw_workflow_run_url.rstrip("/")
+        and workflow_match is None
+    ):
+        errors.append(f"{target} workflow_run_url must be a GitHub Actions run URL")
+    elif workflow_match:
         release_repositories = release_asset_repositories(entry.get("release_asset_urls"))
         workflow_repository = workflow_match.group(1)
         if release_repositories and release_repositories != {workflow_repository}:
@@ -1218,7 +1233,7 @@ def check_linux_command_provenance(
     smoke_script = str(requirements.get("smoke_script", ""))
     expected_build = f"TARGET_ARCH={arch} PYTHON_BIN=.venv-native/bin/python bash {build_script}"
     raw_workflow_run_url = entry.get("workflow_run_url", "")
-    workflow_run_url = raw_workflow_run_url.strip().rstrip("/") if isinstance(raw_workflow_run_url, str) else ""
+    workflow_run_url = raw_workflow_run_url if isinstance(raw_workflow_run_url, str) else ""
     source = entry.get("release_asset_source")
     raw_source_head_sha = source.get("head_sha", "") if isinstance(source, dict) else ""
     source_head_sha = raw_source_head_sha.strip() if isinstance(raw_source_head_sha, str) else ""
@@ -1285,12 +1300,7 @@ def check_linux_workflow_inputs(target: str, entry: dict[str, Any]) -> list[str]
         if any(not str(url).startswith(f"{base_url}/") for url in release_assets):
             errors.append(f"{target} workflow_inputs release_asset_base_url must prefix every release_asset_url")
     source = entry.get("release_asset_source")
-    raw_source_workflow_run_url = source.get("workflow_run_url", "") if isinstance(source, dict) else ""
-    source_workflow_run_url = (
-        raw_source_workflow_run_url.strip().rstrip("/")
-        if isinstance(raw_source_workflow_run_url, str)
-        else ""
-    )
+    source_workflow_run_url = valid_release_source_workflow_run_url(source)
     source_match = GITHUB_ACTIONS_RUN_RE.fullmatch(source_workflow_run_url)
     if release_match and source_match and release_match.group(1) != source_match.group(1):
         errors.append(
@@ -1819,7 +1829,7 @@ def check_linux_builder_workflow_identity(
 ) -> list[str]:
     errors: list[str] = []
     expected_workflow = release_source_workflow(target)
-    workflow_match = GITHUB_ACTIONS_RUN_RE.fullmatch(workflow_run_url.rstrip("/"))
+    workflow_match = GITHUB_ACTIONS_RUN_RE.fullmatch(workflow_run_url)
     expected_repository = workflow_match.group(1).lower() if workflow_match else ""
     workflow_ref = str(raw_identity.get("workflow_ref", "")).strip()
     if not workflow_ref:
@@ -2150,12 +2160,7 @@ def check_xp_workflow_inputs(
             errors.append(f"{target} workflow_inputs release_asset_base_url must prefix every release_asset_url")
 
     source = entry.get("release_asset_source")
-    raw_source_workflow_run_url = source.get("workflow_run_url", "") if isinstance(source, dict) else ""
-    source_workflow_run_url = (
-        raw_source_workflow_run_url.strip().rstrip("/")
-        if isinstance(raw_source_workflow_run_url, str)
-        else ""
-    )
+    source_workflow_run_url = valid_release_source_workflow_run_url(source)
     source_match = GITHUB_ACTIONS_RUN_RE.fullmatch(source_workflow_run_url)
     if release_match and source_match and release_match.group(1) != source_match.group(1):
         errors.append(
@@ -2516,9 +2521,6 @@ def check_xp_evidence_summary_release_source(
     for field in ("workflow", "workflow_run_url", "head_sha", "run_attempt"):
         summary_value = raw_summary_source.get(field)
         release_value = raw_release_asset_source.get(field)
-        if field == "workflow_run_url":
-            summary_value = summary_value.rstrip("/") if isinstance(summary_value, str) else summary_value
-            release_value = release_value.rstrip("/") if isinstance(release_value, str) else release_value
         if summary_value != release_value:
             errors.append(
                 f"{target} xp_evidence_summary release_source.{field} must match "
@@ -2862,9 +2864,7 @@ def check_xp_smoke_command_binding(
     if isinstance(release_source, dict):
         raw_workflow_run_url = release_source.get("workflow_run_url", "")
         expected_values["--source-workflow-run-url"] = (
-            raw_workflow_run_url.strip().rstrip("/")
-            if isinstance(raw_workflow_run_url, str)
-            else ""
+            raw_workflow_run_url if isinstance(raw_workflow_run_url, str) else ""
         )
         raw_head_sha = release_source.get("head_sha", "")
         expected_values["--source-head-sha"] = raw_head_sha if isinstance(raw_head_sha, str) else ""
@@ -3733,6 +3733,8 @@ def check_release_asset_source(
         errors.append(f"{target} release_asset_source.type must be a string")
     else:
         source_type = raw_source_type.strip()
+        if raw_source_type != source_type:
+            errors.append(f"{target} release_asset_source.type must not include surrounding whitespace")
         if source_type not in RELEASE_ASSET_SOURCE_TYPES:
             errors.append(
                 f"{target} release_asset_source.type must be one of "
@@ -3740,12 +3742,25 @@ def check_release_asset_source(
             )
     raw_workflow_run_url = raw_source.get("workflow_run_url", "")
     workflow_match = None
+    workflow_run_url_is_canonical = False
     if not isinstance(raw_workflow_run_url, str):
         errors.append(f"{target} release_asset_source.workflow_run_url must be a string")
     else:
-        workflow_run_url = raw_workflow_run_url.strip().rstrip("/")
-        workflow_match = GITHUB_ACTIONS_RUN_RE.fullmatch(workflow_run_url)
-    if raw_workflow_run_url == "" or (isinstance(raw_workflow_run_url, str) and not workflow_match):
+        workflow_run_url = raw_workflow_run_url
+        workflow_run_url_is_canonical = (
+            raw_workflow_run_url == raw_workflow_run_url.strip()
+            and raw_workflow_run_url == raw_workflow_run_url.rstrip("/")
+        )
+        if not workflow_run_url_is_canonical:
+            errors.append(
+                f"{target} release_asset_source.workflow_run_url must be canonical without "
+                "surrounding whitespace or trailing slash"
+            )
+        else:
+            workflow_match = GITHUB_ACTIONS_RUN_RE.fullmatch(workflow_run_url)
+    if isinstance(raw_workflow_run_url, str) and raw_workflow_run_url == "":
+        errors.append(f"{target} release_asset_source.workflow_run_url must be a GitHub Actions run URL")
+    elif isinstance(raw_workflow_run_url, str) and workflow_run_url_is_canonical and not workflow_match:
         errors.append(f"{target} release_asset_source.workflow_run_url must be a GitHub Actions run URL")
     elif workflow_match:
         release_repositories = release_asset_repositories(native_release_assets)
@@ -3759,13 +3774,19 @@ def check_release_asset_source(
     raw_workflow = raw_source.get("workflow", "")
     if not isinstance(raw_workflow, str):
         errors.append(f"{target} release_asset_source.workflow must be a string")
-    elif raw_workflow.strip() != expected_workflow:
+    elif raw_workflow != raw_workflow.strip():
+        errors.append(f"{target} release_asset_source.workflow must not include surrounding whitespace")
+    elif raw_workflow != expected_workflow:
         errors.append(f"{target} release_asset_source.workflow must be {expected_workflow}")
     raw_artifact_name = raw_source.get("artifact_name", "")
     if not isinstance(raw_artifact_name, str):
         errors.append(f"{target} release_asset_source.artifact_name must be a string")
     else:
         artifact_name = raw_artifact_name.strip()
+        if raw_artifact_name != artifact_name:
+            errors.append(
+                f"{target} release_asset_source.artifact_name must not include surrounding whitespace"
+            )
         if (
             not artifact_name
             or "<" in artifact_name
@@ -3789,7 +3810,9 @@ def check_release_asset_source(
     raw_head_sha = raw_source.get("head_sha", "")
     if not isinstance(raw_head_sha, str):
         errors.append(f"{target} release_asset_source.head_sha must be a string")
-    elif not RELEASE_SOURCE_HEAD_SHA_RE.fullmatch(raw_head_sha.strip()):
+    elif raw_head_sha != raw_head_sha.strip():
+        errors.append(f"{target} release_asset_source.head_sha must not include surrounding whitespace")
+    elif not RELEASE_SOURCE_HEAD_SHA_RE.fullmatch(raw_head_sha):
         errors.append(f"{target} release_asset_source.head_sha must be a 40-character lowercase Git SHA")
     run_attempt = raw_source.get("run_attempt")
     if not isinstance(run_attempt, int) or isinstance(run_attempt, bool) or run_attempt < 1:
@@ -4109,6 +4132,13 @@ def check_local_evidence_preflight_command(
             f"{target} local_evidence_preflight_command must include exactly one --release-tag {release_tag}, "
             f"got {release_tags}"
         )
+    expected_repository = local_evidence_preflight_repository(entry)
+    repositories = command_argument_values(command, "--repository")
+    if repositories != [expected_repository]:
+        errors.append(
+            f"{target} local_evidence_preflight_command --repository must match "
+            f"release asset repository {expected_repository}, got {repositories}"
+        )
     targets = command_argument_values(command, "--target")
     if targets != [target]:
         errors.append(
@@ -4141,6 +4171,16 @@ def check_local_evidence_preflight_command(
     elif target in XP_TARGETS:
         errors.extend(check_xp_local_evidence_preflight_command(target, release_tag, entry, command))
     return errors
+
+
+def local_evidence_preflight_repository(entry: dict[str, Any]) -> str:
+    repositories = release_asset_repositories(entry.get("release_asset_urls"))
+    if len(repositories) == 1:
+        return next(iter(repositories))
+    raw_inputs = entry.get("workflow_inputs")
+    base_url = raw_inputs.get("release_asset_base_url") if isinstance(raw_inputs, dict) else ""
+    match = GITHUB_RELEASE_BASE_RE.fullmatch(base_url) if isinstance(base_url, str) else None
+    return match.group(1) if match else ""
 
 
 def local_evidence_path_bindings(target: str, command: str) -> dict[str, list[str]]:
@@ -4250,7 +4290,7 @@ def check_linux_local_evidence_preflight_command(
         )
     workflow_urls = command_argument_values(command, "--linux-workflow-run-url")
     raw_workflow_url = entry.get("workflow_run_url", "")
-    expected_workflow_url = raw_workflow_url.strip().rstrip("/") if isinstance(raw_workflow_url, str) else ""
+    expected_workflow_url = raw_workflow_url if isinstance(raw_workflow_url, str) else ""
     if workflow_urls != [expected_workflow_url]:
         errors.append(
             f"{target} local_evidence_preflight_command --linux-workflow-run-url must match workflow_run_url"
@@ -4841,7 +4881,9 @@ def valid_release_source_workflow_run_url(source: Any) -> str:
     raw_url = source.get("workflow_run_url")
     if not isinstance(raw_url, str):
         return ""
-    workflow_run_url = raw_url.strip().rstrip("/")
+    if raw_url != raw_url.strip() or raw_url != raw_url.rstrip("/"):
+        return ""
+    workflow_run_url = raw_url
     if not GITHUB_ACTIONS_RUN_RE.fullmatch(workflow_run_url):
         return ""
     return workflow_run_url
@@ -4853,7 +4895,7 @@ def valid_release_source_head_sha(source: Any) -> str:
     raw_head_sha = source.get("head_sha")
     if not isinstance(raw_head_sha, str):
         return ""
-    head_sha = raw_head_sha.strip()
+    head_sha = raw_head_sha
     if not RELEASE_SOURCE_HEAD_SHA_RE.fullmatch(head_sha):
         return ""
     return head_sha
@@ -4927,20 +4969,31 @@ def json_sha256(data: dict[str, Any]) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
-def read_json(path: Path) -> dict[str, Any]:
+def read_json(path: object) -> dict[str, Any]:
     path_errors = check_json_input_path(path, "JSON evidence source")
     if path_errors:
         raise ValueError(path_errors[0])
+    assert isinstance(path, Path)
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def check_json_input_path(path: Path, label: str) -> list[str]:
-    errors = check_path_not_reserved_workspace_root(path, label)
+def path_arg_value(raw_path: object, label: str) -> tuple[list[str], Path | None]:
+    if not isinstance(raw_path, Path):
+        return [f"{label} path must be a pathlib.Path, got {raw_path!r}"], None
+    return [], raw_path
+
+
+def check_json_input_path(path: object, label: str) -> list[str]:
+    path_errors, path_value = path_arg_value(path, label)
+    if path_errors:
+        return path_errors
+    assert path_value is not None
+    errors = check_path_not_reserved_workspace_root(path_value, label)
     if errors:
         return errors
-    if path.is_symlink():
-        return [f"{label} must not be a symlink: {path}"]
-    return check_path_parent_symlinks(path, label)
+    if path_value.is_symlink():
+        return [f"{label} must not be a symlink: {path_value}"]
+    return check_path_parent_symlinks(path_value, label)
 
 
 def is_allowed_platform_parent_symlink(parent: Path) -> bool:
@@ -4952,8 +5005,12 @@ def is_allowed_platform_parent_symlink(parent: Path) -> bool:
         return False
 
 
-def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
-    check_path = path if path.is_absolute() else Path.cwd() / path
+def check_path_parent_symlinks(path: object, label: str) -> list[str]:
+    path_errors, path_value = path_arg_value(path, label)
+    if path_errors:
+        return path_errors
+    assert path_value is not None
+    check_path = path_value if path_value.is_absolute() else Path.cwd() / path_value
     for parent in reversed(check_path.parents):
         if parent == Path("."):
             continue
@@ -4962,7 +5019,11 @@ def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
     return []
 
 
-def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
+def check_path_not_reserved_workspace_root(path: object, label: str) -> list[str]:
+    path_errors, path_value = path_arg_value(path, label)
+    if path_errors:
+        return path_errors
+    assert path_value is not None
     roots: list[Path] = [Path.cwd(), ROOT]
     seen_roots: set[Path] = set()
     for root in roots:
@@ -4970,7 +5031,9 @@ def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
         if root_resolved in seen_roots:
             continue
         seen_roots.add(root_resolved)
-        path_resolved = (path if path.is_absolute() else root_resolved / path).resolve(strict=False)
+        path_resolved = (
+            path_value if path_value.is_absolute() else root_resolved / path_value
+        ).resolve(strict=False)
         try:
             relative = path_resolved.relative_to(root_resolved)
         except ValueError:
@@ -4982,7 +5045,7 @@ def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
         if reserved_root in RESERVED_WORKSPACE_ROOTS:
             return [
                 f"{label} must not point inside reserved workspace directory "
-                f"{reserved_root!r}: {path}"
+                f"{reserved_root!r}: {path_value}"
             ]
     return []
 

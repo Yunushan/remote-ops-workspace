@@ -892,6 +892,57 @@ def test_extended_linux_evidence_bundle_rejects_missing_artifact_directory_befor
     assert f"artifact directory missing: {missing_assets}" in errors
 
 
+def test_extended_linux_evidence_bundle_rejects_non_path_proof_inputs() -> None:
+    bundler = _load_script("make_extended_linux_evidence_bundle")
+
+    errors = bundler.make_extended_linux_evidence_bundle(
+        target="linux-i386",
+        release_tag="v1.0.2",
+        assets_dir=True,
+        builder_evidence="builder-identity-linux-i386.json",
+        smoke_evidence=False,
+        candidate_record=0,
+        out_dir="bundle",
+    )
+
+    assert errors == [
+        "artifact directory path must be a pathlib.Path, got True",
+        "builder evidence path must be a pathlib.Path, got 'builder-identity-linux-i386.json'",
+        "smoke evidence path must be a pathlib.Path, got False",
+        "candidate evidence record path must be a pathlib.Path, got 0",
+        "extended Linux evidence bundle output directory path must be a pathlib.Path, got 'bundle'",
+    ]
+
+
+def test_extended_linux_evidence_bundle_path_helpers_reject_non_path_values() -> None:
+    bundler = _load_script("make_extended_linux_evidence_bundle")
+
+    assert bundler.check_path_parent_symlinks(True, "builder evidence") == [
+        "builder evidence path must be a pathlib.Path, got True"
+    ]
+    assert bundler.check_directory_path_hint("bundle", "output directory") == [
+        "output directory path must be a pathlib.Path, got 'bundle'"
+    ]
+    assert bundler.check_path_not_reserved_workspace_root(False, "artifact directory") == [
+        "artifact directory path must be a pathlib.Path, got False"
+    ]
+    assert bundler.check_target_release_path_segments(
+        "linux-i386",
+        "v1.0.2",
+        0,
+        label="extended Linux evidence bundle output directory",
+    ) == [
+        "extended Linux evidence bundle output directory path must be a pathlib.Path, got 0"
+    ]
+    assert bundler.check_bundle_source_file(True, "builder evidence source file") == [
+        "builder evidence source file path must be a pathlib.Path, got True"
+    ]
+    assert bundler.prepare_output_paths(out_dir=True, outputs=("bundle.zip",), force=True) == [
+        "extended Linux evidence bundle output directory path must be a pathlib.Path, got True",
+        "extended Linux evidence bundle output file path must be a pathlib.Path, got 'bundle.zip'",
+    ]
+
+
 def test_extended_linux_evidence_bundle_rejects_file_shaped_artifact_directory(
     tmp_path: Path,
 ) -> None:

@@ -31,11 +31,12 @@ PLATFORM_EVIDENCE_IMPORT_DEPENDENTS = (
 )
 PUBLISH_PROTECTED_PLATFORM_ASSET_COMMAND = (
     'python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" '
-    "--require-complete --assets-dir release-assets"
+    '--require-complete --assets-dir release-assets --repository "${{ github.repository }}"'
 )
 PUBLISH_PLATFORM_GOAL_COMMAND = (
     'python scripts/check_release_publish_assets.py --assets-dir release-assets '
-    '--tag "${{ github.ref_name }}" --require-platform-goal-targets'
+    '--tag "${{ github.ref_name }}" --repository "${{ github.repository }}" '
+    "--require-platform-goal-targets"
 )
 PUBLISH_REMOTE_PLATFORM_EVIDENCE_AUDIT_COMMAND = (
     'python scripts/check_platform_release_evidence_remote.py --repository "${{ github.repository }}" '
@@ -52,17 +53,19 @@ REQUIRED_DOC_SNIPPETS = (
     "remote-ops-workspace-v1.0.2-macos-<x64|arm64>.dmg",
     "remote-ops-workspace-v1.0.2-macos-<x64|arm64>.pkg",
     "not uploaded by the default GitHub",
-    "check_protected_platform_goal.py --release-tag <tag> --require-complete --assets-dir release-assets",
+    "check_protected_platform_goal.py --release-tag <tag> --require-complete --assets-dir release-assets --repository <owner>/<repo>",
     "release_asset_provenance_complete=false",
     "asset-backed protected goal gate",
-    "check_release_publish_assets.py --assets-dir release-assets --tag <tag> --require-platform-goal-targets",
-    "import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run",
+    "check_release_publish_assets.py --assets-dir release-assets --tag <tag> --repository <owner>/<repo> --require-platform-goal-targets",
+    "import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run --repository <owner>/<repo>",
     "check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag <tag> --require-final-record-assets",
     "check_platform_release_evidence_remote.py --repository <owner>/<repo> --release-tag <tag> --require-goal-targets --require-source-runs --require-source-artifact-bytes --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head",
     "downloaded source artifact native artifact SHA-256 values plus review-bundle size/SHA-256 values",
     "published asset digests, sizes and bytes",
     "published final accepted-record JSON bytes",
     "release tag Git object/source head SHA",
+    "GH_TOKEN` or `GITHUB_TOKEN",
+    "`contents:read`\nand `actions:read`",
     "workflow_run.repository_id",
     "workflow_run.head_repository_id",
     "artifact created_at",
@@ -106,13 +109,15 @@ REQUIRED_TURKISH_DOC_SNIPPETS = (
     "configs/platform_verified_evidence.json",
     "python scripts/check_protected_platform_goal.py --release-tag <tag> --require-records-complete --show-requirements",
     "python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag <tag>",
-    "python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run",
+    "python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run --repository <owner>/<repo>",
     "python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag <tag> --require-final-record-assets",
     "python scripts/check_platform_release_evidence_remote.py --repository <owner>/<repo> --release-tag <tag> --require-goal-targets --require-source-runs --require-source-artifact-bytes --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head",
     "indirilen source artifact native",
     "published asset digest/size/byte",
     "published final accepted-record JSON bytes",
     "release tag Git object/source head SHA",
+    "`GH_TOKEN` veya `GITHUB_TOKEN`",
+    "`contents:read` ve `actions:read`",
     "workflow_run.repository_id",
     "workflow_run.head_repository_id",
     "artifact created_at",
@@ -120,10 +125,10 @@ REQUIRED_TURKISH_DOC_SNIPPETS = (
     "source run creation/start/update",
     "ayni tag/repository/workflow file path/source-head/run-attempt",
     "target'a ozel release source workflow file path",
-    "python scripts/check_protected_platform_goal.py --release-tag <tag> --require-complete --assets-dir release-assets",
+    "python scripts/check_protected_platform_goal.py --release-tag <tag> --require-complete --assets-dir release-assets --repository <owner>/<repo>",
     "release_asset_provenance_complete=false",
     "asset-backed protected goal",
-    "python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --require-platform-goal-targets",
+    "python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --repository <owner>/<repo> --require-platform-goal-targets",
     "Linux i386, Linux armhf, windows-xp-native-x86 ve windows-xp-native-x64",
     "ayni GitHub release repository, target'a ozel release source workflow file path",
     "ayni release source head SHA",
@@ -139,13 +144,15 @@ REQUIRED_README_RELEASE_SECTION_SNIPPETS = (
     "python scripts/check_protected_platform_goal.py --release-tag <tag> --require-records-complete --show-requirements",
     "python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag <tag>",
     "accepted-platform-evidence-assets",
-    "python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run",
+    "python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run --repository <owner>/<repo>",
     "python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag <tag> --require-final-record-assets",
     "python scripts/check_platform_release_evidence_remote.py --repository <owner>/<repo> --release-tag <tag> --require-goal-targets --require-source-runs --require-source-artifact-bytes --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head",
     "downloaded source artifact native artifact SHA-256 values",
     "published asset digests, sizes and bytes",
     "published final accepted-record JSON bytes",
     "release tag Git object/source head SHA",
+    "GH_TOKEN` or `GITHUB_TOKEN",
+    "`contents:read`\nand `actions:read`",
     "workflow_run.repository_id",
     "workflow_run.head_repository_id",
     "artifact created_at",
@@ -158,10 +165,10 @@ REQUIRED_README_RELEASE_SECTION_SNIPPETS = (
     "same release tag, GitHub release repository",
     "target-specific release source workflow file",
     "release source head SHA and per-record release source run attempt before any 100%",
-    "python scripts/check_protected_platform_goal.py --release-tag <tag> --require-complete --assets-dir release-assets",
+    "python scripts/check_protected_platform_goal.py --release-tag <tag> --require-complete --assets-dir release-assets --repository <owner>/<repo>",
     "release_asset_provenance_complete=false",
     "asset-backed protected goal gate",
-    "python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --require-platform-goal-targets",
+    "python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --repository <owner>/<repo> --require-platform-goal-targets",
     "configs/platform_verified_evidence.json",
     "accepted review-bundle hashes",
     "source and native release jobs wait for it before building",
@@ -171,7 +178,7 @@ REQUIRED_README_RELEASE_SECTION_SNIPPETS = (
 )
 
 REQUIRED_RELEASE_STRATEGY_SNIPPETS = (
-    "python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir <release-assets-dir> --dry-run --verify-source-run",
+    "python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir <release-assets-dir> --dry-run --verify-source-run --repository <owner>/<repo>",
     "pre-release protected-platform import dry-run",
     "does not stage files for upload",
     "release_asset_provenance_complete=false",
@@ -317,7 +324,7 @@ def check_accepted_platform_evidence_assets_job(workflow: str) -> list[str]:
         "GH_TOKEN: ${{ github.token }}": "GitHub token for gh run download",
         (
             'python scripts/import_platform_evidence_artifacts.py --release-tag "${{ github.ref_name }}" '
-            "--require-goal-targets --out-dir release-assets --verify-source-run"
+            '--require-goal-targets --out-dir release-assets --verify-source-run --repository "${{ github.repository }}"'
         ): "accepted platform evidence artifact importer",
         (
             'python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets '

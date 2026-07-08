@@ -98,29 +98,42 @@ def make_xp_native_evidence_template(
     return []
 
 
-def check_template_output_paths(*, out_dir: Path, evidence_path: Path, smoke_ids: list[str]) -> list[str]:
-    hint_errors = check_directory_path_hint(out_dir, "XP native evidence template output directory")
+def check_template_output_paths(*, out_dir: object, evidence_path: object, smoke_ids: list[str]) -> list[str]:
+    out_dir_errors, out_dir_path = path_arg_value(
+        out_dir,
+        "XP native evidence template output directory",
+    )
+    evidence_path_errors, evidence_path_value = path_arg_value(
+        evidence_path,
+        "XP native evidence template file",
+    )
+    errors = out_dir_errors + evidence_path_errors
+    if errors:
+        return errors
+    assert out_dir_path is not None
+    assert evidence_path_value is not None
+    hint_errors = check_directory_path_hint(out_dir_path, "XP native evidence template output directory")
     if hint_errors:
         return hint_errors
     reserved_errors = check_path_not_reserved_workspace_root(
-        out_dir,
+        out_dir_path,
         "XP native evidence template output directory",
     )
     if reserved_errors:
         return reserved_errors
-    if out_dir.is_symlink():
-        return [f"XP native evidence template output directory must not be a symlink: {out_dir}"]
-    parent_errors = check_path_parent_symlinks(out_dir, "XP native evidence template output directory")
+    if out_dir_path.is_symlink():
+        return [f"XP native evidence template output directory must not be a symlink: {out_dir_path}"]
+    parent_errors = check_path_parent_symlinks(out_dir_path, "XP native evidence template output directory")
     if parent_errors:
         return parent_errors
-    if out_dir.exists() and not out_dir.is_dir():
-        return [f"XP native evidence template output path must be a directory: {out_dir}"]
-    smoke_dir = out_dir / "xp-smoke-evidence"
-    errors: list[str] = []
-    if evidence_path.is_symlink():
-        errors.append(f"XP native evidence template file must not be a symlink: {evidence_path}")
-    elif evidence_path.exists() and not evidence_path.is_file():
-        errors.append(f"XP native evidence template file must be a regular file: {evidence_path}")
+    if out_dir_path.exists() and not out_dir_path.is_dir():
+        return [f"XP native evidence template output path must be a directory: {out_dir_path}"]
+    smoke_dir = out_dir_path / "xp-smoke-evidence"
+    errors = []
+    if evidence_path_value.is_symlink():
+        errors.append(f"XP native evidence template file must not be a symlink: {evidence_path_value}")
+    elif evidence_path_value.exists() and not evidence_path_value.is_file():
+        errors.append(f"XP native evidence template file must be a regular file: {evidence_path_value}")
     if smoke_dir.is_symlink():
         errors.append(f"XP native evidence template smoke directory must not be a symlink: {smoke_dir}")
     elif smoke_dir.exists() and not smoke_dir.is_dir():
@@ -134,6 +147,12 @@ def check_template_output_paths(*, out_dir: Path, evidence_path: Path, smoke_ids
     return errors
 
 
+def path_arg_value(raw_path: object, label: str) -> tuple[list[str], Path | None]:
+    if not isinstance(raw_path, Path):
+        return [f"{label} path must be a pathlib.Path, got {raw_path!r}"], None
+    return [], raw_path
+
+
 def is_allowed_platform_parent_symlink(parent: Path) -> bool:
     if sys.platform != "darwin" or parent.as_posix() != "/var":
         return False
@@ -143,8 +162,12 @@ def is_allowed_platform_parent_symlink(parent: Path) -> bool:
         return False
 
 
-def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
-    check_path = path if path.is_absolute() else Path.cwd() / path
+def check_path_parent_symlinks(path: object, label: str) -> list[str]:
+    path_errors, path_value = path_arg_value(path, label)
+    if path_errors:
+        return path_errors
+    assert path_value is not None
+    check_path = path_value if path_value.is_absolute() else Path.cwd() / path_value
     for parent in reversed(check_path.parents):
         if parent == Path("."):
             continue
@@ -153,14 +176,22 @@ def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
     return []
 
 
-def check_directory_path_hint(path: Path, label: str) -> list[str]:
-    raw_path = path.as_posix()
+def check_directory_path_hint(path: object, label: str) -> list[str]:
+    path_errors, path_value = path_arg_value(path, label)
+    if path_errors:
+        return path_errors
+    assert path_value is not None
+    raw_path = path_value.as_posix()
     if directory_path_has_file_suffix(raw_path):
         return [f"{label} must be a directory path, got {raw_path!r}"]
     return []
 
 
-def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
+def check_path_not_reserved_workspace_root(path: object, label: str) -> list[str]:
+    path_errors, path_value = path_arg_value(path, label)
+    if path_errors:
+        return path_errors
+    assert path_value is not None
     roots: list[Path] = [Path.cwd(), ROOT]
     seen_roots: set[Path] = set()
     for root in roots:
@@ -168,7 +199,9 @@ def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
         if root_resolved in seen_roots:
             continue
         seen_roots.add(root_resolved)
-        path_resolved = (path if path.is_absolute() else root_resolved / path).resolve(strict=False)
+        path_resolved = (
+            path_value if path_value.is_absolute() else root_resolved / path_value
+        ).resolve(strict=False)
         try:
             relative = path_resolved.relative_to(root_resolved)
         except ValueError:
@@ -180,7 +213,7 @@ def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
         if reserved_root in RESERVED_WORKSPACE_ROOTS:
             return [
                 f"{label} must not point inside reserved workspace directory "
-                f"{reserved_root!r}: {path}"
+                f"{reserved_root!r}: {path_value}"
             ]
     return []
 
@@ -286,7 +319,7 @@ def evidence_template(
         "security": {
             "legacy_crypto_profile_scoped": False,
             "modern_defaults_unchanged": False,
-            "weak_crypto_global_default": True,
+            "weak_crypto_global_default": False,
             "patch_evidence": {
                 "tls_minimum_modern_profiles": "TODO verify TLS 1.2 minimum is unchanged",
                 "tls_preferred_modern_profiles": "TODO verify TLS 1.3 preferred is unchanged",

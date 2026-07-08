@@ -54,6 +54,71 @@ def test_import_record_downloads_expected_files_and_verifies_hashes(tmp_path: Pa
     assert sorted(path.name for path in out_dir.iterdir()) == sorted(importer.expected_release_files(record))
 
 
+def test_import_record_rejects_non_path_output_and_download_root_without_running_gh(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+
+    def fail_run(*_args: Any, **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+        raise AssertionError("gh subprocess should not run for malformed import paths")
+
+    monkeypatch.setattr(importer.subprocess, "run", fail_run)
+
+    errors = importer.import_record(
+        record,
+        out_dir=["release-assets"],
+        download_root="download",
+        dry_run=False,
+        release_head_sha=HEAD_SHA,
+    )
+
+    assert errors == [
+        "release asset import output directory must be a pathlib.Path, got ['release-assets']",
+        "linux-i386 release asset import download root must be a pathlib.Path, got 'download'",
+    ]
+
+
+def test_import_record_rejects_noncanonical_release_asset_source_without_running_gh(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+    source = record["release_asset_source"]
+    assert isinstance(source, dict)
+    source["workflow_run_url"] = "https://github.com/example/remote-ops-workspace/actions/runs/12345/"
+    source["artifact_name"] = " extended-linux-evidence-linux-i386-v1.0.2 "
+    source["head_sha"] = f" {HEAD_SHA} "
+    source["workflow"] = " .github/workflows/extended-platform-evidence.yml "
+    record["release_tag"] = " v1.0.2 "
+
+    def fail_run(*_args: Any, **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+        raise AssertionError("gh subprocess should not run for noncanonical source metadata")
+
+    monkeypatch.setattr(importer.subprocess, "run", fail_run)
+
+    errors = importer.import_record(
+        record,
+        out_dir=tmp_path / "release-assets",
+        download_root=tmp_path / "download",
+        dry_run=False,
+        release_head_sha=HEAD_SHA,
+    )
+
+    assert (
+        "linux-i386 release_asset_source.workflow_run_url must be canonical without "
+        "surrounding whitespace or trailing slash"
+    ) in errors
+    assert (
+        "linux-i386 release_asset_source.artifact_name must not include surrounding whitespace"
+    ) in errors
+    assert "linux-i386 release_tag must not include surrounding whitespace" in errors
+    assert "linux-i386 release_asset_source.head_sha must not include surrounding whitespace" in errors
+    assert "linux-i386 release_asset_source.workflow must not include surrounding whitespace" in errors
+
+
 def test_import_record_rejects_missing_downloaded_file(tmp_path: Path, monkeypatch) -> None:
     importer = _load_importer()
     record = _record(tmp_path)
@@ -304,6 +369,17 @@ def test_validate_source_artifact_rejects_missing_release_source_file_list(tmp_p
     errors = importer.validate_source_artifact(record, source_root=tmp_path / "downloaded")
 
     assert "linux-i386 release_asset_source.contains_files must be a non-empty list" in errors
+
+
+def test_validate_source_artifact_rejects_non_path_source_root(tmp_path: Path) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+
+    errors = importer.validate_source_artifact(record, source_root="downloaded")
+
+    assert errors == [
+        "linux-i386 downloaded artifact directory must be a pathlib.Path, got 'downloaded'"
+    ]
 
 
 def test_validate_source_artifact_rejects_unsafe_release_source_file_entries(tmp_path: Path) -> None:
@@ -583,6 +659,22 @@ def test_copy_expected_files_rejects_symlinked_source_parent(tmp_path: Path, mon
     assert not out_dir.exists()
 
 
+def test_copy_expected_files_rejects_non_path_source_and_output_args(tmp_path: Path) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+
+    errors = importer.copy_expected_files(
+        record,
+        source_root="download",
+        out_dir=True,
+    )
+
+    assert errors == [
+        "linux-i386 downloaded artifact directory must be a pathlib.Path, got 'download'",
+        "release asset import output directory must be a pathlib.Path, got True",
+    ]
+
+
 def test_import_platform_evidence_artifacts_rejects_symlinked_output_directory(
     tmp_path: Path,
     monkeypatch,
@@ -685,6 +777,44 @@ def test_import_platform_evidence_artifacts_rejects_non_path_output_directory() 
     )
 
     assert errors == ["release asset import output directory must be a pathlib.Path, got True"]
+
+
+def test_import_platform_evidence_artifacts_rejects_invalid_expected_repository(
+    tmp_path: Path,
+) -> None:
+    importer = _load_importer()
+    out_dir = tmp_path / "release-assets"
+
+    errors = importer.import_platform_evidence_artifacts(
+        [],
+        out_dir=out_dir,
+        dry_run=True,
+        repository="not-a-repository",
+    )
+
+    assert errors == [
+        "platform evidence import repository must be a GitHub owner/name value, "
+        "got 'not-a-repository'"
+    ]
+    assert not out_dir.exists()
+
+
+def test_check_output_directory_empty_rejects_non_path_arg() -> None:
+    importer = _load_importer()
+
+    errors = importer.check_output_directory_empty("release-assets")
+
+    assert errors == [
+        "release asset import output directory must be a pathlib.Path, got 'release-assets'"
+    ]
+
+
+def test_import_platform_evidence_artifacts_path_parent_helper_rejects_non_path_arg() -> None:
+    importer = _load_importer()
+
+    errors = importer.check_path_parent_symlinks(True, "downloaded artifact directory")
+
+    assert errors == ["downloaded artifact directory must be a pathlib.Path, got True"]
 
 
 def test_import_platform_evidence_artifacts_rejects_non_string_required_target(
@@ -1524,6 +1654,88 @@ def test_import_record_rejects_source_workflow_repository_mismatch(
     ) in errors
 
 
+def test_import_record_rejects_release_asset_urls_outside_expected_repository(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+
+    def wrong_repository(url: str) -> str:
+        return url.replace(
+            "https://github.com/example/remote-ops-workspace/",
+            "https://github.com/other/remote-ops-workspace/",
+        )
+
+    record["release_asset_urls"][0] = wrong_repository(record["release_asset_urls"][0])
+    record["review_bundle"]["release_asset_urls"][0] = wrong_repository(
+        record["review_bundle"]["release_asset_urls"][0]
+    )
+    record["finalized_record_release_asset_url"] = wrong_repository(
+        record["finalized_record_release_asset_url"]
+    )
+
+    def fail_run(*_args: Any, **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+        raise AssertionError("gh should not run when accepted release asset URLs are out of scope")
+
+    monkeypatch.setattr(importer.subprocess, "run", fail_run)
+
+    errors = importer.import_record(
+        record,
+        out_dir=tmp_path / "release-assets",
+        download_root=tmp_path / "download",
+        dry_run=False,
+        release_head_sha=HEAD_SHA,
+        repository="example/remote-ops-workspace",
+    )
+
+    assert any(
+        "linux-i386 release_asset_urls repository must match release repository "
+        "example/remote-ops-workspace" in error
+        for error in errors
+    )
+    assert any(
+        "linux-i386 review_bundle release_asset_urls repository must match release repository "
+        "example/remote-ops-workspace" in error
+        for error in errors
+    )
+    assert any(
+        "linux-i386 finalized_record_release_asset_url repository must match release repository "
+        "example/remote-ops-workspace" in error
+        for error in errors
+    )
+
+
+def test_import_record_rejects_source_workflow_outside_expected_repository(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+    record["release_asset_source"]["workflow_run_url"] = (
+        "https://github.com/other/remote-ops-workspace/actions/runs/12345"
+    )
+
+    def fail_run(*_args: Any, **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+        raise AssertionError("gh should not run when source workflow run is out of scope")
+
+    monkeypatch.setattr(importer.subprocess, "run", fail_run)
+
+    errors = importer.import_record(
+        record,
+        out_dir=tmp_path / "release-assets",
+        download_root=tmp_path / "download",
+        dry_run=False,
+        release_head_sha=HEAD_SHA,
+        repository="example/remote-ops-workspace",
+    )
+
+    assert errors == [
+        "linux-i386 release_asset_source.workflow_run_url repository must match "
+        "release repository example/remote-ops-workspace, got other/remote-ops-workspace"
+    ]
+
+
 def test_import_record_rejects_incomplete_or_non_dispatch_source_workflow_run(
     tmp_path: Path,
     monkeypatch,
@@ -1735,6 +1947,33 @@ def test_import_record_rejects_source_workflow_run_attempt_mismatch(
     )
 
 
+def test_import_record_rejects_boolean_source_workflow_run_attempt(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+
+    def fake_run(command: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        assert _is_metadata_command(command)
+        return _source_run_metadata(command, attempt=True)
+
+    monkeypatch.setattr(importer.subprocess, "run", fake_run)
+
+    errors = importer.import_record(
+        record,
+        out_dir=tmp_path / "release-assets",
+        download_root=tmp_path / "download",
+        dry_run=False,
+        release_head_sha=HEAD_SHA,
+    )
+
+    assert (
+        "linux-i386 release_asset_source workflow run attempt must be a positive integer, "
+        "got True"
+    ) in errors
+
+
 def test_import_record_rejects_source_workflow_run_release_tag_ref_mismatch(
     tmp_path: Path,
     monkeypatch,
@@ -1902,6 +2141,37 @@ def test_import_record_rejects_source_workflow_run_url_mismatch(
     ) in errors
 
 
+def test_import_record_rejects_noncanonical_source_workflow_run_html_url(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+
+    def fake_run(command: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        assert _is_metadata_command(command)
+        return _source_run_metadata(
+            command,
+            htmlUrl="https://github.com/example/remote-ops-workspace/actions/runs/12345/",
+        )
+
+    monkeypatch.setattr(importer.subprocess, "run", fake_run)
+
+    errors = importer.import_record(
+        record,
+        out_dir=tmp_path / "release-assets",
+        download_root=tmp_path / "download",
+        dry_run=False,
+        release_head_sha=HEAD_SHA,
+    )
+
+    assert (
+        "linux-i386 release_asset_source workflow run htmlUrl must match accepted record "
+        "https://github.com/example/remote-ops-workspace/actions/runs/12345, "
+        "got 'https://github.com/example/remote-ops-workspace/actions/runs/12345/'"
+    ) in errors
+
+
 def test_import_record_rejects_non_string_source_workflow_run_html_url(
     tmp_path: Path,
     monkeypatch,
@@ -1924,6 +2194,17 @@ def test_import_record_rejects_non_string_source_workflow_run_html_url(
     )
 
     assert "linux-i386 release_asset_source workflow run htmlUrl must be a string, got True" in errors
+
+
+def test_repository_from_workflow_run_url_rejects_noncanonical_run_url() -> None:
+    importer = _load_importer()
+
+    assert importer.repository_from_workflow_run_url(
+        "https://github.com/example/remote-ops-workspace/actions/runs/12345"
+    ) == "example/remote-ops-workspace"
+    assert importer.repository_from_workflow_run_url(
+        "https://github.com/example/remote-ops-workspace/actions/runs/12345/"
+    ) == ""
 
 
 def test_import_record_rejects_source_workflow_run_endpoint_metadata(
@@ -3204,6 +3485,29 @@ def test_check_imported_hashes_rejects_malformed_review_bundle_metadata(tmp_path
     ) in imported_errors
     assert not any("review bundle archive SHA-256 mismatch" in error for error in imported_errors)
     assert not any("review bundle sha256s SHA-256 mismatch" in error for error in imported_errors)
+
+
+def test_release_import_hash_and_final_record_helpers_reject_non_path_dirs(tmp_path: Path) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+
+    downloaded_errors = importer.check_downloaded_source_hashes(record, source_root="downloaded")
+    imported_errors = importer.check_imported_hashes(record, out_dir="release-assets")
+    review_errors = importer.check_imported_review_bundle(record, out_dir=False)
+    final_record_errors = importer.validate_downloaded_final_record(record, source_root=["downloaded"])
+
+    assert downloaded_errors == [
+        "linux-i386 downloaded artifact directory must be a pathlib.Path, got 'downloaded'"
+    ]
+    assert imported_errors == [
+        "release asset import output directory must be a pathlib.Path, got 'release-assets'"
+    ]
+    assert review_errors == [
+        "release asset import output directory must be a pathlib.Path, got False"
+    ]
+    assert final_record_errors == [
+        "linux-i386 downloaded artifact directory must be a pathlib.Path, got ['downloaded']"
+    ]
 
 
 def test_check_imported_hashes_rejects_ambiguous_review_bundle_files(tmp_path: Path) -> None:

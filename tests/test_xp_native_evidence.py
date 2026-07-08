@@ -323,6 +323,28 @@ def test_xp_native_evidence_rejects_malformed_release_source(tmp_path: Path) -> 
     assert "windows-xp-native-x64 evidence release_source.head_sha must be a 40-character lowercase Git SHA" in errors
 
 
+def test_xp_native_evidence_rejects_noncanonical_release_source(tmp_path: Path) -> None:
+    checker = _load_xp_native_evidence_checker()
+    evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    evidence["release_source"]["workflow"] = " .github/workflows/xp-native-evidence.yml "
+    evidence["release_source"]["workflow_run_url"] = (
+        "https://github.com/example/remote-ops-workspace/actions/runs/12345/"
+    )
+    evidence["release_source"]["head_sha"] = f" {'a' * 40} "
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path)
+
+    assert "windows-xp-native-x86 evidence release_source.workflow must not include surrounding whitespace" in errors
+    assert (
+        "windows-xp-native-x86 evidence release_source.workflow_run_url must be canonical without "
+        "surrounding whitespace or trailing slash"
+    ) in errors
+    assert "windows-xp-native-x86 evidence release_source.head_sha must not include surrounding whitespace" in errors
+
+
 def test_xp_native_evidence_rejects_non_string_release_source_fields(tmp_path: Path) -> None:
     checker = _load_xp_native_evidence_checker()
     evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
@@ -708,6 +730,49 @@ def test_xp_native_evidence_rejects_reserved_workspace_evidence_directory() -> N
     ) in errors
 
 
+def test_xp_native_evidence_path_helpers_reject_non_path_args() -> None:
+    checker = _load_xp_native_evidence_checker()
+
+    assert checker.check_xp_native_evidence(
+        "xp-evidence.json",
+        evidence_dir=["xp-evidence"],
+        assets_dir=True,
+        contract={},
+    ) == [
+        "evidence file path must be a pathlib.Path, got 'xp-evidence.json'",
+        "evidence directory path must be a pathlib.Path, got ['xp-evidence']",
+        "XP native artifact directory path must be a pathlib.Path, got True",
+    ]
+    assert checker.check_evidence_file_location(
+        "xp-evidence.json",
+        ["xp-evidence"],
+    ) == [
+        "evidence file path must be a pathlib.Path, got 'xp-evidence.json'",
+        "evidence directory path must be a pathlib.Path, got ['xp-evidence']",
+    ]
+    assert checker.check_smoke_evidence_file(
+        "windows-xp-native-x86",
+        "v1.0.2",
+        "cli_launch",
+        {"evidence_file": "xp-smoke-evidence/cli_launch.txt"},
+        "xp-evidence",
+        {"required_smoke_evidence_file": True},
+        host_identity={},
+        os_identity={},
+        release_source={},
+        security={},
+    ) == [
+        "windows-xp-native-x86 smoke evidence directory path must be a pathlib.Path, "
+        "got 'xp-evidence'"
+    ]
+    assert checker.check_path_parent_symlinks("xp-evidence", "evidence directory") == [
+        "evidence directory path must be a pathlib.Path, got 'xp-evidence'"
+    ]
+    assert checker.check_path_not_reserved_workspace_root("xp-evidence", "evidence directory") == [
+        "evidence directory path must be a pathlib.Path, got 'xp-evidence'"
+    ]
+
+
 def test_xp_native_evidence_rejects_evidence_file_outside_evidence_directory(
     tmp_path: Path,
 ) -> None:
@@ -953,6 +1018,55 @@ def test_xp_native_evidence_rejects_smoke_evidence_release_source_binding_mismat
         "windows-xp-native-x86 smoke result cli_launch evidence_file source head SHA binding "
         "must be ['aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'], got "
         "['bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb']"
+    ) in errors
+
+
+def test_xp_native_evidence_rejects_smoke_command_source_workflow_run_trailing_slash(
+    tmp_path: Path,
+) -> None:
+    checker = _load_xp_native_evidence_checker()
+    evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    expected = evidence["release_source"]["workflow_run_url"]
+    evidence["smoke_results"][0]["command"] = evidence["smoke_results"][0]["command"].replace(
+        f"--source-workflow-run-url {expected}",
+        f"--source-workflow-run-url {expected}/",
+    )
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path)
+
+    assert (
+        "windows-xp-native-x86 smoke result cli_launch command must include exactly one "
+        f"--source-workflow-run-url {expected}, got ['{expected}/']"
+    ) in errors
+
+
+def test_xp_native_evidence_rejects_smoke_evidence_source_workflow_run_trailing_slash(
+    tmp_path: Path,
+) -> None:
+    checker = _load_xp_native_evidence_checker()
+    evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    expected = evidence["release_source"]["workflow_run_url"]
+    smoke_file = tmp_path / evidence["smoke_results"][0]["evidence_file"]
+    smoke_file.write_text(
+        smoke_file.read_text(encoding="utf-8").replace(
+            f"xp smoke source workflow run: {expected}",
+            f"xp smoke source workflow run: {expected}/",
+        ),
+        encoding="utf-8",
+    )
+    evidence["smoke_results"][0]["evidence_sha256"] = _sha256(smoke_file)
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    errors = checker.check_xp_native_evidence(path)
+
+    assert (
+        "windows-xp-native-x86 smoke result cli_launch evidence_file source workflow run binding "
+        f"must be ['{expected}'], got ['{expected}/']"
     ) in errors
 
 

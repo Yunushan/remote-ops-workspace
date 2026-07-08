@@ -422,6 +422,69 @@ def test_platform_review_bundle_artifacts_rejects_reserved_workspace_bundle_dire
     assert not bundle_dir.exists()
 
 
+def test_platform_review_bundle_artifacts_path_helpers_reject_non_path_args(
+    tmp_path: Path,
+) -> None:
+    validator = _load_script("check_platform_review_bundle_artifacts")
+    record = _finalized_xp_record(tmp_path)
+    registry = _registry_with(record)
+
+    assert validator.check_registry_path("evidence.json") == [
+        "accepted evidence registry path must be a pathlib.Path, got 'evidence.json'"
+    ]
+    assert validator.check_platform_review_bundle_artifacts(
+        registry=registry,
+        bundle_dir="release-assets",
+    ) == ["review bundle directory path must be a pathlib.Path, got 'release-assets'"]
+    assert validator.check_record_review_bundle_artifacts(record, "release-assets") == [
+        "review bundle directory path must be a pathlib.Path, got 'release-assets'"
+    ]
+    assert validator.check_final_record_asset(record, "release-assets") == [
+        "windows-xp-native-x86 finalized accepted-record asset directory path "
+        "must be a pathlib.Path, got 'release-assets'"
+    ]
+    assert validator.check_file_record(
+        "linux-i386",
+        "archive",
+        "review-bundle.zip",
+        {"size_bytes": 0, "sha256": "0" * 64},
+    ) == [
+        "linux-i386 review_bundle archive file path must be a pathlib.Path, "
+        "got 'review-bundle.zip'"
+    ]
+    assert validator.check_path_parent_symlinks("review-bundles", "review bundle directory") == [
+        "review bundle directory path must be a pathlib.Path, got 'review-bundles'"
+    ]
+    assert validator.check_directory_path_hint("review-bundles", "review bundle directory") == [
+        "review bundle directory path must be a pathlib.Path, got 'review-bundles'"
+    ]
+    assert validator.check_path_not_reserved_workspace_root(
+        "review-bundles",
+        "review bundle directory",
+    ) == ["review bundle directory path must be a pathlib.Path, got 'review-bundles'"]
+
+    errors: list[str] = []
+    assert validator.load_json("manifest.json", "review bundle manifest", errors) is None
+    assert errors == [
+        "review bundle manifest path must be a pathlib.Path, got 'manifest.json'"
+    ]
+
+    errors = []
+    assert (
+        validator.read_archive_file(
+            "review-bundle.zip",
+            "candidate.json",
+            errors,
+            "linux-i386",
+        )
+        is None
+    )
+    assert errors == [
+        "linux-i386 review bundle archive path must be a pathlib.Path, "
+        "got 'review-bundle.zip'"
+    ]
+
+
 def test_platform_review_bundle_artifacts_rejects_symlinked_bundle_directory_parent(
     tmp_path: Path,
     monkeypatch,

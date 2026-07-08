@@ -83,14 +83,26 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def make_xp_native_evidence_bundle(
     *,
     target: str,
-    evidence: Path,
-    candidate_record: Path,
-    assets_dir: Path,
-    out_dir: Path,
-    evidence_dir: Path | None = None,
+    evidence: object,
+    candidate_record: object,
+    assets_dir: object,
+    out_dir: object,
+    evidence_dir: object | None = None,
     force: bool = False,
 ) -> list[str]:
     errors: list[str] = []
+    errors.extend(check_required_path_arg(evidence, "XP native evidence file"))
+    errors.extend(check_required_path_arg(candidate_record, "candidate evidence record"))
+    errors.extend(check_required_path_arg(assets_dir, "XP native artifact directory"))
+    errors.extend(check_required_path_arg(out_dir, "XP native evidence bundle output directory"))
+    errors.extend(check_optional_path_arg(evidence_dir, "XP evidence directory"))
+    if errors:
+        return errors
+    assert isinstance(evidence, Path)
+    assert isinstance(candidate_record, Path)
+    assert isinstance(assets_dir, Path)
+    assert isinstance(out_dir, Path)
+    assert evidence_dir is None or isinstance(evidence_dir, Path)
     evidence_root = evidence_dir or evidence.parent
     errors.extend(check_directory_path_hint(assets_dir, "XP native artifact directory"))
     errors.extend(check_directory_path_hint(evidence_root, "XP evidence directory"))
@@ -240,6 +252,23 @@ def make_xp_native_evidence_bundle(
     return []
 
 
+def path_arg_value(raw_path: object, label: str) -> tuple[list[str], Path | None]:
+    if not isinstance(raw_path, Path):
+        return [f"{label} path must be a pathlib.Path, got {raw_path!r}"], None
+    return [], raw_path
+
+
+def check_required_path_arg(raw_path: object, label: str) -> list[str]:
+    errors, _path = path_arg_value(raw_path, label)
+    return errors
+
+
+def check_optional_path_arg(raw_path: object | None, label: str) -> list[str]:
+    if raw_path is None:
+        return []
+    return check_required_path_arg(raw_path, label)
+
+
 def check_input_symlinks(
     evidence: Path,
     candidate_record: Path,
@@ -362,22 +391,33 @@ def check_candidate_staged_upload_command(
     return errors
 
 
-def prepare_output_paths(*, out_dir: Path, outputs: tuple[Path, ...], force: bool) -> list[str]:
-    hint_errors = check_directory_path_hint(out_dir, "XP native evidence bundle output directory")
+def prepare_output_paths(*, out_dir: object, outputs: tuple[object, ...], force: bool) -> list[str]:
+    out_dir_errors, out_dir_path = path_arg_value(out_dir, "XP native evidence bundle output directory")
+    output_paths: list[Path] = []
+    errors = out_dir_errors
+    for output in outputs:
+        output_errors, output_path = path_arg_value(output, "XP native evidence bundle output file")
+        errors.extend(output_errors)
+        if output_path is not None:
+            output_paths.append(output_path)
+    if errors:
+        return errors
+    assert out_dir_path is not None
+    hint_errors = check_directory_path_hint(out_dir_path, "XP native evidence bundle output directory")
     if hint_errors:
         return hint_errors
-    reserved_errors = check_path_not_reserved_workspace_root(out_dir, "XP native evidence bundle output directory")
+    reserved_errors = check_path_not_reserved_workspace_root(out_dir_path, "XP native evidence bundle output directory")
     if reserved_errors:
         return reserved_errors
-    if out_dir.is_symlink():
-        return [f"XP native evidence bundle output directory must not be a symlink: {out_dir}"]
-    parent_errors = check_path_parent_symlinks(out_dir, "XP native evidence bundle output directory")
+    if out_dir_path.is_symlink():
+        return [f"XP native evidence bundle output directory must not be a symlink: {out_dir_path}"]
+    parent_errors = check_path_parent_symlinks(out_dir_path, "XP native evidence bundle output directory")
     if parent_errors:
         return parent_errors
-    if out_dir.exists() and not out_dir.is_dir():
-        return [f"XP native evidence bundle output path must be a directory: {out_dir}"]
-    errors: list[str] = []
-    for path in outputs:
+    if out_dir_path.exists() and not out_dir_path.is_dir():
+        return [f"XP native evidence bundle output path must be a directory: {out_dir_path}"]
+    errors = []
+    for path in output_paths:
         if path.is_symlink():
             errors.append(f"XP native evidence bundle output file must not be a symlink: {path.name}")
         elif path.exists() and not path.is_file():
@@ -385,10 +425,10 @@ def prepare_output_paths(*, out_dir: Path, outputs: tuple[Path, ...], force: boo
     if errors:
         return errors
     if not force:
-        existing = [str(path) for path in outputs if path.exists()]
+        existing = [str(path) for path in output_paths if path.exists()]
         if existing:
             return [f"refusing to overwrite existing XP evidence bundle outputs: {existing}"]
-    out_dir.mkdir(parents=True, exist_ok=True)
+    out_dir_path.mkdir(parents=True, exist_ok=True)
     return []
 
 
@@ -401,8 +441,12 @@ def is_allowed_platform_parent_symlink(parent: Path) -> bool:
         return False
 
 
-def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
-    check_path = path if path.is_absolute() else Path.cwd() / path
+def check_path_parent_symlinks(path: object, label: str) -> list[str]:
+    path_errors, path_value = path_arg_value(path, label)
+    if path_errors:
+        return path_errors
+    assert path_value is not None
+    check_path = path_value if path_value.is_absolute() else Path.cwd() / path_value
     for parent in reversed(check_path.parents):
         if parent == Path("."):
             continue
@@ -411,14 +455,22 @@ def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
     return []
 
 
-def check_directory_path_hint(path: Path, label: str) -> list[str]:
-    raw_path = path.as_posix()
+def check_directory_path_hint(path: object, label: str) -> list[str]:
+    path_errors, path_value = path_arg_value(path, label)
+    if path_errors:
+        return path_errors
+    assert path_value is not None
+    raw_path = path_value.as_posix()
     if directory_path_has_file_suffix(raw_path):
         return [f"{label} must be a directory path, got {raw_path!r}"]
     return []
 
 
-def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
+def check_path_not_reserved_workspace_root(path: object, label: str) -> list[str]:
+    path_errors, path_value = path_arg_value(path, label)
+    if path_errors:
+        return path_errors
+    assert path_value is not None
     roots: list[Path] = [Path.cwd(), ROOT]
     seen_roots: set[Path] = set()
     for root in roots:
@@ -426,7 +478,9 @@ def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
         if root_resolved in seen_roots:
             continue
         seen_roots.add(root_resolved)
-        path_resolved = (path if path.is_absolute() else root_resolved / path).resolve(strict=False)
+        path_resolved = (
+            path_value if path_value.is_absolute() else root_resolved / path_value
+        ).resolve(strict=False)
         try:
             relative = path_resolved.relative_to(root_resolved)
         except ValueError:
@@ -438,7 +492,7 @@ def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
         if reserved_root in RESERVED_WORKSPACE_ROOTS:
             return [
                 f"{label} must not point inside reserved workspace directory "
-                f"{reserved_root!r}: {path}"
+                f"{reserved_root!r}: {path_value}"
             ]
     return []
 
@@ -446,12 +500,16 @@ def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
 def check_target_release_path_segments(
     target: str,
     release_tag: str,
-    path: Path,
+    path: object,
     *,
     label: str,
 ) -> list[str]:
-    segments = {str(part) for part in path.parts if str(part)}
-    raw_path = path.as_posix()
+    path_errors, path_value = path_arg_value(path, label)
+    if path_errors:
+        return path_errors
+    assert path_value is not None
+    segments = {str(part) for part in path_value.parts if str(part)}
+    raw_path = path_value.as_posix()
     errors: list[str] = []
     if target not in segments:
         errors.append(f"{label} must include target path segment {target!r}, got {raw_path!r}")
@@ -639,13 +697,17 @@ def check_bundle_source_files(
     return errors
 
 
-def check_bundle_source_file(path: Path, label: str) -> list[str]:
+def check_bundle_source_file(path: object, label: str) -> list[str]:
+    path_errors, path_value = path_arg_value(path, label)
+    if path_errors:
+        return path_errors
+    assert path_value is not None
     errors: list[str] = []
-    if path.is_symlink():
-        errors.append(f"{label} must not be a symlink: {path}")
-    errors.extend(check_path_parent_symlinks(path, label))
-    if not path.is_file():
-        errors.append(f"{label} must be a regular file: {path}")
+    if path_value.is_symlink():
+        errors.append(f"{label} must not be a symlink: {path_value}")
+    errors.extend(check_path_parent_symlinks(path_value, label))
+    if not path_value.is_file():
+        errors.append(f"{label} must be a regular file: {path_value}")
     return errors
 
 
@@ -681,6 +743,7 @@ def smoke_result_refs(evidence_data: dict[str, Any]) -> list[tuple[str, str]]:
             and smoke_id
             and isinstance(raw_file, str)
             and raw_file
+            and archive_entry_name_is_safe(raw_file)
         ):
             refs.append((smoke_id, raw_file))
     return refs

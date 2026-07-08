@@ -91,8 +91,11 @@ def test_linux_smoke_requires_builder_evidence_for_target_bound_evidence() -> No
 def test_linux_smoke_binds_github_actions_environment_when_available() -> None:
     script = Path("scripts/smoke_linux_native.sh").read_text(encoding="utf-8")
 
+    assert "--workflow-run-url must be canonical without surrounding whitespace or trailing slash" in script
     assert "--workflow-run-url must be a GitHub Actions run URL" in script
-    assert 'REQUESTED_WORKFLOW_RUN_ID="${WORKFLOW_RUN_URL%/}"' in script
+    assert 'REQUESTED_WORKFLOW_RUN_ID="$WORKFLOW_RUN_URL"' in script
+    assert 'REQUESTED_WORKFLOW_RUN_ID="${WORKFLOW_RUN_URL%/}"' not in script
+    assert "[^/[:space:]]+" in script
     assert 'REQUESTED_WORKFLOW_REPOSITORY="${WORKFLOW_RUN_URL#https://github.com/}"' in script
     assert "GITHUB_SHA" in script
     assert "must match --source-head-sha" in script
@@ -121,7 +124,7 @@ def test_linux_smoke_emits_sanitized_identity_for_target_bound_evidence() -> Non
     script = Path("scripts/smoke_linux_native.sh").read_text(encoding="utf-8")
 
     assert 'SMOKE_OBSERVED_AT_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"' in script
-    assert 'REQUESTED_WORKFLOW_RUN_ID="${WORKFLOW_RUN_URL%/}"' in script
+    assert 'REQUESTED_WORKFLOW_RUN_ID="$WORKFLOW_RUN_URL"' in script
     assert "native installer smoke host label: $SMOKE_HOST_LABEL" in script
     assert "native installer smoke evidence run id: $SMOKE_EVIDENCE_RUN_ID" in script
     assert "native installer smoke observed at utc: $SMOKE_OBSERVED_AT_UTC" in script
@@ -141,12 +144,29 @@ def test_linux_smoke_binds_security_lines_to_builder_evidence() -> None:
     assert "native installer smoke CVE review reference: $SMOKE_CVE_REVIEW_REFERENCE" in script
 
 
+def test_native_installer_smoke_checker_requires_linux_canonical_workflow_url() -> None:
+    checker = _load_checker()
+    script = Path("scripts/smoke_linux_native.sh")
+    text = script.read_text(encoding="utf-8").replace(
+        "--workflow-run-url must be canonical without surrounding whitespace or trailing slash",
+        "--workflow-run-url permits trailing slash",
+    )
+
+    errors = checker.check_linux_smoke_source_binding(script, text)
+
+    assert (
+        "scripts/smoke_linux_native.sh missing Linux smoke workflow run URL canonical validation: "
+        "--workflow-run-url must be canonical without surrounding whitespace or trailing slash"
+    ) in errors
+
+
 def test_native_installer_smoke_checker_requires_linux_smoke_identity_contract(tmp_path: Path) -> None:
     checker = _load_checker()
     script = tmp_path / "smoke_linux_native.sh"
     text = """
+--workflow-run-url must be canonical without surrounding whitespace or trailing slash
 --workflow-run-url must be a GitHub Actions run URL
-REQUESTED_WORKFLOW_RUN_ID="${WORKFLOW_RUN_URL%/}"
+REQUESTED_WORKFLOW_RUN_ID="$WORKFLOW_RUN_URL"
 REQUESTED_WORKFLOW_REPOSITORY="${WORKFLOW_RUN_URL#https://github.com/}"
 GITHUB_SHA
 must match --source-head-sha

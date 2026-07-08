@@ -71,44 +71,76 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def check_extended_platform_dispatch_inputs(
     *,
-    target: str,
-    release_tag: str,
-    release_asset_base_url: str,
-    workflow_run_url: str,
-    workflow_ref_name: str,
-    source_head_sha: str,
+    target: object,
+    release_tag: object,
+    release_asset_base_url: object,
+    workflow_run_url: object,
+    workflow_ref_name: object,
+    source_head_sha: object,
     source_run_attempt: object,
 ) -> list[str]:
     errors: list[str] = []
-    if target not in LINUX_TARGETS:
-        errors.append(f"target must be one of {sorted(LINUX_TARGETS)}, got {target!r}")
-    if not RELEASE_TAG_RE.fullmatch(release_tag):
-        errors.append(f"release_tag must look like vX.Y.Z: {release_tag}")
-    if not SOURCE_HEAD_SHA_RE.fullmatch(source_head_sha):
-        errors.append(f"source_head_sha must be a lowercase 40-character Git SHA, got {source_head_sha!r}")
+    target_value, type_errors = dispatch_string_value("target", target)
+    errors.extend(type_errors)
+    release_tag_value, type_errors = dispatch_string_value("release_tag", release_tag)
+    errors.extend(type_errors)
+    release_asset_base_url_value, type_errors = dispatch_string_value(
+        "release_asset_base_url",
+        release_asset_base_url,
+    )
+    errors.extend(type_errors)
+    workflow_run_url_value, type_errors = dispatch_string_value("workflow_run_url", workflow_run_url)
+    errors.extend(type_errors)
+    workflow_ref_name_value, type_errors = dispatch_string_value("workflow_ref_name", workflow_ref_name)
+    errors.extend(type_errors)
+    source_head_sha_value, type_errors = dispatch_string_value("source_head_sha", source_head_sha)
+    errors.extend(type_errors)
+
+    if isinstance(target, str) and target_value not in LINUX_TARGETS:
+        errors.append(f"target must be one of {sorted(LINUX_TARGETS)}, got {target_value!r}")
+    if isinstance(release_tag, str) and not RELEASE_TAG_RE.fullmatch(release_tag_value):
+        errors.append(f"release_tag must look like vX.Y.Z: {release_tag_value}")
+    if isinstance(source_head_sha, str) and not SOURCE_HEAD_SHA_RE.fullmatch(source_head_sha_value):
+        errors.append(f"source_head_sha must be a lowercase 40-character Git SHA, got {source_head_sha_value!r}")
     if not is_positive_integer_text(source_run_attempt):
         errors.append(f"source_run_attempt must be a positive integer, got {source_run_attempt!r}")
-    if workflow_ref_name != release_tag:
+    if (
+        isinstance(workflow_ref_name, str)
+        and isinstance(release_tag, str)
+        and workflow_ref_name_value != release_tag_value
+    ):
         errors.append(
             "workflow_ref_name must match release_tag so evidence is dispatched from "
-            f"the release tag ref, got {workflow_ref_name!r}"
+            f"the release tag ref, got {workflow_ref_name_value!r}"
         )
 
-    release_match = GITHUB_RELEASE_DOWNLOAD_BASE_RE.fullmatch(release_asset_base_url)
-    if not release_match:
-        errors.append(
-            "release_asset_base_url must be exactly "
-            f"https://github.com/<owner>/<repo>/releases/download/{release_tag}"
-        )
-    elif release_match.group(2) != release_tag:
-        errors.append(
-            "release_asset_base_url tag must match release_tag "
-            f"{release_tag}, got {release_match.group(2)}"
-        )
+    release_match = None
+    if isinstance(release_asset_base_url, str):
+        release_match = GITHUB_RELEASE_DOWNLOAD_BASE_RE.fullmatch(release_asset_base_url_value)
+        if not release_match:
+            errors.append(
+                "release_asset_base_url must be exactly "
+                f"https://github.com/<owner>/<repo>/releases/download/{release_tag_value or '<release-tag>'}"
+            )
+        elif release_match.group(2) != release_tag_value:
+            errors.append(
+                "release_asset_base_url tag must match release_tag "
+                f"{release_tag_value}, got {release_match.group(2)}"
+            )
 
-    run_match = GITHUB_ACTIONS_RUN_RE.fullmatch(workflow_run_url.rstrip("/"))
-    if not run_match:
-        errors.append("workflow_run_url must be a GitHub Actions run URL")
+    run_match = None
+    if isinstance(workflow_run_url, str):
+        if (
+            workflow_run_url_value != workflow_run_url_value.strip()
+            or workflow_run_url_value != workflow_run_url_value.rstrip("/")
+        ):
+            errors.append(
+                "workflow_run_url must be canonical without surrounding whitespace or trailing slash"
+            )
+        else:
+            run_match = GITHUB_ACTIONS_RUN_RE.fullmatch(workflow_run_url_value)
+        if not run_match:
+            errors.append("workflow_run_url must be a GitHub Actions run URL")
 
     if release_match and run_match and release_match.group(1) != run_match.group(1):
         errors.append(
@@ -118,10 +150,18 @@ def check_extended_platform_dispatch_inputs(
     return errors
 
 
+def dispatch_string_value(label: str, value: object) -> tuple[str, list[str]]:
+    if not isinstance(value, str):
+        return "", [f"{label} must be a string, got {value!r}"]
+    return value, []
+
+
 def is_positive_integer_text(value: object) -> bool:
     if isinstance(value, bool):
         return False
-    text = str(value).strip()
+    text = str(value)
+    if text != text.strip():
+        return False
     return bool(text) and text.isdigit() and int(text) > 0
 
 

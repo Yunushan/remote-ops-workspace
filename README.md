@@ -324,9 +324,9 @@ same GitHub release repository, target-specific release source workflow file,
 same release source head SHA and a positive release source run attempt in each record. Mixed-tag,
 mixed-repository or mixed-source-head accepted records remain visible as aggregate evidence,
 but the protected goal parity block stays incomplete until one release source has all four targets. The release/verifier promotion
-gate is `python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> --release-assets-dir <release-assets-dir>`,
-which also runs `python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-complete --assets-dir <release-assets-dir>`
-and `python scripts/check_release_publish_assets.py --assets-dir <release-assets-dir> --tag v<project.version> --require-platform-goal-targets`
+gate is `python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> --release-assets-dir <release-assets-dir> --release-repository <owner>/<repo>`,
+which also runs `python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-complete --assets-dir <release-assets-dir> --repository <owner>/<repo>`
+and `python scripts/check_release_publish_assets.py --assets-dir <release-assets-dir> --tag v<project.version> --repository <owner>/<repo> --require-platform-goal-targets`
 and must fail until the same four records are finalized and accepted from that same release source.
 The static readiness report keeps `release_asset_provenance_complete=false`;
 only the asset-backed protected goal gate can flip that proof state after
@@ -352,6 +352,9 @@ missing, or if stale protected-platform native/evidence assets remain on the
 release outside the audited accepted-evidence scope. The release workflow runs that audit after
 `softprops/action-gh-release` uploads the assets, using read-only Actions
 metadata access plus the repository token.
+For local live audits, set `GH_TOKEN` or `GITHUB_TOKEN` with `contents:read`
+and `actions:read` access so GitHub API rate limits or artifact authorization
+cannot hide the real evidence state.
 
 Run:
 
@@ -577,7 +580,7 @@ Linux accepted records in the same path must include `linux_smoke_summary`
 runtime, OpenSSL and profile-only legacy crypto proof values alongside the
 captured smoke log hash.
 The `accepted-platform-evidence-assets` job runs
-`python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run`
+`python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run --repository <owner>/<repo>`
 to copy only same-tag, same-repository, workflow-file, source-head and
 run-attempt-bound accepted evidence artifacts into the release asset directory
 after checking exact source artifact `workflow_run.id`,
@@ -605,9 +608,9 @@ The static readiness report intentionally leaves
 is the proof that finalized accepted records, review bundles and native release
 bytes match before upload.
 Before upload, the publish job runs
-`python scripts/check_protected_platform_goal.py --release-tag <tag> --require-complete --assets-dir release-assets`
+`python scripts/check_protected_platform_goal.py --release-tag <tag> --require-complete --assets-dir release-assets --repository <owner>/<repo>`
 and then
-`python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --require-platform-goal-targets`
+`python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --repository <owner>/<repo> --require-platform-goal-targets`
 to verify the downloaded asset set, finalized protected-platform records,
 review bundles, native artifacts, checksum sidecars and release manifest
 against `configs/release_matrix.json`, `configs/platform_verified_evidence.json`
@@ -626,6 +629,8 @@ and source artifact `workflow_run.id`,
 plus artifact created_at inside the exact source run creation/start/update window when
 GitHub exposes timestamps, and source artifact ZIP contents matching
 `release_asset_source.contains_files`.
+Local live runs should set `GH_TOKEN` or `GITHUB_TOKEN` with `contents:read`
+and `actions:read` access before auditing the published release.
 Python release tooling is constrained by `requirements-release.txt` and recorded
 in each release manifest through `configs/release_toolchain.json`. Native
 Windows, macOS and Linux jobs also emit per-platform `native-SHA256SUMS.txt`

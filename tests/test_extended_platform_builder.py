@@ -39,6 +39,49 @@ def test_builder_identity_context_rejects_boolean_workflow_run_attempt(monkeypat
     assert "linux-i386 builder identity --workflow-run-attempt must be a positive integer" in errors
 
 
+def test_builder_identity_context_rejects_non_string_identity_fields(monkeypatch) -> None:
+    builder = _load_builder()
+    _clear_github_env(monkeypatch)
+    monkeypatch.setattr(builder, "git_head_sha", lambda: "a" * 40)
+    monkeypatch.setattr(builder, "git_status_porcelain", lambda: "")
+
+    errors = builder.check_builder_identity_context(
+        "linux-i386",
+        True,
+        ["https://github.com/example/remote-ops-workspace/actions/runs/12345"],
+        1,
+        False,
+    )
+
+    assert "linux-i386 builder identity --release-tag must be a string, got True" in errors
+    assert (
+        "linux-i386 builder identity --workflow-run-url must be a string, got "
+        "['https://github.com/example/remote-ops-workspace/actions/runs/12345']"
+    ) in errors
+    assert "linux-i386 builder identity --source-head-sha must be a string, got False" in errors
+    assert not any("must look like vX.Y.Z: True" in error for error in errors)
+
+
+def test_builder_identity_context_rejects_noncanonical_workflow_run_url(monkeypatch) -> None:
+    builder = _load_builder()
+    _clear_github_env(monkeypatch)
+    monkeypatch.setattr(builder, "git_head_sha", lambda: "a" * 40)
+    monkeypatch.setattr(builder, "git_status_porcelain", lambda: "")
+
+    errors = builder.check_builder_identity_context(
+        "linux-armhf",
+        "v1.0.2",
+        "https://github.com/example/remote-ops-workspace/actions/runs/12345/",
+        1,
+        "a" * 40,
+    )
+
+    assert (
+        "linux-armhf builder identity --workflow-run-url must be canonical without "
+        "surrounding whitespace or trailing slash"
+    ) in errors
+
+
 def test_builder_identity_context_accepts_github_workflow_provenance(monkeypatch) -> None:
     builder = _load_builder()
     monkeypatch.setenv("GITHUB_ACTIONS", "true")
@@ -246,6 +289,48 @@ def test_builder_identity_output_path_requires_target_scoped_name(tmp_path: Path
         "linux-i386 builder identity output file name must be "
         "builder-identity-linux-i386.json, got 'builder.json'"
     ) in errors
+
+
+def test_builder_identity_path_helpers_reject_non_path_args() -> None:
+    builder = _load_builder()
+
+    assert builder.check_builder_identity_output_path("linux-i386", "builder.json") == [
+        "builder identity output file path must be a pathlib.Path, got 'builder.json'"
+    ]
+    assert builder.check_path_parent_symlinks(
+        "linux-evidence",
+        "builder identity output directory",
+    ) == [
+        "builder identity output directory path must be a pathlib.Path, "
+        "got 'linux-evidence'"
+    ]
+    assert builder.check_directory_path_hint(
+        "linux-evidence",
+        "builder identity output directory",
+    ) == [
+        "builder identity output directory path must be a pathlib.Path, "
+        "got 'linux-evidence'"
+    ]
+    assert builder.check_path_not_reserved_workspace_root(
+        "linux-evidence",
+        "builder identity output directory",
+    ) == [
+        "builder identity output directory path must be a pathlib.Path, "
+        "got 'linux-evidence'"
+    ]
+    assert builder.write_builder_identity_output("builder.json", {"target": "linux-i386"}) == [
+        "builder identity output file path must be a pathlib.Path, got 'builder.json'"
+    ]
+
+
+def test_builder_identity_writer_writes_canonical_json(tmp_path: Path) -> None:
+    builder = _load_builder()
+    out = tmp_path / "builder-identity-linux-i386.json"
+
+    errors = builder.write_builder_identity_output(out, {"target": "linux-i386"})
+
+    assert errors == []
+    assert out.read_text(encoding="utf-8") == '{\n  "target": "linux-i386"\n}\n'
 
 
 def test_builder_security_patch_evidence_rejects_placeholder_provenance(monkeypatch) -> None:

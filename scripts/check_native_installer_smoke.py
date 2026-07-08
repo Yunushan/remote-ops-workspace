@@ -126,8 +126,11 @@ def check_scripts_exist(config: dict[str, Any]) -> list[str]:
 def check_linux_smoke_source_binding(script: Path, text: str) -> list[str]:
     errors: list[str] = []
     required_snippets = {
+        "--workflow-run-url must be canonical without surrounding whitespace or trailing slash": (
+            "workflow run URL canonical validation"
+        ),
         "--workflow-run-url must be a GitHub Actions run URL": "workflow run URL format validation",
-        'REQUESTED_WORKFLOW_RUN_ID="${WORKFLOW_RUN_URL%/}"': "workflow run id parsing",
+        'REQUESTED_WORKFLOW_RUN_ID="$WORKFLOW_RUN_URL"': "workflow run id parsing",
         'REQUESTED_WORKFLOW_REPOSITORY="${WORKFLOW_RUN_URL#https://github.com/}"': (
             "workflow repository parsing"
         ),

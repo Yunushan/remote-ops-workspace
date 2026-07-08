@@ -285,6 +285,19 @@ def test_publish_contract_requires_validation_before_upload() -> None:
     assert any("publish asset validation" in error for error in errors)
 
 
+def test_publish_contract_requires_repository_bound_validation() -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        ' --repository "${{ github.repository }}"',
+        "",
+    )
+
+    errors = checker.check_publish_contract(matrix, workflow)
+
+    assert any("publish evidence repository binding" in error for error in errors)
+
+
 def test_publish_contract_requires_platform_goal_gate_before_upload() -> None:
     checker = _load_checker()
     matrix = _load_matrix()
@@ -303,7 +316,7 @@ def test_publish_contract_requires_protected_platform_release_asset_gate() -> No
     matrix = _load_matrix()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
         '      - name: Require protected platform release assets\n'
-        '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" --require-complete --assets-dir release-assets\n',
+        '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" --require-complete --assets-dir release-assets --repository "${{ github.repository }}"\n',
         "",
     )
 
@@ -318,11 +331,11 @@ def test_publish_contract_requires_protected_asset_gate_before_publish_asset_val
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
     protected_gate = (
         '      - name: Require protected platform release assets\n'
-        '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" --require-complete --assets-dir release-assets\n'
+        '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" --require-complete --assets-dir release-assets --repository "${{ github.repository }}"\n'
     )
     publish_gate = (
         '      - name: Validate release publish assets\n'
-        '        run: python scripts/check_release_publish_assets.py --assets-dir release-assets --tag "${{ github.ref_name }}" --require-platform-goal-targets\n'
+        '        run: python scripts/check_release_publish_assets.py --assets-dir release-assets --tag "${{ github.ref_name }}" --repository "${{ github.repository }}" --require-platform-goal-targets\n'
     )
     workflow = workflow.replace(protected_gate, "").replace(publish_gate, publish_gate + protected_gate)
 
@@ -337,7 +350,7 @@ def test_publish_contract_requires_protected_asset_gate_before_release_upload() 
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
     protected_gate = (
         '      - name: Require protected platform release assets\n'
-        '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" --require-complete --assets-dir release-assets\n'
+        '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" --require-complete --assets-dir release-assets --repository "${{ github.repository }}"\n'
     )
     workflow = workflow.replace(protected_gate, "") + protected_gate
 
@@ -427,10 +440,10 @@ def test_publish_contract_rejects_publish_continue_on_error() -> None:
     matrix = _load_matrix()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
         '      - name: Require protected platform release assets\n'
-        '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" --require-complete --assets-dir release-assets\n',
+        '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" --require-complete --assets-dir release-assets --repository "${{ github.repository }}"\n',
         '      - name: Require protected platform release assets\n'
         '        continue-on-error: true\n'
-        '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" --require-complete --assets-dir release-assets\n',
+        '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" --require-complete --assets-dir release-assets --repository "${{ github.repository }}"\n',
     )
 
     errors = checker.check_publish_contract(matrix, workflow)
@@ -528,12 +541,12 @@ def test_publish_contract_rejects_platform_evidence_import_continue_on_error() -
         '      - name: Import accepted protected platform evidence artifacts\n'
         '        env:\n'
         '          GH_TOKEN: ${{ github.token }}\n'
-        '        run: python scripts/import_platform_evidence_artifacts.py --release-tag "${{ github.ref_name }}" --require-goal-targets --out-dir release-assets --verify-source-run\n',
+        '        run: python scripts/import_platform_evidence_artifacts.py --release-tag "${{ github.ref_name }}" --require-goal-targets --out-dir release-assets --verify-source-run --repository "${{ github.repository }}"\n',
         '      - name: Import accepted protected platform evidence artifacts\n'
         '        continue-on-error: true\n'
         '        env:\n'
         '          GH_TOKEN: ${{ github.token }}\n'
-        '        run: python scripts/import_platform_evidence_artifacts.py --release-tag "${{ github.ref_name }}" --require-goal-targets --out-dir release-assets --verify-source-run\n',
+        '        run: python scripts/import_platform_evidence_artifacts.py --release-tag "${{ github.ref_name }}" --require-goal-targets --out-dir release-assets --verify-source-run --repository "${{ github.repository }}"\n',
     )
 
     errors = checker.check_publish_contract(matrix, workflow)
@@ -713,6 +726,18 @@ def test_publish_contract_requires_platform_evidence_source_run_verification() -
     errors = checker.check_platform_evidence_import_job(workflow)
 
     assert any("source run metadata verification" in error for error in errors)
+
+
+def test_publish_contract_requires_repository_bound_platform_evidence_import() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        ' --repository "${{ github.repository }}"',
+        "",
+    )
+
+    errors = checker.check_platform_evidence_import_job(workflow)
+
+    assert any("repository-bound accepted evidence import" in error for error in errors)
 
 
 def test_publish_contract_rejects_platform_evidence_import_dry_run() -> None:
@@ -1218,6 +1243,63 @@ def test_release_asset_hashes_reject_out_of_scope_accepted_evidence_release_asse
     ) in errors
 
 
+def test_release_asset_hashes_reject_wrong_repository_release_asset_urls(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    registry = _accepted_evidence_registry("linux-i386")
+    record = registry["accepted_evidence"][0]
+    _write_synthetic_release_assets(checker, matrix, tmp_path)
+    _write_accepted_evidence_assets(record, tmp_path)
+    _sync_evidence_artifact_hashes(record, tmp_path)
+    record["release_asset_urls"][0] = str(record["release_asset_urls"][0]).replace(
+        "https://github.com/example/remote-ops-workspace/",
+        "https://github.com/example/wrong-workspace/",
+    )
+    monkeypatch.setattr(checker, "validate_accepted_evidence_registry", lambda _registry: [])
+    assets = {path.name for path in tmp_path.iterdir() if path.is_file()}
+
+    errors = checker.check_platform_evidence_asset_hashes(
+        tmp_path,
+        assets,
+        tag="v1.0.2",
+        repository="example/remote-ops-workspace",
+        evidence_registry=registry,
+    )
+
+    assert (
+        "linux-i386 accepted evidence release_asset_urls repository must match "
+        f"release repository example/remote-ops-workspace: {record['release_asset_urls'][0]}"
+    ) in errors
+
+
+def test_release_asset_hashes_reject_invalid_expected_repository(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    registry = _accepted_evidence_registry("linux-i386")
+    record = registry["accepted_evidence"][0]
+    _write_synthetic_release_assets(checker, matrix, tmp_path)
+    _write_accepted_evidence_assets(record, tmp_path)
+    _sync_evidence_artifact_hashes(record, tmp_path)
+    monkeypatch.setattr(checker, "validate_accepted_evidence_registry", lambda _registry: [])
+    assets = {path.name for path in tmp_path.iterdir() if path.is_file()}
+
+    errors = checker.check_platform_evidence_asset_hashes(
+        tmp_path,
+        assets,
+        tag="v1.0.2",
+        repository="not a repository",
+        evidence_registry=registry,
+    )
+
+    assert "release repository must be a GitHub owner/name value, got 'not a repository'" in errors
+
+
 def test_release_asset_hashes_reject_non_string_accepted_evidence_artifact_key(
     tmp_path: Path,
     monkeypatch,
@@ -1703,6 +1785,82 @@ def test_release_assets_reject_file_shaped_asset_directory(tmp_path: Path) -> No
     assert not assets_dir.exists()
 
 
+def test_release_assets_reject_non_path_asset_directory() -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+
+    errors = checker.check_release_assets("release-assets", matrix, tag="v1.0.2")
+
+    assert errors == [
+        "release asset directory path must be a pathlib.Path, got 'release-assets'"
+    ]
+
+
+def test_release_asset_path_helpers_reject_non_path_args() -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    registry = _accepted_evidence_registry("linux-i386")
+    record = registry["accepted_evidence"][0]
+
+    assert checker.check_directory_path_hint(
+        "release-assets",
+        "release asset directory",
+    ) == [
+        "release asset directory path must be a pathlib.Path, got 'release-assets'"
+    ]
+    assert checker.check_path_not_reserved_workspace_root(
+        ["release-assets"],
+        "release asset directory",
+    ) == [
+        "release asset directory path must be a pathlib.Path, got ['release-assets']"
+    ]
+    assert checker.check_path_parent_symlinks(
+        {"path": "release-assets"},
+        "release asset directory",
+    ) == [
+        "release asset directory path must be a pathlib.Path, got {'path': 'release-assets'}"
+    ]
+    assert checker.check_release_asset_symlinks(True) == [
+        "release asset directory path must be a pathlib.Path, got True"
+    ]
+    assert checker.check_release_asset_root_entries(False) == [
+        "release asset directory path must be a pathlib.Path, got False"
+    ]
+    assert checker.check_platform_review_bundle_artifacts(
+        "release-assets",
+        tag="v1.0.2",
+        evidence_registry=registry,
+    ) == [
+        "release asset directory path must be a pathlib.Path, got 'release-assets'"
+    ]
+    assert checker.check_platform_evidence_asset_hashes(
+        "release-assets",
+        set(),
+        tag="v1.0.2",
+        evidence_registry=registry,
+    ) == [
+        "release asset directory path must be a pathlib.Path, got 'release-assets'"
+    ]
+    assert checker.check_final_accepted_record_asset(
+        "platform-verified-evidence-linux-i386-final.json",
+        target="linux-i386",
+        record=record,
+    ) == [
+        "linux-i386 accepted evidence finalized record asset path must be a pathlib.Path, "
+        "got 'platform-verified-evidence-linux-i386-final.json'"
+    ]
+    assert checker.check_checksum_sidecars("release-assets", set()) == [
+        "release asset directory path must be a pathlib.Path, got 'release-assets'"
+    ]
+    assert checker.check_release_manifest(
+        "release-assets",
+        matrix,
+        tag="v1.0.2",
+    ) == [
+        "release asset directory path must be a pathlib.Path, got 'release-assets'"
+    ]
+
+
 def test_release_assets_reject_reserved_workspace_asset_directory() -> None:
     checker = _load_checker()
     matrix = _load_matrix()
@@ -2131,7 +2289,8 @@ def _linux_accepted_evidence(target: str) -> dict[str, object]:
             f"--linux-smoke-evidence evidence/{target}/v1.0.2/native-smoke-{target}.log "
             "--linux-workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
             f"--linux-source-head-sha {'a' * 40} "
-            "--linux-source-run-attempt 1"
+            "--linux-source-run-attempt 1 "
+            "--repository example/remote-ops-workspace"
         ),
         "staged_upload_command": (
             "python scripts/stage_extended_linux_evidence_upload.py "
@@ -2292,7 +2451,8 @@ def _xp_accepted_evidence(target: str) -> dict[str, object]:
             f"--xp-evidence {evidence_file} --xp-evidence-dir {evidence_dir} "
             "--xp-source-workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
             f"--xp-source-head-sha {'a' * 40} "
-            "--xp-source-run-attempt 1"
+            "--xp-source-run-attempt 1 "
+            "--repository example/remote-ops-workspace"
         ),
         "staged_upload_command": (
             "python scripts/stage_xp_native_evidence_upload.py "

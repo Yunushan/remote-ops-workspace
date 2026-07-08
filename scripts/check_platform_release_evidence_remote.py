@@ -11,6 +11,7 @@ import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.error import HTTPError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
@@ -32,6 +33,7 @@ from check_platform_review_bundle_artifacts import canonical_public_record_bytes
 from check_platform_verified_evidence import (  # noqa: E402
     EVIDENCE_PATH,
     GITHUB_RELEASE_ASSET_RE,
+    GITHUB_REPOSITORY_RE,
     PROMOTION_PATH,
     PROTECTED_GOAL_TARGETS,
     RESERVED_WORKSPACE_ROOTS,
@@ -81,6 +83,10 @@ GOAL_RELEASE_AUDIT_REQUIRED_FLAGS = (
     ("--require-release-asset-bytes", "require_release_asset_bytes"),
     ("--require-tag-source-head", "require_tag_source_head"),
 )
+GITHUB_ACTIONS_RUN_FIXTURE_RE = re.compile(
+    rf"^https://github\.com/{GITHUB_REPOSITORY_RE}/actions/runs/[1-9]\d*$"
+)
+GITHUB_ACTIONS_RUN_ID_RE = re.compile(r"^[1-9]\d*$")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -328,6 +334,10 @@ def strict_arg_errors(args: argparse.Namespace) -> list[str]:
     errors: list[str] = []
     errors.extend(check_local_fixture_path(args.registry, "--registry file"))
     errors.extend(check_local_fixture_path(args.promotion, "--promotion file"))
+    repository_errors, repository = normalize_repository_arg(args.repository)
+    errors.extend(repository_errors)
+    if repository is not None:
+        args.repository = repository
     if args.require_goal_targets:
         missing_goal_flags = [
             flag
@@ -379,6 +389,11 @@ def strict_arg_errors(args: argparse.Namespace) -> list[str]:
     for raw in args.release_asset:
         if "=" not in str(raw):
             errors.append(f"--release-asset must be URL=PATH, got {raw!r}")
+    errors.extend(source_run_fixture_key_errors(args.source_run_json, "--source-run-json"))
+    errors.extend(source_run_fixture_key_errors(args.source_artifacts_json, "--source-artifacts-json"))
+    errors.extend(source_run_fixture_key_errors(args.source_artifact_zip, "--source-artifact-zip"))
+    errors.extend(release_asset_fixture_url_errors(args.final_record_json, "--final-record-json"))
+    errors.extend(release_asset_fixture_url_errors(args.release_asset, "--release-asset"))
     errors.extend(duplicate_workflow_fixture_errors(args.workflow_runs_json, "--workflow-runs-json"))
     errors.extend(duplicate_run_fixture_errors(args.source_run_json, "--source-run-json"))
     errors.extend(duplicate_run_fixture_errors(args.source_artifacts_json, "--source-artifacts-json"))
@@ -386,6 +401,67 @@ def strict_arg_errors(args: argparse.Namespace) -> list[str]:
     errors.extend(duplicate_url_fixture_errors(args.final_record_json, "--final-record-json"))
     errors.extend(duplicate_url_fixture_errors(args.release_asset, "--release-asset"))
     return errors
+
+
+def normalize_repository_arg(repository: object) -> tuple[list[str], str | None]:
+    if repository is None:
+        return [], None
+    if not isinstance(repository, str):
+        return [f"--repository must be a string GitHub owner/name value, got {repository!r}"], None
+    normalized = repository.strip().strip("/")
+    if not normalized:
+        return ["--repository must be a non-empty GitHub owner/name value"], None
+    if not re.fullmatch(GITHUB_REPOSITORY_RE, normalized):
+        return [f"--repository must be a GitHub owner/name value, got {repository!r}"], None
+    return [], normalized
+
+
+def source_run_fixture_key_errors(raw_values: list[str], flag: str) -> list[str]:
+    errors: list[str] = []
+    for raw in raw_values:
+        text = str(raw)
+        if "=" not in text:
+            continue
+        run, _path = text.split("=", 1)
+        if not canonical_source_run_fixture_key(run):
+            errors.append(
+                f"{flag} RUN must be a bare run id or canonical GitHub Actions run URL "
+                f"without surrounding whitespace or trailing slash, got {run!r}"
+            )
+    return errors
+
+
+def canonical_source_run_fixture_key(run: str) -> bool:
+    return bool(
+        run
+        and run == run.strip()
+        and run == run.rstrip("/")
+        and (GITHUB_ACTIONS_RUN_ID_RE.fullmatch(run) or GITHUB_ACTIONS_RUN_FIXTURE_RE.fullmatch(run))
+    )
+
+
+def release_asset_fixture_url_errors(raw_values: list[str], flag: str) -> list[str]:
+    errors: list[str] = []
+    for raw in raw_values:
+        text = str(raw)
+        if "=" not in text:
+            continue
+        url, _path = text.split("=", 1)
+        if not canonical_release_asset_fixture_url(url):
+            errors.append(
+                f"{flag} URL must be a canonical GitHub release asset URL without "
+                f"surrounding whitespace, query, fragment, or unsafe filename, got {url!r}"
+            )
+    return errors
+
+
+def canonical_release_asset_fixture_url(url: str) -> bool:
+    return bool(
+        url
+        and url == url.strip()
+        and GITHUB_RELEASE_ASSET_RE.fullmatch(url)
+        and release_asset_url_filename(url)
+    )
 
 
 def duplicate_workflow_fixture_errors(raw_values: list[str], flag: str) -> list[str]:
@@ -1033,10 +1109,11 @@ def repository_from_release_asset_url(url: Any) -> str:
     return match.group(1)
 
 
-def read_json_file(path: Path, label: str = "JSON fixture") -> tuple[dict[str, Any] | None, str | None]:
+def read_json_file(path: object, label: str = "JSON fixture") -> tuple[dict[str, Any] | None, str | None]:
     path_errors = check_local_fixture_path(path, label)
     if path_errors:
         return None, path_errors[0]
+    assert isinstance(path, Path)
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -1046,13 +1123,17 @@ def read_json_file(path: Path, label: str = "JSON fixture") -> tuple[dict[str, A
     return data, None
 
 
-def check_local_fixture_path(path: Path, label: str) -> list[str]:
-    errors = check_path_not_reserved_workspace_root(path, label)
+def check_local_fixture_path(path: object, label: str) -> list[str]:
+    path_errors, path_value = path_arg_value(path, label)
+    if path_errors:
+        return path_errors
+    assert path_value is not None
+    errors = check_path_not_reserved_workspace_root(path_value, label)
     if errors:
         return errors
-    if path.is_symlink():
-        return [f"{label} path must not be a symlink: {path}"]
-    return check_path_parent_symlinks(path, label)
+    if path_value.is_symlink():
+        return [f"{label} path must not be a symlink: {path_value}"]
+    return check_path_parent_symlinks(path_value, label)
 
 
 def is_allowed_platform_parent_symlink(parent: Path) -> bool:
@@ -1064,8 +1145,18 @@ def is_allowed_platform_parent_symlink(parent: Path) -> bool:
         return False
 
 
-def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
-    check_path = path if path.is_absolute() else Path.cwd() / path
+def path_arg_value(raw_path: object, label: str) -> tuple[list[str], Path | None]:
+    if not isinstance(raw_path, Path):
+        return [f"{label} path must be a pathlib.Path, got {raw_path!r}"], None
+    return [], raw_path
+
+
+def check_path_parent_symlinks(path: object, label: str) -> list[str]:
+    path_errors, path_value = path_arg_value(path, label)
+    if path_errors:
+        return path_errors
+    assert path_value is not None
+    check_path = path_value if path_value.is_absolute() else Path.cwd() / path_value
     for parent in reversed(check_path.parents):
         if parent == Path("."):
             continue
@@ -1074,7 +1165,11 @@ def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
     return []
 
 
-def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
+def check_path_not_reserved_workspace_root(path: object, label: str) -> list[str]:
+    path_errors, path_value = path_arg_value(path, label)
+    if path_errors:
+        return path_errors
+    assert path_value is not None
     roots: list[Path] = [Path.cwd(), ROOT]
     seen_roots: set[Path] = set()
     for root in roots:
@@ -1082,7 +1177,9 @@ def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
         if root_resolved in seen_roots:
             continue
         seen_roots.add(root_resolved)
-        path_resolved = (path if path.is_absolute() else root_resolved / path).resolve(strict=False)
+        path_resolved = (
+            path_value if path_value.is_absolute() else root_resolved / path_value
+        ).resolve(strict=False)
         try:
             relative = path_resolved.relative_to(root_resolved)
         except ValueError:
@@ -1094,7 +1191,7 @@ def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
         if reserved_root in RESERVED_WORKSPACE_ROOTS:
             return [
                 f"{label} must not point inside reserved workspace directory "
-                f"{reserved_root!r}: {path}"
+                f"{reserved_root!r}: {path_value}"
             ]
     return []
 
@@ -1105,16 +1202,17 @@ def fetch_json(url: str, *, timeout: float) -> tuple[dict[str, Any] | None, list
         with urlopen(request, timeout=timeout) as response:
             data = json.loads(response.read().decode("utf-8"))
     except Exception as exc:  # pragma: no cover - exercised manually against live GitHub.
-        return None, [f"failed to fetch {url}: {exc}"]
+        return None, [fetch_error_message(url, exc)]
     if not isinstance(data, dict):
         return None, [f"GitHub API response must be a JSON object: {url}"]
     return data, []
 
 
-def read_bytes_file(path: Path, label: str = "byte fixture") -> tuple[bytes | None, str | None]:
+def read_bytes_file(path: object, label: str = "byte fixture") -> tuple[bytes | None, str | None]:
     path_errors = check_local_fixture_path(path, label)
     if path_errors:
         return None, path_errors[0]
+    assert isinstance(path, Path)
     try:
         return path.read_bytes(), None
     except OSError as exc:
@@ -1127,7 +1225,39 @@ def fetch_bytes(url: str, *, timeout: float) -> tuple[bytes | None, list[str]]:
         with urlopen(request, timeout=timeout) as response:
             return response.read(), []
     except Exception as exc:  # pragma: no cover - exercised manually against live GitHub.
-        return None, [f"failed to fetch {url}: {exc}"]
+        return None, [fetch_error_message(url, exc)]
+
+
+def fetch_error_message(url: str, exc: Exception) -> str:
+    message = f"failed to fetch {url}: {exc}"
+    if github_rate_limit_error(exc):
+        message += (
+            "; GitHub API rate limit exceeded during live release evidence audit; "
+            "set GH_TOKEN or GITHUB_TOKEN with contents:read and actions:read access, "
+            "or wait for the rate limit reset"
+        )
+    return message
+
+
+def github_rate_limit_error(exc: Exception) -> bool:
+    if not isinstance(exc, HTTPError) or exc.code != 403:
+        return False
+    detail = str(exc).casefold()
+    if "rate limit" in detail:
+        return True
+    remaining = http_error_header(exc, "x-ratelimit-remaining")
+    return remaining == "0"
+
+
+def http_error_header(exc: HTTPError, name: str) -> str | None:
+    headers = getattr(exc, "headers", None)
+    if headers is None:
+        return None
+    try:
+        value = headers.get(name) or headers.get(name.title())
+    except AttributeError:
+        value = None
+    return str(value).strip() if value is not None else None
 
 
 def github_api_headers() -> dict[str, str]:
@@ -1626,6 +1756,11 @@ def check_published_final_record_bytes(
     url = record.get("finalized_record_release_asset_url")
     if not isinstance(url, str) or not url.strip():
         return [f"{target} finalized accepted-record release asset URL must be set"]
+    if not canonical_release_asset_fixture_url(url):
+        return [
+            f"{target} finalized accepted-record release asset URL must be a canonical GitHub "
+            f"release asset URL before byte verification, got {url!r}"
+        ]
     url_key = normalize_url_key(url)
     published_bytes = final_record_bytes_by_url.get(url_key)
     if published_bytes is None:
@@ -1653,6 +1788,12 @@ def check_published_release_asset_bytes(
         url = asset.get("url")
         if not isinstance(url, str) or not url.strip():
             errors.append(f"{target} release asset {filename} URL must be set before byte verification")
+            continue
+        if not canonical_release_asset_fixture_url(url):
+            errors.append(
+                f"{target} release asset {filename} URL must be a canonical GitHub release asset URL "
+                f"before byte verification, got {url!r}"
+            )
             continue
         url_key = normalize_url_key(url)
         published_bytes = release_asset_bytes_by_url.get(url_key)
@@ -1715,6 +1856,11 @@ def check_published_native_manifest_bytes(
     manifest_url = manifest_source.get("url")
     if not isinstance(manifest_url, str) or not manifest_url.strip():
         return [f"{target} published native manifest {manifest_name} URL must be set before byte verification"]
+    if not canonical_release_asset_fixture_url(manifest_url):
+        return [
+            f"{target} published native manifest {manifest_name} URL must be a canonical GitHub "
+            f"release asset URL before byte verification, got {manifest_url!r}"
+        ]
     manifest_bytes = release_asset_bytes_by_url.get(normalize_url_key(manifest_url))
     if manifest_bytes is None:
         return [f"{target} published native manifest bytes missing for {manifest_name} at {manifest_url}"]
@@ -1770,6 +1916,12 @@ def check_published_native_manifest_bytes(
         url = source.get("url")
         if not isinstance(url, str) or not url.strip():
             errors.append(f"{target} published native manifest {manifest_name} payload {filename} URL must be set")
+            continue
+        if not canonical_release_asset_fixture_url(url):
+            errors.append(
+                f"{target} published native manifest {manifest_name} payload {filename} URL must be "
+                f"a canonical GitHub release asset URL before byte verification, got {url!r}"
+            )
             continue
         published_bytes = release_asset_bytes_by_url.get(normalize_url_key(url))
         if published_bytes is None:
@@ -2197,8 +2349,8 @@ def source_run_urls_for_records(
         if isinstance(source, dict):
             run_url = source.get("workflow_run_url")
             if isinstance(run_url, str) and run_url.strip():
-                run_url = run_url.strip().rstrip("/")
-                urls.add(run_url)
+                if run_url == run_url.strip() and run_url == run_url.rstrip("/"):
+                    urls.add(run_url)
     return urls
 
 
@@ -2238,14 +2390,18 @@ def source_run_alias_fixture_errors(
         )
     ):
         run_key = normalize_run_key(run_url)
-        run_id = run_key.rsplit("/", 1)[-1] if run_key else ""
-        aliases = [alias for alias in (run_key, run_id) if alias and alias in documents_by_run]
+        aliases = source_run_aliases(documents_by_run, run_key)
         if len(aliases) > 1:
             errors.append(
                 f"{flag} contains ambiguous aliases for accepted source run "
                 f"{run_key}: {aliases}"
             )
     return errors
+
+
+def source_run_aliases(documents_by_run: dict[str, Any], run_key: str) -> list[str]:
+    run_id = run_key.rsplit("/", 1)[-1] if run_key else ""
+    return [alias for alias in (run_key, run_id) if alias and alias in documents_by_run]
 
 
 def missing_source_run_fixture_errors(
@@ -2295,7 +2451,12 @@ def source_run_attempt_for_url(
         source_run_url_raw = source.get("workflow_run_url")
         if not isinstance(source_run_url_raw, str):
             continue
-        source_run_url = normalize_run_key(source_run_url_raw)
+        if (
+            source_run_url_raw != source_run_url_raw.strip()
+            or source_run_url_raw != source_run_url_raw.rstrip("/")
+        ):
+            continue
+        source_run_url = source_run_url_raw
         if source_run_url != normalized:
             continue
         attempt = source.get("run_attempt")
@@ -2356,6 +2517,12 @@ def check_record_source_run(
     workflow = source_values["workflow"]
     run_url = source_values["workflow_run_url"]
     run_id = run_url.rsplit("/", 1)[-1] if run_url else ""
+    source_run_aliases_present = source_run_aliases(source_runs_by_run or {}, normalize_run_key(run_url))
+    if len(source_run_aliases_present) > 1:
+        return [
+            f"{target} exact source workflow run metadata contains ambiguous aliases for "
+            f"accepted source run {run_url}: {source_run_aliases_present}"
+        ]
     exact_run = exact_source_run_document(run_url, source_runs_by_run or {})
     if isinstance(exact_run, dict):
         return check_source_run_record(target, exact_run, record)
@@ -2372,7 +2539,7 @@ def check_record_source_run(
         if isinstance(run, dict)
         and (
             str(run.get("id", "")) == run_id
-            or str(run.get("html_url", "")).rstrip("/") == run_url
+            or str(run.get("html_url", "")) == run_url
         )
     ]
     if len(matches) != 1:
@@ -2390,12 +2557,8 @@ def exact_source_run_document(
     if not source_runs_by_run:
         return None
     run_key = normalize_run_key(run_url)
-    run_id = run_key.rsplit("/", 1)[-1] if run_key else ""
-    document = (
-        source_runs_by_run[run_key]
-        if run_key in source_runs_by_run
-        else source_runs_by_run.get(run_id)
-    )
+    aliases = source_run_aliases(source_runs_by_run, run_key)
+    document = source_runs_by_run.get(aliases[0]) if aliases else None
     return document if isinstance(document, dict) else None
 
 
@@ -2421,7 +2584,7 @@ def check_source_run_record(
             f"{target} source workflow run id must match accepted record "
             f"{expected_run_id}, got {run_id!r}"
         )
-    actual_url = str(first_present(run, "html_url", "htmlUrl") or "").rstrip("/")
+    actual_url = str(first_present(run, "html_url", "htmlUrl") or "")
     if actual_url != expected_run_url:
         errors.append(
             f"{target} source workflow run html_url must match accepted record "
@@ -2523,7 +2686,12 @@ def check_source_run_record(
         )
     expected_attempt = source.get("run_attempt")
     actual_attempt = first_present(run, "run_attempt", "attempt")
-    if actual_attempt != expected_attempt:
+    if not isinstance(actual_attempt, int) or isinstance(actual_attempt, bool) or actual_attempt <= 0:
+        errors.append(
+            f"{target} source workflow run run_attempt must be a positive integer, "
+            f"got {actual_attempt!r}"
+        )
+    elif actual_attempt != expected_attempt:
         errors.append(
             f"{target} source workflow run run_attempt must match accepted record "
             f"{expected_attempt}, got {actual_attempt!r}"
@@ -2581,15 +2749,20 @@ def source_run_expected_values(target: str, source: dict[str, Any]) -> tuple[dic
         errors.append(
             f"{target} release_asset_source.workflow_run_url must be a non-empty string for source run audit"
         )
+    elif run_url != run_url.strip() or run_url != run_url.rstrip("/"):
+        errors.append(
+            f"{target} release_asset_source.workflow_run_url must be canonical without "
+            "surrounding whitespace or trailing slash for source run audit"
+        )
     else:
-        values["workflow_run_url"] = run_url.strip().rstrip("/")
+        values["workflow_run_url"] = run_url
     head_sha = source.get("head_sha")
-    if not isinstance(head_sha, str) or not is_lower_git_sha(head_sha.strip()):
+    if not isinstance(head_sha, str) or head_sha != head_sha.strip() or not is_lower_git_sha(head_sha):
         errors.append(
             f"{target} release_asset_source.head_sha must be a 40-character lowercase Git SHA for source run audit"
         )
     else:
-        values["head_sha"] = head_sha.strip()
+        values["head_sha"] = head_sha
     return values, errors
 
 
@@ -2679,14 +2852,15 @@ def check_record_source_artifact(
     if source_errors:
         return source_errors
     run_url = source_values["workflow_run_url"]
-    run_id = run_url.rsplit("/", 1)[-1] if run_url else ""
     artifact_name = source_values["artifact_name"]
     run_key = normalize_run_key(run_url)
-    document = (
-        source_artifacts_by_run[run_key]
-        if run_key in source_artifacts_by_run
-        else source_artifacts_by_run.get(run_id)
-    )
+    artifact_aliases = source_run_aliases(source_artifacts_by_run, run_key)
+    if len(artifact_aliases) > 1:
+        return [
+            f"{target} source workflow artifacts contain ambiguous aliases for accepted "
+            f"source run {run_key}: {artifact_aliases}"
+        ]
+    document = source_artifacts_by_run.get(artifact_aliases[0]) if artifact_aliases else None
     if not isinstance(document, dict):
         return [f"{target} source workflow artifacts missing for {run_url}"]
     artifacts = document.get("artifacts")
@@ -2850,12 +3024,13 @@ def check_record_source_artifact_zip_bytes(
     artifact_name = source_values["artifact_name"]
     run_url = source_values["workflow_run_url"]
     run_key = normalize_run_key(run_url)
-    run_id = run_key.rsplit("/", 1)[-1] if run_key else ""
-    archive_bytes = (
-        source_artifact_bytes_by_run[run_key]
-        if run_key in source_artifact_bytes_by_run
-        else source_artifact_bytes_by_run.get(run_id)
-    )
+    byte_aliases = source_run_aliases(source_artifact_bytes_by_run, run_key)
+    if len(byte_aliases) > 1:
+        return [
+            f"{target} source workflow artifact ZIP bytes contain ambiguous aliases for "
+            f"accepted source run {run_key}: {byte_aliases}"
+        ]
+    archive_bytes = source_artifact_bytes_by_run.get(byte_aliases[0]) if byte_aliases else None
     if archive_bytes is None:
         return [f"{target} source workflow artifact ZIP bytes missing for {run_url}"]
     errors: list[str] = []
@@ -3038,6 +3213,12 @@ def check_source_artifact_record(
     repository = repository_from_run_url(run_url)
     expected_head = source_values["head_sha"]
     errors: list[str] = []
+    actual_name = artifact.get("name")
+    if actual_name != artifact_name:
+        errors.append(
+            f"{target} source workflow artifact name must match accepted record "
+            f"{artifact_name!r}, got {actual_name!r}"
+        )
     artifact_id = artifact.get("id")
     if not isinstance(artifact_id, int) or isinstance(artifact_id, bool) or artifact_id <= 0:
         errors.append(

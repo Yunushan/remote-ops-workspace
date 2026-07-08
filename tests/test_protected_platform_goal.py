@@ -82,11 +82,20 @@ def test_protected_platform_goal_strict_gate_fails_empty_registry() -> None:
     assert goal["release_import_dry_run_command"] == (
         "python scripts/import_platform_evidence_artifacts.py "
         "--release-tag v1.0.2 --require-goal-targets "
-        "--out-dir <release-assets-dir> --dry-run --verify-source-run"
+        "--out-dir <release-assets-dir> --dry-run --verify-source-run "
+        "--repository <owner>/<repo>"
+    )
+    assert goal["remote_release_evidence_audit_command"] == (
+        "python scripts/check_platform_release_evidence_remote.py "
+        "--repository <owner>/<repo> --release-tag v1.0.2 "
+        "--require-goal-targets --require-source-runs "
+        "--require-source-artifact-bytes --require-final-record-bytes "
+        "--require-release-asset-bytes --require-tag-source-head"
     )
     assert goal["release_asset_provenance_command"] == (
         "python scripts/check_protected_platform_goal.py "
-        "--release-tag v1.0.2 --require-complete --assets-dir <release-assets-dir>"
+        "--release-tag v1.0.2 --require-complete --assets-dir <release-assets-dir> "
+        "--repository <owner>/<repo>"
     )
     assert requirements["linux-i386"]["security_requirements"] == LINUX_SECURITY_REQUIREMENTS
     assert requirements["linux-armhf"]["security_requirements"] == LINUX_SECURITY_REQUIREMENTS
@@ -107,7 +116,16 @@ def test_protected_platform_goal_strict_gate_fails_empty_registry() -> None:
     assert (
         "pre-release import dry-run: python scripts/import_platform_evidence_artifacts.py "
         "--release-tag v1.0.2 --require-goal-targets "
-        "--out-dir <release-assets-dir> --dry-run --verify-source-run"
+        "--out-dir <release-assets-dir> --dry-run --verify-source-run "
+        "--repository <owner>/<repo>"
+    ) in human_scope
+    assert (
+        "published release evidence audit: "
+        "python scripts/check_platform_release_evidence_remote.py "
+        "--repository <owner>/<repo> --release-tag v1.0.2 "
+        "--require-goal-targets --require-source-runs "
+        "--require-source-artifact-bytes --require-final-record-bytes "
+        "--require-release-asset-bytes --require-tag-source-head"
     ) in human_scope
     assert "accepted release scope evidence: none" in human_scope
     human_requirements = checker.format_goal_requirements(goal)
@@ -353,6 +371,75 @@ def test_protected_platform_goal_rejects_malformed_release_scope_metadata(
     assert "protected platform goal is incomplete: status=requirement-metadata-invalid" in errors
 
 
+def test_protected_platform_goal_rejects_drifted_percentage_metadata(
+    monkeypatch,
+) -> None:
+    checker = _load_protected_goal_checker()
+    original_readiness = checker._platform_verified_readiness
+
+    def fake_platform_verified_readiness(*args, **kwargs):
+        report = original_readiness(*args, **kwargs)
+        drifted = deepcopy(report)
+        goal = drifted["protected_goal_parity"]
+        goal["current_percent"] = 75.0
+        goal["gap_percent"] = 0.0
+        return drifted
+
+    monkeypatch.setattr(checker, "_platform_verified_readiness", fake_platform_verified_readiness)
+
+    errors, goal = checker.check_protected_platform_goal(
+        registry=_complete_registry(),
+        release_tag="v1.0.2",
+        require_records_complete=True,
+    )
+
+    assert (
+        "protected platform goal parity current_percent must match "
+        "4/4 accepted targets (100.0), got 75.0"
+    ) in errors
+    assert (
+        "protected platform goal parity gap_percent must equal "
+        "100.0-current_percent (25.0), got 0.0"
+    ) in errors
+    assert goal["complete"] is False
+    assert goal["status"] == "requirement-metadata-invalid"
+    assert goal["requirement_metadata_error_count"] >= 2
+    assert "protected platform goal is incomplete: status=requirement-metadata-invalid" in errors
+
+
+def test_protected_platform_goal_rejects_drifted_requirement_target_set(
+    monkeypatch,
+) -> None:
+    checker = _load_protected_goal_checker()
+    original_readiness = checker._platform_verified_readiness
+
+    def fake_platform_verified_readiness(*args, **kwargs):
+        report = original_readiness(*args, **kwargs)
+        drifted = deepcopy(report)
+        requirements = drifted["protected_goal_parity"]["target_evidence_requirements"]
+        requirements[0]["accepted"] = False
+        requirements[1]["target"] = "linux-i386"
+        return drifted
+
+    monkeypatch.setattr(checker, "_platform_verified_readiness", fake_platform_verified_readiness)
+
+    errors, goal = checker.check_protected_platform_goal(
+        registry=_complete_registry(),
+        release_tag="v1.0.2",
+        require_records_complete=True,
+    )
+
+    assert (
+        "protected platform goal parity requirement targets contain duplicates: ['linux-i386']"
+        in errors
+    )
+    assert "protected platform goal parity requirement targets missing: ['linux-armhf']" in errors
+    assert "linux-i386 protected platform requirement accepted must match accepted_targets" in errors
+    assert goal["complete"] is False
+    assert goal["status"] == "requirement-metadata-invalid"
+    assert "protected platform goal is incomplete: status=requirement-metadata-invalid" in errors
+
+
 def test_protected_platform_goal_rejects_malformed_requirement_target_without_stringifying(
     monkeypatch,
 ) -> None:
@@ -405,6 +492,41 @@ def test_protected_platform_goal_rejects_malformed_release_tag() -> None:
     assert goal["blocking_errors"] == errors
 
 
+def test_protected_platform_goal_rejects_non_string_release_tag_before_asset_check(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    checker = _load_protected_goal_checker()
+
+    def fail_release_asset_check(*_args, **_kwargs):
+        raise AssertionError("release asset checker must not run for non-string release_tag")
+
+    monkeypatch.setattr(checker, "check_release_assets", fail_release_asset_check)
+
+    errors, goal = checker.check_protected_platform_goal(
+        registry=_complete_registry(),
+        release_tag=True,
+        require_complete=True,
+        assets_dir=tmp_path,
+        repository="example/remote-ops-workspace",
+    )
+
+    assert "release_tag must be a string, got True" in errors
+    assert "required_release_tag must be a string, got True" in errors
+    assert (
+        "protected platform goal is incomplete: missing linux-i386, linux-armhf, "
+        "windows-xp-native-x86, windows-xp-native-x64"
+    ) in errors
+    assert goal["complete"] is False
+    assert goal["record_complete"] is False
+    assert goal["release_backed_complete"] is False
+    assert goal["status"] == "release-tag-invalid"
+    assert goal["scope_error"] == "release_tag must be a string, got True"
+    assert goal["release_asset_provenance_complete"] is False
+    assert goal["release_assets_dir"] == str(tmp_path)
+    assert goal["blocking_errors"] == errors
+
+
 def test_protected_platform_goal_assets_dir_requires_strict_completion(tmp_path: Path) -> None:
     checker = _load_protected_goal_checker()
     args = checker.parse_args(
@@ -421,7 +543,39 @@ def test_protected_platform_goal_complete_gate_requires_assets_dir() -> None:
     args = checker.parse_args(["--release-tag", "v1.0.2", "--require-complete"])
 
     assert checker.strict_completion_arg_errors(args) == [
-        checker.REQUIRE_COMPLETE_ASSETS_DIR_ERROR
+        checker.REQUIRE_COMPLETE_ASSETS_DIR_ERROR,
+        checker.REQUIRE_COMPLETE_REPOSITORY_ERROR,
+    ]
+
+
+def test_protected_platform_goal_complete_gate_requires_repository(tmp_path: Path) -> None:
+    checker = _load_protected_goal_checker()
+    args = checker.parse_args(
+        ["--release-tag", "v1.0.2", "--require-complete", "--assets-dir", str(tmp_path)]
+    )
+
+    assert checker.strict_completion_arg_errors(args) == [
+        checker.REQUIRE_COMPLETE_REPOSITORY_ERROR
+    ]
+
+
+def test_protected_platform_goal_rejects_non_path_assets_dir_argument(tmp_path: Path) -> None:
+    checker = _load_protected_goal_checker()
+    args = checker.parse_args(
+        [
+            "--release-tag",
+            "v1.0.2",
+            "--require-complete",
+            "--assets-dir",
+            str(tmp_path),
+            "--repository",
+            "example/remote-ops-workspace",
+        ]
+    )
+    args.assets_dir = True
+
+    assert checker.strict_completion_arg_errors(args) == [
+        "release assets directory path must be a pathlib.Path, got True"
     ]
 
 
@@ -435,6 +589,8 @@ def test_protected_platform_goal_completion_modes_are_mutually_exclusive(tmp_pat
             "--require-records-complete",
             "--assets-dir",
             str(tmp_path),
+            "--repository",
+            "example/remote-ops-workspace",
         ]
     )
 
@@ -454,6 +610,7 @@ def test_protected_platform_goal_assets_dir_validation_blocks_completion(
         matrix,
         *,
         tag,
+        repository,
         evidence_registry,
         require_platform_goal_targets,
         **_kwargs,
@@ -463,6 +620,7 @@ def test_protected_platform_goal_assets_dir_validation_blocks_completion(
                 "assets_dir": assets_dir,
                 "matrix": matrix,
                 "tag": tag,
+                "repository": repository,
                 "same_registry": evidence_registry is registry,
                 "require_platform_goal_targets": require_platform_goal_targets,
             }
@@ -477,6 +635,7 @@ def test_protected_platform_goal_assets_dir_validation_blocks_completion(
         release_tag="v1.0.2",
         require_complete=True,
         assets_dir=tmp_path,
+        repository="example/remote-ops-workspace",
     )
 
     assert calls == [
@@ -484,6 +643,7 @@ def test_protected_platform_goal_assets_dir_validation_blocks_completion(
             "assets_dir": tmp_path,
             "matrix": {"matrix": "sentinel"},
             "tag": "v1.0.2",
+            "repository": "example/remote-ops-workspace",
             "same_registry": True,
             "require_platform_goal_targets": True,
         }
@@ -514,6 +674,7 @@ def test_protected_platform_goal_assets_dir_success_marks_release_asset_provenan
         matrix,
         *,
         tag,
+        repository,
         evidence_registry,
         require_platform_goal_targets,
         **_kwargs,
@@ -523,6 +684,7 @@ def test_protected_platform_goal_assets_dir_success_marks_release_asset_provenan
                 "assets_dir": assets_dir,
                 "matrix": matrix,
                 "tag": tag,
+                "repository": repository,
                 "same_registry": evidence_registry is registry,
                 "require_platform_goal_targets": require_platform_goal_targets,
             }
@@ -537,6 +699,7 @@ def test_protected_platform_goal_assets_dir_success_marks_release_asset_provenan
         release_tag="v1.0.2",
         require_complete=True,
         assets_dir=tmp_path,
+        repository="example/remote-ops-workspace",
     )
 
     assert errors == []
@@ -545,6 +708,7 @@ def test_protected_platform_goal_assets_dir_success_marks_release_asset_provenan
             "assets_dir": tmp_path,
             "matrix": {"matrix": "sentinel"},
             "tag": "v1.0.2",
+            "repository": "example/remote-ops-workspace",
             "same_registry": True,
             "require_platform_goal_targets": True,
         }
@@ -559,6 +723,34 @@ def test_protected_platform_goal_assets_dir_success_marks_release_asset_provenan
     assert goal["release_asset_validation_errors"] == []
     assert goal["release_assets_dir"] == str(tmp_path)
     assert "release asset provenance: complete" in checker.format_goal_scope(goal)
+
+
+def test_protected_platform_goal_rejects_non_path_assets_dir_before_release_check(
+    monkeypatch,
+) -> None:
+    checker = _load_protected_goal_checker()
+
+    def fail_release_asset_check(*_args, **_kwargs):
+        raise AssertionError("release asset checker must not run for non-Path assets_dir")
+
+    monkeypatch.setattr(checker, "check_release_assets", fail_release_asset_check)
+
+    errors, goal = checker.check_protected_platform_goal(
+        registry=_complete_registry(),
+        release_tag="v1.0.2",
+        require_complete=True,
+        assets_dir=True,
+        repository="example/remote-ops-workspace",
+    )
+
+    assert errors == ["release assets directory path must be a pathlib.Path, got True"]
+    assert goal["complete"] is False
+    assert goal["record_complete"] is True
+    assert goal["release_backed_complete"] is False
+    assert goal["status"] == "release-assets-invalid"
+    assert goal["release_asset_provenance_complete"] is False
+    assert goal["release_asset_validation_errors"] == errors
+    assert goal["release_assets_dir"] == ""
 
 
 def test_protected_platform_goal_reports_release_scoped_completion() -> None:
@@ -604,11 +796,13 @@ def test_protected_platform_goal_reports_release_scoped_completion() -> None:
     assert (
         "pre-release import dry-run: python scripts/import_platform_evidence_artifacts.py "
         "--release-tag v1.0.2 --require-goal-targets "
-        "--out-dir <release-assets-dir> --dry-run --verify-source-run"
+        "--out-dir <release-assets-dir> --dry-run --verify-source-run "
+        "--repository <owner>/<repo>"
     ) in human_scope
     assert (
         "release asset provenance gate: python scripts/check_protected_platform_goal.py "
-        "--release-tag v1.0.2 --require-complete --assets-dir <release-assets-dir>"
+        "--release-tag v1.0.2 --require-complete --assets-dir <release-assets-dir> "
+        "--repository example/remote-ops-workspace"
     ) in human_scope
     assert (
         "release-backed completion: pending release asset validation with --assets-dir"
@@ -866,6 +1060,45 @@ def test_protected_platform_goal_rejects_reserved_registry_path() -> None:
     assert errors == [
         "accepted evidence registry must not point inside reserved workspace directory "
         f"'.github': {registry}"
+    ]
+
+
+def test_protected_platform_goal_rejects_non_path_registry_argument() -> None:
+    checker = _load_protected_goal_checker()
+    args = checker.parse_args(["--release-tag", "v1.0.2"])
+    args.registry = "configs/platform_verified_evidence.json"
+
+    errors = checker.strict_completion_arg_errors(args)
+
+    assert errors == [
+        "accepted evidence registry path must be a pathlib.Path, "
+        "got 'configs/platform_verified_evidence.json'"
+    ]
+
+
+def test_protected_platform_goal_path_helpers_reject_non_path_args() -> None:
+    checker = _load_protected_goal_checker()
+
+    assert checker.check_registry_path("configs/platform_verified_evidence.json") == [
+        "accepted evidence registry path must be a pathlib.Path, "
+        "got 'configs/platform_verified_evidence.json'"
+    ]
+    assert checker.check_assets_dir_path("release-assets") == [
+        "release assets directory path must be a pathlib.Path, got 'release-assets'"
+    ]
+    assert checker.check_path_parent_symlinks(
+        "configs/platform_verified_evidence.json",
+        "accepted evidence registry",
+    ) == [
+        "accepted evidence registry path must be a pathlib.Path, "
+        "got 'configs/platform_verified_evidence.json'"
+    ]
+    assert checker.check_path_not_reserved_workspace_root(
+        "configs/platform_verified_evidence.json",
+        "accepted evidence registry",
+    ) == [
+        "accepted evidence registry path must be a pathlib.Path, "
+        "got 'configs/platform_verified_evidence.json'"
     ]
 
 

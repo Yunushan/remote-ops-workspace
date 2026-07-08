@@ -476,10 +476,13 @@ def test_xp_native_evidence_bundle_source_maps_do_not_coerce_malformed_smoke_fie
     smoke_dir.mkdir()
     smoke_file = smoke_dir / "cli_launch.txt"
     smoke_file.write_text("cli smoke proof\n", encoding="utf-8")
+    escaped_smoke_file = tmp_path / "escape.txt"
+    escaped_smoke_file.write_text("escaped smoke proof\n", encoding="utf-8")
     evidence_data = {
         "smoke_results": [
             {"id": True, "evidence_file": "xp-smoke-evidence/coerced-id.txt"},
             {"id": "coerced_file", "evidence_file": True},
+            {"id": "escape_file", "evidence_file": "../escape.txt"},
             {"id": "missing_file", "evidence_file": "xp-smoke-evidence/missing.txt"},
             {"id": "cli_launch", "evidence_file": "xp-smoke-evidence/cli_launch.txt"},
         ]
@@ -508,6 +511,7 @@ def test_xp_native_evidence_bundle_source_maps_do_not_coerce_malformed_smoke_fie
         }
     }
     assert "True" not in json.dumps(sources)
+    assert "../escape.txt" not in json.dumps(sources)
 
 
 def test_xp_native_evidence_bundle_rejects_symlinked_input_parent(
@@ -635,6 +639,57 @@ def test_xp_native_evidence_bundle_rejects_missing_artifact_directory_before_has
     )
 
     assert f"artifact directory missing: {missing_assets}" in errors
+
+
+def test_xp_native_evidence_bundle_rejects_non_path_proof_inputs() -> None:
+    bundler = _load_bundle_script()
+
+    errors = bundler.make_xp_native_evidence_bundle(
+        target="windows-xp-native-x86",
+        evidence=True,
+        candidate_record="platform-verified-evidence-windows-xp-native-x86.json",
+        assets_dir=False,
+        evidence_dir=123,
+        out_dir="bundle",
+    )
+
+    assert errors == [
+        "XP native evidence file path must be a pathlib.Path, got True",
+        "candidate evidence record path must be a pathlib.Path, "
+        "got 'platform-verified-evidence-windows-xp-native-x86.json'",
+        "XP native artifact directory path must be a pathlib.Path, got False",
+        "XP native evidence bundle output directory path must be a pathlib.Path, got 'bundle'",
+        "XP evidence directory path must be a pathlib.Path, got 123",
+    ]
+
+
+def test_xp_native_evidence_bundle_path_helpers_reject_non_path_values() -> None:
+    bundler = _load_bundle_script()
+
+    assert bundler.check_path_parent_symlinks(True, "XP evidence") == [
+        "XP evidence path must be a pathlib.Path, got True"
+    ]
+    assert bundler.check_directory_path_hint("bundle", "output directory") == [
+        "output directory path must be a pathlib.Path, got 'bundle'"
+    ]
+    assert bundler.check_path_not_reserved_workspace_root(False, "artifact directory") == [
+        "artifact directory path must be a pathlib.Path, got False"
+    ]
+    assert bundler.check_target_release_path_segments(
+        "windows-xp-native-x86",
+        "v1.0.2",
+        0,
+        label="XP native evidence bundle output directory",
+    ) == [
+        "XP native evidence bundle output directory path must be a pathlib.Path, got 0"
+    ]
+    assert bundler.check_bundle_source_file(True, "XP evidence source file") == [
+        "XP evidence source file path must be a pathlib.Path, got True"
+    ]
+    assert bundler.prepare_output_paths(out_dir=True, outputs=("bundle.zip",), force=True) == [
+        "XP native evidence bundle output directory path must be a pathlib.Path, got True",
+        "XP native evidence bundle output file path must be a pathlib.Path, got 'bundle.zip'",
+    ]
 
 
 def test_xp_native_evidence_bundle_rejects_file_shaped_directory_inputs(

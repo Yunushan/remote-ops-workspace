@@ -37,7 +37,7 @@ Release integrity rules:
   against the tag being built before build minutes are spent.
 - Before tagging or rerunning a protected-platform promotion, run the
   pre-release protected-platform import dry-run
-  `python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir <release-assets-dir> --dry-run --verify-source-run`.
+  `python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir <release-assets-dir> --dry-run --verify-source-run --repository <owner>/<repo>`.
   It proves the accepted records for Linux i386, Linux armhf and Windows XP
   native-host targets are importable from exact successful same-source
   workflow runs at the accepted run id, attempt, workflow path and source SHA,
@@ -57,12 +57,14 @@ Release integrity rules:
   wrong-commit protected-platform evidence stops the release before new build
   artifacts are produced.
 - The publish job runs
-  `python scripts/check_protected_platform_goal.py --release-tag <tag> --require-complete --assets-dir release-assets`
+  `python scripts/check_protected_platform_goal.py --release-tag <tag> --require-complete --assets-dir release-assets --repository <owner>/<repo>`
   and then
-  `python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --require-platform-goal-targets`
+  `python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --repository <owner>/<repo> --require-platform-goal-targets`
   after downloading workflow artifacts and before uploading the GitHub release.
   The first command keeps the protected parity gate bound to the publish-ready
-  release asset directory; the second verifies the full release asset contract.
+  release asset directory; the second verifies the full release asset contract
+  and binds accepted protected-platform release URLs to the publishing
+  repository.
   Static readiness JSON does not download release assets and therefore keeps
   `release_asset_provenance_complete=false`; only the asset-backed protected
   goal gate can flip that proof state after finalized records, review bundles
@@ -70,7 +72,7 @@ Release integrity rules:
   `release_backed_complete` so records-only proof is not treated as published
   release-byte proof.
   The protected-platform asset job first runs
-  `python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run`
+  `python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run --repository <owner>/<repo>`
   to import only same-tag, same-repository, workflow-file, source-head and
   run-attempt-bound accepted Linux i386, Linux armhf and Windows XP native-host
   artifacts from verified exact evidence workflow runs whose artifact inventory

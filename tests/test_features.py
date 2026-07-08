@@ -274,7 +274,15 @@ def test_platform_verified_readiness_tracks_partial_targets() -> None:
     assert goal["release_import_dry_run_command"] == (
         "python scripts/import_platform_evidence_artifacts.py "
         "--release-tag v<project.version> --require-goal-targets "
-        "--out-dir <release-assets-dir> --dry-run --verify-source-run"
+        "--out-dir <release-assets-dir> --dry-run --verify-source-run "
+        "--repository <owner>/<repo>"
+    )
+    assert goal["remote_release_evidence_audit_command"] == (
+        "python scripts/check_platform_release_evidence_remote.py "
+        "--repository <owner>/<repo> --release-tag v<project.version> "
+        "--require-goal-targets --require-source-runs "
+        "--require-source-artifact-bytes --require-final-record-bytes "
+        "--require-release-asset-bytes --require-tag-source-head"
     )
     assert goal["missing_targets"] == [
         "linux-i386",
@@ -570,9 +578,17 @@ def test_platform_verified_readiness_goal_parity_completes_with_all_accepted_evi
     assert goal["release_backed_complete"] is False
     assert goal["completion_requires_release_asset_provenance"] is True
     assert goal["completion_evidence"] == "accepted-records-only"
+    assert goal["remote_release_evidence_audit_command"] == (
+        "python scripts/check_platform_release_evidence_remote.py "
+        "--repository example/remote-ops-workspace --release-tag v1.0.2 "
+        "--require-goal-targets --require-source-runs "
+        "--require-source-artifact-bytes --require-final-record-bytes "
+        "--require-release-asset-bytes --require-tag-source-head"
+    )
     assert goal["release_asset_provenance_command"] == (
         "python scripts/check_protected_platform_goal.py "
-        "--release-tag v1.0.2 --require-complete --assets-dir <release-assets-dir>"
+        "--release-tag v1.0.2 --require-complete --assets-dir <release-assets-dir> "
+        "--repository example/remote-ops-workspace"
     )
     assert goal["release_consistent"] is True
     assert goal["release_repository_consistent"] is True
@@ -1754,6 +1770,7 @@ def test_platform_verified_readiness_accepts_scoped_linux_local_preflight_root()
     record["local_evidence_preflight_command"] = (
         "python scripts/check_platform_goal_local_evidence.py --root platform-evidence-staging "
         f"--release-tag v1.0.2 --target {target} --assets-dir {assets_dir} "
+        "--repository example/remote-ops-workspace "
         f"--linux-builder-evidence {builder} "
         f"--linux-smoke-evidence {smoke} "
         "--linux-workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
@@ -3045,6 +3062,7 @@ def _linux_accepted_evidence(target: str) -> dict[str, object]:
         "local_evidence_preflight_command": (
             "python scripts/check_platform_goal_local_evidence.py --root . "
             f"--release-tag v1.0.2 --target {target} --assets-dir {assets_dir} "
+            "--repository example/remote-ops-workspace "
             f"--linux-builder-evidence evidence/{target}/v1.0.2/builder-identity-{target}.json "
             f"--linux-smoke-evidence evidence/{target}/v1.0.2/native-smoke-{target}.log "
             "--linux-workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
@@ -3129,6 +3147,7 @@ def _xp_accepted_evidence(target: str) -> dict[str, object]:
         "local_evidence_preflight_command": (
             "python scripts/check_platform_goal_local_evidence.py --root . "
             f"--release-tag v1.0.2 --target {target} --assets-dir {assets_dir} "
+            "--repository example/remote-ops-workspace "
             f"--xp-evidence {evidence_file} --xp-evidence-dir {evidence_dir} "
             "--xp-source-workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 "
             f"--xp-source-head-sha {'a' * 40} "

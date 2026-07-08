@@ -109,6 +109,7 @@ jobs:
             --release-tag "${{ inputs.release_tag }}" \
             --target linux-i386 \
             --assets-dir platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/artifacts \
+            --repository "${{ github.repository }}" \
             --linux-builder-evidence platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/builder-identity-linux-i386.json \
             --linux-smoke-evidence platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/native-smoke-linux-i386.log \
             --linux-workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
@@ -247,6 +248,7 @@ jobs:
             --release-tag "${{ inputs.release_tag }}" \
             --target linux-armhf \
             --assets-dir platform-evidence-staging/linux-armhf/${{ inputs.release_tag }}/artifacts \
+            --repository "${{ github.repository }}" \
             --linux-builder-evidence platform-evidence-staging/linux-armhf/${{ inputs.release_tag }}/builder-identity-linux-armhf.json \
             --linux-smoke-evidence platform-evidence-staging/linux-armhf/${{ inputs.release_tag }}/native-smoke-linux-armhf.log \
             --linux-workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \

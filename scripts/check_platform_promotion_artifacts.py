@@ -135,7 +135,7 @@ def check_contract(promotion: dict[str, Any]) -> list[str]:
 def check_platform_promotion_artifacts(
     *,
     target: str,
-    assets_dir: Path,
+    assets_dir: object,
     tag: str | None = None,
     strict: bool = False,
     promotion: dict[str, Any] | None = None,
@@ -149,20 +149,24 @@ def check_platform_promotion_artifacts(
     version = version_from_tag(tag or f"v{read_project_version()}", errors)
     if errors:
         return errors
-    hint_errors = check_directory_path_hint(assets_dir, f"{target} artifact directory")
+    path_errors, assets_path = path_arg_value(assets_dir, f"{target} artifact directory")
+    if path_errors:
+        return path_errors
+    assert assets_path is not None
+    hint_errors = check_directory_path_hint(assets_path, f"{target} artifact directory")
     if hint_errors:
         return hint_errors
-    reserved_errors = check_path_not_reserved_workspace_root(assets_dir, f"{target} artifact directory")
+    reserved_errors = check_path_not_reserved_workspace_root(assets_path, f"{target} artifact directory")
     if reserved_errors:
         return reserved_errors
-    if assets_dir.is_symlink():
-        return [f"{target} artifact directory must not be a symlink: {assets_dir}"]
-    parent_errors = check_path_parent_symlinks(assets_dir, f"{target} artifact directory")
+    if assets_path.is_symlink():
+        return [f"{target} artifact directory must not be a symlink: {assets_path}"]
+    parent_errors = check_path_parent_symlinks(assets_path, f"{target} artifact directory")
     if parent_errors:
         return parent_errors
-    root = assets_dir.resolve()
+    root = assets_path.resolve()
     if not root.is_dir():
-        return [f"artifact directory missing: {assets_dir}"]
+        return [f"artifact directory missing: {assets_path}"]
     entries_in_root = list(root.iterdir())
     entry_name_collisions = case_insensitive_name_collisions({path.name for path in entries_in_root})
     if entry_name_collisions:
@@ -198,56 +202,78 @@ def check_platform_promotion_artifacts(
     return errors
 
 
-def check_artifact_format(target: str, path: Path) -> list[str]:
-    expected_signatures = signatures_for(path.name)
+def path_arg_value(raw_path: object, label: str) -> tuple[list[str], Path | None]:
+    if not isinstance(raw_path, Path):
+        return [f"{label} path must be a pathlib.Path, got {raw_path!r}"], None
+    return [], raw_path
+
+
+def check_artifact_format(target: str, path: object) -> list[str]:
+    path_errors, path_value = path_arg_value(path, f"{target} artifact")
+    if path_errors:
+        return path_errors
+    assert path_value is not None
+    expected_signatures = signatures_for(path_value.name)
     if not expected_signatures:
         return []
     max_signature = max(len(signature) for signature in expected_signatures)
     try:
-        with path.open("rb") as handle:
+        with path_value.open("rb") as handle:
             header = handle.read(max_signature)
     except OSError as exc:
-        return [f"{target} artifact cannot be read for format validation: {path.name}: {exc}"]
+        return [f"{target} artifact cannot be read for format validation: {path_value.name}: {exc}"]
     if any(header.startswith(signature) for signature in expected_signatures):
-        return check_archive_structure(target, path)
+        return check_archive_structure(target, path_value)
     expected_hex = ", ".join(signature.hex() for signature in expected_signatures)
-    return [f"{target} artifact has invalid file signature for {path.name}; expected one of {expected_hex}"]
+    return [f"{target} artifact has invalid file signature for {path_value.name}; expected one of {expected_hex}"]
 
 
-def check_archive_structure(target: str, path: Path) -> list[str]:
-    if path.name.endswith(".zip"):
-        return check_zip_structure(target, path)
-    if path.name.endswith(".tar.gz"):
-        return check_tar_gz_structure(target, path)
+def check_archive_structure(target: str, path: object) -> list[str]:
+    path_errors, path_value = path_arg_value(path, f"{target} archive artifact")
+    if path_errors:
+        return path_errors
+    assert path_value is not None
+    if path_value.name.endswith(".zip"):
+        return check_zip_structure(target, path_value)
+    if path_value.name.endswith(".tar.gz"):
+        return check_tar_gz_structure(target, path_value)
     return []
 
 
-def check_zip_structure(target: str, path: Path) -> list[str]:
+def check_zip_structure(target: str, path: object) -> list[str]:
+    path_errors, path_value = path_arg_value(path, f"{target} ZIP artifact")
+    if path_errors:
+        return path_errors
+    assert path_value is not None
     try:
-        with zipfile.ZipFile(path) as archive:
+        with zipfile.ZipFile(path_value) as archive:
             infos = archive.infolist()
             entries = [item for item in infos if not item.is_dir()]
     except (OSError, zipfile.BadZipFile) as exc:
-        return [f"{target} ZIP artifact is not a readable archive: {path.name}: {exc}"]
-    errors = check_zip_entry_safety(target, path.name, infos)
+        return [f"{target} ZIP artifact is not a readable archive: {path_value.name}: {exc}"]
+    errors = check_zip_entry_safety(target, path_value.name, infos)
     if not entries:
-        errors.append(f"{target} ZIP artifact must contain at least one file: {path.name}")
+        errors.append(f"{target} ZIP artifact must contain at least one file: {path_value.name}")
     empty_entries = sorted(item.filename for item in entries if item.file_size <= 0)
     if empty_entries:
         errors.append(f"{target} ZIP artifact contains empty files: {empty_entries}")
     return errors
 
 
-def check_tar_gz_structure(target: str, path: Path) -> list[str]:
+def check_tar_gz_structure(target: str, path: object) -> list[str]:
+    path_errors, path_value = path_arg_value(path, f"{target} tar.gz artifact")
+    if path_errors:
+        return path_errors
+    assert path_value is not None
     try:
-        with tarfile.open(path, mode="r:gz") as archive:
+        with tarfile.open(path_value, mode="r:gz") as archive:
             members = archive.getmembers()
             entries = [item for item in members if item.isfile()]
     except (OSError, tarfile.TarError) as exc:
-        return [f"{target} tar.gz artifact is not a readable archive: {path.name}: {exc}"]
-    errors = check_tar_entry_safety(target, path.name, members)
+        return [f"{target} tar.gz artifact is not a readable archive: {path_value.name}: {exc}"]
+    errors = check_tar_entry_safety(target, path_value.name, members)
     if not entries:
-        errors.append(f"{target} tar.gz artifact must contain at least one file: {path.name}")
+        errors.append(f"{target} tar.gz artifact must contain at least one file: {path_value.name}")
     empty_entries = sorted(item.name for item in entries if item.size <= 0)
     if empty_entries:
         errors.append(f"{target} tar.gz artifact contains empty files: {empty_entries}")
@@ -342,8 +368,12 @@ def is_allowed_platform_parent_symlink(parent: Path) -> bool:
         return False
 
 
-def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
-    check_path = path if path.is_absolute() else Path.cwd() / path
+def check_path_parent_symlinks(path: object, label: str) -> list[str]:
+    path_errors, path_value = path_arg_value(path, label)
+    if path_errors:
+        return path_errors
+    assert path_value is not None
+    check_path = path_value if path_value.is_absolute() else Path.cwd() / path_value
     for parent in reversed(check_path.parents):
         if parent == Path("."):
             continue
@@ -352,14 +382,22 @@ def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
     return []
 
 
-def check_directory_path_hint(path: Path, label: str) -> list[str]:
-    raw_path = path.as_posix()
+def check_directory_path_hint(path: object, label: str) -> list[str]:
+    path_errors, path_value = path_arg_value(path, label)
+    if path_errors:
+        return path_errors
+    assert path_value is not None
+    raw_path = path_value.as_posix()
     if directory_path_has_file_suffix(raw_path):
         return [f"{label} must be a directory path, got {raw_path!r}"]
     return []
 
 
-def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
+def check_path_not_reserved_workspace_root(path: object, label: str) -> list[str]:
+    path_errors, path_value = path_arg_value(path, label)
+    if path_errors:
+        return path_errors
+    assert path_value is not None
     roots: list[Path] = [Path.cwd(), ROOT]
     seen_roots: set[Path] = set()
     for root in roots:
@@ -367,7 +405,9 @@ def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
         if root_resolved in seen_roots:
             continue
         seen_roots.add(root_resolved)
-        path_resolved = (path if path.is_absolute() else root_resolved / path).resolve(strict=False)
+        path_resolved = (
+            path_value if path_value.is_absolute() else root_resolved / path_value
+        ).resolve(strict=False)
         try:
             relative = path_resolved.relative_to(root_resolved)
         except ValueError:
@@ -379,7 +419,7 @@ def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
         if reserved_root in RESERVED_WORKSPACE_ROOTS:
             return [
                 f"{label} must not point inside reserved workspace directory "
-                f"{reserved_root!r}: {path}"
+                f"{reserved_root!r}: {path_value}"
             ]
     return []
 
@@ -452,12 +492,16 @@ def signatures_for(filename: str) -> tuple[bytes, ...]:
     return ()
 
 
-def check_checksum_sidecar(target: str, root: Path, expected: set[str]) -> list[str]:
+def check_checksum_sidecar(target: str, root: object, expected: set[str]) -> list[str]:
+    path_errors, root_path = path_arg_value(root, f"{target} artifact directory")
+    if path_errors:
+        return path_errors
+    assert root_path is not None
     errors: list[str] = []
     sidecars = sorted(item for item in expected if item.endswith(CHECKSUM_SUFFIX))
     if len(sidecars) != 1:
         return [f"{target} must declare exactly one checksum sidecar, got {sidecars}"]
-    sidecar = root / sidecars[0]
+    sidecar = root_path / sidecars[0]
     if not sidecar.is_file():
         return errors
     try:
@@ -487,7 +531,7 @@ def check_checksum_sidecar(target: str, root: Path, expected: set[str]) -> list[
         if filename not in expected_references:
             errors.append(f"{target} checksum sidecar references unexpected file: {filename}")
             continue
-        path = root / filename
+        path = root_path / filename
         if not path.is_file():
             errors.append(f"{target} checksum sidecar references missing file: {filename}")
             continue
@@ -503,11 +547,15 @@ def check_checksum_sidecar(target: str, root: Path, expected: set[str]) -> list[
     return errors
 
 
-def check_native_manifest(target: str, root: Path, expected: set[str]) -> list[str]:
+def check_native_manifest(target: str, root: object, expected: set[str]) -> list[str]:
+    path_errors, root_path = path_arg_value(root, f"{target} artifact directory")
+    if path_errors:
+        return path_errors
+    assert root_path is not None
     manifests = sorted(item for item in expected if item.endswith(MANIFEST_SUFFIX))
     if len(manifests) != 1:
         return [f"{target} must declare exactly one native manifest, got {manifests}"]
-    manifest_path = root / manifests[0]
+    manifest_path = root_path / manifests[0]
     if not manifest_path.is_file():
         return []
     try:
@@ -557,7 +605,7 @@ def check_native_manifest(target: str, root: Path, expected: set[str]) -> list[s
 
     for filename in sorted(payload_expected & set(by_name)):
         record = by_name[filename]
-        path = root / filename
+        path = root_path / filename
         if not path.is_file():
             continue
         size = record.get("size_bytes")

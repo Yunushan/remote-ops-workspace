@@ -536,36 +536,52 @@ def check_security_provenance_namespace_contract(contract: dict[str, Any]) -> li
 
 
 def check_xp_native_evidence(
-    evidence_path: Path,
+    evidence_path: object,
     *,
-    assets_dir: Path | None = None,
-    evidence_dir: Path | None = None,
+    assets_dir: object | None = None,
+    evidence_dir: object | None = None,
     contract: dict[str, Any] | None = None,
 ) -> list[str]:
-    contract_data = read_json(CONTRACT_PATH) if contract is None else contract
     errors: list[str] = []
-    evidence_root_input = evidence_dir or evidence_path.parent
-    errors.extend(check_path_not_reserved_workspace_root(evidence_path, "evidence file"))
+    evidence_path_errors, evidence_path_value = path_arg_value(evidence_path, "evidence file")
+    errors.extend(evidence_path_errors)
+    if evidence_dir is not None:
+        evidence_root_errors, evidence_root_input = path_arg_value(evidence_dir, "evidence directory")
+        errors.extend(evidence_root_errors)
+    elif evidence_path_value is not None:
+        evidence_root_input = evidence_path_value.parent
+    else:
+        evidence_root_input = None
+    assets_dir_value: Path | None = None
+    if assets_dir is not None:
+        assets_dir_errors, assets_dir_value = path_arg_value(assets_dir, "XP native artifact directory")
+        errors.extend(assets_dir_errors)
+    if errors:
+        return errors
+    assert evidence_path_value is not None
+    assert evidence_root_input is not None
+    contract_data = read_json(CONTRACT_PATH) if contract is None else contract
+    errors.extend(check_path_not_reserved_workspace_root(evidence_path_value, "evidence file"))
     errors.extend(check_path_not_reserved_workspace_root(evidence_root_input, "evidence directory"))
-    if evidence_path.is_symlink():
-        errors.append(f"evidence file must not be a symlink: {evidence_path}")
+    if evidence_path_value.is_symlink():
+        errors.append(f"evidence file must not be a symlink: {evidence_path_value}")
     if evidence_root_input.is_symlink():
         errors.append(f"evidence directory must not be a symlink: {evidence_root_input}")
     if not errors:
         errors.extend(check_path_parent_symlinks(evidence_root_input, "evidence directory"))
     if not errors:
-        errors.extend(check_evidence_file_location(evidence_path, evidence_root_input))
+        errors.extend(check_evidence_file_location(evidence_path_value, evidence_root_input))
     if errors:
         return errors
-    if not evidence_path.is_file():
-        return [f"evidence file missing: {evidence_path}"]
+    if not evidence_path_value.is_file():
+        return [f"evidence file missing: {evidence_path_value}"]
     try:
-        raw_text = evidence_path.read_text(encoding="utf-8")
+        raw_text = evidence_path_value.read_text(encoding="utf-8")
         evidence = json.loads(raw_text)
     except OSError as exc:
-        return [f"evidence file is not readable JSON: {evidence_path}: {exc}"]
+        return [f"evidence file is not readable JSON: {evidence_path_value}: {exc}"]
     except UnicodeDecodeError:
-        return [f"evidence file must be UTF-8 JSON: {evidence_path}"]
+        return [f"evidence file must be UTF-8 JSON: {evidence_path_value}"]
     except json.JSONDecodeError as exc:
         return [f"evidence file is not valid JSON: {exc}"]
     if not isinstance(evidence, dict):
@@ -615,11 +631,11 @@ def check_xp_native_evidence(
     )
     errors.extend(check_artifact_validation_record(target, evidence.get("artifact_validation"), release_tag))
     errors.extend(check_artifact_names(target, evidence.get("artifacts"), target_contract, release_tag))
-    if assets_dir is not None and release_tag:
+    if assets_dir_value is not None and release_tag:
         errors.extend(
             check_platform_promotion_artifacts(
                 target=target,
-                assets_dir=assets_dir,
+                assets_dir=assets_dir_value,
                 tag=release_tag,
                 strict=True,
             )
@@ -627,31 +643,45 @@ def check_xp_native_evidence(
     return errors
 
 
-def check_evidence_file_location(evidence_path: Path, evidence_root_input: Path) -> list[str]:
-    if evidence_root_input.exists() and not evidence_root_input.is_dir():
-        return [f"evidence directory must be a directory: {evidence_root_input}"]
-    evidence_root = evidence_root_input.resolve(strict=False)
-    evidence_resolved = evidence_path.resolve(strict=False)
+def path_arg_value(raw_path: object, label: str) -> tuple[list[str], Path | None]:
+    if not isinstance(raw_path, Path):
+        return [f"{label} path must be a pathlib.Path, got {raw_path!r}"], None
+    return [], raw_path
+
+
+def check_evidence_file_location(evidence_path: object, evidence_root_input: object) -> list[str]:
     errors: list[str] = []
+    evidence_path_errors, evidence_path_value = path_arg_value(evidence_path, "evidence file")
+    errors.extend(evidence_path_errors)
+    evidence_root_errors, evidence_root_value = path_arg_value(evidence_root_input, "evidence directory")
+    errors.extend(evidence_root_errors)
+    if errors:
+        return errors
+    assert evidence_path_value is not None
+    assert evidence_root_value is not None
+    if evidence_root_value.exists() and not evidence_root_value.is_dir():
+        return [f"evidence directory must be a directory: {evidence_root_value}"]
+    evidence_root = evidence_root_value.resolve(strict=False)
+    evidence_resolved = evidence_path_value.resolve(strict=False)
     try:
         evidence_resolved.relative_to(evidence_root)
     except ValueError:
-        errors.append(f"evidence file must stay inside evidence directory: {evidence_path}")
+        errors.append(f"evidence file must stay inside evidence directory: {evidence_path_value}")
 
     relative_path: Path | None = None
     try:
-        relative_path = evidence_path.relative_to(evidence_root_input)
+        relative_path = evidence_path_value.relative_to(evidence_root_value)
     except ValueError:
         try:
             relative_path = evidence_resolved.relative_to(evidence_root)
         except ValueError:
             relative_path = None
     if relative_path is not None:
-        symlink = first_symlink_in_relative_path(evidence_root_input, relative_path)
+        symlink = first_symlink_in_relative_path(evidence_root_value, relative_path)
         if symlink is not None:
             errors.append(
                 "evidence file path must not contain symlinks: "
-                f"{display_relative_path(evidence_root_input, symlink)}"
+                f"{display_relative_path(evidence_root_value, symlink)}"
             )
     return errors
 
@@ -670,17 +700,26 @@ def check_release_source(target: str, raw_source: Any) -> list[str]:
     workflow = raw_source.get("workflow")
     if not isinstance(workflow, str):
         errors.append(f"{target} evidence release_source.workflow must be a string")
-    elif workflow.strip() != XP_RELEASE_SOURCE_WORKFLOW:
+    elif workflow != workflow.strip():
+        errors.append(f"{target} evidence release_source.workflow must not include surrounding whitespace")
+    elif workflow != XP_RELEASE_SOURCE_WORKFLOW:
         errors.append(f"{target} evidence release_source.workflow must be {XP_RELEASE_SOURCE_WORKFLOW}")
     workflow_run_url = raw_source.get("workflow_run_url")
     if not isinstance(workflow_run_url, str):
         errors.append(f"{target} evidence release_source.workflow_run_url must be a string")
-    elif not GITHUB_ACTIONS_RUN_RE.fullmatch(workflow_run_url.strip().rstrip("/")):
+    elif workflow_run_url != workflow_run_url.strip() or workflow_run_url != workflow_run_url.rstrip("/"):
+        errors.append(
+            f"{target} evidence release_source.workflow_run_url must be canonical without "
+            "surrounding whitespace or trailing slash"
+        )
+    elif not GITHUB_ACTIONS_RUN_RE.fullmatch(workflow_run_url):
         errors.append(f"{target} evidence release_source.workflow_run_url must be a GitHub Actions run URL")
     head_sha = raw_source.get("head_sha")
     if not isinstance(head_sha, str):
         errors.append(f"{target} evidence release_source.head_sha must be a string")
-    elif not RELEASE_SOURCE_HEAD_SHA_RE.fullmatch(head_sha.strip()):
+    elif head_sha != head_sha.strip():
+        errors.append(f"{target} evidence release_source.head_sha must not include surrounding whitespace")
+    elif not RELEASE_SOURCE_HEAD_SHA_RE.fullmatch(head_sha):
         errors.append(f"{target} evidence release_source.head_sha must be a 40-character lowercase Git SHA")
     run_attempt = raw_source.get("run_attempt")
     if not isinstance(run_attempt, int) or isinstance(run_attempt, bool) or run_attempt < 1:
@@ -1167,7 +1206,7 @@ def check_smoke_command_binding(
         expected_values["--evidence-run-id"] = str(host_identity.get("evidence_run_id", ""))
         expected_values["--observed-at-utc"] = str(host_identity.get("observed_at_utc", ""))
     if isinstance(release_source, dict):
-        expected_values["--source-workflow-run-url"] = str(release_source.get("workflow_run_url", "")).rstrip("/")
+        expected_values["--source-workflow-run-url"] = str(release_source.get("workflow_run_url", ""))
         expected_values["--source-head-sha"] = str(release_source.get("head_sha", ""))
         expected_values["--source-run-attempt"] = str(release_source.get("run_attempt", ""))
     if isinstance(os_identity, dict):
@@ -1217,7 +1256,7 @@ def check_smoke_evidence_file(
     release_tag: str,
     smoke_id: str,
     item: dict[str, Any],
-    evidence_root: Path,
+    evidence_root: object,
     contract: dict[str, Any],
     *,
     host_identity: Any,
@@ -1227,6 +1266,10 @@ def check_smoke_evidence_file(
 ) -> list[str]:
     if contract.get("required_smoke_evidence_file") is not True:
         return []
+    path_errors, evidence_root_value = path_arg_value(evidence_root, f"{target} smoke evidence directory")
+    if path_errors:
+        return path_errors
+    assert evidence_root_value is not None
     raw_file = item.get("evidence_file")
     if not isinstance(raw_file, str):
         return [f"{target} smoke result {smoke_id} evidence_file must be a string"]
@@ -1238,15 +1281,15 @@ def check_smoke_evidence_file(
     evidence_file = Path(raw_file)
     if evidence_file.is_absolute():
         return [f"{target} smoke result {smoke_id} evidence_file must be relative"]
-    symlink = first_symlink_in_relative_path(evidence_root, evidence_file)
+    symlink = first_symlink_in_relative_path(evidence_root_value, evidence_file)
     if symlink is not None:
         return [
             f"{target} smoke result {smoke_id} evidence_file path must not contain symlinks: "
-            f"{display_relative_path(evidence_root, symlink)}"
+            f"{display_relative_path(evidence_root_value, symlink)}"
         ]
-    resolved = (evidence_root / evidence_file).resolve()
+    resolved = (evidence_root_value / evidence_file).resolve()
     try:
-        resolved.relative_to(evidence_root)
+        resolved.relative_to(evidence_root_value)
     except ValueError:
         return [f"{target} smoke result {smoke_id} evidence_file must stay inside evidence directory"]
     if not resolved.is_file():
@@ -1294,8 +1337,12 @@ def is_allowed_platform_parent_symlink(parent: Path) -> bool:
         return False
 
 
-def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
-    check_path = path if path.is_absolute() else Path.cwd() / path
+def check_path_parent_symlinks(path: object, label: str) -> list[str]:
+    path_errors, path_value = path_arg_value(path, label)
+    if path_errors:
+        return path_errors
+    assert path_value is not None
+    check_path = path_value if path_value.is_absolute() else Path.cwd() / path_value
     for parent in reversed(check_path.parents):
         if parent == Path("."):
             continue
@@ -1304,7 +1351,11 @@ def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
     return []
 
 
-def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
+def check_path_not_reserved_workspace_root(path: object, label: str) -> list[str]:
+    path_errors, path_value = path_arg_value(path, label)
+    if path_errors:
+        return path_errors
+    assert path_value is not None
     roots: list[Path] = [Path.cwd(), ROOT]
     seen_roots: set[Path] = set()
     for root in roots:
@@ -1312,7 +1363,9 @@ def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
         if root_resolved in seen_roots:
             continue
         seen_roots.add(root_resolved)
-        path_resolved = (path if path.is_absolute() else root_resolved / path).resolve(strict=False)
+        path_resolved = (
+            path_value if path_value.is_absolute() else root_resolved / path_value
+        ).resolve(strict=False)
         try:
             relative = path_resolved.relative_to(root_resolved)
         except ValueError:
@@ -1324,7 +1377,7 @@ def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
         if reserved_root in RESERVED_WORKSPACE_ROOTS:
             return [
                 f"{label} must not point inside reserved workspace directory "
-                f"{reserved_root!r}: {path}"
+                f"{reserved_root!r}: {path_value}"
             ]
     return []
 
@@ -1356,7 +1409,7 @@ def check_smoke_evidence_binding(
     host_labels = xp_smoke_line_values(text, "xp smoke host label")
     evidence_run_ids = xp_smoke_line_values(text, "xp smoke evidence run id")
     observed_at_values = xp_smoke_line_values(text, "xp smoke observed at utc")
-    source_workflow_run_urls = [value.rstrip("/") for value in xp_smoke_line_values(text, "xp smoke source workflow run")]
+    source_workflow_run_urls = xp_smoke_line_values(text, "xp smoke source workflow run")
     source_head_shas = xp_smoke_line_values(text, "xp smoke source head sha")
     source_run_attempts = xp_smoke_line_values(text, "xp smoke source run attempt")
     os_names = xp_smoke_line_values(text, "xp smoke os name")
@@ -1408,7 +1461,7 @@ def check_smoke_evidence_binding(
     expected_source_head_sha = ""
     expected_source_run_attempt = ""
     if isinstance(release_source, dict):
-        expected_source_workflow_run_url = str(release_source.get("workflow_run_url", "")).rstrip("/")
+        expected_source_workflow_run_url = str(release_source.get("workflow_run_url", ""))
         expected_source_head_sha = str(release_source.get("head_sha", ""))
         expected_source_run_attempt = str(release_source.get("run_attempt", ""))
     if source_workflow_run_urls != [expected_source_workflow_run_url]:

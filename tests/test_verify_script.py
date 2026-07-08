@@ -142,6 +142,7 @@ def test_verify_can_require_platform_goal_targets(tmp_path: Path) -> None:
         quick=True,
         require_platform_goal_targets=True,
         release_tag="v1.0.3",
+        release_repository="example/remote-ops-workspace",
         platform_review_bundle_dir=bundle_dir,
         release_assets_dir=release_assets_dir,
         row_home=tmp_path,
@@ -184,6 +185,11 @@ def test_verify_can_require_platform_goal_targets(tmp_path: Path) -> None:
     strict_import = next(
         step for step in strict_steps if step.name == "platform evidence artifact import dry-run"
     )
+    remote_strict_import = next(
+        step
+        for step in remote_strict_steps
+        if step.name == "platform evidence artifact import dry-run"
+    )
     strict_bundle = next(
         step for step in strict_steps if step.name == "platform review bundle artifact validation"
     )
@@ -199,7 +205,7 @@ def test_verify_can_require_platform_goal_targets(tmp_path: Path) -> None:
     assert "platform review bundle artifact validation" not in default_names
     assert "platform review bundle artifact validation" in strict_names
     assert "published platform release evidence audit" not in default_names
-    assert "published platform release evidence audit" not in strict_names
+    assert "published platform release evidence audit" in strict_names
     assert "published platform release evidence audit" in remote_strict_names
     assert strict_names.index("platform evidence artifact import dry-run") < strict_names.index(
         "platform review bundle artifact validation"
@@ -233,6 +239,8 @@ def test_verify_can_require_platform_goal_targets(tmp_path: Path) -> None:
         "v1.0.3",
         "--assets-dir",
         str(release_assets_dir),
+        "--repository",
+        "example/remote-ops-workspace",
     ]
     assert strict_import.command[1:] == [
         "scripts/import_platform_evidence_artifacts.py",
@@ -243,14 +251,29 @@ def test_verify_can_require_platform_goal_targets(tmp_path: Path) -> None:
         str(release_assets_dir),
         "--dry-run",
         "--verify-source-run",
+        "--repository",
+        "example/remote-ops-workspace",
     ]
+    assert remote_strict_import.command == strict_import.command
     assert ["--bundle-dir", str(bundle_dir)] == strict_bundle.command[2:4]
     assert "--require-goal-targets" in strict_bundle.command
     assert ["--release-tag", "v1.0.3"] == strict_bundle.command[-3:-1]
     assert strict_bundle.command[-1] == "--require-final-record-assets"
+    assert strict_publish.command == remote_strict_publish.command
     assert ["--assets-dir", str(release_assets_dir)] == strict_publish.command[2:4]
     assert ["--tag", "v1.0.3"] == strict_publish.command[4:6]
-    assert remote_strict_publish.command == strict_publish.command
+    assert ["--repository", "example/remote-ops-workspace"] == strict_publish.command[6:8]
+    assert remote_strict_publish.command == [
+        "python",
+        "scripts/check_release_publish_assets.py",
+        "--assets-dir",
+        str(release_assets_dir),
+        "--tag",
+        "v1.0.3",
+        "--repository",
+        "example/remote-ops-workspace",
+        "--require-platform-goal-targets",
+    ]
     assert remote_audit.command == [
         "python",
         "scripts/check_platform_release_evidence_remote.py",
@@ -310,6 +333,26 @@ def test_verify_rejects_strict_platform_goal_without_review_bundle_dir(tmp_path:
             "--require-platform-goal-targets",
             "--release-tag",
             "v1.0.3",
+            "--release-assets-dir",
+            str(tmp_path / "release-assets"),
+        ]
+    )
+
+    assert result == 2
+
+
+def test_verify_rejects_strict_platform_goal_without_release_repository(tmp_path: Path) -> None:
+    verify = _load_verify_module()
+
+    result = verify.main(
+        [
+            "--quick",
+            "--no-cli-smoke",
+            "--require-platform-goal-targets",
+            "--release-tag",
+            "v1.0.3",
+            "--platform-review-bundle-dir",
+            str(tmp_path / "platform-bundles"),
             "--release-assets-dir",
             str(tmp_path / "release-assets"),
         ]

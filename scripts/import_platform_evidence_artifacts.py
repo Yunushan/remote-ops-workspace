@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -23,6 +24,7 @@ from check_platform_verified_evidence import (  # noqa: E402
     EVIDENCE_PATH,
     GITHUB_ACTIONS_RUN_RE,
     GITHUB_RELEASE_ASSET_RE,
+    GITHUB_REPOSITORY_RE,
     PROTECTED_GOAL_TARGETS,
     RELEASE_SOURCE_HEAD_SHA_RE,
     RESERVED_WORKSPACE_ROOTS,
@@ -91,6 +93,7 @@ def main(argv: list[str] | None = None) -> int:
         dry_run=args.dry_run,
         verify_source_run_metadata=args.verify_source_run,
         release_head_sha=release_head_sha,
+        repository=args.repository,
     )
     if import_errors:
         for error in import_errors:
@@ -137,6 +140,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "required for protected-platform evidence import dry-runs"
         ),
     )
+    parser.add_argument(
+        "--repository",
+        help=(
+            "expected GitHub owner/name repository for accepted release asset URLs "
+            "and recorded source workflow runs"
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -147,6 +157,10 @@ def strict_import_arg_errors(args: argparse.Namespace) -> list[str]:
         "release asset import output directory",
     )
     errors.extend(out_dir_errors)
+    repository_errors, _repository = normalize_expected_repository(
+        getattr(args, "repository", None)
+    )
+    errors.extend(repository_errors)
     requested_targets, target_errors = required_target_values(args.require_target)
     errors.extend(target_errors)
     if not args.dry_run or args.verify_source_run:
@@ -160,6 +174,23 @@ def strict_import_arg_errors(args: argparse.Namespace) -> list[str]:
     if is_protected_import:
         errors.append(REQUIRE_VERIFY_SOURCE_RUN_DRY_RUN_ERROR)
     return errors
+
+
+def normalize_expected_repository(repository: object) -> tuple[list[str], str | None]:
+    if repository is None:
+        return [], None
+    if not isinstance(repository, str):
+        return [
+            f"platform evidence import repository must be a string owner/name value, got {repository!r}"
+        ], None
+    normalized = repository.strip().strip("/")
+    if not normalized:
+        return ["platform evidence import repository must be a non-empty owner/name value"], None
+    if not re.fullmatch(GITHUB_REPOSITORY_RE, normalized):
+        return [
+            f"platform evidence import repository must be a GitHub owner/name value, got {repository!r}"
+        ], None
+    return [], normalized
 
 
 def required_target_values(raw_targets: object) -> tuple[set[str], list[str]]:
@@ -231,10 +262,13 @@ def import_platform_evidence_artifacts(
     dry_run: bool = False,
     verify_source_run_metadata: bool = False,
     release_head_sha: str | None = None,
+    repository: object = None,
 ) -> list[str]:
     errors: list[str] = []
     out_dir_errors, out_dir_path = path_arg_value(out_dir, "release asset import output directory")
     errors.extend(out_dir_errors)
+    repository_errors, expected_repository = normalize_expected_repository(repository)
+    errors.extend(repository_errors)
     if errors:
         return errors
     assert out_dir_path is not None
@@ -266,6 +300,7 @@ def import_platform_evidence_artifacts(
                     dry_run=dry_run,
                     verify_source_run_metadata=verify_source_run_metadata,
                     release_head_sha=release_head_sha,
+                    repository=expected_repository,
                 )
             )
     return errors
@@ -392,10 +427,14 @@ def path_arg_value(raw_path: object, label: str) -> tuple[list[str], Path | None
     return [], raw_path
 
 
-def check_output_directory_empty(out_dir: Path) -> list[str]:
-    if not out_dir.exists():
+def check_output_directory_empty(out_dir: object) -> list[str]:
+    out_dir_errors, out_dir_path = path_arg_value(out_dir, "release asset import output directory")
+    if out_dir_errors:
+        return out_dir_errors
+    assert out_dir_path is not None
+    if not out_dir_path.exists():
         return []
-    entries = sorted(path.name for path in out_dir.iterdir())
+    entries = sorted(path.name for path in out_dir_path.iterdir())
     if entries:
         return [
             "release asset import output directory must be empty before import: "
@@ -413,14 +452,22 @@ def check_github_cli_available() -> list[str]:
     return []
 
 
-def check_directory_path_hint(path: Path, label: str) -> list[str]:
-    raw_path = path.as_posix()
+def check_directory_path_hint(path: object, label: str) -> list[str]:
+    path_errors, path_value = path_arg_value(path, label)
+    if path_errors:
+        return path_errors
+    assert path_value is not None
+    raw_path = path_value.as_posix()
     if directory_path_has_file_suffix(raw_path):
         return [f"{label} must be a directory path, got {raw_path!r}"]
     return []
 
 
-def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
+def check_path_not_reserved_workspace_root(path: object, label: str) -> list[str]:
+    path_errors, path_value = path_arg_value(path, label)
+    if path_errors:
+        return path_errors
+    assert path_value is not None
     roots: list[Path] = [Path.cwd(), ROOT]
     seen_roots: set[Path] = set()
     for root in roots:
@@ -428,7 +475,9 @@ def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
         if root_resolved in seen_roots:
             continue
         seen_roots.add(root_resolved)
-        path_resolved = (path if path.is_absolute() else root_resolved / path).resolve(strict=False)
+        path_resolved = (
+            path_value if path_value.is_absolute() else root_resolved / path_value
+        ).resolve(strict=False)
         try:
             relative = path_resolved.relative_to(root_resolved)
         except ValueError:
@@ -440,7 +489,7 @@ def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
         if reserved_root in RESERVED_WORKSPACE_ROOTS:
             return [
                 f"{label} must not point inside reserved workspace directory "
-                f"{reserved_root!r}: {path}"
+                f"{reserved_root!r}: {path_value}"
             ]
     return []
 
@@ -448,13 +497,26 @@ def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
 def import_record(
     record: dict[str, Any],
     *,
-    out_dir: Path,
-    download_root: Path,
+    out_dir: object,
+    download_root: object,
     dry_run: bool,
     verify_source_run_metadata: bool = False,
     release_head_sha: str | None = None,
+    repository: object = None,
 ) -> list[str]:
     target = import_record_target_label(record)
+    path_errors, out_dir_path = path_arg_value(out_dir, "release asset import output directory")
+    download_root_errors, download_root_path = path_arg_value(
+        download_root,
+        f"{target} release asset import download root",
+    )
+    path_errors.extend(download_root_errors)
+    repository_errors, expected_repository = normalize_expected_repository(repository)
+    path_errors.extend(repository_errors)
+    if path_errors:
+        return path_errors
+    assert out_dir_path is not None
+    assert download_root_path is not None
     source = record.get("release_asset_source")
     if not isinstance(source, dict):
         return [f"{target} release_asset_source must be an object"]
@@ -462,6 +524,11 @@ def import_record(
     raw_run_url = source.get("workflow_run_url", "")
     if isinstance(raw_run_url, str):
         run_url = raw_run_url.rstrip("/")
+        if raw_run_url != run_url or raw_run_url != raw_run_url.strip():
+            field_errors.append(
+                f"{target} release_asset_source.workflow_run_url must be canonical without "
+                "surrounding whitespace or trailing slash"
+            )
     else:
         run_url = ""
         field_errors.append(
@@ -470,6 +537,10 @@ def import_record(
     raw_artifact_name = source.get("artifact_name", "")
     if isinstance(raw_artifact_name, str):
         artifact_name = raw_artifact_name.strip()
+        if raw_artifact_name != artifact_name:
+            field_errors.append(
+                f"{target} release_asset_source.artifact_name must not include surrounding whitespace"
+            )
     else:
         artifact_name = ""
         field_errors.append(
@@ -478,12 +549,18 @@ def import_record(
     raw_release_tag = record.get("release_tag", "")
     if isinstance(raw_release_tag, str):
         release_tag = raw_release_tag.strip()
+        if raw_release_tag != release_tag:
+            field_errors.append(f"{target} release_tag must not include surrounding whitespace")
     else:
         release_tag = ""
         field_errors.append(f"{target} release_tag must be a string, got {raw_release_tag!r}")
     raw_head_sha = source.get("head_sha", "")
     if isinstance(raw_head_sha, str):
         expected_head_sha = raw_head_sha.strip()
+        if raw_head_sha != expected_head_sha:
+            field_errors.append(
+                f"{target} release_asset_source.head_sha must not include surrounding whitespace"
+            )
     else:
         expected_head_sha = ""
         field_errors.append(
@@ -493,6 +570,10 @@ def import_record(
     raw_workflow = source.get("workflow", "")
     if isinstance(raw_workflow, str):
         workflow = raw_workflow.strip()
+        if raw_workflow != workflow:
+            field_errors.append(
+                f"{target} release_asset_source.workflow must not include surrounding whitespace"
+            )
     else:
         workflow = ""
         field_errors.append(
@@ -515,7 +596,11 @@ def import_record(
         return [f"{target} is not a protected platform evidence target"]
     if artifact_name != expected_artifact_name:
         return [f"{target} release_asset_source.artifact_name must be {expected_artifact_name}"]
-    url_errors = check_import_release_url_tags(record, release_tag)
+    url_errors = check_import_release_url_tags(
+        record,
+        release_tag,
+        repository=expected_repository,
+    )
     if url_errors:
         return url_errors
     if not RELEASE_SOURCE_HEAD_SHA_RE.fullmatch(expected_head_sha):
@@ -533,30 +618,35 @@ def import_record(
     )
     if checkout_errors:
         return checkout_errors
-    repository = run_match.group(1)
+    source_repository = run_match.group(1)
+    if expected_repository is not None and source_repository != expected_repository:
+        return [
+            f"{target} release_asset_source.workflow_run_url repository must match "
+            f"release repository {expected_repository}, got {source_repository}"
+        ]
     release_repositories = release_repositories_for_import_record(record)
     if not release_repositories:
         return [f"{target} release asset import must have GitHub release asset URLs"]
-    if release_repositories != {repository}:
+    if release_repositories != {source_repository}:
         return [
             f"{target} release_asset_source.workflow_run_url repository must match "
-            f"release asset repositories {sorted(release_repositories)}, got {repository}"
+            f"release asset repositories {sorted(release_repositories)}, got {source_repository}"
         ]
     run_id = run_url.rstrip("/").rsplit("/", 1)[-1]
-    destination = download_root / target
+    destination = download_root_path / target
     metadata_command = source_run_attempt_metadata_command(
         run_id,
-        repository,
+        source_repository,
         expected_run_attempt,
     )
-    artifacts_command = source_run_artifacts_command(run_id, repository)
+    artifacts_command = source_run_artifacts_command(run_id, source_repository)
     command = [
         "gh",
         "run",
         "download",
         run_id,
         "--repo",
-        repository,
+        source_repository,
         "--name",
         artifact_name,
         "--dir",
@@ -588,7 +678,7 @@ def import_record(
                 target,
                 artifacts_command,
                 artifact_name=artifact_name,
-                expected_repository=repository,
+                expected_repository=source_repository,
                 expected_run_id=run_id,
                 expected_head_sha=expected_head_sha,
                 expected_repository_id=source_run_observed.get("repository_id"),
@@ -616,7 +706,7 @@ def import_record(
             target,
             artifacts_command,
             artifact_name=artifact_name,
-            expected_repository=repository,
+            expected_repository=source_repository,
             expected_run_id=run_id,
             expected_head_sha=expected_head_sha,
             expected_repository_id=source_run_observed.get("repository_id"),
@@ -639,15 +729,20 @@ def import_record(
     errors = validate_source_artifact(record, source_root=destination)
     if errors:
         return errors
-    errors = copy_expected_files(record, source_root=destination, out_dir=out_dir)
+    errors = copy_expected_files(record, source_root=destination, out_dir=out_dir_path)
     if not errors:
-        errors.extend(check_imported_hashes(record, out_dir=out_dir))
+        errors.extend(check_imported_hashes(record, out_dir=out_dir_path))
     if not errors:
-        errors.extend(check_imported_review_bundle(record, out_dir=out_dir))
+        errors.extend(check_imported_review_bundle(record, out_dir=out_dir_path))
     return errors
 
 
-def check_import_release_url_tags(record: dict[str, Any], release_tag: str) -> list[str]:
+def check_import_release_url_tags(
+    record: dict[str, Any],
+    release_tag: str,
+    *,
+    repository: str | None = None,
+) -> list[str]:
     target = import_record_target_label(record)
     errors: list[str] = []
     urls, url_shape_errors = import_release_asset_urls(record)
@@ -659,6 +754,11 @@ def check_import_release_url_tags(record: dict[str, Any], release_tag: str) -> l
         match = GITHUB_RELEASE_ASSET_RE.fullmatch(url)
         if not match:
             errors.append(f"{target} {label} must be a GitHub release asset URL: {url}")
+            continue
+        if repository is not None and match.group(1) != repository:
+            errors.append(
+                f"{target} {label} repository must match release repository {repository}: {url}"
+            )
             continue
         if match.group(2) != release_tag:
             errors.append(f"{target} {label} tag must match release_tag {release_tag}: {url}")
@@ -793,7 +893,7 @@ def verify_source_run(
             f"{target} release_asset_source workflow run htmlUrl must be a string, "
             f"got {html_url!r}"
         )
-    elif html_url.rstrip("/") != expected_workflow_run_url.rstrip("/"):
+    elif html_url != expected_workflow_run_url:
         errors.append(
             f"{target} release_asset_source workflow run htmlUrl must match accepted record "
             f"{expected_workflow_run_url}, got {html_url!r}"
@@ -952,10 +1052,16 @@ def verify_source_run(
             f"{target} release_asset_source workflow run headBranch must match release_tag "
             f"{expected_release_tag}, got {data.get('headBranch')!r}"
         )
-    if data.get("attempt") != expected_run_attempt:
+    actual_attempt = data.get("attempt")
+    if positive_int_value(actual_attempt) is None:
+        errors.append(
+            f"{target} release_asset_source workflow run attempt must be a positive integer, "
+            f"got {actual_attempt!r}"
+        )
+    elif actual_attempt != expected_run_attempt:
         errors.append(
             f"{target} release_asset_source workflow run attempt must match accepted record "
-            f"{expected_run_attempt}, got {data.get('attempt')!r}"
+            f"{expected_run_attempt}, got {actual_attempt!r}"
         )
     errors.extend(
         check_release_checkout_head_sha(
@@ -968,7 +1074,9 @@ def verify_source_run(
 
 
 def repository_from_workflow_run_url(workflow_run_url: str) -> str:
-    match = GITHUB_ACTIONS_RUN_RE.fullmatch(workflow_run_url.rstrip("/"))
+    if workflow_run_url != workflow_run_url.strip() or workflow_run_url != workflow_run_url.rstrip("/"):
+        return ""
+    match = GITHUB_ACTIONS_RUN_RE.fullmatch(workflow_run_url)
     return match.group(1) if match else ""
 
 
@@ -1338,7 +1446,7 @@ def current_checkout_head_sha() -> str:
     return result.stdout.strip()
 
 
-def copy_expected_files(record: dict[str, Any], *, source_root: Path, out_dir: Path) -> list[str]:
+def copy_expected_files(record: dict[str, Any], *, source_root: object, out_dir: object) -> list[str]:
     target = import_record_target_label(record)
     errors: list[str] = []
     expected_file_errors, expected_file_names = expected_release_file_name_entries(record)
@@ -1348,25 +1456,36 @@ def copy_expected_files(record: dict[str, Any], *, source_root: Path, out_dir: P
     unsafe_files = sorted(filename for filename in expected_files if not exact_safe_file_name(filename))
     if unsafe_files:
         return [f"{target} release asset import expected files must be exact safe file names: {unsafe_files}"]
-    if source_root.is_symlink():
-        errors.append(f"{target} downloaded artifact directory must not be a symlink: {source_root}")
+    source_root_errors, source_root_path = path_arg_value(
+        source_root,
+        f"{target} downloaded artifact directory",
+    )
+    out_dir_errors, out_dir_path = path_arg_value(out_dir, "release asset import output directory")
+    errors.extend(source_root_errors)
+    errors.extend(out_dir_errors)
+    if errors:
+        return errors
+    assert source_root_path is not None
+    assert out_dir_path is not None
+    if source_root_path.is_symlink():
+        errors.append(f"{target} downloaded artifact directory must not be a symlink: {source_root_path}")
     else:
-        errors.extend(check_path_parent_symlinks(source_root, f"{target} downloaded artifact directory"))
-    if not source_root.is_dir():
-        errors.append(f"{target} downloaded artifact directory missing: {source_root}")
+        errors.extend(check_path_parent_symlinks(source_root_path, f"{target} downloaded artifact directory"))
+    if not source_root_path.is_dir():
+        errors.append(f"{target} downloaded artifact directory missing: {source_root_path}")
     for filename in sorted(expected_files):
-        source = source_root / filename
+        source = source_root_path / filename
         if source.is_symlink():
             errors.append(f"{target} release asset import source must not be a symlink: {filename}")
         elif not source.is_file():
             errors.append(f"{target} downloaded artifact missing expected release file: {filename}")
-    errors.extend(ensure_output_directory(out_dir))
+    errors.extend(ensure_output_directory(out_dir_path))
     if errors:
         return errors
-    out_dir.mkdir(parents=True, exist_ok=True)
+    out_dir_path.mkdir(parents=True, exist_ok=True)
     for filename in sorted(expected_files):
-        source = source_root / filename
-        destination = out_dir / filename
+        source = source_root_path / filename
+        destination = out_dir_path / filename
         if destination.is_symlink():
             errors.append(f"{target} release asset import destination must not be a symlink: {filename}")
             continue
@@ -1380,7 +1499,7 @@ def copy_expected_files(record: dict[str, Any], *, source_root: Path, out_dir: P
     return errors
 
 
-def validate_source_artifact(record: dict[str, Any], *, source_root: Path) -> list[str]:
+def validate_source_artifact(record: dict[str, Any], *, source_root: object) -> list[str]:
     target = import_record_target_label(record)
     source_errors, expected_files = release_source_contains_files(record)
     if source_errors:
@@ -1388,17 +1507,24 @@ def validate_source_artifact(record: dict[str, Any], *, source_root: Path) -> li
     declared_errors = check_release_source_declared_files_for_record(record)
     if declared_errors:
         return declared_errors
+    source_root_errors, source_root_path = path_arg_value(
+        source_root,
+        f"{target} downloaded artifact directory",
+    )
+    if source_root_errors:
+        return source_root_errors
+    assert source_root_path is not None
     errors = validate_downloaded_source_file_set(
         target,
-        source_root=source_root,
+        source_root=source_root_path,
         expected_files=expected_files,
     )
     if errors:
         return errors
-    errors = check_downloaded_source_hashes(record, source_root=source_root)
+    errors = check_downloaded_source_hashes(record, source_root=source_root_path)
     if errors:
         return errors
-    return validate_downloaded_final_record(record, source_root=source_root)
+    return validate_downloaded_final_record(record, source_root=source_root_path)
 
 
 def check_release_source_declared_files_for_record(record: dict[str, Any]) -> list[str]:
@@ -1435,21 +1561,28 @@ def check_release_source_declared_files(
 def validate_downloaded_source_file_set(
     target: str,
     *,
-    source_root: Path,
+    source_root: object,
     expected_files: set[str],
 ) -> list[str]:
-    if source_root.is_symlink():
-        return [f"{target} downloaded artifact directory must not be a symlink: {source_root}"]
-    parent_errors = check_path_parent_symlinks(source_root, f"{target} downloaded artifact directory")
+    source_root_errors, source_root_path = path_arg_value(
+        source_root,
+        f"{target} downloaded artifact directory",
+    )
+    if source_root_errors:
+        return source_root_errors
+    assert source_root_path is not None
+    if source_root_path.is_symlink():
+        return [f"{target} downloaded artifact directory must not be a symlink: {source_root_path}"]
+    parent_errors = check_path_parent_symlinks(source_root_path, f"{target} downloaded artifact directory")
     if parent_errors:
         return parent_errors
-    if not source_root.is_dir():
-        return [f"{target} downloaded artifact directory missing: {source_root}"]
+    if not source_root_path.is_dir():
+        return [f"{target} downloaded artifact directory missing: {source_root_path}"]
     errors: list[str] = []
     root_files: set[str] = set()
     root_directories: list[str] = []
     root_symlinks: list[str] = []
-    for child in source_root.iterdir():
+    for child in source_root_path.iterdir():
         if child.is_symlink():
             root_symlinks.append(child.name)
         elif child.is_file():
@@ -1551,11 +1684,18 @@ def lowercase_sha256_hex(value: Any) -> bool:
     return isinstance(value, str) and len(value) == 64 and set(value) <= SHA256_HEX_CHARS
 
 
-def check_downloaded_source_hashes(record: dict[str, Any], *, source_root: Path) -> list[str]:
+def check_downloaded_source_hashes(record: dict[str, Any], *, source_root: object) -> list[str]:
     target = import_record_target_label(record)
+    source_root_errors, source_root_path = path_arg_value(
+        source_root,
+        f"{target} downloaded artifact directory",
+    )
+    if source_root_errors:
+        return source_root_errors
+    assert source_root_path is not None
     artifact_items, errors = checked_artifact_hash_items(record, label="downloaded source artifact")
     for filename, digest in artifact_items:
-        path = source_root / filename
+        path = source_root_path / filename
         if path.is_symlink():
             errors.append(
                 f"{target} downloaded source artifact native artifact must not be a symlink: {filename}"
@@ -1572,7 +1712,7 @@ def check_downloaded_source_hashes(record: dict[str, Any], *, source_root: Path)
     )
     errors.extend(bundle_errors)
     for key, filename, expected_size, expected_sha256 in bundle_records:
-        path = source_root / filename
+        path = source_root_path / filename
         if path.is_symlink():
             errors.append(
                 f"{target} downloaded source artifact review bundle {key} "
@@ -1593,11 +1733,15 @@ def check_downloaded_source_hashes(record: dict[str, Any], *, source_root: Path)
     return errors
 
 
-def check_imported_hashes(record: dict[str, Any], *, out_dir: Path) -> list[str]:
+def check_imported_hashes(record: dict[str, Any], *, out_dir: object) -> list[str]:
     target = import_record_target_label(record)
+    out_dir_errors, out_dir_path = path_arg_value(out_dir, "release asset import output directory")
+    if out_dir_errors:
+        return out_dir_errors
+    assert out_dir_path is not None
     artifact_items, errors = checked_artifact_hash_items(record, label="imported native artifact")
     for filename, digest in artifact_items:
-        path = out_dir / filename
+        path = out_dir_path / filename
         if path.is_symlink():
             errors.append(f"{target} imported native artifact must not be a symlink: {filename}")
             continue
@@ -1612,7 +1756,7 @@ def check_imported_hashes(record: dict[str, Any], *, out_dir: Path) -> list[str]
     )
     errors.extend(bundle_errors)
     for key, filename, expected_size, expected_sha256 in bundle_records:
-        path = out_dir / filename
+        path = out_dir_path / filename
         if path.is_symlink():
             errors.append(f"{target} imported review bundle {key} must not be a symlink: {filename}")
             continue
@@ -1626,10 +1770,14 @@ def check_imported_hashes(record: dict[str, Any], *, out_dir: Path) -> list[str]
     return errors
 
 
-def check_imported_review_bundle(record: dict[str, Any], *, out_dir: Path) -> list[str]:
+def check_imported_review_bundle(record: dict[str, Any], *, out_dir: object) -> list[str]:
     public_errors = public_record_key_errors(record)
     if public_errors:
         return public_errors
+    out_dir_errors, out_dir_path = path_arg_value(out_dir, "release asset import output directory")
+    if out_dir_errors:
+        return out_dir_errors
+    assert out_dir_path is not None
     registry = read_json(EVIDENCE_PATH)
     target = accepted_import_target(record)
     release_tag = record.get("release_tag", "")
@@ -1637,7 +1785,7 @@ def check_imported_review_bundle(record: dict[str, Any], *, out_dir: Path) -> li
         release_tag = ""
     errors = check_platform_review_bundle_artifacts(
         registry={**registry, "accepted_evidence": [public_record(record)]},
-        bundle_dir=out_dir,
+        bundle_dir=out_dir_path,
         required_targets=(target,) if target else None,
         required_release_tag=release_tag or None,
         require_final_record_assets=True,
@@ -1740,12 +1888,19 @@ def release_source_contains_files(record: dict[str, Any]) -> tuple[list[str], se
     return errors, set(files)
 
 
-def validate_downloaded_final_record(record: dict[str, Any], *, source_root: Path) -> list[str]:
+def validate_downloaded_final_record(record: dict[str, Any], *, source_root: object) -> list[str]:
     target = accepted_import_target(record)
     if target not in PROTECTED_GOAL_TARGETS:
         return []
     filename = accepted_record_source_file(target)
-    path = source_root / filename
+    source_root_errors, source_root_path = path_arg_value(
+        source_root,
+        f"{target} downloaded artifact directory",
+    )
+    if source_root_errors:
+        return source_root_errors
+    assert source_root_path is not None
+    path = source_root_path / filename
     parent_errors = check_path_parent_symlinks(path, f"{target} finalized accepted record source file")
     if parent_errors:
         return parent_errors
@@ -1797,8 +1952,12 @@ def is_allowed_platform_parent_symlink(parent: Path) -> bool:
         return False
 
 
-def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
-    check_path = path if path.is_absolute() else Path.cwd() / path
+def check_path_parent_symlinks(path: object, label: str) -> list[str]:
+    path_errors, path_value = path_arg_value(path, label)
+    if path_errors:
+        return path_errors
+    assert path_value is not None
+    check_path = path_value if path_value.is_absolute() else Path.cwd() / path_value
     for parent in reversed(check_path.parents):
         if parent == Path("."):
             continue

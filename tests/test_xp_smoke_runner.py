@@ -320,6 +320,17 @@ def test_xp_smoke_runner_rejects_nonnumeric_source_run_id(tmp_path: Path) -> Non
     assert not output.exists()
 
 
+def test_xp_smoke_runner_rejects_noncanonical_source_workflow_run_url(tmp_path: Path) -> None:
+    result, output = _run_xp_smoke_runner(
+        tmp_path,
+        source_workflow_run_url="https://github.com/example/remote-ops-workspace/actions/runs/12345/",
+    )
+
+    assert result.returncode == 2
+    assert "--source-workflow-run-url must be canonical without trailing slash" in result.stderr
+    assert not output.exists()
+
+
 def test_xp_smoke_runner_rejects_invalid_source_head_sha(tmp_path: Path) -> None:
     result, output = _run_xp_smoke_runner(
         tmp_path,

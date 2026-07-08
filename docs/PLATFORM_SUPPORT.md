@@ -113,9 +113,8 @@ accepted records, the generated readiness report must keep the current partial
 rows. The strict promotion path is
 `python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-records-complete`,
 `python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag v<project.version>`
-and `python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> --release-assets-dir <release-assets-dir>`;
-add `--release-repository <owner>/<repo>` to that strict verifier when the
-same run must also audit an already-published GitHub release, exact source-run
+and `python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> --release-assets-dir <release-assets-dir> --release-repository <owner>/<repo>`;
+that strict verifier audits the intended already-published GitHub release, exact source-run
 metadata, published native/review-bundle asset bytes and published final
 accepted-record JSON bytes.
 those commands must fail until linux-i386, linux-armhf,
@@ -125,13 +124,14 @@ SHA and positive per-record release source run attempts. Mixed-tag,
 mixed-repository, mixed-source-head or same-run-URL conflicting-attempt accepted records remain
 aggregate evidence only and cannot complete the protected goal parity block.
 The strict verifier also runs
-`python scripts/import_platform_evidence_artifacts.py --release-tag v<project.version> --require-goal-targets --out-dir <release-assets-dir> --dry-run --verify-source-run`
-then `python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-complete --assets-dir <release-assets-dir>`
-and `python scripts/check_release_publish_assets.py --assets-dir <release-assets-dir> --tag v<project.version> --require-platform-goal-targets`,
+`python scripts/import_platform_evidence_artifacts.py --release-tag v<project.version> --require-goal-targets --out-dir <release-assets-dir> --dry-run --verify-source-run --repository <owner>/<repo>`
+then `python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-complete --assets-dir <release-assets-dir> --repository <owner>/<repo>`
+and `python scripts/check_release_publish_assets.py --assets-dir <release-assets-dir> --tag v<project.version> --repository <owner>/<repo> --require-platform-goal-targets`,
 so accepted records must be release-importable, bound to the current checkout
 head, backed by completed successful dispatch runs, hash-checked as downloaded
-source artifacts before being copied into the release asset directory and
-matched by the downloaded release asset directory before promotion is trusted.
+source artifacts before being copied into the release asset directory, bound to
+the publishing repository and matched by the downloaded release asset directory
+before promotion is trusted.
 The generated static readiness report keeps
 `release_asset_provenance_complete=false`; only the asset-backed protected goal
 gate can flip that proof state after finalized records, review bundles and
@@ -151,9 +151,10 @@ artifact `created_at` values outside the exact source run creation/start/update 
 from exact source-run timestamps, require artifact `expires_at` to be present
 and later than the artifact create/update timestamps, and compare the finalized public record asset to canonical
 accepted-record JSON bytes before a published release can pass the live audit.
-The live remote audit also requires each published protected-platform release
-asset to expose a positive GitHub release asset ID and the matching GitHub API
-asset URL for the release repository.
+The live remote audit
+(`python scripts/check_platform_release_evidence_remote.py`) also requires each
+published protected-platform release asset to expose a positive GitHub release
+asset ID and the matching GitHub API asset URL for the release repository.
 Generate candidate accepted records with
 `python scripts/make_platform_verified_evidence_record.py` after artifact and
 XP evidence validators pass; package the review bundle, then use

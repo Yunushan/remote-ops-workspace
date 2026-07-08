@@ -465,9 +465,14 @@ def check_release_source_file_set(
     return errors
 
 
-def check_source_paths(target: str, sources: dict[str, Path]) -> list[str]:
+def check_source_paths(target: str, sources: dict[str, object]) -> list[str]:
     errors: list[str] = []
     for filename, path in sorted(sources.items()):
+        if not isinstance(path, Path):
+            errors.append(
+                f"{target} staged upload source {filename} path must be a pathlib.Path, got {path!r}"
+            )
+            continue
         errors.extend(
             check_path_not_reserved_workspace_root(
                 path,
@@ -546,8 +551,13 @@ def review_bundle_workspace_files_with_errors(
             )
             continue
         filename = raw_filename
-        if safe_relative_path(filename):
-            files.add(filename)
+        if not safe_relative_path(filename):
+            errors.append(
+                f"{target} staged upload review_bundle manifest file entries "
+                f"must be safe relative paths, got {filename!r}"
+            )
+            continue
+        files.add(filename)
     return files, errors
 
 
@@ -667,10 +677,17 @@ def prepare_output_directory(target: str, *, out_dir: object, force: bool) -> li
     return []
 
 
-def check_destination_path(target: str, destination: Path, filename: str) -> list[str]:
-    if destination.is_symlink():
+def check_destination_path(target: str, destination: object, filename: str) -> list[str]:
+    destination_errors, destination_path = path_arg_value(
+        destination,
+        f"{target} staged upload destination {filename}",
+    )
+    if destination_errors:
+        return destination_errors
+    assert destination_path is not None
+    if destination_path.is_symlink():
         return [f"{target} staged upload destination must not be a symlink: {filename}"]
-    if destination.exists() and not destination.is_file():
+    if destination_path.exists() and not destination_path.is_file():
         return [f"{target} staged upload destination must be a regular file: {filename}"]
     return []
 
@@ -723,8 +740,12 @@ def is_allowed_platform_parent_symlink(parent: Path) -> bool:
         return False
 
 
-def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
-    check_path = path if path.is_absolute() else Path.cwd() / path
+def check_path_parent_symlinks(path: object, label: str) -> list[str]:
+    path_errors, path_value = path_arg_value(path, label)
+    if path_errors:
+        return path_errors
+    assert path_value is not None
+    check_path = path_value if path_value.is_absolute() else Path.cwd() / path_value
     for parent in reversed(check_path.parents):
         if parent == Path("."):
             continue
@@ -733,14 +754,22 @@ def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
     return []
 
 
-def check_directory_path_hint(path: Path, label: str) -> list[str]:
-    raw_path = path.as_posix()
+def check_directory_path_hint(path: object, label: str) -> list[str]:
+    path_errors, path_value = path_arg_value(path, label)
+    if path_errors:
+        return path_errors
+    assert path_value is not None
+    raw_path = path_value.as_posix()
     if directory_path_has_file_suffix(raw_path):
         return [f"{label} must be a directory path, got {raw_path!r}"]
     return []
 
 
-def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
+def check_path_not_reserved_workspace_root(path: object, label: str) -> list[str]:
+    path_errors, path_value = path_arg_value(path, label)
+    if path_errors:
+        return path_errors
+    assert path_value is not None
     roots: list[Path] = [Path.cwd(), ROOT]
     seen_roots: set[Path] = set()
     for root in roots:
@@ -748,7 +777,9 @@ def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
         if root_resolved in seen_roots:
             continue
         seen_roots.add(root_resolved)
-        path_resolved = (path if path.is_absolute() else root_resolved / path).resolve(strict=False)
+        path_resolved = (
+            path_value if path_value.is_absolute() else root_resolved / path_value
+        ).resolve(strict=False)
         try:
             relative = path_resolved.relative_to(root_resolved)
         except ValueError:
@@ -760,7 +791,7 @@ def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
         if reserved_root in RESERVED_WORKSPACE_ROOTS:
             return [
                 f"{label} must not point inside reserved workspace directory "
-                f"{reserved_root!r}: {path}"
+                f"{reserved_root!r}: {path_value}"
             ]
     return []
 
@@ -835,28 +866,57 @@ def source_map(
 def check_staging_path_separation(
     target: str,
     *,
-    assets_dir: Path,
-    evidence_output_dir: Path,
-    out_dir: Path,
+    assets_dir: object,
+    evidence_output_dir: object,
+    out_dir: object,
 ) -> list[str]:
-    errors: list[str] = []
-    if paths_overlap(assets_dir, evidence_output_dir):
+    assets_dir_errors, assets_dir_path = path_arg_value(
+        assets_dir,
+        f"{target} XP native asset directory",
+    )
+    evidence_output_dir_errors, evidence_output_dir_path = path_arg_value(
+        evidence_output_dir,
+        f"{target} XP evidence output directory",
+    )
+    out_dir_errors, out_dir_path = path_arg_value(
+        out_dir,
+        f"{target} staged upload output directory",
+    )
+    errors = assets_dir_errors + evidence_output_dir_errors + out_dir_errors
+    if errors:
+        return errors
+    assert assets_dir_path is not None
+    assert evidence_output_dir_path is not None
+    assert out_dir_path is not None
+    if paths_overlap(assets_dir_path, evidence_output_dir_path):
         errors.append(f"{target} XP native asset directory and evidence output directory must be separate roots")
-    if paths_overlap(assets_dir, out_dir):
+    if paths_overlap(assets_dir_path, out_dir_path):
         errors.append(f"{target} XP native asset directory and staged upload output directory must be separate roots")
-    if paths_overlap(evidence_output_dir, out_dir):
+    if paths_overlap(evidence_output_dir_path, out_dir_path):
         errors.append(f"{target} XP evidence output directory and staged upload output directory must be separate roots")
     return errors
 
 
-def paths_overlap(left: Path, right: Path) -> bool:
-    left_resolved = left.resolve(strict=False)
-    right_resolved = right.resolve(strict=False)
+def paths_overlap(left: object, right: object) -> bool:
+    left_errors, left_path = path_arg_value(left, "left path")
+    right_errors, right_path = path_arg_value(right, "right path")
+    if left_errors or right_errors:
+        return True
+    assert left_path is not None
+    assert right_path is not None
+    left_resolved = left_path.resolve(strict=False)
+    right_resolved = right_path.resolve(strict=False)
     return path_contains(left_resolved, right_resolved) or path_contains(right_resolved, left_resolved)
 
 
-def path_contains(parent: Path, child: Path) -> bool:
-    return child == parent or child.is_relative_to(parent)
+def path_contains(parent: object, child: object) -> bool:
+    parent_errors, parent_path = path_arg_value(parent, "parent path")
+    child_errors, child_path = path_arg_value(child, "child path")
+    if parent_errors or child_errors:
+        return False
+    assert parent_path is not None
+    assert child_path is not None
+    return child_path == parent_path or child_path.is_relative_to(parent_path)
 
 
 if __name__ == "__main__":

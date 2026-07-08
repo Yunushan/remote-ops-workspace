@@ -14,6 +14,7 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 from check_platform_promotion_artifacts import (  # noqa: E402
+    archive_entry_name_is_safe,
     check_platform_promotion_artifacts,
     required_artifacts,
     version_from_tag,
@@ -147,7 +148,7 @@ GITHUB_REPOSITORY_RE = rf"{GITHUB_OWNER_RE}/[A-Za-z0-9._-]+"
 GITHUB_RELEASE_BASE_RE = re.compile(
     rf"^https://github\.com/({GITHUB_REPOSITORY_RE})/releases/download/(v\d+\.\d+\.\d+)$"
 )
-GITHUB_ACTIONS_RUN_RE = re.compile(rf"^https://github\.com/({GITHUB_REPOSITORY_RE})/actions/runs/\d+/?$")
+GITHUB_ACTIONS_RUN_RE = re.compile(rf"^https://github\.com/({GITHUB_REPOSITORY_RE})/actions/runs/\d+$")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -384,6 +385,12 @@ def release_asset_base_url_arg_value(args: argparse.Namespace) -> tuple[list[str
     return [], raw_base_url
 
 
+def release_asset_base_url_repository(args: argparse.Namespace) -> str:
+    _errors, base_url = release_asset_base_url_arg_value(args)
+    match = GITHUB_RELEASE_BASE_RE.fullmatch(base_url)
+    return match.group(1) if match else ""
+
+
 def path_arg_value(raw_path: object, label: str) -> tuple[list[str], Path | None]:
     if not isinstance(raw_path, Path):
         return [f"{label} must be a pathlib.Path, got {raw_path!r}"], None
@@ -456,7 +463,7 @@ def validate_linux_args(args: argparse.Namespace) -> list[str]:
     target = str(args.target)
     if not args.workflow_run_url:
         errors.append("--workflow-run-url is required for Linux evidence")
-    elif not GITHUB_ACTIONS_RUN_RE.fullmatch(str(args.workflow_run_url).rstrip("/")):
+    elif not GITHUB_ACTIONS_RUN_RE.fullmatch(str(args.workflow_run_url)):
         errors.append("--workflow-run-url must be a GitHub Actions run URL")
     else:
         errors.extend(check_workflow_run_repository(args, str(args.workflow_run_url), "--workflow-run-url"))
@@ -506,7 +513,7 @@ def validate_linux_args(args: argparse.Namespace) -> list[str]:
         errors.append("--xp-evidence-dir is only valid for Windows XP evidence")
     release_source_workflow_run_url = getattr(args, "release_source_workflow_run_url", None)
     if release_source_workflow_run_url is not None:
-        if not GITHUB_ACTIONS_RUN_RE.fullmatch(str(release_source_workflow_run_url).rstrip("/")):
+        if not GITHUB_ACTIONS_RUN_RE.fullmatch(str(release_source_workflow_run_url)):
             errors.append("--release-source-workflow-run-url must be a GitHub Actions run URL")
         else:
             errors.extend(
@@ -577,7 +584,7 @@ def validate_xp_args(args: argparse.Namespace) -> list[str]:
     release_source_workflow_run_url = getattr(args, "release_source_workflow_run_url", None)
     if not release_source_workflow_run_url:
         errors.append("--release-source-workflow-run-url is required for Windows XP evidence")
-    elif not GITHUB_ACTIONS_RUN_RE.fullmatch(str(release_source_workflow_run_url).rstrip("/")):
+    elif not GITHUB_ACTIONS_RUN_RE.fullmatch(str(release_source_workflow_run_url)):
         errors.append("--release-source-workflow-run-url must be a GitHub Actions run URL")
     else:
         errors.extend(
@@ -608,7 +615,7 @@ def check_workflow_run_repository(
     if base_url_errors:
         return []
     release_match = GITHUB_RELEASE_BASE_RE.fullmatch(base_url)
-    workflow_match = GITHUB_ACTIONS_RUN_RE.fullmatch(workflow_run_url.rstrip("/"))
+    workflow_match = GITHUB_ACTIONS_RUN_RE.fullmatch(workflow_run_url)
     if not release_match or not workflow_match:
         return []
     release_repository = release_match.group(1)
@@ -630,8 +637,12 @@ def is_allowed_platform_parent_symlink(parent: Path) -> bool:
         return False
 
 
-def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
-    check_path = path if path.is_absolute() else Path.cwd() / path
+def check_path_parent_symlinks(path: object, label: str) -> list[str]:
+    path_errors, path_value = path_arg_value(path, label)
+    if path_errors:
+        return path_errors
+    assert path_value is not None
+    check_path = path_value if path_value.is_absolute() else Path.cwd() / path_value
     for parent in reversed(check_path.parents):
         if parent == Path("."):
             continue
@@ -640,8 +651,12 @@ def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
     return []
 
 
-def check_directory_path_hint(path: Path, label: str) -> list[str]:
-    raw_path = path.as_posix()
+def check_directory_path_hint(path: object, label: str) -> list[str]:
+    path_errors, path_value = path_arg_value(path, label)
+    if path_errors:
+        return path_errors
+    assert path_value is not None
+    raw_path = path_value.as_posix()
     if directory_path_has_file_suffix(raw_path):
         return [f"{label} must be a directory path, got {raw_path!r}"]
     return []
@@ -741,8 +756,15 @@ def check_reserved_workspace_root_inputs(args: argparse.Namespace) -> list[str]:
 
 
 def check_path_not_reserved_workspace_root(root: Path, path: Path, label: str) -> list[str]:
-    root_resolved = root.resolve(strict=False)
-    path_resolved = path.resolve(strict=False)
+    root_errors, root_path = path_arg_value(root, "local evidence root")
+    path_errors, path_value = path_arg_value(path, label)
+    errors = root_errors + path_errors
+    if errors:
+        return errors
+    assert root_path is not None
+    assert path_value is not None
+    root_resolved = root_path.resolve(strict=False)
+    path_resolved = path_value.resolve(strict=False)
     try:
         relative = path_resolved.relative_to(root_resolved)
     except ValueError:
@@ -754,7 +776,7 @@ def check_path_not_reserved_workspace_root(root: Path, path: Path, label: str) -
     if reserved_root in RESERVED_WORKSPACE_ROOTS:
         return [
             f"{label} must not point inside reserved workspace directory "
-            f"{reserved_root!r}: {path}"
+            f"{reserved_root!r}: {path_value}"
         ]
     return []
 
@@ -762,12 +784,16 @@ def check_path_not_reserved_workspace_root(root: Path, path: Path, label: str) -
 def check_target_release_path_segments(
     target: str,
     release_tag: str,
-    path: Path,
+    path: object,
     *,
     label: str,
 ) -> list[str]:
-    segments = {str(part) for part in path.parts if str(part)}
-    raw_path = path.as_posix()
+    path_errors, path_value = path_arg_value(path, label)
+    if path_errors:
+        return path_errors
+    assert path_value is not None
+    segments = {str(part) for part in path_value.parts if str(part)}
+    raw_path = path_value.as_posix()
     errors: list[str] = []
     if target not in segments:
         errors.append(f"{label} must include target path segment {target!r}, got {raw_path!r}")
@@ -898,15 +924,15 @@ def check_xp_evidence_record_binding(args: argparse.Namespace) -> list[str]:
         errors.append(f"{target} XP evidence release_source.workflow must be a string")
     elif actual_workflow != expected_workflow:
         errors.append(f"{target} XP evidence release_source.workflow must be {expected_workflow}")
-    expected_workflow_run_url = str(args.release_source_workflow_run_url or "").rstrip("/")
+    expected_workflow_run_url = str(args.release_source_workflow_run_url or "")
     actual_workflow_run_url = source.get("workflow_run_url")
     if not isinstance(actual_workflow_run_url, str):
         errors.append(f"{target} XP evidence release_source.workflow_run_url must be a string")
-    elif actual_workflow_run_url.rstrip("/") != expected_workflow_run_url:
+    elif actual_workflow_run_url != expected_workflow_run_url:
         errors.append(
             f"{target} XP evidence release_source.workflow_run_url must match "
             f"--release-source-workflow-run-url {expected_workflow_run_url}, "
-            f"got {actual_workflow_run_url.rstrip('/')!r}"
+            f"got {actual_workflow_run_url!r}"
         )
     expected_head_sha = str(args.release_source_head_sha or "")
     actual_head_sha = source.get("head_sha")
@@ -1077,7 +1103,7 @@ def release_asset_source(args: argparse.Namespace, target: str, promotion: dict[
     return {
         "type": "github-actions-artifact",
         "workflow": release_source_workflow(target),
-        "workflow_run_url": workflow_run_url.rstrip("/"),
+        "workflow_run_url": workflow_run_url,
         "artifact_name": artifact_name,
         "head_sha": str(args.release_source_head_sha),
         "run_attempt": int(args.release_source_run_attempt),
@@ -1156,7 +1182,7 @@ def local_evidence_preflight_command(args: argparse.Namespace) -> str:
     command = (
         "python scripts/check_platform_goal_local_evidence.py "
         f"--root {local_evidence_root_path.as_posix()} --release-tag {args.release_tag} --target {target} "
-        f"--assets-dir {args.assets_dir.as_posix()}"
+        f"--assets-dir {args.assets_dir.as_posix()} --repository {release_asset_base_url_repository(args)}"
     )
     if target in LINUX_TARGETS:
         return (
@@ -1237,13 +1263,18 @@ def xp_evidence_sources(
         for smoke_id, raw_file in sorted(raw_files.items()):
             if not isinstance(smoke_id, str) or not isinstance(raw_file, str):
                 continue
+            if not archive_entry_name_is_safe(raw_file):
+                continue
             smoke_path = evidence_dir / raw_file
             if not smoke_path.is_file():
+                continue
+            digest = smoke_hashes.get(smoke_id, "")
+            if not lowercase_sha256_hex(digest):
                 continue
             smoke_sources[smoke_id] = {
                 "file": raw_file.replace("\\", "/"),
                 "size_bytes": smoke_path.stat().st_size,
-                "sha256": smoke_hashes.get(smoke_id, ""),
+                "sha256": digest,
             }
 
     return {
@@ -1308,6 +1339,10 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def lowercase_sha256_hex(value: Any) -> bool:
+    return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None
+
+
 def xp_evidence_summary(target: str, release_tag: str, evidence: dict[str, Any]) -> dict[str, Any]:
     release_source = evidence.get("release_source", {})
     os_data = evidence.get("os", {})
@@ -1336,7 +1371,7 @@ def xp_evidence_summary(target: str, release_tag: str, evidence: dict[str, Any])
         if isinstance(command, str):
             smoke_commands[smoke_id] = command
         evidence_file = item.get("evidence_file")
-        if isinstance(evidence_file, str):
+        if isinstance(evidence_file, str) and archive_entry_name_is_safe(evidence_file):
             smoke_evidence_files[smoke_id] = evidence_file
     os_summary = {
         "name": summary_string(os_data.get("name")),
@@ -1384,7 +1419,7 @@ def xp_release_source_summary(raw_source: Any) -> dict[str, Any]:
     run_attempt = raw_source.get("run_attempt")
     return {
         "workflow": workflow if isinstance(workflow, str) else "",
-        "workflow_run_url": workflow_run_url.rstrip("/") if isinstance(workflow_run_url, str) else "",
+        "workflow_run_url": workflow_run_url if isinstance(workflow_run_url, str) else "",
         "head_sha": head_sha if isinstance(head_sha, str) else "",
         "run_attempt": (
             run_attempt
@@ -1433,8 +1468,15 @@ def xp_smoke_evidence_sha256_map(evidence: dict[str, Any]) -> dict[str, str]:
         if not isinstance(item, dict):
             continue
         smoke_id = item.get("id")
+        evidence_file = item.get("evidence_file")
         evidence_sha = item.get("evidence_sha256")
-        if isinstance(smoke_id, str) and smoke_id and isinstance(evidence_sha, str):
+        if (
+            isinstance(smoke_id, str)
+            and smoke_id
+            and isinstance(evidence_file, str)
+            and archive_entry_name_is_safe(evidence_file)
+            and lowercase_sha256_hex(evidence_sha)
+        ):
             hashes[smoke_id] = evidence_sha
     return hashes
 
@@ -1486,10 +1528,11 @@ def linux_smoke_summary(target: str, release_tag: str, smoke_evidence: Path) -> 
     }
 
 
-def append_record_to_registry(record: dict[str, Any], *, registry_path: Path = EVIDENCE_PATH) -> list[str]:
+def append_record_to_registry(record: dict[str, Any], *, registry_path: object = EVIDENCE_PATH) -> list[str]:
     errors = check_text_output_path(registry_path, "platform verified evidence registry")
     if errors:
         return errors
+    assert isinstance(registry_path, Path)
     registry = read_evidence_registry(registry_path)
     accepted = registry.get("accepted_evidence")
     if not isinstance(accepted, list):
@@ -1525,8 +1568,12 @@ def append_record_to_registry(record: dict[str, Any], *, registry_path: Path = E
     return []
 
 
-def check_text_output_path(path: Path, label: str) -> list[str]:
-    parent = path.parent
+def check_text_output_path(path: object, label: str) -> list[str]:
+    path_errors, path_value = path_arg_value(path, label)
+    if path_errors:
+        return path_errors
+    assert path_value is not None
+    parent = path_value.parent
     if parent.is_symlink():
         return [f"{label} directory must not be a symlink: {parent}"]
     parent_errors = check_path_parent_symlinks(parent, f"{label} directory")
@@ -1534,14 +1581,18 @@ def check_text_output_path(path: Path, label: str) -> list[str]:
         return parent_errors
     if parent.exists() and not parent.is_dir():
         return [f"{label} directory must be a directory: {parent}"]
-    if path.is_symlink():
-        return [f"{label} must not be a symlink: {path}"]
-    if path.exists() and not path.is_file():
-        return [f"{label} must be a regular file: {path}"]
+    if path_value.is_symlink():
+        return [f"{label} must not be a symlink: {path_value}"]
+    if path_value.exists() and not path_value.is_file():
+        return [f"{label} must be a regular file: {path_value}"]
     return []
 
 
-def check_generated_record_output_path(path: Path, record: dict[str, Any]) -> list[str]:
+def check_generated_record_output_path(path: object, record: dict[str, Any]) -> list[str]:
+    path_errors, path_value = path_arg_value(path, "platform verified evidence record output file")
+    if path_errors:
+        return path_errors
+    assert path_value is not None
     target = accepted_record_target(record)
     if not target:
         return [
@@ -1549,12 +1600,12 @@ def check_generated_record_output_path(path: Path, record: dict[str, Any]) -> li
             f"got {record.get('target', '')!r}"
         ]
     expected_name = generated_record_file_name(target)
-    if path.name != expected_name:
+    if path_value.name != expected_name:
         return [
             f"platform verified evidence record output file name must be {expected_name}, "
-            f"got {path.name!r}"
+            f"got {path_value.name!r}"
         ]
-    return check_text_output_path(path, "platform verified evidence record output file")
+    return check_text_output_path(path_value, "platform verified evidence record output file")
 
 
 def generated_record_file_name(target: str) -> str:
@@ -1573,15 +1624,23 @@ def write_text_output(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8", newline="\n")
 
 
-def read_evidence_registry(path: Path) -> dict[str, Any]:
-    if not path.exists():
+def read_evidence_registry(path: object) -> dict[str, Any]:
+    path_errors, path_value = path_arg_value(path, "platform verified evidence registry")
+    if path_errors:
+        return {
+            "schema_version": 0,
+            "policy": "; ".join(path_errors),
+            "accepted_evidence": None,
+        }
+    assert path_value is not None
+    if not path_value.exists():
         return {
             "schema_version": 1,
             "policy": DEFAULT_EVIDENCE_POLICY,
             "accepted_evidence": [],
         }
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path_value.read_text(encoding="utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         return {
             "schema_version": 0,
@@ -1591,21 +1650,29 @@ def read_evidence_registry(path: Path) -> dict[str, Any]:
     return data if isinstance(data, dict) else {"schema_version": 0, "policy": "", "accepted_evidence": None}
 
 
-def read_json(path: Path) -> dict[str, Any]:
+def read_json(path: object) -> dict[str, Any]:
+    path_errors, path_value = path_arg_value(path, "JSON file")
+    if path_errors:
+        return {"schema_version": 0, "error": "; ".join(path_errors)}
+    assert path_value is not None
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path_value.read_text(encoding="utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         return {"schema_version": 0, "error": f"invalid JSON: {exc}"}
     return data if isinstance(data, dict) else {"schema_version": 0, "error": "JSON root must be an object"}
 
 
-def read_json_object(path: Path, label: str) -> tuple[dict[str, Any], list[str]]:
-    data = read_json(path)
+def read_json_object(path: object, label: str) -> tuple[dict[str, Any], list[str]]:
+    path_errors, path_value = path_arg_value(path, f"{label} file")
+    if path_errors:
+        return {"schema_version": 0, "error": "; ".join(path_errors)}, path_errors
+    assert path_value is not None
+    data = read_json(path_value)
     error = str(data.get("error", ""))
     if data.get("schema_version") == 0 and error:
         if error == "JSON root must be an object":
-            return data, [f"{label} file must contain a JSON object: {path}"]
-        return data, [f"{label} file is not readable JSON: {path}: {error}"]
+            return data, [f"{label} file must contain a JSON object: {path_value}"]
+        return data, [f"{label} file is not readable JSON: {path_value}: {error}"]
     return data, []
 
 

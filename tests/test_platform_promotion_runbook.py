@@ -60,7 +60,7 @@ def test_platform_promotion_runbook_requires_bundle_backed_strict_verify() -> No
         (
             "python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets "
             "--release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> "
-            "--release-assets-dir <release-assets-dir>"
+            "--release-assets-dir <release-assets-dir> --release-repository <owner>/<repo>"
         ),
         "python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets",
     )
@@ -69,6 +69,7 @@ def test_platform_promotion_runbook_requires_bundle_backed_strict_verify() -> No
 
     assert any("--platform-review-bundle-dir <bundle-dir>" in error for error in errors)
     assert any("--release-assets-dir <release-assets-dir>" in error for error in errors)
+    assert any("--release-repository <owner>/<repo>" in error for error in errors)
 
 
 def test_platform_promotion_runbook_requires_asset_backed_strict_publish() -> None:
@@ -76,7 +77,7 @@ def test_platform_promotion_runbook_requires_asset_backed_strict_publish() -> No
     text = Path("docs/PLATFORM_PROMOTION_RUNBOOK.md").read_text(encoding="utf-8").replace(
         (
             "python scripts/check_release_publish_assets.py --assets-dir <release-assets-dir> "
-            "--tag v<project.version> --require-platform-goal-targets"
+            "--tag v<project.version> --repository <owner>/<repo> --require-platform-goal-targets"
         ),
         "python scripts/check_release_publish_assets.py --require-platform-goal-targets",
     )
@@ -85,13 +86,15 @@ def test_platform_promotion_runbook_requires_asset_backed_strict_publish() -> No
 
     assert any("--assets-dir <release-assets-dir>" in error for error in errors)
     assert any("--tag v<project.version>" in error for error in errors)
+    assert any("--repository <owner>/<repo>" in error for error in errors)
 
 
 def test_platform_promotion_runbook_requires_strict_verify_import_dry_run() -> None:
     checker = _load_checker()
     command = (
         "python scripts/import_platform_evidence_artifacts.py --release-tag v<project.version> "
-        "--require-goal-targets --out-dir <release-assets-dir> --dry-run --verify-source-run"
+        "--require-goal-targets --out-dir <release-assets-dir> --dry-run --verify-source-run "
+        "--repository <owner>/<repo>"
     )
     text = Path("docs/PLATFORM_PROMOTION_RUNBOOK.md").read_text(encoding="utf-8").replace(
         command,
@@ -146,6 +149,21 @@ def test_platform_promotion_runbook_requires_published_release_audit_command() -
     assert any("--require-final-record-bytes" in error for error in errors)
     assert any("--require-release-asset-bytes" in error for error in errors)
     assert any("--require-tag-source-head" in error for error in errors)
+
+
+def test_platform_promotion_runbook_requires_evidence_workflow_dispatch_commands() -> None:
+    checker = _load_checker()
+    text = (
+        Path("docs/PLATFORM_PROMOTION_RUNBOOK.md")
+        .read_text(encoding="utf-8")
+        .replace("gh workflow run extended-platform-evidence.yml --repo <owner>/<repo> --ref v<project.version>", "")
+        .replace("gh workflow run xp-native-evidence.yml --repo <owner>/<repo> --ref v<project.version>", "")
+    )
+
+    errors = checker.check_platform_promotion_runbook(runbook_text=text)
+
+    assert any("gh workflow run extended-platform-evidence.yml" in error for error in errors)
+    assert any("gh workflow run xp-native-evidence.yml" in error for error in errors)
 
 
 def test_platform_promotion_runbook_requires_remote_audit_fail_closed_note() -> None:

@@ -238,7 +238,7 @@
     ],
     "accepted_evidence_gate": "python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag v<project.version>",
     "protected_goal_gate": "python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-records-complete",
-    "release_asset_provenance_gate": "python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-complete --assets-dir <release-assets-dir>",
+    "release_asset_provenance_gate": "python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-complete --assets-dir <release-assets-dir> --repository <owner>/<repo>",
     "published_release_audit_gate": "python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> --release-assets-dir <release-assets-dir> --release-repository <owner>/<repo>",
     "target_evidence_sources": {
       "linux-i386": ".github/workflows/extended-platform-evidence.yml",

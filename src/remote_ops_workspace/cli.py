@@ -1264,6 +1264,11 @@ def cmd_platforms(args: argparse.Namespace) -> int:
             "complete" if asset_provenance_complete else "not checked by static platform catalog"
         )
         print(f"  Release asset provenance      : {asset_provenance_state}")
+        remote_audit_command = str(
+            protected_goal.get("remote_release_evidence_audit_command", "")
+        ).strip()
+        if remote_audit_command:
+            print(f"  Published evidence audit      : {remote_audit_command}")
         missing_targets = [
             str(target) for target in protected_goal.get("missing_targets", [])
         ]
@@ -1339,6 +1344,11 @@ def cmd_features(args: argparse.Namespace) -> int:
             asset_command = str(protected_goal.get("release_asset_provenance_command", "")).strip()
             if not asset_provenance_complete and asset_command:
                 print(f"  Asset provenance gate    : {asset_command}")
+            remote_audit_command = str(
+                protected_goal.get("remote_release_evidence_audit_command", "")
+            ).strip()
+            if remote_audit_command:
+                print(f"  Remote evidence audit    : {remote_audit_command}")
             if missing_targets:
                 print(f"  Missing protected evidence  : {', '.join(missing_targets)}")
         evidence = report["evidence_summary"]

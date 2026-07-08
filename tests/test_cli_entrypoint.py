@@ -72,7 +72,15 @@ def test_module_entrypoint_coverage_prints_protected_platform_goal(tmp_path: Pat
     assert "Release asset provenance : not checked by static report" in result.stdout
     assert (
         "Asset provenance gate    : python scripts/check_protected_platform_goal.py "
-        "--release-tag v<project.version> --require-complete --assets-dir <release-assets-dir>"
+        "--release-tag v<project.version> --require-complete "
+        "--assets-dir <release-assets-dir> --repository <owner>/<repo>"
+    ) in result.stdout
+    assert (
+        "Remote evidence audit    : python scripts/check_platform_release_evidence_remote.py "
+        "--repository <owner>/<repo> --release-tag v<project.version> "
+        "--require-goal-targets --require-source-runs "
+        "--require-source-artifact-bytes --require-final-record-bytes "
+        "--require-release-asset-bytes --require-tag-source-head"
     ) in result.stdout
     assert (
         "Missing protected evidence  : linux-i386, linux-armhf, "

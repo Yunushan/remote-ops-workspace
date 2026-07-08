@@ -6,6 +6,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
+SUPPORTED_HOSTED_RUNNERS = {
+    "ubuntu-latest",
+    "windows-2025-vs2026",
+    "macos-14",
+    "macos-15",
+    "macos-15-intel",
+    "macos-26",
+    "macos-26-intel",
+}
 
 
 def main() -> int:
@@ -48,6 +57,7 @@ def check_top_level_policy(workflow: str) -> list[str]:
         errors.append("ci workflow must checkout repository sources")
     if checkout_without_persist_false(workflow):
         errors.append("every ci checkout step must set persist-credentials: false")
+    errors.extend(check_supported_hosted_runner_labels(workflow))
     return errors
 
 
@@ -281,6 +291,41 @@ def workflow_block_contains_token(block: str, token: str) -> bool:
 def workflow_includes_matrix_entry(block: str, *, os_name: str, python_version: str) -> bool:
     pattern = rf'(?ms)^\s+- os: {re.escape(os_name)}\n\s+python-version: "{re.escape(python_version)}"\s*$'
     return re.search(pattern, block) is not None
+
+
+def check_supported_hosted_runner_labels(workflow: str) -> list[str]:
+    labels = sorted(discover_hosted_runner_labels(workflow))
+    unknown = [label for label in labels if label not in SUPPORTED_HOSTED_RUNNERS]
+    if unknown:
+        allowed = ", ".join(sorted(SUPPORTED_HOSTED_RUNNERS))
+        return [
+            f"ci workflow contains unsupported GitHub-hosted runner label {label!r}; allowed labels: {allowed}"
+            for label in unknown
+        ]
+    return []
+
+
+def discover_hosted_runner_labels(workflow: str) -> set[str]:
+    labels: set[str] = set()
+    for match in re.finditer(r"(?m)^\s*runs-on:\s+([^\n#]+)", workflow):
+        value = match.group(1).strip()
+        if value.startswith("${{"):
+            continue
+        labels.update(parse_runner_label_value(value))
+    test_block = workflow_job_block(workflow, "test")
+    for match in re.finditer(r"(?m)^\s*(?:-\s*)?os:\s+([^\n#]+)", test_block):
+        labels.update(parse_runner_label_value(match.group(1).strip()))
+    return labels
+
+
+def parse_runner_label_value(value: str) -> set[str]:
+    text = value.strip().strip('"').strip("'")
+    if not text:
+        return set()
+    if text.startswith("[") and text.endswith("]"):
+        text = text[1:-1]
+        return {item.strip().strip('"').strip("'") for item in text.split(",") if item.strip()}
+    return {text}
 
 
 if __name__ == "__main__":

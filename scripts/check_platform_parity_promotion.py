@@ -85,6 +85,7 @@ LINUX_REQUIRED_PROMOTION_KEYS = {
     "workflow_job",
     "workflow_arch",
     "workflow_runner_evidence",
+    "workflow_dispatch_command",
     "build_script",
     "smoke_script",
     "smoke_evidence",
@@ -103,6 +104,7 @@ XP_REQUIRED_PROMOTION_KEYS = {
     "xp_vm_or_self_hosted_runner",
     "xp_evidence_collector_runner",
     "release_source_workflow",
+    "workflow_dispatch_command",
     "native_artifacts",
     "artifact_validation_command",
     "native_evidence_validation_command",
@@ -128,6 +130,7 @@ REQUIRED_DOC_SNIPPETS: dict[str, tuple[str, ...]] = {
         "python scripts/check_platform_verified_evidence.py",
         "python scripts/make_platform_verified_evidence_record.py",
         "python scripts/finalize_platform_verified_evidence_record.py",
+        "python scripts/check_platform_release_evidence_remote.py",
         "python scripts/stage_extended_linux_evidence_upload.py",
         "python scripts/stage_xp_native_evidence_upload.py",
     ),
@@ -143,6 +146,7 @@ REQUIRED_DOC_SNIPPETS: dict[str, tuple[str, ...]] = {
         "python scripts/check_platform_verified_evidence.py",
         "python scripts/make_platform_verified_evidence_record.py",
         "python scripts/finalize_platform_verified_evidence_record.py",
+        "python scripts/check_platform_release_evidence_remote.py",
         "python scripts/stage_extended_linux_evidence_upload.py",
         "python scripts/stage_xp_native_evidence_upload.py",
     ),
@@ -171,6 +175,7 @@ REQUIRED_DOC_SNIPPETS: dict[str, tuple[str, ...]] = {
         "python scripts/check_platform_verified_evidence.py",
         "python scripts/make_platform_verified_evidence_record.py",
         "python scripts/finalize_platform_verified_evidence_record.py",
+        "python scripts/check_platform_release_evidence_remote.py",
         "python scripts/stage_extended_linux_evidence_upload.py",
         "python scripts/stage_xp_native_evidence_upload.py",
     ),
@@ -354,6 +359,7 @@ def check_linux_promotion_entry(
 
     errors.extend(check_script_requirement(label, requirements, "build_script"))
     errors.extend(check_script_requirement(label, requirements, "smoke_script"))
+    errors.extend(check_workflow_dispatch_command(label, requirements, kind="linux"))
     errors.extend(check_linux_smoke_evidence_requirements(label, requirements))
     errors.extend(check_artifact_validation_command(label, requirements))
     errors.extend(check_local_evidence_preflight_command(label, requirements, kind="linux"))
@@ -472,6 +478,7 @@ def check_xp_promotion_entry(
         errors.append(f"{label} release_source_workflow must be .github/workflows/xp-native-evidence.yml")
     elif not (ROOT / source_workflow).is_file():
         errors.append(f"{label} release_source_workflow file is missing: {source_workflow}")
+    errors.extend(check_workflow_dispatch_command(label, requirements, kind="xp"))
     expected_arch = str(entry.get("architecture", ""))
     artifacts = requirements.get("native_artifacts")
     if not isinstance(artifacts, list) or len(artifacts) < 3:
@@ -641,6 +648,45 @@ def check_xp_native_evidence_validation_command(label: str, requirements: dict[s
     return []
 
 
+def check_workflow_dispatch_command(
+    label: str,
+    requirements: dict[str, Any],
+    *,
+    kind: str,
+) -> list[str]:
+    command = requirements.get("workflow_dispatch_command")
+    if not isinstance(command, str) or not command:
+        return [f"{label} promotion requires workflow_dispatch_command"]
+    if kind == "linux":
+        expected = (
+            "gh workflow run extended-platform-evidence.yml "
+            "--repo <owner>/<repo> "
+            "--ref v<project.version> "
+            f"-f target={label} "
+            "-f release_tag=v<project.version> "
+            "-f release_asset_base_url=<github-release-download-url>"
+        )
+        workflow_path = ".github/workflows/extended-platform-evidence.yml"
+    else:
+        expected = (
+            "gh workflow run xp-native-evidence.yml "
+            "--repo <owner>/<repo> "
+            "--ref v<project.version> "
+            f"-f target={label} "
+            "-f release_tag=v<project.version> "
+            "-f release_asset_base_url=<github-release-download-url> "
+            "-f assets_dir=<target-release-artifact-dir> "
+            "-f evidence_file=<target-release-evidence.json> "
+            "-f evidence_dir=<target-release-evidence-dir>"
+        )
+        workflow_path = ".github/workflows/xp-native-evidence.yml"
+    if command != expected:
+        return [f"{label} workflow_dispatch_command must be {expected!r}"]
+    if not (ROOT / workflow_path).is_file():
+        return [f"{label} evidence source workflow file is missing: {workflow_path}"]
+    return []
+
+
 def check_local_evidence_preflight_command(
     label: str,
     requirements: dict[str, Any],
@@ -657,6 +703,7 @@ def check_local_evidence_preflight_command(
             "--release-tag v<project.version> "
             f"--target {label} "
             "--assets-dir <target-release-artifact-dir> "
+            "--repository <owner>/<repo> "
             "--linux-builder-evidence <builder-identity.json> "
             "--linux-smoke-evidence <native-smoke-log> "
             "--linux-workflow-run-url <github-actions-run-url> "
@@ -670,6 +717,7 @@ def check_local_evidence_preflight_command(
             "--release-tag v<project.version> "
             f"--target {label} "
             "--assets-dir <target-release-artifact-dir> "
+            "--repository <owner>/<repo> "
             "--xp-evidence <target-release-evidence.json> "
             "--xp-evidence-dir <target-release-evidence-dir> "
             "--xp-source-workflow-run-url <github-actions-run-url> "

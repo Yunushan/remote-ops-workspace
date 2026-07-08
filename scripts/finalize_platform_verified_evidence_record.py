@@ -1042,16 +1042,25 @@ def check_manifest_smoke_hashes_match_candidate(
     return errors
 
 
-def check_bundle_sidecar(sidecar: Path, manifest: Path, archive: Path) -> list[str]:
-    if not sidecar.is_file():
+def check_bundle_sidecar(sidecar: object, manifest: object, archive: object) -> list[str]:
+    sidecar_errors, sidecar_path = path_arg_value(sidecar, "review bundle SHA-256 sidecar")
+    manifest_errors, manifest_path = path_arg_value(manifest, "review bundle manifest")
+    archive_errors, archive_path = path_arg_value(archive, "review bundle archive")
+    errors = sidecar_errors + manifest_errors + archive_errors
+    if errors:
+        return errors
+    assert sidecar_path is not None
+    assert manifest_path is not None
+    assert archive_path is not None
+    if not sidecar_path.is_file():
         return []
     try:
-        lines = [line.strip() for line in sidecar.read_text(encoding="utf-8").splitlines() if line.strip()]
+        lines = [line.strip() for line in sidecar_path.read_text(encoding="utf-8").splitlines() if line.strip()]
     except (OSError, UnicodeDecodeError) as exc:
         return [f"review bundle SHA-256 sidecar is not readable UTF-8: {exc}"]
     expected = {
-        f"{sha256_file(manifest)}  {manifest.name}",
-        f"{sha256_file(archive)}  {archive.name}",
+        f"{sha256_file(manifest_path)}  {manifest_path.name}",
+        f"{sha256_file(archive_path)}  {archive_path.name}",
     }
     line_set = set(lines)
     missing = sorted(expected - line_set)
@@ -1597,13 +1606,18 @@ def platform_evidence_policy() -> str:
     return str(registry.get("policy", ""))
 
 
-def load_json(path: Path, label: str, errors: list[str]) -> dict[str, Any] | None:
-    if not check_input_file(path, label, errors):
+def load_json(path: object, label: str, errors: list[str]) -> dict[str, Any] | None:
+    path_errors, path_value = path_arg_value(path, f"{label} file")
+    if path_errors:
+        errors.extend(path_errors)
+        return None
+    assert path_value is not None
+    if not check_input_file(path_value, label, errors):
         return None
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path_value.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        errors.append(f"{label} file is not readable JSON: {path}: {exc}")
+        errors.append(f"{label} file is not readable JSON: {path_value}: {exc}")
         return None
     if not isinstance(data, dict):
         errors.append(f"{label} file must contain a JSON object")
@@ -1611,32 +1625,45 @@ def load_json(path: Path, label: str, errors: list[str]) -> dict[str, Any] | Non
     return data
 
 
-def check_input_file(path: Path, label: str, errors: list[str]) -> bool:
-    reserved_errors = check_path_not_reserved_workspace_root(path, f"{label} file")
+def check_input_file(path: object, label: str, errors: list[str]) -> bool:
+    path_errors, path_value = path_arg_value(path, f"{label} file")
+    if path_errors:
+        errors.extend(path_errors)
+        return False
+    assert path_value is not None
+    reserved_errors = check_path_not_reserved_workspace_root(path_value, f"{label} file")
     if reserved_errors:
         errors.extend(reserved_errors)
         return False
-    if path.is_symlink():
-        errors.append(f"{label} file must not be a symlink: {path}")
+    if path_value.is_symlink():
+        errors.append(f"{label} file must not be a symlink: {path_value}")
         return False
-    parent_errors = check_path_parent_symlinks(path, f"{label} file")
+    parent_errors = check_path_parent_symlinks(path_value, f"{label} file")
     if parent_errors:
         errors.extend(parent_errors)
         return False
-    if not path.is_file():
-        errors.append(f"{label} file missing: {path}")
+    if not path_value.is_file():
+        errors.append(f"{label} file missing: {path_value}")
         return False
     return True
 
 
-def check_text_output_path(path: Path, label: str) -> list[str]:
-    reserved_errors = check_path_not_reserved_workspace_root(path, label)
+def check_text_output_path(path: object, label: str) -> list[str]:
+    path_errors, path_value = path_arg_value(path, label)
+    if path_errors:
+        return path_errors
+    assert path_value is not None
+    reserved_errors = check_path_not_reserved_workspace_root(path_value, label)
     if reserved_errors:
         return reserved_errors
-    return check_base_text_output_path(path, label)
+    return check_base_text_output_path(path_value, label)
 
 
-def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
+def check_path_not_reserved_workspace_root(path: object, label: str) -> list[str]:
+    path_errors, path_value = path_arg_value(path, label)
+    if path_errors:
+        return path_errors
+    assert path_value is not None
     roots: list[Path] = [Path.cwd(), ROOT]
     seen_roots: set[Path] = set()
     for root in roots:
@@ -1644,7 +1671,9 @@ def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
         if root_resolved in seen_roots:
             continue
         seen_roots.add(root_resolved)
-        path_resolved = (path if path.is_absolute() else root_resolved / path).resolve(strict=False)
+        path_resolved = (
+            path_value if path_value.is_absolute() else root_resolved / path_value
+        ).resolve(strict=False)
         try:
             relative = path_resolved.relative_to(root_resolved)
         except ValueError:
@@ -1656,18 +1685,22 @@ def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
         if reserved_root in RESERVED_WORKSPACE_ROOTS:
             return [
                 f"{label} must not point inside reserved workspace directory "
-                f"{reserved_root!r}: {path}"
+                f"{reserved_root!r}: {path_value}"
             ]
     return []
 
 
-def check_candidate_record_file_name(candidate_record: Path, target: str) -> list[str]:
+def check_candidate_record_file_name(candidate_record: object, target: str) -> list[str]:
+    path_errors, candidate_path = path_arg_value(candidate_record, "candidate evidence record")
+    if path_errors:
+        return path_errors
+    assert candidate_path is not None
     expected_name = candidate_record_file_name(target)
-    if candidate_record.name == expected_name:
+    if candidate_path.name == expected_name:
         return []
     return [
         f"candidate evidence record file name must be {expected_name}, "
-        f"got {candidate_record.name!r}"
+        f"got {candidate_path.name!r}"
     ]
 
 
@@ -1676,23 +1709,32 @@ def candidate_record_file_name(target: str) -> str:
 
 
 def check_finalized_record_output_path(
-    path: Path,
+    path: object,
     record: dict[str, Any],
     *,
-    bundle_manifest: Path | None = None,
+    bundle_manifest: object | None = None,
 ) -> list[str]:
+    path_errors, path_value = path_arg_value(path, "finalized platform evidence record output file")
+    if path_errors:
+        return path_errors
+    assert path_value is not None
+    manifest_path: Path | None = None
+    if bundle_manifest is not None:
+        manifest_errors, manifest_path = path_arg_value(bundle_manifest, "review bundle manifest")
+        if manifest_errors:
+            return manifest_errors
     target = str(record.get("target", ""))
     expected_name = accepted_record_source_file(target)
     errors: list[str] = []
-    if path.name != expected_name:
+    if path_value.name != expected_name:
         errors.append(
             f"finalized platform evidence record output file name must be {expected_name}, "
-            f"got {path.name!r}"
+            f"got {path_value.name!r}"
         )
-    errors.extend(check_text_output_path(path, "finalized platform evidence record output file"))
-    if bundle_manifest is not None:
-        output_parent = normalized_parent(path)
-        bundle_parent = normalized_parent(bundle_manifest)
+    errors.extend(check_text_output_path(path_value, "finalized platform evidence record output file"))
+    if manifest_path is not None:
+        output_parent = normalized_parent(path_value)
+        bundle_parent = normalized_parent(manifest_path)
         if output_parent != bundle_parent:
             errors.append(
                 "finalized platform evidence record output file must be written next to review bundle files: "
@@ -1701,34 +1743,47 @@ def check_finalized_record_output_path(
     return errors
 
 
-def check_finalized_record_output_bytes(path: Path, expected_text: str) -> list[str]:
-    errors = check_text_output_path(path, "finalized platform evidence record output file")
+def check_finalized_record_output_bytes(path: object, expected_text: str) -> list[str]:
+    path_errors, path_value = path_arg_value(path, "finalized platform evidence record output file")
+    if path_errors:
+        return path_errors
+    assert path_value is not None
+    errors = check_text_output_path(path_value, "finalized platform evidence record output file")
     if errors:
         return errors
-    if not path.is_file():
-        return [f"finalized platform evidence record output file missing after write: {path}"]
+    if not path_value.is_file():
+        return [f"finalized platform evidence record output file missing after write: {path_value}"]
     try:
-        actual = path.read_bytes()
+        actual = path_value.read_bytes()
     except OSError as exc:
-        return [f"finalized platform evidence record output file is not readable after write: {path}: {exc}"]
+        return [f"finalized platform evidence record output file is not readable after write: {path_value}: {exc}"]
     expected = expected_text.encode("utf-8")
     if actual != expected:
         return [
             "finalized platform evidence record output file bytes must match canonical record JSON "
-            f"before registry append: {path}"
+            f"before registry append: {path_value}"
         ]
     return []
 
 
 def check_review_bundle_input_siblings(
-    manifest: Path,
-    archive: Path,
-    sidecar: Path,
+    manifest: object,
+    archive: object,
+    sidecar: object,
 ) -> list[str]:
+    manifest_errors, manifest_path = path_arg_value(manifest, "review bundle manifest")
+    archive_errors, archive_path = path_arg_value(archive, "review bundle archive")
+    sidecar_errors, sidecar_path = path_arg_value(sidecar, "review bundle SHA-256 sidecar")
+    errors = manifest_errors + archive_errors + sidecar_errors
+    if errors:
+        return errors
+    assert manifest_path is not None
+    assert archive_path is not None
+    assert sidecar_path is not None
     parents = {
-        "manifest": normalized_parent(manifest),
-        "archive": normalized_parent(archive),
-        "sha256s": normalized_parent(sidecar),
+        "manifest": normalized_parent(manifest_path),
+        "archive": normalized_parent(archive_path),
+        "sha256s": normalized_parent(sidecar_path),
     }
     if len(set(parents.values())) == 1:
         return []

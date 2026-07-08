@@ -61,7 +61,7 @@ PROTECTED_READINESS_GATE_COMMANDS = {
     "release_asset_provenance_gate": (
         "python scripts/check_protected_platform_goal.py "
         "--release-tag v<project.version> --require-complete "
-        "--assets-dir <release-assets-dir>"
+        "--assets-dir <release-assets-dir> --repository <owner>/<repo>"
     ),
     "published_release_audit_gate": (
         "python scripts/verify.py --quick --no-cli-smoke "
@@ -208,7 +208,7 @@ REQUIRED_DOC_SNIPPETS: dict[str, tuple[str, ...]] = {
         "`protected_readiness_goal` metadata block",
         "`not native-host/readiness proof`",
         "`configs/platform_verified_evidence.json`",
-        "check_release_publish_assets.py --assets-dir <release-assets-dir> --tag v<project.version> --require-platform-goal-targets",
+        "check_release_publish_assets.py --assets-dir <release-assets-dir> --tag v<project.version> --repository <owner>/<repo> --require-platform-goal-targets",
         "release_asset_provenance_complete=false",
         "asset-backed protected goal gate",
         "check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag <tag> --require-final-record-assets",
@@ -245,7 +245,7 @@ REQUIRED_DOC_SNIPPETS: dict[str, tuple[str, ...]] = {
         "profile-only legacy crypto scope facts",
         "`scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux --target linux-i386 --workflow-run-url <github-actions-run-url> --workflow-run-attempt <github-actions-run-attempt> --source-head-sha <github-actions-head-sha> --builder-evidence <builder-identity.json>`",
         "`scripts/smoke_linux_native.sh --arch armhf --dist native-dist/linux --target linux-armhf --workflow-run-url <github-actions-run-url> --workflow-run-attempt <github-actions-run-attempt> --source-head-sha <github-actions-head-sha> --builder-evidence <builder-identity.json>`",
-        "python scripts/import_platform_evidence_artifacts.py --release-tag v<project.version> --require-goal-targets --out-dir <release-assets-dir> --dry-run --verify-source-run",
+        "python scripts/import_platform_evidence_artifacts.py --release-tag v<project.version> --require-goal-targets --out-dir <release-assets-dir> --dry-run --verify-source-run --repository <owner>/<repo>",
         "hash-checked as downloaded source artifacts before being copied into the release asset directory",
         "release_asset_provenance_complete=false",
         "asset-backed protected goal",
@@ -253,7 +253,7 @@ REQUIRED_DOC_SNIPPETS: dict[str, tuple[str, ...]] = {
         "`release_backed_complete`",
         "`static_readiness_evidence_scope`",
         "`release_backed_readiness_complete=false`",
-        "add `--release-repository <owner>/<repo>` to that strict verifier",
+        "that strict verifier audits the intended already-published GitHub release",
         "published native/review-bundle asset bytes",
         "published final accepted-record JSON bytes",
         "`workflow_run.repository_id` and",
@@ -261,7 +261,7 @@ REQUIRED_DOC_SNIPPETS: dict[str, tuple[str, ...]] = {
         "artifact `created_at` values outside the exact source run creation/start/update window",
         "canonical accepted-record JSON bytes",
         "native artifact SHA-256 plus review-bundle size/SHA-256 checks on the downloaded source artifact",
-        "check_release_publish_assets.py --assets-dir <release-assets-dir> --tag v<project.version> --require-platform-goal-targets",
+        "check_release_publish_assets.py --assets-dir <release-assets-dir> --tag v<project.version> --repository <owner>/<repo> --require-platform-goal-targets",
         "`--host-label`, `--evidence-run-id` and `--observed-at-utc` command bindings",
         "`xp_evidence_summary.release_source` matching `release_asset_source`",
         "`--source-workflow-run-url`, `--source-head-sha` and `--source-run-attempt`",
@@ -308,8 +308,11 @@ REQUIRED_DOC_SNIPPETS: dict[str, tuple[str, ...]] = {
         "static_readiness_evidence_scope",
         "release_backed_readiness_complete=false",
         "release_asset_provenance_command",
+        "remote_release_evidence_audit_command",
         "Release asset provenance",
         "Asset provenance gate",
+        "Remote evidence audit",
+        "live published",
         "accepted-record/release-asset provenance note",
         "asset-backed protected goal gate",
         "same-run-URL conflicting-attempt accepted records",

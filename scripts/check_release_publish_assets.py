@@ -21,6 +21,7 @@ if str(SCRIPTS) not in sys.path:
 
 from check_platform_verified_evidence import (  # noqa: E402
     GITHUB_RELEASE_ASSET_RE,
+    GITHUB_REPOSITORY_RE,
     RESERVED_WORKSPACE_ROOTS,
     directory_path_has_file_suffix,
 )
@@ -35,7 +36,7 @@ PLATFORM_GOAL_TARGETS = (
 )
 PUBLISH_PROTECTED_PLATFORM_ASSET_COMMAND = (
     'python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" '
-    "--require-complete --assets-dir release-assets"
+    '--require-complete --assets-dir release-assets --repository "${{ github.repository }}"'
 )
 PUBLISH_REMOTE_PLATFORM_EVIDENCE_AUDIT_COMMAND = (
     'python scripts/check_platform_release_evidence_remote.py --repository "${{ github.repository }}" '
@@ -93,6 +94,7 @@ def main(argv: list[str] | None = None) -> int:
                 args.assets_dir,
                 matrix,
                 tag=args.tag,
+                repository=args.repository,
                 evidence_registry=evidence_registry,
                 mobaxterm_parity_registry=mobaxterm_registry,
                 require_platform_goal_targets=args.require_platform_goal_targets,
@@ -117,6 +119,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--tag",
         help="Expected release tag, for example v1.0.2. Defaults to the matrix release tag.",
+    )
+    parser.add_argument(
+        "--repository",
+        help="Expected GitHub release repository in owner/name form, for example owner/repo.",
     )
     parser.add_argument(
         "--require-platform-goal-targets",
@@ -199,6 +205,7 @@ def check_publish_contract(
         "merge-multiple: true": "merged downloaded artifact directory",
         PUBLISH_PROTECTED_PLATFORM_ASSET_COMMAND: "protected platform release asset gate",
         "python scripts/check_release_publish_assets.py --assets-dir release-assets --tag": "publish asset validation",
+        '--repository "${{ github.repository }}"': "publish evidence repository binding",
         PUBLISH_REMOTE_PLATFORM_EVIDENCE_AUDIT_COMMAND: "published protected platform evidence audit",
         "--require-platform-goal-targets": "protected platform goal publish gate",
         "--require-source-runs": "published evidence source run audit",
@@ -282,6 +289,7 @@ def check_platform_evidence_import_job(workflow: str) -> list[str]:
         "--require-goal-targets": "strict protected target import",
         "--out-dir release-assets": "release asset import directory",
         "--verify-source-run": "source run metadata verification",
+        '--repository "${{ github.repository }}"': "repository-bound accepted evidence import",
         "python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets": (
             "imported platform review bundle validator"
         ),
@@ -326,12 +334,13 @@ def check_job_block_disallows_continue_on_error(job: str, block: str) -> list[st
 
 
 def check_release_assets(
-    assets_dir: Path,
+    assets_dir: object,
     matrix: dict[str, Any],
     *,
     tag: str | None,
     evidence_registry: dict[str, Any] | None = None,
     mobaxterm_parity_registry: dict[str, Any] | None = None,
+    repository: str | None = None,
     require_platform_goal_targets: bool = False,
     require_mobaxterm_parity_complete: bool = False,
 ) -> list[str]:
@@ -339,6 +348,7 @@ def check_release_assets(
     errors.extend(check_release_asset_directory(assets_dir))
     if errors:
         return errors
+    assert isinstance(assets_dir, Path)
     root = assets_dir.resolve()
     if not root.is_dir():
         return [f"release asset directory missing: {assets_dir}"]
@@ -377,6 +387,7 @@ def check_release_assets(
             root,
             actual,
             tag=release_tag,
+            repository=repository,
             evidence_registry=registry,
         )
     )
@@ -398,26 +409,44 @@ def check_release_assets(
     return errors
 
 
-def check_release_asset_directory(assets_dir: Path) -> list[str]:
-    hint_errors = check_directory_path_hint(assets_dir, "release asset directory")
+def check_release_asset_directory(assets_dir: object) -> list[str]:
+    path_errors, assets_path = path_arg_value(assets_dir, "release asset directory")
+    if path_errors:
+        return path_errors
+    assert assets_path is not None
+    hint_errors = check_directory_path_hint(assets_path, "release asset directory")
     if hint_errors:
         return hint_errors
-    reserved_errors = check_path_not_reserved_workspace_root(assets_dir, "release asset directory")
+    reserved_errors = check_path_not_reserved_workspace_root(assets_path, "release asset directory")
     if reserved_errors:
         return reserved_errors
-    if assets_dir.is_symlink():
-        return [f"release asset directory must not be a symlink: {assets_dir}"]
-    return check_path_parent_symlinks(assets_dir, "release asset directory")
+    if assets_path.is_symlink():
+        return [f"release asset directory must not be a symlink: {assets_path}"]
+    return check_path_parent_symlinks(assets_path, "release asset directory")
 
 
-def check_directory_path_hint(path: Path, label: str) -> list[str]:
-    raw_path = path.as_posix()
+def path_arg_value(raw_path: object, label: str) -> tuple[list[str], Path | None]:
+    if not isinstance(raw_path, Path):
+        return [f"{label} path must be a pathlib.Path, got {raw_path!r}"], None
+    return [], raw_path
+
+
+def check_directory_path_hint(path: object, label: str) -> list[str]:
+    path_errors, path_value = path_arg_value(path, label)
+    if path_errors:
+        return path_errors
+    assert path_value is not None
+    raw_path = path_value.as_posix()
     if directory_path_has_file_suffix(raw_path):
         return [f"{label} must be a directory path, got {raw_path!r}"]
     return []
 
 
-def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
+def check_path_not_reserved_workspace_root(path: object, label: str) -> list[str]:
+    path_errors, path_value = path_arg_value(path, label)
+    if path_errors:
+        return path_errors
+    assert path_value is not None
     roots: list[Path] = [Path.cwd(), ROOT]
     seen_roots: set[Path] = set()
     for root in roots:
@@ -425,7 +454,9 @@ def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
         if root_resolved in seen_roots:
             continue
         seen_roots.add(root_resolved)
-        path_resolved = (path if path.is_absolute() else root_resolved / path).resolve(strict=False)
+        path_resolved = (
+            path_value if path_value.is_absolute() else root_resolved / path_value
+        ).resolve(strict=False)
         try:
             relative = path_resolved.relative_to(root_resolved)
         except ValueError:
@@ -437,24 +468,32 @@ def check_path_not_reserved_workspace_root(path: Path, label: str) -> list[str]:
         if reserved_root in RESERVED_WORKSPACE_ROOTS:
             return [
                 f"{label} must not point inside reserved workspace directory "
-                f"{reserved_root!r}: {path}"
+                f"{reserved_root!r}: {path_value}"
             ]
     return []
 
 
-def check_release_asset_symlinks(root: Path) -> list[str]:
-    symlinks = sorted(path.name for path in root.iterdir() if path.is_symlink())
+def check_release_asset_symlinks(root: object) -> list[str]:
+    path_errors, root_path = path_arg_value(root, "release asset directory")
+    if path_errors:
+        return path_errors
+    assert root_path is not None
+    symlinks = sorted(path.name for path in root_path.iterdir() if path.is_symlink())
     if symlinks:
         return [f"release assets must not contain symlinks: {symlinks}"]
     return []
 
 
-def check_release_asset_root_entries(root: Path) -> list[str]:
-    files = [path.name for path in root.iterdir() if path.is_file()]
-    directories = sorted(path.name for path in root.iterdir() if path.is_dir() and not path.is_symlink())
+def check_release_asset_root_entries(root: object) -> list[str]:
+    path_errors, root_path = path_arg_value(root, "release asset directory")
+    if path_errors:
+        return path_errors
+    assert root_path is not None
+    files = [path.name for path in root_path.iterdir() if path.is_file()]
+    directories = sorted(path.name for path in root_path.iterdir() if path.is_dir() and not path.is_symlink())
     unsupported = sorted(
         path.name
-        for path in root.iterdir()
+        for path in root_path.iterdir()
         if not path.is_file() and not path.is_dir() and not path.is_symlink()
     )
     errors: list[str] = []
@@ -493,11 +532,15 @@ def check_release_asset_file_names(filenames: list[str]) -> list[str]:
 
 
 def check_platform_review_bundle_artifacts(
-    root: Path,
+    root: object,
     *,
     tag: str,
     evidence_registry: dict[str, Any],
 ) -> list[str]:
+    root_errors, root_path = path_arg_value(root, "release asset directory")
+    if root_errors:
+        return root_errors
+    assert root_path is not None
     rows = evidence_registry.get("accepted_evidence", [])
     if not isinstance(rows, list):
         return ["platform verified evidence accepted_evidence must be a list"]
@@ -515,7 +558,7 @@ def check_platform_review_bundle_artifacts(
     scoped_registry = {**evidence_registry, "accepted_evidence": accepted_rows}
     return checker.check_platform_review_bundle_artifacts(
         registry=scoped_registry,
-        bundle_dir=root,
+        bundle_dir=root_path,
     )
 
 
@@ -593,18 +636,24 @@ def accepted_evidence_targets(
 
 
 def check_platform_evidence_asset_hashes(
-    root: Path,
+    root: object,
     assets: set[str],
     *,
     tag: str,
+    repository: str | None = None,
     evidence_registry: dict[str, Any],
 ) -> list[str]:
+    root_errors, root_path = path_arg_value(root, "release asset directory")
+    if root_errors:
+        return root_errors
+    assert root_path is not None
     registry_errors = validate_accepted_evidence_registry(evidence_registry)
     if registry_errors:
         return registry_errors
     rows = evidence_registry.get("accepted_evidence", [])
     if not isinstance(rows, list):
         return ["platform verified evidence accepted_evidence must be a list"]
+    repository_errors, expected_repository = normalize_expected_repository(repository)
     accepted = {
         accepted_record_target(item): item
         for item in rows
@@ -614,7 +663,7 @@ def check_platform_evidence_asset_hashes(
         and item.get("release_tag") == tag
         and accepted_record_target(item)
     }
-    errors: list[str] = []
+    errors: list[str] = repository_errors
     for target, record in sorted(accepted.items()):
         if record.get("release_tag") != tag:
             continue
@@ -634,7 +683,12 @@ def check_platform_evidence_asset_hashes(
                     f"got {url!r}"
                 )
                 continue
-            release_url_errors = check_accepted_release_asset_url_scope(target, url, tag)
+            release_url_errors = check_accepted_release_asset_url_scope(
+                target,
+                url,
+                tag,
+                repository=expected_repository,
+            )
             if release_url_errors:
                 errors.extend(release_url_errors)
                 continue
@@ -674,7 +728,7 @@ def check_platform_evidence_asset_hashes(
                     f"{asset_name}"
                 )
                 continue
-            actual_sha = sha256_file(root / asset_name)
+            actual_sha = sha256_file(root_path / asset_name)
             if actual_sha != expected_sha:
                 errors.append(
                     f"release asset {asset_name} SHA-256 does not match accepted evidence for {target}"
@@ -708,7 +762,7 @@ def check_platform_evidence_asset_hashes(
                     f"{bundle_name}"
                 )
                 continue
-            bundle_path = root / bundle_name
+            bundle_path = root_path / bundle_name
             expected_size = bundle_record.get("size_bytes")
             if (
                 bundle_path.is_file()
@@ -741,7 +795,7 @@ def check_platform_evidence_asset_hashes(
         else:
             errors.extend(
                 check_final_accepted_record_asset(
-                    root / final_record_name,
+                    root_path / final_record_name,
                     target=target,
                     record=record,
                 )
@@ -768,7 +822,7 @@ def check_platform_evidence_asset_hashes(
                     "must be a lowercase SHA-256 hex digest"
                 )
                 continue
-            actual_sha = sha256_file(root / asset)
+            actual_sha = sha256_file(root_path / asset)
             if actual_sha != expected_sha:
                 errors.append(
                     f"release asset {asset} SHA-256 does not match accepted evidence for {target}"
@@ -776,12 +830,36 @@ def check_platform_evidence_asset_hashes(
     return errors
 
 
-def check_accepted_release_asset_url_scope(target: str, url: str, tag: str) -> list[str]:
+def normalize_expected_repository(repository: str | None) -> tuple[list[str], str | None]:
+    if repository is None:
+        return [], None
+    if not isinstance(repository, str):
+        return [f"release repository must be a string owner/name value, got {repository!r}"], None
+    normalized = repository.strip().strip("/")
+    if not normalized:
+        return ["release repository must be a non-empty owner/name value"], None
+    if not re.fullmatch(GITHUB_REPOSITORY_RE, normalized):
+        return [f"release repository must be a GitHub owner/name value, got {repository!r}"], None
+    return [], normalized
+
+
+def check_accepted_release_asset_url_scope(
+    target: str,
+    url: str,
+    tag: str,
+    *,
+    repository: str | None = None,
+) -> list[str]:
     match = GITHUB_RELEASE_ASSET_RE.fullmatch(url)
     if not match:
         return [
             f"{target} accepted evidence release_asset_urls entries must be "
             f"GitHub release asset URLs: {url}"
+        ]
+    if repository is not None and match.group(1) != repository:
+        return [
+            f"{target} accepted evidence release_asset_urls repository must match "
+            f"release repository {repository}: {url}"
         ]
     if match.group(2) != tag:
         return [
@@ -842,30 +920,37 @@ def accepted_record_source_file(target: str) -> str:
 
 
 def check_final_accepted_record_asset(
-    path: Path,
+    path: object,
     *,
     target: str,
     record: dict[str, Any],
 ) -> list[str]:
-    if path.is_symlink():
-        return [f"{target} accepted evidence finalized record asset must not be a symlink: {path.name}"]
-    if not path.is_file():
-        return [f"{target} accepted evidence finalized record asset missing from release directory: {path.name}"]
+    path_errors, path_value = path_arg_value(
+        path,
+        f"{target} accepted evidence finalized record asset",
+    )
+    if path_errors:
+        return path_errors
+    assert path_value is not None
+    if path_value.is_symlink():
+        return [f"{target} accepted evidence finalized record asset must not be a symlink: {path_value.name}"]
+    if not path_value.is_file():
+        return [f"{target} accepted evidence finalized record asset missing from release directory: {path_value.name}"]
     try:
-        raw_bytes = path.read_bytes()
+        raw_bytes = path_value.read_bytes()
         data = json.loads(raw_bytes.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        return [f"{target} accepted evidence finalized record asset is not readable JSON: {path.name}: {exc}"]
+        return [f"{target} accepted evidence finalized record asset is not readable JSON: {path_value.name}: {exc}"]
     if not isinstance(data, dict):
-        return [f"{target} accepted evidence finalized record asset must contain a JSON object: {path.name}"]
+        return [f"{target} accepted evidence finalized record asset must contain a JSON object: {path_value.name}"]
     key_errors = public_record_key_errors(target, record)
     if key_errors:
         return key_errors
     if data != public_record(record):
-        return [f"{target} accepted evidence finalized record asset must match accepted registry record: {path.name}"]
+        return [f"{target} accepted evidence finalized record asset must match accepted registry record: {path_value.name}"]
     if raw_bytes != canonical_public_record_bytes(record):
         return [
-            f"{target} accepted evidence finalized record asset must use canonical sorted JSON: {path.name}"
+            f"{target} accepted evidence finalized record asset must use canonical sorted JSON: {path_value.name}"
         ]
     return []
 
@@ -985,14 +1070,18 @@ def expected_release_assets(matrix: dict[str, Any], *, tag: str | None = None) -
     return assets
 
 
-def check_checksum_sidecars(root: Path, expected: set[str]) -> list[str]:
+def check_checksum_sidecars(root: object, expected: set[str]) -> list[str]:
+    root_errors, root_path = path_arg_value(root, "release asset directory")
+    if root_errors:
+        return root_errors
+    assert root_path is not None
     errors: list[str] = []
     checksum_files = sorted(asset for asset in expected if asset.endswith(EXPECTED_CHECKSUM_SUFFIX))
     final_record_assets = {asset for asset in expected if FINAL_ACCEPTED_RECORD_RE.fullmatch(asset)}
     expected_references = set(expected - set(checksum_files) - final_record_assets)
     referenced_assets: set[str] = set()
     for checksum_name in checksum_files:
-        path = root / checksum_name
+        path = root_path / checksum_name
         if not path.is_file():
             continue
         try:
@@ -1018,7 +1107,7 @@ def check_checksum_sidecars(root: Path, expected: set[str]) -> list[str]:
             if referenced not in expected:
                 errors.append(f"{checksum_name} references unexpected file: {referenced}")
                 continue
-            referenced_path = root / referenced
+            referenced_path = root_path / referenced
             if not referenced_path.is_file():
                 errors.append(f"{checksum_name} references missing file: {referenced}")
                 continue
@@ -1071,9 +1160,13 @@ def release_manifest_artifact_filename(file_value: Any) -> str:
     return filename if checksum_reference_name_is_safe(filename) else ""
 
 
-def check_release_manifest(root: Path, matrix: dict[str, Any], *, tag: str | None) -> list[str]:
+def check_release_manifest(root: object, matrix: dict[str, Any], *, tag: str | None) -> list[str]:
+    root_errors, root_path = path_arg_value(root, "release asset directory")
+    if root_errors:
+        return root_errors
+    assert root_path is not None
     errors: list[str] = []
-    manifests = sorted(root.glob("remote-ops-workspace-v*-release-manifest.json"))
+    manifests = sorted(root_path.glob("remote-ops-workspace-v*-release-manifest.json"))
     if len(manifests) != 1:
         return [f"expected exactly one release manifest, found {len(manifests)}"]
     manifest_name = manifests[0].name
@@ -1116,7 +1209,7 @@ def check_release_manifest(root: Path, matrix: dict[str, Any], *, tag: str | Non
         if not digest_is_valid:
             errors.append(f"{manifest_name} artifact {filename} sha256 must be a lowercase SHA-256 hex digest")
         if filename in source_expected:
-            artifact_path = root / filename
+            artifact_path = root_path / filename
             if not artifact_path.is_file():
                 errors.append(f"{manifest_name} artifact {filename} file missing from release assets")
                 continue
@@ -1136,8 +1229,12 @@ def is_allowed_platform_parent_symlink(parent: Path) -> bool:
         return False
 
 
-def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
-    check_path = path if path.is_absolute() else Path.cwd() / path
+def check_path_parent_symlinks(path: object, label: str) -> list[str]:
+    path_errors, path_value = path_arg_value(path, label)
+    if path_errors:
+        return path_errors
+    assert path_value is not None
+    check_path = path_value if path_value.is_absolute() else Path.cwd() / path_value
     for parent in reversed(check_path.parents):
         if parent == Path("."):
             continue

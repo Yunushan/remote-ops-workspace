@@ -331,6 +331,26 @@ def test_ci_workflow_requires_current_macos_intel_and_apple_silicon_smoke_runner
             assert f"ci test matrix missing macOS smoke row: {runner} Python {version}" in errors
 
 
+def test_ci_workflow_rejects_unknown_hosted_runner_labels() -> None:
+    checker = _load_checker()
+    workflow_with_unknown_matrix_runner = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
+        "windows-2025-vs2026",
+        "windows-2025-vs20260",
+        1,
+    )
+    workflow_with_unknown_direct_runner = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
+        "runs-on: macos-26",
+        "runs-on: macos-260",
+        1,
+    )
+
+    matrix_errors = checker.check_ci_workflow(workflow_with_unknown_matrix_runner)
+    direct_errors = checker.check_ci_workflow(workflow_with_unknown_direct_runner)
+
+    assert any("unsupported GitHub-hosted runner label 'windows-2025-vs20260'" in error for error in matrix_errors)
+    assert any("unsupported GitHub-hosted runner label 'macos-260'" in error for error in direct_errors)
+
+
 def test_ci_workflow_requires_bounded_live_gui_render_timeouts() -> None:
     checker = _load_checker()
     workflow_without_job_timeout = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(

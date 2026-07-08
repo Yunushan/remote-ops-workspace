@@ -30,7 +30,7 @@ def test_make_xp_native_evidence_template_writes_incomplete_bundle(tmp_path: Pat
     assert evidence["host_identity"]["target"] == "windows-xp-native-x86"
     assert evidence["host_identity"]["operator_private_data_redacted"] is False
     assert "sanitized-lab-label" in evidence["host_identity"]["host_label"]
-    assert evidence["security"]["weak_crypto_global_default"] is True
+    assert evidence["security"]["weak_crypto_global_default"] is False
     assert evidence["security"]["patch_evidence"]["cve_patch_reviewed"] is False
     assert evidence["artifacts"] == [
         "remote-ops-workspace-v1.0.2-windows-xp-x86-native.zip",
@@ -135,7 +135,7 @@ def test_xp_native_evidence_template_does_not_validate_as_real_evidence(tmp_path
         "smoke result cli_launch evidence_sha256 must be a lowercase SHA-256 hex digest" in error
         for error in errors
     )
-    assert any("security.weak_crypto_global_default must be False" in error for error in errors)
+    assert not any("security.weak_crypto_global_default must be False" in error for error in errors)
     assert any("security.patch_evidence.tls_minimum_modern_profiles must be 'TLS 1.2'" in error for error in errors)
     assert any("security.patch_evidence.cve_patch_reviewed must be True" in error for error in errors)
 
@@ -297,6 +297,28 @@ def test_make_xp_native_evidence_template_rejects_non_directory_smoke_path(tmp_p
     )
 
     assert errors == [f"XP native evidence template smoke path must be a directory: {smoke_dir}"]
+
+
+def test_make_xp_native_evidence_template_path_helpers_reject_non_path_values() -> None:
+    maker = _load_template_maker()
+
+    assert maker.check_template_output_paths(
+        out_dir=True,
+        evidence_path="xp-evidence.json",
+        smoke_ids=["cli_launch"],
+    ) == [
+        "XP native evidence template output directory path must be a pathlib.Path, got True",
+        "XP native evidence template file path must be a pathlib.Path, got 'xp-evidence.json'",
+    ]
+    assert maker.check_path_parent_symlinks(False, "XP native evidence template output directory") == [
+        "XP native evidence template output directory path must be a pathlib.Path, got False"
+    ]
+    assert maker.check_directory_path_hint("xp-evidence.json", "XP native evidence template output directory") == [
+        "XP native evidence template output directory path must be a pathlib.Path, got 'xp-evidence.json'"
+    ]
+    assert maker.check_path_not_reserved_workspace_root(0, "XP native evidence template output directory") == [
+        "XP native evidence template output directory path must be a pathlib.Path, got 0"
+    ]
 
 
 def _load_template_maker():

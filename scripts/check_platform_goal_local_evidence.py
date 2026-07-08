@@ -38,8 +38,11 @@ from make_platform_verified_evidence_record import (  # noqa: E402
 )
 
 RELEASE_TAG_RE = re.compile(r"^v\d+\.\d+\.\d+$")
-GITHUB_ACTIONS_RUN_RE = re.compile(r"^https://github\.com/[^/]+/[^/]+/actions/runs/\d+/?$")
-GITHUB_ACTIONS_RUN_REPOSITORY_RE = re.compile(r"^https://github\.com/([^/]+/[^/]+)/actions/runs/\d+/?$")
+GITHUB_OWNER_RE = r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?"
+GITHUB_REPOSITORY_RE = rf"{GITHUB_OWNER_RE}/[A-Za-z0-9._-]+"
+GITHUB_REPOSITORY_VALUE_RE = re.compile(rf"^{GITHUB_REPOSITORY_RE}$")
+GITHUB_ACTIONS_RUN_RE = re.compile(rf"^https://github\.com/({GITHUB_REPOSITORY_RE})/actions/runs/\d+/?$")
+GITHUB_ACTIONS_RUN_REPOSITORY_RE = GITHUB_ACTIONS_RUN_RE
 GITHUB_HEAD_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 FULL_GOAL_STRICT_ARTIFACTS_ERROR = (
     "full protected goal local evidence preflight must use strict artifact directories; "
@@ -66,6 +69,7 @@ def main(argv: list[str] | None = None) -> int:
         xp_source_workflow_run_url=args.xp_source_workflow_run_url,
         xp_source_head_sha=args.xp_source_head_sha,
         xp_source_run_attempt=args.xp_source_run_attempt,
+        repository=args.repository,
     )
     report = platform_goal_local_evidence_report(targets=targets, errors=errors)
     if args.json:
@@ -101,6 +105,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="append",
         choices=PROTECTED_GOAL_TARGETS,
         help="protected target to check; repeat or omit for all four targets",
+    )
+    parser.add_argument(
+        "--repository",
+        help="expected GitHub owner/name repository for every source workflow run URL",
     )
     parser.add_argument(
         "--linux-workflow-run-url",
@@ -308,6 +316,19 @@ def local_evidence_release_tag_value(raw_release_tag: object) -> tuple[list[str]
     return [], raw_release_tag
 
 
+def local_evidence_repository_value(raw_repository: object) -> tuple[list[str], str | None]:
+    if raw_repository is None:
+        return [], None
+    if not isinstance(raw_repository, str):
+        return [f"--repository must be a string GitHub owner/name value, got {raw_repository!r}"], None
+    repository = raw_repository.strip().strip("/")
+    if not repository:
+        return ["--repository must be a non-empty GitHub owner/name value"], None
+    if not GITHUB_REPOSITORY_VALUE_RE.fullmatch(repository):
+        return [f"--repository must be a GitHub owner/name value, got {raw_repository!r}"], None
+    return [], repository
+
+
 def local_evidence_required_path_value(raw_path: object, label: str) -> tuple[list[str], Path]:
     if not isinstance(raw_path, Path):
         return [f"{label} must be a pathlib.Path, got {raw_path!r}"], Path()
@@ -339,6 +360,7 @@ def check_platform_goal_local_evidence(
     xp_source_workflow_run_url: str | None = None,
     xp_source_head_sha: str | None = None,
     xp_source_run_attempt: int | None = None,
+    repository: object = None,
 ) -> list[str]:
     errors: list[str] = []
     release_tag_errors, release_tag_value = local_evidence_release_tag_value(release_tag)
@@ -371,6 +393,8 @@ def check_platform_goal_local_evidence(
         "explicit XP evidence directory",
     )
     errors.extend(xp_evidence_dir_errors)
+    repository_errors, expected_repository = local_evidence_repository_value(repository)
+    errors.extend(repository_errors)
     if not root_errors:
         errors.extend(check_directory_path_hint(root_path, "local evidence root"))
     if errors:
@@ -469,6 +493,7 @@ def check_platform_goal_local_evidence(
                 xp_source_workflow_run_url=xp_source_workflow_run_url,
                 xp_source_head_sha=xp_source_head_sha,
                 xp_source_run_attempt=xp_source_run_attempt,
+                repository=expected_repository,
             )
         )
     return errors
@@ -485,9 +510,8 @@ def check_multi_target_release_source_scope(
     xp_source_workflow_run_url: str | None,
     xp_source_head_sha: str | None,
     xp_source_run_attempt: int | None,
+    repository: str | None = None,
 ) -> list[str]:
-    if len(targets) < 2:
-        return []
     bindings = local_release_source_bindings(
         root=root,
         release_tag=release_tag,
@@ -500,6 +524,24 @@ def check_multi_target_release_source_scope(
         xp_source_run_attempt=xp_source_run_attempt,
     )
     errors: list[str] = []
+    if repository is not None:
+        repositories_by_target = {
+            target: binding["repository"]
+            for target, binding in bindings.items()
+            if binding.get("repository")
+        }
+        mismatched = {
+            target: actual_repository
+            for target, actual_repository in repositories_by_target.items()
+            if actual_repository != repository
+        }
+        if mismatched or len(repositories_by_target) != len(targets):
+            errors.append(
+                "local protected platform evidence source repository must match "
+                f"--repository {repository}, got {format_values_by_target(repositories_by_target)}"
+            )
+    if len(targets) < 2:
+        return errors
     heads_by_target = {
         target: binding["head_sha"]
         for target, binding in bindings.items()
@@ -554,44 +596,36 @@ def local_release_source_bindings(
     bindings: dict[str, dict[str, str]] = {}
     for target in targets:
         if target in LINUX_TARGETS:
-            builder = read_json(root / target / release_tag / f"builder-identity-{target}.json")
-            raw_workflow_run_url = (
-                linux_workflow_run_url
-                if linux_workflow_run_url is not None
-                else builder.get("workflow_run_url", "")
-            )
-            raw_head_sha = (
-                linux_source_head_sha
-                if linux_source_head_sha is not None
-                else builder.get("source_head_sha", "")
-            )
-            raw_run_attempt = (
-                linux_source_run_attempt
-                if linux_source_run_attempt is not None
-                else builder.get("workflow_run_attempt")
-            )
+            raw_workflow_run_url: object = linux_workflow_run_url
+            raw_head_sha: object = linux_source_head_sha
+            raw_run_attempt: object = linux_source_run_attempt
+            if raw_workflow_run_url is None or raw_head_sha is None or raw_run_attempt is None:
+                builder_path = root / target / release_tag / f"builder-identity-{target}.json"
+                builder = read_json(builder_path) if builder_path.is_file() else {}
+                if raw_workflow_run_url is None:
+                    raw_workflow_run_url = builder.get("workflow_run_url", "")
+                if raw_head_sha is None:
+                    raw_head_sha = builder.get("source_head_sha", "")
+                if raw_run_attempt is None:
+                    raw_run_attempt = builder.get("workflow_run_attempt")
         elif target in XP_TARGETS:
-            evidence = read_json(root / target / release_tag / "xp-evidence.json")
-            source = evidence.get("release_source") if isinstance(evidence, dict) else {}
-            source = source if isinstance(source, dict) else {}
-            raw_workflow_run_url = (
-                xp_source_workflow_run_url
-                if xp_source_workflow_run_url is not None
-                else source.get("workflow_run_url", "")
-            )
-            raw_head_sha = (
-                xp_source_head_sha
-                if xp_source_head_sha is not None
-                else source.get("head_sha", "")
-            )
-            raw_run_attempt = (
-                xp_source_run_attempt
-                if xp_source_run_attempt is not None
-                else source.get("run_attempt")
-            )
+            raw_workflow_run_url = xp_source_workflow_run_url
+            raw_head_sha = xp_source_head_sha
+            raw_run_attempt = xp_source_run_attempt
+            if raw_workflow_run_url is None or raw_head_sha is None or raw_run_attempt is None:
+                evidence_path = root / target / release_tag / "xp-evidence.json"
+                evidence = read_json(evidence_path) if evidence_path.is_file() else {}
+                source = evidence.get("release_source") if isinstance(evidence, dict) else {}
+                source = source if isinstance(source, dict) else {}
+                if raw_workflow_run_url is None:
+                    raw_workflow_run_url = source.get("workflow_run_url", "")
+                if raw_head_sha is None:
+                    raw_head_sha = source.get("head_sha", "")
+                if raw_run_attempt is None:
+                    raw_run_attempt = source.get("run_attempt")
         else:
             continue
-        workflow_run_url = typed_release_source_string(raw_workflow_run_url).rstrip("/")
+        workflow_run_url = typed_release_source_string(raw_workflow_run_url)
         head_sha = typed_release_source_string(raw_head_sha)
         bindings[target] = {
             "workflow_run_url": workflow_run_url,
@@ -605,7 +639,7 @@ def local_release_source_bindings(
 def typed_release_source_string(raw_value: object) -> str:
     if not isinstance(raw_value, str):
         return ""
-    return raw_value.strip()
+    return raw_value
 
 
 def typed_release_source_run_attempt(raw_value: object) -> str:
@@ -615,13 +649,15 @@ def typed_release_source_run_attempt(raw_value: object) -> str:
 
 
 def repository_from_workflow_run_url(workflow_run_url: str) -> str:
-    match = GITHUB_ACTIONS_RUN_REPOSITORY_RE.fullmatch(workflow_run_url.rstrip("/"))
+    if workflow_run_url != workflow_run_url.strip() or workflow_run_url != workflow_run_url.rstrip("/"):
+        return ""
+    match = GITHUB_ACTIONS_RUN_REPOSITORY_RE.fullmatch(workflow_run_url)
     return match.group(1) if match else ""
 
 
 def check_linux_local_evidence(
     *,
-    root: Path,
+    root: object,
     release_tag: str,
     target: str,
     promotion: dict[str, Any],
@@ -629,16 +665,36 @@ def check_linux_local_evidence(
     source_head_sha: str | None,
     source_run_attempt: object,
     strict_artifacts: bool,
-    assets_dir: Path | None = None,
-    builder_evidence: Path | None = None,
-    smoke_evidence: Path | None = None,
+    assets_dir: object | None = None,
+    builder_evidence: object | None = None,
+    smoke_evidence: object | None = None,
 ) -> list[str]:
-    target_dir = root / target
-    target_root = target_dir / release_tag
-    artifacts_dir = assets_dir or target_root / "artifacts"
-    builder_evidence = builder_evidence or target_root / f"builder-identity-{target}.json"
-    smoke_evidence = smoke_evidence or target_root / f"native-smoke-{target}.log"
     errors: list[str] = []
+    root_errors, root_path = local_evidence_required_path_value(root, "local evidence root")
+    assets_dir_errors, assets_dir_path = local_evidence_optional_path_value(
+        assets_dir,
+        f"{target} artifact directory",
+    )
+    builder_errors, builder_evidence_path = local_evidence_optional_path_value(
+        builder_evidence,
+        f"{target} builder identity evidence",
+    )
+    smoke_errors, smoke_evidence_path = local_evidence_optional_path_value(
+        smoke_evidence,
+        f"{target} native smoke evidence",
+    )
+    errors.extend(root_errors)
+    errors.extend(assets_dir_errors)
+    errors.extend(builder_errors)
+    errors.extend(smoke_errors)
+    if errors:
+        return errors
+    assert root_path is not None
+    target_dir = root_path / target
+    target_root = target_dir / release_tag
+    artifacts_dir = assets_dir_path or target_root / "artifacts"
+    builder_evidence = builder_evidence_path or target_root / f"builder-identity-{target}.json"
+    smoke_evidence = smoke_evidence_path or target_root / f"native-smoke-{target}.log"
     if target_dir.is_symlink():
         errors.append(f"{target} local Linux evidence target directory must not be a symlink: {target_dir}")
     if target_root.is_symlink():
@@ -649,12 +705,12 @@ def check_linux_local_evidence(
     errors.extend(check_path_parent_symlinks(artifacts_dir, f"{target} artifact directory"))
     errors.extend(check_path_parent_symlinks(builder_evidence, f"{target} builder identity evidence"))
     errors.extend(check_path_parent_symlinks(smoke_evidence, f"{target} native smoke evidence"))
-    errors.extend(check_path_inside_root(root, artifacts_dir, f"{target} artifact directory"))
-    errors.extend(check_path_inside_root(root, builder_evidence, f"{target} builder identity evidence"))
-    errors.extend(check_path_inside_root(root, smoke_evidence, f"{target} native smoke evidence"))
-    errors.extend(check_path_not_reserved_workspace_root(root, artifacts_dir, f"{target} artifact directory"))
-    errors.extend(check_path_not_reserved_workspace_root(root, builder_evidence, f"{target} builder identity evidence"))
-    errors.extend(check_path_not_reserved_workspace_root(root, smoke_evidence, f"{target} native smoke evidence"))
+    errors.extend(check_path_inside_root(root_path, artifacts_dir, f"{target} artifact directory"))
+    errors.extend(check_path_inside_root(root_path, builder_evidence, f"{target} builder identity evidence"))
+    errors.extend(check_path_inside_root(root_path, smoke_evidence, f"{target} native smoke evidence"))
+    errors.extend(check_path_not_reserved_workspace_root(root_path, artifacts_dir, f"{target} artifact directory"))
+    errors.extend(check_path_not_reserved_workspace_root(root_path, builder_evidence, f"{target} builder identity evidence"))
+    errors.extend(check_path_not_reserved_workspace_root(root_path, smoke_evidence, f"{target} native smoke evidence"))
     errors.extend(check_path_inside_target_root(target_root, artifacts_dir, f"{target} artifact directory"))
     errors.extend(check_path_inside_target_root(target_root, builder_evidence, f"{target} builder identity evidence"))
     errors.extend(check_path_inside_target_root(target_root, smoke_evidence, f"{target} native smoke evidence"))
@@ -674,12 +730,21 @@ def check_linux_local_evidence(
         errors.append(f"{target} --linux-workflow-run-url is required for local Linux evidence preflight")
     elif workflow_run_url is not None and not isinstance(workflow_run_url, str):
         errors.append(f"{target} --linux-workflow-run-url must be a string")
-    elif workflow_run_url and not GITHUB_ACTIONS_RUN_RE.fullmatch(workflow_run_url.rstrip("/")):
+    elif workflow_run_url and (
+        workflow_run_url != workflow_run_url.strip() or workflow_run_url != workflow_run_url.rstrip("/")
+    ):
+        errors.append(
+            f"{target} --linux-workflow-run-url must be canonical without "
+            "surrounding whitespace or trailing slash"
+        )
+    elif workflow_run_url and not GITHUB_ACTIONS_RUN_RE.fullmatch(workflow_run_url):
         errors.append(f"{target} --linux-workflow-run-url must be a GitHub Actions run URL")
     if not source_head_sha and not infer_linux_bindings:
         errors.append(f"{target} --linux-source-head-sha is required for local Linux evidence preflight")
     elif source_head_sha is not None and not isinstance(source_head_sha, str):
         errors.append(f"{target} --linux-source-head-sha must be a string")
+    elif source_head_sha and source_head_sha != source_head_sha.strip():
+        errors.append(f"{target} --linux-source-head-sha must not include surrounding whitespace")
     elif source_head_sha and not GITHUB_HEAD_SHA_RE.fullmatch(source_head_sha):
         errors.append(f"{target} --linux-source-head-sha must be a 40-character lowercase Git SHA")
     if source_run_attempt is None and not infer_linux_bindings:
@@ -719,21 +784,13 @@ def check_linux_local_evidence(
         if workflow_run_url is not None
         else builder_identity.get("workflow_run_url", "")
     )
-    resolved_workflow_run_url = (
-        raw_resolved_workflow_run_url.strip()
-        if isinstance(raw_resolved_workflow_run_url, str)
-        else raw_resolved_workflow_run_url
-    )
+    resolved_workflow_run_url = raw_resolved_workflow_run_url
     raw_resolved_source_head_sha = (
         source_head_sha
         if source_head_sha is not None
         else builder_identity.get("source_head_sha", "")
     )
-    resolved_source_head_sha = (
-        raw_resolved_source_head_sha.strip()
-        if isinstance(raw_resolved_source_head_sha, str)
-        else raw_resolved_source_head_sha
-    )
+    resolved_source_head_sha = raw_resolved_source_head_sha
     resolved_source_run_attempt = (
         source_run_attempt
         if source_run_attempt is not None
@@ -819,12 +876,18 @@ def check_linux_resolved_run_bindings(
         errors.append(f"{target} {workflow_label} is required for local Linux evidence preflight")
     elif not isinstance(workflow_run_url, str):
         errors.append(f"{target} {workflow_label} must be a string")
-    elif not GITHUB_ACTIONS_RUN_RE.fullmatch(workflow_run_url.rstrip("/")):
+    elif workflow_run_url != workflow_run_url.strip() or workflow_run_url != workflow_run_url.rstrip("/"):
+        errors.append(
+            f"{target} {workflow_label} must be canonical without surrounding whitespace or trailing slash"
+        )
+    elif not GITHUB_ACTIONS_RUN_RE.fullmatch(workflow_run_url):
         errors.append(f"{target} {workflow_label} must be a GitHub Actions run URL")
     if source_head_sha is None or source_head_sha == "":
         errors.append(f"{target} {source_label} is required for local Linux evidence preflight")
     elif not isinstance(source_head_sha, str):
         errors.append(f"{target} {source_label} must be a string")
+    elif source_head_sha != source_head_sha.strip():
+        errors.append(f"{target} {source_label} must not include surrounding whitespace")
     elif not GITHUB_HEAD_SHA_RE.fullmatch(source_head_sha):
         errors.append(f"{target} {source_label} must be a 40-character lowercase Git SHA")
     if (
@@ -838,23 +901,43 @@ def check_linux_resolved_run_bindings(
 
 def check_xp_local_evidence(
     *,
-    root: Path,
+    root: object,
     release_tag: str,
     target: str,
     strict_artifacts: bool,
-    assets_dir: Path | None = None,
-    evidence_file: Path | None = None,
-    evidence_dir: Path | None = None,
+    assets_dir: object | None = None,
+    evidence_file: object | None = None,
+    evidence_dir: object | None = None,
     source_workflow_run_url: str | None = None,
     source_head_sha: str | None = None,
     source_run_attempt: int | None = None,
 ) -> list[str]:
-    target_dir = root / target
-    target_root = target_dir / release_tag
-    artifacts_dir = assets_dir or target_root / "artifacts"
-    evidence_file = evidence_file or target_root / "xp-evidence.json"
-    evidence_dir = evidence_dir or target_root
     errors: list[str] = []
+    root_errors, root_path = local_evidence_required_path_value(root, "local evidence root")
+    assets_dir_errors, assets_dir_path = local_evidence_optional_path_value(
+        assets_dir,
+        f"{target} artifact directory",
+    )
+    evidence_file_errors, evidence_file_path = local_evidence_optional_path_value(
+        evidence_file,
+        f"{target} XP evidence file",
+    )
+    evidence_dir_errors, evidence_dir_path = local_evidence_optional_path_value(
+        evidence_dir,
+        f"{target} XP evidence directory",
+    )
+    errors.extend(root_errors)
+    errors.extend(assets_dir_errors)
+    errors.extend(evidence_file_errors)
+    errors.extend(evidence_dir_errors)
+    if errors:
+        return errors
+    assert root_path is not None
+    target_dir = root_path / target
+    target_root = target_dir / release_tag
+    artifacts_dir = assets_dir_path or target_root / "artifacts"
+    evidence_file = evidence_file_path or target_root / "xp-evidence.json"
+    evidence_dir = evidence_dir_path or target_root
     if target_dir.is_symlink():
         errors.append(f"{target} XP evidence target directory must not be a symlink: {target_dir}")
     if target_root.is_symlink():
@@ -866,12 +949,12 @@ def check_xp_local_evidence(
     errors.extend(check_path_parent_symlinks(artifacts_dir, f"{target} artifact directory"))
     errors.extend(check_path_parent_symlinks(evidence_file, f"{target} XP evidence file"))
     errors.extend(check_path_parent_symlinks(evidence_dir, f"{target} XP evidence directory"))
-    errors.extend(check_path_inside_root(root, artifacts_dir, f"{target} artifact directory"))
-    errors.extend(check_path_inside_root(root, evidence_file, f"{target} XP evidence file"))
-    errors.extend(check_path_inside_root(root, evidence_dir, f"{target} XP evidence directory"))
-    errors.extend(check_path_not_reserved_workspace_root(root, artifacts_dir, f"{target} artifact directory"))
-    errors.extend(check_path_not_reserved_workspace_root(root, evidence_file, f"{target} XP evidence file"))
-    errors.extend(check_path_not_reserved_workspace_root(root, evidence_dir, f"{target} XP evidence directory"))
+    errors.extend(check_path_inside_root(root_path, artifacts_dir, f"{target} artifact directory"))
+    errors.extend(check_path_inside_root(root_path, evidence_file, f"{target} XP evidence file"))
+    errors.extend(check_path_inside_root(root_path, evidence_dir, f"{target} XP evidence directory"))
+    errors.extend(check_path_not_reserved_workspace_root(root_path, artifacts_dir, f"{target} artifact directory"))
+    errors.extend(check_path_not_reserved_workspace_root(root_path, evidence_file, f"{target} XP evidence file"))
+    errors.extend(check_path_not_reserved_workspace_root(root_path, evidence_dir, f"{target} XP evidence directory"))
     if errors:
         return errors
     if evidence_file.is_symlink():
@@ -957,13 +1040,19 @@ def check_xp_source_bindings(
         errors.append(f"{target} {workflow_label} is required for local XP evidence preflight")
     elif not isinstance(workflow_run_url, str):
         errors.append(f"{target} {workflow_label} must be a string")
-    elif not GITHUB_ACTIONS_RUN_RE.fullmatch(workflow_run_url.strip().rstrip("/")):
+    elif workflow_run_url != workflow_run_url.strip() or workflow_run_url != workflow_run_url.rstrip("/"):
+        errors.append(
+            f"{target} {workflow_label} must be canonical without surrounding whitespace or trailing slash"
+        )
+    elif not GITHUB_ACTIONS_RUN_RE.fullmatch(workflow_run_url):
         errors.append(f"{target} {workflow_label} must be a GitHub Actions run URL")
     if source_head_sha is None or source_head_sha == "":
         errors.append(f"{target} {source_label} is required for local XP evidence preflight")
     elif not isinstance(source_head_sha, str):
         errors.append(f"{target} {source_label} must be a string")
-    elif not GITHUB_HEAD_SHA_RE.fullmatch(source_head_sha.strip()):
+    elif source_head_sha != source_head_sha.strip():
+        errors.append(f"{target} {source_label} must not include surrounding whitespace")
+    elif not GITHUB_HEAD_SHA_RE.fullmatch(source_head_sha):
         errors.append(f"{target} {source_label} must be a 40-character lowercase Git SHA")
     if source_run_attempt is None:
         errors.append(f"{target} {attempt_label} is required for local XP evidence preflight")
@@ -988,22 +1077,18 @@ def check_xp_resolved_source_bindings(
     raw_source_head_sha = source.get("head_sha")
     actual_source_run_attempt = source.get("run_attempt")
     raw_workflow = source.get("workflow")
-    actual_workflow_run_url = (
-        raw_workflow_run_url.strip().rstrip("/") if isinstance(raw_workflow_run_url, str) else raw_workflow_run_url
-    )
-    actual_source_head_sha = raw_source_head_sha.strip() if isinstance(raw_source_head_sha, str) else raw_source_head_sha
-    actual_workflow = raw_workflow.strip() if isinstance(raw_workflow, str) else raw_workflow
+    actual_workflow_run_url = raw_workflow_run_url
+    actual_source_head_sha = raw_source_head_sha
+    actual_workflow = raw_workflow
     expected_workflow = release_source_workflow(target)
     explicit_workflow_run_url = workflow_run_url is not None and workflow_run_url != ""
     explicit_source_head_sha = source_head_sha is not None and source_head_sha != ""
     expected_workflow_run_url = actual_workflow_run_url
     if explicit_workflow_run_url:
-        expected_workflow_run_url = (
-            workflow_run_url.strip().rstrip("/") if isinstance(workflow_run_url, str) else workflow_run_url
-        )
+        expected_workflow_run_url = workflow_run_url
     expected_source_head_sha = actual_source_head_sha
     if explicit_source_head_sha:
-        expected_source_head_sha = source_head_sha.strip() if isinstance(source_head_sha, str) else source_head_sha
+        expected_source_head_sha = source_head_sha
     expected_source_run_attempt: object = (
         source_run_attempt if source_run_attempt is not None else actual_source_run_attempt
     )
@@ -1030,6 +1115,10 @@ def check_xp_resolved_source_bindings(
     )
     if not isinstance(actual_workflow, str):
         errors.append(f"{target} XP evidence release_source.workflow must be a string")
+    elif actual_workflow != actual_workflow.strip():
+        errors.append(
+            f"{target} XP evidence release_source.workflow must not include surrounding whitespace"
+        )
     elif actual_workflow != expected_workflow:
         errors.append(
             f"{target} XP evidence release_source.workflow must be {expected_workflow}, "
@@ -1068,44 +1157,65 @@ def local_evidence_path_value(root: Path, path: Path) -> str:
         return path.as_posix()
 
 
-def read_json_object(path: Path, label: str) -> tuple[dict[str, Any], list[str]]:
+def read_json_object(path: object, label: str) -> tuple[dict[str, Any], list[str]]:
+    path_errors, path_value = local_evidence_required_path_value(path, label)
+    if path_errors:
+        return {}, path_errors
+    assert path_value is not None
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path_value.read_text(encoding="utf-8"))
     except OSError as exc:
-        return {}, [f"{label} is not readable JSON: {path}: {exc}"]
+        return {}, [f"{label} is not readable JSON: {path_value}: {exc}"]
     except UnicodeDecodeError as exc:
-        return {}, [f"{label} must be UTF-8 JSON: {path}: {exc}"]
+        return {}, [f"{label} must be UTF-8 JSON: {path_value}: {exc}"]
     except json.JSONDecodeError as exc:
-        return {}, [f"{label} is not valid JSON: {path}: {exc}"]
+        return {}, [f"{label} is not valid JSON: {path_value}: {exc}"]
     if not isinstance(data, dict):
-        return {}, [f"{label} must contain a JSON object: {path}"]
+        return {}, [f"{label} must contain a JSON object: {path_value}"]
     return data, []
 
 
-def check_path_inside_root(root: Path, path: Path, label: str) -> list[str]:
-    root_resolved = root.resolve(strict=False)
-    path_resolved = path.resolve(strict=False)
+def check_path_inside_root(root: object, path: object, label: str) -> list[str]:
+    root_errors, root_path = local_evidence_required_path_value(root, "local evidence root")
+    path_errors, path_value = local_evidence_required_path_value(path, label)
+    errors = root_errors + path_errors
+    if errors:
+        return errors
+    assert root_path is not None
+    assert path_value is not None
+    root_resolved = root_path.resolve(strict=False)
+    path_resolved = path_value.resolve(strict=False)
     try:
         path_resolved.relative_to(root_resolved)
     except ValueError:
-        return [f"{label} must stay inside local evidence root: {path}"]
+        return [f"{label} must stay inside local evidence root: {path_value}"]
     return []
 
 
-def check_path_inside_target_root(target_root: Path, path: Path, label: str) -> list[str]:
-    target_root_resolved = target_root.resolve(strict=False)
-    path_resolved = path.resolve(strict=False)
-    target = target_root.name
+def check_path_inside_target_root(target_root: object, path: object, label: str) -> list[str]:
+    target_root_errors, target_root_path = local_evidence_required_path_value(
+        target_root,
+        "target release directory",
+    )
+    path_errors, path_value = local_evidence_required_path_value(path, label)
+    errors = target_root_errors + path_errors
+    if errors:
+        return errors
+    assert target_root_path is not None
+    assert path_value is not None
+    target_root_resolved = target_root_path.resolve(strict=False)
+    path_resolved = path_value.resolve(strict=False)
+    target = target_root_path.name
     release_tag = ""
     root_resolved = target_root_resolved.parent
-    if target_root.parent != target_root:
-        target = target_root.parent.name
-        release_tag = target_root.name
+    if target_root_path.parent != target_root_path:
+        target = target_root_path.parent.name
+        release_tag = target_root_path.name
         root_resolved = target_root_resolved.parent.parent
     try:
         relative = path_resolved.relative_to(root_resolved)
     except ValueError:
-        return [f"{label} must stay inside local evidence root: {path}"]
+        return [f"{label} must stay inside local evidence root: {path_value}"]
     parts = relative.parts
     if target and release_tag:
         for index, part in enumerate(parts[:-1]):
@@ -1113,14 +1223,21 @@ def check_path_inside_target_root(target_root: Path, path: Path, label: str) -> 
                 return []
         return [
             f"{label} must include target/release path segment "
-            f"{target}/{release_tag} under local evidence root: {path}"
+            f"{target}/{release_tag} under local evidence root: {path_value}"
         ]
     return []
 
 
-def check_path_not_reserved_workspace_root(root: Path, path: Path, label: str) -> list[str]:
-    root_resolved = root.resolve(strict=False)
-    path_resolved = path.resolve(strict=False)
+def check_path_not_reserved_workspace_root(root: object, path: object, label: str) -> list[str]:
+    root_errors, root_path = local_evidence_required_path_value(root, "local evidence root")
+    path_errors, path_value = local_evidence_required_path_value(path, label)
+    errors = root_errors + path_errors
+    if errors:
+        return errors
+    assert root_path is not None
+    assert path_value is not None
+    root_resolved = root_path.resolve(strict=False)
+    path_resolved = path_value.resolve(strict=False)
     try:
         relative = path_resolved.relative_to(root_resolved)
     except ValueError:
@@ -1132,18 +1249,26 @@ def check_path_not_reserved_workspace_root(root: Path, path: Path, label: str) -
     if reserved_root in RESERVED_WORKSPACE_ROOTS:
         return [
             f"{label} must not point inside reserved workspace directory "
-            f"{reserved_root!r}: {path}"
+            f"{reserved_root!r}: {path_value}"
         ]
     return []
 
 
-def check_path_not_reserved_workspace_path(path: Path, label: str) -> list[str]:
-    raw_parts = [str(part) for part in path.parts if str(part) not in ("", ".", path.anchor)]
+def check_path_not_reserved_workspace_path(path: object, label: str) -> list[str]:
+    path_errors, path_value = local_evidence_required_path_value(path, label)
+    if path_errors:
+        return path_errors
+    assert path_value is not None
+    raw_parts = [
+        str(part)
+        for part in path_value.parts
+        if str(part) not in ("", ".", path_value.anchor)
+    ]
     for part in raw_parts:
         if part in RESERVED_WORKSPACE_ROOTS:
             return [
                 f"{label} must not point inside reserved workspace directory "
-                f"{part!r}: {path}"
+                f"{part!r}: {path_value}"
             ]
     return []
 
@@ -1157,8 +1282,12 @@ def is_allowed_platform_parent_symlink(parent: Path) -> bool:
         return False
 
 
-def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
-    check_path = path if path.is_absolute() else Path.cwd() / path
+def check_path_parent_symlinks(path: object, label: str) -> list[str]:
+    path_errors, path_value = local_evidence_required_path_value(path, label)
+    if path_errors:
+        return path_errors
+    assert path_value is not None
+    check_path = path_value if path_value.is_absolute() else Path.cwd() / path_value
     for parent in reversed(check_path.parents):
         if parent == Path("."):
             continue
@@ -1167,8 +1296,12 @@ def check_path_parent_symlinks(path: Path, label: str) -> list[str]:
     return []
 
 
-def check_directory_path_hint(path: Path, label: str) -> list[str]:
-    raw_path = path.as_posix()
+def check_directory_path_hint(path: object, label: str) -> list[str]:
+    path_errors, path_value = local_evidence_required_path_value(path, label)
+    if path_errors:
+        return path_errors
+    assert path_value is not None
+    raw_path = path_value.as_posix()
     if directory_path_has_file_suffix(raw_path):
         return [f"{label} must be a directory path, got {raw_path!r}"]
     return []

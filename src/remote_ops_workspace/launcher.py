@@ -493,6 +493,7 @@ def _build_rdp(profile: Profile) -> LaunchPlan:
     security = _option_enum(profile.options, "security", "rdp_security", allowed={"ext", "nla", "rdp", "tls"})
     if security == "rdp":
         _require_legacy_rdp_security_opt_in(profile.options)
+        notes.append("RDP native security is a legacy compatibility mode; use only for isolated XP remote targets.")
     if _is_windows():
         cmd = ["mstsc", f"/v:{host}:{port}"]
         if _option_bool(profile.options, "fullscreen"):
@@ -510,7 +511,7 @@ def _build_rdp(profile: Profile) -> LaunchPlan:
         ):
             if _option_bool(profile.options, option_name):
                 cmd.append(mstsc_flag)
-        return LaunchPlan("rdp", cmd, ["Uses Windows MSTSC."])
+        return LaunchPlan("rdp", cmd, [*notes, "Uses Windows MSTSC."])
     executable = _first_available(["xfreerdp", "wlfreerdp"]) or "xfreerdp"
     cmd = [executable, f"/v:{host}:{port}"]
     if profile.username:

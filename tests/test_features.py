@@ -271,6 +271,11 @@ def test_platform_verified_readiness_tracks_partial_targets() -> None:
     assert goal["selected_release_source_run_urls"] == {}
     assert goal["release_source_run_attempt_conflicts"] == {}
     assert goal["release_source_provenance_complete"] is False
+    assert goal["source_ref_preflight_command"] == (
+        "python scripts/check_platform_evidence_source_ref.py "
+        "--repository <owner>/<repo> --release-tag v<project.version> "
+        "--require-goal-targets"
+    )
     assert goal["release_import_dry_run_command"] == (
         "python scripts/import_platform_evidence_artifacts.py "
         "--release-tag v<project.version> --require-goal-targets "

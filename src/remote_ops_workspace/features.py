@@ -1440,6 +1440,10 @@ def _protected_platform_goal_parity(evidence_registry: dict[str, Any] | None) ->
             target: release_source_workflows[target]
             for target in sorted(release_source_workflows)
         },
+        "source_ref_preflight_command": _protected_platform_source_ref_preflight_command(
+            release_tag or "v<project.version>",
+            release_repository or "<owner>/<repo>",
+        ),
         "release_import_dry_run_command": _protected_platform_release_import_dry_run_command(
             release_tag or "v<project.version>"
         ),
@@ -1589,6 +1593,15 @@ def _protected_platform_release_import_dry_run_command(release_tag: str) -> str:
         "--dry-run "
         "--verify-source-run "
         "--repository <owner>/<repo>"
+    )
+
+
+def _protected_platform_source_ref_preflight_command(release_tag: str, repository: str) -> str:
+    return (
+        "python scripts/check_platform_evidence_source_ref.py "
+        f"--repository {repository} "
+        f"--release-tag {release_tag} "
+        "--require-goal-targets"
     )
 
 

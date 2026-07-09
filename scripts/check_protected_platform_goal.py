@@ -905,6 +905,11 @@ def apply_required_release_tag(goal: dict[str, Any], release_tag: str) -> None:
             goal["release_import_dry_run_command"],
             release_tag,
         )
+    if "source_ref_preflight_command" in goal:
+        goal["source_ref_preflight_command"] = replace_release_tag_placeholder(
+            goal["source_ref_preflight_command"],
+            release_tag,
+        )
     if "remote_release_evidence_audit_command" in goal:
         goal["remote_release_evidence_audit_command"] = replace_release_tag_placeholder(
             goal["remote_release_evidence_audit_command"],
@@ -1044,6 +1049,9 @@ def format_goal_scope(goal: dict[str, Any]) -> str:
             conflict_parts.append(f"{run_url}: {attempts}")
         if conflict_parts:
             lines.append(f"conflicting release source run attempts: {'; '.join(conflict_parts)}")
+    source_ref_command = str(goal.get("source_ref_preflight_command", "")).strip()
+    if source_ref_command:
+        lines.append(f"pre-dispatch source-ref gate: {source_ref_command}")
     import_command = str(goal.get("release_import_dry_run_command", "")).strip()
     if import_command:
         lines.append(f"pre-release import dry-run: {import_command}")

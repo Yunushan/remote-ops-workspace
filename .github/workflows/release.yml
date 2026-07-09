@@ -25,6 +25,10 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+      - name: Require protected platform workflows at release source ref
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python scripts/check_platform_evidence_source_ref.py --repository "${{ github.repository }}" --release-tag "${{ github.ref_name }}" --require-goal-targets
       - name: Run release preflight verifier
         run: python scripts/verify.py --quick --no-cli-smoke --release-tag "${{ github.ref_name }}"
       - name: Report protected platform readiness requirements

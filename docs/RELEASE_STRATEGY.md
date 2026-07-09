@@ -26,6 +26,7 @@ Release integrity rules:
   `scripts/smoke_linux_native.sh` after native builds and before artifact
   upload.
 - The `release-preflight` workflow job runs
+  `python scripts/check_platform_evidence_source_ref.py --repository <owner>/<repo> --release-tag <tag> --require-goal-targets`,
   `python scripts/verify.py --quick --no-cli-smoke --release-tag <tag>` and
   `python scripts/check_protected_platform_goal.py --release-tag <tag> --require-records-complete --show-requirements` plus
   `python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag <tag>`
@@ -34,7 +35,10 @@ Release integrity rules:
   is passed into the protected platform parity report, the per-target proof
   checklist, the hard completion gate and the strict accepted evidence gate, so
   Linux i386, Linux armhf and Windows XP native-host evidence status is evaluated
-  against the tag being built before build minutes are spent.
+  against the tag being built before build minutes are spent. The source-ref
+  gate resolves the tag commit and refuses release tags that do not contain the
+  tagged project version, both protected-platform evidence workflows and all
+  four protected target dispatch options.
 - Before tagging or rerunning a protected-platform promotion, run the
   pre-release protected-platform import dry-run
   `python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir <release-assets-dir> --dry-run --verify-source-run --repository <owner>/<repo>`.

@@ -85,6 +85,10 @@ def test_protected_platform_goal_strict_gate_fails_empty_registry() -> None:
         "--out-dir <release-assets-dir> --dry-run --verify-source-run "
         "--repository <owner>/<repo>"
     )
+    assert goal["source_ref_preflight_command"] == (
+        "python scripts/check_platform_evidence_source_ref.py "
+        "--repository <owner>/<repo> --release-tag v1.0.2 --require-goal-targets"
+    )
     assert goal["remote_release_evidence_audit_command"] == (
         "python scripts/check_platform_release_evidence_remote.py "
         "--repository <owner>/<repo> --release-tag v1.0.2 "
@@ -113,6 +117,11 @@ def test_protected_platform_goal_strict_gate_fails_empty_registry() -> None:
     assert "per-target release source workflow files" in human_scope
     assert "per-record release source run attempts" in human_scope
     assert "without conflicting attempts for one run URL" in human_scope
+    assert (
+        "pre-dispatch source-ref gate: "
+        "python scripts/check_platform_evidence_source_ref.py "
+        "--repository <owner>/<repo> --release-tag v1.0.2 --require-goal-targets"
+    ) in human_scope
     assert (
         "pre-release import dry-run: python scripts/import_platform_evidence_artifacts.py "
         "--release-tag v1.0.2 --require-goal-targets "

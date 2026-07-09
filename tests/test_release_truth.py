@@ -716,6 +716,22 @@ def test_release_truth_checker_requires_early_platform_goal_evidence_gate() -> N
     assert any("strict accepted evidence registry gate" in error for error in errors)
 
 
+def test_release_truth_checker_requires_release_source_ref_gate() -> None:
+    checker = _load_release_truth_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        '      - name: Require protected platform workflows at release source ref\n'
+        '        env:\n'
+        '          GITHUB_TOKEN: ${{ github.token }}\n'
+        '        run: python scripts/check_platform_evidence_source_ref.py --repository "${{ github.repository }}" --release-tag "${{ github.ref_name }}" --require-goal-targets\n',
+        "",
+    )
+
+    errors = checker.check_release_preflight(workflow)
+
+    assert any("protected platform release source-ref gate" in error for error in errors)
+    assert any("GitHub token for release source-ref gate" in error for error in errors)
+
+
 def test_release_truth_checker_rejects_preflight_evidence_gate_without_explicit_review_bundles() -> None:
     checker = _load_release_truth_checker()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(

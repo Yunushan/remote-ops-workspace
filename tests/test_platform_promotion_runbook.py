@@ -166,6 +166,23 @@ def test_platform_promotion_runbook_requires_evidence_workflow_dispatch_commands
     assert any("gh workflow run xp-native-evidence.yml" in error for error in errors)
 
 
+def test_platform_promotion_runbook_requires_source_ref_gate_before_dispatch() -> None:
+    checker = _load_checker()
+    command = (
+        "python scripts/check_platform_evidence_source_ref.py --repository <owner>/<repo> "
+        "--release-tag v<project.version> --require-goal-targets"
+    )
+    text = Path("docs/PLATFORM_PROMOTION_RUNBOOK.md").read_text(encoding="utf-8").replace(
+        command,
+        "python scripts/check_platform_evidence_source_ref.py --help",
+    )
+
+    errors = checker.check_platform_promotion_runbook(runbook_text=text)
+
+    assert any("check_platform_evidence_source_ref.py" in error for error in errors)
+    assert any("--require-goal-targets" in error for error in errors)
+
+
 def test_platform_promotion_runbook_requires_remote_audit_fail_closed_note() -> None:
     checker = _load_checker()
     snippet = (

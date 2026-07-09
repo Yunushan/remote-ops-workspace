@@ -17,12 +17,21 @@ python scripts/check_platform_parity_promotion.py
 python scripts/check_platform_verified_evidence.py
 python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-records-complete
 python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag v<project.version>
+python scripts/check_platform_evidence_source_ref.py --repository <owner>/<repo> --release-tag v<project.version> --require-goal-targets
 python scripts/check_release_publish_assets.py
 python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-complete --assets-dir <release-assets-dir> --repository <owner>/<repo>
 python scripts/check_release_publish_assets.py --assets-dir <release-assets-dir> --tag v<project.version> --repository <owner>/<repo> --require-platform-goal-targets
 python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> --release-assets-dir <release-assets-dir> --release-repository <owner>/<repo>
 python scripts/check_platform_release_evidence_remote.py --repository <owner>/<repo> --release-tag v<project.version> --require-goal-targets --require-source-runs --require-source-artifact-bytes --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head
 ```
+
+Run the source-ref gate before either evidence workflow dispatch. It resolves
+the release tag to its commit, verifies the tagged `pyproject.toml` version and
+requires both protected-platform workflow files plus all four target dispatch
+options to exist at that exact tag. A release created before either evidence
+workflow was added cannot be promoted retroactively under the same-tag and
+same-source-SHA policy; create a new release tag from a commit containing the
+workflows instead of dispatching from `main` or weakening source provenance.
 
 Accepted records must start as candidates generated with
 `python scripts/make_platform_verified_evidence_record.py`, then the review

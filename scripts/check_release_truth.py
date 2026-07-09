@@ -178,6 +178,7 @@ REQUIRED_README_RELEASE_SECTION_SNIPPETS = (
 )
 
 REQUIRED_RELEASE_STRATEGY_SNIPPETS = (
+    "python scripts/check_platform_evidence_source_ref.py --repository <owner>/<repo> --release-tag <tag> --require-goal-targets",
     "python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir <release-assets-dir> --dry-run --verify-source-run --repository <owner>/<repo>",
     "pre-release protected-platform import dry-run",
     "does not stage files for upload",
@@ -185,6 +186,7 @@ REQUIRED_RELEASE_STRATEGY_SNIPPETS = (
     "record_complete",
     "release_backed_complete",
     "asset-backed protected goal gate",
+    "refuses release tags that do not contain the tagged project version",
 )
 
 STALE_TURKISH_RELEASE_SNIPPETS = (
@@ -289,6 +291,12 @@ def check_release_preflight(workflow: str | None = None) -> list[str]:
         'python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag "${{ github.ref_name }}"': (
             "strict accepted evidence registry gate"
         ),
+        (
+            'python scripts/check_platform_evidence_source_ref.py '
+            '--repository "${{ github.repository }}" '
+            '--release-tag "${{ github.ref_name }}" --require-goal-targets'
+        ): "protected platform release source-ref gate",
+        "GITHUB_TOKEN: ${{ github.token }}": "GitHub token for release source-ref gate",
         "python scripts/check_repository_cleanup.py --require-clean": "clean checkout requirement before tagging",
     }
     for snippet, label in required_snippets.items():

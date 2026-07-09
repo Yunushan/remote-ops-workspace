@@ -364,6 +364,41 @@ def test_product_readiness_rejects_missing_protected_goal_release_import_dry_run
     assert "protected platform goal parity must expose release_import_dry_run_command" in errors
 
 
+def test_product_readiness_rejects_missing_protected_goal_source_ref_preflight_command(monkeypatch) -> None:
+    checker = load_product_readiness_checker()
+    report = deepcopy(checker.coverage_report())
+    del report["platform_verified_readiness"]["protected_goal_parity"][
+        "source_ref_preflight_command"
+    ]
+    monkeypatch.setattr(checker, "coverage_report", lambda: report)
+
+    errors = checker.check_product_readiness()
+
+    assert "protected platform goal parity must expose source_ref_preflight_command" in errors
+
+
+def test_product_readiness_rejects_weak_protected_goal_source_ref_preflight_command(monkeypatch) -> None:
+    checker = load_product_readiness_checker()
+    report = deepcopy(checker.coverage_report())
+    goal = report["platform_verified_readiness"]["protected_goal_parity"]
+    goal["source_ref_preflight_command"] = (
+        "python scripts/check_platform_evidence_source_ref.py --help"
+    )
+    monkeypatch.setattr(checker, "coverage_report", lambda: report)
+
+    errors = checker.check_product_readiness()
+
+    assert any(
+        error.startswith(
+            "protected platform goal parity source_ref_preflight_command must be"
+        )
+        and "--repository <owner>/<repo>" in error
+        and "--release-tag v<project.version>" in error
+        and "--require-goal-targets" in error
+        for error in errors
+    )
+
+
 def test_product_readiness_rejects_weak_protected_goal_release_import_dry_run_command(monkeypatch) -> None:
     checker = load_product_readiness_checker()
     report = deepcopy(checker.coverage_report())

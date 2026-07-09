@@ -263,6 +263,15 @@ def check_product_readiness() -> list[str]:
             )
         if not str(goal.get("completion_evidence", "")).strip():
             errors.append("protected platform goal parity must expose completion_evidence")
+        expected_source_ref_command = expected_source_ref_preflight_command(goal)
+        source_ref_command = goal.get("source_ref_preflight_command")
+        if not str(source_ref_command or "").strip():
+            errors.append("protected platform goal parity must expose source_ref_preflight_command")
+        elif source_ref_command != expected_source_ref_command:
+            errors.append(
+                "protected platform goal parity source_ref_preflight_command must be "
+                f"{expected_source_ref_command!r}"
+            )
         expected_import_command = expected_release_import_dry_run_command(goal)
         import_command = goal.get("release_import_dry_run_command")
         if not str(import_command or "").strip():
@@ -1254,6 +1263,20 @@ def expected_release_import_dry_run_command(goal: dict[str, object]) -> str:
         f"--release-tag {release_tag} --require-goal-targets "
         "--out-dir <release-assets-dir> --dry-run --verify-source-run "
         "--repository <owner>/<repo>"
+    )
+
+
+def expected_source_ref_preflight_command(goal: dict[str, object]) -> str:
+    release_tag = expected_goal_command_release_tag(goal)
+    repositories = goal.get("release_repositories")
+    repository = "<owner>/<repo>"
+    if isinstance(repositories, list) and len(repositories) == 1:
+        value = repositories[0]
+        if isinstance(value, str) and value.strip():
+            repository = value.strip()
+    return (
+        "python scripts/check_platform_evidence_source_ref.py "
+        f"--repository {repository} --release-tag {release_tag} --require-goal-targets"
     )
 
 

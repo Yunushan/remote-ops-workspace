@@ -604,10 +604,16 @@ def required_target_values(raw_targets: object) -> tuple[set[str], list[str]]:
     targets: set[str] = set()
     errors: list[str] = []
     for target in target_values:
-        if not isinstance(target, str) or not target.strip():
+        if not isinstance(target, str) or not target:
             errors.append(f"platform verified evidence required target must be a non-empty string, got {target!r}")
             continue
-        targets.add(target.strip())
+        if target != target.strip():
+            errors.append(
+                "platform verified evidence required target must not include surrounding "
+                f"whitespace, got {target!r}"
+            )
+            continue
+        targets.add(target)
     return targets, errors
 
 
@@ -755,13 +761,19 @@ def required_target_set(raw_targets: Any) -> tuple[set[str], list[str]]:
     targets: set[str] = set()
     errors: list[str] = []
     for target in raw_targets:
-        if not isinstance(target, str) or not target.strip():
+        if not isinstance(target, str) or not target:
             errors.append(
                 "required platform evidence target must be a non-empty string, "
                 f"got {target!r}"
             )
             continue
-        targets.add(target.strip())
+        if target != target.strip():
+            errors.append(
+                "required platform evidence target must not include surrounding "
+                f"whitespace, got {target!r}"
+            )
+            continue
+        targets.add(target)
     return targets, errors
 
 
@@ -772,7 +784,7 @@ def accepted_evidence_target(entry: dict[str, Any]) -> str:
 
 def accepted_evidence_release_tag(entry: dict[str, Any]) -> str:
     release_tag = entry.get("release_tag", "")
-    return release_tag.strip() if isinstance(release_tag, str) else ""
+    return release_tag if isinstance(release_tag, str) else ""
 
 
 def check_protected_goal_release_consistency(
@@ -1282,13 +1294,15 @@ def check_linux_workflow_inputs(target: str, entry: dict[str, Any]) -> list[str]
         errors.append(f"{target} workflow_inputs missing keys: {missing_keys}")
     if unexpected_keys:
         errors.append(f"{target} workflow_inputs unexpected keys: {unexpected_keys}")
+    errors.extend(check_workflow_input_values(target, raw_inputs, LINUX_WORKFLOW_INPUT_KEYS))
     raw_release_tag = entry.get("release_tag", "")
     release_tag = raw_release_tag if isinstance(raw_release_tag, str) else ""
     if raw_inputs.get("target") != target:
         errors.append(f"{target} workflow_inputs target must be {target}")
     if raw_inputs.get("release_tag") != release_tag:
         errors.append(f"{target} workflow_inputs release_tag must match record release_tag {release_tag}")
-    base_url = str(raw_inputs.get("release_asset_base_url", ""))
+    raw_base_url = raw_inputs.get("release_asset_base_url", "")
+    base_url = raw_base_url if isinstance(raw_base_url, str) else ""
     release_match = GITHUB_RELEASE_BASE_RE.fullmatch(base_url)
     if not release_match or release_match.group(2) != release_tag:
         errors.append(
@@ -2139,6 +2153,7 @@ def check_xp_workflow_inputs(
         errors.append(f"{target} workflow_inputs missing keys: {missing_keys}")
     if unexpected_keys:
         errors.append(f"{target} workflow_inputs unexpected keys: {unexpected_keys}")
+    errors.extend(check_workflow_input_values(target, raw_inputs, XP_WORKFLOW_INPUT_KEYS))
 
     raw_release_tag = entry.get("release_tag", "")
     release_tag = raw_release_tag if isinstance(raw_release_tag, str) else ""
@@ -2147,7 +2162,8 @@ def check_xp_workflow_inputs(
     if raw_inputs.get("release_tag") != release_tag:
         errors.append(f"{target} workflow_inputs release_tag must match record release_tag {release_tag}")
 
-    base_url = str(raw_inputs.get("release_asset_base_url", ""))
+    raw_base_url = raw_inputs.get("release_asset_base_url", "")
+    base_url = raw_base_url if isinstance(raw_base_url, str) else ""
     release_match = GITHUB_RELEASE_BASE_RE.fullmatch(base_url)
     if not release_match or release_match.group(2) != release_tag:
         errors.append(
@@ -2178,7 +2194,8 @@ def check_xp_workflow_inputs(
         "evidence_dir": ("--evidence-dir", command_paths["evidence_dir"], False, True),
     }
     for input_key, (command_flag, command_values, require_json, require_directory) in path_bindings.items():
-        input_value = str(raw_inputs.get(input_key, "")).strip()
+        raw_input_value = raw_inputs.get(input_key, "")
+        input_value = raw_input_value if isinstance(raw_input_value, str) else ""
         if not input_value:
             errors.append(f"{target} workflow_inputs {input_key} must be set")
             continue
@@ -2199,6 +2216,23 @@ def check_xp_workflow_inputs(
                 release_tag=release_tag,
             )
         )
+    return errors
+
+
+def check_workflow_input_values(
+    target: str,
+    raw_inputs: dict[Any, Any],
+    expected_keys: set[str],
+) -> list[str]:
+    errors: list[str] = []
+    for key in sorted(expected_keys):
+        if key not in raw_inputs:
+            continue
+        value = raw_inputs.get(key)
+        if not isinstance(value, str):
+            errors.append(f"{target} workflow_inputs {key} must be a string, got {value!r}")
+        elif value != value.strip():
+            errors.append(f"{target} workflow_inputs {key} must not include surrounding whitespace")
     return errors
 
 
@@ -4924,13 +4958,19 @@ def promotion_entries_by_id(
             errors.append("promotion protected target entries must be objects")
             continue
         raw_target = item.get("id", "")
-        if not isinstance(raw_target, str) or not raw_target.strip():
+        if not isinstance(raw_target, str) or not raw_target:
             errors.append(
                 "promotion protected target id must be a non-empty string, "
                 f"got {raw_target!r}"
             )
             continue
-        entries[raw_target.strip()] = item
+        if raw_target != raw_target.strip():
+            errors.append(
+                "promotion protected target id must not include surrounding "
+                f"whitespace, got {raw_target!r}"
+            )
+            continue
+        entries[raw_target] = item
     missing = sorted(KNOWN_TARGETS - set(entries))
     if missing:
         errors.append(f"promotion config missing protected target entries: {missing}")

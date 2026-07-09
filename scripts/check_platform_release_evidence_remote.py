@@ -969,7 +969,7 @@ def load_release_tag_data(
     tag_object: dict[str, Any] | None = None
     object_record = tag_ref.get("object") if isinstance(tag_ref, dict) else None
     object_type = object_record.get("type") if isinstance(object_record, dict) else None
-    object_sha = str(object_record.get("sha", "")).strip() if isinstance(object_record, dict) else ""
+    object_sha = object_record.get("sha") if isinstance(object_record, dict) else ""
     if object_type == "tag":
         if args.tag_object_json:
             tag_object, error = read_json_file(args.tag_object_json, "--tag-object-json fixture")
@@ -1100,10 +1100,11 @@ def expected_release_upload_url(repository: str, release_id: int) -> str:
 
 
 def repository_from_release_asset_url(url: Any) -> str:
-    text = str(url).strip()
-    if not release_asset_url_filename(text):
+    if not isinstance(url, str) or url != url.strip():
         return ""
-    match = GITHUB_RELEASE_ASSET_RE.fullmatch(text)
+    if not release_asset_url_filename(url):
+        return ""
+    match = GITHUB_RELEASE_ASSET_RE.fullmatch(url)
     if not match:
         return ""
     return match.group(1)
@@ -1270,7 +1271,7 @@ def github_api_headers() -> dict[str, str]:
 
 
 def is_lower_git_sha(value: Any) -> bool:
-    return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{40}", value.strip()) is not None
+    return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{40}", value) is not None
 
 
 def lowercase_sha256_hex(value: Any) -> bool:
@@ -1642,13 +1643,17 @@ def check_published_release_asset_metadata(
                 f"got {asset.get('state')!r}"
             )
         node_id = asset.get("node_id")
-        if not isinstance(node_id, str) or not node_id.strip():
+        if not isinstance(node_id, str) or not node_id or node_id != node_id.strip():
             errors.append(
                 f"{target} remote release asset {filename} node_id must be a non-empty string, "
                 f"got {node_id!r}"
             )
         content_type = asset.get("content_type")
-        if not isinstance(content_type, str) or not content_type.strip():
+        if (
+            not isinstance(content_type, str)
+            or not content_type
+            or content_type != content_type.strip()
+        ):
             errors.append(
                 f"{target} remote release asset {filename} content_type must be a non-empty string, "
                 f"got {content_type!r}"
@@ -1952,7 +1957,7 @@ def check_published_native_manifest_bytes(
         expected_architecture = expected_manifest_architecture(target, filename)
         if expected_architecture:
             raw_architecture = raw_record.get("architecture")
-            if not isinstance(raw_architecture, str) or raw_architecture.strip() != expected_architecture:
+            if not isinstance(raw_architecture, str) or raw_architecture != expected_architecture:
                 errors.append(
                     f"{target} published native manifest record {filename} architecture must be "
                     f"{expected_architecture!r}, got {raw_architecture!r}"
@@ -1960,7 +1965,7 @@ def check_published_native_manifest_bytes(
         expected_format = expected_manifest_format(filename)
         if expected_format:
             raw_format = raw_record.get("format")
-            if not isinstance(raw_format, str) or raw_format.strip() != expected_format:
+            if not isinstance(raw_format, str) or raw_format != expected_format:
                 errors.append(
                     f"{target} published native manifest record {filename} format must be "
                     f"{expected_format!r}, got {raw_format!r}"
@@ -2218,13 +2223,13 @@ def accepted_release_source_heads(
             errors.append(f"{target} release_asset_source must be an object for release tag audit")
             continue
         head_sha = source.get("head_sha")
-        if not isinstance(head_sha, str) or not is_lower_git_sha(head_sha.strip()):
+        if not isinstance(head_sha, str) or head_sha != head_sha.strip() or not is_lower_git_sha(head_sha):
             errors.append(
                 f"{target} release_asset_source.head_sha must be a 40-character "
                 "lowercase Git SHA for release tag audit"
             )
             continue
-        heads.add(head_sha.strip())
+        heads.add(head_sha)
     return sorted(heads), errors
 
 
@@ -2244,13 +2249,14 @@ def release_tag_resolved_head(
     if not isinstance(raw_object, dict):
         return None, [*errors, f"release tag {release_tag} ref object must be an object"]
     object_type = raw_object.get("type")
-    object_sha = str(raw_object.get("sha", "")).strip()
+    object_sha = raw_object.get("sha")
     if not is_lower_git_sha(object_sha):
         errors.append(
             f"release tag {release_tag} ref object.sha must be a 40-character lowercase Git SHA"
         )
+    valid_object_sha = object_sha if is_lower_git_sha(object_sha) else None
     if object_type == "commit":
-        return object_sha if is_lower_git_sha(object_sha) else None, errors
+        return valid_object_sha, errors
     if object_type != "tag":
         errors.append(f"release tag {release_tag} ref object.type must be commit or tag, got {object_type!r}")
         return None, errors
@@ -2259,16 +2265,16 @@ def release_tag_resolved_head(
             *errors,
             f"release tag {release_tag} annotated tag object metadata missing for {object_sha}",
         ]
-    tag_object_sha = str(tag_object.get("sha", "")).strip()
+    tag_object_sha = tag_object.get("sha")
     if not is_lower_git_sha(tag_object_sha):
         errors.append(
             f"release tag {release_tag} annotated tag object sha must be a "
             "40-character lowercase Git SHA"
         )
-    elif is_lower_git_sha(object_sha) and tag_object_sha != object_sha:
+    elif valid_object_sha is not None and tag_object_sha != valid_object_sha:
         errors.append(
             f"release tag {release_tag} annotated tag object sha must match ref object "
-            f"{object_sha}, got {tag_object_sha}"
+            f"{valid_object_sha}, got {tag_object_sha}"
         )
     if tag_object.get("tag") != release_tag:
         errors.append(
@@ -2283,7 +2289,7 @@ def release_tag_resolved_head(
             f"release tag {release_tag} annotated tag object target type must be commit, "
             f"got {raw_target.get('type')!r}"
         )
-    commit_sha = str(raw_target.get("sha", "")).strip()
+    commit_sha = raw_target.get("sha")
     if not is_lower_git_sha(commit_sha):
         errors.append(
             f"release tag {release_tag} annotated tag target sha must be a "
@@ -2600,7 +2606,7 @@ def check_source_run_record(
                 f"got {api_url!r}"
             )
     node_id = first_present(run, "node_id", "nodeId")
-    if not isinstance(node_id, str) or not node_id.strip():
+    if not isinstance(node_id, str) or not node_id or node_id != node_id.strip():
         errors.append(f"{target} source workflow run node_id must be a non-empty string, got {node_id!r}")
     run_number = first_present(run, "run_number", "runNumber")
     if not isinstance(run_number, int) or isinstance(run_number, bool) or run_number <= 0:
@@ -2995,7 +3001,12 @@ def source_artifact_archive_download_url_for_fetch(
             f"a non-empty string before byte fetch, got {raw_archive_url!r}"
         )
         return errors, ""
-    archive_url = raw_archive_url.strip()
+    if raw_archive_url != raw_archive_url.strip():
+        errors.append(
+            f"{target} source workflow artifact {label} archive_download_url must not "
+            f"have surrounding whitespace before byte fetch, got {raw_archive_url!r}"
+        )
+    archive_url = raw_archive_url
     if isinstance(artifact_id, int) and not isinstance(artifact_id, bool) and artifact_id > 0:
         expected_url = f"{source_artifact_api_url(repository, artifact_id)}/zip"
         if archive_url != expected_url:
@@ -3241,7 +3252,7 @@ def check_source_artifact_record(
                 f"must be {expected_archive_url!r}, got {artifact.get('archive_download_url')!r}"
             )
     node_id = artifact.get("node_id")
-    if not isinstance(node_id, str) or not node_id.strip():
+    if not isinstance(node_id, str) or not node_id or node_id != node_id.strip():
         errors.append(
             f"{target} source workflow artifact {artifact_name} node_id "
             f"must be a non-empty string, got {node_id!r}"
@@ -3303,15 +3314,19 @@ def check_source_artifact_record(
                 f"run {run_id}, got {artifact_run_id!r}"
             )
         artifact_head = workflow_run.get("head_sha")
-        if not isinstance(artifact_head, str) or not is_lower_git_sha(artifact_head.strip()):
+        if (
+            not isinstance(artifact_head, str)
+            or artifact_head != artifact_head.strip()
+            or not is_lower_git_sha(artifact_head)
+        ):
             errors.append(
                 f"{target} source workflow artifact {artifact_name} workflow_run.head_sha "
                 f"must be a 40-character lowercase Git SHA, got {artifact_head!r}"
             )
-        elif artifact_head.strip() != expected_head:
+        elif artifact_head != expected_head:
             errors.append(
                 f"{target} source workflow artifact {artifact_name} workflow_run.head_sha must match "
-                f"accepted record {expected_head}, got {artifact_head.strip()!r}"
+                f"accepted record {expected_head}, got {artifact_head!r}"
             )
         artifact_repository_id = workflow_run.get("repository_id")
         if (

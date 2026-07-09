@@ -2033,6 +2033,41 @@ def test_import_record_rejects_source_workflow_run_started_before_created(
     ) in errors
 
 
+def test_import_record_rejects_padded_source_workflow_run_metadata(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    importer = _load_importer()
+    record = _record(tmp_path)
+
+    def fake_run(command: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        assert _is_metadata_command(command)
+        return _source_run_metadata(
+            command,
+            nodeId=" WFR_kwLO12345",
+            runCreatedAt=" 2026-06-30T11:59:00Z",
+        )
+
+    monkeypatch.setattr(importer.subprocess, "run", fake_run)
+
+    errors = importer.import_record(
+        record,
+        out_dir=tmp_path / "release-assets",
+        download_root=tmp_path / "download",
+        dry_run=False,
+        release_head_sha=HEAD_SHA,
+    )
+
+    assert (
+        "linux-i386 release_asset_source workflow run nodeId must be a non-empty string, "
+        "got ' WFR_kwLO12345'"
+    ) in errors
+    assert (
+        "linux-i386 release_asset_source workflow run runCreatedAt must be a GitHub ISO-8601 "
+        "timestamp, got ' 2026-06-30T11:59:00Z'"
+    ) in errors
+
+
 def test_import_record_rejects_source_workflow_run_id_mismatch(
     tmp_path: Path,
     monkeypatch,
@@ -2920,6 +2955,68 @@ def test_verify_source_artifact_rejects_non_string_workflow_run_head_sha(monkeyp
     assert (
         "linux-i386 release_asset_source artifact extended-linux-evidence-linux-i386-v1.0.2 "
         "workflow_run.head_sha must be a string, got True"
+    ) in errors
+
+
+def test_verify_source_artifact_rejects_padded_artifact_metadata(monkeypatch) -> None:
+    importer = _load_importer()
+    command = _source_run_artifacts_command(importer)
+
+    def fake_run(command_arg: list[str], check: bool, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        assert command_arg == command
+        assert check is True
+        assert kwargs == {"capture_output": True, "text": True}
+        return _successful_artifacts(
+            command_arg,
+            artifacts=[
+                {
+                    "id": 98765,
+                    "node_id": " MDEyOkFydGlmYWN0OTg3NjU=",
+                    "name": "extended-linux-evidence-linux-i386-v1.0.2",
+                    "url": (
+                        "https://api.github.com/repos/example/remote-ops-workspace/"
+                        "actions/artifacts/98765"
+                    ),
+                    "archive_download_url": (
+                        "https://api.github.com/repos/example/remote-ops-workspace/"
+                        "actions/artifacts/98765/zip"
+                    ),
+                    "expired": False,
+                    "size_in_bytes": 4096,
+                    "created_at": " 2026-06-30T12:03:00Z",
+                    "updated_at": "2026-06-30T12:04:00Z",
+                    "expires_at": "2026-09-28T12:04:00Z",
+                    "workflow_run": {"id": 12345, "head_sha": f"{HEAD_SHA} "},
+                }
+            ],
+        )
+
+    monkeypatch.setattr(importer.subprocess, "run", fake_run)
+
+    errors = importer.verify_source_artifact(
+        "linux-i386",
+        command,
+        artifact_name="extended-linux-evidence-linux-i386-v1.0.2",
+        expected_repository="example/remote-ops-workspace",
+        expected_run_id="12345",
+        expected_head_sha=HEAD_SHA,
+        expected_run_created_at="2026-06-30T11:59:00Z",
+        expected_run_started_at="2026-06-30T12:00:00Z",
+        expected_run_updated_at="2026-06-30T12:05:00Z",
+    )
+
+    assert (
+        "linux-i386 release_asset_source artifact extended-linux-evidence-linux-i386-v1.0.2 "
+        "node_id must be a non-empty string, got ' MDEyOkFydGlmYWN0OTg3NjU='"
+    ) in errors
+    assert (
+        "linux-i386 release_asset_source artifact extended-linux-evidence-linux-i386-v1.0.2 "
+        "created_at must be a GitHub ISO-8601 timestamp when exact source run timestamps "
+        "are known, got ' 2026-06-30T12:03:00Z'"
+    ) in errors
+    assert (
+        "linux-i386 release_asset_source artifact extended-linux-evidence-linux-i386-v1.0.2 "
+        f"workflow_run.head_sha must match accepted record {HEAD_SHA}, got '{HEAD_SHA} '"
     ) in errors
 
 

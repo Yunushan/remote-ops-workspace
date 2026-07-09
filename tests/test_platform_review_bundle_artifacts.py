@@ -172,6 +172,21 @@ def test_platform_review_bundle_artifacts_target_filter_does_not_stringify_targe
     assert records == []
 
 
+def test_platform_review_bundle_artifacts_target_filter_does_not_normalize_padded_targets() -> None:
+    validator = _load_script("check_platform_review_bundle_artifacts")
+    rows = [
+        {"target": "linux-i386", "release_tag": "v1.0.2"},
+    ]
+
+    records = validator.records_for_artifact_validation(
+        rows,
+        required_targets=(" linux-i386",),
+        required_release_tag="v1.0.2",
+    )
+
+    assert records == []
+
+
 def test_platform_review_bundle_artifacts_rejects_symlinked_final_record_asset_parent(
     tmp_path: Path,
     monkeypatch,

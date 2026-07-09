@@ -144,6 +144,30 @@ def test_platform_verified_evidence_rejects_non_string_promotion_target_id() -> 
     assert not any("promotion config missing protected target entries: ['True']" in error for error in errors)
 
 
+def test_platform_verified_evidence_rejects_padded_promotion_target_id() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    promotion = checker.read_json(checker.PROMOTION_PATH)
+    linux_i386 = next(
+        item for item in promotion["protected_targets"] if item["id"] == "linux-i386"
+    )
+    linux_i386["id"] = " linux-i386"
+
+    errors = checker.check_platform_verified_evidence(
+        registry={
+            "schema_version": 1,
+            "policy": POLICY,
+            "accepted_evidence": [],
+        },
+        promotion=promotion,
+    )
+
+    assert (
+        "promotion protected target id must not include surrounding whitespace, got ' linux-i386'"
+        in errors
+    )
+    assert not any("promotion config missing protected target entries: [' linux-i386']" in error for error in errors)
+
+
 def test_platform_verified_evidence_rejects_boolean_registry_schema_version() -> None:
     checker = _load_platform_verified_evidence_checker()
 
@@ -1504,17 +1528,39 @@ def test_platform_verified_evidence_rejects_malformed_required_targets_without_s
     assert not any("['True']" in error for error in errors)
 
 
+def test_platform_verified_evidence_rejects_padded_required_targets_without_normalizing() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [_linux_record("linux-i386")],
+    }
+
+    errors = checker.check_platform_verified_evidence(
+        registry=registry,
+        required_targets=(" linux-i386", "linux-i386"),
+    )
+
+    assert errors == [
+        "required platform evidence target must not include surrounding whitespace, got ' linux-i386'"
+    ]
+
+
 def test_platform_verified_evidence_arg_targets_do_not_stringify_malformed_values() -> None:
     checker = _load_platform_verified_evidence_checker()
     args = checker.parse_args(["--require-target", "linux-i386"])
-    args.require_target = [True, "linux-i386"]
+    args.require_target = [True, " linux-i386", "linux-i386"]
 
     errors = checker.strict_platform_goal_arg_errors(args)
     required_targets = checker.required_targets_from_args(args)
 
-    assert errors == ["platform verified evidence required target must be a non-empty string, got True"]
+    assert errors == [
+        "platform verified evidence required target must be a non-empty string, got True",
+        "platform verified evidence required target must not include surrounding whitespace, got ' linux-i386'",
+    ]
     assert required_targets == ("linux-i386",)
     assert "True" not in required_targets
+    assert " linux-i386" not in required_targets
 
 
 def test_platform_verified_evidence_rejects_malformed_required_release_tag_without_crashing() -> None:
@@ -1888,6 +1934,31 @@ def test_platform_verified_evidence_partial_goal_does_not_stringify_malformed_re
     )
 
 
+def test_platform_verified_evidence_partial_goal_does_not_normalize_padded_release_tag() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    linux_i386 = _linux_record("linux-i386")
+    linux_i386["release_tag"] = " v1.0.2"
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [
+            linux_i386,
+            _xp_record("windows-xp-native-x86"),
+        ],
+    }
+
+    errors = checker.check_platform_verified_evidence(
+        registry=registry,
+        require_review_bundles=True,
+    )
+
+    assert "linux-i386 release_tag must look like vX.Y.Z" in errors
+    assert (
+        "partial protected platform goal evidence must use one release_tag before promotion, "
+        "got {'linux-i386': ' v1.0.2', 'windows-xp-native-x86': 'v1.0.2'}"
+    ) in errors
+
+
 def test_platform_verified_evidence_rejects_partial_protected_goal_mixed_repositories() -> None:
     checker = _load_platform_verified_evidence_checker()
     xp_x86 = _xp_record("windows-xp-native-x86")
@@ -2058,6 +2129,31 @@ def test_platform_verified_evidence_xp_pair_does_not_stringify_malformed_release
         "Windows XP native evidence pair must use one release_tag" in error
         and "True" in error
         for error in errors
+    )
+
+
+def test_platform_verified_evidence_xp_pair_does_not_normalize_padded_release_tag() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    xp_x86 = _xp_record("windows-xp-native-x86")
+    xp_x86["release_tag"] = " v1.0.2"
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [
+            xp_x86,
+            _xp_record("windows-xp-native-x64"),
+        ],
+    }
+
+    errors = checker.check_platform_verified_evidence(
+        registry=registry,
+        require_review_bundles=True,
+    )
+
+    assert "windows-xp-native-x86 release_tag must look like vX.Y.Z" in errors
+    assert (
+        "Windows XP native evidence pair must use one release_tag, got [' v1.0.2', 'v1.0.2']"
+        in errors
     )
 
 
@@ -2986,6 +3082,23 @@ def test_platform_verified_evidence_rejects_ambiguous_linux_workflow_input_keys(
         "linux-i386 workflow_inputs keys must not collide on case-insensitive filesystems: "
         "['TARGET', 'target']"
     ) in errors
+
+
+def test_platform_verified_evidence_rejects_non_string_or_padded_linux_workflow_input_values() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    record["workflow_inputs"]["target"] = " linux-i386"
+    record["workflow_inputs"]["release_asset_base_url"] = True
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert "linux-i386 workflow_inputs target must not include surrounding whitespace" in errors
+    assert "linux-i386 workflow_inputs release_asset_base_url must be a string, got True" in errors
 
 
 def test_platform_verified_evidence_rejects_missing_release_asset_source() -> None:
@@ -4723,6 +4836,33 @@ def test_platform_verified_evidence_rejects_ambiguous_xp_workflow_input_keys() -
         "windows-xp-native-x86 workflow_inputs keys must not collide on case-insensitive "
         "filesystems: ['TARGET', 'target']"
     ) in errors
+
+
+def test_platform_verified_evidence_rejects_non_string_or_padded_xp_workflow_input_values() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _xp_record("windows-xp-native-x64")
+    base_url = str(record["workflow_inputs"]["release_asset_base_url"])
+    evidence_file = str(record["workflow_inputs"]["evidence_file"])
+    record["workflow_inputs"]["release_asset_base_url"] = f"{base_url} "
+    record["workflow_inputs"]["evidence_file"] = f" {evidence_file}"
+    record["workflow_inputs"]["assets_dir"] = False
+    registry = {
+        "schema_version": 1,
+        "policy": POLICY,
+        "accepted_evidence": [record],
+    }
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert (
+        "windows-xp-native-x64 workflow_inputs release_asset_base_url "
+        "must not include surrounding whitespace"
+    ) in errors
+    assert (
+        "windows-xp-native-x64 workflow_inputs evidence_file "
+        "must not include surrounding whitespace"
+    ) in errors
+    assert "windows-xp-native-x64 workflow_inputs assets_dir must be a string, got False" in errors
 
 
 def test_platform_verified_evidence_rejects_xp_workflow_input_path_drift() -> None:

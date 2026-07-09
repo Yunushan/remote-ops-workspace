@@ -907,7 +907,7 @@ def verify_source_run(
                 f"got {data.get('url')!r}"
             )
     node_id = data.get("nodeId")
-    if not isinstance(node_id, str) or not node_id.strip():
+    if not isinstance(node_id, str) or not node_id or node_id != node_id.strip():
         errors.append(
             f"{target} release_asset_source workflow run nodeId must be a non-empty string, "
             f"got {node_id!r}"
@@ -996,21 +996,21 @@ def verify_source_run(
                 f"must be a GitHub ISO-8601 timestamp, got {run_created_at!r}"
             )
         else:
-            observed_source_run["run_created_at"] = str(run_created_at).strip()
+            observed_source_run["run_created_at"] = run_created_at
         if parse_github_timestamp(run_started_at) is None:
             errors.append(
                 f"{target} release_asset_source workflow run runStartedAt "
                 f"must be a GitHub ISO-8601 timestamp, got {run_started_at!r}"
             )
         else:
-            observed_source_run["run_started_at"] = str(run_started_at).strip()
+            observed_source_run["run_started_at"] = run_started_at
         if parse_github_timestamp(run_updated_at) is None:
             errors.append(
                 f"{target} release_asset_source workflow run runUpdatedAt "
                 f"must be a GitHub ISO-8601 timestamp, got {run_updated_at!r}"
             )
         else:
-            observed_source_run["run_updated_at"] = str(run_updated_at).strip()
+            observed_source_run["run_updated_at"] = run_updated_at
         created = parse_github_timestamp(run_created_at)
         start = parse_github_timestamp(run_started_at)
         updated = parse_github_timestamp(run_updated_at)
@@ -1087,9 +1087,9 @@ def positive_int_value(raw_value: Any) -> int | None:
 
 
 def parse_github_timestamp(raw_value: Any) -> datetime | None:
-    if not isinstance(raw_value, str) or not raw_value.strip():
+    if not isinstance(raw_value, str) or not raw_value or raw_value != raw_value.strip():
         return None
-    text = raw_value.strip()
+    text = raw_value
     if text.endswith("Z"):
         text = f"{text[:-1]}+00:00"
     try:
@@ -1177,7 +1177,7 @@ def verify_source_artifact(
                 f"must be {expected_archive_url!r}, got {artifact.get('archive_download_url')!r}"
             )
     node_id = artifact.get("node_id")
-    if not isinstance(node_id, str) or not node_id.strip():
+    if not isinstance(node_id, str) or not node_id or node_id != node_id.strip():
         errors.append(
             f"{target} release_asset_source artifact {artifact_name} node_id "
             f"must be a non-empty string, got {node_id!r}"
@@ -1242,16 +1242,15 @@ def verify_source_artifact(
                 f"run {expected_run_id}, got {artifact_run_id!r}"
             )
         raw_artifact_head_sha = workflow_run.get("head_sha", "")
-        artifact_head_sha = raw_artifact_head_sha.strip() if isinstance(raw_artifact_head_sha, str) else ""
         if not isinstance(raw_artifact_head_sha, str):
             errors.append(
                 f"{target} release_asset_source artifact {artifact_name} workflow_run.head_sha "
                 f"must be a string, got {raw_artifact_head_sha!r}"
             )
-        elif artifact_head_sha != expected_head_sha:
+        elif raw_artifact_head_sha != expected_head_sha:
             errors.append(
                 f"{target} release_asset_source artifact {artifact_name} workflow_run.head_sha must match "
-                f"accepted record {expected_head_sha}, got {artifact_head_sha!r}"
+                f"accepted record {expected_head_sha}, got {raw_artifact_head_sha!r}"
             )
         artifact_repository_id = workflow_run.get("repository_id")
         if (

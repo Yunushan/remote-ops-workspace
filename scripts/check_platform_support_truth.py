@@ -492,11 +492,8 @@ def check_protected_readiness_catalog_contract(raw_goal: Any) -> list[str]:
 
 
 def check_release_matrix_alignment(platform_targets: dict[str, Any], matrix: dict[str, Any]) -> list[str]:
-    rows = {
-        str(item.get("id")): item
-        for item in platform_targets.get("release_architectures", [])
-        if isinstance(item, dict)
-    }
+    errors: list[str] = []
+    rows = rows_by_key(platform_targets.get("release_architectures", []), "id", errors)
     native_ids = {target_id for target_id, row in rows.items() if row.get("release_tier") == "native"}
     script_ids = {
         target_id
@@ -508,23 +505,72 @@ def check_release_matrix_alignment(platform_targets: dict[str, Any], matrix: dic
     }
 
     default_ids: set[str] = set()
-    for job in matrix.get("default_github_release", {}).get("native_jobs", []):
-        if isinstance(job, dict):
-            default_ids.update(str(item) for item in job.get("platform_target_ids", []))
-    matrix_script_ids = {
-        str(item.get("platform_target_id"))
-        for item in matrix.get("script_supported_native", [])
-        if isinstance(item, dict)
-    }
+    native_jobs = matrix.get("default_github_release", {}).get("native_jobs", [])
+    if not isinstance(native_jobs, list):
+        errors.append("release matrix default_github_release.native_jobs must be a list")
+    else:
+        for index, job in enumerate(native_jobs):
+            if not isinstance(job, dict):
+                errors.append(
+                    f"release matrix default_github_release.native_jobs[{index}] must be an object"
+                )
+                continue
+            raw_job_name = job.get("job")
+            job_name = (
+                raw_job_name
+                if isinstance(raw_job_name, str) and raw_job_name
+                else f"default_github_release.native_jobs[{index}]"
+            )
+            default_ids.update(
+                exact_string_set(
+                    job.get("platform_target_ids", []),
+                    f"release matrix {job_name} platform_target_ids",
+                    errors,
+                )
+            )
+
+    matrix_script_ids: set[str] = set()
+    script_rows = matrix.get("script_supported_native", [])
+    if not isinstance(script_rows, list):
+        errors.append("release matrix script_supported_native must be a list")
+    else:
+        for index, item in enumerate(script_rows):
+            if not isinstance(item, dict):
+                errors.append(f"release matrix script_supported_native[{index}] must be an object")
+                continue
+            target_id = exact_string_value(
+                item.get("platform_target_id"),
+                f"release matrix script_supported_native[{index}].platform_target_id",
+                errors,
+            )
+            if target_id:
+                matrix_script_ids.add(target_id)
+
     matrix_web_release_ids: set[str] = set()
     matrix_legacy_versions: set[str] = set()
-    for item in matrix.get("source_or_remote_only", []):
-        if not isinstance(item, dict):
-            continue
-        matrix_web_release_ids.update(str(target_id) for target_id in item.get("platform_target_ids", []))
-        matrix_legacy_versions.update(str(version) for version in item.get("windows_legacy_target_versions", []))
+    source_rows = matrix.get("source_or_remote_only", [])
+    if not isinstance(source_rows, list):
+        errors.append("release matrix source_or_remote_only must be a list")
+    else:
+        for index, item in enumerate(source_rows):
+            if not isinstance(item, dict):
+                errors.append(f"release matrix source_or_remote_only[{index}] must be an object")
+                continue
+            matrix_web_release_ids.update(
+                exact_string_set(
+                    item.get("platform_target_ids", []),
+                    f"release matrix source_or_remote_only[{index}].platform_target_ids",
+                    errors,
+                )
+            )
+            matrix_legacy_versions.update(
+                exact_string_set(
+                    item.get("windows_legacy_target_versions", []),
+                    f"release matrix source_or_remote_only[{index}].windows_legacy_target_versions",
+                    errors,
+                )
+            )
 
-    errors: list[str] = []
     if default_ids != native_ids:
         errors.append(
             "default native release targets must exactly match native platform targets "
@@ -547,6 +593,28 @@ def check_release_matrix_alignment(platform_targets: dict[str, Any], matrix: dic
             f"(expected {sorted(legacy_versions)}, got {sorted(matrix_legacy_versions)})"
         )
     return errors
+
+
+def exact_string_set(raw_values: Any, label: str, errors: list[str]) -> set[str]:
+    if not isinstance(raw_values, list):
+        errors.append(f"{label} must be a list")
+        return set()
+    values: set[str] = set()
+    for index, raw_value in enumerate(raw_values):
+        value = exact_string_value(raw_value, f"{label}[{index}]", errors)
+        if value:
+            values.add(value)
+    return values
+
+
+def exact_string_value(raw_value: Any, label: str, errors: list[str]) -> str:
+    if not isinstance(raw_value, str) or not raw_value:
+        errors.append(f"{label} must be a non-empty string, got {raw_value!r}")
+        return ""
+    if raw_value != raw_value.strip():
+        errors.append(f"{label} must not include surrounding whitespace, got {raw_value!r}")
+        return ""
+    return raw_value
 
 
 def check_platform_readiness_report(
@@ -997,9 +1065,18 @@ def rows_by_key(raw_rows: Any, key: str, errors: list[str]) -> dict[str, dict[st
         if not isinstance(item, dict):
             errors.append(f"platform support row for {key} must be an object")
             continue
-        row_key = str(item.get(key, ""))
-        if not row_key:
-            errors.append(f"platform support row missing key: {key}")
+        row_key = item.get(key, "")
+        if not isinstance(row_key, str) or not row_key:
+            errors.append(
+                f"platform support row key {key} must be a non-empty string, "
+                f"got {row_key!r}"
+            )
+            continue
+        if row_key != row_key.strip():
+            errors.append(
+                f"platform support row key {key} must not include surrounding "
+                f"whitespace, got {row_key!r}"
+            )
             continue
         if row_key in rows:
             errors.append(f"duplicate platform support row: {row_key}")

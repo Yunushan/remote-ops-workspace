@@ -134,7 +134,11 @@ def required_target_filter(raw_targets: object) -> tuple[set[str], bool]:
         target_values = tuple(raw_targets)
     except TypeError:
         return set(), True
-    targets = {target.strip() for target in target_values if isinstance(target, str) and target.strip()}
+    targets = {
+        target
+        for target in target_values
+        if isinstance(target, str) and target and target == target.strip()
+    }
     return targets, bool(target_values)
 
 

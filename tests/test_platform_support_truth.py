@@ -45,6 +45,40 @@ def test_platform_support_truth_rejects_fake_bit_width() -> None:
     assert "platform target windows-x86 uses unsupported bit width: 128" in errors
 
 
+def test_platform_support_truth_rejects_non_string_catalog_target_id() -> None:
+    checker = _load_platform_support_truth_checker()
+    targets = _load_json("configs/platform_targets.json")
+    linux_i386 = next(
+        item for item in targets["release_architectures"] if item["id"] == "linux-i386"
+    )
+    linux_i386["id"] = True
+
+    errors = checker.check_platform_catalog(targets)
+
+    assert "platform support row key id must be a non-empty string, got True" in errors
+    assert not any("duplicate platform support row: True" in error for error in errors)
+
+
+def test_platform_support_truth_rejects_padded_readiness_target_id() -> None:
+    checker = _load_platform_support_truth_checker()
+    targets = _load_json("configs/platform_targets.json")
+    report = deepcopy(coverage_report())
+    linux_i386 = next(
+        row
+        for row in report["platform_verified_readiness"]["targets"]
+        if row["target"] == "linux-i386"
+    )
+    linux_i386["target"] = " linux-i386"
+
+    errors = checker.check_platform_readiness_report(targets, report)
+
+    assert (
+        "platform support row key target must not include surrounding whitespace, "
+        "got ' linux-i386'"
+    ) in errors
+    assert not any("got [' linux-i386'" in error for error in errors)
+
+
 def test_platform_support_truth_rejects_missing_protected_readiness_contract() -> None:
     checker = _load_platform_support_truth_checker()
     targets = _load_json("configs/platform_targets.json")
@@ -96,6 +130,33 @@ def test_platform_support_truth_rejects_manual_linux_promoted_to_default() -> No
 
     assert any("default native release targets must exactly match" in error for error in errors)
     assert any("script-supported release targets must exactly match" in error for error in errors)
+
+
+def test_platform_support_truth_rejects_malformed_release_matrix_target_ids() -> None:
+    checker = _load_platform_support_truth_checker()
+    targets = _load_json("configs/platform_targets.json")
+    matrix = _load_json("configs/release_matrix.json")
+    matrix["default_github_release"]["native_jobs"][2]["platform_target_ids"].append(True)
+    matrix["script_supported_native"][0]["platform_target_id"] = " linux-i386"
+    matrix["source_or_remote_only"][0]["platform_target_ids"].append(False)
+    matrix["source_or_remote_only"][4]["windows_legacy_target_versions"].append(" Windows XP")
+
+    errors = checker.check_release_matrix_alignment(targets, matrix)
+
+    assert "release matrix linux-native platform_target_ids[2] must be a non-empty string, got True" in errors
+    assert (
+        "release matrix script_supported_native[0].platform_target_id "
+        "must not include surrounding whitespace, got ' linux-i386'"
+    ) in errors
+    assert (
+        "release matrix source_or_remote_only[0].platform_target_ids[2] "
+        "must be a non-empty string, got False"
+    ) in errors
+    assert (
+        "release matrix source_or_remote_only[4].windows_legacy_target_versions[5] "
+        "must not include surrounding whitespace, got ' Windows XP'"
+    ) in errors
+    assert not any("True" in error and "exactly match" in error for error in errors)
 
 
 def test_platform_support_truth_rejects_inflated_manual_readiness() -> None:

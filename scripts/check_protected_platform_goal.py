@@ -1052,6 +1052,9 @@ def format_goal_scope(goal: dict[str, Any]) -> str:
     source_ref_command = str(goal.get("source_ref_preflight_command", "")).strip()
     if source_ref_command:
         lines.append(f"pre-dispatch source-ref gate: {source_ref_command}")
+    runner_readiness_command = str(goal.get("runner_readiness_preflight_command", "")).strip()
+    if runner_readiness_command:
+        lines.append(f"pre-dispatch runner-readiness gate: {runner_readiness_command}")
     import_command = str(goal.get("release_import_dry_run_command", "")).strip()
     if import_command:
         lines.append(f"pre-release import dry-run: {import_command}")

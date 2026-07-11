@@ -39,6 +39,11 @@ Release integrity rules:
   gate resolves the tag commit and refuses release tags that do not contain the
   tagged project version, both protected-platform evidence workflows and all
   four protected target dispatch options.
+- Immediately before dispatching protected-platform evidence, an authorized
+  operator must run `python scripts/check_platform_evidence_runner_readiness.py
+  --repository <owner>/<repo> --require-goal-targets --require-idle`. It confirms
+  the required self-hosted evidence labels are online and idle without granting
+  runner-inventory access to normal release jobs.
 - Before tagging or rerunning a protected-platform promotion, run the
   pre-release protected-platform import dry-run
   `python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir <release-assets-dir> --dry-run --verify-source-run --repository <owner>/<repo>`.

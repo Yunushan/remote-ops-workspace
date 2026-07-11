@@ -99,6 +99,11 @@ def build_steps(
             env=_source_env(),
         ),
         VerifyStep(
+            "protected platform evidence runner readiness",
+            [python, "scripts/check_platform_evidence_runner_readiness.py", "--help"],
+            env=_source_env(),
+        ),
+        VerifyStep(
             "extended platform evidence workflow",
             [python, "scripts/check_extended_platform_evidence.py"],
             env=_source_env(),

@@ -272,6 +272,15 @@ def check_product_readiness() -> list[str]:
                 "protected platform goal parity source_ref_preflight_command must be "
                 f"{expected_source_ref_command!r}"
             )
+        expected_runner_command = expected_runner_readiness_preflight_command(goal)
+        runner_command = goal.get("runner_readiness_preflight_command")
+        if not str(runner_command or "").strip():
+            errors.append("protected platform goal parity must expose runner_readiness_preflight_command")
+        elif runner_command != expected_runner_command:
+            errors.append(
+                "protected platform goal parity runner_readiness_preflight_command must be "
+                f"{expected_runner_command!r}"
+            )
         expected_import_command = expected_release_import_dry_run_command(goal)
         import_command = goal.get("release_import_dry_run_command")
         if not str(import_command or "").strip():
@@ -1277,6 +1286,19 @@ def expected_source_ref_preflight_command(goal: dict[str, object]) -> str:
     return (
         "python scripts/check_platform_evidence_source_ref.py "
         f"--repository {repository} --release-tag {release_tag} --require-goal-targets"
+    )
+
+
+def expected_runner_readiness_preflight_command(goal: dict[str, object]) -> str:
+    repositories = goal.get("release_repositories")
+    repository = "<owner>/<repo>"
+    if isinstance(repositories, list) and len(repositories) == 1:
+        value = repositories[0]
+        if isinstance(value, str) and value.strip():
+            repository = value.strip()
+    return (
+        "python scripts/check_platform_evidence_runner_readiness.py "
+        f"--repository {repository} --require-goal-targets --require-idle"
     )
 
 

@@ -18,6 +18,7 @@ python scripts/check_platform_verified_evidence.py
 python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-records-complete
 python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag v<project.version>
 python scripts/check_platform_evidence_source_ref.py --repository <owner>/<repo> --release-tag v<project.version> --require-goal-targets
+python scripts/check_platform_evidence_runner_readiness.py --repository <owner>/<repo> --require-goal-targets --require-idle
 python scripts/check_release_publish_assets.py
 python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-complete --assets-dir <release-assets-dir> --repository <owner>/<repo>
 python scripts/check_release_publish_assets.py --assets-dir <release-assets-dir> --tag v<project.version> --repository <owner>/<repo> --require-platform-goal-targets
@@ -32,6 +33,14 @@ options to exist at that exact tag. A release created before either evidence
 workflow was added cannot be promoted retroactively under the same-tag and
 same-source-SHA policy; create a new release tag from a commit containing the
 workflows instead of dispatching from `main` or weakening source provenance.
+
+Run the runner-readiness gate immediately before dispatch as well. It reads the
+repository self-hosted runner inventory and requires an idle matching runner for
+Linux i386, Linux armhf, and the modern `xp-evidence` collector. It intentionally
+reports only sanitized counts, not runner names. This command needs `GH_TOKEN`
+or `GITHUB_TOKEN` with repository administration read access; it is an operator
+preflight rather than a release-workflow step because normal release tokens do
+not need runner-inventory access.
 
 Accepted records must start as candidates generated with
 `python scripts/make_platform_verified_evidence_record.py`, then the review

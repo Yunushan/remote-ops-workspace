@@ -17,6 +17,8 @@ COMMON_SNIPPETS = (
     "python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-records-complete",
     "python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag v<project.version>",
     "python scripts/check_platform_evidence_source_ref.py --repository <owner>/<repo> --release-tag v<project.version> --require-goal-targets",
+    "python scripts/check_platform_evidence_runner_readiness.py --repository <owner>/<repo> --require-goal-targets --require-idle",
+    "repository administration read access",
     "python scripts/check_release_publish_assets.py",
     "python scripts/check_release_publish_assets.py --assets-dir <release-assets-dir> --tag v<project.version> --repository <owner>/<repo> --require-platform-goal-targets",
     "python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> --release-assets-dir <release-assets-dir> --release-repository <owner>/<repo>",

@@ -112,6 +112,7 @@ evidence JSON and smoke files. Accepted promotion records are stored in
 accepted records, the generated readiness report must keep the current partial
 rows. The strict promotion path is
 `python scripts/check_platform_evidence_source_ref.py --repository <owner>/<repo> --release-tag v<project.version> --require-goal-targets`,
+`python scripts/check_platform_evidence_runner_readiness.py --repository <owner>/<repo> --require-goal-targets --require-idle`,
 `python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-records-complete`,
 `python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag v<project.version>`
 and `python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> --release-assets-dir <release-assets-dir> --release-repository <owner>/<repo>`;
@@ -124,6 +125,12 @@ and all four protected target options exist at that tag. A tag created before
 those workflows existed cannot be promoted by running a newer workflow from
 `main`; promotion requires a new tag whose source commit contains the evidence
 workflows.
+
+The runner-readiness gate must run immediately before dispatch. It checks only
+sanitized counts for required self-hosted label sets and requires an idle Linux
+i386 runner, an idle Linux armhf runner, and an idle modern `xp-evidence`
+collector. It requires a GitHub token with repository administration read
+access and does not broaden normal release-token permissions.
 those commands must fail until linux-i386, linux-armhf,
 windows-xp-native-x86 and windows-xp-native-x64 all have accepted records for
 the same release tag, same GitHub release repository, same release source head

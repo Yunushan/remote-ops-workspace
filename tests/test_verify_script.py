@@ -22,6 +22,7 @@ def test_verify_steps_include_full_checks_and_cli_smoke(tmp_path: Path) -> None:
     assert "platform promotion runbook" in names
     assert "platform promotion artifact validator contract" in names
     assert "protected platform local evidence preflight" in names
+    assert "protected platform evidence runner readiness" in names
     assert "extended platform evidence workflow" in names
     assert "extended platform dispatch input validator" in names
     assert "extended Linux evidence bundle packer" in names
@@ -76,6 +77,7 @@ def test_verify_quick_mode_skips_pytest_but_keeps_cli_smoke(tmp_path: Path) -> N
     assert "platform promotion runbook" in names
     assert "platform promotion artifact validator contract" in names
     assert "protected platform local evidence preflight" in names
+    assert "protected platform evidence runner readiness" in names
     assert "extended platform evidence workflow" in names
     assert "extended platform dispatch input validator" in names
     assert "extended Linux evidence bundle packer" in names

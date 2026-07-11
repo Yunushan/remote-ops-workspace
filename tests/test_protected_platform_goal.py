@@ -89,6 +89,10 @@ def test_protected_platform_goal_strict_gate_fails_empty_registry() -> None:
         "python scripts/check_platform_evidence_source_ref.py "
         "--repository <owner>/<repo> --release-tag v1.0.2 --require-goal-targets"
     )
+    assert goal["runner_readiness_preflight_command"] == (
+        "python scripts/check_platform_evidence_runner_readiness.py "
+        "--repository <owner>/<repo> --require-goal-targets --require-idle"
+    )
     assert goal["remote_release_evidence_audit_command"] == (
         "python scripts/check_platform_release_evidence_remote.py "
         "--repository <owner>/<repo> --release-tag v1.0.2 "
@@ -121,6 +125,11 @@ def test_protected_platform_goal_strict_gate_fails_empty_registry() -> None:
         "pre-dispatch source-ref gate: "
         "python scripts/check_platform_evidence_source_ref.py "
         "--repository <owner>/<repo> --release-tag v1.0.2 --require-goal-targets"
+    ) in human_scope
+    assert (
+        "pre-dispatch runner-readiness gate: "
+        "python scripts/check_platform_evidence_runner_readiness.py "
+        "--repository <owner>/<repo> --require-goal-targets --require-idle"
     ) in human_scope
     assert (
         "pre-release import dry-run: python scripts/import_platform_evidence_artifacts.py "

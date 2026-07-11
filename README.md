@@ -509,7 +509,9 @@ Create local release bundles for the advertised targets:
 python scripts/make_release.py
 ```
 
-The GitHub release workflow runs on tags like `v1.0.2` and uploads these assets:
+The GitHub release workflow is manually promoted from the trusted default branch
+with an immutable tag input such as `v1.0.2`; it builds that tag and uploads
+these assets only after accepted platform evidence is present:
 
 | Target | Asset |
 |---|---|

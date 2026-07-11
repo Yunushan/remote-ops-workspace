@@ -6,6 +6,15 @@ only when the artifact is real, reproducible, and documented.
 Release integrity rules:
 
 - Release tags must match `pyproject.toml` exactly, for example `v1.0.2`.
+- Release publication is an evidence-first `workflow_dispatch` promotion from
+  the trusted default branch, not an automatic tag-push workflow. First create
+  and push the immutable release tag, run the four target evidence workflows
+  from that tag, review and append only their finalized accepted records on the
+  trusted controller branch, then dispatch `release.yml` with
+  `release_tag=vX.Y.Z`. The controller validates the accepted records while all
+  source and native build jobs explicitly check out that immutable tag. This
+  prevents a tag from having to contain evidence that can only be produced
+  after the tag exists.
 - Source/install bundles are built with deterministic archive metadata using
   `SOURCE_DATE_EPOCH` or a fixed default.
 - Python release build dependencies are constrained by `requirements-release.txt`
@@ -445,7 +454,7 @@ Use `--require-clean` only immediately before creating the tag. It adds a
 tree. During ordinary development, the default cleanup check can run while local
 work is still in progress.
 
-The tag workflow repeats this protection automatically through actual GitHub
+The manual tag-targeted promotion repeats this protection through actual GitHub
 Actions `needs` entries. The `release-preflight` job is a dependency of
 `source-and-python`, `windows-native`, `macos-native`, `linux-native`,
 `accepted-platform-evidence-assets` and `publish`; the source and native build

@@ -35,12 +35,12 @@ PLATFORM_GOAL_TARGETS = (
     "windows-xp-native-x64",
 )
 PUBLISH_PROTECTED_PLATFORM_ASSET_COMMAND = (
-    'python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" '
+    'python scripts/check_protected_platform_goal.py --release-tag "${{ inputs.release_tag }}" '
     '--require-complete --assets-dir release-assets --repository "${{ github.repository }}"'
 )
 PUBLISH_REMOTE_PLATFORM_EVIDENCE_AUDIT_COMMAND = (
     'python scripts/check_platform_release_evidence_remote.py --repository "${{ github.repository }}" '
-    '--release-tag "${{ github.ref_name }}" --require-goal-targets --require-source-runs '
+    '--release-tag "${{ inputs.release_tag }}" --require-goal-targets --require-source-runs '
     "--require-source-artifact-bytes --require-final-record-bytes "
     "--require-release-asset-bytes --require-tag-source-head"
 )
@@ -285,7 +285,15 @@ def check_platform_evidence_import_job(workflow: str) -> list[str]:
         "clean: true": "clean platform evidence import checkout",
         "uses: actions/setup-python@v6": "Python setup",
         "GH_TOKEN: ${{ github.token }}": "GitHub token for gh artifact download",
+        "name: Check out immutable release source for evidence binding": (
+            "immutable release source checkout"
+        ),
+        "ref: ${{ inputs.release_tag }}": "immutable release source checkout ref",
+        "path: release-source": "immutable release source checkout path",
         "python scripts/import_platform_evidence_artifacts.py --release-tag": "platform evidence artifact importer",
+        '--release-head-sha "$(git -C release-source rev-parse HEAD)"': (
+            "immutable release source SHA binding"
+        ),
         "--require-goal-targets": "strict protected target import",
         "--out-dir release-assets": "release asset import directory",
         "--verify-source-run": "source run metadata verification",

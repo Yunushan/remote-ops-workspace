@@ -30,17 +30,17 @@ PLATFORM_EVIDENCE_IMPORT_DEPENDENTS = (
     "linux-native",
 )
 PUBLISH_PROTECTED_PLATFORM_ASSET_COMMAND = (
-    'python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" '
+    'python scripts/check_protected_platform_goal.py --release-tag "${{ inputs.release_tag }}" '
     '--require-complete --assets-dir release-assets --repository "${{ github.repository }}"'
 )
 PUBLISH_PLATFORM_GOAL_COMMAND = (
     'python scripts/check_release_publish_assets.py --assets-dir release-assets '
-    '--tag "${{ github.ref_name }}" --repository "${{ github.repository }}" '
+    '--tag "${{ inputs.release_tag }}" --repository "${{ github.repository }}" '
     "--require-platform-goal-targets"
 )
 PUBLISH_REMOTE_PLATFORM_EVIDENCE_AUDIT_COMMAND = (
     'python scripts/check_platform_release_evidence_remote.py --repository "${{ github.repository }}" '
-    '--release-tag "${{ github.ref_name }}" --require-goal-targets --require-source-runs '
+    '--release-tag "${{ inputs.release_tag }}" --require-goal-targets --require-source-runs '
     "--require-source-artifact-bytes --require-final-record-bytes "
     "--require-release-asset-bytes --require-tag-source-head"
 )
@@ -268,6 +268,7 @@ def check_workflow_matrix() -> list[str]:
 def check_release_preflight(workflow: str | None = None) -> list[str]:
     workflow_text = workflow if workflow is not None else read(".github/workflows/release.yml")
     errors: list[str] = []
+    errors.extend(check_tag_targeted_release_dispatch(workflow_text))
     if 'FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"' not in workflow_text:
         errors.append("release workflow must opt JavaScript actions into Node.js 24")
     if "ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION" in workflow_text:
@@ -279,22 +280,25 @@ def check_release_preflight(workflow: str | None = None) -> list[str]:
     required_snippets = {
         "persist-credentials: false": "checkout credential persistence disabled",
         'python-version: "3.12"': "stable preflight Python version",
+        'test "${{ github.ref_name }}" = "${{ github.event.repository.default_branch }}"': (
+            "trusted release controller branch guard"
+        ),
         "python scripts/verify.py --quick --no-cli-smoke": "quick verifier before release builds",
-        '--release-tag "${{ github.ref_name }}"': "tag-scoped protected platform parity report",
-        'python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" --show-requirements': (
+        '--release-tag "${{ inputs.release_tag }}"': "tag-scoped protected platform parity report",
+        'python scripts/check_protected_platform_goal.py --release-tag "${{ inputs.release_tag }}" --show-requirements': (
             "protected platform readiness requirements report"
         ),
         (
-            'python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" '
+            'python scripts/check_protected_platform_goal.py --release-tag "${{ inputs.release_tag }}" '
             "--require-records-complete --show-requirements"
         ): "protected platform accepted records gate",
-        'python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag "${{ github.ref_name }}"': (
+        'python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag "${{ inputs.release_tag }}"': (
             "strict accepted evidence registry gate"
         ),
         (
             'python scripts/check_platform_evidence_source_ref.py '
             '--repository "${{ github.repository }}" '
-            '--release-tag "${{ github.ref_name }}" --require-goal-targets'
+            '--release-tag "${{ inputs.release_tag }}" --require-goal-targets'
         ): "protected platform release source-ref gate",
         "GITHUB_TOKEN: ${{ github.token }}": "GitHub token for release source-ref gate",
         "python scripts/check_repository_cleanup.py --require-clean": "clean checkout requirement before tagging",
@@ -315,9 +319,34 @@ def check_release_preflight(workflow: str | None = None) -> list[str]:
             continue
         if not job_depends_on(dependent_block, "accepted-platform-evidence-assets"):
             errors.append(f"{job} must wait for accepted-platform-evidence-assets")
+        errors.extend(check_tagged_source_checkout(dependent_block, job=job))
     errors.extend(check_accepted_platform_evidence_assets_job(workflow_text))
     errors.extend(check_publish_platform_evidence_dependency(workflow_text))
     return errors
+
+
+def check_tag_targeted_release_dispatch(workflow: str) -> list[str]:
+    errors: list[str] = []
+    if "workflow_dispatch:" not in workflow:
+        errors.append("release workflow must use workflow_dispatch after evidence acceptance")
+    if "push:" in workflow:
+        errors.append("release workflow must not publish automatically when a tag is pushed")
+    input_block = re.search(r"(?ms)^  workflow_dispatch:\n(.*?)(?=^\S|\Z)", workflow)
+    if not input_block or not re.search(
+        r"(?ms)^      release_tag:\n.*?^        required:\s*true\s*$.*?^        type:\s*string\s*$",
+        input_block.group(1),
+    ):
+        errors.append("release workflow must require a string workflow_dispatch release_tag input")
+    return errors
+
+
+def check_tagged_source_checkout(job_block: str, *, job: str) -> list[str]:
+    checkout = workflow_step_block(job_block, "uses: actions/checkout@v6")
+    if not checkout:
+        return [f"{job} missing repository checkout: uses: actions/checkout@v6"]
+    if "ref: ${{ inputs.release_tag }}" not in checkout:
+        return [f"{job} checkout must build the immutable inputs.release_tag source"]
+    return []
 
 
 def check_accepted_platform_evidence_assets_job(workflow: str) -> list[str]:
@@ -330,13 +359,19 @@ def check_accepted_platform_evidence_assets_job(workflow: str) -> list[str]:
         "actions: read": "Actions read permission for artifact import",
         "contents: read": "contents read permission for checkout",
         "GH_TOKEN: ${{ github.token }}": "GitHub token for gh run download",
+        "name: Check out immutable release source for evidence binding": (
+            "immutable release source checkout"
+        ),
+        "ref: ${{ inputs.release_tag }}": "immutable release source checkout ref",
+        "path: release-source": "immutable release source checkout path",
         (
-            'python scripts/import_platform_evidence_artifacts.py --release-tag "${{ github.ref_name }}" '
+            'python scripts/import_platform_evidence_artifacts.py --release-tag "${{ inputs.release_tag }}" '
+            '--release-head-sha "$(git -C release-source rev-parse HEAD)" '
             '--require-goal-targets --out-dir release-assets --verify-source-run --repository "${{ github.repository }}"'
         ): "accepted platform evidence artifact importer",
         (
             'python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets '
-            '--require-goal-targets --release-tag "${{ github.ref_name }}" --require-final-record-assets'
+            '--require-goal-targets --release-tag "${{ inputs.release_tag }}" --require-final-record-assets'
         ): "imported platform review bundle and final record validator",
         "name: release-platform-evidence-assets": "platform evidence release asset artifact name",
         "path: release-assets/*": "platform evidence release asset upload path",

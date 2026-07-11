@@ -2477,6 +2477,54 @@ def test_import_platform_evidence_artifacts_cli_dry_run_checks_release_checkout_
     assert result == 1
 
 
+def test_import_platform_evidence_artifacts_cli_uses_explicit_tag_checkout_head_sha(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    importer = _load_importer()
+    record = importer.public_record(_record(tmp_path))
+    registry = tmp_path / "platform_verified_evidence.json"
+    registry.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "policy": _platform_verified_evidence_policy(),
+                "accepted_evidence": [record],
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    observed: dict[str, object] = {}
+
+    def fake_import(records, **kwargs):
+        observed["records"] = records
+        observed.update(kwargs)
+        return []
+
+    monkeypatch.setattr(importer, "current_checkout_head_sha", lambda: "c" * 40)
+    monkeypatch.setattr(importer, "import_platform_evidence_artifacts", fake_import)
+
+    result = importer.main(
+        [
+            "--registry",
+            str(registry),
+            "--release-tag",
+            "v1.0.2",
+            "--require-target",
+            "linux-i386",
+            "--out-dir",
+            str(tmp_path / "release-assets"),
+            "--release-head-sha",
+            HEAD_SHA,
+        ]
+    )
+
+    assert result == 0
+    assert observed["release_head_sha"] == HEAD_SHA
+
+
 def test_import_platform_evidence_artifacts_cli_requires_source_run_verification_for_single_target_dry_run(
     tmp_path: Path,
     capsys,

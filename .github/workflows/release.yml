@@ -1,9 +1,12 @@
 name: release
 
 on:
-  push:
-    tags:
-      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Immutable vX.Y.Z tag whose source is built and promoted"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -22,21 +25,24 @@ jobs:
         with:
           persist-credentials: false
           clean: true
+      - name: Require trusted release controller branch
+        shell: bash
+        run: test "${{ github.ref_name }}" = "${{ github.event.repository.default_branch }}"
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Require protected platform workflows at release source ref
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: python scripts/check_platform_evidence_source_ref.py --repository "${{ github.repository }}" --release-tag "${{ github.ref_name }}" --require-goal-targets
+        run: python scripts/check_platform_evidence_source_ref.py --repository "${{ github.repository }}" --release-tag "${{ inputs.release_tag }}" --require-goal-targets
       - name: Run release preflight verifier
-        run: python scripts/verify.py --quick --no-cli-smoke --release-tag "${{ github.ref_name }}"
+        run: python scripts/verify.py --quick --no-cli-smoke --release-tag "${{ inputs.release_tag }}"
       - name: Report protected platform readiness requirements
-        run: python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" --show-requirements
+        run: python scripts/check_protected_platform_goal.py --release-tag "${{ inputs.release_tag }}" --show-requirements
       - name: Require protected platform accepted records before release builds
-        run: python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" --require-records-complete --show-requirements
+        run: python scripts/check_protected_platform_goal.py --release-tag "${{ inputs.release_tag }}" --require-records-complete --show-requirements
       - name: Require protected platform evidence before release builds
-        run: python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag "${{ github.ref_name }}"
+        run: python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag "${{ inputs.release_tag }}"
       - name: Require clean release checkout
         run: python scripts/check_repository_cleanup.py --require-clean
 
@@ -48,6 +54,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
+          ref: ${{ inputs.release_tag }}
           persist-credentials: false
           clean: true
       - uses: actions/setup-python@v6
@@ -84,6 +91,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
+          ref: ${{ inputs.release_tag }}
           persist-credentials: false
           clean: true
       - uses: actions/setup-python@v6
@@ -136,6 +144,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
+          ref: ${{ inputs.release_tag }}
           persist-credentials: false
           clean: true
       - uses: actions/setup-python@v6
@@ -169,6 +178,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
+          ref: ${{ inputs.release_tag }}
           persist-credentials: false
           clean: true
       - uses: actions/setup-python@v6
@@ -202,15 +212,22 @@ jobs:
         with:
           persist-credentials: false
           clean: true
+      - name: Check out immutable release source for evidence binding
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.release_tag }}
+          path: release-source
+          persist-credentials: false
+          clean: true
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Import accepted protected platform evidence artifacts
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python scripts/import_platform_evidence_artifacts.py --release-tag "${{ github.ref_name }}" --require-goal-targets --out-dir release-assets --verify-source-run --repository "${{ github.repository }}"
+        run: python scripts/import_platform_evidence_artifacts.py --release-tag "${{ inputs.release_tag }}" --release-head-sha "$(git -C release-source rev-parse HEAD)" --require-goal-targets --out-dir release-assets --verify-source-run --repository "${{ github.repository }}"
       - name: Validate imported protected platform review bundles
-        run: python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag "${{ github.ref_name }}" --require-final-record-assets
+        run: python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag "${{ inputs.release_tag }}" --require-final-record-assets
       - uses: actions/upload-artifact@v7
         with:
           name: release-platform-evidence-assets
@@ -244,9 +261,9 @@ jobs:
           path: release-assets
           merge-multiple: true
       - name: Require protected platform release assets
-        run: python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" --require-complete --assets-dir release-assets --repository "${{ github.repository }}"
+        run: python scripts/check_protected_platform_goal.py --release-tag "${{ inputs.release_tag }}" --require-complete --assets-dir release-assets --repository "${{ github.repository }}"
       - name: Validate release publish assets
-        run: python scripts/check_release_publish_assets.py --assets-dir release-assets --tag "${{ github.ref_name }}" --repository "${{ github.repository }}" --require-platform-goal-targets
+        run: python scripts/check_release_publish_assets.py --assets-dir release-assets --tag "${{ inputs.release_tag }}" --repository "${{ github.repository }}" --require-platform-goal-targets
       - name: Upload release assets
         uses: softprops/action-gh-release@v3
         with:
@@ -255,4 +272,4 @@ jobs:
       - name: Audit published protected platform evidence
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python scripts/check_platform_release_evidence_remote.py --repository "${{ github.repository }}" --release-tag "${{ github.ref_name }}" --require-goal-targets --require-source-runs --require-source-artifact-bytes --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head
+        run: python scripts/check_platform_release_evidence_remote.py --repository "${{ github.repository }}" --release-tag "${{ inputs.release_tag }}" --require-goal-targets --require-source-runs --require-source-artifact-bytes --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head

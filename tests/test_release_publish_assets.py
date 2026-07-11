@@ -316,7 +316,7 @@ def test_publish_contract_requires_protected_platform_release_asset_gate() -> No
     matrix = _load_matrix()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
         '      - name: Require protected platform release assets\n'
-        '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" --require-complete --assets-dir release-assets --repository "${{ github.repository }}"\n',
+        '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ inputs.release_tag }}" --require-complete --assets-dir release-assets --repository "${{ github.repository }}"\n',
         "",
     )
 
@@ -331,11 +331,11 @@ def test_publish_contract_requires_protected_asset_gate_before_publish_asset_val
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
     protected_gate = (
         '      - name: Require protected platform release assets\n'
-        '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" --require-complete --assets-dir release-assets --repository "${{ github.repository }}"\n'
+        '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ inputs.release_tag }}" --require-complete --assets-dir release-assets --repository "${{ github.repository }}"\n'
     )
     publish_gate = (
         '      - name: Validate release publish assets\n'
-        '        run: python scripts/check_release_publish_assets.py --assets-dir release-assets --tag "${{ github.ref_name }}" --repository "${{ github.repository }}" --require-platform-goal-targets\n'
+        '        run: python scripts/check_release_publish_assets.py --assets-dir release-assets --tag "${{ inputs.release_tag }}" --repository "${{ github.repository }}" --require-platform-goal-targets\n'
     )
     workflow = workflow.replace(protected_gate, "").replace(publish_gate, publish_gate + protected_gate)
 
@@ -350,7 +350,7 @@ def test_publish_contract_requires_protected_asset_gate_before_release_upload() 
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
     protected_gate = (
         '      - name: Require protected platform release assets\n'
-        '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" --require-complete --assets-dir release-assets --repository "${{ github.repository }}"\n'
+        '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ inputs.release_tag }}" --require-complete --assets-dir release-assets --repository "${{ github.repository }}"\n'
     )
     workflow = workflow.replace(protected_gate, "") + protected_gate
 
@@ -366,7 +366,7 @@ def test_publish_contract_requires_remote_evidence_audit_after_upload() -> None:
         '      - name: Audit published protected platform evidence\n'
         '        env:\n'
         '          GH_TOKEN: ${{ github.token }}\n'
-        '        run: python scripts/check_platform_release_evidence_remote.py --repository "${{ github.repository }}" --release-tag "${{ github.ref_name }}" --require-goal-targets --require-source-runs --require-source-artifact-bytes --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head\n'
+        '        run: python scripts/check_platform_release_evidence_remote.py --repository "${{ github.repository }}" --release-tag "${{ inputs.release_tag }}" --require-goal-targets --require-source-runs --require-source-artifact-bytes --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head\n'
     )
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
         audit_step,
@@ -386,7 +386,7 @@ def test_publish_contract_rejects_remote_evidence_audit_before_upload() -> None:
         '      - name: Audit published protected platform evidence\n'
         '        env:\n'
         '          GH_TOKEN: ${{ github.token }}\n'
-        '        run: python scripts/check_platform_release_evidence_remote.py --repository "${{ github.repository }}" --release-tag "${{ github.ref_name }}" --require-goal-targets --require-source-runs --require-source-artifact-bytes --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head\n'
+        '        run: python scripts/check_platform_release_evidence_remote.py --repository "${{ github.repository }}" --release-tag "${{ inputs.release_tag }}" --require-goal-targets --require-source-runs --require-source-artifact-bytes --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head\n'
     )
     upload_step = (
         '      - name: Upload release assets\n'
@@ -424,10 +424,10 @@ def test_publish_contract_rejects_release_preflight_continue_on_error() -> None:
     matrix = _load_matrix()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
         '      - name: Require protected platform accepted records before release builds\n'
-        '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" --require-records-complete --show-requirements\n',
+        '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ inputs.release_tag }}" --require-records-complete --show-requirements\n',
         '      - name: Require protected platform accepted records before release builds\n'
         '        continue-on-error: true\n'
-        '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" --require-records-complete --show-requirements\n',
+        '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ inputs.release_tag }}" --require-records-complete --show-requirements\n',
     )
 
     errors = checker.check_publish_contract(matrix, workflow)
@@ -440,10 +440,10 @@ def test_publish_contract_rejects_publish_continue_on_error() -> None:
     matrix = _load_matrix()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
         '      - name: Require protected platform release assets\n'
-        '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" --require-complete --assets-dir release-assets --repository "${{ github.repository }}"\n',
+        '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ inputs.release_tag }}" --require-complete --assets-dir release-assets --repository "${{ github.repository }}"\n',
         '      - name: Require protected platform release assets\n'
         '        continue-on-error: true\n'
-        '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ github.ref_name }}" --require-complete --assets-dir release-assets --repository "${{ github.repository }}"\n',
+        '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ inputs.release_tag }}" --require-complete --assets-dir release-assets --repository "${{ github.repository }}"\n',
     )
 
     errors = checker.check_publish_contract(matrix, workflow)
@@ -541,12 +541,12 @@ def test_publish_contract_rejects_platform_evidence_import_continue_on_error() -
         '      - name: Import accepted protected platform evidence artifacts\n'
         '        env:\n'
         '          GH_TOKEN: ${{ github.token }}\n'
-        '        run: python scripts/import_platform_evidence_artifacts.py --release-tag "${{ github.ref_name }}" --require-goal-targets --out-dir release-assets --verify-source-run --repository "${{ github.repository }}"\n',
+        '        run: python scripts/import_platform_evidence_artifacts.py --release-tag "${{ inputs.release_tag }}" --release-head-sha "$(git -C release-source rev-parse HEAD)" --require-goal-targets --out-dir release-assets --verify-source-run --repository "${{ github.repository }}"\n',
         '      - name: Import accepted protected platform evidence artifacts\n'
         '        continue-on-error: true\n'
         '        env:\n'
         '          GH_TOKEN: ${{ github.token }}\n'
-        '        run: python scripts/import_platform_evidence_artifacts.py --release-tag "${{ github.ref_name }}" --require-goal-targets --out-dir release-assets --verify-source-run --repository "${{ github.repository }}"\n',
+        '        run: python scripts/import_platform_evidence_artifacts.py --release-tag "${{ inputs.release_tag }}" --release-head-sha "$(git -C release-source rev-parse HEAD)" --require-goal-targets --out-dir release-assets --verify-source-run --repository "${{ github.repository }}"\n',
     )
 
     errors = checker.check_publish_contract(matrix, workflow)
@@ -586,35 +586,15 @@ def test_publish_contract_requires_platform_evidence_import_timeout() -> None:
 def test_publish_contract_requires_platform_evidence_import_clean_checkout() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
-        "  accepted-platform-evidence-assets:\n"
-        "    needs: release-preflight\n"
-        "    runs-on: ubuntu-latest\n"
-        "    timeout-minutes: 20\n"
-        "    permissions:\n"
-        "      actions: read\n"
-        "      contents: read\n"
-        "    steps:\n"
-        "      - uses: actions/checkout@v6\n"
-        "        with:\n"
-        "          persist-credentials: false\n"
-        "          clean: true\n",
-        "  accepted-platform-evidence-assets:\n"
-        "    needs: release-preflight\n"
-        "    runs-on: ubuntu-latest\n"
-        "    timeout-minutes: 20\n"
-        "    permissions:\n"
-        "      actions: read\n"
-        "      contents: read\n"
-        "    steps:\n"
-        "      - uses: actions/checkout@v6\n"
-        "        with:\n"
-        "          persist-credentials: false\n",
+        "          clean: true\n"
+        "      - name: Check out immutable release source for evidence binding\n",
+        "      - name: Check out immutable release source for evidence binding\n",
         1,
     )
 
     errors = checker.check_platform_evidence_import_job(workflow)
 
-    assert any("clean platform evidence import checkout" in error for error in errors)
+    assert "accepted-platform-evidence-assets job missing clean release checkout: clean: true" in errors
 
 
 def test_platform_evidence_import_rejects_clean_setting_outside_checkout_step() -> None:

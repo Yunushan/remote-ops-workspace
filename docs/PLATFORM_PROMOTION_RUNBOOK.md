@@ -34,6 +34,14 @@ workflow was added cannot be promoted retroactively under the same-tag and
 same-source-SHA policy; create a new release tag from a commit containing the
 workflows instead of dispatching from `main` or weakening source provenance.
 
+After all four target workflows produce finalized accepted records for that
+immutable tag, review and append those records on the trusted default branch.
+Only then dispatch `.github/workflows/release.yml` from that branch with the
+`release_tag` input set to the immutable tag. The release controller validates
+the branch-held accepted registry, while every source and native build job
+checks out `inputs.release_tag`; do not retag or rebuild from the controller
+branch.
+
 Run the runner-readiness gate immediately before dispatch as well. It reads the
 repository self-hosted runner inventory and requires an idle matching runner for
 Linux i386, Linux armhf, and the modern `xp-evidence` collector. It intentionally

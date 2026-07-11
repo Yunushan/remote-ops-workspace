@@ -86,7 +86,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     records = accepted_records(registry, release_tag=args.release_tag, targets=required_targets)
-    release_head_sha = current_checkout_head_sha()
+    release_head_sha = args.release_head_sha or current_checkout_head_sha()
     import_errors = import_platform_evidence_artifacts(
         records,
         out_dir=args.out_dir,
@@ -147,6 +147,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "and recorded source workflow runs"
         ),
     )
+    parser.add_argument(
+        "--release-head-sha",
+        help=(
+            "40-character source commit SHA checked out from the immutable release tag; "
+            "defaults to the current checkout HEAD"
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -163,6 +170,14 @@ def strict_import_arg_errors(args: argparse.Namespace) -> list[str]:
     errors.extend(repository_errors)
     requested_targets, target_errors = required_target_values(args.require_target)
     errors.extend(target_errors)
+    release_head_sha = getattr(args, "release_head_sha", None)
+    if release_head_sha is not None and (
+        not isinstance(release_head_sha, str)
+        or RELEASE_SOURCE_HEAD_SHA_RE.fullmatch(release_head_sha) is None
+    ):
+        errors.append(
+            "platform evidence import release head SHA must be a 40-character lowercase Git SHA"
+        )
     if not args.dry_run or args.verify_source_run:
         return errors
     protected_targets = set(PROTECTED_GOAL_TARGETS)

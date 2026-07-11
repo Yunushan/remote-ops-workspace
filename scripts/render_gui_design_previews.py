@@ -3196,7 +3196,6 @@ def draw_remmina_toolbar(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: 
 
 def draw_securecrt_toolbar(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
     c = preset.colors
-    chrome = gui_design_securecrt_top_chrome()
     draw.rectangle((x, y, x + w, y + h), fill=c.toolbar)
     draw.line((x, y + h - 1, x + w, y + h - 1), fill=c.toolbar_border)
     # Native SecureCRT toolbar: tiny action glyphs, host and keyword fields.
@@ -3526,7 +3525,6 @@ def draw_sidebar(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: 
 
 def draw_securecrt_command_manager(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
     """Native Command Manager dock patterned after the supplied SecureCRT view."""
-    c = preset.colors
     draw.rectangle((x, y, x + w, y + h), fill="#f5f5f5", outline="#a9a9a9")
     draw.rectangle((x, y, x + w, y + 25), fill="#e7eef5", outline="#a9a9a9")
     draw_text(draw, "Command Manager", x + 8, y + 7, "#243342", 10, bold=True)
@@ -3569,7 +3567,6 @@ def draw_securecrt_command_manager(draw: Any, preset: GuiDesignPreset, x: int, y
 
 def draw_mremoteng_docks(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
     """Recreate the compact Connections/Search/Config dock stack of mRemoteNG."""
-    c = preset.colors
     top_h = int(h * 0.47)
     draw.rectangle((x, y, x + w, y + top_h), fill="#f4f4f4", outline="#a7b1bc")
     draw.rectangle((x, y, x + w, y + 24), fill="#0078c8", outline="#0078c8")
@@ -4001,7 +3998,6 @@ def draw_securecrt_workspace(
     h: int,
     log_h: int,
 ) -> None:
-    c = preset.colors
     route = gui_design_securecrt_session_manager_route()
     reference = gui_design_reference_state(preset.id)
     if route.active_tab_label != reference.active_tab_label or route.target_value != reference.target_label:
@@ -4098,9 +4094,7 @@ def draw_termius_workspace(
     log_h: int,
 ) -> None:
     c = preset.colors
-    sync_route = gui_design_termius_sync_route()
     host_route = gui_design_termius_host_selection_route()
-    port_forward_route = gui_design_termius_port_forward_route()
     reference = gui_design_reference_state(preset.id)
     if host_route.active_tab_label != reference.active_tab_label:
         raise RuntimeError("Termius host-selection route active tab metadata drifted")
@@ -4437,7 +4431,7 @@ def draw_remmina_home_reference(draw: Any, preset: GuiDesignPreset, x: int, y: i
         fill = "#dcecff" if index == 0 else "#ffffff"
         draw.rectangle((table_x, row_y, table_x + table_w, row_y + 38), fill=fill, outline="#d2d9df")
         draw_text(draw, "▣", table_x + 12, row_y + 12, c.primary if index == 0 else "#657381", 10)
-        for value, (_label, offset) in zip(row, columns):
+        for value, (_label, offset) in zip(row, columns, strict=True):
             draw_text(draw, value, table_x + 32 + offset, row_y + 12, c.control_text, 9, bold=index == 0 and offset == 0)
         row_y += 38
     action_y = row_y + 24
@@ -4508,7 +4502,6 @@ def draw_mremoteng_workspace(
     h: int,
     log_h: int,
 ) -> None:
-    c = preset.colors
     route = gui_design_mremoteng_connection_document_route()
     reference = gui_design_reference_state("mremoteng")
     if route.active_tab_label != reference.active_tab_label or route.selected_profile_name != reference.profile_name:

@@ -866,6 +866,15 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             if not text:
                 return
             transcript = self.terminal_emulator.feed(text)
+            self.render_terminal_transcript(transcript)
+
+        def set_terminal_transcript(self, text: str) -> None:
+            """Seed a rendered transcript and keep ANSI stream state in sync."""
+
+            self.terminal_emulator.reset()
+            self.render_terminal_transcript(self.terminal_emulator.feed(text))
+
+        def render_terminal_transcript(self, transcript: str) -> None:
             self.output.clear()
             self.output.moveCursor(QTextCursor.MoveOperation.End)
             cursor = self.output.textCursor()
@@ -2241,7 +2250,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.apply_connected_session_route_properties(self.terminal_pane.output)
             self.apply_connected_identity_route_properties(self.terminal_pane.output)
             self.apply_sftp_terminal_folder_route_properties(self.terminal_pane.output)
-            self.terminal_pane.output.setPlainText("\n".join(line.text for line in lines))
+            self.terminal_pane.set_terminal_transcript("\n".join(line.text for line in lines))
             self.terminal_pane.output.moveCursor(QTextCursor.MoveOperation.End)
 
         def apply_moba_plain_terminal_mode(self) -> None:

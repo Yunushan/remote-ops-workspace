@@ -40,6 +40,7 @@ class Layout:
     orientation: str = "grid"
     panes: list[LayoutPane] = field(default_factory=list)
     description: str = ""
+    splitter_sizes: list[list[int]] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Layout:
@@ -48,6 +49,7 @@ class Layout:
             orientation=str(data.get("orientation", "grid")),
             panes=[LayoutPane.from_dict(item) for item in data.get("panes", [])],
             description=str(data.get("description", "")),
+            splitter_sizes=_splitter_sizes(data.get("splitter_sizes", [])),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -56,6 +58,7 @@ class Layout:
             "orientation": self.orientation,
             "panes": [pane.to_dict() for pane in self.panes],
             "description": self.description,
+            "splitter_sizes": self.splitter_sizes,
         }
 
 
@@ -136,6 +139,30 @@ def validate_layout(layout: Layout) -> None:
             safe.argv(pane.command, "layout command")
         if pane.title:
             safe.clean_text(pane.title, "layout pane title")
+    expected_sizes = layout_splitter_size_lengths(layout)
+    if layout.splitter_sizes:
+        if len(layout.splitter_sizes) != len(expected_sizes):
+            raise ValueError(
+                f"layout splitter_sizes must contain {len(expected_sizes)} splitter entries for this layout"
+            )
+        for index, (sizes, expected_length) in enumerate(
+            zip(layout.splitter_sizes, expected_sizes, strict=True), start=1
+        ):
+            if len(sizes) != expected_length:
+                raise ValueError(f"layout splitter_sizes entry {index} must contain {expected_length} positive sizes")
+            if any(not isinstance(size, int) or isinstance(size, bool) or size <= 0 for size in sizes):
+                raise ValueError(f"layout splitter_sizes entry {index} must contain positive integers")
+
+
+def layout_splitter_size_lengths(layout: Layout) -> list[int]:
+    """Return pre-order QSplitter child counts for a saved layout."""
+    pane_count = len(layout.panes)
+    if pane_count <= 1:
+        return []
+    if layout.orientation in {"horizontal", "vertical"}:
+        return [pane_count]
+    row_lengths = [min(2, pane_count - offset) for offset in range(0, pane_count, 2)]
+    return [len(row_lengths), *row_lengths]
 
 
 def build_layout_terminal_plans(
@@ -178,3 +205,16 @@ def _optional_str(value: Any) -> str | None:
         return None
     value = str(value)
     return value if value else None
+
+
+def _splitter_sizes(value: Any) -> list[list[int]]:
+    if value in (None, ""):
+        return []
+    if not isinstance(value, list):
+        raise ValueError("layout splitter_sizes must be a list")
+    sizes: list[list[int]] = []
+    for entry in value:
+        if not isinstance(entry, list):
+            raise ValueError("layout splitter_sizes entries must be lists")
+        sizes.append(list(entry))
+    return sizes

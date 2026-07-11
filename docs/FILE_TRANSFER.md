@@ -75,6 +75,13 @@ Supported queue operations:
 | `rmdir` | `rmdir /tmp/old-dir` |
 | `rename` | `rename /tmp/old /tmp/new` |
 
+Queue execution runs one reviewed SFTP operation at a time. The CLI JSON result
+and desktop queue dialog report real `planned`, `running`, `completed`,
+`failed`, or `skipped` state for every operation. A failure stops later
+operations, which are marked `skipped`. This is deliberately operation-level
+progress: OpenSSH batch SFTP does not expose portable byte telemetry, so the
+application never presents fabricated byte percentages.
+
 Machine-readable queue output:
 
 ```bash
@@ -98,4 +105,5 @@ row files preview-remote lab-ssh /var/log --dry-run
 
 The desktop GUI includes a transfer queue preview dialog for SSH/SFTP profiles.
 It builds the same queue plan as the CLI, shows the generated SFTP batch commands,
-and can preview local files/directories before an operator runs the transfer path.
+can preview local files/directories before an operator runs the transfer path, and
+reports each actual queue operation as it runs.

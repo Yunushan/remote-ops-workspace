@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import shlex
 import subprocess
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from dataclasses import replace as replace_dataclass
 from pathlib import Path, PurePosixPath
@@ -105,6 +105,7 @@ class SftpQueueResult:
     returncode: int | None = None
     stdout: str = ""
     stderr: str = ""
+    progress: list[SftpQueueProgress] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -119,6 +120,25 @@ class SftpQueueResult:
             "returncode": self.returncode,
             "stdout": self.stdout,
             "stderr": self.stderr,
+            "progress": [event.to_dict() for event in self.progress],
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class SftpQueueProgress:
+    index: int
+    total: int
+    item: SftpQueueItem
+    state: str
+    returncode: int | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "index": self.index,
+            "total": self.total,
+            "item": self.item.to_dict(),
+            "state": self.state,
+            "returncode": self.returncode,
         }
 
 
@@ -294,7 +314,8 @@ def build_sftp_queue_plan(profile: Profile, items: Iterable[SftpQueueItem], *, f
     safety_warnings = _queue_safety_warnings(queue_items)
     batch_commands = [_queue_item_batch_command(item) for item in queue_items]
     notes = [
-        "Transfer queue is sent to sftp over stdin; no shell command string is used.",
+        "Each queue item runs through sftp stdin; no shell command string is used.",
+        "Execution emits actual per-item running/completed/failed progress; byte percentages are not fabricated.",
         *interactive.notes,
     ]
     notes.extend(_safety_notes(safety_warnings, force))
@@ -310,10 +331,22 @@ def build_sftp_queue_plan(profile: Profile, items: Iterable[SftpQueueItem], *, f
     )
 
 
-def run_sftp_queue(plan: SftpQueuePlan, dry_run: bool = False) -> SftpQueueResult:
+def run_sftp_queue(
+    plan: SftpQueuePlan,
+    dry_run: bool = False,
+    *,
+    on_progress: Callable[[SftpQueueProgress], None] | None = None,
+) -> SftpQueueResult:
     safe.argv_list(plan.command, "sftp queue command")
     _require_force_for_execution(plan.destructive, plan.force, dry_run, plan.safety_warnings)
     if dry_run:
+        progress = [
+            SftpQueueProgress(index=index, total=len(plan.items), item=item, state="planned")
+            for index, item in enumerate(plan.items, start=1)
+        ]
+        if on_progress:
+            for event in progress:
+                on_progress(event)
         return SftpQueueResult(
             profile_name=plan.profile_name,
             command=plan.command,
@@ -323,26 +356,73 @@ def run_sftp_queue(plan: SftpQueuePlan, dry_run: bool = False) -> SftpQueueResul
             destructive=plan.destructive,
             force=plan.force,
             safety_warnings=plan.safety_warnings,
+            progress=progress,
         )
-    process = subprocess.run(
-        plan.command,
-        input=plan.batch_input(),
-        text=True,
-        capture_output=True,
-        check=False,
-    )
+    progress: list[SftpQueueProgress] = []
+    output: list[str] = []
+    errors: list[str] = []
+    failed_returncode: int | None = None
+    for index, (item, command) in enumerate(zip(plan.items, plan.batch_commands, strict=True), start=1):
+        running = SftpQueueProgress(index=index, total=len(plan.items), item=item, state="running")
+        if on_progress:
+            on_progress(running)
+        process = subprocess.run(
+            plan.command,
+            input=f"{command}\n",
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if process.stdout:
+            output.append(process.stdout)
+        if process.stderr:
+            errors.append(process.stderr)
+        if process.returncode != 0:
+            failed_returncode = process.returncode
+            event = SftpQueueProgress(
+                index=index,
+                total=len(plan.items),
+                item=item,
+                state="failed",
+                returncode=process.returncode,
+            )
+            progress.append(event)
+            if on_progress:
+                on_progress(event)
+            for skipped_index, skipped_item in enumerate(plan.items[index:], start=index + 1):
+                skipped = SftpQueueProgress(
+                    index=skipped_index,
+                    total=len(plan.items),
+                    item=skipped_item,
+                    state="skipped",
+                )
+                progress.append(skipped)
+                if on_progress:
+                    on_progress(skipped)
+            break
+        event = SftpQueueProgress(
+            index=index,
+            total=len(plan.items),
+            item=item,
+            state="completed",
+            returncode=process.returncode,
+        )
+        progress.append(event)
+        if on_progress:
+            on_progress(event)
     return SftpQueueResult(
         profile_name=plan.profile_name,
         command=plan.command,
         items=plan.items,
         dry_run=False,
-        ok=process.returncode == 0,
+        ok=failed_returncode is None,
         destructive=plan.destructive,
         force=plan.force,
         safety_warnings=plan.safety_warnings,
-        returncode=process.returncode,
-        stdout=process.stdout,
-        stderr=process.stderr,
+        returncode=failed_returncode or 0,
+        stdout="".join(output),
+        stderr="".join(errors),
+        progress=progress,
     )
 
 

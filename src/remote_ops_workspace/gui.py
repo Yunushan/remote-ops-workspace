@@ -4,6 +4,7 @@ import re
 import sys
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from urllib.parse import urlparse
 
 from .doctor import run_doctor
@@ -131,6 +132,7 @@ from .gui_editors import (
     layout_to_editor_data,
     profile_from_editor_data,
     profile_to_editor_data,
+    protocol_preset_editor_data,
 )
 from .gui_lifecycle import ProcessStopPolicy, ProcessStopResult, stop_process
 from .launcher import LauncherError, build_launch_plan
@@ -170,6 +172,7 @@ from .moba_servers import build_moba_server_gui_config_surface
 from .moba_smartcards import MobaSmartCardCertificate, build_smartcard_management_gui_surface
 from .moba_ssh_browser import load_moba_ssh_browser_preferences
 from .models import Profile
+from .profile_importers import import_profiles
 from .storage import ProfileStore
 from .terminal import (
     TerminalPanePlan,
@@ -178,6 +181,7 @@ from .terminal import (
     terminal_plan_for_profile,
     terminal_plan_for_sftp_browser,
 )
+from .terminal_emulation import TERMINAL_EMULATOR_BACKEND, AnsiTerminalTranscript
 from .terminal_highlighting import (
     default_terminal_syntax_rules,
     terminal_highlight_fragments,
@@ -426,6 +430,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             QComboBox,
             QDialog,
             QDialogButtonBox,
+            QFileDialog,
             QFormLayout,
             QFrame,
             QHBoxLayout,
@@ -540,6 +545,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.output.setObjectName("terminalOutput")
             self.output.setReadOnly(True)
             self.output.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
+            self.terminal_emulator = AnsiTerminalTranscript()
+            self.output.setProperty("terminalEmulatorBackend", TERMINAL_EMULATOR_BACKEND)
+            self.output.setProperty("terminalEmulatorPty", False)
+            self.output.setProperty("terminalEmulatorScrollbackLimit", self.terminal_emulator.max_scrollback_lines)
             self.syntax_rules = default_terminal_syntax_rules()
             self.output.setProperty("terminalSyntaxHighlightingEnabled", True)
             self.output.setProperty("terminalSyntaxHighlightRuleKeys", list(terminal_syntax_rule_keys(self.syntax_rules)))
@@ -643,6 +652,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 self.append_text("[error] empty terminal command\n")
                 return
             self.output.clear()
+            self.terminal_emulator.reset()
             self.set_status("starting", "starting")
             self.start_button.setEnabled(False)
             self.stop_button.setEnabled(True)
@@ -690,6 +700,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
         def clear_output(self) -> None:
             self.output.clear()
+            self.terminal_emulator.reset()
             self.append_text(f"$ {self.plan.printable()}\n")
 
         def send_input(self) -> None:
@@ -854,9 +865,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
         def append_text(self, text: str) -> None:
             if not text:
                 return
+            transcript = self.terminal_emulator.feed(text)
+            self.output.clear()
             self.output.moveCursor(QTextCursor.MoveOperation.End)
             cursor = self.output.textCursor()
-            for fragment in terminal_highlight_fragments(text, self.syntax_rules):
+            for fragment in terminal_highlight_fragments(transcript, self.syntax_rules):
                 text_format = QTextCharFormat()
                 if fragment.color:
                     text_format.setForeground(QColor(fragment.color))
@@ -2689,9 +2702,23 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 ("identity_file", "Identity file"),
                 ("credential_ref", "Credential ref"),
             ]:
-                widget = QLineEdit(data[key])
+                if key == "protocol":
+                    widget = QComboBox()
+                    protocols = ["ssh", "sftp", "rdp", "vnc", "spice", "x2go", "ica", "mosh", "kubernetes", "winrm", "serial", "raw"]
+                    if data[key] not in protocols:
+                        protocols.append(data[key])
+                    widget.addItems(protocols)
+                    widget.setCurrentText(data[key])
+                else:
+                    widget = QLineEdit(data[key])
                 self.fields[key] = widget
                 form.addRow(label, widget)
+
+            self.preset_button = QPushButton("Apply protocol defaults")
+            self.preset_note = QLabel("Sets safe port and option defaults; existing identity fields are kept.")
+            self.preset_note.setWordWrap(True)
+            self.preset_button.clicked.connect(self.apply_protocol_preset)
+            form.addRow(self.preset_button, self.preset_note)
 
             description = QPlainTextEdit()
             description.setPlainText(data["description"])
@@ -2716,17 +2743,68 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             buttons.rejected.connect(self.reject)
             form.addRow(buttons)
 
+        def apply_protocol_preset(self) -> None:
+            protocol = self.fields["protocol"]
+            if not isinstance(protocol, QComboBox):
+                return
+            preset = protocol_preset_editor_data(protocol.currentText())
+            port = self.fields["port"]
+            options = self.fields["options"]
+            if isinstance(port, QLineEdit) and "port" in preset:
+                port.setText(preset["port"])
+            if isinstance(options, QPlainTextEdit) and "options" in preset:
+                options.setPlainText(preset["options"])
+            self.preset_note.setText(f"Applied {protocol.currentText().upper()} defaults.")
+
         def editor_data(self) -> dict[str, str]:
             data: dict[str, str] = {}
             for key, widget in self.fields.items():
                 if isinstance(widget, QPlainTextEdit):
                     data[key] = widget.toPlainText()
+                elif isinstance(widget, QComboBox):
+                    data[key] = widget.currentText()
                 else:
                     data[key] = widget.text()
             return data
 
         def profile(self):
             return profile_from_editor_data(self.editor_data())
+
+    class ProfileImportPreviewDialog(QDialog):
+        def __init__(self, source: str, result, parent=None) -> None:
+            super().__init__(parent)
+            self.setObjectName("profileImportPreviewDialog")
+            self.setWindowTitle("Import profile preview")
+            self.resize(660, 480)
+            root = QVBoxLayout(self)
+            title = QLabel("Profile import preview")
+            title.setObjectName("workflowTitle")
+            root.addWidget(title)
+            root.addWidget(QLabel(f"Source: {source}\nFormat: {result.source_format}\nProfiles: {len(result.profiles)}"))
+            preview = QTreeWidget()
+            preview.setObjectName("profileImportPreview")
+            preview.setColumnCount(4)
+            preview.setHeaderLabels(["Name", "Protocol", "Target", "Group"])
+            preview.setRootIsDecorated(False)
+            for profile in result.profiles:
+                preview.addTopLevelItem(
+                    QTreeWidgetItem([profile.name, profile.protocol, profile.display_target, profile.group])
+                )
+            preview.resizeColumnToContents(0)
+            preview.resizeColumnToContents(1)
+            root.addWidget(preview, 1)
+            if result.warnings:
+                warnings = QTextEdit()
+                warnings.setObjectName("profileImportWarnings")
+                warnings.setReadOnly(True)
+                warnings.setMaximumHeight(96)
+                warnings.setPlainText("\n".join(f"warning: {item}" for item in result.warnings))
+                root.addWidget(warnings)
+            buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+            buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Import profiles")
+            buttons.accepted.connect(self.accept)
+            buttons.rejected.connect(self.reject)
+            root.addWidget(buttons)
 
     class LayoutDialog(QDialog):
         def __init__(self, layout=None, parent=None) -> None:
@@ -2802,8 +2880,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             controls = QHBoxLayout()
             self.preview_button = QPushButton("Preview Queue")
             self.local_preview_button = QPushButton("Preview Local")
+            self.run_button = QPushButton("Run Queue")
             controls.addWidget(self.preview_button)
             controls.addWidget(self.local_preview_button)
+            controls.addWidget(self.run_button)
             controls.addStretch(1)
             root.addLayout(controls)
 
@@ -2819,6 +2899,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
             self.preview_button.clicked.connect(self.refresh_queue_preview)
             self.local_preview_button.clicked.connect(self.refresh_local_preview)
+            self.run_button.clicked.connect(self.run_queue)
+            self.active_queue_plan = None
+            self.active_queue_index = 0
+            self.active_queue_process: QProcess | None = None
 
         def queue_plan(self):
             items = []
@@ -2840,6 +2924,66 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             for note in plan.notes:
                 lines.append(f"note: {note}")
             self.preview.setPlainText("\n".join(lines))
+
+        def run_queue(self) -> None:
+            try:
+                plan = self.queue_plan()
+            except ValueError as exc:
+                self.preview.setPlainText(f"error: {exc}")
+                return
+            if plan.destructive and not plan.force:
+                self.preview.setPlainText("error: destructive queue actions require Force destructive actions before execution")
+                return
+            self.active_queue_plan = plan
+            self.active_queue_index = 0
+            self.preview.clear()
+            self.run_button.setEnabled(False)
+            self.preview.append(f"queue started: {len(plan.items)} operation(s)")
+            self.run_next_queue_item()
+
+        def run_next_queue_item(self) -> None:
+            plan = self.active_queue_plan
+            if plan is None:
+                return
+            if self.active_queue_index >= len(plan.items):
+                self.preview.append("queue completed")
+                self.run_button.setEnabled(True)
+                return
+            index = self.active_queue_index
+            command = plan.batch_commands[index]
+            self.preview.append(f"{index + 1}/{len(plan.items)} {plan.items[index].action}: running")
+            process = QProcess(self)
+            process.setProgram(plan.command[0])
+            process.setArguments(plan.command[1:])
+            process.readyReadStandardOutput.connect(
+                lambda active=process: self.preview.append(bytes(active.readAllStandardOutput()).decode(errors="replace").rstrip())
+            )
+            process.readyReadStandardError.connect(
+                lambda active=process: self.preview.append(bytes(active.readAllStandardError()).decode(errors="replace").rstrip())
+            )
+            process.started.connect(lambda active=process, queued=command: self.write_queue_command(active, queued))
+            process.finished.connect(
+                lambda exit_code, _status, queued_index=index: self.finish_queue_item(queued_index, exit_code)
+            )
+            self.active_queue_process = process
+            process.start()
+
+        def write_queue_command(self, process: QProcess, command: str) -> None:
+            process.write(f"{command}\n".encode())
+            process.closeWriteChannel()
+
+        def finish_queue_item(self, index: int, exit_code: int) -> None:
+            plan = self.active_queue_plan
+            if plan is None:
+                return
+            if exit_code != 0:
+                self.preview.append(f"{index + 1}/{len(plan.items)} {plan.items[index].action}: failed (exit {exit_code})")
+                self.preview.append("queue stopped after failure")
+                self.run_button.setEnabled(True)
+                return
+            self.preview.append(f"{index + 1}/{len(plan.items)} {plan.items[index].action}: completed")
+            self.active_queue_index += 1
+            self.run_next_queue_item()
 
         def refresh_local_preview(self) -> None:
             try:
@@ -2988,6 +3132,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.addToolBar(self.layout_toolbar)
             self.refresh_button = self.toolbar_button("Refresh", "SP_BrowserReload", "Reload profiles")
             self.new_profile_button = self.toolbar_button("New", "SP_FileIcon", "Create profile")
+            self.import_profile_button = self.toolbar_button("Import", "SP_DialogOpenButton", "Preview and import profiles")
             self.edit_profile_button = self.toolbar_button("Edit", "SP_FileDialogDetailedView", "Edit selected profile")
             self.remove_profile_button = self.toolbar_button("Remove", "SP_TrashIcon", "Remove selected profile")
             self.remove_profile_button.setObjectName("dangerAction")
@@ -3071,6 +3216,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.main_toolbar_buttons = [
                 self.refresh_button,
                 self.new_profile_button,
+                self.import_profile_button,
                 self.edit_profile_button,
                 self.remove_profile_button,
                 self.connect_button,
@@ -3194,6 +3340,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
             self.refresh_button.clicked.connect(self.refresh_profiles)
             self.new_profile_button.clicked.connect(self.create_profile)
+            self.import_profile_button.clicked.connect(self.import_profiles_with_preview)
             self.edit_profile_button.clicked.connect(self.edit_selected_profile)
             self.remove_profile_button.clicked.connect(self.remove_selected_profile)
             self.connect_button.clicked.connect(lambda: self.connect_selected(False))
@@ -7365,6 +7512,39 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             except ValueError as exc:
                 QMessageBox.warning(self, "Profile failed", str(exc))
 
+        def import_profiles_with_preview(self) -> None:
+            source, _selected_filter = QFileDialog.getOpenFileName(
+                self,
+                "Preview profile import",
+                "",
+                "Profile exports (*.json *.xml *.ini *.conf *.mxtsessions);;All files (*)",
+            )
+            if not source:
+                return
+            try:
+                result = import_profiles(Path(source), source_format="auto")
+            except (OSError, ValueError) as exc:
+                QMessageBox.warning(self, "Profile import failed", str(exc))
+                return
+            if not result.profiles:
+                QMessageBox.information(self, "Profile import", "The import contains no supported profiles.")
+                return
+            dialog = ProfileImportPreviewDialog(source, result, self)
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+            imported = 0
+            skipped: list[str] = []
+            for profile in result.profiles:
+                try:
+                    self.store.add(profile, surface="profile-editor")
+                    imported += 1
+                except ValueError as exc:
+                    skipped.append(f"{profile.name}: {exc}")
+            self.refresh_profiles()
+            self.log.append(f"PROFILE IMPORTED: {imported} from {result.source_format}")
+            if skipped:
+                QMessageBox.warning(self, "Profile import", "Some profiles were skipped:\n" + "\n".join(skipped))
+
         def edit_selected_profile(self) -> None:
             name = self.selected_profile_name()
             if not name:
@@ -11050,6 +11230,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 layout = self.layout_store.get(name)
                 plans = build_layout_terminal_plans(layout, self.store)
                 widget = self.layout_widget(layout, plans)
+                self.bind_layout_resize_persistence(layout.name, widget)
                 for plan in plans:
                     self.remember_terminal_plan(plan)
                 self.add_workspace_tab(widget, layout.name, role="layout")
@@ -11065,11 +11246,13 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 splitter = QSplitter(Qt.Orientation.Vertical)
                 for plan in plans:
                     splitter.addWidget(self.new_terminal_pane(plan))
+                self.restore_layout_splitter_sizes(splitter, layout.splitter_sizes)
                 return splitter
             if layout.orientation == "horizontal":
                 splitter = QSplitter(Qt.Orientation.Horizontal)
                 for plan in plans:
                     splitter.addWidget(self.new_terminal_pane(plan))
+                self.restore_layout_splitter_sizes(splitter, layout.splitter_sizes)
                 return splitter
             root = QSplitter(Qt.Orientation.Vertical)
             for offset in range(0, len(plans), 2):
@@ -11077,7 +11260,47 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 for plan in plans[offset : offset + 2]:
                     row.addWidget(self.new_terminal_pane(plan))
                 root.addWidget(row)
+            self.restore_layout_splitter_sizes(root, layout.splitter_sizes)
             return root
+
+        def layout_splitters(self, widget: QWidget) -> list[QSplitter]:
+            if not isinstance(widget, QSplitter):
+                return []
+            splitters = [widget]
+            for index in range(widget.count()):
+                splitters.extend(self.layout_splitters(widget.widget(index)))
+            return splitters
+
+        def restore_layout_splitter_sizes(self, widget: QWidget, saved_sizes: list[list[int]]) -> None:
+            splitters = self.layout_splitters(widget)
+            if len(splitters) != len(saved_sizes):
+                return
+            for splitter, sizes in zip(splitters, saved_sizes, strict=True):
+                if len(sizes) == splitter.count() and all(size > 0 for size in sizes):
+                    splitter.setSizes(sizes)
+
+        def bind_layout_resize_persistence(self, name: str, widget: QWidget) -> None:
+            for splitter in self.layout_splitters(widget):
+                splitter.splitterMoved.connect(
+                    lambda _position, _index, layout_name=name, layout_widget=widget: self.persist_layout_resize_state(
+                        layout_name,
+                        layout_widget,
+                    )
+                )
+
+        def persist_layout_resize_state(self, name: str, widget: QWidget) -> None:
+            sizes = [splitter.sizes() for splitter in self.layout_splitters(widget)]
+            if not sizes:
+                return
+            layouts = self.layout_store.load()
+            for layout in layouts:
+                if layout.name == name:
+                    if layout.splitter_sizes == sizes:
+                        return
+                    layout.splitter_sizes = sizes
+                    self.layout_store.save(layouts)
+                    self.log.append(f"LAYOUT RESIZE SAVED: {name}")
+                    return
 
         def new_terminal_pane(self, plan: TerminalPanePlan) -> TerminalPane:
             pane = TerminalPane(plan)

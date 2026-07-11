@@ -14,6 +14,8 @@ SUPPORTED_PROFILE_PROTOCOLS = frozenset(
         "http",
         "https",
         "ica",
+        "k8s",
+        "kubernetes",
         "local",
         "local-shell",
         "mosh",
@@ -31,6 +33,7 @@ SUPPORTED_PROFILE_PROTOCOLS = frozenset(
         "sshv1",
         "telnet",
         "vnc",
+        "winrm",
         "www",
         "x2go",
         "xdmcp",
@@ -40,6 +43,8 @@ SUPPORTED_PROFILE_PROTOCOLS = frozenset(
 HOST_TARGET_PROTOCOLS = frozenset(
     {
         "ftp",
+        "k8s",
+        "kubernetes",
         "mosh",
         "raw",
         "rdp",
@@ -53,6 +58,7 @@ HOST_TARGET_PROTOCOLS = frozenset(
         "sshv1",
         "telnet",
         "vnc",
+        "winrm",
         "xdmcp",
     }
 )

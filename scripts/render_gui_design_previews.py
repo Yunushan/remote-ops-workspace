@@ -1078,7 +1078,8 @@ def preset_manifest(artifact: PreviewArtifact) -> dict[str, Any]:
             raise RuntimeError(f"{preset.id} reference control route profile metadata drifted")
         if reference_control_route.active_tab_label != reference_surface_route.active_tab_label:
             raise RuntimeError(f"{preset.id} reference control route active tab metadata drifted")
-        if set(reference_control_route.action_keys) != {"start", "restart", "stop", "copy", "clear"}:
+        required_actions = {"start", "restart", "stop", "copy", "clear"}
+        if not required_actions.issubset(reference_control_route.action_keys):
             raise RuntimeError(f"{preset.id} reference control route action metadata drifted")
     if reference_input_route is not None:
         if reference_surface_route is None:
@@ -3025,6 +3026,12 @@ def draw_title_bar(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h
     if preset.id == "securecrt":
         draw_securecrt_title_bar(draw, preset, x, y, w, h)
         return
+    if preset.id == "termius":
+        draw_termius_title_bar(draw, preset, x, y, w, h)
+        return
+    if preset.id == "remmina":
+        draw_remmina_title_bar(draw, preset, x, y, w, h)
+        return
     if preset.id == "mremoteng":
         draw_mremoteng_title_bar(draw, preset, x, y, w, h)
         return
@@ -3036,6 +3043,38 @@ def draw_title_bar(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h
     for index, token in enumerate(("-", "+", "x")):
         bx = x + w - 92 + index * 30
         draw_text(draw, token, bx, y + 8, c.sidebar_muted, 14, bold=True)
+
+
+def draw_termius_title_bar(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
+    """A quiet app switcher, rather than the generic desktop-window heading."""
+    c = preset.colors
+    draw.rectangle((x, y, x + w, y + h), fill=c.window)
+    draw.ellipse((x + 14, y + 9, x + 23, y + 18), fill=c.primary)
+    draw_text(draw, "Remote Ops", x + 30, y + 9, c.control_text, 12, bold=True)
+    nav_x = x + 166
+    for label in ("Vaults", "Keychain", "Port forwarding", "Snippets"):
+        draw_text(draw, label, nav_x, y + 10, c.sidebar_muted, 9)
+        nav_x += len(label) * 6 + 26
+    rounded(draw, (x + w - 118, y + 6, x + w - 48, y + 27), c.control, c.control_border, 10)
+    draw_text(draw, "⌘  K", x + w - 104, y + 11, c.sidebar_muted, 8, bold=True)
+    draw.ellipse((x + w - 35, y + 7, x + w - 14, y + 27), fill=c.status)
+    draw_text(draw, "O", x + w - 29, y + 11, c.primary_text, 8, bold=True)
+    draw.line((x, y + h - 1, x + w, y + h - 1), fill=c.toolbar_border)
+
+
+def draw_remmina_title_bar(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
+    """A compact GTK-like header without the shared application marketing copy."""
+    c = preset.colors
+    draw.rectangle((x, y, x + w, y + h), fill=c.toolbar)
+    draw.rectangle((x + 14, y + 10, x + 26, y + 22), fill=c.primary)
+    draw_text(draw, "Remote Desktop Client", x + 34, y + 10, c.control_text, 12, bold=True)
+    menu_x = x + 220
+    for label in ("Connection", "Edit", "View", "Tools", "Help"):
+        draw_text(draw, label, menu_x, y + 11, c.sidebar_muted, 9)
+        menu_x += len(label) * 6 + 18
+    for index, token in enumerate(("−", "□", "×")):
+        draw_text(draw, token, x + w - 85 + index * 26, y + 9, c.sidebar_muted, 12, bold=True)
+    draw.line((x, y + h - 1, x + w, y + h - 1), fill=c.toolbar_border)
 
 
 def draw_securecrt_title_bar(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
@@ -3077,6 +3116,12 @@ def draw_toolbar(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: 
     if preset.id == "mremoteng":
         draw_mremoteng_toolbar(draw, preset, x, y, w, h)
         return
+    if preset.id == "termius":
+        draw_termius_toolbar(draw, preset, x, y, w, h)
+        return
+    if preset.id == "remmina":
+        draw_remmina_toolbar(draw, preset, x, y, w, h)
+        return
     c = preset.colors
     interaction = gui_design_interaction_state(preset.id)
     draw.rectangle((x, y, x + w, y + h), fill=c.toolbar)
@@ -3117,68 +3162,69 @@ def draw_toolbar(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: 
     draw_text(draw, "Search log", sx + 10, y + 18, c.sidebar_muted, 11)
 
 
+def draw_termius_toolbar(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
+    c = preset.colors
+    draw.rectangle((x, y, x + w, y + h), fill=c.toolbar)
+    draw.line((x, y + h - 1, x + w, y + h - 1), fill=c.toolbar_border)
+    for label, bx in (("Hosts", x + 20), ("Recent", x + 83)):
+        draw_text(draw, label, bx, y + 20, c.control_text if label == "Hosts" else c.sidebar_muted, 10, bold=label == "Hosts")
+    draw.rectangle((x + 18, y + 42, x + 58, y + 44), fill=c.primary)
+    search_x = x + 315
+    rounded(draw, (search_x, y + 12, search_x + 310, y + 40), c.terminal, c.control_border, 8)
+    draw_text(draw, "⌕  Find a host", search_x + 12, y + 20, c.sidebar_muted, 10)
+    rounded(draw, (x + w - 236, y + 12, x + w - 132, y + 40), c.primary, c.primary, 8)
+    draw_text(draw, "+  New Host", x + w - 220, y + 20, c.primary_text, 9, bold=True)
+    rounded(draw, (x + w - 120, y + 12, x + w - 18, y + 40), c.control, c.control_border, 8)
+    draw_text(draw, "Terminal", x + w - 106, y + 20, c.control_text, 9, bold=True)
+
+
+def draw_remmina_toolbar(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
+    c = preset.colors
+    draw.rectangle((x, y, x + w, y + h), fill=c.toolbar)
+    draw.line((x, y + h - 1, x + w, y + h - 1), fill=c.toolbar_border)
+    for index, icon in enumerate(("+", "▣", "✎", "⊟")):
+        rounded(draw, (x + 16 + index * 34, y + 12, x + 42 + index * 34, y + 38), c.control, c.control_border, 3)
+        draw_text(draw, icon, x + 24 + index * 34, y + 19, c.primary, 10, bold=True)
+    protocol_x = x + 170
+    draw.rectangle((protocol_x, y + 12, protocol_x + 90, y + 39), fill="#ffffff", outline=c.control_border)
+    draw_text(draw, "RDP  ▾", protocol_x + 10, y + 20, c.control_text, 9)
+    draw.rectangle((protocol_x + 98, y + 12, protocol_x + 365, y + 39), fill="#ffffff", outline=c.control_border)
+    draw_text(draw, "Server or hostname", protocol_x + 108, y + 20, c.sidebar_muted, 9)
+    rounded(draw, (protocol_x + 373, y + 12, protocol_x + 454, y + 39), "#3d8b3d", "#327232", 3)
+    draw_text(draw, "Connect!", protocol_x + 385, y + 20, "#ffffff", 9, bold=True)
+
+
 def draw_securecrt_toolbar(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
     c = preset.colors
     chrome = gui_design_securecrt_top_chrome()
-    interaction = gui_design_interaction_state(preset.id)
     draw.rectangle((x, y, x + w, y + h), fill=c.toolbar)
     draw.line((x, y + h - 1, x + w, y + h - 1), fill=c.toolbar_border)
-    for action in chrome.toolbar_actions:
-        bx = x + action.static_x
-        bw = action.static_width
-        state = toolbar_interaction_state(action.key, interaction)
-        fill, outline, text = interaction_button_colors(state, c)
-        if state in {"active", "checked"}:
-            draw.rectangle((bx - 2, y + 5, bx + bw + 2, y + h - 5), outline=c.primary, width=1)
-        elif state == "disabled":
-            draw.rectangle((bx - 1, y + 6, bx + bw + 1, y + h - 6), outline=c.toolbar_border, width=1)
-        icon_x = bx + max(3, (bw - 18) // 2)
-        draw_securecrt_toolbar_icon(draw, action.icon_key, icon_x, y + 7, 18, c, disabled=state == "disabled")
-        label_x = bx + 4 if len(action.label) * 6 + 8 < bw else bx + 1
-        draw_text(draw, action.label, label_x, y + 32, text, 8, bold=state in {"active", "checked"})
-        if action.key in {"edit", "queue", "doctor"}:
-            sep_x = bx + bw + 8
-            draw.line((sep_x, y + 8, sep_x, y + h - 8), fill=c.toolbar_border)
-
-    selector_x = x + w - 346
-    draw_text(draw, "View", selector_x, y + 17, c.sidebar_muted, 10)
-    rounded(draw, (selector_x + 38, y + 10, selector_x + 170, y + 38), c.control, c.control_border, 3)
-    draw_text(draw, "SecureCRT-style", selector_x + 47, y + 18, c.control_text, 9)
-    search_x = x + w - 164
-    rounded(draw, (search_x, y + 10, x + w - 12, y + 38), c.control, c.control_border, 3)
-    draw_text(draw, "Search log", search_x + 9, y + 18, c.sidebar_muted, 9)
+    # Native SecureCRT toolbar: tiny action glyphs, host and keyword fields.
+    for index, icon in enumerate(("session-manager", "new-session", "connect", "properties")):
+        draw_securecrt_toolbar_icon(draw, icon, x + 12 + index * 27, y + 12, 15, c, disabled=False)
+    host_x = x + 126
+    draw.rectangle((host_x, y + 10, host_x + 150, y + 31), fill="#ffffff", outline="#adadad")
+    draw_text(draw, "Enter host <Alt+P>", host_x + 7, y + 16, "#888888", 8)
+    key_x = host_x + 160
+    draw.rectangle((key_x, y + 10, key_x + 142, y + 31), fill="#ffffff", outline="#adadad")
+    draw_text(draw, "Keyword <Alt+/>", key_x + 7, y + 16, "#888888", 8)
+    draw_text(draw, "⌕", key_x + 120, y + 13, c.primary, 13)
+    for index, glyph in enumerate(("▣", "⚙", "▤", "⚑", "?")):
+        draw_text(draw, glyph, key_x + 158 + index * 27, y + 13, "#3f4b56", 13, bold=True)
 
 
 def draw_mremoteng_toolbar(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
     c = preset.colors
-    chrome = gui_design_mremoteng_top_chrome()
-    interaction = gui_design_interaction_state(preset.id)
     draw.rectangle((x, y, x + w, y + h), fill=c.toolbar)
     draw.line((x, y + h - 1, x + w, y + h - 1), fill=c.toolbar_border)
-    for action in chrome.toolbar_actions:
-        bx = x + action.static_x
-        bw = action.static_width
-        state = toolbar_interaction_state(action.key, interaction)
-        _fill, outline, text = interaction_button_colors(state, c)
-        if state in {"active", "checked"}:
-            draw.rectangle((bx - 2, y + 5, bx + bw + 2, y + h - 5), outline=c.primary, width=1)
-        elif state == "disabled":
-            draw.rectangle((bx - 1, y + 6, bx + bw + 1, y + h - 6), outline=c.toolbar_border, width=1)
-        icon_x = bx + max(4, (bw - 17) // 2)
-        draw_mremoteng_toolbar_icon(draw, action.icon_key, icon_x, y + 6, 17, c, disabled=state == "disabled")
-        label_x = bx + 3 if len(action.label) * 6 + 6 < bw else bx + 1
-        draw_text(draw, action.label, label_x, y + 30, text, 8, bold=state in {"active", "checked"})
-        if action.key in {"edit", "queue", "doctor"}:
-            sep_x = bx + bw + 7
-            draw.line((sep_x, y + 7, sep_x, y + h - 8), fill=c.toolbar_border)
-
-    selector_x = x + w - 356
-    draw_text(draw, "View", selector_x, y + 16, c.sidebar_muted, 10)
-    rounded(draw, (selector_x + 38, y + 9, selector_x + 174, y + 37), c.control, c.control_border, 2)
-    draw_text(draw, "mRemoteNG-style", selector_x + 47, y + 17, c.control_text, 9)
-    search_x = x + w - 174
-    rounded(draw, (search_x, y + 9, x + w - 12, y + 37), c.control, c.control_border, 2)
-    draw_text(draw, "Search log", search_x + 9, y + 17, c.sidebar_muted, 9)
+    # Small legacy toolbar matching the compact mRemoteNG window chrome.
+    draw_text(draw, "Connect:", x + 12, y + 17, "#425364", 9)
+    draw.rectangle((x + 62, y + 10, x + 180, y + 31), fill="#ffffff", outline="#b7c0c9")
+    draw_text(draw, "", x + 70, y + 16, "#333333", 8)
+    for index, icon in enumerate(("new-connection", "open-connection", "external-tool", "refresh-tree", "config")):
+        draw_mremoteng_toolbar_icon(draw, icon, x + 193 + index * 31, y + 12, 15, c, disabled=False)
+    draw_text(draw, "RDP", x + 365, y + 17, "#3f6f98", 9, bold=True)
+    draw_text(draw, "⌄", x + 391, y + 16, "#3f6f98", 9)
 
 
 def draw_securecrt_toolbar_icon(
@@ -3441,6 +3487,12 @@ def draw_moba_ribbon_icon(
 def draw_sidebar(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
     c = preset.colors
     interaction = gui_design_interaction_state(preset.id)
+    if preset.id == "securecrt":
+        draw_securecrt_command_manager(draw, preset, x, y, w, h)
+        return
+    if preset.id == "mremoteng":
+        draw_mremoteng_docks(draw, preset, x, y, w, h)
+        return
     rounded(draw, (x, y, x + w, y + h), c.sidebar, c.pane_border, 5)
     title, subtitle = gui_design_sidebar_copy(preset.id)
     draw_text(draw, title, x + 14, y + 14, c.sidebar_text, 14, bold=True)
@@ -3448,11 +3500,7 @@ def draw_sidebar(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: 
     draw_text(draw, preset.density, x + w - 86, y + 15, c.sidebar_muted, 11)
     rows = gui_design_tree_rows(preset.id)
     row_y = y + 66
-    if preset.id == "securecrt":
-        draw_securecrt_session_manager_chrome(draw, preset, x + 10, y + 58, w - 20, 72)
-        draw_securecrt_session_tree(draw, preset, x + 14, y + 150, w - 28, h - 158)
-        return
-    elif preset.id == "termius":
+    if preset.id == "termius":
         draw_termius_hosts_chrome(draw, preset, x + 10, y + 58, w - 20, 72)
         row_y = y + 150
     elif preset.id == "remmina":
@@ -3474,6 +3522,93 @@ def draw_sidebar(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: 
             draw_text(draw, name, x + 40, row_y, color, 12)
             draw_text(draw, target, x + 40, row_y + 15, muted, 9)
             row_y += 42 if preset.density != "dense" else 36
+
+
+def draw_securecrt_command_manager(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
+    """Native Command Manager dock patterned after the supplied SecureCRT view."""
+    c = preset.colors
+    draw.rectangle((x, y, x + w, y + h), fill="#f5f5f5", outline="#a9a9a9")
+    draw.rectangle((x, y, x + w, y + 25), fill="#e7eef5", outline="#a9a9a9")
+    draw_text(draw, "Command Manager", x + 8, y + 7, "#243342", 10, bold=True)
+    draw_text(draw, "⚑", x + w - 32, y + 7, "#202020", 10)
+    draw_text(draw, "×", x + w - 15, y + 7, "#202020", 11)
+    button_x = x + 10
+    for icon in ("➤", "+", "✂", "□", "×", "⚙"):
+        draw_text(draw, icon, button_x, y + 34, "#3b4650", 14, bold=True)
+        button_x += 28
+    draw.rectangle((x + 7, y + 58, x + w - 7, y + 80), fill="#ffffff", outline="#b7b7b7")
+    draw_text(draw, "Filter by folder/command name <Alt+Y>", x + 13, y + 65, "#777777", 8)
+    draw_text(draw, "⌕", x + w - 22, y + 63, "#3c78b4", 12)
+    tree_y = y + 92
+    rows = (
+        ("⌄", "Commands", "#3c78b4", True),
+        ("⌄", "Admin", "#d1a737", True),
+        ("●", "df", "#d21616", False),
+        ("●", "free", "#d21616", False),
+        ("●", "netstat", "#d21616", False),
+        ("⌄", "General", "#d1a737", True),
+        ("●", "ps all", "#17b330", False),
+        ("●", "top", "#17b330", False),
+        ("●", "cal", "#17b330", False),
+    )
+    indent = 0
+    for icon, label, color, folder in rows:
+        if label == "Admin":
+            indent = 17
+        elif label == "General":
+            indent = 17
+        elif label == "ps all":
+            indent = 36
+        draw_text(draw, icon, x + 10 + indent, tree_y, color, 12, bold=folder)
+        draw_text(draw, label, x + 28 + indent, tree_y + 1, "#222222", 10)
+        tree_y += 22
+    draw.rectangle((x, y + h - 26, x + w, y + h), fill="#ffffff", outline="#b7b7b7")
+    draw_text(draw, "Session Manager", x + 9, y + h - 18, "#222222", 9)
+    draw_text(draw, "Command Manager", x + 112, y + h - 18, "#222222", 9)
+
+
+def draw_mremoteng_docks(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
+    """Recreate the compact Connections/Search/Config dock stack of mRemoteNG."""
+    c = preset.colors
+    top_h = int(h * 0.47)
+    draw.rectangle((x, y, x + w, y + top_h), fill="#f4f4f4", outline="#a7b1bc")
+    draw.rectangle((x, y, x + w, y + 24), fill="#0078c8", outline="#0078c8")
+    draw_text(draw, "Connections", x + 8, y + 7, "#ffffff", 10, bold=True)
+    draw_text(draw, "⚑  ×", x + w - 40, y + 6, "#ffffff", 10)
+    for index, icon in enumerate(("◉", "⌂", "+", "−", "A", "★")):
+        draw_text(draw, icon, x + 10 + index * 23, y + 33, "#356f9e", 11, bold=True)
+    tree_y = y + 59
+    for icon, label, depth, selected in (
+        ("◉", "Connections", 0, False),
+        ("▣", "Windows", 1, False),
+        ("▣", "Exchange 1", 2, True),
+        ("▣", "Exchange 2", 2, False),
+        ("▣", "Linux", 1, False),
+        ("●", "Proxy Server", 2, False),
+    ):
+        if selected:
+            draw.rectangle((x + 4 + depth * 17, tree_y - 2, x + w - 5, tree_y + 16), fill="#d9e8f6")
+        draw_text(draw, icon, x + 10 + depth * 17, tree_y, "#3471a0" if icon != "▣" else "#d6a62a", 10)
+        draw_text(draw, label, x + 26 + depth * 17, tree_y + 1, "#1f1f1f", 9)
+        tree_y += 19
+    draw.rectangle((x, y + top_h - 23, x + w, y + top_h), fill="#ffffff", outline="#c0c0c0")
+    draw_text(draw, "⌕  Search", x + 8, y + top_h - 16, "#52606e", 9)
+    config_y = y + top_h + 7
+    draw.rectangle((x, config_y, x + w, y + h), fill="#f8f8f8", outline="#a7b1bc")
+    draw.rectangle((x, config_y, x + w, config_y + 23), fill="#e7edf3", outline="#a7b1bc")
+    draw_text(draw, "Config", x + 8, config_y + 7, "#253544", 10, bold=True)
+    draw_text(draw, "⚑  ×", x + w - 40, config_y + 6, "#253544", 10)
+    for index, icon in enumerate(("☷", "A", "▤", "⊞", "⌘")):
+        draw_text(draw, icon, x + 10 + index * 23, config_y + 32, "#4f86b1", 10)
+    prop_y = config_y + 55
+    for group, rows in (("Display", (("Name", "Proxy Server"), ("Description", ""))), ("Connection", (("Hostname/IP", "edge-prod.example.invalid"), ("Port", "22"), ("Username", "operator")))):
+        draw_text(draw, "⌄", x + 8, prop_y, "#333333", 9)
+        draw_text(draw, group, x + 22, prop_y, "#273747", 9, bold=True)
+        prop_y += 18
+        for key, value in rows:
+            draw_text(draw, key, x + 28, prop_y, "#444444", 8)
+            draw_text(draw, value, x + 105, prop_y, "#111111", 8, bold=bool(value))
+            prop_y += 17
 
 
 def draw_remmina_profile_list_chrome(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
@@ -3869,39 +4004,40 @@ def draw_securecrt_workspace(
     c = preset.colors
     route = gui_design_securecrt_session_manager_route()
     reference = gui_design_reference_state(preset.id)
-    if route.active_tab_label != reference.active_tab_label:
-        raise RuntimeError("SecureCRT session-manager route active tab metadata drifted")
-    if route.target_value != reference.target_label:
-        raise RuntimeError("SecureCRT session-manager route target metadata drifted")
-    if route.protocol_value not in reference.protocol_label:
-        raise RuntimeError("SecureCRT session-manager route protocol metadata drifted")
-    tabs_h = 35
-    log_y = y + h - log_h
+    if route.active_tab_label != reference.active_tab_label or route.target_value != reference.target_label:
+        raise RuntimeError("SecureCRT reference session metadata drifted")
+    # The supplied SecureCRT screens are native and terminal-led: document tabs
+    # directly above one Session / SFTP surface, with no dashboard cards or activity log.
+    tabs_h = 31
     draw_tabs(draw, preset, x, y, w, tabs_h)
     pane_y = y + tabs_h
-    pane_h = log_y - pane_y - 8
-    rounded(draw, (x, pane_y, x + w, pane_y + pane_h), c.pane, c.pane_border, 2)
-    draw.rectangle((x + 10, pane_y + 9, x + w - 10, pane_y + 39), fill=c.toolbar, outline=c.pane_border)
-    draw_text(draw, surface.title, x + 22, pane_y + 17, c.control_text, 12, bold=True)
-    draw_text(draw, surface.subtitle, x + 304, pane_y + 17, c.sidebar_muted, 10)
-    draw_product_reference_state(draw, preset, x + 10, pane_y + 44, w - 20, 24)
+    pane_h = h - tabs_h
+    draw.rectangle((x, pane_y, x + w, pane_y + pane_h), fill="#ffffff", outline="#b5b5b5")
+    draw_rectangle = draw.rectangle
+    draw_rectangle((x + 8, pane_y + 7, x + w - 8, pane_y + 31), fill="#f7f7f7", outline="#c5c5c5")
+    draw_text(draw, "SSH2: edge-prod.example.invalid", x + 16, pane_y + 14, "#202020", 10, bold=True)
+    draw_text(draw, "Connected", x + w - 84, pane_y + 14, "#297137", 9, bold=True)
+    draw_securecrt_reference_terminal(draw, x + 9, pane_y + 38, w - 18, pane_h - 47)
 
-    term_w = int(w * 0.68)
-    command_h = 52
-    command_y = pane_y + pane_h - command_h - 10
-    strip_y = pane_y + 74
-    draw_securecrt_session_status_strip(draw, preset, x + 10, strip_y, w - 20, 30)
-    terminal_y = strip_y + 38
-    terminal_h = command_y - terminal_y - 10
-    draw_product_terminal(draw, preset, surface, x + 12, terminal_y, term_w - 18, terminal_h)
-    detail_x = x + term_w + 2
-    detail_w = w - term_w - 14
-    browser_h = max(140, min(158, terminal_h // 2))
-    detail_h = terminal_h - browser_h - 8
-    draw_detail_panel(draw, preset, surface, detail_x, terminal_y, detail_w, detail_h, heading="Session / SFTP")
-    draw_securecrt_sftp_browser(draw, preset, detail_x, terminal_y + detail_h + 8, detail_w, browser_h)
-    draw_securecrt_command_window(draw, preset, x + 12, command_y, w - 24, command_h)
-    draw_product_activity_log(draw, preset, surface, x, log_y, w, y + h - log_y, "Session Log")
+
+def draw_securecrt_reference_terminal(draw: Any, x: int, y: int, w: int, h: int) -> None:
+    """Single full document session with the native terminal palette in image #1."""
+    draw.rectangle((x, y, x + w, y + h), fill="#003b45", outline="#888888")
+    draw_text(draw, "show interface serial 0", x + 10, y + 10, "#fff65c", 11, mono=True)
+    lines = (
+        ("Serial0 is up, line protocol is up", "#fff65c"),
+        ("  Hardware is MCI Serial", "#d3e6e3"),
+        ("  Internet address is 155.155.155.90/28, subnet mask is 255.255.255.240", "#d3e6e3"),
+        ("  MTU 1500 bytes, BW 1544 Kbit, DLY 20000 usec,", "#d3e6e3"),
+        ("     76762 drops; input queue 0/75, 301 drops", "#e9a000"),
+        ("  54283 packets output, 65566998 bytes, 0 underruns", "#d3e6e3"),
+        ("  2 carrier transitions", "#ff3d35"),
+        ("Router#", "#fff65c"),
+    )
+    line_y = y + 31
+    for text, color in lines:
+        draw_text(draw, text, x + 10, line_y, color, 10, mono=True)
+        line_y += 18
 
 
 def draw_securecrt_sftp_browser(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
@@ -3974,26 +4110,27 @@ def draw_termius_workspace(
         raise RuntimeError("Termius host-selection route target metadata drifted")
     if host_route.protocol_value != reference.protocol_label:
         raise RuntimeError("Termius host-selection route protocol metadata drifted")
+    draw_termius_hosts_reference(draw, preset, x, y, w, h)
+    return
     tabs_w = 86
     log_y = y + h - log_h
-    draw_vertical_tabs(draw, preset, x, y, tabs_w, log_y - y - 8)
+    draw_termius_navigation_rail(draw, preset, x, y, tabs_w, log_y - y - 8)
     pane_x = x + tabs_w
     pane_w = w - tabs_w
     pane_h = log_y - y - 8
     rounded(draw, (pane_x, y, pane_x + pane_w, y + pane_h), c.pane, c.pane_border, 5)
-    draw.rectangle((pane_x + 12, y + 12, pane_x + pane_w - 12, y + 74), fill=c.toolbar, outline=c.pane_border)
-    draw_text(draw, surface.title, pane_x + 26, y + 24, c.control_text, 15, bold=True)
-    draw_text(draw, surface.subtitle, pane_x + 26, y + 47, c.sidebar_muted, 10)
-    for index, chip in enumerate(gui_design_termius_header_chips()):
-        if chip.key == sync_route.header_chip_key and sync_route.sync_state not in chip.label.lower():
-            raise RuntimeError("Termius sync route header chip metadata drifted")
-        if chip.key == port_forward_route.header_chip_key and chip.label != port_forward_route.status_segment:
-            raise RuntimeError("Termius port-forward route header chip metadata drifted")
-        chip_x = pane_x + pane_w - 360 + index * 116
-        rounded(draw, (chip_x, y + 25, chip_x + 104, y + 51), c.control, c.control_border, 12)
-        draw_text(draw, chip.label, chip_x + 10, y + 33, c.terminal_accent, 8, bold=True)
-    draw_product_reference_state(draw, preset, pane_x + 12, y + 80, pane_w - 24, 24)
-    strip_y = y + 110
+    draw_text(draw, "edge-prod", pane_x + 20, y + 18, c.control_text, 17, bold=True)
+    draw_text(draw, "prod  ·  SSH  ·  edge-prod.example.invalid", pane_x + 20, y + 43, c.sidebar_muted, 10)
+    rounded(draw, (pane_x + pane_w - 124, y + 16, pane_x + pane_w - 22, y + 47), c.primary, c.primary, 9)
+    draw_text(draw, "Connect", pane_x + pane_w - 96, y + 26, c.primary_text, 10, bold=True)
+    tab_x = pane_x + 18
+    for tab in ("Terminal", "Files", "Tunnels", "SFTP"):
+        active = tab == "Terminal"
+        draw_text(draw, tab, tab_x, y + 78, c.control_text if active else c.sidebar_muted, 10, bold=active)
+        if active:
+            draw.rectangle((tab_x, y + 96, tab_x + 51, y + 98), fill=c.primary)
+        tab_x += len(tab) * 7 + 32
+    strip_y = y + 108
     draw_termius_host_identity_strip(draw, preset, pane_x + 12, strip_y, pane_w - 24, 30)
 
     term_w = int(pane_w * 0.64)
@@ -4024,7 +4161,73 @@ def draw_termius_workspace(
         files_h,
     )
     draw_termius_session_workflow(draw, preset, pane_x + 12, flow_y, pane_w - 24, y + pane_h - flow_y - 10)
-    draw_product_activity_log(draw, preset, surface, x, log_y, w, y + h - log_y, "Sync Activity")
+    draw_product_activity_log(draw, preset, surface, x, log_y, w, y + h - log_y, "Connection log")
+
+
+def draw_termius_navigation_rail(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
+    c = preset.colors
+    draw.rectangle((x, y, x + w, y + h), fill=c.sidebar)
+    items = (("●", "Hosts", True), ("◆", "Vaults", False), ("⌘", "Snippets", False), ("↔", "Tunnels", False), ("◌", "Known", False))
+    item_y = y + 20
+    for icon, label, active in items:
+        if active:
+            rounded(draw, (x + 8, item_y - 7, x + w - 8, item_y + 25), c.sidebar_selected, c.sidebar_selected, 5)
+        draw_text(draw, icon, x + 15, item_y, c.primary if active else c.sidebar_muted, 11, bold=True)
+        draw_text(draw, label, x + 32, item_y + 1, c.sidebar_selected_text if active else c.sidebar_muted, 8, bold=active)
+        item_y += 48
+    draw.line((x + w - 1, y, x + w - 1, y + h), fill=c.pane_border)
+
+
+def draw_termius_hosts_reference(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
+    """Host and vault manager based on the supplied Termius desktop hierarchy."""
+    c = preset.colors
+    rail_w = 62
+    details_w = 282
+    draw_termius_navigation_rail(draw, preset, x, y, rail_w, h)
+    center_x = x + rail_w + 1
+    center_w = w - rail_w - details_w - 8
+    detail_x = center_x + center_w + 8
+    draw.rectangle((center_x, y, center_x + center_w, y + h), fill=c.pane, outline=c.pane_border)
+    draw.rectangle((detail_x, y, x + w, y + h), fill="#171c1f", outline=c.pane_border)
+    draw_text(draw, "All vaults", center_x + 18, y + 18, c.control_text, 16, bold=True)
+    draw_text(draw, "Personal vault", center_x + 18, y + 42, c.sidebar_muted, 9)
+    draw_text(draw, "Groups", center_x + 18, y + 80, c.sidebar_muted, 10, bold=True)
+    card_y = y + 104
+    cards = (("AWS", "12 hosts"), ("Development", "8 hosts"), ("Staging", "4 hosts"), ("Production", "3 hosts"))
+    for index, (name, count) in enumerate(cards):
+        card_x = center_x + 18 + (index % 2) * ((center_w - 54) // 2)
+        card_top = card_y + (index // 2) * 74
+        card_w = (center_w - 54) // 2
+        rounded(draw, (card_x, card_top, card_x + card_w, card_top + 58), c.control, c.control_border, 7)
+        draw.ellipse((card_x + 13, card_top + 16, card_x + 30, card_top + 33), fill=c.primary)
+        draw_text(draw, name, card_x + 41, card_top + 13, c.control_text, 11, bold=True)
+        draw_text(draw, count, card_x + 41, card_top + 31, c.sidebar_muted, 8)
+    hosts_y = card_y + 170
+    draw_text(draw, "Hosts", center_x + 18, hosts_y, c.sidebar_muted, 10, bold=True)
+    rows = (("edge-prod", "ssh · operator · Production"), ("api-dev", "ssh · deploy · Development"), ("db-staging", "ssh · readonly · Staging"))
+    row_y = hosts_y + 25
+    for index, (name, sub) in enumerate(rows):
+        selected = index == 0
+        fill = c.sidebar_selected if selected else c.control
+        outline = c.primary if selected else c.control_border
+        rounded(draw, (center_x + 16, row_y, center_x + center_w - 16, row_y + 48), fill, outline, 6)
+        draw.ellipse((center_x + 29, row_y + 14, center_x + 48, row_y + 33), fill="#e6a93d")
+        draw_text(draw, name, center_x + 62, row_y + 10, c.sidebar_selected_text if selected else c.control_text, 11, bold=True)
+        draw_text(draw, sub, center_x + 62, row_y + 27, c.sidebar_muted, 8)
+        draw_text(draw, "⋮", center_x + center_w - 38, row_y + 14, c.sidebar_muted, 13)
+        row_y += 56
+    draw_text(draw, "Host Details", detail_x + 16, y + 18, "#eef5f1", 12, bold=True)
+    draw_text(draw, "Production vault", detail_x + 16, y + 42, c.primary, 9)
+    draw_text(draw, "edge-prod", detail_x + 16, y + 83, "#ffffff", 15, bold=True)
+    draw_text(draw, "137.184.95.44", detail_x + 16, y + 108, c.sidebar_muted, 10)
+    rounded(draw, (detail_x + 16, y + 136, x + w - 16, y + 169), c.primary, c.primary, 8)
+    draw_centered_text(draw, "Connect", detail_x + 16, y + 146, details_w - 32, c.primary_text, 10, bold=True)
+    field_y = y + 198
+    for label, value in (("Hostname", "edge-prod.example.invalid"), ("Protocol", "SSH"), ("Port", "22"), ("Username", "operator")):
+        draw_text(draw, label, detail_x + 16, field_y, c.sidebar_muted, 8)
+        draw_text(draw, value, detail_x + 16, field_y + 14, "#ffffff", 9)
+        draw.line((detail_x + 16, field_y + 31, x + w - 16, field_y + 31), fill=c.control_border)
+        field_y += 49
 
 
 def draw_termius_files_browser(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
@@ -4093,7 +4296,7 @@ def draw_remmina_workspace(
     rounded(draw, (x, pane_y, x + w, pane_y + pane_h), c.pane, c.pane_border, 4)
     toolbar_y = pane_y + 10
     draw.rectangle((x + 10, toolbar_y, x + w - 10, toolbar_y + 34), fill=c.toolbar, outline=c.pane_border)
-    draw_text(draw, surface.title, x + 22, toolbar_y + 10, c.control_text, 13, bold=True)
+    draw_text(draw, "RDP viewer", x + 22, toolbar_y + 10, c.control_text, 12, bold=True)
     route = gui_design_remmina_profile_viewer_route()
     clipboard_route = gui_design_remmina_clipboard_route()
     screenshot_route = gui_design_remmina_screenshot_route()
@@ -4139,6 +4342,8 @@ def draw_remmina_workspace(
         key: label for key, label, _tooltip in gui_design_toolbar_actions("remmina")
     }.get(sftp_transfer_route.toolbar_action_key):
         raise RuntimeError("Remmina SFTP transfer route toolbar metadata drifted")
+    draw_remmina_home_reference(draw, preset, x, y, w, h)
+    return
     controls = gui_design_remmina_viewer_controls()
     if route.viewer_control_key not in {control.key for control in controls}:
         raise RuntimeError("Remmina profile-viewer route target control is missing")
@@ -4176,12 +4381,10 @@ def draw_remmina_workspace(
         )
         draw_text(draw, control.label, control_x + control.static_label_x, toolbar_y + control.static_y + 5, c.control_text, 8)
         control_x += control.static_step
-    draw_product_reference_state(draw, preset, x + 10, toolbar_y + 40, w - 20, 24)
-
     viewer_x = x + 18
-    viewer_y = toolbar_y + 70
+    viewer_y = toolbar_y + 48
     viewer_w = int(w * 0.72)
-    viewer_h = pane_h - 88
+    viewer_h = pane_h - 66
     draw_remote_viewer(draw, preset, surface, viewer_x, viewer_y, viewer_w, viewer_h)
     transfer_h = max(132, min(150, viewer_h // 2))
     options_h = viewer_h - transfer_h - 8
@@ -4205,7 +4408,45 @@ def draw_remmina_workspace(
         detail_w,
         transfer_h,
     )
-    draw_product_activity_log(draw, preset, surface, x, log_y, w, y + h - log_y, "Connection Activity")
+    draw_product_activity_log(draw, preset, surface, x, log_y, w, y + h - log_y, "Connection activity")
+
+
+def draw_remmina_home_reference(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
+    """Saved-connection home screen with Remmina's compact GTK list workflow."""
+    c = preset.colors
+    tabs_h = 30
+    draw.rectangle((x, y, x + w, y + h), fill="#f6f7f8", outline="#c3cbd2")
+    draw.rectangle((x, y, x + w, y + tabs_h), fill="#eef1f4", outline="#c3cbd2")
+    for index, (label, active) in enumerate((("Quick Connect", True), ("win-admin", False), ("linux-console", False))):
+        tab_x = x + 10 + index * 135
+        draw.rectangle((tab_x, y + 4, tab_x + 126, y + 29), fill="#ffffff" if active else "#e2e7ec", outline="#b8c2cc")
+        draw_text(draw, label, tab_x + 10, y + 12, c.control_text, 9, bold=active)
+    list_y = y + tabs_h + 16
+    draw_text(draw, "Saved connections", x + 18, list_y, c.control_text, 13, bold=True)
+    draw_text(draw, "Create a new connection or select a profile to connect.", x + 18, list_y + 21, c.sidebar_muted, 9)
+    table_x = x + 18
+    table_y = list_y + 53
+    table_w = w - 36
+    draw.rectangle((table_x, table_y, table_x + table_w, table_y + 31), fill="#e5e9ed", outline="#bac4cc")
+    columns = (("Name", 0), ("Group", 235), ("Server", 410), ("Protocol", 650))
+    for label, offset in columns:
+        draw_text(draw, label, table_x + 12 + offset, table_y + 10, "#44515c", 9, bold=True)
+    row_y = table_y + 31
+    rows = (("win-admin", "Windows", "admin-win.example.invalid", "RDP"), ("linux-console", "Linux", "edge-prod.example.invalid", "SSH"), ("lab-desktop", "Lab", "lab.example.invalid", "VNC"))
+    for index, row in enumerate(rows):
+        fill = "#dcecff" if index == 0 else "#ffffff"
+        draw.rectangle((table_x, row_y, table_x + table_w, row_y + 38), fill=fill, outline="#d2d9df")
+        draw_text(draw, "▣", table_x + 12, row_y + 12, c.primary if index == 0 else "#657381", 10)
+        for value, (_label, offset) in zip(row, columns):
+            draw_text(draw, value, table_x + 32 + offset, row_y + 12, c.control_text, 9, bold=index == 0 and offset == 0)
+        row_y += 38
+    action_y = row_y + 24
+    draw_text(draw, "Recent connections", table_x, action_y, c.sidebar_muted, 10, bold=True)
+    for index, label in enumerate(("Connect", "Edit", "Delete", "Import")):
+        bx = table_x + index * 88
+        rounded(draw, (bx, action_y + 18, bx + 76, action_y + 46), c.control, c.control_border, 3)
+        draw_centered_text(draw, label, bx, action_y + 27, 76, c.control_text, 9, bold=label == "Connect")
+    draw_text(draw, "Total 3 items", x + 18, y + h - 24, c.sidebar_muted, 9)
 
 
 def draw_remmina_sftp_transfer_panel(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
@@ -4270,40 +4511,62 @@ def draw_mremoteng_workspace(
     c = preset.colors
     route = gui_design_mremoteng_connection_document_route()
     reference = gui_design_reference_state("mremoteng")
-    surface_tabs = {tab_label for tab_label, _status, _active in gui_design_tab_items("mremoteng")}
-    if route.active_tab_label != reference.active_tab_label or route.active_tab_label not in surface_tabs:
-        raise RuntimeError("mRemoteNG connection-document route active tab metadata drifted")
-    if route.selected_profile_name != reference.profile_name or route.workspace_state != reference.workspace_state:
-        raise RuntimeError("mRemoteNG connection-document route reference state metadata drifted")
-    if route.signal != "clicked":
-        raise RuntimeError("mRemoteNG reconnect live route signal drifted")
-    if route.handler != "handle_mremoteng_document_reconnect":
-        raise RuntimeError("mRemoteNG reconnect live route handler drifted")
-    if route.live_triggered_property != "mRemoteNgConnectionRouteLiveTriggered":
-        raise RuntimeError("mRemoteNG reconnect live route trigger property drifted")
-    tabs_h = 35
-    log_y = y + h - log_h
+    if route.active_tab_label != reference.active_tab_label or route.selected_profile_name != reference.profile_name:
+        raise RuntimeError("mRemoteNG reference connection metadata drifted")
+    # mRemoteNG's document surface is a docked multi-session canvas: two document
+    # panes and a Notifications dock, not a dashboard/property-table workspace.
+    tabs_h = 30
     draw_tabs(draw, preset, x, y, w, tabs_h)
     pane_y = y + tabs_h
-    pane_h = log_y - pane_y - 8
-    rounded(draw, (x, pane_y, x + w, pane_y + pane_h), c.pane, c.pane_border, 2)
-    header_y = pane_y + 8
-    draw.rectangle((x + 10, header_y, x + w - 10, header_y + 30), fill=c.toolbar, outline=c.pane_border)
-    draw_text(draw, surface.title, x + 22, header_y + 9, c.control_text, 12, bold=True)
-    draw_text(draw, surface.secondary_state, x + w - 120, header_y + 9, c.status, 10, bold=True)
-    draw_product_reference_state(draw, preset, x + 10, header_y + 36, w - 20, 24)
+    notification_h = 104
+    document_h = h - tabs_h - notification_h - 8
+    draw.rectangle((x, pane_y, x + w, pane_y + document_h), fill="#ececf1", outline="#a9a9b0")
+    left_w = int(w * 0.56)
+    left_x = x + 7
+    right_x = x + left_w + 4
+    draw_mremoteng_remote_desktop(draw, left_x, pane_y + 7, left_w - 10, document_h - 14)
+    draw_mremoteng_ssh_document(draw, right_x, pane_y + 7, w - left_w - 11, document_h - 14)
+    notify_y = pane_y + document_h + 6
+    draw.rectangle((x, notify_y, x + w, y + h), fill="#ffffff", outline="#a7b1bc")
+    draw.rectangle((x, notify_y, x + w, notify_y + 23), fill="#e9edf2", outline="#a7b1bc")
+    draw_text(draw, "Notifications", x + 8, notify_y + 7, "#34485a", 9, bold=True)
+    draw_text(draw, "⚑  ×", x + w - 39, notify_y + 6, "#34485a", 9)
+    draw_text(draw, "Connected to Proxy Server via SSH2", x + 12, notify_y + 37, "#4a4a4a", 9)
+    draw_text(draw, "Exchange 1 opened in a tabbed document", x + 12, notify_y + 54, "#4a4a4a", 9)
 
-    draw_mremoteng_document_toolbar(draw, preset, x + 10, header_y + 66, w - 20, 28)
 
-    top_y = header_y + 104
-    top_h = int(pane_h * 0.40)
-    left_w = int(w * 0.58)
-    draw_product_terminal(draw, preset, surface, x + 12, top_y, left_w - 18, top_h)
-    rdp_x = x + left_w + 2
-    draw_mremoteng_rdp_panel(draw, preset, rdp_x, top_y, w - left_w - 14, top_h)
-    props_y = top_y + top_h + 12
-    draw_mremoteng_config_grid(draw, preset, surface, x + 12, props_y, w - 24, pane_y + pane_h - props_y - 10)
-    draw_product_activity_log(draw, preset, surface, x, log_y, w, y + h - log_y, "Connection Log")
+def draw_mremoteng_remote_desktop(draw: Any, x: int, y: int, w: int, h: int) -> None:
+    draw.rectangle((x, y, x + w, y + h), fill="#000000", outline="#777777")
+    draw_text(draw, "Exchange 1", x + 12, y + 12, "#f2f2f2", 10)
+    draw.rectangle((x + 18, y + 47, x + 47, y + 76), fill="#dfe8f0", outline="#ffffff")
+    draw_text(draw, "Recycle Bin", x + 10, y + 80, "#ffffff", 8)
+    draw.rectangle((x + 18, y + h - 28, x + w - 18, y + h - 1), fill="#111111")
+    draw_text(draw, "⊞     ⌕     □", x + 25, y + h - 20, "#ffffff", 12)
+    draw_text(draw, "19:08", x + w - 64, y + h - 21, "#ffffff", 8)
+
+
+def draw_mremoteng_ssh_document(draw: Any, x: int, y: int, w: int, h: int) -> None:
+    draw.rectangle((x, y, x + w, y + h), fill="#000000", outline="#777777")
+    draw_text(draw, "Proxy Server", x + 10, y + 10, "#f3f3f3", 10)
+    lines = (
+        "Using username 'operator'.",
+        "Authenticated with public key from agent",
+        "Welcome to Ubuntu 22.04 LTS",
+        "",
+        " * Documentation:  https://help.ubuntu.com",
+        " * Management:     https://landscape.canonical.com",
+        "",
+        "System information as of 19:08:24 UTC",
+        "System load:  0.01      Processes: 173",
+        "Memory usage: 37%       Users logged in: 0",
+        "IP address for ens160: 10.32.0.42",
+        "",
+        "operator@edge-prod:~$",
+    )
+    line_y = y + 31
+    for line in lines:
+        draw_text(draw, line, x + 14, line_y, "#e8dfad" if line.startswith(" *") else "#e4e4e4", 9, mono=True)
+        line_y += 17
 
 
 def draw_product_terminal(draw: Any, preset: GuiDesignPreset, surface: Any, x: int, y: int, w: int, h: int) -> None:

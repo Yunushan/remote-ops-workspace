@@ -3,7 +3,9 @@ import io
 import json
 import os
 from pathlib import Path
+from types import SimpleNamespace
 
+import remote_ops_workspace.file_transfer as transfer_module
 from remote_ops_workspace.cli import main
 from remote_ops_workspace.file_transfer import (
     build_sftp_get_plan,
@@ -45,6 +47,37 @@ def test_sftp_queue_plan_builds_batch_commands() -> None:
     assert result.destructive is True
     assert result.force is False
     assert result.to_dict()["items"][0]["action"] == "get"
+    assert [event.state for event in result.progress] == ["planned", "planned", "planned", "planned"]
+
+
+def test_sftp_queue_reports_actual_item_progress_and_stops_after_failure(monkeypatch) -> None:
+    profile = Profile(name="files", protocol="ssh", host="192.0.2.10")
+    plan = build_sftp_queue_plan(
+        profile,
+        [parse_transfer_item_spec("mkdir /tmp/one"), parse_transfer_item_spec("mkdir /tmp/two")],
+    )
+    results = iter(
+        [
+            SimpleNamespace(returncode=0, stdout="one complete\n", stderr=""),
+            SimpleNamespace(returncode=1, stdout="", stderr="two failed\n"),
+        ]
+    )
+    captured_inputs: list[str] = []
+
+    def fake_run(_command, *, input, text, capture_output, check):
+        assert text is True and capture_output is True and check is False
+        captured_inputs.append(input)
+        return next(results)
+
+    monkeypatch.setattr(transfer_module.subprocess, "run", fake_run)
+    callback_states: list[str] = []
+    result = run_sftp_queue(plan, on_progress=lambda event: callback_states.append(event.state))
+
+    assert captured_inputs == ["mkdir /tmp/one\n", "mkdir /tmp/two\n"]
+    assert result.ok is False
+    assert result.returncode == 1
+    assert [event.state for event in result.progress] == ["completed", "failed"]
+    assert callback_states == ["running", "completed", "running", "failed"]
 
 
 def test_sftp_queue_refuses_destructive_execution_without_force() -> None:

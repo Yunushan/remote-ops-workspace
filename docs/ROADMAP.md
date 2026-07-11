@@ -15,24 +15,21 @@ does not remain listed as planned work.
 - Added profile importers for Remmina, mRemoteNG, Termius-style JSON and MobaXterm session exports.
 - Added SSH key helper and local key generation workflow.
 - Added sync provider interface.
+- Added loopback browser profile API backend with bearer authentication and policy enforcement.
+- Added saved layout splitter-size persistence with validated restore for desktop sessions.
+- Added GUI protocol presets and profile import previews before saving external profiles.
+- Added versioned mounted-directory team sync proof-of-concept with conflict protection.
 - Added install, verify, upgrade and uninstall smoke-test contract for native packages.
-
-## v0.1.x Remaining
-
-- Continue enriching GUI profile and layout editors with protocol presets and import previews.
+- Added real per-operation SFTP queue progress with fail-fast execution states.
+- Added a bounded ANSI terminal-emulation backend to the embedded terminal widget.
+- Added Kubernetes exec and hardened WinRM protocol adapters.
 
 ## v0.2.x
 
-- Deeper terminal widget plugin using qtermwidget or PTY/web terminal emulation.
-- Continue enriching embedded file transfer UI with live transfer progress after queue/preview support.
-- Richer layout save/restore with resize persistence.
 - Add release signing support for Windows Authenticode and macOS Developer ID.
 
 ## v0.3.x
 
-- Team sync backend proof-of-concept.
-- Browser API backend.
 - Add Apple notarization for macOS distribution.
 - Add hosted or self-hosted 32-bit Linux and ARMv7 release runners for already declared native package mappings.
 - Android PWA packaging; keep APK publishing gated on a real native Android wrapper.
-- More protocol plugins.

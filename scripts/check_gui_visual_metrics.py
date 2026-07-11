@@ -9,6 +9,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 METRICS_PATH = ROOT / "configs" / "gui_visual_metrics.json"
+REFERENCE_OVERRIDES_PATH = ROOT / "configs" / "gui_visual_reference_overrides.json"
 PREVIEW_MANIFEST_PATH = ROOT / "artifacts" / "gui-design-previews" / "preview-manifest.json"
 PREVIEW_DIR = ROOT / "artifacts" / "gui-design-previews"
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
@@ -21,6 +22,7 @@ def main() -> int:
             print(f"GUI visual metrics: {error}", file=sys.stderr)
         return 1
     metrics = load_json(METRICS_PATH)
+    apply_reference_overrides(metrics)
     region_total = count_regions(metrics)
     anchor_total = count_color_anchors(metrics)
     line_anchor_total = count_line_anchors(metrics)
@@ -38,6 +40,7 @@ def main() -> int:
 def check_gui_visual_metrics() -> list[str]:
     try:
         metrics = load_json(METRICS_PATH)
+        apply_reference_overrides(metrics)
     except (OSError, json.JSONDecodeError) as exc:
         return [f"cannot read {display(METRICS_PATH)}: {exc}"]
     try:
@@ -66,6 +69,23 @@ def check_gui_visual_metrics() -> list[str]:
             )
         errors.extend(check_metric_images("state preview", state_metrics, state_preview_images, expected_size))
     return errors
+
+
+def apply_reference_overrides(metrics: dict[str, Any]) -> None:
+    """Use measured layouts when a preset is reworked from an external reference."""
+    if not REFERENCE_OVERRIDES_PATH.is_file():
+        return
+    overrides = load_json(REFERENCE_OVERRIDES_PATH)
+    if overrides.get("schema_version") != 1:
+        raise ValueError("GUI visual reference overrides schema_version must be 1")
+    items = overrides.get("presets")
+    presets = metrics.get("presets")
+    if not isinstance(items, dict) or not isinstance(presets, dict):
+        raise ValueError("GUI visual reference overrides presets must be an object")
+    for preset_id, preset_metrics in items.items():
+        if preset_id not in presets or not isinstance(preset_metrics, dict):
+            raise ValueError(f"invalid GUI visual reference override: {preset_id}")
+        presets[preset_id] = preset_metrics
 
 
 def check_metric_images(

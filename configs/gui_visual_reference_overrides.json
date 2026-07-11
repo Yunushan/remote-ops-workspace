@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "presets": {
+    "securecrt": {
+      "regions": [
+        {"id": "native-toolbar", "box": [0, 34, 1280, 88], "mean_luminance": [235, 255], "min_unique_colors": 70},
+        {"id": "command-manager-dock", "box": [18, 106, 270, 736], "mean_luminance": [225, 250], "min_unique_colors": 60},
+        {"id": "document-tabs", "box": [290, 106, 746, 137], "mean_luminance": [160, 250], "min_unique_colors": 45},
+        {"id": "terminal-document", "box": [290, 175, 1255, 710], "mean_luminance": [35, 95], "min_unique_colors": 100},
+        {"id": "terminal-transcript", "box": [300, 185, 760, 350], "mean_luminance": [25, 105], "min_unique_colors": 80},
+        {"id": "native-status-bar", "box": [0, 738, 1280, 760], "mean_luminance": [220, 255], "min_unique_colors": 30}
+      ],
+      "color_anchors": [
+        {"id": "active-tab-blue", "point": [291, 109], "rgb_min": [40, 100, 160], "rgb_max": [80, 150, 210]},
+        {"id": "terminal-teal", "point": [300, 190], "rgb_min": [0, 45, 55], "rgb_max": [10, 75, 90]},
+        {"id": "command-manager-heading", "point": [22, 107], "rgb_min": [220, 225, 230], "rgb_max": [245, 250, 255]}
+      ],
+      "line_anchors": [
+        {"id": "toolbar-bottom-rule", "from": [0, 88], "to": [1279, 88], "rgb_min": [250, 250, 250], "rgb_max": [255, 255, 255], "min_match_ratio": 0.99},
+        {"id": "terminal-top-border", "from": [290, 175], "to": [1255, 175], "rgb_min": [100, 100, 100], "rgb_max": [180, 180, 180], "min_match_ratio": 0.95},
+        {"id": "status-bar-top-rule", "from": [0, 738], "to": [1279, 738], "rgb_min": [250, 250, 250], "rgb_max": [255, 255, 255], "min_match_ratio": 0.99}
+      ],
+      "topology": [
+        {"id": "toolbar-above-command-manager", "from": "native-toolbar", "relation": "above", "to": "command-manager-dock", "min_gap": 12, "max_gap": 30},
+        {"id": "dock-left-of-terminal", "from": "command-manager-dock", "relation": "left_of", "to": "terminal-document", "min_gap": 12, "max_gap": 30},
+        {"id": "tabs-above-terminal", "from": "document-tabs", "relation": "above", "to": "terminal-document", "min_gap": 30, "max_gap": 45},
+        {"id": "transcript-inside-terminal", "from": "terminal-transcript", "relation": "inside", "to": "terminal-document"}
+      ]
+    },
+    "termius": {
+      "regions": [
+        {"id": "host-toolbar", "box": [0, 34, 1280, 88], "mean_luminance": [20, 65], "min_unique_colors": 80},
+        {"id": "hosts-sidebar", "box": [18, 106, 292, 736], "mean_luminance": [15, 45], "min_unique_colors": 80},
+        {"id": "vault-navigation", "box": [310, 106, 371, 720], "mean_luminance": [15, 45], "min_unique_colors": 45},
+        {"id": "vault-host-catalog", "box": [372, 106, 974, 720], "mean_luminance": [15, 60], "min_unique_colors": 120},
+        {"id": "host-details", "box": [982, 106, 1262, 720], "mean_luminance": [15, 45], "min_unique_colors": 70}
+      ],
+      "color_anchors": [
+        {"id": "new-host-green", "point": [1054, 58], "rgb_min": [80, 180, 120], "rgb_max": [120, 230, 170]},
+        {"id": "selected-host-outline", "point": [392, 406], "rgb_min": [80, 180, 120], "rgb_max": [120, 230, 170]},
+        {"id": "details-connect", "point": [1010, 258], "rgb_min": [80, 180, 120], "rgb_max": [120, 230, 170]}
+      ],
+      "line_anchors": [
+        {"id": "toolbar-bottom-rule", "from": [0, 88], "to": [1279, 88], "rgb_min": [20, 25, 28], "rgb_max": [35, 45, 50], "min_match_ratio": 0.99},
+        {"id": "details-divider", "from": [981, 106], "to": [981, 720], "rgb_min": [35, 45, 50], "rgb_max": [70, 85, 95], "min_match_ratio": 0.99}
+      ],
+      "topology": [
+        {"id": "toolbar-above-hosts", "from": "host-toolbar", "relation": "above", "to": "hosts-sidebar", "min_gap": 12, "max_gap": 30},
+        {"id": "sidebar-left-of-vault-nav", "from": "hosts-sidebar", "relation": "left_of", "to": "vault-navigation", "min_gap": 12, "max_gap": 30},
+        {"id": "nav-left-of-catalog", "from": "vault-navigation", "relation": "left_of", "to": "vault-host-catalog", "max_gap": 2},
+        {"id": "catalog-left-of-details", "from": "vault-host-catalog", "relation": "left_of", "to": "host-details", "min_gap": 4, "max_gap": 12}
+      ]
+    },
+    "remmina": {
+      "regions": [
+        {"id": "client-toolbar", "box": [0, 34, 1280, 88], "mean_luminance": [225, 255], "min_unique_colors": 70},
+        {"id": "profiles-sidebar", "box": [18, 106, 320, 736], "mean_luminance": [235, 255], "min_unique_colors": 80},
+        {"id": "protocol-host-controls", "box": [170, 46, 625, 75], "mean_luminance": [180, 245], "min_unique_colors": 35},
+        {"id": "saved-connections", "box": [338, 106, 1262, 720], "mean_luminance": [230, 255], "min_unique_colors": 100},
+        {"id": "connection-table", "box": [356, 205, 1244, 351], "mean_luminance": [220, 250], "min_unique_colors": 70}
+      ],
+      "color_anchors": [
+        {"id": "connect-green", "point": [560, 59], "rgb_min": [45, 110, 45], "rgb_max": [85, 160, 85]},
+        {"id": "selected-connection", "point": [500, 255], "rgb_min": [210, 225, 245], "rgb_max": [230, 245, 255]},
+        {"id": "profile-filter-focus", "point": [136, 172], "rgb_min": [25, 100, 205], "rgb_max": [70, 145, 245]}
+      ],
+      "line_anchors": [
+        {"id": "toolbar-bottom-rule", "from": [0, 88], "to": [1279, 88], "rgb_min": [250, 250, 250], "rgb_max": [255, 255, 255], "min_match_ratio": 0.99},
+        {"id": "connection-table-header", "from": [356, 205], "to": [1244, 205], "rgb_min": [180, 190, 200], "rgb_max": [210, 220, 230], "min_match_ratio": 0.99}
+      ],
+      "topology": [
+        {"id": "toolbar-above-profiles", "from": "client-toolbar", "relation": "above", "to": "profiles-sidebar", "min_gap": 12, "max_gap": 30},
+        {"id": "profiles-left-of-saved-connections", "from": "profiles-sidebar", "relation": "left_of", "to": "saved-connections", "min_gap": 12, "max_gap": 30},
+        {"id": "table-inside-saved-connections", "from": "connection-table", "relation": "inside", "to": "saved-connections"}
+      ]
+    },
+    "mremoteng": {
+      "regions": [
+        {"id": "native-toolbar", "box": [0, 34, 1280, 88], "mean_luminance": [225, 255], "min_unique_colors": 50},
+        {"id": "connections-dock", "box": [18, 106, 356, 394], "mean_luminance": [215, 250], "min_unique_colors": 60},
+        {"id": "config-dock", "box": [18, 400, 356, 720], "mean_luminance": [220, 255], "min_unique_colors": 50},
+        {"id": "document-canvas", "box": [373, 106, 1262, 606], "mean_luminance": [15, 55], "min_unique_colors": 80},
+        {"id": "remote-document", "box": [382, 144, 868, 600], "mean_luminance": [0, 25], "min_unique_colors": 20},
+        {"id": "ssh-document", "box": [874, 144, 1255, 600], "mean_luminance": [0, 35], "min_unique_colors": 60},
+        {"id": "notifications-dock", "box": [373, 612, 1262, 720], "mean_luminance": [220, 255], "min_unique_colors": 45}
+      ],
+      "color_anchors": [
+        {"id": "connections-title-blue", "point": [20, 108], "rgb_min": [0, 100, 175], "rgb_max": [20, 145, 220]},
+        {"id": "remote-document-black", "point": [400, 180], "rgb_min": [0, 0, 0], "rgb_max": [8, 8, 8]},
+        {"id": "ssh-document-black", "point": [920, 180], "rgb_min": [0, 0, 0], "rgb_max": [8, 8, 8]}
+      ],
+      "line_anchors": [
+        {"id": "toolbar-bottom-rule", "from": [0, 88], "to": [1279, 88], "rgb_min": [235, 240, 245], "rgb_max": [250, 252, 255], "min_match_ratio": 0.99},
+        {"id": "notifications-top-rule", "from": [373, 612], "to": [1262, 612], "rgb_min": [145, 160, 175], "rgb_max": [200, 215, 230], "min_match_ratio": 0.99}
+      ],
+      "topology": [
+        {"id": "toolbar-above-connections", "from": "native-toolbar", "relation": "above", "to": "connections-dock", "min_gap": 12, "max_gap": 30},
+        {"id": "connections-left-of-documents", "from": "connections-dock", "relation": "left_of", "to": "document-canvas", "min_gap": 12, "max_gap": 30},
+        {"id": "config-below-connections", "from": "config-dock", "relation": "below", "to": "connections-dock", "min_gap": 4, "max_gap": 12},
+        {"id": "remote-left-of-ssh", "from": "remote-document", "relation": "left_of", "to": "ssh-document", "min_gap": 4, "max_gap": 12},
+        {"id": "notifications-below-documents", "from": "notifications-dock", "relation": "below", "to": "document-canvas", "min_gap": 4, "max_gap": 12}
+      ]
+    }
+  }
+}

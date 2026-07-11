@@ -129,6 +129,87 @@ IMPLEMENTED_ITEMS = (
         ),
     ),
     RoadmapItem(
+        label="browser profile API backend",
+        completed_snippet="Added loopback browser profile API backend with bearer authentication and policy enforcement.",
+        stale_future_snippets=("Browser API backend.",),
+        evidence=(
+            Evidence("src/remote_ops_workspace/web_server.py", "class WebProfileApi"),
+            Evidence("src/remote_ops_workspace/cli.py", '"--api-token"'),
+            Evidence("tests/test_web_hardening.py", "test_browser_profile_api_serves_authenticated_http_catalogue"),
+            Evidence("docs/BROWSER_API.md", "same-origin profile API"),
+        ),
+    ),
+    RoadmapItem(
+        label="saved layout splitter-size persistence",
+        completed_snippet="Added saved layout splitter-size persistence with validated restore for desktop sessions.",
+        stale_future_snippets=("Richer layout save/restore with resize persistence.",),
+        evidence=(
+            Evidence("src/remote_ops_workspace/layouts.py", "def layout_splitter_size_lengths"),
+            Evidence("src/remote_ops_workspace/gui.py", "def persist_layout_resize_state"),
+            Evidence("tests/test_operator_features.py", "test_layout_store_roundtrips_nested_splitter_sizes"),
+        ),
+    ),
+    RoadmapItem(
+        label="GUI protocol presets and profile import previews",
+        completed_snippet="Added GUI protocol presets and profile import previews before saving external profiles.",
+        stale_future_snippets=("Continue enriching GUI profile and layout editors with protocol presets and import previews.",),
+        evidence=(
+            Evidence("src/remote_ops_workspace/gui_editors.py", "PROTOCOL_PRESETS"),
+            Evidence("src/remote_ops_workspace/gui.py", "class ProfileImportPreviewDialog"),
+            Evidence("src/remote_ops_workspace/gui.py", "def import_profiles_with_preview"),
+            Evidence("tests/test_gui_editors.py", "test_protocol_preset_editor_data_uses_safe_protocol_defaults"),
+        ),
+    ),
+    RoadmapItem(
+        label="versioned team sync proof-of-concept",
+        completed_snippet="Added versioned mounted-directory team sync proof-of-concept with conflict protection.",
+        stale_future_snippets=("Team sync backend proof-of-concept.",),
+        evidence=(
+            Evidence("src/remote_ops_workspace/team_sync.py", "class TeamSyncBackend"),
+            Evidence("src/remote_ops_workspace/team_sync.py", "class TeamSyncConflictError"),
+            Evidence("src/remote_ops_workspace/cli.py", 'team_sync = sub.add_parser("team-sync"'),
+            Evidence("tests/test_team_sync.py", "test_team_sync_refuses_concurrent_writer_lock"),
+            Evidence("docs/TEAM_SYNC.md", "optimistic version control"),
+        ),
+    ),
+    RoadmapItem(
+        label="real per-operation SFTP queue progress",
+        completed_snippet="Added real per-operation SFTP queue progress with fail-fast execution states.",
+        stale_future_snippets=("Continue enriching embedded file transfer UI with live transfer progress after queue/preview support.",),
+        evidence=(
+            Evidence("src/remote_ops_workspace/file_transfer.py", "class SftpQueueProgress"),
+            Evidence("src/remote_ops_workspace/file_transfer.py", "on_progress"),
+            Evidence("src/remote_ops_workspace/gui.py", "def run_next_queue_item"),
+            Evidence("tests/test_file_transfer_queue.py", "test_sftp_queue_reports_actual_item_progress_and_stops_after_failure"),
+            Evidence("docs/FILE_TRANSFER.md", "fabricated byte percentages"),
+        ),
+    ),
+    RoadmapItem(
+        label="bounded ANSI terminal-emulation backend",
+        completed_snippet="Added a bounded ANSI terminal-emulation backend to the embedded terminal widget.",
+        stale_future_snippets=("Deeper terminal widget plugin using qtermwidget or PTY/web terminal emulation.",),
+        evidence=(
+            Evidence("src/remote_ops_workspace/terminal_emulation.py", "class AnsiTerminalTranscript"),
+            Evidence("src/remote_ops_workspace/terminal_emulation.py", "TERMINAL_EMULATOR_BACKEND"),
+            Evidence("src/remote_ops_workspace/gui.py", "terminalEmulatorBackend"),
+            Evidence("tests/test_terminal_emulation.py", "test_ansi_transcript_rewrites_carriage_return_progress_and_backspaces"),
+            Evidence("docs/TERMINAL.md", "not a PTY"),
+        ),
+    ),
+    RoadmapItem(
+        label="Kubernetes exec and hardened WinRM protocol adapters",
+        completed_snippet="Added Kubernetes exec and hardened WinRM protocol adapters.",
+        stale_future_snippets=("More protocol plugins.",),
+        evidence=(
+            Evidence("src/remote_ops_workspace/launcher.py", "def _build_kubernetes"),
+            Evidence("src/remote_ops_workspace/launcher.py", "def _build_winrm"),
+            Evidence("src/remote_ops_workspace/launcher.py", "def _require_legacy_winrm_http_opt_in"),
+            Evidence("tests/test_launcher.py", "test_winrm_http_requires_explicit_xp_scoped_insecure_opt_in"),
+            Evidence("src/remote_ops_workspace/gui_editors.py", '"kubernetes": {"port": "", "options": "namespace=default"}'),
+            Evidence("docs/PROTOCOLS.md", "Kubernetes exec"),
+        ),
+    ),
+    RoadmapItem(
         label="native installer smoke contract",
         completed_snippet="Added install, verify, upgrade and uninstall smoke-test contract for native packages.",
         stale_future_snippets=(

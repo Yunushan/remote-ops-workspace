@@ -47,6 +47,7 @@ DEFAULT_PORTS: dict[str, int] = {
     "x2go": 22,
     "xdmcp": 177,
     "ica": 1494,
+    "winrm": 5986,
     "http": 80,
     "https": 443,
     "raw": 0,
@@ -127,6 +128,10 @@ def build_launch_plan(profile: Profile) -> LaunchPlan:
         return _build_ssh_family(profile, protocol)
     if protocol == "mosh":
         return _build_mosh(profile)
+    if protocol in {"kubernetes", "k8s"}:
+        return _build_kubernetes(profile)
+    if protocol == "winrm":
+        return _build_winrm(profile)
     if protocol == "rdp":
         return _build_rdp(profile)
     if protocol == "vnc":
@@ -182,6 +187,9 @@ def protocol_clients() -> dict[str, list[str]]:
         "sftp": ["sftp"],
         "scp": ["scp"],
         "mosh": ["mosh"],
+        "kubernetes": ["kubectl"],
+        "k8s": ["kubectl"],
+        "winrm": ["pwsh", "powershell", "powershell.exe"],
         "rdp": ["mstsc", "xfreerdp", "wlfreerdp"],
         "vnc": ["vncviewer", "tigervnc", "realvnc-vnc-viewer"],
         "spice": ["remote-viewer", "virt-viewer"],
@@ -474,6 +482,61 @@ def _build_mosh(profile: Profile) -> LaunchPlan:
         notes.append("Mosh does not carry SSH tunnels; tunnel definitions are ignored for this launch.")
     cmd.append(target)
     return LaunchPlan("mosh", cmd, notes)
+
+
+def _build_kubernetes(profile: Profile) -> LaunchPlan:
+    pod = _host(profile)
+    executable = _first_available(["kubectl"]) or "kubectl"
+    cmd = [executable]
+    context = _option(profile.options, "context", "kube_context")
+    if context:
+        cmd.extend(["--context", _option_token(context, "kubernetes context")])
+    kubeconfig = _option(profile.options, "kubeconfig", "kube_config")
+    if kubeconfig:
+        cmd.extend(["--kubeconfig", safe.path_arg(kubeconfig, "kubeconfig")])
+    namespace = _option(profile.options, "namespace", "kube_namespace")
+    if namespace:
+        cmd.extend(["--namespace", _option_token(namespace, "kubernetes namespace")])
+    cmd.extend(["exec", "--stdin", "--tty", pod])
+    container = _option(profile.options, "container", "kube_container")
+    if container:
+        cmd.extend(["--container", _option_token(container, "kubernetes container")])
+    shell = profile.command or _option(profile.options, "shell", "remote_command") or "/bin/sh"
+    cmd.extend(["--", *safe.argv(shell, "kubernetes shell command")])
+    return LaunchPlan(
+        "kubernetes",
+        cmd,
+        [
+            "Kubernetes exec opens an interactive container shell through kubectl.",
+            "Use kubeconfig or the host kubectl identity; credentials are not placed in argv.",
+        ],
+    )
+
+
+def _build_winrm(profile: Profile) -> LaunchPlan:
+    host = _host(profile)
+    transport = _option_enum(profile.options, "transport", "winrm_transport", allowed={"http", "https"}) or "https"
+    if transport == "http":
+        _require_legacy_winrm_http_opt_in(profile.options)
+        port = profile.port if profile.port is not None else 5985
+    else:
+        port = _port(profile, "winrm")
+    executable = _first_available(["pwsh", "powershell", "powershell.exe"])
+    if executable is None:
+        executable = "powershell.exe" if _is_windows() else "pwsh"
+    session = f"New-PSSession -ComputerName {_powershell_quote(host)} -Port {port}"
+    if transport == "https":
+        session += " -UseSSL"
+    if profile.username:
+        session += f" -Credential (Get-Credential -UserName {_powershell_quote(profile.username)})"
+    script = f"$rowSession = {session}; Enter-PSSession -Session $rowSession"
+    notes = [
+        "WinRM uses HTTPS by default and prompts PowerShell for any configured username credential.",
+        "credential_ref stays in local storage and is never emitted in the PowerShell command.",
+    ]
+    if transport == "http":
+        notes.append("WinRM HTTP is an isolated XP legacy exception and has no transport encryption.")
+    return LaunchPlan("winrm", [executable, "-NoLogo", "-NoExit", "-Command", script], notes)
 
 
 def _require_sshv1_opt_in(profile: Profile) -> None:
@@ -833,6 +896,16 @@ def _require_legacy_rdp_security_opt_in(options: Mapping[str, str]) -> None:
     )
 
 
+def _require_legacy_winrm_http_opt_in(options: Mapping[str, str]) -> None:
+    if _is_windows_xp_legacy_target(options) and _option_bool(options, "allow_insecure_winrm_http"):
+        return
+    raise LauncherError(
+        "WinRM transport=http is disabled by default. Use HTTPS, or set "
+        "legacy_target=windows-xp-32/windows-xp-64 and allow_insecure_winrm_http=true "
+        "for an isolated XP remote target."
+    )
+
+
 def _is_windows_xp_legacy_target(options: Mapping[str, str]) -> bool:
     target = _option(options, *LEGACY_TARGET_OPTIONS)
     if target is None:
@@ -845,6 +918,12 @@ def _option_token(value: str, label: str) -> str:
     if any(char.isspace() for char in text):
         raise LauncherError(f"{label} must not contain whitespace")
     return text
+
+
+def _powershell_quote(value: str) -> str:
+    """Quote an already validated value for the PowerShell command argument."""
+
+    return "'" + safe.clean_text(value, "PowerShell value").replace("'", "''") + "'"
 
 
 def _geometry(value: str, label: str) -> str:

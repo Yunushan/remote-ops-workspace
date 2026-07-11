@@ -17,6 +17,7 @@ from remote_ops_workspace.layouts import (
     LayoutPane,
     LayoutStore,
     build_layout_terminal_plans,
+    layout_splitter_size_lengths,
     run_layout_terminal_plans,
     validate_layout,
 )
@@ -54,6 +55,35 @@ def test_layout_store_roundtrip(tmp_path: Path) -> None:
     layout = Layout(name="triage", orientation="horizontal", panes=[LayoutPane(profile="edge")])
     store.add(layout)
     assert store.get("triage").panes[0].profile == "edge"
+
+
+def test_layout_store_roundtrips_nested_splitter_sizes(tmp_path: Path) -> None:
+    store = LayoutStore(tmp_path / "layouts.json")
+    layout = Layout(
+        name="grid",
+        panes=[LayoutPane(command="whoami"), LayoutPane(command="hostname"), LayoutPane(command="uptime")],
+        splitter_sizes=[[400, 300], [240, 160], [400]],
+    )
+    store.add(layout)
+
+    restored = store.get("grid")
+    assert restored.splitter_sizes == [[400, 300], [240, 160], [400]]
+    assert layout_splitter_size_lengths(restored) == [2, 2, 1]
+
+
+def test_layout_validation_rejects_invalid_splitter_size_shape() -> None:
+    layout = Layout(
+        name="broken",
+        orientation="horizontal",
+        panes=[LayoutPane(command="whoami"), LayoutPane(command="hostname")],
+        splitter_sizes=[[200]],
+    )
+    try:
+        validate_layout(layout)
+    except ValueError as exc:
+        assert "splitter_sizes" in str(exc)
+    else:
+        raise AssertionError("layout splitter sizes must match the saved splitter structure")
 
 
 def test_layout_validation_rejects_empty_layout() -> None:

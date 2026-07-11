@@ -7,6 +7,8 @@
 | SFTP | OpenSSH + file browser commands | `sftp`, `row files` |
 | SCP | OpenSSH | `scp` |
 | Mosh | Mosh | `mosh` |
+| Kubernetes exec | kubectl | `kubectl exec --stdin --tty` |
+| WinRM | PowerShell remoting | `pwsh`, `powershell.exe` |
 | RDP | MSTSC/FreeRDP | `mstsc`, `xfreerdp`, `wlfreerdp` |
 | VNC | VNC viewer | `vncviewer`, TigerVNC, RealVNC |
 | SPICE | virt-viewer | `remote-viewer` |
@@ -90,6 +92,8 @@ intentionally not emitted on the command line.
 | SSH/SFTP/SCP | `compression=true`, `connect_timeout=10`, `keepalive_interval=30`, `keepalive_count=3`, `strict_host_key_checking=accept-new`, `user_known_hosts_file=/path/known_hosts`, `log_level=ERROR`, `certificate_file=/path/id-cert.pub`, `pkcs11_provider=/path/opensc-pkcs11.so`, `smartcard_provider=microsoft-capi`, `identity_agent=/path/agent.sock`, `security_key_provider=internal`, `ciphers=...`, `host_key_algorithms=...`, `kex_algorithms=...`, `macs=...`, `proxy_jump=bastion`, `proxy_command=...` with `allow_unsafe_proxy_command=true`, `agent_forward=true` or `forward_agent=true` for SSH. Known legacy algorithms such as `ssh-rsa`, `ssh-dss`, `diffie-hellman-group1-sha1`, CBC/3DES/RC4 ciphers and SHA-1 MACs require `legacy_target=windows-xp-32` or `windows-xp-64` plus `allow_legacy_crypto=true`. |
 | SSHv1 legacy | Requires `--protocol ssh1` or `--protocol sshv1`, `--option allow_insecure_sshv1=true`, `--option legacy_target=windows-xp-32` or `windows-xp-64`, and `--option allow_legacy_crypto=true` before the launcher will add `-1`. This is insecure, obsolete, and only works with clients that still include SSH protocol v1 support. |
 | Mosh | SSH handoff options above, plus `mosh_port=60000:61000`, `mosh_server=mosh-server`, `predict=adaptive|always|never|experimental`, `bind_server=ssh|any|IP` |
+| Kubernetes exec | Profile host is the pod; `namespace=default`, `container=api`, `context=prod`, `kubeconfig=/path/config`, `shell=/bin/bash`. The profile `command` field, when present, is used as the post-`--` command. |
+| WinRM | `transport=https` is the default and uses port 5986. An optional profile username is passed only to PowerShell's interactive `Get-Credential` prompt; `credential_ref` is never put in argv. `transport=http` is rejected unless `legacy_target=windows-xp-32` or `windows-xp-64` and `allow_insecure_winrm_http=true` are both set for an isolated legacy target. |
 | RDP | `geometry=1600x900` or `width=1600` and `height=900`, `fullscreen=true`, `admin=true`, `multimon=true`, `span=true`, `prompt=true`, `domain=LAB`, `dynamic_resolution=false`, `cert_ignore=true`, `cert=ignore|deny|tofu|name`, `security=tls|nla|ext`, `security=rdp` only with `legacy_target=windows-xp-32` or `windows-xp-64` plus `allow_legacy_rdp_security=true`, `clipboard=false`, `drive=name,path`, `scale=140`, `audio=true`, `microphone=true`, `fonts=true`, `themes=true`, `gfx=true` |
 | VNC | `fullscreen=true`, `view_only=true`, `shared=true`, `geometry=1280x720`, `password_file=/path/passwd`, `encoding=tight`, `quality=0..9`, `compression=0..9` |
 | SPICE | `fullscreen=true`, `title=Lab VM`, `zoom=125`, `audio=false` |
@@ -118,6 +122,11 @@ row profile add --name desktop --protocol rdp --host rdp.example.invalid \
 row profile add --name console --protocol serial --path COM3 \
   --option baud=9600 --option data_bits=7 --option parity=even \
   --option stop_bits=2 --option flow=rtscts
+
+row profile add --name api-pod --protocol kubernetes --host api-0 \
+  --option namespace=operations --option container=api --option context=production
+
+row profile add --name windows-admin --protocol winrm --host winrm.example.invalid --username Administrator
 ```
 
 SFTP profiles also support file-browser actions:

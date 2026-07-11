@@ -6,6 +6,7 @@ from remote_ops_workspace.gui_editors import (
     parse_key_value_text,
     profile_from_editor_data,
     profile_to_editor_data,
+    protocol_preset_editor_data,
 )
 from remote_ops_workspace.layouts import Layout, LayoutPane
 from remote_ops_workspace.models import Profile, Tunnel
@@ -64,6 +65,16 @@ def test_profile_editor_data_formats_existing_profile() -> None:
     assert data["name"] == "desk"
     assert data["options"] == "geometry=1600x900"
     assert data["tunnels"] == "dynamic:1080"
+
+
+def test_protocol_preset_editor_data_uses_safe_protocol_defaults() -> None:
+    assert protocol_preset_editor_data("ssh") == {
+        "port": "22",
+        "options": "strict_host_key_checking=accept-new",
+    }
+    assert protocol_preset_editor_data("rdp")["port"] == "3389"
+    assert "baud=115200" in protocol_preset_editor_data("serial")["options"]
+    assert protocol_preset_editor_data("unknown") == {}
 
 
 def test_profile_editor_rejects_bad_options_and_tunnels() -> None:

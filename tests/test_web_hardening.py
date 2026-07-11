@@ -5,10 +5,13 @@ from functools import partial
 from pathlib import Path
 from threading import Thread
 
+from remote_ops_workspace.models import Profile
+from remote_ops_workspace.storage import ProfileStore
 from remote_ops_workspace.web_server import (
     SECURITY_HEADERS,
     QuietHandler,
     ReusableTCPServer,
+    WebProfileApi,
     validate_web_bind,
 )
 
@@ -109,6 +112,64 @@ def test_web_bind_allows_loopback_and_explicit_public_opt_in() -> None:
     assert validate_web_bind("::1") == "::1"
     assert validate_web_bind("localhost") == "localhost"
     assert validate_web_bind("0.0.0.0", allow_public_bind=True) == "0.0.0.0"
+
+
+def test_browser_profile_api_requires_bearer_token_and_redacts_secret_fields(tmp_path: Path) -> None:
+    store = ProfileStore(tmp_path / "profiles.json")
+    api = WebProfileApi(store, "x" * 24)
+
+    assert api.authorized(None) is False
+    assert api.authorized("Bearer wrong") is False
+    assert api.authorized(f"Bearer {'x' * 24}") is True
+    try:
+        api.add_profile(
+            {
+                "name": "edge",
+                "protocol": "ssh",
+                "host": "edge.example.invalid",
+                "credential_ref": "vault:edge",
+            }
+        )
+    except ValueError as exc:
+        assert "secret-bearing" in str(exc)
+    else:
+        raise AssertionError("browser API must reject credential references")
+
+    created = api.add_profile({"name": "edge", "protocol": "ssh", "host": "edge.example.invalid"})
+    assert created["name"] == "edge"
+    assert "credential_ref" not in created
+    store.add(Profile(name="vaulted", protocol="ssh", host="vault.example.invalid", credential_ref="vault:vaulted"))
+    assert "credential_ref" not in api.profiles()[1]
+    assert api.health() == {"api_version": 1, "status": "ok", "profile_count": 2}
+
+
+def test_browser_profile_api_serves_authenticated_http_catalogue(tmp_path: Path) -> None:
+    store = ProfileStore(tmp_path / "profiles.json")
+    store.add(Profile(name="edge", protocol="ssh", host="edge.example.invalid"))
+    token = "t" * 24
+    handler_type = type("ApiHandler", (QuietHandler,), {"api": WebProfileApi(store, token)})
+    handler = partial(handler_type, directory=str(tmp_path))
+    with ReusableTCPServer(("127.0.0.1", 0), handler) as server:
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            host, port = server.server_address
+            with socket.create_connection((host, port), timeout=5) as client:
+                client.sendall(
+                    b"GET /api/v1/profiles HTTP/1.1\r\n"
+                    b"Host: 127.0.0.1\r\n"
+                    + f"Authorization: Bearer {token}\r\n".encode("ascii")
+                    + b"Connection: close\r\n\r\n"
+                )
+                response = b""
+                while chunk := client.recv(4096):
+                    response += chunk
+            headers, body = response.decode("iso-8859-1").split("\r\n\r\n", 1)
+            assert headers.startswith("HTTP/1.0 200")
+            assert json.loads(body)["profiles"][0]["name"] == "edge"
+        finally:
+            server.shutdown()
+            thread.join(timeout=5)
 
 
 def test_web_assets_avoid_persistent_profile_storage() -> None:

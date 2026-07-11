@@ -8,6 +8,22 @@ from .models import Profile, Tunnel
 from .plugins import plugin_protocols
 from .profile_validation import prepare_profile
 
+PROTOCOL_PRESETS: dict[str, dict[str, str]] = {
+    "ssh": {"port": "22", "options": "strict_host_key_checking=accept-new"},
+    "sftp": {"port": "22", "options": "strict_host_key_checking=accept-new"},
+    "rdp": {"port": "3389", "options": "security=tls\ncert=tofu"},
+    "vnc": {"port": "5900", "options": "shared=true"},
+    "spice": {"port": "5900", "options": "audio=true"},
+    "x2go": {"port": "22", "options": "session_type=XFCE"},
+    "ica": {"port": "1494", "options": ""},
+    "mosh": {"port": "22", "options": "predict=adaptive"},
+    "kubernetes": {"port": "", "options": "namespace=default"},
+    "k8s": {"port": "", "options": "namespace=default"},
+    "winrm": {"port": "5986", "options": "transport=https"},
+    "serial": {"port": "", "options": "baud=115200\ndata_bits=8\nparity=none\nstop_bits=1"},
+    "raw": {"port": "", "options": ""},
+}
+
 PROFILE_EDITOR_FIELDS = {
     "command",
     "credential_ref",
@@ -63,6 +79,12 @@ def profile_to_editor_data(profile: Profile | None = None) -> dict[str, str]:
         "options": format_key_value_text(profile.options),
         "tunnels": format_tunnels_text(profile.tunnels),
     }
+
+
+def protocol_preset_editor_data(protocol: str) -> dict[str, str]:
+    """Return safe editor defaults for a recognised protocol without identity data."""
+    key = safe.clean_text(protocol, "protocol preset").lower()
+    return dict(PROTOCOL_PRESETS.get(key, {}))
 
 
 def profile_from_editor_data(data: Mapping[str, str]) -> Profile:

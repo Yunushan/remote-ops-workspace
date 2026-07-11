@@ -2,8 +2,8 @@
   "contact_sheet": {
     "height": 1392,
     "path": "all-gui-designs-contact-sheet.png",
-    "sha256": "4e214eee5e27cd33ab034186a6651fa8ff615638ed6f83ebcfff9fd8f46d2f34",
-    "size_bytes": 410430,
+    "sha256": "08128864971bca225578615fa9bd99fdce550c31e0af0485379d5feab9670550",
+    "size_bytes": 291629,
     "width": 1272
   },
   "contact_thumb": {
@@ -272,8 +272,8 @@
       "image": {
         "height": 760,
         "path": "mobaxterm.png",
-        "sha256": "3152c97278740633ed61d21708cdd88b879ed0359296334dbeaad061ae79d9ec",
-        "size_bytes": 75043,
+        "sha256": "2860790235e4c32ebdfe87a22b5a37b80d910fe90e192d1cb71aa80edc49d422",
+        "size_bytes": 76653,
         "width": 1280
       },
       "label": "MobaXterm-style",
@@ -290,6 +290,7 @@
           "split-horizontal",
           "split-vertical",
           "duplicate-tab",
+          "open-sftp-same-parameters",
           "close-tab",
           "recover-previous-sessions"
         ],
@@ -303,12 +304,13 @@
         "conditional_enabled_action_keys": [
           "close-other-tabs"
         ],
-        "expected_action_count": 7,
+        "expected_action_count": 8,
         "expected_action_keys": [
           "new-local-terminal",
           "split-horizontal",
           "split-vertical",
           "duplicate-tab",
+          "open-sftp-same-parameters",
           "close-tab",
           "close-other-tabs",
           "recover-previous-sessions"
@@ -318,6 +320,7 @@
           "Split horizontal",
           "Split vertical",
           "Duplicate tab",
+          "Open SFTP with same parameters",
           "Close tab",
           "Close other tabs",
           "Recover previous sessions"
@@ -716,7 +719,7 @@
           "Connect selected profile",
           "Cycle to the next visual preset",
           "Open a horizontal split",
-          "Show selected launch command",
+          "Preview broadcast command plans for SSH profiles",
           "Show tunneling workflow status",
           "Show package and file-transfer workflows",
           "Edit selected profile",
@@ -823,7 +826,6 @@
         "route_role": "active-preset-visible-hidden-widget-isolation",
         "visible_objects": [
           "mainToolbar",
-          "profileTree",
           "sessionTabs",
           "mobaQuickConnectChrome",
           "quickConnect",
@@ -1032,13 +1034,13 @@
     },
     {
       "density": "terminal",
-      "description": "Terminal-first workspace with restrained dark chrome and wide session tabs.",
+      "description": "Native Windows terminal workspace with menu chrome, command dock and compact session tabs.",
       "id": "securecrt",
       "image": {
         "height": 760,
         "path": "securecrt.png",
-        "sha256": "a2a2f6408bb5538307824bcb37527974e76e4b020e4655fcc75cb775b4efdccf",
-        "size_bytes": 95304,
+        "sha256": "ea32631162440dfc1e46fa96c803271dccd48c208741e3aafaccd9a45b154ab7",
+        "size_bytes": 45139,
         "width": 1280
       },
       "label": "SecureCRT-style",
@@ -1335,7 +1337,11 @@
           "restart",
           "stop",
           "copy",
-          "clear"
+          "clear",
+          "macro-rec",
+          "macro-stop",
+          "macro-cancel",
+          "macro-replay"
         ],
         "action_label_property": "terminalActionLabel",
         "action_labels": [
@@ -1343,7 +1349,11 @@
           "Restart",
           "Stop",
           "Copy",
-          "Clear"
+          "Clear",
+          "Macro Rec",
+          "Macro Stop",
+          "Macro Cancel",
+          "Macro Replay"
         ],
         "action_tooltip_property": "terminalActionTooltip",
         "action_tooltips": [
@@ -1351,7 +1361,11 @@
           "Restart process",
           "Stop process",
           "Copy launch command",
-          "Clear terminal output"
+          "Clear terminal output",
+          "Record terminal macro",
+          "Stop terminal macro",
+          "Cancel macro",
+          "Replay terminal macro"
         ],
         "active_tab_label": "edge-prod (SSH2)",
         "allowed_status_states": [
@@ -1458,7 +1472,7 @@
         "captured_segments_property": "presetReferenceStatusSegments",
         "captured_tab_property": "presetReferenceStatusCapturedTab",
         "expected_segment_count": 3,
-        "expected_status_message": "No running process panes",
+        "expected_status_message": "Running process panes: 1",
         "expected_status_segments": [
           "SSH2",
           "Session Manager",
@@ -1646,22 +1660,22 @@
         "log_height": 118,
         "main_toolbar_object": "mainToolbar",
         "palette": {
-          "control": "#303030",
-          "control_text": "#eeeeee",
-          "pane": "#090909",
-          "pane_border": "#383838",
-          "primary": "#d7a84a",
-          "sidebar": "#1b1b1b",
-          "sidebar_selected": "#3a3325",
-          "status": "#d7a84a",
-          "tab": "#2a2a2a",
-          "tab_selected": "#101010",
-          "terminal": "#000000",
-          "terminal_accent": "#72d572",
-          "terminal_text": "#dcdcdc",
-          "toolbar": "#242424",
-          "toolbar_border": "#3a3a3a",
-          "window": "#151515"
+          "control": "#ffffff",
+          "control_text": "#202020",
+          "pane": "#ffffff",
+          "pane_border": "#bcbcbc",
+          "primary": "#3c78b4",
+          "sidebar": "#f4f4f4",
+          "sidebar_selected": "#d9e9f8",
+          "status": "#3c78b4",
+          "tab": "#ededed",
+          "tab_selected": "#ffffff",
+          "terminal": "#003b45",
+          "terminal_accent": "#fff45a",
+          "terminal_text": "#d9f1ee",
+          "toolbar": "#ffffff",
+          "toolbar_border": "#c9c9c9",
+          "window": "#f8f8f8"
         },
         "palette_property": "presetVisualSignaturePalette",
         "preset_id": "securecrt",
@@ -1837,8 +1851,8 @@
       "image": {
         "height": 760,
         "path": "termius.png",
-        "sha256": "d7a68d26e87a50b6e47e9e7699400da9545447188ad9b7af3e769cd97cfd8a9e",
-        "size_bytes": 90214,
+        "sha256": "463b8d534503a7350149378c68347ee6cdab204394c5e23874372721f8ffa695",
+        "size_bytes": 54158,
         "width": 1280
       },
       "label": "Termius-style",
@@ -1987,7 +2001,7 @@
         "profile_tree_object": "profileTree",
         "render_source": "gui-design-focus-interaction-route",
         "route_role": "product-preset-focus-interaction-route",
-        "selected_tree_label": "prod-cluster",
+        "selected_tree_label": "edge-prod  ssh host",
         "status_bar_object": "statusBar",
         "status_note": "host search focus, vault checked, remove guarded"
       },
@@ -2135,7 +2149,11 @@
           "restart",
           "stop",
           "copy",
-          "clear"
+          "clear",
+          "macro-rec",
+          "macro-stop",
+          "macro-cancel",
+          "macro-replay"
         ],
         "action_label_property": "terminalActionLabel",
         "action_labels": [
@@ -2143,7 +2161,11 @@
           "Restart",
           "Stop",
           "Copy",
-          "Clear"
+          "Clear",
+          "Macro Rec",
+          "Macro Stop",
+          "Macro Cancel",
+          "Macro Replay"
         ],
         "action_tooltip_property": "terminalActionTooltip",
         "action_tooltips": [
@@ -2151,7 +2173,11 @@
           "Restart process",
           "Stop process",
           "Copy launch command",
-          "Clear terminal output"
+          "Clear terminal output",
+          "Record terminal macro",
+          "Stop terminal macro",
+          "Cancel macro",
+          "Replay terminal macro"
         ],
         "active_tab_label": "edge-prod",
         "allowed_status_states": [
@@ -2258,7 +2284,7 @@
         "captured_segments_property": "presetReferenceStatusSegments",
         "captured_tab_property": "presetReferenceStatusCapturedTab",
         "expected_segment_count": 3,
-        "expected_status_message": "No running process panes",
+        "expected_status_message": "Running process panes: 1",
         "expected_status_segments": [
           "Vault unlocked",
           "Port fwd ready",
@@ -2634,8 +2660,8 @@
       "image": {
         "height": 760,
         "path": "remmina.png",
-        "sha256": "8aa024e85d2b2a00835d823532171f2467cd976d3ee1d1ff7805e495a72aef9e",
-        "size_bytes": 87519,
+        "sha256": "dff24e2690fce00266755a1546c338f405d05f36e79c4dd06c051c6af299253e",
+        "size_bytes": 52407,
         "width": 1280
       },
       "label": "Remmina-style",
@@ -2932,7 +2958,11 @@
           "restart",
           "stop",
           "copy",
-          "clear"
+          "clear",
+          "macro-rec",
+          "macro-stop",
+          "macro-cancel",
+          "macro-replay"
         ],
         "action_label_property": "terminalActionLabel",
         "action_labels": [
@@ -2940,7 +2970,11 @@
           "Restart",
           "Stop",
           "Copy",
-          "Clear"
+          "Clear",
+          "Macro Rec",
+          "Macro Stop",
+          "Macro Cancel",
+          "Macro Replay"
         ],
         "action_tooltip_property": "terminalActionTooltip",
         "action_tooltips": [
@@ -2948,7 +2982,11 @@
           "Restart process",
           "Stop process",
           "Copy launch command",
-          "Clear terminal output"
+          "Clear terminal output",
+          "Record terminal macro",
+          "Stop terminal macro",
+          "Cancel macro",
+          "Replay terminal macro"
         ],
         "active_tab_label": "RDP - win-admin",
         "allowed_status_states": [
@@ -3055,7 +3093,7 @@
         "captured_segments_property": "presetReferenceStatusSegments",
         "captured_tab_property": "presetReferenceStatusCapturedTab",
         "expected_segment_count": 3,
-        "expected_status_message": "No running process panes",
+        "expected_status_message": "Running process panes: 2",
         "expected_status_segments": [
           "RDP/VNC ready",
           "Scale 100%",
@@ -3423,13 +3461,13 @@
     },
     {
       "density": "classic",
-      "description": "Classic connection-manager workspace with a persistent tree and document tabs.",
+      "description": "Classic docked connection manager with tree, config, document tabs and notifications.",
       "id": "mremoteng",
       "image": {
         "height": 760,
         "path": "mremoteng.png",
-        "sha256": "6483d4915d1b276a99189d232a4fb3569d0c9f316f443488b314ea4bbfdb5a37",
-        "size_bytes": 84508,
+        "sha256": "26a7ae9ef0433edaa36a45c2471a1ab62bd8739756994540d9604b1adc4db849",
+        "size_bytes": 53198,
         "width": 1280
       },
       "label": "mRemoteNG-style",
@@ -3804,7 +3842,11 @@
           "restart",
           "stop",
           "copy",
-          "clear"
+          "clear",
+          "macro-rec",
+          "macro-stop",
+          "macro-cancel",
+          "macro-replay"
         ],
         "action_label_property": "terminalActionLabel",
         "action_labels": [
@@ -3812,7 +3854,11 @@
           "Restart",
           "Stop",
           "Copy",
-          "Clear"
+          "Clear",
+          "Macro Rec",
+          "Macro Stop",
+          "Macro Cancel",
+          "Macro Replay"
         ],
         "action_tooltip_property": "terminalActionTooltip",
         "action_tooltips": [
@@ -3820,7 +3866,11 @@
           "Restart process",
           "Stop process",
           "Copy launch command",
-          "Clear terminal output"
+          "Clear terminal output",
+          "Record terminal macro",
+          "Stop terminal macro",
+          "Cancel macro",
+          "Replay terminal macro"
         ],
         "active_tab_label": "edge-prod [SSH]",
         "allowed_status_states": [
@@ -3927,7 +3977,7 @@
         "captured_segments_property": "presetReferenceStatusSegments",
         "captured_tab_property": "presetReferenceStatusCapturedTab",
         "expected_segment_count": 3,
-        "expected_status_message": "No running process panes",
+        "expected_status_message": "Running process panes: 1",
         "expected_status_segments": [
           "Connections.xml",
           "Inheritance on",

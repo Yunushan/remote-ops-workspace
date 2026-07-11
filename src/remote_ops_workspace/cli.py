@@ -135,6 +135,7 @@ from .profile_importers import SUPPORTED_IMPORT_FORMATS, import_profiles_into_st
 from .snippets import Snippet, SnippetStore, run_snippet
 from .storage import ProfileStore
 from .sync import BackupService, DirectorySyncProvider
+from .team_sync import TeamSyncBackend, TeamSyncClient
 from .vault import LocalVault, VaultBackendUnavailable, VaultError, prompt_passphrase
 from .web_server import serve_web
 from .x11 import (
@@ -1076,6 +1077,26 @@ def build_parser() -> argparse.ArgumentParser:
     sync_pull.add_argument("--replace", action="store_true")
     sync_pull.set_defaults(func=cmd_sync_pull)
 
+    team_sync = sub.add_parser("team-sync", help="sync shared profile metadata through a versioned team directory")
+    team_sync_sub = team_sync.add_subparsers(required=True)
+    team_status = team_sync_sub.add_parser("status", help="show shared team version and profile count")
+    team_status.add_argument("--root", required=True, type=Path)
+    team_status.add_argument("--team", required=True)
+    team_status.add_argument("--json", action="store_true")
+    team_status.set_defaults(func=cmd_team_sync_status)
+    team_push = team_sync_sub.add_parser("push", help="publish local metadata with optimistic version control")
+    team_push.add_argument("--root", required=True, type=Path)
+    team_push.add_argument("--team", required=True)
+    team_push.add_argument("--expected-version", required=True, type=int)
+    team_push.add_argument("--json", action="store_true")
+    team_push.set_defaults(func=cmd_team_sync_push)
+    team_pull = team_sync_sub.add_parser("pull", help="merge shared metadata while retaining local credential references")
+    team_pull.add_argument("--root", required=True, type=Path)
+    team_pull.add_argument("--team", required=True)
+    team_pull.add_argument("--replace", action="store_true", help="replace local profiles instead of merging")
+    team_pull.add_argument("--json", action="store_true")
+    team_pull.set_defaults(func=cmd_team_sync_pull)
+
     gui = sub.add_parser("gui", help="start PyQt6 desktop UI")
     gui.set_defaults(func=cmd_gui)
 
@@ -1086,6 +1107,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--allow-public-bind",
         action="store_true",
         help="allow binding Web/PWA to a non-loopback interface",
+    )
+    web.add_argument(
+        "--api-token",
+        help="enable the loopback browser profile API; requires this 24+ character bearer token",
     )
     web.set_defaults(func=cmd_serve_web)
 
@@ -2976,6 +3001,38 @@ def cmd_sync_pull(args: argparse.Namespace) -> int:
     return 0
 
 
+def _team_sync_client(root: Path) -> TeamSyncClient:
+    return TeamSyncClient(ProfileStore(), TeamSyncBackend(root))
+
+
+def _print_team_sync_snapshot(snapshot, *, as_json: bool) -> None:
+    if as_json:
+        print(json.dumps(snapshot.to_dict(), indent=2, sort_keys=True))
+        return
+    print(f"team: {snapshot.team}")
+    print(f"version: {snapshot.version}")
+    print(f"profiles: {len(snapshot.profiles)}")
+    if snapshot.updated_at:
+        print(f"updated_at: {snapshot.updated_at}")
+
+
+def cmd_team_sync_status(args: argparse.Namespace) -> int:
+    _print_team_sync_snapshot(TeamSyncBackend(args.root).read(args.team), as_json=args.json)
+    return 0
+
+
+def cmd_team_sync_push(args: argparse.Namespace) -> int:
+    snapshot = _team_sync_client(args.root).push(args.team, expected_version=args.expected_version)
+    _print_team_sync_snapshot(snapshot, as_json=args.json)
+    return 0
+
+
+def cmd_team_sync_pull(args: argparse.Namespace) -> int:
+    snapshot = _team_sync_client(args.root).pull(args.team, replace=args.replace)
+    _print_team_sync_snapshot(snapshot, as_json=args.json)
+    return 0
+
+
 def cmd_gui(args: argparse.Namespace) -> int:
     frozen_gui_result = _run_frozen_windows_gui_launcher()
     if frozen_gui_result is not None:
@@ -2997,7 +3054,12 @@ def _run_frozen_windows_gui_launcher() -> int | None:
 
 
 def cmd_serve_web(args: argparse.Namespace) -> int:
-    serve_web(host=args.host, port=args.port, allow_public_bind=args.allow_public_bind)
+    serve_web(
+        host=args.host,
+        port=args.port,
+        allow_public_bind=args.allow_public_bind,
+        api_token=args.api_token,
+    )
     return 0
 
 
@@ -3148,6 +3210,11 @@ def _print_sftp_queue_result(plan: SftpQueuePlan, result: SftpQueueResult) -> No
     print("queue:")
     for index, command in enumerate(plan.batch_commands, start=1):
         print(f"  {index}. {command}")
+    if result.progress:
+        print("progress:")
+        for event in result.progress:
+            returncode = "" if event.returncode is None else f" (exit {event.returncode})"
+            print(f"  {event.index}/{event.total} {event.item.action}: {event.state}{returncode}")
     for note in plan.notes:
         print(f"note: {note}")
     if result.stdout:

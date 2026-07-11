@@ -248,3 +248,79 @@ def test_https_command_builder() -> None:
     profile = Profile(name="web", protocol="https", url="https://example.com")
     plan = build_launch_plan(profile)
     assert "https://example.com" in plan.command
+
+
+def test_kubernetes_exec_adapter_builds_safe_interactive_kubectl_command(monkeypatch) -> None:
+    monkeypatch.setattr(launcher_module, "_first_available", lambda _executables: "kubectl")
+    profile = Profile(
+        name="api-pod",
+        protocol="kubernetes",
+        host="api-0",
+        options={
+            "context": "production",
+            "namespace": "operations",
+            "container": "api",
+            "shell": "/bin/bash -l",
+        },
+    )
+
+    plan = launcher_module.build_launch_plan(profile)
+
+    assert plan.command == [
+        "kubectl",
+        "--context",
+        "production",
+        "--namespace",
+        "operations",
+        "exec",
+        "--stdin",
+        "--tty",
+        "api-0",
+        "--container",
+        "api",
+        "--",
+        "/bin/bash",
+        "-l",
+    ]
+    assert any("credentials are not placed in argv" in note for note in plan.notes)
+
+
+def test_winrm_defaults_to_tls_and_prompts_for_username_without_leaking_credential_ref(monkeypatch) -> None:
+    monkeypatch.setattr(launcher_module, "_first_available", lambda _executables: "pwsh")
+    profile = Profile(
+        name="windows-admin",
+        protocol="winrm",
+        host="winrm.example.invalid",
+        username="Administrator",
+        credential_ref="vault://ops/winrm",
+    )
+
+    plan = launcher_module.build_launch_plan(profile)
+
+    assert plan.command[:4] == ["pwsh", "-NoLogo", "-NoExit", "-Command"]
+    assert "-UseSSL" in plan.command[-1]
+    assert "Get-Credential -UserName 'Administrator'" in plan.command[-1]
+    assert "vault://ops/winrm" not in plan.command[-1]
+    assert any("HTTPS by default" in note for note in plan.notes)
+
+
+def test_winrm_http_requires_explicit_xp_scoped_insecure_opt_in(monkeypatch) -> None:
+    monkeypatch.setattr(launcher_module, "_first_available", lambda _executables: "pwsh")
+    profile = Profile(
+        name="xp-admin",
+        protocol="winrm",
+        host="192.0.2.20",
+        options={"transport": "http"},
+    )
+
+    try:
+        launcher_module.build_launch_plan(profile)
+    except LauncherError as exc:
+        assert "allow_insecure_winrm_http=true" in str(exc)
+    else:
+        raise AssertionError("WinRM HTTP should require an explicit XP-scoped opt-in")
+
+    profile.options.update({"legacy_target": "windows-xp-64", "allow_insecure_winrm_http": "true"})
+    plan = launcher_module.build_launch_plan(profile)
+    assert "-UseSSL" not in plan.command[-1]
+    assert "-Port 5985" in plan.command[-1]

@@ -333,15 +333,11 @@ def test_publish_contract_requires_protected_asset_gate_before_publish_asset_val
         '      - name: Require protected platform release assets\n'
         '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ inputs.release_tag }}" --require-complete --assets-dir release-assets --repository "${{ github.repository }}"\n'
     )
-    publish_gate = (
-        '      - name: Validate release publish assets\n'
-        '        run: python scripts/check_release_publish_assets.py --assets-dir release-assets --tag "${{ inputs.release_tag }}" --repository "${{ github.repository }}" --require-platform-goal-targets\n'
-    )
-    workflow = workflow.replace(protected_gate, "").replace(publish_gate, publish_gate + protected_gate)
+    workflow = workflow.replace(protected_gate, "")
 
     errors = checker.check_publish_contract(matrix, workflow)
 
-    assert "protected platform release asset gate must run before publish asset validation" in errors
+    assert "protected platform release asset gate must run before protected publish asset validation" in errors
 
 
 def test_publish_contract_requires_protected_asset_gate_before_release_upload() -> None:
@@ -356,7 +352,7 @@ def test_publish_contract_requires_protected_asset_gate_before_release_upload() 
 
     errors = checker.check_publish_contract(matrix, workflow)
 
-    assert "protected platform release asset gate must run before GitHub release upload" in errors
+    assert "protected platform release asset gate must run before protected GitHub release upload" in errors
 
 
 def test_publish_contract_requires_remote_evidence_audit_after_upload() -> None:
@@ -423,16 +419,16 @@ def test_publish_contract_rejects_release_preflight_continue_on_error() -> None:
     checker = _load_checker()
     matrix = _load_matrix()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
-        '      - name: Require protected platform accepted records before release builds\n'
+        '      - name: Require protected platform accepted records\n'
         '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ inputs.release_tag }}" --require-records-complete --show-requirements\n',
-        '      - name: Require protected platform accepted records before release builds\n'
+        '      - name: Require protected platform accepted records\n'
         '        continue-on-error: true\n'
         '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ inputs.release_tag }}" --require-records-complete --show-requirements\n',
     )
 
     errors = checker.check_publish_contract(matrix, workflow)
 
-    assert "release-preflight job must not use continue-on-error: true for protected release gates" in errors
+    assert "accepted-platform-evidence-assets job must not use continue-on-error: true for protected release gates" in errors
 
 
 def test_publish_contract_rejects_publish_continue_on_error() -> None:
@@ -448,7 +444,21 @@ def test_publish_contract_rejects_publish_continue_on_error() -> None:
 
     errors = checker.check_publish_contract(matrix, workflow)
 
-    assert "publish job must not use continue-on-error: true for protected release gates" in errors
+    assert "publish-protected-platform-evidence job must not use continue-on-error: true for protected release gates" in errors
+
+
+def test_publish_contract_keeps_core_release_independent_from_protected_evidence() -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        "      - linux-native\n    steps:\n",
+        "      - linux-native\n      - accepted-platform-evidence-assets\n    steps:\n",
+        1,
+    )
+
+    errors = checker.check_publish_contract(matrix, workflow)
+
+    assert "core publish job must not depend on accepted-platform-evidence-assets" in errors
 
 
 def test_publish_contract_requires_clean_checkouts_for_release_jobs() -> None:

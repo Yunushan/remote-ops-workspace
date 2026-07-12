@@ -6,15 +6,15 @@ only when the artifact is real, reproducible, and documented.
 Release integrity rules:
 
 - Release tags must match `pyproject.toml` exactly, for example `v1.0.2`.
-- Release publication is an evidence-first `workflow_dispatch` promotion from
-  the trusted default branch, not an automatic tag-push workflow. First create
-  and push the immutable release tag, run the four target evidence workflows
-  from that tag, review and append only their finalized accepted records on the
-  trusted controller branch, then dispatch `release.yml` with
-  `release_tag=vX.Y.Z`. The controller validates the accepted records while all
-  source and native build jobs explicitly check out that immutable tag. This
-  prevents a tag from having to contain evidence that can only be produced
-  after the tag exists.
+- Release publication is a `workflow_dispatch` promotion from the trusted
+  default branch, not an automatic tag-push workflow. Dispatch `release.yml`
+  with `release_tag=vX.Y.Z` to publish the standard source, Windows, macOS and
+  Linux native assets after their normal build and smoke checks. The default
+  core-release lane does not claim Linux i386/armhf or Windows XP native-host
+  support. To attach those protected assets later, run the same workflow with
+  `include_protected_platform_evidence=true`; that opt-in lane requires the
+  four evidence workflows, finalized accepted records and exact evidence assets
+  before it can attach anything to the existing release.
 - Source/install bundles are built with deterministic archive metadata using
   `SOURCE_DATE_EPOCH` or a fixed default.
 - Python release build dependencies are constrained by `requirements-release.txt`
@@ -34,20 +34,14 @@ Release integrity rules:
   `scripts/smoke_windows_native.ps1`, `scripts/smoke_macos_native.sh` and
   `scripts/smoke_linux_native.sh` after native builds and before artifact
   upload.
-- The `release-preflight` workflow job runs
-  `python scripts/check_platform_evidence_source_ref.py --repository <owner>/<repo> --release-tag <tag> --require-goal-targets`,
-  `python scripts/verify.py --quick --no-cli-smoke --release-tag <tag>` and
-  `python scripts/check_protected_platform_goal.py --release-tag <tag> --require-records-complete --show-requirements` plus
-  `python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag <tag>`
-  before any source, Python or native artifact build job can start, then
-  `python scripts/check_repository_cleanup.py --require-clean`. The release tag
-  is passed into the protected platform parity report, the per-target proof
-  checklist, the hard completion gate and the strict accepted evidence gate, so
-  Linux i386, Linux armhf and Windows XP native-host evidence status is evaluated
-  against the tag being built before build minutes are spent. The source-ref
-  gate resolves the tag commit and refuses release tags that do not contain the
-  tagged project version, both protected-platform evidence workflows and all
-  four protected target dispatch options.
+- The core `release-preflight` workflow job runs
+  `python scripts/verify.py --quick --no-cli-smoke --release-tag <tag>`, reports
+  protected-platform readiness and then runs
+  `python scripts/check_repository_cleanup.py --require-clean` before standard
+  assets build. It does not block normal Windows, macOS or default Linux
+  releases on unavailable i386, armhf or XP hosts. The opt-in protected
+  promotion lane performs the stricter source-reference, accepted-record and
+  review-bundle checks before it imports or attaches protected assets.
 - Immediately before dispatching protected-platform evidence, an authorized
   operator must run `python scripts/check_platform_evidence_runner_readiness.py
   --repository <owner>/<repo> --require-goal-targets --require-idle`. It confirms
@@ -68,17 +62,21 @@ Release integrity rules:
   and artifact `expires_at` present and later than the artifact create/update timestamps,
   without copying files
   into the publish directory, and it does not stage files for upload.
-- The `accepted-platform-evidence-assets` job keeps read-only repository and
-  Actions artifact permissions; it must not request any write-scoped GitHub
-  permission while importing protected-platform evidence. Source and native
-  artifact build jobs wait for this import job, so stale, failed or
-  wrong-commit protected-platform evidence stops the release before new build
-  artifacts are produced.
-- The publish job runs
+- The opt-in `accepted-platform-evidence-assets` job keeps read-only repository
+  and Actions artifact permissions; it must not request any write-scoped GitHub
+  permission while importing protected-platform evidence. It runs only when
+  `include_protected_platform_evidence=true`. That lane first runs
+  `python scripts/check_platform_evidence_source_ref.py --repository <owner>/<repo> --release-tag <tag> --require-goal-targets`,
+  which refuses release tags that do not contain the tagged project version and
+  all four protected workflow dispatch options.
+- The default publish job runs
+  `python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --repository <owner>/<repo>`
+  after downloading standard workflow artifacts and before uploading the GitHub
+  release. The opt-in protected promotion job runs
   `python scripts/check_protected_platform_goal.py --release-tag <tag> --require-complete --assets-dir release-assets --repository <owner>/<repo>`
   and then
   `python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --repository <owner>/<repo> --require-platform-goal-targets`
-  after downloading workflow artifacts and before uploading the GitHub release.
+  before attaching protected evidence assets.
   The first command keeps the protected parity gate bound to the publish-ready
   release asset directory; the second verifies the full release asset contract
   and binds accepted protected-platform release URLs to the publishing

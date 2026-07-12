@@ -73,6 +73,20 @@ def check_schema(matrix: dict[str, Any]) -> list[str]:
         native_jobs = require_list(default, "native_jobs", errors)
         if not native_jobs:
             errors.append("configs/release_matrix.json default_github_release.native_jobs must not be empty")
+    promotion = require_mapping(matrix, "protected_platform_promotion", errors)
+    if promotion:
+        if promotion.get("workflow_input") != "include_protected_platform_evidence":
+            errors.append("protected_platform_promotion.workflow_input must be include_protected_platform_evidence")
+        if promotion.get("evidence_job") != "accepted-platform-evidence-assets":
+            errors.append("protected_platform_promotion.evidence_job must be accepted-platform-evidence-assets")
+        if promotion.get("publish_job") != "publish-protected-platform-evidence":
+            errors.append("protected_platform_promotion.publish_job must be publish-protected-platform-evidence")
+        targets = {str(target) for target in require_list(promotion, "targets", errors)}
+        expected_targets = {"linux-i386", "linux-armhf", "windows-xp-native-x86", "windows-xp-native-x64"}
+        if targets != expected_targets:
+            errors.append(
+                "protected_platform_promotion.targets must list Linux i386/armhf and Windows XP native x86/x64"
+            )
     require_list(matrix, "script_supported_native", errors)
     require_list(matrix, "source_or_remote_only", errors)
     return errors

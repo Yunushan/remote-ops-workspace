@@ -3,7 +3,8 @@
   "release_tag_pattern": "v<project.version>",
   "workflow": ".github/workflows/release.yml",
   "policy": {
-    "default_github_release": "Only assets under default_github_release are uploaded by the default tagged GitHub release workflow.",
+    "default_github_release": "Only assets under default_github_release are uploaded by the default core release lane.",
+    "protected_platform_promotion": "Verified Linux i386/armhf and Windows XP native-host assets are attached only by the opt-in protected promotion lane after accepted evidence passes.",
     "script_supported_native": "These targets have maintained build-script mappings, but require matching builders and are not uploaded by the default GitHub release workflow.",
     "source_or_remote_only": "These targets receive source/install/Web/PWA assets or can be managed as remote endpoints; they are not native app artifacts in the default workflow."
   },
@@ -90,6 +91,17 @@
           "remote-ops-workspace-v1.0.2-linux-<x86_64|aarch64>-native-SHA256SUMS.txt"
         ]
       }
+    ]
+  },
+  "protected_platform_promotion": {
+    "workflow_input": "include_protected_platform_evidence",
+    "evidence_job": "accepted-platform-evidence-assets",
+    "publish_job": "publish-protected-platform-evidence",
+    "targets": [
+      "linux-i386",
+      "linux-armhf",
+      "windows-xp-native-x86",
+      "windows-xp-native-x64"
     ]
   },
   "script_supported_native": [

@@ -7,6 +7,11 @@ on:
         description: "Immutable vX.Y.Z tag whose source is built and promoted"
         required: true
         type: string
+      include_protected_platform_evidence:
+        description: "Attach verified Linux i386/armhf and Windows XP evidence assets after the core release"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -31,25 +36,15 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - name: Require protected platform workflows at release source ref
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: python scripts/check_platform_evidence_source_ref.py --repository "${{ github.repository }}" --release-tag "${{ inputs.release_tag }}" --require-goal-targets
       - name: Run release preflight verifier
         run: python scripts/verify.py --quick --no-cli-smoke --release-tag "${{ inputs.release_tag }}"
       - name: Report protected platform readiness requirements
         run: python scripts/check_protected_platform_goal.py --release-tag "${{ inputs.release_tag }}" --show-requirements
-      - name: Require protected platform accepted records before release builds
-        run: python scripts/check_protected_platform_goal.py --release-tag "${{ inputs.release_tag }}" --require-records-complete --show-requirements
-      - name: Require protected platform evidence before release builds
-        run: python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag "${{ inputs.release_tag }}"
       - name: Require clean release checkout
         run: python scripts/check_repository_cleanup.py --require-clean
 
   source-and-python:
-    needs:
-      - release-preflight
-      - accepted-platform-evidence-assets
+    needs: release-preflight
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -71,9 +66,7 @@ jobs:
           if-no-files-found: error
 
   windows-native:
-    needs:
-      - release-preflight
-      - accepted-platform-evidence-assets
+    needs: release-preflight
     strategy:
       fail-fast: false
       matrix:
@@ -129,9 +122,7 @@ jobs:
           if-no-files-found: error
 
   macos-native:
-    needs:
-      - release-preflight
-      - accepted-platform-evidence-assets
+    needs: release-preflight
     strategy:
       fail-fast: false
       matrix:
@@ -163,9 +154,7 @@ jobs:
           if-no-files-found: error
 
   linux-native:
-    needs:
-      - release-preflight
-      - accepted-platform-evidence-assets
+    needs: release-preflight
     strategy:
       fail-fast: false
       matrix:
@@ -202,6 +191,7 @@ jobs:
 
   accepted-platform-evidence-assets:
     needs: release-preflight
+    if: ${{ inputs.include_protected_platform_evidence }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -222,6 +212,14 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+      - name: Require protected platform workflows at release source ref
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python scripts/check_platform_evidence_source_ref.py --repository "${{ github.repository }}" --release-tag "${{ inputs.release_tag }}" --require-goal-targets
+      - name: Require protected platform accepted records
+        run: python scripts/check_protected_platform_goal.py --release-tag "${{ inputs.release_tag }}" --require-records-complete --show-requirements
+      - name: Require protected platform evidence
+        run: python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag "${{ inputs.release_tag }}"
       - name: Import accepted protected platform evidence artifacts
         env:
           GH_TOKEN: ${{ github.token }}
@@ -247,6 +245,33 @@ jobs:
       - windows-native
       - macos-native
       - linux-native
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          clean: true
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v8
+        with:
+          path: release-assets
+          merge-multiple: true
+      - name: Validate release publish assets
+        run: python scripts/check_release_publish_assets.py --assets-dir release-assets --tag "${{ inputs.release_tag }}" --repository "${{ github.repository }}"
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v3
+        with:
+          fail_on_unmatched_files: true
+          files: release-assets/**
+  publish-protected-platform-evidence:
+    if: ${{ inputs.include_protected_platform_evidence }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    needs:
+      - publish
       - accepted-platform-evidence-assets
     steps:
       - uses: actions/checkout@v6
@@ -262,9 +287,9 @@ jobs:
           merge-multiple: true
       - name: Require protected platform release assets
         run: python scripts/check_protected_platform_goal.py --release-tag "${{ inputs.release_tag }}" --require-complete --assets-dir release-assets --repository "${{ github.repository }}"
-      - name: Validate release publish assets
+      - name: Validate protected release publish assets
         run: python scripts/check_release_publish_assets.py --assets-dir release-assets --tag "${{ inputs.release_tag }}" --repository "${{ github.repository }}" --require-platform-goal-targets
-      - name: Upload release assets
+      - name: Upload protected platform evidence assets
         uses: softprops/action-gh-release@v3
         with:
           fail_on_unmatched_files: true

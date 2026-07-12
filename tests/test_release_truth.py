@@ -610,7 +610,7 @@ def test_release_truth_checker_rejects_insecure_node_runtime_opt_out() -> None:
 def test_release_truth_checker_requires_build_jobs_to_need_preflight() -> None:
     checker = _load_release_truth_checker()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
-        "      - release-preflight\n",
+        "    needs: release-preflight\n",
         "",
         1,
     )
@@ -620,7 +620,7 @@ def test_release_truth_checker_requires_build_jobs_to_need_preflight() -> None:
     assert "source-and-python must depend on release-preflight" in errors
 
 
-def test_release_truth_checker_requires_build_jobs_to_wait_for_platform_import() -> None:
+def test_release_truth_checker_requires_protected_publish_to_wait_for_platform_import() -> None:
     checker = _load_release_truth_checker()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
         "      - accepted-platform-evidence-assets\n",
@@ -630,10 +630,10 @@ def test_release_truth_checker_requires_build_jobs_to_wait_for_platform_import()
 
     errors = checker.check_release_preflight(workflow)
 
-    assert "source-and-python must wait for accepted-platform-evidence-assets" in errors
+    assert "publish-protected-platform-evidence must depend on accepted-platform-evidence-assets" in errors
 
 
-def test_release_truth_checker_ignores_step_mentions_when_checking_build_job_needs() -> None:
+def test_release_truth_checker_ignores_step_mentions_when_checking_protected_publish_needs() -> None:
     checker = _load_release_truth_checker()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
         "      - accepted-platform-evidence-assets\n",
@@ -641,16 +641,16 @@ def test_release_truth_checker_ignores_step_mentions_when_checking_build_job_nee
         1,
     )
     workflow = workflow.replace(
-        "      - name: Build source and Python package assets\n",
+        "      - name: Validate protected release publish assets\n",
         '      - name: Mention platform import without depending on it\n'
         '        run: echo "- accepted-platform-evidence-assets"\n'
-        "      - name: Build source and Python package assets\n",
+        "      - name: Validate protected release publish assets\n",
         1,
     )
 
     errors = checker.check_release_preflight(workflow)
 
-    assert "source-and-python must wait for accepted-platform-evidence-assets" in errors
+    assert "publish-protected-platform-evidence must depend on accepted-platform-evidence-assets" in errors
 
 
 def test_release_truth_checker_requires_platform_import_job_to_need_preflight() -> None:
@@ -737,7 +737,7 @@ def test_release_truth_checker_requires_tag_scoped_preflight_verifier() -> None:
 def test_release_truth_checker_requires_early_platform_goal_evidence_gate() -> None:
     checker = _load_release_truth_checker()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
-        '      - name: Require protected platform evidence before release builds\n'
+        '      - name: Require protected platform evidence\n'
         '        run: python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag "${{ inputs.release_tag }}"\n',
         "",
     )
@@ -792,7 +792,7 @@ def test_release_truth_checker_requires_preflight_platform_requirements_report()
 def test_release_truth_checker_requires_protected_platform_accepted_records_gate() -> None:
     checker = _load_release_truth_checker()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
-        '      - name: Require protected platform accepted records before release builds\n'
+        '      - name: Require protected platform accepted records\n'
         '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ inputs.release_tag }}" --require-records-complete --show-requirements\n',
         "",
     )
@@ -847,14 +847,14 @@ def test_release_truth_checker_requires_protected_asset_gate_before_publish_asse
         '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ inputs.release_tag }}" --require-complete --assets-dir release-assets --repository "${{ github.repository }}"\n'
     )
     publish_gate = (
-        '      - name: Validate release publish assets\n'
+        '      - name: Validate protected release publish assets\n'
         '        run: python scripts/check_release_publish_assets.py --assets-dir release-assets --tag "${{ inputs.release_tag }}" --repository "${{ github.repository }}" --require-platform-goal-targets\n'
     )
     workflow = workflow.replace(protected_gate, "").replace(publish_gate, publish_gate + protected_gate)
 
     errors = checker.check_release_preflight(workflow)
 
-    assert "protected platform release asset gate must run before publish asset validation" in errors
+    assert "protected platform release asset gate must run before protected publish asset validation" in errors
 
 
 def test_release_truth_checker_requires_protected_asset_gate_before_release_upload() -> None:
@@ -868,25 +868,25 @@ def test_release_truth_checker_requires_protected_asset_gate_before_release_uplo
 
     errors = checker.check_release_preflight(workflow)
 
-    assert "protected platform release asset gate must run before GitHub release upload" in errors
+    assert "protected platform release asset gate must run before protected GitHub release upload" in errors
 
 
 def test_release_truth_checker_requires_publish_gate_before_release_upload() -> None:
     checker = _load_release_truth_checker()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
     gate = (
-        '      - name: Validate release publish assets\n'
+        '      - name: Validate protected release publish assets\n'
         '        run: python scripts/check_release_publish_assets.py --assets-dir release-assets --tag "${{ inputs.release_tag }}" --repository "${{ github.repository }}" --require-platform-goal-targets\n'
     )
     upload = (
-        "      - name: Upload release assets\n"
+        "      - name: Upload protected platform evidence assets\n"
         "        uses: softprops/action-gh-release@v3\n"
     )
     workflow = workflow.replace(gate, "").replace(upload, upload + gate)
 
     errors = checker.check_release_preflight(workflow)
 
-    assert "publish-time protected platform goal gate must run before GitHub release upload" in errors
+    assert "protected publish-time platform goal gate must run before GitHub release upload" in errors
 
 
 def test_release_truth_checker_requires_published_platform_evidence_audit() -> None:
@@ -917,7 +917,7 @@ def test_release_truth_checker_requires_published_platform_audit_after_release_u
         '        run: python scripts/check_platform_release_evidence_remote.py --repository "${{ github.repository }}" --release-tag "${{ inputs.release_tag }}" --require-goal-targets --require-source-runs --require-source-artifact-bytes --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head\n'
     )
     upload_step = (
-        "      - name: Upload release assets\n"
+        "      - name: Upload protected platform evidence assets\n"
         "        uses: softprops/action-gh-release@v3\n"
     )
     workflow = workflow.replace(audit_step, "").replace(upload_step, audit_step + upload_step)
@@ -936,7 +936,8 @@ def test_release_truth_checker_requires_published_platform_audit_scope() -> None
         '        run: python scripts/check_platform_release_evidence_remote.py --repository "${{ github.repository }}" --release-tag "${{ inputs.release_tag }}" --require-goal-targets --require-source-runs --require-source-artifact-bytes --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head\n'
     )
     publish_permissions = (
-        "  publish:\n"
+        "  publish-protected-platform-evidence:\n"
+        "    if: ${{ inputs.include_protected_platform_evidence }}\n"
         "    runs-on: ubuntu-latest\n"
         "    permissions:\n"
         "      contents: write\n"
@@ -954,8 +955,8 @@ def test_release_truth_checker_requires_published_platform_audit_scope() -> None
 
     errors = checker.check_release_preflight(workflow)
 
-    assert "publish job missing Actions read permission for published protected platform evidence audit" in errors
-    assert "publish job missing GitHub token for published protected platform evidence audit" in errors
+    assert "publish-protected-platform-evidence missing Actions read permission for published protected platform evidence audit" in errors
+    assert "publish-protected-platform-evidence missing GitHub token for published protected platform evidence audit" in errors
 
 
 def test_release_truth_checker_rejects_published_platform_audit_token_in_wrong_step() -> None:
@@ -966,7 +967,7 @@ def test_release_truth_checker_rejects_published_platform_audit_token_in_wrong_s
         '          GH_TOKEN: ${{ github.token }}\n'
     )
     publish_gate = (
-        '      - name: Validate release publish assets\n'
+        '      - name: Validate protected release publish assets\n'
         '        run: python scripts/check_release_publish_assets.py --assets-dir release-assets --tag "${{ inputs.release_tag }}" --repository "${{ github.repository }}" --require-platform-goal-targets\n'
     )
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
@@ -977,7 +978,7 @@ def test_release_truth_checker_rejects_published_platform_audit_token_in_wrong_s
     )
     workflow = workflow.replace(
         publish_gate,
-        '      - name: Validate release publish assets\n'
+        '      - name: Validate protected release publish assets\n'
         '        env:\n'
         '          GH_TOKEN: ${{ github.token }}\n'
         '        run: python scripts/check_release_publish_assets.py --assets-dir release-assets --tag "${{ inputs.release_tag }}" --repository "${{ github.repository }}" --require-platform-goal-targets\n',
@@ -985,13 +986,14 @@ def test_release_truth_checker_rejects_published_platform_audit_token_in_wrong_s
 
     errors = checker.check_release_preflight(workflow)
 
-    assert "publish job missing GitHub token for published protected platform evidence audit" in errors
+    assert "publish-protected-platform-evidence missing GitHub token for published protected platform evidence audit" in errors
 
 
 def test_release_truth_checker_requires_publish_actions_permission_at_job_scope() -> None:
     checker = _load_release_truth_checker()
     publish_permissions = (
-        "  publish:\n"
+        "  publish-protected-platform-evidence:\n"
+        "    if: ${{ inputs.include_protected_platform_evidence }}\n"
         "    runs-on: ubuntu-latest\n"
         "    permissions:\n"
         "      contents: write\n"
@@ -1014,13 +1016,14 @@ def test_release_truth_checker_requires_publish_actions_permission_at_job_scope(
 
     errors = checker.check_release_preflight(workflow)
 
-    assert "publish job missing Actions read permission for published protected platform evidence audit" in errors
+    assert "publish-protected-platform-evidence missing Actions read permission for published protected platform evidence audit" in errors
 
 
 def test_release_truth_checker_requires_publish_contents_write_permission() -> None:
     checker = _load_release_truth_checker()
     publish_permissions = (
-        "  publish:\n"
+        "  publish-protected-platform-evidence:\n"
+        "    if: ${{ inputs.include_protected_platform_evidence }}\n"
         "    runs-on: ubuntu-latest\n"
         "    permissions:\n"
         "      contents: write\n"
@@ -1033,7 +1036,7 @@ def test_release_truth_checker_requires_publish_contents_write_permission() -> N
 
     errors = checker.check_release_preflight(workflow)
 
-    assert "publish job missing contents write permission for GitHub release upload" in errors
+    assert "publish-protected-platform-evidence missing contents write permission for GitHub release upload" in errors
 
 
 def test_release_truth_checker_requires_platform_evidence_import_command() -> None:
@@ -1172,26 +1175,26 @@ def test_release_truth_checker_requires_publish_to_need_platform_evidence_assets
 
     errors = checker.check_release_preflight(workflow)
 
-    assert "publish job must depend on accepted-platform-evidence-assets" in errors
+    assert "publish-protected-platform-evidence must depend on accepted-platform-evidence-assets" in errors
 
 
 def test_release_truth_checker_ignores_step_mentions_when_checking_publish_needs() -> None:
     checker = _load_release_truth_checker()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
-        "      - linux-native\n      - accepted-platform-evidence-assets\n",
-        "      - linux-native\n",
+        "      - publish\n      - accepted-platform-evidence-assets\n",
+        "      - publish\n",
     )
     workflow = workflow.replace(
-        "      - name: Validate release publish assets\n",
+        "      - name: Validate protected release publish assets\n",
         '      - name: Mention platform import without depending on it\n'
         '        run: echo "- accepted-platform-evidence-assets"\n'
-        "      - name: Validate release publish assets\n",
+        "      - name: Validate protected release publish assets\n",
         1,
     )
 
     errors = checker.check_release_preflight(workflow)
 
-    assert "publish job must depend on accepted-platform-evidence-assets" in errors
+    assert "publish-protected-platform-evidence must depend on accepted-platform-evidence-assets" in errors
 
 
 def _load_release_truth_checker():

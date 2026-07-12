@@ -59,6 +59,21 @@ def test_release_matrix_separates_script_supported_linux_targets() -> None:
         assert set(script_rows[target_id]["asset_patterns"]) == set(rows[target_id]["assets"])
 
 
+def test_release_matrix_declares_opt_in_protected_platform_promotion() -> None:
+    matrix = load_release_matrix()
+    promotion = matrix["protected_platform_promotion"]  # type: ignore[index]
+
+    assert promotion["workflow_input"] == "include_protected_platform_evidence"
+    assert promotion["evidence_job"] == "accepted-platform-evidence-assets"
+    assert promotion["publish_job"] == "publish-protected-platform-evidence"
+    assert set(promotion["targets"]) == {
+        "linux-i386",
+        "linux-armhf",
+        "windows-xp-native-x86",
+        "windows-xp-native-x64",
+    }
+
+
 def test_release_matrix_requires_real_32_bit_linux_builder_identity() -> None:
     checker = load_release_matrix_checker()
     matrix = load_release_matrix()

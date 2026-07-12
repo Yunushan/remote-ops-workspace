@@ -44,6 +44,8 @@ PUBLISH_REMOTE_PLATFORM_EVIDENCE_AUDIT_COMMAND = (
     "--require-source-artifact-bytes --require-final-record-bytes "
     "--require-release-asset-bytes --require-tag-source-head"
 )
+PROTECTED_PUBLISH_JOB = "publish-protected-platform-evidence"
+PROTECTED_PROMOTION_INPUT = "include_protected_platform_evidence"
 FINAL_ACCEPTED_RECORD_RE = re.compile(
     r"^platform-verified-evidence-(linux-i386|linux-armhf|windows-xp-native-x86|windows-xp-native-x64)-final\.json$"
 )
@@ -200,36 +202,63 @@ def check_publish_contract(
     errors.extend(check_job_block_disallows_continue_on_error("publish", publish_block))
     required_snippets = {
         "actions/download-artifact@v8": "artifact download",
-        "actions: read": "Actions metadata read permission for published evidence audit",
-        "GH_TOKEN: ${{ github.token }}": "GitHub token for published evidence audit",
         "merge-multiple: true": "merged downloaded artifact directory",
-        PUBLISH_PROTECTED_PLATFORM_ASSET_COMMAND: "protected platform release asset gate",
         "python scripts/check_release_publish_assets.py --assets-dir release-assets --tag": "publish asset validation",
         '--repository "${{ github.repository }}"': "publish evidence repository binding",
-        PUBLISH_REMOTE_PLATFORM_EVIDENCE_AUDIT_COMMAND: "published protected platform evidence audit",
-        "--require-platform-goal-targets": "protected platform goal publish gate",
-        "--require-source-runs": "published evidence source run audit",
-        "--require-source-artifact-bytes": "published source artifact byte audit",
         "softprops/action-gh-release@v3": "GitHub release upload",
         "fail_on_unmatched_files: true": "strict GitHub release upload",
     }
     for snippet, label in required_snippets.items():
         if snippet not in publish_block:
             errors.append(f"publish job missing {label}: {snippet}")
-    protected_gate_index = publish_block.find(PUBLISH_PROTECTED_PLATFORM_ASSET_COMMAND)
     validate_index = publish_block.find("scripts/check_release_publish_assets.py")
     upload_index = publish_block.find("softprops/action-gh-release")
-    remote_audit_index = publish_block.find(PUBLISH_REMOTE_PLATFORM_EVIDENCE_AUDIT_COMMAND)
-    if protected_gate_index < 0 or validate_index < 0 or protected_gate_index > validate_index:
-        errors.append("protected platform release asset gate must run before publish asset validation")
-    if protected_gate_index < 0 or upload_index < 0 or protected_gate_index > upload_index:
-        errors.append("protected platform release asset gate must run before GitHub release upload")
     if validate_index < 0 or upload_index < 0 or validate_index > upload_index:
         errors.append("publish asset validation must run before GitHub release upload")
+    if "--require-platform-goal-targets" in publish_block or PUBLISH_PROTECTED_PLATFORM_ASSET_COMMAND in publish_block:
+        errors.append("core publish job must not require protected-platform evidence")
+    if "- accepted-platform-evidence-assets" in publish_block:
+        errors.append("core publish job must not depend on accepted-platform-evidence-assets")
+    errors.extend(check_protected_publish_job(workflow))
+    return errors
+
+
+def check_protected_publish_job(workflow: str) -> list[str]:
+    block = workflow_job_block(workflow, PROTECTED_PUBLISH_JOB)
+    if not block:
+        return [f"release workflow missing {PROTECTED_PUBLISH_JOB} job"]
+    errors = check_job_block_disallows_continue_on_error(PROTECTED_PUBLISH_JOB, block)
+    errors.extend(check_checkout_step(block, job=PROTECTED_PUBLISH_JOB))
+    required_snippets = {
+        f"if: ${{{{ inputs.{PROTECTED_PROMOTION_INPUT} }}}}": "opt-in protected promotion condition",
+        "- publish": "core release dependency",
+        "- accepted-platform-evidence-assets": "accepted platform evidence dependency",
+        "actions: read": "Actions metadata read permission for published evidence audit",
+        "GH_TOKEN: ${{ github.token }}": "GitHub token for published evidence audit",
+        "actions/download-artifact@v8": "artifact download",
+        "merge-multiple: true": "merged downloaded artifact directory",
+        PUBLISH_PROTECTED_PLATFORM_ASSET_COMMAND: "protected platform release asset gate",
+        "python scripts/check_release_publish_assets.py --assets-dir release-assets --tag": "protected publish asset validation",
+        "--require-platform-goal-targets": "protected platform goal publish gate",
+        PUBLISH_REMOTE_PLATFORM_EVIDENCE_AUDIT_COMMAND: "published protected platform evidence audit",
+        "softprops/action-gh-release@v3": "GitHub release upload",
+        "fail_on_unmatched_files: true": "strict GitHub release upload",
+    }
+    for snippet, label in required_snippets.items():
+        if snippet not in block:
+            errors.append(f"{PROTECTED_PUBLISH_JOB} job missing {label}: {snippet}")
+    protected_gate_index = block.find(PUBLISH_PROTECTED_PLATFORM_ASSET_COMMAND)
+    validate_index = block.find("scripts/check_release_publish_assets.py")
+    upload_index = block.find("softprops/action-gh-release")
+    remote_audit_index = block.find(PUBLISH_REMOTE_PLATFORM_EVIDENCE_AUDIT_COMMAND)
+    if protected_gate_index < 0 or validate_index < 0 or protected_gate_index > validate_index:
+        errors.append("protected platform release asset gate must run before protected publish asset validation")
+    if protected_gate_index < 0 or upload_index < 0 or protected_gate_index > upload_index:
+        errors.append("protected platform release asset gate must run before protected GitHub release upload")
+    if validate_index < 0 or upload_index < 0 or validate_index > upload_index:
+        errors.append("protected publish asset validation must run before GitHub release upload")
     if remote_audit_index < 0 or upload_index < 0 or remote_audit_index < upload_index:
         errors.append("published protected platform evidence audit must run after GitHub release upload")
-    if "- accepted-platform-evidence-assets" not in publish_block:
-        errors.append("publish job must depend on accepted-platform-evidence-assets")
     return errors
 
 
@@ -243,6 +272,7 @@ def check_release_job_clean_checkouts(workflow: str) -> list[str]:
         "linux-native",
         "accepted-platform-evidence-assets",
         "publish",
+        PROTECTED_PUBLISH_JOB,
     ):
         block = workflow_job_block(workflow, job)
         if not block:
@@ -277,6 +307,7 @@ def check_platform_evidence_import_job(workflow: str) -> list[str]:
     errors.extend(check_checkout_step(block, job="accepted-platform-evidence-assets"))
     required_snippets = {
         "needs: release-preflight": "release preflight dependency",
+        f"if: ${{{{ inputs.{PROTECTED_PROMOTION_INPUT} }}}}": "opt-in protected promotion condition",
         "timeout-minutes: 20": "bounded platform evidence import timeout",
         "actions: read": "Actions artifact read permission",
         "contents: read": "read-only repository permission",

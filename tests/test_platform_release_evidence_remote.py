@@ -618,6 +618,33 @@ def test_remote_release_audit_promotion_entries_do_not_stringify_malformed_ids()
     assert entries == {}
 
 
+def test_remote_release_audit_record_selectors_do_not_normalize_padded_targets() -> None:
+    checker = _load_checker()
+    helpers = _load_platform_verified_evidence_helpers()
+    record = helpers._linux_record("linux-i386")
+    record["target"] = " linux-i386"
+    registry = _registry_with(record)
+
+    records = checker.accepted_records_by_target(
+        registry,
+        release_tag="v1.0.2",
+        targets=("linux-i386",),
+    )
+
+    assert checker.accepted_record_target(record) == ""
+    assert records == {}
+
+
+def test_remote_release_audit_promotion_entries_do_not_normalize_padded_ids() -> None:
+    checker = _load_checker()
+
+    entries = checker.promotion_entries_by_id(
+        {"protected_targets": [{"id": " linux-i386"}]}
+    )
+
+    assert entries == {}
+
+
 def test_remote_release_audit_rejects_non_string_release_tag_source_head() -> None:
     checker = _load_checker()
     helpers = _load_platform_verified_evidence_helpers()

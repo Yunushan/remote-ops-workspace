@@ -21,7 +21,7 @@ def test_optional_dependency_declarations_match_expected_extras() -> None:
 
     assert checker.check_declared_extras() == []
     assert checker.OPTIONAL_MODULES["desktop"] == ("PyQt6",)
-    assert checker.OPTIONAL_MODULES["security"] == ("cryptography",)
+    assert checker.OPTIONAL_MODULES["security"] == ("cryptography", "truststore")
     assert checker.OPTIONAL_MODULES["package"] == ("build", "PyInstaller")
 
 

@@ -926,6 +926,21 @@ def test_protected_platform_goal_duplicate_check_ignores_non_string_targets() ->
     assert goal["status"] == "missing-accepted-evidence"
 
 
+def test_protected_platform_goal_duplicate_check_does_not_normalize_padded_targets() -> None:
+    checker = _load_protected_goal_checker()
+    registry = _complete_registry()
+    records = registry["accepted_evidence"]
+    assert isinstance(records, list)
+    first_record = records[0]
+    assert isinstance(first_record, dict)
+    padded_record = deepcopy(first_record)
+    padded_record["target"] = " linux-i386"
+    records.append(padded_record)
+
+    assert checker.accepted_record_target(padded_record) == ""
+    assert checker.check_duplicate_accepted_evidence_targets(registry) == []
+
+
 def test_protected_platform_goal_report_does_not_count_unfinalized_candidate() -> None:
     checker = _load_protected_goal_checker()
     registry = _complete_registry()

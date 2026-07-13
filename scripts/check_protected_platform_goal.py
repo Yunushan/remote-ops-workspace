@@ -847,7 +847,9 @@ def invalid_evidence_goal_registry(registry: dict[str, Any]) -> dict[str, Any]:
 
 def accepted_record_target(record: dict[str, Any]) -> str:
     target = record.get("target")
-    return target.strip() if isinstance(target, str) else ""
+    if not isinstance(target, str) or not target or target != target.strip():
+        return ""
+    return target
 
 
 def check_duplicate_accepted_evidence_targets(registry: dict[str, Any]) -> list[str]:

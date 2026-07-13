@@ -6,6 +6,12 @@ from pathlib import Path
 from urllib.error import HTTPError
 
 
+def test_security_extra_includes_system_trust_store_adapter() -> None:
+    pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
+
+    assert 'security = ["cryptography>=42", "truststore>=0.10"]' in pyproject
+
+
 def test_runner_readiness_accepts_all_goal_targets_with_idle_runners() -> None:
     checker = _load_checker()
     report, errors = checker.check_platform_evidence_runner_readiness(

@@ -2144,11 +2144,12 @@ def promotion_entries_by_id(promotion: dict[str, Any]) -> dict[str, dict[str, An
     if not isinstance(rows, list):
         return {}
     return {
-        target_id.strip(): row
+        target_id: row
         for row in rows
         if isinstance(row, dict)
         and isinstance(target_id := row.get("id"), str)
-        and target_id.strip()
+        and target_id
+        and target_id == target_id.strip()
     }
 
 
@@ -2175,7 +2176,9 @@ def accepted_records_by_target(
 
 def accepted_record_target(record: dict[str, Any]) -> str:
     target = record.get("target")
-    return target.strip() if isinstance(target, str) else ""
+    if not isinstance(target, str) or not target or target != target.strip():
+        return ""
+    return target
 
 
 def check_release_tag_source_head(

@@ -316,7 +316,7 @@ def test_publish_contract_requires_protected_platform_release_asset_gate() -> No
     matrix = _load_matrix()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
         '      - name: Require protected platform release assets\n'
-        '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ inputs.release_tag }}" --require-complete --assets-dir release-assets --repository "${{ github.repository }}"\n',
+        '        run: python scripts/check_protected_platform_goal.py --release-tag "$RELEASE_TAG" --require-complete --assets-dir release-assets --repository "${{ github.repository }}"\n',
         "",
     )
 
@@ -331,7 +331,7 @@ def test_publish_contract_requires_protected_asset_gate_before_publish_asset_val
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
     protected_gate = (
         '      - name: Require protected platform release assets\n'
-        '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ inputs.release_tag }}" --require-complete --assets-dir release-assets --repository "${{ github.repository }}"\n'
+        '        run: python scripts/check_protected_platform_goal.py --release-tag "$RELEASE_TAG" --require-complete --assets-dir release-assets --repository "${{ github.repository }}"\n'
     )
     workflow = workflow.replace(protected_gate, "")
 
@@ -346,7 +346,7 @@ def test_publish_contract_requires_protected_asset_gate_before_release_upload() 
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
     protected_gate = (
         '      - name: Require protected platform release assets\n'
-        '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ inputs.release_tag }}" --require-complete --assets-dir release-assets --repository "${{ github.repository }}"\n'
+        '        run: python scripts/check_protected_platform_goal.py --release-tag "$RELEASE_TAG" --require-complete --assets-dir release-assets --repository "${{ github.repository }}"\n'
     )
     workflow = workflow.replace(protected_gate, "") + protected_gate
 
@@ -362,7 +362,7 @@ def test_publish_contract_requires_remote_evidence_audit_after_upload() -> None:
         '      - name: Audit published protected platform evidence\n'
         '        env:\n'
         '          GH_TOKEN: ${{ github.token }}\n'
-        '        run: python scripts/check_platform_release_evidence_remote.py --repository "${{ github.repository }}" --release-tag "${{ inputs.release_tag }}" --require-goal-targets --require-source-runs --require-source-artifact-bytes --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head\n'
+        '        run: python scripts/check_platform_release_evidence_remote.py --repository "${{ github.repository }}" --release-tag "$RELEASE_TAG" --require-goal-targets --require-source-runs --require-source-artifact-bytes --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head\n'
     )
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
         audit_step,
@@ -382,7 +382,7 @@ def test_publish_contract_rejects_remote_evidence_audit_before_upload() -> None:
         '      - name: Audit published protected platform evidence\n'
         '        env:\n'
         '          GH_TOKEN: ${{ github.token }}\n'
-        '        run: python scripts/check_platform_release_evidence_remote.py --repository "${{ github.repository }}" --release-tag "${{ inputs.release_tag }}" --require-goal-targets --require-source-runs --require-source-artifact-bytes --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head\n'
+        '        run: python scripts/check_platform_release_evidence_remote.py --repository "${{ github.repository }}" --release-tag "$RELEASE_TAG" --require-goal-targets --require-source-runs --require-source-artifact-bytes --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head\n'
     )
     upload_step = (
         '      - name: Upload release assets\n'
@@ -420,10 +420,10 @@ def test_publish_contract_rejects_release_preflight_continue_on_error() -> None:
     matrix = _load_matrix()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
         '      - name: Require protected platform accepted records\n'
-        '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ inputs.release_tag }}" --require-records-complete --show-requirements\n',
+        '        run: python scripts/check_protected_platform_goal.py --release-tag "$RELEASE_TAG" --require-records-complete --show-requirements\n',
         '      - name: Require protected platform accepted records\n'
         '        continue-on-error: true\n'
-        '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ inputs.release_tag }}" --require-records-complete --show-requirements\n',
+        '        run: python scripts/check_protected_platform_goal.py --release-tag "$RELEASE_TAG" --require-records-complete --show-requirements\n',
     )
 
     errors = checker.check_publish_contract(matrix, workflow)
@@ -436,10 +436,10 @@ def test_publish_contract_rejects_publish_continue_on_error() -> None:
     matrix = _load_matrix()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
         '      - name: Require protected platform release assets\n'
-        '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ inputs.release_tag }}" --require-complete --assets-dir release-assets --repository "${{ github.repository }}"\n',
+        '        run: python scripts/check_protected_platform_goal.py --release-tag "$RELEASE_TAG" --require-complete --assets-dir release-assets --repository "${{ github.repository }}"\n',
         '      - name: Require protected platform release assets\n'
         '        continue-on-error: true\n'
-        '        run: python scripts/check_protected_platform_goal.py --release-tag "${{ inputs.release_tag }}" --require-complete --assets-dir release-assets --repository "${{ github.repository }}"\n',
+        '        run: python scripts/check_protected_platform_goal.py --release-tag "$RELEASE_TAG" --require-complete --assets-dir release-assets --repository "${{ github.repository }}"\n',
     )
 
     errors = checker.check_publish_contract(matrix, workflow)
@@ -551,12 +551,12 @@ def test_publish_contract_rejects_platform_evidence_import_continue_on_error() -
         '      - name: Import accepted protected platform evidence artifacts\n'
         '        env:\n'
         '          GH_TOKEN: ${{ github.token }}\n'
-        '        run: python scripts/import_platform_evidence_artifacts.py --release-tag "${{ inputs.release_tag }}" --release-head-sha "$(git -C release-source rev-parse HEAD)" --require-goal-targets --out-dir release-assets --verify-source-run --repository "${{ github.repository }}"\n',
+        '        run: python scripts/import_platform_evidence_artifacts.py --release-tag "$RELEASE_TAG" --release-head-sha "$(git -C release-source rev-parse HEAD)" --require-goal-targets --out-dir release-assets --verify-source-run --repository "${{ github.repository }}"\n',
         '      - name: Import accepted protected platform evidence artifacts\n'
         '        continue-on-error: true\n'
         '        env:\n'
         '          GH_TOKEN: ${{ github.token }}\n'
-        '        run: python scripts/import_platform_evidence_artifacts.py --release-tag "${{ inputs.release_tag }}" --release-head-sha "$(git -C release-source rev-parse HEAD)" --require-goal-targets --out-dir release-assets --verify-source-run --repository "${{ github.repository }}"\n',
+        '        run: python scripts/import_platform_evidence_artifacts.py --release-tag "$RELEASE_TAG" --release-head-sha "$(git -C release-source rev-parse HEAD)" --require-goal-targets --out-dir release-assets --verify-source-run --repository "${{ github.repository }}"\n',
     )
 
     errors = checker.check_publish_contract(matrix, workflow)

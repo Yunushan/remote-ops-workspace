@@ -35,17 +35,21 @@ PLATFORM_GOAL_TARGETS = (
     "windows-xp-native-x64",
 )
 PUBLISH_PROTECTED_PLATFORM_ASSET_COMMAND = (
-    'python scripts/check_protected_platform_goal.py --release-tag "${{ inputs.release_tag }}" '
+    'python scripts/check_protected_platform_goal.py --release-tag "$RELEASE_TAG" '
     '--require-complete --assets-dir release-assets --repository "${{ github.repository }}"'
 )
 PUBLISH_REMOTE_PLATFORM_EVIDENCE_AUDIT_COMMAND = (
     'python scripts/check_platform_release_evidence_remote.py --repository "${{ github.repository }}" '
-    '--release-tag "${{ inputs.release_tag }}" --require-goal-targets --require-source-runs '
+    '--release-tag "$RELEASE_TAG" --require-goal-targets --require-source-runs '
     "--require-source-artifact-bytes --require-final-record-bytes "
     "--require-release-asset-bytes --require-tag-source-head"
 )
 PROTECTED_PUBLISH_JOB = "publish-protected-platform-evidence"
 PROTECTED_PROMOTION_INPUT = "include_protected_platform_evidence"
+PROTECTED_PROMOTION_CONDITION = (
+    "if: ${{ github.event_name == 'workflow_dispatch' && inputs.include_protected_platform_evidence }}"
+)
+TAGGED_RELEASE_REF = "ref: ${{ env.RELEASE_TAG }}"
 FINAL_ACCEPTED_RECORD_RE = re.compile(
     r"^platform-verified-evidence-(linux-i386|linux-armhf|windows-xp-native-x86|windows-xp-native-x64)-final\.json$"
 )
@@ -230,7 +234,7 @@ def check_protected_publish_job(workflow: str) -> list[str]:
     errors = check_job_block_disallows_continue_on_error(PROTECTED_PUBLISH_JOB, block)
     errors.extend(check_checkout_step(block, job=PROTECTED_PUBLISH_JOB))
     required_snippets = {
-        f"if: ${{{{ inputs.{PROTECTED_PROMOTION_INPUT} }}}}": "opt-in protected promotion condition",
+        PROTECTED_PROMOTION_CONDITION: "opt-in protected promotion condition",
         "- publish": "core release dependency",
         "- accepted-platform-evidence-assets": "accepted platform evidence dependency",
         "actions: read": "Actions metadata read permission for published evidence audit",
@@ -307,7 +311,7 @@ def check_platform_evidence_import_job(workflow: str) -> list[str]:
     errors.extend(check_checkout_step(block, job="accepted-platform-evidence-assets"))
     required_snippets = {
         "needs: release-preflight": "release preflight dependency",
-        f"if: ${{{{ inputs.{PROTECTED_PROMOTION_INPUT} }}}}": "opt-in protected promotion condition",
+        PROTECTED_PROMOTION_CONDITION: "opt-in protected promotion condition",
         "timeout-minutes: 20": "bounded platform evidence import timeout",
         "actions: read": "Actions artifact read permission",
         "contents: read": "read-only repository permission",
@@ -319,7 +323,7 @@ def check_platform_evidence_import_job(workflow: str) -> list[str]:
         "name: Check out immutable release source for evidence binding": (
             "immutable release source checkout"
         ),
-        "ref: ${{ inputs.release_tag }}": "immutable release source checkout ref",
+        TAGGED_RELEASE_REF: "immutable release source checkout ref",
         "path: release-source": "immutable release source checkout path",
         "python scripts/import_platform_evidence_artifacts.py --release-tag": "platform evidence artifact importer",
         '--release-head-sha "$(git -C release-source rev-parse HEAD)"': (

@@ -6,15 +6,14 @@ only when the artifact is real, reproducible, and documented.
 Release integrity rules:
 
 - Release tags must match `pyproject.toml` exactly, for example `v1.0.2`.
-- Release publication is a `workflow_dispatch` promotion from the trusted
-  default branch, not an automatic tag-push workflow. Dispatch `release.yml`
-  with `release_tag=vX.Y.Z` to publish the standard source, Windows, macOS and
-  Linux native assets after their normal build and smoke checks. The default
-  core-release lane does not claim Linux i386/armhf or Windows XP native-host
-  support. To attach those protected assets later, run the same workflow with
-  `include_protected_platform_evidence=true`; that opt-in lane requires the
-  four evidence workflows, finalized accepted records and exact evidence assets
-  before it can attach anything to the existing release.
+- Pushing a `vX.Y.Z` tag automatically builds, smoke-tests and publishes the
+  standard source, Windows, macOS and Linux native assets. The tag must resolve
+  to a commit reachable from the trusted default branch. The default core-release
+  lane does not claim Linux i386/armhf or Windows XP native-host support. To
+  attach those protected assets later, manually dispatch `release.yml` with
+  `release_tag=vX.Y.Z` and `include_protected_platform_evidence=true`; that
+  opt-in lane requires the four evidence workflows, finalized accepted records
+  and exact evidence assets before it can attach anything to the existing release.
 - Source/install bundles are built with deterministic archive metadata using
   `SOURCE_DATE_EPOCH` or a fixed default.
 - Python release build dependencies are constrained by `requirements-release.txt`
@@ -452,13 +451,14 @@ Use `--require-clean` only immediately before creating the tag. It adds a
 tree. During ordinary development, the default cleanup check can run while local
 work is still in progress.
 
-The manual tag-targeted promotion repeats this protection through actual GitHub
+The tag-triggered core release repeats this protection through actual GitHub
 Actions `needs` entries. The `release-preflight` job is a dependency of
 `source-and-python`, `windows-native`, `macos-native`, `linux-native`,
-`accepted-platform-evidence-assets` and `publish`; the source and native build
-jobs also wait for `accepted-platform-evidence-assets`. A stale manifest,
-broken verifier check, dirty checkout or unimportable protected-platform
-evidence stops the release before artifacts are built or uploaded.
+`accepted-platform-evidence-assets` and `publish`. The protected evidence jobs
+run only on explicit manual opt-in and wait for the completed core release. A
+stale manifest, broken verifier check or dirty checkout stops standard assets;
+unimportable protected-platform evidence stops only the protected attachment
+lane before it can upload anything.
 
 ## Phase 1: Python package artifacts
 

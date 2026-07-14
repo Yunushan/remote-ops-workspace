@@ -36,11 +36,12 @@ workflows instead of dispatching from `main` or weakening source provenance.
 
 After all four target workflows produce finalized accepted records for that
 immutable tag, review and append those records on the trusted default branch.
-Only then dispatch `.github/workflows/release.yml` from that branch with the
-`release_tag` input set to the immutable tag. The release controller validates
-the branch-held accepted registry, while every source and native build job
-checks out `inputs.release_tag`; do not retag or rebuild from the controller
-branch.
+The standard release assets publish automatically when the matching tag is
+pushed. Only then manually dispatch `.github/workflows/release.yml` from the
+trusted default branch with `release_tag` set to the immutable tag and
+`include_protected_platform_evidence=true`. The protected lane validates the
+branch-held accepted registry and checks out the immutable release tag; do not
+retag or rebuild from the controller branch.
 
 Run the runner-readiness gate immediately before dispatch as well. It reads the
 repository self-hosted runner inventory and requires an idle matching runner for

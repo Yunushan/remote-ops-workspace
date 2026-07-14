@@ -191,6 +191,9 @@ def check_android_emulator_web_job(workflow: str) -> list[str]:
         "ANDROID_AVD_HOME=$avd_home": "durable Android AVD home export",
         "GITHUB_PATH": "Android SDK executable PATH export",
         "sdkmanager": "Android SDK package installation",
+        "for attempt in 1 2 3": "bounded Android SDK installation retries",
+        "removing transient cache and incomplete API": "Android SDK corrupt archive recovery",
+        "Android SDK package installation failed after 3 attempts": "Android SDK retry exhaustion failure",
         "avdmanager create avd": "Android virtual device creation",
         "avdmanager list avd": "Android virtual device creation diagnostics",
         "Android AVD row-api-${{ matrix.api-level }} was not created": (

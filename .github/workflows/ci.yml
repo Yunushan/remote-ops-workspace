@@ -146,9 +146,36 @@ jobs:
           echo "$sdk_root/platform-tools" >> "$GITHUB_PATH"
           "$sdk_tools/sdkmanager" --version
       - name: Install Android emulator image
+        shell: bash
         run: |
-          yes | sdkmanager --licenses
-          sdkmanager "platform-tools" "emulator" "platforms;android-${{ matrix.api-level }}" "system-images;android-${{ matrix.api-level }};google_apis;x86_64"
+          set -euo pipefail
+          packages=(
+            "platform-tools"
+            "emulator"
+            "platforms;android-${{ matrix.api-level }}"
+            "system-images;android-${{ matrix.api-level }};google_apis;x86_64"
+          )
+          accept_sdk_licenses() {
+            set +o pipefail
+            yes | sdkmanager --licenses
+            license_status=$?
+            set -o pipefail
+            return "$license_status"
+          }
+          for attempt in 1 2 3; do
+            if accept_sdk_licenses && sdkmanager --install "${packages[@]}"; then
+              exit 0
+            fi
+            if [[ "$attempt" == "3" ]]; then
+              break
+            fi
+            echo "::warning::Android SDK package installation failed on attempt $attempt; removing transient cache and incomplete API ${{ matrix.api-level }} system image before retrying"
+            rm -rf "${ANDROID_USER_HOME:-$HOME/.android}/cache" \
+              "$ANDROID_HOME/system-images/android-${{ matrix.api-level }}/google_apis/x86_64"
+            sleep "$((attempt * 10))"
+          done
+          echo "::error::Android SDK package installation failed after 3 attempts"
+          exit 1
       - name: Create Android virtual device
         run: |
           set -euo pipefail

@@ -168,6 +168,18 @@ def test_ci_workflow_requires_android_sdk_path_setup() -> None:
     assert any("Android SDK command-line tools PATH setup" in error for error in errors)
 
 
+def test_ci_workflow_requires_android_sdk_archive_recovery() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
+        "          for attempt in 1 2 3; do\n",
+        "",
+    )
+
+    errors = checker.check_ci_workflow(workflow)
+
+    assert any("bounded Android SDK installation retries" in error for error in errors)
+
+
 def test_ci_workflow_requires_durable_android_avd_home_and_creation_assertion() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")

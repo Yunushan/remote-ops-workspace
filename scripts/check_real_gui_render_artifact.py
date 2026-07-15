@@ -18,7 +18,11 @@ from remote_ops_workspace.gui_designs import GUI_DESIGN_PRESETS  # noqa: E402
 MANIFEST_NAME = "real-gui-render-manifest.json"
 RENDERER = "scripts/check_real_gui_render.py"
 CAPTURE_MODE = "live-pyqt6-offscreen"
+CAPTURE_MODES = {CAPTURE_MODE, "live-pyqt6-windows", "live-pyqt6-cocoa"}
 PRODUCT_STYLE_PRESETS = {"mobaxterm", "securecrt", "termius", "remmina", "mremoteng"}
+FONT_PROBE_TEXT = "RemoteOps0123456789"
+MIN_DISTINCT_FONT_GLYPHS = 12
+MIN_FONT_RENDER_INK_PIXELS = 40
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 PNG_IHDR_LENGTH = 13
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -60,11 +64,13 @@ def check_repository_contract() -> list[str]:
     verifier_source = (ROOT / "scripts" / "verify.py").read_text(encoding="utf-8")
     workflow_source = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     docs_source = (ROOT / "docs" / "GUI_DESIGN.md").read_text(encoding="utf-8")
+    readme_source = (ROOT / "README.md").read_text(encoding="utf-8")
     required_render_snippets = {
         f'MANIFEST_NAME = "{MANIFEST_NAME}"': "stable manifest filename",
         '"schema_version": 1': "manifest schema version",
         f'"renderer": "{RENDERER}"': "manifest renderer identity",
-        f'"capture_mode": "{CAPTURE_MODE}"': "manifest capture mode",
+        '"capture_mode": capture_mode_for_captures(captures)': "platform-specific manifest capture mode",
+        '"font_render_evidence"': "per-capture font rendering evidence",
         "DEFAULT_RENDER_TIMEOUT_SECONDS = 240": "bounded renderer timeout default",
         "def run_render_child": "renderer subprocess timeout guard",
         "subprocess.run": "renderer subprocess timeout execution",
@@ -89,6 +95,14 @@ def check_repository_contract() -> list[str]:
         ),
         "name: gui-real-render": "stable artifact upload name",
         "path: artifacts/gui-real/*": "uploaded live render artifact directory",
+        "python scripts/check_real_gui_render.py --require-pyqt6 --timeout-seconds 240 --out-dir artifacts/gui-real-windows": (
+            "native Windows all-preset render artifact command"
+        ),
+        "python scripts/check_real_gui_render_artifact.py --artifact-dir artifacts/gui-real-windows": (
+            "native Windows artifact validator command"
+        ),
+        "name: gui-real-render-windows": "native Windows render artifact upload name",
+        "path: artifacts/gui-real-windows/*": "native Windows render artifact directory",
         "if-no-files-found: error": "artifact upload failure on missing screenshots",
     }
     for snippet, label in required_workflow_snippets.items():
@@ -103,6 +117,15 @@ def check_repository_contract() -> list[str]:
             errors.append(f"verifier missing {label}: {snippet}")
     if "check_real_gui_render_artifact.py --artifact-dir" not in docs_source:
         errors.append("GUI design docs missing artifact validator command")
+    for source_name, source in (("README", readme_source), ("GUI design docs", docs_source)):
+        for snippet, label in {
+            "gui-real-render-windows": "native Windows GUI render artifact",
+            "font_render_evidence": "per-capture font rendering evidence",
+            "fonts-dejavu-core": "Linux readable-font provisioning",
+            "tofu": "tofu-glyph rejection semantics",
+        }.items():
+            if snippet not in source:
+                errors.append(f"{source_name} missing {label}: {snippet}")
     return errors
 
 
@@ -129,8 +152,9 @@ def check_manifest_contract(manifest: dict[str, Any]) -> list[str]:
         errors.append("manifest schema_version must be 1")
     if manifest.get("renderer") != RENDERER:
         errors.append(f"manifest renderer must be {RENDERER}")
-    if manifest.get("capture_mode") != CAPTURE_MODE:
-        errors.append(f"manifest capture_mode must be {CAPTURE_MODE}")
+    capture_mode = manifest.get("capture_mode")
+    if capture_mode not in CAPTURE_MODES:
+        errors.append(f"manifest capture_mode must be one of {sorted(CAPTURE_MODES)}")
     for key in ("selected_preset_ids", "captured_preset_ids"):
         if manifest.get(key) != expected_preset_ids:
             errors.append(f"manifest {key} must equal {expected_preset_ids}")
@@ -193,11 +217,75 @@ def check_capture_artifacts(artifact_dir: Path, manifest: dict[str, Any]) -> lis
         seen_preset_ids.add(preset_id)
         errors.extend(check_capture_metrics(preset_id, capture.get("metrics"), min_width, min_height))
         errors.extend(check_capture_file(artifact_dir, preset_id, capture, min_width, min_height))
+        errors.extend(
+            check_capture_font_render_evidence(
+                preset_id,
+                capture.get("font_render_evidence"),
+                manifest.get("capture_mode"),
+            )
+        )
         if preset_id in PRODUCT_STYLE_PRESETS:
             errors.extend(check_capture_contract_evidence(preset_id, capture.get("contract_evidence")))
     missing_captures = sorted(set(expected_preset_ids) - seen_preset_ids)
     if missing_captures:
         errors.append(f"manifest captures missing presets: {missing_captures}")
+    return errors
+
+
+def check_capture_font_render_evidence(
+    preset_id: str,
+    evidence: Any,
+    capture_mode: Any,
+) -> list[str]:
+    if not isinstance(evidence, dict):
+        return [f"{preset_id} capture font_render_evidence must be an object"]
+    errors: list[str] = []
+    platform_name = evidence.get("platform_name")
+    if not isinstance(platform_name, str) or not platform_name.strip():
+        errors.append(f"{preset_id} capture font platform_name must be a non-empty string")
+        platform_name = ""
+    if capture_mode != f"live-pyqt6-{platform_name.lower()}":
+        errors.append(f"{preset_id} capture font platform must match manifest capture_mode")
+    family_count = evidence.get("family_count")
+    if not isinstance(family_count, int) or isinstance(family_count, bool):
+        errors.append(f"{preset_id} capture font family_count must be an integer")
+    elif family_count <= 0:
+        errors.append(f"{preset_id} capture font family_count must be positive")
+    selected_family = evidence.get("selected_family")
+    if not isinstance(selected_family, str) or not selected_family.strip():
+        errors.append(f"{preset_id} capture selected font family must be a non-empty string")
+    if evidence.get("raw_font_valid") is not True:
+        errors.append(f"{preset_id} capture raw font must be valid")
+    if evidence.get("probe_text") != FONT_PROBE_TEXT:
+        errors.append(f"{preset_id} capture font probe_text must match the renderer contract")
+    glyph_indexes = evidence.get("glyph_indexes")
+    actual_distinct_glyph_count: int | None = None
+    if not isinstance(glyph_indexes, list) or len(glyph_indexes) != len(FONT_PROBE_TEXT):
+        errors.append(f"{preset_id} capture font glyph_indexes must cover every probe character")
+    elif any(
+        not isinstance(index, int) or isinstance(index, bool) or index <= 0
+        for index in glyph_indexes
+    ):
+        errors.append(f"{preset_id} capture font glyph_indexes must all be positive integers")
+    else:
+        actual_distinct_glyph_count = len(set(glyph_indexes))
+        if actual_distinct_glyph_count < MIN_DISTINCT_FONT_GLYPHS:
+            errors.append(f"{preset_id} capture font glyphs indicate tofu substitution")
+    distinct_glyph_count = evidence.get("distinct_glyph_count")
+    if not isinstance(distinct_glyph_count, int) or isinstance(distinct_glyph_count, bool):
+        errors.append(f"{preset_id} capture distinct_glyph_count must be an integer")
+    elif distinct_glyph_count < MIN_DISTINCT_FONT_GLYPHS:
+        errors.append(f"{preset_id} capture distinct_glyph_count is too small")
+    elif (
+        actual_distinct_glyph_count is not None
+        and distinct_glyph_count != actual_distinct_glyph_count
+    ):
+        errors.append(f"{preset_id} capture distinct_glyph_count does not match glyph_indexes")
+    rendered_ink_pixels = evidence.get("rendered_ink_pixels")
+    if not isinstance(rendered_ink_pixels, int) or isinstance(rendered_ink_pixels, bool):
+        errors.append(f"{preset_id} capture rendered_ink_pixels must be an integer")
+    elif rendered_ink_pixels < MIN_FONT_RENDER_INK_PIXELS:
+        errors.append(f"{preset_id} capture rendered font ink is too small")
     return errors
 
 

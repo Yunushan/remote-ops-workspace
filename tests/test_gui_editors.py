@@ -4,12 +4,14 @@ from remote_ops_workspace.gui_editors import (
     layout_from_editor_data,
     layout_to_editor_data,
     parse_key_value_text,
+    profile_editor_protocols,
     profile_from_editor_data,
     profile_to_editor_data,
     protocol_preset_editor_data,
 )
 from remote_ops_workspace.layouts import Layout, LayoutPane
 from remote_ops_workspace.models import Profile, Tunnel
+from remote_ops_workspace.profile_validation import SUPPORTED_PROFILE_PROTOCOLS
 
 
 def test_profile_editor_data_roundtrip_builds_profile() -> None:
@@ -75,6 +77,20 @@ def test_protocol_preset_editor_data_uses_safe_protocol_defaults() -> None:
     assert protocol_preset_editor_data("rdp")["port"] == "3389"
     assert "baud=115200" in protocol_preset_editor_data("serial")["options"]
     assert protocol_preset_editor_data("unknown") == {}
+
+
+def test_profile_editor_protocols_cover_builtins_and_registered_plugins(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "remote_ops_workspace.gui_editors.plugin_protocols", lambda: {"rdp", "vendor-shell"}
+    )
+
+    protocols = profile_editor_protocols()
+
+    assert len(protocols) == len(set(protocols))
+    assert set(SUPPORTED_PROFILE_PROTOCOLS) < set(protocols)
+    assert protocols[:3] == ("ssh", "sftp", "scp")
+    assert protocols[-1] == "vendor-shell"
+    assert {"ssh1", "sshv1"} <= set(protocols)
 
 
 def test_profile_editor_rejects_bad_options_and_tunnels() -> None:

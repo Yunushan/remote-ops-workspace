@@ -316,6 +316,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
+            fontconfig \
+            fonts-dejavu-core \
             libegl1 \
             libgl1 \
             libxkbcommon-x11-0 \
@@ -326,6 +328,11 @@ jobs:
             libxcb-xinerama0 \
             libxext6 \
             libxrender1
+      - name: Verify Linux GUI font discovery
+        run: |
+          fc-cache -f
+          fc-match "DejaVu Sans"
+          fc-list : family | grep -q .
       - name: Install desktop verification dependencies
         run: python -m pip install -e ".[desktop,security,dev]"
       - name: Real GUI render smoke
@@ -334,8 +341,53 @@ jobs:
       - name: Validate real GUI render artifact
         timeout-minutes: 2
         run: python scripts/check_real_gui_render_artifact.py --artifact-dir artifacts/gui-real
+      - name: Exercise GUI controls and responsive layouts
+        timeout-minutes: 5
+        run: python scripts/check_gui_interactions.py --require-pyqt6 --out-dir artifacts/gui-interactions
       - uses: actions/upload-artifact@v7
         with:
           name: gui-real-render
           path: artifacts/gui-real/*
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        with:
+          name: gui-interactions-linux-offscreen
+          path: artifacts/gui-interactions/*
+          if-no-files-found: error
+
+  gui-interactions-windows:
+    name: Native Windows PyQt6 render and interactions
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 20
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      PIP_NO_CACHE_DIR: "1"
+      QT_QPA_PLATFORM: "windows"
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install desktop verification dependencies
+        run: python -m pip install -e ".[desktop,security,dev]"
+      - name: Render full GUI on native Windows
+        timeout-minutes: 8
+        run: python scripts/check_real_gui_render.py --require-pyqt6 --timeout-seconds 240 --out-dir artifacts/gui-real-windows
+      - name: Validate native Windows GUI render artifact
+        timeout-minutes: 2
+        run: python scripts/check_real_gui_render_artifact.py --artifact-dir artifacts/gui-real-windows
+      - name: Exercise native Windows controls and responsive layouts
+        timeout-minutes: 8
+        run: python scripts/check_gui_interactions.py --require-pyqt6 --out-dir artifacts/gui-interactions-windows
+      - uses: actions/upload-artifact@v7
+        with:
+          name: gui-real-render-windows
+          path: artifacts/gui-real-windows/*
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        with:
+          name: gui-interactions-windows
+          path: artifacts/gui-interactions-windows/*
           if-no-files-found: error

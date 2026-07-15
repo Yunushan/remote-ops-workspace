@@ -11,6 +11,13 @@ dist/
 native-dist/
 release-assets/
 artifacts/gui-real/
+artifacts/gui-real-fixed/
+artifacts/gui-real-*/
+artifacts/gui-interactions/
+artifacts/gui-interactions-windows/
+artifacts/gui-interactions-debug/
+artifacts/gui-interactions-subagent/
+artifacts/gui-interactions-*/
 *.egg-info/
 .pytest_cache/
 .mypy_cache/
@@ -18,6 +25,7 @@ artifacts/gui-real/
 .coverage
 htmlcov/
 .verify-row-home/
+.tmp/
 
 # Remote Ops Workspace private data
 .row/

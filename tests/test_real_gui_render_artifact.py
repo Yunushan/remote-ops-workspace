@@ -84,6 +84,80 @@ def test_real_gui_render_artifact_rejects_file_dimension_mismatch(tmp_path: Path
     assert any("securecrt capture file width does not match metrics width" in error for error in errors)
 
 
+def test_real_gui_render_artifact_rejects_missing_font_evidence(tmp_path: Path) -> None:
+    checker = _load_checker()
+    manifest = _write_complete_artifact(checker, tmp_path)
+    manifest["captures"][0].pop("font_render_evidence")
+    (tmp_path / checker.MANIFEST_NAME).write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    errors = checker.check_real_gui_render_artifact(tmp_path)
+
+    assert any("font_render_evidence must be an object" in error for error in errors)
+
+
+def test_real_gui_render_artifact_rejects_tofu_or_platform_drift(tmp_path: Path) -> None:
+    checker = _load_checker()
+    manifest = _write_complete_artifact(checker, tmp_path)
+    evidence = manifest["captures"][0]["font_render_evidence"]
+    evidence["platform_name"] = "windows"
+    evidence["glyph_indexes"] = [1] * len(checker.FONT_PROBE_TEXT)
+    evidence["distinct_glyph_count"] = 1
+    (tmp_path / checker.MANIFEST_NAME).write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    errors = checker.check_real_gui_render_artifact(tmp_path)
+
+    assert any("font platform must match" in error for error in errors)
+    assert any("tofu substitution" in error for error in errors)
+
+
+def test_real_gui_render_artifact_rejects_malformed_font_evidence_without_crashing(
+    tmp_path: Path,
+) -> None:
+    checker = _load_checker()
+    manifest = _write_complete_artifact(checker, tmp_path)
+    evidence = manifest["captures"][0]["font_render_evidence"]
+    evidence["platform_name"] = ["offscreen"]
+    evidence["family_count"] = "many"
+    evidence["selected_family"] = {"name": "DejaVu Sans"}
+    evidence["distinct_glyph_count"] = None
+    evidence["rendered_ink_pixels"] = "900"
+    (tmp_path / checker.MANIFEST_NAME).write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    errors = checker.check_real_gui_render_artifact(tmp_path)
+
+    assert any("platform_name must be a non-empty string" in error for error in errors)
+    assert any("family_count must be an integer" in error for error in errors)
+    assert any("selected font family must be a non-empty string" in error for error in errors)
+    assert any("distinct_glyph_count must be an integer" in error for error in errors)
+    assert any("rendered_ink_pixels must be an integer" in error for error in errors)
+
+
+def test_real_gui_render_artifact_rejects_mismatched_distinct_glyph_count(
+    tmp_path: Path,
+) -> None:
+    checker = _load_checker()
+    manifest = _write_complete_artifact(checker, tmp_path)
+    evidence = manifest["captures"][0]["font_render_evidence"]
+    evidence["distinct_glyph_count"] = 99
+    (tmp_path / checker.MANIFEST_NAME).write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    errors = checker.check_real_gui_render_artifact(tmp_path)
+
+    assert any("distinct_glyph_count does not match glyph_indexes" in error for error in errors)
+
+
 def _write_complete_artifact(checker, root: Path) -> dict[str, object]:
     preset_ids = checker.expected_all_preset_ids()
     captures = [_capture_record(checker, root, preset_id) for preset_id in preset_ids]
@@ -130,6 +204,16 @@ def _capture_record(checker, root: Path, preset_id: str) -> dict[str, object]:
             "distinct_colors": 42,
             "luminance_range": 80,
             "non_background_ratio": 0.25,
+        },
+        "font_render_evidence": {
+            "platform_name": "offscreen",
+            "family_count": 3,
+            "selected_family": "DejaVu Sans",
+            "raw_font_valid": True,
+            "probe_text": checker.FONT_PROBE_TEXT,
+            "glyph_indexes": list(range(1, len(checker.FONT_PROBE_TEXT) + 1)),
+            "distinct_glyph_count": len(checker.FONT_PROBE_TEXT),
+            "rendered_ink_pixels": 900,
         },
     }
     if preset_id in checker.PRODUCT_STYLE_PRESETS:

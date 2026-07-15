@@ -161,6 +161,9 @@ def test_gui_design_presets_have_valid_layout_metadata() -> None:
         assert "QFrame#terminalHeader" in preset.stylesheet
         assert "QToolButton#terminalAction" in preset.stylesheet
         assert "QDialog#workflowDialog" in preset.stylesheet
+        assert "QComboBox QAbstractItemView" in preset.stylesheet
+        assert "QScrollArea#profileFormScroll" in preset.stylesheet
+        assert "QWidget#profileFormBody" in preset.stylesheet
         assert "QTreeWidget#workflowRows" in preset.stylesheet
         assert "QToolButton#workflowAction" in preset.stylesheet
         assert "QFrame#productWorkflowEvidence" in preset.stylesheet
@@ -212,6 +215,30 @@ def test_gui_design_presets_have_valid_layout_metadata() -> None:
         assert "QFrame#productWorkspacePrimaryPane" in preset.stylesheet
         assert "QLabel#productWorkspaceTitle" in preset.stylesheet
         assert "QSplitter::handle" in preset.stylesheet
+
+
+def test_gui_design_product_toolbar_actions_have_complete_unique_stable_keys() -> None:
+    expected = (
+        "refresh",
+        "new",
+        "import",
+        "edit",
+        "remove",
+        "connect",
+        "files",
+        "queue",
+        "dry-run",
+        "doctor",
+        "split-h",
+        "split-v",
+    )
+
+    for preset_id in ("native", "securecrt", "termius", "remmina", "mremoteng"):
+        actions = gui_design_toolbar_actions(preset_id)
+        keys = tuple(key for key, _label, _tooltip in actions)
+        assert keys == expected
+        assert len(keys) == len(set(keys))
+        assert all(label and tooltip for _key, label, tooltip in actions)
 
 
 def test_gui_design_presets_are_not_only_recolored_clones() -> None:
@@ -1473,6 +1500,7 @@ def test_securecrt_top_chrome_is_shared_metadata() -> None:
     assert [action.key for action in chrome.toolbar_actions] == [
         "refresh",
         "new",
+        "import",
         "edit",
         "remove",
         "connect",
@@ -1486,11 +1514,11 @@ def test_securecrt_top_chrome_is_shared_metadata() -> None:
     assert [action.icon_key for action in chrome.toolbar_actions[:5]] == [
         "session-manager",
         "new-session",
+        "import-session",
         "properties",
         "delete",
-        "connect",
     ]
-    assert [action.static_x for action in chrome.toolbar_actions[:4]] == [14, 82, 180, 272]
+    assert [action.static_x for action in chrome.toolbar_actions[:4]] == [14, 82, 180, 258]
     assert all(action.static_width >= 54 for action in chrome.toolbar_actions)
     assert all(item.primary_action for item in chrome.menu_items)
     assert all(action.tooltip for action in chrome.toolbar_actions)
@@ -2043,6 +2071,7 @@ def test_mremoteng_top_chrome_is_shared_metadata() -> None:
     assert [action.key for action in chrome.toolbar_actions] == [
         "refresh",
         "new",
+        "import",
         "edit",
         "remove",
         "connect",
@@ -2056,20 +2085,33 @@ def test_mremoteng_top_chrome_is_shared_metadata() -> None:
     assert [action.icon_key for action in chrome.toolbar_actions[:6]] == [
         "refresh-tree",
         "new-connection",
+        "import-connections",
         "config",
         "delete",
         "open-connection",
-        "external-tool",
     ]
     assert [action.label for action in chrome.toolbar_actions[:6]] == [
         "Refresh",
         "New Conn",
+        "Import",
         "Config",
         "Delete",
         "Open",
-        "External",
     ]
-    assert [action.static_width for action in chrome.toolbar_actions] == [58, 74, 62, 58, 54, 74, 70, 58, 54, 58, 58]
+    assert [action.static_width for action in chrome.toolbar_actions] == [
+        58,
+        74,
+        62,
+        62,
+        58,
+        54,
+        74,
+        70,
+        58,
+        54,
+        58,
+        58,
+    ]
     assert all(item.tooltip for item in chrome.menu_items)
     assert all(action.tooltip for action in chrome.toolbar_actions)
 
@@ -2159,6 +2201,13 @@ def test_mremoteng_document_filter_route_is_shared_metadata() -> None:
     assert route.handler_name == "filter_profile_tree"
     assert route.render_source == "connection-tree-filter-state"
     assert route.to_dict()["expected_query"] == "edge"
+
+
+def test_mremoteng_document_filter_chrome_does_not_double_apply_layout_insets() -> None:
+    stylesheet = get_gui_design_preset("mremoteng").stylesheet
+    controls_block = stylesheet.split("QFrame#mRemoteNgDocumentControls {", 1)[1].split("}", 1)[0]
+
+    assert "padding: 0px;" in controls_block
 
 
 def test_mremoteng_inheritance_route_is_shared_metadata() -> None:
@@ -2368,11 +2417,11 @@ def test_gui_design_preset_keyboard_shortcut_routes_are_shared_metadata() -> Non
 
 def test_gui_design_preset_command_surface_routes_are_shared_metadata() -> None:
     expected_objects = {
-        "mobaxterm": ("mobaRibbonButton", 12, "sessions", "games"),
-        "securecrt": ("productToolbarButton", 11, "connect", "remove"),
-        "termius": ("productToolbarButton", 11, "connect", "remove"),
-        "remmina": ("productToolbarButton", 11, "connect", "remove"),
-        "mremoteng": ("productToolbarButton", 11, "connect", "remove"),
+        "mobaxterm": ("mobaRibbonButton", 12, "sessions", ""),
+        "securecrt": ("productToolbarButton", 12, "connect", ""),
+        "termius": ("productToolbarButton", 12, "connect", ""),
+        "remmina": ("productToolbarButton", 12, "connect", ""),
+        "mremoteng": ("productToolbarButton", 12, "connect", ""),
     }
 
     for preset_id in PRODUCT_GUI_PRESET_IDS:
@@ -2392,7 +2441,10 @@ def test_gui_design_preset_command_surface_routes_are_shared_metadata() -> None:
         assert route.expected_action_count == expected_count == len(actions)
         states = dict(route.expected_action_states)
         assert states[active_key] == "active"
-        assert states[disabled_key] == "disabled"
+        if disabled_key:
+            assert states[disabled_key] == "disabled"
+        else:
+            assert "disabled" not in states.values()
         if state.checked_toolbar_key in states:
             assert states[state.checked_toolbar_key] == "checked"
         assert route.key_property == "presetCommandSurfaceActionKey"
@@ -2418,11 +2470,11 @@ def test_gui_design_preset_command_surface_routes_are_shared_metadata() -> None:
 
 def test_gui_design_preset_focus_interaction_routes_are_shared_metadata() -> None:
     expected_focus_objects = {
-        "mobaxterm": ("quick-connect", "quickConnect", "sessions", "sftp", "games"),
-        "securecrt": ("session-filter", "secureCrtSessionFilter", "connect", "files", "remove"),
-        "termius": ("host-search", "termiusHostSearch", "connect", "doctor", "remove"),
-        "remmina": ("profile-filter", "remminaProfileFilter", "connect", "queue", "remove"),
-        "mremoteng": ("tree-filter", "mRemoteNgDocumentFilter", "connect", "files", "remove"),
+        "mobaxterm": ("quick-connect", "quickConnect", "sessions", "sftp", ""),
+        "securecrt": ("session-filter", "secureCrtSessionFilter", "connect", "files", ""),
+        "termius": ("host-search", "termiusHostSearch", "connect", "doctor", ""),
+        "remmina": ("profile-filter", "remminaProfileFilter", "connect", "queue", ""),
+        "mremoteng": ("tree-filter", "mRemoteNgDocumentFilter", "connect", "files", ""),
     }
 
     for preset_id in PRODUCT_GUI_PRESET_IDS:
@@ -2705,14 +2757,21 @@ def test_gui_design_preset_reference_control_routes_are_shared_metadata() -> Non
             "Start process",
             "Restart process",
             "Stop process",
-            "Copy launch command",
+            "Copy selected terminal output, or the launch command when nothing is selected",
             "Clear terminal output",
             "Record terminal macro",
             "Stop terminal macro",
             "Cancel macro",
             "Replay terminal macro",
         )
-        assert route.allowed_status_states == ("ready", "starting", "running", "stopping", "error")
+        assert route.allowed_status_states == (
+            "ready",
+            "starting",
+            "running",
+            "stopping",
+            "error",
+            "blocked",
+        )
         assert route.action_key_property == "terminalActionKey"
         assert route.action_label_property == "terminalActionLabel"
         assert route.action_tooltip_property == "terminalActionTooltip"

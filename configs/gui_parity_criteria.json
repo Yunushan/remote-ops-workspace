@@ -3294,12 +3294,13 @@
         },
         {
           "id": "moba.interaction-states",
-          "description": "MobaXterm-style interaction state tracks quick-connect focus, checked SFTP rail state and disabled sample ribbon affordance without user-specific data.",
+          "description": "MobaXterm-style interaction state tracks quick-connect focus, checked SFTP rail state and a reachable explicit Games support-status action without user-specific data.",
           "source_tokens": {
             "src/remote_ops_workspace/gui_designs.py": [
               "GUI_DESIGN_INTERACTION_STATES",
               "quick connect focus",
-              "SFTP rail checked"
+              "SFTP rail checked",
+              "explicit games support status available"
             ],
             "src/remote_ops_workspace/gui.py": [
               "configure_interaction_states_for_design",
@@ -5221,12 +5222,12 @@
         },
         {
           "id": "securecrt.interaction-states",
-          "description": "SecureCRT-style interaction state tracks Session Manager focus, active SSH2 connection, checked SFTP action and guarded delete affordance.",
+          "description": "SecureCRT-style interaction state tracks Session Manager focus, active SSH2 connection, checked SFTP action and selection-aware delete affordance.",
           "source_tokens": {
             "src/remote_ops_workspace/gui_designs.py": [
               "Session Manager focus",
               "SFTP checked",
-              "delete guarded"
+              "delete follows selection"
             ],
             "src/remote_ops_workspace/gui.py": [
               "configure_interaction_states_for_design",
@@ -7068,12 +7069,12 @@
         },
         {
           "id": "termius.interaction-states",
-          "description": "Termius-style interaction state tracks host-search focus, active connection, checked vault action and guarded remove action.",
+          "description": "Termius-style interaction state tracks host-search focus, active connection, checked vault action and selection-aware remove action.",
           "source_tokens": {
             "src/remote_ops_workspace/gui_designs.py": [
               "host search focus",
               "vault checked",
-              "remove guarded"
+              "remove follows selection"
             ],
             "src/remote_ops_workspace/gui.py": [
               "configure_interaction_states_for_design",
@@ -8881,12 +8882,12 @@
         },
         {
           "id": "remmina.interaction-states",
-          "description": "Remmina-style interaction state tracks profile-filter focus, active viewer connection, checked transfer action and guarded delete affordance.",
+          "description": "Remmina-style interaction state tracks profile-filter focus, active viewer connection, checked transfer action and selection-aware delete affordance.",
           "source_tokens": {
             "src/remote_ops_workspace/gui_designs.py": [
               "profile filter focus",
               "transfer checked",
-              "delete guarded"
+              "delete follows selection"
             ],
             "src/remote_ops_workspace/gui.py": [
               "configure_interaction_states_for_design",
@@ -10618,12 +10619,12 @@
         },
         {
           "id": "mremoteng.interaction-states",
-          "description": "mRemoteNG-style interaction state tracks connection-tree focus, active document tab, checked external-tool action and guarded delete affordance.",
+          "description": "mRemoteNG-style interaction state tracks connection-tree focus, active document tab, checked external-tool action and selection-aware delete affordance.",
           "source_tokens": {
             "src/remote_ops_workspace/gui_designs.py": [
               "connection tree focus",
               "external tool checked",
-              "delete guarded"
+              "delete follows selection"
             ],
             "src/remote_ops_workspace/gui.py": [
               "configure_interaction_states_for_design",

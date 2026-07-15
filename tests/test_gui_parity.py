@@ -2022,7 +2022,9 @@ def test_live_and_static_renderers_share_session_tree_copy() -> None:
     assert "profile_group_label" in gui_source
     assert "profile_tree_tooltip" in gui_source
     assert "apply_profile_tree_icon" in gui_source
-    assert "GENERATED_PROFILE_TREE_ICON_PRESETS = {\"mobaxterm\"" in gui_source
+    assert "GENERATED_PROFILE_TREE_ICON_PRESETS" in gui_source
+    for preset_id in ("mobaxterm", "securecrt", "termius", "remmina", "mremoteng"):
+        assert f'"{preset_id}"' in gui_source
     assert "mobaSessionTreeProfileRowHeight" in gui_source
     assert "TREE_ROW_STATIC_HEIGHT_ROLE" in gui_source
     assert "gui_design_tree_rows" in renderer_source
@@ -3154,7 +3156,7 @@ def test_gui_parity_tracks_product_command_surface_visual_metrics() -> None:
     expected_regions = {
         "mobaxterm": {
             "command-surface-active-sessions",
-            "command-surface-disabled-games",
+            "command-surface-games-status",
             "command-surface-checked-sftp-rail",
         },
         "securecrt": {
@@ -3181,7 +3183,7 @@ def test_gui_parity_tracks_product_command_surface_visual_metrics() -> None:
     expected_topology = {
         "mobaxterm": {
             "command-surface-active-sessions-inside-ribbon",
-            "command-surface-disabled-games-inside-ribbon",
+            "command-surface-games-status-inside-ribbon",
             "command-surface-checked-sftp-rail-inside-moba-rail",
         },
         "securecrt": {

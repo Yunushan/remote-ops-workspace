@@ -2407,29 +2407,65 @@ GUI_DESIGN_MOBA_RIBBON_EDGE_ACTION_ROUTE = GuiMobaRibbonEdgeActionRoute(
 )
 
 GUI_DESIGN_MOBA_RIBBON_ACTION_GEOMETRY: tuple[GuiMobaRibbonActionGeometry, ...] = (
-    GuiMobaRibbonActionGeometry("session", 12, 61, 26, 6, 24, 21, 40, 10, False, 0, 7, 56, 22, 3, 32, 31),
-    GuiMobaRibbonActionGeometry("servers", 73, 61, 87, 6, 24, 82, 40, 10, True, 67, 7, 56, 83, 3, 32, 31),
-    GuiMobaRibbonActionGeometry("tools", 134, 58, 148, 6, 24, 148, 40, 10, False, 0, 7, 56, 144, 3, 32, 31),
-    GuiMobaRibbonActionGeometry("games", 192, 58, 206, 6, 24, 206, 40, 10, False, 0, 7, 56, 202, 3, 32, 31),
-    GuiMobaRibbonActionGeometry("sessions", 250, 68, 264, 6, 24, 260, 40, 10, True, 244, 7, 56, 260, 3, 32, 31),
-    GuiMobaRibbonActionGeometry("view", 318, 58, 332, 6, 24, 335, 40, 10, False, 0, 7, 56, 328, 3, 32, 31),
-    GuiMobaRibbonActionGeometry("split", 376, 58, 390, 6, 24, 390, 40, 10, False, 0, 7, 56, 386, 3, 32, 31),
-    GuiMobaRibbonActionGeometry("multiexec", 434, 75, 448, 6, 24, 444, 40, 10, True, 428, 7, 56, 444, 3, 32, 31),
-    GuiMobaRibbonActionGeometry("tunneling", 509, 75, 523, 6, 24, 519, 40, 10, False, 0, 7, 56, 519, 3, 32, 31),
-    GuiMobaRibbonActionGeometry("packages", 584, 68, 598, 6, 24, 594, 40, 10, False, 0, 7, 56, 594, 3, 32, 31),
-    GuiMobaRibbonActionGeometry("settings", 652, 68, 666, 6, 24, 662, 40, 10, True, 646, 7, 56, 662, 3, 32, 31),
-    GuiMobaRibbonActionGeometry("help", 720, 58, 734, 6, 24, 737, 40, 10, False, 0, 7, 56, 730, 3, 32, 31),
-    GuiMobaRibbonActionGeometry("xserver", 1152, 70, 1158, 6, 28, 1152, 42, 10, True, 1140, 7, 56, 1158, 3, 32, 31),
-    GuiMobaRibbonActionGeometry("exit", 1230, 42, 1232, 7, 25, 1230, 42, 10, False, 0, 7, 56, 1232, 3, 32, 31),
+    GuiMobaRibbonActionGeometry(
+        "session", 12, 61, 26, 6, 24, 21, 40, 10, False, 0, 7, 56, 22, 3, 32, 31
+    ),
+    GuiMobaRibbonActionGeometry(
+        "servers", 73, 61, 87, 6, 24, 82, 40, 10, True, 67, 7, 56, 83, 3, 32, 31
+    ),
+    GuiMobaRibbonActionGeometry(
+        "tools", 134, 58, 148, 6, 24, 148, 40, 10, False, 0, 7, 56, 144, 3, 32, 31
+    ),
+    GuiMobaRibbonActionGeometry(
+        "games", 192, 58, 206, 6, 24, 206, 40, 10, False, 0, 7, 56, 202, 3, 32, 31
+    ),
+    GuiMobaRibbonActionGeometry(
+        "sessions", 250, 68, 264, 6, 24, 260, 40, 10, True, 244, 7, 56, 260, 3, 32, 31
+    ),
+    GuiMobaRibbonActionGeometry(
+        "view", 318, 58, 332, 6, 24, 335, 40, 10, False, 0, 7, 56, 328, 3, 32, 31
+    ),
+    GuiMobaRibbonActionGeometry(
+        "split", 376, 58, 390, 6, 24, 390, 40, 10, False, 0, 7, 56, 386, 3, 32, 31
+    ),
+    GuiMobaRibbonActionGeometry(
+        "multiexec", 434, 75, 448, 6, 24, 444, 40, 10, True, 428, 7, 56, 444, 3, 32, 31
+    ),
+    GuiMobaRibbonActionGeometry(
+        "tunneling", 509, 75, 523, 6, 24, 519, 40, 10, False, 0, 7, 56, 519, 3, 32, 31
+    ),
+    GuiMobaRibbonActionGeometry(
+        "packages", 584, 68, 598, 6, 24, 594, 40, 10, False, 0, 7, 56, 594, 3, 32, 31
+    ),
+    GuiMobaRibbonActionGeometry(
+        "settings", 652, 68, 666, 6, 24, 662, 40, 10, True, 646, 7, 56, 662, 3, 32, 31
+    ),
+    GuiMobaRibbonActionGeometry(
+        "help", 720, 58, 734, 6, 24, 737, 40, 10, False, 0, 7, 56, 730, 3, 32, 31
+    ),
+    GuiMobaRibbonActionGeometry(
+        "xserver", 1152, 70, 1158, 6, 28, 1152, 42, 10, True, 1140, 7, 56, 1158, 3, 32, 31
+    ),
+    GuiMobaRibbonActionGeometry(
+        "exit", 1230, 42, 1232, 7, 25, 1230, 42, 10, False, 0, 7, 56, 1232, 3, 32, 31
+    ),
 )
 
 GUI_DESIGN_MOBA_TOP_MENU_ITEMS: tuple[GuiMobaTopMenuItem, ...] = (
-    GuiMobaTopMenuItem("terminal", "Terminal", "Start local terminal", "Local terminal and split-pane commands"),
-    GuiMobaTopMenuItem("sessions", "Sessions", "Connect selected", "Saved session and connection commands"),
+    GuiMobaTopMenuItem(
+        "terminal", "Terminal", "Start local terminal", "Local terminal and split-pane commands"
+    ),
+    GuiMobaTopMenuItem(
+        "sessions", "Sessions", "Connect selected", "Saved session and connection commands"
+    ),
     GuiMobaTopMenuItem("view", "View", "Refresh sessions", "View preset and refresh commands"),
-    GuiMobaTopMenuItem("x-server", "X server", "X server workflow", "External X server workflow status"),
+    GuiMobaTopMenuItem(
+        "x-server", "X server", "X server workflow", "External X server workflow status"
+    ),
     GuiMobaTopMenuItem("tools", "Tools", "Tools status", "Diagnostics and helper tools"),
-    GuiMobaTopMenuItem("games", "Games", "Games disabled", "Disabled sample menu entry"),
+    GuiMobaTopMenuItem(
+        "games", "Games", "Games status", "Explicit compatibility and support status"
+    ),
     GuiMobaTopMenuItem("settings", "Settings", "Settings status", "Workspace settings commands"),
     GuiMobaTopMenuItem("macros", "Macros", "Macros status", "Macro and multiexec workflow status"),
     GuiMobaTopMenuItem("help", "Help", "Run doctor", "Help and doctor commands"),
@@ -3681,15 +3717,16 @@ GUI_DESIGN_SECURECRT_TOP_CHROME = GuiSecureCrtTopChrome(
     toolbar_actions=(
         GuiSecureCrtTopToolbarAction("refresh", "session-manager", "Refresh", "Refresh Session Manager", 14, 58),
         GuiSecureCrtTopToolbarAction("new", "new-session", "New Session", "Create a terminal session", 82, 88),
-        GuiSecureCrtTopToolbarAction("edit", "properties", "Properties", "Edit session properties", 180, 82),
-        GuiSecureCrtTopToolbarAction("remove", "delete", "Delete", "Delete selected session", 272, 62),
-        GuiSecureCrtTopToolbarAction("connect", "connect", "Connect", "Open selected terminal session", 344, 70),
-        GuiSecureCrtTopToolbarAction("files", "sftp", "SFTP", "Open SFTP tab", 424, 54),
-        GuiSecureCrtTopToolbarAction("queue", "transfer", "Transfer", "Preview transfer queue", 488, 70),
-        GuiSecureCrtTopToolbarAction("dry-run", "command", "Command", "Show launch command", 568, 74),
-        GuiSecureCrtTopToolbarAction("doctor", "tools", "Tools", "Run tool diagnostics", 652, 54),
-        GuiSecureCrtTopToolbarAction("split-h", "tile-h", "Tile H", "Tile terminal panes horizontally", 716, 58),
-        GuiSecureCrtTopToolbarAction("split-v", "tile-v", "Tile V", "Tile terminal panes vertically", 784, 58),
+        GuiSecureCrtTopToolbarAction("import", "import-session", "Import", "Import terminal sessions", 180, 68),
+        GuiSecureCrtTopToolbarAction("edit", "properties", "Properties", "Edit session properties", 258, 82),
+        GuiSecureCrtTopToolbarAction("remove", "delete", "Delete", "Delete selected session", 350, 62),
+        GuiSecureCrtTopToolbarAction("connect", "connect", "Connect", "Open selected terminal session", 422, 70),
+        GuiSecureCrtTopToolbarAction("files", "sftp", "SFTP", "Open SFTP tab", 502, 54),
+        GuiSecureCrtTopToolbarAction("queue", "transfer", "Transfer", "Preview transfer queue", 566, 70),
+        GuiSecureCrtTopToolbarAction("dry-run", "command", "Command", "Show launch command", 646, 74),
+        GuiSecureCrtTopToolbarAction("doctor", "tools", "Tools", "Run tool diagnostics", 730, 54),
+        GuiSecureCrtTopToolbarAction("split-h", "tile-h", "Tile H", "Tile terminal panes horizontally", 794, 58),
+        GuiSecureCrtTopToolbarAction("split-v", "tile-v", "Tile V", "Tile terminal panes vertically", 862, 58),
     ),
 )
 
@@ -3708,15 +3745,16 @@ GUI_DESIGN_MREMOTENG_TOP_CHROME = GuiMRemoteNgTopChrome(
     toolbar_actions=(
         GuiMRemoteNgTopToolbarAction("refresh", "refresh-tree", "Refresh", "Refresh connection tree", 14, 58),
         GuiMRemoteNgTopToolbarAction("new", "new-connection", "New Conn", "Create connection", 80, 74),
-        GuiMRemoteNgTopToolbarAction("edit", "config", "Config", "Edit connection configuration", 164, 62),
-        GuiMRemoteNgTopToolbarAction("remove", "delete", "Delete", "Delete connection", 236, 58),
-        GuiMRemoteNgTopToolbarAction("connect", "open-connection", "Open", "Open selected connection", 304, 54),
-        GuiMRemoteNgTopToolbarAction("files", "external-tool", "External", "Open external file workflow", 368, 74),
-        GuiMRemoteNgTopToolbarAction("queue", "transfer", "Transfer", "Preview transfer workflow", 452, 70),
-        GuiMRemoteNgTopToolbarAction("dry-run", "script", "Script", "Show launch script", 532, 58),
-        GuiMRemoteNgTopToolbarAction("doctor", "tools", "Tools", "Run client tools check", 600, 54),
-        GuiMRemoteNgTopToolbarAction("split-h", "tile-h", "Tile H", "Tile connection panes horizontally", 664, 58),
-        GuiMRemoteNgTopToolbarAction("split-v", "tile-v", "Tile V", "Tile connection panes vertically", 732, 58),
+        GuiMRemoteNgTopToolbarAction("import", "import-connections", "Import", "Import connection files", 164, 62),
+        GuiMRemoteNgTopToolbarAction("edit", "config", "Config", "Edit connection configuration", 236, 62),
+        GuiMRemoteNgTopToolbarAction("remove", "delete", "Delete", "Delete connection", 308, 58),
+        GuiMRemoteNgTopToolbarAction("connect", "open-connection", "Open", "Open selected connection", 376, 54),
+        GuiMRemoteNgTopToolbarAction("files", "external-tool", "External", "Open external file workflow", 440, 74),
+        GuiMRemoteNgTopToolbarAction("queue", "transfer", "Transfer", "Preview transfer workflow", 524, 70),
+        GuiMRemoteNgTopToolbarAction("dry-run", "script", "Script", "Show launch script", 604, 58),
+        GuiMRemoteNgTopToolbarAction("doctor", "tools", "Tools", "Run client tools check", 672, 54),
+        GuiMRemoteNgTopToolbarAction("split-h", "tile-h", "Tile H", "Tile connection panes horizontally", 736, 58),
+        GuiMRemoteNgTopToolbarAction("split-v", "tile-v", "Tile V", "Tile connection panes vertically", 804, 58),
     ),
 )
 
@@ -4549,6 +4587,7 @@ GUI_DESIGN_TOOLBAR_COPY: dict[str, tuple[tuple[str, str, str], ...]] = {
     DEFAULT_GUI_DESIGN_ID: (
         ("refresh", "Refresh", "Reload profiles"),
         ("new", "New", "Create profile"),
+        ("import", "Import", "Preview and import profiles"),
         ("edit", "Edit", "Edit selected profile"),
         ("remove", "Remove", "Remove selected profile"),
         ("connect", "Connect", "Open selected profile"),
@@ -4562,6 +4601,7 @@ GUI_DESIGN_TOOLBAR_COPY: dict[str, tuple[tuple[str, str, str], ...]] = {
     "securecrt": (
         ("refresh", "Refresh", "Refresh Session Manager"),
         ("new", "New Session", "Create a terminal session"),
+        ("import", "Import", "Import session definitions"),
         ("edit", "Properties", "Edit session properties"),
         ("remove", "Delete", "Delete selected session"),
         ("connect", "Connect", "Open selected terminal session"),
@@ -4575,6 +4615,7 @@ GUI_DESIGN_TOOLBAR_COPY: dict[str, tuple[tuple[str, str, str], ...]] = {
     "termius": (
         ("refresh", "Sync", "Sync host inventory"),
         ("new", "New Host", "Create SSH host"),
+        ("import", "Import", "Import host profiles"),
         ("edit", "Edit Host", "Edit selected host"),
         ("remove", "Remove", "Remove selected host"),
         ("connect", "Connect", "Open selected SSH host"),
@@ -4588,6 +4629,7 @@ GUI_DESIGN_TOOLBAR_COPY: dict[str, tuple[tuple[str, str, str], ...]] = {
     "remmina": (
         ("refresh", "Refresh", "Refresh connection profiles"),
         ("new", "New Profile", "Create connection profile"),
+        ("import", "Import", "Import connection profiles"),
         ("edit", "Edit", "Edit connection profile"),
         ("remove", "Delete", "Delete connection profile"),
         ("connect", "Connect", "Open selected remote desktop profile"),
@@ -4601,6 +4643,7 @@ GUI_DESIGN_TOOLBAR_COPY: dict[str, tuple[tuple[str, str, str], ...]] = {
     "mremoteng": (
         ("refresh", "Refresh", "Refresh connection tree"),
         ("new", "New Conn", "Create connection"),
+        ("import", "Import", "Import connection definitions"),
         ("edit", "Config", "Edit connection configuration"),
         ("remove", "Delete", "Delete connection"),
         ("connect", "Open", "Open selected connection"),
@@ -4895,56 +4938,56 @@ GUI_DESIGN_INTERACTION_STATES: dict[str, GuiInteractionState] = {
     DEFAULT_GUI_DESIGN_ID: GuiInteractionState(
         active_toolbar_key="connect",
         checked_toolbar_key="files",
-        disabled_toolbar_key="remove",
+        disabled_toolbar_key="",
         focused_control="search-log",
         active_tab_status="running",
         selected_tree_label="edge-prod",
-        status_note="focused search, active connect, checked files",
+        status_note="focused search, active connect, checked files; destructive actions follow selection",
     ),
     "mobaxterm": GuiInteractionState(
         active_toolbar_key="sessions",
         checked_toolbar_key="sftp",
-        disabled_toolbar_key="games",
+        disabled_toolbar_key="",
         focused_control="quick-connect",
         active_tab_status="SSH direct",
         selected_tree_label="sftp-ops",
-        status_note="quick connect focus, SFTP rail checked, games disabled",
+        status_note="quick connect focus, SFTP rail checked, explicit games support status available",
     ),
     "securecrt": GuiInteractionState(
         active_toolbar_key="connect",
         checked_toolbar_key="files",
-        disabled_toolbar_key="remove",
+        disabled_toolbar_key="",
         focused_control="session-filter",
         active_tab_status="SSH2 connected",
         selected_tree_label="edge-prod (SSH2)",
-        status_note="Session Manager focus, SFTP checked, delete guarded",
+        status_note="Session Manager focus, SFTP checked, delete follows selection",
     ),
     "termius": GuiInteractionState(
         active_toolbar_key="connect",
         checked_toolbar_key="doctor",
-        disabled_toolbar_key="remove",
+        disabled_toolbar_key="",
         focused_control="host-search",
         active_tab_status="vault unlocked",
         selected_tree_label="edge-prod  ssh host",
-        status_note="host search focus, vault checked, remove guarded",
+        status_note="host search focus, vault checked, remove follows selection",
     ),
     "remmina": GuiInteractionState(
         active_toolbar_key="connect",
         checked_toolbar_key="queue",
-        disabled_toolbar_key="remove",
+        disabled_toolbar_key="",
         focused_control="profile-filter",
         active_tab_status="viewer scaled",
         selected_tree_label="linux-console",
-        status_note="profile filter focus, transfer checked, delete guarded",
+        status_note="profile filter focus, transfer checked, delete follows selection",
     ),
     "mremoteng": GuiInteractionState(
         active_toolbar_key="connect",
         checked_toolbar_key="files",
-        disabled_toolbar_key="remove",
+        disabled_toolbar_key="",
         focused_control="tree-filter",
         active_tab_status="document open",
         selected_tree_label="edge-prod [SSH]",
-        status_note="connection tree focus, external tool checked, delete guarded",
+        status_note="connection tree focus, external tool checked, delete follows selection",
     ),
 }
 
@@ -6299,6 +6342,14 @@ QPushButton, QToolButton, QComboBox, QLineEdit {{
 QPushButton:hover, QToolButton:hover, QComboBox:hover, QLineEdit:hover {{
   border-color: {colors.control_hover};
 }}
+QComboBox QAbstractItemView {{
+  background: {colors.control};
+  color: {colors.control_text};
+  border: 1px solid {colors.control_border};
+  selection-background-color: {colors.sidebar_selected};
+  selection-color: {colors.sidebar_selected_text};
+  outline: 0;
+}}
 QPushButton:disabled, QToolButton:disabled {{
   color: {colors.sidebar_muted};
   background: {colors.pane};
@@ -6547,6 +6598,19 @@ QDialog#workflowDialog {{
   background: {colors.pane};
   color: {colors.control_text};
 }}
+QDialog#workflowDialog QScrollArea#profileFormScroll,
+QDialog#workflowDialog QWidget#profileFormBody,
+QDialog#workflowDialog QScrollArea#layoutFormScroll,
+QDialog#workflowDialog QWidget#layoutFormBody {{
+  background: {colors.pane};
+  color: {colors.control_text};
+  border: 0;
+}}
+QDialog#workflowDialog QWidget#profileFormBody QLabel,
+QDialog#workflowDialog QWidget#layoutFormBody QLabel {{
+  background: transparent;
+  color: {colors.control_text};
+}}
 QDialog#workflowDialog QLabel#workflowTitle {{
   color: {colors.control_text};
   font-size: 18px;
@@ -6554,6 +6618,14 @@ QDialog#workflowDialog QLabel#workflowTitle {{
 }}
 QDialog#workflowDialog QLabel#workflowSubtitle {{
   color: {colors.sidebar_muted};
+}}
+QDialog#workflowDialog QLabel#profileValidationError,
+QDialog#workflowDialog QLabel#layoutValidationError {{
+  background: {colors.danger};
+  color: {colors.primary_text};
+  border-radius: {radius}px;
+  padding: 7px 9px;
+  font-weight: 600;
 }}
 QDialog#workflowDialog QLineEdit,
 QDialog#workflowDialog QComboBox,
@@ -6880,7 +6952,7 @@ QFrame#mRemoteNgDocumentControls {{
   background: {colors.control};
   border: 1px solid {colors.control_border};
   border-radius: {radius}px;
-  padding: 5px;
+  padding: 0px;
 }}
 QLabel#mRemoteNgDocumentTitle {{
   color: {colors.control_text};
@@ -7135,7 +7207,7 @@ QLabel#paneStatus[state="starting"], QLabel#paneStatus[state="stopping"] {{
   color: {colors.terminal_accent};
   border-color: {colors.terminal_accent};
 }}
-QLabel#paneStatus[state="error"] {{
+QLabel#paneStatus[state="error"], QLabel#paneStatus[state="blocked"] {{
   color: {colors.danger_text};
   border-color: {colors.danger};
 }}
@@ -8621,14 +8693,14 @@ def gui_design_preset_reference_control_route(preset_id: str) -> GuiPresetRefere
             "Start process",
             "Restart process",
             "Stop process",
-            "Copy launch command",
+            "Copy selected terminal output, or the launch command when nothing is selected",
             "Clear terminal output",
             "Record terminal macro",
             "Stop terminal macro",
             "Cancel macro",
             "Replay terminal macro",
         ),
-        allowed_status_states=("ready", "starting", "running", "stopping", "error"),
+        allowed_status_states=("ready", "starting", "running", "stopping", "error", "blocked"),
         action_key_property="terminalActionKey",
         action_label_property="terminalActionLabel",
         action_tooltip_property="terminalActionTooltip",

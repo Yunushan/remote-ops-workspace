@@ -37,6 +37,7 @@ def check_ci_workflow(workflow: str | None = None) -> list[str]:
     errors.extend(check_android_emulator_web_job(text))
     errors.extend(check_ios_simulator_web_job(text))
     errors.extend(check_gui_render_job(text))
+    errors.extend(check_gui_interactions_windows_job(text))
     return errors
 
 
@@ -125,10 +126,16 @@ def check_gui_render_job(workflow: str) -> list[str]:
         'QT_QPA_PLATFORM: "offscreen"': "offscreen Qt platform",
         'python-version: "3.12"': "stable GUI smoke Python version",
         "sudo apt-get update": "Linux package index update for Qt runtime libraries",
+        "fontconfig": "Qt font discovery runtime",
+        "fonts-dejavu-core": "known readable Linux GUI font",
         "libegl1": "Qt EGL runtime library for PyQt6",
         "libgl1": "OpenGL runtime library for PyQt6",
         "libxkbcommon-x11-0": "Qt xkbcommon X11 runtime library",
         "libxcb-cursor0": "Qt xcb cursor runtime library",
+        "Verify Linux GUI font discovery": "explicit Linux GUI font discovery gate",
+        "fc-cache -f": "fresh Linux fontconfig cache",
+        'fc-match "DejaVu Sans"': "known Linux GUI font match",
+        "fc-list : family | grep -q .": "non-empty Linux Qt font inventory assertion",
         '".[desktop,security,dev]"': "desktop extra installation",
         "timeout-minutes: 8": "bounded live GUI render smoke step timeout",
         "python scripts/check_real_gui_render.py --require-pyqt6 --timeout-seconds 240": (
@@ -140,6 +147,15 @@ def check_gui_render_job(workflow: str) -> list[str]:
         "python scripts/check_real_gui_render_artifact.py --artifact-dir artifacts/gui-real": (
             "live GUI artifact validator"
         ),
+        "Exercise GUI controls and responsive layouts": "Linux GUI interaction step",
+        "timeout-minutes: 5": "bounded Linux GUI interaction step timeout",
+        "python scripts/check_gui_interactions.py --require-pyqt6 --out-dir artifacts/gui-interactions": (
+            "Linux GUI interaction gate"
+        ),
+        "name: gui-real-render": "dedicated live GUI screenshot artifact name",
+        "path: artifacts/gui-real/*": "dedicated live GUI screenshot artifact path",
+        "name: gui-interactions-linux-offscreen": "Linux GUI interaction artifact name",
+        "path: artifacts/gui-interactions/*": "Linux GUI interaction artifact path",
         "actions/upload-artifact@v7": "live GUI screenshot artifact upload",
         "if-no-files-found: error": "artifact upload failure on missing live screenshots",
     }
@@ -148,6 +164,54 @@ def check_gui_render_job(workflow: str) -> list[str]:
             errors.append(f"ci gui-render job missing {label}: {snippet}")
     if "--preset " in block:
         errors.append("ci gui-render job must use the default all-preset live screenshot set")
+    return errors
+
+
+def check_gui_interactions_windows_job(workflow: str) -> list[str]:
+    errors: list[str] = []
+    block = workflow_job_block(workflow, "gui-interactions-windows")
+    if not block:
+        return [
+            "ci workflow missing gui-interactions-windows job for native Windows PyQt6 controls"
+        ]
+    required_snippets = {
+        "name: Native Windows PyQt6 render and interactions": (
+            "clear native Windows render and interaction job label"
+        ),
+        "runs-on: windows-2025-vs2026": "repository-approved native Windows runner",
+        "timeout-minutes: 20": "bounded native Windows GUI job timeout",
+        'QT_QPA_PLATFORM: "windows"': "native Windows Qt platform",
+        'python-version: "3.12"': "stable native Windows GUI Python version",
+        'python -m pip install -e ".[desktop,security,dev]"': "desktop verification dependencies",
+        "Render full GUI on native Windows": "native Windows full GUI render step",
+        "python scripts/check_real_gui_render.py --require-pyqt6 --timeout-seconds 240 --out-dir artifacts/gui-real-windows": (
+            "native Windows all-preset GUI render gate"
+        ),
+        "Validate native Windows GUI render artifact": (
+            "native Windows GUI artifact validation step"
+        ),
+        "python scripts/check_real_gui_render_artifact.py --artifact-dir artifacts/gui-real-windows": (
+            "native Windows GUI artifact validator"
+        ),
+        "Exercise native Windows controls and responsive layouts": "native Windows interaction step",
+        "timeout-minutes: 8": "bounded native Windows interaction step timeout",
+        "python scripts/check_gui_interactions.py --require-pyqt6 --out-dir artifacts/gui-interactions-windows": (
+            "native Windows GUI interaction gate"
+        ),
+        "actions/upload-artifact@v7": "native Windows GUI interaction artifact upload",
+        "name: gui-real-render-windows": "native Windows GUI render artifact name",
+        "path: artifacts/gui-real-windows/*": "native Windows GUI render artifact path",
+        "name: gui-interactions-windows": "native Windows GUI interaction artifact name",
+        "path: artifacts/gui-interactions-windows/*": "native Windows GUI interaction artifact path",
+        "if-no-files-found: error": "missing native Windows interaction artifact failure",
+    }
+    for snippet, label in required_snippets.items():
+        if snippet not in block:
+            errors.append(f"ci gui-interactions-windows job missing {label}: {snippet}")
+    if "--preset " in block:
+        errors.append(
+            "ci gui-interactions-windows job must use the default all-preset native Windows render set"
+        )
     return errors
 
 

@@ -478,19 +478,40 @@ python scripts/verify.py
 ```
 
 Pull-request and push CI runs `python scripts/verify.py --lint` across the
-Python/OS matrix, and a dedicated Linux job installs the desktop extra and runs
-`python scripts/check_real_gui_render.py --require-pyqt6 --timeout-seconds 240` against a live
-offscreen PyQt6 window. `python scripts/check_ci_workflow.py` keeps those gates
-from drifting.
+Python/OS matrix. A dedicated Linux job provisions `fontconfig` and
+`fonts-dejavu-core`, installs the desktop extra, and runs
+`python scripts/check_real_gui_render.py --require-pyqt6 --timeout-seconds 240`
+against a live offscreen PyQt6 window. The renderer fails closed when Qt exposes
+no font families, cannot resolve the probe glyphs, substitutes one tofu glyph,
+or paints too little text ink. That job also runs `python
+scripts/check_gui_interactions.py --require-pyqt6` for real button, menu, dialog,
+search, terminal and saved-layout behavior.
+
+A separate `windows-2025-vs2026` job uses `QT_QPA_PLATFORM=windows` to run both
+the complete six-preset renderer/artifact validator and the interaction gate. It
+uploads `gui-real-render-windows` and `gui-interactions-windows` independently
+from the Linux `gui-real-render` and `gui-interactions-linux-offscreen`
+artifacts. `python scripts/check_ci_workflow.py` keeps those gates from drifting.
+
+The interaction gate declares **1024x768** as the minimum readiness-gated GUI
+window boundary. Every preset must render at that exact size with its visible
+toolbar actions inside the toolbar and with no Qt overflow-extension button;
+central evidence panels, status cells and profile columns must also remain
+inside their parent bounds without intersecting. Compact visible values retain
+their exact label/value metadata and full literal tooltip. Larger supported
+sizes are exercised too. Windows narrower than 1024 pixels are not part of the
+release-readiness claim.
 
 Use `python scripts/verify.py --require-real-gui` on a desktop-extra install
 when local verification must fail unless the real PyQt6 GUI screenshot gate
 runs instead of the dependency-missing fail-closed path.
 
-After downloading the CI `gui-real-render` artifact, run
+After downloading the CI `gui-real-render` or `gui-real-render-windows`
+artifact, run
 `python scripts/check_real_gui_render_artifact.py --artifact-dir <artifact-dir>`
 to validate the live PNG captures, manifest, PNG dimensions, sizes, SHA-256
-hashes and measured product-style layout/topology evidence.
+hashes, measured product-style layout/topology evidence, platform-specific
+capture mode, and per-capture `font_render_evidence`.
 
 Use `python scripts/verify.py --quick` only for dependency-constrained review
 environments where `pytest` is unavailable. See

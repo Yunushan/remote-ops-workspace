@@ -2,8 +2,8 @@
   "contact_sheet": {
     "height": 1392,
     "path": "all-gui-designs-contact-sheet.png",
-    "sha256": "08128864971bca225578615fa9bd99fdce550c31e0af0485379d5feab9670550",
-    "size_bytes": 291629,
+    "sha256": "1b27d44a67183bea862a6eff26ae3f04e267b034b5380e08eafe766fbf58d785",
+    "size_bytes": 291721,
     "width": 1272
   },
   "contact_thumb": {
@@ -18,8 +18,8 @@
       "image": {
         "height": 760,
         "path": "native.png",
-        "sha256": "c9ee013c95767988d69e2f561eade99f575969b002daae74aaaf45d54c11dc6f",
-        "size_bytes": 68708,
+        "sha256": "b5d98451cc6846bbcd3bd7ba215f7863417ff38e6d5d38f8349c5a83c6f3ecc0",
+        "size_bytes": 68079,
         "width": 1280
       },
       "label": "Native",
@@ -272,8 +272,8 @@
       "image": {
         "height": 760,
         "path": "mobaxterm.png",
-        "sha256": "2860790235e4c32ebdfe87a22b5a37b80d910fe90e192d1cb71aa80edc49d422",
-        "size_bytes": 76653,
+        "sha256": "0b4fa69b3c9c8120e5b0c44c635e17f0f6faa507a311a5b847172dfea0ed9490",
+        "size_bytes": 76459,
         "width": 1280
       },
       "label": "MobaXterm-style",
@@ -698,7 +698,7 @@
           "Help"
         ],
         "expected_action_states": {
-          "games": "disabled",
+          "games": "normal",
           "help": "normal",
           "multiexec": "normal",
           "packages": "normal",
@@ -745,7 +745,7 @@
         "captured_status_message_property": "presetFocusInteractionStatusMessage",
         "captured_toolbar_states_property": "presetFocusInteractionToolbarStates",
         "checked_toolbar_key": "sftp",
-        "disabled_toolbar_key": "games",
+        "disabled_toolbar_key": "",
         "focus_object": "quickConnect",
         "focused_control": "quick-connect",
         "focused_state_property": "interactionState",
@@ -756,7 +756,7 @@
         "route_role": "product-preset-focus-interaction-route",
         "selected_tree_label": "sftp-ops",
         "status_bar_object": "statusBar",
-        "status_note": "quick connect focus, SFTP rail checked, games disabled"
+        "status_note": "quick connect focus, SFTP rail checked, explicit games support status available"
       },
       "preset_home_search_route": {
         "captured_actions_property": "presetHomeSearchCapturedActions",
@@ -1107,10 +1107,11 @@
         "captured_states_property": "presetCommandSurfaceCapturedStates",
         "captured_tooltips_property": "presetCommandSurfaceCapturedTooltips",
         "command_object": "productToolbarButton",
-        "expected_action_count": 11,
+        "expected_action_count": 12,
         "expected_action_keys": [
           "refresh",
           "new",
+          "import",
           "edit",
           "remove",
           "connect",
@@ -1124,6 +1125,7 @@
         "expected_action_labels": [
           "Refresh",
           "New Session",
+          "Import",
           "Properties",
           "Delete",
           "Connect",
@@ -1140,16 +1142,18 @@
           "dry-run": "normal",
           "edit": "normal",
           "files": "checked",
+          "import": "normal",
           "new": "normal",
           "queue": "normal",
           "refresh": "normal",
-          "remove": "disabled",
+          "remove": "normal",
           "split-h": "normal",
           "split-v": "normal"
         },
         "expected_action_tooltips": [
           "Refresh Session Manager",
           "Create a terminal session",
+          "Import session definitions",
           "Edit session properties",
           "Delete selected session",
           "Open selected terminal session",
@@ -1180,7 +1184,7 @@
         "captured_status_message_property": "presetFocusInteractionStatusMessage",
         "captured_toolbar_states_property": "presetFocusInteractionToolbarStates",
         "checked_toolbar_key": "files",
-        "disabled_toolbar_key": "remove",
+        "disabled_toolbar_key": "",
         "focus_object": "secureCrtSessionFilter",
         "focused_control": "session-filter",
         "focused_state_property": "interactionState",
@@ -1191,7 +1195,7 @@
         "route_role": "product-preset-focus-interaction-route",
         "selected_tree_label": "edge-prod (SSH2)",
         "status_bar_object": "statusBar",
-        "status_note": "Session Manager focus, SFTP checked, delete guarded"
+        "status_note": "Session Manager focus, SFTP checked, delete follows selection"
       },
       "preset_home_search_route": {
         "captured_actions_property": "presetHomeSearchCapturedActions",
@@ -1360,7 +1364,7 @@
           "Start process",
           "Restart process",
           "Stop process",
-          "Copy launch command",
+          "Copy selected terminal output, or the launch command when nothing is selected",
           "Clear terminal output",
           "Record terminal macro",
           "Stop terminal macro",
@@ -1373,7 +1377,8 @@
           "starting",
           "running",
           "stopping",
-          "error"
+          "error",
+          "blocked"
         ],
         "captured_actions_property": "presetReferenceControlCapturedActionKeys",
         "captured_property": "presetReferenceControlsCaptured",
@@ -1919,10 +1924,11 @@
         "captured_states_property": "presetCommandSurfaceCapturedStates",
         "captured_tooltips_property": "presetCommandSurfaceCapturedTooltips",
         "command_object": "productToolbarButton",
-        "expected_action_count": 11,
+        "expected_action_count": 12,
         "expected_action_keys": [
           "refresh",
           "new",
+          "import",
           "edit",
           "remove",
           "connect",
@@ -1936,6 +1942,7 @@
         "expected_action_labels": [
           "Sync",
           "New Host",
+          "Import",
           "Edit Host",
           "Remove",
           "Connect",
@@ -1952,16 +1959,18 @@
           "dry-run": "normal",
           "edit": "normal",
           "files": "normal",
+          "import": "normal",
           "new": "normal",
           "queue": "normal",
           "refresh": "normal",
-          "remove": "disabled",
+          "remove": "normal",
           "split-h": "normal",
           "split-v": "normal"
         },
         "expected_action_tooltips": [
           "Sync host inventory",
           "Create SSH host",
+          "Import host profiles",
           "Edit selected host",
           "Remove selected host",
           "Open selected SSH host",
@@ -1992,7 +2001,7 @@
         "captured_status_message_property": "presetFocusInteractionStatusMessage",
         "captured_toolbar_states_property": "presetFocusInteractionToolbarStates",
         "checked_toolbar_key": "doctor",
-        "disabled_toolbar_key": "remove",
+        "disabled_toolbar_key": "",
         "focus_object": "termiusHostSearch",
         "focused_control": "host-search",
         "focused_state_property": "interactionState",
@@ -2003,7 +2012,7 @@
         "route_role": "product-preset-focus-interaction-route",
         "selected_tree_label": "edge-prod  ssh host",
         "status_bar_object": "statusBar",
-        "status_note": "host search focus, vault checked, remove guarded"
+        "status_note": "host search focus, vault checked, remove follows selection"
       },
       "preset_home_search_route": {
         "captured_actions_property": "presetHomeSearchCapturedActions",
@@ -2172,7 +2181,7 @@
           "Start process",
           "Restart process",
           "Stop process",
-          "Copy launch command",
+          "Copy selected terminal output, or the launch command when nothing is selected",
           "Clear terminal output",
           "Record terminal macro",
           "Stop terminal macro",
@@ -2185,7 +2194,8 @@
           "starting",
           "running",
           "stopping",
-          "error"
+          "error",
+          "blocked"
         ],
         "captured_actions_property": "presetReferenceControlCapturedActionKeys",
         "captured_property": "presetReferenceControlsCaptured",
@@ -2728,10 +2738,11 @@
         "captured_states_property": "presetCommandSurfaceCapturedStates",
         "captured_tooltips_property": "presetCommandSurfaceCapturedTooltips",
         "command_object": "productToolbarButton",
-        "expected_action_count": 11,
+        "expected_action_count": 12,
         "expected_action_keys": [
           "refresh",
           "new",
+          "import",
           "edit",
           "remove",
           "connect",
@@ -2745,6 +2756,7 @@
         "expected_action_labels": [
           "Refresh",
           "New Profile",
+          "Import",
           "Edit",
           "Delete",
           "Connect",
@@ -2761,16 +2773,18 @@
           "dry-run": "normal",
           "edit": "normal",
           "files": "normal",
+          "import": "normal",
           "new": "normal",
           "queue": "checked",
           "refresh": "normal",
-          "remove": "disabled",
+          "remove": "normal",
           "split-h": "normal",
           "split-v": "normal"
         },
         "expected_action_tooltips": [
           "Refresh connection profiles",
           "Create connection profile",
+          "Import connection profiles",
           "Edit connection profile",
           "Delete connection profile",
           "Open selected remote desktop profile",
@@ -2801,7 +2815,7 @@
         "captured_status_message_property": "presetFocusInteractionStatusMessage",
         "captured_toolbar_states_property": "presetFocusInteractionToolbarStates",
         "checked_toolbar_key": "queue",
-        "disabled_toolbar_key": "remove",
+        "disabled_toolbar_key": "",
         "focus_object": "remminaProfileFilter",
         "focused_control": "profile-filter",
         "focused_state_property": "interactionState",
@@ -2812,7 +2826,7 @@
         "route_role": "product-preset-focus-interaction-route",
         "selected_tree_label": "linux-console",
         "status_bar_object": "statusBar",
-        "status_note": "profile filter focus, transfer checked, delete guarded"
+        "status_note": "profile filter focus, transfer checked, delete follows selection"
       },
       "preset_home_search_route": {
         "captured_actions_property": "presetHomeSearchCapturedActions",
@@ -2981,7 +2995,7 @@
           "Start process",
           "Restart process",
           "Stop process",
-          "Copy launch command",
+          "Copy selected terminal output, or the launch command when nothing is selected",
           "Clear terminal output",
           "Record terminal macro",
           "Stop terminal macro",
@@ -2994,7 +3008,8 @@
           "starting",
           "running",
           "stopping",
-          "error"
+          "error",
+          "blocked"
         ],
         "captured_actions_property": "presetReferenceControlCapturedActionKeys",
         "captured_property": "presetReferenceControlsCaptured",
@@ -3612,10 +3627,11 @@
         "captured_states_property": "presetCommandSurfaceCapturedStates",
         "captured_tooltips_property": "presetCommandSurfaceCapturedTooltips",
         "command_object": "productToolbarButton",
-        "expected_action_count": 11,
+        "expected_action_count": 12,
         "expected_action_keys": [
           "refresh",
           "new",
+          "import",
           "edit",
           "remove",
           "connect",
@@ -3629,6 +3645,7 @@
         "expected_action_labels": [
           "Refresh",
           "New Conn",
+          "Import",
           "Config",
           "Delete",
           "Open",
@@ -3645,16 +3662,18 @@
           "dry-run": "normal",
           "edit": "normal",
           "files": "checked",
+          "import": "normal",
           "new": "normal",
           "queue": "normal",
           "refresh": "normal",
-          "remove": "disabled",
+          "remove": "normal",
           "split-h": "normal",
           "split-v": "normal"
         },
         "expected_action_tooltips": [
           "Refresh connection tree",
           "Create connection",
+          "Import connection definitions",
           "Edit connection configuration",
           "Delete connection",
           "Open selected connection",
@@ -3685,7 +3704,7 @@
         "captured_status_message_property": "presetFocusInteractionStatusMessage",
         "captured_toolbar_states_property": "presetFocusInteractionToolbarStates",
         "checked_toolbar_key": "files",
-        "disabled_toolbar_key": "remove",
+        "disabled_toolbar_key": "",
         "focus_object": "mRemoteNgDocumentFilter",
         "focused_control": "tree-filter",
         "focused_state_property": "interactionState",
@@ -3696,7 +3715,7 @@
         "route_role": "product-preset-focus-interaction-route",
         "selected_tree_label": "edge-prod [SSH]",
         "status_bar_object": "statusBar",
-        "status_note": "connection tree focus, external tool checked, delete guarded"
+        "status_note": "connection tree focus, external tool checked, delete follows selection"
       },
       "preset_home_search_route": {
         "captured_actions_property": "presetHomeSearchCapturedActions",
@@ -3865,7 +3884,7 @@
           "Start process",
           "Restart process",
           "Stop process",
-          "Copy launch command",
+          "Copy selected terminal output, or the launch command when nothing is selected",
           "Clear terminal output",
           "Record terminal macro",
           "Stop terminal macro",
@@ -3878,7 +3897,8 @@
           "starting",
           "running",
           "stopping",
-          "error"
+          "error",
+          "blocked"
         ],
         "captured_actions_property": "presetReferenceControlCapturedActionKeys",
         "captured_property": "presetReferenceControlsCaptured",
@@ -4223,8 +4243,8 @@
       "image": {
         "height": 760,
         "path": "mobaxterm-home.png",
-        "sha256": "51cc346ecfc01510418046efc2f1f5e6100853b8524e56f6987113f6be27cd9b",
-        "size_bytes": 56046,
+        "sha256": "9b53cf117908bb8d9ef91e2e1f27ebee0e190425e5c6c5afbf1427d9a859c4d6",
+        "size_bytes": 55851,
         "width": 1280
       },
       "label": "MobaXterm-style Home",

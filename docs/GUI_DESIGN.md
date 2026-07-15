@@ -957,6 +957,7 @@ python scripts/check_gui_design_previews.py
 python scripts/check_gui_visual_metrics.py
 python scripts/check_gui_parity.py
 python scripts/check_gui_parity.py --json
+python scripts/check_gui_interactions.py --require-pyqt6 --out-dir artifacts/gui-interactions
 python scripts/check_real_gui_render.py
 python scripts/check_real_gui_render.py --require-pyqt6 --timeout-seconds 240 --out-dir artifacts/gui-real
 python scripts/check_real_gui_render.py --timeout-seconds 240 --out-dir artifacts/gui-real
@@ -975,12 +976,18 @@ selector. In dependency-light environments, the same check verifies that the GUI
 factory fails closed with a clear install hint.
 
 `python scripts/check_real_gui_render.py` is the live screenshot contract. With
-the desktop extra installed it opens the real PyQt6 main window offscreen,
+the desktop extra installed it opens the real PyQt6 main window using the
+selected platform plugin (native `windows` by default on Windows, native `cocoa`
+on macOS, and `offscreen` by default on Linux),
 switches through the selected presets, checks the expected controls are visible,
 verifies preset-specific tabs, side panel copy, toolbar/ribbon labels, status
 segments, interaction states, live layout geometry contracts, live widget
 topology contracts and product-specific tab/session-tree content labels, then
-rejects blank or placeholder captures by sampling screenshot pixels. For the
+rejects blank or placeholder captures by sampling screenshot pixels. Before any
+window is accepted, a font preflight requires a non-empty Qt font inventory, a
+valid raw font, positive and sufficiently distinct glyph indexes for
+`RemoteOps0123456789`, and painted text ink. This rejects the tofu-box output
+that Qt can otherwise produce when an offscreen backend has no usable fonts. For the
 MobaXterm-style preset the live checker opens the bundled `edge-prod` demo profile
 into a connected reference tab before capture, so the SFTP/monitoring dock,
 SSH banner and bottom telemetry strip are verified in the real PyQt window.
@@ -1005,15 +1012,22 @@ measurement set. These captures are diagnostic outputs and are not the same as
 the tracked static preview gallery. Without PyQt6, the checker does not fake
 screenshots: it verifies that the GUI factory raises the expected dependency
 error unless `--require-pyqt6` is used.
-After a live capture or after downloading the CI `gui-real-render` artifact,
+Each capture also records `font_render_evidence` (platform, family inventory,
+selected family, raw-font validity, glyph indexes/distinct count, and rendered
+ink pixels), while the manifest records `live-pyqt6-offscreen`,
+`live-pyqt6-windows`, or `live-pyqt6-cocoa` as its honest capture mode.
+After a live capture or after downloading the CI `gui-real-render` or
+`gui-real-render-windows` artifact,
 `python scripts/check_real_gui_render_artifact.py --artifact-dir
 artifacts/gui-real` validates the manifest, all six PNG files, per-capture
 PNG dimensions, sizes, SHA-256 hashes, all-preset capture completeness and full
-product-style measured contract evidence.
+product-style measured contract evidence. It also rejects missing, malformed,
+tofu-like, or capture-mode-mismatched font evidence.
 
 CI enforces both paths. The normal matrix runs `python scripts/verify.py --lint`,
 which includes the fail-closed render smoke in dependency-light jobs. A
-dedicated `gui-render` job installs the desktop extra and runs
+dedicated `gui-render` job installs `fontconfig`, `fonts-dejavu-core`, the Qt
+runtime libraries and the desktop extra, verifies font discovery, and runs
 `python scripts/check_real_gui_render.py --require-pyqt6 --timeout-seconds
 240 --out-dir artifacts/gui-real`, validates the resulting directory with
 `python scripts/check_real_gui_render_artifact.py --artifact-dir
@@ -1021,6 +1035,28 @@ artifacts/gui-real`, then uploads the captured PNG manifest as a workflow
 artifact. Because no `--preset` filter is passed, that job captures Native,
 MobaXterm-style, SecureCRT-style, Termius-style, Remmina-style and
 mRemoteNG-style in one all-preset gate.
+
+The same Linux job separately runs `scripts/check_gui_interactions.py` with the
+offscreen Qt plugin and uploads `gui-interactions-linux-offscreen`. A dedicated
+`gui-interactions-windows` job uses `QT_QPA_PLATFORM=windows` on
+`windows-2025-vs2026`, runs the complete unfiltered six-preset renderer, validates
+and uploads `gui-real-render-windows`, then runs and uploads
+`gui-interactions-windows`. This interaction evidence exercises routed toolbar
+and menu actions, correction-preserving profile and layout dialogs, searchable
+terminal output, split-pane identity and sizing, saved-layout isolation, and
+exact supported window sizes after live terminal creation. It remains distinct
+from static preview resemblance; both Linux and Windows now also publish the
+all-preset pixel/topology render artifact.
+
+The minimum readiness-gated GUI window boundary is **1024x768**. At that exact
+size, the live gate switches through every preset and requires all visible
+product or MobaXterm-style ribbon actions to remain inside the main toolbar with
+no Qt overflow-extension button. It also requires status/reference cells and
+profile columns to stay inside their parent content rectangles without physical
+intersection. Where the 1024px viewport needs compact visible values, the full
+literal label/value remains available through exact widget metadata and tooltip
+contracts. Sub-1024-pixel window widths are not included in the
+release-readiness claim.
 
 For the same strict local proof path on a desktop-extra install, run
 `python scripts/verify.py --require-real-gui`; it fails if PyQt6 or the live

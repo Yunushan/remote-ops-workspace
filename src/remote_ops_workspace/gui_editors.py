@@ -6,7 +6,7 @@ from . import command_safety as safe
 from .layouts import Layout, LayoutPane, parse_layout_pane, validate_layout
 from .models import Profile, Tunnel
 from .plugins import plugin_protocols
-from .profile_validation import prepare_profile
+from .profile_validation import SUPPORTED_PROFILE_PROTOCOLS, prepare_profile
 
 PROTOCOL_PRESETS: dict[str, dict[str, str]] = {
     "ssh": {"port": "22", "options": "strict_host_key_checking=accept-new"},
@@ -41,6 +41,45 @@ PROFILE_EDITOR_FIELDS = {
     "url",
     "username",
 }
+
+PROFILE_EDITOR_PROTOCOL_ORDER = (
+    "ssh",
+    "sftp",
+    "scp",
+    "rdp",
+    "vnc",
+    "spice",
+    "x2go",
+    "mosh",
+    "telnet",
+    "rlogin",
+    "rsh",
+    "ftp",
+    "http",
+    "https",
+    "www",
+    "kubernetes",
+    "k8s",
+    "winrm",
+    "ica",
+    "xdmcp",
+    "serial",
+    "raw",
+    "local-shell",
+    "local",
+    "shell",
+    "custom",
+    "ssh1",
+    "sshv1",
+)
+
+
+def profile_editor_protocols() -> tuple[str, ...]:
+    """Return every protocol accepted by the editor, including registered plugins."""
+
+    supported = set(SUPPORTED_PROFILE_PROTOCOLS) | plugin_protocols()
+    ordered = [protocol for protocol in PROFILE_EDITOR_PROTOCOL_ORDER if protocol in supported]
+    return tuple([*ordered, *sorted(supported - set(ordered))])
 
 
 def profile_to_editor_data(profile: Profile | None = None) -> dict[str, str]:

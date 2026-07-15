@@ -80,6 +80,133 @@ def test_real_gui_render_metrics_accept_detailed_capture() -> None:
     assert checker.validate_metrics("native", metrics) == []
 
 
+def test_real_gui_render_metrics_reject_capture_wider_than_requested_size() -> None:
+    checker = _load_checker()
+    samples = [((index * 13) % 255, (index * 29) % 255, (index * 47) % 255) for index in range(120)]
+
+    metrics = checker.metrics_from_samples(
+        checker.REQUESTED_SIZE[0] + 1, checker.REQUESTED_SIZE[1], samples
+    )
+    errors = checker.validate_metrics("native", metrics)
+
+    assert any("must not exceed requested size" in error for error in errors)
+
+
+def test_real_gui_render_font_preflight_rejects_empty_font_inventory() -> None:
+    checker = _load_checker()
+    evidence = checker.FontRenderEvidence(
+        platform_name="offscreen",
+        family_count=0,
+        selected_family="",
+        raw_font_valid=False,
+        glyph_indexes=(),
+        rendered_ink_pixels=0,
+    )
+
+    errors = checker.validate_qt_font_render_evidence(evidence)
+
+    assert any("exposes no usable font families" in error for error in errors)
+    assert any("readable glyph rendering is required" in error for error in errors)
+
+
+def test_real_gui_render_font_preflight_rejects_tofu_glyph_substitution() -> None:
+    checker = _load_checker()
+    evidence = checker.FontRenderEvidence(
+        platform_name="offscreen",
+        family_count=1,
+        selected_family="Fallback",
+        raw_font_valid=True,
+        glyph_indexes=(1,) * len(checker.FONT_PROBE_TEXT),
+        rendered_ink_pixels=900,
+    )
+
+    errors = checker.validate_qt_font_render_evidence(evidence)
+
+    assert any("tofu substitution is not accepted" in error for error in errors)
+
+
+def test_real_gui_render_font_preflight_accepts_distinct_rendered_glyphs() -> None:
+    checker = _load_checker()
+    evidence = checker.FontRenderEvidence(
+        platform_name="windows",
+        family_count=300,
+        selected_family="Segoe UI",
+        raw_font_valid=True,
+        glyph_indexes=tuple(range(1, len(checker.FONT_PROBE_TEXT) + 1)),
+        rendered_ink_pixels=900,
+    )
+
+    assert checker.validate_qt_font_render_evidence(evidence) == []
+
+
+def test_real_gui_render_uses_native_windows_backend_by_default() -> None:
+    checker = _load_checker()
+
+    assert checker.default_qt_platform("win32") == "windows"
+    assert checker.default_qt_platform("darwin") == "cocoa"
+    assert checker.default_qt_platform("linux") == "offscreen"
+
+
+def test_real_gui_render_capture_binds_font_evidence_and_platform_mode() -> None:
+    checker = _load_checker()
+    evidence = checker.FontRenderEvidence(
+        platform_name="windows",
+        family_count=300,
+        selected_family="Segoe UI",
+        raw_font_valid=True,
+        glyph_indexes=tuple(range(1, len(checker.FONT_PROBE_TEXT) + 1)),
+        rendered_ink_pixels=900,
+    )
+    capture = checker.CaptureResult(
+        preset_id="native",
+        preset_label="Native",
+        metrics=checker.RenderMetrics(1420, 820, 128, 42, 80, 0.25),
+        font_render_evidence=evidence,
+    )
+
+    assert checker.capture_mode_for_captures([capture]) == "live-pyqt6-windows"
+    assert capture.to_dict()["font_render_evidence"]["selected_family"] == "Segoe UI"
+
+
+def test_real_gui_render_validates_real_remmina_screenshot_artifact(tmp_path: Path) -> None:
+    checker = _load_checker()
+    artifact = tmp_path / "win-admin-rdp-screenshot.png"
+    payload = b"\x89PNG\r\n\x1a\nreal-capture"
+    artifact.write_bytes(payload)
+
+    assert (
+        checker.validate_remmina_screenshot_capture_artifact(
+            "viewer-controls",
+            str(artifact.resolve()),
+            len(payload),
+            artifact.name,
+        )
+        == []
+    )
+
+
+def test_real_gui_render_rejects_unproved_remmina_screenshot_artifact(tmp_path: Path) -> None:
+    checker = _load_checker()
+    artifact = tmp_path / "win-admin-rdp-screenshot.png"
+    artifact.write_bytes(b"not-a-png")
+
+    relative_errors = checker.validate_remmina_screenshot_capture_artifact(
+        "viewer-controls",
+        artifact.name,
+        artifact.stat().st_size,
+        artifact.name,
+    )
+    png_errors = checker.validate_remmina_screenshot_capture_artifact(
+        "viewer-controls",
+        str(artifact.resolve()),
+        artifact.stat().st_size,
+        artifact.name,
+    )
+
+    assert any("must be absolute" in error for error in relative_errors)
+    assert any("must contain a PNG artifact" in error for error in png_errors)
+
+
 def test_real_gui_render_manifest_contract_names_required_widgets() -> None:
     checker = _load_checker()
     source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
@@ -174,9 +301,10 @@ def test_real_gui_render_manifest_contract_names_required_widgets() -> None:
         "Window",
         "Help",
     ]
-    assert checker.EXPECTED_SECURECRT_TOP_TOOLBAR_KEYS[:5] == [
+    assert checker.EXPECTED_SECURECRT_TOP_TOOLBAR_KEYS[:6] == [
         "refresh",
         "new",
+        "import",
         "edit",
         "remove",
         "connect",
@@ -336,9 +464,10 @@ def test_real_gui_render_manifest_contract_names_required_widgets() -> None:
         "window",
         "help",
     ]
-    assert checker.EXPECTED_MREMOTENG_TOP_TOOLBAR_KEYS[:6] == [
+    assert checker.EXPECTED_MREMOTENG_TOP_TOOLBAR_KEYS[:7] == [
         "refresh",
         "new",
+        "import",
         "edit",
         "remove",
         "connect",
@@ -1068,7 +1197,7 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
             assert focus_interaction_route["focused_control"]
             assert focus_interaction_route["active_toolbar_key"]
             assert focus_interaction_route["checked_toolbar_key"]
-            assert focus_interaction_route["disabled_toolbar_key"]
+            assert focus_interaction_route["disabled_toolbar_key"] == ""
             assert focus_interaction_route["selected_tree_label"]
             assert focus_interaction_route["active_tab_status"]
             assert focus_interaction_route["status_note"]
@@ -2851,11 +2980,11 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "Help",
     ]
     assert securecrt["expected_securecrt_top_chrome"]["toolbar_height"] == 54
-    assert securecrt["expected_securecrt_top_chrome"]["toolbar_actions"][5] == {
+    assert securecrt["expected_securecrt_top_chrome"]["toolbar_actions"][6] == {
         "key": "files",
         "icon_key": "sftp",
         "label": "SFTP",
-        "static_x": 424,
+        "static_x": 502,
         "static_width": 54,
     }
     assert securecrt["expected_securecrt_command_window"] == {
@@ -3715,11 +3844,11 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "Help",
     ]
     assert mremoteng["expected_mremoteng_top_chrome"]["toolbar_height"] == 50
-    assert mremoteng["expected_mremoteng_top_chrome"]["toolbar_actions"][5] == {
+    assert mremoteng["expected_mremoteng_top_chrome"]["toolbar_actions"][6] == {
         "key": "files",
         "icon_key": "external-tool",
         "label": "External",
-        "static_x": 368,
+        "static_x": 440,
         "static_width": 74,
     }
     assert mremoteng["expected_mremoteng_document_controls"] == {
@@ -3930,6 +4059,25 @@ def test_real_gui_render_tracks_live_layout_contracts_for_product_presets() -> N
     mremoteng_objects = {str(contract["object_name"]) for contract in checker.live_layout_contracts_for_preset("mremoteng")}
     assert "mRemoteNgPropertyGrid" in mremoteng_objects
     assert "mRemoteNgDocumentFilter" in mremoteng_objects
+
+
+def test_real_gui_render_rejects_overlapping_or_out_of_bounds_live_cells() -> None:
+    checker = _load_checker()
+    container = {"x": 0, "y": 0, "width": 100, "height": 20}
+    valid = [
+        {"id": "first", "x": 0, "y": 0, "width": 40, "height": 20},
+        {"id": "second", "x": 40, "y": 0, "width": 60, "height": 20},
+    ]
+    invalid = [
+        {"id": "first", "x": 0, "y": 0, "width": 60, "height": 20},
+        {"id": "second", "x": 50, "y": 0, "width": 60, "height": 20},
+    ]
+
+    assert checker.validate_non_overlapping_bounds("proof", valid, container) == []
+    errors = checker.validate_non_overlapping_bounds("proof", invalid, container)
+
+    assert any("overlaps" in error for error in errors)
+    assert any("outside its parent" in error for error in errors)
 
 
 def test_real_gui_render_tracks_live_topology_contracts_for_product_presets() -> None:

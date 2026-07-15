@@ -711,46 +711,210 @@ LIVE_LAYOUT_CONTRACTS: dict[str, list[dict[str, object]]] = {
 }
 LIVE_TOPOLOGY_CONTRACTS: dict[str, list[dict[str, object]]] = {
     "mobaxterm": [
-        {"id": "quick-connect-above-dock", "from": "mobaQuickConnectChrome", "relation": "above", "to": "mobaConnectedLeftDock", "max_gap": 90},
-        {"id": "rail-left-of-dock", "from": "mobaRail", "relation": "left_of", "to": "mobaConnectedLeftDock", "max_gap": 80},
-        {"id": "dock-left-of-ssh-banner", "from": "mobaConnectedLeftDock", "relation": "left_of", "to": "mobaSshBanner", "max_gap": 120},
-        {"id": "ssh-banner-left-of-right-utility", "from": "mobaSshBanner", "relation": "left_of", "to": "mobaRightUtilityRail", "min_gap": 20},
-        {"id": "sftp-table-inside-dock", "from": "mobaSftpFileTable", "relation": "inside", "to": "mobaConnectedLeftDock"},
-        {"id": "ssh-banner-above-telemetry", "from": "mobaSshBanner", "relation": "above", "to": "mobaTelemetryBar", "min_gap": 80},
+        {
+            "id": "quick-connect-above-dock",
+            "from": "mobaQuickConnectChrome",
+            "relation": "above",
+            "to": "mobaConnectedLeftDock",
+            "max_gap": 90,
+        },
+        {
+            "id": "rail-left-of-dock",
+            "from": "mobaRail",
+            "relation": "left_of",
+            "to": "mobaConnectedLeftDock",
+            "max_gap": 80,
+        },
+        {
+            "id": "dock-left-of-ssh-banner",
+            "from": "mobaConnectedLeftDock",
+            "relation": "left_of",
+            "to": "mobaSshBanner",
+            "max_gap": 120,
+        },
+        {
+            "id": "ssh-banner-left-of-right-utility",
+            "from": "mobaSshBanner",
+            "relation": "left_of",
+            "to": "mobaRightUtilityRail",
+            "min_gap": 20,
+        },
+        {
+            "id": "sftp-table-inside-dock",
+            "from": "mobaSftpFileTable",
+            "relation": "inside",
+            "to": "mobaConnectedLeftDock",
+        },
+        {
+            "id": "ssh-banner-above-telemetry",
+            "from": "mobaSshBanner",
+            "relation": "above",
+            "to": "mobaTelemetryBar",
+            "min_gap": 80,
+        },
     ],
     "securecrt": [
-        {"id": "toolbar-above-tabs", "from": "layoutToolbar", "relation": "above", "to": "sessionTabs", "max_gap": 120},
-        {"id": "sidebar-left-of-tabs", "from": "leftPanel", "relation": "left_of", "to": "sessionTabs", "max_gap": 80},
-        {"id": "workflow-above-workspace-surface", "from": "productWorkflowEvidence", "relation": "above", "to": "productWorkspaceSurface", "max_gap": 50},
-        {"id": "workspace-surface-above-log", "from": "productWorkspaceSurface", "relation": "above", "to": "activityLog", "max_gap": 196},
-        {"id": "workspace-primary-left-of-secondary", "from": "productWorkspacePrimaryPane", "relation": "left_of", "to": "productWorkspaceSecondaryPane", "max_gap": 40},
+        {
+            "id": "toolbar-above-tabs",
+            "from": "layoutToolbar",
+            "relation": "above",
+            "to": "sessionTabs",
+            "max_gap": 120,
+        },
+        {
+            "id": "sidebar-left-of-tabs",
+            "from": "leftPanel",
+            "relation": "left_of",
+            "to": "sessionTabs",
+            "max_gap": 80,
+        },
+        {
+            "id": "workflow-above-workspace-surface",
+            "from": "productWorkflowEvidence",
+            "relation": "above",
+            "to": "productWorkspaceSurface",
+            "max_gap": 50,
+        },
+        {
+            "id": "welcome-scroll-above-log",
+            "from": "welcomeScroll",
+            "relation": "above",
+            "to": "activityLog",
+            "max_gap": 196,
+        },
+        {
+            "id": "workspace-primary-left-of-secondary",
+            "from": "productWorkspacePrimaryPane",
+            "relation": "left_of",
+            "to": "productWorkspaceSecondaryPane",
+            "max_gap": 40,
+        },
     ],
     "termius": [
-        {"id": "toolbar-above-tabs", "from": "layoutToolbar", "relation": "above", "to": "sessionTabs", "max_gap": 120},
-        {"id": "hosts-sidebar-left-of-west-tabs", "from": "leftPanel", "relation": "left_of", "to": "sessionTabs", "max_gap": 80},
-        {"id": "workflow-above-workspace-surface", "from": "productWorkflowEvidence", "relation": "above", "to": "productWorkspaceSurface", "max_gap": 50},
-        {"id": "workspace-surface-above-log", "from": "productWorkspaceSurface", "relation": "above", "to": "activityLog", "max_gap": 196},
-        {"id": "workspace-primary-left-of-secondary", "from": "productWorkspacePrimaryPane", "relation": "left_of", "to": "productWorkspaceSecondaryPane", "max_gap": 40},
+        {
+            "id": "toolbar-above-tabs",
+            "from": "layoutToolbar",
+            "relation": "above",
+            "to": "sessionTabs",
+            "max_gap": 120,
+        },
+        {
+            "id": "hosts-sidebar-left-of-west-tabs",
+            "from": "leftPanel",
+            "relation": "left_of",
+            "to": "sessionTabs",
+            "max_gap": 80,
+        },
+        {
+            "id": "workflow-above-workspace-surface",
+            "from": "productWorkflowEvidence",
+            "relation": "above",
+            "to": "productWorkspaceSurface",
+            "max_gap": 50,
+        },
+        {
+            "id": "welcome-scroll-above-log",
+            "from": "welcomeScroll",
+            "relation": "above",
+            "to": "activityLog",
+            "max_gap": 196,
+        },
+        {
+            "id": "workspace-primary-left-of-secondary",
+            "from": "productWorkspacePrimaryPane",
+            "relation": "left_of",
+            "to": "productWorkspaceSecondaryPane",
+            "max_gap": 40,
+        },
     ],
     "remmina": [
-        {"id": "toolbar-above-viewer-tabs", "from": "layoutToolbar", "relation": "above", "to": "sessionTabs", "max_gap": 120},
-        {"id": "profiles-left-of-viewer-tabs", "from": "leftPanel", "relation": "left_of", "to": "sessionTabs", "max_gap": 80},
-        {"id": "workflow-above-workspace-surface", "from": "productWorkflowEvidence", "relation": "above", "to": "productWorkspaceSurface", "max_gap": 50},
-        {"id": "workspace-surface-above-activity", "from": "productWorkspaceSurface", "relation": "above", "to": "activityLog", "max_gap": 196},
-        {"id": "workspace-primary-left-of-secondary", "from": "productWorkspacePrimaryPane", "relation": "left_of", "to": "productWorkspaceSecondaryPane", "max_gap": 40},
+        {
+            "id": "toolbar-above-viewer-tabs",
+            "from": "layoutToolbar",
+            "relation": "above",
+            "to": "sessionTabs",
+            "max_gap": 120,
+        },
+        {
+            "id": "profiles-left-of-viewer-tabs",
+            "from": "leftPanel",
+            "relation": "left_of",
+            "to": "sessionTabs",
+            "max_gap": 80,
+        },
+        {
+            "id": "workflow-above-workspace-surface",
+            "from": "productWorkflowEvidence",
+            "relation": "above",
+            "to": "productWorkspaceSurface",
+            "max_gap": 50,
+        },
+        {
+            "id": "welcome-scroll-above-activity",
+            "from": "welcomeScroll",
+            "relation": "above",
+            "to": "activityLog",
+            "max_gap": 196,
+        },
+        {
+            "id": "workspace-primary-left-of-secondary",
+            "from": "productWorkspacePrimaryPane",
+            "relation": "left_of",
+            "to": "productWorkspaceSecondaryPane",
+            "max_gap": 40,
+        },
     ],
     "mremoteng": [
-        {"id": "toolbar-above-document-tabs", "from": "layoutToolbar", "relation": "above", "to": "sessionTabs", "max_gap": 120},
-        {"id": "connections-left-of-document-tabs", "from": "leftPanel", "relation": "left_of", "to": "sessionTabs", "max_gap": 80},
-        {"id": "workspace-surface-above-workflow", "from": "productWorkspaceSurface", "relation": "above", "to": "productWorkflowEvidence", "max_gap": 110},
-        {"id": "document-controls-above-property-grid", "from": "mRemoteNgDocumentControls", "relation": "above", "to": "mRemoteNgPropertyGrid", "max_gap": 40},
-        {"id": "workflow-above-log", "from": "productWorkflowEvidence", "relation": "above", "to": "activityLog", "max_gap": 196},
-        {"id": "workspace-primary-left-of-secondary", "from": "productWorkspacePrimaryPane", "relation": "left_of", "to": "productWorkspaceSecondaryPane", "max_gap": 40},
+        {
+            "id": "toolbar-above-document-tabs",
+            "from": "layoutToolbar",
+            "relation": "above",
+            "to": "sessionTabs",
+            "max_gap": 120,
+        },
+        {
+            "id": "connections-left-of-document-tabs",
+            "from": "leftPanel",
+            "relation": "left_of",
+            "to": "sessionTabs",
+            "max_gap": 80,
+        },
+        {
+            "id": "workspace-surface-above-workflow",
+            "from": "productWorkspaceSurface",
+            "relation": "above",
+            "to": "productWorkflowEvidence",
+            "max_gap": 110,
+        },
+        {
+            "id": "document-controls-above-property-grid",
+            "from": "mRemoteNgDocumentControls",
+            "relation": "above",
+            "to": "mRemoteNgPropertyGrid",
+            "max_gap": 40,
+        },
+        {
+            "id": "welcome-scroll-above-log",
+            "from": "welcomeScroll",
+            "relation": "above",
+            "to": "activityLog",
+            "max_gap": 196,
+        },
+        {
+            "id": "workspace-primary-left-of-secondary",
+            "from": "productWorkspacePrimaryPane",
+            "relation": "left_of",
+            "to": "productWorkspaceSecondaryPane",
+            "max_gap": 40,
+        },
     ],
 }
 MIN_DISTINCT_COLORS = 18
 MIN_LUMINANCE_RANGE = 40
 MIN_NON_BACKGROUND_RATIO = 0.08
+FONT_PROBE_TEXT = "RemoteOps0123456789"
+MIN_FONT_RENDER_INK_PIXELS = 40
+MIN_DISTINCT_FONT_GLYPHS = 12
 
 
 @dataclass(frozen=True)
@@ -782,6 +946,7 @@ class CaptureResult:
     size_bytes: int | None = None
     sha256: str | None = None
     contract_evidence: dict[str, object] | None = None
+    font_render_evidence: FontRenderEvidence | None = None
 
     def to_dict(self) -> dict[str, object]:
         payload: dict[str, object] = {
@@ -797,7 +962,31 @@ class CaptureResult:
             payload["sha256"] = self.sha256
         if self.contract_evidence is not None:
             payload["contract_evidence"] = self.contract_evidence
+        if self.font_render_evidence is not None:
+            payload["font_render_evidence"] = self.font_render_evidence.to_dict()
         return payload
+
+
+@dataclass(frozen=True)
+class FontRenderEvidence:
+    platform_name: str
+    family_count: int
+    selected_family: str
+    raw_font_valid: bool
+    glyph_indexes: tuple[int, ...]
+    rendered_ink_pixels: int
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "platform_name": self.platform_name,
+            "family_count": self.family_count,
+            "selected_family": self.selected_family,
+            "raw_font_valid": self.raw_font_valid,
+            "probe_text": FONT_PROBE_TEXT,
+            "glyph_indexes": list(self.glyph_indexes),
+            "distinct_glyph_count": len(set(self.glyph_indexes)),
+            "rendered_ink_pixels": self.rendered_ink_pixels,
+        }
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -934,7 +1123,7 @@ def capture_live_gui(
 ) -> tuple[list[str], list[str]]:
     old_qpa = os.environ.get("QT_QPA_PLATFORM")
     old_home = os.environ.get("ROW_HOME")
-    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    os.environ.setdefault("QT_QPA_PLATFORM", default_qt_platform())
     captures: list[CaptureResult] = []
     errors: list[str] = []
     messages: list[str] = []
@@ -954,19 +1143,46 @@ def capture_live_gui(
     return errors, messages
 
 
+def default_qt_platform(platform: str | None = None) -> str:
+    resolved = platform or sys.platform
+    if resolved.startswith("win"):
+        return "windows"
+    if resolved == "darwin":
+        return "cocoa"
+    return "offscreen"
+
+
 def _capture_live_gui(
     preset_ids: list[str],
     *,
     out_dir: Path | None,
 ) -> tuple[list[CaptureResult], list[str], list[str]]:
     from PyQt6.QtCore import QCoreApplication
-    from PyQt6.QtWidgets import QComboBox
+    from PyQt6.QtWidgets import QApplication, QComboBox
 
     from remote_ops_workspace import gui
 
     captures: list[CaptureResult] = []
     errors: list[str] = []
     messages: list[str] = []
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication(["row-real-gui-render-font-preflight"])
+    font_evidence = collect_qt_font_render_evidence(app)
+    font_errors = validate_qt_font_render_evidence(font_evidence)
+    if font_errors:
+        errors.extend(font_errors)
+        messages.append(
+            f"Qt font preflight failed on {font_evidence.platform_name}: "
+            f"{font_evidence.family_count} families, "
+            f"{font_evidence.rendered_ink_pixels} rendered ink pixels"
+        )
+        return captures, errors, messages
+    messages.append(
+        f"Qt font preflight passed on {font_evidence.platform_name}: "
+        f"{font_evidence.selected_family}, {len(font_evidence.glyph_indexes)} glyphs, "
+        f"{font_evidence.rendered_ink_pixels} rendered ink pixels"
+    )
     for preset_id in preset_ids:
         preset = next((item for item in GUI_DESIGN_PRESETS if item.id == preset_id), None)
         if preset is None:
@@ -1032,6 +1248,12 @@ def _capture_live_gui(
             if preset_widget_errors:
                 errors.extend(preset_widget_errors)
                 continue
+            actual_window_size = (window.width(), window.height())
+            if actual_window_size != REQUESTED_SIZE:
+                errors.append(
+                    f"{preset.id} live GUI window size {actual_window_size} "
+                    f"must equal requested size {REQUESTED_SIZE}"
+                )
 
             pixmap = window.grab()
             metrics = metrics_from_qimage(pixmap.toImage())
@@ -1048,6 +1270,7 @@ def _capture_live_gui(
                     size_bytes=artifact.get("size_bytes"),
                     sha256=artifact.get("sha256"),
                     contract_evidence=contract_evidence,
+                    font_render_evidence=font_evidence,
                 )
             )
             messages.append(
@@ -1058,6 +1281,99 @@ def _capture_live_gui(
             close_live_render_window(window, app)
             QCoreApplication.processEvents()
     return captures, errors, messages
+
+
+def collect_qt_font_render_evidence(app: Any) -> FontRenderEvidence:
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtGui import (
+        QColor,
+        QFont,
+        QFontDatabase,
+        QGuiApplication,
+        QImage,
+        QPainter,
+        QRawFont,
+    )
+
+    families = tuple(str(family) for family in QFontDatabase.families())
+    selected_font: Any | None = None
+    selected_raw_font: Any | None = None
+    selected_glyph_indexes: tuple[int, ...] = ()
+    candidates = [QFont(app.font())]
+    candidates.extend(QFont(family) for family in families)
+    for candidate in candidates:
+        raw_font = QRawFont.fromFont(candidate)
+        if not raw_font.isValid():
+            continue
+        glyph_indexes = tuple(int(index) for index in raw_font.glyphIndexesForString(FONT_PROBE_TEXT))
+        if len(glyph_indexes) != len(FONT_PROBE_TEXT) or any(index <= 0 for index in glyph_indexes):
+            continue
+        selected_font = candidate
+        selected_raw_font = raw_font
+        selected_glyph_indexes = glyph_indexes
+        break
+
+    rendered_ink_pixels = 0
+    if selected_font is not None:
+        if selected_font.family() != app.font().family():
+            app.setFont(selected_font)
+        probe_font = QFont(selected_font)
+        probe_font.setPointSize(14)
+        image = QImage(360, 72, QImage.Format.Format_ARGB32_Premultiplied)
+        background = QColor("#ffffff")
+        image.fill(background)
+        painter = QPainter(image)
+        try:
+            painter.setFont(probe_font)
+            painter.setPen(QColor("#000000"))
+            painter.drawText(image.rect(), Qt.AlignmentFlag.AlignCenter, FONT_PROBE_TEXT)
+        finally:
+            painter.end()
+        rendered_ink_pixels = sum(
+            1
+            for y in range(image.height())
+            for x in range(image.width())
+            if image.pixelColor(x, y) != background
+        )
+
+    return FontRenderEvidence(
+        platform_name=str(QGuiApplication.platformName()),
+        family_count=len(families),
+        selected_family=selected_font.family() if selected_font is not None else "",
+        raw_font_valid=bool(selected_raw_font is not None and selected_raw_font.isValid()),
+        glyph_indexes=selected_glyph_indexes,
+        rendered_ink_pixels=rendered_ink_pixels,
+    )
+
+
+def validate_qt_font_render_evidence(evidence: FontRenderEvidence) -> list[str]:
+    errors: list[str] = []
+    if evidence.family_count <= 0:
+        errors.append(
+            f"Qt platform {evidence.platform_name!r} exposes no usable font families; "
+            "install fontconfig and a TrueType font (Linux CI requires fontconfig and fonts-dejavu-core)"
+        )
+    if not evidence.raw_font_valid or not evidence.selected_family:
+        errors.append(
+            f"Qt platform {evidence.platform_name!r} could not resolve a valid raw font for the GUI"
+        )
+    if len(evidence.glyph_indexes) != len(FONT_PROBE_TEXT) or any(
+        index <= 0 for index in evidence.glyph_indexes
+    ):
+        errors.append(
+            f"Qt platform {evidence.platform_name!r} could not resolve every required GUI probe glyph"
+        )
+    elif len(set(evidence.glyph_indexes)) < MIN_DISTINCT_FONT_GLYPHS:
+        errors.append(
+            f"Qt platform {evidence.platform_name!r} resolved only "
+            f"{len(set(evidence.glyph_indexes))} distinct GUI probe glyphs; tofu substitution is not accepted"
+        )
+    if evidence.rendered_ink_pixels < MIN_FONT_RENDER_INK_PIXELS:
+        errors.append(
+            f"Qt platform {evidence.platform_name!r} rendered only "
+            f"{evidence.rendered_ink_pixels} font-probe ink pixels; readable glyph rendering is required"
+        )
+    return errors
 
 
 def close_live_render_window(window: Any, app: Any) -> None:
@@ -1193,6 +1509,15 @@ def find_live_tab_index(tabs: Any, label: str) -> int:
     return -1
 
 
+def live_tab_plain_tooltip(tabs: Any, index: int) -> str:
+    widget = tabs.widget(index)
+    if widget is not None:
+        value = widget.property("tabTooltipPlainText")
+        if isinstance(value, str):
+            return value
+    return tabs.tabToolTip(index)
+
+
 def capture_product_reference_tab_chrome(window: Any, preset_id: str, reference_index: int) -> list[str]:
     route = EXPECTED_PRESET_REFERENCE_TAB_CHROME_ROUTES.get(preset_id)
     if route is None:
@@ -1209,7 +1534,7 @@ def capture_product_reference_tab_chrome(window: Any, preset_id: str, reference_
     properties = {
         route.captured_property: True,
         route.captured_label_property: tabs.tabText(reference_index),
-        route.captured_tooltip_property: tabs.tabToolTip(reference_index),
+        route.captured_tooltip_property: live_tab_plain_tooltip(tabs, reference_index),
         route.captured_index_property: reference_index,
         route.captured_role_property: tab_role,
         route.captured_position_property: tab_position,
@@ -2858,6 +3183,28 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
         cell_widths = [int(cell.property("mobaTelemetryCellWidth") or 0) for cell in telemetry_cells]
         if cell_widths != EXPECTED_MOBA_TELEMETRY_CELL_WIDTHS:
             errors.append(f"mobaxterm live GUI telemetry cell widths drifted: {cell_widths}")
+        if telemetry_cells:
+            telemetry_geometry_errors = live_widget_non_overlap_errors(
+                "mobaxterm live GUI telemetry cells",
+                telemetry_cells,
+            )
+            errors.extend(telemetry_geometry_errors)
+        for cell, preferred_width in zip(
+            telemetry_cells,
+            EXPECTED_MOBA_TELEMETRY_CELL_WIDTHS,
+            strict=False,
+        ):
+            live_preferred = int(
+                cell.property("mobaTelemetryLivePreferredWidth") or 0
+            )
+            if live_preferred != preferred_width:
+                errors.append(
+                    "mobaxterm live GUI telemetry preferred-width metadata drifted"
+                )
+            if cell.minimumWidth() != 0 or cell.width() <= 0:
+                errors.append(
+                    "mobaxterm live GUI telemetry compact cell geometry drifted"
+                )
         cell_by_key = {str(cell.property("mobaTelemetryKey") or ""): cell for cell in telemetry_cells}
         icons_by_key = {str(icon.property("mobaTelemetryKey") or ""): icon for icon in telemetry_icons}
         labels_by_key = {str(label.property("mobaTelemetryKey") or ""): label for label in telemetry_labels}
@@ -4959,6 +5306,77 @@ def live_widget_bounds(window: Any, object_name: str) -> dict[str, int] | None:
     }
 
 
+def live_widget_non_overlap_errors(context: str, widgets: list[Any]) -> list[str]:
+    if not widgets:
+        return [f"{context} must expose at least one widget"]
+    parent = widgets[0].parentWidget()
+    if parent is None or any(widget.parentWidget() is not parent for widget in widgets):
+        return [f"{context} must share one parent for measurable geometry"]
+    content = parent.contentsRect()
+    bounds = []
+    for index, widget in enumerate(widgets):
+        geometry = widget.geometry()
+        bounds.append(
+            {
+                "id": f"{widget.objectName()}[{index}]",
+                "x": int(geometry.x()),
+                "y": int(geometry.y()),
+                "width": int(geometry.width()),
+                "height": int(geometry.height()),
+            }
+        )
+    container = {
+        "x": int(content.x()),
+        "y": int(content.y()),
+        "width": int(content.width()),
+        "height": int(content.height()),
+    }
+    return validate_non_overlapping_bounds(context, bounds, container)
+
+
+def validate_non_overlapping_bounds(
+    context: str,
+    bounds: list[dict[str, int | str]],
+    container: dict[str, int],
+) -> list[str]:
+    errors: list[str] = []
+    container_right = container["x"] + container["width"]
+    container_bottom = container["y"] + container["height"]
+    for item in bounds:
+        label = str(item["id"])
+        x = int(item["x"])
+        y = int(item["y"])
+        width = int(item["width"])
+        height = int(item["height"])
+        if width <= 0 or height <= 0:
+            errors.append(f"{context} {label} has empty geometry")
+            continue
+        if (
+            x < container["x"]
+            or y < container["y"]
+            or x + width > container_right
+            or y + height > container_bottom
+        ):
+            errors.append(f"{context} {label} extends outside its parent content rect")
+    for index, left in enumerate(bounds):
+        left_right = int(left["x"]) + int(left["width"])
+        left_bottom = int(left["y"]) + int(left["height"])
+        for right in bounds[index + 1 :]:
+            overlap_width = min(left_right, int(right["x"]) + int(right["width"])) - max(
+                int(left["x"]), int(right["x"])
+            )
+            overlap_height = min(
+                left_bottom,
+                int(right["y"]) + int(right["height"]),
+            ) - max(int(left["y"]), int(right["y"]))
+            if overlap_width > 0 and overlap_height > 0:
+                errors.append(
+                    f"{context} {left['id']} overlaps {right['id']} by "
+                    f"{overlap_width}x{overlap_height} pixels"
+                )
+    return errors
+
+
 def live_layout_contracts_for_preset(preset_id: str) -> list[dict[str, object]]:
     return list(LIVE_LAYOUT_CONTRACTS.get(preset_id, []))
 
@@ -5510,7 +5928,7 @@ def check_live_preset_reference_tab_chrome_route(window: Any, preset_id: str) ->
         errors.append(f"{preset_id} live GUI reference tab chrome widget missing route key")
     if tabs.tabText(actual_reference_index) != route.active_tab_label:
         errors.append(f"{preset_id} live GUI reference tab chrome label drifted")
-    if tabs.tabToolTip(actual_reference_index) != route.expected_tooltip:
+    if live_tab_plain_tooltip(tabs, actual_reference_index) != route.expected_tooltip:
         errors.append(f"{preset_id} live GUI reference tab chrome tooltip drifted")
     if str(reference_widget.property("tabRole") or "") != route.reference_tab_role:
         errors.append(f"{preset_id} live GUI reference tab chrome role drifted")
@@ -6306,7 +6724,7 @@ def required_termius_hosts_chrome_texts() -> set[str]:
 
 
 def check_live_moba_quick_connect_chrome(window: Any) -> list[str]:
-    from PyQt6.QtCore import Qt
+    from PyQt6.QtCore import QCoreApplication, Qt
     from PyQt6.QtWidgets import QFrame, QLabel, QLineEdit, QTreeWidget
 
     chrome = gui_design_moba_quick_connect_chrome()
@@ -6420,6 +6838,13 @@ def check_live_moba_quick_connect_chrome(window: Any) -> list[str]:
         update_suggestions = getattr(window, "update_quick_connect_suggestions", None)
         if callable(update_suggestions):
             update_suggestions()
+        # Showing the suggestion tree invalidates the parent layout.  Hiding it
+        # again restores the idle state immediately, but Qt defers the dock's
+        # geometry update until the event queue is serviced.  Settle that
+        # production transition before later topology checks measure it.
+        app = QCoreApplication.instance()
+        if app is not None:
+            process_events(app)
 
     if previous_text == chrome.connected_idle_query and tree.isVisible() != chrome.connected_suggestions_visible:
         errors.append("mobaxterm live GUI quick-connect suggestions must return to connected idle visibility")
@@ -6461,11 +6886,13 @@ def check_live_securecrt_session_status_strip(window: Any) -> list[str]:
         return ["securecrt live GUI session-status missing title label"]
     if title.minimumWidth() != chrome.title_width or title.maximumWidth() != chrome.title_width:
         return ["securecrt live GUI session-status title width drifted"]
-    labels = {label.text() for label in panel.findChildren(QLabel)}
-    missing = sorted(required_securecrt_session_status_texts() - labels)
-    if missing:
-        return [f"securecrt live GUI session-status missing text: {missing}"]
     status_cells = panel.findChildren(QLabel, "secureCrtSessionStatusCell")
+    geometry_errors = live_widget_non_overlap_errors(
+        "securecrt live GUI session-status cells",
+        [title, *status_cells],
+    )
+    if geometry_errors:
+        return geometry_errors
     actual_keys = [str(label.property("secureCrtSessionStatusKey") or "") for label in status_cells]
     if actual_keys != expected_keys:
         return [f"securecrt live GUI session-status label keys {actual_keys!r} must equal {expected_keys!r}"]
@@ -6497,8 +6924,25 @@ def check_live_securecrt_session_status_strip(window: Any) -> list[str]:
                     f"securecrt live GUI session-status field {field.key!r} {prop_name} "
                     f"{actual_value!r} must equal {expected_value!r}"
                 ]
-        if cell.minimumWidth() != field.live_min_width:
-            return [f"securecrt live GUI session-status field {field.key!r} minimum width drifted"]
+        full_text = f"{field.label}: {field.value}"
+        tooltip_text = f"{full_text}\n{field.tooltip}"
+        compact_width = int(cell.property("secureCrtSessionStatusCompactMinWidth") or 0)
+        if str(cell.property("secureCrtSessionStatusLabel") or "") != field.label:
+            return [f"securecrt live GUI session-status field {field.key!r} label metadata drifted"]
+        if str(cell.property("secureCrtSessionStatusValue") or "") != field.value:
+            return [f"securecrt live GUI session-status field {field.key!r} value metadata drifted"]
+        if str(cell.property("secureCrtSessionStatusFullText") or "") != full_text:
+            return [f"securecrt live GUI session-status field {field.key!r} full text metadata drifted"]
+        if str(cell.property("secureCrtSessionStatusDisplayText") or "") != cell.text() or not cell.text().strip():
+            return [f"securecrt live GUI session-status field {field.key!r} compact display text drifted"]
+        if str(cell.property("secureCrtSessionStatusTooltipText") or "") != tooltip_text:
+            return [f"securecrt live GUI session-status field {field.key!r} tooltip metadata drifted"]
+        if cell.accessibleName() != full_text or not cell.toolTip():
+            return [f"securecrt live GUI session-status field {field.key!r} full accessible text drifted"]
+        if compact_width <= 0 or compact_width > field.live_min_width:
+            return [f"securecrt live GUI session-status field {field.key!r} compact width is invalid"]
+        if cell.minimumWidth() != compact_width:
+            return [f"securecrt live GUI session-status field {field.key!r} compact minimum width drifted"]
         if cell.minimumHeight() != field.live_cell_height:
             return [f"securecrt live GUI session-status field {field.key!r} height drifted"]
     return []
@@ -6659,8 +7103,9 @@ def check_live_securecrt_session_manager_route(window: Any) -> list[str]:
             actual_value = str(target_cell.property(property_name) or "")
             if actual_value != expected_value:
                 errors.append(f"securecrt live GUI session-manager route status property {property_name} drifted")
-        if route.target_value not in target_cell.text():
-            errors.append("securecrt live GUI session-manager route target status text drifted")
+        full_text = str(target_cell.property("secureCrtSessionStatusFullText") or "")
+        if route.target_value not in full_text or target_cell.accessibleName() != full_text:
+            errors.append("securecrt live GUI session-manager route target full status text drifted")
     return errors
 
 
@@ -6905,8 +7350,9 @@ def check_live_securecrt_sftp_tab_route(window: Any) -> list[str]:
                 errors.append(f"securecrt live GUI SFTP tab status-cell property {property_name} drifted")
         if str(target_cell.property("secureCrtSessionStatusValue") or "") != route.status_value:
             errors.append("securecrt live GUI SFTP tab status cell value metadata drifted")
-        if route.status_value not in target_cell.text():
-            errors.append("securecrt live GUI SFTP tab status text drifted")
+        full_text = str(target_cell.property("secureCrtSessionStatusFullText") or "")
+        if route.status_value not in full_text or target_cell.accessibleName() != full_text:
+            errors.append("securecrt live GUI SFTP tab full status text drifted")
 
     static_tab_labels = {label for label, _status, _active in gui_design_tab_items("securecrt")}
     if route.sftp_tab_label not in static_tab_labels:
@@ -7488,9 +7934,27 @@ def check_live_remmina_profile_list_chrome(window: Any) -> list[str]:
             f"remmina live GUI profile header live widths {actual_live_widths!r} "
             f"must equal {expected_live_widths!r}"
         ]
-    actual_header_min_widths = [label.minimumWidth() for label in columns]
-    if actual_header_min_widths != expected_live_widths:
-        return ["remmina live GUI profile header minimum widths drifted"]
+    actual_header_compact_widths = [
+        int(label.property("remminaProfileColumnCompactMinWidth") or 0)
+        for label in columns
+    ]
+    if any(
+        compact <= 0 or compact > preferred
+        for compact, preferred in zip(
+            actual_header_compact_widths,
+            expected_live_widths,
+            strict=True,
+        )
+    ):
+        return ["remmina live GUI profile header compact widths are invalid"]
+    if [label.minimumWidth() for label in columns] != actual_header_compact_widths:
+        return ["remmina live GUI profile header compact minimum widths drifted"]
+    geometry_errors = live_widget_non_overlap_errors(
+        "remmina live GUI profile headers",
+        columns,
+    )
+    if geometry_errors:
+        return geometry_errors
     rows = panel.findChildren(QFrame, "remminaProfileListRow")
     live_rows = {str(row.property("remminaProfileRowKey") or ""): row for row in rows}
     missing_rows = sorted(set(expected_row_keys) - set(live_rows))
@@ -7537,23 +8001,58 @@ def check_live_remmina_profile_list_chrome(window: Any) -> list[str]:
             matching = [
                 cell for cell in cells if str(cell.property("remminaProfileColumnKey") or "") == column.key
             ]
-            if not matching:
-                return [f"remmina live GUI profile row {row.key!r} missing {column.key!r} cell"]
+            if len(matching) != 1:
+                return [
+                    f"remmina live GUI profile row {row.key!r} must expose exactly one "
+                    f"{column.key!r} cell, found {len(matching)}"
+                ]
             cell = matching[0]
             column_width = int(cell.property("remminaProfileColumnWidth") or 0)
             live_width = int(cell.property("remminaProfileColumnLiveMinWidth") or 0)
+            compact_width = int(cell.property("remminaProfileColumnCompactMinWidth") or 0)
             if column_width != column.static_width:
                 return [f"remmina live GUI profile row {row.key!r} {column.key!r} static width drifted"]
-            if live_width != column.live_min_width or cell.minimumWidth() != column.live_min_width:
-                return [f"remmina live GUI profile row {row.key!r} {column.key!r} live width drifted"]
+            if live_width != column.live_min_width:
+                return [f"remmina live GUI profile row {row.key!r} {column.key!r} preferred width metadata drifted"]
+            if compact_width <= 0 or compact_width > live_width or cell.minimumWidth() != compact_width:
+                return [f"remmina live GUI profile row {row.key!r} {column.key!r} compact width drifted"]
+            full_text = f"{column.label}: {expected_values[column.key]}"
+            if str(cell.property("remminaProfileCellFullText") or "") != full_text:
+                return [f"remmina live GUI profile row {row.key!r} {column.key!r} full text metadata drifted"]
+            if str(cell.property("remminaProfileCellDisplayText") or "") != cell.text() or not cell.text().strip():
+                return [f"remmina live GUI profile row {row.key!r} {column.key!r} compact display text drifted"]
+            if cell.accessibleName() != full_text or not cell.toolTip():
+                return [f"remmina live GUI profile row {row.key!r} {column.key!r} accessible full value drifted"]
         status_cells = [
             cell for cell in cells if str(cell.property("remminaProfileColumnKey") or "") == "status"
         ]
-        if not status_cells:
-            return [f"remmina live GUI profile row {row.key!r} missing status cell"]
+        if len(status_cells) != 1:
+            return [
+                f"remmina live GUI profile row {row.key!r} must expose exactly one "
+                f"status cell, found {len(status_cells)}"
+            ]
         status_y = int(status_cells[0].property("remminaProfileStaticStatusY") or 0)
         if status_y != chrome.static_status_y:
             return [f"remmina live GUI profile row {row.key!r} status y drifted"]
+        status = status_cells[0]
+        status_full_text = f"Status: {row.status}"
+        status_compact_width = int(
+            status.property("remminaProfileColumnCompactMinWidth") or 0
+        )
+        if str(status.property("remminaProfileCellFullText") or "") != status_full_text:
+            return [f"remmina live GUI profile row {row.key!r} status full text metadata drifted"]
+        if str(status.property("remminaProfileCellDisplayText") or "") != status.text() or not status.text().strip():
+            return [f"remmina live GUI profile row {row.key!r} status compact display text drifted"]
+        if status.accessibleName() != status_full_text or not status.toolTip():
+            return [f"remmina live GUI profile row {row.key!r} status accessible full value drifted"]
+        if status_compact_width <= 0 or status.minimumWidth() != status_compact_width:
+            return [f"remmina live GUI profile row {row.key!r} status compact width drifted"]
+        geometry_errors = live_widget_non_overlap_errors(
+            f"remmina live GUI profile row {row.key!r} cells",
+            cells,
+        )
+        if geometry_errors:
+            return geometry_errors
     return []
 
 
@@ -7949,6 +8448,47 @@ def check_remmina_screenshot_live_capture(route_widgets: dict[str, Any], route: 
                     f"remmina live GUI screenshot click route {object_name}.{prop_name} "
                     f"{actual_value!r} must equal {expected_value!r}"
                 ]
+        artifact_errors = validate_remmina_screenshot_capture_artifact(
+            object_name,
+            widget.property("remminaScreenshotCapturePath"),
+            widget.property("remminaScreenshotCaptureBytes"),
+            route.capture_artifact,
+        )
+        if artifact_errors:
+            return artifact_errors
+    return []
+
+
+def validate_remmina_screenshot_capture_artifact(
+    object_name: str,
+    path_value: Any,
+    bytes_value: Any,
+    expected_name: str,
+) -> list[str]:
+    context = f"remmina live GUI screenshot click route {object_name}"
+    if not isinstance(path_value, str) or not path_value:
+        return [f"{context}.remminaScreenshotCapturePath must be a non-empty string"]
+    artifact_path = Path(path_value)
+    if not artifact_path.is_absolute():
+        return [f"{context}.remminaScreenshotCapturePath must be absolute"]
+    if artifact_path.name != expected_name:
+        return [
+            f"{context}.remminaScreenshotCapturePath basename {artifact_path.name!r} "
+            f"must equal {expected_name!r}"
+        ]
+    try:
+        payload = artifact_path.read_bytes()
+    except OSError as exc:
+        return [f"{context}.remminaScreenshotCapturePath is not readable: {exc}"]
+    if not payload.startswith(b"\x89PNG\r\n\x1a\n"):
+        return [f"{context}.remminaScreenshotCapturePath must contain a PNG artifact"]
+    if not isinstance(bytes_value, int) or isinstance(bytes_value, bool) or bytes_value <= 0:
+        return [f"{context}.remminaScreenshotCaptureBytes must be a positive integer"]
+    if bytes_value != len(payload):
+        return [
+            f"{context}.remminaScreenshotCaptureBytes {bytes_value} "
+            f"must equal artifact size {len(payload)}"
+        ]
     return []
 
 
@@ -8391,11 +8931,13 @@ def check_live_termius_host_identity_strip(window: Any) -> list[str]:
         return ["termius live GUI host-identity missing title label"]
     if title.minimumWidth() != strip.title_width or title.maximumWidth() != strip.title_width:
         return ["termius live GUI host-identity title width drifted"]
-    labels = {label.text() for label in panel.findChildren(QLabel)}
-    missing = sorted(required_termius_host_identity_texts() - labels)
-    if missing:
-        return [f"termius live GUI host-identity missing text: {missing}"]
     cells = panel.findChildren(QLabel, "termiusHostIdentityCell")
+    geometry_errors = live_widget_non_overlap_errors(
+        "termius live GUI host-identity cells",
+        [title, *cells],
+    )
+    if geometry_errors:
+        return geometry_errors
     actual_keys = [str(label.property("termiusHostIdentityKey") or "") for label in cells]
     if actual_keys != expected_keys:
         return [f"termius live GUI host-identity label keys {actual_keys!r} must equal {expected_keys!r}"]
@@ -8427,8 +8969,25 @@ def check_live_termius_host_identity_strip(window: Any) -> list[str]:
                     f"termius live GUI host-identity field {field.key!r} {prop_name} "
                     f"{actual_value!r} must equal {expected_value!r}"
                 ]
-        if cell.minimumWidth() != field.live_min_width:
-            return [f"termius live GUI host-identity field {field.key!r} minimum width drifted"]
+        full_text = f"{field.label}: {field.value}"
+        tooltip_text = f"{full_text}\n{field.tooltip}"
+        compact_width = int(cell.property("termiusHostIdentityCompactMinWidth") or 0)
+        if str(cell.property("termiusHostIdentityLabel") or "") != field.label:
+            return [f"termius live GUI host-identity field {field.key!r} label metadata drifted"]
+        if str(cell.property("termiusHostIdentityValue") or "") != field.value:
+            return [f"termius live GUI host-identity field {field.key!r} value metadata drifted"]
+        if str(cell.property("termiusHostIdentityFullText") or "") != full_text:
+            return [f"termius live GUI host-identity field {field.key!r} full text metadata drifted"]
+        if str(cell.property("termiusHostIdentityDisplayText") or "") != cell.text() or not cell.text().strip():
+            return [f"termius live GUI host-identity field {field.key!r} compact display text drifted"]
+        if str(cell.property("termiusHostIdentityTooltipText") or "") != tooltip_text:
+            return [f"termius live GUI host-identity field {field.key!r} tooltip metadata drifted"]
+        if cell.accessibleName() != full_text or not cell.toolTip():
+            return [f"termius live GUI host-identity field {field.key!r} full accessible text drifted"]
+        if compact_width <= 0 or compact_width > field.live_min_width:
+            return [f"termius live GUI host-identity field {field.key!r} compact width is invalid"]
+        if cell.minimumWidth() != compact_width:
+            return [f"termius live GUI host-identity field {field.key!r} compact minimum width drifted"]
         if cell.minimumHeight() != field.live_cell_height:
             return [f"termius live GUI host-identity field {field.key!r} height drifted"]
     return []
@@ -8551,8 +9110,12 @@ def check_live_termius_host_selection_route(window: Any) -> list[str]:
             actual_value = str(target_cell.property(property_name) or "")
             if actual_value != expected_value:
                 errors.append(f"termius live GUI host-selection route identity property {property_name} drifted")
-        if target_cell.text() != f"Host: {route.host_value}":
-            errors.append("termius live GUI host-selection route Host identity text drifted")
+        full_text = f"Host: {route.host_value}"
+        if (
+            str(target_cell.property("termiusHostIdentityFullText") or "") != full_text
+            or target_cell.accessibleName() != full_text
+        ):
+            errors.append("termius live GUI host-selection route Host full identity text drifted")
     return errors
 
 
@@ -8625,7 +9188,10 @@ def check_live_termius_sync_route(window: Any) -> list[str]:
         return ["termius live GUI sync route header chip label drifted"]
     if (
         str(sync_cell.property(route.identity_value_property) or "") != expected_field.value
-        or sync_cell.text() != f"{expected_field.label}: {expected_field.value}"
+        or str(sync_cell.property("termiusHostIdentityFullText") or "")
+        != f"{expected_field.label}: {expected_field.value}"
+        or sync_cell.accessibleName()
+        != f"{expected_field.label}: {expected_field.value}"
     ):
         return ["termius live GUI sync route identity value drifted"]
     if expected_field.value != route.sync_state:
@@ -8717,8 +9283,12 @@ def check_live_termius_port_forward_route(window: Any) -> list[str]:
     if port_cell is not None:
         if str(port_cell.property(route.identity_value_property) or "") != expected_field.value:
             errors.append("termius live GUI port-forward route identity value property drifted")
-        if port_cell.text() != f"{expected_field.label}: {expected_field.value}":
-            errors.append("termius live GUI port-forward route identity text drifted")
+        full_text = f"{expected_field.label}: {expected_field.value}"
+        if (
+            str(port_cell.property("termiusHostIdentityFullText") or "") != full_text
+            or port_cell.accessibleName() != full_text
+        ):
+            errors.append("termius live GUI port-forward route full identity text drifted")
         if expected_field.value != route.forward_value:
             errors.append("termius live GUI port-forward route expected field value must equal route forward value")
     if route.status_segment not in {label.text() for label in window.findChildren(QLabel, "productStatusSegment")}:
@@ -8830,8 +9400,12 @@ def check_live_termius_snippet_route(window: Any) -> list[str]:
     if snippet_cell is not None:
         if str(snippet_cell.property(route.identity_value_property) or "") != expected_field.value:
             errors.append("termius live GUI snippet route identity value property drifted")
-        if snippet_cell.text() != f"{expected_field.label}: {expected_field.value}":
-            errors.append("termius live GUI snippet route identity text drifted")
+        full_text = f"{expected_field.label}: {expected_field.value}"
+        if (
+            str(snippet_cell.property("termiusHostIdentityFullText") or "") != full_text
+            or snippet_cell.accessibleName() != full_text
+        ):
+            errors.append("termius live GUI snippet route full identity text drifted")
         if expected_field.value != route.snippet_command:
             errors.append("termius live GUI snippet route expected field value must equal route command")
     workspace_lines = {label.text() for label in window.findChildren(QLabel, "productWorkspaceLine")}
@@ -9047,8 +9621,12 @@ def check_live_termius_files_browser_route(window: Any) -> list[str]:
     if files_cell is not None:
         if str(files_cell.property(route.identity_value_property) or "") != expected_field.value:
             errors.append("termius live GUI files browser route identity value property drifted")
-        if files_cell.text() != f"{expected_field.label}: {expected_field.value}":
-            errors.append("termius live GUI files browser route identity text drifted")
+        full_text = f"{expected_field.label}: {expected_field.value}"
+        if (
+            str(files_cell.property("termiusHostIdentityFullText") or "") != full_text
+            or files_cell.accessibleName() != full_text
+        ):
+            errors.append("termius live GUI files browser route full identity text drifted")
 
     action_labels = [] if toolbar is None else toolbar.findChildren(QToolButton, route.action_object)
     actual_action_keys = [str(action.property("termiusFilesRouteActionKey") or "") for action in action_labels]
@@ -9276,7 +9854,9 @@ def check_live_mremoteng_document_controls(window: Any) -> list[str]:
                 f"mremoteng live GUI document-control {control.key!r} render source "
                 f"{render_source!r} must equal {control.render_source!r}"
             ]
-        expected_state = "checked" if control.key == "external-tool" else "normal"
+        expected_state = (
+            "checked" if control.key in {"external-tool", "dock-view"} else "normal"
+        )
         actual_state = str(button.property("interactionState") or "")
         if actual_state != expected_state:
             return [
@@ -9326,6 +9906,32 @@ def check_live_mremoteng_property_grid(window: Any) -> list[str]:
     if missing:
         return [f"mremoteng live GUI property-grid missing text: {missing}"]
 
+    headers = panel.findChildren(QLabel, "mRemoteNgPropertyGridColumn")
+    if [str(label.property("mRemoteNgPropertyColumnKey") or "") for label in headers] != (
+        EXPECTED_MREMOTENG_PROPERTY_COLUMN_KEYS
+    ):
+        return ["mremoteng live GUI property-grid header keys drifted"]
+    header_geometry_errors = live_widget_non_overlap_errors(
+        "mremoteng live GUI property-grid headers",
+        headers,
+    )
+    if header_geometry_errors:
+        return header_geometry_errors
+    for header, column in zip(headers, chrome.columns, strict=True):
+        preferred_width = int(
+            header.property("mRemoteNgPropertyLivePreferredWidth") or 0
+        )
+        compact_width = int(
+            header.property("mRemoteNgPropertyLiveCompactMinWidth") or 0
+        )
+        expected_preferred = max(72, min(column.static_width, 190))
+        if preferred_width != expected_preferred:
+            return [f"mremoteng live GUI property-grid header {column.key!r} preferred width drifted"]
+        if compact_width <= 0 or compact_width > preferred_width:
+            return [f"mremoteng live GUI property-grid header {column.key!r} compact width is invalid"]
+        if header.minimumWidth() != compact_width:
+            return [f"mremoteng live GUI property-grid header {column.key!r} compact minimum width drifted"]
+
     row_frames = panel.findChildren(QWidget, "mRemoteNgPropertyGridRow")
     actual_frame_keys = [str(row.property("mRemoteNgPropertyRowKey") or "") for row in row_frames]
     if actual_frame_keys != EXPECTED_MREMOTENG_PROPERTY_ROW_KEYS:
@@ -9361,6 +9967,43 @@ def check_live_mremoteng_property_grid(window: Any) -> list[str]:
             expected_cells[(row.key, column.key)] = values[column.key]
     if actual_cells != expected_cells:
         return ["mremoteng live GUI property-grid cell metadata drifted"]
+    for row_frame, row in zip(row_frames, chrome.rows, strict=True):
+        row_cells = row_frame.findChildren(QLabel, "mRemoteNgPropertyGridCell")
+        row_keys = [
+            str(cell.property("mRemoteNgPropertyColumnKey") or "")
+            for cell in row_cells
+        ]
+        if row_keys != EXPECTED_MREMOTENG_PROPERTY_COLUMN_KEYS:
+            return [f"mremoteng live GUI property-grid row {row.key!r} cell keys drifted"]
+        geometry_errors = live_widget_non_overlap_errors(
+            f"mremoteng live GUI property-grid row {row.key!r} cells",
+            row_cells,
+        )
+        if geometry_errors:
+            return geometry_errors
+        values = {
+            "property": row.property_label,
+            "inherited": row.inherited_from,
+            "effective": row.effective_value,
+            "source": row.source,
+        }
+        for cell, column in zip(row_cells, chrome.columns, strict=True):
+            full_text = f"{column.label}: {values[column.key]}"
+            preferred_width = int(
+                cell.property("mRemoteNgPropertyLivePreferredWidth") or 0
+            )
+            compact_width = int(
+                cell.property("mRemoteNgPropertyLiveCompactMinWidth") or 0
+            )
+            expected_preferred = max(72, min(column.static_width, 190))
+            if str(cell.property("mRemoteNgPropertyCellFullText") or "") != full_text:
+                return [f"mremoteng live GUI property-grid row {row.key!r} {column.key!r} full text drifted"]
+            if cell.accessibleName() != full_text or not cell.toolTip():
+                return [f"mremoteng live GUI property-grid row {row.key!r} {column.key!r} accessible value drifted"]
+            if preferred_width != expected_preferred:
+                return [f"mremoteng live GUI property-grid row {row.key!r} {column.key!r} preferred width drifted"]
+            if compact_width <= 0 or compact_width > preferred_width or cell.minimumWidth() != compact_width:
+                return [f"mremoteng live GUI property-grid row {row.key!r} {column.key!r} compact width drifted"]
     return []
 
 
@@ -11376,18 +12019,21 @@ def check_live_interaction_state(window: Any, preset_id: str) -> list[str]:
     state = gui_design_interaction_state(preset_id)
     errors: list[str] = []
     buttons = {button.text().strip(): button for button in window.findChildren(QToolButton)}
-    if preset_id == "mobaxterm":
-        for button in window.findChildren(QToolButton):
-            role = str(button.property("mobaRailRole") or "")
-            if role:
-                buttons[role] = button
+    buttons_by_key: dict[str, Any] = {}
+    for button in window.findChildren(QToolButton):
+        for property_name in ("productToolbarKey", "mobaIconKey", "mobaRailRole"):
+            key = str(button.property(property_name) or "")
+            if key:
+                buttons_by_key[key] = button
     for key, expected_state in [
         (state.active_toolbar_key, "active"),
         (state.checked_toolbar_key, "checked"),
         (state.disabled_toolbar_key, "disabled"),
     ]:
+        if not key:
+            continue
         label = interaction_label_for_key(preset_id, key)
-        button = buttons.get(label)
+        button = buttons_by_key.get(key) or buttons.get(label)
         if button is None:
             errors.append(f"{preset_id} live GUI interaction button missing: {label}")
             continue
@@ -11416,7 +12062,8 @@ def check_live_interaction_state(window: Any, preset_id: str) -> list[str]:
     if tabs is None:
         errors.append(f"{preset_id} live GUI missing session tabs for active tab status")
     elif state.active_tab_status and not any(
-        state.active_tab_status in tabs.tabToolTip(index) for index in range(tabs.count())
+        state.active_tab_status in live_tab_plain_tooltip(tabs, index)
+        for index in range(tabs.count())
     ):
         errors.append(
             f"{preset_id} live GUI tabs must expose active tab status: {state.active_tab_status}"
@@ -11539,10 +12186,19 @@ def validate_metrics(preset_id: str, metrics: RenderMetrics) -> list[str]:
             f"{preset_id} live GUI capture dimensions {(metrics.width, metrics.height)} "
             f"must be at least {MIN_CAPTURE_SIZE}"
         )
+    if metrics.width > REQUESTED_SIZE[0] or metrics.height > REQUESTED_SIZE[1]:
+        errors.append(
+            f"{preset_id} live GUI capture dimensions {(metrics.width, metrics.height)} "
+            f"must not exceed requested size {REQUESTED_SIZE}"
+        )
     if metrics.distinct_colors < MIN_DISTINCT_COLORS:
-        errors.append(f"{preset_id} live GUI capture has too few sampled colors: {metrics.distinct_colors}")
+        errors.append(
+            f"{preset_id} live GUI capture has too few sampled colors: {metrics.distinct_colors}"
+        )
     if metrics.luminance_range < MIN_LUMINANCE_RANGE:
-        errors.append(f"{preset_id} live GUI capture luminance range is too small: {metrics.luminance_range}")
+        errors.append(
+            f"{preset_id} live GUI capture luminance range is too small: {metrics.luminance_range}"
+        )
     if metrics.non_background_ratio < MIN_NON_BACKGROUND_RATIO:
         errors.append(
             f"{preset_id} live GUI capture non-background ratio is too small: "
@@ -11652,7 +12308,7 @@ def write_manifest(out_dir: Path, captures: list[CaptureResult], expected_preset
     manifest = {
         "schema_version": 1,
         "renderer": "scripts/check_real_gui_render.py",
-        "capture_mode": "live-pyqt6-offscreen",
+        "capture_mode": capture_mode_for_captures(captures),
         "requested_window_size": {"width": REQUESTED_SIZE[0], "height": REQUESTED_SIZE[1]},
         "minimum_capture_size": {"width": MIN_CAPTURE_SIZE[0], "height": MIN_CAPTURE_SIZE[1]},
         "selected_preset_ids": expected_preset_ids,
@@ -11690,6 +12346,19 @@ def write_manifest(out_dir: Path, captures: list[CaptureResult], expected_preset
         "captures": [capture.to_dict() for capture in captures],
     }
     (out_dir / MANIFEST_NAME).write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def capture_mode_for_captures(captures: list[CaptureResult]) -> str:
+    evidence_platforms = {
+        capture.font_render_evidence.platform_name
+        for capture in captures
+        if capture.font_render_evidence is not None
+    }
+    if len(evidence_platforms) == 1:
+        platform_name = next(iter(evidence_platforms))
+    else:
+        platform_name = os.environ.get("QT_QPA_PLATFORM", default_qt_platform())
+    return f"live-pyqt6-{platform_name.lower()}"
 
 
 def module_available(module: str) -> bool:

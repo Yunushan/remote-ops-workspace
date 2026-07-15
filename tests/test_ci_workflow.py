@@ -395,6 +395,63 @@ def test_ci_workflow_requires_live_gui_artifact_validation_before_upload() -> No
     assert any("ci gui-render job missing live GUI artifact validator" in error for error in errors)
 
 
+def test_ci_workflow_requires_linux_and_native_windows_gui_interaction_gates() -> None:
+    checker = _load_checker()
+    source = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    without_linux_gate = source.replace(
+        "      - name: Exercise GUI controls and responsive layouts\n"
+        "        timeout-minutes: 5\n"
+        "        run: python scripts/check_gui_interactions.py --require-pyqt6 --out-dir artifacts/gui-interactions\n",
+        "",
+    )
+    without_windows_job = source.replace(
+        "  gui-interactions-windows:",
+        "  gui_interactions_windows_disabled:",
+    )
+    wrong_windows_runner = source.replace(
+        "  gui-interactions-windows:\n"
+        "    name: Native Windows PyQt6 render and interactions\n"
+        "    runs-on: windows-2025-vs2026\n",
+        "  gui-interactions-windows:\n"
+        "    name: Native Windows PyQt6 render and interactions\n"
+        "    runs-on: ubuntu-latest\n",
+    )
+
+    linux_errors = checker.check_ci_workflow(without_linux_gate)
+    missing_windows_errors = checker.check_ci_workflow(without_windows_job)
+    runner_errors = checker.check_ci_workflow(wrong_windows_runner)
+
+    assert any(
+        "ci gui-render job missing Linux GUI interaction gate" in error for error in linux_errors
+    )
+    assert (
+        "ci workflow missing gui-interactions-windows job for native Windows PyQt6 controls"
+        in missing_windows_errors
+    )
+    assert any("repository-approved native Windows runner" in error for error in runner_errors)
+
+
+def test_ci_workflow_requires_fonts_and_native_windows_full_renderer() -> None:
+    checker = _load_checker()
+    source = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    without_linux_font = source.replace("            fonts-dejavu-core \\\n", "")
+    without_native_renderer = source.replace(
+        "      - name: Render full GUI on native Windows\n"
+        "        timeout-minutes: 8\n"
+        "        run: python scripts/check_real_gui_render.py --require-pyqt6 --timeout-seconds 240 --out-dir artifacts/gui-real-windows\n",
+        "",
+    )
+
+    font_errors = checker.check_ci_workflow(without_linux_font)
+    native_renderer_errors = checker.check_ci_workflow(without_native_renderer)
+
+    assert any("known readable Linux GUI font" in error for error in font_errors)
+    assert any(
+        "native Windows all-preset GUI render gate" in error
+        for error in native_renderer_errors
+    )
+
+
 def test_ci_workflow_requires_checkout_credentials_disabled() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(

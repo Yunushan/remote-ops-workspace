@@ -46,7 +46,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         )
     )
     parser.add_argument("--target", choices=targets, required=True)
-    parser.add_argument("--release-tag", required=True, help="Release tag, for example v1.0.4")
+    parser.add_argument("--release-tag", required=True, help="Release tag, for example v1.0.5")
     parser.add_argument("--out-dir", type=Path, required=True, help="Directory that will receive xp-evidence.json")
     parser.add_argument("--force", action="store_true", help="overwrite an existing template file")
     return parser.parse_args(argv)

@@ -7,7 +7,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-
 HISTORICAL_ACCEPTED_RECORD_TAG = "v1.0.2"
 
 

@@ -12,20 +12,20 @@
     "source_and_python": {
       "job": "source-and-python",
       "artifacts": [
-        "remote_ops_workspace-1.0.4-py3-none-any.whl",
-        "remote_ops_workspace-1.0.4.tar.gz",
-        "remote-ops-workspace-v1.0.4-release-manifest.json",
-        "remote-ops-workspace-v1.0.4-SHA256SUMS.txt"
+        "remote_ops_workspace-1.0.5-py3-none-any.whl",
+        "remote_ops_workspace-1.0.5.tar.gz",
+        "remote-ops-workspace-v1.0.5-release-manifest.json",
+        "remote-ops-workspace-v1.0.5-SHA256SUMS.txt"
       ],
       "target_bundles": [
-        "remote-ops-workspace-v1.0.4-source.zip",
-        "remote-ops-workspace-v1.0.4-windows.zip",
-        "remote-ops-workspace-v1.0.4-linux.tar.gz",
-        "remote-ops-workspace-v1.0.4-macos.tar.gz",
-        "remote-ops-workspace-v1.0.4-bsd.tar.gz",
-        "remote-ops-workspace-v1.0.4-solaris.tar.gz",
-        "remote-ops-workspace-v1.0.4-android-termux.tar.gz",
-        "remote-ops-workspace-v1.0.4-web-pwa.zip"
+        "remote-ops-workspace-v1.0.5-source.zip",
+        "remote-ops-workspace-v1.0.5-windows.zip",
+        "remote-ops-workspace-v1.0.5-linux.tar.gz",
+        "remote-ops-workspace-v1.0.5-macos.tar.gz",
+        "remote-ops-workspace-v1.0.5-bsd.tar.gz",
+        "remote-ops-workspace-v1.0.5-solaris.tar.gz",
+        "remote-ops-workspace-v1.0.5-android-termux.tar.gz",
+        "remote-ops-workspace-v1.0.5-web-pwa.zip"
       ]
     },
     "native_jobs": [
@@ -44,11 +44,11 @@
         ],
         "upload_artifact_prefix": "release-windows-native-",
         "asset_patterns": [
-          "remote-ops-workspace-v1.0.4-windows-<x86|x64|arm64>-setup.exe",
-          "remote-ops-workspace-v1.0.4-windows-<x86|x64|arm64>.msi",
-          "remote-ops-workspace-v1.0.4-windows-<x86|x64|arm64>-native.zip",
-          "remote-ops-workspace-v1.0.4-windows-<x86|x64|arm64>-native-manifest.json",
-          "remote-ops-workspace-v1.0.4-windows-<x86|x64|arm64>-native-SHA256SUMS.txt"
+          "remote-ops-workspace-v1.0.5-windows-<x86|x64|arm64>-setup.exe",
+          "remote-ops-workspace-v1.0.5-windows-<x86|x64|arm64>.msi",
+          "remote-ops-workspace-v1.0.5-windows-<x86|x64|arm64>-native.zip",
+          "remote-ops-workspace-v1.0.5-windows-<x86|x64|arm64>-native-manifest.json",
+          "remote-ops-workspace-v1.0.5-windows-<x86|x64|arm64>-native-SHA256SUMS.txt"
         ]
       },
       {
@@ -64,10 +64,10 @@
         ],
         "upload_artifact_prefix": "release-macos-native-",
         "asset_patterns": [
-          "remote-ops-workspace-v1.0.4-macos-<x64|arm64>.dmg",
-          "remote-ops-workspace-v1.0.4-macos-<x64|arm64>.pkg",
-          "remote-ops-workspace-v1.0.4-macos-<x64|arm64>-native-manifest.json",
-          "remote-ops-workspace-v1.0.4-macos-<x64|arm64>-native-SHA256SUMS.txt"
+          "remote-ops-workspace-v1.0.5-macos-<x64|arm64>.dmg",
+          "remote-ops-workspace-v1.0.5-macos-<x64|arm64>.pkg",
+          "remote-ops-workspace-v1.0.5-macos-<x64|arm64>-native-manifest.json",
+          "remote-ops-workspace-v1.0.5-macos-<x64|arm64>-native-SHA256SUMS.txt"
         ]
       },
       {
@@ -83,12 +83,12 @@
         ],
         "upload_artifact_prefix": "release-linux-native-",
         "asset_patterns": [
-          "remote-ops-workspace-v1.0.4-linux-<amd64|arm64>.deb",
-          "remote-ops-workspace-v1.0.4-linux-<x86_64|aarch64>.rpm",
-          "remote-ops-workspace-v1.0.4-linux-<x86_64|aarch64>.AppImage",
-          "remote-ops-workspace-v1.0.4-linux-<x86_64|aarch64>-native.tar.gz",
-          "remote-ops-workspace-v1.0.4-linux-<x86_64|aarch64>-native-manifest.json",
-          "remote-ops-workspace-v1.0.4-linux-<x86_64|aarch64>-native-SHA256SUMS.txt"
+          "remote-ops-workspace-v1.0.5-linux-<amd64|arm64>.deb",
+          "remote-ops-workspace-v1.0.5-linux-<x86_64|aarch64>.rpm",
+          "remote-ops-workspace-v1.0.5-linux-<x86_64|aarch64>.AppImage",
+          "remote-ops-workspace-v1.0.5-linux-<x86_64|aarch64>-native.tar.gz",
+          "remote-ops-workspace-v1.0.5-linux-<x86_64|aarch64>-native-manifest.json",
+          "remote-ops-workspace-v1.0.5-linux-<x86_64|aarch64>-native-SHA256SUMS.txt"
         ]
       }
     ]
@@ -111,12 +111,12 @@
       "cpu_arch": "i386/i686",
       "script": "scripts/make_linux_native.sh",
       "asset_patterns": [
-        "remote-ops-workspace-v1.0.4-linux-i386.deb",
-        "remote-ops-workspace-v1.0.4-linux-i686.rpm",
-        "remote-ops-workspace-v1.0.4-linux-i686.AppImage",
-        "remote-ops-workspace-v1.0.4-linux-i686-native.tar.gz",
-        "remote-ops-workspace-v1.0.4-linux-i686-native-manifest.json",
-        "remote-ops-workspace-v1.0.4-linux-i686-native-SHA256SUMS.txt"
+        "remote-ops-workspace-v1.0.5-linux-i386.deb",
+        "remote-ops-workspace-v1.0.5-linux-i686.rpm",
+        "remote-ops-workspace-v1.0.5-linux-i686.AppImage",
+        "remote-ops-workspace-v1.0.5-linux-i686-native.tar.gz",
+        "remote-ops-workspace-v1.0.5-linux-i686-native-manifest.json",
+        "remote-ops-workspace-v1.0.5-linux-i686-native-SHA256SUMS.txt"
       ],
       "builder_requirement": "Run on a real 32-bit i386/i686 host, matching 32-bit container, or self-hosted runner where builder evidence reports dpkg --print-architecture=i386, getconf LONG_BIT=32, rpm installed and sudo -n true passing, with Python, PyInstaller, dpkg, dpkg-deb, getconf, rpm, rpmbuild and appimagetool support.",
       "promotion_policy": "May be attached to a release only after a maintainer runs and verifies the matching builder output."
@@ -127,12 +127,12 @@
       "cpu_arch": "armv7l/armhf",
       "script": "scripts/make_linux_native.sh",
       "asset_patterns": [
-        "remote-ops-workspace-v1.0.4-linux-armhf.deb",
-        "remote-ops-workspace-v1.0.4-linux-armv7hl.rpm",
-        "remote-ops-workspace-v1.0.4-linux-armhf.AppImage",
-        "remote-ops-workspace-v1.0.4-linux-armhf-native.tar.gz",
-        "remote-ops-workspace-v1.0.4-linux-armhf-native-manifest.json",
-        "remote-ops-workspace-v1.0.4-linux-armhf-native-SHA256SUMS.txt"
+        "remote-ops-workspace-v1.0.5-linux-armhf.deb",
+        "remote-ops-workspace-v1.0.5-linux-armv7hl.rpm",
+        "remote-ops-workspace-v1.0.5-linux-armhf.AppImage",
+        "remote-ops-workspace-v1.0.5-linux-armhf-native.tar.gz",
+        "remote-ops-workspace-v1.0.5-linux-armhf-native-manifest.json",
+        "remote-ops-workspace-v1.0.5-linux-armhf-native-SHA256SUMS.txt"
       ],
       "builder_requirement": "Run on a real 32-bit armv7l/armhf host, matching 32-bit container, or self-hosted runner where builder evidence reports dpkg --print-architecture=armhf, getconf LONG_BIT=32, rpm installed and sudo -n true passing, with Python, PyInstaller, dpkg, dpkg-deb, getconf, rpm, rpmbuild and appimagetool support.",
       "promotion_policy": "May be attached to a release only after a maintainer runs and verifies the matching builder output."
@@ -146,8 +146,8 @@
         "android-arm64"
       ],
       "default_assets": [
-        "remote-ops-workspace-v1.0.4-android-termux.tar.gz",
-        "remote-ops-workspace-v1.0.4-web-pwa.zip"
+        "remote-ops-workspace-v1.0.5-android-termux.tar.gz",
+        "remote-ops-workspace-v1.0.5-web-pwa.zip"
       ],
       "native_status": "No APK is published until a tested native Android wrapper exists."
     },
@@ -157,21 +157,21 @@
         "ios-web"
       ],
       "default_assets": [
-        "remote-ops-workspace-v1.0.4-web-pwa.zip"
+        "remote-ops-workspace-v1.0.5-web-pwa.zip"
       ],
       "native_status": "No IPA/App Store package is published until a tested native iOS wrapper exists."
     },
     {
       "id": "bsd",
       "default_assets": [
-        "remote-ops-workspace-v1.0.4-bsd.tar.gz"
+        "remote-ops-workspace-v1.0.5-bsd.tar.gz"
       ],
       "native_status": "Source/install bundle plus CLI/Web/PWA workflows; no default native installer."
     },
     {
       "id": "solaris-illumos",
       "default_assets": [
-        "remote-ops-workspace-v1.0.4-solaris.tar.gz"
+        "remote-ops-workspace-v1.0.5-solaris.tar.gz"
       ],
       "native_status": "Source/install bundle plus CLI/Web/PWA workflows; no default native installer."
     },

@@ -264,6 +264,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
+          ref: ${{ env.RELEASE_TAG }}
           persist-credentials: false
           clean: true
       - name: Check out immutable release source for evidence binding
@@ -312,6 +313,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
+          ref: ${{ env.RELEASE_TAG }}
           persist-credentials: false
           clean: true
       - uses: actions/setup-python@v6
@@ -341,6 +343,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
+          ref: ${{ env.RELEASE_TAG }}
           persist-credentials: false
           clean: true
       - uses: actions/setup-python@v6

@@ -81,6 +81,20 @@ def test_release_truth_checker_requires_preflight_tag_checkout() -> None:
     assert any("release-preflight checkout must build the immutable env.RELEASE_TAG source" in error for error in errors)
 
 
+def test_release_truth_checker_requires_all_build_and_publish_jobs_to_use_tagged_source() -> None:
+    checker = _load_release_truth_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+
+    for job in checker.TAGGED_RELEASE_SOURCE_JOBS:
+        block = checker.workflow_job_block(workflow, job)
+        assert checker.TAGGED_RELEASE_REF in block
+        mutated_block = block.replace(checker.TAGGED_RELEASE_REF, "", 1)
+
+        errors = checker.check_release_preflight(workflow.replace(block, mutated_block, 1))
+
+        assert f"{job} checkout must build the immutable env.RELEASE_TAG source" in errors
+
+
 def test_release_truth_checker_requires_explicit_core_upload_tag() -> None:
     checker = _load_release_truth_checker()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
@@ -97,10 +111,10 @@ def test_release_truth_checker_requires_explicit_core_upload_tag() -> None:
 def test_release_truth_checker_rejects_stale_default_linux_patterns() -> None:
     checker = _load_release_truth_checker()
 
-    assert "remote-ops-workspace-v1.0.4-linux-<i386|amd64|armhf|arm64>.deb" in (
+    assert "remote-ops-workspace-v1.0.5-linux-<i386|amd64|armhf|arm64>.deb" in (
         checker.STALE_DEFAULT_ARTIFACT_SNIPPETS
     )
-    assert "remote-ops-workspace-v1.0.4-linux-<amd64|arm64>.deb" in checker.REQUIRED_DOC_SNIPPETS
+    assert "remote-ops-workspace-v1.0.5-linux-<amd64|arm64>.deb" in checker.REQUIRED_DOC_SNIPPETS
 
 
 def test_release_truth_checker_requires_linux_smoke_git_head_docs() -> None:
@@ -605,7 +619,7 @@ def test_release_truth_checker_rejects_stale_turkish_release_version() -> None:
     def fake_read(relative: str) -> str:
         text = original_read(relative)
         if relative == "README.tr.md":
-            return text.replace("release-v1.0.4", "release-v1.0.1")
+            return text.replace("release-v1.0.5", "release-v1.0.1")
         return text
 
     checker.read = fake_read

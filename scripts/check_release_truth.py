@@ -23,11 +23,14 @@ RELEASE_PREFLIGHT_DEPENDENTS = (
     "accepted-platform-evidence-assets",
     "publish",
 )
-CORE_RELEASE_JOBS = (
+TAGGED_RELEASE_SOURCE_JOBS = (
     "source-and-python",
     "windows-native",
     "macos-native",
     "linux-native",
+    "accepted-platform-evidence-assets",
+    "publish",
+    "publish-protected-platform-evidence",
 )
 PROTECTED_PUBLISH_JOB = "publish-protected-platform-evidence"
 RELEASE_TAG_RESOLVER = "RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}"
@@ -59,12 +62,12 @@ PUBLISH_REMOTE_PLATFORM_EVIDENCE_AUDIT_COMMAND = (
 )
 
 REQUIRED_DOC_SNIPPETS = (
-    "remote-ops-workspace-v1.0.4-linux-<amd64|arm64>.deb",
-    "remote-ops-workspace-v1.0.4-linux-<x86_64|aarch64>.rpm",
-    "remote-ops-workspace-v1.0.4-linux-<x86_64|aarch64>.AppImage",
-    "remote-ops-workspace-v1.0.4-linux-<x86_64|aarch64>-native.tar.gz",
-    "remote-ops-workspace-v1.0.4-macos-<x64|arm64>.dmg",
-    "remote-ops-workspace-v1.0.4-macos-<x64|arm64>.pkg",
+    "remote-ops-workspace-v1.0.5-linux-<amd64|arm64>.deb",
+    "remote-ops-workspace-v1.0.5-linux-<x86_64|aarch64>.rpm",
+    "remote-ops-workspace-v1.0.5-linux-<x86_64|aarch64>.AppImage",
+    "remote-ops-workspace-v1.0.5-linux-<x86_64|aarch64>-native.tar.gz",
+    "remote-ops-workspace-v1.0.5-macos-<x64|arm64>.dmg",
+    "remote-ops-workspace-v1.0.5-macos-<x64|arm64>.pkg",
     "not uploaded by the default GitHub",
     "check_protected_platform_goal.py --release-tag <tag> --require-complete --assets-dir release-assets --repository <owner>/<repo>",
     "release_asset_provenance_complete=false",
@@ -118,7 +121,7 @@ REQUIRED_DOC_SNIPPETS = (
 )
 
 REQUIRED_TURKISH_DOC_SNIPPETS = (
-    "![release](https://img.shields.io/badge/release-v1.0.4-blue)",
+    "![release](https://img.shields.io/badge/release-v1.0.5-blue)",
     "configs/platform_verified_evidence.json",
     "python scripts/check_protected_platform_goal.py --release-tag <tag> --require-records-complete --show-requirements",
     "python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag <tag>",
@@ -209,12 +212,12 @@ STALE_TURKISH_RELEASE_SNIPPETS = (
 )
 
 STALE_DEFAULT_ARTIFACT_SNIPPETS = (
-    "remote-ops-workspace-v1.0.4-linux-<i386|amd64|armhf|arm64>.deb",
-    "remote-ops-workspace-v1.0.4-linux-<i686|x86_64|armv7hl|aarch64>.rpm",
-    "remote-ops-workspace-v1.0.4-linux-<i686|x86_64|armhf|aarch64>.AppImage",
-    "remote-ops-workspace-v1.0.4-linux-<i686|x86_64|armhf|aarch64>-native.tar.gz",
-    "remote-ops-workspace-v1.0.4-macos-<arch>.dmg",
-    "remote-ops-workspace-v1.0.4-macos-<arch>.pkg",
+    "remote-ops-workspace-v1.0.5-linux-<i386|amd64|armhf|arm64>.deb",
+    "remote-ops-workspace-v1.0.5-linux-<i686|x86_64|armv7hl|aarch64>.rpm",
+    "remote-ops-workspace-v1.0.5-linux-<i686|x86_64|armhf|aarch64>.AppImage",
+    "remote-ops-workspace-v1.0.5-linux-<i686|x86_64|armhf|aarch64>-native.tar.gz",
+    "remote-ops-workspace-v1.0.5-macos-<arch>.dmg",
+    "remote-ops-workspace-v1.0.5-macos-<arch>.pkg",
 )
 
 STALE_PLATFORM_EVIDENCE_SNIPPETS = (
@@ -325,7 +328,7 @@ def check_release_preflight(workflow: str | None = None) -> list[str]:
             continue
         if not job_depends_on(dependent_block, "release-preflight"):
             errors.append(f"{job} must depend on release-preflight")
-    for job in CORE_RELEASE_JOBS:
+    for job in TAGGED_RELEASE_SOURCE_JOBS:
         dependent_block = workflow_job_block(workflow_text, job)
         if not dependent_block:
             continue

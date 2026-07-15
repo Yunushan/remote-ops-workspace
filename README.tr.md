@@ -5,7 +5,7 @@
 ### SSH, RDP, VNC, SFTP, Mosh, Telnet, X11, SPICE, X2Go, ICA, HTTP/HTTPS, seri konsollar, raw socket'ler, bolunmus paneller, vault, snippet, sync, CLI, GUI ve Web/PWA icin operator odakli uzak erisim calisma alani.
 
 ![build](https://img.shields.io/badge/build-source--available-brightgreen)
-![release](https://img.shields.io/badge/release-v1.0.4-blue)
+![release](https://img.shields.io/badge/release-v1.0.5-blue)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 ![runtime](https://img.shields.io/badge/runtime-Python%203.10--3.14-orange)
 ![interfaces](https://img.shields.io/badge/interfaces-CLI%20%7C%20GUI%20%7C%20Web-purple)
@@ -261,10 +261,10 @@ python scripts/check_repository_cleanup.py
 python scripts/check_repository_cleanup.py --require-clean
 ```
 
-Yayin akisi `v1.0.4` gibi tag'lerde wheel/sdist, kaynak zip, platform tar/zip
+Yayin akisi `v1.0.5` gibi tag'lerde wheel/sdist, kaynak zip, platform tar/zip
 paketleri, Windows `x86`/`x64`/`arm64`, macOS `x64`/`arm64` ve Linux
 `x86_64`/`aarch64` native paketleri, release manifestleri ve
-`remote-ops-workspace-v1.0.4-SHA256SUMS.txt` uretir. Linux `i386`/`i686` ve
+`remote-ops-workspace-v1.0.5-SHA256SUMS.txt` uretir. Linux `i386`/`i686` ve
 `armhf` ciktisi eslesen builder ile betik desteklidir, fakat varsayilan GitHub
 release is akisinda accepted evidence olmadan yuklenmez. Makine tarafindan
 okunabilen yayin karari `configs/release_matrix.json` icindedir;

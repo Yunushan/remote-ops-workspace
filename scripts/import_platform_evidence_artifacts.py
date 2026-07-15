@@ -111,7 +111,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         )
     )
     parser.add_argument("--registry", type=Path, default=EVIDENCE_PATH)
-    parser.add_argument("--release-tag", required=True, help="release tag, for example v1.0.4")
+    parser.add_argument("--release-tag", required=True, help="release tag, for example v1.0.5")
     parser.add_argument(
         "--require-target",
         action="append",

@@ -99,7 +99,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "Linux builder/smoke evidence or XP evidence files"
         ),
     )
-    parser.add_argument("--release-tag", required=True, help="release tag, for example v1.0.4")
+    parser.add_argument("--release-tag", required=True, help="release tag, for example v1.0.5")
     parser.add_argument(
         "--target",
         action="append",

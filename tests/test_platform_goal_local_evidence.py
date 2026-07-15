@@ -301,6 +301,7 @@ def test_platform_goal_local_evidence_accepts_linux_i386_staged_proof(tmp_path: 
         smoke,
         target,
         fixtures._smoke_artifact_hashes(artifacts, names),
+        release_tag=tag,
         workflow_run_url=workflow_run_url,
     )
 
@@ -385,6 +386,7 @@ def test_platform_goal_local_evidence_rejects_symlinked_linux_proof_inputs(
         smoke,
         target,
         fixtures._smoke_artifact_hashes(artifacts, names),
+        release_tag=tag,
         workflow_run_url=workflow_run_url,
     )
     symlink_names = {builder.name, smoke.name}
@@ -651,6 +653,7 @@ def test_platform_goal_local_evidence_accepts_linux_explicit_target_release_scop
         smoke,
         target,
         fixtures._smoke_artifact_hashes(artifacts, names),
+        release_tag=tag,
         workflow_run_url=workflow_run_url,
     )
 
@@ -695,6 +698,7 @@ def test_platform_goal_local_evidence_accepts_linux_workspace_prefixed_release_p
         smoke,
         target,
         fixtures._smoke_artifact_hashes(artifacts, names),
+        release_tag=tag,
         workflow_run_url=workflow_run_url,
     )
 
@@ -743,6 +747,7 @@ def test_platform_goal_local_evidence_accepts_linux_targets_with_inferred_run_bi
             smoke,
             target,
             fixtures._smoke_artifact_hashes(artifacts, names),
+            release_tag=tag,
             workflow_run_url=workflow_run_url,
             source_head_sha=source_head_sha,
         )
@@ -786,6 +791,7 @@ def test_platform_goal_local_evidence_rejects_non_string_inferred_linux_source_b
         smoke,
         target,
         fixtures._smoke_artifact_hashes(artifacts, names),
+        release_tag=tag,
         workflow_run_url="https://github.com/example/remote-ops-workspace/actions/runs/12345",
     )
 
@@ -898,6 +904,7 @@ def test_platform_goal_local_evidence_rejects_linux_source_head_drift(
             smoke,
             target,
             fixtures._smoke_artifact_hashes(artifacts, names),
+            release_tag=tag,
             workflow_run_url=workflow_run_url,
             source_head_sha=source_heads[target],
         )
@@ -949,6 +956,7 @@ def test_platform_goal_local_evidence_rejects_linux_source_run_attempt_conflict(
             smoke,
             target,
             fixtures._smoke_artifact_hashes(artifacts, names),
+            release_tag=tag,
             workflow_run_url=workflow_run_url,
             workflow_run_attempt=workflow_run_attempt,
             source_head_sha=source_head_sha,
@@ -1129,6 +1137,7 @@ def test_platform_goal_local_evidence_rejects_misnamed_linux_proof_inputs(tmp_pa
         smoke,
         target,
         fixtures._smoke_artifact_hashes(artifacts, names),
+        release_tag=tag,
         workflow_run_url=workflow_run_url,
     )
 
@@ -1179,6 +1188,7 @@ def test_platform_goal_local_evidence_rejects_invalid_inferred_linux_run_binding
         smoke,
         target,
         fixtures._smoke_artifact_hashes(artifacts, names),
+        release_tag=tag,
         workflow_run_url="https://example.invalid/not-actions",
         source_head_sha="A" * 40,
     )

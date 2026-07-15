@@ -1161,10 +1161,11 @@ def test_extended_linux_evidence_bundle_rejects_builder_smoke_identity_drift(
         out_dir=Path("bundle"),
     )
 
+    smoke_release_id = tag.removeprefix("v").replace(".", "-")
     assert (
         "linux-i386 linux_smoke_evidence native installer smoke evidence run id must match "
         "builder_identity.host_identity.evidence_run_id 'linux-i386-1-0-2-run-99999', "
-        "got 'linux-i386-1-0-2-run-12345'"
+        f"got 'linux-i386-{smoke_release_id}-run-12345'"
     ) in errors
     assert (
         "linux-i386 linux_smoke_evidence native installer smoke observed at utc must not be earlier than "
@@ -1305,13 +1306,13 @@ def test_extended_linux_evidence_bundle_rejects_builder_smoke_security_drift(
     ) in errors
 
 
-def _builder_identity(target: str) -> dict[str, object]:
+def _builder_identity(target: str, release_tag: str = "v1.0.2") -> dict[str, object]:
     machine = "i686" if target == "linux-i386" else "armv7l"
     dpkg_arch = "i386" if target == "linux-i386" else "armhf"
     return {
         "schema_version": 1,
         "target": target,
-        "release_tag": "v1.0.2",
+        "release_tag": release_tag,
         "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
         "workflow_run_attempt": 1,
         "workflow_ref": (
@@ -1322,7 +1323,7 @@ def _builder_identity(target: str) -> dict[str, object]:
         "source_head_sha": "a" * 40,
         "observed_git_head_sha": "a" * 40,
         "git_worktree_clean": True,
-        "host_identity": _linux_host_identity(target),
+        "host_identity": _linux_host_identity(target, release_tag),
         "sudo_non_interactive": True,
         "sys_platform": "linux",
         "platform_machine": machine,
@@ -1369,9 +1370,17 @@ def _stage_valid_linux_evidence_inputs(
     assets.mkdir(parents=True)
     _write_artifact_set(assets, names)
     builder = target_root / f"builder-identity-{target}.json"
-    builder.write_text(json.dumps(_builder_identity(target), indent=2) + "\n", encoding="utf-8")
+    builder.write_text(
+        json.dumps(_builder_identity(target, tag), indent=2) + "\n",
+        encoding="utf-8",
+    )
     smoke = target_root / f"native-smoke-{target}.log"
-    _write_linux_smoke_evidence(smoke, target, _smoke_artifact_hashes(assets, names))
+    _write_linux_smoke_evidence(
+        smoke,
+        target,
+        _smoke_artifact_hashes(assets, names),
+        release_tag=tag,
+    )
     return assets, builder, smoke
 
 
@@ -1452,6 +1461,7 @@ def _write_linux_smoke_evidence(
     target: str,
     artifact_hashes: dict[str, str],
     *,
+    release_tag: str = "v1.0.2",
     workflow_run_url: str = "https://github.com/example/remote-ops-workspace/actions/runs/12345",
     workflow_run_attempt: int = 1,
     source_head_sha: str = "a" * 40,
@@ -1461,7 +1471,8 @@ def _write_linux_smoke_evidence(
     machine = "i686" if target == "linux-i386" else "armv7l"
     dpkg_arch = "i386" if target == "linux-i386" else "armhf"
     run_id = workflow_run_url.rstrip("/").rsplit("/", 1)[-1]
-    evidence_run_id = f"{target}-1-0-2-run-{run_id}"
+    release_id = release_tag.removeprefix("v").replace(".", "-")
+    evidence_run_id = f"{target}-{release_id}-run-{run_id}"
     builder_evidence_path = (
         Path(builder_evidence).as_posix()
         if builder_evidence is not None
@@ -1478,7 +1489,7 @@ def _write_linux_smoke_evidence(
                 f"--dist native-dist/linux --target {target} --workflow-run-url {workflow_run_url} "
                 f"--workflow-run-attempt {workflow_run_attempt} "
                 f"--source-head-sha {source_head_sha} --builder-evidence {builder_evidence_path}",
-                "native installer smoke release: v1.0.2",
+                f"native installer smoke release: {release_tag}",
                 f"native installer smoke target arch: {arch}",
                 f"native installer smoke target: {target}",
                 f"native installer smoke workflow run: {workflow_run_url}",

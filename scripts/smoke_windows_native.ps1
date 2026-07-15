@@ -61,6 +61,51 @@ function Test-PortableGuiLauncher([string]$InstallDir, [string]$Arch) {
   }
 }
 
+function Test-RowVault([string]$Path, [string]$Label) {
+  $OldRowHome = [Environment]::GetEnvironmentVariable("ROW_HOME", "Process")
+  $OldVaultPassword = [Environment]::GetEnvironmentVariable("ROW_VAULT_PASSWORD", "Process")
+  $VaultHome = Join-Path $SmokeRoot ("vault-" + [Guid]::NewGuid().ToString("N"))
+  try {
+    $env:ROW_HOME = $VaultHome
+    $env:ROW_VAULT_PASSWORD = "release-native-vault-smoke-passphrase"
+
+    $InitOutput = & $Path vault init 2>&1
+    if ($LASTEXITCODE -ne 0) {
+      throw "$Label vault init failed: $($InitOutput -join ' ')"
+    }
+    $StatusOutput = & $Path vault status --json 2>&1
+    if ($LASTEXITCODE -ne 0) {
+      throw "$Label vault status failed: $($StatusOutput -join ' ')"
+    }
+    try {
+      $Status = ($StatusOutput -join "`n") | ConvertFrom-Json
+    } catch {
+      throw "$Label vault status did not return valid JSON: $($StatusOutput -join ' ')"
+    }
+    if (-not $Status.initialized) {
+      throw "$Label vault did not report initialized state"
+    }
+    if (-not $Status.backend_available) {
+      throw "$Label vault cryptography backend is unavailable"
+    }
+    if ($Status.kdf -ne "scrypt") {
+      throw "$Label vault did not report the expected scrypt KDF"
+    }
+  } finally {
+    if ($null -eq $OldRowHome) {
+      Remove-Item Env:ROW_HOME -ErrorAction SilentlyContinue
+    } else {
+      $env:ROW_HOME = $OldRowHome
+    }
+    if ($null -eq $OldVaultPassword) {
+      Remove-Item Env:ROW_VAULT_PASSWORD -ErrorAction SilentlyContinue
+    } else {
+      $env:ROW_VAULT_PASSWORD = $OldVaultPassword
+    }
+    Remove-Item -Recurse -Force $VaultHome -ErrorAction SilentlyContinue
+  }
+}
+
 function Find-MsiRowExe {
   $Candidates = @()
   if ($env:ProgramFiles) {
@@ -102,6 +147,7 @@ Expand-Archive -Path $NativeZip -DestinationPath $PortableInstallDir -Force
 $PortableRow = Join-Path $PortableInstallDir "bin\row.exe"
 Test-RowVersion $PortableRow $Version
 Test-PortableGuiLauncher $PortableInstallDir $Arch
+Test-RowVault $PortableRow "portable ZIP"
 Remove-Item -Recurse -Force $PortableInstallDir
 if (Test-Path $PortableInstallDir) {
   throw "portable zip cleanup left extracted files behind"
@@ -120,6 +166,7 @@ Invoke-SmokeCommand "EXE install" $SetupExe $ExeInstallArgs
 $ExeRow = Join-Path $ExeInstallDir "bin\row.exe"
 Test-RowVersion $ExeRow $Version
 Test-RowGuiLauncher $ExeRow $Arch
+Test-RowVault $ExeRow "EXE install"
 Invoke-SmokeCommand "EXE upgrade" $SetupExe $ExeInstallArgs
 Test-RowVersion $ExeRow $Version
 Test-RowGuiLauncher $ExeRow $Arch
@@ -142,6 +189,7 @@ Invoke-SmokeCommand "MSI install" "msiexec.exe" @("/i", $Msi, "/qn", "/norestart
 $MsiRow = Find-MsiRowExe
 Test-RowVersion $MsiRow $Version
 Test-RowGuiLauncher $MsiRow $Arch
+Test-RowVault $MsiRow "MSI install"
 Invoke-SmokeCommand "MSI upgrade" "msiexec.exe" @("/i", $Msi, "/qn", "/norestart", "/l*v", $MsiLog)
 $MsiRow = Find-MsiRowExe
 Test-RowVersion $MsiRow $Version

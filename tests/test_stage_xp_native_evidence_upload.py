@@ -8,11 +8,14 @@ from pathlib import Path
 from typing import Any
 
 
+HISTORICAL_ACCEPTED_RECORD_TAG = "v1.0.2"
+
+
 def test_stage_xp_native_evidence_upload_copies_only_expected_files(tmp_path: Path) -> None:
     stager = _load_stager()
     checker = _load_platform_promotion_artifacts_checker()
     target = "windows-xp-native-x86"
-    tag = f"v{checker.read_project_version()}"
+    tag = HISTORICAL_ACCEPTED_RECORD_TAG
     assets = _xp_assets_dir(tmp_path, target, tag)
     evidence_output = _xp_evidence_output_dir(tmp_path, target, tag)
     staged = tmp_path / "xp-evidence-upload"
@@ -143,7 +146,7 @@ def test_stage_xp_native_evidence_upload_rejects_extra_source_entries(tmp_path: 
     stager = _load_stager()
     checker = _load_platform_promotion_artifacts_checker()
     target = "windows-xp-native-x86"
-    tag = f"v{checker.read_project_version()}"
+    tag = HISTORICAL_ACCEPTED_RECORD_TAG
     assets = _xp_assets_dir(tmp_path, target, tag)
     evidence_output = _xp_evidence_output_dir(tmp_path, target, tag)
     assets.mkdir(parents=True)
@@ -192,7 +195,7 @@ def test_stage_xp_native_evidence_upload_rejects_hash_mismatch(tmp_path: Path) -
     stager = _load_stager()
     checker = _load_platform_promotion_artifacts_checker()
     target = "windows-xp-native-x86"
-    tag = f"v{checker.read_project_version()}"
+    tag = HISTORICAL_ACCEPTED_RECORD_TAG
     assets = _xp_assets_dir(tmp_path, target, tag)
     evidence_output = _xp_evidence_output_dir(tmp_path, target, tag)
     assets.mkdir(parents=True)
@@ -523,7 +526,7 @@ def test_stage_xp_native_evidence_upload_rejects_review_bundle_content_mismatch(
     stager = _load_stager()
     checker = _load_platform_promotion_artifacts_checker()
     target = "windows-xp-native-x86"
-    tag = f"v{checker.read_project_version()}"
+    tag = HISTORICAL_ACCEPTED_RECORD_TAG
     assets = _xp_assets_dir(tmp_path, target, tag)
     evidence_output = _xp_evidence_output_dir(tmp_path, target, tag)
     assets.mkdir(parents=True)
@@ -598,7 +601,7 @@ def test_stage_xp_native_evidence_upload_rejects_noncanonical_final_record(
     stager = _load_stager()
     checker = _load_platform_promotion_artifacts_checker()
     target = "windows-xp-native-x86"
-    tag = f"v{checker.read_project_version()}"
+    tag = HISTORICAL_ACCEPTED_RECORD_TAG
     assets = _xp_assets_dir(tmp_path, target, tag)
     evidence_output = _xp_evidence_output_dir(tmp_path, target, tag)
     assets.mkdir(parents=True)

@@ -45,6 +45,7 @@ PROJECT_FILES = [
     "README.tr.md",
     "pyproject.toml",
     "requirements-dev.txt",
+    "requirements-release-compat.txt",
     "requirements-release.txt",
     "requirements.txt",
     "SECURITY.md",
@@ -237,9 +238,18 @@ def validate_version(version: str) -> None:
 
 
 def validate_github_tag(version: str) -> None:
-    tag = os.environ.get("GITHUB_REF_NAME")
-    if tag and tag != f"v{version}":
-        raise SystemExit(f"GITHUB_REF_NAME={tag!r} does not match project version v{version}")
+    expected_tag = f"v{version}"
+    release_tag = os.environ.get("RELEASE_TAG", "").strip()
+    if release_tag and release_tag != expected_tag:
+        raise SystemExit(
+            f"RELEASE_TAG={release_tag!r} does not match project version {expected_tag}"
+        )
+    ref_name = os.environ.get("GITHUB_REF_NAME", "").strip()
+    ref_type = os.environ.get("GITHUB_REF_TYPE", "").strip()
+    if ref_name and (ref_type == "tag" or ref_name.startswith("v")) and ref_name != expected_tag:
+        raise SystemExit(
+            f"GITHUB_REF_NAME={ref_name!r} does not match project version {expected_tag}"
+        )
 
 
 def resolve_dist(path: Path) -> Path:

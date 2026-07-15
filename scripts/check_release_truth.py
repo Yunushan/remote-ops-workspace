@@ -32,6 +32,13 @@ CORE_RELEASE_JOBS = (
 PROTECTED_PUBLISH_JOB = "publish-protected-platform-evidence"
 RELEASE_TAG_RESOLVER = "RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}"
 TAGGED_RELEASE_REF = "ref: ${{ env.RELEASE_TAG }}"
+RELEASE_UPLOAD_TAG_NAME = "tag_name: ${{ env.RELEASE_TAG }}"
+RELEASE_VERSION_GATE_COMMAND = (
+    'python scripts/check_release_version.py --release-tag "$RELEASE_TAG"'
+)
+RELEASE_VERIFY_COMMAND = (
+    'python scripts/verify.py --quick --no-cli-smoke --release-tag "$RELEASE_TAG"'
+)
 PROTECTED_PROMOTION_CONDITION = (
     "if: ${{ github.event_name == 'workflow_dispatch' && inputs.include_protected_platform_evidence }}"
 )
@@ -52,12 +59,12 @@ PUBLISH_REMOTE_PLATFORM_EVIDENCE_AUDIT_COMMAND = (
 )
 
 REQUIRED_DOC_SNIPPETS = (
-    "remote-ops-workspace-v1.0.2-linux-<amd64|arm64>.deb",
-    "remote-ops-workspace-v1.0.2-linux-<x86_64|aarch64>.rpm",
-    "remote-ops-workspace-v1.0.2-linux-<x86_64|aarch64>.AppImage",
-    "remote-ops-workspace-v1.0.2-linux-<x86_64|aarch64>-native.tar.gz",
-    "remote-ops-workspace-v1.0.2-macos-<x64|arm64>.dmg",
-    "remote-ops-workspace-v1.0.2-macos-<x64|arm64>.pkg",
+    "remote-ops-workspace-v1.0.4-linux-<amd64|arm64>.deb",
+    "remote-ops-workspace-v1.0.4-linux-<x86_64|aarch64>.rpm",
+    "remote-ops-workspace-v1.0.4-linux-<x86_64|aarch64>.AppImage",
+    "remote-ops-workspace-v1.0.4-linux-<x86_64|aarch64>-native.tar.gz",
+    "remote-ops-workspace-v1.0.4-macos-<x64|arm64>.dmg",
+    "remote-ops-workspace-v1.0.4-macos-<x64|arm64>.pkg",
     "not uploaded by the default GitHub",
     "check_protected_platform_goal.py --release-tag <tag> --require-complete --assets-dir release-assets --repository <owner>/<repo>",
     "release_asset_provenance_complete=false",
@@ -111,7 +118,7 @@ REQUIRED_DOC_SNIPPETS = (
 )
 
 REQUIRED_TURKISH_DOC_SNIPPETS = (
-    "![release](https://img.shields.io/badge/release-v1.0.2-blue)",
+    "![release](https://img.shields.io/badge/release-v1.0.4-blue)",
     "configs/platform_verified_evidence.json",
     "python scripts/check_protected_platform_goal.py --release-tag <tag> --require-records-complete --show-requirements",
     "python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag <tag>",
@@ -202,12 +209,12 @@ STALE_TURKISH_RELEASE_SNIPPETS = (
 )
 
 STALE_DEFAULT_ARTIFACT_SNIPPETS = (
-    "remote-ops-workspace-v1.0.2-linux-<i386|amd64|armhf|arm64>.deb",
-    "remote-ops-workspace-v1.0.2-linux-<i686|x86_64|armv7hl|aarch64>.rpm",
-    "remote-ops-workspace-v1.0.2-linux-<i686|x86_64|armhf|aarch64>.AppImage",
-    "remote-ops-workspace-v1.0.2-linux-<i686|x86_64|armhf|aarch64>-native.tar.gz",
-    "remote-ops-workspace-v1.0.2-macos-<arch>.dmg",
-    "remote-ops-workspace-v1.0.2-macos-<arch>.pkg",
+    "remote-ops-workspace-v1.0.4-linux-<i386|amd64|armhf|arm64>.deb",
+    "remote-ops-workspace-v1.0.4-linux-<i686|x86_64|armv7hl|aarch64>.rpm",
+    "remote-ops-workspace-v1.0.4-linux-<i686|x86_64|armhf|aarch64>.AppImage",
+    "remote-ops-workspace-v1.0.4-linux-<i686|x86_64|armhf|aarch64>-native.tar.gz",
+    "remote-ops-workspace-v1.0.4-macos-<arch>.dmg",
+    "remote-ops-workspace-v1.0.4-macos-<arch>.pkg",
 )
 
 STALE_PLATFORM_EVIDENCE_SNIPPETS = (
@@ -283,6 +290,7 @@ def check_release_preflight(workflow: str | None = None) -> list[str]:
     if not block:
         return [*errors, "release workflow missing release-preflight job"]
     errors.extend(check_checkout_step(block, job=RELEASE_PREFLIGHT_JOB))
+    errors.extend(check_tagged_source_checkout(block, job=RELEASE_PREFLIGHT_JOB))
     required_snippets = {
         "persist-credentials: false": "checkout credential persistence disabled",
         'python-version: "3.12"': "stable preflight Python version",
@@ -293,7 +301,8 @@ def check_release_preflight(workflow: str | None = None) -> list[str]:
         'test "${{ github.ref_name }}" = "${{ github.event.repository.default_branch }}"': (
             "trusted manual release controller branch guard"
         ),
-        "python scripts/verify.py --quick --no-cli-smoke": "quick verifier before release builds",
+        RELEASE_VERSION_GATE_COMMAND: "release tag/project version gate",
+        RELEASE_VERIFY_COMMAND: "quick verifier before release builds",
         '--release-tag "$RELEASE_TAG"': "tag-scoped protected platform parity report",
         'python scripts/check_protected_platform_goal.py --release-tag "$RELEASE_TAG" --show-requirements': (
             "protected platform readiness requirements report"
@@ -303,6 +312,10 @@ def check_release_preflight(workflow: str | None = None) -> list[str]:
     for snippet, label in required_snippets.items():
         if snippet not in block:
             errors.append(f"release-preflight missing {label}: {snippet}")
+    version_gate_index = block.find(RELEASE_VERSION_GATE_COMMAND)
+    verifier_index = block.find(RELEASE_VERIFY_COMMAND)
+    if version_gate_index >= 0 and verifier_index >= 0 and version_gate_index > verifier_index:
+        errors.append("release-preflight version gate must run before the repository verifier")
     if RELEASE_TAG_RESOLVER not in workflow_text:
         errors.append(f"release workflow missing event-aware release tag resolver: {RELEASE_TAG_RESOLVER}")
     for job in RELEASE_PREFLIGHT_DEPENDENTS:
@@ -319,6 +332,7 @@ def check_release_preflight(workflow: str | None = None) -> list[str]:
         errors.extend(check_tagged_source_checkout(dependent_block, job=job))
     errors.extend(check_accepted_platform_evidence_assets_job(workflow_text))
     errors.extend(check_publish_platform_evidence_dependency(workflow_text))
+    errors.extend(check_explicit_release_upload_tags(workflow_text))
     return errors
 
 
@@ -451,6 +465,28 @@ def check_publish_platform_evidence_dependency(workflow: str) -> list[str]:
         errors.append("protected publish-time platform goal gate must run before GitHub release upload")
     if remote_audit_index >= 0 and upload_index >= 0 and remote_audit_index < upload_index:
         errors.append("published protected platform evidence audit must run after GitHub release upload")
+    return errors
+
+
+def check_explicit_release_upload_tags(workflow: str) -> list[str]:
+    errors: list[str] = []
+    upload_steps = {
+        "publish": "name: Upload release assets",
+        PROTECTED_PUBLISH_JOB: "name: Upload protected platform evidence assets",
+    }
+    for job, marker in upload_steps.items():
+        block = workflow_job_block(workflow, job)
+        if not block:
+            continue
+        upload = workflow_step_block(block, marker)
+        if (
+            upload
+            and "uses: softprops/action-gh-release@v3" in upload
+            and RELEASE_UPLOAD_TAG_NAME not in upload
+        ):
+            errors.append(
+                f"{job} GitHub release upload must explicitly target env.RELEASE_TAG"
+            )
     return errors
 
 

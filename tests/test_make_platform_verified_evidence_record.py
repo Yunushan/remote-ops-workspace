@@ -36,12 +36,13 @@ def test_make_platform_verified_evidence_record_generates_linux_record(
     _write_artifact_set(assets, names)
     builder_evidence = Path("evidence") / target / tag / "builder-identity-linux-i386.json"
     builder_evidence.parent.mkdir(parents=True)
-    _write_builder_evidence(builder_evidence, target)
+    _write_builder_evidence(builder_evidence, target, release_tag=tag)
     smoke_evidence = Path("evidence") / target / tag / "native-smoke-linux-i386.log"
     _write_linux_smoke_evidence(
         smoke_evidence,
         target,
         _smoke_artifact_hashes(assets, names),
+        release_tag=tag,
     )
 
     errors, record = maker.build_evidence_record(
@@ -143,7 +144,7 @@ def test_make_platform_verified_evidence_record_generates_linux_record(
         "git_head_sha": "a" * 40,
         "target_arch": "i386",
         "host_label": "linux-i386-builder",
-        "evidence_run_id": "linux-i386-1-0-2-run-12345",
+        "evidence_run_id": f"linux-i386-{tag.removeprefix('v').replace('.', '-')}-run-12345",
         "observed_at_utc": "2026-06-20T12:00:00Z",
         "uname_machine": "i686",
         "dpkg_architecture": "i386",
@@ -204,12 +205,13 @@ def test_make_platform_verified_evidence_record_binds_local_evidence_root(
     assets.mkdir(parents=True)
     _write_artifact_set(assets, names)
     builder_evidence = target_root / "builder-identity-linux-i386.json"
-    _write_builder_evidence(builder_evidence, target)
+    _write_builder_evidence(builder_evidence, target, release_tag=tag)
     smoke_evidence = target_root / "native-smoke-linux-i386.log"
     _write_linux_smoke_evidence(
         smoke_evidence,
         target,
         _smoke_artifact_hashes(assets, names),
+        release_tag=tag,
     )
 
     errors, record = maker.build_evidence_record(
@@ -266,12 +268,13 @@ def test_make_platform_verified_evidence_record_requires_local_preflight_pass(
     _write_artifact_set(assets, names)
     builder_evidence = Path("evidence") / target / tag / f"builder-identity-{target}.json"
     builder_evidence.parent.mkdir(parents=True)
-    _write_builder_evidence(builder_evidence, target)
+    _write_builder_evidence(builder_evidence, target, release_tag=tag)
     smoke_evidence = Path("evidence") / target / tag / f"native-smoke-{target}.log"
     _write_linux_smoke_evidence(
         smoke_evidence,
         target,
         _smoke_artifact_hashes(assets, names),
+        release_tag=tag,
     )
 
     monkeypatch.setattr(
@@ -330,12 +333,13 @@ def test_make_platform_verified_evidence_record_rejects_file_shaped_linux_direct
     _write_artifact_set(assets, names)
     builder_evidence = Path("evidence") / target / tag / f"builder-identity-{target}.json"
     builder_evidence.parent.mkdir(parents=True)
-    _write_builder_evidence(builder_evidence, target)
+    _write_builder_evidence(builder_evidence, target, release_tag=tag)
     smoke_evidence = Path("evidence") / target / tag / f"native-smoke-{target}.log"
     _write_linux_smoke_evidence(
         smoke_evidence,
         target,
         _smoke_artifact_hashes(assets, names),
+        release_tag=tag,
     )
 
     errors, record = maker.build_evidence_record(
@@ -2053,12 +2057,13 @@ def test_make_platform_verified_evidence_record_rejects_unscoped_linux_evidence_
     names = _required_names(artifact_checker, target, tag)
     _write_artifact_set(assets, names)
     builder_evidence = tmp_path / "builder.json"
-    _write_builder_evidence(builder_evidence, target)
+    _write_builder_evidence(builder_evidence, target, release_tag=tag)
     smoke_evidence = tmp_path / "native-smoke.log"
     _write_linux_smoke_evidence(
         smoke_evidence,
         target,
         _smoke_artifact_hashes(assets, names),
+        release_tag=tag,
     )
 
     errors, record = maker.build_evidence_record(
@@ -2109,12 +2114,13 @@ def test_make_platform_verified_evidence_record_rejects_unscoped_linux_generator
     names = _required_names(artifact_checker, target, tag)
     _write_artifact_set(assets, names)
     builder_evidence = tmp_path / "builder-identity-linux-i386.json"
-    _write_builder_evidence(builder_evidence, target)
+    _write_builder_evidence(builder_evidence, target, release_tag=tag)
     smoke_evidence = tmp_path / "native-smoke-linux-i386.log"
     _write_linux_smoke_evidence(
         smoke_evidence,
         target,
         _smoke_artifact_hashes(assets, names),
+        release_tag=tag,
     )
     staged_upload = tmp_path / "upload"
 
@@ -2390,7 +2396,7 @@ def test_make_platform_verified_evidence_record_rejects_weak_linux_smoke_log(tmp
     names = _required_names(artifact_checker, target, tag)
     _write_artifact_set(assets, names)
     builder_evidence = tmp_path / "builder-identity-linux-i386.json"
-    _write_builder_evidence(builder_evidence, target)
+    _write_builder_evidence(builder_evidence, target, release_tag=tag)
     smoke_evidence = tmp_path / "native-smoke-linux-i386.log"
     smoke_evidence.write_text("linux-i386 native smoke passed\n", encoding="utf-8")
 
@@ -2449,12 +2455,13 @@ def test_make_platform_verified_evidence_record_rejects_missing_linux_smoke_secu
     names = _required_names(artifact_checker, target, tag)
     _write_artifact_set(assets, names)
     builder_evidence = tmp_path / "builder-identity-linux-i386.json"
-    _write_builder_evidence(builder_evidence, target)
+    _write_builder_evidence(builder_evidence, target, release_tag=tag)
     smoke_evidence = tmp_path / "native-smoke-linux-i386.log"
     _write_linux_smoke_evidence(
         smoke_evidence,
         target,
         _smoke_artifact_hashes(assets, names),
+        release_tag=tag,
     )
     missing_line = "native installer smoke TLS preferred modern profiles: TLS 1.3"
     smoke_evidence.write_text(
@@ -2556,12 +2563,13 @@ def test_make_platform_verified_evidence_record_rejects_missing_linux_smoke_git_
     names = _required_names(artifact_checker, target, tag)
     _write_artifact_set(assets, names)
     builder_evidence = tmp_path / "builder-identity-linux-i386.json"
-    _write_builder_evidence(builder_evidence, target)
+    _write_builder_evidence(builder_evidence, target, release_tag=tag)
     smoke_evidence = tmp_path / "native-smoke-linux-i386.log"
     _write_linux_smoke_evidence(
         smoke_evidence,
         target,
         _smoke_artifact_hashes(assets, names),
+        release_tag=tag,
     )
     missing_line = f"native installer smoke git head sha: {'a' * 40}"
     smoke_evidence.write_text(
@@ -2616,12 +2624,13 @@ def test_make_platform_verified_evidence_record_rejects_missing_linux_smoke_secu
     names = _required_names(artifact_checker, target, tag)
     _write_artifact_set(assets, names)
     builder_evidence = tmp_path / "builder-identity-linux-i386.json"
-    _write_builder_evidence(builder_evidence, target)
+    _write_builder_evidence(builder_evidence, target, release_tag=tag)
     smoke_evidence = tmp_path / "native-smoke-linux-i386.log"
     _write_linux_smoke_evidence(
         smoke_evidence,
         target,
         _smoke_artifact_hashes(assets, names),
+        release_tag=tag,
     )
     missing_line = "native installer smoke CVE review reference: vendor-cve-advisory-review-2026-06"
     smoke_evidence.write_text(
@@ -2679,12 +2688,13 @@ def test_make_platform_verified_evidence_record_rejects_forbidden_linux_smoke_se
     names = _required_names(artifact_checker, target, tag)
     _write_artifact_set(assets, names)
     builder_evidence = tmp_path / "builder-identity-linux-armhf.json"
-    _write_builder_evidence(builder_evidence, target)
+    _write_builder_evidence(builder_evidence, target, release_tag=tag)
     smoke_evidence = tmp_path / "native-smoke-linux-armhf.log"
     _write_linux_smoke_evidence(
         smoke_evidence,
         target,
         _smoke_artifact_hashes(assets, names),
+        release_tag=tag,
     )
     smoke_evidence.write_text(
         smoke_evidence.read_text(encoding="utf-8")
@@ -2747,12 +2757,13 @@ def test_make_platform_verified_evidence_record_rejects_case_variant_forbidden_l
     names = _required_names(artifact_checker, target, tag)
     _write_artifact_set(assets, names)
     builder_evidence = tmp_path / "builder-identity-linux-armhf.json"
-    _write_builder_evidence(builder_evidence, target)
+    _write_builder_evidence(builder_evidence, target, release_tag=tag)
     smoke_evidence = tmp_path / "native-smoke-linux-armhf.log"
     _write_linux_smoke_evidence(
         smoke_evidence,
         target,
         _smoke_artifact_hashes(assets, names),
+        release_tag=tag,
     )
     smoke_evidence.write_text(
         smoke_evidence.read_text(encoding="utf-8")
@@ -2810,12 +2821,13 @@ def test_make_platform_verified_evidence_record_rejects_wrong_linux_smoke_runtim
     names = _required_names(artifact_checker, target, tag)
     _write_artifact_set(assets, names)
     builder_evidence = tmp_path / "builder-identity-linux-i386.json"
-    _write_builder_evidence(builder_evidence, target)
+    _write_builder_evidence(builder_evidence, target, release_tag=tag)
     smoke_evidence = tmp_path / "native-smoke-linux-i386.log"
     _write_linux_smoke_evidence(
         smoke_evidence,
         target,
         _smoke_artifact_hashes(assets, names),
+        release_tag=tag,
     )
     smoke_evidence.write_text(
         smoke_evidence.read_text(encoding="utf-8").replace(
@@ -2875,18 +2887,22 @@ def test_make_platform_verified_evidence_record_rejects_wrong_linux_smoke_identi
     names = _required_names(artifact_checker, target, tag)
     _write_artifact_set(assets, names)
     builder_evidence = tmp_path / "builder-identity-linux-i386.json"
-    _write_builder_evidence(builder_evidence, target)
+    _write_builder_evidence(builder_evidence, target, release_tag=tag)
     smoke_evidence = tmp_path / "native-smoke-linux-i386.log"
     _write_linux_smoke_evidence(
         smoke_evidence,
         target,
         _smoke_artifact_hashes(assets, names),
+        release_tag=tag,
     )
+    version_slug = tag.removeprefix("v").replace(".", "-")
+    expected_evidence_run_id = f"{target}-{version_slug}-run-12345"
+    wrong_evidence_run_id = f"{target}-{version_slug}-run-99999"
     smoke_evidence.write_text(
         smoke_evidence.read_text(encoding="utf-8")
         .replace(
-            "native installer smoke evidence run id: linux-i386-1-0-2-run-12345",
-            "native installer smoke evidence run id: linux-i386-1-0-2-run-99999",
+            f"native installer smoke evidence run id: {expected_evidence_run_id}",
+            f"native installer smoke evidence run id: {wrong_evidence_run_id}",
         )
         .replace(
             "native installer smoke observed at utc: 2026-06-20T12:00:00Z",
@@ -2928,8 +2944,8 @@ def test_make_platform_verified_evidence_record_rejects_wrong_linux_smoke_identi
 
     assert record == {}
     assert (
-        "linux-i386 linux_smoke_evidence native installer smoke evidence run id "
-        "must be 'linux-i386-1-0-2-run-12345', got 'linux-i386-1-0-2-run-99999'"
+        f"{target} linux_smoke_evidence native installer smoke evidence run id "
+        f"must be '{expected_evidence_run_id}', got '{wrong_evidence_run_id}'"
     ) in errors
     assert (
         "linux-i386 linux_smoke_evidence native installer smoke observed at utc "
@@ -2949,9 +2965,12 @@ def test_make_platform_verified_evidence_record_rejects_linux_builder_smoke_iden
     names = _required_names(artifact_checker, target, tag)
     _write_artifact_set(assets, names)
     builder_evidence = tmp_path / "builder-identity-linux-i386.json"
-    _write_builder_evidence(builder_evidence, target)
+    _write_builder_evidence(builder_evidence, target, release_tag=tag)
     builder_data = json.loads(builder_evidence.read_text(encoding="utf-8"))
-    builder_data["host_identity"]["evidence_run_id"] = "linux-i386-1-0-2-run-99999"
+    version_slug = tag.removeprefix("v").replace(".", "-")
+    wrong_evidence_run_id = f"{target}-{version_slug}-run-99999"
+    expected_evidence_run_id = f"{target}-{version_slug}-run-12345"
+    builder_data["host_identity"]["evidence_run_id"] = wrong_evidence_run_id
     builder_data["host_identity"]["observed_at_utc"] = "2026-06-20T12:30:00Z"
     builder_evidence.write_text(json.dumps(builder_data, indent=2) + "\n", encoding="utf-8")
     smoke_evidence = tmp_path / "native-smoke-linux-i386.log"
@@ -2959,6 +2978,7 @@ def test_make_platform_verified_evidence_record_rejects_linux_builder_smoke_iden
         smoke_evidence,
         target,
         _smoke_artifact_hashes(assets, names),
+        release_tag=tag,
     )
 
     errors, record = maker.build_evidence_record(
@@ -2994,9 +3014,9 @@ def test_make_platform_verified_evidence_record_rejects_linux_builder_smoke_iden
 
     assert record == {}
     assert (
-        "linux-i386 linux_smoke_evidence native installer smoke evidence run id must match "
-        "builder_identity.host_identity.evidence_run_id 'linux-i386-1-0-2-run-99999', "
-        "got 'linux-i386-1-0-2-run-12345'"
+        f"{target} linux_smoke_evidence native installer smoke evidence run id must match "
+        f"builder_identity.host_identity.evidence_run_id '{wrong_evidence_run_id}', "
+        f"got '{expected_evidence_run_id}'"
     ) in errors
     assert (
         "linux-i386 linux_smoke_evidence native installer smoke observed at utc must not be earlier than "
@@ -3017,7 +3037,7 @@ def test_make_platform_verified_evidence_record_rejects_linux_builder_smoke_secu
     names = _required_names(artifact_checker, target, tag)
     _write_artifact_set(assets, names)
     builder_evidence = tmp_path / "builder-identity-linux-armhf.json"
-    _write_builder_evidence(builder_evidence, target)
+    _write_builder_evidence(builder_evidence, target, release_tag=tag)
     builder_data = json.loads(builder_evidence.read_text(encoding="utf-8"))
     builder_data["security_patch_evidence"]["security_update_channel"] = "vendor-security-updates-2026-07"
     builder_data["security_patch_evidence"]["cve_review_reference"] = "vendor-cve-advisory-review-2026-07"
@@ -3027,6 +3047,7 @@ def test_make_platform_verified_evidence_record_rejects_linux_builder_smoke_secu
         smoke_evidence,
         target,
         _smoke_artifact_hashes(assets, names),
+        release_tag=tag,
     )
 
     errors, record = maker.build_evidence_record(
@@ -3085,12 +3106,18 @@ def test_make_platform_verified_evidence_record_rejects_builder_source_head_sha_
     names = _required_names(artifact_checker, target, tag)
     _write_artifact_set(assets, names)
     builder_evidence = tmp_path / "builder-identity-linux-i386.json"
-    _write_builder_evidence(builder_evidence, target, source_head_sha="b" * 40)
+    _write_builder_evidence(
+        builder_evidence,
+        target,
+        release_tag=tag,
+        source_head_sha="b" * 40,
+    )
     smoke_evidence = tmp_path / "native-smoke-linux-i386.log"
     _write_linux_smoke_evidence(
         smoke_evidence,
         target,
         _smoke_artifact_hashes(assets, names),
+        release_tag=tag,
     )
 
     errors, record = maker.build_evidence_record(
@@ -3143,12 +3170,18 @@ def test_make_platform_verified_evidence_record_rejects_builder_observed_git_hea
     names = _required_names(artifact_checker, target, tag)
     _write_artifact_set(assets, names)
     builder_evidence = tmp_path / "builder-identity-linux-i386.json"
-    _write_builder_evidence(builder_evidence, target, observed_git_head_sha="b" * 40)
+    _write_builder_evidence(
+        builder_evidence,
+        target,
+        release_tag=tag,
+        observed_git_head_sha="b" * 40,
+    )
     smoke_evidence = tmp_path / "native-smoke-linux-i386.log"
     _write_linux_smoke_evidence(
         smoke_evidence,
         target,
         _smoke_artifact_hashes(assets, names),
+        release_tag=tag,
     )
 
     errors, record = maker.build_evidence_record(
@@ -3295,6 +3328,7 @@ def test_append_platform_verified_evidence_record_updates_registry(
     _write_builder_evidence(
         builder_evidence,
         target,
+        release_tag=tag,
         workflow_run_url="https://github.com/example/remote-ops-workspace/actions/runs/67890",
     )
     smoke_evidence = Path("evidence") / target / tag / "native-smoke-linux-armhf.log"
@@ -3302,6 +3336,7 @@ def test_append_platform_verified_evidence_record_updates_registry(
         smoke_evidence,
         target,
         _smoke_artifact_hashes(assets, names),
+        release_tag=tag,
         workflow_run_url="https://github.com/example/remote-ops-workspace/actions/runs/67890",
     )
     registry = Path("platform_verified_evidence.json")
@@ -3378,6 +3413,7 @@ def test_append_platform_verified_evidence_record_rejects_unfinalized_candidate(
     _write_builder_evidence(
         builder_evidence,
         target,
+        release_tag=tag,
         workflow_run_url="https://github.com/example/remote-ops-workspace/actions/runs/67890",
     )
     smoke_evidence = Path("evidence") / target / tag / "native-smoke-linux-armhf.log"
@@ -3385,6 +3421,7 @@ def test_append_platform_verified_evidence_record_rejects_unfinalized_candidate(
         smoke_evidence,
         target,
         _smoke_artifact_hashes(assets, names),
+        release_tag=tag,
         workflow_run_url="https://github.com/example/remote-ops-workspace/actions/runs/67890",
     )
     registry = Path("platform_verified_evidence.json")
@@ -3609,6 +3646,7 @@ def test_make_platform_verified_evidence_record_rejects_non_utf8_linux_builder_e
         smoke_evidence,
         target,
         _smoke_artifact_hashes(assets, names),
+        release_tag=tag,
         builder_evidence=builder_evidence,
     )
 
@@ -3912,6 +3950,7 @@ def _write_linux_smoke_evidence(
     target: str,
     artifact_hashes: dict[str, str],
     *,
+    release_tag: str = "v1.0.2",
     workflow_run_url: str = "https://github.com/example/remote-ops-workspace/actions/runs/12345",
     workflow_run_attempt: int = 1,
     source_head_sha: str = "a" * 40,
@@ -3921,7 +3960,8 @@ def _write_linux_smoke_evidence(
     machine = "i686" if target == "linux-i386" else "armv7l"
     dpkg_arch = "i386" if target == "linux-i386" else "armhf"
     run_id = workflow_run_url.rstrip("/").rsplit("/", 1)[-1]
-    evidence_run_id = f"{target}-1-0-2-run-{run_id}"
+    version_slug = release_tag.removeprefix("v").replace(".", "-")
+    evidence_run_id = f"{target}-{version_slug}-run-{run_id}"
     builder_evidence_path = (
         Path(builder_evidence).as_posix()
         if builder_evidence is not None
@@ -3938,7 +3978,7 @@ def _write_linux_smoke_evidence(
                 f"--dist native-dist/linux --target {target} --workflow-run-url {workflow_run_url} "
                 f"--workflow-run-attempt {workflow_run_attempt} "
                 f"--source-head-sha {source_head_sha} --builder-evidence {builder_evidence_path}",
-                "native installer smoke release: v1.0.2",
+                f"native installer smoke release: {release_tag}",
                 f"native installer smoke target arch: {arch}",
                 f"native installer smoke target: {target}",
                 f"native installer smoke workflow run: {workflow_run_url}",

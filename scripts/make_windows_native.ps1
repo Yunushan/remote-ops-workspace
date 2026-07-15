@@ -233,9 +233,15 @@ function Test-PythonModule([string]$Python, [string]$Module) {
 
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $Version = Get-ProjectVersion
-$Tag = $env:GITHUB_REF_NAME
-if ($Tag -and $Tag -ne "v$Version") {
-  throw "GITHUB_REF_NAME='$Tag' does not match project version v$Version"
+$ExpectedTag = "v$Version"
+$ReleaseTag = $env:RELEASE_TAG
+if ($ReleaseTag -and $ReleaseTag -ne $ExpectedTag) {
+  throw "RELEASE_TAG='$ReleaseTag' does not match project version $ExpectedTag"
+}
+$RefName = $env:GITHUB_REF_NAME
+$RefType = $env:GITHUB_REF_TYPE
+if ($RefName -and (($RefType -eq "tag") -or $RefName.StartsWith("v")) -and $RefName -ne $ExpectedTag) {
+  throw "GITHUB_REF_NAME='$RefName' does not match project version $ExpectedTag"
 }
 $PythonArch = Get-PythonArchitecture $Python
 if ($PythonArch -ne $Arch) {

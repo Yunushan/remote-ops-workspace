@@ -5,7 +5,7 @@ only when the artifact is real, reproducible, and documented.
 
 Release integrity rules:
 
-- Release tags must match `pyproject.toml` exactly, for example `v1.0.2`.
+- Release tags must match `pyproject.toml` exactly, for example `v1.0.4`.
 - Pushing a `vX.Y.Z` tag automatically builds, smoke-tests and publishes the
   standard source, Windows, macOS and Linux native assets. The tag must resolve
   to a commit reachable from the trusted default branch. The default core-release
@@ -18,6 +18,16 @@ Release integrity rules:
   `SOURCE_DATE_EPOCH` or a fixed default.
 - Python release build dependencies are constrained by `requirements-release.txt`
   and mirrored in `configs/release_toolchain.json`.
+- Modern release targets retain `cryptography==49.0.0`. Windows x86 and Intel
+  macOS use the explicit `requirements-release-compat.txt` profile with
+  `cryptography==48.0.1`, the latest release that still publishes the required
+  upstream wheels. A Windows x86 wheel is not Windows XP readiness evidence;
+  XP support still requires the separate accepted native-host records.
+- Windows ARM64 builds `cryptography==49.0.0` from source with pinned
+  `maturin`/CFFI build dependencies and the recorded vcpkg commit, statically
+  linked OpenSSL 3.6.3 triplet, and no vendored OpenSSL fallback. The workflow
+  asserts the imported cryptography and OpenSSL versions, and Windows release
+  smoke initializes the encrypted vault from the portable ZIP, EXE and MSI.
 - The GitHub release workflow avoids unbounded `pip install --upgrade` commands.
 - Every artifact entry in release manifests includes `size_bytes` and `sha256`.
 - Release manifests record the release toolchain contract used for the build.
@@ -33,7 +43,8 @@ Release integrity rules:
   `scripts/smoke_windows_native.ps1`, `scripts/smoke_macos_native.sh` and
   `scripts/smoke_linux_native.sh` after native builds and before artifact
   upload.
-- The core `release-preflight` workflow job runs
+- The core `release-preflight` workflow job checks out the requested immutable
+  tag, requires it to match both project version declarations, then runs
   `python scripts/verify.py --quick --no-cli-smoke --release-tag <tag>`, reports
   protected-platform readiness and then runs
   `python scripts/check_repository_cleanup.py --require-clean` before standard
@@ -149,7 +160,7 @@ and `docs/PLATFORM_SUPPORT.md`.
 The default GitHub release workflow publishes:
 
 - Python wheel, Python sdist, target source/install bundles, the release
-  manifest and `remote-ops-workspace-v1.0.2-SHA256SUMS.txt`;
+  manifest and `remote-ops-workspace-v1.0.4-SHA256SUMS.txt`;
 - Windows native `x86`, `x64` and `arm64` artifacts;
 - macOS native `x64` and `arm64` artifacts;
 - Linux native `x86_64`/`amd64` and `aarch64`/`arm64` artifacts.
@@ -466,12 +477,12 @@ Status: active.
 
 Release assets:
 
-- `remote_ops_workspace-1.0.2-py3-none-any.whl`
-- `remote_ops_workspace-1.0.2.tar.gz`
+- `remote_ops_workspace-1.0.4-py3-none-any.whl`
+- `remote_ops_workspace-1.0.4.tar.gz`
 - target source/install bundles for Windows, Linux, macOS, BSD, Solaris,
   Android/Termux, and Web/PWA
-- `remote-ops-workspace-v1.0.2-release-manifest.json`
-- `remote-ops-workspace-v1.0.2-SHA256SUMS.txt`
+- `remote-ops-workspace-v1.0.4-release-manifest.json`
+- `remote-ops-workspace-v1.0.4-SHA256SUMS.txt`
 
 Purpose:
 
@@ -486,11 +497,11 @@ Status: active.
 
 Release assets:
 
-- `remote-ops-workspace-v1.0.2-windows-<x86|x64|arm64>-setup.exe`
-- `remote-ops-workspace-v1.0.2-windows-<x86|x64|arm64>.msi`
-- `remote-ops-workspace-v1.0.2-windows-<x86|x64|arm64>-native.zip`
-- `remote-ops-workspace-v1.0.2-windows-<x86|x64|arm64>-native-manifest.json`
-- `remote-ops-workspace-v1.0.2-windows-<x86|x64|arm64>-native-SHA256SUMS.txt`
+- `remote-ops-workspace-v1.0.4-windows-<x86|x64|arm64>-setup.exe`
+- `remote-ops-workspace-v1.0.4-windows-<x86|x64|arm64>.msi`
+- `remote-ops-workspace-v1.0.4-windows-<x86|x64|arm64>-native.zip`
+- `remote-ops-workspace-v1.0.4-windows-<x86|x64|arm64>-native-manifest.json`
+- `remote-ops-workspace-v1.0.4-windows-<x86|x64|arm64>-native-SHA256SUMS.txt`
 
 Implementation:
 
@@ -520,10 +531,10 @@ Status: active.
 
 Release assets:
 
-- `remote-ops-workspace-v1.0.2-macos-<x64|arm64>.dmg`
-- `remote-ops-workspace-v1.0.2-macos-<x64|arm64>.pkg`
-- `remote-ops-workspace-v1.0.2-macos-<x64|arm64>-native-manifest.json`
-- `remote-ops-workspace-v1.0.2-macos-<x64|arm64>-native-SHA256SUMS.txt`
+- `remote-ops-workspace-v1.0.4-macos-<x64|arm64>.dmg`
+- `remote-ops-workspace-v1.0.4-macos-<x64|arm64>.pkg`
+- `remote-ops-workspace-v1.0.4-macos-<x64|arm64>-native-manifest.json`
+- `remote-ops-workspace-v1.0.4-macos-<x64|arm64>-native-SHA256SUMS.txt`
 
 Implementation:
 
@@ -541,12 +552,12 @@ Status: active.
 
 Release assets:
 
-- `remote-ops-workspace-v1.0.2-linux-<amd64|arm64>.deb`
-- `remote-ops-workspace-v1.0.2-linux-<x86_64|aarch64>.rpm`
-- `remote-ops-workspace-v1.0.2-linux-<x86_64|aarch64>.AppImage`
-- `remote-ops-workspace-v1.0.2-linux-<x86_64|aarch64>-native.tar.gz`
-- `remote-ops-workspace-v1.0.2-linux-<x86_64|aarch64>-native-manifest.json`
-- `remote-ops-workspace-v1.0.2-linux-<x86_64|aarch64>-native-SHA256SUMS.txt`
+- `remote-ops-workspace-v1.0.4-linux-<amd64|arm64>.deb`
+- `remote-ops-workspace-v1.0.4-linux-<x86_64|aarch64>.rpm`
+- `remote-ops-workspace-v1.0.4-linux-<x86_64|aarch64>.AppImage`
+- `remote-ops-workspace-v1.0.4-linux-<x86_64|aarch64>-native.tar.gz`
+- `remote-ops-workspace-v1.0.4-linux-<x86_64|aarch64>-native-manifest.json`
+- `remote-ops-workspace-v1.0.4-linux-<x86_64|aarch64>-native-SHA256SUMS.txt`
 
 Implementation:
 

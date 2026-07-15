@@ -67,7 +67,7 @@ def main(argv: list[str] | None = None) -> int:
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate an accepted MobaXterm parity evidence registry record.")
     parser.add_argument("--article-id", required=True, choices=sorted(ARTICLE_SPECS))
-    parser.add_argument("--release-tag", required=True, help="release tag such as v1.0.2")
+    parser.add_argument("--release-tag", required=True, help="release tag such as v1.0.4")
     parser.add_argument("--release-target", required=True, help="release target such as windows-x64")
     parser.add_argument("--evidence", required=True, type=Path)
     parser.add_argument("--assets-dir", type=Path)

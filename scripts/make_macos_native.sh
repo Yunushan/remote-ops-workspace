@@ -17,8 +17,17 @@ print(match.group(1))
 PY
 )"
 
-if [[ -n "${GITHUB_REF_NAME:-}" && "${GITHUB_REF_NAME}" != "v${VERSION}" ]]; then
-  echo "GITHUB_REF_NAME='${GITHUB_REF_NAME}' does not match project version v${VERSION}" >&2
+EXPECTED_TAG="v${VERSION}"
+if [[ -n "${RELEASE_TAG:-}" && "${RELEASE_TAG}" != "${EXPECTED_TAG}" ]]; then
+  echo "RELEASE_TAG='${RELEASE_TAG}' does not match project version ${EXPECTED_TAG}" >&2
+  exit 1
+fi
+if [[ "${GITHUB_REF_TYPE:-}" == "tag" && "${GITHUB_REF_NAME:-}" != "${EXPECTED_TAG}" ]]; then
+  echo "GITHUB_REF_NAME='${GITHUB_REF_NAME:-}' does not match project version ${EXPECTED_TAG}" >&2
+  exit 1
+fi
+if [[ -n "${GITHUB_REF_NAME:-}" && "${GITHUB_REF_NAME}" == v* && "${GITHUB_REF_NAME}" != "${EXPECTED_TAG}" ]]; then
+  echo "GITHUB_REF_NAME='${GITHUB_REF_NAME}' does not match project version ${EXPECTED_TAG}" >&2
   exit 1
 fi
 

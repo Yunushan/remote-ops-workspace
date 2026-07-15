@@ -1,5 +1,5 @@
-# Exact direct Python packages used by the release workflow.
-# Keep this file in sync with configs/release_toolchain.json.
+# Exact direct Python packages for release targets whose upstream wheels were
+# removed in cryptography 49. Keep in sync with configs/release_toolchain.json.
 pip==24.3.1
 setuptools==80.9.0
 wheel==0.45.1
@@ -11,5 +11,5 @@ pycparser==3.0
 PyQt6==6.11.0
 PyQt6-Qt6==6.11.1
 PyQt6-sip==13.11.1
-cryptography==49.0.0
+cryptography==48.0.1
 truststore==0.10.4

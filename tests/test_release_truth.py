@@ -35,7 +35,7 @@ def test_release_truth_checker_requires_tag_trigger_and_manual_protected_promoti
 def test_release_truth_checker_requires_trusted_automatic_release_source() -> None:
     checker = _load_release_truth_checker()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
-        '            git merge-base --is-ancestor HEAD "origin/${{ github.event.repository.default_branch }}"\n',
+        '          git merge-base --is-ancestor HEAD "origin/${{ github.event.repository.default_branch }}"\n',
         "",
     )
 
@@ -44,13 +44,63 @@ def test_release_truth_checker_requires_trusted_automatic_release_source() -> No
     assert any("trusted automatic release source guard" in error for error in errors)
 
 
+def test_release_truth_checker_requires_release_version_gate() -> None:
+    checker = _load_release_truth_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        checker.RELEASE_VERSION_GATE_COMMAND,
+        'python -c "print(\'version gate disabled\')"',
+    )
+
+    errors = checker.check_release_preflight(workflow)
+
+    assert any("release tag/project version gate" in error for error in errors)
+
+
+def test_release_truth_checker_requires_version_gate_before_verifier() -> None:
+    checker = _load_release_truth_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    workflow = workflow.replace(checker.RELEASE_VERSION_GATE_COMMAND, "__VERSION_GATE__")
+    workflow = workflow.replace(checker.RELEASE_VERIFY_COMMAND, checker.RELEASE_VERSION_GATE_COMMAND)
+    workflow = workflow.replace("__VERSION_GATE__", checker.RELEASE_VERIFY_COMMAND)
+
+    errors = checker.check_release_preflight(workflow)
+
+    assert "release-preflight version gate must run before the repository verifier" in errors
+
+
+def test_release_truth_checker_requires_preflight_tag_checkout() -> None:
+    checker = _load_release_truth_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        "          ref: ${{ env.RELEASE_TAG }}\n",
+        "",
+        1,
+    )
+
+    errors = checker.check_release_preflight(workflow)
+
+    assert any("release-preflight checkout must build the immutable env.RELEASE_TAG source" in error for error in errors)
+
+
+def test_release_truth_checker_requires_explicit_core_upload_tag() -> None:
+    checker = _load_release_truth_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        "          tag_name: ${{ env.RELEASE_TAG }}\n",
+        "",
+        1,
+    )
+
+    errors = checker.check_release_preflight(workflow)
+
+    assert "publish GitHub release upload must explicitly target env.RELEASE_TAG" in errors
+
+
 def test_release_truth_checker_rejects_stale_default_linux_patterns() -> None:
     checker = _load_release_truth_checker()
 
-    assert "remote-ops-workspace-v1.0.2-linux-<i386|amd64|armhf|arm64>.deb" in (
+    assert "remote-ops-workspace-v1.0.4-linux-<i386|amd64|armhf|arm64>.deb" in (
         checker.STALE_DEFAULT_ARTIFACT_SNIPPETS
     )
-    assert "remote-ops-workspace-v1.0.2-linux-<amd64|arm64>.deb" in checker.REQUIRED_DOC_SNIPPETS
+    assert "remote-ops-workspace-v1.0.4-linux-<amd64|arm64>.deb" in checker.REQUIRED_DOC_SNIPPETS
 
 
 def test_release_truth_checker_requires_linux_smoke_git_head_docs() -> None:
@@ -555,7 +605,7 @@ def test_release_truth_checker_rejects_stale_turkish_release_version() -> None:
     def fake_read(relative: str) -> str:
         text = original_read(relative)
         if relative == "README.tr.md":
-            return text.replace("release-v1.0.2", "release-v1.0.1")
+            return text.replace("release-v1.0.4", "release-v1.0.1")
         return text
 
     checker.read = fake_read

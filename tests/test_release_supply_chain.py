@@ -30,6 +30,29 @@ def test_release_version_validation_rejects_non_release_versions() -> None:
             raise AssertionError(f"release version should be rejected: {version}")
 
 
+def test_release_tag_guard_allows_manual_controller_branch(monkeypatch) -> None:
+    make_release = load_make_release()
+    monkeypatch.setenv("RELEASE_TAG", "v1.2.3")
+    monkeypatch.setenv("GITHUB_REF_NAME", "main")
+    monkeypatch.setenv("GITHUB_REF_TYPE", "branch")
+
+    make_release.validate_github_tag("1.2.3")
+
+
+def test_release_tag_guard_rejects_wrong_dispatch_tag(monkeypatch) -> None:
+    make_release = load_make_release()
+    monkeypatch.setenv("RELEASE_TAG", "v1.2.4")
+    monkeypatch.setenv("GITHUB_REF_NAME", "main")
+    monkeypatch.setenv("GITHUB_REF_TYPE", "branch")
+
+    try:
+        make_release.validate_github_tag("1.2.3")
+    except SystemExit as exc:
+        assert "RELEASE_TAG='v1.2.4'" in str(exc)
+    else:
+        raise AssertionError("mismatched workflow-dispatch release tag should be rejected")
+
+
 def test_release_dist_must_be_inside_repo(tmp_path: Path) -> None:
     make_release = load_make_release()
     try:
@@ -121,6 +144,7 @@ def test_release_workflow_uses_minimal_permissions() -> None:
     assert "persist-credentials: false" in workflow
     assert "permissions:\n      contents: write" in workflow
     assert "fail_on_unmatched_files: true" in workflow
+    assert workflow.count("tag_name: ${{ env.RELEASE_TAG }}") == 2
 
 
 def test_release_workflow_uses_pinned_toolchain() -> None:
@@ -172,3 +196,15 @@ def test_linux_native_build_allows_branch_evidence_dispatch_with_release_tag_bin
     assert '"${GITHUB_REF_TYPE:-}" == "tag"' in linux
     assert '"${GITHUB_REF_NAME}" == v*' in linux
     assert "RELEASE_TAG: ${{ inputs.release_tag }}" in workflow
+
+
+def test_windows_and_macos_builds_allow_manual_controller_branch_with_release_tag_binding() -> None:
+    macos = Path("scripts/make_macos_native.sh").read_text(encoding="utf-8")
+    windows = Path("scripts/make_windows_native.ps1").read_text(encoding="utf-8")
+
+    assert "${RELEASE_TAG:-}" in macos
+    assert "${GITHUB_REF_TYPE:-}" in macos
+    assert '"${GITHUB_REF_NAME}" == v*' in macos
+    assert "$env:RELEASE_TAG" in windows
+    assert "$env:GITHUB_REF_TYPE" in windows
+    assert '.StartsWith("v")' in windows

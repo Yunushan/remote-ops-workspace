@@ -19,6 +19,8 @@ def main() -> int:
         errors.extend(check_workflow(toolchain))
         errors.extend(check_release_helper(toolchain))
         errors.extend(check_linux_appimagetool_script())
+        errors.extend(check_windows_native_smoke())
+        errors.extend(check_native_release_tag_guards())
     if errors:
         for error in errors:
             print(f"release toolchain: {error}", file=sys.stderr)
@@ -64,12 +66,47 @@ def check_python_constraints(toolchain: dict[str, object]) -> list[str]:
             "requirements-release.txt pins must match configs/release_toolchain.json "
             f"(expected {expected}, got {actual})"
         )
+
+    profiles = required_list(python, "compatibility_profiles", errors)
+    names: set[str] = set()
+    for row in profiles:
+        if not isinstance(row, dict):
+            errors.append("python.compatibility_profiles rows must be objects")
+            continue
+        name = str(row.get("name", ""))
+        profile_file = str(row.get("constraints_file", ""))
+        overrides = row.get("package_overrides")
+        targets = row.get("targets")
+        if not name or name in names:
+            errors.append("python.compatibility_profiles names must be non-empty and unique")
+            continue
+        names.add(name)
+        if not profile_file or not isinstance(overrides, dict):
+            errors.append(f"compatibility profile {name} must declare constraints_file and package_overrides")
+            continue
+        if not isinstance(targets, list) or not targets or not all(isinstance(item, str) for item in targets):
+            errors.append(f"compatibility profile {name} must declare non-empty string targets")
+        profile_expected = dict(expected)
+        for package, version in overrides.items():
+            normalized = normalize_package_name(str(package))
+            if normalized not in expected:
+                errors.append(f"compatibility profile {name} overrides unknown package {package}")
+                continue
+            profile_expected[normalized] = str(version)
+        profile_actual = parse_requirement_pins(ROOT / profile_file, errors)
+        if profile_actual != profile_expected:
+            errors.append(
+                f"{profile_file} pins must match compatibility profile {name} "
+                f"(expected {profile_expected}, got {profile_actual})"
+            )
     return errors
 
 
-def check_workflow(toolchain: dict[str, object]) -> list[str]:
+def check_workflow(
+    toolchain: dict[str, object], workflow_text: str | None = None
+) -> list[str]:
     errors: list[str] = []
-    workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
+    workflow = workflow_text if workflow_text is not None else WORKFLOW_PATH.read_text(encoding="utf-8")
     python = required_mapping(toolchain, "python", errors)
     if not python:
         return errors
@@ -86,17 +123,76 @@ def check_workflow(toolchain: dict[str, object]) -> list[str]:
     if "python -m pip install --upgrade" in workflow:
         errors.append("release workflow must not use unbounded pip install --upgrade")
 
-    windows_tools = {
-        str(row.get("name")): str(row.get("version"))
+    profiles = {
+        str(row.get("name")): row
+        for row in required_list(python, "compatibility_profiles", errors)
+        if isinstance(row, dict)
+    }
+    compatibility = profiles.get("legacy-wheel-architectures", {})
+    compatibility_file = str(compatibility.get("constraints_file", ""))
+    if set(compatibility.get("targets", [])) != {"windows-x86", "macos-x64"}:
+        errors.append(
+            "legacy-wheel-architectures profile must target exactly windows-x86 and macos-x64"
+        )
+    if compatibility.get("package_overrides") != {"cryptography": "48.0.1"}:
+        errors.append(
+            "legacy-wheel-architectures profile must pin cryptography 48.0.1"
+        )
+    for snippet, label in {
+        f"--only-binary=cryptography --constraint {constraints_file}": (
+            "binary-only modern cryptography installs"
+        ),
+        f"--only-binary=cryptography --constraint {compatibility_file}": (
+            "binary-only compatibility cryptography installs"
+        ),
+        'if ("${{ matrix.arch }}" -eq "x86")': "explicit Windows x86 compatibility branch",
+        'if [[ "${{ matrix.arch }}" == "x64" ]]': "explicit Intel macOS compatibility branch",
+        "$ExpectedCryptography = \"48.0.1\"": "Windows compatibility version assertion",
+        'expected_cryptography="48.0.1"': "macOS compatibility version assertion",
+        "backend.openssl_version_text()": "cryptography/OpenSSL runtime import smoke",
+    }.items():
+        if snippet not in workflow:
+            errors.append(f"release workflow missing {label}: {snippet}")
+
+    windows_tool_rows = {
+        str(row.get("name")): row
         for row in required_list(required_mapping(toolchain, "native_toolchains", errors), "windows", errors)
         if isinstance(row, dict)
     }
-    inno_version = windows_tools.get("innosetup")
-    wix_version = windows_tools.get("wix")
+    inno_version = str(windows_tool_rows.get("innosetup", {}).get("version", ""))
+    wix_version = str(windows_tool_rows.get("wix", {}).get("version", ""))
     if inno_version and f"choco install innosetup --version={inno_version}" not in workflow:
         errors.append(f"release workflow must pin Inno Setup to {inno_version}")
     if wix_version and f"dotnet tool install --global wix --version {wix_version}" not in workflow:
         errors.append(f"release workflow must pin WiX to {wix_version}")
+
+    openssl = windows_tool_rows.get("openssl", {})
+    openssl_version = str(openssl.get("version", ""))
+    vcpkg_commit = str(openssl.get("vcpkg_commit", ""))
+    triplet = str(openssl.get("triplet", ""))
+    if openssl.get("targets") != ["windows-arm64"] or openssl.get("linkage") != "static":
+        errors.append("Windows OpenSSL toolchain must be static and scoped only to windows-arm64")
+    for snippet, label in {
+        f'$VcpkgCommit = "{vcpkg_commit}"': "pinned Windows ARM64 vcpkg commit",
+        "git -C $VcpkgRoot checkout --detach $VcpkgCommit": "detached pinned vcpkg checkout",
+        f'& $Vcpkg install "openssl:{triplet}" --clean-after-build': (
+            f"OpenSSL {openssl_version} ARM64 vcpkg install"
+        ),
+        f'installed\\{triplet}': "architecture-correct ARM64 OpenSSL root",
+        '$env:OPENSSL_DIR = $OpenSslRoot': "explicit OpenSSL source-build root",
+        '$env:OPENSSL_STATIC = "1"': "static OpenSSL linkage policy",
+        '$env:OPENSSL_NO_VENDOR = "1"': "no untracked vendored OpenSSL fallback",
+        f"python -m pip install --constraint {constraints_file} pip setuptools wheel maturin cffi pycparser": (
+            "pinned Windows ARM64 cryptography build dependencies"
+        ),
+        f"--no-cache-dir --no-build-isolation --no-binary=cryptography --constraint {constraints_file}": (
+            "deterministic Windows ARM64 cryptography source build"
+        ),
+        f'$ExpectedOpenSsl = "OpenSSL {openssl_version}"': "expected ARM64 OpenSSL runtime version",
+        "actual_openssl.startswith('$ExpectedOpenSsl')": "ARM64 OpenSSL runtime version assertion",
+    }.items():
+        if snippet not in workflow:
+            errors.append(f"release workflow missing {label}: {snippet}")
     return errors
 
 
@@ -113,6 +209,12 @@ def check_release_helper(toolchain: dict[str, object]) -> list[str]:
         errors.append("make_release.py manifest must include release_toolchain_metadata()")
     if '"requirements-release.txt"' not in helper:
         errors.append("source release bundles must include requirements-release.txt")
+    for row in required_list(python, "compatibility_profiles", errors):
+        if not isinstance(row, dict):
+            continue
+        constraints_file = str(row.get("constraints_file", ""))
+        if constraints_file and f'"{constraints_file}"' not in helper:
+            errors.append(f"source release bundles must include {constraints_file}")
     return errors
 
 
@@ -123,6 +225,44 @@ def check_linux_appimagetool_script() -> list[str]:
         errors.append("make_linux_native.sh must use the maintained AppImage/appimagetool upstream URL")
     if "APPIMAGETOOL_SHA256" not in script:
         errors.append("make_linux_native.sh must support APPIMAGETOOL_SHA256 verification")
+    return errors
+
+
+def check_windows_native_smoke(script_text: str | None = None) -> list[str]:
+    script = (
+        script_text
+        if script_text is not None
+        else (ROOT / "scripts" / "smoke_windows_native.ps1").read_text(encoding="utf-8")
+    )
+    errors: list[str] = []
+    for snippet, label in {
+        "function Test-RowVault": "packaged vault smoke helper",
+        "vault init": "packaged vault initialization smoke",
+        "vault status --json": "packaged vault status smoke",
+        "$Status.backend_available": "packaged cryptography backend assertion",
+        "Test-RowVault $PortableRow": "portable ZIP vault smoke",
+        "Test-RowVault $ExeRow": "installed EXE vault smoke",
+        "Test-RowVault $MsiRow": "installed MSI vault smoke",
+    }.items():
+        if snippet not in script:
+            errors.append(f"smoke_windows_native.ps1 missing {label}: {snippet}")
+    return errors
+
+
+def check_native_release_tag_guards() -> list[str]:
+    errors: list[str] = []
+    scripts = {
+        "scripts/make_release.py": ("RELEASE_TAG", "GITHUB_REF_TYPE", 'ref_name.startswith("v")'),
+        "scripts/make_windows_native.ps1": ("$env:RELEASE_TAG", "$env:GITHUB_REF_TYPE", '.StartsWith("v")'),
+        "scripts/make_macos_native.sh": ("${RELEASE_TAG:-}", "${GITHUB_REF_TYPE:-}", '"${GITHUB_REF_NAME}" == v*'),
+    }
+    for relative, snippets in scripts.items():
+        text = (ROOT / relative).read_text(encoding="utf-8")
+        for snippet in snippets:
+            if snippet not in text:
+                errors.append(
+                    f"{relative} missing workflow-dispatch-safe release tag guard: {snippet}"
+                )
     return errors
 
 

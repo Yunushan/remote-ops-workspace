@@ -3,7 +3,21 @@
   "python": {
     "version": "3.12",
     "constraints_file": "requirements-release.txt",
-    "source_date_epoch": 1704067200
+    "source_date_epoch": 1704067200,
+    "compatibility_profiles": [
+      {
+        "name": "legacy-wheel-architectures",
+        "constraints_file": "requirements-release-compat.txt",
+        "targets": [
+          "windows-x86",
+          "macos-x64"
+        ],
+        "package_overrides": {
+          "cryptography": "48.0.1"
+        },
+        "reason": "cryptography 49 removed 32-bit Windows and Intel macOS wheels; 48.0.1 is the latest compatible wheel release and contains the preceding security fixes. This profile is not Windows XP evidence."
+      }
+    ]
   },
   "python_packages": [
     {
@@ -32,6 +46,21 @@
       "purpose": "Pinned native executable packager."
     },
     {
+      "name": "maturin",
+      "version": "1.14.1",
+      "purpose": "Pinned PEP 517 backend for the Windows ARM64 cryptography source build."
+    },
+    {
+      "name": "cffi",
+      "version": "2.1.0",
+      "purpose": "Pinned cryptography build/runtime bridge for the Windows ARM64 source build and packaged vault."
+    },
+    {
+      "name": "pycparser",
+      "version": "3.0",
+      "purpose": "Pinned transitive cffi parser dependency used by release security builds."
+    },
+    {
       "name": "PyQt6",
       "version": "6.11.0",
       "purpose": "Pinned desktop GUI dependency for native GUI bundles, including Windows x64 and ARM64 wheels."
@@ -49,7 +78,12 @@
     {
       "name": "cryptography",
       "version": "49.0.0",
-      "purpose": "Pinned optional vault encryption dependency with CPython 3.12 Windows ARM64 wheels."
+      "purpose": "Pinned modern vault encryption dependency. Windows x64 uses the upstream wheel; Windows ARM64 builds this version from source against the pinned ARM64 OpenSSL toolchain."
+    },
+    {
+      "name": "truststore",
+      "version": "0.10.4",
+      "purpose": "Pinned native certificate-store integration used by the security extra."
     }
   ],
   "native_toolchains": {
@@ -63,6 +97,18 @@
         "name": "wix",
         "provider": "dotnet-tool",
         "version": "5.0.2"
+      },
+      {
+        "name": "openssl",
+        "provider": "vcpkg",
+        "version": "3.6.3",
+        "vcpkg_commit": "42e4e33e1505c9f47b58c21e0f557c1571b751ee",
+        "triplet": "arm64-windows-static-md",
+        "targets": [
+          "windows-arm64"
+        ],
+        "linkage": "static",
+        "purpose": "Architecture-correct OpenSSL used only for the cryptography 49 Windows ARM64 source build; weak cipher features remain disabled."
       }
     ],
     "linux": [

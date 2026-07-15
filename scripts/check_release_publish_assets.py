@@ -124,7 +124,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--tag",
-        help="Expected release tag, for example v1.0.2. Defaults to the matrix release tag.",
+        help="Expected release tag, for example v1.0.4. Defaults to the matrix release tag.",
     )
     parser.add_argument(
         "--repository",
@@ -210,6 +210,7 @@ def check_publish_contract(
         "python scripts/check_release_publish_assets.py --assets-dir release-assets --tag": "publish asset validation",
         '--repository "${{ github.repository }}"': "publish evidence repository binding",
         "softprops/action-gh-release@v3": "GitHub release upload",
+        "tag_name: ${{ env.RELEASE_TAG }}": "explicit immutable release tag target",
         "fail_on_unmatched_files: true": "strict GitHub release upload",
     }
     for snippet, label in required_snippets.items():
@@ -246,6 +247,7 @@ def check_protected_publish_job(workflow: str) -> list[str]:
         "--require-platform-goal-targets": "protected platform goal publish gate",
         PUBLISH_REMOTE_PLATFORM_EVIDENCE_AUDIT_COMMAND: "published protected platform evidence audit",
         "softprops/action-gh-release@v3": "GitHub release upload",
+        "tag_name: ${{ env.RELEASE_TAG }}": "explicit immutable release tag target",
         "fail_on_unmatched_files: true": "strict GitHub release upload",
     }
     for snippet, label in required_snippets.items():

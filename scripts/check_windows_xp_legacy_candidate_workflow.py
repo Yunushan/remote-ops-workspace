@@ -4,7 +4,6 @@ import re
 import sys
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW_PATH = ROOT / ".github" / "workflows" / "xp-legacy-candidate.yml"
 REQUIRED_FILES = (

@@ -496,13 +496,14 @@ Current state:
 
 Current blockers:
 
-- The current native stack is Python 3.10+ and PyQt6, which is not treated as an XP native host stack in this project.
+- The modern Python 3.10+/PyQt6 stack remains unsupported on XP; the separate .NET Framework v4 WinForms legacy candidate still requires real XP host smoke evidence.
 - No accepted XP x86 evidence bundle from a real Windows XP SP3 host and modern xp-evidence collector exists yet.
 - No XP x86 native artifact is declared in the default release matrix.
 
 Required real evidence:
 
 - Use a separate XP-capable legacy toolchain.
+- Build the .NET Framework v4 WinForms legacy candidate with `scripts/make_windows_xp_legacy.ps1 -Arch x86`. This local structural check does not replace Windows XP SP3 smoke evidence.
 - XP host requirement: Windows XP SP3 32-bit VM or physical host running scripts/xp_smoke_runner.cmd and artifact validation.
 - Dispatch `.github/workflows/xp-native-evidence.yml` with `target=windows-xp-native-x86` so the self-hosted `xp-evidence` collector prints the source workflow run URL, head SHA and run attempt, then waits for a non-empty and stable staged XP x86 native artifact/evidence file set including `xp-evidence.json` and smoke evidence files.
 - Dispatch it with `gh workflow run xp-native-evidence.yml --repo <owner>/<repo> --ref v<project.version> -f target=windows-xp-native-x86 -f release_tag=v<project.version> -f release_asset_base_url=<github-release-download-url> -f assets_dir=<target-release-artifact-dir> -f evidence_file=<target-release-evidence.json> -f evidence_dir=<target-release-evidence-dir>`.
@@ -568,13 +569,14 @@ Current state:
 
 Current blockers:
 
-- The current native stack is Python 3.10+ and PyQt6, which is not treated as an XP native host stack in this project.
+- The modern Python 3.10+/PyQt6 stack remains unsupported on XP; the separate .NET Framework v4 WinForms legacy candidate still requires real XP host smoke evidence.
 - No accepted XP x64 evidence bundle from a real Windows XP Professional x64 Edition SP2 host and modern xp-evidence collector exists yet.
 - No XP x64 native artifact is declared in the default release matrix.
 
 Required real evidence:
 
 - Use a separate XP-capable legacy toolchain.
+- Build the .NET Framework v4 WinForms legacy candidate with `scripts/make_windows_xp_legacy.ps1 -Arch x64`. This local structural check does not replace Windows XP Professional x64 Edition SP2 smoke evidence.
 - XP host requirement: Windows XP Professional x64 Edition SP2 VM or physical host running scripts/xp_smoke_runner.cmd and artifact validation.
 - Dispatch `.github/workflows/xp-native-evidence.yml` with `target=windows-xp-native-x64` so the self-hosted `xp-evidence` collector prints the source workflow run URL, head SHA and run attempt, then waits for a non-empty and stable staged XP x64 native artifact/evidence file set including `xp-evidence.json` and smoke evidence files.
 - Dispatch it with `gh workflow run xp-native-evidence.yml --repo <owner>/<repo> --ref v<project.version> -f target=windows-xp-native-x64 -f release_tag=v<project.version> -f release_asset_base_url=<github-release-download-url> -f assets_dir=<target-release-artifact-dir> -f evidence_file=<target-release-evidence.json> -f evidence_dir=<target-release-evidence-dir>`.

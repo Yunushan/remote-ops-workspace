@@ -224,6 +224,7 @@ def check_required_artifacts(text: str, target_id: str, requirements: dict[str, 
 def check_required_commands(text: str, target_id: str, requirements: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     for key, label in (
+        ("build_script", "legacy candidate build command"),
         ("artifact_validation_command", "artifact validation command"),
         ("native_evidence_validation_command", "native evidence validation command"),
         ("local_evidence_preflight_command", "local evidence preflight command"),

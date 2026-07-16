@@ -140,6 +140,8 @@
       "target_readiness_percent": 100.0,
       "promotion_to_100_requires": {
         "separate_legacy_toolchain": true,
+        "legacy_host_stack": "dotnet-framework-v4-winforms",
+        "build_script": "scripts/make_windows_xp_legacy.ps1 -Arch x86",
         "xp_vm_or_self_hosted_runner": "Windows XP SP3 32-bit VM or physical host running scripts/xp_smoke_runner.cmd and artifact validation",
         "xp_evidence_collector_runner": "modern self-hosted xp-evidence collector with Python 3.12 and GitHub Actions support; validates staged XP host proof but does not replace XP host smoke evidence",
         "release_source_workflow": ".github/workflows/xp-native-evidence.yml",
@@ -176,7 +178,7 @@
         ]
       },
       "current_blockers": [
-        "The current native stack is Python 3.10+ and PyQt6, which is not treated as an XP native host stack in this project.",
+        "The modern Python 3.10+/PyQt6 stack remains unsupported on XP; the separate .NET Framework v4 WinForms legacy candidate still requires real XP host smoke evidence.",
         "No accepted XP x86 evidence bundle from a real Windows XP SP3 host and modern xp-evidence collector exists yet.",
         "No XP x86 native artifact is declared in the default release matrix."
       ]
@@ -195,6 +197,8 @@
       "target_readiness_percent": 100.0,
       "promotion_to_100_requires": {
         "separate_legacy_toolchain": true,
+        "legacy_host_stack": "dotnet-framework-v4-winforms",
+        "build_script": "scripts/make_windows_xp_legacy.ps1 -Arch x64",
         "xp_vm_or_self_hosted_runner": "Windows XP Professional x64 Edition SP2 VM or physical host running scripts/xp_smoke_runner.cmd and artifact validation",
         "xp_evidence_collector_runner": "modern self-hosted xp-evidence collector with Python 3.12 and GitHub Actions support; validates staged XP host proof but does not replace XP host smoke evidence",
         "release_source_workflow": ".github/workflows/xp-native-evidence.yml",
@@ -231,7 +235,7 @@
         ]
       },
       "current_blockers": [
-        "The current native stack is Python 3.10+ and PyQt6, which is not treated as an XP native host stack in this project.",
+        "The modern Python 3.10+/PyQt6 stack remains unsupported on XP; the separate .NET Framework v4 WinForms legacy candidate still requires real XP host smoke evidence.",
         "No accepted XP x64 evidence bundle from a real Windows XP Professional x64 Edition SP2 host and modern xp-evidence collector exists yet.",
         "No XP x64 native artifact is declared in the default release matrix."
       ]

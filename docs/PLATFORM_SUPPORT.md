@@ -352,6 +352,10 @@ Current readiness:
   evidence captured with `scripts/xp_smoke_runner.cmd`, native artifact evidence, and
   security proof that weak TLS/SSH/RDP compatibility remains profile-scoped and
   never lowers modern OS defaults. Validate XP artifact sets with
+  `scripts/make_windows_xp_legacy.ps1 -Arch x86` and
+  `scripts/make_windows_xp_legacy.ps1 -Arch x64` to create separate .NET Framework
+  v4 WinForms candidate archives. These local candidate builds do not count as XP
+  host proof and do not alter modern Python/PyQt6 defaults. Then validate with
   `python scripts/check_platform_promotion_artifacts.py --target windows-xp-native-x86 --assets-dir <artifact-dir> --tag v<project.version> --strict`
   and
   `python scripts/check_platform_promotion_artifacts.py --target windows-xp-native-x64 --assets-dir <artifact-dir> --tag v<project.version> --strict`.

@@ -134,6 +134,11 @@ def build_steps(
             env=_source_env(),
         ),
         VerifyStep(
+            "Windows XP legacy candidate workflow",
+            [python, "scripts/check_windows_xp_legacy_candidate_workflow.py"],
+            env=_source_env(),
+        ),
+        VerifyStep(
             "Windows XP native evidence dispatch input validator",
             [python, "scripts/check_xp_native_evidence_dispatch_inputs.py", "--help"],
             env=_source_env(),

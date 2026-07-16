@@ -101,6 +101,8 @@ LINUX_REQUIRED_PROMOTION_KEYS = {
 }
 XP_REQUIRED_PROMOTION_KEYS = {
     "separate_legacy_toolchain",
+    "legacy_host_stack",
+    "build_script",
     "xp_vm_or_self_hosted_runner",
     "xp_evidence_collector_runner",
     "release_source_workflow",
@@ -466,6 +468,10 @@ def check_xp_promotion_entry(
         return errors
     if requirements.get("separate_legacy_toolchain") is not True:
         errors.append(f"{label} promotion requires separate_legacy_toolchain=true")
+    if requirements.get("legacy_host_stack") != "dotnet-framework-v4-winforms":
+        errors.append(
+            f"{label} legacy_host_stack must be dotnet-framework-v4-winforms"
+        )
     expected_xp_host = XP_HOST_EVIDENCE_REQUIREMENTS.get(label)
     if requirements.get("xp_vm_or_self_hosted_runner") != expected_xp_host:
         errors.append(f"{label} xp_vm_or_self_hosted_runner must be {expected_xp_host}")
@@ -480,6 +486,11 @@ def check_xp_promotion_entry(
         errors.append(f"{label} release_source_workflow file is missing: {source_workflow}")
     errors.extend(check_workflow_dispatch_command(label, requirements, kind="xp"))
     expected_arch = str(entry.get("architecture", ""))
+    expected_build_script = f"scripts/make_windows_xp_legacy.ps1 -Arch {expected_arch}"
+    if requirements.get("build_script") != expected_build_script:
+        errors.append(f"{label} build_script must be {expected_build_script!r}")
+    else:
+        errors.extend(check_script_requirement(label, requirements, "build_script"))
     artifacts = requirements.get("native_artifacts")
     if not isinstance(artifacts, list) or len(artifacts) < 3:
         errors.append(f"{label} must list XP native artifact requirements")

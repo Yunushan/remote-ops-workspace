@@ -496,6 +496,23 @@ def test_platform_parity_promotion_requires_xp_host_and_collector_boundary() -> 
     assert any("windows-xp-native-x86 xp_evidence_collector_runner must be" in error for error in errors)
 
 
+def test_platform_parity_promotion_requires_xp_legacy_candidate_builder() -> None:
+    checker = _load_platform_parity_promotion_checker()
+    promotion = _load_json("configs/platform_parity_promotion.json")
+    entry = _promotion_entry(promotion, "windows-xp-native-x64")
+    requirements = entry["promotion_to_100_requires"]
+    requirements["legacy_host_stack"] = "python-pyqt6"
+    requirements["build_script"] = "scripts/make_windows_xp_legacy.ps1 -Arch x86"
+
+    errors = checker.check_platform_parity_promotion(promotion=promotion)
+
+    assert "windows-xp-native-x64 legacy_host_stack must be dotnet-framework-v4-winforms" in errors
+    assert (
+        "windows-xp-native-x64 build_script must be "
+        "'scripts/make_windows_xp_legacy.ps1 -Arch x64'"
+    ) in errors
+
+
 def test_platform_parity_promotion_requires_xp_smoke_on_host_before_collector() -> None:
     checker = _load_platform_parity_promotion_checker()
     promotion = _load_json("configs/platform_parity_promotion.json")

@@ -1,0 +1,52 @@
+name: XP legacy candidate
+
+on:
+  push:
+    paths:
+      - "legacy/xp_host/**"
+      - "scripts/make_windows_xp_legacy.ps1"
+      - "scripts/check_platform_promotion_artifacts.py"
+      - "scripts/check_windows_xp_legacy_candidate_workflow.py"
+      - "pyproject.toml"
+  pull_request:
+    paths:
+      - "legacy/xp_host/**"
+      - "scripts/make_windows_xp_legacy.ps1"
+      - "scripts/check_platform_promotion_artifacts.py"
+      - "scripts/check_windows_xp_legacy_candidate_workflow.py"
+      - "pyproject.toml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  build:
+    name: Windows XP legacy candidate (${{ matrix.arch }})
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86, x64]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          clean: true
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Build Windows XP legacy candidate
+        shell: pwsh
+        run: ./scripts/make_windows_xp_legacy.ps1 -Arch ${{ matrix.arch }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows-xp-legacy-candidate-${{ matrix.arch }}
+          path: native-dist/windows-xp/${{ matrix.arch }}/*
+          if-no-files-found: error
+          include-hidden-files: false
+          retention-days: 30

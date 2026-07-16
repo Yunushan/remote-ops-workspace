@@ -358,9 +358,11 @@ def check_tag_targeted_release_dispatch(workflow: str) -> list[str]:
 
 
 def check_tagged_source_checkout(job_block: str, *, job: str) -> list[str]:
-    checkout = workflow_step_block(job_block, "uses: actions/checkout@v6")
+    if not re.search(r"(?m)^      - uses: actions/checkout@[0-9a-f]{40}(?:\s+#.*)?$", job_block):
+        return [f"{job} missing repository checkout pinned to a 40-character commit SHA"]
+    checkout = workflow_step_block(job_block, "uses: actions/checkout@")
     if not checkout:
-        return [f"{job} missing repository checkout: uses: actions/checkout@v6"]
+        return [f"{job} missing repository checkout: uses: actions/checkout@<pinned-sha>"]
     if TAGGED_RELEASE_REF not in checkout:
         return [f"{job} checkout must build the immutable env.RELEASE_TAG source"]
     return []
@@ -444,7 +446,7 @@ def check_publish_platform_evidence_dependency(workflow: str) -> list[str]:
     if gate_index < 0:
         errors.append(f"{PROTECTED_PUBLISH_JOB} missing publish-time protected platform goal gate: {PUBLISH_PLATFORM_GOAL_COMMAND}")
     if upload_index < 0:
-        errors.append(f"{PROTECTED_PUBLISH_JOB} missing GitHub release upload step: uses: softprops/action-gh-release@v3")
+        errors.append(f"{PROTECTED_PUBLISH_JOB} missing GitHub release upload step: uses: softprops/action-gh-release@<pinned-sha>")
     if not remote_audit_step or PUBLISH_REMOTE_PLATFORM_EVIDENCE_AUDIT_COMMAND not in remote_audit_step:
         errors.append(
             f"{PROTECTED_PUBLISH_JOB} missing published protected platform evidence audit: "
@@ -484,7 +486,7 @@ def check_explicit_release_upload_tags(workflow: str) -> list[str]:
         upload = workflow_step_block(block, marker)
         if (
             upload
-            and "uses: softprops/action-gh-release@v3" in upload
+            and "uses: softprops/action-gh-release@" in upload
             and RELEASE_UPLOAD_TAG_NAME not in upload
         ):
             errors.append(
@@ -540,9 +542,11 @@ def workflow_job_block(workflow: str, job: str) -> str:
 
 
 def check_checkout_step(job_block: str, *, job: str) -> list[str]:
-    checkout = workflow_step_block(job_block, "uses: actions/checkout@v6")
+    if not re.search(r"(?m)^      - uses: actions/checkout@[0-9a-f]{40}(?:\s+#.*)?$", job_block):
+        return [f"{job} missing repository checkout pinned to a 40-character commit SHA"]
+    checkout = workflow_step_block(job_block, "uses: actions/checkout@")
     if not checkout:
-        return [f"{job} missing repository checkout: uses: actions/checkout@v6"]
+        return [f"{job} missing repository checkout: uses: actions/checkout@<pinned-sha>"]
     errors: list[str] = []
     if "persist-credentials: false" not in checkout:
         errors.append(f"{job} checkout step missing credential isolation: persist-credentials: false")
@@ -552,7 +556,7 @@ def check_checkout_step(job_block: str, *, job: str) -> list[str]:
 
 
 def workflow_step_block(job_block: str, marker: str) -> str:
-    pattern = rf"(?ms)^      - {re.escape(marker)}\n(.*?)(?=^      - |\Z)"
+    pattern = rf"(?ms)^      - {re.escape(marker)}[^\n]*\n(.*?)(?=^      - |\Z)"
     match = re.search(pattern, job_block)
     return match.group(0) if match else ""
 

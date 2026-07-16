@@ -97,6 +97,25 @@ def test_web_handler_serves_enterprise_policy_endpoint(tmp_path: Path) -> None:
                 os.environ["ROW_HOME"] = old_home
 
 
+def test_web_handler_serves_unauthenticated_liveness_endpoint(tmp_path: Path) -> None:
+    handler = partial(QuietHandler, directory=str(tmp_path))
+    with ReusableTCPServer(("127.0.0.1", 0), handler) as server:
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            host, port = server.server_address
+            with socket.create_connection((host, port), timeout=5) as client:
+                client.sendall(b"GET /healthz HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
+                response = b""
+                while chunk := client.recv(4096):
+                    response += chunk
+            assert response.startswith(b"HTTP/1.0 200")
+            assert json.loads(response.split(b"\r\n\r\n", 1)[1]) == {"status": "ok"}
+        finally:
+            server.shutdown()
+            thread.join(timeout=5)
+
+
 def test_web_bind_rejects_public_hosts_without_explicit_opt_in() -> None:
     for host in ["0.0.0.0", "::", "192.0.2.10"]:
         try:
@@ -135,12 +154,36 @@ def test_browser_profile_api_requires_bearer_token_and_redacts_secret_fields(tmp
     else:
         raise AssertionError("browser API must reject credential references")
 
+    try:
+        api.add_profile(
+            {
+                "name": "option-secret",
+                "protocol": "ssh",
+                "host": "edge.example.invalid",
+                "options": {"password": "not-for-browser"},
+            }
+        )
+    except ValueError as exc:
+        assert "secret-bearing options" in str(exc)
+    else:
+        raise AssertionError("browser API must reject secret-like option keys")
+
     created = api.add_profile({"name": "edge", "protocol": "ssh", "host": "edge.example.invalid"})
     assert created["name"] == "edge"
     assert "credential_ref" not in created
     store.add(Profile(name="vaulted", protocol="ssh", host="vault.example.invalid", credential_ref="vault:vaulted"))
     assert "credential_ref" not in api.profiles()[1]
-    assert api.health() == {"api_version": 1, "status": "ok", "profile_count": 2}
+    store.add(
+        Profile(
+            name="legacy-secret-option",
+            protocol="ssh",
+            host="legacy.example.invalid",
+            options={"access_token": "legacy-value", "compression": "yes"},
+        )
+    )
+    legacy = next(profile for profile in api.profiles() if profile["name"] == "legacy-secret-option")
+    assert legacy["options"] == {"compression": "yes"}
+    assert api.health() == {"api_version": 1, "status": "ok", "profile_count": 3}
 
 
 def test_browser_profile_api_serves_authenticated_http_catalogue(tmp_path: Path) -> None:
@@ -216,7 +259,19 @@ def test_web_container_defaults_are_hardened() -> None:
     assert "USER 10001:10001" in dockerfile
     assert "--allow-public-bind" in dockerfile
     assert "PYTHONDONTWRITEBYTECODE=1" in dockerfile
+    assert "HEALTHCHECK" in dockerfile
+    assert "pip install --no-cache-dir --no-compile ." in dockerfile
     assert "127.0.0.1:8765:8765" in compose
+    assert "restart: unless-stopped" in compose
+    assert "pids_limit: 128" in compose
     assert "read_only: true" in compose
     assert "no-new-privileges:true" in compose
     assert "cap_drop:" in compose
+
+
+def test_web_image_uses_an_explicit_runtime_allowlist() -> None:
+    dockerignore = Path(".dockerignore").read_text(encoding="utf-8")
+    assert dockerignore.startswith("# Build the Web/PWA image")
+    assert "*\n" in dockerignore
+    assert "!src/**" in dockerignore
+    assert "!apps/web/**" in dockerignore

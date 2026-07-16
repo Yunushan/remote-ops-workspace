@@ -37,6 +37,8 @@ SECURITY_HEADERS = {
     "X-Frame-Options": "DENY",
 }
 
+SENSITIVE_OPTION_TOKENS = ("password", "passphrase", "secret", "token", "credential", "private_key")
+
 
 class WebProfileApi:
     """Small same-origin API for the Web/PWA profile catalogue.
@@ -73,6 +75,18 @@ class WebProfileApi:
         blocked = sorted(forbidden & supplied)
         if blocked:
             raise ValueError(f"web API refuses secret-bearing fields: {', '.join(blocked)}")
+        raw_options = profile_data.get("options", {})
+        if not isinstance(raw_options, dict):
+            raise ValueError("profile options must be a JSON object")
+        sensitive_options = sorted(
+            str(key)
+            for key in raw_options
+            if _is_sensitive_option_key(str(key))
+        )
+        if sensitive_options:
+            raise ValueError(
+                "web API refuses secret-bearing options: " + ", ".join(sensitive_options)
+            )
         profile = Profile.from_dict(profile_data)
         replace = payload.get("replace", False)
         if not isinstance(replace, bool):
@@ -95,15 +109,27 @@ class WebProfileApi:
             "url": profile.url,
             "command": profile.command,
             "tunnels": [tunnel.to_dict() for tunnel in profile.tunnels],
-            "options": profile.options,
+            "options": {
+                key: value
+                for key, value in profile.options.items()
+                if not _is_sensitive_option_key(key)
+            },
         }
+
+
+def _is_sensitive_option_key(key: str) -> bool:
+    return any(token in key.lower() for token in SENSITIVE_OPTION_TOKENS)
 
 
 class QuietHandler(http.server.SimpleHTTPRequestHandler):
     api: WebProfileApi | None = None
+    timeout = 15
 
     def do_GET(self) -> None:  # noqa: N802 - http.server API
         path = urlparse(self.path).path
+        if path == "/healthz":
+            self._send_json(200, {"status": "ok"})
+            return
         if path == "/enterprise-policy.json":
             self._send_enterprise_policy()
             return
@@ -191,8 +217,12 @@ class QuietHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
 
 
-class ReusableTCPServer(socketserver.TCPServer):
+class ReusableTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+    """Bounded-lifetime request handling for the local static application."""
+
     allow_reuse_address = True
+    daemon_threads = True
+    request_queue_size = 128
 
 
 def validate_web_bind(host: str, *, allow_public_bind: bool = False) -> str:

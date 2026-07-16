@@ -41,6 +41,30 @@ function Write-NativeChecksums([string]$Version, [string]$OutDir, [string]$Arch,
   return $ChecksumPath
 }
 
+function Sign-NativeArtifact([string]$ArtifactPath) {
+  if ($env:ROW_REQUIRE_RELEASE_SIGNING -ne "1") {
+    return
+  }
+  foreach ($Name in @("ROW_WINDOWS_CERTIFICATE_PATH", "ROW_WINDOWS_CERTIFICATE_PASSWORD", "ROW_WINDOWS_TIMESTAMP_URL")) {
+    $Value = [string](Get-Item -Path "Env:$Name" -ErrorAction SilentlyContinue).Value
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+      throw "Production signing requires environment variable $Name"
+    }
+  }
+  $SignTool = Get-Command "signtool.exe" -ErrorAction SilentlyContinue
+  if (!$SignTool) {
+    throw "Production signing requires signtool.exe"
+  }
+  & $SignTool.Source sign /fd SHA256 /td SHA256 /tr $env:ROW_WINDOWS_TIMESTAMP_URL /f $env:ROW_WINDOWS_CERTIFICATE_PATH /p $env:ROW_WINDOWS_CERTIFICATE_PASSWORD $ArtifactPath
+  if ($LASTEXITCODE -ne 0) {
+    throw "Authenticode signing failed for $ArtifactPath"
+  }
+  & $SignTool.Source verify /pa /all $ArtifactPath
+  if ($LASTEXITCODE -ne 0) {
+    throw "Authenticode verification failed for $ArtifactPath"
+  }
+}
+
 function Find-InnoSetup {
   $Command = Get-Command "iscc.exe" -ErrorAction SilentlyContinue
   if ($Command) {
@@ -350,6 +374,7 @@ PyInstaller. $GuiTargetNote Protocol sessions still depend on Windows system too
 OpenSSH, MSTSC, PuTTY, VcXsrv, and VNC clients.
 "@ | Set-Content -Encoding UTF8 (Join-Path $Stage "RELEASE_TARGET.md")
 
+Get-ChildItem -Path $Stage -Filter "*.exe" -Recurse | ForEach-Object { Sign-NativeArtifact $_.FullName }
 New-Item -ItemType Directory -Force $PortableStage | Out-Null
 Copy-Item -Path (Join-Path $Stage "*") -Destination $PortableStage -Recurse -Force
 if ($BuildGuiLauncher) {
@@ -361,6 +386,8 @@ Compress-Archive -Path (Join-Path $PortableStage "*") -DestinationPath $NativeZi
 
 $SetupExe = Build-InnoSetupInstaller -Version $Version -Stage $Stage -OutDir $OutDir -Arch $Arch
 $Msi = Build-WixMsi -Version $Version -Stage $Stage -OutDir $OutDir -Arch $Arch
+Sign-NativeArtifact $SetupExe
+Sign-NativeArtifact $Msi
 
 $PortableInstallCommand = if ($BuildGuiLauncher) {
   "Extract and double-click Remote Ops Workspace GUI.exe for the desktop UI, or run bin\row.exe for CLI workflows."
@@ -368,7 +395,7 @@ $PortableInstallCommand = if ($BuildGuiLauncher) {
   "Extract and run bin\row.exe. The Windows x86 portable build is CLI-first."
 }
 $PortableNotes = @("Standalone PyInstaller CLI executable plus docs.", "Built for Windows $Arch.")
-$InstallerNotes = @("Unsigned native installer for the standalone row.exe CLI.", "Built for Windows $Arch.")
+$InstallerNotes = @("Authenticode-signing is mandatory for release workflow artifacts.", "Built for Windows $Arch.")
 $PortableEntrypoints = @{
   cli = "bin\row.exe"
 }

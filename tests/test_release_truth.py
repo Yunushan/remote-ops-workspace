@@ -939,7 +939,7 @@ def test_release_truth_checker_requires_publish_gate_before_release_upload() -> 
     )
     upload = (
         "      - name: Upload protected platform evidence assets\n"
-        "        uses: softprops/action-gh-release@v3\n"
+        "        uses: softprops/action-gh-release@c12583777ecdfd3be55c69cf75464299dc01057e # v3\n"
     )
     workflow = workflow.replace(gate, "").replace(upload, upload + gate)
 
@@ -977,7 +977,7 @@ def test_release_truth_checker_requires_published_platform_audit_after_release_u
     )
     upload_step = (
         "      - name: Upload protected platform evidence assets\n"
-        "        uses: softprops/action-gh-release@v3\n"
+        "        uses: softprops/action-gh-release@c12583777ecdfd3be55c69cf75464299dc01057e # v3\n"
     )
     workflow = workflow.replace(audit_step, "").replace(upload_step, audit_step + upload_step)
 

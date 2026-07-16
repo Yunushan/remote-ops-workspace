@@ -4,7 +4,7 @@
 
 | Version | Status |
 |---|---|
-| 0.1.x | Supported for security fixes |
+| 1.x | Supported for security fixes |
 
 ## Reporting a vulnerability
 

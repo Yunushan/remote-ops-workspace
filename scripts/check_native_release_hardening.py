@@ -28,6 +28,7 @@ def main() -> int:
     errors.extend(check_native_manifest_integrity())
     errors.extend(check_pyinstaller_launchers())
     errors.extend(check_windows_gui_launcher())
+    errors.extend(check_windows_application_icon())
     errors.extend(check_windows_wix_debug_sidecars())
     errors.extend(check_macos_dmg_creation_retry())
     errors.extend(check_linux_appimagetool_download())
@@ -159,6 +160,39 @@ def check_windows_gui_launcher() -> list[str]:
         errors.append("release workflow must bound Windows native installer smoke with timeout-minutes")
     if "row-gui.exe exists on x64/ARM64" not in smoke_contract:
         errors.append("configs/native_installer_smoke.json must document Windows GUI launcher verification")
+    return errors
+
+
+def check_windows_application_icon() -> list[str]:
+    errors: list[str] = []
+    icon_svg = ROOT / "src" / "remote_ops_workspace" / "assets" / "remote_ops_workspace.svg"
+    icon_ico = ROOT / "src" / "remote_ops_workspace" / "assets" / "remote_ops_workspace.ico"
+    for icon in (icon_svg, icon_ico):
+        if not icon.is_file() or icon.is_symlink():
+            errors.append(f"Windows application icon must be a plain file: {display(icon)}")
+    if icon_ico.is_file() and icon_ico.read_bytes()[:4] != b"\x00\x00\x01\x00":
+        errors.append("Windows application icon must be a valid ICO file")
+    gui = (ROOT / "src" / "remote_ops_workspace" / "gui.py").read_text(encoding="utf-8")
+    for snippet, label in {
+        "def application_icon_path()": "packaged icon path helper",
+        "def set_windows_taskbar_app_id()": "Windows taskbar identity helper",
+        "SetCurrentProcessExplicitAppUserModelID": "Windows taskbar identity call",
+        "app.setWindowIcon(icon)": "application icon assignment",
+        "self.setWindowIcon(QApplication.instance().windowIcon())": "main-window icon assignment",
+    }.items():
+        if snippet not in gui:
+            errors.append(f"src/remote_ops_workspace/gui.py missing {label}: {snippet}")
+    script = NATIVE_SCRIPTS["windows"].read_text(encoding="utf-8")
+    for snippet, label in {
+        "$IconSvg": "vector icon asset",
+        "$IconIco": "Windows ICO asset",
+        "--icon $IconIco": "PyInstaller executable icon",
+        '--add-data "$IconSvg;remote_ops_workspace/assets"': "frozen GUI icon data",
+        "SetupIconFile=$IconEscaped": "Inno Setup icon",
+        '<Icon Id="RemoteOpsWorkspaceIcon" SourceFile="$IconSource" />': "WiX product icon",
+    }.items():
+        if snippet not in script:
+            errors.append(f"scripts/make_windows_native.ps1 missing {label}: {snippet}")
     return errors
 
 

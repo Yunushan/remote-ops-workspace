@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Remote Ops Workspace">
+  <defs>
+    <linearGradient id="background" x1="24" y1="18" x2="232" y2="238" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#172b3a"/>
+      <stop offset="1" stop-color="#07131d"/>
+    </linearGradient>
+    <linearGradient id="screen" x1="52" y1="62" x2="204" y2="192" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1e5367"/>
+      <stop offset="1" stop-color="#123343"/>
+    </linearGradient>
+  </defs>
+  <rect x="10" y="10" width="236" height="236" rx="54" fill="url(#background)"/>
+  <rect x="13" y="13" width="230" height="230" rx="51" fill="none" stroke="#4cc9e8" stroke-opacity=".34" stroke-width="6"/>
+  <path d="M54 69c0-12.7 10.3-23 23-23h102c12.7 0 23 10.3 23 23v112c0 12.7-10.3 23-23 23H77c-12.7 0-23-10.3-23-23V69Z" fill="url(#screen)" stroke="#76e2f4" stroke-width="8"/>
+  <path d="m88 95 28 28-28 28" fill="none" stroke="#8df5c4" stroke-linecap="round" stroke-linejoin="round" stroke-width="15"/>
+  <path d="M137 157h35" fill="none" stroke="#e6f7fb" stroke-linecap="round" stroke-width="14"/>
+  <circle cx="181" cy="76" r="10" fill="#8df5c4"/>
+</svg>

@@ -146,6 +146,19 @@ def test_windows_native_package_builds_double_click_gui_launcher() -> None:
     assert "Start-Process -FilePath $FilePath -ArgumentList $ArgumentList -NoNewWindow -Wait -PassThru" in smoke
 
 
+def test_windows_native_package_embeds_product_icon_everywhere() -> None:
+    checker = _load_checker()
+    script = Path("scripts/make_windows_native.ps1").read_text(encoding="utf-8")
+    gui = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+
+    assert checker.check_windows_application_icon() == []
+    assert "--icon $IconIco" in script
+    assert "SetupIconFile=$IconEscaped" in script
+    assert 'RemoteOpsWorkspaceIcon' in script
+    assert "app.setWindowIcon(icon)" in gui
+    assert "SetCurrentProcessExplicitAppUserModelID" in gui
+
+
 def _load_checker():
     path = Path("scripts/check_native_release_hardening.py")
     spec = importlib.util.spec_from_file_location("check_native_release_hardening_script", path)

@@ -427,6 +427,28 @@ def quick_connect_profile_name(protocol: str, target: str) -> str:
     return f"quick-{protocol}-{slug}"[:80]
 
 
+def application_icon_path() -> Path:
+    """Return the packaged vector icon used by the desktop window and taskbar."""
+
+    return Path(__file__).resolve().parent / "assets" / "remote_ops_workspace.svg"
+
+
+def set_windows_taskbar_app_id() -> None:
+    """Keep the Windows taskbar grouped under the product icon rather than Python's default."""
+
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+            "Yunushan.RemoteOpsWorkspace.Desktop"
+        )
+    except (AttributeError, OSError):
+        # The Qt window icon still works when a restricted Windows shell denies this hint.
+        return
+
+
 def create_main_window(argv: list[str] | None = None, *, show: bool = False):
     try:
         from PyQt6.QtCore import (
@@ -3747,6 +3769,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             super().__init__()
             self.setObjectName("remoteOpsMain")
             self.setWindowTitle("Remote Ops Workspace")
+            self.setWindowIcon(QApplication.instance().windowIcon())
             self.apply_moba_titlebar_chrome("Remote Ops Workspace")
             self.resize(1180, 720)
             self.store = ProfileStore()
@@ -13796,9 +13819,13 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.stop_terminal_panes(running)
             event.accept()
 
+    set_windows_taskbar_app_id()
     app = QApplication.instance()
     if app is None:
         app = QApplication(argv or sys.argv)
+    icon = QIcon(str(application_icon_path()))
+    if not icon.isNull():
+        app.setWindowIcon(icon)
     window = MainWindow()
     if show:
         window.show()

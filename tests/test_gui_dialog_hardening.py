@@ -15,6 +15,13 @@ def test_safe_tooltip_html_escapes_markup_and_preserves_lines() -> None:
     )
 
 
+def test_main_window_and_application_have_a_visible_product_icon(gui_window) -> None:
+    app, window = gui_window
+
+    assert not app.windowIcon().isNull()
+    assert not window.windowIcon().isNull()
+
+
 @pytest.fixture
 def gui_window(monkeypatch, tmp_path):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")

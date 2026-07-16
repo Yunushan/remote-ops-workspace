@@ -106,7 +106,7 @@ function Get-WixArchitecture([string]$Arch) {
   }
 }
 
-function Build-InnoSetupInstaller([string]$Version, [string]$Stage, [string]$OutDir, [string]$Arch) {
+function Build-InnoSetupInstaller([string]$Version, [string]$Stage, [string]$OutDir, [string]$Arch, [string]$IconPath) {
   $Iscc = Find-InnoSetup
   $Iss = Join-Path $BuildDir "remote-ops-workspace.iss"
   $OutputBase = "remote-ops-workspace-v$Version-windows-$Arch-setup"
@@ -121,6 +121,7 @@ Name: "{autodesktop}\Remote Ops Workspace GUI"; Filename: "{app}\bin\row-gui.exe
   }
   $StageEscaped = $Stage.Replace("\", "\\")
   $OutEscaped = $OutDir.Replace("\", "\\")
+  $IconEscaped = $IconPath.Replace("\", "\\")
 
 @"
 [Setup]
@@ -133,6 +134,7 @@ DefaultGroupName=Remote Ops Workspace
 DisableProgramGroupPage=yes
 OutputDir=$OutEscaped
 OutputBaseFilename=$OutputBase
+SetupIconFile=$IconEscaped
 Compression=lzma2
 SolidCompression=yes
 $ArchitectureDirectives
@@ -165,7 +167,7 @@ Filename: "{app}\bin\row.exe"; Parameters: "--version"; Description: "Show insta
   return $Setup
 }
 
-function Build-WixMsi([string]$Version, [string]$Stage, [string]$OutDir, [string]$Arch) {
+function Build-WixMsi([string]$Version, [string]$Stage, [string]$OutDir, [string]$Arch, [string]$IconPath) {
   $env:PATH = "$env:PATH;$env:USERPROFILE\.dotnet\tools"
   $Wix = Get-Command "wix.exe" -ErrorAction SilentlyContinue
   if (!$Wix) {
@@ -186,12 +188,15 @@ function Build-WixMsi([string]$Version, [string]$Stage, [string]$OutDir, [string
   $NoticeSource = XmlEscape (Join-Path $Stage "docs\NOTICE")
   $ReadmeSource = XmlEscape (Join-Path $Stage "docs\README.md")
   $TargetSource = XmlEscape (Join-Path $Stage "RELEASE_TARGET.md")
+  $IconSource = XmlEscape $IconPath
 
 @"
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package Name="Remote Ops Workspace" Manufacturer="Remote Ops Workspace Contributors" Version="$Version" UpgradeCode="8F8A21B4-6E48-4B1A-9F5D-B9373E1807D0" Scope="perMachine">
     <MajorUpgrade DowngradeErrorMessage="A newer version of Remote Ops Workspace is already installed." />
     <MediaTemplate EmbedCab="yes" />
+    <Icon Id="RemoteOpsWorkspaceIcon" SourceFile="$IconSource" />
+    <Property Id="ARPPRODUCTICON" Value="RemoteOpsWorkspaceIcon" />
     <StandardDirectory Id="ProgramFilesFolder">
       <Directory Id="INSTALLFOLDER" Name="Remote Ops Workspace">
         <Directory Id="BINDIR" Name="bin">
@@ -284,6 +289,11 @@ $PyDist = Join-Path $BuildDir "pyinstaller-dist"
 $PyWork = Join-Path $BuildDir "pyinstaller-work"
 $Launcher = Join-Path $BuildDir "row_launcher.py"
 $GuiLauncher = Join-Path $BuildDir "row_gui_launcher.py"
+$IconSvg = Join-Path $Root "src\remote_ops_workspace\assets\remote_ops_workspace.svg"
+$IconIco = Join-Path $Root "src\remote_ops_workspace\assets\remote_ops_workspace.ico"
+if (!(Test-Path -LiteralPath $IconSvg) -or !(Test-Path -LiteralPath $IconIco)) {
+  throw "Windows application icon assets are missing under src\\remote_ops_workspace\\assets"
+}
 
 Remove-Item -Recurse -Force $BuildDir -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force $OutDir, $Stage, $PyDist, $PyWork | Out-Null
@@ -308,6 +318,7 @@ raise SystemExit(main())
   --onefile `
   --name row `
   --console `
+  --icon $IconIco `
   --distpath $PyDist `
   --workpath $PyWork `
   --specpath $BuildDir `
@@ -326,6 +337,8 @@ if ($BuildGuiLauncher) {
     --onefile `
     --name row-gui `
     --windowed `
+    --icon $IconIco `
+    --add-data "$IconSvg;remote_ops_workspace/assets" `
     --distpath $PyDist `
     --workpath $PyWork `
     --specpath $BuildDir `
@@ -384,8 +397,8 @@ if ($BuildGuiLauncher) {
 $NativeZip = Join-Path $OutDir "remote-ops-workspace-v$Version-windows-$Arch-native.zip"
 Compress-Archive -Path (Join-Path $PortableStage "*") -DestinationPath $NativeZip -Force
 
-$SetupExe = Build-InnoSetupInstaller -Version $Version -Stage $Stage -OutDir $OutDir -Arch $Arch
-$Msi = Build-WixMsi -Version $Version -Stage $Stage -OutDir $OutDir -Arch $Arch
+$SetupExe = Build-InnoSetupInstaller -Version $Version -Stage $Stage -OutDir $OutDir -Arch $Arch -IconPath $IconIco
+$Msi = Build-WixMsi -Version $Version -Stage $Stage -OutDir $OutDir -Arch $Arch -IconPath $IconIco
 Sign-NativeArtifact $SetupExe
 Sign-NativeArtifact $Msi
 

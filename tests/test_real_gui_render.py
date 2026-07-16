@@ -125,6 +125,18 @@ def test_real_gui_render_font_preflight_rejects_tofu_glyph_substitution() -> Non
     assert any("tofu substitution is not accepted" in error for error in errors)
 
 
+def test_real_gui_render_font_selection_rejects_tofu_glyph_substitution() -> None:
+    checker = _load_checker()
+
+    assert checker.usable_font_probe_glyphs((1,) * len(checker.FONT_PROBE_TEXT)) is False
+    assert (
+        checker.usable_font_probe_glyphs(
+            tuple(range(1, len(checker.FONT_PROBE_TEXT) + 1))
+        )
+        is True
+    )
+
+
 def test_real_gui_render_font_preflight_accepts_distinct_rendered_glyphs() -> None:
     checker = _load_checker()
     evidence = checker.FontRenderEvidence(
@@ -145,6 +157,8 @@ def test_real_gui_render_uses_native_windows_backend_by_default() -> None:
     assert checker.default_qt_platform("win32") == "windows"
     assert checker.default_qt_platform("darwin") == "cocoa"
     assert checker.default_qt_platform("linux") == "offscreen"
+    assert checker.default_qt_scale_factor("win32") == "1"
+    assert checker.default_qt_scale_factor("linux") is None
 
 
 def test_real_gui_render_capture_binds_font_evidence_and_platform_mode() -> None:

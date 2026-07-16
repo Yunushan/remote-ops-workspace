@@ -73,6 +73,14 @@ def test_gui_interaction_gate_defaults_to_host_native_qt_platform() -> None:
     )
 
 
+def test_gui_interaction_window_size_accepts_host_clamping_above_minimum() -> None:
+    checker = _load_checker()
+
+    assert checker.window_size_is_acceptable((1028, 749), (1920, 1080), (469, 298))
+    assert not checker.window_size_is_acceptable((468, 749), (1920, 1080), (469, 298))
+    assert not checker.window_size_is_acceptable((1921, 1080), (1920, 1080), (469, 298))
+
+
 def test_gui_interaction_manifest_records_fail_closed_font_render_evidence() -> None:
     checker = (
         Path(__file__).resolve().parents[1] / "scripts" / "check_gui_interactions.py"

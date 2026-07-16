@@ -15,6 +15,7 @@ try:
     from check_real_gui_render import (
         collect_qt_font_render_evidence,
         default_qt_platform,
+        prepare_preset_live_state,
         validate_non_overlapping_bounds,
         validate_qt_font_render_evidence,
     )
@@ -22,6 +23,7 @@ except ModuleNotFoundError:
     from scripts.check_real_gui_render import (
         collect_qt_font_render_evidence,
         default_qt_platform,
+        prepare_preset_live_state,
         validate_non_overlapping_bounds,
         validate_qt_font_render_evidence,
     )
@@ -259,7 +261,7 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
     configure_qt_platform_environment()
     os.environ["ROW_HOME"] = tempfile.mkdtemp(prefix="row-gui-interactions-")
     try:
-        from PyQt6.QtCore import PYQT_VERSION_STR, QT_VERSION_STR, Qt, QTimer
+        from PyQt6.QtCore import PYQT_VERSION_STR, QT_VERSION_STR, QPoint, Qt, QTimer
         from PyQt6.QtGui import QPalette
         from PyQt6.QtTest import QTest
         from PyQt6.QtWidgets import (
@@ -395,6 +397,197 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
 
     app, window = create_main_window(["check-gui-interactions"], show=True)
     app.processEvents()
+
+    def bounds_in(container, widgets) -> tuple[dict[str, int], list[dict[str, int | str]]]:
+        container_origin = container.mapTo(window, QPoint(0, 0))
+        container_bounds = {
+            "x": container_origin.x(),
+            "y": container_origin.y(),
+            "width": container.width(),
+            "height": container.height(),
+        }
+        bounds = []
+        for index, widget in enumerate(widgets):
+            origin = widget.mapTo(window, QPoint(0, 0))
+            bounds.append(
+                {
+                    "id": widget.objectName() or f"widget-{index}",
+                    "x": origin.x(),
+                    "y": origin.y(),
+                    "width": widget.width(),
+                    "height": widget.height(),
+                }
+            )
+        return container_bounds, bounds
+
+    def record_responsive_bounds(
+        name: str,
+        container,
+        widgets,
+        *,
+        horizontal_only: bool = False,
+    ) -> None:
+        visible = [widget for widget in widgets if widget is not None and widget.isVisible()]
+        if container is None or not container.isVisible() or not visible:
+            record(
+                name,
+                False,
+                {
+                    "container": container.objectName() if container is not None else "missing",
+                    "visible_widget_count": len(visible),
+                },
+            )
+            return
+        container_bounds, bounds = bounds_in(container, visible)
+        geometry_errors = validate_responsive_bounds(
+            name,
+            bounds,
+            container_bounds,
+            horizontal_only=horizontal_only,
+        )
+        record(
+            name,
+            not geometry_errors,
+            {
+                "container": container_bounds,
+                "widgets": bounds,
+                "errors": geometry_errors,
+            },
+        )
+
+    def record_minimum_size_preset_geometry(preset_id: str) -> None:
+        """Record live 1024-wide containment and non-overlap evidence per preset."""
+
+        if preset_id == "mobaxterm":
+            home_index = window.find_tab_by_role("home")
+            if home_index >= 0:
+                window.tabs.setCurrentIndex(home_index)
+            for _ in range(4):
+                app.processEvents()
+            window.configure_welcome_responsiveness()
+            app.processEvents()
+            welcome_scroll = window.findChild(QScrollArea, "welcomeScroll")
+            welcome_panel = window.findChild(QFrame, "mobaHomeWelcomeSurface")
+            record_responsive_bounds(
+                "mobaxterm-welcome-horizontal-containment-1024x768",
+                welcome_scroll.viewport() if welcome_scroll is not None else None,
+                [welcome_panel],
+                horizontal_only=True,
+            )
+            record(
+                "mobaxterm-welcome-no-horizontal-scrollbar-1024x768",
+                welcome_scroll is not None
+                and welcome_scroll.isVisible()
+                and welcome_scroll.horizontalScrollBar().maximum() == 0
+                and not welcome_scroll.horizontalScrollBar().isVisible(),
+                {
+                    "maximum": (
+                        welcome_scroll.horizontalScrollBar().maximum()
+                        if welcome_scroll is not None
+                        else None
+                    ),
+                    "visible": (
+                        welcome_scroll.horizontalScrollBar().isVisible()
+                        if welcome_scroll is not None
+                        else None
+                    ),
+                },
+            )
+
+        preparation_errors = prepare_preset_live_state(window, preset_id)
+        for _ in range(4):
+            app.processEvents()
+        record(
+            f"preset-reference-state-prepared-{preset_id}-1024x768",
+            not preparation_errors,
+            preparation_errors,
+        )
+        if preset_id not in {"native", "mobaxterm"}:
+            workspace = window.findChild(QFrame, "productWorkspaceSurface")
+            record_responsive_bounds(
+                f"{preset_id}-workspace-horizontal-containment-1024x768",
+                window.tabs,
+                [workspace],
+                horizontal_only=True,
+            )
+
+        if preset_id == "securecrt":
+            panel = window.findChild(QFrame, "secureCrtSessionStatusStrip")
+            record_responsive_bounds(
+                "securecrt-session-status-cells-non-overlap-1024x768",
+                panel,
+                panel.findChildren(QLabel, "secureCrtSessionStatusCell") if panel else [],
+            )
+        elif preset_id == "termius":
+            panel = window.findChild(QFrame, "termiusHostIdentityStrip")
+            record_responsive_bounds(
+                "termius-host-identity-cells-non-overlap-1024x768",
+                panel,
+                panel.findChildren(QLabel, "termiusHostIdentityCell") if panel else [],
+            )
+        elif preset_id == "remmina":
+            profile_panel = window.findChild(QFrame, "remminaProfileListChrome")
+            rows = (
+                profile_panel.findChildren(QFrame, "remminaProfileListRow")
+                if profile_panel is not None
+                else []
+            )
+            for index, row in enumerate(rows):
+                record_responsive_bounds(
+                    f"remmina-profile-row-{index}-cells-non-overlap-1024x768",
+                    row,
+                    row.findChildren(QLabel, "remminaProfileListCell"),
+                )
+        elif preset_id == "mremoteng":
+            grid = window.findChild(QFrame, "mRemoteNgPropertyGrid")
+            rows = (
+                grid.findChildren(QFrame, "mRemoteNgPropertyGridRow")
+                if grid is not None
+                else []
+            )
+            for index, row in enumerate(rows):
+                record_responsive_bounds(
+                    f"mremoteng-property-row-{index}-cells-non-overlap-1024x768",
+                    row,
+                    row.findChildren(QLabel, "mRemoteNgPropertyGridCell"),
+                )
+        elif preset_id == "mobaxterm":
+            telemetry = None
+            for index in range(window.tabs.count()):
+                candidate = window.tabs.widget(index)
+                candidate_telemetry = (
+                    candidate.findChild(QFrame, "mobaTelemetryBar")
+                    if candidate is not None
+                    else None
+                )
+                if candidate_telemetry is not None:
+                    window.tabs.setCurrentIndex(index)
+                    telemetry = candidate_telemetry
+                    break
+            for _ in range(4):
+                app.processEvents()
+            if telemetry is None or not telemetry.isVisible():
+                window.connect_selected(False)
+                for _ in range(4):
+                    app.processEvents()
+                for index in range(window.tabs.count()):
+                    candidate = window.tabs.widget(index)
+                    candidate_telemetry = (
+                        candidate.findChild(QFrame, "mobaTelemetryBar")
+                        if candidate is not None
+                        else None
+                    )
+                    if candidate_telemetry is not None:
+                        window.tabs.setCurrentIndex(index)
+                        telemetry = candidate_telemetry
+                        break
+                for _ in range(4):
+                    app.processEvents()
+            record_responsive_bounds(
+                "mobaxterm-telemetry-cells-non-overlap-1024x768",
+                telemetry,
+                telemetry.findChildren(QFrame, "mobaTelemetryCell") if telemetry else [],
+            )
 
     record(
         "product-key-cardinality",
@@ -3598,6 +3791,16 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
             QApplication.clipboard().text() == expected_clipboard,
             QApplication.clipboard().text(),
         )
+
+    # Run minimum-width geometry evidence after stateful interaction coverage,
+    # because preparing product reference tabs intentionally changes selection
+    # and should not influence the earlier callback assertions.
+    for preset_id in preset_ids:
+        window.set_design_preset(preset_id)
+        window.resize(1024, 768)
+        for _ in range(4):
+            app.processEvents()
+        record_minimum_size_preset_geometry(preset_id)
 
     image_records = []
     for path in sorted(set(captured_images)):

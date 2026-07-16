@@ -24,6 +24,16 @@ def chmod_best_effort(path: Path, mode: int) -> None:
         pass
 
 
+def _chmod_required(path: Path, mode: int) -> None:
+    """Apply a security-sensitive mode or fail closed.
+
+    Private artifacts must never be reported as successfully written when the
+    platform refused their owner-only permissions.
+    """
+
+    path.chmod(mode)
+
+
 def write_json_atomic(
     path: Path,
     data: Any,
@@ -54,18 +64,42 @@ def append_jsonl_private(path: Path, record: Any) -> None:
 
 def _write_bytes_atomic(path: Path, payload: bytes, *, private: bool) -> None:
     ensure_private_dir(path.parent)
+    mode = PRIVATE_FILE_MODE if private else PUBLIC_FILE_MODE
+    if private:
+        # Never replace a caller-controlled link while recording private data.
+        # ``os.replace`` itself replaces a link rather than following it, and
+        # this explicit guard makes the rejected state observable to callers.
+        if path.is_symlink():
+            raise OSError(f"refusing to replace symlinked private artifact: {path}")
+        _chmod_required(path.parent, PRIVATE_DIR_MODE)
     fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
     temp_path = Path(temp_name)
-    mode = PRIVATE_FILE_MODE if private else PUBLIC_FILE_MODE
+    replaced = False
     try:
         with os.fdopen(fd, "wb") as handle:
             handle.write(payload)
             handle.flush()
             os.fsync(handle.fileno())
-        chmod_best_effort(temp_path, mode)
+        if private:
+            _chmod_required(temp_path, mode)
+            if path.is_symlink():
+                raise OSError(f"refusing to replace symlinked private artifact: {path}")
+        else:
+            chmod_best_effort(temp_path, mode)
         os.replace(temp_path, path)
-        chmod_best_effort(path, mode)
+        replaced = True
+        if private:
+            _chmod_required(path, mode)
+        else:
+            chmod_best_effort(path, mode)
     except Exception:
+        if private and replaced:
+            try:
+                # Do not leave a potentially non-private final artifact behind
+                # when the post-replace permission assertion failed.
+                path.unlink()
+            except OSError:
+                pass
         try:
             temp_path.unlink()
         except OSError:

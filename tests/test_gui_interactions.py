@@ -81,6 +81,38 @@ def test_gui_interaction_window_size_accepts_host_clamping_above_minimum() -> No
     assert not checker.window_size_is_acceptable((1921, 1080), (1920, 1080), (469, 298))
 
 
+def test_gui_interaction_responsive_bounds_reject_clipping_and_overlap() -> None:
+    checker = _load_checker()
+    container = {"x": 0, "y": 0, "width": 100, "height": 40}
+    contained = [
+        {"id": "first", "x": 0, "y": 0, "width": 50, "height": 20},
+        {"id": "second", "x": 50, "y": 0, "width": 50, "height": 20},
+    ]
+    clipped = [{"id": "clipped", "x": 90, "y": 0, "width": 20, "height": 20}]
+
+    assert checker.validate_responsive_bounds("proof", contained, container) == []
+    assert checker.validate_responsive_bounds(
+        "proof", contained, container, horizontal_only=True
+    ) == []
+    assert any(
+        "outside the horizontal viewport" in error
+        for error in checker.validate_responsive_bounds(
+            "proof", clipped, container, horizontal_only=True
+        )
+    )
+    assert any(
+        "overlaps" in error
+        for error in checker.validate_responsive_bounds(
+            "proof",
+            [
+                {"id": "first", "x": 0, "y": 0, "width": 60, "height": 20},
+                {"id": "second", "x": 50, "y": 0, "width": 50, "height": 20},
+            ],
+            container,
+        )
+    )
+
+
 def test_gui_interaction_manifest_records_fail_closed_font_render_evidence() -> None:
     checker = (
         Path(__file__).resolve().parents[1] / "scripts" / "check_gui_interactions.py"
@@ -122,6 +154,9 @@ def test_gui_interaction_evidence_snapshots_mutable_dispatch_details() -> None:
     assert "termius-no-match-filter-clears-stale-selection" in checker
     assert "mremoteng-no-match-filter-clears-stale-selection" in checker
     assert "moba-native-duplicate-preserves-identity-path-sftp-and-splits" in checker
+    assert "record_minimum_size_preset_geometry" in checker
+    assert "mobaxterm-welcome-horizontal-containment-1024x768" in checker
+    assert "mobaxterm-telemetry-cells-non-overlap-1024x768" in checker
     assert "duplicated-open-layout-rename-retargets-title-tooltip-and-binding" in checker
     for preset_id in ("securecrt", "termius", "remmina", "mremoteng"):
         assert f"recovery-{preset_id}-preserves-profile-and-sftp-tab-identity" in checker

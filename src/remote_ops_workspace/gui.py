@@ -11,9 +11,7 @@ from urllib.parse import urlparse
 from .doctor import run_doctor
 from .enterprise_policy import assert_profile_launch_allowed
 from .file_safety import (
-    PRIVATE_FILE_MODE,
-    chmod_best_effort,
-    ensure_private_dir,
+    write_bytes_atomic,
     write_json_atomic,
 )
 from .file_transfer import build_sftp_queue_plan, parse_transfer_item_spec, preview_local_path
@@ -431,7 +429,16 @@ def quick_connect_profile_name(protocol: str, target: str) -> str:
 
 def create_main_window(argv: list[str] | None = None, *, show: bool = False):
     try:
-        from PyQt6.QtCore import QPoint, QProcess, QSize, Qt, QTimer
+        from PyQt6.QtCore import (
+            QBuffer,
+            QByteArray,
+            QIODevice,
+            QPoint,
+            QProcess,
+            QSize,
+            Qt,
+            QTimer,
+        )
         from PyQt6.QtGui import (
             QBrush,
             QColor,
@@ -4114,7 +4121,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 scroll.viewport().width()
                 - margins.left()
                 - margins.right()
-                - 8,
+                # Reserve an additional gutter for the native style frame and
+                # scrollbar rounding at the 1024 px support boundary.
+                - 16,
             )
             if available <= 0:
                 return
@@ -10763,13 +10772,13 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 "sync": "current",
             }
             compact_widths = {
-                "host": 60,
-                "identity": 76,
-                "chain": 48,
-                "files": 52,
-                "forward": 70,
-                "snippet": 70,
-                "sync": 52,
+                "host": 58,
+                "identity": 74,
+                "chain": 46,
+                "files": 50,
+                "forward": 68,
+                "snippet": 68,
+                "sync": 50,
             }
             for field in strip.fields:
                 full_text = f"{field.label}: {field.value}"
@@ -11237,15 +11246,24 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     / "remmina"
                     / Path(route.capture_artifact).name
                 )
-                ensure_private_dir(artifact_path.parent)
                 source = self.tabs.currentWidget() or self
                 pixmap = source.grab()
-                saved = pixmap.save(str(artifact_path), "PNG")
-                if saved:
-                    chmod_best_effort(artifact_path, PRIVATE_FILE_MODE)
-                if saved and artifact_path.is_file():
+                encoded = QByteArray()
+                buffer = QBuffer(encoded)
+                if not buffer.open(QIODevice.OpenModeFlag.WriteOnly):
+                    raise OSError("could not open private screenshot buffer")
+                try:
+                    if not pixmap.save(buffer, "PNG"):
+                        raise RuntimeError("could not encode Remmina screenshot as PNG")
+                finally:
+                    buffer.close()
+                payload = bytes(encoded)
+                if not payload.startswith(b"\x89PNG\r\n\x1a\n"):
+                    raise RuntimeError("Remmina screenshot encoder did not produce a PNG")
+                write_bytes_atomic(artifact_path, payload, private=True)
+                if artifact_path.is_file():
                     artifact_size = artifact_path.stat().st_size
-                artifact_valid = saved and artifact_size > 0
+                artifact_valid = artifact_size == len(payload) and artifact_size > 0
             except (OSError, RuntimeError) as exc:
                 artifact_valid = False
                 capture_error = str(exc)
@@ -12293,13 +12311,17 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 "state": "connected",
             }
             compact_widths = {
-                "session": 64,
-                "target": 92,
-                "protocol": 64,
-                "cipher": 70,
-                "sftp": 58,
-                "log": 60,
-                "state": 58,
+                # The status strip can be only ~520 px wide at the accepted
+                # 1024-wide window.  Keep each compact value independent and
+                # let its full canonical value live in the accessible label
+                # and tooltip rather than allowing sibling cells to overlap.
+                "session": 44,
+                "target": 62,
+                "protocol": 44,
+                "cipher": 48,
+                "sftp": 42,
+                "log": 44,
+                "state": 44,
             }
             for field in chrome.fields:
                 full_text = f"{field.label}: {field.value}"

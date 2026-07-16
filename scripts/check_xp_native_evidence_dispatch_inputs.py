@@ -61,7 +61,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         description="Validate XP native evidence workflow dispatch inputs before touching staged evidence."
     )
     parser.add_argument("--target", required=True, choices=sorted(TARGETS))
-    parser.add_argument("--release-tag", required=True, help="Release tag, for example v1.0.5")
+    parser.add_argument("--release-tag", required=True, help="Release tag, for example v1.0.6")
     parser.add_argument(
         "--release-asset-base-url",
         required=True,

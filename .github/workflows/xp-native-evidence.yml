@@ -11,7 +11,7 @@ on:
           - windows-xp-native-x86
           - windows-xp-native-x64
       release_tag:
-        description: "Release tag to validate, for example v1.0.5"
+        description: "Release tag to validate, for example v1.0.6"
         required: true
         type: string
       release_asset_base_url:

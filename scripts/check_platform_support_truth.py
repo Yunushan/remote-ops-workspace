@@ -33,20 +33,20 @@ PROTECTED_RELEASE_SOURCE_WORKFLOWS = {
 }
 PROTECTED_LINUX_CATALOG_ASSETS = {
     "linux-i386": {
-        "remote-ops-workspace-v1.0.5-linux-i386.deb",
-        "remote-ops-workspace-v1.0.5-linux-i686.rpm",
-        "remote-ops-workspace-v1.0.5-linux-i686.AppImage",
-        "remote-ops-workspace-v1.0.5-linux-i686-native.tar.gz",
-        "remote-ops-workspace-v1.0.5-linux-i686-native-manifest.json",
-        "remote-ops-workspace-v1.0.5-linux-i686-native-SHA256SUMS.txt",
+        "remote-ops-workspace-v1.0.6-linux-i386.deb",
+        "remote-ops-workspace-v1.0.6-linux-i686.rpm",
+        "remote-ops-workspace-v1.0.6-linux-i686.AppImage",
+        "remote-ops-workspace-v1.0.6-linux-i686-native.tar.gz",
+        "remote-ops-workspace-v1.0.6-linux-i686-native-manifest.json",
+        "remote-ops-workspace-v1.0.6-linux-i686-native-SHA256SUMS.txt",
     },
     "linux-armhf": {
-        "remote-ops-workspace-v1.0.5-linux-armhf.deb",
-        "remote-ops-workspace-v1.0.5-linux-armv7hl.rpm",
-        "remote-ops-workspace-v1.0.5-linux-armhf.AppImage",
-        "remote-ops-workspace-v1.0.5-linux-armhf-native.tar.gz",
-        "remote-ops-workspace-v1.0.5-linux-armhf-native-manifest.json",
-        "remote-ops-workspace-v1.0.5-linux-armhf-native-SHA256SUMS.txt",
+        "remote-ops-workspace-v1.0.6-linux-armhf.deb",
+        "remote-ops-workspace-v1.0.6-linux-armv7hl.rpm",
+        "remote-ops-workspace-v1.0.6-linux-armhf.AppImage",
+        "remote-ops-workspace-v1.0.6-linux-armhf-native.tar.gz",
+        "remote-ops-workspace-v1.0.6-linux-armhf-native-manifest.json",
+        "remote-ops-workspace-v1.0.6-linux-armhf-native-SHA256SUMS.txt",
     },
 }
 PROTECTED_READINESS_GATE_COMMANDS = {

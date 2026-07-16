@@ -153,7 +153,7 @@ Name: remote-ops-workspace
 Version: $VERSION
 Release: 1%{?dist}
 Summary: Operator-first remote terminal and connection workspace
-License: MIT
+License: 0BSD
 BuildArch: $RPM_ARCH
 
 %description

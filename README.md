@@ -6,7 +6,7 @@
 
 ![build](https://img.shields.io/badge/build-source--available-brightgreen)
 ![release](https://img.shields.io/badge/release-v1.0.5-blue)
-![license](https://img.shields.io/badge/license-MIT-blue)
+![license](https://img.shields.io/badge/license-0BSD-blue)
 ![runtime](https://img.shields.io/badge/runtime-Python%203.10--3.14-orange)
 ![interfaces](https://img.shields.io/badge/interfaces-CLI%20%7C%20GUI%20%7C%20Web-purple)
 ![targets](https://img.shields.io/badge/targets-Windows%20%7C%20Linux%20%7C%20macOS%20%7C%20BSD%20%7C%20Solaris%20%7C%20Android%20%7C%20iOS%20%7C%20Web-green)
@@ -26,7 +26,7 @@ English • [Türkçe](README.tr.md)
 
 ## What this project is
 
-**Remote Ops Workspace** is a MIT-licensed, cross-platform remote access workspace designed as an open foundation for the feature families people expect from MobaXterm, Remmina, mRemoteNG, Terminator and Termius.
+**Remote Ops Workspace** is a 0BSD-licensed, cross-platform remote access workspace designed as an open foundation for the feature families people expect from MobaXterm, Remmina, mRemoteNG, Terminator and Termius.
 
 It is intentionally built as an **adapter-first foundation**: the repo includes a working CLI, profile store, launcher command builders, optional encrypted vault support, GUI shell, Web/PWA shell, feature coverage manifest, tests, installers, CI and release scaffolding. Deep protocol rendering is delegated to native system tools such as OpenSSH, FreeRDP, TigerVNC, x2goclient, virt-viewer, PuTTY, Windows MSTSC, XQuartz/VcXsrv/Xorg, or future embedded protocol plugins.
 
@@ -681,4 +681,4 @@ See [`docs/RELEASE_STRATEGY.md`](docs/RELEASE_STRATEGY.md).
 
 ## License
 
-MIT. See [`LICENSE`](LICENSE).
+0BSD. See [`LICENSE`](LICENSE).

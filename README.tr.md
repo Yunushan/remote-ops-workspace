@@ -6,7 +6,7 @@
 
 ![build](https://img.shields.io/badge/build-source--available-brightgreen)
 ![release](https://img.shields.io/badge/release-v1.0.5-blue)
-![license](https://img.shields.io/badge/license-MIT-blue)
+![license](https://img.shields.io/badge/license-0BSD-blue)
 ![runtime](https://img.shields.io/badge/runtime-Python%203.10--3.14-orange)
 ![interfaces](https://img.shields.io/badge/interfaces-CLI%20%7C%20GUI%20%7C%20Web-purple)
 ![targets](https://img.shields.io/badge/targets-Windows%20%7C%20Linux%20%7C%20macOS%20%7C%20BSD%20%7C%20Solaris%20%7C%20Android%20%7C%20Web-green)
@@ -22,7 +22,7 @@
 
 ## Bu Proje Nedir?
 
-**Remote Ops Workspace**, MobaXterm, Remmina, mRemoteNG, Terminator ve Termius gibi araclarda beklenen ozellik aileleri icin MIT lisansli, capraz platform bir uzak erisim calisma alanidir.
+**Remote Ops Workspace**, MobaXterm, Remmina, mRemoteNG, Terminator ve Termius gibi araclarda beklenen ozellik aileleri icin 0BSD lisansli, capraz platform bir uzak erisim calisma alanidir.
 
 Proje bilincli olarak **adapter-first** tasarlanmistir: CLI, profil deposu, guvenli argv tabanli baslaticilar, istege bagli sifreli vault, PyQt6 GUI kabugu, Web/PWA kabugu, ozellik kapsami manifesti, testler, kurulum betikleri, CI ve yayin iskeleti bulunur. Protokol motorlari yeniden yazilmaz; OpenSSH, FreeRDP, TigerVNC, x2goclient, virt-viewer, PuTTY, Windows MSTSC, XQuartz/VcXsrv/Xorg gibi yerel istemciler veya ileride eklenebilecek protokol eklentileri kullanilir.
 
@@ -366,4 +366,4 @@ Ayrintilar icin [`docs/RELEASE_STRATEGY.md`](docs/RELEASE_STRATEGY.md) dosyasina
 
 ## Lisans
 
-MIT. Ayrintilar icin [`LICENSE`](LICENSE) dosyasina bakin.
+0BSD. Ayrintilar icin [`LICENSE`](LICENSE) dosyasina bakin.

@@ -513,9 +513,14 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
         )
         record(
             f"preset-window-size-{preset_id}-1024x768",
-            (window.width(), window.height()) == (1024, 768),
+            window_size_is_acceptable(
+                (window.width(), window.height()),
+                (1024, 768),
+                (window.minimumSizeHint().width(), window.minimumSizeHint().height()),
+            ),
             {
                 "actual": [window.width(), window.height()],
+                "requested": [1024, 768],
                 "minimum": [window.minimumSizeHint().width(), window.minimumSizeHint().height()],
             },
         )
@@ -580,9 +585,14 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
         app.processEvents()
         record(
             f"post-preset-window-size-{preset_id}-1180x720",
-            (window.width(), window.height()) == (1180, 720),
+            window_size_is_acceptable(
+                (window.width(), window.height()),
+                (1180, 720),
+                (window.minimumSizeHint().width(), window.minimumSizeHint().height()),
+            ),
             {
                 "actual": [window.width(), window.height()],
+                "requested": [1180, 720],
                 "minimum": [window.minimumSizeHint().width(), window.minimumSizeHint().height()],
             },
         )

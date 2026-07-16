@@ -12,6 +12,17 @@ def test_security_extra_includes_system_trust_store_adapter() -> None:
     assert 'security = ["cryptography>=42", "truststore>=0.10"]' in pyproject
 
 
+def test_runner_api_fetcher_uses_authenticated_gh_when_no_ci_token(monkeypatch) -> None:
+    checker = _load_checker()
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.setattr(checker.shutil, "which", lambda name: "C:/Program Files/GitHub CLI/gh.exe" if name == "gh" else None)
+
+    fetcher = checker.runner_api_fetcher(repository="example/remote-ops-workspace", timeout=20.0)
+
+    assert isinstance(fetcher, checker.GitHubCliRunnerApiFetcher)
+
+
 def test_runner_readiness_accepts_all_goal_targets_with_idle_runners() -> None:
     checker = _load_checker()
     report, errors = checker.check_platform_evidence_runner_readiness(

@@ -104,7 +104,9 @@ def check_desktop_gui(tmp_path: Path, *, render_timeout_seconds: int = 60) -> tu
         return ["GUI factory must raise GuiDependencyError when PyQt6 is unavailable"], []
 
     env = os.environ.copy()
-    env.setdefault("QT_QPA_PLATFORM", "offscreen")
+    env.setdefault("QT_QPA_PLATFORM", desktop_gui_qt_platform())
+    if (scale_factor := desktop_gui_qt_scale_factor()) is not None:
+        env["QT_SCALE_FACTOR"] = scale_factor
     env["ROW_HOME"] = str(tmp_path / "row-home")
     command = [
         sys.executable,
@@ -131,6 +133,16 @@ def check_desktop_gui(tmp_path: Path, *, render_timeout_seconds: int = 60) -> tu
         detail = output.splitlines()[-1] if output else f"exit code {result.returncode}"
         return [f"desktop/PyQt6 live render smoke failed: {detail}"], []
     return [], ["desktop/PyQt6 bounded live render smoke passed for native preset"]
+
+
+def desktop_gui_qt_platform(platform: str | None = None) -> str:
+    resolved = platform or sys.platform
+    return "windows" if resolved.startswith("win") else "offscreen"
+
+
+def desktop_gui_qt_scale_factor(platform: str | None = None) -> str | None:
+    resolved = platform or sys.platform
+    return "1" if resolved.startswith("win") else None
 
 
 def check_security_vault(tmp_path: Path) -> tuple[list[str], list[str]]:

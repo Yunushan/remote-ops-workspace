@@ -50,7 +50,19 @@ def test_optional_desktop_smoke_uses_bounded_render_subprocess(monkeypatch, tmp_
     assert calls["timeout"] == 22
     assert "--timeout-seconds" in calls["command"]
     assert "7" in calls["command"]
-    assert calls["env"]["QT_QPA_PLATFORM"] == "offscreen"
+    assert calls["env"]["QT_QPA_PLATFORM"] == checker.desktop_gui_qt_platform()
+    if checker.desktop_gui_qt_scale_factor() is not None:
+        assert calls["env"]["QT_SCALE_FACTOR"] == "1"
+
+
+def test_optional_desktop_smoke_uses_native_windows_and_headless_non_windows_backends() -> None:
+    checker = _load_optional_checker()
+
+    assert checker.desktop_gui_qt_platform("win32") == "windows"
+    assert checker.desktop_gui_qt_platform("linux") == "offscreen"
+    assert checker.desktop_gui_qt_platform("darwin") == "offscreen"
+    assert checker.desktop_gui_qt_scale_factor("win32") == "1"
+    assert checker.desktop_gui_qt_scale_factor("linux") is None
 
 
 def test_optional_desktop_smoke_reports_subprocess_timeout(monkeypatch, tmp_path: Path) -> None:

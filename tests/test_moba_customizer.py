@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import hashlib
-import hmac
 import json
+from base64 import b64encode
 from pathlib import Path
+
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from remote_ops_workspace.cli import build_parser
 from remote_ops_workspace.moba_customizer import (
@@ -17,6 +20,14 @@ from remote_ops_workspace.moba_customizer import (
     write_moba_professional_customizer_bundle,
     write_professional_deployment_evidence_bundle,
 )
+
+_UPDATE_PRIVATE_KEY = Ed25519PrivateKey.from_private_bytes(bytes(range(32)))
+UPDATE_PUBLIC_KEY = "ed25519:" + b64encode(
+    _UPDATE_PRIVATE_KEY.public_key().public_bytes(
+        serialization.Encoding.Raw,
+        serialization.PublicFormat.Raw,
+    )
+).decode("ascii")
 
 
 def test_moba_professional_customizer_bundle_contains_enterprise_assets(tmp_path: Path) -> None:
@@ -95,7 +106,7 @@ def test_moba_professional_deployment_plan_covers_installers_locks_and_updates()
         organization="Example Corp",
         version="1.0.2",
         update_url="https://updates.example.com/row/stable.json",
-        update_public_key="hmac-sha256:corp-secret",
+        update_public_key=UPDATE_PUBLIC_KEY,
         lock_settings=["theme=dark"],
     )
 
@@ -114,7 +125,7 @@ def test_moba_professional_update_channel_requires_https() -> None:
     try:
         build_enterprise_update_channel_plan(
             update_url="http://updates.example.com/row.json",
-            public_key="hmac-sha256:corp-secret",
+            public_key=UPDATE_PUBLIC_KEY,
         )
     except ValueError as exc:
         assert "HTTPS" in str(exc)
@@ -122,24 +133,36 @@ def test_moba_professional_update_channel_requires_https() -> None:
         raise AssertionError("enterprise update channels must require HTTPS")
 
 
+def test_moba_professional_update_channel_requires_ed25519_public_key() -> None:
+    try:
+        build_enterprise_update_channel_plan(
+            update_url="https://updates.example.com/row.json",
+            public_key="hmac-sha256:legacy-shared-secret",
+        )
+    except ValueError as exc:
+        assert "ed25519" in str(exc)
+    else:
+        raise AssertionError("enterprise update channels must reject symmetric verifier secrets")
+
+
 def test_moba_professional_update_manifest_accepts_signed_https_artifacts(tmp_path: Path) -> None:
     artifact = _write_evidence_asset(tmp_path, "corp-ops-1.0.2-setup.exe", "installer")
     manifest = _write_signed_update_manifest(
         tmp_path,
         artifact=artifact,
-        public_key="hmac-sha256:corp-secret",
+        public_key=UPDATE_PUBLIC_KEY,
     )
 
     result = validate_professional_update_manifest(
         manifest,
-        public_key="hmac-sha256:corp-secret",
+        public_key=UPDATE_PUBLIC_KEY,
         expected_channel="stable",
         expected_organization="Example Corp",
         assets_dir=tmp_path,
     )
 
     assert result.passed is True
-    assert result.summary["signature_algorithm"] == "hmac-sha256"
+    assert result.summary["signature_algorithm"] == "ed25519"
     assert result.summary["artifact_count"] == 1
 
 
@@ -148,7 +171,7 @@ def test_moba_professional_update_manifest_rejects_tampered_signature(tmp_path: 
     manifest = _write_signed_update_manifest(
         tmp_path,
         artifact=artifact,
-        public_key="hmac-sha256:corp-secret",
+        public_key=UPDATE_PUBLIC_KEY,
     )
     data = json.loads(manifest.read_text(encoding="utf-8"))
     data["artifacts"][0]["url"] = "http://updates.example.com/corp-ops-1.0.2-setup.exe"
@@ -156,7 +179,7 @@ def test_moba_professional_update_manifest_rejects_tampered_signature(tmp_path: 
 
     result = validate_professional_update_manifest(
         manifest,
-        public_key="hmac-sha256:corp-secret",
+        public_key=UPDATE_PUBLIC_KEY,
         expected_channel="stable",
         assets_dir=tmp_path,
     )
@@ -175,7 +198,7 @@ def test_moba_professional_deployment_evidence_accepts_complete_bundle(tmp_path:
     update_manifest = _write_signed_update_manifest(
         tmp_path,
         artifact=update_artifact,
-        public_key="hmac-sha256:corp-secret",
+        public_key=UPDATE_PUBLIC_KEY,
     )
     evidence_path = tmp_path / "deployment.json"
     evidence_path.write_text(
@@ -228,7 +251,7 @@ def test_moba_professional_deployment_evidence_accepts_complete_bundle(tmp_path:
                     "organization_channel": True,
                     "manifest_file": update_manifest.name,
                     "manifest_sha256": _sha256(update_manifest),
-                    "public_key": "hmac-sha256:corp-secret",
+                    "public_key": UPDATE_PUBLIC_KEY,
                     "channel": "stable",
                     "organization": "Example Corp",
                 },
@@ -256,14 +279,14 @@ def test_moba_professional_deployment_evidence_bundle_writer_accepts_complete_bu
     update_manifest = _write_signed_update_manifest(
         source,
         artifact=update_artifact,
-        public_key="hmac-sha256:corp-secret",
+        public_key=UPDATE_PUBLIC_KEY,
     )
     deployment = build_professional_deployment_plan(
         brand_name="Corp Ops",
         organization="Example Corp",
         version="1.0.2",
         update_url="https://updates.example.com/row/stable.json",
-        update_public_key="hmac-sha256:corp-secret",
+        update_public_key=UPDATE_PUBLIC_KEY,
         lock_settings=["theme=dark"],
     )
     plan = build_professional_deployment_evidence_bundle_plan(
@@ -308,7 +331,7 @@ def test_moba_professional_deployment_evidence_rejects_missing_surface(tmp_path:
     update_manifest = _write_signed_update_manifest(
         tmp_path,
         artifact=update_artifact,
-        public_key="hmac-sha256:corp-secret",
+        public_key=UPDATE_PUBLIC_KEY,
     )
     evidence_path = tmp_path / "deployment.json"
     evidence_path.write_text(
@@ -360,7 +383,7 @@ def test_moba_professional_deployment_evidence_rejects_missing_surface(tmp_path:
                     "organization_channel": True,
                     "manifest_file": update_manifest.name,
                     "manifest_sha256": _sha256(update_manifest),
-                    "public_key": "hmac-sha256:corp-secret",
+                    "public_key": UPDATE_PUBLIC_KEY,
                     "channel": "stable",
                     "organization": "Example Corp",
                 },
@@ -391,7 +414,7 @@ def test_customizer_cli_command_is_registered() -> None:
             "--update-url",
             "https://updates.example.com/row/stable.json",
             "--update-public-key",
-            "hmac-sha256:corp-secret",
+            UPDATE_PUBLIC_KEY,
             "--lock-setting",
             "theme=dark",
             "--json",
@@ -410,7 +433,7 @@ def test_customizer_cli_command_is_registered() -> None:
             "--update-url",
             "https://updates.example.com/row/stable.json",
             "--update-public-key",
-            "hmac-sha256:corp-secret",
+            UPDATE_PUBLIC_KEY,
             "--lock-setting",
             "theme=dark",
             "--out-dir",
@@ -453,7 +476,7 @@ def test_customizer_cli_command_is_registered() -> None:
             "--manifest",
             "stable.json",
             "--public-key",
-            "hmac-sha256:corp-secret",
+            UPDATE_PUBLIC_KEY,
             "--channel",
             "stable",
             "--json",
@@ -496,11 +519,11 @@ def _write_signed_update_manifest(root: Path, *, artifact: Path, public_key: str
         ],
     }
     canonical = canonical_update_manifest_payload(payload)
-    secret = public_key.split(":", 1)[1]
+    assert public_key == UPDATE_PUBLIC_KEY
     payload["signature"] = {
-        "algorithm": "hmac-sha256",
+        "algorithm": "ed25519",
         "key_id": "corp",
-        "value": hmac.new(secret.encode("utf-8"), canonical, hashlib.sha256).hexdigest(),
+        "value": b64encode(_UPDATE_PRIVATE_KEY.sign(canonical)).decode("ascii"),
         "payload_sha256": hashlib.sha256(canonical).hexdigest(),
     }
     path = root / "stable-update.json"

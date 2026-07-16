@@ -212,9 +212,11 @@ def check_native_workflow_boundaries(workflow: str | None = None) -> list[str]:
 
 
 def check_checkout_step(job_block: str, *, job: str) -> list[str]:
-    checkout = workflow_step_block(job_block, "uses: actions/checkout@v6")
+    if not re.search(r"(?m)^      - uses: actions/checkout@[0-9a-f]{40}(?:\s+#.*)?$", job_block):
+        return [f"{job} missing repository checkout pinned to a 40-character commit SHA"]
+    checkout = workflow_step_block(job_block, "uses: actions/checkout@")
     if not checkout:
-        return [f"{job} missing repository checkout: uses: actions/checkout@v6"]
+        return [f"{job} missing repository checkout: uses: actions/checkout@<pinned-sha>"]
     errors: list[str] = []
     if "persist-credentials: false" not in checkout:
         errors.append(f"{job} checkout step must disable credential persistence")
@@ -229,7 +231,7 @@ def workflow_job_block(workflow: str, job: str) -> str:
 
 
 def workflow_step_block(job_block: str, marker: str) -> str:
-    pattern = rf"(?ms)^      - {re.escape(marker)}\n(.*?)(?=^      - |\Z)"
+    pattern = rf"(?ms)^      - {re.escape(marker)}[^\n]*\n(.*?)(?=^      - |\Z)"
     match = re.search(pattern, job_block)
     return match.group(0) if match else ""
 

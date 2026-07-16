@@ -1,0 +1,10 @@
+# Build the Web/PWA image from an explicit runtime allowlist. Git ignores do not
+# protect Docker build contexts, so private ROW data must never be sent to Docker.
+*
+!pyproject.toml
+!README.md
+!src/
+!src/**
+!apps/
+!apps/web/
+!apps/web/**

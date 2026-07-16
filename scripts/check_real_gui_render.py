@@ -1100,10 +1100,10 @@ def check_real_gui_render(
     out_dir: Path | None = None,
     require_pyqt6: bool = False,
 ) -> tuple[list[str], list[str]]:
-    from remote_ops_workspace import gui
-
     selected = preset_ids or [preset.id for preset in GUI_DESIGN_PRESETS]
     if not module_available("PyQt6"):
+        from remote_ops_workspace import gui
+
         try:
             gui.create_main_window(["row-real-gui-render-check"], show=False)
         except gui.GuiDependencyError:
@@ -1122,8 +1122,11 @@ def capture_live_gui(
     out_dir: Path | None = None,
 ) -> tuple[list[str], list[str]]:
     old_qpa = os.environ.get("QT_QPA_PLATFORM")
+    old_scale_factor = os.environ.get("QT_SCALE_FACTOR")
     old_home = os.environ.get("ROW_HOME")
     os.environ.setdefault("QT_QPA_PLATFORM", default_qt_platform())
+    if (scale_factor := default_qt_scale_factor()) is not None:
+        os.environ["QT_SCALE_FACTOR"] = scale_factor
     captures: list[CaptureResult] = []
     errors: list[str] = []
     messages: list[str] = []
@@ -1133,6 +1136,7 @@ def capture_live_gui(
             captures, errors, messages = _capture_live_gui(preset_ids, out_dir=out_dir)
     finally:
         restore_env("QT_QPA_PLATFORM", old_qpa)
+        restore_env("QT_SCALE_FACTOR", old_scale_factor)
         restore_env("ROW_HOME", old_home)
 
     if not errors:
@@ -1150,6 +1154,39 @@ def default_qt_platform(platform: str | None = None) -> str:
     if resolved == "darwin":
         return "cocoa"
     return "offscreen"
+
+
+def default_qt_scale_factor(platform: str | None = None) -> str | None:
+    resolved = platform or sys.platform
+    return "1" if resolved.startswith("win") else None
+
+
+def logical_capture_size(width: int, height: int, device_pixel_ratio: float) -> tuple[int, int]:
+    """Return logical screenshot dimensions for a Qt high-DPI pixmap."""
+
+    if device_pixel_ratio <= 0:
+        return width, height
+    return round(width / device_pixel_ratio), round(height / device_pixel_ratio)
+
+
+def normalize_capture_pixmap(pixmap: Any) -> Any:
+    """Downsample high-DPI grabs so metrics and artifacts use logical window pixels."""
+
+    device_pixel_ratio = float(pixmap.devicePixelRatio())
+    width, height = logical_capture_size(pixmap.width(), pixmap.height(), device_pixel_ratio)
+    if (width, height) == (pixmap.width(), pixmap.height()):
+        return pixmap
+
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtGui import QPixmap
+
+    image = pixmap.toImage().scaled(
+        width,
+        height,
+        Qt.AspectRatioMode.IgnoreAspectRatio,
+        Qt.TransformationMode.SmoothTransformation,
+    )
+    return QPixmap.fromImage(image)
 
 
 def _capture_live_gui(
@@ -1255,7 +1292,7 @@ def _capture_live_gui(
                     f"must equal requested size {REQUESTED_SIZE}"
                 )
 
-            pixmap = window.grab()
+            pixmap = normalize_capture_pixmap(window.grab())
             metrics = metrics_from_qimage(pixmap.toImage())
             errors.extend(validate_metrics(preset.id, metrics))
             contract_evidence = collect_live_contract_evidence(window, preset.id)
@@ -1306,7 +1343,7 @@ def collect_qt_font_render_evidence(app: Any) -> FontRenderEvidence:
         if not raw_font.isValid():
             continue
         glyph_indexes = tuple(int(index) for index in raw_font.glyphIndexesForString(FONT_PROBE_TEXT))
-        if len(glyph_indexes) != len(FONT_PROBE_TEXT) or any(index <= 0 for index in glyph_indexes):
+        if not usable_font_probe_glyphs(glyph_indexes):
             continue
         selected_font = candidate
         selected_raw_font = raw_font
@@ -1343,6 +1380,14 @@ def collect_qt_font_render_evidence(app: Any) -> FontRenderEvidence:
         raw_font_valid=bool(selected_raw_font is not None and selected_raw_font.isValid()),
         glyph_indexes=selected_glyph_indexes,
         rendered_ink_pixels=rendered_ink_pixels,
+    )
+
+
+def usable_font_probe_glyphs(glyph_indexes: tuple[int, ...]) -> bool:
+    return (
+        len(glyph_indexes) == len(FONT_PROBE_TEXT)
+        and all(index > 0 for index in glyph_indexes)
+        and len(set(glyph_indexes)) >= MIN_DISTINCT_FONT_GLYPHS
     )
 
 

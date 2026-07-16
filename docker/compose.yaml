@@ -5,6 +5,8 @@ services:
       dockerfile: docker/Dockerfile.web
     ports:
       - "127.0.0.1:8765:8765"
+    restart: unless-stopped
+    init: true
     environment:
       ROW_HOME: /data
     read_only: true
@@ -14,6 +16,8 @@ services:
       - no-new-privileges:true
     tmpfs:
       - /tmp
+    pids_limit: 128
+    mem_limit: 256m
     volumes:
       - remote-ops-data:/data
 volumes:

@@ -31,7 +31,7 @@ jobs:
   release-preflight:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           ref: ${{ env.RELEASE_TAG }}
           persist-credentials: false
@@ -48,7 +48,7 @@ jobs:
           fi
           git fetch --no-tags origin "${{ github.event.repository.default_branch }}"
           git merge-base --is-ancestor HEAD "origin/${{ github.event.repository.default_branch }}"
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
       - name: Require release tag and project version match
@@ -64,19 +64,19 @@ jobs:
     needs: release-preflight
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           ref: ${{ env.RELEASE_TAG }}
           persist-credentials: false
           clean: true
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
       - name: Install release build tools
         run: python -m pip install --constraint requirements-release.txt pip setuptools wheel build
       - name: Build source and Python package assets
         run: python scripts/make_release.py
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: release-source-python
           path: dist/*
@@ -84,6 +84,7 @@ jobs:
 
   windows-native:
     needs: release-preflight
+    environment: release
     strategy:
       fail-fast: false
       matrix:
@@ -99,12 +100,12 @@ jobs:
             runner: windows-11-arm
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           ref: ${{ env.RELEASE_TAG }}
           persist-credentials: false
           clean: true
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
           architecture: ${{ matrix.python-architecture }}
@@ -162,6 +163,24 @@ jobs:
             Write-Host "Inno Setup compiler already available"
           }
           dotnet tool install --global wix --version 5.0.2
+      - name: Prepare Windows release signing certificate
+        shell: powershell
+        env:
+          ROW_WINDOWS_CERTIFICATE_BASE64: ${{ secrets.ROW_WINDOWS_CERTIFICATE_BASE64 }}
+          ROW_WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.ROW_WINDOWS_CERTIFICATE_PASSWORD }}
+          ROW_WINDOWS_TIMESTAMP_URL: ${{ secrets.ROW_WINDOWS_TIMESTAMP_URL }}
+        run: |
+          foreach ($Name in @("ROW_WINDOWS_CERTIFICATE_BASE64", "ROW_WINDOWS_CERTIFICATE_PASSWORD", "ROW_WINDOWS_TIMESTAMP_URL")) {
+            if ([string]::IsNullOrWhiteSpace([string](Get-Item -Path "Env:$Name").Value)) {
+              throw "Protected release environment is missing $Name"
+            }
+          }
+          $CertificatePath = Join-Path $env:RUNNER_TEMP "remote-ops-release-signing.pfx"
+          [System.IO.File]::WriteAllBytes($CertificatePath, [Convert]::FromBase64String($env:ROW_WINDOWS_CERTIFICATE_BASE64))
+          Add-Content $env:GITHUB_ENV "ROW_REQUIRE_RELEASE_SIGNING=1"
+          Add-Content $env:GITHUB_ENV "ROW_WINDOWS_CERTIFICATE_PATH=$CertificatePath"
+          Add-Content $env:GITHUB_ENV "ROW_WINDOWS_CERTIFICATE_PASSWORD=$env:ROW_WINDOWS_CERTIFICATE_PASSWORD"
+          Add-Content $env:GITHUB_ENV "ROW_WINDOWS_TIMESTAMP_URL=$env:ROW_WINDOWS_TIMESTAMP_URL"
       - name: Build Windows EXE and MSI installers
         shell: powershell
         run: .\scripts\make_windows_native.ps1 -Arch "${{ matrix.arch }}"
@@ -169,7 +188,7 @@ jobs:
         shell: powershell
         timeout-minutes: 20
         run: .\scripts\smoke_windows_native.ps1 -Arch "${{ matrix.arch }}" -Dist "native-dist\windows"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: release-windows-native-${{ matrix.arch }}
           path: native-dist/windows/*
@@ -177,6 +196,7 @@ jobs:
 
   macos-native:
     needs: release-preflight
+    environment: release
     strategy:
       fail-fast: false
       matrix:
@@ -187,12 +207,12 @@ jobs:
             runner: macos-latest
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           ref: ${{ env.RELEASE_TAG }}
           persist-credentials: false
           clean: true
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
       - name: Install Python packaging dependencies
@@ -205,11 +225,42 @@ jobs:
             expected_cryptography="49.0.0"
           fi
           EXPECTED_CRYPTOGRAPHY="$expected_cryptography" python -c "import os, cryptography; from cryptography.hazmat.backends.openssl.backend import backend; assert cryptography.__version__ == os.environ['EXPECTED_CRYPTOGRAPHY']; print(f'cryptography={cryptography.__version__} openssl={backend.openssl_version_text()}')"
+      - name: Prepare macOS release signing keychain
+        env:
+          ROW_MACOS_CERTIFICATE_BASE64: ${{ secrets.ROW_MACOS_CERTIFICATE_BASE64 }}
+          ROW_MACOS_CERTIFICATE_PASSWORD: ${{ secrets.ROW_MACOS_CERTIFICATE_PASSWORD }}
+          ROW_MACOS_SIGN_IDENTITY: ${{ secrets.ROW_MACOS_SIGN_IDENTITY }}
+          ROW_MACOS_INSTALLER_SIGN_IDENTITY: ${{ secrets.ROW_MACOS_INSTALLER_SIGN_IDENTITY }}
+          ROW_MACOS_NOTARY_KEY_BASE64: ${{ secrets.ROW_MACOS_NOTARY_KEY_BASE64 }}
+          ROW_MACOS_NOTARY_KEY_ID: ${{ secrets.ROW_MACOS_NOTARY_KEY_ID }}
+          ROW_MACOS_NOTARY_ISSUER: ${{ secrets.ROW_MACOS_NOTARY_ISSUER }}
+        run: |
+          for name in ROW_MACOS_CERTIFICATE_BASE64 ROW_MACOS_CERTIFICATE_PASSWORD ROW_MACOS_SIGN_IDENTITY ROW_MACOS_INSTALLER_SIGN_IDENTITY ROW_MACOS_NOTARY_KEY_BASE64 ROW_MACOS_NOTARY_KEY_ID ROW_MACOS_NOTARY_ISSUER; do
+            test -n "${!name}" || { echo "Protected release environment is missing $name" >&2; exit 1; }
+          done
+          keychain="$RUNNER_TEMP/remote-ops-release.keychain-db"
+          certificate="$RUNNER_TEMP/remote-ops-release.p12"
+          notary_key="$RUNNER_TEMP/AuthKey.p8"
+          printf '%s' "$ROW_MACOS_CERTIFICATE_BASE64" | base64 --decode > "$certificate"
+          printf '%s' "$ROW_MACOS_NOTARY_KEY_BASE64" | base64 --decode > "$notary_key"
+          security create-keychain -p "$ROW_MACOS_CERTIFICATE_PASSWORD" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$ROW_MACOS_CERTIFICATE_PASSWORD" "$keychain"
+          security import "$certificate" -k "$keychain" -P "$ROW_MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/productsign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$ROW_MACOS_CERTIFICATE_PASSWORD" "$keychain"
+          security list-keychain -d user -s "$keychain"
+          xcrun notarytool store-credentials "remote-ops-notary" --key "$notary_key" --key-id "$ROW_MACOS_NOTARY_KEY_ID" --issuer "$ROW_MACOS_NOTARY_ISSUER"
+          {
+            echo "ROW_REQUIRE_RELEASE_SIGNING=1"
+            echo "ROW_MACOS_SIGN_IDENTITY=$ROW_MACOS_SIGN_IDENTITY"
+            echo "ROW_MACOS_INSTALLER_SIGN_IDENTITY=$ROW_MACOS_INSTALLER_SIGN_IDENTITY"
+            echo "ROW_MACOS_NOTARY_PROFILE=remote-ops-notary"
+          } >> "$GITHUB_ENV"
       - name: Build macOS DMG and PKG installers
         run: EXPECTED_ARTIFACT_ARCH="${{ matrix.arch }}" bash scripts/make_macos_native.sh
       - name: Run macOS native installer smoke tests
         run: bash scripts/smoke_macos_native.sh --arch "${{ matrix.arch }}" --dist native-dist/macos
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: release-macos-native-${{ matrix.arch }}
           path: native-dist/macos/*
@@ -227,12 +278,12 @@ jobs:
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           ref: ${{ env.RELEASE_TAG }}
           persist-credentials: false
           clean: true
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
       - name: Install Linux packaging toolchains
@@ -247,7 +298,7 @@ jobs:
         run: TARGET_ARCH="${{ matrix.arch }}" bash scripts/make_linux_native.sh
       - name: Run Linux native installer smoke tests
         run: bash scripts/smoke_linux_native.sh --arch "${{ matrix.arch }}" --dist native-dist/linux
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: release-linux-native-${{ matrix.arch }}
           path: native-dist/linux/*
@@ -262,19 +313,19 @@ jobs:
       actions: read
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           ref: ${{ env.RELEASE_TAG }}
           persist-credentials: false
           clean: true
       - name: Check out immutable release source for evidence binding
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           ref: ${{ env.RELEASE_TAG }}
           path: release-source
           persist-credentials: false
           clean: true
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
       - name: Require protected platform workflows at release source ref
@@ -291,7 +342,7 @@ jobs:
         run: python scripts/import_platform_evidence_artifacts.py --release-tag "$RELEASE_TAG" --release-head-sha "$(git -C release-source rev-parse HEAD)" --require-goal-targets --out-dir release-assets --verify-source-run --repository "${{ github.repository }}"
       - name: Validate imported protected platform review bundles
         run: python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag "$RELEASE_TAG" --require-final-record-assets
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: release-platform-evidence-assets
           path: release-assets/*
@@ -311,22 +362,22 @@ jobs:
       - macos-native
       - linux-native
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           ref: ${{ env.RELEASE_TAG }}
           persist-credentials: false
           clean: true
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           path: release-assets
           merge-multiple: true
       - name: Validate release publish assets
         run: python scripts/check_release_publish_assets.py --assets-dir release-assets --tag "$RELEASE_TAG" --repository "${{ github.repository }}"
       - name: Upload release assets
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@c12583777ecdfd3be55c69cf75464299dc01057e # v3
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           fail_on_unmatched_files: true
@@ -341,15 +392,15 @@ jobs:
       - publish
       - accepted-platform-evidence-assets
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           ref: ${{ env.RELEASE_TAG }}
           persist-credentials: false
           clean: true
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           path: release-assets
           merge-multiple: true
@@ -358,7 +409,7 @@ jobs:
       - name: Validate protected release publish assets
         run: python scripts/check_release_publish_assets.py --assets-dir release-assets --tag "$RELEASE_TAG" --repository "${{ github.repository }}" --require-platform-goal-targets
       - name: Upload protected platform evidence assets
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@c12583777ecdfd3be55c69cf75464299dc01057e # v3
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           fail_on_unmatched_files: true

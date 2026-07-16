@@ -50,6 +50,16 @@ LAUNCHER="$BUILD_DIR/remote_ops_workspace_gui_launcher.py"
 APP_NAME="Remote Ops Workspace"
 APP_PATH="$PY_DIST/$APP_NAME.app"
 
+sign_macos_artifact() {
+  if [[ "${ROW_REQUIRE_RELEASE_SIGNING:-0}" != "1" ]]; then
+    codesign --force --deep --sign - "$1"
+    return
+  fi
+  : "${ROW_MACOS_SIGN_IDENTITY:?Production signing requires ROW_MACOS_SIGN_IDENTITY}"
+  codesign --force --deep --options runtime --timestamp --sign "$ROW_MACOS_SIGN_IDENTITY" "$1"
+  codesign --verify --deep --strict --verbose=2 "$1"
+}
+
 create_macos_dmg() {
   local dmg_stage="$1"
   local dmg="$2"
@@ -98,7 +108,7 @@ if [[ ! -d "$APP_PATH" ]]; then
   exit 1
 fi
 
-codesign --force --deep --sign - "$APP_PATH"
+sign_macos_artifact "$APP_PATH"
 
 DMG_STAGE="$BUILD_DIR/dmg-stage"
 mkdir -p "$DMG_STAGE"
@@ -117,8 +127,7 @@ This native package installs a PyInstaller app bundle for the PyQt6 desktop UI.
 Protocol sessions still depend on macOS system tools such as OpenSSH, XQuartz,
 Microsoft Remote Desktop/FreeRDP, and VNC clients.
 
-This CI-built artifact is ad-hoc signed. Production distribution should add
-Developer ID signing and Apple notarization.
+Production releases require Developer ID signing, notarization and stapling.
 EOF
 
 DMG="$OUT_DIR/remote-ops-workspace-v${VERSION}-macos-${ARTIFACT_ARCH}.dmg"
@@ -138,6 +147,18 @@ pkgbuild \
   --version "$VERSION" \
   --install-location "/" \
   "$PKG"
+
+if [[ "${ROW_REQUIRE_RELEASE_SIGNING:-0}" == "1" ]]; then
+  : "${ROW_MACOS_INSTALLER_SIGN_IDENTITY:?Production signing requires ROW_MACOS_INSTALLER_SIGN_IDENTITY}"
+  : "${ROW_MACOS_NOTARY_PROFILE:?Production signing requires ROW_MACOS_NOTARY_PROFILE}"
+  SIGNED_PKG="$BUILD_DIR/$(basename "$PKG").signed"
+  productsign --sign "$ROW_MACOS_INSTALLER_SIGN_IDENTITY" "$PKG" "$SIGNED_PKG"
+  mv "$SIGNED_PKG" "$PKG"
+  xcrun notarytool submit "$PKG" --keychain-profile "$ROW_MACOS_NOTARY_PROFILE" --wait
+  xcrun stapler staple "$PKG"
+  xcrun notarytool submit "$DMG" --keychain-profile "$ROW_MACOS_NOTARY_PROFILE" --wait
+  xcrun stapler staple "$DMG"
+fi
 
 "$PYTHON_BIN" - "$ROOT" "$VERSION" "$DMG" "$PKG" "$ARTIFACT_ARCH" "$OUT_DIR" <<'PY'
 from __future__ import annotations

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import hmac
 import json
 import re
 import shutil
@@ -472,9 +471,7 @@ def build_enterprise_update_channel_plan(
         raise ValueError("enterprise update url must be HTTPS")
     if interval_hours <= 0:
         raise ValueError("update interval must be positive")
-    key = safe.clean_text(public_key, "update public key").strip()
-    if not key:
-        raise ValueError("update public key is required")
+    key = _validate_update_public_key(public_key)
     return MobaEnterpriseUpdateChannelPlan(
         schema=MOBA_PROFESSIONAL_UPDATE_CHANNEL_SCHEMA,
         channel=safe.option_value(channel, "update channel"),
@@ -1279,32 +1276,23 @@ def _verify_update_manifest_signature(
     errors: list[str],
 ) -> bool:
     normalised = algorithm.strip().lower()
-    if normalised == "hmac-sha256":
-        return _verify_hmac_sha256_signature(public_key, signature_value, payload, errors)
     if normalised == "ed25519":
         return _verify_ed25519_signature(public_key, signature_value, payload, errors)
-    errors.append("signature.algorithm must be one of: ed25519, hmac-sha256")
+    errors.append("signature.algorithm must be ed25519")
     return False
 
 
-def _verify_hmac_sha256_signature(
-    public_key: str,
-    signature_value: str,
-    payload: bytes,
-    errors: list[str],
-) -> bool:
-    if not public_key.startswith("hmac-sha256:"):
-        errors.append("hmac-sha256 public_key must use hmac-sha256:<secret>")
-        return False
-    secret = public_key.split(":", 1)[1]
-    if not secret:
-        errors.append("hmac-sha256 public_key secret is empty")
-        return False
-    expected = hmac.new(secret.encode("utf-8"), payload, hashlib.sha256).hexdigest()
-    if not re.fullmatch(r"[0-9a-f]{64}", signature_value):
-        errors.append("hmac-sha256 signature value must be lowercase hex SHA-256")
-        return False
-    return hmac.compare_digest(expected, signature_value)
+def _validate_update_public_key(public_key: str) -> str:
+    key = safe.clean_text(public_key, "update public key").strip()
+    if not key.startswith("ed25519:"):
+        raise ValueError("update public key must use ed25519:<base64-raw-public-key>")
+    try:
+        key_bytes = b64decode(key.split(":", 1)[1], validate=True)
+    except Exception as exc:  # noqa: BLE001 - malformed deployment input.
+        raise ValueError(f"update public key is not valid base64: {exc}") from exc
+    if len(key_bytes) != 32:
+        raise ValueError("ed25519 update public key must contain 32 raw bytes")
+    return key
 
 
 def _verify_ed25519_signature(
@@ -1313,8 +1301,10 @@ def _verify_ed25519_signature(
     payload: bytes,
     errors: list[str],
 ) -> bool:
-    if not public_key.startswith("ed25519:"):
-        errors.append("ed25519 public_key must use ed25519:<base64-raw-public-key>")
+    try:
+        public_key = _validate_update_public_key(public_key)
+    except ValueError as exc:
+        errors.append(str(exc))
         return False
     try:
         from cryptography.exceptions import InvalidSignature

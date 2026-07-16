@@ -88,8 +88,8 @@ row plugins list
 row plugins validate
 row plugins scaffold --out ./row-demo-plugin --name row-demo-plugin --module row_demo_plugin --protocol demo --client demo-client
 row customizer build --out ./dist/corp-row --brand-name "Corp Ops" --profiles configs/profiles.example.json --lock-setting theme=dark
-row customizer deployment-plan --brand-name "Corp Ops" --lock-setting theme=dark --update-url https://updates.example.com/row/stable.json --update-public-key hmac-sha256:corp-secret --json
-row customizer update-verify --manifest artifacts/stable-update.json --public-key hmac-sha256:corp-secret --channel stable --organization "Corp Ops" --assets-dir artifacts --json
+row customizer deployment-plan --brand-name "Corp Ops" --lock-setting theme=dark --update-url https://updates.example.com/row/stable.json --update-public-key ed25519:QSOApv2JQKG8cVcGoYv++5EDw9fXbYNnXShgESontvI= --json
+row customizer update-verify --manifest artifacts/stable-update.json --public-key ed25519:QSOApv2JQKG8cVcGoYv++5EDw9fXbYNnXShgESontvI= --channel stable --organization "Corp Ops" --assets-dir artifacts --json
 row customizer evidence-verify --evidence artifacts/moba-professional-deployment.json --assets-dir artifacts --json
 row mobapt status --json
 row mobapt runtime-status --json

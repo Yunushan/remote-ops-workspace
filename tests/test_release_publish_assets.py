@@ -387,7 +387,7 @@ def test_publish_contract_rejects_remote_evidence_audit_before_upload() -> None:
     )
     upload_step = (
         '      - name: Upload release assets\n'
-        '        uses: softprops/action-gh-release@v3\n'
+        '        uses: softprops/action-gh-release@c12583777ecdfd3be55c69cf75464299dc01057e # v3\n'
         '        with:\n'
         '          fail_on_unmatched_files: true\n'
         '          files: release-assets/**\n'
@@ -482,12 +482,12 @@ def test_publish_contract_rejects_clean_checkout_setting_outside_checkout_step()
     block = checker.workflow_job_block(workflow, "linux-native")
     assert block
     mutated = block.replace("          clean: true\n", "", 1).replace(
-        "      - uses: actions/setup-python@v6\n",
+        "      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6\n",
         "      - name: Misleading clean setting\n"
         "        run: echo clean\n"
         "        env:\n"
         "          clean: true\n"
-        "      - uses: actions/setup-python@v6\n",
+        "      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6\n",
         1,
     )
     workflow = workflow.replace(block, mutated, 1)
@@ -504,12 +504,12 @@ def test_publish_contract_rejects_persist_credentials_outside_checkout_step() ->
     block = checker.workflow_job_block(workflow, "publish")
     assert block
     mutated = block.replace("          persist-credentials: false\n", "", 1).replace(
-        "      - uses: actions/setup-python@v6\n",
+        "      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6\n",
         "      - name: Misleading checkout credential setting\n"
         "        run: echo persist\n"
         "        env:\n"
         "          persist-credentials: false\n"
-        "      - uses: actions/setup-python@v6\n",
+        "      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6\n",
         1,
     )
     workflow = workflow.replace(block, mutated, 1)
@@ -614,12 +614,12 @@ def test_platform_evidence_import_rejects_clean_setting_outside_checkout_step() 
     block = checker.workflow_job_block(workflow, "accepted-platform-evidence-assets")
     assert block
     mutated = block.replace("          clean: true\n", "", 1).replace(
-        "      - uses: actions/setup-python@v6\n",
+        "      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6\n",
         "      - name: Misleading clean setting\n"
         "        run: echo clean\n"
         "        env:\n"
         "          clean: true\n"
-        "      - uses: actions/setup-python@v6\n",
+        "      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6\n",
         1,
     )
     workflow = workflow.replace(block, mutated, 1)
@@ -635,12 +635,12 @@ def test_platform_evidence_import_rejects_persist_credentials_outside_checkout_s
     block = checker.workflow_job_block(workflow, "accepted-platform-evidence-assets")
     assert block
     mutated = block.replace("          persist-credentials: false\n", "", 1).replace(
-        "      - uses: actions/setup-python@v6\n",
+        "      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6\n",
         "      - name: Misleading credential isolation setting\n"
         "        run: echo credentials\n"
         "        env:\n"
         "          persist-credentials: false\n"
-        "      - uses: actions/setup-python@v6\n",
+        "      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6\n",
         1,
     )
     workflow = workflow.replace(block, mutated, 1)
@@ -687,11 +687,11 @@ jobs:
       actions: read
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
-      - uses: actions/setup-python@v6
-      - uses: actions/upload-artifact@v7
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: release-platform-evidence-assets
           path: release-assets/*
@@ -777,15 +777,15 @@ jobs:
       actions: read
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
       - name: Import accepted protected platform evidence artifacts
         env:
           GH_TOKEN: ${{ github.token }}
         run: python scripts/import_platform_evidence_artifacts.py --release-tag "${{ github.ref_name }}" --require-goal-targets --out-dir release-assets
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: release-platform-evidence-assets
           path: release-assets/*

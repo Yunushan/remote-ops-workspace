@@ -205,11 +205,11 @@ def check_publish_contract(
         return [*errors, "release workflow missing publish job"]
     errors.extend(check_job_block_disallows_continue_on_error("publish", publish_block))
     required_snippets = {
-        "actions/download-artifact@v8": "artifact download",
+        "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c": "artifact download",
         "merge-multiple: true": "merged downloaded artifact directory",
         "python scripts/check_release_publish_assets.py --assets-dir release-assets --tag": "publish asset validation",
         '--repository "${{ github.repository }}"': "publish evidence repository binding",
-        "softprops/action-gh-release@v3": "GitHub release upload",
+        "softprops/action-gh-release@c12583777ecdfd3be55c69cf75464299dc01057e": "GitHub release upload",
         "tag_name: ${{ env.RELEASE_TAG }}": "explicit immutable release tag target",
         "fail_on_unmatched_files: true": "strict GitHub release upload",
     }
@@ -240,13 +240,13 @@ def check_protected_publish_job(workflow: str) -> list[str]:
         "- accepted-platform-evidence-assets": "accepted platform evidence dependency",
         "actions: read": "Actions metadata read permission for published evidence audit",
         "GH_TOKEN: ${{ github.token }}": "GitHub token for published evidence audit",
-        "actions/download-artifact@v8": "artifact download",
+        "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c": "artifact download",
         "merge-multiple: true": "merged downloaded artifact directory",
         PUBLISH_PROTECTED_PLATFORM_ASSET_COMMAND: "protected platform release asset gate",
         "python scripts/check_release_publish_assets.py --assets-dir release-assets --tag": "protected publish asset validation",
         "--require-platform-goal-targets": "protected platform goal publish gate",
         PUBLISH_REMOTE_PLATFORM_EVIDENCE_AUDIT_COMMAND: "published protected platform evidence audit",
-        "softprops/action-gh-release@v3": "GitHub release upload",
+        "softprops/action-gh-release@c12583777ecdfd3be55c69cf75464299dc01057e": "GitHub release upload",
         "tag_name: ${{ env.RELEASE_TAG }}": "explicit immutable release tag target",
         "fail_on_unmatched_files: true": "strict GitHub release upload",
     }
@@ -288,9 +288,9 @@ def check_release_job_clean_checkouts(workflow: str) -> list[str]:
 
 
 def check_checkout_step(job_block: str, *, job: str) -> list[str]:
-    checkout = workflow_step_block(job_block, "uses: actions/checkout@v6")
+    checkout = workflow_step_block(job_block, "uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10")
     if not checkout:
-        return [f"{job} job missing repository checkout: uses: actions/checkout@v6"]
+        return [f"{job} job missing repository checkout: uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10"]
     errors: list[str] = []
     if "persist-credentials: false" not in checkout:
         errors.append(f"{job} job missing checkout credential isolation: persist-credentials: false")
@@ -317,10 +317,10 @@ def check_platform_evidence_import_job(workflow: str) -> list[str]:
         "timeout-minutes: 20": "bounded platform evidence import timeout",
         "actions: read": "Actions artifact read permission",
         "contents: read": "read-only repository permission",
-        "uses: actions/checkout@v6": "repository checkout",
+        "uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10": "repository checkout",
         "persist-credentials: false": "checkout credential isolation",
         "clean: true": "clean platform evidence import checkout",
-        "uses: actions/setup-python@v6": "Python setup",
+        "uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1": "Python setup",
         "GH_TOKEN: ${{ github.token }}": "GitHub token for gh artifact download",
         "name: Check out immutable release source for evidence binding": (
             "immutable release source checkout"
@@ -339,7 +339,7 @@ def check_platform_evidence_import_job(workflow: str) -> list[str]:
             "imported platform review bundle validator"
         ),
         "--require-final-record-assets": "imported finalized accepted-record asset validator",
-        "actions/upload-artifact@v7": "imported artifact upload",
+        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a": "imported artifact upload",
         "name: release-platform-evidence-assets": "platform evidence release artifact name",
         "path: release-assets/*": "platform evidence release artifact path",
         "if-no-files-found: error": "missing imported asset failure",
@@ -353,7 +353,7 @@ def check_platform_evidence_import_job(workflow: str) -> list[str]:
         errors.append("platform evidence import job must download accepted artifacts, not run with --dry-run")
     import_index = block.find("scripts/import_platform_evidence_artifacts.py")
     review_bundle_index = block.find("scripts/check_platform_review_bundle_artifacts.py")
-    upload_index = block.find("actions/upload-artifact@v7")
+    upload_index = block.find("actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a")
     if import_index < 0 or upload_index < 0 or import_index > upload_index:
         errors.append("platform evidence import must run before imported artifact upload")
     if review_bundle_index < 0 or upload_index < 0 or review_bundle_index > upload_index:
@@ -1332,7 +1332,7 @@ def workflow_job_block(workflow: str, job: str) -> str:
 
 
 def workflow_step_block(job_block: str, marker: str) -> str:
-    pattern = rf"(?ms)^      - {re.escape(marker)}\n(.*?)(?=^      - |\Z)"
+    pattern = rf"(?ms)^      - {re.escape(marker)}[^\n]*\n(.*?)(?=^      - |\Z)"
     match = re.search(pattern, job_block)
     return match.group(0) if match else ""
 

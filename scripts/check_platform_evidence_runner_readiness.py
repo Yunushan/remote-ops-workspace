@@ -4,7 +4,9 @@ import argparse
 import json
 import os
 import re
+import shutil
 import ssl
+import subprocess
 import sys
 from collections.abc import Callable, Sequence
 from typing import Any
@@ -36,7 +38,7 @@ def main(argv: list[str] | None = None) -> int:
         repository=args.repository,
         targets=targets,
         require_idle=args.require_idle,
-        fetcher=GitHubRunnerApiFetcher(repository=args.repository, timeout=args.timeout),
+        fetcher=runner_api_fetcher(repository=args.repository, timeout=args.timeout),
     )
     if args.json:
         print(json.dumps({**report, "errors": errors}, indent=2, sort_keys=True))
@@ -84,6 +86,22 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     if args.timeout <= 0:
         parser.error("--timeout must be greater than zero")
     return args
+
+
+def runner_api_fetcher(*, repository: str, timeout: float) -> ApiFetcher:
+    """Prefer an explicit CI token, then the authenticated GitHub CLI locally.
+
+    GitHub Actions exposes ``GITHUB_TOKEN`` to workflow steps, while a developer
+    authenticated with ``gh auth login`` normally has no token environment
+    variable.  The CLI fallback keeps the pre-dispatch audit usable on that
+    workstation without reading or printing its keyring token.
+    """
+
+    if os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN"):
+        return GitHubRunnerApiFetcher(repository=repository, timeout=timeout)
+    if shutil.which("gh"):
+        return GitHubCliRunnerApiFetcher(repository=repository, timeout=timeout)
+    return GitHubRunnerApiFetcher(repository=repository, timeout=timeout)
 
 
 def selected_targets(raw_targets: Sequence[str] | None, *, require_goal_targets: bool) -> tuple[str, ...]:
@@ -239,6 +257,47 @@ class GitHubRunnerApiFetcher:
         request = Request(url, headers=github_api_headers())
         with urlopen(request, timeout=self.timeout, context=self.ssl_context) as response:
             payload = json.loads(response.read().decode("utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError(f"GitHub API response must be an object: {endpoint}")
+        return payload
+
+
+class GitHubCliRunnerApiFetcher:
+    """Read the runner inventory through an already-authenticated ``gh`` CLI."""
+
+    def __init__(self, *, repository: str, timeout: float) -> None:
+        self.repository = repository
+        self.timeout = timeout
+
+    def __call__(self, endpoint: str) -> dict[str, Any]:
+        command = [
+            "gh",
+            "api",
+            "--method",
+            "GET",
+            f"repos/{self.repository}/{endpoint}",
+        ]
+        try:
+            completed = subprocess.run(
+                command,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=self.timeout,
+            )
+        except OSError as exc:
+            raise RuntimeError("unable to execute authenticated GitHub CLI") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError("authenticated GitHub CLI timed out") from exc
+        if completed.returncode:
+            raise RuntimeError(
+                "authenticated GitHub CLI could not read repository runner inventory; "
+                "run 'gh auth login' with repository administration access or set GH_TOKEN"
+            )
+        try:
+            payload = json.loads(completed.stdout)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"GitHub CLI response must be JSON: {endpoint}") from exc
         if not isinstance(payload, dict):
             raise ValueError(f"GitHub API response must be an object: {endpoint}")
         return payload

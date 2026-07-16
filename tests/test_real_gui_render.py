@@ -161,6 +161,14 @@ def test_real_gui_render_uses_native_windows_backend_by_default() -> None:
     assert checker.default_qt_scale_factor("linux") is None
 
 
+def test_real_gui_render_normalizes_high_dpi_capture_dimensions() -> None:
+    checker = _load_checker()
+
+    assert checker.logical_capture_size(1775, 1025, 1.25) == (1420, 820)
+    assert checker.logical_capture_size(1420, 820, 1.0) == (1420, 820)
+    assert checker.logical_capture_size(1420, 820, 0.0) == (1420, 820)
+
+
 def test_real_gui_render_capture_binds_font_evidence_and_platform_mode() -> None:
     checker = _load_checker()
     evidence = checker.FontRenderEvidence(

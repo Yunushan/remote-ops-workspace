@@ -1161,6 +1161,34 @@ def default_qt_scale_factor(platform: str | None = None) -> str | None:
     return "1" if resolved.startswith("win") else None
 
 
+def logical_capture_size(width: int, height: int, device_pixel_ratio: float) -> tuple[int, int]:
+    """Return logical screenshot dimensions for a Qt high-DPI pixmap."""
+
+    if device_pixel_ratio <= 0:
+        return width, height
+    return round(width / device_pixel_ratio), round(height / device_pixel_ratio)
+
+
+def normalize_capture_pixmap(pixmap: Any) -> Any:
+    """Downsample high-DPI grabs so metrics and artifacts use logical window pixels."""
+
+    device_pixel_ratio = float(pixmap.devicePixelRatio())
+    width, height = logical_capture_size(pixmap.width(), pixmap.height(), device_pixel_ratio)
+    if (width, height) == (pixmap.width(), pixmap.height()):
+        return pixmap
+
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtGui import QPixmap
+
+    image = pixmap.toImage().scaled(
+        width,
+        height,
+        Qt.AspectRatioMode.IgnoreAspectRatio,
+        Qt.TransformationMode.SmoothTransformation,
+    )
+    return QPixmap.fromImage(image)
+
+
 def _capture_live_gui(
     preset_ids: list[str],
     *,
@@ -1264,7 +1292,7 @@ def _capture_live_gui(
                     f"must equal requested size {REQUESTED_SIZE}"
                 )
 
-            pixmap = window.grab()
+            pixmap = normalize_capture_pixmap(window.grab())
             metrics = metrics_from_qimage(pixmap.toImage())
             errors.extend(validate_metrics(preset.id, metrics))
             contract_evidence = collect_live_contract_evidence(window, preset.id)

@@ -45,10 +45,13 @@ the Python build tooling from `requirements-release.txt` and disables isolated
 build-backend resolution. Review and pin any new action, container base image,
 or image-build dependency before adding it to production automation.
 
-The release jobs fail before upload if the required material is absent. Check
-the Authenticode signatures, macOS Gatekeeper assessment, release checksums,
-and the generated manifests before promoting a release. Checksums prove file
-integrity only; they are not a substitute for platform signing.
+When protected signing material is unavailable, the release workflow records a
+notice and skips the Windows/macOS native jobs and GitHub Release publication;
+it never publishes unsigned native assets. Source and Linux workflow artifacts
+may still finish for inspection. Check the Authenticode signatures, macOS
+Gatekeeper assessment, release checksums, and the generated manifests before
+promoting a release. Checksums prove file integrity only; they are not a
+substitute for platform signing.
 
 ## Updates and Dependencies
 

@@ -30,6 +30,11 @@ env:
 jobs:
   release-preflight:
     runs-on: ubuntu-latest
+    environment: release
+    outputs:
+      windows_release_signing_ready: ${{ steps.signing-readiness.outputs.windows_ready }}
+      macos_release_signing_ready: ${{ steps.signing-readiness.outputs.macos_ready }}
+      signed_native_publish_ready: ${{ steps.signing-readiness.outputs.signed_native_ready }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
@@ -57,6 +62,45 @@ jobs:
         run: python scripts/verify.py --quick --no-cli-smoke --release-tag "$RELEASE_TAG"
       - name: Report protected platform readiness requirements
         run: python scripts/check_protected_platform_goal.py --release-tag "$RELEASE_TAG" --show-requirements
+      - name: Detect release signing readiness
+        id: signing-readiness
+        shell: bash
+        env:
+          ROW_WINDOWS_CERTIFICATE_BASE64: ${{ secrets.ROW_WINDOWS_CERTIFICATE_BASE64 }}
+          ROW_WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.ROW_WINDOWS_CERTIFICATE_PASSWORD }}
+          ROW_WINDOWS_TIMESTAMP_URL: ${{ secrets.ROW_WINDOWS_TIMESTAMP_URL }}
+          ROW_MACOS_CERTIFICATE_BASE64: ${{ secrets.ROW_MACOS_CERTIFICATE_BASE64 }}
+          ROW_MACOS_CERTIFICATE_PASSWORD: ${{ secrets.ROW_MACOS_CERTIFICATE_PASSWORD }}
+          ROW_MACOS_SIGN_IDENTITY: ${{ secrets.ROW_MACOS_SIGN_IDENTITY }}
+          ROW_MACOS_INSTALLER_SIGN_IDENTITY: ${{ secrets.ROW_MACOS_INSTALLER_SIGN_IDENTITY }}
+          ROW_MACOS_NOTARY_KEY_BASE64: ${{ secrets.ROW_MACOS_NOTARY_KEY_BASE64 }}
+          ROW_MACOS_NOTARY_KEY_ID: ${{ secrets.ROW_MACOS_NOTARY_KEY_ID }}
+          ROW_MACOS_NOTARY_ISSUER: ${{ secrets.ROW_MACOS_NOTARY_ISSUER }}
+        run: |
+          windows_ready=true
+          for name in ROW_WINDOWS_CERTIFICATE_BASE64 ROW_WINDOWS_CERTIFICATE_PASSWORD ROW_WINDOWS_TIMESTAMP_URL; do
+            if [[ -z "${!name}" ]]; then
+              windows_ready=false
+            fi
+          done
+          macos_ready=true
+          for name in ROW_MACOS_CERTIFICATE_BASE64 ROW_MACOS_CERTIFICATE_PASSWORD ROW_MACOS_SIGN_IDENTITY ROW_MACOS_INSTALLER_SIGN_IDENTITY ROW_MACOS_NOTARY_KEY_BASE64 ROW_MACOS_NOTARY_KEY_ID ROW_MACOS_NOTARY_ISSUER; do
+            if [[ -z "${!name}" ]]; then
+              macos_ready=false
+            fi
+          done
+          signed_native_ready=false
+          if [[ "$windows_ready" == true && "$macos_ready" == true ]]; then
+            signed_native_ready=true
+          fi
+          {
+            echo "windows_ready=$windows_ready"
+            echo "macos_ready=$macos_ready"
+            echo "signed_native_ready=$signed_native_ready"
+          } >> "$GITHUB_OUTPUT"
+          if [[ "$signed_native_ready" != true ]]; then
+            echo "::notice::Protected signing material is unavailable; signed Windows/macOS jobs and GitHub Release publishing will be skipped."
+          fi
       - name: Require clean release checkout
         run: python scripts/check_repository_cleanup.py --require-clean
 
@@ -84,6 +128,7 @@ jobs:
 
   windows-native:
     needs: release-preflight
+    if: ${{ needs.release-preflight.outputs.windows_release_signing_ready == 'true' }}
     environment: release
     strategy:
       fail-fast: false
@@ -196,6 +241,7 @@ jobs:
 
   macos-native:
     needs: release-preflight
+    if: ${{ needs.release-preflight.outputs.macos_release_signing_ready == 'true' }}
     environment: release
     strategy:
       fail-fast: false
@@ -352,6 +398,7 @@ jobs:
 
   publish:
     runs-on: ubuntu-latest
+    if: ${{ needs.release-preflight.outputs.signed_native_publish_ready == 'true' }}
     permissions:
       contents: write
       actions: read

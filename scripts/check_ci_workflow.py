@@ -43,9 +43,15 @@ def check_ci_workflow(workflow: str | None = None) -> list[str]:
 
 def check_top_level_policy(workflow: str) -> list[str]:
     errors: list[str] = []
-    for trigger in ("push:", "pull_request:"):
-        if trigger not in workflow:
-            errors.append(f"ci workflow must run on {trigger.rstrip(':')}")
+    required_trigger_snippets = {
+        "push:\n    branches: [main]": "ci workflow must run on pushes to main",
+        "pull_request:\n    branches: [main]": "ci workflow must run on pull requests targeting main",
+    }
+    for snippet, error in required_trigger_snippets.items():
+        if snippet not in workflow:
+            errors.append(error)
+    if "concurrency:\n  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}\n  cancel-in-progress: true" not in workflow:
+        errors.append("ci workflow must cancel superseded runs for the same pull request or ref")
     if "permissions:\n  contents: read" not in workflow:
         errors.append("ci workflow must default to read-only contents permission")
     if 'FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"' not in workflow:

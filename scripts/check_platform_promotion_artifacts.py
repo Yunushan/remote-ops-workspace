@@ -99,7 +99,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--tag",
-        help="release tag to validate, for example v1.0.6. Defaults to pyproject.toml",
+        help="release tag to validate, for example v1.0.7. Defaults to pyproject.toml",
     )
     parser.add_argument(
         "--strict",

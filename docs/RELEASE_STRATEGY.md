@@ -519,8 +519,10 @@ Implementation:
   `row-gui.exe` presence on GUI-capable Windows architectures.
 - Pins the Windows installer toolchain in CI: Inno Setup `6.3.3` and WiX
   `5.0.2`.
-- Publishes unsigned CI artifacts. Authenticode signing can be layered in when
-  release signing credentials are available.
+- CI candidate artifacts can be unsigned for inspection. Production tags
+  require Authenticode signing credentials and fail before publication when
+  they are unavailable; unsigned Windows installers are never published as a
+  GitHub Release.
 - Treats Windows XP, Vista, Windows 7 and Windows 8.0 as legacy remote targets,
   not as first-class modern native runtime targets. Windows XP x86/x64 remote
   endpoints use isolated per-profile legacy opt-ins.
@@ -543,8 +545,9 @@ Implementation:
 - Builds a PKG for managed installs.
 - Runs `scripts/smoke_macos_native.sh` to smoke install, verify, upgrade and
   uninstall the `.dmg` and `.pkg` artifacts before upload.
-- Uses ad-hoc signing in CI. Developer ID signing and Apple notarization should
-  be added before broad public macOS distribution.
+- CI candidate artifacts use ad-hoc signing only. Production tags require
+  Developer ID signing and Apple notarization; unsigned or unstapled macOS
+  installers are never published as a GitHub Release.
 
 ## Phase 4: Linux native packages
 

@@ -64,6 +64,11 @@ def build_steps(
             env=_source_env(),
         ),
         VerifyStep(
+            "container base-image pins",
+            [python, "scripts/check_container_base_images.py"],
+            env=_source_env(),
+        ),
+        VerifyStep(
             "release identity and artifact truth",
             [python, "scripts/check_release_truth.py"],
             env=_source_env(),

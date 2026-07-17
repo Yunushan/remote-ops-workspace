@@ -16,6 +16,7 @@ def test_verify_steps_include_full_checks_and_cli_smoke(tmp_path: Path) -> None:
     assert "roadmap truth" in names
     assert "CI workflow policy" in names
     assert "GitHub Action supply-chain pins" in names
+    assert "container base-image pins" in names
     assert "release identity and artifact truth" in names
     assert "release toolchain reproducibility" in names
     assert "platform support truth" in names
@@ -72,6 +73,7 @@ def test_verify_quick_mode_skips_pytest_but_keeps_cli_smoke(tmp_path: Path) -> N
     assert "roadmap truth" in names
     assert "CI workflow policy" in names
     assert "GitHub Action supply-chain pins" in names
+    assert "container base-image pins" in names
     assert "release identity and artifact truth" in names
     assert "release toolchain reproducibility" in names
     assert "platform support truth" in names

@@ -54,7 +54,7 @@ def check_top_level_policy(workflow: str) -> list[str]:
         errors.append("ci workflow must not opt JavaScript actions into an insecure Node.js runtime")
     if "python -m pip install --upgrade pip" in workflow:
         errors.append("ci workflow must not upgrade pip outside the project dependency contract")
-    if "actions/checkout@v6" not in workflow:
+    if "actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6" not in workflow:
         errors.append("ci workflow must checkout repository sources")
     if checkout_without_persist_false(workflow):
         errors.append("every ci checkout step must set persist-credentials: false")
@@ -156,7 +156,7 @@ def check_gui_render_job(workflow: str) -> list[str]:
         "path: artifacts/gui-real/*": "dedicated live GUI screenshot artifact path",
         "name: gui-interactions-linux-offscreen": "Linux GUI interaction artifact name",
         "path: artifacts/gui-interactions/*": "Linux GUI interaction artifact path",
-        "actions/upload-artifact@v7": "live GUI screenshot artifact upload",
+        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7": "live GUI screenshot artifact upload",
         "if-no-files-found: error": "artifact upload failure on missing live screenshots",
     }
     for snippet, label in required_snippets.items():
@@ -198,7 +198,7 @@ def check_gui_interactions_windows_job(workflow: str) -> list[str]:
         "python scripts/check_gui_interactions.py --require-pyqt6 --out-dir artifacts/gui-interactions-windows": (
             "native Windows GUI interaction gate"
         ),
-        "actions/upload-artifact@v7": "native Windows GUI interaction artifact upload",
+        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7": "native Windows GUI interaction artifact upload",
         "name: gui-real-render-windows": "native Windows GUI render artifact name",
         "path: artifacts/gui-real-windows/*": "native Windows GUI render artifact path",
         "name: gui-interactions-windows": "native Windows GUI interaction artifact name",
@@ -283,7 +283,7 @@ def check_android_emulator_web_job(workflow: str) -> list[str]:
         "scripts/check_mobile_emulator_smoke.py --platform android": "Android emulator smoke helper",
         "--android-api ${{ matrix.api-level }}": "Android API assertion",
         "http://10.0.2.2:8765/index.html": "Android emulator host loopback URL",
-        "actions/upload-artifact@v7": "Android smoke screenshot upload",
+        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7": "Android smoke screenshot upload",
         "if-no-files-found: error": "artifact upload failure on missing Android screenshots",
     }
     for snippet, label in required_snippets.items():
@@ -321,7 +321,7 @@ def check_ios_simulator_web_job(workflow: str) -> list[str]:
         "scripts/check_mobile_emulator_smoke.py --platform ios": "iOS simulator smoke helper",
         "--ios-open-url-attempts 3": "iOS simulator openurl retry budget",
         '--url "$WEB_PWA_URL"': "iOS simulator host loopback URL",
-        "actions/upload-artifact@v7": "iOS smoke screenshot upload",
+        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7": "iOS smoke screenshot upload",
         "if-no-files-found: error": "artifact upload failure on missing iOS screenshots",
     }
     for snippet, label in required_snippets.items():
@@ -333,7 +333,7 @@ def check_ios_simulator_web_job(workflow: str) -> list[str]:
 def checkout_without_persist_false(workflow: str) -> bool:
     lines = workflow.splitlines()
     for index, line in enumerate(lines):
-        if not re.match(r"^\s+- uses: actions/checkout@v6\s*$", line):
+        if not re.match(r"^\s+- uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6\s*$", line):
             continue
         indent = len(line) - len(line.lstrip())
         block: list[str] = []

@@ -40,10 +40,10 @@ def check_windows_xp_legacy_candidate_workflow(workflow: str | None = None) -> l
     required_snippets = {
         "runs-on: windows-2025-vs2026": "modern Windows builder",
         "arch: [x86, x64]": "x86/x64 matrix",
-        "uses: actions/checkout@v6": "checkout",
+        "uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6": "checkout",
         "persist-credentials: false": "checkout credential isolation",
         "clean: true": "clean checkout",
-        "uses: actions/setup-python@v6": "Python setup",
+        "uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6": "Python setup",
         'python-version: "3.12"': "Python pin",
         "./scripts/make_windows_xp_legacy.ps1 -Arch ${{ matrix.arch }}": "legacy builder",
         "name: windows-xp-legacy-candidate-${{ matrix.arch }}": "scoped artifact name",

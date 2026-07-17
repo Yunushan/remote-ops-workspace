@@ -49,11 +49,11 @@ jobs:
     runs-on: [self-hosted, xp-evidence]
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
           clean: true
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
       - name: Record XP evidence collector boundary
@@ -83,7 +83,7 @@ jobs:
         run: python scripts/finalize_platform_verified_evidence_record.py --candidate-record "xp-evidence-output/${{ inputs.target }}/${{ inputs.release_tag }}/platform-verified-evidence-${{ inputs.target }}.json" --bundle-manifest "xp-evidence-output/${{ inputs.target }}/${{ inputs.release_tag }}/xp-native-evidence-bundle-${{ inputs.target }}-${{ inputs.release_tag }}.json" --bundle-archive "xp-evidence-output/${{ inputs.target }}/${{ inputs.release_tag }}/xp-native-evidence-bundle-${{ inputs.target }}-${{ inputs.release_tag }}.zip" --bundle-sha256s "xp-evidence-output/${{ inputs.target }}/${{ inputs.release_tag }}/xp-native-evidence-bundle-${{ inputs.target }}-${{ inputs.release_tag }}-SHA256SUMS.txt" --out "xp-evidence-output/${{ inputs.target }}/${{ inputs.release_tag }}/platform-verified-evidence-${{ inputs.target }}-final.json"
       - name: Stage scoped XP evidence upload
         run: python scripts/stage_xp_native_evidence_upload.py --target "${{ inputs.target }}" --release-tag "${{ inputs.release_tag }}" --assets-dir "${{ inputs.assets_dir }}" --evidence-output-dir "xp-evidence-output/${{ inputs.target }}/${{ inputs.release_tag }}" --out-dir "platform-evidence-upload/${{ inputs.target }}/${{ inputs.release_tag }}" --force
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: xp-native-evidence-${{ inputs.target }}-${{ inputs.release_tag }}
           path: platform-evidence-upload/${{ inputs.target }}/${{ inputs.release_tag }}/*

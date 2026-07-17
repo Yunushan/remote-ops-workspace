@@ -49,12 +49,12 @@ def test_native_workflow_rejects_checkout_credentials_outside_checkout_step() ->
     block = checker.workflow_job_block(workflow, "windows-native")
     assert block
     mutated = block.replace("          persist-credentials: false\n", "", 1).replace(
-        "      - uses: actions/setup-python@v6\n",
+        "      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6\n",
         "      - name: Misleading checkout credential setting\n"
         "        run: echo persist\n"
         "        env:\n"
         "          persist-credentials: false\n"
-        "      - uses: actions/setup-python@v6\n",
+        "      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6\n",
         1,
     )
     workflow = workflow.replace(block, mutated, 1)
@@ -70,12 +70,12 @@ def test_native_workflow_rejects_clean_setting_outside_checkout_step() -> None:
     block = checker.workflow_job_block(workflow, "linux-native")
     assert block
     mutated = block.replace("          clean: true\n", "", 1).replace(
-        "      - uses: actions/setup-python@v6\n",
+        "      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6\n",
         "      - name: Misleading clean setting\n"
         "        run: echo clean\n"
         "        env:\n"
         "          clean: true\n"
-        "      - uses: actions/setup-python@v6\n",
+        "      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6\n",
         1,
     )
     workflow = workflow.replace(block, mutated, 1)

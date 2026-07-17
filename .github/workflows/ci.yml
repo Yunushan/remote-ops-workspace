@@ -19,10 +19,10 @@ jobs:
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
       PIP_NO_CACHE_DIR: "1"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
       - name: Install policy verification dependencies
@@ -69,10 +69,10 @@ jobs:
           - os: macos-26
             python-version: "3.14"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: ${{ matrix.python-version }}
       - name: Purge pip cache
@@ -91,10 +91,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
       - name: Install mobile web verification dependencies
@@ -111,10 +111,10 @@ jobs:
       matrix:
         api-level: [31, 32, 33, 34, 35, 36]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
       - name: Install mobile verification dependencies
@@ -228,7 +228,7 @@ jobs:
           adb shell input keyevent 82 || true
       - name: Android Web/PWA emulator smoke
         run: python scripts/check_mobile_emulator_smoke.py --platform android --android-api ${{ matrix.api-level }} --url http://10.0.2.2:8765/index.html --out-dir artifacts/mobile
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: android-web-pwa-api-${{ matrix.api-level }}
           path: artifacts/mobile
@@ -239,10 +239,10 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
       - name: Install mobile verification dependencies
@@ -291,7 +291,7 @@ jobs:
           PY
       - name: iOS Web/PWA simulator smoke
         run: python scripts/check_mobile_emulator_smoke.py --platform ios --url "$WEB_PWA_URL" --ios-open-url-attempts 3 --out-dir artifacts/mobile
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: ios-web-pwa-simulator
           path: artifacts/mobile
@@ -306,10 +306,10 @@ jobs:
       PIP_NO_CACHE_DIR: "1"
       QT_QPA_PLATFORM: "offscreen"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
       - name: Install Linux Qt runtime libraries
@@ -344,12 +344,12 @@ jobs:
       - name: Exercise GUI controls and responsive layouts
         timeout-minutes: 5
         run: python scripts/check_gui_interactions.py --require-pyqt6 --out-dir artifacts/gui-interactions
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: gui-real-render
           path: artifacts/gui-real/*
           if-no-files-found: error
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: gui-interactions-linux-offscreen
           path: artifacts/gui-interactions/*
@@ -364,10 +364,10 @@ jobs:
       PIP_NO_CACHE_DIR: "1"
       QT_QPA_PLATFORM: "windows"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
       - name: Install desktop verification dependencies
@@ -381,12 +381,12 @@ jobs:
       - name: Exercise native Windows controls and responsive layouts
         timeout-minutes: 8
         run: python scripts/check_gui_interactions.py --require-pyqt6 --out-dir artifacts/gui-interactions-windows
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: gui-real-render-windows
           path: artifacts/gui-real-windows/*
           if-no-files-found: error
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: gui-interactions-windows
           path: artifacts/gui-interactions-windows/*

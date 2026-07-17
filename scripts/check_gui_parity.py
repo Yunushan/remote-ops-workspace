@@ -607,7 +607,7 @@ def check_live_render_proof_contract(
             "python scripts/check_real_gui_render_artifact.py --artifact-dir artifacts/gui-real": (
                 "live GUI artifact validator command"
             ),
-            "actions/upload-artifact@v7": "live GUI screenshot artifact upload",
+            "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7": "live GUI screenshot artifact upload",
             "name: gui-real-render": "stable live GUI artifact name",
             "if-no-files-found: error": "artifact failure on missing screenshots",
         }

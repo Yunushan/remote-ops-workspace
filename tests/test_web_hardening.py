@@ -260,7 +260,8 @@ def test_web_container_defaults_are_hardened() -> None:
     assert "--allow-public-bind" in dockerfile
     assert "PYTHONDONTWRITEBYTECODE=1" in dockerfile
     assert "HEALTHCHECK" in dockerfile
-    assert "pip install --no-cache-dir --no-compile ." in dockerfile
+    assert "--constraint requirements-release.txt pip setuptools wheel" in dockerfile
+    assert "pip install --no-cache-dir --no-compile --no-build-isolation ." in dockerfile
     assert "127.0.0.1:8765:8765" in compose
     assert "restart: unless-stopped" in compose
     assert "pids_limit: 128" in compose

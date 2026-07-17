@@ -43,11 +43,11 @@ def test_release_matrix_separates_script_supported_linux_targets() -> None:
     script_targets = set(script_rows)
     assert script_targets == {"linux-i386", "linux-armhf"}
     assert (
-        "remote-ops-workspace-v1.0.6-linux-i686-native-SHA256SUMS.txt"
+        "remote-ops-workspace-v1.0.7-linux-i686-native-SHA256SUMS.txt"
         in script_rows["linux-i386"]["asset_patterns"]
     )
     assert (
-        "remote-ops-workspace-v1.0.6-linux-armhf-native-SHA256SUMS.txt"
+        "remote-ops-workspace-v1.0.7-linux-armhf-native-SHA256SUMS.txt"
         in script_rows["linux-armhf"]["asset_patterns"]
     )
 
@@ -93,7 +93,7 @@ def test_release_matrix_requires_script_supported_checksum_asset_pattern() -> No
     matrix = load_release_matrix()
     platform_targets = load_platform_targets()
     matrix["script_supported_native"][0]["asset_patterns"].remove(
-        "remote-ops-workspace-v1.0.6-linux-i686-native-SHA256SUMS.txt"
+        "remote-ops-workspace-v1.0.7-linux-i686-native-SHA256SUMS.txt"
     )
 
     errors = checker.check_platform_target_alignment(matrix, platform_targets)
@@ -101,7 +101,7 @@ def test_release_matrix_requires_script_supported_checksum_asset_pattern() -> No
     assert "linux-i386 asset_patterns must include native SHA256SUMS sidecar" in errors
     assert any(
         "linux-i386 asset_patterns must match platform_targets assets" in error
-        and "remote-ops-workspace-v1.0.6-linux-i686-native-SHA256SUMS.txt" in error
+        and "remote-ops-workspace-v1.0.7-linux-i686-native-SHA256SUMS.txt" in error
         for error in errors
     )
 
@@ -119,11 +119,11 @@ def test_release_matrix_rejects_stale_native_asset_pattern_versions() -> None:
     errors = checker.check_release_asset_pattern_versions(matrix)
 
     assert (
-        "linux-native asset pattern must use current project version v1.0.6: "
+        "linux-native asset pattern must use current project version v1.0.7: "
         "remote-ops-workspace-v9.9.9-linux-<amd64|arm64>.deb"
     ) in errors
     assert (
-        "linux-i386 asset pattern must use current project version v1.0.6: "
+        "linux-i386 asset pattern must use current project version v1.0.7: "
         "remote-ops-workspace-v9.9.9-linux-i386.deb"
     ) in errors
 
@@ -148,7 +148,7 @@ def test_release_matrix_docs_require_script_supported_asset_patterns(monkeypatch
 
     assert (
         "release docs missing matrix asset pattern: "
-        "remote-ops-workspace-v1.0.6-linux-i686-native-SHA256SUMS.txt"
+        "remote-ops-workspace-v1.0.7-linux-i686-native-SHA256SUMS.txt"
     ) in errors
 
 

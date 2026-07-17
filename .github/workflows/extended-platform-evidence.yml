@@ -11,7 +11,7 @@ on:
           - linux-i386
           - linux-armhf
       release_tag:
-        description: "Release tag to validate, for example v1.0.6"
+        description: "Release tag to validate, for example v1.0.7"
         required: true
         type: string
       release_asset_base_url:

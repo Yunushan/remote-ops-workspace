@@ -5,7 +5,7 @@
 ### Operator-first remote terminal and connection workspace for SSH, RDP, VNC, SFTP, Mosh, Telnet, X11, SPICE, X2Go, ICA, HTTP/HTTPS, serial consoles, raw sockets, split panes, vaults, snippets, sync, CLI, GUI and Web/PWA.
 
 ![build](https://img.shields.io/badge/build-source--available-brightgreen)
-![release](https://img.shields.io/badge/release-v1.0.6-blue)
+![release](https://img.shields.io/badge/release-v1.0.7-blue)
 ![license](https://img.shields.io/badge/license-0BSD-blue)
 ![runtime](https://img.shields.io/badge/runtime-Python%203.10--3.14-orange)
 ![interfaces](https://img.shields.io/badge/interfaces-CLI%20%7C%20GUI%20%7C%20Web-purple)
@@ -531,35 +531,35 @@ python scripts/make_release.py
 ```
 
 The GitHub release workflow is manually promoted from the trusted default branch
-with an immutable tag input such as `v1.0.6`; it builds that tag and uploads
+with an immutable tag input such as `v1.0.7`; it builds that tag and uploads
 these assets only after accepted platform evidence is present:
 
 | Target | Asset |
 |---|---|
-| Python wheel | `remote_ops_workspace-1.0.6-py3-none-any.whl` |
-| Python sdist | `remote_ops_workspace-1.0.6.tar.gz` |
-| Source | `remote-ops-workspace-v1.0.6-source.zip` |
-| Windows | `remote-ops-workspace-v1.0.6-windows.zip` |
-| Linux | `remote-ops-workspace-v1.0.6-linux.tar.gz` |
-| macOS | `remote-ops-workspace-v1.0.6-macos.tar.gz` |
-| BSD | `remote-ops-workspace-v1.0.6-bsd.tar.gz` |
-| Solaris/illumos | `remote-ops-workspace-v1.0.6-solaris.tar.gz` |
-| Android/Termux | `remote-ops-workspace-v1.0.6-android-termux.tar.gz` |
-| iOS/iPadOS Web/PWA | `remote-ops-workspace-v1.0.6-web-pwa.zip` |
-| Web/PWA | `remote-ops-workspace-v1.0.6-web-pwa.zip` |
-| Windows native | `remote-ops-workspace-v1.0.6-windows-<x86\|x64\|arm64>-setup.exe` |
-| Windows native | `remote-ops-workspace-v1.0.6-windows-<x86\|x64\|arm64>.msi` |
-| Windows native | `remote-ops-workspace-v1.0.6-windows-<x86\|x64\|arm64>-native.zip` |
-| macOS native | `remote-ops-workspace-v1.0.6-macos-<x64\|arm64>.dmg` |
-| macOS native | `remote-ops-workspace-v1.0.6-macos-<x64\|arm64>.pkg` |
-| macOS native | `remote-ops-workspace-v1.0.6-macos-<x64\|arm64>-native-manifest.json` |
-| Linux native | `remote-ops-workspace-v1.0.6-linux-<amd64\|arm64>.deb` |
-| Linux native | `remote-ops-workspace-v1.0.6-linux-<x86_64\|aarch64>.rpm` |
-| Linux native | `remote-ops-workspace-v1.0.6-linux-<x86_64\|aarch64>.AppImage` |
-| Linux native | `remote-ops-workspace-v1.0.6-linux-<x86_64\|aarch64>-native.tar.gz` |
-| Linux native | `remote-ops-workspace-v1.0.6-linux-<x86_64\|aarch64>-native-manifest.json` |
-| Manifests | `remote-ops-workspace-v1.0.6-*-manifest.json` |
-| Checksums | `remote-ops-workspace-v1.0.6-SHA256SUMS.txt` |
+| Python wheel | `remote_ops_workspace-1.0.7-py3-none-any.whl` |
+| Python sdist | `remote_ops_workspace-1.0.7.tar.gz` |
+| Source | `remote-ops-workspace-v1.0.7-source.zip` |
+| Windows | `remote-ops-workspace-v1.0.7-windows.zip` |
+| Linux | `remote-ops-workspace-v1.0.7-linux.tar.gz` |
+| macOS | `remote-ops-workspace-v1.0.7-macos.tar.gz` |
+| BSD | `remote-ops-workspace-v1.0.7-bsd.tar.gz` |
+| Solaris/illumos | `remote-ops-workspace-v1.0.7-solaris.tar.gz` |
+| Android/Termux | `remote-ops-workspace-v1.0.7-android-termux.tar.gz` |
+| iOS/iPadOS Web/PWA | `remote-ops-workspace-v1.0.7-web-pwa.zip` |
+| Web/PWA | `remote-ops-workspace-v1.0.7-web-pwa.zip` |
+| Windows native | `remote-ops-workspace-v1.0.7-windows-<x86\|x64\|arm64>-setup.exe` |
+| Windows native | `remote-ops-workspace-v1.0.7-windows-<x86\|x64\|arm64>.msi` |
+| Windows native | `remote-ops-workspace-v1.0.7-windows-<x86\|x64\|arm64>-native.zip` |
+| macOS native | `remote-ops-workspace-v1.0.7-macos-<x64\|arm64>.dmg` |
+| macOS native | `remote-ops-workspace-v1.0.7-macos-<x64\|arm64>.pkg` |
+| macOS native | `remote-ops-workspace-v1.0.7-macos-<x64\|arm64>-native-manifest.json` |
+| Linux native | `remote-ops-workspace-v1.0.7-linux-<amd64\|arm64>.deb` |
+| Linux native | `remote-ops-workspace-v1.0.7-linux-<x86_64\|aarch64>.rpm` |
+| Linux native | `remote-ops-workspace-v1.0.7-linux-<x86_64\|aarch64>.AppImage` |
+| Linux native | `remote-ops-workspace-v1.0.7-linux-<x86_64\|aarch64>-native.tar.gz` |
+| Linux native | `remote-ops-workspace-v1.0.7-linux-<x86_64\|aarch64>-native-manifest.json` |
+| Manifests | `remote-ops-workspace-v1.0.7-*-manifest.json` |
+| Checksums | `remote-ops-workspace-v1.0.7-SHA256SUMS.txt` |
 
 Native protocol rendering still depends on the external clients installed on the target system.
 Windows x64 and ARM64 native portable zips include a top-level

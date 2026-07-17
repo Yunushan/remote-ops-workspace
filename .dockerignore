@@ -2,6 +2,7 @@
 # protect Docker build contexts, so private ROW data must never be sent to Docker.
 *
 !pyproject.toml
+!requirements-release.txt
 !README.md
 !src/
 !src/**

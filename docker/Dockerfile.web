@@ -4,7 +4,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     ROW_HOME=/data
 WORKDIR /app
 COPY . /app
-RUN pip install --no-cache-dir --no-compile .
+RUN pip install --no-cache-dir --no-compile --constraint requirements-release.txt pip setuptools wheel \
+    && pip install --no-cache-dir --no-compile --no-build-isolation .
 RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin row \
     && mkdir -p /data \
     && chown -R row:row /app /data

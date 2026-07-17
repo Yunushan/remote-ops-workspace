@@ -22,6 +22,26 @@ def test_container_base_images_reject_mutable_tags() -> None:
     assert any("base image must be digest-pinned" in error for error in errors)
 
 
+def test_container_base_images_require_pinned_build_toolchain() -> None:
+    checker = _load_checker()
+    dockerfile = Path("docker/Dockerfile.web").read_text(encoding="utf-8")
+    unpinned = dockerfile.replace(checker.PINNED_BUILD_TOOLCHAIN, "pip install pip setuptools wheel")
+
+    errors = checker.check_container_base_images(unpinned)
+
+    assert any("install its build tooling from requirements-release.txt" in error for error in errors)
+
+
+def test_container_base_images_require_no_build_isolation() -> None:
+    checker = _load_checker()
+    dockerfile = Path("docker/Dockerfile.web").read_text(encoding="utf-8")
+    isolated = dockerfile.replace("--no-build-isolation ", "")
+
+    errors = checker.check_container_base_images(isolated)
+
+    assert any("install the application with --no-build-isolation" in error for error in errors)
+
+
 def _load_checker():
     path = Path("scripts/check_container_base_images.py")
     spec = importlib.util.spec_from_file_location("container_base_images", path)

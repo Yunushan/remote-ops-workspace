@@ -40,8 +40,10 @@ these environment secrets before creating a release:
 
 Every GitHub Action used by release, CI, and protected-evidence workflows is
 commit-pinned and checked locally. The Web/PWA Python base image is also
-pinned to an immutable multi-architecture OCI digest. Review and pin any new
-action or container base image before adding it to production automation.
+pinned to an immutable multi-architecture OCI digest. Its Docker build pins
+the Python build tooling from `requirements-release.txt` and disables isolated
+build-backend resolution. Review and pin any new action, container base image,
+or image-build dependency before adding it to production automation.
 
 The release jobs fail before upload if the required material is absent. Check
 the Authenticode signatures, macOS Gatekeeper assessment, release checksums,

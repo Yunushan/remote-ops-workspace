@@ -4,7 +4,6 @@ import re
 import sys
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 WEB_DOCKERFILE = ROOT / "docker" / "Dockerfile.web"
 PYTHON_BASE_IMAGE = (

@@ -53,6 +53,11 @@ Dependabot tracks `pip`, GitHub Actions, and Docker updates weekly through
 normal protected-branch policy; automated update tooling does not replace
 release validation or platform signing.
 
+The modern and legacy-wheel release profiles use the same pinned `build`,
+`wheel`, and PyInstaller versions. Only cryptography is intentionally lower in
+the legacy profile, because its x86 Windows and Intel macOS wheel availability
+is independently constrained and guarded by the release-toolchain contract.
+
 `.github/workflows/codeql.yml` scans the Python application and
 JavaScript/TypeScript Web/PWA sources on main-branch changes, pull requests,
 and a weekly schedule. Its CodeQL revision is immutable-pinned and checked by

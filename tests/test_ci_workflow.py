@@ -72,6 +72,21 @@ def test_ci_workflow_requires_dependency_vulnerability_audit() -> None:
     assert any("dependency vulnerability audit" in error for error in errors)
 
 
+def test_ci_workflow_requires_qt_headless_runtime_dependency() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
+        "      - name: Install Qt headless runtime dependency\n"
+        "        run: |\n"
+        "          sudo apt-get update\n"
+        "          sudo apt-get install -y libegl1\n",
+        "",
+    )
+
+    errors = checker.check_ci_workflow(workflow)
+
+    assert any("Qt headless runtime dependency" in error for error in errors)
+
+
 def test_ci_workflow_test_matrix_runs_pytest_not_monolithic_verifier() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(

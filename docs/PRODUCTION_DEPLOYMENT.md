@@ -53,6 +53,13 @@ Dependabot tracks `pip`, GitHub Actions, and Docker updates weekly through
 normal protected-branch policy; automated update tooling does not replace
 release validation or platform signing.
 
+`.github/workflows/codeql.yml` scans the Python application and
+JavaScript/TypeScript Web/PWA sources on main-branch changes, pull requests,
+and a weekly schedule. Its CodeQL revision is immutable-pinned and checked by
+the normal workflow-pin verifier. Triage every resulting alert before release;
+CodeQL complements, but does not replace, dependency auditing or runtime
+security testing.
+
 When protected signing material is unavailable, the release workflow records a
 notice and skips the Windows/macOS native jobs and GitHub Release publication;
 it never publishes unsigned native assets. Source and Linux workflow artifacts

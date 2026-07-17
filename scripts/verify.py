@@ -64,6 +64,11 @@ def build_steps(
             env=_source_env(),
         ),
         VerifyStep(
+            "CodeQL security workflow",
+            [python, "scripts/check_code_security_workflow.py"],
+            env=_source_env(),
+        ),
+        VerifyStep(
             "container base-image pins",
             [python, "scripts/check_container_base_images.py"],
             env=_source_env(),

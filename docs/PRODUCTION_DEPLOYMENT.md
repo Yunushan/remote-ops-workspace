@@ -38,6 +38,10 @@ these environment secrets before creating a release:
 - `ROW_MACOS_NOTARY_KEY_BASE64`, `ROW_MACOS_NOTARY_KEY_ID`, and
   `ROW_MACOS_NOTARY_ISSUER` for Apple notarization and stapling.
 
+Every GitHub Action used by release, CI, and protected-evidence workflows is
+commit-pinned and checked locally. Review and pin any new action before adding
+it to a workflow.
+
 The release jobs fail before upload if the required material is absent. Check
 the Authenticode signatures, macOS Gatekeeper assessment, release checksums,
 and the generated manifests before promoting a release. Checksums prove file

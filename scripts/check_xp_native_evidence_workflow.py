@@ -115,10 +115,10 @@ def check_xp_job(workflow: str) -> list[str]:
     required_snippets = {
         "runs-on: [self-hosted, xp-evidence]": "XP evidence self-hosted runner labels",
         "timeout-minutes: 60": "bounded XP evidence job timeout",
-        "uses: actions/checkout@v6": "repository checkout",
+        "uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6": "repository checkout",
         "persist-credentials: false": "checkout credential isolation",
         "clean: true": "self-hosted checkout workspace cleanup",
-        "uses: actions/setup-python@v6": "Python setup",
+        "uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6": "Python setup",
         'python-version: "3.12"': "Python version pin",
         "XP evidence collector validates staged proof captured on real Windows XP hosts; run scripts/xp_smoke_runner.cmd after this workflow starts so smoke proof binds the printed source run metadata.": "XP host versus collector boundary",
         f"Path('{XP_EVIDENCE_OUTPUT_DIR}').mkdir(parents=True, exist_ok=True)": "target/release scoped XP evidence output directory creation",
@@ -154,7 +154,7 @@ def check_xp_job(workflow: str) -> list[str]:
         f'--bundle-sha256s "{XP_EVIDENCE_OUTPUT_DIR}/xp-native-evidence-bundle-{GHA_TARGET}-{GHA_RELEASE_TAG}-SHA256SUMS.txt"': "target/release scoped finalized evidence checksum sidecar binding",
         f'--out "{XP_EVIDENCE_OUTPUT_DIR}/platform-verified-evidence-{GHA_TARGET}-final.json"': "target/release scoped finalized evidence output",
         f'python scripts/stage_xp_native_evidence_upload.py --target "{GHA_TARGET}" --release-tag "{GHA_RELEASE_TAG}" --assets-dir "{GHA_ASSETS_DIR}" --evidence-output-dir "{XP_EVIDENCE_OUTPUT_DIR}" --out-dir "{XP_EVIDENCE_UPLOAD_DIR}" --force': "target/release scoped XP upload staging",
-        "actions/upload-artifact@v7": "evidence artifact upload",
+        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7": "evidence artifact upload",
         "name: xp-native-evidence-${{ inputs.target }}-${{ inputs.release_tag }}": "target/release scoped uploaded artifact",
         f"path: {XP_EVIDENCE_UPLOAD_DIR}/*": "target/release scoped staged upload path",
         "if-no-files-found: error": "missing evidence artifact failure",
@@ -182,7 +182,7 @@ def check_xp_job(workflow: str) -> list[str]:
                 ("review evidence bundle generation", "      - name: Package XP review evidence bundle"),
                 ("finalized evidence record generation", "      - name: Finalize XP accepted-evidence candidate"),
                 ("scoped XP upload staging", "      - name: Stage scoped XP evidence upload"),
-                ("evidence artifact upload", "      - uses: actions/upload-artifact@v7"),
+                ("evidence artifact upload", "      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7"),
             ),
             job="xp-native-evidence",
         )
@@ -288,9 +288,9 @@ def workflow_job_block(workflow: str, job: str) -> str:
 
 
 def check_checkout_step(block: str, *, job: str) -> list[str]:
-    checkout = workflow_step_block(block, "uses: actions/checkout@v6")
+    checkout = workflow_step_block(block, "uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6")
     if not checkout:
-        return [f"{job} missing repository checkout: uses: actions/checkout@v6"]
+        return [f"{job} missing repository checkout: uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6"]
     errors: list[str] = []
     if "persist-credentials: false" not in checkout:
         errors.append(f"{job} checkout step missing credential isolation: persist-credentials: false")

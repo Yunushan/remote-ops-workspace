@@ -165,7 +165,7 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
         f"runs-on: [self-hosted, linux, {runner}]": "matching self-hosted runner labels",
         "timeout-minutes: 90": "bounded native evidence job timeout",
         "RELEASE_TAG: ${{ inputs.release_tag }}": "release-tag environment binding for native build script",
-        "uses: actions/checkout@v6": "repository checkout",
+        "uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6": "repository checkout",
         "persist-credentials: false": "checkout credential isolation",
         "clean: true": "self-hosted checkout workspace cleanup",
         f"python3 scripts/check_extended_platform_dispatch_inputs.py \\\n            --target {target}": "dispatch input preflight",
@@ -214,7 +214,7 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
         f"--bundle-sha256s {assets_dir}/extended-linux-evidence-bundle-{target}-${{{{ inputs.release_tag }}}}-SHA256SUMS.txt": "finalized evidence checksum sidecar binding",
         f"--out {assets_dir}/platform-verified-evidence-{target}-final.json": "finalized evidence record output",
         stage_upload_snippet: "scoped Linux evidence upload staging",
-        "actions/upload-artifact@v7": "evidence artifact upload",
+        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7": "evidence artifact upload",
         f"name: {source_artifact_name}": "target/release-scoped evidence artifact name",
         f"path: {upload_dir}/*": "target/release scoped staged upload path",
         "if-no-files-found: error": "missing evidence artifact failure",
@@ -257,7 +257,7 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
                     f"      - name: Finalize {step_prefix} accepted-evidence candidate",
                 ),
                 ("scoped Linux evidence upload staging", f"      - name: Stage scoped {step_prefix} evidence upload"),
-                ("evidence artifact upload", "      - uses: actions/upload-artifact@v7"),
+                ("evidence artifact upload", "      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7"),
             ),
             job=job,
         )
@@ -423,9 +423,9 @@ def workflow_job_block(workflow: str, job: str) -> str:
 
 
 def check_checkout_step(block: str, *, job: str) -> list[str]:
-    checkout = workflow_step_block(block, "uses: actions/checkout@v6")
+    checkout = workflow_step_block(block, "uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6")
     if not checkout:
-        return [f"{job} missing repository checkout: uses: actions/checkout@v6"]
+        return [f"{job} missing repository checkout: uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6"]
     errors: list[str] = []
     if "persist-credentials: false" not in checkout:
         errors.append(f"{job} checkout step missing credential isolation: persist-credentials: false")

@@ -125,7 +125,7 @@ def check_workflow(workflow: str) -> list[str]:
         "ios-simulator-web:": "iOS simulator Web/PWA job",
         "runs-on: macos-26": "current macOS/Xcode simulator runner",
         "--platform ios": "iOS mobile smoke helper call",
-        "actions/upload-artifact@v7": "mobile screenshot artifact upload",
+        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7": "mobile screenshot artifact upload",
     }
     for snippet, label in snippets.items():
         if snippet not in workflow:

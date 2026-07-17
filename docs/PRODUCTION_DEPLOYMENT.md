@@ -58,6 +58,11 @@ The modern and legacy-wheel release profiles use the same pinned `build`,
 the legacy profile, because its x86 Windows and Intel macOS wheel availability
 is independently constrained and guarded by the release-toolchain contract.
 
+Tag-triggered releases fail before building any partial asset set unless both
+the Windows signing and macOS signing/notarization secret sets are available in
+the protected `release` environment. This prevents a successful-looking tag
+run that silently omits signed desktop installers or a GitHub Release.
+
 `.github/workflows/codeql.yml` scans the Python application and
 JavaScript/TypeScript Web/PWA sources on main-branch changes, pull requests,
 and a weekly schedule. Its CodeQL revision is immutable-pinned and checked by

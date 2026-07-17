@@ -99,7 +99,11 @@ jobs:
             echo "signed_native_ready=$signed_native_ready"
           } >> "$GITHUB_OUTPUT"
           if [[ "$signed_native_ready" != true ]]; then
-            echo "::notice::Protected signing material is unavailable; signed Windows/macOS jobs and GitHub Release publishing will be skipped."
+            if [[ "${{ github.event_name }}" == "push" ]]; then
+              echo "::error::Tag-triggered releases require protected Windows and macOS signing material; no partial release will be built or published." >&2
+              exit 1
+            fi
+            echo "::notice::Protected signing material is unavailable; signed Windows/macOS jobs and GitHub Release publishing will be skipped for this manual evidence workflow."
           fi
       - name: Require clean release checkout
         run: python scripts/check_repository_cleanup.py --require-clean

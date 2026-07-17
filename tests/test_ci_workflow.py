@@ -42,6 +42,21 @@ def test_ci_workflow_requires_policy_job_lint_and_quick_verifier() -> None:
     assert any("ci repo-policy job missing single-row repository verifier" in error for error in verify_errors)
 
 
+def test_ci_workflow_requires_dependency_vulnerability_audit() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
+        "      - name: Dependency vulnerability audit\n"
+        "        run: >-\n"
+        '          python -c "import truststore; truststore.inject_into_ssl(); from pip_audit._cli import audit; audit()"\n'
+        "          --strict --no-deps --disable-pip -r requirements-release.txt\n",
+        "",
+    )
+
+    errors = checker.check_ci_workflow(workflow)
+
+    assert any("dependency vulnerability audit" in error for error in errors)
+
+
 def test_ci_workflow_test_matrix_runs_pytest_not_monolithic_verifier() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(

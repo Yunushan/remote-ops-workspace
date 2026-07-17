@@ -45,6 +45,14 @@ the Python build tooling from `requirements-release.txt` and disables isolated
 build-backend resolution. Review and pin any new action, container base image,
 or image-build dependency before adding it to production automation.
 
+The repository-policy CI job also runs `pip-audit --strict` against the exact
+release dependency pins. It uses the system trust store, so inspection remains
+reliable on managed networks that add a trusted TLS interception certificate.
+Dependabot tracks `pip`, GitHub Actions, and Docker updates weekly through
+`.github/dependabot.yml`. Review dependency update pull requests through the
+normal protected-branch policy; automated update tooling does not replace
+release validation or platform signing.
+
 When protected signing material is unavailable, the release workflow records a
 notice and skips the Windows/macOS native jobs and GitHub Release publication;
 it never publishes unsigned native assets. Source and Linux workflow artifacts

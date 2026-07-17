@@ -72,7 +72,11 @@ def check_repo_policy_job(workflow: str) -> list[str]:
         "runs-on: ubuntu-latest": "stable policy runner",
         "timeout-minutes: 15": "bounded policy job timeout",
         'python-version: "3.12"': "stable policy Python version",
-        'python -m pip install -e ".[security,dev]"': "policy dependency installation",
+        "python -m pip install -r requirements-dev.txt": "policy dependency installation",
+        "truststore.inject_into_ssl()": "system trust-store initialization for dependency audit",
+        "--strict --no-deps --disable-pip -r requirements-release.txt": (
+            "exact release dependency vulnerability audit"
+        ),
         "python scripts/verify.py --quick": "single-row repository verifier",
         "python -m ruff check src tests scripts": "single-row ruff lint",
     }

@@ -22,17 +22,17 @@
   "python_packages": [
     {
       "name": "pip",
-      "version": "24.3.1",
+      "version": "26.1.2",
       "purpose": "Pinned installer front-end for release jobs."
     },
     {
       "name": "setuptools",
-      "version": "80.9.0",
+      "version": "83.0.0",
       "purpose": "Pinned build backend dependency."
     },
     {
       "name": "wheel",
-      "version": "0.45.1",
+      "version": "0.46.2",
       "purpose": "Pinned wheel builder dependency."
     },
     {

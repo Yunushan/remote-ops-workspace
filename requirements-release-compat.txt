@@ -11,5 +11,5 @@ pycparser==3.0
 PyQt6==6.11.0
 PyQt6-Qt6==6.11.1
 PyQt6-sip==13.11.1
-cryptography==48.0.1
+cryptography==49.0.0
 truststore==0.10.4

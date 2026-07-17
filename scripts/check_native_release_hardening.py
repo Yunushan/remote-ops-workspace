@@ -19,6 +19,11 @@ CHECKSUM_PATTERNS = {
 }
 
 WORKFLOW_NATIVE_JOBS = ("windows-native", "macos-native", "linux-native")
+SIGNING_READINESS_OUTPUTS = {
+    "windows_release_signing_ready": "steps.signing-readiness.outputs.windows_ready",
+    "macos_release_signing_ready": "steps.signing-readiness.outputs.macos_ready",
+    "signed_native_publish_ready": "steps.signing-readiness.outputs.signed_native_ready",
+}
 
 
 def main() -> int:
@@ -242,6 +247,50 @@ def check_native_workflow_boundaries(workflow: str | None = None) -> list[str]:
         errors.append("macOS x64 release builds must not use the deprecated macos-13 runner label")
     if "runner: macos-15-intel" not in workflow_text:
         errors.append("macOS x64 release builds must use the Intel macos-15-intel runner")
+    errors.extend(check_signing_readiness_gate(workflow_text))
+    return errors
+
+
+def check_signing_readiness_gate(workflow: str) -> list[str]:
+    preflight = workflow_job_block(workflow, "release-preflight")
+    publish = workflow_job_block(workflow, "publish")
+    errors: list[str] = []
+    if "environment: release" not in preflight:
+        errors.append("release-preflight must read protected signing material from the release environment")
+    for output, step_output in SIGNING_READINESS_OUTPUTS.items():
+        if f"{output}: ${{{{ {step_output} }}}}" not in preflight:
+            errors.append(f"release-preflight missing signing-readiness output: {output}")
+    for snippet, label in {
+        "- name: Detect release signing readiness": "signing readiness detection step",
+        "id: signing-readiness": "signing readiness step identifier",
+        "ROW_WINDOWS_CERTIFICATE_BASE64: ${{ secrets.ROW_WINDOWS_CERTIFICATE_BASE64 }}": (
+            "Windows signing certificate readiness input"
+        ),
+        "ROW_MACOS_CERTIFICATE_BASE64: ${{ secrets.ROW_MACOS_CERTIFICATE_BASE64 }}": (
+            "macOS signing certificate readiness input"
+        ),
+        'echo "windows_ready=$windows_ready"': "Windows signing readiness output",
+        'echo "macos_ready=$macos_ready"': "macOS signing readiness output",
+        'echo "signed_native_ready=$signed_native_ready"': "combined signing readiness output",
+        "signed Windows/macOS jobs and GitHub Release publishing will be skipped": (
+            "explicit unavailable-signing notice"
+        ),
+    }.items():
+        if snippet not in preflight:
+            errors.append(f"release-preflight missing {label}: {snippet}")
+    for job, output in (
+        ("windows-native", "windows_release_signing_ready"),
+        ("macos-native", "macos_release_signing_ready"),
+    ):
+        block = workflow_job_block(workflow, job)
+        condition = f"if: ${{{{ needs.release-preflight.outputs.{output} == 'true' }}}}"
+        if condition not in block:
+            errors.append(f"{job} must skip when protected signing material is unavailable")
+    publish_condition = (
+        "if: ${{ needs.release-preflight.outputs.signed_native_publish_ready == 'true' }}"
+    )
+    if publish_condition not in publish:
+        errors.append("publish must skip rather than publish unsigned native artifacts")
     return errors
 
 

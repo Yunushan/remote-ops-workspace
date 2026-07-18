@@ -94,14 +94,14 @@ def test_platform_support_truth_rejects_missing_protected_linux_checksum_asset()
     targets = _load_json("configs/platform_targets.json")
     rows = {item["id"]: item for item in targets["release_architectures"]}
     rows["linux-i386"]["assets"].remove(
-        "remote-ops-workspace-v1.0.8-linux-i686-native-SHA256SUMS.txt"
+        "remote-ops-workspace-v1.0.9-linux-i686-native-SHA256SUMS.txt"
     )
 
     errors = checker.check_platform_catalog(targets)
 
     assert (
         "platform target linux-i386 assets must include protected promotion artifacts: "
-        "['remote-ops-workspace-v1.0.8-linux-i686-native-SHA256SUMS.txt']"
+        "['remote-ops-workspace-v1.0.9-linux-i686-native-SHA256SUMS.txt']"
     ) in errors
 
 

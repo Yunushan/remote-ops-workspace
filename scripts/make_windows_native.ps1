@@ -70,11 +70,18 @@ function Find-InnoSetup {
   if ($Command) {
     return $Command.Source
   }
-  $Default = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
-  if (Test-Path $Default) {
-    return $Default
+  # Winget installs Inno Setup per-user by default, while Chocolatey and the
+  # standalone installer usually use one of the Program Files locations.
+  foreach ($Candidate in @(
+    (Join-Path $env:LOCALAPPDATA "Programs\Inno Setup 6\ISCC.exe"),
+    (Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"),
+    (Join-Path $env:ProgramFiles "Inno Setup 6\ISCC.exe")
+  )) {
+    if (Test-Path -LiteralPath $Candidate) {
+      return $Candidate
+    }
   }
-  throw "Inno Setup compiler is required. Install it with: choco install innosetup -y"
+  throw "Inno Setup compiler is required. Install it with: winget install --id JRSoftware.InnoSetup --exact"
 }
 
 function Get-InnoArchitectureDirectives([string]$Arch) {

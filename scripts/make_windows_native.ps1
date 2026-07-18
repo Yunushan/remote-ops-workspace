@@ -309,8 +309,13 @@ $Launcher = Join-Path $BuildDir "row_launcher.py"
 $GuiLauncher = Join-Path $BuildDir "row_gui_launcher.py"
 $IconSvg = Join-Path $Root "src\remote_ops_workspace\assets\remote_ops_workspace.svg"
 $IconIco = Join-Path $Root "src\remote_ops_workspace\assets\remote_ops_workspace.ico"
-if (!(Test-Path -LiteralPath $IconSvg) -or !(Test-Path -LiteralPath $IconIco)) {
-  throw "Windows application icon assets are missing under src\\remote_ops_workspace\\assets"
+$GuiManifest = Join-Path $Root "src\remote_ops_workspace\assets\remote_ops_workspace_gui.manifest"
+if (
+  !(Test-Path -LiteralPath $IconSvg) -or
+  !(Test-Path -LiteralPath $IconIco) -or
+  !(Test-Path -LiteralPath $GuiManifest)
+) {
+  throw "Windows GUI assets (SVG, ICO, or manifest) are missing under src\\remote_ops_workspace\\assets"
 }
 
 Remove-Item -Recurse -Force $BuildDir -ErrorAction SilentlyContinue
@@ -356,6 +361,7 @@ if ($BuildGuiLauncher) {
     --name row-gui `
     --windowed `
     --icon $IconIco `
+    --manifest $GuiManifest `
     --add-data "$IconSvg;remote_ops_workspace/assets" `
     --distpath $PyDist `
     --workpath $PyWork `

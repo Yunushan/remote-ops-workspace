@@ -53,12 +53,31 @@ def terminal_plan_for_command(command: str, title: str = "Command") -> TerminalP
 
 def terminal_plan_for_profile(profile: Profile) -> TerminalPanePlan:
     plan = build_launch_plan(profile)
+    command = _embedded_terminal_command(profile, plan.command)
     return TerminalPanePlan(
         title=profile.name,
-        command=plan.command,
+        command=command,
         source=f"profile:{profile.name}",
         notes=plan.notes,
     )
+
+
+def _embedded_terminal_command(profile: Profile, command: list[str]) -> list[str]:
+    """Adapt external launch argv for the embedded, stdin-backed terminal surface.
+
+    OpenSSH otherwise sees QProcess stdin as a pipe and refuses to allocate a
+    remote pseudo-terminal.  Force a remote TTY only for embedded SSH panes;
+    the general launcher keeps its existing external-process semantics.
+    """
+
+    if not command or profile.protocol.lower() not in {"ssh", "ssh1", "sshv1"}:
+        return list(command)
+    executable = os.path.basename(command[0]).lower()
+    if executable not in {"ssh", "ssh.exe"}:
+        return list(command)
+    if any(argument in {"-t", "-tt", "-T"} for argument in command[1:]):
+        return list(command)
+    return [command[0], "-tt", *command[1:]]
 
 
 def terminal_plan_for_sftp_browser(profile: Profile) -> TerminalPanePlan:

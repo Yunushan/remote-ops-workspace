@@ -7139,7 +7139,7 @@ QLabel#mobaSshBannerFooter {{
 QLabel#mobaSshBannerTitle {{
   color: {colors.status};
   font-family: "Cascadia Mono", Consolas, monospace;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 700;
 }}
 QLabel#mobaSshBannerSubtitle {{

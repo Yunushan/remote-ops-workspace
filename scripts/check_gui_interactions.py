@@ -2338,6 +2338,14 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
         expected_protocols = profile_editor_protocols()
         actual_protocols = tuple(protocol.itemText(index) for index in range(protocol.count()))
         record("profile-protocol-catalog", actual_protocols == expected_protocols, actual_protocols)
+        record(
+            "profile-protocol-closed-catalog",
+            not protocol.isEditable() and protocol.lineEdit() is None,
+            {
+                "editable": protocol.isEditable(),
+                "has_line_edit": protocol.lineEdit() is not None,
+            },
+        )
         legacy_index = actual_protocols.index("ssh1")
         legacy_help = str(
             protocol.itemData(legacy_index, Qt.ItemDataRole.ToolTipRole) or ""

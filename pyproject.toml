@@ -57,7 +57,7 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-remote_ops_workspace = ["py.typed", "assets/*.svg", "assets/*.ico"]
+remote_ops_workspace = ["py.typed", "assets/*.svg", "assets/*.ico", "assets/*.manifest"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

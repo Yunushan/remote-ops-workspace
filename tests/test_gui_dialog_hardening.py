@@ -22,6 +22,288 @@ def test_main_window_and_application_have_a_visible_product_icon(gui_window) -> 
     assert not window.windowIcon().isNull()
 
 
+def test_profile_protocol_is_a_closed_supported_catalog(gui_window) -> None:
+    from PyQt6.QtCore import QTimer
+    from PyQt6.QtWidgets import QApplication, QComboBox
+
+    _app, window = gui_window
+    observed: dict[str, object] = {}
+
+    def inspect_dialog() -> None:
+        dialog = QApplication.activeModalWidget()
+        assert dialog is not None
+        protocol = dialog.findChild(QComboBox, "profileProtocol")
+        assert protocol is not None
+        initial = protocol.currentText()
+        protocol.setEditText("not-a-supported-protocol")
+        observed.update(
+            editable=protocol.isEditable(),
+            line_edit=protocol.lineEdit(),
+            initial=initial,
+            after=protocol.currentText(),
+            options=[protocol.itemText(index) for index in range(protocol.count())],
+        )
+        dialog.reject()
+
+    QTimer.singleShot(0, inspect_dialog)
+    window.create_profile()
+
+    assert observed["editable"] is False
+    assert observed["line_edit"] is None
+    assert observed["after"] == observed["initial"]
+    assert observed["after"] in observed["options"]
+
+
+def test_terminal_output_accepts_direct_keys_and_has_operational_context_menu(
+    gui_window,
+) -> None:
+    from PyQt6.QtCore import QEvent, QProcess, Qt
+    from PyQt6.QtGui import QInputMethodEvent, QKeyEvent
+    from PyQt6.QtTest import QTest
+
+    from remote_ops_workspace.gui_lifecycle import ProcessStopPolicy
+    from remote_ops_workspace.terminal import TerminalPanePlan
+
+    app, window = gui_window
+    pane = window.new_terminal_pane(
+        TerminalPanePlan(title="interaction-test", command=[], source="test")
+    )
+    process = _FakeProcess(pane)
+    process.process_state = QProcess.ProcessState.Running
+    process.finished.connect(pane.on_finished)
+    pane.process = process
+    pane.output.show()
+    pane.output.setFocus()
+
+    assert pane.focusProxy() is pane.output
+    events = [
+        QKeyEvent(
+            QEvent.Type.KeyPress,
+            Qt.Key.Key_A,
+            Qt.KeyboardModifier.NoModifier,
+            "a",
+        ),
+        QKeyEvent(
+            QEvent.Type.KeyPress,
+            Qt.Key.Key_Left,
+            Qt.KeyboardModifier.NoModifier,
+        ),
+        QKeyEvent(
+            QEvent.Type.KeyPress,
+            Qt.Key.Key_C,
+            Qt.KeyboardModifier.ControlModifier,
+        ),
+    ]
+    for event in events:
+        app.sendEvent(pane.output, event)
+    assert process.written == b"a\x1b[D\x03"
+
+    altgr_event = QKeyEvent(
+        QEvent.Type.KeyPress,
+        Qt.Key.Key_Q,
+        Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.AltModifier,
+        "@",
+    )
+    app.sendEvent(pane.output, altgr_event)
+    input_method_event = QInputMethodEvent("", [])
+    input_method_event.setCommitString("ş")
+    app.sendEvent(pane.output, input_method_event)
+    assert process.written.endswith("@ş".encode())
+
+    app.clipboard().setText("pasted")
+    menu = pane.build_output_context_menu()
+    assert [action.text() for action in menu.actions() if not action.isSeparator()] == [
+        "Copy",
+        "Paste to terminal",
+        "Select all",
+        "Clear terminal",
+        "Restart session",
+        "Stop session",
+    ]
+    pane.paste_to_terminal()
+    assert process.written.endswith(b"pasted")
+
+    pane.request_stop(policy=ProcessStopPolicy(terminate_timeout_ms=10, kill_timeout_ms=0))
+    assert process.terminated
+    assert not process.killed
+    QTest.qWait(30)
+    assert process.killed
+    menu.deleteLater()
+    pane.deleteLater()
+
+
+def test_moba_rail_labels_are_clickable_and_favorites_filter_is_reversible(
+    gui_window,
+) -> None:
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtTest import QTest
+    from PyQt6.QtWidgets import QLabel, QToolButton
+
+    _app, window = gui_window
+    moba_index = window.design_select.findData("mobaxterm")
+    assert moba_index >= 0
+    window.design_select.setCurrentIndex(moba_index)
+    window.store.save(
+        [
+            Profile(
+                name="favorite-host",
+                protocol="ssh",
+                host="favorite.example.invalid",
+                tags=["favorite"],
+            ),
+            Profile(
+                name="regular-host",
+                protocol="ssh",
+                host="regular.example.invalid",
+            ),
+        ]
+    )
+    window.refresh_profiles()
+
+    sessions_label = next(
+        label
+        for label in window.findChildren(QLabel, "mobaRailLabel")
+        if label.property("mobaRailRole") == "sessions"
+    )
+    sessions_button = next(
+        button
+        for button in window.findChildren(QToolButton)
+        if button.property("mobaRailRole") == "sessions"
+    )
+    sessions_button.setChecked(False)
+    QTest.mouseClick(sessions_label, Qt.MouseButton.LeftButton)
+    assert sessions_button.isChecked()
+
+    window.show_moba_favorites_rail()
+    visible_names = {
+        item.data(0, Qt.ItemDataRole.UserRole)
+        for item in window.iter_profile_tree_items()
+        if isinstance(item.data(0, Qt.ItemDataRole.UserRole), str)
+        and not item.isHidden()
+    }
+    assert visible_names == {"favorite-host"}
+    window.show_moba_sessions_rail()
+    visible_names = {
+        item.data(0, Qt.ItemDataRole.UserRole)
+        for item in window.iter_profile_tree_items()
+        if isinstance(item.data(0, Qt.ItemDataRole.UserRole), str)
+        and not item.isHidden()
+    }
+    assert visible_names == {"favorite-host", "regular-host"}
+
+
+def test_moba_sessions_rail_preserves_connected_sftp_dock(gui_window) -> None:
+    from PyQt6.QtWidgets import QFrame
+
+    _app, window = gui_window
+    moba_index = window.design_select.findData("mobaxterm")
+    assert moba_index >= 0
+    window.design_select.setCurrentIndex(moba_index)
+    dock = QFrame()
+    dock.setObjectName("testConnectedSftpDock")
+    window.moba_left_stack.addWidget(dock)
+    window.moba_connected_dock = dock
+    window.moba_left_stack.setCurrentWidget(dock)
+
+    window.show_moba_sessions_rail()
+    assert window.moba_connected_dock is dock
+    assert window.moba_left_stack.currentWidget() is window.profile_list
+    window.show_moba_sftp_rail()
+    assert window.moba_left_stack.currentWidget() is dock
+
+
+def test_running_tab_close_is_immediate_and_cancels_pending_restart(gui_window) -> None:
+    from PyQt6.QtCore import QProcess
+    from PyQt6.QtTest import QTest
+
+    from remote_ops_workspace.gui_lifecycle import ProcessStopPolicy
+    from remote_ops_workspace.terminal import TerminalPanePlan
+
+    _app, window = gui_window
+    pane = window.new_terminal_pane(
+        TerminalPanePlan(title="close-test", command=[], source="test")
+    )
+    process = _FakeProcess(pane)
+    process.process_state = QProcess.ProcessState.Running
+    process.finished.connect(pane.on_finished)
+    pane.process = process
+    pane._restart_after_stop = True
+    index = window.add_workspace_tab(pane, "close-test", role="terminal")
+    window.CLOSE_STOP_POLICY = ProcessStopPolicy(
+        terminate_timeout_ms=10,
+        kill_timeout_ms=0,
+    )
+    window.confirm_stop_processes = lambda *_args: True
+
+    window.close_tab(index)
+
+    assert window.tabs.indexOf(pane) == -1
+    assert pane in window._closing_tab_widgets
+    assert pane.property("terminalClosing") is True
+    assert pane._restart_after_stop is False
+    assert process.terminated is True
+    QTest.qWait(30)
+    assert process.killed is True
+    assert pane not in window._closing_tab_widgets
+    assert process.process_state == QProcess.ProcessState.NotRunning
+
+
+def test_moba_sftp_dock_routes_supported_actions_and_disables_stubs(gui_window) -> None:
+    from remote_ops_workspace.terminal import TerminalPanePlan
+
+    app, window = gui_window
+    moba_index = window.design_select.findData("mobaxterm")
+    assert moba_index >= 0
+    window.design_select.setCurrentIndex(moba_index)
+    profile = Profile(
+        name="sftp-actions",
+        protocol="ssh",
+        host="example.invalid",
+        username="operator",
+    )
+    window.store.save([profile])
+    window.refresh_profiles()
+    panel = window.open_moba_connected_session_tab(
+        profile,
+        TerminalPanePlan(title=profile.name, command=[], source="test"),
+        remote_path="/var/log",
+    )
+    dock = window.moba_connected_dock
+    assert dock is not None
+
+    for action_key in {"new-folder", "new-file", "delete", "ascii-mode", "split-view"}:
+        button = dock.sftp_action_buttons[action_key]
+        assert button.isEnabled() is False
+        assert button.property("mobaSftpActionOperational") is False
+
+    dock.path.setText("/var/log")
+    dock.path.returnPressed.emit()
+    assert dock.active_remote_path == "/var/log"
+    dock.sftp_action_buttons["parent-folder"].click()
+    assert dock.active_remote_path == "/var"
+    assert dock.path.text() == "/var"
+
+    selected_file = next(
+        dock.file_table.topLevelItem(index)
+        for index in range(dock.file_table.topLevelItemCount())
+        if dock.file_table.topLevelItem(index).text(0) == "app.log"
+    )
+    dock.file_table.setCurrentItem(selected_file)
+    app.processEvents()
+    assert dock.sftp_action_buttons["download"].isEnabled() is True
+
+    calls: list[str] = []
+    dock.open_moba_sftp_transfer_workflow = lambda action_key: calls.append(action_key) or True
+    dock.sftp_action_buttons["download"].click()
+    panel.terminal_pane.restart = lambda *_args: calls.append("connect")
+    dock.sftp_action_buttons["connect"].click()
+    dock.sftp_action_buttons["terminal"].click()
+    app.processEvents()
+
+    assert calls == ["download", "connect"]
+    assert panel.terminal_pane.output.property("mobaTerminalFocusRequested") is True
+
+
 @pytest.fixture
 def gui_window(monkeypatch, tmp_path):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")

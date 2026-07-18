@@ -36,6 +36,7 @@ def main() -> int:
     errors.extend(check_pyinstaller_launchers())
     errors.extend(check_windows_gui_launcher())
     errors.extend(check_windows_application_icon())
+    errors.extend(check_windows_gui_dpi_manifest())
     errors.extend(check_windows_wix_debug_sidecars())
     errors.extend(check_macos_dmg_creation_retry())
     errors.extend(check_linux_appimagetool_download())
@@ -200,6 +201,51 @@ def check_windows_application_icon() -> list[str]:
     }.items():
         if snippet not in script:
             errors.append(f"scripts/make_windows_native.ps1 missing {label}: {snippet}")
+    return errors
+
+
+def check_windows_gui_dpi_manifest() -> list[str]:
+    errors: list[str] = []
+    manifest = (
+        ROOT
+        / "src"
+        / "remote_ops_workspace"
+        / "assets"
+        / "remote_ops_workspace_gui.manifest"
+    )
+    if not manifest.is_file() or manifest.is_symlink():
+        return [
+            "Windows GUI DPI manifest must be a tracked plain file: "
+            f"{display(manifest)}"
+        ]
+    text = manifest.read_text(encoding="utf-8")
+    for snippet, label in {
+        '<requestedExecutionLevel level="asInvoker" uiAccess="false"': (
+            "non-elevated execution policy"
+        ),
+        '<dpiAware xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">': (
+            "legacy per-monitor DPI declaration"
+        ),
+        "true/pm": "legacy per-monitor DPI value",
+        '<dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">': (
+            "modern DPI declaration"
+        ),
+        "PerMonitorV2, PerMonitor": "modern Per-Monitor-V2 DPI value",
+        '<longPathAware xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">': (
+            "long-path declaration"
+        ),
+    }.items():
+        if snippet not in text:
+            errors.append(f"{display(manifest)} missing {label}: {snippet}")
+    script = NATIVE_SCRIPTS["windows"].read_text(encoding="utf-8")
+    if "$GuiManifest" not in script or "--manifest $GuiManifest" not in script:
+        errors.append(
+            "scripts/make_windows_native.ps1 must embed the explicit DPI manifest "
+            "into row-gui.exe"
+        )
+    package_config = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    if '"assets/*.manifest"' not in package_config:
+        errors.append("pyproject.toml must include the Windows GUI manifest as package data")
     return errors
 
 

@@ -2557,7 +2557,7 @@ GUI_DESIGN_MOBA_RAIL_CHROME = GuiMobaRailChrome(
     label_height=54,
     label_step=58,
     unlabeled_gap_after=8,
-    label_font_size=10,
+    label_font_size=12,
     render_source="generated-pixmap",
 )
 
@@ -6478,7 +6478,7 @@ QLabel#mobaRailLabel {{
   background: transparent;
   border: 0;
   border-bottom: 1px solid {colors.toolbar_border};
-  font-size: 10px;
+  font-size: {GUI_DESIGN_MOBA_RAIL_CHROME.label_font_size}px;
   font-weight: 700;
 }}
 QLabel#mobaRailButton, QToolButton#mobaRailButton {{
@@ -7118,7 +7118,7 @@ QLabel#mobaMonitoringMetric, QCheckBox#mobaFollowTerminalFolder {{
 QFrame#mobaSshBanner {{
   background: {colors.terminal};
   border: 1px solid {colors.terminal_accent};
-  margin: 12px 36px 8px 36px;
+  margin: 0;
 }}
 QLabel#mobaSshBannerLine, QLabel#mobaSshBannerTargetLine, QLabel#mobaSshBannerCapability {{
   color: {colors.terminal_text};

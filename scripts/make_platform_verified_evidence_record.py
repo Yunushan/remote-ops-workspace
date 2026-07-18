@@ -192,7 +192,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         description="Generate a validated accepted-evidence record for platform readiness promotion."
     )
     parser.add_argument("--target", choices=sorted({*LINUX_TARGETS, *XP_TARGETS}), required=True)
-    parser.add_argument("--release-tag", required=True, help="Release tag, for example v1.0.9")
+    parser.add_argument("--release-tag", required=True, help="Release tag, for example v1.0.10")
     parser.add_argument("--assets-dir", type=Path, required=True, help="Directory with built native artifacts")
     parser.add_argument(
         "--release-asset-base-url",

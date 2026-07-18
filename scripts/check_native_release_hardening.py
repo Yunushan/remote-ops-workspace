@@ -23,6 +23,8 @@ SIGNING_READINESS_OUTPUTS = {
     "windows_release_signing_ready": "steps.signing-readiness.outputs.windows_ready",
     "macos_release_signing_ready": "steps.signing-readiness.outputs.macos_ready",
     "signed_native_publish_ready": "steps.signing-readiness.outputs.signed_native_ready",
+    "unsigned_native_preview_allowed": "steps.signing-readiness.outputs.unsigned_preview_allowed",
+    "native_publish_ready": "steps.signing-readiness.outputs.native_publish_ready",
 }
 
 
@@ -272,25 +274,41 @@ def check_signing_readiness_gate(workflow: str) -> list[str]:
         'echo "windows_ready=$windows_ready"': "Windows signing readiness output",
         'echo "macos_ready=$macos_ready"': "macOS signing readiness output",
         'echo "signed_native_ready=$signed_native_ready"': "combined signing readiness output",
+        'echo "unsigned_preview_allowed=$unsigned_preview_allowed"': "unsigned-preview readiness output",
+        'echo "native_publish_ready=$native_publish_ready"': "native publish readiness output",
+        "building an explicitly unsigned preview release": "explicit unsigned-preview warning",
+        "allow_unsigned_preview=true": "manual unsigned-preview opt-in guidance",
         "signed Windows/macOS jobs and GitHub Release publishing will be skipped": (
             "explicit unavailable-signing notice"
         ),
     }.items():
         if snippet not in preflight:
             errors.append(f"release-preflight missing {label}: {snippet}")
+    for snippet, label in {
+        "allow_unsigned_preview:": "manual unsigned-preview workflow input",
+        "UNSIGNED PREVIEW": "unsigned preview release label",
+        "prerelease: ${{ env.RELEASE_PRERELEASE }}": "unsigned preview prerelease marker",
+    }.items():
+        if snippet not in workflow:
+            errors.append(f"release workflow missing {label}: {snippet}")
     for job, output in (
         ("windows-native", "windows_release_signing_ready"),
         ("macos-native", "macos_release_signing_ready"),
     ):
         block = workflow_job_block(workflow, job)
-        condition = f"if: ${{{{ needs.release-preflight.outputs.{output} == 'true' }}}}"
-        if condition not in block:
-            errors.append(f"{job} must skip when protected signing material is unavailable")
+        signed_condition = f"needs.release-preflight.outputs.{output} == 'true'"
+        unsigned_condition = (
+            "needs.release-preflight.outputs.unsigned_native_preview_allowed == 'true'"
+        )
+        if signed_condition not in block or unsigned_condition not in block:
+            errors.append(
+                f"{job} must run without signing material only for an explicit unsigned preview"
+            )
     publish_condition = (
-        "if: ${{ needs.release-preflight.outputs.signed_native_publish_ready == 'true' }}"
+        "if: ${{ needs.release-preflight.outputs.native_publish_ready == 'true' }}"
     )
     if publish_condition not in publish:
-        errors.append("publish must skip rather than publish unsigned native artifacts")
+        errors.append("publish must require signed readiness or an explicit unsigned preview")
     return errors
 
 

@@ -519,10 +519,11 @@ Implementation:
   `row-gui.exe` presence on GUI-capable Windows architectures.
 - Pins the Windows installer toolchain in CI: Inno Setup `6.3.3` and WiX
   `5.0.2`.
-- CI candidate artifacts can be unsigned for inspection. Production tags
-  require Authenticode signing credentials and fail before publication when
-  they are unavailable; unsigned Windows installers are never published as a
-  GitHub Release.
+- The signed production path requires Authenticode credentials. If they are
+  unavailable, tag-triggered publication skips Windows installers. A maintainer
+  may manually dispatch the release workflow with `allow_unsigned_preview=true`
+  to publish clearly labeled **UNSIGNED PREVIEW** installers as a GitHub
+  prerelease; they are not trusted production artifacts.
 - Treats Windows XP, Vista, Windows 7 and Windows 8.0 as legacy remote targets,
   not as first-class modern native runtime targets. Windows XP x86/x64 remote
   endpoints use isolated per-profile legacy opt-ins.
@@ -545,9 +546,11 @@ Implementation:
 - Builds a PKG for managed installs.
 - Runs `scripts/smoke_macos_native.sh` to smoke install, verify, upgrade and
   uninstall the `.dmg` and `.pkg` artifacts before upload.
-- CI candidate artifacts use ad-hoc signing only. Production tags require
-  Developer ID signing and Apple notarization; unsigned or unstapled macOS
-  installers are never published as a GitHub Release.
+- CI candidate artifacts use ad-hoc signing only. The signed production path
+  requires Developer ID signing and Apple notarization. Without them, only an
+  explicit `allow_unsigned_preview=true` manual workflow dispatch may publish
+  clearly labeled **UNSIGNED PREVIEW** macOS installers as a prerelease; they
+  are not trusted production artifacts.
 
 ## Phase 4: Linux native packages
 

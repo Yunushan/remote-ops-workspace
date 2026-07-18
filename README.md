@@ -534,6 +534,11 @@ The GitHub release workflow is manually promoted from the trusted default branch
 with an immutable tag input such as `v1.0.8`; it builds that tag and uploads
 these assets only after accepted platform evidence is present:
 
+Signed installers are the production channel. If protected Windows/macOS
+credentials are unavailable, maintainers may use the manual
+`allow_unsigned_preview` workflow input to publish an **UNSIGNED PREVIEW**
+prerelease. Those installers are intentionally not production-trusted.
+
 | Target | Asset |
 |---|---|
 | Python wheel | `remote_ops_workspace-1.0.8-py3-none-any.whl` |

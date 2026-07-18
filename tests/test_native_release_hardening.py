@@ -43,24 +43,24 @@ def test_native_workflow_uploads_fail_if_assets_missing() -> None:
         assert "persist-credentials: false" in block
 
 
-def test_native_workflow_skips_unsigned_publish_when_signing_material_is_unavailable() -> None:
+def test_native_workflow_allows_only_explicit_unsigned_preview_publish() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
 
     assert checker.check_signing_readiness_gate(workflow) == []
 
 
-def test_native_workflow_rejects_unconditional_unsigned_publish() -> None:
+def test_native_workflow_rejects_publish_without_a_readiness_gate() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
-        "    if: ${{ needs.release-preflight.outputs.signed_native_publish_ready == 'true' }}\n",
+        "    if: ${{ needs.release-preflight.outputs.native_publish_ready == 'true' }}\n",
         "",
         1,
     )
 
     errors = checker.check_signing_readiness_gate(workflow)
 
-    assert "publish must skip rather than publish unsigned native artifacts" in errors
+    assert "publish must require signed readiness or an explicit unsigned preview" in errors
 
 
 def test_native_workflow_rejects_checkout_credentials_outside_checkout_step() -> None:

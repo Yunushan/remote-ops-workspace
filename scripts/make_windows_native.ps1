@@ -72,11 +72,22 @@ function Find-InnoSetup {
   }
   # Winget installs Inno Setup per-user by default, while Chocolatey and the
   # standalone installer usually use one of the Program Files locations.
-  foreach ($Candidate in @(
-    (Join-Path $env:LOCALAPPDATA "Programs\Inno Setup 6\ISCC.exe"),
-    (Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"),
-    (Join-Path $env:ProgramFiles "Inno Setup 6\ISCC.exe")
+  # Build paths only after confirming each root exists.  PowerShell evaluates
+  # every array expression before foreach, and Join-Path rejects a null root.
+  $Candidates = @()
+  $LocalAppData = [Environment]::GetEnvironmentVariable("LOCALAPPDATA")
+  if (![string]::IsNullOrWhiteSpace($LocalAppData)) {
+    $Candidates += (Join-Path $LocalAppData "Programs\Inno Setup 6\ISCC.exe")
+  }
+  foreach ($ProgramFilesRoot in @(
+    [Environment]::GetEnvironmentVariable("ProgramFiles(x86)"),
+    [Environment]::GetEnvironmentVariable("ProgramFiles")
   )) {
+    if (![string]::IsNullOrWhiteSpace($ProgramFilesRoot)) {
+      $Candidates += (Join-Path $ProgramFilesRoot "Inno Setup 6\ISCC.exe")
+    }
+  }
+  foreach ($Candidate in $Candidates) {
     if (Test-Path -LiteralPath $Candidate) {
       return $Candidate
     }

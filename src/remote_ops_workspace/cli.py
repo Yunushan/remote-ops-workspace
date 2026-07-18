@@ -1034,11 +1034,10 @@ def build_parser() -> argparse.ArgumentParser:
     vset.set_defaults(func=cmd_vault_set)
     vget = vsub.add_parser("get", help="retrieve a secret")
     vget.add_argument("name")
-    vget_output = vget.add_mutually_exclusive_group()
-    vget_output.add_argument("--show", action="store_true", help="print the secret to stdout")
-    vget_output.add_argument(
+    vget.add_argument(
         "--out",
         type=Path,
+        required=True,
         help="write the secret to a file with best-effort owner-only permissions",
     )
     vget.set_defaults(func=cmd_vault_get)
@@ -2931,15 +2930,10 @@ def cmd_vault_set(args: argparse.Namespace) -> int:
 
 
 def cmd_vault_get(args: argparse.Namespace) -> int:
-    if not args.show and not args.out:
-        raise ValueError("refusing to print secret by default; use --show or --out")
     passphrase = _vault_passphrase(confirm=False)
     secret = LocalVault().get(args.name, passphrase)
-    if args.out:
-        _write_secret_file(args.out, secret)
-        print(f"secret written: {args.out}")
-    else:
-        print(secret)
+    _write_secret_file(args.out, secret)
+    print(f"secret written: {args.out}")
     return 0
 
 

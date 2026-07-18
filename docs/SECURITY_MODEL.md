@@ -106,7 +106,7 @@ Operational rules:
 - prefer `ROW_VAULT_PASSWORD` only for short-lived automation contexts;
 - use `row vault set NAME --secret-env ENV` or `row vault set NAME --stdin` for automation so secret values are not placed in argv;
 - secret names are validated to reject empty, option-like, whitespace/control-character and parent-directory-style names;
-- `row vault get` refuses to print secrets unless `--show` is provided, or writes to an explicit `--out` file with best-effort owner-only permissions where supported;
+- `row vault get` writes only to an explicit `--out` file with best-effort owner-only permissions where supported; it never prints decrypted secrets to the terminal;
 - `row vault status` reports path, initialization state and item counts without revealing secret names or values;
 - `row vault delete` requires `--force` to reduce accidental deletion;
 - do not commit `vault.json`.

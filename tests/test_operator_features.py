@@ -1,9 +1,10 @@
 from pathlib import Path
 
+import remote_ops_workspace.cli as cli_module
 import remote_ops_workspace.launcher as launcher_module
 from remote_ops_workspace.audit import _redact
 from remote_ops_workspace.broadcast import build_broadcast_plans, run_broadcast
-from remote_ops_workspace.cli import build_parser, cmd_vault_get
+from remote_ops_workspace.cli import build_parser
 from remote_ops_workspace.file_transfer import (
     build_sftp_get_plan,
     build_sftp_interactive_plan,
@@ -232,9 +233,10 @@ def test_fido_keygen_plan_supports_resident_keys(tmp_path: Path) -> None:
 
 
 def test_network_tool_plan_uses_argv_list() -> None:
-    plan = build_network_tool_plan("ping", "example.com", count=1)
+    target = "192.0.2.1"
+    plan = build_network_tool_plan("ping", target, count=1)
     assert plan.command[0] == "ping"
-    assert "example.com" in plan.command
+    assert plan.command[-1] == target
 
 
 def test_network_tool_rejects_option_like_target() -> None:
@@ -694,14 +696,28 @@ def test_x11_rejects_invalid_display() -> None:
         raise AssertionError("invalid X display names should be rejected")
 
 
-def test_vault_get_requires_explicit_reveal_mode() -> None:
-    args = build_parser().parse_args(["vault", "get", "prod/router-password"])
+def test_vault_get_requires_private_output_file() -> None:
     try:
-        cmd_vault_get(args)
-    except ValueError as exc:
-        assert "refusing to print secret by default" in str(exc)
+        build_parser().parse_args(["vault", "get", "prod/router-password"])
+    except SystemExit as exc:
+        assert exc.code == 2
     else:
-        raise AssertionError("vault get should require --show or --out")
+        raise AssertionError("vault get should require --out")
+
+
+def test_vault_get_writes_secret_only_to_private_file(tmp_path: Path, monkeypatch, capsys) -> None:
+    class FakeVault:
+        def get(self, _name: str, _passphrase: str) -> str:
+            return "top-secret"
+
+    output = tmp_path / "retrieved-secret"
+    args = build_parser().parse_args(["vault", "get", "prod/router-password", "--out", str(output)])
+    monkeypatch.setattr(cli_module, "LocalVault", FakeVault)
+    monkeypatch.setattr(cli_module, "_vault_passphrase", lambda **_kwargs: "passphrase")
+
+    assert cli_module.cmd_vault_get(args) == 0
+    assert output.read_text(encoding="utf-8") == "top-secret"
+    assert capsys.readouterr().out == f"secret written: {output}\n"
 
 
 def test_audit_redacts_secret_command_arguments() -> None:

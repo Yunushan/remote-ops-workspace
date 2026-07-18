@@ -15,6 +15,11 @@ on:
         required: false
         default: false
         type: boolean
+      allow_unsigned_preview:
+        description: "Publish explicitly unsigned native installers as a clearly labeled pre-release when protected signing material is unavailable"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -35,6 +40,8 @@ jobs:
       windows_release_signing_ready: ${{ steps.signing-readiness.outputs.windows_ready }}
       macos_release_signing_ready: ${{ steps.signing-readiness.outputs.macos_ready }}
       signed_native_publish_ready: ${{ steps.signing-readiness.outputs.signed_native_ready }}
+      unsigned_native_preview_allowed: ${{ steps.signing-readiness.outputs.unsigned_preview_allowed }}
+      native_publish_ready: ${{ steps.signing-readiness.outputs.native_publish_ready }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
@@ -93,17 +100,31 @@ jobs:
           if [[ "$windows_ready" == true && "$macos_ready" == true ]]; then
             signed_native_ready=true
           fi
+          unsigned_preview_allowed=false
+          if [[ "$signed_native_ready" != true && "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.allow_unsigned_preview }}" == "true" ]]; then
+            unsigned_preview_allowed=true
+          fi
+          native_publish_ready=false
+          if [[ "$signed_native_ready" == true || "$unsigned_preview_allowed" == true ]]; then
+            native_publish_ready=true
+          fi
           {
             echo "windows_ready=$windows_ready"
             echo "macos_ready=$macos_ready"
             echo "signed_native_ready=$signed_native_ready"
+            echo "unsigned_preview_allowed=$unsigned_preview_allowed"
+            echo "native_publish_ready=$native_publish_ready"
           } >> "$GITHUB_OUTPUT"
           if [[ "$signed_native_ready" != true ]]; then
-            if [[ "${{ github.event_name }}" == "push" ]]; then
-              echo "::error::Tag-triggered releases require protected Windows and macOS signing material; no partial release will be built or published." >&2
-              exit 1
+            if [[ "$unsigned_preview_allowed" == true ]]; then
+              echo "::warning::Protected signing material is unavailable; building an explicitly unsigned preview release. Do not treat its native installers as trusted production artifacts."
+            else
+              if [[ "${{ github.event_name }}" == "push" ]]; then
+                echo "::error::Tag-triggered releases require protected Windows and macOS signing material; no partial release will be built or published." >&2
+                exit 1
+              fi
+              echo "::notice::Protected signing material is unavailable; signed Windows/macOS jobs and GitHub Release publishing will be skipped unless a maintainer manually dispatches this workflow with allow_unsigned_preview=true."
             fi
-            echo "::notice::Protected signing material is unavailable; signed Windows/macOS jobs and GitHub Release publishing will be skipped for this manual evidence workflow."
           fi
       - name: Require clean release checkout
         run: python scripts/check_repository_cleanup.py --require-clean
@@ -132,7 +153,7 @@ jobs:
 
   windows-native:
     needs: release-preflight
-    if: ${{ needs.release-preflight.outputs.windows_release_signing_ready == 'true' }}
+    if: ${{ needs.release-preflight.outputs.windows_release_signing_ready == 'true' || needs.release-preflight.outputs.unsigned_native_preview_allowed == 'true' }}
     environment: release
     strategy:
       fail-fast: false
@@ -219,6 +240,12 @@ jobs:
           ROW_WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.ROW_WINDOWS_CERTIFICATE_PASSWORD }}
           ROW_WINDOWS_TIMESTAMP_URL: ${{ secrets.ROW_WINDOWS_TIMESTAMP_URL }}
         run: |
+          if ("${{ needs.release-preflight.outputs.windows_release_signing_ready }}" -ne "true") {
+            Add-Content $env:GITHUB_ENV "ROW_REQUIRE_RELEASE_SIGNING=0"
+            Add-Content $env:GITHUB_ENV "ROW_NATIVE_RELEASE_CHANNEL=unsigned-preview"
+            Write-Warning "Building explicitly unsigned preview installers. Do not treat these artifacts as production-trusted."
+            exit 0
+          }
           foreach ($Name in @("ROW_WINDOWS_CERTIFICATE_BASE64", "ROW_WINDOWS_CERTIFICATE_PASSWORD", "ROW_WINDOWS_TIMESTAMP_URL")) {
             if ([string]::IsNullOrWhiteSpace([string](Get-Item -Path "Env:$Name").Value)) {
               throw "Protected release environment is missing $Name"
@@ -245,7 +272,7 @@ jobs:
 
   macos-native:
     needs: release-preflight
-    if: ${{ needs.release-preflight.outputs.macos_release_signing_ready == 'true' }}
+    if: ${{ needs.release-preflight.outputs.macos_release_signing_ready == 'true' || needs.release-preflight.outputs.unsigned_native_preview_allowed == 'true' }}
     environment: release
     strategy:
       fail-fast: false
@@ -285,6 +312,14 @@ jobs:
           ROW_MACOS_NOTARY_KEY_ID: ${{ secrets.ROW_MACOS_NOTARY_KEY_ID }}
           ROW_MACOS_NOTARY_ISSUER: ${{ secrets.ROW_MACOS_NOTARY_ISSUER }}
         run: |
+          if [[ "${{ needs.release-preflight.outputs.macos_release_signing_ready }}" != "true" ]]; then
+            {
+              echo "ROW_REQUIRE_RELEASE_SIGNING=0"
+              echo "ROW_NATIVE_RELEASE_CHANNEL=unsigned-preview"
+            } >> "$GITHUB_ENV"
+            echo "::warning::Building explicitly unsigned preview installers. Do not treat these artifacts as production-trusted."
+            exit 0
+          fi
           for name in ROW_MACOS_CERTIFICATE_BASE64 ROW_MACOS_CERTIFICATE_PASSWORD ROW_MACOS_SIGN_IDENTITY ROW_MACOS_INSTALLER_SIGN_IDENTITY ROW_MACOS_NOTARY_KEY_BASE64 ROW_MACOS_NOTARY_KEY_ID ROW_MACOS_NOTARY_ISSUER; do
             test -n "${!name}" || { echo "Protected release environment is missing $name" >&2; exit 1; }
           done
@@ -402,7 +437,7 @@ jobs:
 
   publish:
     runs-on: ubuntu-latest
-    if: ${{ needs.release-preflight.outputs.signed_native_publish_ready == 'true' }}
+    if: ${{ needs.release-preflight.outputs.native_publish_ready == 'true' }}
     permissions:
       contents: write
       actions: read
@@ -431,6 +466,8 @@ jobs:
         uses: softprops/action-gh-release@c12583777ecdfd3be55c69cf75464299dc01057e # v3
         with:
           tag_name: ${{ env.RELEASE_TAG }}
+          name: ${{ needs.release-preflight.outputs.unsigned_native_preview_allowed == 'true' && format('{0} (UNSIGNED PREVIEW)', env.RELEASE_TAG) || env.RELEASE_TAG }}
+          prerelease: ${{ needs.release-preflight.outputs.unsigned_native_preview_allowed == 'true' }}
           fail_on_unmatched_files: true
           files: release-assets/**
   publish-protected-platform-evidence:

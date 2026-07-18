@@ -245,9 +245,9 @@ def test_rdp_native_security_uses_explicit_freerdp_security_mode(monkeypatch) ->
 
 
 def test_https_command_builder() -> None:
-    profile = Profile(name="web", protocol="https", url="https://example.com")
+    profile = Profile(name="web", protocol="https", url="https://192.0.2.1")
     plan = build_launch_plan(profile)
-    assert "https://example.com" in plan.command
+    assert plan.command[-1] == profile.url
 
 
 def test_kubernetes_exec_adapter_builds_safe_interactive_kubectl_command(monkeypatch) -> None:

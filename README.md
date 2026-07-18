@@ -451,7 +451,7 @@ Core design principles:
 - Use `row connect NAME --dry-run` before launching newly imported profiles.
 - Vault encryption requires the optional `security` extra: `pip install -e ".[security]"`.
 - Use `row vault set NAME --secret-env ENV` or `row vault set NAME --stdin` for automation so secret values are not placed in argv or shell history.
-- `row vault get` requires explicit `--show` or `--out`; secrets are not printed by default.
+- `row vault get` requires `--out`; decrypted secrets are never printed to the terminal.
 - `row keygen --passphrase-env` keeps software-key passphrases out of `ssh-keygen` argv by generating encrypted keys in-process.
 - Shared profile validation checks protocol names, required targets, hosts, ports and URLs; command builders also validate snippets, broadcast payloads and X11 display names before starting external tools.
 - Destructive SFTP actions, remote-overwrite-prone uploads and local-overwrite downloads are blocked before execution unless an operator passes `--force`; broad delete targets and remote globs are rejected for deletes/renames.

@@ -313,6 +313,9 @@ def check_release_preflight(workflow: str | None = None) -> list[str]:
         'if [[ "$signed_native_ready" != true && "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.allow_unsigned_preview }}" == "true" ]]; then\n            unsigned_preview_allowed=true\n          fi': (
             "manual-only unsigned preview guard"
         ),
+        'if [[ "${{ github.event_name }}" == "push" ]]; then\n                echo "::error::Tag-triggered releases require protected Windows and macOS signing material; no partial release will be built or published." >&2\n                exit 1\n              fi': (
+            "tag-triggered signing-material fail-fast guard"
+        ),
         "python scripts/check_repository_cleanup.py --require-clean": "clean checkout requirement before tagging",
     }
     for snippet, label in required_snippets.items():

@@ -119,6 +119,10 @@ jobs:
             if [[ "$unsigned_preview_allowed" == true ]]; then
               echo "::warning::Protected signing material is unavailable; building an explicitly unsigned preview release. Do not treat its native installers as trusted production artifacts."
             else
+              if [[ "${{ github.event_name }}" == "push" ]]; then
+                echo "::error::Tag-triggered releases require protected Windows and macOS signing material; no partial release will be built or published." >&2
+                exit 1
+              fi
               echo "::notice::Protected signing material is unavailable; signed Windows/macOS jobs and GitHub Release publishing will be skipped unless a maintainer manually dispatches this workflow with allow_unsigned_preview=true."
             fi
           fi
@@ -458,22 +462,12 @@ jobs:
           merge-multiple: true
       - name: Validate release publish assets
         run: python scripts/check_release_publish_assets.py --assets-dir release-assets --tag "$RELEASE_TAG" --repository "${{ github.repository }}"
-      - name: Label release channel
-        shell: bash
-        run: |
-          if [[ "${{ needs.release-preflight.outputs.unsigned_native_preview_allowed }}" == "true" ]]; then
-            echo "RELEASE_NAME=$RELEASE_TAG (UNSIGNED PREVIEW)" >> "$GITHUB_ENV"
-            echo "RELEASE_PRERELEASE=true" >> "$GITHUB_ENV"
-          else
-            echo "RELEASE_NAME=$RELEASE_TAG" >> "$GITHUB_ENV"
-            echo "RELEASE_PRERELEASE=false" >> "$GITHUB_ENV"
-          fi
       - name: Upload release assets
         uses: softprops/action-gh-release@c12583777ecdfd3be55c69cf75464299dc01057e # v3
         with:
           tag_name: ${{ env.RELEASE_TAG }}
-          name: ${{ env.RELEASE_NAME }}
-          prerelease: ${{ env.RELEASE_PRERELEASE }}
+          name: ${{ needs.release-preflight.outputs.unsigned_native_preview_allowed == 'true' && format('{0} (UNSIGNED PREVIEW)', env.RELEASE_TAG) || env.RELEASE_TAG }}
+          prerelease: ${{ needs.release-preflight.outputs.unsigned_native_preview_allowed == 'true' }}
           fail_on_unmatched_files: true
           files: release-assets/**
   publish-protected-platform-evidence:

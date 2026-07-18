@@ -519,11 +519,11 @@ Implementation:
   `row-gui.exe` presence on GUI-capable Windows architectures.
 - Pins the Windows installer toolchain in CI: Inno Setup `6.3.3` and WiX
   `5.0.2`.
-- The signed production path requires Authenticode credentials. If they are
-  unavailable, tag-triggered publication skips Windows installers. A maintainer
-  may manually dispatch the release workflow with `allow_unsigned_preview=true`
-  to publish clearly labeled **UNSIGNED PREVIEW** installers as a GitHub
-  prerelease; they are not trusted production artifacts.
+- The signed production path requires Authenticode credentials. Without them,
+  a tag-triggered release fails before publication. A maintainer may manually
+  dispatch the release workflow with `allow_unsigned_preview=true` to publish
+  clearly labeled **UNSIGNED PREVIEW** installers as a GitHub prerelease; they
+  are not trusted production artifacts.
 - Treats Windows XP, Vista, Windows 7 and Windows 8.0 as legacy remote targets,
   not as first-class modern native runtime targets. Windows XP x86/x64 remote
   endpoints use isolated per-profile legacy opt-ins.

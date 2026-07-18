@@ -81,6 +81,22 @@ def test_release_truth_checker_requires_manual_only_unsigned_preview_guard() -> 
     assert any("manual-only unsigned preview guard" in error for error in errors)
 
 
+def test_release_truth_checker_requires_tag_signing_material_fail_fast_guard() -> None:
+    checker = _load_release_truth_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        '              if [[ "${{ github.event_name }}" == "push" ]]; then\n'
+        '                echo "::error::Tag-triggered releases require protected Windows and macOS signing material; no partial release will be built or published." >&2\n'
+        "                exit 1\n"
+        "              fi\n",
+        "",
+        1,
+    )
+
+    errors = checker.check_release_preflight(workflow)
+
+    assert any("tag-triggered signing-material fail-fast guard" in error for error in errors)
+
+
 def test_release_truth_checker_requires_preflight_tag_checkout() -> None:
     checker = _load_release_truth_checker()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(

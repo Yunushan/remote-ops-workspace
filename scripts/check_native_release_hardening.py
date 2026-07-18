@@ -287,7 +287,9 @@ def check_signing_readiness_gate(workflow: str) -> list[str]:
     for snippet, label in {
         "allow_unsigned_preview:": "manual unsigned-preview workflow input",
         "UNSIGNED PREVIEW": "unsigned preview release label",
-        "prerelease: ${{ env.RELEASE_PRERELEASE }}": "unsigned preview prerelease marker",
+        "prerelease: ${{ needs.release-preflight.outputs.unsigned_native_preview_allowed == 'true' }}": (
+            "unsigned preview prerelease marker"
+        ),
     }.items():
         if snippet not in workflow:
             errors.append(f"release workflow missing {label}: {snippet}")

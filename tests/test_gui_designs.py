@@ -522,7 +522,7 @@ def test_mobaxterm_rail_geometry_is_shared_metadata() -> None:
     assert (chrome.active_x, chrome.active_y_offset, chrome.active_width, chrome.active_height) == (2, -3, 20, 30)
     assert (chrome.label_width, chrome.label_height, chrome.label_step) == (24, 54, 58)
     assert chrome.unlabeled_gap_after == 8
-    assert chrome.label_font_size == 10
+    assert chrome.label_font_size == 12
     assert chrome.render_source == "generated-pixmap"
     assert [(item.role, item.static_icon_y, item.static_label_y) for item in geometry] == [
         ("collapse", 8, 0),

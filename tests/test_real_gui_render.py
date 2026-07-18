@@ -159,6 +159,53 @@ def test_real_gui_render_uses_native_windows_backend_by_default() -> None:
     assert checker.default_qt_platform("linux") == "offscreen"
     assert checker.default_qt_scale_factor("win32") == "1"
     assert checker.default_qt_scale_factor("linux") is None
+    assert checker.effective_qt_scale_factor("1.25", "win32") == "1.25"
+    assert checker.effective_qt_scale_factor("1.5", "linux") == "1.5"
+    assert checker.effective_qt_scale_factor(None, "win32") == "1"
+    assert checker.effective_qt_scale_factor(None, "linux") is None
+
+
+def test_real_gui_render_capture_preserves_explicit_scale_factor(monkeypatch) -> None:
+    checker = _load_checker()
+    observed: dict[str, str | None] = {}
+
+    def fake_capture_live_gui(_preset_ids, *, out_dir=None):
+        observed["scale_factor"] = checker.os.environ.get("QT_SCALE_FACTOR")
+        observed["out_dir"] = str(out_dir) if out_dir is not None else None
+        return [], [], []
+
+    monkeypatch.setenv("QT_SCALE_FACTOR", "1.25")
+    monkeypatch.setattr(checker, "_capture_live_gui", fake_capture_live_gui)
+
+    errors, messages = checker.capture_live_gui(["mobaxterm"])
+
+    assert errors == []
+    assert messages == []
+    assert observed["scale_factor"] == "1.25"
+    assert checker.os.environ["QT_SCALE_FACTOR"] == "1.25"
+
+
+def test_real_gui_render_moba_live_contract_requires_usable_crisp_surfaces() -> None:
+    source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
+    contract_source = source[
+        source.index("def check_preset_live_contract") :
+        source.index("def live_tab_labels")
+    ]
+
+    assert '"mobaTerminalInputVisible": True' in contract_source
+    assert "terminal_input.isVisible()" in contract_source
+    assert "terminal_input.isEnabled()" in contract_source
+    assert "transcript_keys =" not in contract_source
+    assert "transcript_tones =" not in contract_source
+    assert "for line in EXPECTED_MOBA_TERMINAL_TRANSCRIPT" not in contract_source
+    assert "route.web_console_line not in terminal_text" not in source
+    assert "route.terminal_prompt not in terminal_text" not in source
+    assert "banner_frame.frameWidth() != 1" in contract_source
+    assert "banner_frame.contentsRect().getRect() != expected_contents" in contract_source
+    assert "QFont.HintingPreference.PreferFullHinting" in contract_source
+    assert '"mobaRailTextRenderMode"' in contract_source
+    assert '"device-pixel-pixmap"' in contract_source
+    assert '"mobaRailTextDevicePixelRatio"' in contract_source
 
 
 def test_real_gui_render_normalizes_high_dpi_capture_dimensions() -> None:
@@ -1638,7 +1685,7 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "label_height": 54,
         "label_step": 58,
         "unlabeled_gap_after": 8,
-        "label_font_size": 10,
+        "label_font_size": 12,
         "render_source": "generated-pixmap",
     }
     assert moba["expected_moba_rail_items"] == [

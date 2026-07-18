@@ -139,6 +139,7 @@ from remote_ops_workspace.moba_connected import (  # noqa: E402
     moba_telemetry_cells,
 )
 from remote_ops_workspace.models import Profile  # noqa: E402
+from remote_ops_workspace.terminal import TerminalPanePlan  # noqa: E402
 
 REQUESTED_SIZE = (1420, 820)
 MIN_CAPTURE_SIZE = (1100, 680)
@@ -1125,7 +1126,7 @@ def capture_live_gui(
     old_scale_factor = os.environ.get("QT_SCALE_FACTOR")
     old_home = os.environ.get("ROW_HOME")
     os.environ.setdefault("QT_QPA_PLATFORM", default_qt_platform())
-    if (scale_factor := default_qt_scale_factor()) is not None:
+    if (scale_factor := effective_qt_scale_factor(old_scale_factor)) is not None:
         os.environ["QT_SCALE_FACTOR"] = scale_factor
     captures: list[CaptureResult] = []
     errors: list[str] = []
@@ -1159,6 +1160,17 @@ def default_qt_platform(platform: str | None = None) -> str:
 def default_qt_scale_factor(platform: str | None = None) -> str | None:
     resolved = platform or sys.platform
     return "1" if resolved.startswith("win") else None
+
+
+def effective_qt_scale_factor(
+    explicit_scale_factor: str | None,
+    platform: str | None = None,
+) -> str | None:
+    """Preserve an explicit DPI test leg while retaining deterministic defaults."""
+
+    if explicit_scale_factor is not None:
+        return explicit_scale_factor
+    return default_qt_scale_factor(platform)
 
 
 def logical_capture_size(width: int, height: int, device_pixel_ratio: float) -> tuple[int, int]:
@@ -1466,7 +1478,31 @@ def prepare_preset_live_state(window: Any, preset_id: str) -> list[str]:
 def prepare_moba_connected_reference(window: Any) -> list[str]:
     try:
         profile = window.store.get(PRESET_REFERENCE_PROFILES["mobaxterm"])
-        window.launch_profile(profile, dry_run=False, prefix="CI CONNECTED")
+        # The render gate must not race DNS or an unavailable SSH endpoint.
+        # Keep a real local QProcess alive so focus, typing and line-input
+        # readiness are measured deterministically without fabricating remote
+        # terminal output.
+        transport_harness = (
+            "import sys\n"
+            "print('REFERENCE TRANSPORT READY', flush=True)\n"
+            "for line in sys.stdin:\n"
+            "    print(line, end='', flush=True)\n"
+        )
+        window.open_moba_connected_session_tab(
+            profile,
+            TerminalPanePlan(
+                title=profile.name,
+                command=[
+                    sys.executable,
+                    "-u",
+                    "-c",
+                    transport_harness,
+                ],
+                source="real-gui-render-local-transport",
+            ),
+            remote_path="/var/log",
+            tab_status="CI CONNECTED",
+        )
     except (KeyError, LauncherError, ValueError) as exc:
         return [f"mobaxterm live GUI could not open connected reference profile: {exc}"]
     return []
@@ -1803,6 +1839,7 @@ def capture_product_reference_transcript(window: Any, preset_id: str, reference_
 
 def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
     from PyQt6.QtCore import Qt
+    from PyQt6.QtGui import QFont
     from PyQt6.QtWidgets import (
         QCheckBox,
         QFrame,
@@ -2141,6 +2178,8 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
             str(label.property("mobaRailRole") or ""): label
             for label in window.findChildren(QLabel, "mobaRailLabel")
         }
+        if EXPECTED_MOBA_RAIL_CHROME.label_font_size != 12:
+            errors.append("mobaxterm live GUI rail crisp font size must be 12 pixels")
         for role, expected_label in EXPECTED_MOBA_RAIL_LABELS.items():
             label = rail_labels.get(role)
             if label is None or label.text() != expected_label:
@@ -2162,6 +2201,22 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                 errors.append(f"mobaxterm live GUI rail label {role!r} width drifted")
             if label.height() != EXPECTED_MOBA_RAIL_CHROME.label_height:
                 errors.append(f"mobaxterm live GUI rail label {role!r} height drifted")
+            if label.font().pixelSize() != 12:
+                errors.append(f"mobaxterm live GUI rail label {role!r} must render at 12 pixels")
+            if label.font().hintingPreference() != QFont.HintingPreference.PreferFullHinting:
+                errors.append(f"mobaxterm live GUI rail label {role!r} must use full font hinting")
+            if str(label.property("mobaRailTextRenderMode") or "") != "device-pixel-pixmap":
+                errors.append(
+                    f"mobaxterm live GUI rail label {role!r} must use device-pixel-pixmap rendering"
+                )
+            try:
+                rendered_dpr = float(label.property("mobaRailTextDevicePixelRatio"))
+            except (TypeError, ValueError):
+                rendered_dpr = 0.0
+            if abs(rendered_dpr - float(label.devicePixelRatioF())) > 0.001:
+                errors.append(
+                    f"mobaxterm live GUI rail label {role!r} device-pixel ratio drifted"
+                )
         sftp_toolbar = window.findChild(QFrame, "mobaSftpToolbar")
         sftp_queue = window.findChild(QLabel, EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_ROUTE.queue_object)
         if sftp_toolbar is None:
@@ -3053,6 +3108,19 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
         if banner_frame is None:
             errors.append("mobaxterm live GUI SSH banner card is missing")
         else:
+            expected_contents = (
+                1,
+                1,
+                EXPECTED_MOBA_SSH_BANNER_CHROME.static_width - 2,
+                EXPECTED_MOBA_SSH_BANNER_CHROME.static_height - 2,
+            )
+            if banner_frame.frameWidth() != 1:
+                errors.append("mobaxterm live GUI SSH banner must use a one-pixel frame")
+            if banner_frame.contentsRect().getRect() != expected_contents:
+                errors.append(
+                    "mobaxterm live GUI SSH banner content rectangle must fill its "
+                    "one-pixel frame without stylesheet margins"
+                )
             expected_frame_properties = {
                 "mobaBannerLeftOffset": EXPECTED_MOBA_SSH_BANNER_CHROME.static_left_offset,
                 "mobaBannerTopOffset": EXPECTED_MOBA_SSH_BANNER_CHROME.static_top_offset,
@@ -3143,25 +3211,28 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
             expected_visibility = {
                 "mobaTerminalHeaderVisible": False,
                 "mobaTerminalCommandRowVisible": False,
-                "mobaTerminalInputVisible": False,
+                "mobaTerminalInputVisible": True,
                 "mobaTerminalDirectInput": True,
             }
             for property_name, expected_value in expected_visibility.items():
                 if bool(terminal_pane.property(property_name)) != expected_value:
                     errors.append(f"mobaxterm live GUI terminal pane {property_name} drifted")
+            terminal_input = terminal_pane.findChild(QLineEdit, "terminalInput")
+            if terminal_input is None:
+                errors.append("mobaxterm live GUI terminal line-input fallback is missing")
+            else:
+                if not terminal_input.isVisible():
+                    errors.append("mobaxterm live GUI terminal line-input fallback must be visible")
+                if not terminal_input.isEnabled():
+                    errors.append("mobaxterm live GUI terminal line-input fallback must be enabled")
+                input_placeholder = terminal_input.placeholderText().lower()
+                if "command" not in input_placeholder or "press enter" not in input_placeholder:
+                    errors.append(
+                        "mobaxterm live GUI terminal line-input fallback must explain Enter submission"
+                    )
         if terminal_output is None:
-            errors.append("mobaxterm live GUI terminal transcript output is missing")
+            errors.append("mobaxterm live GUI terminal runtime output is missing")
         else:
-            transcript_keys = list(terminal_output.property("mobaTerminalTranscriptKeys") or [])
-            transcript_tones = list(terminal_output.property("mobaTerminalTranscriptTones") or [])
-            if transcript_keys != EXPECTED_MOBA_TERMINAL_TRANSCRIPT_KEYS:
-                errors.append(f"mobaxterm live GUI terminal transcript keys drifted: {transcript_keys}")
-            if transcript_tones != EXPECTED_MOBA_TERMINAL_TRANSCRIPT_TONES:
-                errors.append(f"mobaxterm live GUI terminal transcript tones drifted: {transcript_tones}")
-            transcript_text = terminal_output.toPlainText()
-            for line in EXPECTED_MOBA_TERMINAL_TRANSCRIPT:
-                if line.text and line.text not in transcript_text:
-                    errors.append(f"mobaxterm live GUI terminal transcript missing line: {line.key}")
             if bool(terminal_output.property("mobaPlainTerminalMode")) is not True:
                 errors.append("mobaxterm live GUI terminal output must be marked as Moba plain terminal mode")
             geometry_keys = list(terminal_output.property("mobaTerminalTranscriptGeometryKeys") or [])
@@ -4776,12 +4847,6 @@ def check_live_moba_connected_session_identity_route(window: Any) -> list[str]:
         errors.append("mobaxterm live GUI connected identity banner target drifted")
     if terminal_output is None:
         errors.append("mobaxterm live GUI connected identity missing terminal output")
-    else:
-        terminal_text = terminal_output.toPlainText()
-        if route.web_console_line not in terminal_text:
-            errors.append("mobaxterm live GUI connected identity web console line drifted")
-        if route.terminal_prompt not in terminal_text:
-            errors.append("mobaxterm live GUI connected identity terminal prompt drifted")
     if len(telemetry_identity_cells) != 1:
         errors.append("mobaxterm live GUI connected identity must expose one target telemetry cell")
     elif str(telemetry_identity_cells[0].property("mobaTelemetryDisplayText") or "") != route.telemetry_target:

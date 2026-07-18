@@ -3356,11 +3356,6 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
             ),
         },
     )
-    expected_moba_transcript = (
-        "\n".join(line.text for line in moba_split_state.terminal_transcript)
-        if moba_split_state is not None
-        else ""
-    )
     moba_plain_pane_details = [
         {
             "plain_mode": pane.property("mobaPlainTerminalMode"),
@@ -3385,14 +3380,16 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
             and bool(pane.output.property("mobaPlainTerminalMode"))
             and not pane.header.isVisible()
             and not pane.command_row.isVisible()
-            and not pane.input.isVisible()
+            and pane.input.isVisible()
             and bool(pane.property("mobaConnectedRouteKey"))
             and bool(pane.property("mobaConnectedIdentityRouteKey"))
             and bool(pane.property("mobaSftpTerminalFolderRouteKey"))
             and pane.property("mobaConnectedRouteTarget") == moba_split_state.target
             and pane.property("mobaSftpTerminalFolderRoutePath")
             == moba_split_state.remote_path
-            and pane.output.toPlainText().startswith(expected_moba_transcript)
+            and not bool(pane.output.property("mobaTerminalTranscriptInjected"))
+            and "Last login: Sat Jun  6 05:27:50 2026"
+            not in pane.output.toPlainText()
             for pane in moba_panes
         ),
         moba_plain_pane_details,
@@ -3451,7 +3448,7 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
             bool(pane.property("mobaPlainTerminalMode"))
             and not pane.header.isVisible()
             and not pane.command_row.isVisible()
-            and not pane.input.isVisible()
+            and pane.input.isVisible()
             and pane.property("mobaConnectedRouteTarget") == duplicate_moba_state.target
             and pane.property("mobaSftpTerminalFolderRoutePath")
             == duplicate_moba_state.remote_path
@@ -3789,15 +3786,35 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
             pane.output.textCursor().selectedText(),
         )
         cursor = pane.output.textCursor()
-        cursor.movePosition(cursor.MoveOperation.Start)
-        cursor.movePosition(cursor.MoveOperation.NextWord, cursor.MoveMode.KeepAnchor)
+        cursor.setPosition(0)
+        cursor.setPosition(len("alpha"), cursor.MoveMode.KeepAnchor)
         pane.output.setTextCursor(cursor)
         expected_clipboard = cursor.selectedText()
+        clipboard_probe = "row-gui-clipboard-roundtrip"
+        QApplication.clipboard().setText(clipboard_probe)
+        clipboard_roundtrip_available = (
+            QApplication.clipboard().text() == clipboard_probe
+        )
         pane.copy_command()
+        clipboard_text = QApplication.clipboard().text()
+        internal_copy_evidence = str(
+            pane.output.property("terminalLastCopiedText") or ""
+        )
         record(
             "terminal-copy-prefers-selection",
-            QApplication.clipboard().text() == expected_clipboard,
-            QApplication.clipboard().text(),
+            internal_copy_evidence == expected_clipboard
+            and (
+                clipboard_text == expected_clipboard
+                or not clipboard_roundtrip_available
+            ),
+            {
+                "clipboard": clipboard_text,
+                "expected": expected_clipboard,
+                "clipboard_roundtrip_available": clipboard_roundtrip_available,
+                "internal_copy_evidence": internal_copy_evidence,
+                "transcript": pane.output.toPlainText(),
+                "plan": pane.plan.printable(),
+            },
         )
 
     # Run minimum-width geometry evidence after stateful interaction coverage,

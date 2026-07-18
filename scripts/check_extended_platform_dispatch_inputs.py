@@ -44,7 +44,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         )
     )
     parser.add_argument("--target", required=True, choices=sorted(LINUX_TARGETS))
-    parser.add_argument("--release-tag", required=True, help="Release tag, for example v1.0.7")
+    parser.add_argument("--release-tag", required=True, help="Release tag, for example v1.0.8")
     parser.add_argument(
         "--release-asset-base-url",
         required=True,

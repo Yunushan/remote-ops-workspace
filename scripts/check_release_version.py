@@ -27,7 +27,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Require an immutable release tag to match both project version declarations."
     )
-    parser.add_argument("--release-tag", required=True, help="exact release tag, for example v1.0.7")
+    parser.add_argument("--release-tag", required=True, help="exact release tag, for example v1.0.8")
     args = parser.parse_args(argv)
 
     errors = check_release_version(args.release_tag)

@@ -68,7 +68,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         )
     )
     parser.add_argument("--target", choices=sorted(LINUX_TARGETS), required=True)
-    parser.add_argument("--release-tag", required=True, help="Release tag, for example v1.0.7")
+    parser.add_argument("--release-tag", required=True, help="Release tag, for example v1.0.8")
     parser.add_argument("--assets-dir", type=Path, required=True, help="directory containing Linux native artifacts")
     parser.add_argument("--builder-evidence", type=Path, required=True, help="builder identity JSON")
     parser.add_argument("--smoke-evidence", type=Path, required=True, help="native smoke log captured on the builder")

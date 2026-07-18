@@ -136,6 +136,17 @@ def test_windows_wix_debug_sidecars_are_removed() -> None:
     assert "Remove-Item -LiteralPath $WixPdb" in script
 
 
+def test_windows_inno_setup_discovery_skips_unset_search_roots() -> None:
+    script = Path("scripts/make_windows_native.ps1").read_text(encoding="utf-8")
+
+    assert '[Environment]::GetEnvironmentVariable("LOCALAPPDATA")' in script
+    assert '[Environment]::GetEnvironmentVariable("ProgramFiles(x86)")' in script
+    assert '[Environment]::GetEnvironmentVariable("ProgramFiles")' in script
+    assert "[string]::IsNullOrWhiteSpace($LocalAppData)" in script
+    assert "[string]::IsNullOrWhiteSpace($ProgramFilesRoot)" in script
+    assert "foreach ($Candidate in $Candidates)" in script
+
+
 def test_windows_native_package_builds_double_click_gui_launcher() -> None:
     script = Path("scripts/make_windows_native.ps1").read_text(encoding="utf-8")
     cli = Path("src/remote_ops_workspace/cli.py").read_text(encoding="utf-8")

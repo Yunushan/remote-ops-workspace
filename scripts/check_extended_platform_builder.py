@@ -148,7 +148,7 @@ def main(argv: list[str] | None = None) -> int:
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Validate an extended-platform native builder.")
     parser.add_argument("--target", choices=sorted(LINUX_TARGET_ARCHES), required=True)
-    parser.add_argument("--release-tag", help="release tag this builder evidence is bound to, for example v1.0.7")
+    parser.add_argument("--release-tag", help="release tag this builder evidence is bound to, for example v1.0.8")
     parser.add_argument("--workflow-run-url", help="GitHub Actions run URL this builder evidence is bound to")
     parser.add_argument(
         "--workflow-run-attempt",

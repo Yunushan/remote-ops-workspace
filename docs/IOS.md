@@ -17,7 +17,7 @@ current Xcode runtime on the runner.
 
 ## Supported path
 
-1. Build or download `remote-ops-workspace-v1.0.7-web-pwa.zip`.
+1. Build or download `remote-ops-workspace-v1.0.8-web-pwa.zip`.
 2. Serve the extracted `apps/web` files from a trusted HTTPS origin or an internal portal.
 3. Open the site from Safari or another trusted browser.
 4. Use the browser's Add to Home Screen flow when an installed PWA-style launch icon is needed.

@@ -63,7 +63,18 @@ article has accepted product-depth evidence.
   bundle assembly and release evidence validation for live macro replay. The
   PyQt terminal pane now exposes Record/Stop/Cancel/Replay macro controls,
   captures operator-submitted terminal input and schedules recorded payload
-  injection back into the live pane with preserved event timing.
+  injection back into the live pane with preserved event timing. Connected SSH
+  panes request a remote TTY, accept printable, navigation and control keys
+  directly on the transcript surface, expose Copy/Paste/Select/Clear/Restart/
+  Stop through a terminal context menu and close through a non-blocking
+  terminate-then-kill lifecycle. Moba rail icon and rotated-label hit areas now
+  dispatch the same action; Sessions/Favorites switch the visible profile tree
+  without destroying a connected SFTP dock, and SFTP returns to that dock. The
+  connected SFTP toolbar now routes path/parent navigation, download/upload
+  transfer queues, reconnect, Tools and terminal focus to live GUI workflows.
+  New-file, new-folder, delete, ASCII-mode and split-view controls remain
+  disabled in that dock until safe operational backends replace their earlier
+  metadata-only previews.
 - MobApt-style `row mobapt status/search/install/update` workflow that
   inventories Unix tools, discovers host package managers such as `apt`,
   `brew`, `winget`, `scoop` and `choco`, builds explicit argv plans and

@@ -3144,6 +3144,7 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                 "mobaTerminalHeaderVisible": False,
                 "mobaTerminalCommandRowVisible": False,
                 "mobaTerminalInputVisible": False,
+                "mobaTerminalDirectInput": True,
             }
             for property_name, expected_value in expected_visibility.items():
                 if bool(terminal_pane.property(property_name)) != expected_value:
@@ -4887,6 +4888,8 @@ def check_live_moba_sftp_toolbar_action_route(
     queue: Any,
     buttons: list[Any],
 ) -> list[str]:
+    from PyQt6.QtCore import Qt
+
     route = EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_ROUTE
     target_action_key = "download"
     target_index = route.action_keys.index(target_action_key)
@@ -4964,6 +4967,18 @@ def check_live_moba_sftp_toolbar_action_route(
     if errors:
         return errors
 
+    for row_index in range(table.topLevelItemCount()):
+        candidate = table.topLevelItem(row_index)
+        if (
+            str(candidate.data(0, Qt.ItemDataRole.UserRole) or "") in {"file", "dir"}
+            and candidate.text(0).strip() not in {"", ".."}
+        ):
+            table.setCurrentItem(candidate)
+            break
+    if not target_button.isEnabled():
+        return ["mobaxterm live GUI SFTP download action did not enable for a selected remote item"]
+    if bool(target_button.property("mobaSftpActionOperational")) is not True:
+        return ["mobaxterm live GUI SFTP download action is not marked operational"]
     dock.setProperty("mobaSftpToolbarRouteSuppressDialog", True)
     target_button.click()
     return check_moba_sftp_toolbar_live_action(route_widgets, route, target_action_key, target_status)

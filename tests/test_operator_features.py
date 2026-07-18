@@ -26,6 +26,7 @@ from remote_ops_workspace.models import Profile, Tunnel
 from remote_ops_workspace.network_tools import build_network_tool_plan
 from remote_ops_workspace.snippets import Snippet, SnippetStore
 from remote_ops_workspace.terminal import (
+    _embedded_terminal_command,
     default_shell_command,
     split_shell_plans,
     terminal_plan_for_command,
@@ -153,8 +154,21 @@ def test_terminal_plan_for_profile_uses_launcher() -> None:
     profile = Profile(name="edge", protocol="ssh", host="192.0.2.10", username="admin")
     plan = terminal_plan_for_profile(profile)
     assert plan.title == "edge"
-    assert plan.command[:3] == ["ssh", "-p", "22"]
+    assert plan.command[:4] == ["ssh", "-tt", "-p", "22"]
     assert plan.command[-1] == "admin@192.0.2.10"
+
+
+def test_embedded_terminal_tty_adaptation_is_scoped_and_idempotent() -> None:
+    ssh_profile = Profile(name="edge", protocol="ssh", host="192.0.2.10")
+    custom_profile = Profile(name="custom", protocol="custom", command="ssh example.invalid")
+
+    assert _embedded_terminal_command(custom_profile, ["ssh", "example.invalid"]) == [
+        "ssh",
+        "example.invalid",
+    ]
+    for tty_flag in ("-t", "-tt", "-T"):
+        command = ["ssh", tty_flag, "example.invalid"]
+        assert _embedded_terminal_command(ssh_profile, command) == command
 
 
 def test_sftp_list_plan_uses_batch_stdin() -> None:

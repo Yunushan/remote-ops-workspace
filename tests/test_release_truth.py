@@ -140,10 +140,10 @@ def test_release_truth_checker_requires_explicit_core_upload_tag() -> None:
 def test_release_truth_checker_rejects_stale_default_linux_patterns() -> None:
     checker = _load_release_truth_checker()
 
-    assert "remote-ops-workspace-v1.0.8-linux-<i386|amd64|armhf|arm64>.deb" in (
+    assert "remote-ops-workspace-v1.0.9-linux-<i386|amd64|armhf|arm64>.deb" in (
         checker.STALE_DEFAULT_ARTIFACT_SNIPPETS
     )
-    assert "remote-ops-workspace-v1.0.8-linux-<amd64|arm64>.deb" in checker.REQUIRED_DOC_SNIPPETS
+    assert "remote-ops-workspace-v1.0.9-linux-<amd64|arm64>.deb" in checker.REQUIRED_DOC_SNIPPETS
 
 
 def test_release_truth_checker_requires_linux_smoke_git_head_docs() -> None:
@@ -648,7 +648,7 @@ def test_release_truth_checker_rejects_stale_turkish_release_version() -> None:
     def fake_read(relative: str) -> str:
         text = original_read(relative)
         if relative == "README.tr.md":
-            return text.replace("release-v1.0.8", "release-v1.0.1")
+            return text.replace("release-v1.0.9", "release-v1.0.1")
         return text
 
     checker.read = fake_read

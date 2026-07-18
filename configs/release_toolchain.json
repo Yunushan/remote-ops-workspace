@@ -32,17 +32,17 @@
     },
     {
       "name": "wheel",
-      "version": "0.46.2",
+      "version": "0.47.0",
       "purpose": "Pinned wheel builder dependency."
     },
     {
       "name": "build",
-      "version": "1.2.2.post1",
+      "version": "1.5.0",
       "purpose": "Pinned PEP 517 source/wheel build front-end."
     },
     {
       "name": "pyinstaller",
-      "version": "6.11.1",
+      "version": "6.21.0",
       "purpose": "Pinned native executable packager."
     },
     {

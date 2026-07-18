@@ -38,6 +38,10 @@ these environment secrets before creating a release:
 - `ROW_MACOS_NOTARY_KEY_BASE64`, `ROW_MACOS_NOTARY_KEY_ID`, and
   `ROW_MACOS_NOTARY_ISSUER` for Apple notarization and stapling.
 
+The environment accepts only protected `main` dispatches and `v*` tags. Keep
+that policy in place: `main` is required for the controlled evidence-promotion
+dispatch, while version tags are required for automatic production publishing.
+
 Every GitHub Action used by release, CI, and protected-evidence workflows is
 commit-pinned and checked locally. The Web/PWA Python base image is also
 pinned to an immutable multi-architecture OCI digest. Its Docker build pins
@@ -53,6 +57,16 @@ Dependabot tracks `pip`, GitHub Actions, and Docker updates weekly through
 normal protected-branch policy; automated update tooling does not replace
 release validation or platform signing.
 
+The modern and legacy-wheel release profiles use the same pinned `build`,
+`wheel`, and PyInstaller versions. Only cryptography is intentionally lower in
+the legacy profile, because its x86 Windows and Intel macOS wheel availability
+is independently constrained and guarded by the release-toolchain contract.
+
+Tag-triggered releases fail before building any partial asset set unless both
+the Windows signing and macOS signing/notarization secret sets are available in
+the protected `release` environment. This prevents a successful-looking tag
+run that silently omits signed desktop installers or a GitHub Release.
+
 `.github/workflows/codeql.yml` scans the Python application and
 JavaScript/TypeScript Web/PWA sources on main-branch changes, pull requests,
 and a weekly schedule. Its CodeQL revision is immutable-pinned and checked by
@@ -60,13 +74,11 @@ the normal workflow-pin verifier. Triage every resulting alert before release;
 CodeQL complements, but does not replace, dependency auditing or runtime
 security testing.
 
-When protected signing material is unavailable, the release workflow records a
-notice and skips the Windows/macOS native jobs and GitHub Release publication;
-it never publishes unsigned native assets. Source and Linux workflow artifacts
-may still finish for inspection. Check the Authenticode signatures, macOS
-Gatekeeper assessment, release checksums, and the generated manifests before
-promoting a release. Checksums prove file integrity only; they are not a
-substitute for platform signing.
+Manual evidence-only dispatches can report missing signing material and skip
+release publication; they never publish unsigned native assets. Check the
+Authenticode signatures, macOS Gatekeeper assessment, release checksums, and
+the generated manifests before promoting a release. Checksums prove file
+integrity only; they are not a substitute for platform signing.
 
 ## Updates and Dependencies
 

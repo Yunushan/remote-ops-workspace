@@ -38,10 +38,11 @@ clients available on the target system.
 
 Native `.exe`, `.msi`, `.dmg`, `.pkg`, `.deb`, `.rpm`, and AppImage artifacts
 are built by OS-specific release jobs or matching self-hosted builders. Windows
-and macOS artifacts are unsigned CI builds until release signing credentials are
-configured. APK-style artifacts remain out of scope until there is a real native
-Android wrapper. iOS/iPadOS support is Web/PWA only; no native `.ipa` artifact
-is published.
+and macOS CI candidates can be unsigned until release signing credentials are
+configured, but production tags fail before publication in that state and never
+publish unsigned native assets. APK-style artifacts remain out of scope until
+there is a real native Android wrapper. iOS/iPadOS support is Web/PWA only; no
+native `.ipa` artifact is published.
 
 Native installer smoke coverage is declared in
 `configs/native_installer_smoke.json` and checked by

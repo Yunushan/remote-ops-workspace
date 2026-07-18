@@ -3,7 +3,6 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "codeql.yml"
 CODEQL_PIN = "7188fc363630916deb702c7fdcf4e481b751f97a"
@@ -30,6 +29,9 @@ def check_code_security_workflow(workflow: str | None = None) -> list[str]:
         "name: code-security": "clear workflow name",
         "branches: [main]": "main-branch push or pull-request scope",
         "schedule:": "scheduled recurring scan",
+        "concurrency:\n  group: code-security-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}\n  cancel-in-progress: true": (
+            "same-ref superseded-run cancellation"
+        ),
         "security-events: write": "CodeQL security-event permission",
         "actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10": "pinned checkout action",
         f"github/codeql-action/init@{CODEQL_PIN}": "pinned CodeQL initialization",

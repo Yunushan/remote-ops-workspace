@@ -23,6 +23,21 @@ def test_ci_workflow_requires_single_row_policy_verifier() -> None:
     assert "ci workflow missing repo-policy job for single-row repository gates" in errors
 
 
+def test_ci_workflow_scopes_pushes_to_main_and_cancels_superseded_runs() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+    push_errors = checker.check_ci_workflow(
+        workflow.replace("  push:\n    branches: [main]\n", "  push:\n")
+    )
+    concurrency_errors = checker.check_ci_workflow(
+        workflow.replace("  cancel-in-progress: true\n", "")
+    )
+
+    assert "ci workflow must run on pushes to main" in push_errors
+    assert any("cancel superseded runs" in error for error in concurrency_errors)
+
+
 def test_ci_workflow_requires_policy_job_lint_and_quick_verifier() -> None:
     checker = _load_checker()
     workflow_without_ruff = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
@@ -55,6 +70,21 @@ def test_ci_workflow_requires_dependency_vulnerability_audit() -> None:
     errors = checker.check_ci_workflow(workflow)
 
     assert any("dependency vulnerability audit" in error for error in errors)
+
+
+def test_ci_workflow_requires_qt_headless_runtime_dependency() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
+        "      - name: Install Qt headless runtime dependency\n"
+        "        run: |\n"
+        "          sudo apt-get update\n"
+        "          sudo apt-get install -y libegl1\n",
+        "",
+    )
+
+    errors = checker.check_ci_workflow(workflow)
+
+    assert any("Qt headless runtime dependency" in error for error in errors)
 
 
 def test_ci_workflow_test_matrix_runs_pytest_not_monolithic_verifier() -> None:

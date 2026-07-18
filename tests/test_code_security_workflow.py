@@ -11,6 +11,18 @@ def test_code_security_workflow_checker_passes_current_tree() -> None:
     assert checker.main() == 0
 
 
+def test_code_security_workflow_requires_superseded_run_cancellation() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/codeql.yml").read_text(encoding="utf-8").replace(
+        "  cancel-in-progress: true\n",
+        "",
+    )
+
+    errors = checker.check_code_security_workflow(workflow)
+
+    assert any("superseded-run cancellation" in error for error in errors)
+
+
 def test_code_security_workflow_requires_pinned_codeql_analysis() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/codeql.yml").read_text(encoding="utf-8").replace(

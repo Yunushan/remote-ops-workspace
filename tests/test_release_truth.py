@@ -68,6 +68,19 @@ def test_release_truth_checker_requires_version_gate_before_verifier() -> None:
     assert "release-preflight version gate must run before the repository verifier" in errors
 
 
+def test_release_truth_checker_requires_tag_signing_material_fail_fast_guard() -> None:
+    checker = _load_release_truth_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        "              exit 1\n            fi\n            echo \"::notice::Protected signing material is unavailable; signed Windows/macOS jobs and GitHub Release publishing will be skipped for this manual evidence workflow.\"\n",
+        "            echo \"::notice::Protected signing material is unavailable; signed Windows/macOS jobs and GitHub Release publishing will be skipped for this manual evidence workflow.\"\n",
+        1,
+    )
+
+    errors = checker.check_release_preflight(workflow)
+
+    assert any("tag-triggered signing-material fail-fast guard" in error for error in errors)
+
+
 def test_release_truth_checker_requires_preflight_tag_checkout() -> None:
     checker = _load_release_truth_checker()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(

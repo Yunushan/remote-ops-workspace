@@ -9,8 +9,14 @@ from .plugins import plugin_protocols
 from .profile_validation import SUPPORTED_PROFILE_PROTOCOLS, prepare_profile
 
 PROTOCOL_PRESETS: dict[str, dict[str, str]] = {
-    "ssh": {"port": "22", "options": "strict_host_key_checking=accept-new"},
-    "sftp": {"port": "22", "options": "strict_host_key_checking=accept-new"},
+    "ssh": {
+        "port": "22",
+        "options": "strict_host_key_checking=ask\nconnect_timeout=10",
+    },
+    "sftp": {
+        "port": "22",
+        "options": "strict_host_key_checking=ask\nconnect_timeout=10",
+    },
     "rdp": {"port": "3389", "options": "security=tls\ncert=tofu"},
     "vnc": {"port": "5900", "options": "shared=true"},
     "spice": {"port": "5900", "options": "audio=true"},

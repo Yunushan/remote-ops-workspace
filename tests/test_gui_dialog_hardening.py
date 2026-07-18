@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 
 import pytest
@@ -312,6 +313,232 @@ def test_visible_moba_line_fallback_completes_a_real_pipe_readline(
             pane.process.waitForFinished(1_000)
 
 
+def test_moba_ssh_terminal_starts_the_configured_process(gui_window) -> None:
+    from remote_ops_workspace.terminal import TerminalPanePlan
+
+    _app, window = gui_window
+    profile = Profile(
+        name="ssh-start",
+        protocol="ssh",
+        host="ssh-start.example.invalid",
+        username="operator",
+    )
+    pane = window.new_terminal_pane(
+        TerminalPanePlan(title=profile.name, command=[], source="test"),
+        profile=profile,
+    )
+    process = _install_fake_terminal_process(pane)
+    pane.plan.command = [
+        "ssh",
+        "-tt",
+        "-p",
+        "22",
+        "operator@ssh-start.example.invalid",
+    ]
+
+    pane.start()
+
+    assert process.start_calls == 1
+    assert process.program == "ssh"
+    assert process.arguments == [
+        "-tt",
+        "-p",
+        "22",
+        "operator@ssh-start.example.invalid",
+    ]
+    assert pane.is_running()
+    assert pane.status.text() == "running"
+    assert pane.input.isEnabled()
+    process.finish()
+    pane.deleteLater()
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows ConPTY integration")
+@pytest.mark.parametrize(
+    "command",
+    [
+        ["ssh.exe", "-V"],
+        ["sftp.exe", "-h"],
+    ],
+)
+def test_direct_openssh_panes_select_windows_conpty(gui_window, command) -> None:
+    import shutil
+
+    from PyQt6.QtTest import QTest
+
+    from remote_ops_workspace.terminal import TerminalPanePlan
+    from remote_ops_workspace.windows_conpty import conpty_support
+
+    if not conpty_support().supported:
+        pytest.skip(conpty_support().reason)
+    if shutil.which(command[0]) is None:
+        pytest.skip(f"{command[0]} is unavailable")
+    app, window = gui_window
+
+    pane = window.new_terminal_pane(
+        TerminalPanePlan(
+            title=f"{command[0]}-backend",
+            command=command,
+            source="test",
+        )
+    )
+    try:
+        assert pane.output.property("terminalProcessBackend") == "windows-conpty"
+        assert pane.output.property("terminalEmulatorPty") is True
+        for _ in range(200):
+            app.processEvents()
+            if not pane.is_running():
+                break
+            QTest.qWait(5)
+    finally:
+        if pane.is_running():
+            pane.process.kill()
+            pane.process.waitForFinished(1_000)
+        pane.deleteLater()
+
+
+def test_moba_ssh_line_input_is_written_while_process_is_running(gui_window) -> None:
+    from remote_ops_workspace.terminal import TerminalPanePlan
+
+    _app, window = gui_window
+    profile = Profile(
+        name="ssh-input",
+        protocol="ssh",
+        host="ssh-input.example.invalid",
+        username="operator",
+    )
+    pane = window.new_terminal_pane(
+        TerminalPanePlan(title=profile.name, command=[], source="test"),
+        profile=profile,
+    )
+    process = _install_fake_terminal_process(pane)
+    pane.plan.command = ["ssh", "-tt", "operator@ssh-input.example.invalid"]
+    pane.start()
+    pane.input.setText("printf terminal-regression")
+
+    pane.send_input()
+
+    assert process.written == b"printf terminal-regression\n"
+    assert pane.input.text() == ""
+    assert pane.output.property("terminalLastInputBytesRequested") == 27
+    assert pane.output.property("terminalLastInputBytesAccepted") == 27
+    assert pane.status.text() == "running"
+    process.finish()
+    pane.deleteLater()
+
+
+def test_moba_ssh_line_input_uses_terminal_enter_for_pty_backend(gui_window) -> None:
+    from PyQt6.QtCore import QProcess
+
+    from remote_ops_workspace.terminal import TerminalPanePlan
+
+    _app, window = gui_window
+    profile = Profile(
+        name="ssh-pty-input",
+        protocol="ssh",
+        host="ssh-pty-input.example.invalid",
+        username="operator",
+    )
+    pane = window.new_terminal_pane(
+        TerminalPanePlan(title=profile.name, command=[], source="test"),
+        profile=profile,
+    )
+    pane.process.deleteLater()
+    process = _FakePtyProcess(pane)
+    process.process_state = QProcess.ProcessState.Running
+    process.finished.connect(pane.on_finished)
+    pane.process = process
+    pane.update_process_actions()
+    pane.input.setText("printf terminal-regression")
+
+    pane.send_input()
+
+    assert process.written == b"printf terminal-regression\r"
+    assert pane.output.property("terminalLastInputBytesRequested") == 27
+    assert pane.output.property("terminalLastInputBytesAccepted") == 27
+    process.finish()
+    pane.deleteLater()
+
+
+def test_moba_ssh_secret_prompt_masks_line_input_and_skips_macro_capture(
+    gui_window,
+) -> None:
+    from PyQt6.QtCore import QProcess
+    from PyQt6.QtWidgets import QLineEdit
+
+    from remote_ops_workspace.terminal import TerminalPanePlan
+
+    _app, window = gui_window
+    pane = window.new_terminal_pane(
+        TerminalPanePlan(title="ssh-secret", command=[], source="test")
+    )
+    pane.process.deleteLater()
+    process = _FakePtyProcess(pane)
+    process.process_state = QProcess.ProcessState.Running
+    process.finished.connect(pane.on_finished)
+    pane.process = process
+    pane.update_process_actions()
+    pane.start_macro_capture()
+
+    pane.append_text("operator@example.invalid's password: ")
+
+    assert pane.input.echoMode() == QLineEdit.EchoMode.Password
+    assert pane.input.property("terminalSecretInputActive") is True
+    assert "not recorded" in pane.input.placeholderText()
+    assert not pane.macro_record_button.isEnabled()
+    assert not pane.macro_replay_button.isEnabled()
+    pane.input.setText("controlled-secret")
+    pane.send_input()
+
+    assert process.written == b"controlled-secret\r"
+    assert pane.input.text() == ""
+    assert pane.input.property("terminalLastSubmissionWasSecret") is True
+    assert "controlled-secret" not in pane.output.toPlainText()
+    assert pane.macro_capture_state is not None
+    assert pane.macro_capture_state.events == []
+
+    pane.append_text("\r\nWelcome\r\n$ ")
+    assert pane.input.echoMode() == QLineEdit.EchoMode.Normal
+    assert pane.input.property("terminalSecretInputActive") is False
+    pane.cancel_macro_capture()
+    process.finish()
+    pane.deleteLater()
+
+
+def test_moba_ssh_start_failure_is_visible_in_the_terminal(gui_window) -> None:
+    from remote_ops_workspace.terminal import TerminalPanePlan
+
+    _app, window = gui_window
+    profile = Profile(
+        name="ssh-start-error",
+        protocol="ssh",
+        host="ssh-start-error.example.invalid",
+        username="operator",
+    )
+    pane = window.new_terminal_pane(
+        TerminalPanePlan(title=profile.name, command=[], source="test"),
+        profile=profile,
+    )
+    process = _install_fake_terminal_process(
+        pane,
+        options=_FakeProcessOptions(fail_to_start=True),
+    )
+    pane.plan.command = ["ssh", "-tt", "operator@ssh-start-error.example.invalid"]
+
+    pane.start()
+
+    transcript = pane.output.toPlainText()
+    assert process.start_calls == 1
+    assert not pane.is_running()
+    assert pane.status.text() == "error"
+    assert pane.status.property("state") == "error"
+    assert "FailedToStart" in transcript
+    assert "controlled start failure" in transcript
+    assert pane.start_button.isEnabled()
+    assert not pane.input.isEnabled()
+    pane.deleteLater()
+
+
 def test_terminal_surfaces_short_process_writes_instead_of_silently_losing_input(
     gui_window,
 ) -> None:
@@ -541,6 +768,60 @@ def test_moba_monitoring_controls_change_runtime_and_request_follow_refresh(
     assert dock.property("mobaMonitoringFollowEnabled") is True
     assert refresh_reasons
     assert all(reason for reason in refresh_reasons)
+
+
+def test_moba_monitoring_forces_trusted_noninteractive_ssh_without_mutating_plan(
+    gui_window,
+) -> None:
+    from PyQt6.QtCore import QProcess
+
+    _app, window = gui_window
+    _panel, dock = _open_moba_interaction_test_dock(
+        window,
+        name="monitoring-ssh-hardening",
+    )
+    stored_command = dock.state.monitoring_plan.command
+    stored_command[:] = [
+        "C:\\Windows\\System32\\OpenSSH\\ssh.exe",
+        "-o",
+        "StrictHostKeyChecking=ask",
+        "-oBatchMode=no",
+        "-o",
+        "ConnectTimeout=30",
+        "operator@example.invalid",
+    ]
+    original = list(stored_command)
+
+    runtime = dock.monitoring_runtime_command()
+
+    assert stored_command == original
+    assert runtime.count("BatchMode=yes") == 1
+    assert runtime.count("ConnectTimeout=5") == 1
+    assert runtime.count("StrictHostKeyChecking=yes") == 1
+    assert not any("=ask" in argument or "=no" in argument for argument in runtime)
+
+    control = dock.monitoring_control_widgets["remote-monitoring"]
+    control.setChecked(True)
+    dock.monitoring_generation = 7
+    dock.monitoring_active_generation = 7
+    dock.monitoring_output_buffer[:] = b"Host key verification failed.\r\n"
+    dock.handle_remote_monitoring_finished(255, QProcess.ExitStatus.NormalExit)
+    assert "host key not trusted" in dock.property(
+        "mobaRemoteMonitoringRuntimeMessage"
+    )
+    assert "verify it in the terminal" in dock.property(
+        "mobaRemoteMonitoringRuntimeMessage"
+    )
+
+    dock.monitoring_generation = 8
+    dock.monitoring_active_generation = 8
+    dock.monitoring_output_buffer[:] = (
+        b"Permission denied (publickey,keyboard-interactive,password).\r\n"
+    )
+    dock.handle_remote_monitoring_finished(255, QProcess.ExitStatus.NormalExit)
+    assert "password-only SSH cannot run background monitoring" in dock.property(
+        "mobaRemoteMonitoringRuntimeMessage"
+    )
 
 
 def test_moba_runtime_shutdown_invalidates_late_monitoring_results(
@@ -858,12 +1139,14 @@ class _FakeProcess:
         self.process_state = QProcess.ProcessState.NotRunning
         self.program = ""
         self.arguments = []
+        self.start_calls = 0
         self.written = b""
         self.stdout = b""
         self.stderr = b""
         self.terminated = False
         self.killed = False
         self.deleted = False
+        self.properties = {}
 
     def setProgram(self, program: str) -> None:
         self.program = program
@@ -874,6 +1157,7 @@ class _FakeProcess:
     def start(self) -> None:
         from PyQt6.QtCore import QProcess
 
+        self.start_calls += 1
         if self.options.fail_to_start:
             self.process_state = QProcess.ProcessState.NotRunning
             self.errorOccurred.emit(QProcess.ProcessError.FailedToStart)
@@ -904,6 +1188,12 @@ class _FakeProcess:
     def errorString(self) -> str:
         return "controlled start failure"
 
+    def setProperty(self, name: str, value) -> None:
+        self.properties[name] = value
+
+    def property(self, name: str):
+        return self.properties.get(name)
+
     def terminate(self) -> None:
         self.terminated = True
 
@@ -930,6 +1220,27 @@ class _ShortWriteProcess(_FakeProcess):
         accepted = data[:1]
         self.written += accepted
         return len(accepted)
+
+
+class _FakePtyProcess(_FakeProcess):
+    is_pty = True
+
+
+def _install_fake_terminal_process(
+    pane,
+    *,
+    options: _FakeProcessOptions | None = None,
+) -> _FakeProcess:
+    pane.process.deleteLater()
+    process = _FakeProcess(pane, options=options)
+    process.readyReadStandardOutput.connect(pane.read_stdout)
+    process.readyReadStandardError.connect(pane.read_stderr)
+    process.started.connect(pane.on_started)
+    process.finished.connect(pane.on_finished)
+    process.errorOccurred.connect(pane.on_error)
+    pane.process = process
+    pane.update_process_actions()
+    return process
 
 
 def test_transfer_queue_owns_process_lifecycle_until_completion_and_cancel(gui_window) -> None:

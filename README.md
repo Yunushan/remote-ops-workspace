@@ -192,7 +192,7 @@ The PyQt6 desktop shell provides:
 - external protocol launch buttons;
 - interactive SFTP file browser panes and transfer queue preview dialog for SSH/SFTP profiles;
 - tabbed workspace for process-backed sessions with close confirmation and cleanup;
-- process-backed terminal panes with stdout/stderr capture, stdin entry and managed start/stop state;
+- process-backed terminal panes with stdout/stderr capture, masked secret entry and managed start/stop state, plus native Windows ConPTY transport for direct interactive OpenSSH SSH/SFTP prompts on Windows 10 version 1809 or newer;
 - horizontal and vertical split-pane shells inspired by tiling terminals;
 - selectable GUI view presets: Native, MobaXterm-style, SecureCRT-style, Termius-style, Remmina-style and mRemoteNG-style, with reproducible static previews and live PyQt6 render smoke checks documented in [`docs/GUI_DESIGN.md`](docs/GUI_DESIGN.md);
 - saved layout selector plus create/edit/remove dialogs that open layout panes directly in the workspace;

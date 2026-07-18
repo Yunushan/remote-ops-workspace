@@ -434,6 +434,15 @@ Target support:
 - Windows 8 and Windows 7 as legacy source-only or remote-target systems.
 - Windows Vista and Windows XP as remote targets only.
 
+Direct OpenSSH SSH/SFTP launches inside the PyQt terminal use Windows ConPTY and
+therefore require Windows 10 version 1809/build 17763 or newer. On a host
+without ConPTY, the pane reports a pipe fallback and forces a bounded,
+trusted-host-only, key/agent-only launch; password/passphrase interactivity is
+not claimed there. This boundary does not weaken host-key policy: first-seen
+keys use interactive confirmation, changed keys remain rejected, background
+monitoring requires an already trusted key, and explicit profile settings take
+precedence on the supported interactive path.
+
 Legacy Windows support means this project can store profiles, generate adapter
 commands, and connect to those systems through RDP, VNC, SSH, Telnet, serial
 consoles or raw sockets when the chosen external client can still negotiate the

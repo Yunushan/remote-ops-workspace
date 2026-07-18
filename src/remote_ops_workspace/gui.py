@@ -200,6 +200,7 @@ from .storage import ProfileStore
 from .terminal import (
     TerminalPanePlan,
     default_shell_plan,
+    openssh_command_with_overrides,
     split_shell_plans,
     terminal_plan_for_profile,
     terminal_plan_for_sftp_browser,
@@ -524,6 +525,45 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
     except Exception as exc:  # pragma: no cover - optional dependency
         raise GuiDependencyError("PyQt6 is not installed. Install with: pip install -e '.[desktop]'") from exc
 
+    def _terminal_process_backend(
+        parent,
+        plan: TerminalPanePlan,
+        _profile: Profile | None,
+    ):
+        """Select a real local pseudo-console for interactive Windows OpenSSH."""
+
+        use_windows_conpty = bool(
+            sys.platform == "win32"
+            and plan.command
+            and Path(plan.command[0]).name.lower()
+            in {"ssh", "ssh.exe", "sftp", "sftp.exe"}
+        )
+        if not use_windows_conpty:
+            return QProcess(parent), ""
+        try:
+            from .qt_terminal_process import QtConPtyProcess
+            from .windows_conpty import conpty_support
+
+            support = conpty_support()
+            if support.supported:
+                return QtConPtyProcess(parent), ""
+            reason = support.reason
+        except (ImportError, OSError, RuntimeError) as exc:
+            reason = str(exc)
+        return (
+            _openssh_pipe_fallback_process(parent),
+            (
+                "Local ConPTY is unavailable, so this SSH pane is using a pipe fallback. "
+                "Interactive prompts are unsupported; this launch is restricted to "
+                f"trusted-host key/agent authentication: {reason}"
+            ),
+        )
+
+    def _openssh_pipe_fallback_process(parent):
+        process = QProcess(parent)
+        process.setProperty("terminalOpenSshPipeFallback", True)
+        return process
+
     def _literal_label(text: object = "", parent=None) -> QLabel:
         """Create a QLabel that never interprets profile or route text as rich text."""
 
@@ -703,7 +743,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.setObjectName("terminalPane")
             self.plan = plan
             self.profile = profile
-            self.process = QProcess(self)
+            self.process, self._terminal_backend_warning = _terminal_process_backend(
+                self,
+                plan,
+                profile,
+            )
             self.process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
             self._restart_after_stop = False
             self._rendered_terminal_text = ""
@@ -743,7 +787,16 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.output.viewport().installEventFilter(self)
             self.terminal_emulator = AnsiTerminalTranscript()
             self.output.setProperty("terminalEmulatorBackend", TERMINAL_EMULATOR_BACKEND)
-            self.output.setProperty("terminalEmulatorPty", False)
+            self.output.setProperty(
+                "terminalEmulatorPty",
+                bool(getattr(self.process, "is_pty", False)),
+            )
+            self.output.setProperty(
+                "terminalProcessBackend",
+                "windows-conpty"
+                if bool(getattr(self.process, "is_pty", False))
+                else "qt-process-pipe",
+            )
             self.output.setProperty(
                 "terminalRemotePtyRequested",
                 any(argument in {"-t", "-tt"} for argument in plan.command),
@@ -756,6 +809,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.input = QLineEdit()
             self.input.setObjectName("terminalInput")
             self.input.setPlaceholderText("stdin, shell command or interactive input")
+            self._secret_prompt_active = False
+            self.input.setProperty("terminalSecretInputActive", False)
             self.macro_capture_state: MobaMacroTerminalCaptureState | None = None
             self.macro_last_recording: MobaMacroRecording | None = None
             self.macro_last_injection: MobaMacroTerminalReplayInjection | None = None
@@ -882,6 +937,19 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
         def resizeEvent(self, event) -> None:  # noqa: N802
             super().resizeEvent(event)
             self.layout_terminal_actions(event.size().width())
+            self.resize_terminal_backend()
+
+        def resize_terminal_backend(self) -> None:
+            resize = getattr(self.process, "setTerminalSize", None)
+            if resize is None:
+                return
+            metrics = self.output.fontMetrics()
+            cell_width = max(1, metrics.horizontalAdvance("M"))
+            cell_height = max(1, metrics.lineSpacing())
+            viewport = self.output.viewport().size()
+            columns = max(20, viewport.width() // cell_width)
+            rows = max(5, viewport.height() // cell_height)
+            resize(columns, rows)
 
         def layout_terminal_actions(self, width: int) -> None:
             compact = width < 620
@@ -1065,8 +1133,22 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.append_text(f"$ {self.plan.printable()}\n")
             for note in self.plan.notes:
                 self.append_text(f"[note] {note}\n")
-            self.process.setProgram(self.plan.command[0])
-            self.process.setArguments(self.plan.command[1:])
+            if self._terminal_backend_warning:
+                self.append_text(f"[warning] {self._terminal_backend_warning}\n")
+            runtime_command = list(self.plan.command)
+            process_property = getattr(self.process, "property", lambda _name: None)
+            if bool(process_property("terminalOpenSshPipeFallback")):
+                runtime_command = openssh_command_with_overrides(
+                    runtime_command,
+                    {
+                        "BatchMode": "yes",
+                        "ConnectTimeout": "10",
+                        "StrictHostKeyChecking": "yes",
+                    },
+                )
+            self.process.setProgram(runtime_command[0])
+            self.process.setArguments(runtime_command[1:])
+            self.resize_terminal_backend()
             self.process.start()
             self.update_process_actions()
 
@@ -1165,12 +1247,15 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             if not self.is_running():
                 self.append_text("[stdin ignored: process is not running]\n")
                 return
-            self.capture_macro_input(line)
-            # This fallback writes to a pipe-backed QProcess rather than a PTY.
-            # LF is therefore required to complete conventional line readers;
-            # direct key events still translate Enter to CR for terminal-style
-            # sessions in eventFilter().
-            self.send_raw_input((line + "\n").encode("utf-8"))
+            secret_input = self._secret_prompt_active
+            self.input.setProperty("terminalLastSubmissionWasSecret", secret_input)
+            if not secret_input:
+                self.capture_macro_input(line)
+            # A terminal Enter key is carriage return.  Preserve LF for the
+            # ordinary pipe backend so conventional line readers still receive
+            # a complete line when no local PTY is available.
+            terminator = "\r" if bool(getattr(self.process, "is_pty", False)) else "\n"
+            self.send_raw_input((line + terminator).encode("utf-8"))
 
         def macro_capture_name(self) -> str:
             slug = re.sub(r"[^A-Za-z0-9_.-]+", "-", self.plan.title).strip("-").lower()
@@ -1182,6 +1267,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             return f"{slug}-{id(self):x}"
 
         def start_macro_capture(self) -> None:
+            if self._secret_prompt_active:
+                self.append_text("\n[macro recording unavailable during secret input]\n")
+                return
             if self.macro_capture_state is not None and self.macro_capture_state.active:
                 return
             self.macro_capture_state = start_terminal_macro_capture(
@@ -1241,6 +1329,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.update_process_actions()
 
         def replay_macro_capture(self) -> None:
+            if self._secret_prompt_active:
+                self.append_text("\n[macro replay unavailable during secret input]\n")
+                return
             if self.macro_last_recording is None:
                 self.append_text("\n[macro replay unavailable: no recorded macro]\n")
                 return
@@ -1363,10 +1454,44 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 cursor.insertText(fragment.text, text_format)
             self._rendered_terminal_text = transcript
             self.output.moveCursor(QTextCursor.MoveOperation.End)
+            self.refresh_terminal_input_security(transcript)
+
+        @staticmethod
+        def terminal_secret_prompt_visible(transcript: str) -> bool:
+            tail = transcript[-512:]
+            return bool(
+                re.search(
+                    r"(?i)(?:password|passphrase)[^:\r\n]{0,240}:\s*$",
+                    tail,
+                )
+            )
+
+        def refresh_terminal_input_security(self, transcript: str) -> None:
+            active = self.terminal_secret_prompt_visible(transcript)
+            if active == self._secret_prompt_active:
+                return
+            self._secret_prompt_active = active
+            if active:
+                self.input.clear()
+            echo_mode = (
+                QLineEdit.EchoMode.Password
+                if active
+                else QLineEdit.EchoMode.Normal
+            )
+            self.input.setEchoMode(echo_mode)
+            self.input.setPlaceholderText(
+                "Secret input (masked, not recorded); press Enter"
+                if active
+                else "stdin, shell command or interactive input"
+            )
+            self.input.setProperty("terminalSecretInputActive", active)
+            self.output.setProperty("terminalSecretInputActive", active)
+            self.update_process_actions()
 
         def on_started(self) -> None:
             self.set_status("running", "running")
             self.update_process_actions()
+            QTimer.singleShot(0, self.resize_terminal_backend)
             QTimer.singleShot(0, self.focus_terminal_input)
 
         def focus_terminal_input(self) -> None:
@@ -1379,11 +1504,14 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
         def on_error(self, error) -> None:
             self.set_status("error", "error")
-            self.append_text(f"\n[error] {error.name}\n")
+            detail = str(self.process.errorString()).strip()
+            suffix = f": {detail}" if detail and detail != error.name else ""
+            self.append_text(f"\n[error] {error.name}{suffix}\n")
             self.update_process_actions()
 
         def on_finished(self, exit_code: int, exit_status: QProcess.ExitStatus) -> None:
             self._stop_timer.stop()
+            self.refresh_terminal_input_security("")
             state = "ready" if exit_code == 0 else "error"
             self.set_status(f"exited {exit_code}", state)
             self.append_text(f"\n[process exited: {exit_code}, {exit_status.name}]\n")
@@ -1406,10 +1534,20 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.restart_button.setEnabled(bool(self.plan.command))
             self.stop_button.setEnabled(running)
             self.input.setEnabled(running)
-            self.macro_record_button.setEnabled(running and not capture_active and not self.macro_replay_active)
+            self.macro_record_button.setEnabled(
+                running
+                and not capture_active
+                and not self.macro_replay_active
+                and not self._secret_prompt_active
+            )
             self.macro_stop_button.setEnabled(capture_active)
             self.macro_cancel_button.setEnabled(capture_active or self.macro_replay_active)
-            self.macro_replay_button.setEnabled(running and self.macro_last_recording is not None and not capture_active)
+            self.macro_replay_button.setEnabled(
+                running
+                and self.macro_last_recording is not None
+                and not capture_active
+                and not self._secret_prompt_active
+            )
             self.apply_moba_macro_runtime_properties()
 
     class MobaTextEditorHighlighter(QSyntaxHighlighter):
@@ -2610,13 +2748,15 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             if not command:
                 return command
             executable = Path(command[0]).stem.lower()
-            if executable == "ssh" and "BatchMode=yes" not in command:
-                command[1:1] = [
-                    "-o",
-                    "BatchMode=yes",
-                    "-o",
-                    "ConnectTimeout=5",
-                ]
+            if executable == "ssh":
+                command = openssh_command_with_overrides(
+                    command,
+                    {
+                        "BatchMode": "yes",
+                        "ConnectTimeout": "5",
+                        "StrictHostKeyChecking": "yes",
+                    },
+                )
             return command
 
         def request_remote_monitoring_refresh(self, *_args) -> None:
@@ -2695,8 +2835,17 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     (line.strip() for line in reversed(output.splitlines()) if line.strip()),
                     f"exit {exit_code}",
                 )
+                if "permission denied" in detail.lower() and "password" in detail.lower():
+                    detail = (
+                        "password-only SSH cannot run background monitoring; "
+                        "configure key or agent authentication"
+                    )
+                elif "host key verification failed" in detail.lower():
+                    detail = (
+                        "host key not trusted; verify it in the terminal, then refresh"
+                    )
                 self.set_remote_monitoring_status(
-                    f"Monitoring unavailable: {detail[:80]}",
+                    f"Monitoring unavailable: {detail[:120]}",
                     state="error",
                 )
                 self.setProperty("mobaRemoteMonitoringLastError", detail)

@@ -647,6 +647,7 @@ def test_moba_sessions_rail_preserves_connected_sftp_dock(gui_window) -> None:
 
 
 def _open_moba_interaction_test_dock(window, *, name: str):
+    from remote_ops_workspace.moba_connected import RemoteFileEntry
     from remote_ops_workspace.terminal import TerminalPanePlan
 
     moba_index = window.design_select.findData("mobaxterm")
@@ -667,6 +668,14 @@ def _open_moba_interaction_test_dock(window, *, name: str):
     )
     dock = window.moba_connected_dock
     assert dock is not None
+    dock.apply_live_sftp_entries(
+        (
+            RemoteFileEntry("app.log", "file", 64, "Jun 06 12:00"),
+            RemoteFileEntry("archive", "dir", 0, "Jun 05 12:00"),
+        ),
+        request_path="/var/log",
+        plan=dock.state.sftp_list_plan,
+    )
     return panel, dock
 
 
@@ -727,34 +736,41 @@ def test_moba_monitoring_controls_change_runtime_and_request_follow_refresh(
     remote_monitoring = dock.monitoring_control_widgets["remote-monitoring"]
     follow_folder = dock.monitoring_control_widgets["follow-terminal-folder"]
     monitoring_panel = dock.remote_monitoring_panel
-    expanded_height = monitoring_panel.height()
+    compact_height = monitoring_panel.height()
     monitoring_refreshes: list[str] = []
     dock.request_remote_monitoring_refresh = lambda: monitoring_refreshes.append(
         "refresh"
     )
     app.processEvents()
 
+    assert remote_monitoring.isChecked() is False
+    assert dock.monitoring_refresh_timer.isActive() is False
+    assert dock.property("mobaRemoteMonitoringRuntimeActive") is False
+    assert follow_folder.isVisible() is True
+
+    remote_monitoring.click()
+    app.processEvents()
     assert remote_monitoring.isChecked() is True
     assert dock.monitoring_refresh_timer.isActive() is True
     assert dock.property("mobaRemoteMonitoringRuntimeActive") is True
-    assert follow_folder.isVisible() is True
+    assert monitoring_refreshes
 
     remote_monitoring.click()
     app.processEvents()
     assert remote_monitoring.isChecked() is False
     assert dock.monitoring_refresh_timer.isActive() is False
     assert dock.property("mobaRemoteMonitoringRuntimeActive") is False
-    assert monitoring_panel.height() < expanded_height
-    assert follow_folder.isVisible() is False
+    assert monitoring_panel.height() == compact_height
+    assert follow_folder.isVisible() is True
 
     remote_monitoring.click()
     app.processEvents()
     assert remote_monitoring.isChecked() is True
     assert dock.monitoring_refresh_timer.isActive() is True
     assert dock.property("mobaRemoteMonitoringRuntimeActive") is True
-    assert monitoring_panel.height() == expanded_height
+    assert monitoring_panel.height() == compact_height
     assert follow_folder.isVisible() is True
-    assert monitoring_refreshes
+    assert len(monitoring_refreshes) >= 2
 
     refresh_reasons: list[str] = []
     dock.request_sftp_refresh = lambda *, reason: refresh_reasons.append(reason)
@@ -986,6 +1002,7 @@ def test_running_tab_close_is_immediate_and_cancels_pending_restart(gui_window) 
 
 
 def test_moba_sftp_dock_routes_supported_actions_and_disables_stubs(gui_window) -> None:
+    from remote_ops_workspace.moba_connected import RemoteFileEntry
     from remote_ops_workspace.terminal import TerminalPanePlan
 
     app, window = gui_window
@@ -1019,6 +1036,11 @@ def test_moba_sftp_dock_routes_supported_actions_and_disables_stubs(gui_window) 
     dock.sftp_action_buttons["parent-folder"].click()
     assert dock.active_remote_path == "/var"
     assert dock.path.text() == "/var"
+    dock.apply_live_sftp_entries(
+        (RemoteFileEntry("app.log", "file", 64, "Jun 06 12:00"),),
+        request_path="/var",
+        plan=dock.state.sftp_list_plan,
+    )
 
     selected_file = next(
         dock.file_table.topLevelItem(index)

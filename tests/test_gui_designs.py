@@ -328,17 +328,18 @@ def test_mobaxterm_ribbon_action_geometry_tracks_reference_offsets() -> None:
         "xserver",
         "exit",
     ]
-    assert [item.static_x for item in geometry] == [12, 73, 134, 192, 250, 318, 376, 434, 509, 584, 652, 720, 1152, 1230]
-    assert [item.width for item in geometry] == [61, 61, 58, 58, 68, 58, 58, 75, 75, 68, 68, 58, 70, 42]
-    assert [item.separator_x for item in geometry if item.separator_before] == [67, 244, 428, 646, 1140]
-    assert {item.icon_y for item in geometry[:12]} == {6}
-    assert {item.icon_size for item in geometry[:12]} == {24}
-    assert {item.label_y for item in geometry[:12]} == {40}
+    assert [item.static_x for item in geometry] == [8, 66, 124, 178, 232, 292, 346, 400, 462, 524, 582, 640, 1152, 1230]
+    assert [item.width for item in geometry] == [58, 58, 54, 54, 60, 54, 54, 62, 62, 58, 58, 54, 70, 42]
+    assert [item.separator_x for item in geometry if item.separator_before] == [62, 228, 396, 578, 1140]
+    assert {item.icon_y for item in geometry[:12]} == {4}
+    assert {item.icon_size for item in geometry[:12]} == {22}
+    assert {item.label_y for item in geometry[:12]} == {33}
     assert {item.label_font_size for item in geometry} == {10}
-    assert {item.separator_top for item in geometry} == {7}
-    assert {item.separator_bottom for item in geometry} == {56}
-    assert gui_design_moba_ribbon_action_geometry_for("xserver").icon_size == 28
-    assert gui_design_moba_ribbon_action_geometry_for("exit").icon_x == 1232
+    assert {item.separator_top for item in geometry} == {5}
+    assert {item.separator_bottom for item in geometry} == {49}
+    assert gui_design_moba_ribbon_action_geometry_for("help").icon_x == 656
+    assert gui_design_moba_ribbon_action_geometry_for("xserver").icon_size == 26
+    assert gui_design_moba_ribbon_action_geometry_for("exit").icon_x == 1239
 
 
 def test_mobaxterm_top_menu_items_are_shared_metadata() -> None:
@@ -385,12 +386,12 @@ def test_mobaxterm_top_menu_geometry_tracks_reference_offsets() -> None:
         "macros",
         "help",
     ]
-    assert [item.static_x for item in geometry] == [8, 82, 156, 202, 276, 329, 382, 456, 516]
-    assert [item.width for item in geometry] == [74, 74, 46, 74, 53, 53, 74, 60, 46]
+    assert [item.static_x for item in geometry] == [8, 66, 126, 166, 226, 270, 316, 374, 424]
+    assert [item.width for item in geometry] == [58, 60, 40, 60, 44, 46, 58, 50, 38]
     assert {item.label_y for item in geometry} == {5}
     assert {item.label_font_size for item in geometry} == {11}
-    assert {item.gap_after for item in geometry} == {18}
-    assert gui_design_moba_top_menu_geometry_for("x-server").static_x == 202
+    assert {item.gap_after for item in geometry} == {8}
+    assert gui_design_moba_top_menu_geometry_for("x-server").static_x == 166
 
 
 def test_mobaxterm_titlebar_chrome_is_shared_metadata() -> None:
@@ -412,16 +413,16 @@ def test_mobaxterm_top_stack_geometry_is_shared_metadata() -> None:
     assert stack.menu_y == 22
     assert stack.menu_height == 22
     assert stack.ribbon_y == 44
-    assert stack.ribbon_height == 64
-    assert stack.quick_connect_y == 108
+    assert stack.ribbon_height == 54
+    assert stack.quick_connect_y == 98
     assert stack.quick_connect_height == gui_design_moba_quick_connect_chrome().static_height
-    assert stack.left_dock_y == 132
-    assert stack.tab_y == 108
-    assert stack.tab_height == 28
-    assert stack.terminal_content_y == 136
-    assert stack.status_height == 22
-    assert stack.side_width == 390
-    assert stack.rail_width == 24
+    assert stack.left_dock_y == 122
+    assert stack.tab_y == 98
+    assert stack.tab_height == 24
+    assert stack.terminal_content_y == 122
+    assert stack.status_height == 18
+    assert stack.side_width == 394
+    assert stack.rail_width == 28
 
 
 def test_mobaxterm_quick_connect_chrome_is_shared_metadata() -> None:
@@ -444,7 +445,7 @@ def test_mobaxterm_quick_connect_suggestion_chrome_is_shared_metadata() -> None:
     assert chrome.expected_kinds == ("profile", "direct")
     assert chrome.max_visible_rows == 4
     assert chrome.row_height == 22
-    assert chrome.static_width == 390
+    assert chrome.static_width == 394
     assert chrome.detail_separator == "    "
 
 
@@ -513,14 +514,14 @@ def test_mobaxterm_rail_geometry_is_shared_metadata() -> None:
     chrome = gui_design_moba_rail_chrome()
     geometry = gui_design_moba_rail_item_geometry()
 
-    assert chrome.rail_width == 24
-    assert chrome.icon_x == 5
+    assert chrome.rail_width == 28
+    assert chrome.icon_x == 6
     assert chrome.static_icon_size == 16
     assert chrome.live_icon_size == 20
     assert chrome.generated_icon_size == 22
-    assert (chrome.button_width, chrome.button_height) == (24, 26)
-    assert (chrome.active_x, chrome.active_y_offset, chrome.active_width, chrome.active_height) == (2, -3, 20, 30)
-    assert (chrome.label_width, chrome.label_height, chrome.label_step) == (24, 54, 58)
+    assert (chrome.button_width, chrome.button_height) == (28, 26)
+    assert (chrome.active_x, chrome.active_y_offset, chrome.active_width, chrome.active_height) == (2, -3, 24, 30)
+    assert (chrome.label_width, chrome.label_height, chrome.label_step) == (28, 54, 58)
     assert chrome.unlabeled_gap_after == 8
     assert chrome.label_font_size == 12
     assert chrome.render_source == "generated-pixmap"
@@ -587,8 +588,8 @@ def test_mobaxterm_right_utility_action_route_is_shared_metadata() -> None:
 def test_mobaxterm_right_utility_rail_chrome_is_shared_metadata() -> None:
     chrome = gui_design_moba_right_utility_rail_chrome()
 
-    assert chrome.static_width == 30
-    assert chrome.live_width == 30
+    assert chrome.static_width == 0
+    assert chrome.live_width == 0
     assert (chrome.margin_left, chrome.margin_top, chrome.margin_right, chrome.margin_bottom) == (2, 2, 2, 2)
     assert chrome.action_spacing == 8
     assert chrome.session_edge_top_y == 108
@@ -732,10 +733,10 @@ def test_mobaxterm_sftp_toolbar_geometry_is_shared_metadata() -> None:
         "terminal",
     ]
     assert [item.button_x for item in geometry] == [3, 34, 58, 89, 113, 137, 161, 192, 216, 240, 271]
-    assert {item.button_y for item in geometry} == {1}
+    assert {item.button_y for item in geometry} == {3}
     assert {item.button_size for item in geometry} == {24}
     assert [item.icon_x for item in geometry] == [7, 38, 62, 93, 117, 141, 165, 196, 220, 244, 275]
-    assert {item.icon_y for item in geometry} == {5}
+    assert {item.icon_y for item in geometry} == {7}
     assert {item.icon_size for item in geometry} == {16}
     assert [item.separator_x for item in geometry if item.separator_after] == [34, 89, 192, 271]
     assert gui_design_moba_sftp_toolbar_action_geometry_for("ascii-mode").icon_x == 196
@@ -762,7 +763,7 @@ def test_mobaxterm_sftp_browser_chrome_is_shared_metadata() -> None:
         "dropdown_font_size": 10,
         "header_label_y": 7,
         "header_font_size": 10,
-        "row_top_offset": -4,
+        "row_top_offset": 0,
         "row_icon_x": 14,
         "row_icon_y_offset": -1,
         "row_name_x": 38,
@@ -829,32 +830,35 @@ def test_mobaxterm_sftp_routed_file_rows_are_shared_metadata() -> None:
 def test_mobaxterm_sftp_dock_layout_is_shared_density_metadata() -> None:
     layout = gui_design_moba_sftp_dock_layout()
 
-    assert layout.inner_margin == 6
-    assert layout.toolbar_height == 26
+    assert layout.inner_margin == 0
+    assert layout.toolbar_height == 30
     assert layout.toolbar_icon_size == 16
     assert layout.toolbar_icon_step == 24
     assert layout.toolbar_separator_width == 7
-    assert layout.path_height == 24
+    assert layout.path_height == 22
+    assert layout.path_gap == 0
+    assert layout.table_header_gap == 0
+    assert layout.file_row_gap == 1
     assert layout.table_header_height == 24
     assert layout.file_row_height == 21
     assert layout.static_max_rows == 9
-    assert layout.monitoring_height == 116
-    assert layout.monitoring_divider_offset == 14
+    assert layout.monitoring_height == 78
+    assert layout.monitoring_divider_offset == 10
 
 
 def test_mobaxterm_connected_dock_frame_is_shared_geometry_metadata() -> None:
     frame = gui_design_moba_connected_dock_frame()
 
-    assert frame.side_width == 390
-    assert frame.rail_width == 24
-    assert frame.dock_x == 24
-    assert frame.dock_y == 132
+    assert frame.side_width == 394
+    assert frame.rail_width == 28
+    assert frame.dock_x == 28
+    assert frame.dock_y == 122
     assert frame.dock_width == 366
-    assert frame.dock_height == 606
-    assert frame.workspace_x == 390
-    assert frame.quick_connect_y == 108
+    assert frame.dock_height == 620
+    assert frame.workspace_x == 394
+    assert frame.quick_connect_y == 98
     assert frame.quick_connect_height == 24
-    assert frame.status_y == 738
+    assert frame.status_y == 742
 
 
 def test_mobaxterm_monitoring_metrics_are_shared_metadata() -> None:
@@ -880,7 +884,7 @@ def test_mobaxterm_monitoring_control_geometry_is_shared_metadata() -> None:
     geometry = gui_design_moba_monitoring_control_geometry()
 
     assert [item.key for item in geometry] == ["remote-monitoring", "follow-terminal-folder"]
-    assert [(item.anchor_x, item.static_y) for item in geometry] == [(104, 1), (42, 76)]
+    assert [(item.anchor_x, item.static_y) for item in geometry] == [(104, 1), (42, 50)]
     assert [item.icon_x for item in geometry] == [104, 60]
     assert [item.icon_size for item in geometry] == [20, 16]
     assert [item.label_x for item in geometry] == [132, 80]
@@ -904,7 +908,7 @@ def test_mobaxterm_remote_monitoring_dock_chrome_is_compact_shared_metadata() ->
     assert chrome.visible_metric_keys == ()
     assert chrome.refresh_seconds == 5
     assert chrome.compact is True
-    assert chrome.static_height == 116
+    assert chrome.static_height == 78
     assert chrome.static_height == layout.monitoring_height
     assert chrome.divider_offset == layout.monitoring_divider_offset
     assert chrome.divider_left_inset == layout.monitoring_left_inset
@@ -1016,15 +1020,15 @@ def test_mobaxterm_status_bar_chrome_is_shared_metadata() -> None:
     assert chrome.notice == "REMOTE OPS WORKSPACE"
     assert chrome.product_note == "open-protocol operator shell"
     assert chrome.right_marker == "[]"
-    assert chrome.static_height == 22
+    assert chrome.static_height == 18
     assert chrome.notice_x == 6
-    assert chrome.notice_y == 6
+    assert chrome.notice_y == 4
     assert chrome.product_note_x == 142
-    assert chrome.product_note_y == 6
+    assert chrome.product_note_y == 4
     assert chrome.text_font_size == 10
     assert chrome.segment_start_right_offset == 480
     assert chrome.marker_right_inset == 4
-    assert chrome.marker_y == 6
+    assert chrome.marker_y == 4
     assert chrome.marker_width == 9
     assert chrome.marker_height == 10
     assert [segment.key for segment in segments] == ["sftp-ready", "cpu-monitor", "ssh-browser"]
@@ -1046,7 +1050,7 @@ def test_mobaxterm_bottom_edge_controls_are_shared_metadata() -> None:
 def test_mobaxterm_ssh_banner_chrome_is_shared_metadata() -> None:
     chrome = gui_design_moba_ssh_banner_chrome()
 
-    assert chrome.title == "Remote Ops Workspace Personal Edition v1.0"
+    assert chrome.title == "Remote Ops Workspace"
     assert chrome.subtitle == "(SSH client, SFTP browser and remote tools)"
     assert chrome.heading_prefix == "* "
     assert chrome.heading_suffix == " *"
@@ -1055,10 +1059,10 @@ def test_mobaxterm_ssh_banner_chrome_is_shared_metadata() -> None:
     assert chrome.footer_prefix == "For more info, ctrl+click on"
     assert chrome.help_link_label == "help"
     assert chrome.website_link_label == "website"
-    assert chrome.static_left_offset == 42
-    assert chrome.static_top_offset == 12
+    assert chrome.static_left_offset == 40
+    assert chrome.static_top_offset == 10
     assert chrome.static_width == 570
-    assert chrome.static_height == 182
+    assert chrome.static_height == 166
     assert chrome.body_top_offset < chrome.static_height
     assert chrome.terminal_gap > 0
 
@@ -1088,12 +1092,12 @@ def test_mobaxterm_ssh_banner_row_geometry_is_shared_metadata() -> None:
         "mobaSshBannerCapability",
         "mobaSshBannerFooter",
     ]
-    assert [item.static_x for item in geometry] == [0, 0, 14, 14, 14, 14, 14, 14, 14]
-    assert [item.static_y for item in geometry] == [10, 27, 54, 70, 86, 102, 118, 134, 154]
-    assert [item.static_width for item in geometry] == [570, 570, 542, 542, 542, 542, 542, 542, 542]
-    assert {item.static_height for item in geometry} == {16}
+    assert [item.static_x for item in geometry] == [0, 0, 14, 14, 14, 0, 14, 14, 14]
+    assert [item.static_y for item in geometry] == [10, 27, 54, 70, 86, 0, 102, 118, 138]
+    assert [item.static_width for item in geometry] == [570, 570, 542, 542, 542, 0, 542, 542, 542]
+    assert [item.static_height for item in geometry] == [16, 16, 16, 16, 16, 0, 16, 16, 16]
     assert [item.key for item in geometry if item.centered] == ["title", "subtitle"]
-    assert gui_design_moba_ssh_banner_row_geometry_for("footer").static_y == 154
+    assert gui_design_moba_ssh_banner_row_geometry_for("footer").static_y == 138
 
 
 def test_mobaxterm_terminal_transcript_row_geometry_is_shared_metadata() -> None:

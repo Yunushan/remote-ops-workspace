@@ -557,11 +557,6 @@ def test_gui_parity_mobaxterm_connected_reference_is_explicit() -> None:
     assert "moba.connected-session-action-menu-route" in requirement_ids
     assert "moba.connected-session-identity-route" in requirement_ids
     assert "moba.connected-tab-chrome" in requirement_ids
-    assert "moba.session-edge-controls" in requirement_ids
-    assert "moba.session-edge-geometry" in requirement_ids
-    assert "moba.session-edge-action-route" in requirement_ids
-    assert "moba.right-utility-rail" in requirement_ids
-    assert "moba.right-utility-rail-chrome" in requirement_ids
     assert "moba.ssh-banner-chrome" in requirement_ids
     assert "moba.ssh-banner-row-geometry" in requirement_ids
     assert "moba.terminal-transcript" in requirement_ids
@@ -620,31 +615,11 @@ def test_gui_parity_mobaxterm_connected_reference_is_explicit() -> None:
     assert "moba.ribbon-geometry" in moba["dimension_coverage"]["density"]
     assert "moba.ribbon-geometry" in moba["dimension_coverage"]["spacing"]
     assert "moba.ribbon-geometry" in moba["dimension_coverage"]["interaction_states"]
-    assert "moba.right-utility-rail" in moba["dimension_coverage"]["layout"]
-    assert "moba.right-utility-rail-chrome" in moba["dimension_coverage"]["layout"]
-    assert "moba.session-edge-controls" in moba["dimension_coverage"]["layout"]
-    assert "moba.session-edge-geometry" in moba["dimension_coverage"]["layout"]
-    assert "moba.session-edge-controls" in moba["dimension_coverage"]["navigation"]
-    assert "moba.session-edge-geometry" in moba["dimension_coverage"]["navigation"]
     assert "moba.bottom-edge-controls" in moba["dimension_coverage"]["navigation"]
-    assert "moba.session-edge-controls" in moba["dimension_coverage"]["tabs"]
-    assert "moba.session-edge-geometry" in moba["dimension_coverage"]["tabs"]
     assert "moba.bottom-edge-controls" in moba["dimension_coverage"]["tabs"]
-    assert "moba.session-edge-controls" in moba["dimension_coverage"]["connected_session_behavior"]
-    assert "moba.session-edge-geometry" in moba["dimension_coverage"]["connected_session_behavior"]
-    assert "moba.right-utility-rail-chrome" in moba["dimension_coverage"]["connected_session_behavior"]
     assert "moba.bottom-edge-controls" in moba["dimension_coverage"]["connected_session_behavior"]
-    assert "moba.session-edge-controls" in moba["dimension_coverage"]["density"]
-    assert "moba.session-edge-geometry" in moba["dimension_coverage"]["density"]
-    assert "moba.right-utility-rail-chrome" in moba["dimension_coverage"]["density"]
     assert "moba.bottom-edge-controls" in moba["dimension_coverage"]["density"]
-    assert "moba.session-edge-controls" in moba["dimension_coverage"]["spacing"]
-    assert "moba.session-edge-geometry" in moba["dimension_coverage"]["spacing"]
-    assert "moba.right-utility-rail-chrome" in moba["dimension_coverage"]["spacing"]
     assert "moba.bottom-edge-controls" in moba["dimension_coverage"]["spacing"]
-    assert "moba.session-edge-controls" in moba["dimension_coverage"]["interaction_states"]
-    assert "moba.session-edge-geometry" in moba["dimension_coverage"]["interaction_states"]
-    assert "moba.right-utility-rail-chrome" in moba["dimension_coverage"]["interaction_states"]
     assert "moba.bottom-edge-controls" in moba["dimension_coverage"]["interaction_states"]
     assert "moba.ssh-banner-chrome" in moba["dimension_coverage"]["panes"]
     assert "moba.ssh-banner-capability-card" in moba["dimension_coverage"]["panes"]
@@ -1451,7 +1426,7 @@ def test_mobaxterm_compact_monitoring_dock_uses_shared_metadata() -> None:
     assert "handle_moba_follow_terminal_folder_toggled" in checker_source
     assert "toggled state did not update" in checker_source
     assert "mobaFollowTerminalFolderControlLiveChecked" in checker_source
-    assert "remote-monitoring-footer-geometry" in checker_source
+    assert "mobaRemoteMonitoringStaticHeight" in checker_source
     assert "moba-monitoring-control-geometry" in checker_source
     assert "mobaMonitoringControlCheckmarkPoints" in checker_source
     assert "mobaRemoteMonitoringStaticHeight" in checker_source
@@ -1590,134 +1565,39 @@ def test_mobaxterm_static_renderer_uses_connected_tab_chrome_metadata() -> None:
     )
 
 
-def test_mobaxterm_static_renderer_uses_right_utility_icons_not_text_placeholders() -> None:
+def test_mobaxterm_static_contract_excludes_obsolete_permanent_edge_surfaces() -> None:
     criteria = _load_checker().load_json(_load_checker().CRITERIA_PATH)
     moba = criteria["presets"]["mobaxterm"]
-    requirement = next(item for item in moba["requirements"] if item["id"] == "moba.right-utility-rail-chrome")
-    route_requirement = next(
-        item for item in moba["requirements"] if item["id"] == "moba.right-utility-action-route"
-    )
+    requirement_ids = {item["id"] for item in moba["requirements"]}
+    obsolete_ids = {
+        "moba.session-edge-controls",
+        "moba.session-edge-geometry",
+        "moba.session-edge-action-route",
+        "moba.right-utility-rail",
+        "moba.right-utility-rail-chrome",
+        "moba.right-utility-action-route",
+    }
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
-    design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
-    checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
-    docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
+    connected_renderer = renderer_source.split("def render_mobaxterm_preset", 1)[1].split(
+        "def render_mobaxterm_home_preset", 1
+    )[0]
+    home_renderer = renderer_source.split("def render_mobaxterm_home_preset", 1)[1].split(
+        "def draw_moba_home_rail", 1
+    )[0]
+    metrics = _load_checker().load_json(Path("configs/gui_visual_metrics.json"))
+    region_ids = {item["id"] for item in metrics["presets"]["mobaxterm"]["regions"]}
 
-    assert "draw_moba_right_utility_rail" in renderer_source
-    assert "draw_moba_right_utility_icon" in renderer_source
-    assert "gui_design_moba_right_utility_actions" in renderer_source
-    assert "gui_design_moba_right_utility_action_route" in renderer_source
-    assert "moba_right_utility_action_route" in renderer_source
-    assert "show_moba_clipboard_hints" in renderer_source
-    assert "gui_design_moba_right_utility_rail_chrome" in renderer_source
-    assert "right_rail.static_width" in renderer_source
-    assert "rail.session_edge_icon_x" in renderer_source
-    assert "rail.session_edge_top_y" in renderer_source
-    assert "action.static_y" in renderer_source
-    assert '"gear"' in renderer_source
-    assert 'draw_text(draw, "clip"' not in renderer_source
-    assert "GuiMobaRightUtilityRailChrome" in design_source
-    assert "GUI_DESIGN_MOBA_RIGHT_UTILITY_RAIL_CHROME" in design_source
-    assert "GuiMobaRightUtilityActionRoute" in design_source
-    assert "GUI_DESIGN_MOBA_RIGHT_UTILITY_ACTION_ROUTE" in design_source
-    assert "gui_design_moba_right_utility_action_route" in design_source
-    assert "mobaRightUtilityRail" in gui_source
-    assert "mobaRightUtilityRailStaticWidth" in gui_source
-    assert "mobaRightUtilityRailMargins" in gui_source
-    assert "mobaRightUtilityRailSessionEdgeIconSize" in gui_source
-    assert "mobaRightUtilityKey" in gui_source
-    assert "mobaRightUtilityIconKey" in gui_source
-    assert "mobaRightUtilityStaticY" in gui_source
-    assert "mobaRightUtilityButtonSize" in gui_source
-    assert "mobaRightUtilityRenderSource" in gui_source
-    assert "mobaRightUtilityRouteKey" in gui_source
-    assert "mobaRightUtilityRouteHandler" in gui_source
-    assert "show_moba_clipboard_hints" in gui_source
-    assert "show_moba_terminal_settings" in gui_source
-    assert "EXPECTED_MOBA_RIGHT_UTILITY_KEYS" in checker_source
-    assert "EXPECTED_MOBA_RIGHT_UTILITY_ICON_KEYS" in checker_source
-    assert "EXPECTED_MOBA_RIGHT_UTILITY_BY_KEY" in checker_source
-    assert "EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME" in checker_source
-    assert "EXPECTED_MOBA_RIGHT_UTILITY_ACTION_ROUTE" in checker_source
-    assert "expected_moba_right_utility_rail_chrome" in checker_source
-    assert "expected_moba_right_utility_action_route" in checker_source
-    assert "right-utility-rail-chrome" in checker_source
-    assert "right-utility-rail-geometry" in checker_source
-    assert "right-utility-action-route" in checker_source
-    assert "MobaXterm-style right utility rail chrome" in docs_source
-    assert "MobaXterm-style right utility action route" in docs_source
-    assert "mobaRightUtilityRailStaticWidth" in requirement["source_tokens"]["src/remote_ops_workspace/gui.py"]
-    assert "moba.right-utility-action-route" in moba["dimension_coverage"]["layout"]
-    assert "moba.right-utility-action-route" in moba["dimension_coverage"]["navigation"]
-    assert "moba.right-utility-action-route" in moba["dimension_coverage"]["toolbars"]
-    assert "moba.right-utility-action-route" in moba["dimension_coverage"]["connected_session_behavior"]
-    assert "moba.right-utility-action-route" in moba["dimension_coverage"]["density"]
-    assert "moba.right-utility-action-route" in moba["dimension_coverage"]["spacing"]
-    assert "moba.right-utility-action-route" in moba["dimension_coverage"]["interaction_states"]
-    assert (
-        "GuiMobaRightUtilityActionRoute"
-        in route_requirement["source_tokens"]["src/remote_ops_workspace/gui_designs.py"]
+    assert requirement_ids.isdisjoint(obsolete_ids)
+    assert all(set(items).isdisjoint(obsolete_ids) for items in moba["dimension_coverage"].values())
+    assert "draw_moba_right_utility_rail(" not in connected_renderer
+    assert "draw_moba_session_edge_controls(" not in connected_renderer
+    assert "draw_moba_right_utility_rail(" not in home_renderer
+    assert "draw_moba_session_edge_controls(" not in home_renderer
+    assert {"right-utility-rail", "right-utility-action-stack", "session-edge-controls"}.isdisjoint(
+        region_ids
     )
-    assert "show_moba_clipboard_hints" in route_requirement["source_tokens"]["src/remote_ops_workspace/gui.py"]
-
-
-def test_mobaxterm_static_renderer_uses_session_edge_shortcut_metadata() -> None:
-    criteria = _load_checker().load_json(_load_checker().CRITERIA_PATH)
-    moba = criteria["presets"]["mobaxterm"]
-    requirement = next(item for item in moba["requirements"] if item["id"] == "moba.session-edge-geometry")
-    route_requirement = next(item for item in moba["requirements"] if item["id"] == "moba.session-edge-action-route")
-    renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
-    design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
-    checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
-    docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
-
-    assert "GuiMobaSessionEdgeAction" in design_source
-    assert "GUI_DESIGN_MOBA_SESSION_EDGE_ACTIONS" in design_source
-    assert "GuiMobaSessionEdgeActionRoute" in design_source
-    assert "GUI_DESIGN_MOBA_SESSION_EDGE_ACTION_ROUTE" in design_source
-    assert "gui_design_moba_session_edge_action_route" in design_source
-    assert "gui_design_moba_session_edge_actions" in renderer_source
-    assert "gui_design_moba_session_edge_action_route" in renderer_source
-    assert "moba_session_edge_action_route" in renderer_source
-    assert "draw_moba_session_edge_controls" in renderer_source
-    assert "action.relative_y" in renderer_source
-    assert "action.static_size" in renderer_source
-    assert "show_moba_session_attachment" in renderer_source
-    assert "mobaSessionEdgeControls" in gui_source
-    assert "mobaSessionEdgeAction" in gui_source
-    assert "mobaSessionEdgeIconKey" in gui_source
-    assert "mobaSessionEdgeRelativeY" in gui_source
-    assert "mobaSessionEdgeButtonSize" in gui_source
-    assert "mobaSessionEdgeRenderSource" in gui_source
-    assert "mobaSessionEdgeRouteKey" in gui_source
-    assert "mobaSessionEdgeRouteHandler" in gui_source
-    assert "show_moba_session_attachment" in gui_source
-    assert "show_moba_session_settings" in gui_source
-    assert "EXPECTED_MOBA_SESSION_EDGE_KEYS" in checker_source
-    assert "EXPECTED_MOBA_SESSION_EDGE_BY_KEY" in checker_source
-    assert "EXPECTED_MOBA_SESSION_EDGE_ACTION_ROUTE" in checker_source
-    assert "session-edge-geometry" in checker_source
-    assert "session-edge-action-route" in checker_source
-    assert "mobaSessionEdgeButtonSize" in checker_source
-    assert "expected_moba_session_edge_actions" in checker_source
-    assert "expected_moba_session_edge_action_route" in checker_source
-    assert "MobaXterm-style session-edge shortcut geometry" in docs_source
-    assert "MobaXterm-style session-edge action route" in docs_source
-    assert "mobaSessionEdgeRelativeY" in requirement["source_tokens"]["src/remote_ops_workspace/gui.py"]
-    assert (
-        "GuiMobaSessionEdgeActionRoute"
-        in route_requirement["source_tokens"]["src/remote_ops_workspace/gui_designs.py"]
-    )
-    assert "show_moba_session_attachment" in route_requirement["source_tokens"]["src/remote_ops_workspace/gui.py"]
-    assert "moba.session-edge-action-route" in moba["dimension_coverage"]["layout"]
-    assert "moba.session-edge-action-route" in moba["dimension_coverage"]["navigation"]
-    assert "moba.session-edge-action-route" in moba["dimension_coverage"]["tabs"]
-    assert "moba.session-edge-action-route" in moba["dimension_coverage"]["toolbars"]
-    assert "moba.session-edge-action-route" in moba["dimension_coverage"]["connected_session_behavior"]
-    assert "moba.session-edge-action-route" in moba["dimension_coverage"]["density"]
-    assert "moba.session-edge-action-route" in moba["dimension_coverage"]["spacing"]
-    assert "moba.session-edge-action-route" in moba["dimension_coverage"]["interaction_states"]
+    assert "moba.connected-session-actions-route" in moba["dimension_coverage"]["navigation"]
+    assert "moba.connected-session-action-menu-route" in moba["dimension_coverage"]["navigation"]
 
 
 def test_mobaxterm_ssh_banner_uses_shared_chrome_metadata() -> None:
@@ -1794,7 +1674,7 @@ def test_mobaxterm_terminal_transcript_uses_shared_connected_state() -> None:
     assert "expected_moba_terminal_transcript" in checker_source
     assert "EXPECTED_MOBA_TERMINAL_TRANSCRIPT_ROW_GEOMETRY" in checker_source
     assert "expected_moba_terminal_transcript_row_geometry" in checker_source
-    assert "terminal-transcript-geometry" in checker_source
+    assert "mobaTerminalTranscriptInjected" in checker_source
     assert "MobaXterm-style terminal transcript geometry" in docs_source
 
 

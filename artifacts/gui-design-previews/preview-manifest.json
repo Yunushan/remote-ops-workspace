@@ -2,8 +2,8 @@
   "contact_sheet": {
     "height": 1392,
     "path": "all-gui-designs-contact-sheet.png",
-    "sha256": "1b27d44a67183bea862a6eff26ae3f04e267b034b5380e08eafe766fbf58d785",
-    "size_bytes": 291721,
+    "sha256": "9e52a75ee14b3fb3b55ec5a22784ecf99dc6de582598350a99fe8f119617566c",
+    "size_bytes": 288248,
     "width": 1272
   },
   "contact_thumb": {
@@ -272,8 +272,8 @@
       "image": {
         "height": 760,
         "path": "mobaxterm.png",
-        "sha256": "0b4fa69b3c9c8120e5b0c44c635e17f0f6faa507a311a5b847172dfea0ed9490",
-        "size_bytes": 76459,
+        "sha256": "a3d0e3996faae824bca3546459c90d2b6fc9c2c924c9ba902598ffe4f9d8198e",
+        "size_bytes": 73141,
         "width": 1280
       },
       "label": "MobaXterm-style",
@@ -991,19 +991,19 @@
         "palette": {
           "control": "#222222",
           "control_text": "#f0f0f0",
-          "pane": "#202020",
-          "pane_border": "#545454",
+          "pane": "#1c1c1c",
+          "pane_border": "#383838",
           "primary": "#2d6ebd",
-          "sidebar": "#151515",
+          "sidebar": "#141414",
           "sidebar_selected": "#2b2b2b",
           "status": "#f2cc00",
           "tab": "#1a1a1a",
           "tab_selected": "#242424",
-          "terminal": "#1f1f1f",
+          "terminal": "#1c1c1c",
           "terminal_accent": "#f2cc00",
           "terminal_text": "#e9e9e9",
-          "toolbar": "#171717",
-          "toolbar_border": "#454545",
+          "toolbar": "#141414",
+          "toolbar_border": "#383838",
           "window": "#101010"
         },
         "palette_property": "presetVisualSignaturePalette",
@@ -4243,8 +4243,8 @@
       "image": {
         "height": 760,
         "path": "mobaxterm-home.png",
-        "sha256": "9b53cf117908bb8d9ef91e2e1f27ebee0e190425e5c6c5afbf1427d9a859c4d6",
-        "size_bytes": 55851,
+        "sha256": "956264e27628ccd17508043a0535ba72dc30986feca50d4f56853f341be6d16a",
+        "size_bytes": 55414,
         "width": 1280
       },
       "label": "MobaXterm-style Home",

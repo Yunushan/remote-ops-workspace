@@ -218,13 +218,13 @@ def test_gui_visual_metrics_cover_every_preview_preset() -> None:
     assert set(metrics["presets"]) == {item["id"] for item in manifest["presets"]}
     assert set(metrics["state_previews"]) == {item["id"] for item in manifest["state_previews"]}
     assert metrics["preview_size"] == [1280, 760]
-    assert checker.count_regions(metrics) == 118
-    assert checker.count_color_anchors(metrics) == 96
-    assert checker.count_line_anchors(metrics) == 72
-    assert checker.count_topology_contracts(metrics) == 83
-    assert len(metrics["presets"]["mobaxterm"]["regions"]) == 33
-    assert len(metrics["presets"]["mobaxterm"]["line_anchors"]) == 16
-    assert len(metrics["state_previews"]["mobaxterm-home"]["regions"]) == 13
+    assert checker.count_regions(metrics) == 114
+    assert checker.count_color_anchors(metrics) == 93
+    assert checker.count_line_anchors(metrics) == 71
+    assert checker.count_topology_contracts(metrics) == 81
+    assert len(metrics["presets"]["mobaxterm"]["regions"]) == 30
+    assert len(metrics["presets"]["mobaxterm"]["line_anchors"]) == 15
+    assert len(metrics["state_previews"]["mobaxterm-home"]["regions"]) == 12
     assert len(metrics["state_previews"]["mobaxterm-home"]["color_anchors"]) == 9
     assert len(metrics["state_previews"]["mobaxterm-home"]["line_anchors"]) == 8
     assert len(metrics["state_previews"]["mobaxterm-home"]["topology"]) == 6
@@ -240,8 +240,8 @@ def test_gui_visual_metrics_cover_every_preview_preset() -> None:
     assert len(metrics["presets"]["mremoteng"]["regions"]) == 17
     assert len(metrics["presets"]["mremoteng"]["line_anchors"]) == 13
     assert len(metrics["presets"]["mremoteng"]["topology"]) == 14
-    assert len(metrics["presets"]["mobaxterm"]["topology"]) == 19
-    assert len(metrics["presets"]["mobaxterm"]["color_anchors"]) == 23
+    assert len(metrics["presets"]["mobaxterm"]["topology"]) == 17
+    assert len(metrics["presets"]["mobaxterm"]["color_anchors"]) == 20
     assert len(metrics["presets"]["securecrt"]["color_anchors"]) == 19
     assert len(metrics["presets"]["termius"]["color_anchors"]) == 14
     assert len(metrics["presets"]["remmina"]["color_anchors"]) == 13
@@ -250,13 +250,11 @@ def test_gui_visual_metrics_cover_every_preview_preset() -> None:
     assert {
         "titlebar-window-controls",
         "ribbon-right-actions",
-        "session-edge-controls",
         "sftp-toolbar-action-strip",
         "sftp-file-row-density",
         "sftp-selected-parent-row",
         "monitoring-control-row",
         "follow-folder-control-row",
-        "right-utility-action-stack",
         "telemetry-cpu-cell",
         "bottom-edge-controls",
     } <= mobaxterm_region_ids
@@ -265,7 +263,6 @@ def test_gui_visual_metrics_cover_every_preview_preset() -> None:
         "titlebar-close-control",
         "ribbon-xserver-action",
         "ribbon-exit-action",
-        "session-edge-settings-control",
         "sftp-toolbar-ascii-action",
         "sftp-parent-row-icon",
         "sftp-parent-row-fill",
@@ -279,8 +276,6 @@ def test_gui_visual_metrics_cover_every_preview_preset() -> None:
     assert {
         "titlebar-controls-inside-titlebar",
         "ribbon-right-actions-inside-ribbon",
-        "session-edge-controls-above-right-utility-rail",
-        "right-utility-stack-inside-right-utility-rail",
         "sftp-toolbar-actions-inside-connected-dock",
         "sftp-file-row-inside-connected-dock",
         "sftp-selected-parent-row-inside-connected-dock",

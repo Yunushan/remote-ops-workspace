@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import os
 import posixpath
 import re
 import shlex
@@ -751,6 +752,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
             self._restart_after_stop = False
             self._rendered_terminal_text = ""
+            self.startup_preamble = ""
+            self.show_launch_command = True
+            self.output_context_menu_builder = None
             self._stop_timer = QTimer(self)
             self._stop_timer.setSingleShot(True)
             self._stop_timer.timeout.connect(self.kill_after_stop_timeout)
@@ -1007,6 +1011,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
             key = event.key()
             modifiers = event.modifiers()
+            shift = bool(modifiers & Qt.KeyboardModifier.ShiftModifier)
             control = bool(modifiers & Qt.KeyboardModifier.ControlModifier)
             alt = bool(modifiers & Qt.KeyboardModifier.AltModifier)
             meta = bool(modifiers & Qt.KeyboardModifier.MetaModifier)
@@ -1023,8 +1028,53 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 # printable character instead of translating its physical key
                 # to a terminal control byte (for example AltGr+Q -> "@").
                 return text.encode("utf-8")
+            if control and not alt and key == Qt.Key.Key_Space:
+                return b"\x00"
             if control and int(Qt.Key.Key_A) <= int(key) <= int(Qt.Key.Key_Z):
                 return bytes((int(key) - int(Qt.Key.Key_A) + 1,))
+            if shift and key == Qt.Key.Key_Tab:
+                return b"\x1b[Z"
+            function_keys = {
+                Qt.Key.Key_F1: b"\x1bOP",
+                Qt.Key.Key_F2: b"\x1bOQ",
+                Qt.Key.Key_F3: b"\x1bOR",
+                Qt.Key.Key_F4: b"\x1bOS",
+                Qt.Key.Key_F5: b"\x1b[15~",
+                Qt.Key.Key_F6: b"\x1b[17~",
+                Qt.Key.Key_F7: b"\x1b[18~",
+                Qt.Key.Key_F8: b"\x1b[19~",
+                Qt.Key.Key_F9: b"\x1b[20~",
+                Qt.Key.Key_F10: b"\x1b[21~",
+                Qt.Key.Key_F11: b"\x1b[23~",
+                Qt.Key.Key_F12: b"\x1b[24~",
+            }
+            function_payload = function_keys.get(key)
+            if function_payload is not None and not (shift or control):
+                return (
+                    b"\x1b" + function_payload
+                    if alt
+                    else function_payload
+                )
+            cursor_navigation = {
+                Qt.Key.Key_Up: "A",
+                Qt.Key.Key_Down: "B",
+                Qt.Key.Key_Right: "C",
+                Qt.Key.Key_Left: "D",
+                Qt.Key.Key_Home: "H",
+                Qt.Key.Key_End: "F",
+            }
+            tilde_navigation = {
+                Qt.Key.Key_Insert: 2,
+                Qt.Key.Key_Delete: 3,
+                Qt.Key.Key_PageUp: 5,
+                Qt.Key.Key_PageDown: 6,
+            }
+            if key in cursor_navigation and (shift or alt or control):
+                modifier = 1 + int(shift) + 2 * int(alt) + 4 * int(control)
+                return f"\x1b[1;{modifier}{cursor_navigation[key]}".encode("ascii")
+            if key in tilde_navigation and (shift or alt or control):
+                modifier = 1 + int(shift) + 2 * int(alt) + 4 * int(control)
+                return f"\x1b[{tilde_navigation[key]};{modifier}~".encode("ascii")
             special = {
                 Qt.Key.Key_Return: b"\r",
                 Qt.Key.Key_Enter: b"\r",
@@ -1037,6 +1087,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 Qt.Key.Key_Left: b"\x1b[D",
                 Qt.Key.Key_Home: b"\x1b[H",
                 Qt.Key.Key_End: b"\x1b[F",
+                Qt.Key.Key_Insert: b"\x1b[2~",
                 Qt.Key.Key_Delete: b"\x1b[3~",
                 Qt.Key.Key_PageUp: b"\x1b[5~",
                 Qt.Key.Key_PageDown: b"\x1b[6~",
@@ -1082,6 +1133,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 QApplication.clipboard().setText(selection)
 
         def build_output_context_menu(self) -> QMenu:
+            if callable(self.output_context_menu_builder):
+                return self.output_context_menu_builder(self)
             menu = QMenu(self.output)
             selection = bool(self.output.textCursor().selectedText())
             clipboard_text = bool(QApplication.clipboard().text())
@@ -1130,7 +1183,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.start_button.setEnabled(False)
             self.stop_button.setEnabled(True)
             self.input.setEnabled(False)
-            self.append_text(f"$ {self.plan.printable()}\n")
+            if self.startup_preamble:
+                self.append_text(self.startup_preamble)
+            if self.show_launch_command:
+                self.append_text(f"$ {self.plan.printable()}\n")
             for note in self.plan.notes:
                 self.append_text(f"[note] {note}\n")
             if self._terminal_backend_warning:
@@ -1239,7 +1295,46 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.output.clear()
             self._rendered_terminal_text = ""
             self.terminal_emulator.reset()
-            self.append_text(f"$ {self.plan.printable()}\n")
+            if self.startup_preamble:
+                self.append_text(self.startup_preamble)
+            if self.show_launch_command:
+                self.append_text(f"$ {self.plan.printable()}\n")
+
+        def set_launch_command_echo_visible(
+            self,
+            visible: bool,
+            *,
+            rewrite_current: bool = True,
+        ) -> None:
+            self.show_launch_command = bool(visible)
+            self.output.setProperty(
+                "terminalLaunchCommandEchoVisible",
+                self.show_launch_command,
+            )
+            if self.show_launch_command or not rewrite_current:
+                return
+            command_line = f"$ {self.plan.printable()}\n"
+            current = self._rendered_terminal_text
+            if command_line not in current:
+                return
+            self.set_terminal_transcript(current.replace(command_line, "", 1))
+
+        def set_startup_preamble(self, text: str, *, inject_current: bool = True) -> None:
+            """Keep a truthful session preamble inside the scrollable transcript."""
+
+            normalized = text.rstrip()
+            self.startup_preamble = f"{normalized}\n\n" if normalized else ""
+            self.output.setProperty("terminalStartupPreamble", normalized)
+            self.output.setProperty(
+                "terminalStartupPreambleScrollable",
+                bool(self.startup_preamble),
+            )
+            if not inject_current or not self.startup_preamble:
+                return
+            current = self._rendered_terminal_text
+            if current.startswith(self.startup_preamble):
+                return
+            self.set_terminal_transcript(f"{self.startup_preamble}{current}")
 
         def send_input(self) -> None:
             line = self.input.text()
@@ -1843,8 +1938,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
         def __init__(self, state: MobaConnectedSessionState) -> None:
             super().__init__()
             self.setObjectName("mobaConnectedLeftDock")
-            self.state = state
-            self.active_remote_path = normalise_remote_path(state.remote_path)
+            self.state = replace(
+                state,
+                file_entries=self.filtered_sftp_entries(state.file_entries),
+            )
+            self.active_remote_path = normalise_remote_path(self.state.remote_path)
             self.monitoring_control_widgets = {}
             self.monitoring_output_buffer = bytearray()
             self.runtime_shutting_down = False
@@ -1963,6 +2061,12 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 if action.separator_after:
                     toolbar_layout.addWidget(self.toolbar_separator(action, density))
             toolbar_layout.addStretch(1)
+            self.sftp_status_badge = self.sftp_action_buttons.get("connect")
+            self._sftp_status_default_icon = (
+                self.sftp_status_badge.icon()
+                if self.sftp_status_badge is not None
+                else QIcon()
+            )
             layout.addWidget(toolbar)
 
             chrome = gui_design_moba_sftp_browser_chrome()
@@ -2079,8 +2183,14 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             layout.addSpacing(density.table_header_gap)
             layout.addWidget(self.file_table, 1)
 
-            layout.addWidget(self.build_text_editor_toolbar())
-            layout.addWidget(self.build_text_editor())
+            self.text_editor_toolbar = self.build_text_editor_toolbar()
+            self.text_editor_toolbar.setVisible(False)
+            self.text_editor_toolbar.setProperty("mobaTextEditorOnDemand", True)
+            layout.addWidget(self.text_editor_toolbar)
+            self.text_editor = self.build_text_editor()
+            self.text_editor.setVisible(False)
+            self.text_editor.setProperty("mobaTextEditorOnDemand", True)
+            layout.addWidget(self.text_editor)
 
             queue = QLabel("Queue: SFTP toolbar idle")
             queue.setObjectName(toolbar_route.queue_object)
@@ -2091,7 +2201,119 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
             layout.addWidget(self.build_remote_monitoring(density))
             self.update_sftp_action_states()
-            self.activate_initial_monitoring_state()
+            self.set_sftp_runtime_status("SFTP listing idle", state="idle")
+            QTimer.singleShot(0, self.activate_initial_background_state)
+
+        @staticmethod
+        def filtered_sftp_entries(entries):
+            """Keep the single synthetic parent row authoritative."""
+
+            return tuple(entry for entry in entries if entry.name.strip() not in {".", ".."})
+
+        @staticmethod
+        def background_ssh_auth_capability(profile: Profile | None) -> tuple[bool, str]:
+            """Return whether an automatic, non-interactive SSH child is defensible."""
+
+            if profile is None:
+                return False, "connected profile was not found"
+            if profile.identity_file:
+                identity = Path(profile.identity_file).expanduser()
+                if identity.is_file():
+                    return True, f"identity file: {identity}"
+                return False, f"configured identity file was not found: {identity}"
+            normalized = {
+                str(key).strip().lower(): str(value).strip()
+                for key, value in profile.options.items()
+            }
+            for key in ("identity_agent", "ssh_identity_agent", "mobagent_socket"):
+                if normalized.get(key):
+                    return True, f"configured SSH agent: {key}"
+            if os.environ.get("SSH_AUTH_SOCK"):
+                return True, "SSH_AUTH_SOCK agent"
+            if any(
+                normalized.get(key, "").lower() in {"1", "true", "yes", "on"}
+                for key in ("use_ssh_agent", "ssh_agent", "background_auth")
+            ):
+                return True, "explicit SSH-agent background-auth setting"
+            return (
+                False,
+                "background SSH uses a separate non-interactive process and requires "
+                "a trusted host key plus key or agent authentication",
+            )
+
+        def activate_initial_background_state(self) -> None:
+            if self.runtime_shutting_down:
+                return
+            profile = self.profile_for_sftp_action()
+            available, detail = self.background_ssh_auth_capability(profile)
+            for widget in (
+                self,
+                getattr(self, "browser", None),
+                getattr(self, "file_table", None),
+            ):
+                if widget is not None:
+                    widget.setProperty("mobaBackgroundSshAuthAvailable", available)
+                    widget.setProperty("mobaBackgroundSshAuthDetail", detail)
+            if available:
+                self.set_sftp_runtime_status(
+                    f"Initial SFTP refresh pending ({detail})",
+                    state="pending",
+                )
+                self.request_sftp_refresh(reason="initial-key-agent-auth")
+                self.activate_initial_monitoring_state()
+                return
+            self.set_sftp_runtime_status(
+                f"SFTP auto-refresh skipped: {detail}",
+                state="auth-required",
+            )
+            control = self.monitoring_control_widgets.get("remote-monitoring")
+            if control is not None and control.isChecked():
+                control.setChecked(False)
+            self.set_remote_monitoring_runtime(False, immediate=False)
+            self.set_remote_monitoring_status(
+                f"Monitoring not started automatically: {detail}",
+                state="auth-required",
+            )
+
+        def set_sftp_runtime_status(self, message: str, *, state: str) -> None:
+            badge = getattr(self, "sftp_status_badge", None)
+            tooltip = (
+                f"{message}\n"
+                "SFTP listing uses a separate non-interactive OpenSSH process; "
+                "password prompts from the terminal are not shared."
+            )
+            if badge is not None:
+                badge.setProperty("state", state)
+                badge.setProperty("mobaSftpStatusBadgeState", state)
+                badge.setProperty("mobaSftpStatusBadgeMessage", message)
+                badge.setToolTip(_safe_tooltip_html(tooltip))
+                badge.setAccessibleDescription(message)
+                status_icon = {
+                    "pending": QStyle.StandardPixmap.SP_BrowserReload,
+                    "refreshing": QStyle.StandardPixmap.SP_BrowserReload,
+                    "ready": QStyle.StandardPixmap.SP_DialogApplyButton,
+                    "error": QStyle.StandardPixmap.SP_MessageBoxWarning,
+                    "auth-required": QStyle.StandardPixmap.SP_MessageBoxWarning,
+                }.get(state)
+                badge.setIcon(
+                    self.style().standardIcon(status_icon)
+                    if status_icon is not None
+                    else self._sftp_status_default_icon
+                )
+                badge.style().unpolish(badge)
+                badge.style().polish(badge)
+                badge.update()
+            for widget in (
+                self,
+                getattr(self, "browser", None),
+                getattr(self, "file_table", None),
+            ):
+                if widget is not None:
+                    widget.setProperty("mobaSftpRuntimeState", state)
+                    widget.setProperty("mobaSftpRuntimeMessage", message)
+            table = getattr(self, "file_table", None)
+            if table is not None:
+                table.setToolTip(_safe_tooltip_html(tooltip))
 
         def build_text_editor_toolbar(self) -> QFrame:
             toolbar = QFrame()
@@ -2115,6 +2337,15 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             layout.addWidget(self.text_editor_save_button)
             layout.addWidget(self.text_editor_diff_button)
             layout.addStretch(1)
+            close_button = self.text_editor_action_button(
+                "close",
+                "SP_DialogCancelButton",
+                "mobaTextEditorCloseAction",
+                self.hide_moba_text_editor,
+            )
+            close_button.setToolTip("Close the inline editor")
+            self.text_editor_close_button = close_button
+            layout.addWidget(close_button)
             return toolbar
 
         def build_text_editor(self) -> QPlainTextEdit:
@@ -2122,13 +2353,19 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             editor = QPlainTextEdit()
             editor.setObjectName(route.editor_object)
             self.apply_connected_text_editor_route_properties(editor)
-            editor.setPlainText(route.preview_text)
-            editor.setPlaceholderText(route.remote_path)
+            editor.setPlainText("")
+            editor.setPlaceholderText(
+                "Remote content is not loaded. Use Download to retrieve the file first."
+            )
             editor.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
             editor.setFixedHeight(116)
+            editor.setReadOnly(True)
+            editor.setProperty("mobaTextEditorContentLoaded", False)
+            editor.setProperty("mobaTextEditorSyntheticPreviewSuppressed", True)
             editor.textChanged.connect(self.handle_moba_text_editor_changed)
             self.text_editor_highlighter = MobaTextEditorHighlighter(editor.document(), route.syntax)
-            self.text_editor = editor
+            self.text_editor_save_button.setEnabled(False)
+            self.text_editor_diff_button.setEnabled(False)
             return editor
 
         def text_editor_action_button(self, action_key: str, icon_name: str, object_name: str, handler) -> QToolButton:
@@ -2155,7 +2392,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 return
             previous = editor.blockSignals(True)
             try:
-                editor.setPlainText(self.text_editor_preview_for_remote_path(remote_path))
+                editor.clear()
             finally:
                 editor.blockSignals(previous)
             widgets = [
@@ -2165,6 +2402,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 editor,
                 getattr(self, "text_editor_save_button", None),
                 getattr(self, "text_editor_diff_button", None),
+                getattr(self, "text_editor_toolbar", None),
             ]
             for widget in widgets:
                 if widget is None:
@@ -2174,7 +2412,25 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 widget.setProperty("mobaTextEditorCapturedRowName", item.text(0))
                 widget.setProperty("mobaTextEditorCapturedOpenSignal", "itemDoubleClicked")
                 widget.setProperty("mobaTextEditorDirty", False)
-            editor.setPlaceholderText(remote_path)
+                widget.setProperty("mobaTextEditorContentLoaded", False)
+                widget.setProperty("mobaTextEditorOnDemand", True)
+            editor.setPlaceholderText(
+                f"{remote_path} is not loaded; use Download to retrieve its real contents."
+            )
+            self.text_editor_toolbar.setVisible(True)
+            editor.setVisible(True)
+            self.setProperty("mobaTextEditorOnDemandVisible", True)
+            self.text_editor_save_button.setEnabled(False)
+            self.text_editor_diff_button.setEnabled(False)
+
+        def hide_moba_text_editor(self, *_args) -> None:
+            toolbar = getattr(self, "text_editor_toolbar", None)
+            editor = getattr(self, "text_editor", None)
+            if toolbar is not None:
+                toolbar.setVisible(False)
+            if editor is not None:
+                editor.setVisible(False)
+            self.setProperty("mobaTextEditorOnDemandVisible", False)
 
         def handle_moba_text_editor_changed(self) -> None:
             editor = getattr(self, "text_editor", None)
@@ -2232,16 +2488,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             return f"/{name}" if base == "/" else f"{base}/{name}"
 
         def text_editor_preview_for_remote_path(self, remote_path: str) -> str:
-            name = remote_path.rsplit("/", 1)[-1]
-            if name.endswith(".json"):
-                return '{\n  "status": "ok"\n}\n'
-            if name.endswith((".sh", ".bash", ".ps1")):
-                return "#!/usr/bin/env sh\nset -eu\n"
-            if name.endswith((".conf", ".ini")) or name in {"ssh_config", "sshd_config"}:
-                return "[remote]\nenabled=true\n"
-            if name.endswith(".log"):
-                return "2026-06-06T12:00:00Z service=remote status=ok\n"
-            return f"{name}\n"
+            del remote_path
+            return ""
 
         def apply_sftp_file_row_icon(self, item: QTreeWidgetItem, kind: str) -> None:
             row_icon = gui_design_moba_sftp_file_row_icon(kind)
@@ -2374,6 +2622,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 [geometry.key for geometry in gui_design_moba_monitoring_control_geometry()],
             )
             panel.setFixedHeight(chrome.static_height)
+            panel.setProperty("mobaRemoteMonitoringAlwaysCompact", True)
             panel.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
             panel.customContextMenuRequested.connect(
                 self.show_remote_monitoring_context_menu
@@ -2381,7 +2630,12 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             controls = QFrame(panel)
             controls.setObjectName("mobaMonitoringControls")
             self.remote_monitoring_controls = controls
-            controls.setGeometry(0, 0, chrome.live_controls_width, chrome.static_height)
+            controls.setGeometry(
+                0,
+                0,
+                chrome.live_controls_width,
+                chrome.static_height,
+            )
             controls.setProperty("mobaRemoteMonitoringLiveControlsWidth", chrome.live_controls_width)
             controls.setProperty("mobaRemoteMonitoringStaticHeight", chrome.static_height)
             controls.setProperty(
@@ -2422,15 +2676,13 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             last_refresh.setObjectName("mobaMonitoringLastRefresh")
             last_refresh.setGeometry(150, 52, 100, 19)
             self.monitoring_last_refresh_label = last_refresh
-            follow_widget = self.monitoring_control_widgets.get(
-                "follow-terminal-folder"
-            )
             self.monitoring_detail_widgets = [
                 status,
                 refresh_button,
                 last_refresh,
-                *([follow_widget] if follow_widget is not None else []),
             ]
+            for detail_widget in self.monitoring_detail_widgets:
+                detail_widget.setVisible(False)
             for metric in gui_design_moba_monitoring_metrics():
                 label = _literal_label(self.monitoring_metric_text(metric), panel)
                 label.setObjectName("mobaMonitoringMetric")
@@ -2609,15 +2861,16 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 return
             chrome = gui_design_moba_remote_monitoring_dock_chrome()
             for widget in getattr(self, "monitoring_detail_widgets", []):
-                widget.setVisible(bool(expanded))
-            height = chrome.static_height if expanded else 28
+                widget.setVisible(False)
+            height = chrome.static_height
             panel.setFixedHeight(height)
-            panel.setProperty("mobaRemoteMonitoringExpanded", bool(expanded))
+            panel.setProperty("mobaRemoteMonitoringExpanded", False)
+            panel.setProperty("mobaRemoteMonitoringRuntimeRequested", bool(expanded))
             panel.setProperty("mobaRemoteMonitoringLiveHeight", height)
             controls = getattr(self, "remote_monitoring_controls", None)
             if controls is not None:
                 controls.setFixedHeight(height)
-                controls.setProperty("mobaRemoteMonitoringExpanded", bool(expanded))
+                controls.setProperty("mobaRemoteMonitoringExpanded", False)
             panel.updateGeometry()
 
         def set_remote_monitoring_status(
@@ -2634,6 +2887,34 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 label.style().unpolish(label)
                 label.style().polish(label)
                 label.update()
+            control = self.monitoring_control_widgets.get("remote-monitoring")
+            if control is not None:
+                tooltip = (
+                    f"{message}\n"
+                    "Monitoring runs through a separate non-interactive SSH process; "
+                    "terminal password prompts are not shared. A trusted host key and "
+                    "key or agent authentication are required."
+                )
+                control.setProperty("state", state)
+                control.setProperty("mobaMonitoringStatusBadgeState", state)
+                control.setProperty("mobaMonitoringStatusBadgeMessage", message)
+                control.setToolTip(_safe_tooltip_html(tooltip))
+                control.setAccessibleDescription(message)
+                status_icon = {
+                    "starting": QStyle.StandardPixmap.SP_BrowserReload,
+                    "refreshing": QStyle.StandardPixmap.SP_BrowserReload,
+                    "live": QStyle.StandardPixmap.SP_DialogApplyButton,
+                    "error": QStyle.StandardPixmap.SP_MessageBoxWarning,
+                    "auth-required": QStyle.StandardPixmap.SP_MessageBoxWarning,
+                }.get(state)
+                control.setIcon(
+                    self.style().standardIcon(status_icon)
+                    if status_icon is not None
+                    else self.monitoring_control_icon("monitor")
+                )
+                control.style().unpolish(control)
+                control.style().polish(control)
+                control.update()
             panel = getattr(self, "remote_monitoring_panel", None)
             for widget in (self, panel):
                 if widget is not None:
@@ -2942,6 +3223,16 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             refresh_action.setEnabled(
                 bool(control is not None and control.isChecked())
             )
+            follow_control = self.monitoring_control_widgets.get(
+                "follow-terminal-folder"
+            )
+            follow_action = menu.addAction("Follow terminal folder")
+            follow_action.setCheckable(True)
+            follow_action.setChecked(
+                bool(follow_control is not None and follow_control.isChecked())
+            )
+            if follow_control is not None:
+                follow_action.toggled.connect(follow_control.setChecked)
             menu.addSeparator()
             menu.addAction(
                 "Copy monitoring command",
@@ -3044,12 +3335,20 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             request_generation = self.sftp_refresh_generation
             if self.sftp_refresh_process.state() != QProcess.ProcessState.NotRunning:
                 self.sftp_refresh_pending = (request_path, reason)
+                self.set_sftp_runtime_status(
+                    f"SFTP refresh queued for {request_path}",
+                    state="pending",
+                )
                 self.show_sftp_status(
                     f"SFTP refresh queued for {request_path}"
                 )
                 return
             profile = self.profile_for_sftp_action()
             if profile is None:
+                self.set_sftp_runtime_status(
+                    "SFTP refresh unavailable: connected profile was not found",
+                    state="error",
+                )
                 self.show_sftp_status(
                     "SFTP refresh unavailable: connected profile was not found"
                 )
@@ -3057,17 +3356,33 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             try:
                 plan = build_sftp_list_plan(profile, request_path)
             except ValueError as exc:
+                self.set_sftp_runtime_status(
+                    f"SFTP refresh unavailable: {exc}",
+                    state="error",
+                )
                 self.show_sftp_status(f"SFTP refresh unavailable: {exc}")
                 return
             self.sftp_refresh_plan = plan
             self.sftp_refresh_active_generation = request_generation
             self.sftp_refresh_request_path = request_path
             self.sftp_refresh_output_buffer.clear()
+            self.set_sftp_runtime_status(
+                f"Refreshing SFTP listing at {request_path}",
+                state="refreshing",
+            )
             self.show_sftp_status(
                 f"Refreshing SFTP listing at {request_path}"
             )
-            self.sftp_refresh_process.setProgram(plan.command[0])
-            self.sftp_refresh_process.setArguments(plan.command[1:])
+            runtime_command = openssh_command_with_overrides(
+                list(plan.command),
+                {
+                    "BatchMode": "yes",
+                    "ConnectTimeout": "5",
+                    "StrictHostKeyChecking": "yes",
+                },
+            )
+            self.sftp_refresh_process.setProgram(runtime_command[0])
+            self.sftp_refresh_process.setArguments(runtime_command[1:])
             self.sftp_refresh_process.start()
             self.sftp_refresh_timeout.start(10_000)
 
@@ -3100,6 +3415,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.sftp_refresh_active_generation = 0
             if request_is_current:
                 self.setProperty("mobaSftpRefreshLastError", error.name)
+                self.set_sftp_runtime_status(
+                    f"SFTP refresh error: {error.name}",
+                    state="error",
+                )
                 self.show_sftp_status(f"SFTP refresh error: {error.name}")
             self.schedule_pending_sftp_refresh()
 
@@ -3109,6 +3428,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.sftp_refresh_process.kill()
             if self.sftp_refresh_request_is_current():
                 self.setProperty("mobaSftpRefreshLastError", "timeout")
+                self.set_sftp_runtime_status(
+                    "SFTP refresh timed out after 10 seconds",
+                    state="error",
+                )
                 self.show_sftp_status("SFTP refresh timed out after 10 seconds")
 
         def sftp_refresh_request_is_current(self) -> bool:
@@ -3159,16 +3482,24 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     f"exit {exit_code}",
                 )
                 self.setProperty("mobaSftpRefreshLastError", detail)
+                self.set_sftp_runtime_status(
+                    f"SFTP refresh failed: {detail[:100]}",
+                    state="error",
+                )
                 self.show_sftp_status(f"SFTP refresh failed: {detail[:100]}")
                 self.schedule_pending_sftp_refresh()
                 return
-            entries = parse_sftp_ls_output(output)
+            entries = self.filtered_sftp_entries(parse_sftp_ls_output(output))
             self.apply_live_sftp_entries(
                 entries,
                 request_path=self.sftp_refresh_request_path,
                 plan=self.sftp_refresh_plan,
             )
             self.setProperty("mobaSftpRefreshLastError", "")
+            self.set_sftp_runtime_status(
+                f"SFTP listing refreshed: {len(entries)} entries",
+                state="ready",
+            )
             self.show_sftp_status(
                 f"SFTP listing refreshed: {len(entries)} entries"
             )
@@ -3181,6 +3512,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             request_path: str,
             plan,
         ) -> None:
+            entries = self.filtered_sftp_entries(entries)
             density = gui_design_moba_sftp_dock_layout()
             chrome = gui_design_moba_sftp_browser_chrome()
             follow_route = gui_design_moba_sftp_follow_folder_route()
@@ -3189,7 +3521,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.state = replace(
                 self.state,
                 remote_path=selected_path,
-                file_entries=tuple(entries),
+                file_entries=entries,
                 sftp_list_plan=plan,
                 follow_folder_plan=plan,
             )
@@ -3238,25 +3570,46 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             if control.key == "follow-terminal-folder":
                 return f"{control.tooltip}\n{self.state.follow_folder_plan.printable_batch()}"
             if control.key == "remote-monitoring":
-                return f"{control.tooltip}\n{self.state.monitoring_plan.printable()}"
+                return (
+                    f"{control.tooltip}\n{self.state.monitoring_plan.printable()}\n"
+                    "Runs as a separate non-interactive SSH process; terminal password "
+                    "prompts are not shared. Requires a trusted host key plus key or "
+                    "agent authentication."
+                )
             return control.tooltip
 
         def monitoring_metric_text(self, metric) -> str:
             monitoring = self.state.monitoring
             if metric.source == "cpu_percent":
-                value = f"{monitoring.cpu_percent}%"
+                value = (
+                    "Unavailable"
+                    if monitoring.cpu_percent is None
+                    else f"{monitoring.cpu_percent}%"
+                )
             elif metric.source == "memory_label":
-                value = monitoring.memory_label
+                value = monitoring.memory_label or "Unavailable"
             elif metric.source == "disk_label":
-                value = monitoring.disk_label
+                value = monitoring.disk_label or "Unavailable"
             elif metric.source == "network_pair":
-                value = f"{monitoring.net_up_mbps:.2f}/{monitoring.net_down_mbps:.2f} Mb/s"
+                value = (
+                    "Unavailable"
+                    if monitoring.net_up_mbps is None
+                    or monitoring.net_down_mbps is None
+                    else (
+                        f"{monitoring.net_up_mbps:.2f}/"
+                        f"{monitoring.net_down_mbps:.2f} Mb/s"
+                    )
+                )
             elif metric.source == "load_average":
-                value = monitoring.load_average
+                value = monitoring.load_average or "Unavailable"
             elif metric.source == "process_count":
-                value = str(monitoring.process_count)
+                value = (
+                    "Unavailable"
+                    if monitoring.process_count is None
+                    else str(monitoring.process_count)
+                )
             else:
-                value = ""
+                value = "Unavailable"
             return f"{metric.label} {value}".strip()
 
         def update_sftp_action_states(self, *_args) -> None:
@@ -3841,6 +4194,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             area.setObjectName("mobaTerminalArea")
             self.apply_connected_session_route_properties(area)
             self.apply_sftp_terminal_folder_route_properties(area)
+            area.setProperty("mobaFixedBannerVisible", False)
+            area.setProperty("mobaRightUtilityRailVisible", False)
+            area.setProperty("mobaRightUtilityRoutesRetainedInMenu", True)
             layout = QHBoxLayout(area)
             layout.setContentsMargins(0, 0, 0, 0)
             layout.setSpacing(0)
@@ -3849,7 +4205,6 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             stack_layout = QVBoxLayout(terminal_stack)
             stack_layout.setContentsMargins(0, 0, 0, 0)
             stack_layout.setSpacing(0)
-            stack_layout.addWidget(self.build_ssh_banner_slot())
             self.apply_terminal_transcript_evidence()
             self.apply_moba_plain_terminal_mode()
             self.terminal_splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -3860,7 +4215,6 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.terminal_splitter.setStretchFactor(0, 1)
             stack_layout.addWidget(self.terminal_splitter, 1)
             layout.addWidget(terminal_stack, 1)
-            layout.addWidget(self.build_right_utility_rail())
             return area
 
         def add_terminal_split(
@@ -3881,51 +4235,315 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
         def apply_terminal_transcript_evidence(self, pane: TerminalPane | None = None) -> None:
             pane = pane or self.terminal_pane
-            lines = self.state.terminal_transcript
-            pane.output.setProperty("mobaTerminalTranscriptKeys", [line.key for line in lines])
-            pane.output.setProperty("mobaTerminalTranscriptTones", [line.tone for line in lines])
-            pane.output.setProperty("mobaTerminalTranscriptPreviewOnly", True)
+            pane.set_launch_command_echo_visible(False)
+            pane.set_startup_preamble(self.moba_startup_preamble(pane))
+            pane.output.setProperty("mobaTerminalTranscriptKeys", [])
+            pane.output.setProperty("mobaTerminalTranscriptTones", [])
+            pane.output.setProperty("mobaTerminalTranscriptPreviewOnly", False)
             pane.output.setProperty("mobaTerminalTranscriptInjected", False)
+            pane.output.setProperty("mobaSyntheticConnectedTranscriptSuppressed", True)
+            pane.output.setProperty("mobaFixedBannerVisible", False)
             self.apply_connected_session_route_properties(pane.output)
             self.apply_connected_identity_route_properties(pane.output)
             self.apply_sftp_terminal_folder_route_properties(pane.output)
+            pane.output.setProperty("mobaConnectedIdentityWebConsoleLine", "")
+            pane.output.setProperty("mobaConnectedIdentityTerminalPrompt", "")
+
+        def moba_startup_preamble(self, pane: TerminalPane | None = None) -> str:
+            pane = pane or self.terminal_pane
+            command = set(pane.plan.command)
+            compression = "requested" if "-C" in command else "not requested"
+            x11 = (
+                "requested"
+                if any(flag in command for flag in {"-X", "-Y"})
+                else "not requested"
+            )
+            return "\n".join(
+                [
+                    "* Remote Ops Workspace *",
+                    "  (SSH client, SFTP browser, and remote tools)",
+                    f"> SSH session target: {self.state.target}",
+                    "* Direct SSH: requested",
+                    f"* SSH compression: {compression}",
+                    "* SSH browser: requested",
+                    f"* X11 forwarding: {x11}",
+                    "> Waiting for authentication and server output.",
+                ]
+            )
 
         def apply_moba_plain_terminal_mode(self, pane: TerminalPane | None = None) -> None:
             pane = pane or self.terminal_pane
             geometry = gui_design_moba_terminal_transcript_row_geometry()
+            native_pty = bool(getattr(pane.process, "is_pty", False))
+            process_property = getattr(pane.process, "property", lambda _name: None)
+            pipe_fallback = bool(
+                process_property("terminalOpenSshPipeFallback")
+            ) or not native_pty
             self.apply_connected_session_route_properties(pane)
             self.apply_connected_identity_route_properties(pane)
             self.apply_sftp_terminal_folder_route_properties(pane)
             pane.setProperty("mobaPlainTerminalMode", True)
             pane.setProperty("mobaTerminalHeaderVisible", False)
             pane.setProperty("mobaTerminalCommandRowVisible", False)
-            pane.setProperty("mobaTerminalInputVisible", True)
+            pane.setProperty("mobaTerminalInputVisible", pipe_fallback)
             pane.setProperty("mobaTerminalDirectInput", True)
-            pane.setProperty("mobaTerminalInputMode", "direct-with-line-fallback")
+            pane.setProperty(
+                "mobaTerminalInputMode",
+                "explicit-pipe-line-fallback"
+                if pipe_fallback
+                else "native-pty-direct",
+            )
             pane.header.setVisible(False)
             pane.command_row.setVisible(False)
-            pane.input.setVisible(True)
+            pane.input.setVisible(pipe_fallback)
             pane.input.setPlaceholderText(
-                "Type a command and press Enter (reliable line-input fallback)"
+                "Type a command and press Enter (non-PTY fallback)"
             )
             pane.input.setToolTip(
-                "Direct terminal keys are forwarded when the transcript has focus. "
-                "This line input remains available because the current process backend "
-                "uses pipes rather than a native PTY."
+                "This field is shown only because this process is using an explicit "
+                "non-PTY pipe fallback."
             )
             pane.input.setAccessibleName("Terminal command input")
             pane.output.setProperty("mobaPlainTerminalMode", True)
             pane.output.setProperty("mobaTerminalDirectInput", True)
-            pane.output.setProperty("mobaTerminalLineInputFallback", True)
+            pane.output.setProperty("mobaTerminalLineInputFallback", pipe_fallback)
+            pane.output.setProperty("mobaTerminalNativePty", native_pty)
             pane.output.setToolTip(
-                "Click the terminal and type; right-click for terminal actions. "
-                "Use the command field below if direct input is not accepted by the remote program."
+                "Click the terminal and type. Right-click for copy, paste, save, "
+                "telemetry, and session actions."
             )
+            pane.output_context_menu_builder = self.build_moba_terminal_context_menu
             pane.output.setProperty("mobaTerminalTranscriptGeometryKeys", [row.key for row in geometry])
             pane.output.setProperty("mobaTerminalTranscriptX", [row.static_x for row in geometry])
             pane.output.setProperty("mobaTerminalTranscriptY", [row.static_y for row in geometry])
             pane.output.setProperty("mobaTerminalTranscriptRowHeight", [row.row_height for row in geometry])
             pane.output.setProperty("mobaTerminalTranscriptFontSize", [row.font_size for row in geometry])
+
+        def build_moba_terminal_context_menu(self, pane: TerminalPane) -> QMenu:
+            menu = QMenu(pane.output)
+            menu.setObjectName("mobaTerminalContextMenu")
+            selection = bool(pane.output.textCursor().selectedText())
+            copy_action = menu.addAction("Copy")
+            copy_action.setEnabled(selection)
+            copy_action.triggered.connect(pane.copy_terminal_selection)
+            save_action = menu.addAction("Save to file")
+            save_action.setEnabled(bool(pane._rendered_terminal_text))
+            save_action.triggered.connect(
+                lambda _checked=False, active_pane=pane: self.save_terminal_to_file(
+                    active_pane
+                )
+            )
+            menu.addSeparator()
+            cells = {
+                cell.key: cell
+                for cell in moba_telemetry_cells(self.state)
+            }
+            for key, frame in getattr(self, "telemetry_cell_frames", {}).items():
+                label = (
+                    "host"
+                    if key == "target"
+                    else (
+                        cells[key].label.lower()
+                        if key in cells
+                        else key.replace("-", " ")
+                    )
+                )
+                action = menu.addAction(f"Display {label} information")
+                action.setCheckable(True)
+                action.setChecked(frame.isVisible())
+                action.setProperty("mobaTelemetryVisibilityKey", key)
+                action.toggled.connect(
+                    lambda checked, cell_key=key: self.set_telemetry_cell_visible(
+                        cell_key,
+                        checked,
+                    )
+                )
+
+            menu.addSeparator()
+            paste_action = menu.addAction("Paste")
+            paste_action.setEnabled(bool(QApplication.clipboard().text()))
+            paste_action.triggered.connect(pane.paste_to_terminal)
+            select_action = menu.addAction("Select all")
+            select_action.triggered.connect(pane.output.selectAll)
+
+            dock = self.active_moba_sftp_dock()
+            if dock is not None:
+                monitoring_menu = menu.addMenu("Monitoring")
+                monitoring_menu.setObjectName("mobaMonitoringContextMenu")
+                monitoring_control = dock.monitoring_control_widgets.get(
+                    "remote-monitoring"
+                )
+                monitoring_action = monitoring_menu.addAction(
+                    "Remote monitoring enabled"
+                )
+                monitoring_action.setCheckable(True)
+                monitoring_action.setChecked(
+                    bool(
+                        monitoring_control is not None
+                        and monitoring_control.isChecked()
+                    )
+                )
+                if monitoring_control is not None:
+                    monitoring_action.toggled.connect(
+                        monitoring_control.setChecked
+                    )
+                follow_control = dock.monitoring_control_widgets.get(
+                    "follow-terminal-folder"
+                )
+                follow_action = monitoring_menu.addAction("Follow terminal folder")
+                follow_action.setCheckable(True)
+                follow_action.setChecked(
+                    bool(follow_control is not None and follow_control.isChecked())
+                )
+                if follow_control is not None:
+                    follow_action.toggled.connect(follow_control.setChecked)
+
+            tools_menu = menu.addMenu("Session tools")
+            session_route = gui_design_moba_session_edge_action_route()
+            session_handlers = dict(
+                zip(
+                    session_route.action_keys,
+                    session_route.action_handlers,
+                    strict=True,
+                )
+            )
+            for action_spec in gui_design_moba_session_edge_actions():
+                action = tools_menu.addAction(action_spec.label)
+                action.setProperty("mobaSessionEdgeKey", action_spec.key)
+                action.triggered.connect(
+                    lambda _checked=False, handler=session_handlers[
+                        action_spec.key
+                    ]: self.dispatch_moba_workspace_action(handler)
+                )
+            utility_route = gui_design_moba_right_utility_action_route()
+            utility_handlers = dict(
+                zip(
+                    utility_route.action_keys,
+                    utility_route.action_handlers,
+                    strict=True,
+                )
+            )
+            for action_spec in gui_design_moba_right_utility_actions():
+                action = tools_menu.addAction(action_spec.label)
+                action.setProperty("mobaRightUtilityKey", action_spec.key)
+                action.triggered.connect(
+                    lambda _checked=False, handler=utility_handlers[
+                        action_spec.key
+                    ]: self.dispatch_moba_workspace_action(handler)
+                )
+
+            menu.addSeparator()
+            restart_action = menu.addAction("Restart session")
+            restart_action.setEnabled(bool(pane.plan.command))
+            restart_action.triggered.connect(pane.restart)
+            stop_action = menu.addAction("Stop session")
+            stop_action.setEnabled(pane.is_running())
+            stop_action.triggered.connect(pane.request_stop)
+            return menu
+
+        def active_moba_sftp_dock(self):
+            dock = getattr(self.window(), "moba_connected_dock", None)
+            if dock is None:
+                return None
+            if dock.state.profile_name != self.state.profile_name:
+                return None
+            return dock
+
+        def dispatch_moba_workspace_action(self, handler_name: str) -> None:
+            handler = getattr(self.window(), handler_name, None)
+            if callable(handler):
+                handler()
+                return
+            fallback = getattr(self, handler_name, None)
+            if callable(fallback):
+                fallback()
+
+        def save_terminal_to_file(self, pane: TerminalPane) -> None:
+            stem = re.sub(r"[^A-Za-z0-9_.-]+", "-", pane.plan.title).strip("-")
+            filename, _selected_filter = QFileDialog.getSaveFileName(
+                self,
+                "Save terminal transcript",
+                f"{stem or 'terminal'}.txt",
+                "Text files (*.txt);;All files (*)",
+            )
+            if not filename:
+                return
+            try:
+                Path(filename).write_text(
+                    pane._rendered_terminal_text,
+                    encoding="utf-8",
+                )
+            except OSError as exc:
+                self.setProperty("mobaTerminalSaveError", str(exc))
+                status_bar = getattr(self.window(), "statusBar", lambda: None)()
+                if status_bar is not None:
+                    status_bar.showMessage(f"Could not save terminal output: {exc}")
+                return
+            self.setProperty("mobaTerminalSavedPath", filename)
+            status_bar = getattr(self.window(), "statusBar", lambda: None)()
+            if status_bar is not None:
+                status_bar.showMessage(f"Saved terminal output to {filename}", 5000)
+
+        def set_telemetry_cell_visible(self, key: str, visible: bool) -> None:
+            frame = getattr(self, "telemetry_cell_frames", {}).get(key)
+            if frame is None:
+                return
+            frame.setVisible(bool(visible))
+            frame.setProperty("mobaTelemetryUserVisible", bool(visible))
+            visible_keys = [
+                cell_key
+                for cell_key, cell_frame in self.telemetry_cell_frames.items()
+                if cell_frame.isVisible()
+            ]
+            self.telemetry_bar.setProperty(
+                "mobaTelemetryVisibleCellKeys",
+                visible_keys,
+            )
+            self.telemetry_bar.setProperty(
+                "mobaTelemetryVisibilityChangedKey",
+                key,
+            )
+
+        def show_moba_terminal_context_menu(
+            self,
+            source: QWidget,
+            position: QPoint,
+        ) -> None:
+            pane = self.moba_terminal_context_pane(source)
+            menu = self.build_moba_terminal_context_menu(pane)
+            menu.exec(source.mapToGlobal(position))
+            menu.deleteLater()
+
+        def moba_terminal_context_pane(self, source: QWidget) -> TerminalPane:
+            """Route shared chrome actions to the split that originated or owns focus."""
+
+            candidate = source
+            while candidate is not None:
+                if isinstance(candidate, TerminalPane):
+                    return candidate
+                candidate = candidate.parentWidget()
+            main_window = self.window()
+            active = (
+                main_window.active_terminal_pane()
+                if hasattr(main_window, "active_terminal_pane")
+                else None
+            )
+            if (
+                isinstance(active, TerminalPane)
+                and hasattr(self, "terminal_splitter")
+                and self.terminal_splitter.indexOf(active) >= 0
+            ):
+                return active
+            return self.terminal_pane
+
+        def install_moba_terminal_context_menu(self, widget: QWidget) -> None:
+            widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+            widget.customContextMenuRequested.connect(
+                lambda position, source=widget: self.show_moba_terminal_context_menu(
+                    source,
+                    position,
+                )
+            )
 
         def build_right_utility_rail(self) -> QFrame:
             chrome = gui_design_moba_right_utility_rail_chrome()
@@ -4063,6 +4681,12 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
         def record_moba_panel_action(self, route_role: str, action_key: str) -> None:
             self.setProperty("mobaConnectedLastActionRouteRole", route_role)
             self.setProperty("mobaConnectedLastActionKey", action_key)
+            status_bar = getattr(self.window(), "statusBar", lambda: None)()
+            if status_bar is not None:
+                status_bar.showMessage(
+                    f"{action_key.replace('-', ' ').title()} selected",
+                    3000,
+                )
 
         def moba_utility_icon(self, icon_key: str, fill: str) -> QIcon:
             pixmap = QPixmap(20, 20)
@@ -4234,6 +4858,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
         def build_telemetry_bar(self) -> QFrame:
             bar = QFrame()
             bar.setObjectName("mobaTelemetryBar")
+            self.telemetry_bar = bar
+            self.telemetry_cell_frames = {}
             self.apply_connected_session_route_properties(bar)
             self.apply_connected_identity_route_properties(bar)
             route = gui_design_moba_monitoring_telemetry_route()
@@ -4248,9 +4874,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             bar.setProperty("mobaMonitoringTelemetrySurface", route.telemetry_surface)
             bar.setProperty("mobaMonitoringTelemetryMetricCellKeys", list(route.target_metric_cell_keys))
             bar.setProperty("mobaMonitoringTelemetryIdentityCellKey", route.target_identity_cell_key)
-            bar.setProperty("mobaTelemetryDataSource", "derived-preview")
+            bar.setProperty("mobaTelemetryDataSource", "unavailable-until-live")
             bar.setProperty("mobaTelemetryLive", False)
+            bar.setProperty("mobaTerminalContextMenuObject", "mobaTerminalContextMenu")
             bar.setFixedHeight(24)
+            self.install_moba_terminal_context_menu(bar)
             layout = QHBoxLayout(bar)
             layout.setContentsMargins(geometry_items[0].static_x, 0, 7, 0)
             layout.setSpacing(0)
@@ -4258,6 +4886,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 geometry = moba_telemetry_cell_geometry_for(cell.key)
                 cell_frame = QFrame()
                 cell_frame.setObjectName("mobaTelemetryCell")
+                self.telemetry_cell_frames[cell.key] = cell_frame
                 cell_frame.setProperty("mobaTelemetryKey", cell.key)
                 cell_frame.setProperty("mobaTelemetryIconKey", cell.icon_key)
                 cell_frame.setProperty("mobaTelemetryIconAccent", cell.icon_accent)
@@ -4281,6 +4910,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     QSizePolicy.Policy.Ignored,
                     QSizePolicy.Policy.Fixed,
                 )
+                self.install_moba_terminal_context_menu(cell_frame)
                 cell_layout = QHBoxLayout(cell_frame)
                 cell_layout.setContentsMargins(geometry.icon_x, 0, 5, 0)
                 cell_layout.setSpacing(geometry.label_x - geometry.icon_x - geometry.icon_size)
@@ -4296,6 +4926,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 icon.setPixmap(self.telemetry_icon_pixmap(cell))
                 icon.setFixedSize(QSize(geometry.icon_size, geometry.icon_size))
                 icon.setToolTip(_safe_tooltip_html(cell.label))
+                self.install_moba_terminal_context_menu(icon)
                 cell_layout.addWidget(icon)
                 label = _literal_label(cell.display_text)
                 label.setObjectName("mobaTelemetryItem")
@@ -4308,9 +4939,14 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 label.setProperty("mobaTelemetryLabelFontSize", geometry.label_font_size)
                 label.setToolTip(_safe_tooltip_html(cell.label))
                 label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+                self.install_moba_terminal_context_menu(label)
                 cell_layout.addWidget(label, 1)
                 layout.addWidget(cell_frame, geometry.width)
             layout.addStretch(1)
+            bar.setProperty(
+                "mobaTelemetryVisibleCellKeys",
+                list(self.telemetry_cell_frames),
+            )
             return bar
 
         def telemetry_icon_pixmap(self, cell) -> QPixmap:
@@ -5136,6 +5772,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.setProperty("mobaRailLabelFontSize", chrome.label_font_size)
             self.setProperty("mobaRailTextRenderMode", "device-pixel-pixmap")
             self.setProperty("mobaRailTextHinting", "PreferFullHinting")
+            self.setProperty("mobaRailTextTransformation", "none")
+            self.setProperty("mobaRailTextPixmapRenderMode", "dpr-aware-rotated-pixmap")
+            self.setProperty("mobaRailTextPixmapTransformation", "rotate-minus-90-before-paint")
+            self.setProperty("mobaRailTextPixmapDevicePixelRatio", 1.0)
             self.setToolTip(label)
             self.setCursor(Qt.CursorShape.PointingHandCursor)
             self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -5217,26 +5857,120 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             source_painter.end()
             rotated = source.transformed(
                 QTransform().rotate(-90),
-                Qt.TransformationMode.FastTransformation,
+                Qt.TransformationMode.SmoothTransformation,
             )
             rotated.setDevicePixelRatio(dpr)
             self._rail_text_pixmap = rotated
             self._rail_text_cache_key = key
             self.setProperty("mobaRailTextDevicePixelRatio", dpr)
+            self.setProperty("mobaRailTextPixmapDevicePixelRatio", dpr)
+            self.setProperty(
+                "mobaRailTextPixmapPhysicalSize",
+                [rotated.width(), rotated.height()],
+            )
+            self.setProperty(
+                "mobaRailTextPixmapLogicalSize",
+                [
+                    round(rotated.width() / dpr),
+                    round(rotated.height() / dpr),
+                ],
+            )
+            self.setProperty("mobaRailTextPixmapReady", not rotated.isNull())
             return rotated
 
         def paintEvent(self, event) -> None:  # noqa: N802
-            painter = QPainter(self)
+            del event
             pixmap = self.rail_text_pixmap()
-            dpr = max(1.0, float(pixmap.devicePixelRatio()))
-            logical_width = round(pixmap.width() / dpr)
-            logical_height = round(pixmap.height() / dpr)
-            painter.drawPixmap(
-                (self.width() - logical_width) // 2,
-                (self.height() - logical_height) // 2,
-                pixmap,
-            )
+            painter = QPainter(self)
+            painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+            painter.drawPixmap(0, 0, pixmap)
             painter.end()
+
+    class MobaWorkspaceTabBar(QTabBar):
+        """Apply measured tab widths only while the Moba preset is active."""
+
+        def __init__(self, parent=None) -> None:
+            super().__init__(parent)
+            self.special_tab_handler = None
+            self._pressed_special_key = ""
+            self._stabilizing_special_tabs = False
+            self.tabMoved.connect(self.stabilize_special_tabs)
+
+        def moba_tab_key(self, index: int) -> str:
+            data = self.tabData(index)
+            if not isinstance(data, dict):
+                return ""
+            return str(data.get("moba_key") or "")
+
+        def activate_special_tab(self, index: int) -> bool:
+            key = self.moba_tab_key(index)
+            if key != "new-session" or not callable(self.special_tab_handler):
+                return False
+            self.special_tab_handler(index)
+            return True
+
+        def mousePressEvent(self, event) -> None:  # noqa: N802
+            index = self.tabAt(event.position().toPoint())
+            self._pressed_special_key = self.moba_tab_key(index)
+            if self.activate_special_tab(index):
+                event.accept()
+                return
+            super().mousePressEvent(event)
+
+        def mouseMoveEvent(self, event) -> None:  # noqa: N802
+            if self._pressed_special_key in {"home", "new-session"}:
+                event.accept()
+                return
+            super().mouseMoveEvent(event)
+
+        def mouseReleaseEvent(self, event) -> None:  # noqa: N802
+            special_key = self._pressed_special_key
+            self._pressed_special_key = ""
+            if special_key == "new-session":
+                event.accept()
+                return
+            super().mouseReleaseEvent(event)
+
+        def stabilize_special_tabs(self, *_args) -> None:
+            if self._stabilizing_special_tabs:
+                return
+            self._stabilizing_special_tabs = True
+            try:
+                home_index = next(
+                    (
+                        index
+                        for index in range(self.count())
+                        if self.moba_tab_key(index) == "home"
+                    ),
+                    -1,
+                )
+                if home_index > 0:
+                    self.moveTab(home_index, 0)
+                new_session_index = next(
+                    (
+                        index
+                        for index in range(self.count())
+                        if self.moba_tab_key(index) == "new-session"
+                    ),
+                    -1,
+                )
+                if 0 <= new_session_index < self.count() - 1:
+                    self.moveTab(new_session_index, self.count() - 1)
+            finally:
+                self._stabilizing_special_tabs = False
+
+        def tabSizeHint(self, index: int):  # noqa: N802
+            hint = super().tabSizeHint(index)
+            if not bool(self.property("mobaCompactTabWidths")):
+                return hint
+            data = self.tabData(index)
+            if not isinstance(data, dict):
+                return hint
+            width = data.get("moba_width")
+            height = data.get("moba_height")
+            if not isinstance(width, int) or width <= 0:
+                return hint
+            return QSize(width, height if isinstance(height, int) and height > 0 else hint.height())
 
     class ResponsiveWorkspaceTabs(QTabWidget):
         """Keep hidden, content-rich tabs from fixing the whole window above its usable size."""
@@ -5518,6 +6252,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.moba_connected_dock: MobaSftpDock | None = None
             self.left_panel = self.create_left_panel()
             self.tabs = ResponsiveWorkspaceTabs()
+            self.tabs.setTabBar(MobaWorkspaceTabBar())
+            self.tabs.tabBar().special_tab_handler = self.activate_moba_special_tab
             self.tabs.setObjectName("sessionTabs")
             self.tabs.tabBar().setObjectName("sessionTabBar")
             self.tabs.setTabsClosable(True)
@@ -9048,14 +9784,18 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     button.setIconSize(icon)
                     button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
                     width = int(button.property("mobaRibbonStaticWidth") or 58)
-                    button.setMinimumSize(QSize(width, 56))
-                    button.setMaximumSize(QSize(width + 8, 56))
+                    button.setMinimumSize(QSize(width, top_stack.ribbon_height))
+                    button.setMaximumSize(
+                        QSize(width + 8, top_stack.ribbon_height)
+                    )
                 for button in [self.moba_x_server_button, self.moba_exit_button]:
                     button.setIconSize(icon)
                     button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
                     width = int(button.property("mobaRibbonStaticWidth") or 58)
-                    button.setMinimumSize(QSize(width, 56))
-                    button.setMaximumSize(QSize(width + 8, 56))
+                    button.setMinimumSize(QSize(width, top_stack.ribbon_height))
+                    button.setMaximumSize(
+                        QSize(width + 8, top_stack.ribbon_height)
+                    )
             elif is_securecrt:
                 self.main_toolbar.setMinimumHeight(gui_design_securecrt_top_chrome().toolbar_height)
                 self.main_toolbar.setMaximumHeight(gui_design_securecrt_top_chrome().toolbar_height)
@@ -10027,6 +10767,13 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             return QTabWidget.TabPosition.North
 
         def configure_workspace_tabs_for_design(self, is_moba: bool) -> None:
+            tab_bar = self.tabs.tabBar()
+            tab_bar.setProperty("mobaCompactTabWidths", bool(is_moba))
+            tab_bar.setProperty(
+                "mobaCompactTabWidthSource",
+                "moba-connected-tab-chrome" if is_moba else "",
+            )
+            tab_bar.updateGeometry()
             previous_guard = self.moba_tab_guard
             self.moba_tab_guard = True
             try:
@@ -10165,6 +10912,18 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 closeable=False,
             )
 
+        def activate_moba_special_tab(self, _index: int) -> None:
+            """Treat the plus chrome as an action without selecting its placeholder page."""
+
+            if self.moba_tab_guard or not self.current_design_is_moba():
+                return
+            self.moba_tab_guard = True
+            try:
+                self.open_local_terminal_tab()
+            finally:
+                self.moba_tab_guard = False
+            self.refresh_moba_left_dock_for_current_tab()
+
         def remove_new_session_tab(self) -> None:
             index = self.find_tab_by_role("new-session")
             if index < 0:
@@ -10205,6 +10964,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 )
                 for position in [QTabBar.ButtonPosition.LeftSide, QTabBar.ButtonPosition.RightSide]:
                     tab_bar.setTabButton(new_index, position, None)
+            if isinstance(tab_bar, MobaWorkspaceTabBar):
+                tab_bar.stabilize_special_tabs()
 
         def apply_moba_tab_chrome(
             self,
@@ -10219,6 +10980,16 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 return
             widget = self.tabs.widget(index)
             geometry = moba_connected_tab_chrome_geometry_for(key)
+            tab_bar = self.tabs.tabBar()
+            tab_bar.setTabData(
+                index,
+                {
+                    "moba_key": key,
+                    "moba_width": geometry.width,
+                    "moba_height": geometry.height,
+                },
+            )
+            tab_bar.setProperty("mobaCompactTabWidths", True)
             self.tabs.setProperty(
                 "mobaTabChromeGeometryKeys",
                 [item.key for item in moba_connected_tab_chrome_geometry_items()],
@@ -10244,9 +11015,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.tabs.setTabIcon(index, self.moba_ribbon_icon(icon_key, "#d6a72d", size=18))
             self.set_literal_tab_tooltip(index, tooltip)
             if not closeable:
-                tab_bar = self.tabs.tabBar()
                 for position in [QTabBar.ButtonPosition.LeftSide, QTabBar.ButtonPosition.RightSide]:
                     tab_bar.setTabButton(index, position, None)
+            tab_bar.updateGeometry()
 
         def handle_tab_changed(self, index: int) -> None:
             if self.moba_tab_guard or index < 0:

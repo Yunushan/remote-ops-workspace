@@ -2408,46 +2408,46 @@ GUI_DESIGN_MOBA_RIBBON_EDGE_ACTION_ROUTE = GuiMobaRibbonEdgeActionRoute(
 
 GUI_DESIGN_MOBA_RIBBON_ACTION_GEOMETRY: tuple[GuiMobaRibbonActionGeometry, ...] = (
     GuiMobaRibbonActionGeometry(
-        "session", 12, 61, 26, 6, 24, 21, 40, 10, False, 0, 7, 56, 22, 3, 32, 31
+        "session", 8, 58, 26, 4, 22, 16, 33, 10, False, 0, 5, 49, 22, 2, 30, 27
     ),
     GuiMobaRibbonActionGeometry(
-        "servers", 73, 61, 87, 6, 24, 82, 40, 10, True, 67, 7, 56, 83, 3, 32, 31
+        "servers", 66, 58, 84, 4, 22, 74, 33, 10, True, 62, 5, 49, 80, 2, 30, 27
     ),
     GuiMobaRibbonActionGeometry(
-        "tools", 134, 58, 148, 6, 24, 148, 40, 10, False, 0, 7, 56, 144, 3, 32, 31
+        "tools", 124, 54, 140, 4, 22, 136, 33, 10, False, 0, 5, 49, 136, 2, 30, 27
     ),
     GuiMobaRibbonActionGeometry(
-        "games", 192, 58, 206, 6, 24, 206, 40, 10, False, 0, 7, 56, 202, 3, 32, 31
+        "games", 178, 54, 194, 4, 22, 187, 33, 10, False, 0, 5, 49, 190, 2, 30, 27
     ),
     GuiMobaRibbonActionGeometry(
-        "sessions", 250, 68, 264, 6, 24, 260, 40, 10, True, 244, 7, 56, 260, 3, 32, 31
+        "sessions", 232, 60, 251, 4, 22, 238, 33, 10, True, 228, 5, 49, 247, 2, 30, 27
     ),
     GuiMobaRibbonActionGeometry(
-        "view", 318, 58, 332, 6, 24, 335, 40, 10, False, 0, 7, 56, 328, 3, 32, 31
+        "view", 292, 54, 308, 4, 22, 307, 33, 10, False, 0, 5, 49, 304, 2, 30, 27
     ),
     GuiMobaRibbonActionGeometry(
-        "split", 376, 58, 390, 6, 24, 390, 40, 10, False, 0, 7, 56, 386, 3, 32, 31
+        "split", 346, 54, 362, 4, 22, 358, 33, 10, False, 0, 5, 49, 358, 2, 30, 27
     ),
     GuiMobaRibbonActionGeometry(
-        "multiexec", 434, 75, 448, 6, 24, 444, 40, 10, True, 428, 7, 56, 444, 3, 32, 31
+        "multiexec", 400, 62, 420, 4, 22, 407, 33, 10, True, 396, 5, 49, 416, 2, 30, 27
     ),
     GuiMobaRibbonActionGeometry(
-        "tunneling", 509, 75, 523, 6, 24, 519, 40, 10, False, 0, 7, 56, 519, 3, 32, 31
+        "tunneling", 462, 62, 482, 4, 22, 466, 33, 10, False, 0, 5, 49, 478, 2, 30, 27
     ),
     GuiMobaRibbonActionGeometry(
-        "packages", 584, 68, 598, 6, 24, 594, 40, 10, False, 0, 7, 56, 594, 3, 32, 31
+        "packages", 524, 58, 542, 4, 22, 529, 33, 10, False, 0, 5, 49, 538, 2, 30, 27
     ),
     GuiMobaRibbonActionGeometry(
-        "settings", 652, 68, 666, 6, 24, 662, 40, 10, True, 646, 7, 56, 662, 3, 32, 31
+        "settings", 582, 58, 600, 4, 22, 587, 33, 10, True, 578, 5, 49, 596, 2, 30, 27
     ),
     GuiMobaRibbonActionGeometry(
-        "help", 720, 58, 734, 6, 24, 737, 40, 10, False, 0, 7, 56, 730, 3, 32, 31
+        "help", 640, 54, 656, 4, 22, 655, 33, 10, False, 0, 5, 49, 652, 2, 30, 27
     ),
     GuiMobaRibbonActionGeometry(
-        "xserver", 1152, 70, 1158, 6, 28, 1152, 42, 10, True, 1140, 7, 56, 1158, 3, 32, 31
+        "xserver", 1152, 70, 1173, 4, 26, 1152, 33, 10, True, 1140, 5, 49, 1171, 2, 30, 27
     ),
     GuiMobaRibbonActionGeometry(
-        "exit", 1230, 42, 1232, 7, 25, 1230, 42, 10, False, 0, 7, 56, 1232, 3, 32, 31
+        "exit", 1230, 42, 1239, 5, 23, 1230, 33, 10, False, 0, 5, 49, 1235, 2, 30, 27
     ),
 )
 
@@ -2472,15 +2472,15 @@ GUI_DESIGN_MOBA_TOP_MENU_ITEMS: tuple[GuiMobaTopMenuItem, ...] = (
 )
 
 GUI_DESIGN_MOBA_TOP_MENU_GEOMETRY: tuple[GuiMobaTopMenuGeometry, ...] = (
-    GuiMobaTopMenuGeometry("terminal", 8, 74, 5, 11, 18),
-    GuiMobaTopMenuGeometry("sessions", 82, 74, 5, 11, 18),
-    GuiMobaTopMenuGeometry("view", 156, 46, 5, 11, 18),
-    GuiMobaTopMenuGeometry("x-server", 202, 74, 5, 11, 18),
-    GuiMobaTopMenuGeometry("tools", 276, 53, 5, 11, 18),
-    GuiMobaTopMenuGeometry("games", 329, 53, 5, 11, 18),
-    GuiMobaTopMenuGeometry("settings", 382, 74, 5, 11, 18),
-    GuiMobaTopMenuGeometry("macros", 456, 60, 5, 11, 18),
-    GuiMobaTopMenuGeometry("help", 516, 46, 5, 11, 18),
+    GuiMobaTopMenuGeometry("terminal", 8, 58, 5, 11, 8),
+    GuiMobaTopMenuGeometry("sessions", 66, 60, 5, 11, 8),
+    GuiMobaTopMenuGeometry("view", 126, 40, 5, 11, 8),
+    GuiMobaTopMenuGeometry("x-server", 166, 60, 5, 11, 8),
+    GuiMobaTopMenuGeometry("tools", 226, 44, 5, 11, 8),
+    GuiMobaTopMenuGeometry("games", 270, 46, 5, 11, 8),
+    GuiMobaTopMenuGeometry("settings", 316, 58, 5, 11, 8),
+    GuiMobaTopMenuGeometry("macros", 374, 50, 5, 11, 8),
+    GuiMobaTopMenuGeometry("help", 424, 38, 5, 11, 8),
 )
 
 GUI_DESIGN_MOBA_RAIL_ITEMS: tuple[GuiMobaRailItem, ...] = (
@@ -2542,18 +2542,18 @@ GUI_DESIGN_MOBA_RAIL_ITEMS: tuple[GuiMobaRailItem, ...] = (
 
 
 GUI_DESIGN_MOBA_RAIL_CHROME = GuiMobaRailChrome(
-    rail_width=24,
-    icon_x=5,
+    rail_width=28,
+    icon_x=6,
     static_icon_size=16,
     live_icon_size=20,
     generated_icon_size=22,
-    button_width=24,
+    button_width=28,
     button_height=26,
     active_x=2,
     active_y_offset=-3,
-    active_width=20,
+    active_width=24,
     active_height=30,
-    label_width=24,
+    label_width=28,
     label_height=54,
     label_step=58,
     unlabeled_gap_after=8,
@@ -2573,7 +2573,7 @@ GUI_DESIGN_MOBA_RAIL_ITEM_GEOMETRY: tuple[GuiMobaRailItemGeometry, ...] = (
 
 
 GUI_DESIGN_MOBA_SSH_BANNER_CHROME = GuiMobaSshBannerChrome(
-    title="Remote Ops Workspace Personal Edition v1.0",
+    title="Remote Ops Workspace",
     subtitle="(SSH client, SFTP browser and remote tools)",
     heading_prefix="* ",
     heading_suffix=" *",
@@ -2582,10 +2582,10 @@ GUI_DESIGN_MOBA_SSH_BANNER_CHROME = GuiMobaSshBannerChrome(
     footer_prefix="For more info, ctrl+click on",
     help_link_label="help",
     website_link_label="website",
-    static_left_offset=42,
-    static_top_offset=12,
+    static_left_offset=40,
+    static_top_offset=10,
     static_width=570,
-    static_height=182,
+    static_height=166,
     body_top_offset=54,
     terminal_gap=18,
 )
@@ -2594,6 +2594,13 @@ GUI_DESIGN_MOBA_SSH_BANNER_CAPABILITY_KEYS = (
     "direct-ssh",
     "ssh-compression",
     "smartcard-auth",
+    "ssh-browser",
+    "x11-forwarding",
+)
+
+GUI_DESIGN_MOBA_SSH_BANNER_VISIBLE_CAPABILITY_KEYS = (
+    "direct-ssh",
+    "ssh-compression",
     "ssh-browser",
     "x11-forwarding",
 )
@@ -2625,7 +2632,20 @@ def _build_moba_ssh_banner_row_geometry() -> tuple[GuiMobaSshBannerRowGeometry, 
         ),
     ]
     capability_y = chrome.body_top_offset + line_height
-    for index, key in enumerate(GUI_DESIGN_MOBA_SSH_BANNER_CAPABILITY_KEYS):
+    for key in GUI_DESIGN_MOBA_SSH_BANNER_CAPABILITY_KEYS:
+        if key not in GUI_DESIGN_MOBA_SSH_BANNER_VISIBLE_CAPABILITY_KEYS:
+            rows.append(
+                GuiMobaSshBannerRowGeometry(
+                    key,
+                    "mobaSshBannerCapability",
+                    0,
+                    0,
+                    0,
+                    0,
+                )
+            )
+            continue
+        index = GUI_DESIGN_MOBA_SSH_BANNER_VISIBLE_CAPABILITY_KEYS.index(key)
         rows.append(
             GuiMobaSshBannerRowGeometry(
                 key,
@@ -2641,7 +2661,9 @@ def _build_moba_ssh_banner_row_geometry() -> tuple[GuiMobaSshBannerRowGeometry, 
             "footer",
             "mobaSshBannerFooter",
             body_x,
-            capability_y + len(GUI_DESIGN_MOBA_SSH_BANNER_CAPABILITY_KEYS) * line_height + 4,
+            capability_y
+            + len(GUI_DESIGN_MOBA_SSH_BANNER_VISIBLE_CAPABILITY_KEYS) * line_height
+            + 4,
             body_width,
             line_height,
         )
@@ -2724,8 +2746,8 @@ GUI_DESIGN_MOBA_RIGHT_UTILITY_ACTION_ROUTE = GuiMobaRightUtilityActionRoute(
 
 
 GUI_DESIGN_MOBA_RIGHT_UTILITY_RAIL_CHROME = GuiMobaRightUtilityRailChrome(
-    static_width=30,
-    live_width=30,
+    static_width=0,
+    live_width=0,
     margin_left=2,
     margin_top=2,
     margin_right=2,
@@ -2814,23 +2836,23 @@ GUI_DESIGN_MOBA_TOP_STACK_GEOMETRY = GuiMobaTopStackGeometry(
     menu_y=GUI_DESIGN_MOBA_TITLEBAR_CHROME.static_height,
     menu_height=22,
     ribbon_y=44,
-    ribbon_height=64,
-    quick_connect_y=108,
+    ribbon_height=54,
+    quick_connect_y=98,
     quick_connect_height=GUI_DESIGN_MOBA_QUICK_CONNECT_CHROME.static_height,
-    left_dock_y=132,
-    tab_y=108,
-    tab_height=28,
-    terminal_content_y=136,
-    status_height=22,
-    side_width=390,
-    rail_width=24,
+    left_dock_y=122,
+    tab_y=98,
+    tab_height=24,
+    terminal_content_y=122,
+    status_height=18,
+    side_width=394,
+    rail_width=28,
 )
 GUI_DESIGN_MOBA_QUICK_CONNECT_SUGGESTION_CHROME = GuiMobaQuickConnectSuggestionChrome(
     preview_query="edge-prod.example.invalid",
     expected_kinds=("profile", "direct"),
     max_visible_rows=4,
     row_height=22,
-    static_width=390,
+    static_width=394,
     detail_separator="    ",
 )
 GUI_DESIGN_MOBA_HOME_WELCOME_CHROME = GuiMobaHomeWelcomeChrome(
@@ -2936,7 +2958,7 @@ GUI_DESIGN_MOBA_SFTP_BROWSER_CHROME = GuiMobaSftpBrowserChrome(
     dropdown_font_size=10,
     header_label_y=7,
     header_font_size=10,
-    row_top_offset=-4,
+    row_top_offset=0,
     row_icon_x=14,
     row_icon_y_offset=-1,
     row_name_x=38,
@@ -2971,21 +2993,21 @@ GUI_DESIGN_MOBA_SFTP_ROUTED_FILE_ROWS = GuiMobaSftpRoutedFileRows(
 
 
 GUI_DESIGN_MOBA_SFTP_DOCK_LAYOUT = GuiMobaSftpDockLayout(
-    inner_margin=6,
-    toolbar_height=26,
+    inner_margin=0,
+    toolbar_height=30,
     toolbar_icon_size=16,
     toolbar_icon_left_inset=7,
     toolbar_icon_step=24,
     toolbar_separator_width=7,
-    path_gap=7,
-    path_height=24,
-    table_header_gap=8,
+    path_gap=0,
+    path_height=22,
+    table_header_gap=0,
     table_header_height=24,
-    file_row_gap=7,
+    file_row_gap=1,
     file_row_height=21,
     static_max_rows=9,
-    monitoring_height=116,
-    monitoring_divider_offset=14,
+    monitoring_height=78,
+    monitoring_divider_offset=10,
     monitoring_left_inset=18,
     monitoring_content_left=42,
     monitoring_icon_center_x=104,
@@ -3077,16 +3099,16 @@ GUI_DESIGN_MOBA_SFTP_TOOLBAR_ACTION_ROUTE = GuiMobaSftpToolbarActionRoute(
 )
 
 GUI_DESIGN_MOBA_CONNECTED_DOCK_FRAME = GuiMobaConnectedDockFrame(
-    side_width=390,
-    rail_width=24,
-    dock_x=24,
-    dock_y=132,
+    side_width=394,
+    rail_width=28,
+    dock_x=28,
+    dock_y=122,
     dock_width=366,
-    dock_height=606,
-    workspace_x=390,
-    quick_connect_y=108,
+    dock_height=620,
+    workspace_x=394,
+    quick_connect_y=98,
     quick_connect_height=24,
-    status_y=738,
+    status_y=742,
 )
 
 GUI_DESIGN_MOBA_MONITORING_METRICS: tuple[GuiMobaMonitoringMetric, ...] = (
@@ -3114,7 +3136,10 @@ GUI_DESIGN_MOBA_MONITORING_CONTROLS: tuple[GuiMobaMonitoringControl, ...] = (
         label="Follow terminal folder",
         control_type="checkbox",
         checked=True,
-        tooltip="Keep the SFTP browser path synced to the terminal working directory",
+        tooltip=(
+            "Keep the SFTP browser on its selected remote path; automatic shell "
+            "working-directory detection is not available"
+        ),
     ),
 )
 
@@ -3138,7 +3163,7 @@ GUI_DESIGN_MOBA_MONITORING_CONTROL_GEOMETRY: tuple[GuiMobaMonitoringControlGeome
     GuiMobaMonitoringControlGeometry(
         key="follow-terminal-folder",
         anchor_x=42,
-        static_y=76,
+        static_y=50,
         icon_x=60,
         icon_size=16,
         label_x=80,
@@ -3160,8 +3185,8 @@ GUI_DESIGN_MOBA_REMOTE_MONITORING_DOCK_CHROME = GuiMobaRemoteMonitoringDockChrom
     visible_metric_keys=(),
     refresh_seconds=5,
     compact=True,
-    static_height=116,
-    divider_offset=14,
+    static_height=78,
+    divider_offset=10,
     divider_left_inset=18,
     divider_right_inset=194,
     content_left=42,
@@ -3274,15 +3299,15 @@ GUI_DESIGN_MOBA_STATUS_BAR_CHROME = GuiMobaStatusBarChrome(
     product_note="open-protocol operator shell",
     right_marker="[]",
     right_marker_tooltip="Compact status marker",
-    static_height=22,
+    static_height=18,
     notice_x=6,
-    notice_y=6,
+    notice_y=4,
     product_note_x=142,
-    product_note_y=6,
+    product_note_y=4,
     text_font_size=10,
     segment_start_right_offset=480,
     marker_right_inset=4,
-    marker_y=6,
+    marker_y=4,
     marker_width=9,
     marker_height=10,
 )
@@ -6393,7 +6418,7 @@ QToolButton#mobaRibbonButton {{
   color: {colors.control_text};
   border: 1px solid transparent;
   border-radius: 0;
-  padding: 4px 5px;
+  padding: 2px 4px;
   font-size: 10px;
   font-weight: 500;
 }}
@@ -6406,7 +6431,7 @@ QToolButton#mobaXServerAction {{
   color: {colors.primary};
   border: 1px solid transparent;
   border-radius: 0;
-  padding: 4px 5px;
+  padding: 2px 4px;
   font-size: 10px;
   font-weight: 600;
 }}
@@ -6419,7 +6444,7 @@ QToolButton#mobaExitAction {{
   color: {colors.danger_text};
   border: 1px solid transparent;
   border-radius: 0;
-  padding: 4px 5px;
+  padding: 2px 4px;
   font-size: 10px;
   font-weight: 600;
 }}
@@ -7346,8 +7371,8 @@ NATIVE_COLORS = GuiDesignColors(
 
 MOBAXTERM_COLORS = GuiDesignColors(
     window="#101010",
-    toolbar="#171717",
-    toolbar_border="#454545",
+    toolbar="#141414",
+    toolbar_border="#383838",
     control="#222222",
     control_text="#f0f0f0",
     control_border="#5a5a5a",
@@ -7356,18 +7381,18 @@ MOBAXTERM_COLORS = GuiDesignColors(
     primary_text="#ffffff",
     danger="#d73737",
     danger_text="#ffd0d0",
-    sidebar="#151515",
+    sidebar="#141414",
     sidebar_text="#e8e8e8",
     sidebar_muted="#a6a6a6",
     sidebar_selected="#2b2b2b",
     sidebar_selected_text="#ffffff",
-    pane="#202020",
-    pane_border="#545454",
+    pane="#1c1c1c",
+    pane_border="#383838",
     tab="#1a1a1a",
     tab_selected="#242424",
     tab_text="#cfcfcf",
     tab_selected_text="#ffffff",
-    terminal="#1f1f1f",
+    terminal="#1c1c1c",
     terminal_text="#e9e9e9",
     terminal_accent="#f2cc00",
     log="#151515",

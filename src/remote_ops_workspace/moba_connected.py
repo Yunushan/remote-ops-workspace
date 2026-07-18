@@ -225,27 +225,34 @@ class RemoteMonitoringPlan:
 
 @dataclass(frozen=True, slots=True)
 class RemoteMonitoringSnapshot:
-    cpu_percent: int
-    memory_used_gb: float
-    memory_total_gb: float
-    disk_used_gb: float
-    disk_total_gb: float
-    net_up_mbps: float
-    net_down_mbps: float
-    connection_count: int
-    process_count: int
-    load_average: str = "0.00"
+    cpu_percent: int | None
+    memory_used_gb: float | None
+    memory_total_gb: float | None
+    disk_used_gb: float | None
+    disk_total_gb: float | None
+    net_up_mbps: float | None
+    net_down_mbps: float | None
+    connection_count: int | None
+    process_count: int | None
+    load_average: str | None = "0.00"
+    observed: bool = True
 
     @property
     def memory_label(self) -> str:
+        if self.memory_used_gb is None or self.memory_total_gb is None:
+            return "Unavailable"
         return f"{self.memory_used_gb:.1f} GB / {self.memory_total_gb:.1f} GB"
 
     @property
     def disk_label(self) -> str:
+        if self.disk_used_gb is None or self.disk_total_gb is None:
+            return "Unavailable"
         return f"{self.disk_used_gb:.1f} GB / {self.disk_total_gb:.1f} GB"
 
     @property
     def network_label(self) -> str:
+        if self.net_up_mbps is None or self.net_down_mbps is None:
+            return "Unavailable"
         return f"{self.net_up_mbps:.2f} Mb/s up, {self.net_down_mbps:.2f} Mb/s down"
 
     def to_dict(self) -> dict[str, object]:
@@ -260,6 +267,7 @@ class RemoteMonitoringSnapshot:
             "connection_count": self.connection_count,
             "process_count": self.process_count,
             "load_average": self.load_average,
+            "observed": self.observed,
         }
 
 
@@ -536,6 +544,8 @@ class MobaConnectedSessionState:
     smartcard_selection: MobaSmartCardSelectionState
     text_editor: MobaConnectedTextEditorState
     terminal_transcript: tuple[MobaTerminalTranscriptLine, ...]
+    state_source: str = "live"
+    connection_phase: str = "connecting"
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -565,6 +575,8 @@ class MobaConnectedSessionState:
             "sftp_terminal_folder_route": moba_sftp_terminal_folder_route(self).to_dict(),
             "banner": self.banner.to_dict(),
             "terminal_transcript": [line.to_dict() for line in self.terminal_transcript],
+            "state_source": self.state_source,
+            "connection_phase": self.connection_phase,
         }
 
 
@@ -777,10 +789,25 @@ def build_moba_connected_session_state(
     sftp_listing: str = "",
     monitoring_output: str = "",
     ssh_browser_preferences: object | Mapping[str, object] | None = None,
+    preview_sample_data: bool = False,
 ) -> MobaConnectedSessionState:
     _require_ssh_browser_profile(profile)
     selected_path = normalise_remote_path(terminal_cwd if follow_terminal_folder and terminal_cwd else remote_path)
-    entries = tuple(parse_sftp_ls_output(sftp_listing) or default_remote_file_entries(selected_path))
+    parsed_entries = tuple(parse_sftp_ls_output(sftp_listing))
+    parsed_monitoring = parse_remote_monitoring_output(monitoring_output)
+    if preview_sample_data:
+        entries = parsed_entries or tuple(default_remote_file_entries(selected_path))
+        monitoring = parsed_monitoring or default_remote_monitoring_snapshot(profile)
+        transcript = build_moba_terminal_transcript(profile, selected_path)
+        state_source = "preview-sample"
+        connection_phase = "preview"
+    else:
+        entries = parsed_entries
+        monitoring = parsed_monitoring or unavailable_remote_monitoring_snapshot()
+        transcript = ()
+        has_runtime_evidence = bool(sftp_listing.strip()) or parsed_monitoring is not None
+        state_source = "runtime-observed" if has_runtime_evidence else "live"
+        connection_phase = "connected-observed" if has_runtime_evidence else "connecting"
     return MobaConnectedSessionState(
         profile_name=profile.name,
         target=profile.display_target,
@@ -791,12 +818,14 @@ def build_moba_connected_session_state(
         sftp_list_plan=build_sftp_list_plan(profile, selected_path),
         follow_folder_plan=build_follow_terminal_folder_plan(profile, selected_path),
         monitoring_plan=build_remote_monitoring_plan(profile),
-        monitoring=parse_remote_monitoring_output(monitoring_output) or default_remote_monitoring_snapshot(profile),
+        monitoring=monitoring,
         banner=build_ssh_connection_banner(profile),
         ssh_browser_state=build_connected_ssh_browser_state(ssh_browser_preferences),
         smartcard_selection=build_moba_smartcard_selection_state(profile.options),
         text_editor=build_moba_connected_text_editor_state(profile, selected_path, entries),
-        terminal_transcript=build_moba_terminal_transcript(profile, selected_path),
+        terminal_transcript=transcript,
+        state_source=state_source,
+        connection_phase=connection_phase,
     )
 
 
@@ -1106,23 +1135,39 @@ def moba_connected_tab_chrome_items(state: MobaConnectedSessionState) -> tuple[M
 
 def moba_telemetry_segments(state: MobaConnectedSessionState) -> tuple[MobaTelemetrySegment, ...]:
     monitoring = state.monitoring
+    target_label = "Connected target" if state.connection_phase == "connected-observed" else "Target"
+    cpu = f"{monitoring.cpu_percent}%" if monitoring.cpu_percent is not None else "Unavailable"
+    net_up = f"{monitoring.net_up_mbps:.2f} Mb/s" if monitoring.net_up_mbps is not None else "Unavailable"
+    net_down = (
+        f"{monitoring.net_down_mbps:.2f} Mb/s" if monitoring.net_down_mbps is not None else "Unavailable"
+    )
+    connections = str(monitoring.connection_count) if monitoring.connection_count is not None else "Unavailable"
+    processes = str(monitoring.process_count) if monitoring.process_count is not None else "Unavailable"
     return (
-        MobaTelemetrySegment("target", "host", "Connected target", state.target),
-        MobaTelemetrySegment("cpu", "cpu", "CPU usage", f"{monitoring.cpu_percent}%"),
+        MobaTelemetrySegment("target", "host", target_label, state.target),
+        MobaTelemetrySegment("cpu", "cpu", "CPU usage", cpu),
         MobaTelemetrySegment("memory", "memory", "Memory usage", monitoring.memory_label),
         MobaTelemetrySegment("disk", "disk", "Disk usage", monitoring.disk_label),
-        MobaTelemetrySegment("net-up", "upload", "Network upload", f"{monitoring.net_up_mbps:.2f} Mb/s"),
-        MobaTelemetrySegment("net-down", "download", "Network download", f"{monitoring.net_down_mbps:.2f} Mb/s"),
-        MobaTelemetrySegment("connections", "connection", "Open connections", str(monitoring.connection_count)),
-        MobaTelemetrySegment("processes", "process", "Remote processes", str(monitoring.process_count)),
+        MobaTelemetrySegment("net-up", "upload", "Network upload", net_up),
+        MobaTelemetrySegment("net-down", "download", "Network download", net_down),
+        MobaTelemetrySegment("connections", "connection", "Open connections", connections),
+        MobaTelemetrySegment("processes", "process", "Remote processes", processes),
     )
 
 
 def moba_telemetry_cells(state: MobaConnectedSessionState) -> tuple[MobaTelemetryCell, ...]:
+    connections = state.monitoring.connection_count
+    processes = state.monitoring.process_count
     display_by_key = {
         "target": moba_telemetry_target_display(state),
-        "connections": f"Connections: {state.monitoring.connection_count} (port {moba_telemetry_port(state)})",
-        "processes": f"{max(1, state.monitoring.connection_count + 1)}/{state.monitoring.process_count}",
+        "connections": (
+            f"Connections: {connections} (port {moba_telemetry_port(state)})"
+            if connections is not None
+            else "Connections: unavailable"
+        ),
+        "processes": f"{max(1, connections + 1)}/{processes}"
+        if connections is not None and processes is not None
+        else "Unavailable",
     }
     return tuple(
         MobaTelemetryCell(
@@ -1521,6 +1566,8 @@ def parse_sftp_ls_output(text: str) -> list[RemoteFileEntry]:
         permissions = parts[0]
         size = int(parts[4]) if parts[4].isdigit() else 0
         modified = " ".join(parts[5:8])
+        if parts[8] in {".", ".."}:
+            continue
         rows.append(
             RemoteFileEntry(
                 name=parts[8],
@@ -1540,19 +1587,19 @@ def parse_remote_monitoring_output(text: str) -> RemoteMonitoringSnapshot | None
             values[key] = value
     if not values:
         return None
-    mem_used, mem_total = parse_pair_mb(values.get("mem_mb", "0/0"))
-    disk_used, disk_total = parse_pair_mb(values.get("disk_mb", "0/0"))
+    mem_used, mem_total = _optional_pair_gb(values.get("mem_mb"))
+    disk_used, disk_total = _optional_pair_gb(values.get("disk_mb"))
     return RemoteMonitoringSnapshot(
-        cpu_percent=clamp_int(values.get("cpu"), 0, 100),
-        memory_used_gb=round(mem_used / 1024, 1),
-        memory_total_gb=round(mem_total / 1024, 1),
-        disk_used_gb=round(disk_used / 1024, 1),
-        disk_total_gb=round(disk_total / 1024, 1),
-        net_up_mbps=float(values.get("net_up_mbps", "0.01")),
-        net_down_mbps=float(values.get("net_down_mbps", "0.01")),
-        connection_count=clamp_int(values.get("connections", values.get("users")), 0, 9999),
-        process_count=clamp_int(values.get("processes"), 0, 99999),
-        load_average=values.get("load", "0.00"),
+        cpu_percent=_optional_clamp_int(values.get("cpu"), 0, 100),
+        memory_used_gb=mem_used,
+        memory_total_gb=mem_total,
+        disk_used_gb=disk_used,
+        disk_total_gb=disk_total,
+        net_up_mbps=_optional_float(values.get("net_up_mbps")),
+        net_down_mbps=_optional_float(values.get("net_down_mbps")),
+        connection_count=_optional_clamp_int(values.get("connections", values.get("users")), 0, 9999),
+        process_count=_optional_clamp_int(values.get("processes"), 0, 99999),
+        load_average=values.get("load"),
     )
 
 
@@ -1574,10 +1621,25 @@ def default_remote_monitoring_snapshot(profile: Profile) -> RemoteMonitoringSnap
     )
 
 
+def unavailable_remote_monitoring_snapshot() -> RemoteMonitoringSnapshot:
+    return RemoteMonitoringSnapshot(
+        cpu_percent=None,
+        memory_used_gb=None,
+        memory_total_gb=None,
+        disk_used_gb=None,
+        disk_total_gb=None,
+        net_up_mbps=None,
+        net_down_mbps=None,
+        connection_count=None,
+        process_count=None,
+        load_average=None,
+        observed=False,
+    )
+
+
 def default_remote_file_entries(remote_path: str) -> list[RemoteFileEntry]:
     if normalise_remote_path(remote_path) == "/":
         return [
-            RemoteFileEntry("..", "dir", 0, "2026-06-06"),
             RemoteFileEntry("apps", "dir", 0, "2026-06-06"),
             RemoteFileEntry("logs", "dir", 0, "2026-06-06"),
             RemoteFileEntry("releases", "dir", 0, "2026-06-06"),
@@ -1586,7 +1648,6 @@ def default_remote_file_entries(remote_path: str) -> list[RemoteFileEntry]:
             RemoteFileEntry("README.txt", "file", 3, "2026-06-04"),
         ]
     return [
-        RemoteFileEntry("..", "dir", 0, "2026-06-06"),
         RemoteFileEntry("current", "dir", 0, "2026-06-06"),
         RemoteFileEntry("archive", "dir", 0, "2026-06-05"),
         RemoteFileEntry("app.log", "file", 64, "2026-06-06"),
@@ -1611,6 +1672,32 @@ def parse_pair_mb(value: str) -> tuple[int, int]:
     if not separator:
         return 0, 0
     return clamp_int(left, 0, 10_000_000), clamp_int(right, 0, 10_000_000)
+
+
+def _optional_pair_gb(value: str | None) -> tuple[float | None, float | None]:
+    if value is None or "/" not in value:
+        return None, None
+    used_mb, total_mb = parse_pair_mb(value)
+    return round(used_mb / 1024, 1), round(total_mb / 1024, 1)
+
+
+def _optional_clamp_int(value: str | None, lower: int, upper: int) -> int | None:
+    if value is None:
+        return None
+    try:
+        parsed = int(float(value))
+    except ValueError:
+        return None
+    return max(lower, min(upper, parsed))
+
+
+def _optional_float(value: str | None) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
 
 
 def clamp_int(value: str | None, lower: int, upper: int) -> int:

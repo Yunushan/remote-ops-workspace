@@ -672,6 +672,9 @@ parent row and the generated SFTP list command to one `mobaSftpTerminalFolder*`
 property set. Static preview rendering validates the route against the same
 state, and the live checker records `expected_moba_sftp_terminal_folder_route`
 so terminal/output, checkbox, path strip and table cannot drift apart.
+Here, "terminal folder" is the operator-selected remote path carried by the
+connected-session route. The current runtime does not observe the interactive
+shell's working directory or OSC 7 updates.
 MobaXterm-style SFTP routed file rows are tracked as a separate row-level
 contract. `GuiMobaSftpRoutedFileRows` ties the visible file-list rows to the
 follow-folder route key, active remote path, selected parent row and stable row

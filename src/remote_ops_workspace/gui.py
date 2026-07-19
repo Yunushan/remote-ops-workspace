@@ -12069,6 +12069,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.welcome_scroll = scroll
             content = QWidget()
             content.setObjectName("welcomeContent")
+            content.setMinimumWidth(0)
+            content.setSizePolicy(
+                QSizePolicy.Policy.Ignored,
+                QSizePolicy.Policy.Preferred,
+            )
             layout = QVBoxLayout(content)
             layout.setContentsMargins(32, 28, 32, 28)
             scroll.setWidget(content)

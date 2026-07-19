@@ -5,10 +5,11 @@ import time
 
 import pytest
 
-from remote_ops_workspace.qt_terminal_process import QtConPtyProcess
 from remote_ops_workspace.windows_conpty import conpty_support
 
 qt_core = pytest.importorskip("PyQt6.QtCore")
+qt_terminal_process = pytest.importorskip("remote_ops_workspace.qt_terminal_process")
+QtConPtyProcess = qt_terminal_process.QtConPtyProcess
 _CONPTY_SUPPORT = conpty_support()
 pytestmark = pytest.mark.skipif(
     not _CONPTY_SUPPORT.supported,

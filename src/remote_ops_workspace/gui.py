@@ -759,6 +759,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
             self._restart_after_stop = False
             self._rendered_terminal_text = ""
+            self._pty_initial_clear_pending = False
+            self._pty_startup_probe = ""
             self.startup_preamble = ""
             self.show_launch_command = True
             self.output_context_menu_builder = None
@@ -1338,18 +1340,13 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.output.clear()
             self._rendered_terminal_text = ""
             self.terminal_emulator.reset()
+            self.disarm_initial_pty_clear_recovery()
             self.set_status("starting", "starting")
             self.start_button.setEnabled(False)
             self.stop_button.setEnabled(True)
             self.input.setEnabled(False)
-            if self.startup_preamble:
-                self.append_text(self.startup_preamble)
-            if self.show_launch_command:
-                self.append_text(f"$ {self.plan.printable()}\n")
-            for note in self.plan.notes:
-                self.append_text(f"[note] {note}\n")
-            if self._terminal_backend_warning:
-                self.append_text(f"[warning] {self._terminal_backend_warning}\n")
+            self.append_text(self.terminal_startup_context_text())
+            self.arm_initial_pty_clear_recovery()
             runtime_command = list(self.plan.command)
             process_property = getattr(self.process, "property", lambda _name: None)
             if bool(process_property("terminalOpenSshPipeFallback")):
@@ -1494,6 +1491,17 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             if current.startswith(self.startup_preamble):
                 return
             self.set_terminal_transcript(f"{self.startup_preamble}{current}")
+
+        def terminal_startup_context_text(self) -> str:
+            """Return the app-owned context that precedes process output."""
+
+            parts = [self.startup_preamble]
+            if self.show_launch_command:
+                parts.append(f"$ {self.plan.printable()}\n")
+            parts.extend(f"[note] {note}\n" for note in self.plan.notes)
+            if self._terminal_backend_warning:
+                parts.append(f"[warning] {self._terminal_backend_warning}\n")
+            return "".join(parts)
 
         def send_input(self) -> None:
             line = self.input.text()
@@ -1662,10 +1670,66 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 widget.setProperty("mobaMacroReplayCancelled", self.macro_replay_cancelled)
 
         def read_stdout(self) -> None:
-            self.append_text(bytes(self.process.readAllStandardOutput()).decode(errors="replace"))
+            self.append_process_text(
+                bytes(self.process.readAllStandardOutput()).decode(errors="replace")
+            )
 
         def read_stderr(self) -> None:
-            self.append_text(bytes(self.process.readAllStandardError()).decode(errors="replace"))
+            self.append_process_text(
+                bytes(self.process.readAllStandardError()).decode(errors="replace")
+            )
+
+        @staticmethod
+        def is_initial_conpty_screen_clear(text: str) -> bool:
+            """Recognize the bounded console-initialization clear emitted by ConPTY."""
+
+            return "\x1b[?9001h" in text and "\x1b[2J" in text
+
+        def arm_initial_pty_clear_recovery(self) -> None:
+            armed = bool(
+                getattr(self.process, "is_pty", False)
+                and self.terminal_startup_context_text()
+            )
+            self._pty_initial_clear_pending = armed
+            self._pty_startup_probe = ""
+            self.output.setProperty("terminalInitialPtyClearRecoveryArmed", armed)
+            self.output.setProperty("terminalInitialPtyClearNormalized", False)
+
+        def disarm_initial_pty_clear_recovery(self) -> None:
+            self._pty_initial_clear_pending = False
+            self._pty_startup_probe = ""
+            self.output.setProperty("terminalInitialPtyClearRecoveryArmed", False)
+
+        def append_process_text(self, text: str) -> None:
+            """Render process output and normalize only ConPTY's first screen clear."""
+
+            if not text:
+                return
+            transcript = self.terminal_emulator.feed(text)
+            if self._pty_initial_clear_pending:
+                self._pty_startup_probe = (
+                    self._pty_startup_probe + text
+                )[-16_384:]
+                if self.is_initial_conpty_screen_clear(self._pty_startup_probe):
+                    body = transcript.lstrip("\n")
+                    self.disarm_initial_pty_clear_recovery()
+                    self.set_terminal_transcript(
+                        f"{self.terminal_startup_context_text()}{body}"
+                    )
+                    self.output.setProperty(
+                        "terminalInitialPtyClearNormalized",
+                        True,
+                    )
+                    return
+                startup_context = self.terminal_startup_context_text()
+                visible_tail = (
+                    transcript[len(startup_context) :]
+                    if transcript.startswith(startup_context)
+                    else transcript
+                )
+                if visible_tail.strip() or len(self._pty_startup_probe) >= 16_384:
+                    self.disarm_initial_pty_clear_recovery()
+            self.render_terminal_transcript(transcript)
 
         def append_text(self, text: str) -> None:
             if not text:

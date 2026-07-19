@@ -194,6 +194,12 @@ def check_gui_interactions_windows_job(workflow: str) -> list[str]:
         'QT_QPA_PLATFORM: "windows"': "native Windows Qt platform",
         'python-version: "3.12"': "stable native Windows GUI Python version",
         'python -m pip install -e ".[desktop,security,dev]"': "desktop verification dependencies",
+        "Verify real Windows ConPTY terminal transport": (
+            "real Windows ConPTY transport verification step"
+        ),
+        "python -m pytest -q tests/test_windows_conpty.py tests/test_qt_terminal_process.py": (
+            "real Windows ConPTY transport tests"
+        ),
         "Render full GUI on native Windows": "native Windows full GUI render step",
         "python scripts/check_real_gui_render.py --require-pyqt6 --timeout-seconds 240 --out-dir artifacts/gui-real-windows": (
             "native Windows all-preset GUI render gate"

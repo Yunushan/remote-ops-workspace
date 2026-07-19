@@ -4,6 +4,12 @@ import pytest
 
 from remote_ops_workspace.terminal import TerminalPanePlan
 
+_CONPTY_INITIAL_SCREEN_FRAME = (
+    "\x1b[?9001h\x1b[?1004h\x1b[?25l\x1b[2J\x1b[m\x1b[H"
+    + "\r\n" * 24
+    + "\x1b[H\x1b]0;C:\\Windows\\System32\\OpenSSH\\ssh.exe\x07\x1b[?25h"
+)
+
 
 @pytest.fixture
 def terminal_pane(monkeypatch, tmp_path):
@@ -148,3 +154,82 @@ def test_stream_update_preserves_unchanged_multiline_selection(terminal_pane) ->
     assert selected.anchor() == 0
     assert selected.position() == 10
     assert pane.output.property("terminalSelectionPreservedOnOutput") is True
+
+
+def _arm_initial_pty_clear_recovery(pane) -> None:
+    pane._pty_initial_clear_pending = True
+    pane._pty_startup_probe = ""
+    pane.output.setProperty("terminalInitialPtyClearRecoveryArmed", True)
+    pane.output.setProperty("terminalInitialPtyClearNormalized", False)
+
+
+def test_initial_conpty_clear_preserves_command_context_and_later_clear_works(
+    terminal_pane,
+) -> None:
+    _app, pane = terminal_pane
+    pane.plan = TerminalPanePlan(
+        title="edge-prod",
+        command=[
+            "ssh.exe",
+            "-tt",
+            "-p",
+            "22",
+            "operator@edge-prod.example.invalid",
+        ],
+        source="test",
+        notes=["strict host-key checks enabled"],
+    )
+    pane.startup_preamble = ""
+    pane.show_launch_command = True
+    context = pane.terminal_startup_context_text()
+    pane.set_terminal_transcript(context)
+    _arm_initial_pty_clear_recovery(pane)
+
+    split_at = _CONPTY_INITIAL_SCREEN_FRAME.index("\x1b[2J") + 3
+    pane.append_process_text(_CONPTY_INITIAL_SCREEN_FRAME[:split_at])
+    pane.append_process_text(_CONPTY_INITIAL_SCREEN_FRAME[split_at:])
+
+    output = pane.output.toPlainText()
+    assert output == context
+    assert output.startswith("$ ssh.exe -tt -p 22 operator@edge-prod.example.invalid")
+    assert "[note] strict host-key checks enabled" in output
+    assert "\x1b" not in output
+    assert pane.output.property("terminalInitialPtyClearNormalized") is True
+    assert pane.output.property("terminalInitialPtyClearRecoveryArmed") is False
+
+    pane.append_process_text("before\n\x1b[2Jafter")
+    assert pane.output.toPlainText() == "after"
+
+
+def test_initial_conpty_clear_preserves_moba_preamble_without_command_echo(
+    terminal_pane,
+) -> None:
+    _app, pane = terminal_pane
+    pane.plan = TerminalPanePlan(
+        title="edge-prod",
+        command=["ssh.exe", "-tt", "operator@edge-prod.example.invalid"],
+        source="test",
+    )
+    pane.set_terminal_transcript(f"$ {pane.plan.printable()}\n")
+    pane.set_launch_command_echo_visible(False)
+    pane.set_startup_preamble(
+        "\n".join(
+            [
+                "* Remote Ops Workspace *",
+                "> SSH session target: edge-prod.example.invalid:22",
+                "> Waiting for authentication and server output.",
+            ]
+        )
+    )
+    context = pane.terminal_startup_context_text()
+    _arm_initial_pty_clear_recovery(pane)
+
+    pane.append_process_text(_CONPTY_INITIAL_SCREEN_FRAME)
+
+    output = pane.output.toPlainText()
+    assert output == context
+    assert output.startswith("* Remote Ops Workspace *")
+    assert "> Waiting for authentication and server output." in output
+    assert "$ ssh.exe" not in output
+    assert not output.startswith("\n")
+    assert "\x1b" not in output

@@ -4,11 +4,11 @@ import sys
 import time
 
 import pytest
-from PyQt6.QtCore import QCoreApplication, QProcess
 
 from remote_ops_workspace.qt_terminal_process import QtConPtyProcess
 from remote_ops_workspace.windows_conpty import conpty_support
 
+qt_core = pytest.importorskip("PyQt6.QtCore")
 _CONPTY_SUPPORT = conpty_support()
 pytestmark = pytest.mark.skipif(
     not _CONPTY_SUPPORT.supported,
@@ -17,15 +17,15 @@ pytestmark = pytest.mark.skipif(
 
 
 @pytest.fixture(scope="module")
-def qt_app() -> QCoreApplication:
-    existing = QCoreApplication.instance()
+def qt_app():
+    existing = qt_core.QCoreApplication.instance()
     if existing is not None:
         return existing
-    return QCoreApplication(["remote-ops-workspace-conpty-tests"])
+    return qt_core.QCoreApplication(["remote-ops-workspace-conpty-tests"])
 
 
 def _process_events_until(
-    app: QCoreApplication,
+    app,
     predicate,
     *,
     timeout: float = 5.0,
@@ -41,7 +41,7 @@ def _process_events_until(
 
 
 def test_real_cmd_round_trips_output_and_input_through_qt_events(
-    qt_app: QCoreApplication,
+    qt_app,
 ) -> None:
     process = QtConPtyProcess()
     output = bytearray()
@@ -72,7 +72,7 @@ def test_real_cmd_round_trips_output_and_input_through_qt_events(
         _process_events_until(qt_app, lambda: b"QT-READY" in output)
 
         assert started == [True]
-        assert process.state() == QProcess.ProcessState.Running
+        assert process.state() == qt_core.QProcess.ProcessState.Running
         assert process.processId() > 0
         assert process.write(b"qt-terminal-input\r") == len(b"qt-terminal-input\r")
         session = process._session
@@ -87,14 +87,14 @@ def test_real_cmd_round_trips_output_and_input_through_qt_events(
         _process_events_until(qt_app, lambda: bool(finished))
 
         assert errors == []
-        assert finished == [(0, QProcess.ExitStatus.NormalExit)]
-        assert process.state() == QProcess.ProcessState.NotRunning
+        assert finished == [(0, qt_core.QProcess.ExitStatus.NormalExit)]
+        assert process.state() == qt_core.QProcess.ProcessState.NotRunning
     finally:
         process.close()
 
 
 def test_missing_executable_emits_failed_to_start_with_useful_detail(
-    qt_app: QCoreApplication,
+    qt_app,
 ) -> None:
     process = QtConPtyProcess()
     missing_program = "remote-ops-workspace-conpty-missing-command.exe"
@@ -106,8 +106,8 @@ def test_missing_executable_emits_failed_to_start_with_useful_detail(
         process.start()
         qt_app.processEvents()
 
-        assert errors == [QProcess.ProcessError.FailedToStart]
-        assert process.state() == QProcess.ProcessState.NotRunning
+        assert errors == [qt_core.QProcess.ProcessError.FailedToStart]
+        assert process.state() == qt_core.QProcess.ProcessState.NotRunning
         assert process.processId() == 0
         assert missing_program in process.errorString()
         assert "not found" in process.errorString().lower()
@@ -116,7 +116,7 @@ def test_missing_executable_emits_failed_to_start_with_useful_detail(
 
 
 def test_start_is_idempotent_and_live_terminal_resize_reaches_conpty(
-    qt_app: QCoreApplication,
+    qt_app,
 ) -> None:
     process = QtConPtyProcess()
     output = bytearray()
@@ -152,14 +152,14 @@ def test_start_is_idempotent_and_live_terminal_resize_reaches_conpty(
         process.terminate()
         _process_events_until(qt_app, lambda: bool(finished))
         assert finished[0][0] != 0
-        assert finished[0][1] == QProcess.ExitStatus.CrashExit
-        assert process.state() == QProcess.ProcessState.NotRunning
+        assert finished[0][1] == qt_core.QProcess.ExitStatus.CrashExit
+        assert process.state() == qt_core.QProcess.ProcessState.NotRunning
     finally:
         process.close()
 
 
 def test_fast_exit_drains_high_volume_tail_before_finished(
-    qt_app: QCoreApplication,
+    qt_app,
 ) -> None:
     process = QtConPtyProcess()
     output = bytearray()
@@ -193,11 +193,11 @@ def test_fast_exit_drains_high_volume_tail_before_finished(
         qt_app.processEvents()
 
         assert finished == [
-            (0, QProcess.ExitStatus.NormalExit, len(output), True)
+            (0, qt_core.QProcess.ExitStatus.NormalExit, len(output), True)
         ]
         assert output.count(b"Q") >= payload_size
         assert tail_marker in output
-        assert process.state() == QProcess.ProcessState.NotRunning
+        assert process.state() == qt_core.QProcess.ProcessState.NotRunning
         assert process._session is None
 
         # Stale timer callbacks or explicit polls must not report completion
@@ -211,7 +211,7 @@ def test_fast_exit_drains_high_volume_tail_before_finished(
 
 
 def test_normal_nonzero_exit_is_not_reported_as_crash(
-    qt_app: QCoreApplication,
+    qt_app,
 ) -> None:
     process = QtConPtyProcess()
     output = bytearray()
@@ -232,7 +232,7 @@ def test_normal_nonzero_exit_is_not_reported_as_crash(
         _process_events_until(qt_app, lambda: bool(finished))
 
         assert b"QT-NONZERO-NORMAL" in output
-        assert finished == [(7, QProcess.ExitStatus.NormalExit)]
-        assert process.state() == QProcess.ProcessState.NotRunning
+        assert finished == [(7, qt_core.QProcess.ExitStatus.NormalExit)]
+        assert process.state() == qt_core.QProcess.ProcessState.NotRunning
     finally:
         process.close()
